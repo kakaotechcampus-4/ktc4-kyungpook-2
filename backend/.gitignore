@@ -1,3 +1,35 @@
-# 루트 .gitignore의 *.jar 규칙이 gradle wrapper jar까지 막아버려서,
-# backend/ 안에서만 이 파일을 다시 허용함 (이게 없으면 clone 받은 사람 ./gradlew이 안 됨).
+# Gradle build artifacts and caches
+.gradle/
+build/
+out/
+*.class
+*.jar
+
+# Gradle wrapper는 저장소에 포함해야 ./gradlew로 빌드할 수 있습니다.
 !gradle/wrapper/gradle-wrapper.jar
+
+# Java IDE metadata
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.factorypath
+.sts4-cache/
+
+# Spring Boot 개발자별 로컬 설정 (예시 파일은 커밋)
+application-local.yml
+application-local.yaml
+application-local.properties
+application-secret.yml
+application-secret.yaml
+application-secret.properties
+
+# Runtime logs, local H2 databases, and JVM crash dumps
+logs/
+*.log
+*.mv.db
+*.trace.db
+*.hprof
+hs_err_pid*
+replay_pid*
