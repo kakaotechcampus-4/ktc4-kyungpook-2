@@ -1,6 +1,7 @@
 # Gradle build artifacts and caches
 .gradle/
 build/
+bin/
 out/
 *.class
 *.jar
