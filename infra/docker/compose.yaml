@@ -34,6 +34,17 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     mem_limit: 768m
+    
+  ai:
+    build:
+      context: ../../AI
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../../AI/.env
+    ports:
+      - "127.0.0.1:8000:8000"
+    mem_limit: 512m
 
 volumes:
   postgres_data:
