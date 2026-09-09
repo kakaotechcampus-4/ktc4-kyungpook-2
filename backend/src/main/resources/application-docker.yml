@@ -7,3 +7,9 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+
+app:
+  raw-storage:
+    s3:
+      bucket: ${RAW_STORAGE_S3_BUCKET:itda-raw-records-dev}
+      region: ${AWS_REGION:ap-northeast-2}
