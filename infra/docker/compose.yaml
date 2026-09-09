@@ -64,5 +64,18 @@ services:
       - "127.0.0.1:3000:3000"
     mem_limit: 512m
 
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+    volumes:
+      - ../nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      # 외부에 열리는 유일한 포트. 나머지 서비스는 127.0.0.1 에만 바인드한다.
+      - "80:80"
+    mem_limit: 128m
+
 volumes:
   postgres_data:
