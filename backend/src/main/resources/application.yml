@@ -1,6 +1,14 @@
 spring:
   application:
     name: backend
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
 
 server:
   port: 8080
+
+app:
+  raw-storage:
+    base-dir: ${RAW_STORAGE_DIR:./data/raw-storage}
