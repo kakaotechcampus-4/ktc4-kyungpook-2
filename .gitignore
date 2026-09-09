@@ -70,3 +70,11 @@ target/
 *.sqlite3
 *.db
 .terraform/
+
+# ── 로컬 원본 데이터 저장소 (PoC) ───────────────────
+backend/data/raw-storage/
+
+
+# ── Claude local/session files ────────────────────────────────────────────
+CLAUDE.*
+.claude/*
