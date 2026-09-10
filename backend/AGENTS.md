@@ -156,8 +156,11 @@ OpenAPI/Swagger 명세가 도입된 이후에는 해당 명세도 같은 변경�
 ```
 
 - 변경한 유스케이스의 성공 경로와 주요 실패 경로를 함께 테스트한다.
-- DB 매핑, JPA 쿼리, 트랜잭션 관련 변경에는 H2 PostgreSQL 호환 모드로 실행되는 테스트를 추가한다.
+- DB 매핑, JPA 쿼리, 트랜잭션 관련 변경에는 H2 PostgreSQL 호환 모드 또는 Testcontainers PostgreSQL로 실행되는 테스트를 추가한다.
 - DB 테스트는 `test` 프로필을 사용하고 기존 `application-test.yml` 설정을 유지한다.
+- 단위 테스트와 빠른 스모크 테스트는 Docker 없이 실행 가능하게 유지한다.
+- PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션 검증이 필요한 통합 테스트에만 Testcontainers를 사용한다.
+- Testcontainers를 사용하는 테스트에는 `@Tag("integration")`을 붙여 통합 테스트임을 명확히 구분한다.
 - 인증·인가 코드를 수정한 경우 성공, 인증 실패, 권한 거부 경로를 검증한다.
 - 문서만 변경한 경우에도 링크, 경로, 코드 예시와 실제 설정의 일치 여부를 확인한다.
 

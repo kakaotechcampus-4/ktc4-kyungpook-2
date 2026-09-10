@@ -18,7 +18,7 @@
 | 웹·검증 | Spring Web, Bean Validation |
 | 데이터 접근 | Spring Data JPA |
 | 운영 DB | PostgreSQL |
-| 테스트 DB | H2 (PostgreSQL 호환 모드) |
+| 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |
 | 빌드 | Gradle Wrapper |
 
 ## 시작하기
@@ -39,6 +39,26 @@
 ```
 
 Windows에서는 `gradlew.bat test`와 `gradlew.bat build`를 사용합니다.
+
+### 테스트 환경
+
+- [BackendApplicationTests](src/test/java/com/itda/backend/BackendApplicationTests.java)는
+  H2 PostgreSQL 호환 모드로 실행되는 빠른 스모크 테스트다. 단위 테스트와 간단한
+  애플리케이션 기동 검증에는 Docker가 필요 없다.
+- `@Tag("integration")`이 붙은 통합 테스트는 Testcontainers로 실제 PostgreSQL
+  컨테이너를 실행한다. JPA 매핑, 쿼리, 트랜잭션처럼 PostgreSQL 동작을 검증해야 할
+  경우에만 추가한다.
+- Testcontainers 통합 테스트를 실행하려면 Docker Desktop이 실행 중이어야 한다.
+  Docker를 사용할 수 없는 환경에서는 해당 테스트가 실패한다.
+
+프로젝트는 Java 21을 기준으로 한다. 여러 JDK가 설치된 macOS 환경에서는 아래처럼
+Java 21을 명시한 뒤 테스트를 실행한다.
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+export PATH="$JAVA_HOME/bin:$PATH"
+./gradlew test --rerun-tasks
+```
 
 ### 로컬 PostgreSQL로 실행
 
