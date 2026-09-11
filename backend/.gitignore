@@ -1,0 +1,49 @@
+# Gradle build artifacts and caches
+.gradle/
+build/
+out/
+bin/
+*.class
+*.jar
+
+# Gradle wrapper는 저장소에 포함해야 ./gradlew로 빌드할 수 있습니다.
+!gradle/wrapper/gradle-wrapper.jar
+
+# Java IDE metadata
+.idea/
+.run/
+*.iml
+*.iws
+.classpath
+.project
+.settings/
+.factorypath
+.sts4-cache/
+
+# Spring Boot 개발자별 로컬 설정 (예시 파일은 커밋)
+application-local.yml
+application-local.yaml
+application-local.properties
+application-secret.yml
+application-secret.yaml
+application-secret.properties
+application-*-local.yml
+application-*-local.yaml
+application-*-local.properties
+application-*-secret.yml
+application-*-secret.yaml
+application-*-secret.properties
+
+# Runtime logs, local H2 databases, and JVM crash dumps
+logs/
+*.log
+*.mv.db
+*.trace.db
+*.lock.db
+*.temp.db
+*.lobs.db
+*.newFile
+*.hprof
+hs_err_pid*
+replay_pid*
+.attach_pid*
