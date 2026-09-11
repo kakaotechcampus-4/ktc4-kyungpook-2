@@ -35,11 +35,12 @@ class AuthControllerTest {
         given(kakaoAuthService.login(any()))
                 .willReturn(new LoginResponse("jwt-token", 12345L, "홍길동"));
 
-        mockMvc.perform(post("/api/auth/kakao").param("code", "test-code"))
+        mockMvc.perform(post("/api/v1/auth/kakao").param("code", "test-code"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").value("jwt-token"))
-                .andExpect(jsonPath("$.kakaoId").value(12345))
-                .andExpect(jsonPath("$.nickname").value("홍길동"));
+                .andExpect(jsonPath("$.result").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.accessToken").value("jwt-token"))
+                .andExpect(jsonPath("$.data.kakaoId").value(12345))
+                .andExpect(jsonPath("$.data.nickname").value("홍길동"));
     }
 
     @Test
@@ -47,7 +48,9 @@ class AuthControllerTest {
         given(kakaoAuthService.login(any()))
                 .willThrow(new RestClientException("카카오 서버 응답 실패"));
 
-        mockMvc.perform(post("/api/auth/kakao").param("code", "invalid-code"))
-                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/auth/kakao").param("code", "invalid-code"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result").value("FAIL"))
+                .andExpect(jsonPath("$.code").value("KAKAO_AUTH_FAILED"));
     }
 }
