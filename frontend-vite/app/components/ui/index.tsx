@@ -4,7 +4,7 @@
  * 규칙: 상태는 색 단독으로 전달하지 않는다. 항상 텍스트 라벨을 함께 렌더한다.
  * (교사 사용자 40대 중후반 + 색약 대응)
  */
-import Link from "next/link";
+import { Link } from "react-router";
 import type {
   ConsentState,
   Institution,
@@ -114,7 +114,7 @@ export function EvidenceChip({
       </span>
     </span>
   );
-  return href ? <Link href={href}>{body}</Link> : body;
+  return href ? <Link to={href}>{body}</Link> : body;
 }
 
 /* ── C5 큐 카드 ─────────────────────────────────────── */
@@ -142,7 +142,7 @@ export function QueueCard({
     tone === "human" ? "text-human" : tone === "block" ? "text-block" : "text-accentink";
   return (
     <Link
-      href={href}
+      to={href}
       className={`tap flex flex-col justify-between gap-2 rounded border p-4 transition-colors hover:border-accent ${toneClass}`}
     >
       <span className="text-[15px] font-semibold text-ink">{title}</span>

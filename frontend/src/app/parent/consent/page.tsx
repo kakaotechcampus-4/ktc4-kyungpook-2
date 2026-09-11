@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { signIn } from "@/lib/auth";
 import { INVITING_INSTITUTION, PARENT_CHILD } from "@/lib/mock/data";
 import { InstitutionChip } from "@/components/ui";
 
@@ -28,7 +28,7 @@ export default function ParentConsentPage() {
   const [defaultOn, setDefaultOn] = useState(true);
   const [checked, setChecked] = useState<string[]>(FIELDS.map((f) => f.key));
   const [mismatch, setMismatch] = useState(false);
-  const router = useRouter();
+  const [pending, start] = useTransition();
 
   const applyDefault = (on: boolean) => {
     setDefaultOn(on);
@@ -143,11 +143,11 @@ export default function ParentConsentPage() {
       {/* 하단 고정 — 스크롤 위치와 무관하게 동의 버튼이 보여야 한다 */}
       <div className="fixed bottom-0 left-1/2 w-full max-w-[430px] -translate-x-1/2 border-t border-line bg-surface px-4 py-3">
         <button
-          onClick={() => router.push("/parent")}
-          disabled={checked.length === 0}
+          onClick={() => start(() => { void signIn("parent"); })}
+          disabled={checked.length === 0 || pending}
           className="tap w-full rounded bg-accent px-4 text-[16px] font-semibold text-white hover:bg-accentink disabled:bg-line2 disabled:text-muted"
         >
-          동의하고 시작하기
+          {pending ? "확인 중…" : "동의하고 시작하기"}
         </button>
         {checked.length === 0 ? (
           <p className="mt-1.5 text-center text-[14px] text-muted">
