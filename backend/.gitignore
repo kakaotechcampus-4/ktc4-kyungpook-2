@@ -3,6 +3,7 @@
 build/
 bin/
 out/
+bin/
 *.class
 *.jar
 
@@ -11,7 +12,9 @@ out/
 
 # Java IDE metadata
 .idea/
+.run/
 *.iml
+*.iws
 .classpath
 .project
 .settings/
@@ -25,12 +28,23 @@ application-local.properties
 application-secret.yml
 application-secret.yaml
 application-secret.properties
+application-*-local.yml
+application-*-local.yaml
+application-*-local.properties
+application-*-secret.yml
+application-*-secret.yaml
+application-*-secret.properties
 
 # Runtime logs, local H2 databases, and JVM crash dumps
 logs/
 *.log
 *.mv.db
 *.trace.db
+*.lock.db
+*.temp.db
+*.lobs.db
+*.newFile
 *.hprof
 hs_err_pid*
 replay_pid*
+.attach_pid*

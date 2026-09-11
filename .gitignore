@@ -70,3 +70,6 @@ target/
 *.sqlite3
 *.db
 .terraform/
+
+# TypeScript 증분 빌드 캐시
+tsconfig.tsbuildinfo
