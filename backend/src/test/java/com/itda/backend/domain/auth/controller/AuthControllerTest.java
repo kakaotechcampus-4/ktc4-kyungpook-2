@@ -53,4 +53,12 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.result").value("FAIL"))
                 .andExpect(jsonPath("$.code").value("KAKAO_AUTH_FAILED"));
     }
+
+    @Test
+    void kakaoLoginReturnsBadRequestWhenCodeParamIsMissing() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/kakao"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result").value("FAIL"))
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
 }
