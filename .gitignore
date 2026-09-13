@@ -43,6 +43,7 @@ node_modules/
 dist/
 build/
 .next/
+.react-router/
 out/
 coverage/
 *.log
