@@ -2,6 +2,7 @@ package com.itda.backend.global.exception;
 
 import com.itda.backend.domain.auth.exception.AuthErrorCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
@@ -14,6 +15,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleRestClientException(RestClientException e) {
         return ResponseEntity.status(AuthErrorCode.KAKAO_AUTH_FAILED.getStatus())
                 .body(ErrorResponse.of(AuthErrorCode.KAKAO_AUTH_FAILED));
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingServletRequestParameterException(
+            MissingServletRequestParameterException e) {
+        return ResponseEntity.status(CommonErrorCode.INVALID_REQUEST.getStatus())
+                .body(ErrorResponse.of(CommonErrorCode.INVALID_REQUEST));
     }
 
     @ExceptionHandler(Exception.class)
