@@ -7,3 +7,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+
+app:
+  cors:
+    allowed-origins: http://13.125.56.179
