@@ -8,12 +8,24 @@ Luna 호출과 응답 파싱.
 import json
 import os
 import re
+from dataclasses import dataclass, field
 
 import requests
+
+from .config import LUNA_CHAT_PATH, LUNA_MODEL, LUNA_TIMEOUT
 
 
 class LlmError(RuntimeError):
     """Luna 호출 또는 응답 해석이 실패했을 때."""
+
+
+@dataclass
+class LlmResult:
+    """모델 응답에서 우리가 쓰는 것만 담는다."""
+
+    data: dict
+    #: 토큰 사용량. cached_tokens 로 프롬프트 캐싱이 실제로 먹는지 확인한다.
+    usage: dict = field(default_factory=dict)
 
 
 def _endpoint() -> tuple[str, str]:
@@ -21,47 +33,28 @@ def _endpoint() -> tuple[str, str]:
     key = os.environ.get("LUNA_API_KEY")
     if not (url and key):
         raise LlmError("LUNA_API_URL / LUNA_API_KEY 가 설정되지 않았습니다")
+    # .env 에는 base 만 둔다. 경로가 이미 붙어 있으면 그대로 쓴다.
+    if not url.rstrip("/").endswith(LUNA_CHAT_PATH):
+        url = url.rstrip("/") + LUNA_CHAT_PATH
     return url, key
 
 
-def _extract_text(payload) -> str:
+def _extract_text(payload: dict) -> str:
     """
-    응답 본문에서 모델이 쓴 텍스트만 꺼낸다.
+    응답에서 모델이 쓴 텍스트를 꺼낸다.
 
-    Luna 의 정확한 응답 스키마를 아직 확인하지 못해서, 흔한 형태를 순서대로 시도한다.
-    실제 형태를 확인하면 이 함수만 그 형태로 줄이면 된다.
+    Luna 는 OpenAI 호환이라 choices[0].message.content 하나만 보면 된다.
+    (2026-09-15 실제 응답으로 확인. model=gpt-5.6-luna)
     """
-    if isinstance(payload, str):
-        return payload
+    try:
+        content = payload["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        keys = list(payload)[:10] if isinstance(payload, dict) else type(payload)
+        raise LlmError(f"응답 형태가 예상과 다릅니다. 최상위 키: {keys}") from exc
 
-    if isinstance(payload, dict):
-        # OpenAI 호환
-        choices = payload.get("choices")
-        if isinstance(choices, list) and choices:
-            message = choices[0].get("message") or {}
-            if isinstance(message.get("content"), str):
-                return message["content"]
-            if isinstance(choices[0].get("text"), str):
-                return choices[0]["text"]
-
-        # Anthropic 계열
-        content = payload.get("content")
-        if isinstance(content, list) and content:
-            first = content[0]
-            if isinstance(first, dict) and isinstance(first.get("text"), str):
-                return first["text"]
-        if isinstance(content, str):
-            return content
-
-        # 단순 형태
-        for key in ("text", "output", "result", "response", "answer", "message"):
-            value = payload.get(key)
-            if isinstance(value, str):
-                return value
-
-    raise LlmError(
-        f"응답에서 텍스트를 찾지 못했습니다. 최상위 키: {list(payload)[:10] if isinstance(payload, dict) else type(payload)}"
-    )
+    if not isinstance(content, str):
+        raise LlmError(f"content 가 문자열이 아닙니다: {type(content)}")
+    return content
 
 
 def _parse_json_block(text: str) -> dict:
@@ -85,20 +78,29 @@ def _parse_json_block(text: str) -> dict:
         raise LlmError(f"JSON 파싱 실패: {text[:200]}") from exc
 
 
-def ask_json(messages: list[dict], *, timeout: float = 60.0) -> dict:
+def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResult:
     """
     Luna 에 물어보고 JSON 객체를 돌려받는다.
 
-    재시도는 여기서 하지 않는다. requests 가 올린 예외를 LlmError 로 바꿔서
-    노드가 한 곳에서 처리하게 한다 — 노드마다 재시도를 넣으면 지연이 곱해지고,
-    기획서 리스크 #4(Agent 누적 실패)를 키운다.
+    response_format 으로 JSON 출력을 강제한다. 자유 텍스트를 파싱하면
+    형식이 조금만 흔들려도 깨지고, 그 재시도가 기획서 리스크 #4(Agent 누적 실패)를
+    키운다.
+
+    재시도는 여기서 하지 않는다. 예외를 LlmError 로 바꿔 노드가 한 곳에서
+    처리하게 한다 — 노드마다 재시도를 넣으면 지연이 곱해진다.
+
+    temperature 는 보내지 않는다. 이 모델은 기본값(1)만 허용한다.
     """
     url, key = _endpoint()
 
     try:
         response = requests.post(
             url,
-            json={"messages": messages},
+            json={
+                "model": LUNA_MODEL,
+                "response_format": {"type": "json_object"},
+                "messages": messages,
+            },
             headers={
                 "accept": "application/json",
                 "content-type": "application/json",
@@ -110,7 +112,11 @@ def ask_json(messages: list[dict], *, timeout: float = 60.0) -> dict:
     except requests.RequestException as exc:
         raise LlmError(f"Luna 호출 실패: {exc}") from exc
 
-    return _parse_json_block(_extract_text(response.json()))
+    payload = response.json()
+    return LlmResult(
+        data=_parse_json_block(_extract_text(payload)),
+        usage=payload.get("usage") or {},
+    )
 
 
 def spans_for_quotes(content: str, quotes: list) -> list[dict]:

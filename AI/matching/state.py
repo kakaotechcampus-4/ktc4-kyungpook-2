@@ -31,6 +31,9 @@ class MatchingState(TypedDict, total=False):
     candidates: list[ScoredCandidate]
     mentioned_child_ids: list[int]
     co_mention: bool
+    #: 본문에 이름이 그대로 적힌 아이가 한 명이라도 있었는지.
+    #: 없으면 판단 근거가 추론뿐이라 자동 확정하지 않는다.
+    has_exact: bool
 
     # ── llm_judge 가 채운다 ──
     llm_called: bool
@@ -38,6 +41,8 @@ class MatchingState(TypedDict, total=False):
     llm_evidence: list[dict]
     #: 호출이 실패했을 때의 사유. 값이 있으면 auto 로 확정하지 않는다.
     llm_error: str | None
+    #: 토큰 사용량. cached_tokens 로 프롬프트 캐싱이 먹는지 확인한다.
+    llm_usage: dict
 
     # ── decide 가 채운다 (최종 출력이 되는 값들) ──
     status: str

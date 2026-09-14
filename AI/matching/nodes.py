@@ -93,6 +93,7 @@ def shortlist(state: MatchingState) -> dict:
         # 실제로 등장한 게 아니라 비슷했을 뿐이라, Validation 에 잘못된 신호를 준다.
         "mentioned_child_ids": sorted(exact_ids),
         "co_mention": co_mention,
+        "has_exact": bool(exact_ids),
     }
 
 
@@ -111,9 +112,11 @@ def llm_judge(state: MatchingState) -> dict:
     content = state["content"]
 
     try:
-        answer = ask_json(build_messages(state))
+        result = ask_json(build_messages(state))
     except LlmError as exc:
         return {"llm_called": True, "llm_error": str(exc)}
+
+    answer = result.data
 
     candidates = [dict(c) for c in state.get("candidates", [])]
     mentioned = set(state.get("mentioned_child_ids", []))
@@ -149,6 +152,7 @@ def llm_judge(state: MatchingState) -> dict:
     return {
         "llm_called": True,
         "llm_error": None,
+        "llm_usage": result.usage,
         "candidates": candidates,
         "mentioned_child_ids": sorted(mentioned),
         # 대등 언급 여부는 모델 판단으로 덮는다. 코드는 "이름이 둘 이상 있다" 까지만
@@ -193,6 +197,8 @@ def decide(state: MatchingState) -> dict:
       - 표지 힌트를 뒤집은 경우(hint_mismatch) — 표지가 틀렸거나 우리가 틀렸거나
         둘 중 하나인데, 어느 쪽이든 사람이 봐야 한다.
       - 모델 호출이 실패한 경우(llm_error) — 판단 근거가 반쪽이다.
+      - 본문에 이름이 그대로 없는 경우(has_exact=False) — 오타·별명 추론이라
+        모델 confidence 를 믿을 수 없다.
     """
     candidates = state.get("candidates", [])
     top = candidates[0]["confidence"] if candidates else 0.0
@@ -259,6 +265,15 @@ def decide(state: MatchingState) -> dict:
     # 모델 호출이 실패했으면 코드 점수만으로 자동 확정하지 않는다.
     # 애매해서 부른 것이라, 판단 근거가 반쪽인 채로 통과시키면 안 된다.
     if state.get("llm_error") and status == "auto":
+        status = "review"
+
+    # 본문에 이름이 그대로 적힌 아이가 하나도 없으면 자동 확정하지 않는다.
+    #
+    # 오타("임유젼")나 별명("막내가")만 있는 경우인데, 모델이 높은 confidence 를
+    # 주더라도 그 숫자를 믿을 수 없다. 실제로 "임유젼"(임유진/임유전 어느 쪽의
+    # 오타인지 편집거리상 완전 동점)에 모델이 0.98 을 준 사례가 있었다.
+    # 모델은 자기 확신도를 캘리브레이션하지 못한다.
+    if not state.get("has_exact") and status == "auto":
         status = "review"
 
     return {
