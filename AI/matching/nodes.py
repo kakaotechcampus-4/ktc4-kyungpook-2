@@ -149,6 +149,22 @@ def llm_judge(state: MatchingState) -> dict:
     ]
     mentioned.update(co_ids)
 
+    co_mention = bool(answer.get("co_mention", False))
+
+    # 대등 언급이면 후보를 하나로 좁히면 안 된다.
+    # "누가 주인공인지 모르겠다" 가 아니라 "둘 다 나온다" 는 상태라,
+    # 화면이 교사에게 두 아이를 다 보여주고 고르게 해야 한다.
+    if co_mention:
+        known_ids = {c["child_id"] for c in candidates}
+        code_scores = {c["child_id"]: c["confidence"] for c in state.get("candidates", [])}
+        for cid in co_ids:
+            if cid in known_ids:
+                continue
+            candidates.append(
+                {"child_id": cid, "confidence": code_scores.get(cid, llm_confidence)}
+            )
+        candidates.sort(key=lambda c: c["confidence"], reverse=True)
+
     return {
         "llm_called": True,
         "llm_error": None,
@@ -157,7 +173,7 @@ def llm_judge(state: MatchingState) -> dict:
         "mentioned_child_ids": sorted(mentioned),
         # 대등 언급 여부는 모델 판단으로 덮는다. 코드는 "이름이 둘 이상 있다" 까지만
         # 알 수 있고, 각자 행동했는지는 문맥을 읽어야 안다.
-        "co_mention": bool(answer.get("co_mention", False)),
+        "co_mention": co_mention,
         "llm_evidence": spans_for_quotes(content, answer.get("quotes")),
     }
 
