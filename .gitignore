@@ -43,6 +43,7 @@ node_modules/
 dist/
 build/
 .next/
+.react-router/
 out/
 coverage/
 *.log
@@ -74,7 +75,5 @@ target/
 # ── 로컬 원본 데이터 저장소 (PoC) ───────────────────
 backend/data/raw-storage/
 
-
-# ── Claude local/session files ────────────────────────────────────────────
-CLAUDE.*
-.claude/*
+# TypeScript 증분 빌드 캐시
+tsconfig.tsbuildinfo

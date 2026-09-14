@@ -1,10 +1,10 @@
 # Docs
 
-프로젝트 문서와 팀의 기술적 결정을 관리합니다.
+프로젝트 공통 문서의 탐색 지점입니다. 문서의 상세 내용은 각 원본 문서에서 관리합니다.
 
-- `architecture/`: 시스템 구조, ERD, 다이어그램
-- `api/`: API 명세
-- `adr/`: 주요 기술 결정 기록
-- `conventions/`: 브랜치, 커밋, 코드 컨벤션
+| 문서 | 역할 |
+| --- | --- |
+| [api/api-conventions.md](api/api-conventions.md) | 외부 API 경로, 응답 형식, 오류 코드, HTTP 상태 코드 규약 |
 
-문서 변경은 `문서작업` 이슈로 관리합니다.
+백엔드의 실행 방법과 현재 상태는 [backend/README.md](../backend/README.md), 구현·검토
+규칙은 [backend/AGENTS.md](../backend/AGENTS.md)에서 확인합니다.
