@@ -3,8 +3,12 @@ package com.itda.backend.domain.auth.service;
 import com.itda.backend.domain.auth.dto.response.KakaoTokenResponse;
 import com.itda.backend.domain.auth.dto.response.KakaoUserInfoResponse;
 import com.itda.backend.domain.auth.dto.response.LoginResponse;
+import com.itda.backend.domain.auth.exception.AuthErrorCode;
+import com.itda.backend.domain.auth.exception.AuthException;
 import com.itda.backend.global.jwt.JwtProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
+import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -12,13 +16,23 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
+
 @Service
 public class KakaoAuthService {
 
     private static final String TOKEN_URI = "https://kauth.kakao.com/oauth/token";
     private static final String USER_INFO_URI = "https://kapi.kakao.com/v2/user/me";
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient = RestClient.builder()
+            .requestFactory(ClientHttpRequestFactoryBuilder.detect().build(
+                    ClientHttpRequestFactorySettings.defaults()
+                            .withConnectTimeout(CONNECT_TIMEOUT)
+                            .withReadTimeout(READ_TIMEOUT)
+            ))
+            .build();
     private final JwtProvider jwtProvider;
     private final String clientId;
     private final String clientSecret;
@@ -39,6 +53,9 @@ public class KakaoAuthService {
     public LoginResponse login(String code) {
         String kakaoAccessToken = exchangeToken(code);
         KakaoUserInfoResponse userInfo = getUserInfo(kakaoAccessToken);
+        if (userInfo.getId() == null) {
+            throw new AuthException(AuthErrorCode.KAKAO_AUTH_FAILED);
+        }
 
         String jwt = jwtProvider.createToken(String.valueOf(userInfo.getId()));
         String nickname = extractNickname(userInfo);
