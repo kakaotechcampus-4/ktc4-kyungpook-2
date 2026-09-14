@@ -1,6 +1,11 @@
 spring:
   application:
     name: backend
+  config:
+    import: optional:application-secret.yml
 
 server:
   port: 8080
+
+jwt:
+  access-token-expiration-ms: 3600000 # 1시간 / jwt 토큰 유효시간
