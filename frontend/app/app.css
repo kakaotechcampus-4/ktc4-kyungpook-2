@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   잇다 디자인 토큰
+   와이어프레임 Components.dc.html 의 "색 사용 원칙" 을 그대로 옮긴 것.
+   · 상태 색은 반드시 텍스트 라벨과 함께 쓴다 (색 단독 정보 전달 금지)
+   · 기관 화면 본문 16px 이상, 클릭 타깃 44px 이상
+   ───────────────────────────────────────────────────────────── */
+@theme {
+  --color-paper: #f3f5f4;
+  --color-surface: #ffffff;
+  --color-surface2: #e9edeb;
+  --color-ink: #161c1b;
+  --color-ink2: #3d4948;
+  --color-muted: #6b7a78;
+  --color-line: #d3dad8;
+  --color-line2: #bcc6c3;
+
+  /* 구조 · Agent */
+  --color-accent: #0e6b62;
+  --color-accentsoft: #dceae7;
+  --color-accentink: #0a544d;
+
+  /* 사람 승인 · 되돌릴 수 없음 */
+  --color-human: #a84a16;
+  --color-humansoft: #f6e5d9;
+
+  /* 판정 3단계 */
+  --color-pass: #2c7a4e;
+  --color-passsoft: #deede4;
+  --color-review: #96700a;
+  --color-reviewsoft: #f5edd5;
+  --color-block: #a93a32;
+  --color-blocksoft: #f6e1df;
+
+  /* 기관 3종 — `center` 는 Tailwind 의 text-center(정렬)와 겹치므로 접두사를 붙인다 */
+  --color-instschool: #2f5da8;
+  --color-instschoolsoft: #dfe7f5;
+  --color-instcenter: #0e6b62;
+  --color-instcentersoft: #dceae7;
+  --color-instassistant: #7a4b96;
+  --color-instassistantsoft: #ece1f3;
+}
+
+html {
+  color-scheme: light;
+}
+
+/*
+ * 한국어 웹폰트를 쓰지 않는다.
+ * IBM Plex Sans KR 을 next/font 로 넣었을 때 학부모 첫 화면에서 woff2 250개 / 2.17MB
+ * 를 내려받았다. 학부모는 SMS 링크로 모바일에서 들어오므로 첫 페인트가 동의 완료율을
+ * 좌우한다. 시스템 한글 폰트는 0바이트이고 품질도 충분하다.
+ * 서체는 디자인 단계에서 다시 정한다.
+ */
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard",
+    "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  /* 접근성: 교사 사용자 40대 중후반 기준 본문 16px */
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 클릭 타깃 44px 최소 보장용 유틸 */
+@utility tap {
+  min-height: 44px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
