@@ -1,11 +1,8 @@
 package com.itda.backend.global.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.global.exception.CommonErrorCode;
-import com.itda.backend.global.exception.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
@@ -15,10 +12,10 @@ import java.io.IOException;
 @Component
 public class JsonAccessDeniedHandler implements AccessDeniedHandler {
 
-    private final ObjectMapper objectMapper;
+    private final JsonErrorResponseWriter jsonErrorResponseWriter;
 
-    public JsonAccessDeniedHandler(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public JsonAccessDeniedHandler(JsonErrorResponseWriter jsonErrorResponseWriter) {
+        this.jsonErrorResponseWriter = jsonErrorResponseWriter;
     }
 
     @Override
@@ -27,11 +24,6 @@ public class JsonAccessDeniedHandler implements AccessDeniedHandler {
             HttpServletResponse response,
             AccessDeniedException accessDeniedException
     ) throws IOException {
-        response.setStatus(CommonErrorCode.FORBIDDEN.getStatus().value());
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding("UTF-8");
-        response.getWriter().write(
-                objectMapper.writeValueAsString(ErrorResponse.of(CommonErrorCode.FORBIDDEN))
-        );
+        jsonErrorResponseWriter.write(response, CommonErrorCode.FORBIDDEN);
     }
 }
