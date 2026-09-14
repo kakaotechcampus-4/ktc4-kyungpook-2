@@ -18,7 +18,9 @@ from .config import (
     TAU_GAP,
     TAU_REJECT,
 )
+from .llm import LlmError, ask_json, spans_for_quotes
 from .names import find_name_hits
+from .prompts import build_messages
 from .state import MatchingState
 
 
@@ -99,19 +101,77 @@ def shortlist(state: MatchingState) -> dict:
 
 def llm_judge(state: MatchingState) -> dict:
     """
-    애매한 경우에만 불린다.
+    애매한 경우에만 불린다. 모델이 후보를 다시 매기고 대등 언급 여부를 확정한다.
 
-    B-4 에서 Luna 를 호출해 후보 점수를 다시 매기고, 대등 언급 여부를 확정한다.
-    지금은 통과만 시킨다 — 그래도 코드로 매긴 점수가 그대로 decide 로 간다.
+    호출이 실패해도 기록을 버리지 않는다. 코드가 매긴 점수를 그대로 두고
+    llm_error 만 남기면, decide 가 그 경우 auto 로 내보내지 않는다.
+    애매해서 부른 것이라 코드 점수는 어차피 review/multi 구간에 있고,
+    결과적으로 사람 확인 큐로 간다.
     """
-    return {"llm_called": False}
+    content = state["content"]
+
+    try:
+        answer = ask_json(build_messages(state))
+    except LlmError as exc:
+        return {"llm_called": True, "llm_error": str(exc)}
+
+    candidates = [dict(c) for c in state.get("candidates", [])]
+    mentioned = set(state.get("mentioned_child_ids", []))
+
+    raw_id = answer.get("child_id")
+    child_id = int(raw_id) if isinstance(raw_id, (int, float)) else None
+
+    try:
+        llm_confidence = float(answer.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        llm_confidence = 0.0
+    llm_confidence = max(0.0, min(SCORE_CAP, llm_confidence))
+
+    if child_id is None:
+        # 모델이 특정하지 못했다. 코드가 본 후보를 그대로 두고 사람에게 넘긴다.
+        # 후보가 둘이면 multi(ambiguous_identity), 하나면 review 로 간다.
+        pass
+    else:
+        # 모델이 하나를 골랐으면 그것이 답이다 — "확신이 없으면 null" 이라고
+        # 지시했으므로, 골랐다는 것은 판단이 섰다는 뜻이다.
+        # 나머지 후보를 점수째로 남겨두면 코드 점수가 모델 판단을 역전시킨다.
+        # 다른 아이들은 mentioned_child_ids 에 남아 Validation 으로 전달되므로
+        # 정보가 사라지지도 않는다.
+        candidates = [{"child_id": child_id, "confidence": round(llm_confidence, 4)}]
+
+    co_ids = [
+        int(cid)
+        for cid in (answer.get("co_mention_child_ids") or [])
+        if isinstance(cid, (int, float))
+    ]
+    mentioned.update(co_ids)
+
+    return {
+        "llm_called": True,
+        "llm_error": None,
+        "candidates": candidates,
+        "mentioned_child_ids": sorted(mentioned),
+        # 대등 언급 여부는 모델 판단으로 덮는다. 코드는 "이름이 둘 이상 있다" 까지만
+        # 알 수 있고, 각자 행동했는지는 문맥을 읽어야 안다.
+        "co_mention": bool(answer.get("co_mention", False)),
+        "llm_evidence": spans_for_quotes(content, answer.get("quotes")),
+    }
 
 
 # ── ④ decide ────────────────────────────────────────────────────
 
 
 def _evidence_for(state: MatchingState, child_ids: list[int]) -> list[dict]:
-    """해당 아이들의 이름이 등장한 구간을 근거로 담는다. 최소 구간만 담는다."""
+    """
+    판정 근거 구간. 최소 구간만 담는다.
+
+    모델이 인용한 것이 있으면 그것을 쓴다 — 이름이 적힌 위치보다
+    "왜 그렇게 봤는지" 를 더 잘 가리킨다. 없으면 이름이 등장한 위치로 대신한다.
+    """
+    llm_spans = state.get("llm_evidence") or []
+    if llm_spans:
+        return llm_spans
+
     return [
         {"start": h.start, "end": h.end}
         for h in state.get("hits", [])
@@ -129,9 +189,10 @@ def decide(state: MatchingState) -> dict:
         4. 최고점 ≥ τ_reject, 후보 2명 이상  → multi (ambiguous_identity)
         5. 그 외                              → unmatched
 
-    마지막에 하나 더: 표지 힌트를 뒤집은 경우(hint_mismatch)는 auto 로 내보내지
-    않고 review 로 내린다. 표지가 틀렸거나 우리 판단이 틀렸거나 둘 중 하나인데,
-    어느 쪽이든 사람이 봐야 한다.
+    마지막에 두 가지 더. 아래 경우는 auto 로 내보내지 않고 review 로 내린다.
+      - 표지 힌트를 뒤집은 경우(hint_mismatch) — 표지가 틀렸거나 우리가 틀렸거나
+        둘 중 하나인데, 어느 쪽이든 사람이 봐야 한다.
+      - 모델 호출이 실패한 경우(llm_error) — 판단 근거가 반쪽이다.
     """
     candidates = state.get("candidates", [])
     top = candidates[0]["confidence"] if candidates else 0.0
@@ -193,6 +254,11 @@ def decide(state: MatchingState) -> dict:
 
     # 표지를 뒤집었으면 자동 확정하지 않는다
     if hint_mismatch and status == "auto":
+        status = "review"
+
+    # 모델 호출이 실패했으면 코드 점수만으로 자동 확정하지 않는다.
+    # 애매해서 부른 것이라, 판단 근거가 반쪽인 채로 통과시키면 안 된다.
+    if state.get("llm_error") and status == "auto":
         status = "review"
 
     return {

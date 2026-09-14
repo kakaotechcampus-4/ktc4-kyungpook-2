@@ -34,6 +34,10 @@ class MatchingState(TypedDict, total=False):
 
     # ── llm_judge 가 채운다 ──
     llm_called: bool
+    #: 모델이 인용한 근거 구간. 있으면 decide 가 이름 위치보다 우선해서 쓴다.
+    llm_evidence: list[dict]
+    #: 호출이 실패했을 때의 사유. 값이 있으면 auto 로 확정하지 않는다.
+    llm_error: str | None
 
     # ── decide 가 채운다 (최종 출력이 되는 값들) ──
     status: str
