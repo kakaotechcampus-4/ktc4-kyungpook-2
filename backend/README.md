@@ -5,9 +5,10 @@
 
 ## 현재 상태
 
-기본 Spring Boot 애플리케이션과 데이터베이스 연결 설정만 준비되어 있습니다.
-도메인 API, 공통 응답 래퍼, 전역 예외 처리, 카카오 로그인과 Spring Security 설정은
-**구현 예정**입니다. 이 문서는 구현 전에 팀이 합의한 기준을 기록합니다.
+기본 Spring Boot 애플리케이션, 데이터베이스 연결 설정, Swagger/OpenAPI 문서 기반이
+준비되어 있습니다. 도메인 API, 공통 응답 래퍼, 전역 예외 처리, 카카오 로그인과
+Spring Security 설정은 **구현 예정**입니다. 이 문서는 구현 전에 팀이 합의한 기준을
+기록합니다.
 
 ## 기술 스택
 
@@ -17,6 +18,7 @@
 | 프레임워크 | Spring Boot 3.5.3 |
 | 웹·검증 | Spring Web, Bean Validation |
 | 데이터 접근 | Spring Data JPA |
+| API 문서 | Springdoc OpenAPI 2.9.1, Swagger UI |
 | 운영 DB | PostgreSQL |
 | 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |
 | 빌드 | Gradle Wrapper |
@@ -39,6 +41,18 @@
 ```
 
 Windows에서는 `gradlew.bat test`와 `gradlew.bat build`를 사용합니다.
+
+### API 문서
+
+애플리케이션을 실행한 뒤 아래 경로에서 API 문서를 확인할 수 있습니다.
+
+- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+- OpenAPI YAML: `http://localhost:8080/v3/api-docs.yaml`
+
+새 외부 API를 추가할 때는 컨트롤러의 `@Tag`, `@Operation`과 요청·응답·오류 응답
+명세를 같은 변경에서 갱신한다. JWT 보호 API에는 `bearerAuth` 보안 요구 사항을
+선언하고, 공개 API에는 이를 적용하지 않는다.
 
 ### 테스트 환경
 
