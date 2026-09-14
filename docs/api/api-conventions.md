@@ -1,12 +1,13 @@
 # API 규약
 
-> 상태: **Swagger/OpenAPI 기반 도입 완료, 외부 API 구현 예정**
+> 상태: **공통 응답 래퍼·오류 코드·전역 예외 처리·Spring Security 구현 완료**
 >
-> 이 문서는 백엔드 구현 전에 합의한 외부 API 계약이다. 현재 공통 응답 래퍼,
-> 오류 코드 enum, 전역 예외 처리, Spring Security는 구현되지 않았다. 첫 API 구현 시
-> 이 규약을 코드에 반영한다. Swagger UI는 `/swagger-ui/index.html`, OpenAPI 명세는
-> `/v3/api-docs`와 `/v3/api-docs.yaml`에서 확인할 수 있으며, 외부 API 변경 시 해당
-> 명세를 같은 변경에서 갱신한다.
+> 이 문서는 백엔드 구현 전에 합의한 외부 API 계약이다. 공통 응답 래퍼(`ApiResponse`/`ErrorResponse`),
+> 오류 코드 enum(`CommonErrorCode`/`AuthErrorCode`), 전역 예외 처리(`GlobalExceptionHandler`),
+> Spring Security(JWT 인증 + CORS + 401/403 JSON 응답)까지 카카오 로그인 API에 반영돼 있다.
+> 회원 DB 연결과 역할(role) 기반 인가는 아직 구현 예정이다. Swagger UI는
+> `/swagger-ui/index.html`, OpenAPI 명세는 `/v3/api-docs`와 `/v3/api-docs.yaml`에서
+> 확인할 수 있으며, 외부 API 변경 시 해당 명세를 같은 변경에서 갱신한다.
 
 관련 문서:
 
@@ -95,6 +96,8 @@ HTTP/1.1 404 Not Found
 | 중복·현재 상태와 충돌 | `409 Conflict` | `DUPLICATE_EMAIL` |
 | 업로드 용량 초과 | `413 Payload Too Large` | `FILE_TOO_LARGE` |
 | 예상하지 못한 서버 오류 | `500 Internal Server Error` | `INTERNAL_SERVER_ERROR` |
+| 외부 서비스(카카오 등) 서버 오류 | `502 Bad Gateway` | `KAKAO_SERVER_ERROR` |
+| 외부 서비스 연결 실패·타임아웃 | `503 Service Unavailable` | `KAKAO_UNAVAILABLE` |
 
 `204 No Content` 응답에는 JSON 래퍼를 포함하지 않는다.
 
@@ -108,13 +111,13 @@ HTTP/1.1 404 Not Found
 
 ## 인증·인가 규약
 
-> 상태: **구현 예정**. 카카오 로그인 기능을 시작하는 변경에서 Spring Security와 함께 구현한다.
+> 상태: **카카오 인증 + JWT 발급 구현 완료 · 회원 DB 연결과 역할(role) 기반 인가는 예정**
 
-- 카카오 로그인은 외부 신원 확인 수단이며, 서비스 회원·역할·권한의 기준은 내부 DB다.
-- 카카오 사용자 ID를 내부 회원에 연결한 뒤 `PARENT`, `ORGANIZATION`, `ADMIN` 역할로 인가한다.
-- 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다.
-- 카카오 OAuth 2.0 클라이언트 시크릿은 환경 변수 또는 무시되는 `application-local.yml`로만 제공한다.
-- 세션 기반 인증을 우선 검토한다. JWT 등 다른 방식을 채택하면 토큰 보관·만료·폐기·CSRF 대응 정책을 ADR에 기록한다.
+- 카카오 로그인은 외부 신원 확인 수단이며, 서비스 회원·역할·권한의 기준은 내부 DB다. (DB 연결은 예정)
+- 카카오 사용자 ID를 내부 회원에 연결한 뒤 `PARENT`, `ORGANIZATION`, `ADMIN` 역할로 인가한다. (예정)
+- 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다. 401은 구현·검증 완료. 403은 핸들러(`JsonAccessDeniedHandler`)까지는 구현돼 있으나, 아직 역할 기반으로 막힌 API가 없어 실제로 도달하는 경로는 없다.
+- 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.yml.example) 참고).
+- 인증 방식은 JWT로 결정·구현됐다: 세션 없이 Stateless로 동작하며, 클라이언트는 발급받은 JWT를 `Authorization: Bearer` 헤더에 담아 이후 요청에 사용한다. 만료 시간은 `jwt.access-token-expiration-ms`(기본 1시간)로 설정한다. refresh token 발급, 토큰 폐기(로그아웃) 전략은 아직 없다 — 필요해지면 별도로 설계한다.
 
 ## 변경 절차
 
