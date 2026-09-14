@@ -5,7 +5,9 @@ import org.springframework.http.HttpStatus;
 
 public enum AuthErrorCode implements ErrorCode {
 
-    KAKAO_AUTH_FAILED(HttpStatus.BAD_REQUEST, "KAKAO_AUTH_FAILED", "카카오 인증에 실패했습니다.");
+    KAKAO_AUTH_FAILED(HttpStatus.BAD_REQUEST, "KAKAO_AUTH_FAILED", "카카오 인증에 실패했습니다."),
+    KAKAO_SERVER_ERROR(HttpStatus.BAD_GATEWAY, "KAKAO_SERVER_ERROR", "카카오 서버에 문제가 발생했습니다."),
+    KAKAO_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "KAKAO_UNAVAILABLE", "카카오 서버에 연결할 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;

@@ -7,8 +7,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientException;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -52,6 +57,41 @@ class AuthControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.result").value("FAIL"))
                 .andExpect(jsonPath("$.code").value("KAKAO_AUTH_FAILED"));
+    }
+
+    @Test
+    void kakaoLoginReturnsBadRequestWhenKakaoRejectsAuthorizationCode() throws Exception {
+        given(kakaoAuthService.login(any()))
+                .willThrow(HttpClientErrorException.create(
+                        HttpStatus.BAD_REQUEST, "Bad Request", HttpHeaders.EMPTY, new byte[0], null));
+
+        mockMvc.perform(post("/api/v1/auth/kakao").param("code", "expired-code"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result").value("FAIL"))
+                .andExpect(jsonPath("$.code").value("KAKAO_AUTH_FAILED"));
+    }
+
+    @Test
+    void kakaoLoginReturnsBadGatewayWhenKakaoServerFails() throws Exception {
+        given(kakaoAuthService.login(any()))
+                .willThrow(HttpServerErrorException.create(
+                        HttpStatus.BAD_GATEWAY, "Bad Gateway", HttpHeaders.EMPTY, new byte[0], null));
+
+        mockMvc.perform(post("/api/v1/auth/kakao").param("code", "any-code"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.result").value("FAIL"))
+                .andExpect(jsonPath("$.code").value("KAKAO_SERVER_ERROR"));
+    }
+
+    @Test
+    void kakaoLoginReturnsServiceUnavailableWhenKakaoTimesOut() throws Exception {
+        given(kakaoAuthService.login(any()))
+                .willThrow(new ResourceAccessException("connect timed out"));
+
+        mockMvc.perform(post("/api/v1/auth/kakao").param("code", "any-code"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.result").value("FAIL"))
+                .andExpect(jsonPath("$.code").value("KAKAO_UNAVAILABLE"));
     }
 
     @Test
