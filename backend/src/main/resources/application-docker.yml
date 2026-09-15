@@ -11,7 +11,7 @@ spring:
 app:
   raw-storage:
     s3:
-      bucket: ${RAW_STORAGE_S3_BUCKET:itda-raw-records-dev}
+      bucket: ${RAW_STORAGE_S3_BUCKET}
       region: ${AWS_REGION:ap-northeast-2}
   cors:
     allowed-origins: http://13.125.56.179

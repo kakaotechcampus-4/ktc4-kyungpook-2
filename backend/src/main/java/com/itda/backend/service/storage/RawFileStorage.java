@@ -11,4 +11,11 @@ public interface RawFileStorage {
      * The client-supplied filename is intentionally never used to build the storage path.
      */
     String store(MultipartFile file, String validatedExtension) throws IOException;
+
+    /**
+     * Best-effort compensating delete for a previously stored key — used to clean up
+     * an orphaned file after a downstream failure (e.g. DB save). Must not throw;
+     * implementations log and swallow their own failures.
+     */
+    void delete(String storedKey);
 }

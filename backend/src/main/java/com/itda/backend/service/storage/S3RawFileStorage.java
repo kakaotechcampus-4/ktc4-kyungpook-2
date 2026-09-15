@@ -8,10 +8,13 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
+import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+@Slf4j
 @Component
 @Profile("docker")
 public class S3RawFileStorage implements RawFileStorage {
@@ -37,5 +40,14 @@ public class S3RawFileStorage implements RawFileStorage {
                 RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
 
         return key;
+    }
+
+    @Override
+    public void delete(String storedKey) {
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(storedKey).build());
+        } catch (RuntimeException e) {
+            log.warn("failed to delete orphaned S3 object: {}", storedKey, e);
+        }
     }
 }

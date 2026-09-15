@@ -20,14 +20,17 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class RawRecord {
 
+    // RawRecordService의 저장 전 길이 검증과 반드시 같은 값을 써야 한다.
+    public static final int MAX_TEXT_FIELD_LENGTH = 255;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = MAX_TEXT_FIELD_LENGTH)
     private String institutionId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = MAX_TEXT_FIELD_LENGTH)
     private String originalFilename;
 
     @Column(nullable = false)

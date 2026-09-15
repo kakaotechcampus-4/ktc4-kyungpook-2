@@ -40,11 +40,19 @@ public class RawRecordService {
         if (institutionId == null || institutionId.isBlank()) {
             throw new RawRecordValidationException("institutionId is required");
         }
+        if (institutionId.length() > RawRecord.MAX_TEXT_FIELD_LENGTH) {
+            throw new RawRecordValidationException("institutionId is too long");
+        }
         if (file == null || file.isEmpty()) {
             throw new RawRecordValidationException("file is required");
         }
 
-        String extension = extractExtension(file.getOriginalFilename());
+        String displayFilename = sanitizeDisplayName(file.getOriginalFilename());
+        if (displayFilename.length() > RawRecord.MAX_TEXT_FIELD_LENGTH) {
+            throw new RawRecordValidationException("file name is too long");
+        }
+
+        String extension = extractExtension(displayFilename);
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
             throw new RawRecordValidationException("unsupported file extension");
         }
@@ -64,21 +72,47 @@ public class RawRecordService {
 
         RawRecord rawRecord = new RawRecord(
                 institutionId,
-                sanitizeDisplayName(file.getOriginalFilename()),
+                displayFilename,
                 storedPath,
                 contentType,
                 file.getSize(),
                 RawRecordStatus.PENDING);
 
-        RawRecord saved = rawRecordRepository.save(rawRecord);
+        RawRecord saved;
+        try {
+            saved = rawRecordRepository.save(rawRecord);
+        } catch (RuntimeException e) {
+            // 원본은 append-only — DB 저장이 실패해도 이미 저장소에 올라간 파일은 지우지 않는다.
+            // 대신 FAILED 상태로 별도 기록을 남겨서, 나중에 추적/재처리할 수 있게 한다.
+            log.error("failed to persist raw record metadata for storedPath={}; raw file is kept", storedPath, e);
+            try {
+                rawRecordRepository.save(new RawRecord(
+                        institutionId, displayFilename, storedPath, contentType, file.getSize(),
+                        RawRecordStatus.FAILED));
+            } catch (RuntimeException retryFailure) {
+                log.error("failed to record FAILED status for storedPath={}; "
+                        + "raw file remains untracked in DB but preserved in storage", storedPath, retryFailure);
+            }
+            throw new RawRecordStorageException("failed to persist raw record metadata", e);
+        }
+
         log.info("raw record intake recorded id={} institutionId={} status={}",
                 saved.getId(), institutionId, saved.getStatus());
         return saved;
     }
 
-    public RawRecord getById(Long id) {
-        return rawRecordRepository.findById(id)
+    public RawRecord getById(Long id, String institutionId) {
+        RawRecord record = rawRecordRepository.findById(id)
                 .orElseThrow(() -> new RawRecordNotFoundException(id));
+        // 다른 기관 소유 레코드는 "권한 없음"이 아니라 "없음"으로 응답한다 —
+        // 403으로 응답하면 그 id가 실제로 존재한다는 사실 자체를 노출하게 된다.
+        // 다만 응답과 별개로, 접근 거부는 감사 로그로 남긴다.
+        if (!record.getInstitutionId().equals(institutionId)) {
+            log.warn("denied cross-institution access id={} requester={} owner={}",
+                    id, institutionId, record.getInstitutionId());
+            throw new RawRecordNotFoundException(id);
+        }
+        return record;
     }
 
     public List<RawRecord> getByInstitution(String institutionId) {
@@ -94,12 +128,11 @@ public class RawRecordService {
         return lastSegment.isBlank() ? "unknown" : lastSegment;
     }
 
-    private String extractExtension(String originalFilename) {
-        String displayName = sanitizeDisplayName(originalFilename);
-        int dotIndex = displayName.lastIndexOf('.');
-        if (dotIndex < 0 || dotIndex == displayName.length() - 1) {
+    private String extractExtension(String displayFilename) {
+        int dotIndex = displayFilename.lastIndexOf('.');
+        if (dotIndex < 0 || dotIndex == displayFilename.length() - 1) {
             return "";
         }
-        return displayName.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+        return displayFilename.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
     }
 }
