@@ -48,3 +48,6 @@ logs/
 hs_err_pid*
 replay_pid*
 .attach_pid*
+
+CLAUDE.md
+.claude/

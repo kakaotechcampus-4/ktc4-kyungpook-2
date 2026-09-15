@@ -71,6 +71,11 @@ target/
 *.sqlite3
 *.db
 .terraform/
+CLAUDE.md
+.claude/
+
+# ── 로컬 원본 데이터 저장소 (PoC) ───────────────────
+backend/data/raw-storage/
 
 # TypeScript 증분 빌드 캐시
 tsconfig.tsbuildinfo
