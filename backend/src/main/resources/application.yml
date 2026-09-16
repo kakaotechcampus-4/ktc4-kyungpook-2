@@ -3,9 +3,17 @@ spring:
     name: backend
   config:
     import: optional:application-secret.yml
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
 
 server:
   port: 8080
+
+app:
+  raw-storage:
+    base-dir: ${RAW_STORAGE_DIR:./data/raw-storage}
 
 jwt:
   access-token-expiration-ms: 3600000 # 1시간 / jwt 토큰 유효시간
