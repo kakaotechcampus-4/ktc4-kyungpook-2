@@ -36,6 +36,9 @@ def run_one(case: dict) -> dict:
         "expected_status": case.get("expected_status"),
         "expected_hint_mismatch": case.get("expected_hint_mismatch"),
         "expected_mentioned_child_ids": case.get("expected_mentioned_child_ids"),
+        # null 이 "대등 언급이 아니어야 한다" 는 정답이라, 필드가 없는 것과
+        # 구별해야 한다. 없으면 이 지표를 건너뛴다.
+        "expected_multi_reason": case.get("expected_multi_reason", "__skip__"),
         "confusion_child_id": case.get("confusion_child_id"),
     }
 

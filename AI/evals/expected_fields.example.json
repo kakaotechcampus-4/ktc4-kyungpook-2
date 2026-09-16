@@ -7,14 +7,23 @@
     "hint_name": "임유진",
     "hint_birthdate": "2016-08-03",
     "roster": [
-      { "child_id": 11, "name": "임유진", "birthdate": "2016-08-03" },
-      { "child_id": 12, "name": "임준호", "birthdate": "2016-02-14" }
+      {
+        "child_id": 11,
+        "name": "임유진",
+        "birthdate": "2016-08-03"
+      },
+      {
+        "child_id": 12,
+        "name": "임준호",
+        "birthdate": "2016-02-14"
+      }
     ],
-
     "expected_child_id": 12,
     "expected_status": "review",
     "expected_hint_mismatch": true,
-    "expected_mentioned_child_ids": [12]
+    "expected_mentioned_child_ids": [
+      12
+    ]
   },
   {
     "case_id": "M1102",
@@ -24,14 +33,25 @@
     "hint_name": "임유진",
     "hint_birthdate": "2016-08-03",
     "roster": [
-      { "child_id": 11, "name": "임유진", "birthdate": "2016-08-03" },
-      { "child_id": 12, "name": "임준호", "birthdate": "2016-02-14" }
+      {
+        "child_id": 11,
+        "name": "임유진",
+        "birthdate": "2016-08-03"
+      },
+      {
+        "child_id": 12,
+        "name": "임준호",
+        "birthdate": "2016-02-14"
+      }
     ],
-
     "expected_child_id": 11,
-    "expected_status": "auto",
     "expected_hint_mismatch": false,
-    "expected_mentioned_child_ids": [11, 12]
+    "expected_mentioned_child_ids": [
+      11,
+      12
+    ],
+    "expected_multi_reason": null,
+    "difficulty": "easy"
   },
   {
     "case_id": "M1103",
@@ -41,10 +61,17 @@
     "hint_name": null,
     "hint_birthdate": null,
     "roster": [
-      { "child_id": 11, "name": "임유진", "birthdate": "2016-08-03" },
-      { "child_id": 12, "name": "임준호", "birthdate": "2016-02-14" }
+      {
+        "child_id": 11,
+        "name": "임유진",
+        "birthdate": "2016-08-03"
+      },
+      {
+        "child_id": 12,
+        "name": "임준호",
+        "birthdate": "2016-02-14"
+      }
     ],
-
     "expected_child_id": null,
     "expected_status": "unmatched",
     "expected_mentioned_child_ids": []

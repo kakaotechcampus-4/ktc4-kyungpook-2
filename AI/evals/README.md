@@ -25,9 +25,18 @@ python evals/score.py /tmp/result.json
 | `expected_child_id` | 정답 아동 ID. `null` 이면 "명부에 없는 아이" (정답 = `unmatched`) |
 | `expected_status` | `auto` / `review` / `multi` / `unmatched` |
 | `expected_hint_mismatch` | 표지를 뒤집는 것이 맞는 케이스인지 |
+| `expected_multi_reason` | `co_mention` / `ambiguous_identity` / `null`(대등 언급 아님) |
 | `expected_mentioned_child_ids` | 본문에 이름이 등장해야 하는 아이들 |
 
 형식은 [expected_fields.example.json](expected_fields.example.json) 참고.
+
+**`expected_status` 는 τ 와 무관하게 값이 정해지는 케이스에만 적는다.** 표지를
+뒤집은 판정(`review`)이나 근거가 없는 기록(`unmatched`) 은 임계값을 어떻게 잡든
+값이 같다. 반면 "주인공 + 스쳐 지나간 아이" 같은 케이스에서 `auto` 냐 `review` 냐는
+`TAU_AUTO` 가 정하는 값이지 정답이 아니다. 여기에 `auto` 를 정답으로 박아두면
+τ 를 올리는 순간 전부 오답이 되는데, 그건 에이전트가 틀린 것이 아니다.
+그런 케이스는 `expected_status` 를 빼고 `expected_multi_reason` 과
+`expected_mentioned_child_ids` 로 잰다.
 
 `status` 를 따로 적어야 하는 이유: `matched_child_id` 가 맞아도 `status` 가 틀릴 수
 있다. 표지를 뒤집은 판정은 확신이 0.99 여도 `auto` 가 아니라 `review` 로 내려간다
@@ -55,5 +64,5 @@ python evals/score.py /tmp/result.json
 에이전트가 베이스라인을 넘는지 알 수 없다. 아래 셋이 들어와야 측정이 시작된다.
 
 1. 표지는 A 인데 본문이 명백히 B — `expected_hint_mismatch: true`
-2. 표지 아이가 주인공이고 다른 아이는 스쳐 지나감 — `multi` 가 아니라 `auto`/`review`
+2. 표지 아이가 주인공이고 다른 아이는 스쳐 지나감 — `expected_multi_reason: null`
 3. 표지가 비어 있음 (`hint_name: null`) — 근거가 없으면 `unmatched` 가 맞는지

@@ -8,6 +8,7 @@ run_eval.py 가 만든 결과 파일을 채점한다.
 
     expected_child_id            아동 ID. null 이면 "명부에 없는 아이"(정답 = unmatched)
     expected_status              auto / review / multi / unmatched
+    expected_multi_reason        co_mention / ambiguous_identity / null(대등 언급 아님)
     expected_hint_mismatch       표지를 뒤집는 것이 맞는 케이스인지
     expected_mentioned_child_ids 본문에 이름이 등장해야 하는 아이들
 
@@ -115,6 +116,16 @@ def report(rows: list[dict]) -> None:
         for r in [x for x in hm if x["hint_mismatch"] != x["expected_hint_mismatch"]][:5]:
             print(f"     X {r['case_id']} 기대={r['expected_hint_mismatch']} "
                   f"실제={r['hint_mismatch']} | {r['content'][:44]}")
+
+    mr = [r for r in ok if r.get("expected_multi_reason", "__skip__") != "__skip__"]
+    if mr:
+        hit = [r for r in mr if r["multi_reason"] == r["expected_multi_reason"]]
+        print(f"\n■ multi_reason 정확도 {len(hit)}/{len(mr)}  {pct(len(hit), len(mr))}")
+        print("   두 아이가 대등하게 나온 기록인지, 한 명은 스쳐 지나간 것인지.")
+        print("   코드는 구별 못 한다 — 본문을 읽어야 알 수 있어 LLM 판단력을 잰다.")
+        for r in [x for x in mr if x["multi_reason"] != x["expected_multi_reason"]][:5]:
+            print(f"     X {r['case_id']} 기대={r['expected_multi_reason']} "
+                  f"실제={r['multi_reason']} | {r['content'][:44]}")
 
     mc = [r for r in ok if r.get("expected_mentioned_child_ids") is not None]
     if mc:
