@@ -11,7 +11,7 @@ offset 은 모두 Python str 인덱스(유니코드 코드포인트) 기준이�
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from .config import FUZZY_MIN_RATIO
+from .config import FUZZY_MIN_RATIO, NAME_SUFFIX_CHARS, REQUIRE_NAME_BOUNDARY
 
 
 @dataclass
@@ -31,6 +31,25 @@ class NameHit:
 def _is_hangul_block(text: str) -> bool:
     """한글 음절로만 이루어졌는지. 공백·구두점이 섞인 구간을 이름 후보에서 뺀다."""
     return all("가" <= ch <= "힣" for ch in text)
+
+
+def _has_name_boundary(content: str, end: int) -> bool:
+    """
+    구간 끝이 이름의 끝으로 말이 되는지.
+
+    한글 이름 뒤에는 조사("정하윤이"), 호칭("정하윤님"), 또는 공백·구두점이
+    온다. 그 밖의 음절이 붙어 있으면 단어 중간을 잘라낸 것이다 —
+    "정교하게" 에서 '정교하' 를 떼어낸 것처럼.
+    """
+    if end >= len(content):
+        return True
+
+    nxt = content[end]
+    if not ("가" <= nxt <= "힣"):
+        # 공백·구두점·숫자·영문은 그대로 경계다
+        return True
+
+    return nxt in NAME_SUFFIX_CHARS
 
 
 def find_exact(content: str, name: str) -> list[tuple[int, int]]:
@@ -72,8 +91,13 @@ def find_fuzzy(
         if any(s <= i < e for s, e in skip):
             continue
         ratio = SequenceMatcher(None, name, window).ratio()
-        if ratio >= min_ratio:
-            raw.append((i, i + n, ratio))
+        if ratio < min_ratio:
+            continue
+        # 오타 후보는 경계까지 맞아야 인정한다. 정확 일치와 달리 근거가
+        # 유사도뿐이라, 단어 중간을 잘라낸 것과 구별할 방법이 이것뿐이다.
+        if REQUIRE_NAME_BOUNDARY and not _has_name_boundary(content, i + n):
+            continue
+        raw.append((i, i + n, ratio))
 
     return _dedupe_overlaps(raw)
 

@@ -9,6 +9,10 @@
 """
 
 from .config import (
+    ALLOW_AUTO_ON_HINT_ONLY,
+    FUZZY_SCORE_MAX,
+    FUZZY_SCORE_MIN,
+    COMBINE_AGREEING_SCORES,
     EXACT_SCORE,
     FUZZY_MIN_RATIO,
     HINT_BONUS,
@@ -17,6 +21,7 @@ from .config import (
     TAU_AUTO,
     TAU_GAP,
     TAU_REJECT,
+    UNMATCHED_WHEN_HINT_NOT_IN_ROSTER,
 )
 from .llm import LlmError, ask_json, spans_for_quotes
 from .names import find_name_hits
@@ -40,11 +45,14 @@ def _fuzzy_to_score(ratio: float) -> float:
     """
     편집거리 유사도를 후보 점수로 옮긴다.
 
-    오타로 걸린 건 자동 확정(TAU_AUTO)에 닿지 않고 사람 확인(review) 구간에
-    떨어져야 한다. [FUZZY_MIN_RATIO, 1.0] 을 [0.62, 0.88] 로 선형 변환한다.
+    퍼지는 "비슷했을 뿐" 이라 표지 힌트보다 약한 근거다. 한 글자 차이(0.667)가
+    HINT_ONLY_SCORE 아래에 오도록 구간을 잡는다. 그래야 문장 조각에서 나온
+    오탐이 표지를 이기지 못한다.
     """
     span = 1.0 - FUZZY_MIN_RATIO
-    return 0.62 + (ratio - FUZZY_MIN_RATIO) / span * 0.26
+    return FUZZY_SCORE_MIN + (ratio - FUZZY_MIN_RATIO) / span * (
+        FUZZY_SCORE_MAX - FUZZY_SCORE_MIN
+    )
 
 
 def shortlist(state: MatchingState) -> dict:
@@ -69,15 +77,24 @@ def shortlist(state: MatchingState) -> dict:
                     SCORE_CAP, best[entry.child_id] + HINT_BONUS
                 )
 
-    # 본문에 이름이 전혀 없고 표지 힌트만 있는 경우.
-    # 자동 확정에는 못 미치고 사람 확인으로 가는 점수를 준다.
-    if not best and hint_name:
+    # 표지 힌트가 가리키는 아이는 언제나 바닥 점수를 받는다.
+    # "본문에 이름이 없을 때만" 으로 두면, 엉뚱한 아이가 퍼지로 하나 걸렸다는
+    # 이유로 표지 근거가 통째로 사라진다.
+    if hint_name:
         for entry in state["roster"]:
             if entry.name == hint_name:
-                best[entry.child_id] = HINT_ONLY_SCORE
+                best[entry.child_id] = max(
+                    best.get(entry.child_id, 0.0), HINT_ONLY_SCORE
+                )
 
+    # TAU_REJECT 미만은 후보로 치지 않는다. 문장 조각에서 나온 퍼지 오탐이
+    # 여기서 떨어져, 애먼 아이가 교사에게 선택지로 올라가지 않는다.
     candidates = sorted(
-        ({"child_id": cid, "confidence": round(s, 4)} for cid, s in best.items()),
+        (
+            {"child_id": cid, "confidence": round(s, 4)}
+            for cid, s in best.items()
+            if s >= TAU_REJECT
+        ),
         key=lambda c: c["confidence"],
         reverse=True,
     )
@@ -88,6 +105,9 @@ def shortlist(state: MatchingState) -> dict:
     co_mention = len(exact_ids) >= 2
 
     return {
+        "hint_in_roster": bool(hint_name) and any(
+            e.name == hint_name for e in state["roster"]
+        ),
         "candidates": candidates,
         # "본문에 이름이 등장했다" 는 사실만 담는다. 오타로 걸린 것은 넣지 않는다 —
         # 실제로 등장한 게 아니라 비슷했을 뿐이라, Validation 에 잘못된 신호를 준다.
@@ -140,7 +160,16 @@ def llm_judge(state: MatchingState) -> dict:
         # 나머지 후보를 점수째로 남겨두면 코드 점수가 모델 판단을 역전시킨다.
         # 다른 아이들은 mentioned_child_ids 에 남아 Validation 으로 전달되므로
         # 정보가 사라지지도 않는다.
-        candidates = [{"child_id": child_id, "confidence": round(llm_confidence, 4)}]
+        # 단, 코드가 이미 같은 아이를 후보로 봤다면 둘 중 높은 쪽을 쓴다.
+        # 본문에 이름이 없는 기록에서 모델은 "본문만으로는 확신 못 한다"는 뜻으로
+        # 낮은 값을 주는데, 그것으로 표지 근거까지 지워버리면 안 된다.
+        code_scores = {
+            c["child_id"]: c["confidence"] for c in state.get("candidates", [])
+        }
+        score = llm_confidence
+        if COMBINE_AGREEING_SCORES and child_id in code_scores:
+            score = max(score, code_scores[child_id])
+        candidates = [{"child_id": child_id, "confidence": round(score, 4)}]
 
     co_ids = [
         int(cid)
@@ -199,6 +228,25 @@ def _evidence_for(state: MatchingState, child_ids: list[int]) -> list[dict]:
     ]
 
 
+def _hint_confirms(state: MatchingState, winner: int) -> bool:
+    """
+    표지 힌트가 이 판정을 뒷받침하는가.
+
+    본문에 이름이 없을 때 자동 확정을 허용할지 판단하는 유일한 근거다.
+    표지가 가리키는 아이와 판정이 같고, 그 이름이 명부에서 한 명으로
+    특정될 때만 참이다. 동명이인이 있으면 표지만으로는 못 고른다.
+    """
+    hint_name = state.get("hint_name")
+    if not hint_name:
+        return False
+
+    same_name = [e for e in state["roster"] if e.name == hint_name]
+    if len(same_name) != 1:
+        return False
+
+    return same_name[0].child_id == winner
+
+
 def decide(state: MatchingState) -> dict:
     """
     status 결정 규칙을 그대로 옮긴 것. 위에서부터 먼저 걸리는 조건을 적용한다.
@@ -213,8 +261,8 @@ def decide(state: MatchingState) -> dict:
       - 표지 힌트를 뒤집은 경우(hint_mismatch) — 표지가 틀렸거나 우리가 틀렸거나
         둘 중 하나인데, 어느 쪽이든 사람이 봐야 한다.
       - 모델 호출이 실패한 경우(llm_error) — 판단 근거가 반쪽이다.
-      - 본문에 이름이 그대로 없는 경우(has_exact=False) — 오타·별명 추론이라
-        모델 confidence 를 믿을 수 없다.
+      - 본문에 이름이 그대로 없고(has_exact=False) 표지 힌트도 뒷받침하지
+        않는 경우 — 오타·별명 추론이라 모델 confidence 를 믿을 수 없다.
     """
     candidates = state.get("candidates", [])
     top = candidates[0]["confidence"] if candidates else 0.0
@@ -227,6 +275,18 @@ def decide(state: MatchingState) -> dict:
         "evidence": [],
         "hint_mismatch": False,
     }
+
+    # 0. 표지 이름이 명부에 없고 본문에도 명부 아이 이름이 그대로 없다.
+    #    아직 등록되지 않은 아이의 기록으로 본다. 여기서 끊지 않으면
+    #    비슷한 이름들이 퍼지로 걸려 multi 가 되고, 교사에게 전부 오답인
+    #    선택지를 보여주게 된다.
+    if (
+        UNMATCHED_WHEN_HINT_NOT_IN_ROSTER
+        and state.get("hint_name")
+        and not state.get("hint_in_roster")
+        and not state.get("has_exact")
+    ):
+        return {**base, "status": "unmatched"}
 
     # 1. 대등 언급 — confidence 가 높아도 사람에게 넘긴다.
     #    한 항목을 여러 건으로 쪼개는 것은 MVP 범위가 아니라, 보류를 택한다.
@@ -283,14 +343,22 @@ def decide(state: MatchingState) -> dict:
     if state.get("llm_error") and status == "auto":
         status = "review"
 
-    # 본문에 이름이 그대로 적힌 아이가 하나도 없으면 자동 확정하지 않는다.
+    # 본문에 이름이 그대로 적힌 아이가 없는 경우.
     #
-    # 오타("임유젼")나 별명("막내가")만 있는 경우인데, 모델이 높은 confidence 를
-    # 주더라도 그 숫자를 믿을 수 없다. 실제로 "임유젼"(임유진/임유전 어느 쪽의
-    # 오타인지 편집거리상 완전 동점)에 모델이 0.98 을 준 사례가 있었다.
+    # 모델 confidence 만으로는 통과시키지 않는다. "임유젼"(임유진/임유전 어느
+    # 쪽의 오타인지 편집거리상 완전 동점)에 모델이 0.98 을 준 사례가 있었다.
     # 모델은 자기 확신도를 캘리브레이션하지 못한다.
+    #
+    # 다만 표지 힌트가 같은 아이를 가리키면 통과시킨다. 본문에 이름이 없는 것은
+    # 관찰일지의 정상적인 형태이고(파일 표지에 이름, 본문에는 관찰 내용만),
+    # 이때 표지를 안 믿으면 확인 큐가 100% 가 되어 서비스가 성립하지 않는다.
+    #
+    # 표지를 뒤집는 신호는 위에서 이미 걸러졌다 —
+    # 본문에 다른 아이 이름이 그대로 있으면 has_exact 가 참이라 여기 오지 않고,
+    # 오타로라도 다른 아이가 1위면 hint_mismatch 로 review 가 된다.
     if not state.get("has_exact") and status == "auto":
-        status = "review"
+        if not (ALLOW_AUTO_ON_HINT_ONLY and _hint_confirms(state, winner)):
+            status = "review"
 
     return {
         **base,

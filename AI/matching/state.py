@@ -34,6 +34,8 @@ class MatchingState(TypedDict, total=False):
     #: 본문에 이름이 그대로 적힌 아이가 한 명이라도 있었는지.
     #: 없으면 판단 근거가 추론뿐이라 자동 확정하지 않는다.
     has_exact: bool
+    #: 표지 힌트의 이름이 명부에 있는지. 없으면 미등록 아동일 수 있다.
+    hint_in_roster: bool
 
     # ── llm_judge 가 채운다 ──
     llm_called: bool
