@@ -55,6 +55,19 @@ class RawRecordServiceTest {
     }
 
     @Test
+    void storageThrowsRuntimeException_convertedToStorageFailedException() throws Exception {
+        // S3RawFileStorage.store()는 인증/네트워크 오류 시 IOException이 아니라
+        // SdkException(unchecked RuntimeException)을 던질 수 있다 — 이것도 도메인 예외로 변환돼야 한다.
+        MockMultipartFile file = new MockMultipartFile("file", "note.csv", "text/csv", "a,b,c".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willThrow(new RuntimeException("s3 access denied"));
+
+        assertThatThrownBy(() -> rawRecordService.ingest("inst-1", file))
+                .isInstanceOf(RawRecordStorageException.class);
+
+        verify(rawRecordRepository, never()).save(any());
+    }
+
+    @Test
     void dbSaveFailure_keepsStoredFileAndRecordsFailedStatus() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.csv", "text/csv", "a,b,c".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.csv");

@@ -65,7 +65,10 @@ public class RawRecordService {
         String storedPath;
         try {
             storedPath = rawFileStorage.store(file, extension);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // RuntimeException도 함께 잡는다 — S3RawFileStorage.store()는 인증/네트워크 오류 시
+            // IOException이 아니라 SdkException(unchecked)을 던질 수 있어서, IOException만 잡으면
+            // 이 예외가 그대로 새어나가 RAW_RECORD_STORAGE_FAILED 대신 일반 서버 오류로 응답된다.
             log.warn("raw file storage failed for institutionId={}", institutionId);
             throw new RawRecordStorageException("failed to store raw file", e);
         }
