@@ -67,6 +67,10 @@ target/
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
 
+# ── Data ──────────────────────────
+AI/evals/word_samples/
+AI/evals/generated/
+
 # ── 기타 ────────────────────────────────────────────
 *.sqlite3
 *.db

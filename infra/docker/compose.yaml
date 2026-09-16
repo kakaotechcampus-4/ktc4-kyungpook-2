@@ -49,6 +49,8 @@ services:
     restart: unless-stopped
     env_file:
       - ../../AI/.env
+    volumes:
+      - ../../AI/evals:/app/evals
     ports:
       - "127.0.0.1:8000:8000"
     mem_limit: 512m
