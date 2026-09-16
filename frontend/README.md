@@ -3,11 +3,6 @@
 잇다(ITDA) 기관 대시보드와 학부모 웹앱. React Router v8 **SPA 모드** 한 프로젝트에서
 라우트로 두 사용자 화면을 나눕니다.
 
-> 이 프로젝트는 기존 Next.js 앱(`../frontend`)을 이관한 것입니다. Next.js 고유 기능이
-> `src/proxy.ts`(역할 게이트) 하나로 수렴했고, 나머지 페이지는 mock 함수를 부르는
-> 것뿐이라 이관 비용이 낮았습니다. 이제 이 프로젝트가 실제로 개발되는 쪽이고,
-> `../frontend`는 참고용으로만 남아있습니다.
-
 ## 스택
 
 | 항목 | 선택 |
@@ -17,7 +12,7 @@
 | 서체 | 시스템 한글 폰트 — 웹폰트 없음 (Next 시절과 동일한 이유: 학부모 첫 화면 용량) |
 | 데이터 | `app/lib/api.ts` 심(seam) + `app/lib/mock/data.ts` |
 | 다자녀 상태 | `app/components/parent/ChildContext.tsx`(React Context) + `app/lib/selectedChild.ts`(localStorage) — 선택된 아이 id 를 보관 |
-| 배포 | `output: "standalone"` → Docker → `infra/docker/compose.yaml` |
+| 배포 | Vite 정적 빌드 → nginx 이미지(`Dockerfile`) → `infra/docker/compose.yaml` |
 
 상태 관리 라이브러리(TanStack Query·zustand)는 아직 넣지 않았습니다.
 실제 API 가 붙는 시점에 추가합니다. 다자녀 선택 상태만 React 기본 Context 로 관리합니다.
@@ -34,6 +29,19 @@ npm run typecheck   # react-router typegen && tsc
 포트를 고정해뒀습니다(`vite.config.ts` · `strictPort: true`) — 5173 이 이미 쓰이고
 있으면 자동으로 다른 포트로 넘어가지 않고 에러가 납니다. 이전에 띄운 dev 서버를
 종료하고 다시 실행하세요.
+
+### Docker 로 전체 스택 실행
+
+`npm run dev` 는 프론트엔드만 띄웁니다. 백엔드·DB 까지 함께 띄우려면:
+
+```bash
+cp infra/docker/.env.example infra/docker/.env   # POSTGRES_PASSWORD 를 채운다
+touch AI/.env                                    # 비어 있어도 되지만 파일은 있어야 한다
+cd infra/docker && docker compose up -d --build
+```
+
+접속 주소는 **http://localhost** 입니다(nginx 80). 개발 서버의 5173 과 달리
+포트를 붙이지 않습니다. `/api/` 는 nginx 가 backend 로 넘깁니다.
 
 ## 화면
 
@@ -131,3 +139,13 @@ VITE_API_BASE_URL=http://backend:8080
 
 `lib/api.ts` 상단 주석에 실제 백엔드 계약(카카오 OAuth + JWT, RawRecord S3 저장 등)이
 기획서와 다른 부분이 정리돼 있습니다 — 연결 전에 꼭 읽어보세요.
+
+## 관련 문서
+
+| 문서 | 역할 |
+|---|---|
+| [docs/frontend/feature-interfaces.md](../docs/frontend/feature-interfaces.md) | 도메인 타입·API 함수 계약 (팀 공유용) |
+| [docs/frontend/screen-specs.md](../docs/frontend/screen-specs.md) | 화면별 기능 명세 |
+| [docs/frontend/feature-spec.md](../docs/frontend/feature-spec.md) | 전체 기능 명세·상태 전이·제품 규칙 |
+| [docs/api/api-spec.md](../docs/api/api-spec.md) | 백엔드 요청용 API 명세 |
+| [docs/api/api-conventions.md](../docs/api/api-conventions.md) | 응답 래퍼·오류 코드·HTTP 상태 규약 |
