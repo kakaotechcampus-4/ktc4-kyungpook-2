@@ -1,0 +1,52 @@
+[
+  {
+    "case_id": "M1101",
+    "journal_entry_id": 1101,
+    "raw_record_id": 81,
+    "content": "임준호가 오늘 미술 시간에 처음으로 가위질에 성공함.",
+    "hint_name": "임유진",
+    "hint_birthdate": "2016-08-03",
+    "roster": [
+      { "child_id": 11, "name": "임유진", "birthdate": "2016-08-03" },
+      { "child_id": 12, "name": "임준호", "birthdate": "2016-02-14" }
+    ],
+
+    "expected_child_id": 12,
+    "expected_status": "review",
+    "expected_hint_mismatch": true,
+    "expected_mentioned_child_ids": [12]
+  },
+  {
+    "case_id": "M1102",
+    "journal_entry_id": 1102,
+    "raw_record_id": 82,
+    "content": "임유진이 미술 시간에 그림을 완성함. 옆자리 임준호가 도와줬음.",
+    "hint_name": "임유진",
+    "hint_birthdate": "2016-08-03",
+    "roster": [
+      { "child_id": 11, "name": "임유진", "birthdate": "2016-08-03" },
+      { "child_id": 12, "name": "임준호", "birthdate": "2016-02-14" }
+    ],
+
+    "expected_child_id": 11,
+    "expected_status": "auto",
+    "expected_hint_mismatch": false,
+    "expected_mentioned_child_ids": [11, 12]
+  },
+  {
+    "case_id": "M1103",
+    "journal_entry_id": 1103,
+    "raw_record_id": 83,
+    "content": "막내가 오늘 낮잠을 푹 잤음.",
+    "hint_name": null,
+    "hint_birthdate": null,
+    "roster": [
+      { "child_id": 11, "name": "임유진", "birthdate": "2016-08-03" },
+      { "child_id": 12, "name": "임준호", "birthdate": "2016-02-14" }
+    ],
+
+    "expected_child_id": null,
+    "expected_status": "unmatched",
+    "expected_mentioned_child_ids": []
+  }
+]
