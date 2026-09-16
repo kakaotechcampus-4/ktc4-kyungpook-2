@@ -24,6 +24,7 @@
  *      → 기획서 12절의 SMS OTP 와 다르다. 로그인 화면 재작업이 필요하다.
  */
 
+import { getToken } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
 import type {
   ActivityLog,
@@ -54,10 +55,16 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // JWT 는 쿠키와 달리 브라우저가 자동으로 실어주지 않는다. 매 요청에 직접 붙인다.
+  // (쿠키 방식이 아니므로 credentials: "include" 는 쓰지 않는다 — lib/auth.ts 주석 참고)
+  const token = getToken();
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    credentials: "include",
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
     cache: "no-store",
   });
   if (!res.ok) {
