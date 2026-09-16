@@ -40,6 +40,9 @@ def run_one(case: dict) -> dict:
         # 구별해야 한다. 없으면 이 지표를 건너뛴다.
         "expected_multi_reason": case.get("expected_multi_reason", "__skip__"),
         "confusion_child_id": case.get("confusion_child_id"),
+        # 분석용 꼬리표. 채점에는 안 쓰지만 카테고리별로 끊어 보기 위해 남긴다.
+        "category": case.get("category"),
+        "difficulty": case.get("difficulty"),
     }
 
     try:
