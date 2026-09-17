@@ -68,9 +68,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     cache: "no-store",
   });
   if (!res.ok) {
-    // 에러 코드는 기획서 12절 인증/권한 공통 Error 형식을 따른다.
+    // BE 공통 에러 형식 { result, code, message } — global/exception/ErrorResponse.java
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error_code ?? "UNKNOWN", body.message);
+    throw new ApiError(res.status, body.code ?? "UNKNOWN", body.message);
   }
   return res.json() as Promise<T>;
 }
