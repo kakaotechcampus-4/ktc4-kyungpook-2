@@ -21,14 +21,20 @@
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:3000
 npm run build
 npm run typecheck   # react-router typegen && tsc
 ```
 
-포트를 고정해뒀습니다(`vite.config.ts` · `strictPort: true`) — 5173 이 이미 쓰이고
+포트를 고정해뒀습니다(`vite.config.ts` · `strictPort: true`) — 3000 이 이미 쓰이고
 있으면 자동으로 다른 포트로 넘어가지 않고 에러가 납니다. 이전에 띄운 dev 서버를
 종료하고 다시 실행하세요.
+
+포트가 3000 인 이유는 백엔드의 카카오 `redirect-uri`
+(`http://localhost:3000/oauth/kakao/callback`)와 compose 의 frontend 컨테이너 포트가
+모두 3000 이기 때문입니다. 셋을 맞춰두면 dev 와 배포에서 같은 주소를 씁니다.
+그래서 Docker 를 띄운 채로는 dev 서버가 포트 충돌로 뜨지 않습니다 —
+`docker compose stop frontend` 로 비우고 실행하세요.
 
 ### Docker 로 전체 스택 실행
 
@@ -40,7 +46,7 @@ touch AI/.env                                    # 비어 있어도 되지만 �
 cd infra/docker && docker compose up -d --build
 ```
 
-접속 주소는 **http://localhost** 입니다(nginx 80). 개발 서버의 5173 과 달리
+접속 주소는 **http://localhost** 입니다(nginx 80). 개발 서버의 3000 과 달리
 포트를 붙이지 않습니다. `/api/` 는 nginx 가 backend 로 넘깁니다.
 
 ## 화면
