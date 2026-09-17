@@ -53,7 +53,7 @@ public class KakaoAuthService {
     public LoginResponse login(String code) {
         String kakaoAccessToken = exchangeToken(code);
         KakaoUserInfoResponse userInfo = getUserInfo(kakaoAccessToken);
-        if (userInfo.getId() == null) {
+        if (userInfo == null || userInfo.getId() == null) {
             throw new AuthException(AuthErrorCode.KAKAO_AUTH_FAILED);
         }
 
