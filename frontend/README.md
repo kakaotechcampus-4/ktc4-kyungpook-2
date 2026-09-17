@@ -58,7 +58,8 @@ cd infra/docker && docker compose up -d --build
 
 | 경로 | 화면 |
 |---|---|
-| `/login` | I-01 로그인 (SMS OTP) |
+| `/login` | I-01 로그인 (카카오) |
+| `/oauth/kakao/callback` | 카카오 인가 코드 수신 · state 검증 (화면 없음, 실패 시에만 안내) |
 | `/settings/org` | I-02 기관 등록 · 증빙서류 |
 | `/dashboard` | I-03 처리 현황 |
 | `/children/new` | I-04 아이 등록 · 초대코드 |
@@ -128,20 +129,62 @@ Next.js 시절엔 `src/proxy.ts`(서버 미들웨어)가 기관 경로와 `/pare
 클라이언트 로딩 한 박자로 대체한 것이라, "다른 역할 화면이 순간 노출"되는 문제는
 여전히 없습니다. 
 
-역할 판정은 지금 `localStorage`(`itda_role`, `app/lib/auth.ts`)만 봅니다. Spring Boot
-인증이 붙으면 `getSession()`/`signIn()`/`signOut()` 내부만 실제 API 호출로 바꾸면
-됩니다 — 호출부(각 라우트의 `clientLoader`)는 그대로 둡니다.
+역할 판정은 지금 `localStorage`(`itda_role`, `app/lib/auth.ts`)만 봅니다. 백엔드에
+사용자 테이블이 없어 JWT 의 subject 가 kakaoId 뿐이고, 서버가 기관/학부모를 구분할
+방법이 없기 때문입니다. `GET /api/v1/auth/me`(역할 포함)가 열리면
+`getSession()`/`grantRole()` 내부만 그 응답으로 바꾸면 됩니다 — 호출부(각 라우트의
+`clientLoader`)는 그대로 둡니다.
+
+## 환경 변수
+
+`.env.example` 을 `.env` 로 복사해서 씁니다 (`.env` 는 gitignore 됩니다).
+
+```bash
+cp .env.example .env
+```
+
+| 변수 | 기본 | 설명 |
+|---|---|---|
+| `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false` 일 때만 실제 HTTP 호출 |
+| `VITE_AUTH_MOCK` | `true` | 로그인(`lib/auth.ts`). 데이터와 분리돼 있습니다 |
+| `VITE_KAKAO_CLIENT_ID` | — | 카카오 개발자 콘솔의 REST API 키 |
+| `VITE_KAKAO_REDIRECT_URI` | — | 콘솔 · 백엔드 `kakao.redirect-uri` 와 글자까지 같아야 합니다 |
+| `VITE_API_BASE_URL` | 빈 값 | dev proxy 와 nginx 가 같은 오리진의 `/api` 를 넘기므로 비워 둡니다 |
+
+**mock 스위치를 둘로 나눈 이유** — 백엔드에 열려 있는 것이 인증과 원본 기록뿐이라,
+하나로 묶으면 로그인을 켜는 순간 대시보드·아이 목록·게이트가 전부 빈 화면이 됩니다.
+`VITE_AUTH_MOCK=false`, `VITE_USE_MOCK=true` 로 두면 **로그인만 실연동**하고
+나머지 화면은 mock 으로 유지할 수 있습니다.
+
+`VITE_AUTH_MOCK=true` 일 때는 로그인 화면에 "mock 데이터로 둘러보기" 버튼이 나옵니다.
+카카오 키 없이 기관 화면을 확인하는 용도이고, 실연동 빌드에서는 렌더링되지 않습니다.
+
+`VITE_*` 는 빌드 시점에 번들에 박히므로, 값을 바꾸면 **dev 서버를 다시 시작**하거나
+이미지를 다시 빌드해야 합니다.
+
+## 로그인
+
+카카오 OAuth 입니다. 기획서 12절의 SMS OTP 는 폐기됐습니다 — 백엔드 인증이
+카카오로 구현돼 있고 SMS 발송은 구현 자체가 없습니다.
+
+```
+/login → 카카오 인가 화면 → /oauth/kakao/callback
+       → state 검증 → POST /api/v1/auth/kakao?code= → JWT 저장
+```
+
+**`state` 검증**(`app/lib/oauth-state.ts`)이 이 흐름의 핵심입니다. 인가 코드는 그것만
+있으면 로그인이 되기 때문에, 공격자가 자신의 코드를 피해자 브라우저에 끼워넣으면
+피해자가 공격자 계정으로 로그인된 상태가 됩니다. 로그인 시작 시 난수를
+`sessionStorage` 에 저장해 카카오에 함께 보내고, 콜백에서 대조합니다.
+**불일치하면 인가 코드를 백엔드로 보내지 않고 중단합니다** — 검증 전에 보내면
+state 를 쓰는 의미가 없습니다.
+
+백엔드는 아직 `state` 를 받지 않습니다. 서버 측 검증이 붙으면 `oauth-state.ts` 의
+두 함수만 교체하면 되고, 호출부는 그대로 둡니다.
 
 ## API 연결
 
 `app/lib/api.ts` 의 함수 본문만 바꾸면 됩니다. 화면 코드는 그대로 둡니다.
-
-```
-VITE_USE_MOCK=false   # mock 끄기
-VITE_API_BASE_URL=http://backend:8080
-```
-
-`VITE_*` 는 빌드 시점에 번들에 박히므로, 값이 바뀌면 다시 빌드해야 합니다.
 
 `lib/api.ts` 상단 주석에 실제 백엔드 계약(카카오 OAuth + JWT, RawRecord S3 저장 등)이
 기획서와 다른 부분이 정리돼 있습니다 — 연결 전에 꼭 읽어보세요.

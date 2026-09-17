@@ -27,12 +27,11 @@
   ├─ clientLoader()  ─────┐
   └─ 이벤트 핸들러    ─────┤
                           ▼
-                    lib/api.ts      ← 이 문서가 정의하는 계약
-                    lib/auth.ts
-                          │
-              ┌───────────┴───────────┐
-        VITE_USE_MOCK=true      VITE_USE_MOCK=false
-        lib/mock/data.ts        fetch(VITE_API_BASE_URL + path)
+       lib/api.ts (데이터)              lib/auth.ts (로그인)
+                │                              │
+      ┌─────────┴─────────┐          ┌─────────┴─────────┐
+  VITE_USE_MOCK        =false    VITE_AUTH_MOCK       =false
+  lib/mock/data.ts     fetch()   로컬 역할만           카카오 OAuth
 ```
 
 - 화면 코드는 `lib/api.ts`의 **함수 이름과 시그니처**에만 의존합니다.
@@ -44,8 +43,16 @@
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
-| `VITE_USE_MOCK` | `true` | `false`일 때만 실제 HTTP 호출 |
-| `VITE_API_BASE_URL` | `""` | 백엔드 origin. 예: `http://backend:8080` |
+| `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false`일 때만 실제 HTTP 호출 |
+| `VITE_AUTH_MOCK` | `true` | 로그인(`lib/auth.ts`). 데이터와 분리돼 있습니다 |
+| `VITE_KAKAO_CLIENT_ID` | `""` | 카카오 개발자 콘솔의 REST API 키 |
+| `VITE_KAKAO_REDIRECT_URI` | `""` | 콘솔·백엔드 `kakao.redirect-uri`와 글자까지 같아야 합니다 |
+| `VITE_API_BASE_URL` | `""` | 백엔드 origin. dev proxy·nginx를 쓰면 비워 둡니다 |
+
+**mock 스위치가 둘인 이유** — 백엔드에 열려 있는 것이 인증과 원본 기록뿐이라, 하나로
+묶으면 로그인을 켜는 순간 대시보드·아이 목록·게이트가 전부 빈 화면이 됩니다.
+`VITE_AUTH_MOCK=false` + `VITE_USE_MOCK=true` 로 두면 **로그인만 실연동**하고 나머지는
+mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하나씩 옮겨갑니다.
 
 `VITE_*`는 빌드 시점에 번들에 포함됩니다. 값이 바뀌면 재빌드가 필요합니다.
 
@@ -309,18 +316,29 @@ interface ParentActivity {
 ```ts
 type Role = "org" | "parent" | null;
 
-getSession(): Promise<{ role: Role }>            // 현재 세션의 역할
-signIn(role: "org" | "parent"): Promise<void>
+getSession(): Promise<{ role: Role }>        // 현재 세션의 역할
+getToken(): string | null                    // 저장된 JWT — api.ts 가 매 요청에 붙입니다
+grantRole(role: "org" | "parent"): void      // 역할을 로컬에 기록 — 로그인이 아닙니다
 signOut(): Promise<void>
+
+isKakaoConfigured(): boolean                 // .env 에 카카오 키가 채워져 있는지
+isAuthMock(): boolean                        // mock 모드인지 (로그인 화면이 참조)
+buildKakaoAuthorizeUrl(): string             // 인가 화면 주소 — 부르는 순간 state 가 발급됩니다
+exchangeKakaoCode(code: string): Promise<{ kakaoId: number; nickname: string | null }>
 ```
 
-- 현재는 `localStorage`(`itda_role`)로 역할만 흉내 냅니다.
-- 실제 연결 시 이 파일 **내부만** 바꿉니다. 호출부(각 라우트의 `clientLoader`)는
-  그대로 둡니다.
-- 프론트가 선호하는 방식: **백엔드가 httpOnly 세션 쿠키를 직접 심고**, `getSession()`은
-  `GET /api/v1/auth/me`로 그 쿠키를 서버에서 검증한 결과만 받습니다. 브라우저 JS가
-  토큰을 직접 보관하지 않습니다(XSS 노출 차단). 논의는
-  [api-spec.md](../api/api-spec.md) §2 참고.
+- 토큰은 `localStorage`(`itda_token`), 역할은 `localStorage`(`itda_role`)에 있습니다.
+- `grantRole`은 **로그인이 아닙니다.** 백엔드에 사용자 테이블이 없어 JWT의 subject가
+  kakaoId뿐이고, 서버가 기관/학부모를 구분하지 못해 클라이언트가 임시로 들고 있습니다.
+  학부모 온보딩(P-02)과 카카오 콜백이 부릅니다.
+- `GET /api/v1/auth/me`(역할 포함)가 열리면 `getSession()`/`grantRole()` **내부만** 그
+  응답으로 바꿉니다. 호출부(각 라우트의 `clientLoader`)는 그대로 둡니다.
+- **전송은 쿠키가 아니라 헤더입니다.** 백엔드가 accessToken을 응답 본문으로 주므로
+  브라우저 JS가 보관했다가 `Authorization: Bearer`로 붙입니다. 프론트가 선호하는 방식은
+  여전히 **백엔드가 httpOnly 쿠키를 직접 심는 것**입니다(XSS 노출 차단) — 그렇게 바뀌면
+  이 파일만 되돌리면 됩니다. 논의는 [api-spec.md](../api/api-spec.md) §2 참고.
+- `state` 검증은 `lib/oauth-state.ts`로 분리돼 있습니다. 백엔드가 `state`를 받게 되면
+  그 파일의 두 함수만 교체하고 호출부는 그대로 둡니다.
 
 ### 역할 경계
 
