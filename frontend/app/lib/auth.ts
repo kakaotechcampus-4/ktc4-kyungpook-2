@@ -107,6 +107,14 @@ export async function signOut(): Promise<void> {
   }
 }
 
+/**
+ * mock 모드인지. 로그인 화면이 "둘러보기" 진입을 띄울지 판단하는 데만 쓴다.
+ * 실연동 빌드에서는 false 가 되어 그 버튼이 아예 렌더링되지 않는다.
+ */
+export function isAuthMock(): boolean {
+  return USE_MOCK;
+}
+
 /* ── 카카오 ─────────────────────────────────────────── */
 
 /** .env 에 카카오 키가 채워져 있는지. 로그인 화면이 안내를 띄우는 데 쓴다. */
