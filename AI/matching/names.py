@@ -11,7 +11,12 @@ offset 은 모두 Python str 인덱스(유니코드 코드포인트) 기준이�
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from .config import FUZZY_MIN_RATIO, NAME_SUFFIX_CHARS, REQUIRE_NAME_BOUNDARY
+from .config import (
+    FUZZY_MIN_RATIO,
+    NAME_SUFFIX_CHARS,
+    REQUIRE_EXACT_NAME_BOUNDARY,
+    REQUIRE_NAME_BOUNDARY,
+)
 
 
 @dataclass
@@ -22,10 +27,14 @@ class NameHit:
     name: str
     start: int
     end: int
-    #: 본문에 이름이 그대로 있었는지. False 면 편집거리로 걸린 것(오타 의심).
+    #: 본문에 이름이 그대로 있고 앞뒤가 이름 경계인지.
+    #: 이 값이 True 일 때만 "이름이 등장했다" 고 본다.
     exact: bool
     #: 유사도 0~1. exact 면 1.0
     ratio: float
+    #: 이름이 그대로 있었지만 단어의 일부였는지 ('은하수' 안의 '은하').
+    #: 후보로는 남기되 자동 확정 경로에는 넣지 않는다.
+    partial: bool = False
 
 
 def _is_hangul_block(text: str) -> bool:
@@ -50,6 +59,18 @@ def _has_name_boundary(content: str, end: int) -> bool:
         return True
 
     return nxt in NAME_SUFFIX_CHARS
+
+
+def _has_prefix_boundary(content: str, start: int) -> bool:
+    """
+    구간 앞이 이름의 시작으로 말이 되는지.
+
+    앞 글자가 한글 음절이면 단어 중간을 잘라낸 것이다 — '김은하' 에서 '은하'
+    를 떼어낸 것처럼. 문장 시작·공백·구두점은 경계다.
+    """
+    if start == 0:
+        return True
+    return not ("가" <= content[start - 1] <= "힣")
 
 
 def find_exact(content: str, name: str) -> list[tuple[int, int]]:
@@ -122,8 +143,21 @@ def find_name_hits(content: str, roster: list) -> list[NameHit]:
     for entry in roster:
         exact_spans = find_exact(content, entry.name)
         for s, e in exact_spans:
+            # 문자열이 들어 있다는 것만으로는 이름이 아니다.
+            # 앞뒤가 모두 경계일 때만 "이름이 등장했다" 로 인정한다.
+            on_boundary = not REQUIRE_EXACT_NAME_BOUNDARY or (
+                _has_prefix_boundary(content, s) and _has_name_boundary(content, e)
+            )
             hits.append(
-                NameHit(entry.child_id, entry.name, s, e, exact=True, ratio=1.0)
+                NameHit(
+                    entry.child_id,
+                    entry.name,
+                    s,
+                    e,
+                    exact=on_boundary,
+                    ratio=1.0,
+                    partial=not on_boundary,
+                )
             )
 
         for s, e, ratio in find_fuzzy(content, entry.name, skip=exact_spans):

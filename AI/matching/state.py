@@ -43,6 +43,8 @@ class MatchingState(TypedDict, total=False):
     llm_evidence: list[dict]
     #: 호출이 실패했을 때의 사유. 값이 있으면 auto 로 확정하지 않는다.
     llm_error: str | None
+    #: 모델이 명부에 없는 child_id 를 돌려줬는지. True 면 auto 로 확정하지 않는다.
+    llm_off_roster: bool
     #: 토큰 사용량. cached_tokens 로 프롬프트 캐싱이 먹는지 확인한다.
     llm_usage: dict
 

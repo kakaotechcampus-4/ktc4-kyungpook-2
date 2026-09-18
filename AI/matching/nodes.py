@@ -17,6 +17,8 @@ from .config import (
     FUZZY_MIN_RATIO,
     HINT_BONUS,
     HINT_ONLY_SCORE,
+    PARTIAL_NAME_SCORE,
+    SPLIT_SAME_NAME_CANDIDATES,
     SCORE_CAP,
     TAU_AUTO,
     TAU_GAP,
@@ -62,11 +64,23 @@ def shortlist(state: MatchingState) -> dict:
 
     best: dict[int, float] = {}
     exact_ids: set[int] = set()
+    #: 정확 일치로 등장한 "이름" 들. child_id 가 아니라 이름으로 세는 것이
+    #: 중요하다 — 동명이인이면 이름 하나에 child_id 가 둘 붙는데, 그것은
+    #: 두 아이가 언급된 것이 아니라 누군지 모르는 것이다.
+    exact_names: set[str] = set()
 
     for hit in hits:
-        score = EXACT_SCORE if hit.exact else _fuzzy_to_score(hit.ratio)
         if hit.exact:
+            score = EXACT_SCORE
             exact_ids.add(hit.child_id)
+            exact_names.add(hit.name)
+        elif hit.partial:
+            # 이름이 단어의 일부로만 들어 있었다 ('은하수' 안의 '은하').
+            # 후보로는 남기되 EXACT_SCORE 를 주지 않아, LLM 건너뛰기 경로에
+            # 들어가지 못하고 사람 확인으로 간다.
+            score = PARTIAL_NAME_SCORE
+        else:
+            score = _fuzzy_to_score(hit.ratio)
         best[hit.child_id] = max(best.get(hit.child_id, 0.0), score)
 
     # 표지 힌트는 정답이 아니라 단서다. 순위를 뒤집지 못할 만큼만 얹는다.
@@ -87,6 +101,27 @@ def shortlist(state: MatchingState) -> dict:
                     best.get(entry.child_id, 0.0), HINT_ONLY_SCORE
                 )
 
+    # 동명이인 정리. 같은 이름이 명부에 둘 이상이면 본문만으로는 구별할
+    # 방법이 없다. 표지의 생년월일로 한 명이 특정될 때만 좁히고, 아니면 둘 다
+    # 남겨 사람이 고르게 한다(decide 가 multi 로 낸다).
+    if SPLIT_SAME_NAME_CANDIDATES:
+        by_name: dict[str, list] = {}
+        for entry in state["roster"]:
+            if entry.child_id in best:
+                by_name.setdefault(entry.name, []).append(entry)
+
+        hint_birthdate = state.get("hint_birthdate")
+        for group in by_name.values():
+            if len(group) < 2:
+                continue
+            matched = [e for e in group if e.birthdate == hint_birthdate] if hint_birthdate else []
+            if len(matched) != 1:
+                continue
+            for entry in group:
+                if entry.child_id != matched[0].child_id:
+                    best.pop(entry.child_id, None)
+                    exact_ids.discard(entry.child_id)
+
     # TAU_REJECT 미만은 후보로 치지 않는다. 문장 조각에서 나온 퍼지 오탐이
     # 여기서 떨어져, 애먼 아이가 교사에게 선택지로 올라가지 않는다.
     candidates = sorted(
@@ -99,10 +134,12 @@ def shortlist(state: MatchingState) -> dict:
         reverse=True,
     )
 
-    # 서로 다른 아이 이름이 둘 이상 그대로 등장하면 대등 언급을 의심한다.
+    # 서로 다른 "이름" 이 둘 이상 등장했을 때만 대등 언급을 의심한다.
+    # 동명이인이라 child_id 가 둘인 경우는 여기 해당하지 않는다 — 같은 이름
+    # 하나가 나온 것이고, 누구인지 모르는 상태다.
     # 이 단계에서는 "의심"까지만 하고, 실제로 두 아이의 행동이 대등하게
     # 기술되었는지는 B-4 에서 llm_judge 가 확정한다.
-    co_mention = len(exact_ids) >= 2
+    co_mention = len(exact_names) >= 2
 
     return {
         "hint_in_roster": bool(hint_name) and any(
@@ -141,8 +178,24 @@ def llm_judge(state: MatchingState) -> dict:
     candidates = [dict(c) for c in state.get("candidates", [])]
     mentioned = set(state.get("mentioned_child_ids", []))
 
+    # 모델 응답은 전부 이번 요청의 명부로 검증한다.
+    # 프롬프트에 "명부에서만 고른다" 고 적어두었지만 그것은 지시일 뿐이고,
+    # 지켜졌는지는 코드가 확인해야 한다. 명부에 없는 ID 를 그대로 흘리면
+    # 존재하지 않는 아동에게 기록이 붙는다.
+    roster_ids = {e.child_id for e in state["roster"]}
+
     raw_id = answer.get("child_id")
-    child_id = int(raw_id) if isinstance(raw_id, (int, float)) else None
+    # bool 은 int 의 하위 타입이라 True 가 1 로 통과한다. 먼저 걸러낸다.
+    child_id = (
+        int(raw_id)
+        if isinstance(raw_id, (int, float)) and not isinstance(raw_id, bool)
+        else None
+    )
+
+    off_roster = child_id is not None and child_id not in roster_ids
+    if off_roster:
+        # 판단을 버리고 코드 후보로 되돌린다. decide 가 auto 로 내보내지 않는다.
+        child_id = None
 
     try:
         llm_confidence = float(answer.get("confidence", 0.0))
@@ -160,6 +213,39 @@ def llm_judge(state: MatchingState) -> dict:
         # 나머지 후보를 점수째로 남겨두면 코드 점수가 모델 판단을 역전시킨다.
         # 다른 아이들은 mentioned_child_ids 에 남아 Validation 으로 전달되므로
         # 정보가 사라지지도 않는다.
+        # 동명이인이 있으면 모델이 한 명을 골랐어도 그것은 판단이 아니라
+        # 임의 선택이다. 이름이 같으면 본문만으로 구별할 방법이 없다.
+        # 생년월일로 한 명이 특정될 때만 좁히고, 아니면 둘 다 남겨 multi 로 보낸다.
+        twins = _same_name_ids(state, child_id)
+        if SPLIT_SAME_NAME_CANDIDATES and twins:
+            resolved = _resolve_by_birthdate(state, twins | {child_id})
+            if resolved is None:
+                code_scores = {
+                    c["child_id"]: c["confidence"]
+                    for c in state.get("candidates", [])
+                }
+                return {
+                    "llm_called": True,
+                    "llm_error": None,
+                    "llm_usage": result.usage,
+                    # 점수를 같게 줘서 어느 쪽도 앞서지 않게 한다.
+                    # decide 가 격차 부족으로 multi(ambiguous_identity) 를 낸다.
+                    "candidates": [
+                        {
+                            "child_id": cid,
+                            "confidence": round(
+                                max(llm_confidence, code_scores.get(cid, 0.0)), 4
+                            ),
+                        }
+                        for cid in sorted(twins | {child_id})
+                    ],
+                    "mentioned_child_ids": sorted(mentioned),
+                    "co_mention": False,
+                    "llm_off_roster": off_roster,
+                    "llm_evidence": spans_for_quotes(content, answer.get("quotes")),
+                }
+            child_id = resolved
+
         # 단, 코드가 이미 같은 아이를 후보로 봤다면 둘 중 높은 쪽을 쓴다.
         # 본문에 이름이 없는 기록에서 모델은 "본문만으로는 확신 못 한다"는 뜻으로
         # 낮은 값을 주는데, 그것으로 표지 근거까지 지워버리면 안 된다.
@@ -171,10 +257,13 @@ def llm_judge(state: MatchingState) -> dict:
             score = max(score, code_scores[child_id])
         candidates = [{"child_id": child_id, "confidence": round(score, 4)}]
 
+    # 대등 언급 목록도 명부에 있는 ID 만 받는다.
     co_ids = [
         int(cid)
         for cid in (answer.get("co_mention_child_ids") or [])
         if isinstance(cid, (int, float))
+        and not isinstance(cid, bool)
+        and int(cid) in roster_ids
     ]
     mentioned.update(co_ids)
 
@@ -198,6 +287,7 @@ def llm_judge(state: MatchingState) -> dict:
         "llm_called": True,
         "llm_error": None,
         "llm_usage": result.usage,
+        "llm_off_roster": off_roster,
         "candidates": candidates,
         "mentioned_child_ids": sorted(mentioned),
         # 대등 언급 여부는 모델 판단으로 덮는다. 코드는 "이름이 둘 이상 있다" 까지만
@@ -205,6 +295,38 @@ def llm_judge(state: MatchingState) -> dict:
         "co_mention": co_mention,
         "llm_evidence": spans_for_quotes(content, answer.get("quotes")),
     }
+
+
+def _same_name_ids(state: MatchingState, child_id: int) -> set[int]:
+    """이 아이와 이름이 같은 명부의 다른 아이들."""
+    target = next(
+        (e.name for e in state["roster"] if e.child_id == child_id), None
+    )
+    if target is None:
+        return set()
+    return {
+        e.child_id
+        for e in state["roster"]
+        if e.name == target and e.child_id != child_id
+    }
+
+
+def _resolve_by_birthdate(state: MatchingState, ids: set[int]) -> int | None:
+    """
+    표지의 생년월일로 동명이인 중 한 명이 특정되는지.
+
+    정확히 한 명만 걸릴 때 그 아이를 돌려준다. 아무도 안 걸리거나 둘 이상이
+    걸리면 구분 근거가 없다는 뜻이라 None 을 돌려준다.
+    """
+    hint = state.get("hint_birthdate")
+    if not hint:
+        return None
+    matched = [
+        e.child_id
+        for e in state["roster"]
+        if e.child_id in ids and e.birthdate == hint
+    ]
+    return matched[0] if len(matched) == 1 else None
 
 
 # ── ④ decide ────────────────────────────────────────────────────
@@ -336,6 +458,11 @@ def decide(state: MatchingState) -> dict:
 
     # 표지를 뒤집었으면 자동 확정하지 않는다
     if hint_mismatch and status == "auto":
+        status = "review"
+
+    # 모델이 명부에 없는 ID 를 돌려줬으면 자동 확정하지 않는다.
+    # 응답 하나가 규칙을 어겼다는 뜻이라, 같은 응답의 다른 값도 믿을 수 없다.
+    if state.get("llm_off_roster") and status == "auto":
         status = "review"
 
     # 모델 호출이 실패했으면 코드 점수만으로 자동 확정하지 않는다.
