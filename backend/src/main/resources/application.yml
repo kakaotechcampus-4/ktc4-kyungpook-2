@@ -8,12 +8,55 @@ spring:
       max-file-size: 20MB
       max-request-size: 20MB
 
+  security:
+    oauth2:
+      client:
+        # 이 블록이 예전의 KakaoAuthService(토큰 교환 + 사용자 조회)를 대체한다.
+        # provider 를 추가하려면 registration/provider 에 블록만 더 넣으면 된다.
+        registration:
+          kakao:
+            client-id: ${KAKAO_CLIENT_ID}
+            client-secret: ${KAKAO_CLIENT_SECRET}
+            # {baseUrl} 은 실제 요청 주소로 치환된다. 이 주소가 카카오 콘솔의
+            # Redirect URI 와 글자까지 같아야 한다 (다르면 KOE006).
+            redirect-uri: "{baseUrl}/login/oauth2/code/kakao"
+            authorization-grant-type: authorization_code
+            # 카카오는 client_secret 을 헤더가 아니라 폼 파라미터로 받는다.
+            client-authentication-method: client_secret_post
+            scope: profile_nickname
+            client-name: Kakao
+        provider:
+          kakao:
+            authorization-uri: https://kauth.kakao.com/oauth/authorize
+            token-uri: https://kauth.kakao.com/oauth/token
+            user-info-uri: https://kapi.kakao.com/v2/user/me
+            # 사용자 정보 응답에서 식별자로 쓸 최상위 필드.
+            # OAuth2LoginSuccessHandler 가 이 값을 JWT subject 로 넣는다.
+            user-name-attribute: id
+
 server:
   port: 8080
+  # nginx 뒤에 있을 때 X-Forwarded-* 를 신뢰한다. 기본값(NONE)이면 Spring 이 이 헤더를
+  # 무시해서, redirect-uri 의 {baseUrl} 이 내부 주소나 잘못된 scheme 으로 만들어진다.
+  # 특히 HTTPS 를 붙이면 http:// 로 조립돼 카카오가 KOE006 으로 거절한다.
+  forward-headers-strategy: framework
 
 app:
   raw-storage:
     base-dir: ${RAW_STORAGE_DIR:./data/raw-storage}
+  auth:
+    cookie:
+      # 운영이 아직 평문 HTTP 라 false. HTTPS 를 붙이면 true 로 켠다.
+      # true 인데 HTTPS 가 아니면 브라우저가 쿠키를 보내지 않아 로그인이 전부 실패한다.
+      secure: ${AUTH_COOKIE_SECURE:false}
+    # 로그인이 끝난 뒤 사용자를 돌려보낼 프론트 주소.
+    success-redirect: ${AUTH_SUCCESS_REDIRECT:http://localhost:3000/oauth/success}
+    failure-redirect: ${AUTH_FAILURE_REDIRECT:http://localhost:3000/login}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
 
 jwt:
-  access-token-expiration-ms: 3600000 # 1시간 / jwt 토큰 유효시간
+  # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.
+  # 기본값을 두지 않는다 — 빈 값으로 뜨면 기동은 되고 로그인만 이상하게 깨진다.
+  secret: ${JWT_SECRET}
+  access-token-expiration-ms: 3600000 # 1시간 / 출입증 쿠키 만료도 이 값을 따른다

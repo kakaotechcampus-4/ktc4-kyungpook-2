@@ -18,6 +18,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import com.itda.backend.global.jwt.JwtCookie;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -46,6 +47,11 @@ class RawRecordControllerTest {
 
     @MockitoBean
     private JwtProvider jwtProvider;
+
+    // JwtAuthenticationFilter 가 쿠키에서 토큰을 읽도록 바뀌면서 생긴 의존성.
+    // addFilters(false) 라 실제로 쓰이진 않지만 빈은 있어야 컨텍스트가 뜬다.
+    @MockitoBean
+    private JwtCookie jwtCookie;
 
     @AfterEach
     void clearSecurityContext() {
