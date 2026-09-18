@@ -12,6 +12,7 @@ from .config import (
     ALLOW_AUTO_ON_HINT_ONLY,
     AUTO_GATE,
     GIVEN_NAME_SCORE,
+    IGNORE_UNGROUNDED_LLM_PICK,
     FUZZY_SCORE_MAX,
     FUZZY_SCORE_MIN,
     COMBINE_AGREEING_SCORES,
@@ -230,6 +231,18 @@ def llm_judge(state: MatchingState) -> dict:
     off_roster = child_id is not None and child_id not in roster_ids
     if off_roster:
         # 판단을 버리고 코드 후보로 되돌린다. decide 가 auto 로 내보내지 않는다.
+        child_id = None
+
+    # 본문에 이름 근거가 없는데 모델이 코드가 못 본 아이를 골랐다면 무시한다.
+    # 근거 없이 명부에서 한 명을 집어낸 것이고, 다시 돌리면 다른 아이를 고른다.
+    # 표지를 뒤집는 판단은 본문에 명백한 근거가 있을 때만 성립한다.
+    code_ids = {c["child_id"] for c in state.get("candidates", [])}
+    if (
+        IGNORE_UNGROUNDED_LLM_PICK
+        and child_id is not None
+        and child_id not in code_ids
+        and not state.get("has_exact")
+    ):
         child_id = None
 
     try:
