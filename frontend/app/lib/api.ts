@@ -18,13 +18,14 @@
  *              status, createdAt }
  *      → 기획서 11.1 의 { type, local_path, captured_at } JSON 과 다르다.
  *
- *    feat/be/#3 — 인증 (카카오 OAuth + JWT)
- *      POST /api/auth/kakao?code=...    → { accessToken, kakaoId, nickname }
- *      /api/auth/** 는 permitAll, 나머지는 JWT 필요
- *      → 기획서 12절의 SMS OTP 와 다르다. 로그인 화면 재작업이 필요하다.
+ *    인증 — Spring Security oauth2Login + httpOnly 쿠키
+ *      로그인 진입 GET /oauth2/authorization/kakao   (백엔드가 전부 처리)
+ *      로그아웃   POST /api/v1/auth/logout
+ *      출입증은 access_token 쿠키. 쓰기 요청에는 X-XSRF-TOKEN 헤더가 필요하다.
+ *      → 기획서 12절의 SMS OTP 는 폐기됐다.
  */
 
-import { getToken } from "@/lib/auth";
+import { clearSession, csrfHeader } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
 import type {
   ActivityLog,
@@ -55,19 +56,30 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  // JWT 는 쿠키와 달리 브라우저가 자동으로 실어주지 않는다. 매 요청에 직접 붙인다.
-  // (쿠키 방식이 아니므로 credentials: "include" 는 쓰지 않는다 — lib/auth.ts 주석 참고)
-  const token = getToken();
+  /*
+   * 출입증은 httpOnly 쿠키라 **브라우저가 자동으로** 붙인다. 헤더를 직접 만들지 않는다.
+   * credentials 를 명시하는 이유는 VITE_API_BASE_URL 로 다른 오리진을 볼 때도 쿠키가
+   * 실리게 하기 위해서다(백엔드 CORS 가 allowCredentials 로 열려 있다).
+   *
+   * 대신 쿠키가 자동 전송되므로 쓰기 요청에는 CSRF 토큰이 필요하다 — 없으면 403 이다.
+   */
+  const method = (init?.method ?? "GET").toUpperCase();
+  const needsCsrf = method !== "GET" && method !== "HEAD";
+
   const res = await fetch(`${BASE}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "content-type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(needsCsrf ? csrfHeader() : {}),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
   });
   if (!res.ok) {
+    // 쿠키가 만료·무효면 로컬 세션 표시도 지운다.
+    // 안 그러면 로그인된 척하면서 요청마다 401 만 맞는 상태가 된다.
+    if (res.status === 401) clearSession();
     // BE 공통 에러 형식 { result, code, message } — global/exception/ErrorResponse.java
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.code ?? "UNKNOWN", body.message);

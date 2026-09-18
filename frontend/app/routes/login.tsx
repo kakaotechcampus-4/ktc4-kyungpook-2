@@ -1,18 +1,18 @@
 import { useNavigate } from "react-router";
-import { buildKakaoAuthorizeUrl, grantRole, isAuthMock, isKakaoConfigured } from "@/lib/auth";
+import { grantRole, isAuthMock, startKakaoLogin } from "@/lib/auth";
 
 /**
  * 카카오 로그인 진입점.
  *
- * 기획서 12절의 SMS OTP 는 폐기됐다 — BE 인증이 카카오 OAuth + JWT 로 구현돼 있고
- * SMS 발송은 구현 자체가 없다. 두 방식을 함께 두면 어느 쪽이 실제인지 헷갈려서 지웠다.
+ * 기획서 12절의 SMS OTP 는 폐기됐다 — 백엔드 인증이 카카오 OAuth 로 구현돼 있고
+ * SMS 발송은 구현 자체가 없다.
  *
- * fetch 가 아니라 location 이동인 이유: 인가 화면은 카카오 도메인에서 사용자가 직접
- * 로그인·동의해야 하는 페이지라, 브라우저가 실제로 그리로 가야 한다.
+ * 버튼은 백엔드의 `/oauth2/authorization/kakao` 로 **페이지를 이동시킨다**. 그 뒤로는
+ * 전부 백엔드 몫이다 — state 발급, 카카오 인가, 토큰 교환, 출입증 쿠키 발급까지.
+ * 끝나면 `/oauth/success` 로 돌아온다(실패하면 이 화면으로).
  */
 export default function LoginPage() {
   const navigate = useNavigate();
-  const configured = isKakaoConfigured();
   const mock = isAuthMock();
 
   return (
@@ -34,28 +34,16 @@ export default function LoginPage() {
         <div className="rounded border border-line bg-surface p-6">
           <button
             type="button"
-            disabled={!configured}
-            onClick={() => {
-              // state 는 이 시점에 발급·저장된다(lib/oauth-state.ts).
-              window.location.href = buildKakaoAuthorizeUrl();
-            }}
-            className="tap flex w-full items-center justify-center gap-2 rounded bg-[#FEE500] px-4 text-[16px] font-semibold text-[#191600] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={startKakaoLogin}
+            className="tap flex w-full items-center justify-center gap-2 rounded bg-[#FEE500] px-4 text-[16px] font-semibold text-[#191600] hover:brightness-95"
           >
             <KakaoMark />
             카카오로 로그인
           </button>
 
-          {!configured ? (
-            <p className="mt-4 rounded border border-block/40 bg-blocksoft px-3 py-2 text-[13px] leading-6 text-block">
-              카카오 키가 설정되지 않았습니다. <code>frontend/.env</code> 의{" "}
-              <code>VITE_KAKAO_CLIENT_ID</code> 와 <code>VITE_KAKAO_REDIRECT_URI</code> 를
-              채운 뒤 dev 서버를 다시 시작하세요.
-            </p>
-          ) : null}
-
           {/*
-            데모용 진입. 카카오 키 없이도 기관 화면을 볼 수 있어야 하는데, 역할을 주는 곳이
-            카카오 콜백뿐이라 키가 없으면 대시보드에 들어갈 방법이 사라진다.
+            데모용 진입. 백엔드 없이 기관 화면을 볼 수 있어야 하는데, 역할을 주는 곳이
+            로그인 성공 페이지뿐이라 이것이 없으면 대시보드에 들어갈 방법이 사라진다.
             실연동 빌드(VITE_AUTH_MOCK=false)에서는 렌더링되지 않는다.
           */}
           {mock ? (
