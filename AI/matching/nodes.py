@@ -10,6 +10,8 @@
 
 from .config import (
     ALLOW_AUTO_ON_HINT_ONLY,
+    AUTO_GATE,
+    GIVEN_NAME_SCORE,
     FUZZY_SCORE_MAX,
     FUZZY_SCORE_MIN,
     COMBINE_AGREEING_SCORES,
@@ -23,6 +25,7 @@ from .config import (
     TAU_AUTO,
     TAU_GAP,
     TAU_REJECT,
+    UNMATCHED_WITHOUT_ANCHOR,
     UNMATCHED_WHEN_HINT_NOT_IN_ROSTER,
 )
 from .llm import LlmError, ask_json, spans_for_quotes
@@ -68,12 +71,20 @@ def shortlist(state: MatchingState) -> dict:
     #: 중요하다 — 동명이인이면 이름 하나에 child_id 가 둘 붙는데, 그것은
     #: 두 아이가 언급된 것이 아니라 누군지 모르는 것이다.
     exact_names: set[str] = set()
+    #: 성을 뗀 이름으로 걸린 아이들을 그 이름별로 모은다.
+    #: "지안" 하나에 백지안·조지안·김지안 이 붙는다.
+    given_groups: dict[str, set[int]] = {}
 
     for hit in hits:
         if hit.exact:
             score = EXACT_SCORE
             exact_ids.add(hit.child_id)
             exact_names.add(hit.name)
+        elif hit.given_name:
+            # 성을 뗀 이름으로 불렸다. 같은 이름이 여럿이면 전원이 같은 점수를
+            # 받아 어느 쪽도 앞서지 않고, decide 가 multi 로 낸다.
+            score = GIVEN_NAME_SCORE
+            given_groups.setdefault(hit.name[1:], set()).add(hit.child_id)
         elif hit.partial:
             # 이름이 단어의 일부로만 들어 있었다 ('은하수' 안의 '은하').
             # 후보로는 남기되 EXACT_SCORE 를 주지 않아, LLM 건너뛰기 경로에
@@ -101,26 +112,45 @@ def shortlist(state: MatchingState) -> dict:
                     best.get(entry.child_id, 0.0), HINT_ONLY_SCORE
                 )
 
-    # 동명이인 정리. 같은 이름이 명부에 둘 이상이면 본문만으로는 구별할
-    # 방법이 없다. 표지의 생년월일로 한 명이 특정될 때만 좁히고, 아니면 둘 다
-    # 남겨 사람이 고르게 한다(decide 가 multi 로 낸다).
+    # 이름이 겹쳐 구별이 안 되는 아이들을 정리한다.
+    #
+    # 두 경로로 겹친다 — 명부에 이름이 똑같은 아이가 둘 있는 경우와,
+    # 성을 뗀 이름으로 불려서 여러 아이에게 해당하는 경우("지안이가").
+    # 둘 다 본문만으로는 구별할 방법이 없다.
+    # 표지의 생년월일로 한 명이 특정되면 좁히고, 아니면 전원을 남겨
+    # 사람이 고르게 한다(decide 가 multi 로 낸다).
+    ambiguous_group: set[int] = set()
     if SPLIT_SAME_NAME_CANDIDATES:
-        by_name: dict[str, list] = {}
+        by_id = {e.child_id: e for e in state["roster"]}
+
+        groups: list[set[int]] = []
+        same_full: dict[str, set[int]] = {}
         for entry in state["roster"]:
             if entry.child_id in best:
-                by_name.setdefault(entry.name, []).append(entry)
+                same_full.setdefault(entry.name, set()).add(entry.child_id)
+        groups += [g for g in same_full.values() if len(g) >= 2]
+        groups += [
+            {cid for cid in g if cid in best}
+            for g in given_groups.values()
+            if len({cid for cid in g if cid in best}) >= 2
+        ]
 
         hint_birthdate = state.get("hint_birthdate")
-        for group in by_name.values():
-            if len(group) < 2:
-                continue
-            matched = [e for e in group if e.birthdate == hint_birthdate] if hint_birthdate else []
-            if len(matched) != 1:
-                continue
-            for entry in group:
-                if entry.child_id != matched[0].child_id:
-                    best.pop(entry.child_id, None)
-                    exact_ids.discard(entry.child_id)
+        for group in groups:
+            matched = (
+                [c for c in group if by_id[c].birthdate == hint_birthdate]
+                if hint_birthdate
+                else []
+            )
+            if len(matched) == 1:
+                for cid in group:
+                    if cid != matched[0]:
+                        best.pop(cid, None)
+                        exact_ids.discard(cid)
+            else:
+                # 구분 근거가 없다. 전원을 남기고 표시해둔다 —
+                # llm_judge 가 그중 한 명을 골라도 좁히지 못하게 한다.
+                ambiguous_group |= group
 
     # TAU_REJECT 미만은 후보로 치지 않는다. 문장 조각에서 나온 퍼지 오탐이
     # 여기서 떨어져, 애먼 아이가 교사에게 선택지로 올라가지 않는다.
@@ -142,6 +172,11 @@ def shortlist(state: MatchingState) -> dict:
     co_mention = len(exact_names) >= 2
 
     return {
+        #: 본문에도 표지에도 근거가 글자로 없는 상태.
+        #: 별명·호칭만 있는 기록이 여기 해당한다.
+        "no_textual_anchor": not candidates and not hint_name,
+        #: 이름이 겹쳐 구별이 안 되는 아이들. 모델이 한 명을 골라도 좁히지 않는다.
+        "ambiguous_group": sorted(ambiguous_group),
         "hint_in_roster": bool(hint_name) and any(
             e.name == hint_name for e in state["roster"]
         ),
@@ -216,8 +251,11 @@ def llm_judge(state: MatchingState) -> dict:
         # 동명이인이 있으면 모델이 한 명을 골랐어도 그것은 판단이 아니라
         # 임의 선택이다. 이름이 같으면 본문만으로 구별할 방법이 없다.
         # 생년월일로 한 명이 특정될 때만 좁히고, 아니면 둘 다 남겨 multi 로 보낸다.
-        twins = _same_name_ids(state, child_id)
-        if SPLIT_SAME_NAME_CANDIDATES and twins:
+        twins = set(state.get("ambiguous_group") or ()) | _same_name_ids(state, child_id)
+        twins.discard(child_id)
+        if SPLIT_SAME_NAME_CANDIDATES and child_id in set(
+            state.get("ambiguous_group") or ()
+        ) or (SPLIT_SAME_NAME_CANDIDATES and twins and _same_name_ids(state, child_id)):
             resolved = _resolve_by_birthdate(state, twins | {child_id})
             if resolved is None:
                 code_scores = {
@@ -369,6 +407,28 @@ def _hint_confirms(state: MatchingState, winner: int) -> bool:
     return same_name[0].child_id == winner
 
 
+def _structural_auto(state: MatchingState, winner: int, candidates: list) -> bool:
+    """
+    모델 점수를 보지 않고 자동 확정 여부를 정한다.
+
+    조건은 모두 불리언이고, 그중 모델에 의존하는 것은 "모델이 이 아이를
+    골랐는가" 하나다. 그 판단은 실행마다 거의 바뀌지 않는다 —
+    흔들리는 것은 모델이 스스로 매기는 confidence 숫자다.
+
+        1. 후보가 정확히 한 명이다
+        2. 근거가 글자로 존재한다 — 본문에 이름이 있거나 표지가 뒷받침한다
+        3. 근거를 부정하는 신호가 없다 — 대등 언급이 아니다
+        4. 판단에 쓴 정보가 검증되었다 — 호출 성공, 명부 안의 ID
+    """
+    if len(candidates) != 1:
+        return False
+    if state.get("co_mention"):
+        return False
+    if state.get("llm_error") or state.get("llm_off_roster"):
+        return False
+    return bool(state.get("has_exact")) or _hint_confirms(state, winner)
+
+
 def decide(state: MatchingState) -> dict:
     """
     status 결정 규칙을 그대로 옮긴 것. 위에서부터 먼저 걸리는 조건을 적용한다.
@@ -397,6 +457,13 @@ def decide(state: MatchingState) -> dict:
         "evidence": [],
         "hint_mismatch": False,
     }
+
+    # 0. 근거가 글자로 아무것도 없다. 모델에게 묻지 않고 끊는다.
+    #    별명·호칭("막둥이가")만 있는 기록인데, 모델은 근거가 없어도 명부의
+    #    아무 아이를 골라 높은 confidence 를 준다. 모를 때 모른다고 하는 것이
+    #    이 단계의 정답이다.
+    if UNMATCHED_WITHOUT_ANCHOR and state.get("no_textual_anchor"):
+        return {**base, "status": "unmatched", "confidence": 0.0}
 
     # 0. 표지 이름이 명부에 없고 본문에도 명부 아이 이름이 그대로 없다.
     #    아직 등록되지 않은 아이의 기록으로 본다. 여기서 끊지 않으면
@@ -428,7 +495,12 @@ def decide(state: MatchingState) -> dict:
     gap_ok = second is None or (top - second) >= TAU_GAP
 
     # 2. 자동 확정
-    if top >= TAU_AUTO and gap_ok:
+    if AUTO_GATE == "structural":
+        auto_ok = _structural_auto(state, winner, candidates)
+    else:
+        auto_ok = top >= TAU_AUTO and gap_ok
+
+    if auto_ok:
         status = "auto"
     # 3~4. 사람 확인
     elif top >= TAU_REJECT:

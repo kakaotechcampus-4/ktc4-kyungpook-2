@@ -13,6 +13,7 @@ from difflib import SequenceMatcher
 
 from .config import (
     FUZZY_MIN_RATIO,
+    MATCH_GIVEN_NAME,
     NAME_SUFFIX_CHARS,
     REQUIRE_EXACT_NAME_BOUNDARY,
     REQUIRE_NAME_BOUNDARY,
@@ -35,6 +36,8 @@ class NameHit:
     #: 이름이 그대로 있었지만 단어의 일부였는지 ('은하수' 안의 '은하').
     #: 후보로는 남기되 자동 확정 경로에는 넣지 않는다.
     partial: bool = False
+    #: 성을 뗀 이름으로 걸렸는지 ('백지안' 을 '지안이가' 로).
+    given_name: bool = False
 
 
 def _is_hangul_block(text: str) -> bool:
@@ -159,6 +162,23 @@ def find_name_hits(content: str, roster: list) -> list[NameHit]:
                     partial=not on_boundary,
                 )
             )
+
+        # 성을 뗀 이름으로 부른 경우. 전체 이름이 안 걸렸을 때만 본다.
+        if MATCH_GIVEN_NAME and not exact_spans and len(entry.name) >= 3:
+            given = entry.name[1:]
+            for s, e in find_exact(content, given):
+                if _has_prefix_boundary(content, s) and _has_name_boundary(content, e):
+                    hits.append(
+                        NameHit(
+                            entry.child_id,
+                            entry.name,
+                            s,
+                            e,
+                            exact=False,
+                            ratio=1.0,
+                            given_name=True,
+                        )
+                    )
 
         for s, e, ratio in find_fuzzy(content, entry.name, skip=exact_spans):
             hits.append(

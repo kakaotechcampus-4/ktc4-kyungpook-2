@@ -6,11 +6,14 @@ run_eval.py 가 만든 결과 파일을 채점한다.
 정답 필드는 전부 선택이다. 없는 항목은 그 지표를 건너뛴다 —
 데이터가 늘어날 때마다 스크립트를 고치지 않기 위해서다.
 
-    expected_child_id            아동 ID. null 이면 "명부에 없는 아이"(정답 = unmatched)
+    expected_child_id            아동 ID. null 이면 한 명으로 특정할 수 없다는 뜻이고,
+                                 그때 정답 status 는 expected_status 가 정한다
+                                 (unmatched = 명부에 없음 / multi = 후보가 여럿)
     expected_status              auto / review / multi / unmatched
     expected_multi_reason        co_mention / ambiguous_identity / null(대등 언급 아님)
     expected_hint_mismatch       표지를 뒤집는 것이 맞는 케이스인지
     expected_mentioned_child_ids 본문에 이름이 등장해야 하는 아이들
+    expected_candidates_child_ids multi 일 때 교사에게 보여야 하는 후보 집합
 
 가장 중요한 숫자는 맨 위의 **오매칭**이다. auto 는 사람 확인 없이 지나가므로,
 여기서 틀리면 다른 아이의 기록이 부모에게 간다. 나머지 지표가 좋아도
@@ -30,13 +33,27 @@ def pct(part: int, whole: int) -> str:
     return f"{part / whole * 100:.1f}%" if whole else "-"
 
 
+def _unmatched_expected(row: dict) -> bool:
+    """정답이 "명부에 없는 아이" 인가.
+
+    expected_child_id 가 null 인 것만으로는 판단할 수 없다. 한 명으로 특정할
+    수 없다는 뜻일 뿐이어서, multi 가 정답인 경우도 null 로 온다.
+    """
+    if row.get("expected_child_id") is not None:
+        return False
+    want = row.get("expected_status")
+    return want in (None, "unmatched")
+
+
 def first_choice_ok(row: dict) -> bool | None:
     """1순위 판정이 정답인가. 정답 라벨이 없으면 None."""
     if "expected_child_id" not in row:
         return None
     expected = row["expected_child_id"]
     if expected is None:
-        return row["status"] == "unmatched"
+        # 한 명으로 특정할 수 없는 케이스. status 가 맞으면 정답으로 본다.
+        want = row.get("expected_status") or "unmatched"
+        return row["status"] == want
     return row["matched_child_id"] == expected
 
 
@@ -51,7 +68,7 @@ def answer_reachable(row: dict) -> bool | None:
         return None
     expected = row["expected_child_id"]
     if expected is None:
-        return row["status"] == "unmatched"
+        return row["status"] == (row.get("expected_status") or "unmatched")
     if row["matched_child_id"] == expected:
         return True
     return any(c["child_id"] == expected for c in row.get("candidates", []))
@@ -61,10 +78,7 @@ def report(rows: list[dict]) -> None:
     errors = [r for r in rows if r["status"] == "ERROR"]
     ok = [r for r in rows if r["status"] != "ERROR"]
     labeled = [r for r in ok if r.get("expected_child_id") is not None]
-    unlisted = [
-        r for r in ok
-        if "expected_child_id" in r and r["expected_child_id"] is None
-    ]
+    unlisted = [r for r in ok if _unmatched_expected(r)]
 
     print(f"■ 전체 {len(rows)}건 / 오류 {len(errors)}건")
     print(f"   정답 라벨 {len(labeled)}건 · 명부에 없는 아이 {len(unlisted)}건\n")
@@ -138,6 +152,21 @@ def report(rows: list[dict]) -> None:
                   if set(x["mentioned_child_ids"]) != set(x["expected_mentioned_child_ids"])][:5]:
             print(f"     X {r['case_id']} 기대={r['expected_mentioned_child_ids']} "
                   f"실제={r['mentioned_child_ids']}")
+
+    ec = [r for r in ok if r.get("expected_candidates_child_ids") is not None]
+    if ec:
+        hit = [
+            r for r in ec
+            if set(c["child_id"] for c in r["candidates"])
+            == set(r["expected_candidates_child_ids"])
+        ]
+        print(f"\n■ candidates 정확도 {len(hit)}/{len(ec)}  {pct(len(hit), len(ec))}")
+        print("   누구인지 모를 때, 교사에게 보여줄 후보를 정확히 추렸는지.")
+        for r in [x for x in ec
+                  if set(c["child_id"] for c in x["candidates"])
+                  != set(x["expected_candidates_child_ids"])][:6]:
+            print(f"     X {r['case_id']} 기대={sorted(r['expected_candidates_child_ids'])} "
+                  f"실제={sorted(c['child_id'] for c in r['candidates'])} ({r['status']})")
 
     conf = [r for r in ok if r.get("confusion_child_id") is not None]
     if conf:

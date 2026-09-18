@@ -36,6 +36,10 @@ class MatchingState(TypedDict, total=False):
     has_exact: bool
     #: 표지 힌트의 이름이 명부에 있는지. 없으면 미등록 아동일 수 있다.
     hint_in_roster: bool
+    #: 본문에도 표지에도 근거가 글자로 없는 상태.
+    no_textual_anchor: bool
+    #: 이름이 겹쳐 구별이 안 되는 아이들.
+    ambiguous_group: list[int]
 
     # ── llm_judge 가 채운다 ──
     llm_called: bool
