@@ -6,9 +6,8 @@ import com.itda.backend.domain.auth.dto.response.LoginResponse;
 import com.itda.backend.domain.auth.exception.AuthErrorCode;
 import com.itda.backend.domain.auth.exception.AuthException;
 import com.itda.backend.global.jwt.JwtProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
-import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -16,34 +15,26 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
-import java.time.Duration;
-
 @Service
 public class KakaoAuthService {
 
     private static final String TOKEN_URI = "https://kauth.kakao.com/oauth/token";
     private static final String USER_INFO_URI = "https://kapi.kakao.com/v2/user/me";
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
-    private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 
-    private final RestClient restClient = RestClient.builder()
-            .requestFactory(ClientHttpRequestFactoryBuilder.detect().build(
-                    ClientHttpRequestFactorySettings.defaults()
-                            .withConnectTimeout(CONNECT_TIMEOUT)
-                            .withReadTimeout(READ_TIMEOUT)
-            ))
-            .build();
+    private final RestClient restClient;
     private final JwtProvider jwtProvider;
     private final String clientId;
     private final String clientSecret;
     private final String redirectUri;
 
     public KakaoAuthService(
+            @Qualifier("kakaoRestClient") RestClient restClient,
             JwtProvider jwtProvider,
             @Value("${kakao.client-id}") String clientId,
             @Value("${kakao.client-secret}") String clientSecret,
             @Value("${kakao.redirect-uri}") String redirectUri
     ) {
+        this.restClient = restClient;
         this.jwtProvider = jwtProvider;
         this.clientId = clientId;
         this.clientSecret = clientSecret;
