@@ -70,15 +70,15 @@ mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하�
 | --- | --- | --- |
 | `InstitutionType` | `school` · `center` · `assistant` | 학교 · 센터 · 활동지원사 |
 | `ValidationStatus` | `PASS` · `REVIEW` · `BLOCK` | Validation Agent 판정 |
-| `MatchStatus` | `confirmed` · `multi` · `unmatched` · `low` | Matching Agent 결과 |
+| `MatchStatus` | `auto` · `review` · `multi` · `unmatched` | Matching Agent 결과. AI 쪽 이름과 맞춥니다 |
 | `Gate1Status` | `pending` · `approved` · `rejected` | 1차 검토(요약 승인) 상태 |
 | `Gate2Status` | `pending` · `approved` · `held` · `sent` | 공유 전 검토(발송) 상태 |
 | `ConsentState` | `granted` · `not_granted` · `revoked` | 기관별 보호자 동의 상태 |
 | `ChildStatus` | `pending_consent` · `active` · `suspended` | 아이 활성 상태 |
 | `ConsentField` | `daily_summary` · `weekly_insight` | 동의 범위 필드 |
 
-`MatchStatus`의 `confirmed`는 큐에 나타나지 않습니다. 확인 필요 큐(`MatchingItem`)에는
-`multi` · `unmatched` · `low`만 들어옵니다.
+`MatchStatus`의 `auto`(자동 확정)는 큐에 나타나지 않습니다. 확인 필요 큐(`MatchingItem`)에는
+`review` · `multi` · `unmatched`만 들어옵니다.
 
 ### 2.2 공통 엔티티
 
@@ -122,9 +122,14 @@ interface RawRecord {
 interface MatchingItem {      // 확인 필요 큐 한 건
   id: string;
   record: RawRecord;
-  status: "multi" | "unmatched" | "low";
-  confidence: number | null;  // 0.0 ~ 1.0, unmatched면 null
-  candidates: { childId: string; name: string; group: string }[];
+  status: "review" | "multi" | "unmatched";
+  // 동명이인이면 후보가 둘 이상 남는다. 이름·반이 같으므로 birthDate 가 유일한 구분 근거다.
+  candidates: { childId: string; name: string; group: string; birthDate: string }[];
+  evidence: { start: number; end: number }[];   // 판정 근거 구간 (문자 인덱스)
+  multiReason?: "co_mention" | "ambiguous_identity" | null;
+  unmatchedReason?: "no_anchor" | "not_in_roster" | null;
+  hintMismatch?: boolean;     // 표지 이름과 본문 판정이 어긋남
+  hintName?: string | null;
 }
 
 interface BlockedItem {       // 재입력 요청 큐 한 건 (BLOCK 판정)
