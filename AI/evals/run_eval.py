@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from matching.graph import run_matching  # noqa: E402
+from matching.graph import GRAPH  # noqa: E402
 from matching.schemas import MatchingInput  # noqa: E402
 
 
@@ -39,6 +39,8 @@ def run_one(case: dict) -> dict:
         # null 이 "대등 언급이 아니어야 한다" 는 정답이라, 필드가 없는 것과
         # 구별해야 한다. 없으면 이 지표를 건너뛴다.
         "expected_multi_reason": case.get("expected_multi_reason", "__skip__"),
+        #: multi 일 때 교사에게 보여야 하는 후보 집합.
+        "expected_candidates_child_ids": case.get("expected_candidates_child_ids"),
         "confusion_child_id": case.get("confusion_child_id"),
         # 분석용 꼬리표. 채점에는 안 쓰지만 카테고리별로 끊어 보기 위해 남긴다.
         "category": case.get("category"),
@@ -46,27 +48,56 @@ def run_one(case: dict) -> dict:
     }
 
     try:
-        out = run_matching(
-            MatchingInput(
-                journal_entry_id=case["journal_entry_id"],
-                content=case["content"],
-                roster=case["roster"],
-                raw_record_id=case.get("raw_record_id"),
-                entry_date=case.get("entry_date"),
-                hint_name=case.get("hint_name"),
-                hint_birthdate=case.get("hint_birthdate"),
-            )
+        # 그래프를 한 번만 돌리고, 계약 출력과 진단값을 같은 실행에서 뽑는다.
+        # run_matching 을 따로 부르면 호출이 두 배가 되고 비결정성 때문에
+        # 진단값이 그 출력과 맞지 않는다.
+        payload = MatchingInput(
+            journal_entry_id=case["journal_entry_id"],
+            content=case["content"],
+            roster=case["roster"],
+            raw_record_id=case.get("raw_record_id"),
+            entry_date=case.get("entry_date"),
+            hint_name=case.get("hint_name"),
+            hint_birthdate=case.get("hint_birthdate"),
         )
+        final = GRAPH.invoke(
+            {
+                "journal_entry_id": payload.journal_entry_id,
+                "content": payload.content,
+                "roster": payload.roster,
+                "hint_name": payload.hint_name,
+                "hint_birthdate": payload.hint_birthdate,
+            }
+        )
+        status = final["status"]
         record.update(
-            status=out.status,
-            matched_child_id=out.matched_child_id,
-            confidence=out.confidence,
-            hint_mismatch=out.hint_mismatch,
-            mentioned_child_ids=out.mentioned_child_ids,
-            multi_reason=out.multi_reason,
-            candidates=[c.model_dump() for c in out.candidates],
-            llm_called=out.llm_called,
+            status=status,
+            matched_child_id=final.get("matched_child_id"),
+            confidence=final.get("confidence", 0.0),
+            hint_mismatch=final.get("hint_mismatch", False),
+            mentioned_child_ids=final.get("mentioned_child_ids", []),
+            multi_reason=final.get("multi_reason"),
+            # 계약대로 multi 일 때만 채운다
+            candidates=(
+                [dict(c) for c in final.get("candidates", [])]
+                if status == "multi"
+                else []
+            ),
+            llm_called=final.get("llm_called", False),
             error=None,
+            # 게이트를 바꿔 비교하려면 판정에 쓰인 재료가 필요하다.
+            # 계약 밖의 값이라 결과 파일에만 남긴다.
+            diag={
+                "has_exact": bool(final.get("has_exact")),
+                "co_mention": bool(final.get("co_mention")),
+                "llm_error": final.get("llm_error"),
+                "llm_off_roster": bool(final.get("llm_off_roster")),
+                "n_candidates": len(final.get("candidates", [])),
+                "all_candidates": [
+                    c["child_id"] for c in final.get("candidates", [])
+                ],
+                "top": final.get("confidence", 0.0),
+            },
         )
     except Exception as exc:  # noqa: BLE001 - 한 건이 죽어도 나머지는 돌려야 한다
         record.update(
@@ -79,6 +110,7 @@ def run_one(case: dict) -> dict:
             candidates=[],
             llm_called=False,
             error=f"{type(exc).__name__}: {exc}",
+            diag={},
         )
 
     return record
