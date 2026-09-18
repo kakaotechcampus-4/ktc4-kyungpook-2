@@ -1,15 +1,19 @@
-import { useState, useTransition } from "react";
 import { useNavigate } from "react-router";
-import { signIn } from "@/lib/auth";
+import { grantRole, isAuthMock, startKakaoLogin } from "@/lib/auth";
 
-type Step = "phone" | "otp" | "otp_expired";
-
+/**
+ * 카카오 로그인 진입점.
+ *
+ * 기획서 12절의 SMS OTP 는 폐기됐다 — 백엔드 인증이 카카오 OAuth 로 구현돼 있고
+ * SMS 발송은 구현 자체가 없다.
+ *
+ * 버튼은 백엔드의 `/oauth2/authorization/kakao` 로 **페이지를 이동시킨다**. 그 뒤로는
+ * 전부 백엔드 몫이다 — state 발급, 카카오 인가, 토큰 교환, 출입증 쿠키 발급까지.
+ * 끝나면 `/oauth/success` 로 돌아온다(실패하면 이 화면으로).
+ */
 export default function LoginPage() {
-  const [step, setStep] = useState<Step>("phone");
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [pending, start] = useTransition();
   const navigate = useNavigate();
+  const mock = isAuthMock();
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
@@ -28,98 +32,56 @@ export default function LoginPage() {
         </div>
 
         <div className="rounded border border-line bg-surface p-6">
-          {step === "phone" ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setStep("otp");
-              }}
-              className="flex flex-col gap-4"
-            >
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[15px] font-semibold">휴대폰 번호</span>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="tel"
-                  required
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="010-0000-0000"
-                  className="tap rounded border border-line2 px-3 text-[16px] outline-none focus:border-accent"
-                />
-              </label>
-              <button
-                type="submit"
-                className="tap rounded bg-accent px-4 text-[16px] font-semibold text-white hover:bg-accentink"
-              >
-                인증번호 받기
-              </button>
-              <p className="text-[13px] leading-6 text-muted">
-                학부모라면 기관에서 받은 초대 링크로 들어와 주세요.
-              </p>
-            </form>
-          ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                start(async () => {
-                  await signIn("org");
-                  navigate("/dashboard");
-                });
-              }}
-              className="flex flex-col gap-4"
-            >
-              <p className="text-[15px] text-ink2">
-                <b className="font-semibold">{phone || "010-0000-0000"}</b> 으로 인증번호를
-                보냈습니다.
-              </p>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[15px] font-semibold">인증번호 6자리</span>
-                <input
-                  inputMode="numeric"
-                  maxLength={6}
-                  required
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="000000"
-                  className="tap rounded border border-line2 px-3 text-[18px] tracking-[0.3em] tabular-nums outline-none focus:border-accent"
-                />
-              </label>
+          <button
+            type="button"
+            onClick={startKakaoLogin}
+            className="tap flex w-full items-center justify-center gap-2 rounded bg-[#FEE500] px-4 text-[16px] font-semibold text-[#191600] hover:brightness-95"
+          >
+            <KakaoMark />
+            카카오로 로그인
+          </button>
 
-              {step === "otp_expired" ? (
-                <p className="rounded border border-block/40 bg-blocksoft px-3 py-2 text-[14px] text-block">
-                  인증번호 유효시간이 만료되었습니다. 다시 받아주세요.
-                </p>
-              ) : null}
-
-              <button
-                type="submit"
-                disabled={pending}
-                className="tap rounded bg-accent px-4 text-[16px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
-              >
-                {pending ? "확인 중…" : "로그인"}
-              </button>
-              <div className="flex gap-3 text-[14px]">
-                <button
-                  type="button"
-                  onClick={() => setStep("phone")}
-                  className="text-accentink underline"
-                >
-                  번호 다시 입력
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep("otp_expired")}
-                  className="text-muted underline"
-                >
-                  만료 상태 보기
-                </button>
+          {/*
+            데모용 진입. 백엔드 없이 기관 화면을 볼 수 있어야 하는데, 역할을 주는 곳이
+            로그인 성공 페이지뿐이라 이것이 없으면 대시보드에 들어갈 방법이 사라진다.
+            실연동 빌드(VITE_AUTH_MOCK=false)에서는 렌더링되지 않는다.
+          */}
+          {mock ? (
+            <>
+              <div className="my-4 flex items-center gap-3 text-[13px] text-muted">
+                <span className="h-px flex-1 bg-line" />
+                데모
+                <span className="h-px flex-1 bg-line" />
               </div>
-            </form>
-          )}
+              <button
+                type="button"
+                onClick={() => {
+                  grantRole("org");
+                  navigate("/dashboard");
+                }}
+                className="tap w-full rounded border border-line2 px-4 text-[16px] font-semibold text-ink2 hover:bg-surface2"
+              >
+                mock 데이터로 둘러보기
+              </button>
+              <p className="mt-2 text-[13px] leading-6 text-muted">
+                백엔드 없이 기관 화면을 확인하는 용도입니다.
+              </p>
+            </>
+          ) : null}
+
+          <p className="mt-4 text-[13px] leading-6 text-muted">
+            학부모라면 기관에서 받은 초대 링크로 들어와 주세요.
+          </p>
         </div>
       </div>
     </div>
+  );
+}
+
+function KakaoMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className="size-5 fill-current">
+      <path d="M12 3C6.99 3 3 6.2 3 10.14c0 2.52 1.7 4.73 4.26 5.99l-.9 3.3c-.09.32.27.58.55.4l3.96-2.6c.37.03.75.05 1.13.05 5.01 0 9-3.2 9-7.14S17.01 3 12 3Z" />
+    </svg>
   );
 }

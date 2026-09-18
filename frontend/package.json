@@ -1,5 +1,5 @@
 {
-  "name": "itda-frontend-vite",
+  "name": "itda-frontend",
   "private": true,
   "type": "module",
   "scripts": {
