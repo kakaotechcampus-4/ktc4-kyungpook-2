@@ -1,3 +1,4 @@
+| `VITE_AUTH_ORIGIN` | `""` | 로그인 진입 주소의 오리진. **dev 는 `http://localhost:8080`** |
 # 프론트엔드 기능 인터페이스
 
 > 대상: 백엔드 · AI · 기획 팀원
@@ -31,7 +32,7 @@
                 │                              │
       ┌─────────┴─────────┐          ┌─────────┴─────────┐
   VITE_USE_MOCK        =false    VITE_AUTH_MOCK       =false
-  lib/mock/data.ts     fetch()   로컬 역할만           카카오 OAuth
+  lib/mock/data.ts     fetch()   로컬 역할만           BE oauth2Login
 ```
 
 - 화면 코드는 `lib/api.ts`의 **함수 이름과 시그니처**에만 의존합니다.
@@ -45,8 +46,7 @@
 | --- | --- | --- |
 | `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false`일 때만 실제 HTTP 호출 |
 | `VITE_AUTH_MOCK` | `true` | 로그인(`lib/auth.ts`). 데이터와 분리돼 있습니다 |
-| `VITE_KAKAO_CLIENT_ID` | `""` | 카카오 개발자 콘솔의 REST API 키 |
-| `VITE_KAKAO_REDIRECT_URI` | `""` | 콘솔·백엔드 `kakao.redirect-uri`와 글자까지 같아야 합니다 |
+| `VITE_AUTH_ORIGIN` | `""` | 로그인 진입 주소의 오리진. **dev 는 `http://localhost:8080`** |
 | `VITE_API_BASE_URL` | `""` | 백엔드 origin. dev proxy·nginx를 쓰면 비워 둡니다 |
 
 **mock 스위치가 둘인 이유** — 백엔드에 열려 있는 것이 인증과 원본 기록뿐이라, 하나로
@@ -317,28 +317,30 @@ interface ParentActivity {
 type Role = "org" | "parent" | null;
 
 getSession(): Promise<{ role: Role }>        // 현재 세션의 역할
-getToken(): string | null                    // 저장된 JWT — api.ts 가 매 요청에 붙입니다
 grantRole(role: "org" | "parent"): void      // 역할을 로컬에 기록 — 로그인이 아닙니다
-signOut(): Promise<void>
-
-isKakaoConfigured(): boolean                 // .env 에 카카오 키가 채워져 있는지
+clearSession(): void                         // 401 을 받았을 때 로컬 표시를 지웁니다
 isAuthMock(): boolean                        // mock 모드인지 (로그인 화면이 참조)
-buildKakaoAuthorizeUrl(): string             // 인가 화면 주소 — 부르는 순간 state 가 발급됩니다
-exchangeKakaoCode(code: string): Promise<{ kakaoId: number; nickname: string | null }>
+
+startKakaoLogin(): void                      // /oauth2/authorization/kakao 로 페이지 이동
+signOut(): Promise<void>                     // POST /api/v1/auth/logout — 서버가 쿠키를 지웁니다
+
+readCsrfToken(): string | null               // XSRF-TOKEN 쿠키
+csrfHeader(): Record<string, string>         // { "X-XSRF-TOKEN": ... } 또는 {}
 ```
 
-- 토큰은 `localStorage`(`itda_token`), 역할은 `localStorage`(`itda_role`)에 있습니다.
+- **출입증은 `access_token` httpOnly 쿠키입니다.** 프론트가 읽지도 지우지도 못합니다.
+  요청에 붙이는 일은 브라우저가 자동으로 하고(`lib/api.ts` 의 `credentials: "include"`),
+  지우는 일은 서버에 부탁합니다(`signOut()`).
+- **CSRF 토큰이 필요합니다.** 쿠키가 자동 전송되므로 남의 사이트 폼에도 실립니다.
+  백엔드가 `XSRF-TOKEN` 쿠키(이것만 httpOnly 가 아님)를 내려주고, `lib/api.ts` 가
+  쓰기 요청마다 `X-XSRF-TOKEN` 헤더로 되돌립니다. 없으면 403 입니다.
 - `grantRole`은 **로그인이 아닙니다.** 백엔드에 사용자 테이블이 없어 JWT의 subject가
   kakaoId뿐이고, 서버가 기관/학부모를 구분하지 못해 클라이언트가 임시로 들고 있습니다.
-  학부모 온보딩(P-02)과 카카오 콜백이 부릅니다.
+  학부모 온보딩(P-02)과 로그인 착지 페이지(I-01b)가 부릅니다.
+  출입증이 쿠키가 된 지금은 이 값이 **로그인 여부의 표시**도 겸합니다.
 - `GET /api/v1/auth/me`(역할 포함)가 열리면 `getSession()`/`grantRole()` **내부만** 그
   응답으로 바꿉니다. 호출부(각 라우트의 `clientLoader`)는 그대로 둡니다.
-- **전송은 쿠키가 아니라 헤더입니다.** 백엔드가 accessToken을 응답 본문으로 주므로
-  브라우저 JS가 보관했다가 `Authorization: Bearer`로 붙입니다. 프론트가 선호하는 방식은
-  여전히 **백엔드가 httpOnly 쿠키를 직접 심는 것**입니다(XSS 노출 차단) — 그렇게 바뀌면
-  이 파일만 되돌리면 됩니다. 논의는 [api-spec.md](../api/api-spec.md) §2 참고.
-- `state` 검증은 `lib/oauth-state.ts`로 분리돼 있습니다. 백엔드가 `state`를 받게 되면
-  그 파일의 두 함수만 교체하고 호출부는 그대로 둡니다.
+- **state 검증은 프론트에 없습니다.** Spring Security 가 서버에서 처리합니다.
 
 ### 역할 경계
 

@@ -30,9 +30,9 @@ npm run typecheck   # react-router typegen && tsc
 있으면 자동으로 다른 포트로 넘어가지 않고 에러가 납니다. 이전에 띄운 dev 서버를
 종료하고 다시 실행하세요.
 
-포트가 3000 인 이유는 백엔드의 카카오 `redirect-uri`
-(`http://localhost:3000/oauth/kakao/callback`)와 compose 의 frontend 컨테이너 포트가
-모두 3000 이기 때문입니다. 셋을 맞춰두면 dev 와 배포에서 같은 주소를 씁니다.
+포트가 3000 인 이유는 백엔드가 로그인 후 돌려보내는 주소
+(`app.auth.success-redirect` = `http://localhost:3000/oauth/success`)와 compose 의
+frontend 컨테이너 포트가 모두 3000 이기 때문입니다. 백엔드 CORS 허용 오리진도 3000 입니다.
 그래서 Docker 를 띄운 채로는 dev 서버가 포트 충돌로 뜨지 않습니다 —
 `docker compose stop frontend` 로 비우고 실행하세요.
 
@@ -59,7 +59,7 @@ cd infra/docker && docker compose up -d --build
 | 경로 | 화면 |
 |---|---|
 | `/login` | I-01 로그인 (카카오) |
-| `/oauth/kakao/callback` | 카카오 인가 코드 수신 · state 검증 (화면 없음, 실패 시에만 안내) |
+| `/oauth/success` | 로그인 후 착지 지점 — 화면 없이 역할에 맞는 첫 화면으로 보냅니다 |
 | `/settings/org` | I-02 기관 등록 · 증빙서류 |
 | `/dashboard` | I-03 처리 현황 |
 | `/children/new` | I-04 아이 등록 · 초대코드 |
@@ -147,9 +147,17 @@ cp .env.example .env
 |---|---|---|
 | `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false` 일 때만 실제 HTTP 호출 |
 | `VITE_AUTH_MOCK` | `true` | 로그인(`lib/auth.ts`). 데이터와 분리돼 있습니다 |
-| `VITE_KAKAO_CLIENT_ID` | — | 카카오 개발자 콘솔의 REST API 키 |
-| `VITE_KAKAO_REDIRECT_URI` | — | 콘솔 · 백엔드 `kakao.redirect-uri` 와 글자까지 같아야 합니다 |
+| `VITE_AUTH_ORIGIN` | 빈 값 | 로그인 진입 주소의 오리진. **dev 는 `http://localhost:8080`** |
 | `VITE_API_BASE_URL` | 빈 값 | dev proxy 와 nginx 가 같은 오리진의 `/api` 를 넘기므로 비워 둡니다 |
+
+**카카오 키는 프론트에 없습니다.** `client_id` · `client_secret` 모두 백엔드만 가집니다.
+로그인 전 과정을 백엔드가 처리하기 때문입니다(아래 "로그인" 참고).
+
+**`VITE_AUTH_ORIGIN` 이 dev 에서만 필요한 이유** — Spring 이 **자기가 받은 주소**로
+`redirect_uri` 를 조립합니다. Vite 프록시를 거치면 그 값이 카카오 콘솔 등록값과 어긋나
+KOE006 으로 거절당합니다. 그래서 로그인 진입만 백엔드(8080)로 직접 보냅니다.
+출입증 쿠키는 포트를 구분하지 않으므로 3000 에서 그대로 쓸 수 있습니다.
+운영은 nginx 가 같은 오리진의 `/oauth2/` 를 백엔드로 넘기므로 비워 둡니다.
 
 **mock 스위치를 둘로 나눈 이유** — 백엔드에 열려 있는 것이 인증과 원본 기록뿐이라,
 하나로 묶으면 로그인을 켜는 순간 대시보드·아이 목록·게이트가 전부 빈 화면이 됩니다.
@@ -157,30 +165,42 @@ cp .env.example .env
 나머지 화면은 mock 으로 유지할 수 있습니다.
 
 `VITE_AUTH_MOCK=true` 일 때는 로그인 화면에 "mock 데이터로 둘러보기" 버튼이 나옵니다.
-카카오 키 없이 기관 화면을 확인하는 용도이고, 실연동 빌드에서는 렌더링되지 않습니다.
+백엔드 없이 기관 화면을 확인하는 용도이고, 실연동 빌드에서는 렌더링되지 않습니다.
 
 `VITE_*` 는 빌드 시점에 번들에 박히므로, 값을 바꾸면 **dev 서버를 다시 시작**하거나
 이미지를 다시 빌드해야 합니다.
 
 ## 로그인
 
-카카오 OAuth 입니다. 기획서 12절의 SMS OTP 는 폐기됐습니다 — 백엔드 인증이
-카카오로 구현돼 있고 SMS 발송은 구현 자체가 없습니다.
+**로그인은 백엔드가 전부 맡습니다.** Spring Security `oauth2Login` 이 인가 요청(state
+포함) · 카카오 토큰 교환 · 사용자 조회까지 처리하고, 끝나면 출입증을 httpOnly 쿠키로
+심은 뒤 프론트로 돌려보냅니다. 프론트가 인가 코드나 토큰을 직접 만지는 부분은 없습니다.
 
 ```
-/login → 카카오 인가 화면 → /oauth/kakao/callback
-       → state 검증 → POST /api/v1/auth/kakao?code= → JWT 저장
+/login  ──버튼──▶  (BE) /oauth2/authorization/kakao  ──▶  카카오
+                                                            │
+        ◀── /oauth/success ──  (BE) /login/oauth2/code/kakao ◀┘
+             (실패 시 /login)      쿠키 발급
 ```
 
-**`state` 검증**(`app/lib/oauth-state.ts`)이 이 흐름의 핵심입니다. 인가 코드는 그것만
-있으면 로그인이 되기 때문에, 공격자가 자신의 코드를 피해자 브라우저에 끼워넣으면
-피해자가 공격자 계정으로 로그인된 상태가 됩니다. 로그인 시작 시 난수를
-`sessionStorage` 에 저장해 카카오에 함께 보내고, 콜백에서 대조합니다.
-**불일치하면 인가 코드를 백엔드로 보내지 않고 중단합니다** — 검증 전에 보내면
-state 를 쓰는 의미가 없습니다.
+프론트가 하는 일은 두 가지뿐입니다.
 
-백엔드는 아직 `state` 를 받지 않습니다. 서버 측 검증이 붙으면 `oauth-state.ts` 의
-두 함수만 교체하면 되고, 호출부는 그대로 둡니다.
+1. 로그인 버튼이 `/oauth2/authorization/kakao` 로 **페이지를 이동**시킵니다
+   (fetch 가 아닙니다 — 사용자가 카카오 도메인에서 직접 로그인해야 합니다)
+2. `/oauth/success` 가 착지 지점입니다. 화면을 그리지 않고 역할에 맞는 첫 화면으로 보냅니다
+
+**출입증은 `access_token` httpOnly 쿠키입니다.** 브라우저가 자동으로 붙이므로
+`Authorization` 헤더를 만들지 않습니다. JS 가 읽을 수 없어 XSS 로도 훔칠 수 없습니다.
+
+**대신 CSRF 대비가 필요합니다.** 쿠키는 남의 사이트에서 띄운 폼에도 자동으로 실리기
+때문입니다. 백엔드가 `XSRF-TOKEN` 쿠키(이것만은 httpOnly 가 아닙니다)를 내려주고,
+`lib/api.ts` 가 쓰기 요청마다 `X-XSRF-TOKEN` 헤더로 되돌려보냅니다. 없으면 403 입니다.
+
+**로그아웃도 서버에 부탁해야 합니다** — httpOnly 라 프론트가 쿠키를 지울 수 없습니다.
+`signOut()` 이 `POST /api/v1/auth/logout` 을 부르면 서버가 만료된 쿠키를 다시 심습니다.
+
+**401 을 받으면 로컬 역할 표시를 지웁니다.** 쿠키 만료를 프론트가 볼 수 없어서,
+그냥 두면 로그인된 척하며 요청마다 401 만 맞는 상태가 됩니다.
 
 ## API 연결
 
