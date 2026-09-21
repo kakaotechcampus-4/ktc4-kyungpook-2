@@ -1,4 +1,4 @@
-package com.itda.backend.domain.auth.handler;
+package com.itda.backend.global.security.oauth;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;

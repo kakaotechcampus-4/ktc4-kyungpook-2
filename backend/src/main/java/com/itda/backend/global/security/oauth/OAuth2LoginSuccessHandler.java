@@ -1,4 +1,4 @@
-package com.itda.backend.domain.auth.handler;
+package com.itda.backend.global.security.oauth;
 
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;

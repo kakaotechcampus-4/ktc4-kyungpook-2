@@ -1,4 +1,4 @@
-package com.itda.backend.domain.auth.controller;
+package com.itda.backend.api;
 
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.response.ApiResponse;

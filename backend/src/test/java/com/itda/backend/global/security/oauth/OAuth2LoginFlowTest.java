@@ -1,4 +1,4 @@
-package com.itda.backend.domain.auth.flow;
+package com.itda.backend.global.security.oauth;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -37,31 +37,38 @@ API 계약은 API 규약을, 의존성과 버전은 `build.gradle`을 기준으�
 
 ## 패키지 구조 원칙
 
-패키지 루트는 `com.itda.backend`다. 계층 전체를 먼저 나누지 않고 기능을 기준으로
-도메인을 나눈 뒤, 각 도메인 내부에서 계층을 구분한다.
+패키지 루트는 `com.itda.backend`다. 최상위 패키지는 기술 계층을 기준으로 나누고,
+각 계층 안에서 필요한 경우에만 기능이나 세부 관심사로 구분한다.
 
 ```text
 com.itda.backend
-├── domain
-│   └── {domain}
-│       ├── controller
-│       ├── service
-│       ├── repository
-│       ├── entity
-│       ├── dto
-│       │   ├── request
-│       │   └── response
-│       └── exception
-└── global
+├── api                 # Controller
+├── service             # 유스케이스와 트랜잭션
+│   └── storage         # 외부 저장소 구현
+├── repository          # Entity 영속화와 조회
+├── domain              # Entity, enum 등 도메인 모델
+├── dto
+│   ├── request
+│   └── response
+├── exception           # 기능별 예외와 오류 코드
+└── global              # 설정, 보안, JWT, 공통 응답·예외 등 횡단 관심사
+    ├── config
+    ├── exception
+    ├── jwt
     ├── response
-    └── exception
+    └── security
+        └── oauth
 ```
 
-- 특정 도메인에서만 사용하는 코드는 해당 `domain/{domain}` 아래에 둔다.
-- 여러 도메인에서 공통으로 사용하는 코드만 `global`에 둔다.
-- 한 도메인에서 다른 도메인의 Repository나 Entity를 직접 사용하지 않는다.
-- 도메인 간 협력이 필요하면 상대 도메인의 Service를 통해 요청한다.
-- 새로운 공통 패키지는 실제로 둘 이상의 도메인에서 공유할 때만 추가한다.
+- 비즈니스 요청은 `Controller → Service → Repository` 흐름을 따른다. Controller는 Repository를 직접 호출하거나 Entity의 상태를 변경하지 않는다.
+- Controller의 HTTP 응답 처리에는 쿠키·헤더 등 `global`의 웹 보안 구성 요소를 사용할 수 있지만, 비즈니스 규칙과 영속화는 Service로 위임한다.
+- Service는 유스케이스와 트랜잭션을 조율하며 Repository를 통해 영속화·조회한다.
+- Repository는 Entity 영속화와 조회만 담당한다.
+- 도메인 모델은 `domain`에, 요청·응답 전송 객체는 `dto`에 둔다.
+- 기능별 예외와 오류 코드는 `exception`에 둔다. 여러 기능이 공유하는 오류 처리만 `global.exception`에 둔다.
+- `global`은 설정, 보안, JWT, 공통 응답·예외처럼 여러 계층에서 공유하는 횡단 관심사에만 사용한다.
+- OAuth2 핸들러처럼 Spring Security 구성에 결합된 구현은 `global.security.oauth`에 둔다.
+- 새 최상위 패키지는 기존 계층으로 표현할 수 없는 횡단 관심사일 때만 추가한다.
 
 ## 코드 컨벤션
 

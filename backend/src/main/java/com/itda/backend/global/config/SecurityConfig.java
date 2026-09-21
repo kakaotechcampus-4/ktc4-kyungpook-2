@@ -1,7 +1,7 @@
 package com.itda.backend.global.config;
 
-import com.itda.backend.domain.auth.handler.OAuth2LoginFailureHandler;
-import com.itda.backend.domain.auth.handler.OAuth2LoginSuccessHandler;
+import com.itda.backend.global.security.oauth.OAuth2LoginFailureHandler;
+import com.itda.backend.global.security.oauth.OAuth2LoginSuccessHandler;
 import com.itda.backend.global.jwt.JwtAuthenticationFilter;
 import com.itda.backend.global.security.CsrfCookieFilter;
 import com.itda.backend.global.security.JsonAccessDeniedHandler;
