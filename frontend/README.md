@@ -3,11 +3,6 @@
 잇다(ITDA) 기관 대시보드와 학부모 웹앱. React Router v8 **SPA 모드** 한 프로젝트에서
 라우트로 두 사용자 화면을 나눕니다.
 
-> 이 프로젝트는 기존 Next.js 앱(`../frontend`)을 이관한 것입니다. Next.js 고유 기능이
-> `src/proxy.ts`(역할 게이트) 하나로 수렴했고, 나머지 페이지는 mock 함수를 부르는
-> 것뿐이라 이관 비용이 낮았습니다. 이제 이 프로젝트가 실제로 개발되는 쪽이고,
-> `../frontend`는 참고용으로만 남아있습니다.
-
 ## 스택
 
 | 항목 | 선택 |
@@ -17,7 +12,7 @@
 | 서체 | 시스템 한글 폰트 — 웹폰트 없음 (Next 시절과 동일한 이유: 학부모 첫 화면 용량) |
 | 데이터 | `app/lib/api.ts` 심(seam) + `app/lib/mock/data.ts` |
 | 다자녀 상태 | `app/components/parent/ChildContext.tsx`(React Context) + `app/lib/selectedChild.ts`(localStorage) — 선택된 아이 id 를 보관 |
-| 배포 | `output: "standalone"` → Docker → `infra/docker/compose.yaml` |
+| 배포 | Vite 정적 빌드 → nginx 이미지(`Dockerfile`) → `infra/docker/compose.yaml` |
 
 상태 관리 라이브러리(TanStack Query·zustand)는 아직 넣지 않았습니다.
 실제 API 가 붙는 시점에 추가합니다. 다자녀 선택 상태만 React 기본 Context 로 관리합니다.
@@ -26,14 +21,33 @@
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:3000
 npm run build
 npm run typecheck   # react-router typegen && tsc
 ```
 
-포트를 고정해뒀습니다(`vite.config.ts` · `strictPort: true`) — 5173 이 이미 쓰이고
+포트를 고정해뒀습니다(`vite.config.ts` · `strictPort: true`) — 3000 이 이미 쓰이고
 있으면 자동으로 다른 포트로 넘어가지 않고 에러가 납니다. 이전에 띄운 dev 서버를
 종료하고 다시 실행하세요.
+
+포트가 3000 인 이유는 백엔드가 로그인 후 돌려보내는 주소
+(`app.auth.success-redirect` = `http://localhost:3000/oauth/success`)와 compose 의
+frontend 컨테이너 포트가 모두 3000 이기 때문입니다. 백엔드 CORS 허용 오리진도 3000 입니다.
+그래서 Docker 를 띄운 채로는 dev 서버가 포트 충돌로 뜨지 않습니다 —
+`docker compose stop frontend` 로 비우고 실행하세요.
+
+### Docker 로 전체 스택 실행
+
+`npm run dev` 는 프론트엔드만 띄웁니다. 백엔드·DB 까지 함께 띄우려면:
+
+```bash
+cp infra/docker/.env.example infra/docker/.env   # POSTGRES_PASSWORD 를 채운다
+touch AI/.env                                    # 비어 있어도 되지만 파일은 있어야 한다
+cd infra/docker && docker compose up -d --build
+```
+
+접속 주소는 **http://localhost** 입니다(nginx 80). 개발 서버의 3000 과 달리
+포트를 붙이지 않습니다. `/api/` 는 nginx 가 backend 로 넘깁니다.
 
 ## 화면
 
@@ -44,7 +58,8 @@ npm run typecheck   # react-router typegen && tsc
 
 | 경로 | 화면 |
 |---|---|
-| `/login` | I-01 로그인 (SMS OTP) |
+| `/login` | I-01 로그인 (카카오) |
+| `/oauth/success` | 로그인 후 착지 지점 — 화면 없이 역할에 맞는 첫 화면으로 보냅니다 |
 | `/settings/org` | I-02 기관 등록 · 증빙서류 |
 | `/dashboard` | I-03 처리 현황 |
 | `/children/new` | I-04 아이 등록 · 초대코드 |
@@ -114,20 +129,92 @@ Next.js 시절엔 `src/proxy.ts`(서버 미들웨어)가 기관 경로와 `/pare
 클라이언트 로딩 한 박자로 대체한 것이라, "다른 역할 화면이 순간 노출"되는 문제는
 여전히 없습니다. 
 
-역할 판정은 지금 `localStorage`(`itda_role`, `app/lib/auth.ts`)만 봅니다. Spring Boot
-인증이 붙으면 `getSession()`/`signIn()`/`signOut()` 내부만 실제 API 호출로 바꾸면
-됩니다 — 호출부(각 라우트의 `clientLoader`)는 그대로 둡니다.
+역할 판정은 지금 `localStorage`(`itda_role`, `app/lib/auth.ts`)만 봅니다. 백엔드에
+사용자 테이블이 없어 JWT 의 subject 가 kakaoId 뿐이고, 서버가 기관/학부모를 구분할
+방법이 없기 때문입니다. `GET /api/v1/auth/me`(역할 포함)가 열리면
+`getSession()`/`grantRole()` 내부만 그 응답으로 바꾸면 됩니다 — 호출부(각 라우트의
+`clientLoader`)는 그대로 둡니다.
+
+## 환경 변수
+
+`.env.example` 을 `.env` 로 복사해서 씁니다 (`.env` 는 gitignore 됩니다).
+
+```bash
+cp .env.example .env
+```
+
+| 변수 | 기본 | 설명 |
+|---|---|---|
+| `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false` 일 때만 실제 HTTP 호출 |
+| `VITE_AUTH_MOCK` | `true` | 로그인(`lib/auth.ts`). 데이터와 분리돼 있습니다 |
+| `VITE_AUTH_ORIGIN` | 빈 값 | 로그인 진입 주소의 오리진. **dev 는 `http://localhost:8080`** |
+| `VITE_API_BASE_URL` | 빈 값 | dev proxy 와 nginx 가 같은 오리진의 `/api` 를 넘기므로 비워 둡니다 |
+
+**카카오 키는 프론트에 없습니다.** `client_id` · `client_secret` 모두 백엔드만 가집니다.
+로그인 전 과정을 백엔드가 처리하기 때문입니다(아래 "로그인" 참고).
+
+**`VITE_AUTH_ORIGIN` 이 dev 에서만 필요한 이유** — Spring 이 **자기가 받은 주소**로
+`redirect_uri` 를 조립합니다. Vite 프록시를 거치면 그 값이 카카오 콘솔 등록값과 어긋나
+KOE006 으로 거절당합니다. 그래서 로그인 진입만 백엔드(8080)로 직접 보냅니다.
+출입증 쿠키는 포트를 구분하지 않으므로 3000 에서 그대로 쓸 수 있습니다.
+운영은 nginx 가 같은 오리진의 `/oauth2/` 를 백엔드로 넘기므로 비워 둡니다.
+
+**mock 스위치를 둘로 나눈 이유** — 백엔드에 열려 있는 것이 인증과 원본 기록뿐이라,
+하나로 묶으면 로그인을 켜는 순간 대시보드·아이 목록·게이트가 전부 빈 화면이 됩니다.
+`VITE_AUTH_MOCK=false`, `VITE_USE_MOCK=true` 로 두면 **로그인만 실연동**하고
+나머지 화면은 mock 으로 유지할 수 있습니다.
+
+`VITE_AUTH_MOCK=true` 일 때는 로그인 화면에 "mock 데이터로 둘러보기" 버튼이 나옵니다.
+백엔드 없이 기관 화면을 확인하는 용도이고, 실연동 빌드에서는 렌더링되지 않습니다.
+
+`VITE_*` 는 빌드 시점에 번들에 박히므로, 값을 바꾸면 **dev 서버를 다시 시작**하거나
+이미지를 다시 빌드해야 합니다.
+
+## 로그인
+
+**로그인은 백엔드가 전부 맡습니다.** Spring Security `oauth2Login` 이 인가 요청(state
+포함) · 카카오 토큰 교환 · 사용자 조회까지 처리하고, 끝나면 출입증을 httpOnly 쿠키로
+심은 뒤 프론트로 돌려보냅니다. 프론트가 인가 코드나 토큰을 직접 만지는 부분은 없습니다.
+
+```
+/login  ──버튼──▶  (BE) /oauth2/authorization/kakao  ──▶  카카오
+                                                            │
+        ◀── /oauth/success ──  (BE) /login/oauth2/code/kakao ◀┘
+             (실패 시 /login)      쿠키 발급
+```
+
+프론트가 하는 일은 두 가지뿐입니다.
+
+1. 로그인 버튼이 `/oauth2/authorization/kakao` 로 **페이지를 이동**시킵니다
+   (fetch 가 아닙니다 — 사용자가 카카오 도메인에서 직접 로그인해야 합니다)
+2. `/oauth/success` 가 착지 지점입니다. 화면을 그리지 않고 역할에 맞는 첫 화면으로 보냅니다
+
+**출입증은 `access_token` httpOnly 쿠키입니다.** 브라우저가 자동으로 붙이므로
+`Authorization` 헤더를 만들지 않습니다. JS 가 읽을 수 없어 XSS 로도 훔칠 수 없습니다.
+
+**대신 CSRF 대비가 필요합니다.** 쿠키는 남의 사이트에서 띄운 폼에도 자동으로 실리기
+때문입니다. 백엔드가 `XSRF-TOKEN` 쿠키(이것만은 httpOnly 가 아닙니다)를 내려주고,
+`lib/api.ts` 가 쓰기 요청마다 `X-XSRF-TOKEN` 헤더로 되돌려보냅니다. 없으면 403 입니다.
+
+**로그아웃도 서버에 부탁해야 합니다** — httpOnly 라 프론트가 쿠키를 지울 수 없습니다.
+`signOut()` 이 `POST /api/v1/auth/logout` 을 부르면 서버가 만료된 쿠키를 다시 심습니다.
+
+**401 을 받으면 로컬 역할 표시를 지웁니다.** 쿠키 만료를 프론트가 볼 수 없어서,
+그냥 두면 로그인된 척하며 요청마다 401 만 맞는 상태가 됩니다.
 
 ## API 연결
 
 `app/lib/api.ts` 의 함수 본문만 바꾸면 됩니다. 화면 코드는 그대로 둡니다.
 
-```
-VITE_USE_MOCK=false   # mock 끄기
-VITE_API_BASE_URL=http://backend:8080
-```
-
-`VITE_*` 는 빌드 시점에 번들에 박히므로, 값이 바뀌면 다시 빌드해야 합니다.
-
 `lib/api.ts` 상단 주석에 실제 백엔드 계약(카카오 OAuth + JWT, RawRecord S3 저장 등)이
 기획서와 다른 부분이 정리돼 있습니다 — 연결 전에 꼭 읽어보세요.
+
+## 관련 문서
+
+| 문서 | 역할 |
+|---|---|
+| [docs/frontend/feature-interfaces.md](../docs/frontend/feature-interfaces.md) | 도메인 타입·API 함수 계약 (팀 공유용) |
+| [docs/frontend/screen-specs.md](../docs/frontend/screen-specs.md) | 화면별 기능 명세 |
+| [docs/frontend/feature-spec.md](../docs/frontend/feature-spec.md) | 전체 기능 명세·상태 전이·제품 규칙 |
+| [docs/api/api-spec.md](../docs/api/api-spec.md) | 백엔드 요청용 API 명세 |
+| [docs/api/api-conventions.md](../docs/api/api-conventions.md) | 응답 래퍼·오류 코드·HTTP 상태 규약 |

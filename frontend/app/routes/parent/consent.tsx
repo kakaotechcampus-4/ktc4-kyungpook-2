@@ -1,6 +1,6 @@
 import { useState, useTransition } from "react";
 import { useNavigate } from "react-router";
-import { signIn, getSession } from "@/lib/auth";
+import { grantRole, getSession } from "@/lib/auth";
 import { updateConsent } from "@/lib/api";
 import { INSTITUTION_SHARE_FIELDS, INVITING_INSTITUTION, PARENT_CHILD } from "@/lib/mock/data";
 import { InstitutionChip } from "@/components/ui";
@@ -137,7 +137,7 @@ export default function ParentConsentPage() {
               if (role === "parent") {
                 navigate("/parent");
               } else {
-                await signIn("parent");
+                grantRole("parent");
                 navigate("/parent/care-info?onboarding=1");
               }
             })
