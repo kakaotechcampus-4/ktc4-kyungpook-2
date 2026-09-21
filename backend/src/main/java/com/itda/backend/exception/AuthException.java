@@ -1,4 +1,4 @@
-package com.itda.backend.domain.auth.exception;
+package com.itda.backend.exception;
 
 public class AuthException extends RuntimeException {
 

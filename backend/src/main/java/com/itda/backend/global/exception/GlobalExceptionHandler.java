@@ -1,6 +1,6 @@
 package com.itda.backend.global.exception;
 
-import com.itda.backend.domain.auth.exception.AuthException;
+import com.itda.backend.exception.AuthException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;

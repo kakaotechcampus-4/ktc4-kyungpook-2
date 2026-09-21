@@ -1,4 +1,4 @@
-package com.itda.backend.domain.auth.exception;
+package com.itda.backend.exception;
 
 import com.itda.backend.global.exception.ErrorCode;
 import org.springframework.http.HttpStatus;
