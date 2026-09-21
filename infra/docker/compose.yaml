@@ -31,6 +31,8 @@ services:
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}
       # 실제 배포(EC2/ECS)에서는 IAM Role로 자동 인증되어 비워둬도 됨.
       # 로컬에서 docker compose로 띄워 테스트할 때만 호스트 셸의 AWS 자격증명을 전달.
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
