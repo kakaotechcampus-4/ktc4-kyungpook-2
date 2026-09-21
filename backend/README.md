@@ -30,6 +30,10 @@
 - Docker Desktop (Docker 환경으로 실행할 경우)
 - 로컬 실행 시 PostgreSQL
 
+Gradle Wrapper 자체도 JDK 21로 실행해야 합니다. `build.gradle`의 Java toolchain은
+컴파일·테스트에 사용할 Java 버전을 지정할 뿐, 이미 시작된 Gradle의 런타임을 바꾸지 않습니다.
+여러 JDK가 설치된 환경에서는 검증 전에 `java -version`이 21을 가리키는지 확인하세요.
+
 ### 테스트와 빌드
 
 `backend/`에서 실행합니다.
@@ -72,12 +76,16 @@ PostgreSQL 동작을 확인하는 Testcontainers 통합 테스트는 Docker Desk
   Docker를 사용할 수 없는 환경에서도 `./gradlew test`와 `./gradlew build`는 실행할 수 있다.
 
 프로젝트는 Java 21을 기준으로 한다. 여러 JDK가 설치된 macOS 환경에서는 아래처럼
-Java 21을 명시한 뒤 테스트를 실행한다.
+Java 21을 명시하고 확인한 뒤 테스트·빌드를 실행한다.
 
 ```bash
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 export PATH="$JAVA_HOME/bin:$PATH"
+java -version # 21.x인지 확인
 ./gradlew test --rerun-tasks
+./gradlew build --rerun-tasks
+# Docker Desktop 실행 후 PostgreSQL 통합 테스트가 필요한 경우
+./gradlew integrationTest --rerun-tasks
 ```
 
 ### 로컬 PostgreSQL로 실행

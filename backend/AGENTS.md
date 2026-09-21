@@ -32,7 +32,7 @@ API 계약은 API 규약을, 의존성과 버전은 `build.gradle`을 기준으�
 1. README와 API 규약을 읽고 변경 범위를 확인한다.
 2. 같은 도메인의 기존 코드와 테스트를 먼저 확인한다.
 3. 아래의 패키지 구조와 계층별 책임에 맞게 구현한다.
-4. 변경 범위에 맞는 테스트를 추가하고 `./gradlew test`, `./gradlew build`를 실행한다.
+4. Gradle Wrapper가 Java 21로 실행되는지 확인한 뒤, 변경 범위에 맞는 테스트를 추가하고 검증 명령을 실행한다.
 5. 외부 계약이나 개발 절차가 달라졌다면 관련 문서를 같은 변경에서 갱신한다.
 
 ## 패키지 구조 원칙
@@ -162,6 +162,16 @@ API 계약을 변경하면 `docs/api/api-conventions.md`와 Springdoc으로 생�
   기존 테스트를 보완한다.
 
 ## 테스트 원칙
+
+`build.gradle`의 Java toolchain은 컴파일·테스트에 사용할 Java 버전을 지정하지만, Gradle
+Wrapper를 시작하는 Java 런타임까지 바꾸지는 않는다. 모든 Gradle 명령은 Java 21 런타임으로
+실행한다. 여러 JDK가 설치된 macOS에서는 다음처럼 Java 21을 명시하고 버전을 확인한다.
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version
+```
 
 `backend/`에서 최소한 다음 명령을 실행한다.
 
