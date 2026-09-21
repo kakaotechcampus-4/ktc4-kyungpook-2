@@ -150,8 +150,16 @@ Mapper를 사용하는 경우에도 데이터 변환만 담당하게 하고 조�
 - 실패 응답을 `200 OK`로 반환하지 않는다.
 - 내부 예외 메시지, SQL, 비밀번호, 토큰, 스택 트레이스를 API 응답에 노출하지 않는다.
 
-API 계약을 변경하면 `docs/api/api-conventions.md`를 함께 갱신한다. 실제
-OpenAPI/Swagger 명세가 도입된 이후에는 해당 명세도 같은 변경에서 갱신한다.
+API 계약을 변경하면 `docs/api/api-conventions.md`와 Springdoc으로 생성되는 OpenAPI 명세를
+같은 변경에서 갱신·검증한다. 이 프로젝트에서 OpenAPI 명세의 원본은 정적 파일이 아니라
+컨트롤러의 OpenAPI annotation과 `global.config.OpenApiConfig`다.
+
+- 새 외부 API를 추가하거나 기존 API의 경로·요청·응답·오류 응답을 변경할 때는 `@Tag`,
+  `@Operation`, 성공·오류 응답 annotation을 함께 갱신한다.
+- 보호 API와 공개 API의 OpenAPI 보안 요구 사항은 `SecurityConfig`와 `OpenApiConfig`의 현재
+  인증 방식·보안 스킴에 맞춘다. 인증 방식을 변경하면 두 구성과 관련 endpoint의 명세를 함께 갱신한다.
+- API 문서 관련 변경 후에는 `/v3/api-docs`와 Swagger UI가 정상 생성되는 테스트를 추가하거나
+  기존 테스트를 보완한다.
 
 ## 테스트 원칙
 
@@ -162,12 +170,19 @@ OpenAPI/Swagger 명세가 도입된 이후에는 해당 명세도 같은 변경�
 ./gradlew build
 ```
 
+PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션을 변경한 경우에는 Docker가 실행 중인
+환경에서 다음 통합 테스트도 실행한다.
+
+```bash
+./gradlew integrationTest
+```
+
 - 변경한 유스케이스의 성공 경로와 주요 실패 경로를 함께 테스트한다.
 - DB 매핑, JPA 쿼리, 트랜잭션 관련 변경에는 H2 PostgreSQL 호환 모드 또는 Testcontainers PostgreSQL로 실행되는 테스트를 추가한다.
 - DB 테스트는 `test` 프로필을 사용하고 기존 `application-test.yml` 설정을 유지한다.
-- 단위 테스트와 빠른 스모크 테스트는 Docker 없이 실행 가능하게 유지한다.
-- PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션 검증이 필요한 통합 테스트에만 Testcontainers를 사용한다.
-- Testcontainers를 사용하는 테스트에는 `@Tag("integration")`을 붙여 통합 테스트임을 명확히 구분한다.
+- `test`와 `build`는 `@Tag("integration")` 테스트를 제외하므로 Docker 없이 실행 가능하게 유지한다.
+- PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션 검증이 필요한 통합 테스트에만 Testcontainers를 사용하고 `integrationTest` 태스크로 실행한다.
+- Testcontainers를 사용하는 테스트에는 `@Tag("integration")`을 붙인다. `integrationTest`에는 이 태그가 있는 테스트만 포함한다.
 - 인증·인가 코드를 수정한 경우 성공, 인증 실패, 권한 거부 경로를 검증한다.
 - 문서만 변경한 경우에도 링크, 경로, 코드 예시와 실제 설정의 일치 여부를 확인한다.
 
@@ -179,11 +194,11 @@ OpenAPI/Swagger 명세가 도입된 이후에는 해당 명세도 같은 변경�
 
 | 변경 유형 | 함께 확인하거나 수정할 문서 |
 | --- | --- |
-| API 경로, 요청·응답, HTTP 상태, 오류 코드 | `docs/api/api-conventions.md`, 실제 OpenAPI/Swagger 명세가 있다면 해당 명세 |
+| API 경로, 요청·응답, HTTP 상태, 오류 코드 | `docs/api/api-conventions.md`, 컨트롤러 OpenAPI annotation, `global.config.OpenApiConfig`, `/v3/api-docs` 검증 테스트 |
 | JDK, Spring Boot, 의존성, DB 변경 | `build.gradle`, `backend/README.md`, 이 문서의 기술 스택 |
 | 실행 명령, 프로필, 환경 변수 변경 | `backend/README.md` |
 | 패키지 구조나 계층 책임 변경 | `backend/AGENTS.md` |
-| 인증·인가 API 계약 변경 | `docs/api/api-conventions.md`, 실제 OpenAPI/Swagger 명세가 있다면 해당 명세 |
+| 인증·인가 API 계약 변경 | `docs/api/api-conventions.md`, `SecurityConfig`, `global.config.OpenApiConfig`, 관련 endpoint의 OpenAPI 보안 요구 사항 |
 | 새 문서 추가 또는 문서 위치 변경 | `docs/README.md`와 연결되는 문서의 링크 |
 | 외부 계약이 변하지 않는 내부 리팩터링 | 문서 영향 여부를 확인하고, 영향이 없으면 수정하지 않음 |
 

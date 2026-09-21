@@ -41,6 +41,13 @@
 
 Windows에서는 `gradlew.bat test`와 `gradlew.bat build`를 사용합니다.
 
+PostgreSQL 동작을 확인하는 Testcontainers 통합 테스트는 Docker Desktop을 실행한 뒤 별도로
+실행합니다.
+
+```bash
+./gradlew integrationTest
+```
+
 ### API 문서
 
 애플리케이션을 실행한 뒤 아래 경로에서 API 문서를 확인할 수 있습니다.
@@ -59,10 +66,10 @@ Windows에서는 `gradlew.bat test`와 `gradlew.bat build`를 사용합니다.
   H2 PostgreSQL 호환 모드로 실행되는 빠른 스모크 테스트다. 단위 테스트와 간단한
   애플리케이션 기동 검증에는 Docker가 필요 없다.
 - `@Tag("integration")`이 붙은 통합 테스트는 Testcontainers로 실제 PostgreSQL
-  컨테이너를 실행한다. JPA 매핑, 쿼리, 트랜잭션처럼 PostgreSQL 동작을 검증해야 할
-  경우에만 추가한다.
+  컨테이너를 실행하며 `./gradlew integrationTest`로만 실행한다. JPA 매핑, 쿼리,
+  트랜잭션처럼 PostgreSQL 동작을 검증해야 할 경우에만 추가한다.
 - Testcontainers 통합 테스트를 실행하려면 Docker Desktop이 실행 중이어야 한다.
-  Docker를 사용할 수 없는 환경에서는 해당 테스트가 실패한다.
+  Docker를 사용할 수 없는 환경에서도 `./gradlew test`와 `./gradlew build`는 실행할 수 있다.
 
 프로젝트는 Java 21을 기준으로 한다. 여러 JDK가 설치된 macOS 환경에서는 아래처럼
 Java 21을 명시한 뒤 테스트를 실행한다.
