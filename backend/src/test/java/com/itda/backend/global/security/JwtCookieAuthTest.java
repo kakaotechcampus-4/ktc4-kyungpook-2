@@ -120,7 +120,7 @@ class JwtCookieAuthTest {
         mockMvc.perform(post("/api/v1/auth/logout")
                         .cookie(csrfCookie)
                         .header("X-XSRF-TOKEN", csrfCookie.getValue()))
-                .andExpect(status().isOk())
+                .andExpect(status().isNoContent())
                 .andExpect(cookie().maxAge(JwtCookie.NAME, 0))
                 .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")));
     }

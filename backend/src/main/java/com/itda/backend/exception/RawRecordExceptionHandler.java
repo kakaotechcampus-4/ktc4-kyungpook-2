@@ -1,5 +1,6 @@
 package com.itda.backend.exception;
 
+import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -14,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 // 이미 잡는다 — 여기서 다시 선언하면 Spring이 Ambiguous @ExceptionHandler 오류를 던진다.
 @Slf4j
 @RestControllerAdvice
+@Order(0)
 public class RawRecordExceptionHandler {
 
     @ExceptionHandler(RawRecordValidationException.class)
