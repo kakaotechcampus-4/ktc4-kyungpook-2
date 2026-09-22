@@ -41,24 +41,34 @@ export function ValidationBadge({ status }: { status: ValidationStatus }) {
 
 /* ── C2 확신도 경고 ─────────────────────────────────── */
 
+/**
+ * 확인이 필요한 이유를 알려준다.
+ *
+ * 예전에는 confidence 를 퍼센트로 함께 보여줬는데 지웠다. 모델 점수가 같은 입력에도
+ * 크게 흔들려(`AI/matching/config.py`) AI 쪽도 자동 확정 판단에서 이 값을 뺐는데,
+ * 화면에 숫자가 남아 있으면 교사가 그것을 판단 근거로 삼게 된다.
+ */
 export function ConfidenceWarning({
-  confidence,
+  title = "확인 필요",
   message = "이 아이가 맞는지 확인해주세요",
+  tone = "review",
 }: {
-  confidence?: number | null;
+  title?: string;
   message?: string;
+  tone?: "review" | "block";
 }) {
+  const palette =
+    tone === "block"
+      ? "border-block/40 bg-blocksoft text-block"
+      : "border-review/40 bg-reviewsoft text-review";
+
   return (
-    <div className="flex items-start gap-2 rounded border border-review/40 bg-reviewsoft px-3 py-2 text-[15px] text-review">
+    <div className={`flex items-start gap-2 rounded border px-3 py-2 text-[15px] ${palette}`}>
       <span aria-hidden className="font-bold leading-6">
         !
       </span>
       <p className="leading-6">
-        <b className="font-semibold">
-          확신도 낮음
-          {typeof confidence === "number" ? ` · ${Math.round(confidence * 100)}%` : ""}
-        </b>{" "}
-        · {message}
+        <b className="font-semibold">{title}</b> · {message}
       </p>
     </div>
   );
@@ -87,6 +97,58 @@ export function FlaggedText({
       {rest.join(span)}
     </p>
   );
+}
+
+/**
+ * 매칭 판정의 근거가 된 구간을 본문 안에서 하이라이트한다.
+ *
+ * FlaggedText 와 달리 **문자 인덱스**를 받는다 — AI 가 `[{start, end}]` 형태로
+ * 주기 때문이다(`AI/matching/nodes.py` 의 `_evidence_for`). 구간이 여러 개일 수 있고,
+ * 모델이 인용한 위치라 본문과 글자가 정확히 같지 않을 수도 있어 부분 문자열 검색으로는
+ * 찾을 수 없다.
+ *
+ * 색은 accent 를 쓴다. REVIEW 하이라이트(review 색)는 "여기가 문제다" 라는 뜻인데,
+ * 이쪽은 "여기를 보고 판단했다" 라서 의미가 반대다.
+ */
+export function EvidenceText({
+  content,
+  spans,
+}: {
+  content: string;
+  spans?: { start: number; end: number }[];
+}) {
+  const valid = (spans ?? [])
+    .filter((s) => s.end > s.start && s.start < content.length)
+    .sort((a, b) => a.start - b.start);
+
+  if (valid.length === 0) {
+    return <p className="leading-7 text-ink">{content}</p>;
+  }
+
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+
+  valid.forEach((span, i) => {
+    // 구간이 겹치거나 범위를 벗어나도 본문이 깨지지 않게 잘라 맞춘다.
+    const start = Math.max(cursor, span.start);
+    const end = Math.min(content.length, Math.max(start, span.end));
+    if (end <= start) return;
+
+    if (start > cursor) parts.push(content.slice(cursor, start));
+    parts.push(
+      <mark
+        key={i}
+        className="rounded bg-accentsoft px-0.5 text-accentink underline decoration-accent/40 decoration-2 underline-offset-2"
+      >
+        {content.slice(start, end)}
+      </mark>,
+    );
+    cursor = end;
+  });
+
+  if (cursor < content.length) parts.push(content.slice(cursor));
+
+  return <p className="leading-7 text-ink">{parts}</p>;
 }
 
 /* ── C4 근거 출처 칩 ────────────────────────────────── */

@@ -7,3 +7,16 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+
+app:
+  raw-storage:
+    s3:
+      bucket: ${RAW_STORAGE_S3_BUCKET}
+      region: ${AWS_REGION:ap-northeast-2}
+  cors:
+    allowed-origins: http://13.125.56.179
+  auth:
+    # 이걸 안 두면 기본값(localhost:3000)이 적용돼, 운영에서 로그인한 사용자가
+    # 자기 PC 주소로 리다이렉트된다.
+    success-redirect: ${AUTH_SUCCESS_REDIRECT:http://13.125.56.179/oauth/success}
+    failure-redirect: ${AUTH_FAILURE_REDIRECT:http://13.125.56.179/login}

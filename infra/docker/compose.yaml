@@ -30,9 +30,21 @@ services:
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       DB_USERNAME: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}
+      # 실제 배포(EC2/ECS)에서는 IAM Role로 자동 인증되어 비워둬도 됨.
+      # 로컬에서 docker compose로 띄워 테스트할 때만 호스트 셸의 AWS 자격증명을 전달.
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      RAW_STORAGE_S3_BUCKET: ${RAW_STORAGE_S3_BUCKET:?RAW_STORAGE_S3_BUCKET is required}
       JAVA_TOOL_OPTIONS: -Xms128m -Xmx512m
     ports:
-      - "127.0.0.1:8080:8080"
+      # Swagger 및 FE 직접 연동을 위해 임시로 외부에 공개한다.
+      # 운영에서는 이 항목을 제거하고 Nginx만 통해 접근시킨다.
+      - "8080:8080"
     mem_limit: 768m
     
   ai:
@@ -42,6 +54,8 @@ services:
     restart: unless-stopped
     env_file:
       - ../../AI/.env
+    volumes:
+      - ../../AI/evals:/app/evals
     ports:
       - "127.0.0.1:8000:8000"
     mem_limit: 512m
@@ -51,18 +65,15 @@ services:
       context: ../../frontend
       dockerfile: Dockerfile
       args:
-        # NEXT_PUBLIC_* 는 빌드 시점에 번들에 박힌다. 바꾸면 이미지를 다시 만들어야 한다.
-        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL-}
-        NEXT_PUBLIC_USE_MOCK: ${USE_MOCK:-true}
+        # VITE_* 는 빌드 시점에 번들에 박힌다. 바꾸면 이미지를 다시 빌드해야 한다.
+        VITE_API_BASE_URL: ${PUBLIC_API_BASE_URL-}
+        VITE_USE_MOCK: ${USE_MOCK:-true}
     restart: unless-stopped
     depends_on:
       - backend
-    environment:
-      # 서버 컴포넌트에서 백엔드를 부를 때 쓰는 내부 주소
-      API_BASE_URL: http://backend:8080
     ports:
       - "127.0.0.1:3000:3000"
-    mem_limit: 512m
+    mem_limit: 128m
 
   nginx:
     image: nginx:1.27-alpine
@@ -74,7 +85,7 @@ services:
       - ../nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ../nginx/proxy-common.conf:/etc/nginx/proxy-common.inc:ro
     ports:
-      # 외부에 열리는 유일한 포트. 나머지 서비스는 127.0.0.1 에만 바인드한다.
+      # 기본 외부 진입점. backend:8080 직접 공개는 개발·연동 확인용이다.
       - "80:80"
     mem_limit: 128m
 

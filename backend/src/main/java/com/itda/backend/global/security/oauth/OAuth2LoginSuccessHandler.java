@@ -1,0 +1,84 @@
+package com.itda.backend.global.security.oauth;
+
+import com.itda.backend.global.jwt.JwtCookie;
+import com.itda.backend.global.jwt.JwtProvider;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+
+/**
+ * Spring Security 가 카카오 인증(state 검증 · 토큰 교환 · 사용자 조회)을 끝낸 뒤 불린다.
+ * 여기서부터가 우리 몫이다 — 자체 출입증을 만들어 브라우저에 심고 프론트로 돌려보낸다.
+ *
+ * <p>이 클래스와 실패 핸들러, 그리고 설정 파일이 이번 구조에서 우리가 직접 짜는 전부다.
+ */
+@Slf4j
+@Component
+public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
+
+    /** 카카오 사용자 정보 응답의 최상위 식별자. application.yml 의 user-name-attribute 와 같다. */
+    private static final String KAKAO_ID = "id";
+
+    private final JwtProvider jwtProvider;
+    private final JwtCookie jwtCookie;
+    private final OAuth2LoginFailureHandler failureHandler;
+    private final String redirectUri;
+
+    public OAuth2LoginSuccessHandler(
+            JwtProvider jwtProvider,
+            JwtCookie jwtCookie,
+            OAuth2LoginFailureHandler failureHandler,
+            @Value("${app.auth.success-redirect:http://localhost:3000/oauth/success}") String redirectUri
+    ) {
+        this.jwtProvider = jwtProvider;
+        this.jwtCookie = jwtCookie;
+        this.failureHandler = failureHandler;
+        this.redirectUri = redirectUri;
+    }
+
+    @Override
+    public void onAuthenticationSuccess(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            Authentication authentication
+    ) throws IOException {
+        OAuth2User user = (OAuth2User) authentication.getPrincipal();
+        Object kakaoId = user.getAttributes().get(KAKAO_ID);
+        if (kakaoId == null) {
+            /*
+             * user-name-attribute 설정과 카카오 응답이 어긋난 경우. 토큰을 만들면 안 된다.
+             *
+             * 여기서 그냥 예외를 던지면 안 된다 — 성공 핸들러는 필터 안이라
+             * GlobalExceptionHandler 가 잡지 못하고, 사용자는 톰캣 기본 500 페이지를 본다.
+             * 다른 실패 경로와 똑같이 프론트 로그인 화면으로 돌려보낸다.
+             */
+            log.error("카카오 사용자 정보에 {} 가 없습니다. user-name-attribute 설정을 확인하세요.", KAKAO_ID);
+            failureHandler.onAuthenticationFailure(request, response,
+                    new OAuth2AuthenticationException("kakao_id_missing"));
+            return;
+        }
+
+        String token = jwtProvider.createToken(String.valueOf(kakaoId));
+        response.addHeader(HttpHeaders.SET_COOKIE, jwtCookie.issue(token).toString());
+
+        // 세션은 인가 요청을 잠시 보관하려고 만들어진 것뿐이다. 역할이 끝났으니 버린다.
+        // 남겨두면 JWT 와 세션이라는 인증 수단이 둘이 되어 수명이 어긋난다.
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
+
+        log.info("카카오 로그인 성공: kakaoId={}", kakaoId);
+        getRedirectStrategy().sendRedirect(request, response, redirectUri);
+    }
+}

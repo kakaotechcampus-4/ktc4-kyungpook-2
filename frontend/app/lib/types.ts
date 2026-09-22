@@ -8,8 +8,23 @@ export type InstitutionType = "school" | "center" | "assistant";
 /** Validation Agent 판정 — 기획서 11.3 */
 export type ValidationStatus = "PASS" | "REVIEW" | "BLOCK";
 
-/** Matching Agent 결과 상태 */
-export type MatchStatus = "confirmed" | "multi" | "unmatched" | "low";
+/**
+ * Matching Agent 결과 상태. AI 쪽 이름(`AI/matching/nodes.py` 의 decide)과 맞춘다.
+ * `auto` 는 자동 확정이라 확인 큐에 오지 않는다.
+ */
+export type MatchStatus = "auto" | "review" | "multi" | "unmatched";
+
+/** multi 로 내려온 이유 — 둘은 교사가 할 일이 서로 다르다 */
+export type MultiReason = "co_mention" | "ambiguous_identity";
+
+/** unmatched 로 내려온 이유 — 미등록 아동이면 등록 화면으로 보내야 한다 */
+export type UnmatchedReason = "no_anchor" | "not_in_roster";
+
+/** 본문에서 판정 근거가 된 구간 (문자 인덱스) */
+export interface EvidenceSpan {
+  start: number;
+  end: number;
+}
 
 export type Gate1Status = "pending" | "approved" | "rejected";
 export type Gate2Status = "pending" | "approved" | "held" | "sent";
@@ -60,10 +75,29 @@ export interface RawRecord {
 export interface MatchingItem {
   id: string;
   record: RawRecord;
-  status: Exclude<MatchStatus, "confirmed">;
-  confidence: number | null;
-  candidates: { childId: string; name: string; group: string }[];
+  status: Exclude<MatchStatus, "auto">;
+  /**
+   * 동명이인이면 후보가 둘 이상 남는다(AI 의 SPLIT_SAME_NAME_CANDIDATES).
+   * 이름만으로는 구별이 안 되므로 **생년월일이 반드시 함께 와야 한다.**
+   */
+  candidates: { childId: string; name: string; group: string; birthDate: string }[];
+  /** 본문에서 이 판정의 근거가 된 구간. 화면에서 하이라이트한다. */
+  evidence: EvidenceSpan[];
+  multiReason?: MultiReason | null;
+  unmatchedReason?: UnmatchedReason | null;
+  /** 표지에 적힌 이름과 본문 판정이 어긋남 */
+  hintMismatch?: boolean;
+  /** 표지에 적혀 있던 이름 */
+  hintName?: string | null;
 }
+
+/*
+ * confidence 는 일부러 두지 않는다.
+ *
+ * 모델 점수는 같은 입력에도 0.72~0.98 로 흔들리고(AI/matching/config.py 참고),
+ * AI 쪽도 자동 확정 판단에서 이 값을 뺐다(AUTO_GATE = "structural").
+ * 화면에 숫자를 띄우면 교사가 그 숫자를 근거로 삼게 되므로 상태 문구로만 표현한다.
+ */
 
 /** 재입력 요청 큐 한 건 */
 export interface BlockedItem {

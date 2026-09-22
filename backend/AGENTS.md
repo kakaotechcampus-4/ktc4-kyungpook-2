@@ -32,36 +32,43 @@ API 계약은 API 규약을, 의존성과 버전은 `build.gradle`을 기준으�
 1. README와 API 규약을 읽고 변경 범위를 확인한다.
 2. 같은 도메인의 기존 코드와 테스트를 먼저 확인한다.
 3. 아래의 패키지 구조와 계층별 책임에 맞게 구현한다.
-4. 변경 범위에 맞는 테스트를 추가하고 `./gradlew test`, `./gradlew build`를 실행한다.
+4. Gradle Wrapper가 Java 21로 실행되는지 확인한 뒤, 변경 범위에 맞는 테스트를 추가하고 검증 명령을 실행한다.
 5. 외부 계약이나 개발 절차가 달라졌다면 관련 문서를 같은 변경에서 갱신한다.
 
 ## 패키지 구조 원칙
 
-패키지 루트는 `com.itda.backend`다. 계층 전체를 먼저 나누지 않고 기능을 기준으로
-도메인을 나눈 뒤, 각 도메인 내부에서 계층을 구분한다.
+패키지 루트는 `com.itda.backend`다. 최상위 패키지는 기술 계층을 기준으로 나누고,
+각 계층 안에서 필요한 경우에만 기능이나 세부 관심사로 구분한다.
 
 ```text
 com.itda.backend
-├── domain
-│   └── {domain}
-│       ├── controller
-│       ├── service
-│       ├── repository
-│       ├── entity
-│       ├── dto
-│       │   ├── request
-│       │   └── response
-│       └── exception
-└── global
+├── api                 # Controller
+├── service             # 유스케이스와 트랜잭션
+│   └── storage         # 외부 저장소 구현
+├── repository          # Entity 영속화와 조회
+├── domain              # Entity, enum 등 도메인 모델
+├── dto
+│   ├── request
+│   └── response
+├── exception           # 기능별 예외와 오류 코드
+└── global              # 설정, 보안, JWT, 공통 응답·예외 등 횡단 관심사
+    ├── config
+    ├── exception
+    ├── jwt
     ├── response
-    └── exception
+    └── security
+        └── oauth
 ```
 
-- 특정 도메인에서만 사용하는 코드는 해당 `domain/{domain}` 아래에 둔다.
-- 여러 도메인에서 공통으로 사용하는 코드만 `global`에 둔다.
-- 한 도메인에서 다른 도메인의 Repository나 Entity를 직접 사용하지 않는다.
-- 도메인 간 협력이 필요하면 상대 도메인의 Service를 통해 요청한다.
-- 새로운 공통 패키지는 실제로 둘 이상의 도메인에서 공유할 때만 추가한다.
+- 비즈니스 요청은 `Controller → Service → Repository` 흐름을 따른다. Controller는 Repository를 직접 호출하거나 Entity의 상태를 변경하지 않는다.
+- Controller의 HTTP 응답 처리에는 쿠키·헤더 등 `global`의 웹 보안 구성 요소를 사용할 수 있지만, 비즈니스 규칙과 영속화는 Service로 위임한다.
+- Service는 유스케이스와 트랜잭션을 조율하며 Repository를 통해 영속화·조회한다.
+- Repository는 Entity 영속화와 조회만 담당한다.
+- 도메인 모델은 `domain`에, 요청·응답 전송 객체는 `dto`에 둔다.
+- 기능별 예외와 오류 코드는 `exception`에 둔다. 여러 기능이 공유하는 오류 처리만 `global.exception`에 둔다.
+- `global`은 설정, 보안, JWT, 공통 응답·예외처럼 여러 계층에서 공유하는 횡단 관심사에만 사용한다.
+- OAuth2 핸들러처럼 Spring Security 구성에 결합된 구현은 `global.security.oauth`에 둔다.
+- 새 최상위 패키지는 기존 계층으로 표현할 수 없는 횡단 관심사일 때만 추가한다.
 
 ## 코드 컨벤션
 
@@ -143,10 +150,28 @@ Mapper를 사용하는 경우에도 데이터 변환만 담당하게 하고 조�
 - 실패 응답을 `200 OK`로 반환하지 않는다.
 - 내부 예외 메시지, SQL, 비밀번호, 토큰, 스택 트레이스를 API 응답에 노출하지 않는다.
 
-API 계약을 변경하면 `docs/api/api-conventions.md`를 함께 갱신한다. 실제
-OpenAPI/Swagger 명세가 도입된 이후에는 해당 명세도 같은 변경에서 갱신한다.
+API 계약을 변경하면 `docs/api/api-conventions.md`와 Springdoc으로 생성되는 OpenAPI 명세를
+같은 변경에서 갱신·검증한다. 이 프로젝트에서 OpenAPI 명세의 원본은 정적 파일이 아니라
+컨트롤러의 OpenAPI annotation과 `global.config.OpenApiConfig`다.
+
+- 새 외부 API를 추가하거나 기존 API의 경로·요청·응답·오류 응답을 변경할 때는 `@Tag`,
+  `@Operation`, 성공·오류 응답 annotation을 함께 갱신한다.
+- 보호 API와 공개 API의 OpenAPI 보안 요구 사항은 `SecurityConfig`와 `OpenApiConfig`의 현재
+  인증 방식·보안 스킴에 맞춘다. 인증 방식을 변경하면 두 구성과 관련 endpoint의 명세를 함께 갱신한다.
+- API 문서 관련 변경 후에는 `/v3/api-docs`와 Swagger UI가 정상 생성되는 테스트를 추가하거나
+  기존 테스트를 보완한다.
 
 ## 테스트 원칙
+
+`build.gradle`의 Java toolchain은 컴파일·테스트에 사용할 Java 버전을 지정하지만, Gradle
+Wrapper를 시작하는 Java 런타임까지 바꾸지는 않는다. 모든 Gradle 명령은 Java 21 런타임으로
+실행한다. 여러 JDK가 설치된 macOS에서는 다음처럼 Java 21을 명시하고 버전을 확인한다.
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+export PATH="$JAVA_HOME/bin:$PATH"
+java -version
+```
 
 `backend/`에서 최소한 다음 명령을 실행한다.
 
@@ -155,12 +180,19 @@ OpenAPI/Swagger 명세가 도입된 이후에는 해당 명세도 같은 변경�
 ./gradlew build
 ```
 
+PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션을 변경한 경우에는 Docker가 실행 중인
+환경에서 다음 통합 테스트도 실행한다.
+
+```bash
+./gradlew integrationTest
+```
+
 - 변경한 유스케이스의 성공 경로와 주요 실패 경로를 함께 테스트한다.
 - DB 매핑, JPA 쿼리, 트랜잭션 관련 변경에는 H2 PostgreSQL 호환 모드 또는 Testcontainers PostgreSQL로 실행되는 테스트를 추가한다.
 - DB 테스트는 `test` 프로필을 사용하고 기존 `application-test.yml` 설정을 유지한다.
-- 단위 테스트와 빠른 스모크 테스트는 Docker 없이 실행 가능하게 유지한다.
-- PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션 검증이 필요한 통합 테스트에만 Testcontainers를 사용한다.
-- Testcontainers를 사용하는 테스트에는 `@Tag("integration")`을 붙여 통합 테스트임을 명확히 구분한다.
+- `test`와 `build`는 `@Tag("integration")` 테스트를 제외하므로 Docker 없이 실행 가능하게 유지한다.
+- PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션 검증이 필요한 통합 테스트에만 Testcontainers를 사용하고 `integrationTest` 태스크로 실행한다.
+- Testcontainers를 사용하는 테스트에는 `@Tag("integration")`을 붙인다. `integrationTest`에는 이 태그가 있는 테스트만 포함한다.
 - 인증·인가 코드를 수정한 경우 성공, 인증 실패, 권한 거부 경로를 검증한다.
 - 문서만 변경한 경우에도 링크, 경로, 코드 예시와 실제 설정의 일치 여부를 확인한다.
 
@@ -172,11 +204,11 @@ OpenAPI/Swagger 명세가 도입된 이후에는 해당 명세도 같은 변경�
 
 | 변경 유형 | 함께 확인하거나 수정할 문서 |
 | --- | --- |
-| API 경로, 요청·응답, HTTP 상태, 오류 코드 | `docs/api/api-conventions.md`, 실제 OpenAPI/Swagger 명세가 있다면 해당 명세 |
+| API 경로, 요청·응답, HTTP 상태, 오류 코드 | `docs/api/api-conventions.md`, 컨트롤러 OpenAPI annotation, `global.config.OpenApiConfig`, `/v3/api-docs` 검증 테스트 |
 | JDK, Spring Boot, 의존성, DB 변경 | `build.gradle`, `backend/README.md`, 이 문서의 기술 스택 |
 | 실행 명령, 프로필, 환경 변수 변경 | `backend/README.md` |
 | 패키지 구조나 계층 책임 변경 | `backend/AGENTS.md` |
-| 인증·인가 API 계약 변경 | `docs/api/api-conventions.md`, 실제 OpenAPI/Swagger 명세가 있다면 해당 명세 |
+| 인증·인가 API 계약 변경 | `docs/api/api-conventions.md`, `SecurityConfig`, `global.config.OpenApiConfig`, 관련 endpoint의 OpenAPI 보안 요구 사항 |
 | 새 문서 추가 또는 문서 위치 변경 | `docs/README.md`와 연결되는 문서의 링크 |
 | 외부 계약이 변하지 않는 내부 리팩터링 | 문서 영향 여부를 확인하고, 영향이 없으면 수정하지 않음 |
 
