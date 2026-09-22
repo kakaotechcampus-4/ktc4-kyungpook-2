@@ -32,7 +32,13 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/oauth2/authorization/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/login/oauth2/code/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.201").exists())
-				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.security[0].cookieAuth").exists());
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.security[0].cookieAuth").exists())
+				// 세션 조회는 보호 API 다 — 쿠키 인증 요구와 401 이 명세에 드러나야 한다.
+				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.responses.401").exists())
+				// 로그아웃은 본문 없는 204 다.
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists());
 	}
 
 	@Test

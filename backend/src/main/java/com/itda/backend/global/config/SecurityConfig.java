@@ -94,11 +94,20 @@ public class SecurityConfig {
                  * 지금은 EC2 한 대라 문제되지 않는다.
                  */
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                /*
+                 * 규칙은 먼저 맞는 것이 이긴다. "/api/v1/auth/**" 를 통째로 열어두면
+                 * 그 아래 새로 만드는 API 가 전부 인증 없이 뚫리므로, 열 것만 하나씩 적는다.
+                 * /api/v1/auth/me 는 anyRequest().authenticated() 가 잡아,
+                 * 비로그인 요청은 JsonAuthenticationEntryPoint 가 401 JSON 으로 응답한다.
+                 */
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/oauth2/**",
                                 "/login/oauth2/**",
-                                "/api/v1/auth/**",
+                                // 메서드로 좁히지 않는다. POST 만 열면 익명 GET 요청이
+                                // DispatcherServlet 에 닿기 전에 401 로 끝나서, 405 로 응답해야 할
+                                // 잘못된 메서드 호출이 인증 오류로 둔갑한다.
+                                "/api/v1/auth/logout",
                                 "/api/health",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
