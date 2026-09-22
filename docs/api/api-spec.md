@@ -59,25 +59,30 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 GET /api/v1/auth/me
 ```
 
+> **구현 완료.** 아래는 실제 응답입니다.
+
 ```json
 {
   "result": "SUCCESS",
   "data": {
     "role": "org",
-    "userId": "u_1",
+    "userId": "1",
     "name": "박지현",
-    "institutionId": "inst_center_1"
+    "institutionId": "1"
   }
 }
 ```
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `role` | `"org"` \| `"parent"` \| `"admin"` | 프론트 `Role` 타입과 매핑 |
-| `institutionId` | string | `role === "org"`일 때만 |
+| `role` | `"org"` \| `"parent"` | 프론트 `Role` 타입과 매핑. `admin`은 아직 없습니다 |
+| `userId` | string | 내부 PK를 문자열로 직렬화한 값입니다 (`"u_1"` 같은 접두사는 붙지 않습니다) |
+| `name` | string | 카카오 닉네임. 동의를 거부하면 **이 필드가 빠집니다** |
+| `institutionId` | string | `role === "org"`일 때만 포함됩니다 |
 
-비로그인 요청에는 `401`을 반환해주세요. 프론트는 `401`을 "역할 없음"으로 해석해
-로그인 화면으로 보냅니다.
+비로그인 요청에는 `401`을 반환합니다. 프론트는 `401`을 "역할 없음"으로 해석해
+로그인 화면으로 보냅니다. 출입증이 유효하더라도 그 회원이 DB에 없으면(예: subject를
+내부 `userId`로 바꾸기 전에 발급된 토큰) 마찬가지로 `401`입니다.
 
 ### 2.3 로그아웃
 
@@ -85,9 +90,31 @@ GET /api/v1/auth/me
 POST /api/v1/auth/logout   → 204 No Content
 ```
 
+> **구현 완료.** 서버가 `access_token` 쿠키를 만료시킵니다. 쓰기 요청이므로
+> `X-XSRF-TOKEN` 헤더가 필요합니다.
+
 ### 2.4 로그인 — 카카오
 
 기관 담당자와 보호자 **모두 카카오 로그인**을 사용합니다.
+
+> **이 엔드포인트는 만들지 않았습니다.** 인가 코드 교환을 백엔드가 직접 받는 구조로
+> 정해지면서, 로그인은 Spring Security가 제공하는 경로로 처리합니다. 프론트는
+> 아래 주소로 **페이지를 이동**시키기만 하면 됩니다(fetch가 아닙니다).
+>
+> ```http
+> GET /oauth2/authorization/kakao              → 기관 담당자로 로그인
+> GET /oauth2/authorization/kakao?invite=코드  → 보호자로 로그인 (초대 링크·QR)
+> ```
+>
+> 콜백(`GET /login/oauth2/code/kakao`)은 서버 전용이라 클라이언트가 직접 부르지 않습니다.
+> 성공하면 `access_token` httpOnly 쿠키를 심고 `app.auth.success-redirect`로,
+> 실패하면 `app.auth.failure-redirect`로 리다이렉트합니다. 응답 본문이 없으므로
+> 로그인 직후 상태는 [§2.2 `GET /api/v1/auth/me`](#22-세션-조회--라우트-가드가-매-진입마다-호출)로 확인합니다.
+>
+> `isNewUser`, `termsAgreed`는 아직 없습니다(약관 도메인 미구현).
+> 역할은 진입 경로로 정해지므로 `role`이 `null`인 상태도 없습니다.
+
+아래는 확정 전 초안입니다. 참고용으로만 남깁니다.
 
 ```http
 POST /api/v1/auth/kakao
@@ -114,6 +141,8 @@ POST /api/v1/auth/kakao
 | `role` | 역할이 아직 정해지지 않은 신규 가입자는 `null`. 프론트는 역할 선택 화면으로 보냅니다 |
 | `isNewUser` | `true`면 약관 동의 → 기관 연결 단계로 진입 |
 | `termsAgreed` | 서비스 자체 약관 동의 여부 |
+
+> §2.5 약관 동의는 아직 구현되지 않았습니다.
 
 ### 2.5 서비스 약관 동의
 
@@ -503,6 +532,13 @@ POST /api/v1/auth/terms
 
 초대코드 방식은 제외했습니다. 최초 연결은 **연결 요청(pending link)** 방식 하나로
 갑니다.
+
+> **백엔드 확인 필요 (2026-09-22).** 이 문서는 초대코드 방식을 제외한다고 적혀 있지만,
+> 실제 기획은 "기관이 아이를 등록하고 초대 QR·링크를 보호자에게 보내면 보호자가 그것으로
+> 들어와 카카오 로그인" 입니다. 이슈 #34에서 백엔드는 후자에 맞춰,
+> `GET /oauth2/authorization/kakao?invite=코드`로 들어온 로그인을 `PARENT`로 등록합니다.
+> 지금은 **초대 코드가 붙어 있는지만** 역할 결정에 씁니다 — 그 코드가 어떤 아이·기관을
+> 가리키는지는 아직 해석하지 않습니다. 어느 쪽으로 갈지 정해서 이 절을 정리해야 합니다.
 
 ```
 기관: 아이 등록 (O-11)  →  서버가 보호자 연결 요청 생성

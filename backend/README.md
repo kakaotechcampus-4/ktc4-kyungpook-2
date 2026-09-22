@@ -6,8 +6,33 @@
 ## 현재 상태
 
 기본 Spring Boot 애플리케이션, 데이터베이스 연결 설정, Swagger/OpenAPI 문서 기반과
-함께 공통 응답 래퍼, 전역 예외 처리, 카카오 로그인, Spring Security(JWT 인증) 설정이
-구현되어 있습니다. 도메인 API는 이 기반 위에 순차적으로 추가됩니다.
+함께 공통 응답 래퍼, 전역 예외 처리, 카카오 로그인, Spring Security(JWT 쿠키 인증) 설정이
+구현되어 있습니다. 로그인한 사용자는 `User`로 저장되며 `Organization`에 소속됩니다.
+도메인 API는 이 기반 위에 순차적으로 추가됩니다.
+
+### 로그인과 역할
+
+역할은 **로그인 진입 경로**로 정해집니다.
+
+| 진입 주소 | 등록되는 역할 |
+| --- | --- |
+| `GET /oauth2/authorization/kakao` | `ORGANIZATION` |
+| `GET /oauth2/authorization/kakao?invite={초대코드}` | `PARENT` |
+
+초대 코드는 **붙어 있는지만** 봅니다. 그 코드가 어떤 아이·기관을 가리키는지는 아직
+해석하지 않습니다. 이미 가입한 회원의 역할은 다시 로그인해도 바뀌지 않습니다.
+
+기관 담당자에게는 시드된 기관 중 가장 먼저 만들어진 것이 자동으로 배정됩니다.
+기관을 만들거나 고르는 API는 만들지 않기로 했기 때문입니다.
+
+### 시연용 기관 시드
+
+기동할 때 `organization` 테이블에 시연용 기관 3개(어린이집·학교·활동지원센터)를 넣습니다.
+이미 있는 이름은 건너뛰므로 재기동해도 늘어나지 않습니다.
+
+`app.seed.organizations.enabled=false`로 끌 수 있지만, **로그인을 서비스하는 환경에서는
+끄지 않습니다.** 기관이 하나도 없으면 새 기관 담당자가 소속 없이 만들어져
+기관 전용 API에서 `403 ORGANIZATION_NOT_ASSIGNED`로 막힙니다.
 
 ## 기술 스택
 
@@ -61,7 +86,7 @@ PostgreSQL 동작을 확인하는 Testcontainers 통합 테스트는 Docker Desk
 - OpenAPI YAML: `http://localhost:8080/v3/api-docs.yaml`
 
 새 외부 API를 추가할 때는 컨트롤러의 `@Tag`, `@Operation`과 요청·응답·오류 응답
-명세를 같은 변경에서 갱신한다. JWT 보호 API에는 `bearerAuth` 보안 요구 사항을
+명세를 같은 변경에서 갱신한다. 보호 API에는 `cookieAuth` 보안 요구 사항을
 선언하고, 공개 API에는 이를 적용하지 않는다.
 
 ### 테스트 환경
