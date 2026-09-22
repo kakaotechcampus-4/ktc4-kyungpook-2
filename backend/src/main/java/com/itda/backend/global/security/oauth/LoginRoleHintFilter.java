@@ -30,6 +30,15 @@ import jakarta.servlet.http.HttpSession;
  *
  * <p>초대 코드가 어떤 아이·어떤 기관을 가리키는지는 아직 해석하지 않는다.
  * 지금은 "붙어 있는가" 만 역할 결정에 쓴다.
+ *
+ * <p><b>한계 — 힌트는 세션당 하나이고 나중에 들어온 진입이 이긴다.</b> 보호자가 초대 링크를
+ * 연 뒤 같은 브라우저의 다른 탭에서 그냥 로그인을 시작하면 힌트가 지워지고, 먼저 열어둔 탭의
+ * 콜백이 그 사람을 기관 담당자로 등록해버린다. 역할은 다시 로그인해도 바뀌지 않으므로
+ * 저절로 고쳐지지 않는다.
+ *
+ * <p>제대로 막으려면 힌트를 세션이 아니라 인가 요청의 state 에 묶어야 한다
+ * ({@code AuthorizationRequestRepository} 를 감싸는 일이다). 초대 코드로 무엇을 할지가
+ * 아직 정해지지 않아 이번에는 하지 않았다 — 초대·아이 연결 도메인에서 함께 설계한다.
  */
 @Component
 public class LoginRoleHintFilter extends OncePerRequestFilter {

@@ -2,8 +2,8 @@ package com.itda.backend.service;
 
 import java.util.List;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.Organization;
 import com.itda.backend.domain.OrganizationType;
@@ -41,16 +41,32 @@ public class OrganizationSeedService {
 
     private final OrganizationRepository organizationRepository;
 
-    @Transactional
+    /**
+     * 행마다 따로 저장한다. 하나를 트랜잭션으로 묶으면 한 건이 실패할 때 나머지까지 되돌아간다.
+     */
     public void seedDemoOrganizations() {
         for (DemoOrganization demo : DEMO_ORGANIZATIONS) {
-            if (organizationRepository.existsByName(demo.name())) {
-                continue;
-            }
+            seedOne(demo);
+        }
+    }
+
+    private void seedOne(DemoOrganization demo) {
+        if (organizationRepository.existsByName(demo.name())) {
+            return;
+        }
+        try {
             Organization saved = organizationRepository.save(
                     Organization.of(demo.name(), demo.type()));
             log.info("시연용 기관 추가: id={} name={} type={}",
                     saved.getId(), saved.getName(), saved.getType());
+        } catch (DataIntegrityViolationException e) {
+            /*
+             * "있나 보고 없으면 넣는다" 사이에 다른 인스턴스가 먼저 넣은 경우.
+             * uk_organization_name 이 막아주므로 중복은 생기지 않았고, 우리가 하려던 일은
+             * 이미 이루어졌다. 여기서 예외가 그대로 올라가면 ApplicationRunner 가 실패해
+             * 서버가 아예 뜨지 않는다 — 배포가 겹치는 순간 새 인스턴스가 죽는다.
+             */
+            log.info("시연용 기관 {} 은 이미 있습니다. 건너뜁니다.", demo.name());
         }
     }
 }

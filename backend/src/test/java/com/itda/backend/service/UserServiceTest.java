@@ -15,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.itda.backend.domain.Organization;
 import com.itda.backend.domain.OrganizationType;
@@ -44,14 +45,17 @@ class UserServiceTest {
         userService = new UserService(userRepository, organizationRepository);
     }
 
-    private static Organization organization() {
-        return Organization.of("햇살어린이집", OrganizationType.CENTER);
+    /** 시드된 기관은 저장된 뒤라 id 가 있다. 저장 전 객체를 쓰면 실제와 다른 상황을 검증하게 된다. */
+    private static Organization organization(long id) {
+        Organization organization = Organization.of("햇살어린이집", OrganizationType.CENTER);
+        ReflectionTestUtils.setField(organization, "id", id);
+        return organization;
     }
 
     @Test
     void firstOrganizationLoginGetsTheFirstSeededOrganization() {
         given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.empty());
-        given(organizationRepository.findFirstByOrderByIdAsc()).willReturn(Optional.of(organization()));
+        given(organizationRepository.findFirstByOrderByIdAsc()).willReturn(Optional.of(organization(1L)));
         given(userRepository.save(any(User.class))).willAnswer(i -> i.getArgument(0));
 
         userService.findOrCreateByKakaoId(KAKAO_ID, "박지현", UserRole.ORGANIZATION);
@@ -60,6 +64,7 @@ class UserServiceTest {
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getRole()).isEqualTo(UserRole.ORGANIZATION);
         assertThat(captor.getValue().getName()).isEqualTo("박지현");
+        assertThat(captor.getValue().getOrganizationId()).isEqualTo(1L);
     }
 
     @Test
@@ -77,16 +82,20 @@ class UserServiceTest {
         verify(organizationRepository, never()).findFirstByOrderByIdAsc();
     }
 
-    /** 기관이 하나도 없어도 로그인 자체를 막지는 않는다. 소속 없이 만들고 경고만 남긴다. */
+    /**
+     * 기관이 하나도 없으면 사용자를 만들지 않는다. 소속 없이 만들어 두면 /auth/me 가
+     * role 은 org 인데 institutionId 는 없는 응답을 내보내 계약을 어기고, 역할은 나중에
+     * 다시 로그인해도 바뀌지 않아 그 사용자가 영구히 고장난 채로 남는다.
+     */
     @Test
-    void organizationLoginWithoutAnySeededOrganizationStillCreatesUser() {
+    void organizationLoginWithoutAnySeededOrganizationFailsInsteadOfCreatingABrokenUser() {
         given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.empty());
         given(organizationRepository.findFirstByOrderByIdAsc()).willReturn(Optional.empty());
-        given(userRepository.save(any(User.class))).willAnswer(i -> i.getArgument(0));
 
-        User created = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현", UserRole.ORGANIZATION);
+        assertThatThrownBy(() -> userService.findOrCreateByKakaoId(KAKAO_ID, "박지현", UserRole.ORGANIZATION))
+                .isInstanceOf(IllegalStateException.class);
 
-        assertThat(created.getOrganizationId()).isNull();
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test

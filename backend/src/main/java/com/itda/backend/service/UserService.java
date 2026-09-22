@@ -93,18 +93,23 @@ public class UserService {
      * 기관 선택 화면이 없어서 서버가 정한다. 시드된 기관 중 가장 먼저 만들어진 것을 쓴다.
      *
      * <p>FK 제약이 없으므로 여기가 정합성을 지키는 지점이다 — 실제로 존재하는 기관의 id 만 넣는다.
-     * 기관이 하나도 없으면 소속 없이 만든다. 로그인 자체를 막는 것보다는 낫고,
-     * 기관 전용 API 에서 ORGANIZATION_NOT_ASSIGNED 로 분명하게 드러난다.
+     *
+     * <p><b>기관이 하나도 없으면 사용자를 만들지 않고 실패시킨다.</b> 소속 없이 만들어 두면
+     * 두 가지가 한꺼번에 망가진다. {@code /auth/me} 가 role 은 org 인데 institutionId 는 없는
+     * 응답을 내보내 계약을 어기고("org 일 때만 포함" 이지 "org 면 포함" 이 아니게 된다),
+     * 역할은 나중에 다시 로그인해도 바뀌지 않으므로 그렇게 만들어진 사용자는 시드를 고친 뒤에도
+     * 영구히 고장난 채로 남는다. 로그인이 실패하면 원인이 즉시 드러나고 고치면 바로 정상이 된다.
      */
     private Long resolveOrganizationIdFor(UserRole role) {
         if (role != UserRole.ORGANIZATION) {
             return null;
         }
-        return organizationRepository.findFirstByOrderByIdAsc()
-                .map(Organization::getId)
-                .orElseGet(() -> {
-                    log.warn("기관이 하나도 없어 소속 없이 기관 담당자를 만든다. 시드 설정을 확인하라.");
-                    return null;
-                });
+        // map(getId).orElseThrow 로 쓰면 "기관이 없다" 와 "기관은 있는데 id 가 null 이다" 가
+        // 구분되지 않는다. 앞의 것만 설정 문제이므로 조회와 id 꺼내기를 나눈다.
+        Organization organization = organizationRepository.findFirstByOrderByIdAsc()
+                .orElseThrow(() -> new IllegalStateException(
+                        "배정할 기관이 없어 기관 담당자를 만들 수 없습니다. "
+                                + "app.seed.organizations.enabled 설정과 organization 테이블을 확인하세요."));
+        return organization.getId();
     }
 }

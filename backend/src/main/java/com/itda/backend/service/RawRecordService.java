@@ -53,13 +53,9 @@ public class RawRecordService {
     }
 
     public RawRecord ingest(String userId, MultipartFile file) {
+        // 기관 식별자는 이제 사용자의 소속 기관 id(숫자)라, 비어 있거나 컬럼 길이를 넘을 수 없다.
+        // 예전에 있던 두 검사는 클라이언트가 보낸 값을 믿던 시절의 것이라 지웠다.
         String institutionId = resolveInstitutionId(userId);
-        if (institutionId == null || institutionId.isBlank()) {
-            throw new RawRecordValidationException("institutionId is required");
-        }
-        if (institutionId.length() > RawRecord.MAX_TEXT_FIELD_LENGTH) {
-            throw new RawRecordValidationException("institutionId is too long");
-        }
         if (file == null || file.isEmpty()) {
             throw new RawRecordValidationException("file is required");
         }

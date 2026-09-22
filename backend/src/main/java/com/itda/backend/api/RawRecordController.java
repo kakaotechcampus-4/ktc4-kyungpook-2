@@ -57,7 +57,7 @@ public class RawRecordController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "CSRF 토큰 누락 또는 권한 없음",
+                    description = "CSRF 토큰 누락, 또는 기관 소속이 아닌 사용자",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
@@ -78,6 +78,11 @@ public class RawRecordController {
                     responseCode = "401",
                     description = "인증 필요",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
     public ApiResponse<RawRecordResponse> getOne(
@@ -93,6 +98,11 @@ public class RawRecordController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
                     description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
