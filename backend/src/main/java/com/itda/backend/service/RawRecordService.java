@@ -35,8 +35,25 @@ public class RawRecordService {
 
     private final RawRecordRepository rawRecordRepository;
     private final RawFileStorage rawFileStorage;
+    private final UserService userService;
 
-    public RawRecord ingest(String institutionId, MultipartFile file) {
+    /**
+     * 인증된 사용자의 소속 기관을 찾는다.
+     *
+     * <p>예전에는 컨트롤러가 받은 값(실제로는 카카오 회원번호)을 그대로 기관 식별자로 썼다.
+     * 이제 principal 은 내부 userId 이므로, 여기서 실제 소속 기관으로 바꾼다.
+     * 기관 소속이 아닌 사용자(보호자 등)는 여기서 막힌다.
+     *
+     * <p>RawRecord.institutionId 는 문자열 컬럼이라 그대로 문자열로 넘긴다.
+     * 컬럼 타입을 Long 으로 바꾸는 일은 마이그레이션 도구가 들어온 뒤에 한다 —
+     * ddl-auto: update 는 이미 만들어진 컬럼의 타입을 바꿔주지 않는다.
+     */
+    private String resolveInstitutionId(String userId) {
+        return String.valueOf(userService.getOrganizationIdOf(userId));
+    }
+
+    public RawRecord ingest(String userId, MultipartFile file) {
+        String institutionId = resolveInstitutionId(userId);
         if (institutionId == null || institutionId.isBlank()) {
             throw new RawRecordValidationException("institutionId is required");
         }
@@ -104,7 +121,8 @@ public class RawRecordService {
         return saved;
     }
 
-    public RawRecord getById(Long id, String institutionId) {
+    public RawRecord getById(Long id, String userId) {
+        String institutionId = resolveInstitutionId(userId);
         RawRecord record = rawRecordRepository.findById(id)
                 .orElseThrow(() -> new RawRecordNotFoundException(id));
         // 다른 기관 소유 레코드는 "권한 없음"이 아니라 "없음"으로 응답한다 —
@@ -118,8 +136,8 @@ public class RawRecordService {
         return record;
     }
 
-    public List<RawRecord> getByInstitution(String institutionId) {
-        return rawRecordRepository.findByInstitutionId(institutionId);
+    public List<RawRecord> getByInstitution(String userId) {
+        return rawRecordRepository.findByInstitutionId(resolveInstitutionId(userId));
     }
 
     private String sanitizeDisplayName(String originalFilename) {

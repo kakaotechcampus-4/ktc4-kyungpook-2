@@ -28,10 +28,11 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// ponytail: 아직 Member/Institution 도메인이 없어서, 인증된 카카오ID(JwtAuthenticationFilter가
-// SecurityContext principal로 심어둔 subject)를 그대로 기관 식별자로 쓴다. 클라이언트가 보낸
-// institutionId는 더 이상 신뢰하지 않음 — 인증된 사용자만 자기 소속(=자기 kakaoId) 기록에 접근 가능.
-// Member→Institution 매핑이 생기면 여기서 institutionId 대신 실제 소속 기관을 조회해서 넘길 것.
+// principal 은 JwtAuthenticationFilter 가 심은 내부 userId 다. 이 사용자의 소속 기관을 찾는
+// 일은 RawRecordService 가 한다 — 컨트롤러는 저장소를 직접 보지 않는다. 클라이언트가 보낸
+// institutionId는 여전히 신뢰하지 않는다.
+// (이슈 #34 이전에는 여기 카카오 회원번호가 들어와 그대로 기관 식별자로 쓰이고 있었다.
+//  즉 "기관"이 사실상 "카카오 계정 하나"였다.)
 @RestController
 @RequestMapping("/api/v1/raw-records")
 @RequiredArgsConstructor
@@ -61,9 +62,9 @@ public class RawRecordController {
             )
     })
     public ResponseEntity<ApiResponse<RawRecordResponse>> upload(
-            @AuthenticationPrincipal String institutionId,
+            @AuthenticationPrincipal String userId,
             @RequestParam("file") MultipartFile file) {
-        RawRecord saved = rawRecordService.ingest(institutionId, file);
+        RawRecord saved = rawRecordService.ingest(userId, file);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(RawRecordResponse.from(saved)));
     }
@@ -80,8 +81,8 @@ public class RawRecordController {
             )
     })
     public ApiResponse<RawRecordResponse> getOne(
-            @AuthenticationPrincipal String institutionId, @PathVariable Long id) {
-        return ApiResponse.success(RawRecordResponse.from(rawRecordService.getById(id, institutionId)));
+            @AuthenticationPrincipal String userId, @PathVariable Long id) {
+        return ApiResponse.success(RawRecordResponse.from(rawRecordService.getById(id, userId)));
     }
 
     @GetMapping
@@ -95,8 +96,8 @@ public class RawRecordController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
-    public ApiResponse<List<RawRecordResponse>> list(@AuthenticationPrincipal String institutionId) {
-        List<RawRecordResponse> records = rawRecordService.getByInstitution(institutionId).stream()
+    public ApiResponse<List<RawRecordResponse>> list(@AuthenticationPrincipal String userId) {
+        List<RawRecordResponse> records = rawRecordService.getByInstitution(userId).stream()
                 .map(RawRecordResponse::from)
                 .toList();
         return ApiResponse.success(records);
