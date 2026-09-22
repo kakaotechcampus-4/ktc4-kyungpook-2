@@ -52,7 +52,7 @@ class MatchingQueueControllerTest {
         mockMvc.perform(get(BASE_URL))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
-                .andExpect(jsonPath("$.data[0].status").value("REVIEW"));
+                .andExpect(jsonPath("$.data[0].status").value("review"));
     }
 
     @Test
@@ -65,8 +65,8 @@ class MatchingQueueControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"action\":\"assign\",\"childId\":2}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.matchedChildId").value(2))
-                .andExpect(jsonPath("$.data.status").value("AUTO"));
+                .andExpect(jsonPath("$.data.matchedChildId").value("2"))
+                .andExpect(jsonPath("$.data.status").value("auto"));
     }
 
     @Test
