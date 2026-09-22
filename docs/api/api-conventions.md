@@ -64,8 +64,7 @@ HTTP/1.1 404 Not Found
 {
   "result": "FAIL",
   "code": "USER_NOT_FOUND",
-  "message": "사용자를 찾을 수 없습니다.",
-  "type": "/problems/user/not-found"
+  "message": "사용자를 찾을 수 없습니다."
 }
 ```
 
@@ -74,7 +73,6 @@ HTTP/1.1 404 Not Found
 | `result` | string | 예 | 실패 시 `FAIL` |
 | `code` | string | 예 | 프로그램이 처리하는 오류 코드 (`UPPER_SNAKE_CASE`) |
 | `message` | string | 예 | 사용자에게 노출 가능한 메시지 |
-| `type` | string | 아니오 | 오류 유형 식별 URI. Problem Details 형식과의 호환을 위한 확장 필드 |
 
 서버 내부 예외, SQL, 액세스 토큰, 비밀번호 등 민감한 상세 내용은 응답 `message`에
 넣지 않는다. 상세 원인은 서버 로그에만 기록한다.
@@ -117,7 +115,10 @@ HTTP/1.1 404 Not Found
 - 카카오 사용자 ID를 내부 회원에 연결한 뒤 `PARENT`, `ORGANIZATION`, `ADMIN` 역할로 인가한다. (예정)
 - 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다. 401은 구현·검증 완료. 403은 핸들러(`JsonAccessDeniedHandler`)까지는 구현돼 있으나, 아직 역할 기반으로 막힌 API가 없어 실제로 도달하는 경로는 없다.
 - 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.yml.example) 참고).
-- 인증 방식은 JWT로 결정·구현됐다: 세션 없이 Stateless로 동작하며, 클라이언트는 발급받은 JWT를 `Authorization: Bearer` 헤더에 담아 이후 요청에 사용한다. 만료 시간은 `jwt.access-token-expiration-ms`(기본 1시간)로 설정한다. refresh token 발급, 토큰 폐기(로그아웃) 전략은 아직 없다 — 필요해지면 별도로 설계한다.
+- 인증 방식은 JWT 쿠키다. 브라우저는 `GET /oauth2/authorization/kakao`로 이동해 카카오 로그인을 시작한다. 카카오 콜백(`GET /login/oauth2/code/kakao`)은 Spring Security가 처리하며, 클라이언트가 직접 호출하지 않는다. 성공 시 서버는 `access_token` httpOnly 쿠키를 발급하고 설정된 프론트엔드 주소로 리다이렉트한다.
+- 보호 API 요청은 브라우저가 `access_token` 쿠키를 자동으로 전송하도록 `credentials: include`를 사용한다. 클라이언트는 JWT를 읽거나 `Authorization: Bearer` 헤더에 직접 넣지 않는다.
+- `POST`, `PUT`, `PATCH`, `DELETE` 요청에는 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 함께 보낸다. OAuth 로그인 시작·콜백 경로는 이 CSRF 검사에서 제외된다.
+- OAuth 인가 요청의 state 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로 처리한다. refresh token 발급과 토큰 폐기 전략은 아직 없다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시킨다.
 
 ## 변경 절차
 
