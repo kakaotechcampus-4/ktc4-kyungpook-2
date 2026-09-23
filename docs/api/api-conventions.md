@@ -91,8 +91,11 @@ HTTP/1.1 404 Not Found
 | 인증되지 않은 요청 | `401 Unauthorized` | `UNAUTHORIZED` |
 | 인증됐지만 권한 없음 | `403 Forbidden` | `FORBIDDEN` |
 | 대상 리소스 없음 | `404 Not Found` | `USER_NOT_FOUND` |
+| 존재하지 않는 경로 | `404 Not Found` | `NOT_FOUND` |
+| 지원하지 않는 HTTP 메서드 | `405 Method Not Allowed` | `METHOD_NOT_ALLOWED` |
 | 중복·현재 상태와 충돌 | `409 Conflict` | `DUPLICATE_EMAIL` |
 | 업로드 용량 초과 | `413 Payload Too Large` | `FILE_TOO_LARGE` |
+| 지원하지 않는 요청 형식(Content-Type) | `415 Unsupported Media Type` | `UNSUPPORTED_MEDIA_TYPE` |
 | 예상하지 못한 서버 오류 | `500 Internal Server Error` | `INTERNAL_SERVER_ERROR` |
 | 외부 서비스(카카오 등) 서버 오류 | `502 Bad Gateway` | `KAKAO_SERVER_ERROR` |
 | 외부 서비스 연결 실패·타임아웃 | `503 Service Unavailable` | `KAKAO_UNAVAILABLE` |
@@ -104,7 +107,10 @@ HTTP/1.1 404 Not Found
 - 코드명은 `UPPER_SNAKE_CASE`를 사용한다.
 - 공통 오류는 `CommonErrorCode` 같은 공통 enum으로 관리한다.
 - 도메인 오류는 `UserErrorCode`, `OrganizationErrorCode`처럼 도메인별 enum으로 분리한다.
-- 공통 오류의 초기 목록은 `INVALID_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `INTERNAL_SERVER_ERROR`다.
+- 공통 오류 목록은 `INVALID_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `METHOD_NOT_ALLOWED`,
+  `UNSUPPORTED_MEDIA_TYPE`, `INTERNAL_SERVER_ERROR`다.
+- 경로 변수 타입 불일치, 필수 파라미터·멀티파트 파트 누락, 읽을 수 없는 요청 본문처럼 Spring MVC가
+  요청 단계에서 거부하는 오류는 `INVALID_REQUEST`(`400`)로 응답한다. 이때도 실패 응답 본문 형식은 같다.
 - 오류 코드는 이름과 HTTP 상태를 함부로 변경하지 않는다. 변경이 필요하면 클라이언트 영향도를 확인한다.
 
 ## 인증·인가 규약
