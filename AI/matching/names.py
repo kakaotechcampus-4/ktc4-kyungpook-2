@@ -13,6 +13,7 @@ from difflib import SequenceMatcher
 
 from .config import (
     FUZZY_MIN_RATIO,
+    FUZZY_REQUIRE_PARTICLE,
     MATCH_GIVEN_NAME,
     NAME_SUFFIX_CHARS,
     REQUIRE_EXACT_NAME_BOUNDARY,
@@ -62,6 +63,14 @@ def _has_name_boundary(content: str, end: int) -> bool:
         return True
 
     return nxt in NAME_SUFFIX_CHARS
+
+
+def _followed_by_particle(content: str, end: int) -> bool:
+    """구간 바로 뒤에 조사·호칭이 붙어 있는지. 공백·구두점·문장 끝은 아니다."""
+    if end >= len(content):
+        return False
+    nxt = content[end]
+    return ("가" <= nxt <= "힣") and nxt in NAME_SUFFIX_CHARS
 
 
 def _has_prefix_boundary(content: str, start: int) -> bool:
@@ -120,6 +129,10 @@ def find_fuzzy(
         # 오타 후보는 경계까지 맞아야 인정한다. 정확 일치와 달리 근거가
         # 유사도뿐이라, 단어 중간을 잘라낸 것과 구별할 방법이 이것뿐이다.
         if REQUIRE_NAME_BOUNDARY and not _has_name_boundary(content, i + n):
+            continue
+        # 오타 후보는 조사가 붙어 있을 때만 인정한다. 공백·구두점은
+        # 경계이긴 해도 "이름이었다" 는 근거가 되지 못한다.
+        if FUZZY_REQUIRE_PARTICLE and not _followed_by_particle(content, i + n):
             continue
         raw.append((i, i + n, ratio))
 
