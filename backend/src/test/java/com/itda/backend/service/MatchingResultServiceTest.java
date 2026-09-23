@@ -41,10 +41,12 @@ class MatchingResultServiceTest {
         given(matchingResultRepository.save(any(MatchingResult.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
 
-        MatchingResult resolved = matchingResultService.resolve(1L, "assign", 2L);
+        MatchingResult resolved = matchingResultService.resolve(1L, "assign", 2L, "kakao-teacher-1");
 
         assertThat(resolved.getMatchedChildId()).isEqualTo(2L);
         assertThat(resolved.getStatus()).isEqualTo(MatchingStatus.AUTO);
+        // 팀원 리뷰 반영: status만으론 AI 자동확정과 구분이 안 되니 reviewerId로 구분한다.
+        assertThat(resolved.getReviewerId()).isEqualTo("kakao-teacher-1");
     }
 
     @Test
@@ -53,7 +55,7 @@ class MatchingResultServiceTest {
                 1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, "근거", "v1");
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
 
-        assertThatThrownBy(() -> matchingResultService.resolve(1L, "assign", null))
+        assertThatThrownBy(() -> matchingResultService.resolve(1L, "assign", null, "kakao-teacher-1"))
                 .isInstanceOf(MatchingResultValidationException.class);
     }
 
@@ -67,17 +69,28 @@ class MatchingResultServiceTest {
         given(matchingResultRepository.save(any(MatchingResult.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
 
-        MatchingResult resolved = matchingResultService.resolve(1L, "not_ours", null);
+        MatchingResult resolved = matchingResultService.resolve(1L, "not_ours", null, "kakao-teacher-1");
 
         assertThat(resolved.getMatchedChildId()).isNull();
         assertThat(resolved.getStatus()).isEqualTo(MatchingStatus.AUTO);
+        assertThat(resolved.getReviewerId()).isEqualTo("kakao-teacher-1");
+    }
+
+    @Test
+    void aiAutoConfirmed_hasNoReviewerId() {
+        // AI가 스스로 auto로 내놓은 건(사람 개입 없음) reviewerId가 비어있어야
+        // 나중에 "누가 확정했나" 감사할 때 AI/사람을 구분할 수 있다.
+        MatchingResult aiConfirmed = new MatchingResult(
+                1L, 9L, new BigDecimal("0.97"), MatchingStatus.AUTO, null, null, null, "v1");
+
+        assertThat(aiConfirmed.getReviewerId()).isNull();
     }
 
     @Test
     void resolveUnknownId_throwsNotFound() {
         given(matchingResultRepository.findById(999L)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> matchingResultService.resolve(999L, "assign", 1L))
+        assertThatThrownBy(() -> matchingResultService.resolve(999L, "assign", 1L, "kakao-teacher-1"))
                 .isInstanceOf(MatchingResultNotFoundException.class);
     }
 }

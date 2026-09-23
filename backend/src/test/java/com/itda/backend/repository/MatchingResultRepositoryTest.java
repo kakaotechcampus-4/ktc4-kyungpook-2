@@ -46,7 +46,7 @@ class MatchingResultRepositoryTest {
                 new MatchingResult(1L, null, new BigDecimal("0.2"), MatchingStatus.UNMATCHED,
                         null, null, null, "v1"));
 
-        saved.resolveAsNotOurs();
+        saved.resolveAsNotOurs("kakao-teacher-1");
         matchingResultRepository.save(saved);
 
         var queue = matchingResultRepository.findByStatusNot(MatchingStatus.AUTO);

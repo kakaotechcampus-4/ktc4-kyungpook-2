@@ -57,6 +57,12 @@ public class MatchingResult {
     @Column(length = 100)
     private String modelVersion;
 
+    // 팀원 리뷰 반영: null이면 AI가 그대로 확정한 것, 값이 있으면 사람이 큐에서 처리한
+    // 것 — status만으로는 AI 자동확정과 사람이 처리한 건(둘 다 AUTO)을 구분 못 해서 추가.
+    // User 도메인이 아직 없어서 우선 카카오ID(RawRecordController와 같은 패턴)를 담는다.
+    @Column(length = 255)
+    private String reviewerId;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -89,19 +95,23 @@ public class MatchingResult {
     // ponytail: AI 계약(MatchStatus)에는 "사람이 확정함"을 뜻하는 별도 값이 없어서,
     // AUTO를 "더 이상 검토가 필요 없다"는 의미로 재사용한다 — AI가 자동 확정했든
     // 사람이 확정했든 확인 필요 큐(findByStatusNot(AUTO))에서는 빠져야 하기 때문.
-    public void resolveAsAssigned(Long childId) {
+    // reviewerId를 함께 남겨서 "누가" 확정했는지(=사람이 처리했다는 사실 자체)는
+    // status와 별개로 감사 추적이 가능하게 한다.
+    public void resolveAsAssigned(Long childId, String reviewerId) {
         this.matchedChildId = childId;
         this.status = MatchingStatus.AUTO;
+        this.reviewerId = reviewerId;
         this.updatedAt = LocalDateTime.now();
     }
 
     // 선생님이 "우리 기관 아동 아님"으로 제외한 경우.
     // 버그 수정: UNMATCHED는 AI가 내놓는 "아직 검토 필요" 상태와 같은 값이라, 여기 쓰면
     // findByStatusNot(AUTO) 큐에서 이 레코드가 절대 안 빠진다. resolveAsAssigned와 마찬가지로
-    // "사람이 처리를 끝냈다"는 뜻으로 AUTO를 쓴다.
-    public void resolveAsNotOurs() {
+    // "사람이 처리를 끝냈다"는 뜻으로 AUTO를 쓰고, reviewerId로 AI 자동확정과 구분한다.
+    public void resolveAsNotOurs(String reviewerId) {
         this.matchedChildId = null;
         this.status = MatchingStatus.AUTO;
+        this.reviewerId = reviewerId;
         this.updatedAt = LocalDateTime.now();
     }
 }

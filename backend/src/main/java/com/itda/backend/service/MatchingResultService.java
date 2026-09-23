@@ -26,7 +26,7 @@ public class MatchingResultService {
     }
 
     @Transactional
-    public MatchingResult resolve(Long id, String action, Long childId) {
+    public MatchingResult resolve(Long id, String action, Long childId, String reviewerId) {
         MatchingResult matchingResult = matchingResultRepository.findById(id)
                 .orElseThrow(() -> new MatchingResultNotFoundException(id));
 
@@ -35,9 +35,9 @@ public class MatchingResultService {
                 if (childId == null) {
                     throw new MatchingResultValidationException("childId is required for assign");
                 }
-                matchingResult.resolveAsAssigned(childId);
+                matchingResult.resolveAsAssigned(childId, reviewerId);
             }
-            case "not_ours" -> matchingResult.resolveAsNotOurs();
+            case "not_ours" -> matchingResult.resolveAsNotOurs(reviewerId);
             default -> throw new MatchingResultValidationException("unsupported action: " + action);
         }
 

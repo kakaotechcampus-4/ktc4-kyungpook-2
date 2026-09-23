@@ -54,14 +54,17 @@ class MatchingQueueControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
                 .andExpect(jsonPath("$.data[0].status").value("review"))
-                .andExpect(jsonPath("$.data[0].evidence").value("[{\"start\":0,\"end\":3}]"));
+                // 팀원 리뷰 반영: evidence는 문자열이 아니라 실제 JSON 배열로 내려가야
+                // 프론트(EvidenceSpan[])가 바로 쓸 수 있다.
+                .andExpect(jsonPath("$.data[0].evidence[0].start").value(0))
+                .andExpect(jsonPath("$.data[0].evidence[0].end").value(3));
     }
 
     @Test
     void resolveAssign_updatesMatchedChild() throws Exception {
         MatchingResult resolved = new MatchingResult(
                 1L, 2L, new BigDecimal("0.4"), MatchingStatus.AUTO, null, null, null, "v1");
-        given(matchingResultService.resolve(1L, "assign", 2L)).willReturn(resolved);
+        given(matchingResultService.resolve(1L, "assign", 2L, null)).willReturn(resolved);
 
         mockMvc.perform(post(BASE_URL + "/1/resolve")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -73,7 +76,7 @@ class MatchingQueueControllerTest {
 
     @Test
     void resolveUnknownId_returns404() throws Exception {
-        given(matchingResultService.resolve(999L, "assign", 2L))
+        given(matchingResultService.resolve(999L, "assign", 2L, null))
                 .willThrow(new MatchingResultNotFoundException(999L));
 
         mockMvc.perform(post(BASE_URL + "/999/resolve")
@@ -85,7 +88,7 @@ class MatchingQueueControllerTest {
 
     @Test
     void resolveMissingChildIdForAssign_returns400() throws Exception {
-        given(matchingResultService.resolve(1L, "assign", null))
+        given(matchingResultService.resolve(1L, "assign", null, null))
                 .willThrow(new MatchingResultValidationException("childId is required for assign"));
 
         mockMvc.perform(post(BASE_URL + "/1/resolve")
