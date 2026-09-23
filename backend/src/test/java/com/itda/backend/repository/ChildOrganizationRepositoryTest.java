@@ -40,6 +40,20 @@ class ChildOrganizationRepositoryTest {
     }
 
     @Test
+    void 연결_해제된_행도_찾아서_되살릴_수_있다() {
+        ChildOrganization link = childOrganizationRepository.saveAndFlush(ChildOrganization.of(1L, 10L));
+        link.delete();
+        childOrganizationRepository.saveAndFlush(link);
+
+        ChildOrganization found = childOrganizationRepository.findByChildIdAndOrganizationId(1L, 10L).orElseThrow();
+        found.restore();
+        childOrganizationRepository.saveAndFlush(found);
+
+        assertThat(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(1L, 10L))
+                .isTrue();
+    }
+
+    @Test
     void 같은_아동과_기관은_두_번_연결할_수_없다() {
         childOrganizationRepository.saveAndFlush(ChildOrganization.of(1L, 10L));
 
