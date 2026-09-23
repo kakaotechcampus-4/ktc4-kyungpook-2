@@ -138,6 +138,45 @@ class AuthMeSecurityTest {
                 .andExpect(jsonPath("$.code").value("SESSION_USER_NOT_FOUND"));
     }
 
+    /**
+     * 출입증으로 인증된 요청이 세션에 로그인 정보를 남기면 안 된다.
+     *
+     * <p>남기면 로그아웃으로 출입증을 지워도 JSESSIONID 만으로 계속 로그인된다.
+     * 실제로 그랬다 — SessionManagementFilter 가 JWT 인증을 "세션에 없는 새 로그인" 으로 보고
+     * 매 요청 세션에 저장하고 있었다.
+     */
+    @Test
+    void authenticatedRequestDoesNotLeaveLoginInSession() throws Exception {
+        Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
+        User user = userRepository.save(
+                User.of("me-session-1", "세션", UserRole.ORGANIZATION, organization.getId()));
+
+        var result = mockMvc.perform(get(ME).cookie(cookieFor(user)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        var session = result.getRequest().getSession(false);
+        if (session != null) {
+            org.assertj.core.api.Assertions.assertThat(session.getAttribute("SPRING_SECURITY_CONTEXT")).isNull();
+        }
+    }
+
+    /** 로그아웃 뒤에는 같은 세션을 들고 와도 로그인이 인정되지 않아야 한다. */
+    @Test
+    void sessionAloneDoesNotAuthenticateAfterLogout() throws Exception {
+        Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
+        User user = userRepository.save(
+                User.of("me-session-2", "세션", UserRole.ORGANIZATION, organization.getId()));
+        org.springframework.mock.web.MockHttpSession session = new org.springframework.mock.web.MockHttpSession();
+
+        mockMvc.perform(get(ME).cookie(cookieFor(user)).session(session))
+                .andExpect(status().isOk());
+
+        // 출입증 없이 같은 세션만 들고 온다 (로그아웃으로 쿠키가 지워진 상태)
+        mockMvc.perform(get(ME).session(session))
+                .andExpect(status().isUnauthorized());
+    }
+
     /** 기관 소속이 아닌 사용자는 기관 전용 API 에서 403 으로 막힌다. */
     @Test
     void parentIsForbiddenFromOrganizationOnlyApi() throws Exception {

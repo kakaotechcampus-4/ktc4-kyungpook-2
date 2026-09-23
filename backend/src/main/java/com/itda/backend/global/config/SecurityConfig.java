@@ -17,6 +17,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
@@ -94,6 +95,18 @@ public class SecurityConfig {
                  * 지금은 EC2 한 대라 문제되지 않는다.
                  */
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                /*
+                 * 로그인 정보(SecurityContext)를 세션에 절대 저장하지 않는다. 출입증 쿠키만이 인증 수단이다.
+                 *
+                 * 기본 저장소(HttpSession)를 두면 SessionManagementFilter 가 JWT 로 인증된 요청을
+                 * "세션에 없는 새 로그인" 으로 보고 매 요청마다 세션을 만들어 인증을 넣어둔다.
+                 * 그러면 로그아웃으로 출입증을 지워도 JSESSIONID 만으로 계속 로그인된 상태가 된다.
+                 *
+                 * 요청 속성 저장소로 바꾸면 인증은 그 요청 안에서만 살고 끝난다. 세션은 위에 적은 대로
+                 * 카카오 인가 요청(state)과 역할 힌트를 잠깐 담는 용도로만 남는다.
+                 */
+                .securityContext(context -> context
+                        .securityContextRepository(new RequestAttributeSecurityContextRepository()))
                 /*
                  * 규칙은 먼저 맞는 것이 이긴다. "/api/v1/auth/**" 를 통째로 열어두면
                  * 그 아래 새로 만드는 API 가 전부 인증 없이 뚫리므로, 열 것만 하나씩 적는다.
