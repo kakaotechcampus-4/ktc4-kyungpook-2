@@ -1,4 +1,10 @@
-# AI/evals/scripts/validation/score.py
+"""
+Validation Agent 채점 — 혼동행렬 + 이슈 유형별 탐지율.
+
+치명적 오류(BLOCK->PASS)를 0으로 유지하는 게 최우선 지표.
+준치명적 오류(REVIEW->PASS)도 같은 계열의 위험 — REVIEW 표시가
+사라지면 교사가 그 기록을 정상으로 보고 넘어가기 때문이다.
+"""
 import json
 from pathlib import Path
 from collections import Counter
@@ -24,7 +30,6 @@ def score(inputs, outputs_by_case_id, dataset_filter=None):
 
         confusion[(case["expected_verdict"], output["verdict"])] += 1
 
-        # 이슈 유형별 정확도도 같이 집계 (BLOCK/REVIEW 세부 유형 맞았는지)
         for issue in case["expected_issue_types"]:
             issue_type_total[issue] += 1
             if issue in output.get("issue_types", []):
@@ -50,6 +55,7 @@ def score(inputs, outputs_by_case_id, dataset_filter=None):
         print(f"  {issue}: {hit}/{total} ({hit/total*100:.1f}%)")
 
     return confusion
+
 
 if __name__ == "__main__":
     inputs = load_inputs()

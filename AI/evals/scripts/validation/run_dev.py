@@ -1,4 +1,9 @@
-# AI/evals/scripts/validation/run_dev.py
+"""
+Validation Agent를 dev 데이터로 돌려서 결과를 generated/validation/dev_outputs.json에 저장한다.
+
+ThreadPoolExecutor로 동시 6개 처리 — Matching과 동일한 방식.
+Luna 응답 대기가 대부분인 I/O 바운드 작업이라 스레드로 충분하다.
+"""
 from dotenv import load_dotenv
 from pathlib import Path
 load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
@@ -11,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from validation.graph import build_graph
 
-MAX_WORKERS = 6  # matching과 동일하게 동시 6개
+MAX_WORKERS = 6
 
 
 def load_dev_inputs(limit: int | None = None):
@@ -25,7 +30,6 @@ def load_dev_inputs(limit: int | None = None):
 
 
 def run_one(case: dict, graph) -> tuple[str, dict | None, str | None]:
-    """케이스 하나를 처리. 성공하면 (case_id, output, None), 실패하면 (case_id, None, 에러메시지)"""
     state = {"content": case["content"]}
     try:
         result = graph.invoke(state)

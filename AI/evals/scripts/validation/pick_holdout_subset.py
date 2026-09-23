@@ -1,5 +1,13 @@
-# AI/evals/scripts/validation/pick_holdout_subset.py
-import json, random
+"""
+holdout 200건 중 이슈 유형이 있는 케이스(BLOCK/REVIEW)만 30%씩 뽑아서
+순환 검증 방지용 재작성 대상을 고른다.
+
+PASS 문장은 재작성 대상에서 뺀다 — "정상 문장을 정상이라고 맞히는지"는
+판정 로직이 뭔가를 "잡아내야" 하는 상황이 아니므로, 만든 사람이 같아도
+순환 검증 문제가 생기지 않는다.
+"""
+import json
+import random
 from pathlib import Path
 
 random.seed(99)
@@ -7,12 +15,11 @@ random.seed(99)
 with open(Path(__file__).parent.parent.parent / "generated" / "validation" / "validation_inputs.json", encoding="utf-8") as f:
     inputs = json.load(f)
 
-holdout = [c for c in inputs if c["dataset"] == "holdout"]
+holdout = [c for c in inputs if c["dataset"] == "holdout" and c["expected_verdict"] != "PASS"]
 
-# 이슈 유형별로 30%씩 뽑기 (BLOCK 20건 -> 6건, REVIEW 각 8건 -> 약 2~3건씩)
 by_type = {}
 for c in holdout:
-    key = tuple(c["expected_issue_types"]) or ("PASS",)
+    key = tuple(c["expected_issue_types"])
     by_type.setdefault(key, []).append(c)
 
 selected = []

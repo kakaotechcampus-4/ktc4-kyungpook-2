@@ -1,4 +1,7 @@
-# AI/validation/graph.py
+"""
+Validation Agent 그래프 조립.
+인식 -> 계획 -> 행동(Luna 호출) -> 반영 순서로 고정.
+"""
 from langgraph.graph import StateGraph, END
 from validation.nodes import perceive, plan, act, reflect
 

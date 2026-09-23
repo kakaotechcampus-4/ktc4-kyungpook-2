@@ -1,4 +1,10 @@
-# AI/evals/scripts/validation/build_inputs.py
+"""
+잇다_파이프라인_테스트매니페스트.json의 validation_test_cases를
+Validation Agent 입력 형태로 변환한다.
+
+dataset(dev/holdout) 구분을 그대로 실어 보낸다 — 채점 시 dev로만 개발하고
+holdout(특히 sealed 60건 재작성분)은 최종 검증 전까지 열어보지 않기 위함.
+"""
 import json
 from pathlib import Path
 
