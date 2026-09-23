@@ -161,6 +161,33 @@ class AuthMeSecurityTest {
         }
     }
 
+    /**
+     * 로그인한 상태의 GET 이 CSRF 쿠키를 지우면 안 된다.
+     *
+     * <p>지우면 프론트가 다음 쓰기 요청(업로드·로그아웃)에 실을 토큰이 없어 403 이 난다.
+     * 프론트 라우트 가드가 화면마다 /auth/me 를 부르므로 사실상 모든 쓰기 요청이 깨진다.
+     * SessionManagementFilter 가 출입증 인증을 매번 "새 로그인" 으로 보고
+     * CsrfAuthenticationStrategy 로 토큰을 비우고 있었다.
+     */
+    @Test
+    void authenticatedRequestDoesNotExpireCsrfCookie() throws Exception {
+        Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
+        User user = userRepository.save(
+                User.of("me-csrf-1", "토큰", UserRole.ORGANIZATION, organization.getId()));
+        jakarta.servlet.http.Cookie csrf = mockMvc.perform(get("/api/health"))
+                .andReturn().getResponse().getCookie("XSRF-TOKEN");
+
+        var response = mockMvc.perform(get(ME).cookie(cookieFor(user), csrf))
+                .andExpect(status().isOk())
+                .andReturn().getResponse();
+
+        jakarta.servlet.http.Cookie after = response.getCookie("XSRF-TOKEN");
+        if (after != null) {
+            org.assertj.core.api.Assertions.assertThat(after.getMaxAge())
+                    .as("XSRF-TOKEN 을 만료시키면 안 된다").isNotZero();
+        }
+    }
+
     /** 로그아웃 뒤에는 같은 세션을 들고 와도 로그인이 인정되지 않아야 한다. */
     @Test
     void sessionAloneDoesNotAuthenticateAfterLogout() throws Exception {

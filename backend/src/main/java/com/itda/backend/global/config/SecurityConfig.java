@@ -12,7 +12,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -80,29 +79,30 @@ public class SecurityConfig {
                 .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 /*
-                 * STATELESS 에서 IF_REQUIRED 로 바꾼다.
+                 * 세션 정책은 기본값(IF_REQUIRED)을 쓴다. STATELESS 로 두면 안 된다.
                  *
                  * oauth2Login 은 인가 요청(state 포함)을 카카오에 다녀오는 동안 어딘가
                  * 보관해야 하고, 기본 보관소가 HttpSession 이다. STATELESS 면 세션이 아예
                  * 만들어지지 않아 로그인이 성립하지 않는다.
                  *
                  * 세션은 인가 화면에 다녀오는 몇 초 동안만 살아 있고, 성공·실패 핸들러가
-                 * 곧바로 invalidate 한다. 그 뒤의 모든 API 요청은 여전히 JWT 쿠키만 보는
-                 * 무상태 방식이다.
+                 * 곧바로 invalidate 한다. 그 뒤의 모든 API 요청은 JWT 쿠키만 보는 무상태 방식이다.
+                 *
+                 * <b>sessionCreationPolicy(IF_REQUIRED) 를 명시적으로 쓰지 않는다.</b> 기본값과 같은 값이라도
+                 * 명시하면 Spring 이 SessionManagementFilter 를 끼워 넣는다. 이 필터는 출입증으로 인증된
+                 * 요청을 매번 "방금 새로 로그인한 사람" 으로 오해하고 로그인 직후 절차를 돌려서 두 가지 버그를 냈다.
+                 *  - 인증을 세션에 저장해, 로그아웃으로 출입증을 지워도 JSESSIONID 로 로그인이 유지됐다.
+                 *  - CsrfAuthenticationStrategy 가 XSRF-TOKEN 쿠키를 비워, 로그인한 뒤 GET 한 번이면
+                 *    다음 쓰기 요청(업로드·로그아웃)이 403 이 됐다.
+                 * oauth2Login 쪽 세션 처리(세션 ID 교체 등)는 로그인 필터가 직접 하므로 이 필터가 없어도 된다.
                  *
                  * 대가: 서버를 재시작하면 그 순간 로그인 중이던 사용자는 다시 눌러야 하고,
                  * 인스턴스를 늘리면 sticky session 이나 공유 세션 저장소가 필요해진다.
                  * 지금은 EC2 한 대라 문제되지 않는다.
                  */
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 /*
-                 * 로그인 정보(SecurityContext)를 세션에 절대 저장하지 않는다. 출입증 쿠키만이 인증 수단이다.
-                 *
-                 * 기본 저장소(HttpSession)를 두면 SessionManagementFilter 가 JWT 로 인증된 요청을
-                 * "세션에 없는 새 로그인" 으로 보고 매 요청마다 세션을 만들어 인증을 넣어둔다.
-                 * 그러면 로그아웃으로 출입증을 지워도 JSESSIONID 만으로 계속 로그인된 상태가 된다.
-                 *
-                 * 요청 속성 저장소로 바꾸면 인증은 그 요청 안에서만 살고 끝난다. 세션은 위에 적은 대로
+                 * 로그인 정보(SecurityContext)를 세션에 저장하지 않는다. 출입증 쿠키만이 인증 수단이다.
+                 * 요청 속성 저장소는 그 요청 안에서만 인증을 들고 있다가 버린다. 세션은 위에 적은 대로
                  * 카카오 인가 요청(state)과 역할 힌트를 잠깐 담는 용도로만 남는다.
                  */
                 .securityContext(context -> context
