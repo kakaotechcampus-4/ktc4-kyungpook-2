@@ -32,7 +32,13 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/oauth2/authorization/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/login/oauth2/code/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.201").exists())
-				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.security[0].cookieAuth").exists());
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.413").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.500").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists());
 	}
 
 	@Test

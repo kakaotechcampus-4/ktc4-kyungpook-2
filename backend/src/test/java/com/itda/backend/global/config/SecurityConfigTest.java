@@ -48,7 +48,7 @@ class SecurityConfigTest {
         RequestEntity<Void> request = new RequestEntity<>(
                 headers,
                 HttpMethod.OPTIONS,
-                URI.create("http://localhost:" + port + "/api/v1/auth/kakao")
+                URI.create("http://localhost:" + port + "/api/v1/auth/logout")
         );
 
         ResponseEntity<String> response = restTemplate.exchange(request, String.class);
