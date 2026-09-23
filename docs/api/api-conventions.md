@@ -122,13 +122,14 @@ HTTP/1.1 404 Not Found
 - **역할은 로그인 진입 경로로 정한다.** 초대 코드를 달고(`/oauth2/authorization/kakao?invite=코드`) 들어오면 `PARENT`, 그냥 들어오면 `ORGANIZATION`이다. 이미 가입한 회원의 역할은 다시 로그인해도 바뀌지 않는다.
 - **JWT의 subject는 내부 `userId`다.** 카카오 회원번호가 아니다. 역할과 소속 기관은 토큰에 담지 않고 요청마다 DB에서 읽는다 — 값이 바뀌면 다음 요청부터 바로 반영되고, 토큰에 박힌 옛 값이 남지 않는다.
 - 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다. 기관 전용 API를 기관 소속이 아닌 회원이 호출하면 `403 ORGANIZATION_NOT_ASSIGNED`다.
-- 토큰 서명은 유효하지만 그 회원이 DB에 없으면 `404`가 아니라 `401 SESSION_USER_NOT_FOUND`다. 자격 증명이 더 이상 누구도 가리키지 못하는 상태라 다시 로그인해야 하고, 프론트도 `401`을 "역할 없음 → 로그인 화면"으로 해석한다.
+- **탈퇴는 행을 지우지 않고 `users.deleted_at`에 표시한다(soft delete).** 탈퇴한 회원의 출입증은 만료 전이어도 인정하지 않는다. 같은 카카오 계정으로 다시 로그인하면 새 회원을 만들지 않고 기존 행을 되살린다(`kakao_id` 유니크 제약 때문).
+- 토큰 서명은 유효하지만 그 회원이 DB에 없거나 탈퇴했으면 `404`가 아니라 `401 SESSION_USER_NOT_FOUND`다. 자격 증명이 더 이상 누구도 가리키지 못하는 상태라 다시 로그인해야 하고, 프론트도 `401`을 "역할 없음 → 로그인 화면"으로 해석한다.
 - **응답 본문의 PK는 문자열로 직렬화한다.** DB의 `BIGINT`를 그대로 내리면 클라이언트 쪽에서 정밀도가 깎일 수 있다. (AI 연동 경로는 정수 그대로 주고받는다.)
 - 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.yml.example) 참고).
 - 인증 방식은 JWT 쿠키다. 브라우저는 `GET /oauth2/authorization/kakao`로 이동해 카카오 로그인을 시작한다. 카카오 콜백(`GET /login/oauth2/code/kakao`)은 Spring Security가 처리하며, 클라이언트가 직접 호출하지 않는다. 성공 시 서버는 `access_token` httpOnly 쿠키를 발급하고 설정된 프론트엔드 주소로 리다이렉트한다.
 - 보호 API 요청은 브라우저가 `access_token` 쿠키를 자동으로 전송하도록 `credentials: include`를 사용한다. 클라이언트는 JWT를 읽거나 `Authorization: Bearer` 헤더에 직접 넣지 않는다.
 - `POST`, `PUT`, `PATCH`, `DELETE` 요청에는 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 함께 보낸다. OAuth 로그인 시작·콜백 경로는 이 CSRF 검사에서 제외된다.
-- OAuth 인가 요청의 state와 로그인 진입 시 받은 역할 힌트 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로 처리한다. refresh token 발급과 토큰 폐기 전략은 아직 없다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시키고 `204 No Content`로 응답한다.
+- OAuth 인가 요청의 state와 로그인 진입 시 받은 역할 힌트 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로만 처리하며, **로그인 정보는 세션에 저장하지 않는다**(`JSESSIONID`만으로는 인증되지 않는다). refresh token 발급과 토큰 폐기 전략은 아직 없다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시키고 `204 No Content`로 응답한다.
 
 ## 변경 절차
 
