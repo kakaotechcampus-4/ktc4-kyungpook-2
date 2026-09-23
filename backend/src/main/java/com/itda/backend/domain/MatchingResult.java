@@ -40,8 +40,19 @@ public class MatchingResult {
     @Column(nullable = false, length = 30)
     private MatchingStatus status;
 
+    // ponytail: DB수정본(9/23) ERD 기준 JSON 컬럼 — JSON 라이브러리/컨버터가 아직 없어서
+    // 원문 JSON 텍스트를 그대로 담는다. AI가 직접 이 테이블에 쓸 때도 같은 형식이면 된다.
+    // candidates: AI/matching/schemas.py의 Candidate[] ({child_id, confidence})
     @Column(columnDefinition = "TEXT")
-    private String reason;
+    private String candidates;
+
+    // evidence: AI/matching/schemas.py의 EvidenceSpan[] ({start, end})
+    @Column(columnDefinition = "TEXT")
+    private String evidence;
+
+    // rawResponse: Matching Agent 응답 원문 전체 (디버깅/재처리용, 기존 reason 컬럼 대체)
+    @Column(columnDefinition = "TEXT")
+    private String rawResponse;
 
     @Column(length = 100)
     private String modelVersion;
@@ -57,13 +68,17 @@ public class MatchingResult {
             Long matchedChildId,
             BigDecimal confidence,
             MatchingStatus status,
-            String reason,
+            String candidates,
+            String evidence,
+            String rawResponse,
             String modelVersion) {
         this.journalEntryId = journalEntryId;
         this.matchedChildId = matchedChildId;
         this.confidence = confidence;
         this.status = status;
-        this.reason = reason;
+        this.candidates = candidates;
+        this.evidence = evidence;
+        this.rawResponse = rawResponse;
         this.modelVersion = modelVersion;
         LocalDateTime now = LocalDateTime.now();
         this.createdAt = now;
@@ -81,9 +96,12 @@ public class MatchingResult {
     }
 
     // 선생님이 "우리 기관 아동 아님"으로 제외한 경우.
+    // 버그 수정: UNMATCHED는 AI가 내놓는 "아직 검토 필요" 상태와 같은 값이라, 여기 쓰면
+    // findByStatusNot(AUTO) 큐에서 이 레코드가 절대 안 빠진다. resolveAsAssigned와 마찬가지로
+    // "사람이 처리를 끝냈다"는 뜻으로 AUTO를 쓴다.
     public void resolveAsNotOurs() {
         this.matchedChildId = null;
-        this.status = MatchingStatus.UNMATCHED;
+        this.status = MatchingStatus.AUTO;
         this.updatedAt = LocalDateTime.now();
     }
 }

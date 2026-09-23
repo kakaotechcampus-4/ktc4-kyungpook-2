@@ -46,19 +46,21 @@ class MatchingQueueControllerTest {
     @Test
     void getQueue_excludesAutoStatus() throws Exception {
         MatchingResult review = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, "본문 근거", "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW,
+                null, "[{\"start\":0,\"end\":3}]", null, "v1");
         given(matchingResultService.getQueue()).willReturn(List.of(review));
 
         mockMvc.perform(get(BASE_URL))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
-                .andExpect(jsonPath("$.data[0].status").value("review"));
+                .andExpect(jsonPath("$.data[0].status").value("review"))
+                .andExpect(jsonPath("$.data[0].evidence").value("[{\"start\":0,\"end\":3}]"));
     }
 
     @Test
     void resolveAssign_updatesMatchedChild() throws Exception {
         MatchingResult resolved = new MatchingResult(
-                1L, 2L, new BigDecimal("0.4"), MatchingStatus.AUTO, "본문 근거", "v1");
+                1L, 2L, new BigDecimal("0.4"), MatchingStatus.AUTO, null, null, null, "v1");
         given(matchingResultService.resolve(1L, "assign", 2L)).willReturn(resolved);
 
         mockMvc.perform(post(BASE_URL + "/1/resolve")
