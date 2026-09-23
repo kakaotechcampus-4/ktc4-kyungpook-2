@@ -1,5 +1,25 @@
-# AI/validation/nodes.py (act, reflect 부분만 교체)
+# AI/validation/nodes.py
+import re
+
+from .config import ISSUE_LEVEL, STRUCTURAL_PII_PATTERNS
 from .llm import ask_json, LlmError, spans_for_quotes
+
+
+def perceive(state: dict) -> dict:
+    """인식: 정규식으로 확인 가능한 구조적 개인정보부터 먼저 스캔"""
+    content = state["content"]
+    hits = []
+    for pattern in STRUCTURAL_PII_PATTERNS:
+        for m in re.finditer(pattern, content):
+            hits.append({"start": m.start(), "end": m.end()})
+    state["structural_pii_hits"] = hits
+    return state
+
+
+def plan(state: dict) -> dict:
+    """계획: 별도 분기 없음 — 구조적 히트 여부와 무관하게 항상 LLM에도 물어봄
+    (구조적 패턴은 개인정보표현만 잡아내고, 나머지 6개 유형은 LLM 판단이 필요하므로)"""
+    return state
 
 
 def act(state: dict) -> dict:
@@ -28,15 +48,15 @@ JSON 형식으로만 답하세요:
         result = ask_json(messages)
         state["llm_issues"] = result.data.get("issues", [])
         state["llm_error"] = False
-    except LlmError:
+    except LlmError as e:
+        print(f"[LLM 에러] {e}")   # 임시로 추가 — 원인 확인용
         state["llm_issues"] = []
         state["llm_error"] = True
 
-    return state
-
 
 def reflect(state: dict) -> dict:
-    """반영: 최종 검사"""
+    """반영: 최종 검사 — "문서 안에 위험 신호가 있는지"가 아니라
+    "그 신호가 지금 판정 대상 본인에게 귀속되는지"로 최종 확정 여부를 가른다."""
     content = state["content"]
     verdict = "PASS"
     issue_types = []
@@ -55,12 +75,12 @@ def reflect(state: dict) -> dict:
         if issue_type not in ISSUE_LEVEL:
             continue
         if not candidate.get("attributed_to_subject"):
-            continue  # ⚠️ 이번 피드백 반영 지점
+            continue
 
         quote = candidate.get("evidence_quote", "")
         spans = spans_for_quotes(content, [quote])
         if not spans:
-            continue  # 원문에서 못 찾은 근거(=지어낸 근거)는 버림
+            continue
 
         issue_types.append(issue_type)
         evidence.extend(spans)

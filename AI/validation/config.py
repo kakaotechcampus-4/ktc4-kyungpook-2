@@ -1,9 +1,9 @@
 # AI/validation/config.py 맨 위에 추가
-LUNA_CHAT_PATH = "..."   # matching/config.py에서 복사
-LUNA_MODEL = "..."       # matching/config.py에서 복사
-LUNA_TIMEOUT = ...       # matching/config.py에서 복사
+LUNA_CHAT_PATH = "/v1/chat/completions"
+LUNA_MODEL = "gpt-5.6-luna"
+LUNA_TIMEOUT = 60.0
 
-# 기존 내용
+# 기존 내용은 그대로 유지
 ISSUE_LEVEL = {
     "진단명": "BLOCK",
     "개인정보표현": "BLOCK",
