@@ -33,6 +33,20 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 const ROLE_KEY = "itda_role";
 
+/**
+ * 온보딩을 끝냈다는 표시. 역할과 따로 둔다 — 카카오 로그인 직후에 역할이 정해지는데,
+ * 약관 동의와 첫 기관 연결이 아직 안 끝난 상태를 그것과 구분할 방법이 필요하다.
+ */
+const ONBOARDED_KEY = "itda_parent_onboarded";
+
+/**
+ * 로그인 의도. 카카오로 떠나기 전에 적어두고 `/oauth/success` 가 읽는다.
+ * 서버는 기관인지 보호자인지 모른다(사용자 테이블이 없어 JWT subject 가 kakaoId 뿐이다).
+ * 아는 것은 "어느 버튼을 눌렀는가" 하나뿐이라 그것을 들고 다녀야 한다.
+ * 탭을 닫으면 사라져야 하므로 sessionStorage 를 쓴다.
+ */
+const INTENT_KEY = "itda_login_intent";
+
 export type Role = "org" | "parent" | null;
 
 /* ── 역할 ───────────────────────────────────────────── */
@@ -71,8 +85,28 @@ export function grantRole(role: "org" | "parent"): void {
 export function clearSession(): void {
   try {
     localStorage.removeItem(ROLE_KEY);
+    localStorage.removeItem(ONBOARDED_KEY);
   } catch {
     // 무시
+  }
+}
+
+/* ── 온보딩 ─────────────────────────────────────────── */
+
+/** 보호자가 약관 동의와 첫 기관 공유 동의까지 마쳤다는 표시. */
+export function markOnboarded(): void {
+  try {
+    localStorage.setItem(ONBOARDED_KEY, "1");
+  } catch {
+    // 무시 — 온보딩 화면을 한 번 더 보게 될 뿐이다.
+  }
+}
+
+export function isOnboarded(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDED_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -93,8 +127,24 @@ export function isAuthMock(): boolean {
  * 카카오 로그인 시작. fetch 가 아니라 페이지 이동이다 —
  * 사용자가 카카오 도메인에서 직접 로그인·동의해야 하므로 브라우저가 실제로 가야 한다.
  */
-export function startKakaoLogin(): void {
+export function startKakaoLogin(intent: "org" | "parent"): void {
+  try {
+    sessionStorage.setItem(INTENT_KEY, intent);
+  } catch {
+    // 무시 — 착지 페이지가 기존 역할로 판단하고, 그것도 없으면 기관으로 둔다.
+  }
   window.location.href = `${AUTH_ORIGIN}/oauth2/authorization/kakao`;
+}
+
+/** 로그인 의도를 **한 번만** 읽는다 — 읽고 지운다. 다음 로그인까지 남으면 안 된다. */
+export function takeLoginIntent(): "org" | "parent" | null {
+  try {
+    const intent = sessionStorage.getItem(INTENT_KEY);
+    sessionStorage.removeItem(INTENT_KEY);
+    return intent === "org" || intent === "parent" ? intent : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

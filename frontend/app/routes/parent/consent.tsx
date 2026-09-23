@@ -1,8 +1,13 @@
 import { useState, useTransition } from "react";
-import { useNavigate } from "react-router";
-import { grantRole, getSession } from "@/lib/auth";
+import { useNavigate, useSearchParams } from "react-router";
+import { grantRole, isOnboarded, markOnboarded } from "@/lib/auth";
 import { updateConsent } from "@/lib/api";
-import { INSTITUTION_SHARE_FIELDS, INVITING_INSTITUTION, PARENT_CHILD } from "@/lib/mock/data";
+import {
+  INSTITUTION_SHARE_FIELDS,
+  INVITING_INSTITUTION,
+  PARENT_CHILD,
+  PARENT_CHILDREN,
+} from "@/lib/mock/data";
 import { InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
@@ -14,7 +19,18 @@ import { StepProgress } from "@/components/parent/StepProgress";
  * 둘 다 "아직 not_granted 상태인 기관"을 찾아서 쓰기 때문에 화면 하나로 겸한다.
  */
 export default function ParentConsentPage() {
-  const pendingRec = PARENT_CHILD.institutions.find((i) => i.consent === "not_granted");
+  /*
+   * 대상은 쿼리로 받는다 — P-01 의 연결 요청 목록이 "어느 아이 · 어느 기관"인지 지정해
+   * 보낸다. 쿼리 없이 들어온 경우(알림에서 온 재요청 등)에는 예전처럼 아직 동의하지 않은
+   * 첫 기관을 찾아 쓴다.
+   */
+  const [params] = useSearchParams();
+  const child = PARENT_CHILDREN.find((c) => c.id === params.get("childId")) ?? PARENT_CHILD;
+  const institutionId = params.get("institutionId");
+  const pendingRec =
+    child.institutions.find(
+      (i) => i.institution.id === institutionId && i.consent === "not_granted",
+    ) ?? child.institutions.find((i) => i.consent === "not_granted");
   const institution = pendingRec?.institution ?? INVITING_INSTITUTION;
   const { shared, notShared } = INSTITUTION_SHARE_FIELDS[institution.type];
 
@@ -40,7 +56,7 @@ export default function ParentConsentPage() {
             기관이 등록한 정보
           </p>
           <p className="text-[16px] font-semibold">
-            {PARENT_CHILD.name} · {PARENT_CHILD.birthDate.replaceAll("-", ".")}생
+            {child.name} · {child.birthDate.replaceAll("-", ".")}생
           </p>
         </div>
         <button className="tap h-14 w-full rounded-2xl bg-block px-4 text-[16px] font-bold text-white">
@@ -61,7 +77,7 @@ export default function ParentConsentPage() {
       <StepProgress step={3} total={4} />
 
       <p className="rounded-2xl bg-accentsoft px-4 py-3 text-[15px] leading-6 text-accentink">
-        <b className="font-semibold">{institution.name}</b>에서 {PARENT_CHILD.name} 학생을
+        <b className="font-semibold">{institution.name}</b>에서 {child.name} 학생을
         등록했어요
       </p>
 
@@ -72,10 +88,10 @@ export default function ParentConsentPage() {
             aria-hidden
             className="flex size-10 items-center justify-center rounded-full bg-surface2 text-[16px] font-semibold text-ink2"
           >
-            {PARENT_CHILD.name.slice(0, 1)}
+            {child.name.slice(0, 1)}
           </span>
           <span className="text-[16px] font-semibold">
-            {PARENT_CHILD.name} · {PARENT_CHILD.birthDate.replaceAll("-", ".")}생
+            {child.name} · {child.birthDate.replaceAll("-", ".")}생
           </span>
         </div>
         <button
@@ -129,15 +145,17 @@ export default function ParentConsentPage() {
         <button
           onClick={() =>
             start(async () => {
-              await updateConsent(PARENT_CHILD.id, institution.id, {
+              await updateConsent(child.id, institution.id, {
                 allowed_fields: shared,
                 action: "grant",
               });
-              const { role } = await getSession();
-              if (role === "parent") {
+              // 온보딩 중이면 돌봄 정보 입력(4단계)까지 이어가고, 이미 쓰던 보호자가
+              // 새 기관 요청을 승인한 것이면 홈으로 돌아간다.
+              if (isOnboarded()) {
                 navigate("/parent");
               } else {
-                grantRole("parent");
+                grantRole("parent"); // 쿼리로 바로 들어온 경우를 위한 보정
+                markOnboarded();
                 navigate("/parent/care-info?onboarding=1");
               }
             })

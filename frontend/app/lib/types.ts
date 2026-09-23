@@ -63,6 +63,19 @@ export interface Child {
   care?: ChildCareInfo;
 }
 
+/**
+ * 대기 중인 보호자–아이 연결 요청 (api-spec G-01).
+ *
+ * 기관이 아이를 등록하면 서버가 만들고, 보호자가 카카오 로그인 뒤 이 목록에서
+ * 확인·동의하면 사라진다. 초대코드를 대신하는 최초 연결 경로다.
+ */
+export interface PendingLink {
+  child: { id: string; name: string; birthDate: string };
+  institution: Institution;
+  /** ISO 8601. 화면은 앞 10자리만 잘라 날짜로 보여준다. */
+  requestedAt: string;
+}
+
 export interface RawRecord {
   id: string;
   fileName: string;

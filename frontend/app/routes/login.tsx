@@ -1,15 +1,18 @@
-import { useNavigate } from "react-router";
-import { grantRole, isAuthMock, startKakaoLogin } from "@/lib/auth";
+import { Link, useNavigate } from "react-router";
+import { KakaoLoginButton } from "@/components/KakaoLoginButton";
+import { grantRole, isAuthMock } from "@/lib/auth";
 
 /**
- * 카카오 로그인 진입점.
+ * 기관 담당자 로그인 진입점.
  *
- * 기획서 12절의 SMS OTP 는 폐기됐다 — 백엔드 인증이 카카오 OAuth 로 구현돼 있고
- * SMS 발송은 구현 자체가 없다.
+ * 기획서 12절의 SMS OTP 는 폐기됐다 — 인증은 기관·보호자 모두 카카오 하나로 통일했다.
  *
  * 버튼은 백엔드의 `/oauth2/authorization/kakao` 로 **페이지를 이동시킨다**. 그 뒤로는
  * 전부 백엔드 몫이다 — state 발급, 카카오 인가, 토큰 교환, 출입증 쿠키 발급까지.
  * 끝나면 `/oauth/success` 로 돌아온다(실패하면 이 화면으로).
+ *
+ * 보호자도 같은 카카오 로그인을 타지만 진입 화면은 `/parent/invite` 로 따로 둔다 —
+ * 돌아왔을 때 기관인지 보호자인지 가릴 단서가 "어느 버튼을 눌렀는가" 뿐이기 때문이다.
  */
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -32,14 +35,7 @@ export default function LoginPage() {
         </div>
 
         <div className="rounded border border-line bg-surface p-6">
-          <button
-            type="button"
-            onClick={startKakaoLogin}
-            className="tap flex w-full items-center justify-center gap-2 rounded bg-[#FEE500] px-4 text-[16px] font-semibold text-[#191600] hover:brightness-95"
-          >
-            <KakaoMark />
-            카카오로 로그인
-          </button>
+          <KakaoLoginButton intent="org" />
 
           {/*
             데모용 진입. 백엔드 없이 기관 화면을 볼 수 있어야 하는데, 역할을 주는 곳이
@@ -70,18 +66,13 @@ export default function LoginPage() {
           ) : null}
 
           <p className="mt-4 text-[13px] leading-6 text-muted">
-            학부모라면 기관에서 받은 초대 링크로 들어와 주세요.
+            학부모이신가요?{" "}
+            <Link to="/parent/invite" className="font-semibold text-accentink underline">
+              보호자 화면으로 가기
+            </Link>
           </p>
         </div>
       </div>
     </div>
-  );
-}
-
-function KakaoMark() {
-  return (
-    <svg aria-hidden viewBox="0 0 24 24" className="size-5 fill-current">
-      <path d="M12 3C6.99 3 3 6.2 3 10.14c0 2.52 1.7 4.73 4.26 5.99l-.9 3.3c-.09.32.27.58.55.4l3.96-2.6c.37.03.75.05 1.13.05 5.01 0 9-3.2 9-7.14S17.01 3 12 3Z" />
-    </svg>
   );
 }

@@ -46,6 +46,7 @@ import type {
   JournalEntry,
   MatchingItem,
   ParentActivity,
+  PendingLink,
   SummaryItem,
   TimelineEntry,
 } from "@/lib/types";
@@ -288,6 +289,35 @@ export async function getActivity(): Promise<ActivityLog[]> {
 }
 
 /* ── 학부모 ─────────────────────────────────────────── */
+
+/**
+ * GET /api/v1/guardians/me/pending-links (api-spec G-01)
+ *
+ * 기관이 아이를 등록하면 서버가 만들어 두는 "연결 대기" 목록이다. 초대코드를 대신하는
+ * 최초 연결 경로라, 보호자 온보딩의 마지막 단계가 이 목록을 그린다. 나중에 아이를 하나
+ * 더 추가할 때도 같은 목록을 본다.
+ *
+ * 거절한 요청은 빼고 준다 — 알림 배지(getPendingInstitutionRequests)와 기준을 맞춘다.
+ */
+export async function getPendingLinks(): Promise<PendingLink[]> {
+  if (USE_MOCK) {
+    return mock.PARENT_CHILDREN.flatMap((child) =>
+      child.institutions
+        .filter(
+          (i) =>
+            i.consent === "not_granted" &&
+            !mock.DECLINED_INSTITUTION_REQUESTS.has(`${child.id}:${i.institution.id}`),
+        )
+        .map((i) => ({
+          child: { id: child.id, name: child.name, birthDate: child.birthDate },
+          institution: i.institution,
+          requestedAt: mock.PENDING_LINK_REQUESTED_AT[`${child.id}:${i.institution.id}`] ?? "",
+        })),
+    );
+  }
+  return request("/api/v1/guardians/me/pending-links");
+}
+
 
 /** GET /api/v1/guardians/me/children — 이 보호자에게 연결된 아이 전체 */
 export async function getParentChildren(): Promise<Child[]> {
