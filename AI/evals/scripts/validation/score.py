@@ -51,12 +51,12 @@ def score(inputs, outputs_by_case_id, dataset_filter=None):
 
     return confusion
 
-
 if __name__ == "__main__":
     inputs = load_inputs()
     print(f"전체 케이스: {len(inputs)}건")
-    print(f"dev: {sum(1 for c in inputs if c['dataset']=='dev')}건, "
-          f"holdout: {sum(1 for c in inputs if c['dataset']=='holdout')}건")
 
-    outputs = {}  # mock 단계, 비워서 시작 — 그래프 완성 전까지는 손으로 몇 건 채워서 검증
+    outputs_path = Path(__file__).parent.parent.parent / "generated" / "validation" / "dev_outputs.json"
+    with open(outputs_path, encoding="utf-8") as f:
+        outputs = json.load(f)
+
     score(inputs, outputs, dataset_filter="dev")
