@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.itda.backend.domain.Child;
@@ -20,9 +21,13 @@ class ChildRepositoryTest {
     @Autowired
     private ChildRepository childRepository;
 
+    @Autowired
+    private TestEntityManager entityManager;
+
     @Test
     void 새로_등록한_아동은_동의_대기_상태로_저장된다() {
         Child saved = childRepository.saveAndFlush(Child.of("임유진", LocalDate.of(2019, 11, 26)));
+        entityManager.clear();
 
         Child found = childRepository.findByIdAndDeletedAtIsNull(saved.getId()).orElseThrow();
         assertThat(found.getName()).isEqualTo("임유진");

@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.itda.backend.domain.JournalEntry;
@@ -19,10 +20,14 @@ class JournalEntryRepositoryTest {
     @Autowired
     private JournalEntryRepository journalEntryRepository;
 
+    @Autowired
+    private TestEntityManager entityManager;
+
     @Test
     void 매칭_전_일지는_아동_없이_대기_상태로_저장된다() {
         JournalEntry saved = journalEntryRepository.saveAndFlush(
                 JournalEntry.of(3L, LocalDate.of(2026, 9, 1), "점심시간에 식사를 잘함", 1));
+        entityManager.clear();
 
         JournalEntry found = journalEntryRepository.findByIdAndDeletedAtIsNull(saved.getId()).orElseThrow();
         assertThat(found.getRawRecordId()).isEqualTo(3L);
@@ -47,6 +52,7 @@ class JournalEntryRepositoryTest {
 
         entry.assignChild(8L);
         journalEntryRepository.saveAndFlush(entry);
+        entityManager.clear();
 
         assertThat(journalEntryRepository.findByIdAndDeletedAtIsNull(entry.getId()).orElseThrow().getChildId())
                 .isEqualTo(8L);
