@@ -1,49 +1,113 @@
 # AI/validation/nodes.py
+import re
+import json
+from validation.config import ISSUE_LEVEL, STRUCTURAL_PII_PATTERNS
+from llm.luna_client import call_luna  # 기존 Matching에서 쓰던 공용 클라이언트 재사용
+
 
 def perceive(state: dict) -> dict:
-    """인식: 판정 대상 텍스트와 이슈 유형별 탐지 패턴을 불러옴"""
+    """인식: 정규식으로 확인 가능한 구조적 개인정보부터 먼저 스캔"""
     content = state["content"]
-    state["candidate_issues"] = []  # 아직 귀속 검증 전, 후보만
+    hits = []
+    for pattern in STRUCTURAL_PII_PATTERNS:
+        for m in re.finditer(pattern, content):
+            hits.append({"start": m.start(), "end": m.end()})
+    state["structural_pii_hits"] = hits
     return state
 
 
 def plan(state: dict) -> dict:
-    """계획: 후보로 잡힌 이슈들을 귀속 검증이 필요한지 분류"""
-    # 예: "확정적 표현"류는 귀속 검증이 특히 중요 (누구에 대한 확정적 서술인지가 핵심)
+    """계획: 별도 분기 없음 — 구조적 히트 여부와 무관하게 항상 LLM에도 물어봄
+    (구조적 패턴은 개인정보표현만 잡아내고, 나머지 6개 유형은 LLM 판단이 필요하므로)"""
     return state
 
 
 def act(state: dict) -> dict:
-    """
-    행동: Luna 호출.
-    핵심 — 단순히 "이 문서에 위험 표현이 있나?"가 아니라
-    "판정 대상 아동 본인에 대한 서술에 위험 표현이 있나?"로 프롬프트 구성.
-    """
-    # LLM에게 "본문 전체" + "지금 판정 중인 아동이 누구인지"를 같이 줘서,
-    # 위험 표현이 그 아동 본인 얘기인지를 판단하게 함
-    ...
+    """행동: Luna 호출. 여기서만 LLM을 씀"""
+    content = state["content"]
+
+    prompt = f"""
+다음 관찰 기록에서 아래 7개 유형 중 해당하는 것이 있는지 판단하세요.
+
+BLOCK: 진단명, 개인정보표현
+REVIEW: 확정적표현, 다수아동언급, 추측성표현, 감정적표현, 위험행동표현
+
+각 유형이 있다고 판단되면, 그게 "지금 이 기록의 주인공 아동 본인"에 대한
+서술인지, 아니면 다른 사람(부모/형제/다른 아이)에 대한 언급일 뿐인지도
+반드시 구분하세요. 본인에 대한 서술이 아니면 attributed_to_subject를
+false로 표시하세요.
+
+기록: {content}
+
+아래 JSON 형식으로만 답하세요:
+{{
+  "issues": [
+    {{"issue_type": "진단명", "attributed_to_subject": true, "evidence_text": "해당 근거 원문 일부"}}
+  ]
+}}
+"""
+    try:
+        raw = call_luna(prompt)
+        parsed = json.loads(raw)
+        state["llm_issues"] = parsed.get("issues", [])
+        state["llm_error"] = False
+    except Exception:
+        state["llm_issues"] = []
+        state["llm_error"] = True
+
     return state
+
+
+def _find_evidence_offset(content: str, evidence_text: str) -> dict | None:
+    """LLM이 준 근거 문자열을 원문에서 찾아 offset으로 변환.
+    못 찾으면(=LLM이 원문에 없는 걸 지어냈으면) None 반환 -> 그 근거는 버림"""
+    idx = content.find(evidence_text)
+    if idx == -1:
+        return None
+    return {"start": idx, "end": idx + len(evidence_text)}
 
 
 def reflect(state: dict) -> dict:
-    """반영: 최종 검사 — Matching 피드백 그대로 적용하는 지점"""
-    winner_issue = state.get("winner_issue")
+    """반영: 최종 검사 — 여기가 이번에 받은 피드백을 반영하는 핵심 지점
 
+    Matching 피드백 그대로 적용: "문서 안에 위험 신호가 있는지"가 아니라
+    "그 신호가 지금 판정 대상 본인에게 귀속되는지"로 최종 확정 여부를 가른다.
+    """
+    content = state["content"]
+    verdict = "PASS"
+    issue_types = []
+    evidence = []
+
+    # 1. 구조적 개인정보(정규식)는 귀속 검증 없이 항상 반영
+    if state["structural_pii_hits"]:
+        issue_types.append("개인정보표현")
+        evidence.extend(state["structural_pii_hits"])
+        verdict = "BLOCK"
+
+    # 2. 모델 호출 실패 시 안전하게 REVIEW로
     if state.get("llm_error"):
-        return {**state, "verdict": "REVIEW", "reason": "모델 호출 실패"}
+        return {**state, "verdict": "REVIEW", "issue_types": issue_types or ["모델호출실패"], "evidence": evidence}
 
-    # ⚠️ 여기가 이번에 받은 피드백을 반영하는 핵심 지점입니다.
-    # "문서 안에 위험 표현이 하나라도 있는지"가 아니라
-    # "지금 판정하려는 이 문장/이 아동에 대해 확실한 귀속 근거가 있는지"로 검사
-    if winner_issue and not _issue_confirms_this_subject(state, winner_issue):
-        return {**state, "verdict": "REVIEW", "reason": "위험 표현은 감지됐으나 귀속 근거 불확실"}
+    # 3. LLM이 찾은 후보들 — 귀속 검증 통과한 것만 최종 반영 (⚠️ 핵심 지점)
+    for candidate in state.get("llm_issues", []):
+        issue_type = candidate.get("issue_type")
+        if issue_type not in ISSUE_LEVEL:
+            continue  # 명부(허용된 유형 목록) 밖 값은 무시 — Matching의 "명부 밖 ID 무시"와 같은 원리
 
-    return state
+        if not candidate.get("attributed_to_subject"):
+            continue  # ⚠️ 여기가 이번 피드백 반영 지점: 귀속 안 되면 반영 안 함
 
+        offset = _find_evidence_offset(content, candidate.get("evidence_text", ""))
+        if offset is None:
+            continue  # 근거를 원문에서 못 찾으면(=지어낸 근거) 신뢰 안 함
 
-def _issue_confirms_this_subject(state: dict, issue: dict) -> bool:
-    """
-    Matching의 has_exact 버그 교훈:
-    '문서 안에 있는지'가 아니라 '이 문장의 주어가 판정 대상 본인인지'를 확인.
-    """
-    ...
+        issue_types.append(issue_type)
+        evidence.append(offset)
+
+        level = ISSUE_LEVEL[issue_type]
+        if level == "BLOCK":
+            verdict = "BLOCK"
+        elif level == "REVIEW" and verdict != "BLOCK":
+            verdict = "REVIEW"
+
+    return {**state, "verdict": verdict, "issue_types": list(set(issue_types)), "evidence": evidence}
