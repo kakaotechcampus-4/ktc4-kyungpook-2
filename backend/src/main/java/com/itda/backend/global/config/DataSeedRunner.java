@@ -14,7 +14,7 @@ import lombok.RequiredArgsConstructor;
  * 무엇을 어떻게 넣을지는 Service 가 정한다.
  *
  * <p>끄려면 {@code app.seed.organizations.enabled=false}. 다만 기관이 하나도 없으면
- * 새로 로그인한 기관 담당자에게 붙일 기관이 없어 소속 없이 만들어진다 —
+ * 새 기관 담당자를 만들 수 없어 로그인이 실패한다(UserService 참고) —
  * 로그인을 서비스하는 환경에서는 끄지 않는다.
  */
 @Component
