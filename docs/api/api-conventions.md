@@ -19,6 +19,10 @@
 - 새 외부 API의 기본 경로는 `/api/v1`이다.
 - 요청·응답 본문은 JSON을 기본으로 한다.
 - 파일 다운로드·스트리밍·웹훅처럼 원본 형식이 필요한 응답은 이 문서의 응답 래퍼를 적용하지 않을 수 있다.
+- 상태 확인용 `GET /api/health`는 인프라 점검용이라 `/api/v1` 경로와 응답 래퍼를 적용하지 않고
+  `{ "status": "ok" }`를 그대로 반환한다.
+- 카카오 로그인 진입(`/oauth2/authorization/kakao`)과 콜백(`/login/oauth2/code/kakao`)은 Spring
+  Security가 제공하는 브라우저 리다이렉트 경로라 `/api/v1` 밖에 있고 JSON을 반환하지 않는다.
 - `null` 값은 가능한 한 응답에서 생략한다. 값이 없다는 의미가 필요하면 명시적인 상태나 빈 배열을 사용한다.
 
 ## 성공 응답
@@ -122,6 +126,10 @@ HTTP/1.1 404 Not Found
 - 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다. 401은 구현·검증 완료. 403은 핸들러(`JsonAccessDeniedHandler`)까지는 구현돼 있으나, 아직 역할 기반으로 막힌 API가 없어 실제로 도달하는 경로는 없다.
 - 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.yml.example) 참고).
 - 인증 방식은 JWT 쿠키다. 브라우저는 `GET /oauth2/authorization/kakao`로 이동해 카카오 로그인을 시작한다. 카카오 콜백(`GET /login/oauth2/code/kakao`)은 Spring Security가 처리하며, 클라이언트가 직접 호출하지 않는다. 성공 시 서버는 `access_token` httpOnly 쿠키를 발급하고 설정된 프론트엔드 주소로 리다이렉트한다.
+- 로그인 실패(state 불일치, 동의 취소, 카카오 장애 등)는 JSON 오류가 아니라 설정된 실패 주소에
+  `?error=login_failed`를 붙인 리다이렉트로 전달한다. 상세 원인은 서버 로그에만 남긴다. 그래서 위
+  표의 `KAKAO_SERVER_ERROR`·`KAKAO_UNAVAILABLE`과 `AuthErrorCode`의 `KAKAO_AUTH_FAILED`는 현재
+  로그인 흐름에서 응답으로 나가지 않는다.
 - 보호 API 요청은 브라우저가 `access_token` 쿠키를 자동으로 전송하도록 `credentials: include`를 사용한다. 클라이언트는 JWT를 읽거나 `Authorization: Bearer` 헤더에 직접 넣지 않는다.
 - `POST`, `PUT`, `PATCH`, `DELETE` 요청에는 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 함께 보낸다. OAuth 로그인 시작·콜백 경로는 이 CSRF 검사에서 제외된다.
 - OAuth 인가 요청의 state 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로 처리한다. refresh token 발급과 토큰 폐기 전략은 아직 없다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시킨다.
