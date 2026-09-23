@@ -32,6 +32,9 @@ public class UserService {
     /**
      * 카카오 로그인 성공 시 회원을 찾거나 만든다.
      *
+     * <p>탈퇴한 회원이면 새로 만들지 않고 되살린다. kakao_id 유니크 제약 때문에 새로 넣을 수 없다.
+     * 역할과 소속도 탈퇴 전 값을 그대로 쓴다.
+     *
      * <p><b>이미 있는 회원의 역할은 바꾸지 않는다.</b> 기관으로 가입한 사람이 나중에 초대
      * 링크를 눌렀다고 보호자가 되어버리면 안 된다. 역할을 바꾸는 절차가 필요해지면
      * 초대·아이 연결 도메인에서 별도로 설계한다.
@@ -44,6 +47,9 @@ public class UserService {
     public User findOrCreateByKakaoId(String kakaoId, String nickname, UserRole role) {
         return userRepository.findByKakaoId(kakaoId)
                 .map(existing -> {
+                    if (existing.isDeleted()) {
+                        existing.restore();
+                    }
                     existing.updateName(nickname);
                     return existing;
                 })
@@ -85,7 +91,8 @@ public class UserService {
         } catch (NumberFormatException e) {
             throw new UserException(UserErrorCode.SESSION_USER_NOT_FOUND);
         }
-        return userRepository.findById(userId)
+        // 탈퇴한 사용자의 출입증은 아직 만료 전이어도 인정하지 않는다.
+        return userRepository.findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new UserException(UserErrorCode.SESSION_USER_NOT_FOUND));
     }
 

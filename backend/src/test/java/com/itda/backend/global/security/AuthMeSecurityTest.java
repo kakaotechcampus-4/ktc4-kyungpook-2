@@ -126,6 +126,18 @@ class AuthMeSecurityTest {
                 .andExpect(jsonPath("$.code").value("SESSION_USER_NOT_FOUND"));
     }
 
+    /** 탈퇴한 사용자의 출입증은 아직 만료 전이어도 인정하지 않는다. */
+    @Test
+    void withdrawnUserIsUnauthorized() throws Exception {
+        User user = User.of("me-withdrawn-1", "탈퇴자", UserRole.PARENT, null);
+        user.delete();
+        user = userRepository.save(user);
+
+        mockMvc.perform(get(ME).cookie(cookieFor(user)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("SESSION_USER_NOT_FOUND"));
+    }
+
     /** 기관 소속이 아닌 사용자는 기관 전용 API 에서 403 으로 막힌다. */
     @Test
     void parentIsForbiddenFromOrganizationOnlyApi() throws Exception {

@@ -47,7 +47,7 @@ public class User {
      * <p>유니크 제약은 여기가 마지막 기회다. 배포는 {@code ddl-auto: update} 라
      * 나중에 붙여주지 않는다.
      */
-    @Column(name = "kakao_id", nullable = false, length = 64)
+    @Column(name = "kakao_id", nullable = false, length = 50)
     private String kakaoId;
 
     /** 카카오 닉네임. 사용자가 동의를 거부할 수 있어 nullable 이다. */
@@ -67,6 +67,15 @@ public class User {
 
     @Column(nullable = false)
     private LocalDateTime updatedAt;
+
+    /**
+     * 탈퇴 표시. null 이면 활성 계정이다 (DB 스키마 §3.2 soft delete).
+     *
+     * <p>행을 지우지 않는 이유: FK 제약이 없어서, 지우면 이 사용자를 가리키는 child_guardian ·
+     * sharing_consent · human_review.reviewer_id 가 존재하지 않는 id 를 가리킨 채 남는다.
+     */
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     private User(String kakaoId, String name, UserRole role, Long organizationId) {
         this.kakaoId = kakaoId;
@@ -93,6 +102,19 @@ public class User {
             return;
         }
         this.name = name;
+    }
+
+    public void delete() {
+        this.deletedAt = LocalDateTime.now();
+    }
+
+    /** 탈퇴한 사람이 같은 카카오 계정으로 다시 들어오면 새 행을 만들지 않고 되살린다 (§3.3). */
+    public void restore() {
+        this.deletedAt = null;
+    }
+
+    public boolean isDeleted() {
+        return this.deletedAt != null;
     }
 
     public boolean isOrganization() {

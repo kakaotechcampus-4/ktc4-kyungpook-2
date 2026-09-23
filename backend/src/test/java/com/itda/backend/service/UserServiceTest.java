@@ -132,6 +132,20 @@ class UserServiceTest {
         assertThat(found.getName()).isEqualTo("박지현");
     }
 
+    /** 탈퇴한 사람이 같은 카카오 계정으로 다시 오면 새 행을 만들지 않고 되살린다. */
+    @Test
+    void withdrawnUserIsRestoredInsteadOfCreatingANewRow() {
+        User withdrawn = User.of(KAKAO_ID, "박지현", UserRole.ORGANIZATION, 7L);
+        withdrawn.delete();
+        given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(withdrawn));
+
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현", UserRole.ORGANIZATION);
+
+        assertThat(found).isSameAs(withdrawn);
+        assertThat(found.isDeleted()).isFalse();
+        verify(userRepository, never()).save(any(User.class));
+    }
+
     @Test
     void changedNicknameIsRefreshed() {
         User existing = User.of(KAKAO_ID, "옛이름", UserRole.ORGANIZATION, 7L);
@@ -144,7 +158,7 @@ class UserServiceTest {
 
     @Test
     void currentUserOfOrganizationCarriesLowercaseRoleAndStringIds() {
-        given(userRepository.findById(1L))
+        given(userRepository.findByIdAndDeletedAtIsNull(1L))
                 .willReturn(Optional.of(User.of(KAKAO_ID, "박지현", UserRole.ORGANIZATION, 7L)));
 
         CurrentUserResponse response = userService.getCurrentUser("1");
@@ -155,7 +169,7 @@ class UserServiceTest {
 
     @Test
     void currentUserOfParentHasNoInstitutionId() {
-        given(userRepository.findById(2L))
+        given(userRepository.findByIdAndDeletedAtIsNull(2L))
                 .willReturn(Optional.of(User.of(KAKAO_ID, "김보호", UserRole.PARENT, null)));
 
         CurrentUserResponse response = userService.getCurrentUser("2");
@@ -166,7 +180,7 @@ class UserServiceTest {
 
     @Test
     void unknownUserIsReportedAsSessionFailure() {
-        given(userRepository.findById(404L)).willReturn(Optional.empty());
+        given(userRepository.findByIdAndDeletedAtIsNull(404L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.getCurrentUser("404"))
                 .isInstanceOf(UserException.class)
@@ -191,7 +205,7 @@ class UserServiceTest {
 
     @Test
     void parentHasNoOrganizationToActOnBehalfOf() {
-        given(userRepository.findById(2L))
+        given(userRepository.findByIdAndDeletedAtIsNull(2L))
                 .willReturn(Optional.of(User.of(KAKAO_ID, "김보호", UserRole.PARENT, null)));
 
         assertThatThrownBy(() -> userService.getOrganizationIdOf("2"))
@@ -202,7 +216,7 @@ class UserServiceTest {
 
     @Test
     void organizationUserResolvesToItsOrganizationId() {
-        given(userRepository.findById(1L))
+        given(userRepository.findByIdAndDeletedAtIsNull(1L))
                 .willReturn(Optional.of(User.of(KAKAO_ID, "박지현", UserRole.ORGANIZATION, 7L)));
 
         assertThat(userService.getOrganizationIdOf("1")).isEqualTo(7L);
