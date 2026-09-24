@@ -8,11 +8,14 @@ import com.fasterxml.jackson.annotation.JsonValue;
 // FE 타입(frontend/app/lib/types.ts의 MatchStatus)이 소문자 문자열을 기대해서
 // JSON 직렬화만 소문자로 내보낸다 — DB 저장은 @Enumerated(STRING)이라 컬럼 값은
 // 그대로 AUTO/REVIEW/... 이고 영향 없음.
+// FAILED: AI 계약(schemas.py)엔 없는, DB수정본(9/24) §7.1 기준 BE 전용 상태값 —
+// AI 서비스 호출 자체가 실패했을 때(네트워크 오류 등) BE가 이 값으로 기록한다.
 public enum MatchingStatus {
     AUTO,
     REVIEW,
     MULTI,
-    UNMATCHED;
+    UNMATCHED,
+    FAILED;
 
     @JsonValue
     public String toJson() {

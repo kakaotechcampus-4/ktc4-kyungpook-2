@@ -40,6 +40,15 @@ public class MatchingResult {
     @Column(nullable = false, length = 30)
     private MatchingStatus status;
 
+    // status=MULTI일 때만 채워진다 (DB수정본 §7.1).
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private MultiReason multiReason;
+
+    // 표지 힌트(hint_name/hint_birthdate)와 다른 아동으로 판단했는지.
+    @Column
+    private Boolean hintMismatch;
+
     // ponytail: DB수정본(9/23) ERD 기준 JSON 컬럼 — JSON 라이브러리/컨버터가 아직 없어서
     // 원문 JSON 텍스트를 그대로 담는다. AI가 직접 이 테이블에 쓸 때도 같은 형식이면 된다.
     // candidates: AI/matching/schemas.py의 Candidate[] ({child_id, confidence})
@@ -74,6 +83,8 @@ public class MatchingResult {
             Long matchedChildId,
             BigDecimal confidence,
             MatchingStatus status,
+            MultiReason multiReason,
+            Boolean hintMismatch,
             String candidates,
             String evidence,
             String rawResponse,
@@ -82,6 +93,8 @@ public class MatchingResult {
         this.matchedChildId = matchedChildId;
         this.confidence = confidence;
         this.status = status;
+        this.multiReason = multiReason;
+        this.hintMismatch = hintMismatch;
         this.candidates = candidates;
         this.evidence = evidence;
         this.rawResponse = rawResponse;

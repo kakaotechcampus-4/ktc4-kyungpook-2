@@ -36,7 +36,7 @@ class MatchingResultServiceTest {
     @Test
     void resolveAssign_setsMatchedChildAndAutoStatus() {
         MatchingResult matchingResult = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, "근거", "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, "근거", "v1");
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(matchingResultRepository.save(any(MatchingResult.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
@@ -52,7 +52,7 @@ class MatchingResultServiceTest {
     @Test
     void resolveAssignWithoutChildId_throwsValidationException() {
         MatchingResult matchingResult = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, "근거", "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, "근거", "v1");
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
 
         assertThatThrownBy(() -> matchingResultService.resolve(1L, "assign", null, "kakao-teacher-1"))
@@ -64,7 +64,7 @@ class MatchingResultServiceTest {
         // 버그 재발 방지: 예전엔 여기서 status를 UNMATCHED로 뒀는데, UNMATCHED는
         // findByStatusNot(AUTO) 큐 조건에 여전히 걸려서 "제외" 처리해도 큐에서 안 빠졌다.
         MatchingResult matchingResult = new MatchingResult(
-                1L, 5L, new BigDecimal("0.3"), MatchingStatus.MULTI, null, null, "근거", "v1");
+                1L, 5L, new BigDecimal("0.3"), MatchingStatus.MULTI, null, null, null, null, "근거", "v1");
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(matchingResultRepository.save(any(MatchingResult.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
@@ -81,7 +81,7 @@ class MatchingResultServiceTest {
         // AI가 스스로 auto로 내놓은 건(사람 개입 없음) reviewerId가 비어있어야
         // 나중에 "누가 확정했나" 감사할 때 AI/사람을 구분할 수 있다.
         MatchingResult aiConfirmed = new MatchingResult(
-                1L, 9L, new BigDecimal("0.97"), MatchingStatus.AUTO, null, null, null, "v1");
+                1L, 9L, new BigDecimal("0.97"), MatchingStatus.AUTO, null, null, null, null, null, "v1");
 
         assertThat(aiConfirmed.getReviewerId()).isNull();
     }

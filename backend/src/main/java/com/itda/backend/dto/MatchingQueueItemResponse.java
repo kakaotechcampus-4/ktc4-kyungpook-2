@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.MatchingResult;
 import com.itda.backend.domain.MatchingStatus;
+import com.itda.backend.domain.MultiReason;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -24,6 +25,8 @@ public record MatchingQueueItemResponse(
         String matchedChildId,
         MatchingStatus status,
         BigDecimal confidence,
+        MultiReason multiReason,
+        Boolean hintMismatch,
         JsonNode candidates,
         JsonNode evidence) {
 
@@ -38,6 +41,8 @@ public record MatchingQueueItemResponse(
                         : String.valueOf(matchingResult.getMatchedChildId()),
                 matchingResult.getStatus(),
                 matchingResult.getConfidence(),
+                matchingResult.getMultiReason(),
+                matchingResult.getHintMismatch(),
                 parseJson(matchingResult.getCandidates(), matchingResult.getId()),
                 parseJson(matchingResult.getEvidence(), matchingResult.getId()));
     }

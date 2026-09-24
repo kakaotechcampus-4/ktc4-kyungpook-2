@@ -47,7 +47,7 @@ class MatchingQueueControllerTest {
     void getQueue_excludesAutoStatus() throws Exception {
         MatchingResult review = new MatchingResult(
                 1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW,
-                null, "[{\"start\":0,\"end\":3}]", null, "v1");
+                null, null, null, "[{\"start\":0,\"end\":3}]", null, "v1");
         given(matchingResultService.getQueue()).willReturn(List.of(review));
 
         mockMvc.perform(get(BASE_URL))
@@ -63,7 +63,7 @@ class MatchingQueueControllerTest {
     @Test
     void resolveAssign_updatesMatchedChild() throws Exception {
         MatchingResult resolved = new MatchingResult(
-                1L, 2L, new BigDecimal("0.4"), MatchingStatus.AUTO, null, null, null, "v1");
+                1L, 2L, new BigDecimal("0.4"), MatchingStatus.AUTO, null, null, null, null, null, "v1");
         given(matchingResultService.resolve(1L, "assign", 2L, null)).willReturn(resolved);
 
         mockMvc.perform(post(BASE_URL + "/1/resolve")

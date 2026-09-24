@@ -22,7 +22,7 @@ class MatchingResultRepositoryTest {
     void savesAndLoadsWithoutJpaRelations() {
         MatchingResult result = new MatchingResult(
                 1L, 2L, new BigDecimal("0.9123"), MatchingStatus.AUTO,
-                "[{\"child_id\":2,\"confidence\":0.91}]", "[{\"start\":0,\"end\":3}]",
+                null, null, "[{\"child_id\":2,\"confidence\":0.91}]", "[{\"start\":0,\"end\":3}]",
                 "본문 근거", "matching-v1");
 
         MatchingResult saved = matchingResultRepository.save(result);
@@ -44,7 +44,7 @@ class MatchingResultRepositoryTest {
         // 계속 걸려서 큐에서 안 빠졌다. 실제 리포지토리 쿼리로 끝까지 확인한다.
         MatchingResult saved = matchingResultRepository.save(
                 new MatchingResult(1L, null, new BigDecimal("0.2"), MatchingStatus.UNMATCHED,
-                        null, null, null, "v1"));
+                        null, null, null, null, null, "v1"));
 
         saved.resolveAsNotOurs("kakao-teacher-1");
         matchingResultRepository.save(saved);
@@ -57,10 +57,10 @@ class MatchingResultRepositoryTest {
     void findByStatusNot_excludesAutoStatus() {
         matchingResultRepository.save(
                 new MatchingResult(1L, 2L, new BigDecimal("0.9"), MatchingStatus.AUTO,
-                        null, null, null, "v1"));
+                        null, null, null, null, null, "v1"));
         matchingResultRepository.save(
                 new MatchingResult(3L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW,
-                        null, null, null, "v1"));
+                        null, null, null, null, null, "v1"));
 
         var queue = matchingResultRepository.findByStatusNot(MatchingStatus.AUTO);
 
