@@ -307,7 +307,7 @@ POST /api/v1/auth/terms
 | `summarizing` | 요약 |
 | `gate1_pending` | 1차 검토 대기 |
 
-**O-22 응답** · `MatchStatus`가 `confirmed`인 건은 포함하지 않습니다.
+**O-22 응답** · `status`가 `auto`인 건은 포함하지 않습니다.
 
 ```json
 [
@@ -316,11 +316,19 @@ POST /api/v1/auth/terms
                 "capturedAt": "2026-08-21T14:10:00+09:00", "preview": "…" },
     "status": "multi",
     "confidence": 0.62,
-    "candidates": [ { "childId": "child_1", "name": "김하늘", "group": "햇살반" } ] }
+    "multiReason": "ambiguous_identity",
+    "hintMismatch": false,
+    "candidates": [ { "childId": "child_1", "name": "김하늘", "group": "햇살반" } ],
+    "evidence": [ { "start": 12, "end": 15 } ] }
 ]
 ```
 
-`status`: `multi` · `unmatched` · `low` · `confidence`: 0.0~1.0 (`unmatched`면 `null`)
+- `status`: `auto` · `review` · `multi` · `unmatched` · `failed` — AI 매칭 에이전트 실제 계약(`AI/matching/schemas.py`)값 그대로 (9/22 팀 확인, 9/24 DB초안 반영). `failed`는 AI 호출 자체가 실패했을 때만 쓰는 BE 전용 값
+- `confidence`: 0.0~1.0, 항상 채워짐 (AI 계약 기본값 0.0) — `multi`면 후보 중 최고점과 같음
+- `multiReason`: `status`가 `multi`일 때만 채워짐 — `ambiguous_identity` · `co_mention`
+- `hintMismatch`: 표지 힌트와 다른 아동으로 판단했는지
+- `evidence`: 판정 근거가 된 본문 구간(`{start, end}`, 유니코드 코드포인트 인덱스)
+- `record`/`candidates[].{name,group}`은 아직 JournalEntry·Child 연동 전이라 BE가 못 채웁니다 — 현재는 없이 내려갑니다
 
 **O-23 요청** · 프론트는 선택한 아이를 함께 보냅니다.
 
