@@ -32,6 +32,7 @@
 
 import { clearSession, csrfHeader } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
+import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
   ActivityLog,
   BlockedItem,
@@ -39,12 +40,14 @@ import type {
   ChatTurn,
   Child,
   ChildCareInfo,
+  FileProgress,
   InboxItem,
   Insight,
   Institution,
   InstitutionRequestItem,
   JournalEntry,
   MatchingItem,
+  MatchResolution,
   ParentActivity,
   PendingLink,
   SummaryItem,
@@ -71,12 +74,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
    */
   const method = (init?.method ?? "GET").toUpperCase();
   const needsCsrf = method !== "GET" && method !== "HEAD";
+  // 파일 업로드는 브라우저가 boundary 를 붙인 multipart content-type 을 직접 만들어야 한다
+  const isForm = init?.body instanceof FormData;
 
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     credentials: "include",
     headers: {
-      "content-type": "application/json",
+      ...(isForm ? {} : { "content-type": "application/json" }),
       ...(needsCsrf ? csrfHeader() : {}),
       ...(init?.headers ?? {}),
     },
@@ -208,16 +213,162 @@ export async function decideGate2(
  * 확인 필요 큐에서 아이를 확정(또는 "우리 기관 아동 아님"으로 제외)하면 큐에서 빠진다.
  *
  * ⚠️ **이 엔드포인트는 백엔드에 없다.** RawRecordController 에는 업로드·조회만 있다.
- *    선택한 childId 도 보내지 않아서, 서버가 "확정" 과 "우리 아동 아님" 을 구분하지 못한다.
- *    계약 합의가 필요하다.
+ *    본문 형태({ action, childId })는 FE 가 제안하는 계약이다. 백엔드와 합의가 필요하다.
  */
-export async function resolveMatchingItem(id: string): Promise<{ ok: true }> {
+export async function resolveMatchingItem(
+  id: string,
+  resolution: MatchResolution,
+): Promise<{ ok: true }> {
   if (USE_MOCK) {
     const idx = mock.MATCHING_QUEUE.findIndex((m) => m.id === id);
     if (idx !== -1) mock.MATCHING_QUEUE.splice(idx, 1);
     return { ok: true };
   }
-  return request(`/api/v1/raw-records/${id}/match`, { method: "POST" });
+  return request(`/api/v1/raw-records/${id}/match`, {
+    method: "POST",
+    body: JSON.stringify(resolution),
+  });
+}
+
+/**
+ * Gate 1 에서 아이를 바꾼다. Gate 1 은 되돌릴 수 있는 단계라 여기서 고칠 수 있어야 한다.
+ *
+ * ⚠️ **이 엔드포인트는 백엔드에 없다.** 경로·본문은 FE 제안이다.
+ *    아이가 바뀌면 검증(다른 아이 이름 포함 여부 등)을 다시 돌려야 할 수 있다 — 서버 쪽 판단이다.
+ */
+export async function reassignSummaryChild(
+  summaryId: string,
+  childId: string,
+): Promise<{ ok: true }> {
+  if (USE_MOCK) {
+    const item = mock.GATE1_QUEUE.find((s) => s.id === summaryId);
+    const child = mock.CHILDREN.find((c) => c.id === childId);
+    if (item && child) {
+      item.childId = child.id;
+      item.childName = child.name;
+      item.matchBasis = { source: "teacher", name: child.name };
+    }
+    return { ok: true };
+  }
+  return request(`/api/v1/summaries/${summaryId}/child`, {
+    method: "PUT",
+    body: JSON.stringify({ child_id: childId }),
+  });
+}
+
+/* ── 업로드 · 처리 현황 ─────────────────────────────── */
+
+/**
+ * POST /api/v1/raw-records — **구현됨** (multipart: file → 201)
+ *
+ * 즉시 응답하고 매칭 · 검증 · 요약은 백그라운드에서 돈다. 파일마다 한 번씩 부른다.
+ * 응답은 RawRecordResponse(backend/.../dto/RawRecordResponse.java) 다.
+ */
+export async function uploadRawRecords(files: File[]): Promise<FileProgress[]> {
+  if (USE_MOCK) {
+    const now = new Date().toISOString();
+    const created = files.map((f, i) => ({
+      rawRecordId: `rr_mock_${Date.now()}_${i}`,
+      fileName: f.name,
+      uploadedAt: now,
+      entries: [],
+    }));
+    for (const file of created) simulated.set(file.rawRecordId, Date.now());
+    mock.FILE_PROGRESS.unshift(...created);
+    return created;
+  }
+  return Promise.all(
+    files.map(async (file) => {
+      const form = new FormData();
+      form.append("file", file);
+      const saved = await request<{ id: number; originalFilename: string; createdAt: string }>(
+        "/api/v1/raw-records",
+        { method: "POST", body: form },
+      );
+      return {
+        rawRecordId: String(saved.id),
+        fileName: saved.originalFilename,
+        uploadedAt: saved.createdAt,
+        entries: [],
+      };
+    }),
+  );
+}
+
+/**
+ * 파일별 처리 현황. 최근 업로드가 먼저 온다.
+ *
+ * ⚠️ **이 엔드포인트는 백엔드에 없다.** RawRecordResponse 에는 파일 상태(status) 하나뿐이라
+ *    파일에서 나온 기록이 건별로 어느 단계에 있는지 알 수 없다. FileProgress 형태로 달라고
+ *    요청해야 한다.
+ */
+export async function getFileProgress(): Promise<FileProgress[]> {
+  if (USE_MOCK) {
+    tickSimulation();
+    return mock.FILE_PROGRESS;
+  }
+  return request("/api/v1/raw-records/progress");
+}
+
+/**
+ * 실패한 기록을 다시 처리한다. 실패는 사람이 고를 게 아니라 시스템 오류라 재시도로 충분하다.
+ * ⚠️ **이 엔드포인트는 백엔드에 없다.**
+ */
+export async function retryFailedEntries(rawRecordId: string): Promise<{ ok: true }> {
+  if (USE_MOCK) {
+    const file = mock.FILE_PROGRESS.find((f) => f.rawRecordId === rawRecordId);
+    for (const e of file?.entries ?? []) {
+      if (e.state === "failed") e.state = "running";
+    }
+    simulated.set(rawRecordId, Date.now());
+    return { ok: true };
+  }
+  return request(`/api/v1/raw-records/${rawRecordId}/retry`, { method: "POST" });
+}
+
+/**
+ * mock 전용: 방금 올린 파일이 백그라운드에서 한 칸씩 나아가는 것을 흉내낸다.
+ * 조회할 때마다 마지막으로 움직인 뒤 일정 시간이 지났으면 한 단계씩 전진시킨다.
+ */
+const simulated = new Map<string, number>();
+const TICK_MS = 1200;
+
+function tickSimulation() {
+  const now = Date.now();
+  for (const [id, last] of simulated) {
+    if (now - last < TICK_MS) continue;
+    const file = mock.FILE_PROGRESS.find((f) => f.rawRecordId === id);
+    if (!file) {
+      simulated.delete(id);
+      continue;
+    }
+    simulated.set(id, now);
+
+    // 첫 단계: 파일에서 기록을 떼어낸다
+    if (file.entries.length === 0) {
+      file.entries = Array.from({ length: 3 }, (_, i) => ({
+        id: `${id}_${i + 1}`,
+        stageIndex: MATCHING_INDEX,
+        state: "running" as const,
+      }));
+      continue;
+    }
+
+    for (const [i, e] of file.entries.entries()) {
+      if (e.state !== "running") continue;
+      // 데모: 두 번째 기록은 매칭에서 사람 확인으로 멈춘다
+      if (e.stageIndex === MATCHING_INDEX && i === 1) {
+        e.state = "waiting";
+        continue;
+      }
+      e.stageIndex += 1;
+      if (e.stageIndex >= GATE1_INDEX) {
+        e.stageIndex = GATE1_INDEX;
+        e.state = "waiting";
+      }
+    }
+    if (!file.entries.some((e) => e.state === "running")) simulated.delete(id);
+  }
 }
 
 /** 재입력 요청 큐 항목을 처리(재업로드 또는 보류)하면 큐에서 빠진다. */

@@ -20,10 +20,25 @@ export type MultiReason = "co_mention" | "ambiguous_identity";
 /** unmatched 로 내려온 이유 — 미등록 아동이면 등록 화면으로 보내야 한다 */
 export type UnmatchedReason = "no_anchor" | "not_in_roster";
 
-/** 본문에서 판정 근거가 된 구간 (문자 인덱스) */
+/**
+ * 본문에서 판정 근거가 된 구간.
+ * 인덱스는 **유니코드 코드포인트** 기준이다(Python str 인덱스, `AI/matching/schemas.py`).
+ */
 export interface EvidenceSpan {
   start: number;
   end: number;
+}
+
+/**
+ * 이 기록을 왜 이 아이로 봤는지 — Gate 1 에 한 줄로 보여준다.
+ * cover   → "파일 표지: 이하은"
+ * body    → 본문에 "이하은" 등장
+ * teacher → 선생님이 직접 지정 (매칭 확인 화면 또는 Gate 1 에서 바꾼 경우)
+ */
+export interface MatchBasis {
+  source: "cover" | "body" | "teacher";
+  /** 근거가 된 이름. 표지·본문에 적힌 그대로다 (명부의 이름과 다를 수 있다) */
+  name: string;
 }
 
 export type Gate1Status = "pending" | "approved" | "rejected";
@@ -112,6 +127,41 @@ export interface MatchingItem {
  * 화면에 숫자를 띄우면 교사가 그 숫자를 근거로 삼게 되므로 상태 문구로만 표현한다.
  */
 
+/** 매칭 확인 화면에서 교사가 내린 결정 */
+export type MatchResolution =
+  | { action: "confirm"; childId: string }
+  /** 명부에 있는 아이가 아니다 — 파이프라인에서 뺀다 */
+  | { action: "not_ours" };
+
+/**
+ * 파일 하나의 처리 현황.
+ *
+ * 업로드는 즉시 응답하고 처리는 백그라운드에서 돈다. 파일 하나에서 기록이 여러 건
+ * 나오고, 건마다 도달한 단계가 다르므로 건별 위치를 받아 화면이 집계한다.
+ */
+export interface FileProgress {
+  rawRecordId: string;
+  fileName: string;
+  uploadedAt: string;
+  /** 파일에서 기록을 아직 떼어내지 못했으면 비어 있다 (기록 등록 단계) */
+  entries: EntryProgress[];
+}
+
+export interface EntryProgress {
+  id: string;
+  /**
+   * PIPELINE_STAGES 의 인덱스.
+   * 1차 검토까지 승인돼 파이프라인을 빠져나간 건은 PIPELINE_STAGES.length 이고 state 는 done 이다.
+   */
+  stageIndex: number;
+  /**
+   * running → 자동으로 진행 중
+   * waiting → 사람이 골라야 진행 (매칭 확인 · 수정 요청 · 1차 검토)
+   * failed  → 시스템 오류. 재시도하면 된다
+   */
+  state: "running" | "waiting" | "failed" | "done";
+}
+
 /** 재입력 요청 큐 한 건 */
 export interface BlockedItem {
   id: string;
@@ -130,6 +180,8 @@ export interface SummaryItem {
   recordType: RawRecord["type"];
   validation: ValidationStatus;
   content: string;
+  /** 매칭 근거. 옛 데이터에는 없을 수 있어 선택으로 둔다 */
+  matchBasis?: MatchBasis | null;
   /** REVIEW 사유가 된 문장 — 본문 안에서 하이라이트한다 */
   flaggedSpan?: string;
   flagReason?: string;
