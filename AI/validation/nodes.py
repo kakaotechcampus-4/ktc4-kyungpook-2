@@ -21,6 +21,7 @@ def perceive(state: dict) -> dict:
         for m in re.finditer(pattern, content):
             hits.append({"start": m.start(), "end": m.end()})
     state["structural_pii_hits"] = hits
+    state["subject_known"] = bool(state.get("subject_name"))
     return state
 
 
@@ -31,14 +32,19 @@ def plan(state: dict) -> dict:
 
 
 def act(state: dict) -> dict:
-    """행동: Luna 호출. 여기서만 LLM을 쓴다.
-
-    이슈 유형마다 정의를 명시한다. 처음엔 유형 이름만 던졌더니
-    "감정적표현" 32건 중 8건, "다수아동언급"·"추측성표현" 일부를 놓쳤다.
-    유형 이름만으로는 모델이 판단 기준을 스스로 추측해야 했기 때문으로 보고,
-    정의를 프롬프트에 명시한 뒤 감정적표현 24/32 -> 31/32로 개선됨
-    (2026-09-21 확인)."""
+    """행동: Luna 호출. 여기서만 LLM을 쓴다."""
     content = state["content"]
+    subject_name = state.get("subject_name")
+
+    # 대상을 알면 이름을 명시하고, 모르면 모델한테도 "모른다"고 알려서
+    # attributed_to_subject를 스스로 false로 두게 유도한다 (2차 방어선).
+    subject_line = (
+        f'지금 판정 대상 아동은 "{subject_name}"입니다. 각 유형이 있다면, '
+        f'그것이 {subject_name} 본인에 대한 서술인지 판단하세요.'
+        if subject_name else
+        '이번 요청에는 판정 대상 아동 정보가 제공되지 않았습니다. '
+        '이 경우 attributed_to_subject는 항상 false로 표시하세요.'
+    )
 
     messages = [{
         "role": "user",
@@ -57,10 +63,7 @@ REVIEW:
   힘들다는 하소연("지치고 힘든 하루였음")도 포함됩니다.
 - 위험행동표현: 자해/타해 행동을 필요 이상으로 상세하게 묘사
 
-각 유형이 있다고 판단되면, 그게 "지금 이 기록의 주인공 아동 본인"에 대한
-서술인지, 아니면 다른 사람(부모/형제/다른 아이)에 대한 언급일 뿐인지도
-반드시 구분하세요. 본인에 대한 서술이 아니면 attributed_to_subject를
-false로 표시하세요. evidence_quote에는 근거가 되는 원문 문장을 그대로(가공하지 말고) 인용하세요.
+{subject_line}
 
 기록: {content}
 
@@ -82,13 +85,9 @@ JSON 형식으로만 답하세요:
 def reflect(state: dict) -> dict:
     """반영: 최종 검사.
 
-    Matching에서 받은 피드백 반영 지점 —
-    "문서 안에 위험 신호가 있는지"가 아니라
-    "그 신호가 지금 판정 대상 본인에게 귀속되는지"로 최종 확정한다.
-    attributed_to_subject가 false면, 위험 표현이 감지됐어도 반영하지 않는다.
-
-    또한 LLM이 인용한 근거가 원문에 실제로 없으면(=지어낸 근거) 버린다
-    (spans_for_quotes가 못 찾으면 빈 리스트 반환).
+    피드백 반영 지점: 판정 대상이 누군지 모르면 귀속 검증 자체가
+    성립하지 않는다. 이 경우 모델 응답과 무관하게 코드가 강제로 REVIEW로
+    보낸다 (프롬프트 지시는 2차 방어선일 뿐, 1차는 여기).
     """
     content = state["content"]
     verdict = "PASS"
@@ -104,8 +103,13 @@ def reflect(state: dict) -> dict:
     if state.get("llm_error"):
         if verdict == "BLOCK":
             # 구조적 패턴(정규식)으로 이미 확정된 BLOCK은 모델 상태와 무관하게 유지
-            return {**state, "verdict": "BLOCK", "issue_types": issue_type, "evidence": evidence}
+            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": evidence}
         return {**state, "verdict": "REVIEW", "issue_types": issue_types or ["모델호출실패"], "evidence": evidence}
+
+    if not state.get("subject_known"):
+        if verdict == "BLOCK":
+            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": evidence}
+        return {**state, "verdict": "REVIEW", "issue_types": list(set(issue_types + ["대상불명확"])), "evidence": evidence}
 
     for candidate in state.get("llm_issues", []):
         issue_type = candidate.get("issue_type")
