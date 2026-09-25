@@ -2,6 +2,7 @@ package com.itda.backend.global.security;
 
 import com.itda.backend.domain.Organization;
 import com.itda.backend.domain.User;
+import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -51,7 +52,7 @@ class JwtCookieAuthTest {
      * 아무 숫자나 넣으면 보호 API 가 사용자를 찾지 못해 401 이 된다.
      */
     private String tokenForOrganizationUser(String kakaoId) {
-        Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
+        Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
                 UserFixture.organizationUser(kakaoId, "테스트", organization.getId()));
         return jwtProvider.createToken(String.valueOf(user.getId()));

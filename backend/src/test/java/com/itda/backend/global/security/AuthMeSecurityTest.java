@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.domain.Organization;
 import com.itda.backend.domain.User;
+import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -52,7 +53,7 @@ class AuthMeSecurityTest {
 
     @Test
     void organizationUserGetsRoleAndInstitutionId() throws Exception {
-        Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
+        Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
                 UserFixture.organizationUser("me-org-1", "박지현", organization.getId()));
 
@@ -97,7 +98,7 @@ class AuthMeSecurityTest {
     /** 닉네임 동의를 거부한 사용자는 name 이 없다. null 을 실어 보내지 않는다. */
     @Test
     void userWithoutNicknameOmitsName() throws Exception {
-        Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
+        Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
                 UserFixture.organizationUser("me-org-2", null, organization.getId()));
 
@@ -165,7 +166,7 @@ class AuthMeSecurityTest {
      */
     @Test
     void authenticatedRequestDoesNotLeaveLoginInSession() throws Exception {
-        Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
+        Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
                 UserFixture.organizationUser("me-session-1", "세션", organization.getId()));
 
@@ -189,7 +190,7 @@ class AuthMeSecurityTest {
      */
     @Test
     void authenticatedRequestDoesNotExpireCsrfCookie() throws Exception {
-        Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
+        Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
                 UserFixture.organizationUser("me-csrf-1", "토큰", organization.getId()));
         jakarta.servlet.http.Cookie csrf = mockMvc.perform(get("/api/health"))
@@ -209,7 +210,7 @@ class AuthMeSecurityTest {
     /** 로그아웃 뒤에는 같은 세션을 들고 와도 로그인이 인정되지 않아야 한다. */
     @Test
     void sessionAloneDoesNotAuthenticateAfterLogout() throws Exception {
-        Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
+        Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
                 UserFixture.organizationUser("me-session-2", "세션", organization.getId()));
         org.springframework.mock.web.MockHttpSession session = new org.springframework.mock.web.MockHttpSession();

@@ -12,6 +12,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.itda.backend.domain.Organization;
+import com.itda.backend.domain.OrganizationType;
 import com.itda.backend.domain.User;
 import com.itda.backend.domain.UserRole;
 import com.itda.backend.fixture.UserFixture;
@@ -74,9 +76,13 @@ class PostgreSqlIntegrationTests {
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
-	/** 시드가 PostgreSQL 에서도 동작하고 기관 유형이 그대로 저장된다. */
+	/** 사업자등록번호 유니크 제약이 PostgreSQL 에서도 실제로 걸린다. */
 	@Test
-	void seededOrganizationsExistOnPostgreSql() {
-		assertThat(organizationRepository.findFirstByOrderByIdAsc()).isPresent();
+	void duplicateBusinessNumberIsRejectedByTheUniqueConstraint() {
+		organizationRepository.saveAndFlush(Organization.of("햇살센터", OrganizationType.CENTER, "1234567890"));
+
+		assertThatThrownBy(() -> organizationRepository.saveAndFlush(
+				Organization.of("다른센터", OrganizationType.SCHOOL, "1234567890")))
+				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 }
