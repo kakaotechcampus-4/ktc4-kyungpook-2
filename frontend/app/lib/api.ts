@@ -40,6 +40,7 @@ import type {
   ChatTurn,
   Child,
   ChildCareInfo,
+  ConsentPreview,
   FileProgress,
   InboxItem,
   Insight,
@@ -467,6 +468,60 @@ export async function getPendingLinks(): Promise<PendingLink[]> {
     );
   }
   return request("/api/v1/guardians/me/pending-links");
+}
+
+/**
+ * GET /api/v1/children/{childId}/consent-preview?institutionId= (api-spec G-02)
+ *
+ * P-02 가 그릴 아이 · 기관 · 공유 범위. 해당 연결 요청이 없으면 null 이다 — 다른 아이나
+ * 기관으로 대신 채우지 않는다. 동의 화면에 엉뚱한 아이가 뜨면 잘못 동의하게 된다.
+ * 이미 동의했거나 반려한 요청도 "없는 요청" 으로 본다 (getPendingLinks 와 기준을 맞춘다).
+ */
+export async function getConsentPreview(
+  childId: string,
+  institutionId: string,
+): Promise<ConsentPreview | null> {
+  if (USE_MOCK) {
+    const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
+    const rec = child?.institutions.find(
+      (i) => i.institution.id === institutionId && i.consent === "not_granted",
+    );
+    if (!child || !rec) return null;
+    if (mock.DECLINED_INSTITUTION_REQUESTS.has(`${childId}:${institutionId}`)) return null;
+    const { shared, notShared } = mock.INSTITUTION_SHARE_FIELDS[rec.institution.type];
+    return {
+      child: { id: child.id, name: child.name, birthDate: child.birthDate },
+      institution: rec.institution,
+      documentUrl: null,
+      sharedFields: shared,
+      notSharedFields: notShared,
+    };
+  }
+  try {
+    return await request<ConsentPreview>(
+      `/api/v1/children/${encodeURIComponent(childId)}/consent-preview?institutionId=${encodeURIComponent(institutionId)}`,
+    );
+  } catch (e) {
+    // 없는 요청은 화면에서 안내한다. 그 밖의 오류는 그대로 올려 에러 화면으로 보낸다.
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/**
+ * POST /api/v1/children/{childId}/links/{institutionId}/reject (api-spec G-03)
+ *
+ * P-02 에서 "우리 아이가 아니에요" 로 반려한다. 반려한 요청은 getPendingLinks 에서 빠진다.
+ */
+export async function rejectLink(childId: string, institutionId: string) {
+  if (USE_MOCK) {
+    mock.DECLINED_INSTITUTION_REQUESTS.add(`${childId}:${institutionId}`);
+    return { ok: true };
+  }
+  return request(
+    `/api/v1/children/${encodeURIComponent(childId)}/links/${encodeURIComponent(institutionId)}/reject`,
+    { method: "POST" },
+  );
 }
 
 
