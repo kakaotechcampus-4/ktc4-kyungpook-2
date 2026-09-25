@@ -12,7 +12,7 @@ import type {
   ValidationStatus,
 } from "@/lib/types";
 
-export { PipelineStepper } from "./PipelineStepper";
+export { PipelineStepper, StageDots } from "./PipelineStepper";
 export type { StageState, PipelineStepperProps } from "./PipelineStepper";
 
 /* ── C1 판정 배지 ───────────────────────────────────── */
@@ -117,8 +117,13 @@ export function EvidenceText({
   content: string;
   spans?: { start: number; end: number }[];
 }) {
+  // AI 의 인덱스는 코드포인트 기준이다. String.slice(UTF-16) 로 자르면 이모지 뒤부터
+  // 한 칸씩 밀리므로 코드포인트 배열로 바꿔서 자른다 (AI/matching/schemas.py 의 EvidenceSpan).
+  const chars = Array.from(content);
+  const cut = (from: number, to: number) => chars.slice(from, to).join("");
+
   const valid = (spans ?? [])
-    .filter((s) => s.end > s.start && s.start < content.length)
+    .filter((s) => s.end > s.start && s.start < chars.length)
     .sort((a, b) => a.start - b.start);
 
   if (valid.length === 0) {
@@ -131,22 +136,22 @@ export function EvidenceText({
   valid.forEach((span, i) => {
     // 구간이 겹치거나 범위를 벗어나도 본문이 깨지지 않게 잘라 맞춘다.
     const start = Math.max(cursor, span.start);
-    const end = Math.min(content.length, Math.max(start, span.end));
+    const end = Math.min(chars.length, Math.max(start, span.end));
     if (end <= start) return;
 
-    if (start > cursor) parts.push(content.slice(cursor, start));
+    if (start > cursor) parts.push(cut(cursor, start));
     parts.push(
       <mark
         key={i}
         className="rounded bg-accentsoft px-0.5 text-accentink underline decoration-accent/40 decoration-2 underline-offset-2"
       >
-        {content.slice(start, end)}
+        {cut(start, end)}
       </mark>,
     );
     cursor = end;
   });
 
-  if (cursor < content.length) parts.push(content.slice(cursor));
+  if (cursor < chars.length) parts.push(cut(cursor, chars.length));
 
   return <p className="leading-7 text-ink">{parts}</p>;
 }
