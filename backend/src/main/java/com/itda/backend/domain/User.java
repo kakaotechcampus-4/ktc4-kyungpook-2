@@ -21,6 +21,8 @@ import lombok.NoArgsConstructor;
 /**
  * 서비스 회원. 카카오는 신원 확인 수단일 뿐이고, 역할·소속의 기준은 이 테이블이다.
  *
+ * <p>카카오 로그인으로 역할 없는(가입 미완료) 행이 먼저 생기고, 가입 API 가 역할을 정한다.
+ *
  * <p><b>테이블 이름이 {@code users} 인 이유.</b> {@code USER} 는 PostgreSQL 예약어이고
  * H2 의 {@code MODE=PostgreSQL} 에서도 마찬가지다. {@code @Table(name = "user")} 로 두면
  * 테이블 생성 자체가 실패한다.
@@ -54,11 +56,15 @@ public class User {
     @Column(length = 100)
     private String name;
 
+    /**
+     * null 이면 가입 미완료다. 카카오 로그인은 신원 확인만 하고, 역할은 가입 API 에서
+     * {@link #completeSignup} 으로 정해진다. 한 번 정해지면 바뀌지 않는다.
+     */
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(length = 20)
     private UserRole role;
 
-    /** 보호자는 소속 기관이 없어 null 이다. FK 제약 없음. */
+    /** 기관 담당자만 가진다. 보호자와 가입 미완료 회원은 null 이다. FK 제약 없음. */
     @Column(name = "organization_id")
     private Long organizationId;
 
@@ -77,18 +83,38 @@ public class User {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
-    private User(String kakaoId, String name, UserRole role, Long organizationId) {
+    private User(String kakaoId, String name) {
         this.kakaoId = kakaoId;
         this.name = name;
-        this.role = role;
-        this.organizationId = organizationId;
     }
 
-    public static User of(String kakaoId, String name, UserRole role, Long organizationId) {
+    /** 카카오 로그인 직후의 회원. 역할과 소속은 아직 없다. */
+    public static User pending(String kakaoId, String name) {
+        return new User(kakaoId, name);
+    }
+
+    /**
+     * 가입을 마친다 — 역할과 소속을 확정한다.
+     *
+     * <p>이미 가입한 회원이면 막는다. 서비스가 먼저 409 로 거르지만, 역할이 바뀌면 그 사람이
+     * 볼 수 있는 데이터 범위가 통째로 바뀌므로 엔티티도 스스로 지킨다.
+     * 소속 없는 기관 담당자도 만들지 않는다 — /auth/me 가 institutionId 없는 org 응답을 내보내게 된다.
+     */
+    public void completeSignup(UserRole role, Long organizationId) {
+        if (isSignupCompleted()) {
+            throw new IllegalStateException("이미 가입을 마친 회원입니다.");
+        }
+        if (role == null) {
+            throw new IllegalArgumentException("역할은 필수입니다.");
+        }
         if (role == UserRole.PARENT && organizationId != null) {
             throw new IllegalArgumentException("보호자는 소속 기관을 가질 수 없습니다.");
         }
-        return new User(kakaoId, name, role, organizationId);
+        if (role == UserRole.ORGANIZATION && organizationId == null) {
+            throw new IllegalArgumentException("기관 담당자는 소속 기관이 있어야 합니다.");
+        }
+        this.role = role;
+        this.organizationId = organizationId;
     }
 
     /**
@@ -115,6 +141,10 @@ public class User {
 
     public boolean isDeleted() {
         return this.deletedAt != null;
+    }
+
+    public boolean isSignupCompleted() {
+        return this.role != null;
     }
 
     public boolean isOrganization() {

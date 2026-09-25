@@ -59,7 +59,7 @@ class AuthControllerTest {
     void meReturnsRoleUserIdNameAndInstitutionIdForOrganization() throws Exception {
         authenticateAs("1");
         given(userService.getCurrentUser("1"))
-                .willReturn(new CurrentUserResponse("org", "1", "박지현", "1"));
+                .willReturn(new CurrentUserResponse("org", "1", "박지현", "1", true));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
@@ -67,7 +67,22 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.role").value("org"))
                 .andExpect(jsonPath("$.data.userId").value("1"))
                 .andExpect(jsonPath("$.data.name").value("박지현"))
-                .andExpect(jsonPath("$.data.institutionId").value("1"));
+                .andExpect(jsonPath("$.data.institutionId").value("1"))
+                .andExpect(jsonPath("$.data.signupCompleted").value(true));
+    }
+
+    /** 가입 미완료 — signupCompleted 는 false 로 반드시 나가고, role 은 빠진다. */
+    @Test
+    void meReportsSignupNotCompletedWithoutRole() throws Exception {
+        authenticateAs("3");
+        given(userService.getCurrentUser("3"))
+                .willReturn(new CurrentUserResponse(null, "3", "박지현", null, false));
+
+        mockMvc.perform(get("/api/v1/auth/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.signupCompleted").value(false))
+                .andExpect(jsonPath("$.data.role").doesNotExist())
+                .andExpect(jsonPath("$.data.institutionId").doesNotExist());
     }
 
     /** institutionId 는 role 이 org 일 때만 내려간다 — null 로도 실어 보내지 않는다. */
@@ -75,7 +90,7 @@ class AuthControllerTest {
     void meOmitsInstitutionIdForParent() throws Exception {
         authenticateAs("2");
         given(userService.getCurrentUser("2"))
-                .willReturn(new CurrentUserResponse("parent", "2", "김보호", null));
+                .willReturn(new CurrentUserResponse("parent", "2", "김보호", null, true));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())

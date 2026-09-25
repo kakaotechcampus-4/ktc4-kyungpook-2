@@ -2,7 +2,7 @@ package com.itda.backend.global.security;
 
 import com.itda.backend.domain.Organization;
 import com.itda.backend.domain.User;
-import com.itda.backend.domain.UserRole;
+import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.OrganizationRepository;
@@ -53,7 +53,7 @@ class JwtCookieAuthTest {
     private String tokenForOrganizationUser(String kakaoId) {
         Organization organization = organizationRepository.findFirstByOrderByIdAsc().orElseThrow();
         User user = userRepository.save(
-                User.of(kakaoId, "테스트", UserRole.ORGANIZATION, organization.getId()));
+                UserFixture.organizationUser(kakaoId, "테스트", organization.getId()));
         return jwtProvider.createToken(String.valueOf(user.getId()));
     }
 

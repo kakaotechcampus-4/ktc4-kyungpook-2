@@ -14,6 +14,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.itda.backend.domain.User;
 import com.itda.backend.domain.UserRole;
+import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.repository.OrganizationRepository;
 import com.itda.backend.repository.UserRepository;
 
@@ -56,20 +57,20 @@ class PostgreSqlIntegrationTests {
 	 */
 	@Test
 	void userTableIsCreatedAndEnumsAreStoredAsStrings() {
-		User saved = userRepository.save(User.of("pg-1", "박지현", UserRole.ORGANIZATION, null));
+		User saved = userRepository.save(UserFixture.parent("pg-1", "박지현"));
 
 		assertThat(userRepository.findByKakaoId("pg-1")).isPresent();
-		assertThat(saved.getRole()).isEqualTo(UserRole.ORGANIZATION);
+		assertThat(saved.getRole()).isEqualTo(UserRole.PARENT);
 		assertThat(saved.getCreatedAt()).isNotNull();
 	}
 
 	/** 유니크 제약은 엔티티를 만들 때 넣지 않으면 ddl-auto: update 가 나중에 붙여주지 않는다. */
 	@Test
 	void duplicateKakaoIdIsRejectedByTheUniqueConstraint() {
-		userRepository.saveAndFlush(User.of("pg-dup", "첫번째", UserRole.ORGANIZATION, null));
+		userRepository.saveAndFlush(User.pending("pg-dup", "첫번째"));
 
 		assertThatThrownBy(() -> userRepository.saveAndFlush(
-				User.of("pg-dup", "두번째", UserRole.ORGANIZATION, null)))
+				User.pending("pg-dup", "두번째")))
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 

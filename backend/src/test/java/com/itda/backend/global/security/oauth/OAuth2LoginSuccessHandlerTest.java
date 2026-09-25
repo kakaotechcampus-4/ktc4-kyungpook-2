@@ -17,7 +17,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.test.context.ActiveProfiles;
 
 import com.itda.backend.domain.User;
-import com.itda.backend.domain.UserRole;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.UserRepository;
@@ -55,14 +54,15 @@ class OAuth2LoginSuccessHandlerTest {
         return response;
     }
 
+    /** 역할은 가입 API 에서 정한다. 첫 로그인은 역할·소속 없는 가입 미완료 회원을 만든다. */
     @Test
-    void firstLoginStoresUserAsOrganizationWithSeededOrganization() throws Exception {
+    void firstLoginStoresUserWithoutRole() throws Exception {
         MockHttpServletResponse response = login(new MockHttpServletRequest(), 900001L, "박지현");
 
         User saved = userRepository.findByKakaoId("900001").orElseThrow();
-        assertThat(saved.getRole()).isEqualTo(UserRole.ORGANIZATION);
+        assertThat(saved.getRole()).isNull();
+        assertThat(saved.getOrganizationId()).isNull();
         assertThat(saved.getName()).isEqualTo("박지현");
-        assertThat(saved.getOrganizationId()).isNotNull();
         assertThat(response.getStatus()).isEqualTo(302);
     }
 
@@ -97,7 +97,6 @@ class OAuth2LoginSuccessHandlerTest {
 
         User saved = userRepository.findByKakaoId("900004").orElseThrow();
         assertThat(saved.getName()).isNull();
-        assertThat(saved.getRole()).isEqualTo(UserRole.ORGANIZATION);
     }
 
     /** 나중에 동의를 철회해 닉네임이 빠져도, 이미 저장한 이름을 지우지 않는다. */
@@ -108,32 +107,5 @@ class OAuth2LoginSuccessHandlerTest {
         login(new MockHttpServletRequest(), 900005L, null);
 
         assertThat(userRepository.findByKakaoId("900005").orElseThrow().getName()).isEqualTo("최유나");
-    }
-
-    @Test
-    void inviteHintInSessionCreatesParentWithoutOrganization() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.getSession(true)
-                .setAttribute(LoginRoleHintFilter.ROLE_SESSION_ATTRIBUTE, UserRole.PARENT);
-
-        login(request, 900006L, "학부모");
-
-        User saved = userRepository.findByKakaoId("900006").orElseThrow();
-        assertThat(saved.getRole()).isEqualTo(UserRole.PARENT);
-        assertThat(saved.getOrganizationId()).isNull();
-    }
-
-    /** 이미 기관으로 가입한 사람이 초대 링크를 눌러도 보호자가 되지 않는다. */
-    @Test
-    void existingUserRoleIsNotOverwrittenByAnInviteLink() throws Exception {
-        login(new MockHttpServletRequest(), 900007L, "기관담당");
-
-        MockHttpServletRequest withInvite = new MockHttpServletRequest();
-        withInvite.getSession(true)
-                .setAttribute(LoginRoleHintFilter.ROLE_SESSION_ATTRIBUTE, UserRole.PARENT);
-        login(withInvite, 900007L, "기관담당");
-
-        assertThat(userRepository.findByKakaoId("900007").orElseThrow().getRole())
-                .isEqualTo(UserRole.ORGANIZATION);
     }
 }

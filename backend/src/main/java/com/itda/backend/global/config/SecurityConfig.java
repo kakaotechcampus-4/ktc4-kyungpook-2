@@ -1,6 +1,5 @@
 package com.itda.backend.global.config;
 
-import com.itda.backend.global.security.oauth.LoginRoleHintFilter;
 import com.itda.backend.global.security.oauth.OAuth2LoginFailureHandler;
 import com.itda.backend.global.security.oauth.OAuth2LoginSuccessHandler;
 import com.itda.backend.global.jwt.JwtAuthenticationFilter;
@@ -13,7 +12,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
@@ -35,7 +33,6 @@ public class SecurityConfig {
     private final JsonAccessDeniedHandler jsonAccessDeniedHandler;
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     private final OAuth2LoginFailureHandler oAuth2LoginFailureHandler;
-    private final LoginRoleHintFilter loginRoleHintFilter;
 
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private String[] allowedOrigins;
@@ -45,15 +42,13 @@ public class SecurityConfig {
             JsonAuthenticationEntryPoint jsonAuthenticationEntryPoint,
             JsonAccessDeniedHandler jsonAccessDeniedHandler,
             OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
-            OAuth2LoginFailureHandler oAuth2LoginFailureHandler,
-            LoginRoleHintFilter loginRoleHintFilter
+            OAuth2LoginFailureHandler oAuth2LoginFailureHandler
     ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.jsonAuthenticationEntryPoint = jsonAuthenticationEntryPoint;
         this.jsonAccessDeniedHandler = jsonAccessDeniedHandler;
         this.oAuth2LoginSuccessHandler = oAuth2LoginSuccessHandler;
         this.oAuth2LoginFailureHandler = oAuth2LoginFailureHandler;
-        this.loginRoleHintFilter = loginRoleHintFilter;
     }
 
     @Bean
@@ -103,7 +98,7 @@ public class SecurityConfig {
                 /*
                  * 로그인 정보(SecurityContext)를 세션에 저장하지 않는다. 출입증 쿠키만이 인증 수단이다.
                  * 요청 속성 저장소는 그 요청 안에서만 인증을 들고 있다가 버린다. 세션은 위에 적은 대로
-                 * 카카오 인가 요청(state)과 역할 힌트를 잠깐 담는 용도로만 남는다.
+                 * 카카오 인가 요청(state)을 잠깐 담는 용도로만 남는다.
                  */
                 .securityContext(context -> context
                         .securityContextRepository(new RequestAttributeSecurityContextRepository()))
@@ -136,13 +131,7 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jsonAuthenticationEntryPoint)
                         .accessDeniedHandler(jsonAccessDeniedHandler)
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                /*
-                 * 역할 힌트는 인가 요청이 만들어지기 전에 세션에 들어가야 한다.
-                 * OAuth2AuthorizationRequestRedirectFilter 가 /oauth2/authorization/** 를 받아
-                 * 인가 요청을 세션에 저장하고 곧바로 302 를 내보내므로, 그 뒤에 두면 아예 실행되지 않는다.
-                 */
-                .addFilterBefore(loginRoleHintFilter, OAuth2AuthorizationRequestRedirectFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

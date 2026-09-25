@@ -15,16 +15,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.OrganizationType;
 import com.itda.backend.domain.User;
 import com.itda.backend.domain.UserRole;
 import com.itda.backend.dto.response.CurrentUserResponse;
 import com.itda.backend.exception.UserErrorCode;
 import com.itda.backend.exception.UserException;
-import com.itda.backend.repository.OrganizationRepository;
+import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.repository.UserRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,87 +32,50 @@ class UserServiceTest {
     @Mock
     private UserRepository userRepository;
 
-    @Mock
-    private OrganizationRepository organizationRepository;
-
     private UserService userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, organizationRepository);
-    }
-
-    /** 시드된 기관은 저장된 뒤라 id 가 있다. 저장 전 객체를 쓰면 실제와 다른 상황을 검증하게 된다. */
-    private static Organization organization(long id) {
-        Organization organization = Organization.of("햇살어린이집", OrganizationType.CENTER);
-        ReflectionTestUtils.setField(organization, "id", id);
-        return organization;
-    }
-
-    @Test
-    void firstOrganizationLoginGetsTheFirstSeededOrganization() {
-        given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.empty());
-        given(organizationRepository.findFirstByOrderByIdAsc()).willReturn(Optional.of(organization(1L)));
-        given(userRepository.save(any(User.class))).willAnswer(i -> i.getArgument(0));
-
-        userService.findOrCreateByKakaoId(KAKAO_ID, "박지현", UserRole.ORGANIZATION);
-
-        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(captor.capture());
-        assertThat(captor.getValue().getRole()).isEqualTo(UserRole.ORGANIZATION);
-        assertThat(captor.getValue().getName()).isEqualTo("박지현");
-        assertThat(captor.getValue().getOrganizationId()).isEqualTo(1L);
-    }
-
-    @Test
-    void parentIsCreatedWithoutOrganization() {
-        given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.empty());
-        given(userRepository.save(any(User.class))).willAnswer(i -> i.getArgument(0));
-
-        userService.findOrCreateByKakaoId(KAKAO_ID, "김보호", UserRole.PARENT);
-
-        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(captor.capture());
-        assertThat(captor.getValue().getRole()).isEqualTo(UserRole.PARENT);
-        assertThat(captor.getValue().getOrganizationId()).isNull();
-        // 보호자에게는 기관을 찾지도 않는다.
-        verify(organizationRepository, never()).findFirstByOrderByIdAsc();
+        userService = new UserService(userRepository);
     }
 
     /**
-     * 기관이 하나도 없으면 사용자를 만들지 않는다. 소속 없이 만들어 두면 /auth/me 가
-     * role 은 org 인데 institutionId 는 없는 응답을 내보내 계약을 어기고, 역할은 나중에
-     * 다시 로그인해도 바뀌지 않아 그 사용자가 영구히 고장난 채로 남는다.
+     * 카카오 로그인은 신원 확인만 한다. 역할과 소속은 가입 API 에서 정하므로
+     * 첫 로그인에서는 역할 없는(가입 미완료) 회원을 만든다.
      */
     @Test
-    void organizationLoginWithoutAnySeededOrganizationFailsInsteadOfCreatingABrokenUser() {
+    void firstLoginCreatesUserWithoutRole() {
         given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.empty());
-        given(organizationRepository.findFirstByOrderByIdAsc()).willReturn(Optional.empty());
+        given(userRepository.save(any(User.class))).willAnswer(i -> i.getArgument(0));
 
-        assertThatThrownBy(() -> userService.findOrCreateByKakaoId(KAKAO_ID, "박지현", UserRole.ORGANIZATION))
-                .isInstanceOf(IllegalStateException.class);
+        userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
 
-        verify(userRepository, never()).save(any(User.class));
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getName()).isEqualTo("박지현");
+        assertThat(captor.getValue().getRole()).isNull();
+        assertThat(captor.getValue().getOrganizationId()).isNull();
+        assertThat(captor.getValue().isSignupCompleted()).isFalse();
     }
 
     @Test
     void existingUserIsReusedInsteadOfCreatingAnother() {
-        User existing = User.of(KAKAO_ID, "박지현", UserRole.ORGANIZATION, 7L);
+        User existing = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
         given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(existing));
 
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현", UserRole.ORGANIZATION);
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
 
         assertThat(found).isSameAs(existing);
         verify(userRepository, never()).save(any(User.class));
     }
 
-    /** 기관으로 가입한 사람이 초대 링크를 눌러도 보호자가 되지 않는다. */
+    /** 가입을 마친 회원이 다시 로그인해도 역할과 소속은 그대로다. */
     @Test
-    void existingUsersRoleIsNeverOverwritten() {
-        User existing = User.of(KAKAO_ID, "박지현", UserRole.ORGANIZATION, 7L);
+    void loggingInAgainKeepsTheCompletedSignup() {
+        User existing = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
         given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(existing));
 
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현", UserRole.PARENT);
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
 
         assertThat(found.getRole()).isEqualTo(UserRole.ORGANIZATION);
         assertThat(found.getOrganizationId()).isEqualTo(7L);
@@ -124,10 +84,10 @@ class UserServiceTest {
     /** 동의를 철회해 닉네임이 빠져도 이미 저장한 이름을 지우지 않는다. */
     @Test
     void nullNicknameDoesNotWipeTheStoredName() {
-        User existing = User.of(KAKAO_ID, "박지현", UserRole.ORGANIZATION, 7L);
+        User existing = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
         given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(existing));
 
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, null, UserRole.ORGANIZATION);
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID, null);
 
         assertThat(found.getName()).isEqualTo("박지현");
     }
@@ -135,11 +95,11 @@ class UserServiceTest {
     /** 탈퇴한 사람이 같은 카카오 계정으로 다시 오면 새 행을 만들지 않고 되살린다. */
     @Test
     void withdrawnUserIsRestoredInsteadOfCreatingANewRow() {
-        User withdrawn = User.of(KAKAO_ID, "박지현", UserRole.ORGANIZATION, 7L);
+        User withdrawn = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
         withdrawn.delete();
         given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(withdrawn));
 
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현", UserRole.ORGANIZATION);
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
 
         assertThat(found).isSameAs(withdrawn);
         assertThat(found.isDeleted()).isFalse();
@@ -148,10 +108,10 @@ class UserServiceTest {
 
     @Test
     void changedNicknameIsRefreshed() {
-        User existing = User.of(KAKAO_ID, "옛이름", UserRole.ORGANIZATION, 7L);
+        User existing = UserFixture.organizationUser(KAKAO_ID, "옛이름", 7L);
         given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(existing));
 
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "새이름", UserRole.ORGANIZATION);
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "새이름");
 
         assertThat(found.getName()).isEqualTo("새이름");
     }
@@ -159,18 +119,33 @@ class UserServiceTest {
     @Test
     void currentUserOfOrganizationCarriesLowercaseRoleAndStringIds() {
         given(userRepository.findByIdAndDeletedAtIsNull(1L))
-                .willReturn(Optional.of(User.of(KAKAO_ID, "박지현", UserRole.ORGANIZATION, 7L)));
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
 
         CurrentUserResponse response = userService.getCurrentUser("1");
 
         assertThat(response.role()).isEqualTo("org");
         assertThat(response.institutionId()).isEqualTo("7");
+        assertThat(response.signupCompleted()).isTrue();
+    }
+
+    /** 가입 미완료는 정상 상태다. 역할 없이 signupCompleted=false 로 내려 프론트가 가입 화면으로 보낸다. */
+    @Test
+    void currentUserBeforeSignupHasNoRole() {
+        given(userRepository.findByIdAndDeletedAtIsNull(3L))
+                .willReturn(Optional.of(User.pending(KAKAO_ID, "박지현")));
+
+        CurrentUserResponse response = userService.getCurrentUser("3");
+
+        assertThat(response.signupCompleted()).isFalse();
+        assertThat(response.role()).isNull();
+        assertThat(response.institutionId()).isNull();
+        assertThat(response.name()).isEqualTo("박지현");
     }
 
     @Test
     void currentUserOfParentHasNoInstitutionId() {
         given(userRepository.findByIdAndDeletedAtIsNull(2L))
-                .willReturn(Optional.of(User.of(KAKAO_ID, "김보호", UserRole.PARENT, null)));
+                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID, "김보호")));
 
         CurrentUserResponse response = userService.getCurrentUser("2");
 
@@ -206,7 +181,7 @@ class UserServiceTest {
     @Test
     void parentHasNoOrganizationToActOnBehalfOf() {
         given(userRepository.findByIdAndDeletedAtIsNull(2L))
-                .willReturn(Optional.of(User.of(KAKAO_ID, "김보호", UserRole.PARENT, null)));
+                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID, "김보호")));
 
         assertThatThrownBy(() -> userService.getOrganizationIdOf("2"))
                 .isInstanceOf(UserException.class)
@@ -217,7 +192,7 @@ class UserServiceTest {
     @Test
     void organizationUserResolvesToItsOrganizationId() {
         given(userRepository.findByIdAndDeletedAtIsNull(1L))
-                .willReturn(Optional.of(User.of(KAKAO_ID, "박지현", UserRole.ORGANIZATION, 7L)));
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
 
         assertThat(userService.getOrganizationIdOf("1")).isEqualTo(7L);
     }
