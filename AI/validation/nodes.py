@@ -102,6 +102,9 @@ def reflect(state: dict) -> dict:
         verdict = "BLOCK"
 
     if state.get("llm_error"):
+        if verdict == "BLOCK":
+            # 구조적 패턴(정규식)으로 이미 확정된 BLOCK은 모델 상태와 무관하게 유지
+            return {**state, "verdict": "BLOCK", "issue_types": issue_type, "evidence": evidence}
         return {**state, "verdict": "REVIEW", "issue_types": issue_types or ["모델호출실패"], "evidence": evidence}
 
     for candidate in state.get("llm_issues", []):
