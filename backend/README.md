@@ -7,37 +7,33 @@
 
 기본 Spring Boot 애플리케이션, 데이터베이스 연결 설정, Swagger/OpenAPI 문서 기반과
 함께 공통 응답 래퍼, 전역 예외 처리, 카카오 로그인(Spring Security `oauth2Login`),
-JWT 쿠키 인증과 CSRF 보호가 구현되어 있습니다. 로그인한 사용자는 `User`로 저장되며
-`Organization`에 소속됩니다.
+JWT 쿠키 인증과 CSRF 보호, 회원가입이 구현되어 있습니다. 로그인한 사용자는 `User`로
+저장되고, 기관 담당자는 가입할 때 만든 `Organization`에 소속됩니다.
 
 도메인 API는 원본 기록 업로드·조회(`/api/v1/raw-records`)가 있으며, 원본 파일은 기본
 프로필에서 로컬 디스크에, `docker` 프로필에서 S3에 저장합니다. 원본 기록은 로그인한
 사용자의 소속 기관 기준으로 저장·조회됩니다.
 
-### 로그인과 역할
+### 로그인과 회원가입
 
-역할은 **로그인 진입 경로**로 정해집니다.
+기관 담당자와 보호자 모두 `GET /oauth2/authorization/kakao`로 로그인합니다. 로그인은 신원 확인만
+하고 역할을 정하지 않습니다.
 
-| 진입 주소 | 등록되는 역할 |
-| --- | --- |
-| `GET /oauth2/authorization/kakao` | `ORGANIZATION` |
-| `GET /oauth2/authorization/kakao?invite={초대코드}` | `PARENT` |
+1. 처음 로그인하면 역할 없는(`role = NULL`) **가입 미완료** 회원이 만들어집니다.
+2. 프론트는 `GET /api/v1/auth/me`의 `signupCompleted: false`를 보고 역할 선택 화면을 띄웁니다.
+3. `POST /api/v1/auth/signup`으로 역할을 확정합니다. 보호자는 `role`만, 기관은 기관명·기관유형·
+   사업자등록번호를 함께 보내고, 이때 `organization` 행이 새로 만들어집니다(기관 1곳당 계정 1개).
 
-초대 코드는 **붙어 있는지만** 봅니다. 그 코드가 어떤 아이·기관을 가리키는지는 아직
-해석하지 않습니다. 이미 가입한 회원의 역할은 다시 로그인해도 바뀌지 않습니다.
+사업자등록번호는 숫자 10자리 형식만 검사하고 진위·체크섬은 검증하지 않습니다. 역할은 한 번 정해지면
+바뀌지 않습니다. 가입 미완료 회원은 `/auth/me` · `/auth/signup` · `/auth/logout` 외의 API에서
+`403 SIGNUP_NOT_COMPLETED`로 막힙니다. 요청·응답 형식은
+[API 명세 §2.2 · §2.6](../docs/api/api-spec.md)을 참고하세요.
 
-기관 담당자에게는 시드된 기관 중 가장 먼저 만들어진 것이 자동으로 배정됩니다.
-기관을 만들거나 고르는 API는 만들지 않기로 했기 때문입니다.
+시연용 기관 시드는 없습니다. 기관은 회원가입으로만 만들어집니다.
 
-### 시연용 기관 시드
-
-기동할 때 `organization` 테이블에 시연용 기관 3개(어린이집·학교·활동지원센터)를 넣습니다.
-이미 있는 이름은 건너뛰므로 재기동해도 늘어나지 않습니다.
-
-`app.seed.organizations.enabled=false`로 끌 수 있지만, **로그인을 서비스하는 환경에서는
-끄지 않습니다.** 기관이 하나도 없으면 새 기관 담당자를 만들지 않고 로그인을 실패시킵니다
-(프론트 로그인 화면으로 `?error=login_failed`와 함께 돌아갑니다). 소속 없는 기관 담당자가
-생기면 역할이 영구히 고정돼 나중에 고칠 수 없기 때문입니다. 원인은 서버 로그에 남습니다.
+> **로컬 DB를 이미 쓰고 있었다면** `users`와 `organization` 테이블을 지우고 다시 기동하세요.
+> `ddl-auto: update`는 `users.role`의 NOT NULL과 `organization.name`의 UNIQUE 제약을 걷어내지 못하고,
+> 기존 행이 있으면 NOT NULL인 `organization.business_number` 컬럼 추가도 실패합니다.
 
 ## 기술 스택
 
