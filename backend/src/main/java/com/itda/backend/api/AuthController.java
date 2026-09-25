@@ -80,7 +80,8 @@ public class AuthController {
                     responseCode = "201", description = "가입 완료"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "role 누락·잘못된 값, 기관 필드 누락, 사업자등록번호 형식 오류 (INVALID_REQUEST)",
+                    description = "role 누락·잘못된 값, 기관인데 기관 필드 누락, 보호자인데 기관 필드 포함, "
+                            + "사업자등록번호 형식 오류 (INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",

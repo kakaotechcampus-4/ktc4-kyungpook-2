@@ -196,7 +196,9 @@ POST /api/v1/auth/signup   → 201 Created
 | `organizationType` | `"SCHOOL"` \| `"CENTER"` \| `"ACTIVITY_SUPPORT"` | `role === "org"`일 때 | 백엔드 enum 값 그대로. 화면 표시용 변환은 프론트 몫입니다 |
 | `businessNumber` | string (`^\d{10}$`) | `role === "org"`일 때 | 사업자등록번호. 하이픈 없이 숫자 10자리. **형식만 검사하고 진위·체크섬은 검증하지 않습니다** |
 
-보호자는 `role`만 보냅니다. 아이 연결은 가입과 별개입니다.
+보호자는 `role`**만** 보냅니다. 기관 필드가 하나라도 섞이면(값이 맞든 틀리든) `400`입니다 —
+가입 화면에서 기관 입력란에 쓰다가 보호자로 바꿨다면 남은 값을 비우고 보내 주세요.
+아이 연결은 가입과 별개입니다.
 
 **응답 — `201 Created`.** 본문은 §2.2의 가입 완료 응답과 같습니다.
 
@@ -216,7 +218,7 @@ POST /api/v1/auth/signup   → 201 Created
 
 | 상태 | 코드 | 조건 | 프론트 동작 |
 | --- | --- | --- | --- |
-| 400 | `INVALID_REQUEST` | `role` 누락·잘못된 값, 기관 필드 누락, `businessNumber` 형식 오류, 없는 `organizationType` | 입력 오류 표시 |
+| 400 | `INVALID_REQUEST` | `role` 누락·잘못된 값, 기관인데 기관 필드 누락, 보호자인데 기관 필드 포함, `businessNumber` 형식 오류, 없는 `organizationType` | 입력 오류 표시 |
 | 401 | `UNAUTHORIZED` · `SESSION_USER_NOT_FOUND` | 비로그인 · 없는 회원 | 로그인 화면으로 |
 | 403 | `FORBIDDEN` | CSRF 토큰 누락 또는 불일치 | |
 | 409 | `ALREADY_SIGNED_UP` | 이미 가입 완료 | `/auth/me`를 다시 불러 역할별 홈으로 |

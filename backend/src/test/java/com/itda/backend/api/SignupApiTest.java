@@ -150,6 +150,28 @@ class SignupApiTest {
         assertThat(userRepository.findById(user.getId()).orElseThrow().isSignupCompleted()).isFalse();
     }
 
+    /**
+     * 보호자는 role 만 보낸다. 기관 필드가 하나라도 섞이면 형식이 맞든 틀리든 400 이다 —
+     * 조용히 무시하면 "기관 정보를 보냈는데 기관이 안 생겼다" 는 착각이 생긴다.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"role\": \"parent\", \"organizationName\": \"햇살센터\"}",
+            "{\"role\": \"parent\", \"organizationType\": \"CENTER\"}",
+            "{\"role\": \"parent\", \"businessNumber\": \"1234567892\"}",
+            "{\"role\": \"parent\", \"businessNumber\": \"12\"}",
+            "{\"role\": \"parent\", \"organizationName\": \"햇살센터\", \"organizationType\": \"CENTER\", \"businessNumber\": \"1234567892\"}",
+    })
+    void parentSignupWithOrganizationInfoIsBadRequest(String body) throws Exception {
+        User user = pendingUser("signup-parent-org-" + Math.abs(body.hashCode()));
+
+        signup(user, body)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        assertThat(userRepository.findById(user.getId()).orElseThrow().isSignupCompleted()).isFalse();
+    }
+
     @Test
     void organizationNameLongerThanColumnIsBadRequest() throws Exception {
         User user = pendingUser("signup-long-name");

@@ -53,7 +53,7 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.role").exists())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.businessNumber").exists())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationSignup").doesNotExist())
-				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationInfoPresent").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationInfoMatchingRole").doesNotExist())
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists());
