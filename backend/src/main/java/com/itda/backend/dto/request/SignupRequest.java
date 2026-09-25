@@ -1,5 +1,7 @@
 package com.itda.backend.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -34,10 +36,16 @@ public record SignupRequest(
 
     public static final String ROLE_ORGANIZATION = "org";
 
+    /*
+     * 아래 두 메서드는 is 로 시작해 getter 처럼 보인다. @JsonIgnore 가 없으면 Swagger 요청 스키마에
+     * organizationSignup · organizationInfoPresent 라는 없는 필드로 나타난다.
+     */
+    @JsonIgnore
     public boolean isOrganizationSignup() {
         return ROLE_ORGANIZATION.equals(role);
     }
 
+    @JsonIgnore
     @AssertTrue
     public boolean isOrganizationInfoPresent() {
         if (!isOrganizationSignup()) {

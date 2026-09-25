@@ -49,6 +49,11 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.401").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.409").exists())
+				// 요청 스키마에는 실제 요청 필드만 있어야 한다. 검증용 is*() 메서드가 필드로 새면 안 된다.
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.role").exists())
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.businessNumber").exists())
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationSignup").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationInfoPresent").doesNotExist())
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists());
