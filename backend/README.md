@@ -6,9 +6,13 @@
 ## 현재 상태
 
 기본 Spring Boot 애플리케이션, 데이터베이스 연결 설정, Swagger/OpenAPI 문서 기반과
-함께 공통 응답 래퍼, 전역 예외 처리, 카카오 로그인, Spring Security(JWT 쿠키 인증) 설정이
-구현되어 있습니다. 로그인한 사용자는 `User`로 저장되며 `Organization`에 소속됩니다.
-도메인 API는 이 기반 위에 순차적으로 추가됩니다.
+함께 공통 응답 래퍼, 전역 예외 처리, 카카오 로그인(Spring Security `oauth2Login`),
+JWT 쿠키 인증과 CSRF 보호가 구현되어 있습니다. 로그인한 사용자는 `User`로 저장되며
+`Organization`에 소속됩니다.
+
+도메인 API는 원본 기록 업로드·조회(`/api/v1/raw-records`)가 있으며, 원본 파일은 기본
+프로필에서 로컬 디스크에, `docker` 프로필에서 S3에 저장합니다. 원본 기록은 로그인한
+사용자의 소속 기관 기준으로 저장·조회됩니다.
 
 ### 로그인과 역할
 
@@ -42,7 +46,9 @@
 | 언어·런타임 | Java 21 |
 | 프레임워크 | Spring Boot 3.5.3 |
 | 웹·검증 | Spring Web, Bean Validation |
+| 인증 | Spring Security, OAuth2 Client(카카오), JJWT 0.12.6 |
 | 데이터 접근 | Spring Data JPA |
+| 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
 | API 문서 | Springdoc OpenAPI 2.9.1, Swagger UI |
 | 운영 DB | PostgreSQL |
 | 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |
@@ -87,8 +93,9 @@ PostgreSQL 동작을 확인하는 Testcontainers 통합 테스트는 Docker Desk
 - OpenAPI YAML: `http://localhost:8080/v3/api-docs.yaml`
 
 새 외부 API를 추가할 때는 컨트롤러의 `@Tag`, `@Operation`과 요청·응답·오류 응답
-명세를 같은 변경에서 갱신한다. 보호 API에는 `cookieAuth` 보안 요구 사항을
-선언하고, 공개 API에는 이를 적용하지 않는다.
+명세를 같은 변경에서 갱신한다. 인증이 필요한 API에는 `access_token` 쿠키 보안 스킴인
+`cookieAuth`(`OpenApiConfig.COOKIE_AUTH_SCHEME`) 보안 요구 사항을 선언하고, 공개 API에는
+이를 적용하지 않는다.
 
 ### 테스트 환경
 
@@ -136,8 +143,16 @@ spring:
 ./gradlew bootRun --args='--spring.profiles.active=local'
 ```
 
-비밀번호, 카카오 클라이언트 시크릿, 운영 키는 어떤 `application*.yml`에도 커밋하지
-않습니다. 환경 변수 또는 무시되는 로컬 프로필 파일로만 제공합니다.
+JWT 서명 키와 카카오 앱 키는 `application.yml`이 자동으로 읽는
+`src/main/resources/application-secret.yml`에 둡니다. 예시 파일을 복사해 값을 채웁니다.
+이 파일도 Git에서 무시됩니다.
+
+```bash
+cp src/main/resources/application-secret.yml.example src/main/resources/application-secret.yml
+```
+
+비밀번호, 카카오 클라이언트 시크릿, 운영 키는 Git이 추적하는 `application*.yml`에 커밋하지
+않습니다. 환경 변수 또는 무시되는 `application-local.yml`·`application-secret.yml`로만 제공합니다.
 
 ### Docker Compose로 실행
 
@@ -149,8 +164,27 @@ docker compose up --build
 ```
 
 Compose 환경에서는 `docker` 프로필이 활성화되고, `DB_URL`, `DB_USERNAME`,
-`DB_PASSWORD` 환경 변수로 PostgreSQL에 연결합니다. 백엔드는 호스트의
-`127.0.0.1:8080`에 바인딩됩니다.
+`DB_PASSWORD` 환경 변수로 PostgreSQL에 연결합니다. `JWT_SECRET`, `KAKAO_CLIENT_ID`,
+`KAKAO_CLIENT_SECRET`, `RAW_STORAGE_S3_BUCKET`이 비어 있으면 Compose가 실행을 거부합니다.
+
+외부 진입점은 nginx(80번 포트)입니다. 백엔드 8080 포트는 Swagger 확인과 프론트 직접 연동을
+위해 **임시로 외부에 공개**돼 있으며(`"8080:8080"`), 운영에서는 제거하고 nginx로만 접근시킬
+예정입니다.
+
+### 환경 변수
+
+| 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `JWT_SECRET` | 없음 (필수) | JWT 서명 키. 32바이트 이상이어야 하며, 없으면 기동하지 않음 |
+| `KAKAO_CLIENT_ID` · `KAKAO_CLIENT_SECRET` | 없음 (필수) | 카카오 REST API 키와 클라이언트 시크릿 |
+| `AUTH_SUCCESS_REDIRECT` | `http://localhost:3000/oauth/success` | 로그인 성공 후 보낼 프론트 주소 (`docker` 프로필은 배포 주소) |
+| `AUTH_FAILURE_REDIRECT` | `http://localhost:3000/login` | 로그인 실패 후 보낼 프론트 주소. `?error=login_failed`가 붙음 |
+| `AUTH_COOKIE_SECURE` | `false` | `access_token` 쿠키의 `Secure` 속성. HTTPS 적용 후 `true` |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | 허용 오리진(쉼표 구분). `docker` 프로필은 `application-docker.yml` 값으로 고정 |
+| `RAW_STORAGE_DIR` | `./data/raw-storage` | 기본 프로필의 원본 파일 저장 경로 |
+| `RAW_STORAGE_S3_BUCKET` | 없음 (`docker` 필수) | `docker` 프로필의 원본 파일 버킷 |
+| `AWS_REGION` | `ap-northeast-2` | S3 리전 |
+| `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | 없음 (`docker` 필수) | `docker` 프로필의 PostgreSQL 연결 정보 |
 
 ## 설정 프로필
 
@@ -159,7 +193,8 @@ Compose 환경에서는 `docker` 프로필이 활성화되고, `DB_URL`, `DB_USE
 | 기본 | `application.yml` | 애플리케이션 이름·포트 등 공통 설정 | 예 |
 | `docker` | `application-docker.yml` | Docker Compose PostgreSQL 연결 | 예 |
 | `test` | `src/test/resources/application-test.yml` | H2 기반 테스트 | 예 |
-| `local` | `application-local.yml` | 개발자별 로컬 DB·개인 키 | 아니오 |
+| `local` | `application-local.yml` | 개발자별 로컬 DB 설정 | 아니오 |
+| (항상 로드) | `application-secret.yml` | JWT 서명 키·카카오 앱 키 (`application.yml`이 선택적으로 import) | 아니오 |
 
 ## 관련 문서
 

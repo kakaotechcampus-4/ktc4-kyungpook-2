@@ -76,7 +76,7 @@ public class AuthController {
                     responseCode = "204", description = "로그아웃 성공. 본문 없음"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "CSRF 토큰 누락",
+                    description = "CSRF 토큰 누락 또는 불일치 (FORBIDDEN)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<Void> logout() {

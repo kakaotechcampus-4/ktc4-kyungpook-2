@@ -10,9 +10,10 @@ import com.itda.backend.global.exception.ErrorResponse;
 
 import lombok.extern.slf4j.Slf4j;
 
-// RawRecord 전용 예외만 처리한다. MissingServletRequestParameterException과
-// 그 외 미분류 예외(catch-all)는 global.exception.GlobalExceptionHandler(#3에서 도입)가
-// 이미 잡는다 — 여기서 다시 선언하면 Spring이 Ambiguous @ExceptionHandler 오류를 던진다.
+// RawRecord 전용 예외만 처리한다. Spring MVC 표준 요청 오류와 미분류 예외(catch-all)는
+// global.exception.GlobalExceptionHandler가 처리한다.
+// 두 advice에 모두 해당하는 예외(MaxUploadSizeExceededException 등)는 advice 적용 순서로
+// 처리기가 정해진다 — Ambiguous 오류는 같은 advice 클래스 안에서 중복 선언할 때만 난다.
 @Slf4j
 @RestControllerAdvice
 @Order(0)

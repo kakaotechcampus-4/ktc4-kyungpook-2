@@ -1,6 +1,6 @@
 import { Outlet, redirect, useLoaderData } from "react-router";
 import { ChildProvider } from "@/components/parent/ChildContext";
-import { getSession } from "@/lib/auth";
+import { getSession, isOnboarded } from "@/lib/auth";
 import { getParentChildren } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
@@ -15,6 +15,8 @@ import { readSelectedChildId } from "@/lib/selectedChild";
 export async function clientLoader() {
   const { role } = await getSession();
   if (role !== "parent") return redirect("/parent/invite");
+  // 카카오 로그인만 하고 약관·첫 기관 동의를 안 끝낸 사람은 아직 본 화면에 들어올 수 없다.
+  if (!isOnboarded()) return redirect("/parent/invite");
   const kids = await getParentChildren();
   // 동의를 마쳐야만 role이 parent가 되므로 이론상 항상 1명 이상이지만, 방어적으로 처리한다.
   if (kids.length === 0) return redirect("/parent/invite");

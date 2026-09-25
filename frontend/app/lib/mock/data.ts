@@ -547,6 +547,14 @@ export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
  */
 export const DECLINED_INSTITUTION_REQUESTS = new Set<string>();
 
+/**
+ * 연결 요청이 만들어진 시각 (G-01 mock) — 키는 "childId:institutionId".
+ * 값이 없으면 화면이 날짜 줄을 숨긴다.
+ */
+export const PENDING_LINK_REQUESTED_AT: Record<string, string> = {
+  "child_1023:inst_speech_01": "2026-09-21T10:00:00+09:00",
+};
+
 /** 학부모를 초대한 기관 (P-02 확인·동의 화면) */
 export const INVITING_INSTITUTION = SCHOOL;
 

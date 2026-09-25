@@ -51,6 +51,11 @@ public class RawRecordController {
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "업로드 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "파일 누락, 허용되지 않은 확장자·형식, 너무 긴 파일명 (RAW_RECORD_INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
                     description = "인증 필요",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
@@ -58,6 +63,16 @@ public class RawRecordController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "CSRF 토큰 누락, 또는 기관 소속이 아닌 사용자",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "413",
+                    description = "파일 크기 20MB 초과 (RAW_RECORD_FILE_TOO_LARGE)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "500",
+                    description = "원본 파일 또는 기록 저장 실패 (RAW_RECORD_STORAGE_FAILED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
@@ -81,7 +96,12 @@ public class RawRecordController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "기관 소속이 아닌 사용자",
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "없는 기록이거나 다른 기관의 기록 (RAW_RECORD_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
