@@ -76,6 +76,20 @@ export interface PendingLink {
   requestedAt: string;
 }
 
+/**
+ * P-02 확인 · 동의 화면이 한 번에 그리는 정보 (api-spec G-02).
+ *
+ * 스펙 예시에는 child.id 가 없지만 동의(G-41)와 반려(G-03) 호출에 필요해서 받는다.
+ */
+export interface ConsentPreview {
+  child: { id: string; name: string; birthDate: string };
+  institution: Institution;
+  /** 증빙서류. 없으면 null — 화면에서 버튼을 숨긴다 */
+  documentUrl: string | null;
+  sharedFields: string[];
+  notSharedFields: string[];
+}
+
 export interface RawRecord {
   id: string;
   fileName: string;
