@@ -42,6 +42,13 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.responses.401").exists())
+				// 회원가입은 보호 API 이고, 가입 완료 응답을 201 로 준다.
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.201").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.409").exists())
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists());

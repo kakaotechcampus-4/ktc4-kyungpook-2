@@ -19,7 +19,13 @@ public enum UserErrorCode implements ErrorCode {
     SESSION_USER_NOT_FOUND(HttpStatus.UNAUTHORIZED, "SESSION_USER_NOT_FOUND", "인증 정보를 확인할 수 없습니다."),
 
     /** 로그인은 됐지만 기관 소속이 아니다. 기관 전용 API 에서 막힌다. */
-    ORGANIZATION_NOT_ASSIGNED(HttpStatus.FORBIDDEN, "ORGANIZATION_NOT_ASSIGNED", "기관 소속 사용자만 이용할 수 있습니다.");
+    ORGANIZATION_NOT_ASSIGNED(HttpStatus.FORBIDDEN, "ORGANIZATION_NOT_ASSIGNED", "기관 소속 사용자만 이용할 수 있습니다."),
+
+    /** 카카오 로그인만 하고 가입(역할 선택)을 마치지 않았다. /auth/me · /auth/signup · /auth/logout 외에는 막힌다. */
+    SIGNUP_NOT_COMPLETED(HttpStatus.FORBIDDEN, "SIGNUP_NOT_COMPLETED", "회원가입을 먼저 완료해주세요."),
+
+    /** 이미 역할이 정해진 회원의 가입 재요청. 역할은 한 번 정해지면 바뀌지 않는다. */
+    ALREADY_SIGNED_UP(HttpStatus.CONFLICT, "ALREADY_SIGNED_UP", "이미 회원가입을 완료했습니다.");
 
     private final HttpStatus status;
     private final String code;
