@@ -6,6 +6,9 @@ import com.itda.backend.global.jwt.JwtAuthenticationFilter;
 import com.itda.backend.global.security.CsrfCookieFilter;
 import com.itda.backend.global.security.JsonAccessDeniedHandler;
 import com.itda.backend.global.security.JsonAuthenticationEntryPoint;
+import com.itda.backend.global.security.JsonErrorResponseWriter;
+import com.itda.backend.global.security.SignupCompletionFilter;
+import com.itda.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,6 +36,8 @@ public class SecurityConfig {
     private final JsonAccessDeniedHandler jsonAccessDeniedHandler;
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
     private final OAuth2LoginFailureHandler oAuth2LoginFailureHandler;
+    private final UserService userService;
+    private final JsonErrorResponseWriter jsonErrorResponseWriter;
 
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private String[] allowedOrigins;
@@ -42,13 +47,17 @@ public class SecurityConfig {
             JsonAuthenticationEntryPoint jsonAuthenticationEntryPoint,
             JsonAccessDeniedHandler jsonAccessDeniedHandler,
             OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
-            OAuth2LoginFailureHandler oAuth2LoginFailureHandler
+            OAuth2LoginFailureHandler oAuth2LoginFailureHandler,
+            UserService userService,
+            JsonErrorResponseWriter jsonErrorResponseWriter
     ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.jsonAuthenticationEntryPoint = jsonAuthenticationEntryPoint;
         this.jsonAccessDeniedHandler = jsonAccessDeniedHandler;
         this.oAuth2LoginSuccessHandler = oAuth2LoginSuccessHandler;
         this.oAuth2LoginFailureHandler = oAuth2LoginFailureHandler;
+        this.userService = userService;
+        this.jsonErrorResponseWriter = jsonErrorResponseWriter;
     }
 
     @Bean
@@ -131,7 +140,11 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jsonAuthenticationEntryPoint)
                         .accessDeniedHandler(jsonAccessDeniedHandler)
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // 출입증으로 누군지 알아낸 직후, 가입을 마치지 않은 회원을 403 SIGNUP_NOT_COMPLETED 로 막는다.
+                .addFilterAfter(
+                        new SignupCompletionFilter(userService, jsonErrorResponseWriter),
+                        JwtAuthenticationFilter.class);
 
         return http.build();
     }

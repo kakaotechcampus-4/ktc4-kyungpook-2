@@ -312,4 +312,34 @@ class UserServiceTest {
                 .extracting(e -> ((UserException) e).getErrorCode())
                 .isEqualTo(UserErrorCode.SESSION_USER_NOT_FOUND);
     }
+
+    /* ── 가입 완료 여부 (가입 미완료 차단 필터용) ───────────── */
+
+    @Test
+    void pendingUserIsNotSignedUp() {
+        given(userRepository.findByIdAndDeletedAtIsNull(3L))
+                .willReturn(Optional.of(User.pending(KAKAO_ID, "박지현")));
+
+        assertThat(userService.isSignupCompleted("3")).isFalse();
+    }
+
+    @Test
+    void userWithRoleIsSignedUp() {
+        given(userRepository.findByIdAndDeletedAtIsNull(2L))
+                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID, "김보호")));
+
+        assertThat(userService.isSignupCompleted("2")).isTrue();
+    }
+
+    /**
+     * 회원을 못 찾으면 가입 미완료(403)로 막지 않는다. 필터를 통과시켜 서비스가 기존대로
+     * 401 SESSION_USER_NOT_FOUND 를 내게 한다 — 프론트는 401 을 "다시 로그인" 으로 처리한다.
+     */
+    @Test
+    void unknownUserIsLeftToTheSessionCheck() {
+        given(userRepository.findByIdAndDeletedAtIsNull(404L)).willReturn(Optional.empty());
+
+        assertThat(userService.isSignupCompleted("404")).isTrue();
+        assertThat(userService.isSignupCompleted("not-a-number")).isTrue();
+    }
 }
