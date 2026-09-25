@@ -161,6 +161,9 @@ class SignupApiTest {
             "{\"role\": \"parent\", \"businessNumber\": \"1234567892\"}",
             "{\"role\": \"parent\", \"businessNumber\": \"12\"}",
             "{\"role\": \"parent\", \"organizationName\": \"햇살센터\", \"organizationType\": \"CENTER\", \"businessNumber\": \"1234567892\"}",
+            // 빈 문자열도 "보낸 값" 이다. 비우려면 필드를 빼거나 null 로 보내야 한다.
+            "{\"role\": \"parent\", \"organizationName\": \"\"}",
+            "{\"role\": \"parent\", \"businessNumber\": \"\"}",
     })
     void parentSignupWithOrganizationInfoIsBadRequest(String body) throws Exception {
         User user = pendingUser("signup-parent-org-" + Math.abs(body.hashCode()));
@@ -170,6 +173,19 @@ class SignupApiTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
         assertThat(userRepository.findById(user.getId()).orElseThrow().isSignupCompleted()).isFalse();
+    }
+
+    /** 폼 직렬화가 빈 선택 필드를 null 로 채우는 경우. null 은 "보내지 않음" 과 같다. */
+    @Test
+    void parentSignupWithNullOrganizationFieldsIsAccepted() throws Exception {
+        User user = pendingUser("signup-parent-nulls");
+
+        signup(user, """
+                {"role": "parent", "organizationName": null,
+                 "organizationType": null, "businessNumber": null}
+                """)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.role").value("parent"));
     }
 
     @Test
