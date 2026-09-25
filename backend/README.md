@@ -31,9 +31,10 @@ JWT 쿠키 인증과 CSRF 보호, 회원가입이 구현되어 있습니다. 로
 
 시연용 기관 시드는 없습니다. 기관은 회원가입으로만 만들어집니다.
 
-> **로컬 DB를 이미 쓰고 있었다면** `users`와 `organization` 테이블을 지우고 다시 기동하세요.
-> `ddl-auto: update`는 `users.role`의 NOT NULL과 `organization.name`의 UNIQUE 제약을 걷어내지 못하고,
-> 기존 행이 있으면 NOT NULL인 `organization.business_number` 컬럼 추가도 실패합니다.
+> **배포 DB(PostgreSQL)에 `users`·`organization` 테이블이 이미 있다면** 두 테이블을 지우고 배포하세요.
+> `docker` 프로필은 `ddl-auto: update`라 `users.role`의 NOT NULL과 `organization.name`의 UNIQUE 제약을
+> 걷어내지 못하고, 기존 행이 있으면 NOT NULL인 `organization.business_number` 컬럼 추가도 실패합니다.
+> 로컬(`local` 프로필)은 H2 인메모리에 `create-drop`이라 재기동하면 초기화되므로 해당하지 않습니다.
 
 ## 기술 스택
 

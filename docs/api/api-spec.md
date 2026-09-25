@@ -50,7 +50,8 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 ### 2.1 공통
 
 - 기본 경로: `/api/v1`
-- 보호 API는 인증 실패 시 `401 UNAUTHORIZED`, 역할 불일치 시 `403 FORBIDDEN`
+- 보호 API는 인증 실패 시 `401 UNAUTHORIZED`, 역할 불일치 시 `403`. 기관 전용 API(예: 원본 기록)를
+  기관 소속이 아닌 회원(보호자)이 호출하면 `403 ORGANIZATION_NOT_ASSIGNED`입니다
 - 역할: `PARENT` · `ORGANIZATION` (`ADMIN`은 아직 없음). 역할은 회원가입(§2.6)에서 정해집니다
 - 가입을 마치지 않은 회원이 `/auth/me` · `/auth/signup` · `/auth/logout` 외의 API를 호출하면
   `403 SIGNUP_NOT_COMPLETED`입니다. 프론트는 역할 선택 화면으로 보냅니다
@@ -875,6 +876,7 @@ POST /api/v1/auth/signup   → 201 Created
 | 코드 | 상태 | 화면 문구 |
 | --- | --- | --- |
 | `KAKAO_AUTH_FAILED` | 401 | "카카오 로그인에 실패했어요. 다시 시도해주세요." (현재 로그인 실패는 JSON이 아니라 `/login?error=login_failed` 리다이렉트로 전달됩니다 — §2.4) |
+| `ORGANIZATION_NOT_ASSIGNED` | 403 | 기관 소속이 아닌 회원(보호자)이 기관 전용 API 호출 → "기관 담당자만 이용할 수 있어요" |
 | `SIGNUP_NOT_COMPLETED` | 403 | 가입 미완료 회원이 `/auth/me` · `/auth/signup` · `/auth/logout` 외 API 호출 → 역할 선택 화면으로 이동 |
 | `ALREADY_SIGNED_UP` | 409 | 이미 가입 완료 → `/auth/me` 재조회 후 역할별 홈으로 이동 (§2.6) |
 | `DUPLICATE_BUSINESS_NUMBER` | 409 | "이미 등록된 사업자등록번호입니다" (§2.6) |
