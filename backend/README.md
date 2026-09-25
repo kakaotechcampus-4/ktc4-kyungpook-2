@@ -7,11 +7,34 @@
 
 기본 Spring Boot 애플리케이션, 데이터베이스 연결 설정, Swagger/OpenAPI 문서 기반과
 함께 공통 응답 래퍼, 전역 예외 처리, 카카오 로그인(Spring Security `oauth2Login`),
-JWT 쿠키 인증과 CSRF 보호가 구현되어 있습니다.
+JWT 쿠키 인증과 CSRF 보호, 회원가입이 구현되어 있습니다. 로그인한 사용자는 `User`로
+저장되고, 기관 담당자는 가입할 때 만든 `Organization`에 소속됩니다.
 
 도메인 API는 원본 기록 업로드·조회(`/api/v1/raw-records`)가 있으며, 원본 파일은 기본
-프로필에서 로컬 디스크에, `docker` 프로필에서 S3에 저장합니다. 회원 DB와 역할 기반 인가는
-아직 없어서, 로그인한 카카오 회원번호를 기관 식별자로 임시 사용합니다.
+프로필에서 로컬 디스크에, `docker` 프로필에서 S3에 저장합니다. 원본 기록은 로그인한
+사용자의 소속 기관 기준으로 저장·조회됩니다.
+
+### 로그인과 회원가입
+
+기관 담당자와 보호자 모두 `GET /oauth2/authorization/kakao`로 로그인합니다. 로그인은 신원 확인만
+하고 역할을 정하지 않습니다.
+
+1. 처음 로그인하면 역할 없는(`role = NULL`) **가입 미완료** 회원이 만들어집니다.
+2. 프론트는 `GET /api/v1/auth/me`의 `signupCompleted: false`를 보고 역할 선택 화면을 띄웁니다.
+3. `POST /api/v1/auth/signup`으로 역할을 확정합니다. 보호자는 `role`만, 기관은 기관명·기관유형·
+   사업자등록번호를 함께 보내고, 이때 `organization` 행이 새로 만들어집니다(기관 1곳당 계정 1개).
+
+사업자등록번호는 숫자 10자리 형식만 검사하고 진위·체크섬은 검증하지 않습니다. 역할은 한 번 정해지면
+바뀌지 않습니다. 가입 미완료 회원은 `/auth/me` · `/auth/signup` · `/auth/logout` 외의 API에서
+`403 SIGNUP_NOT_COMPLETED`로 막힙니다. 요청·응답 형식은
+[API 명세 §2.2 · §2.6](../docs/api/api-spec.md)을 참고하세요.
+
+시연용 기관 시드는 없습니다. 기관은 회원가입으로만 만들어집니다.
+
+> **배포 DB(PostgreSQL)에 `users`·`organization` 테이블이 이미 있다면** 두 테이블을 지우고 배포하세요.
+> `docker` 프로필은 `ddl-auto: update`라 `users.role`의 NOT NULL과 `organization.name`의 UNIQUE 제약을
+> 걷어내지 못하고, 기존 행이 있으면 NOT NULL인 `organization.business_number` 컬럼 추가도 실패합니다.
+> 로컬(`local` 프로필)은 H2 인메모리에 `create-drop`이라 재기동하면 초기화되므로 해당하지 않습니다.
 
 ## 기술 스택
 

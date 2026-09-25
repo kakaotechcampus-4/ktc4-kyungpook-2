@@ -36,8 +36,26 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.413").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.500").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.404").exists())
-				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.200").exists())
+				// 세션 조회는 보호 API 다 — 쿠키 인증 요구와 401 이 명세에 드러나야 한다.
+				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.responses.401").exists())
+				// 회원가입은 보호 API 이고, 가입 완료 응답을 201 로 준다.
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.201").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.409").exists())
+				// 요청 스키마에는 실제 요청 필드만 있어야 한다. 검증용 is*() 메서드가 필드로 새면 안 된다.
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.role").exists())
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.businessNumber").exists())
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationSignup").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationInfoMatchingRole").doesNotExist())
+				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists());
 	}
 

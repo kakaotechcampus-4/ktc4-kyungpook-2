@@ -1,11 +1,11 @@
 # API 규약
 
-> 상태: **공통 응답 래퍼·오류 코드·전역 예외 처리·Spring Security 구현 완료**
+> 상태: **공통 응답 래퍼·오류 코드·전역 예외 처리·Spring Security·회원 DB 연결 구현 완료**
 >
 > 이 문서는 백엔드 구현 전에 합의한 외부 API 계약이다. 공통 응답 래퍼(`ApiResponse`/`ErrorResponse`),
-> 오류 코드 enum(`CommonErrorCode`/`AuthErrorCode`), 전역 예외 처리(`GlobalExceptionHandler`),
-> Spring Security(JWT 인증 + CORS + 401/403 JSON 응답)까지 카카오 로그인 API에 반영돼 있다.
-> 회원 DB 연결과 역할(role) 기반 인가는 아직 구현 예정이다. Swagger UI는
+> 오류 코드 enum(`CommonErrorCode`/`AuthErrorCode`/`UserErrorCode`), 전역 예외 처리(`GlobalExceptionHandler`),
+> Spring Security(JWT 쿠키 인증 + CORS + CSRF + 401/403 JSON 응답), 그리고 회원 DB 연결과
+> `PARENT`/`ORGANIZATION` 역할 구분까지 반영돼 있다(`ADMIN`은 아직 없다). Swagger UI는
 > `/swagger-ui/index.html`, OpenAPI 명세는 `/v3/api-docs`와 `/v3/api-docs.yaml`에서
 > 확인할 수 있으며, 외부 API 변경 시 해당 명세를 같은 변경에서 갱신한다.
 
@@ -119,11 +119,17 @@ HTTP/1.1 404 Not Found
 
 ## 인증·인가 규약
 
-> 상태: **카카오 인증 + JWT 발급 구현 완료 · 회원 DB 연결과 역할(role) 기반 인가는 예정**
+> 상태: **카카오 인증 + JWT 쿠키 발급 + 회원 DB 연결 + 회원가입 구현 완료**
 
-- 카카오 로그인은 외부 신원 확인 수단이며, 서비스 회원·역할·권한의 기준은 내부 DB다. (DB 연결은 예정)
-- 카카오 사용자 ID를 내부 회원에 연결한 뒤 `PARENT`, `ORGANIZATION`, `ADMIN` 역할로 인가한다. (예정)
-- 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다. 401은 구현·검증 완료. 403은 핸들러(`JsonAccessDeniedHandler`)까지는 구현돼 있으나, 아직 역할 기반으로 막힌 API가 없어 실제로 도달하는 경로는 없다.
+- 카카오 로그인은 외부 신원 확인 수단이며, 서비스 회원·역할·권한의 기준은 내부 DB다.
+- 카카오 사용자 ID는 내부 회원(`users.kakao_id`)에 연결된다. 역할은 `PARENT`와 `ORGANIZATION`이 구현돼 있고 `ADMIN`은 아직 없다.
+- **역할은 회원가입(`POST /api/v1/auth/signup`)에서 사용자가 직접 정한다.** 카카오 로그인은 신원 확인만 하고, 처음 로그인한 사람은 역할 없는(`users.role = NULL`) 가입 미완료 회원으로 등록된다. 기관 담당자는 가입할 때 기관명·유형·사업자등록번호를 입력하고, 그 자리에서 기관이 만들어진다(기관 1곳당 계정 1개). 역할은 한 번 정해지면 바뀌지 않으며, 다시 가입을 요청하면 `409 ALREADY_SIGNED_UP`, 이미 등록된 사업자등록번호면 `409 DUPLICATE_BUSINESS_NUMBER`다.
+- 가입 미완료 회원은 `/api/v1/auth/me` · `/api/v1/auth/signup` · `/api/v1/auth/logout` 외의 API에서 `403 SIGNUP_NOT_COMPLETED`로 막힌다. 보안 필터 한 곳에서 확인하므로 새 API에도 자동으로 적용된다. `/auth/me`는 가입 미완료를 `401`이 아니라 `signupCompleted: false`로 알려준다.
+- **JWT의 subject는 내부 `userId`다.** 카카오 회원번호가 아니다. 역할과 소속 기관은 토큰에 담지 않고 요청마다 DB에서 읽는다 — 값이 바뀌면 다음 요청부터 바로 반영되고, 토큰에 박힌 옛 값이 남지 않는다.
+- 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다. 기관 전용 API를 기관 소속이 아닌 회원이 호출하면 `403 ORGANIZATION_NOT_ASSIGNED`다.
+- **탈퇴는 행을 지우지 않고 `users.deleted_at`에 표시한다(soft delete).** 탈퇴한 회원의 출입증은 만료 전이어도 인정하지 않는다. 같은 카카오 계정으로 다시 로그인하면 새 회원을 만들지 않고 기존 행을 되살린다(`kakao_id` 유니크 제약 때문).
+- 토큰 서명은 유효하지만 그 회원이 DB에 없거나 탈퇴했으면 `404`가 아니라 `401 SESSION_USER_NOT_FOUND`다. 자격 증명이 더 이상 누구도 가리키지 못하는 상태라 다시 로그인해야 하고, 프론트도 `401`을 "역할 없음 → 로그인 화면"으로 해석한다.
+- **응답 본문의 PK는 문자열로 직렬화한다.** DB의 `BIGINT`를 그대로 내리면 클라이언트 쪽에서 정밀도가 깎일 수 있다. (AI 연동 경로는 정수 그대로 주고받는다.)
 - 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.yml.example) 참고).
 - 인증 방식은 JWT 쿠키다. 브라우저는 `GET /oauth2/authorization/kakao`로 이동해 카카오 로그인을 시작한다. 카카오 콜백(`GET /login/oauth2/code/kakao`)은 Spring Security가 처리하며, 클라이언트가 직접 호출하지 않는다. 성공 시 서버는 `access_token` httpOnly 쿠키를 발급하고 설정된 프론트엔드 주소로 리다이렉트한다.
 - 로그인 실패(state 불일치, 동의 취소, 카카오 장애 등)는 JSON 오류가 아니라 설정된 실패 주소에
@@ -132,7 +138,7 @@ HTTP/1.1 404 Not Found
   로그인 흐름에서 응답으로 나가지 않는다.
 - 보호 API 요청은 브라우저가 `access_token` 쿠키를 자동으로 전송하도록 `credentials: include`를 사용한다. 클라이언트는 JWT를 읽거나 `Authorization: Bearer` 헤더에 직접 넣지 않는다.
 - `POST`, `PUT`, `PATCH`, `DELETE` 요청에는 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 함께 보낸다. OAuth 로그인 시작·콜백 경로는 이 CSRF 검사에서 제외된다.
-- OAuth 인가 요청의 state 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로 처리한다. refresh token 발급과 토큰 폐기 전략은 아직 없다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시킨다.
+- OAuth 인가 요청의 state 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로만 처리하며, **로그인 정보는 세션에 저장하지 않는다**(`JSESSIONID`만으로는 인증되지 않는다). refresh token 발급과 토큰 폐기 전략은 아직 없다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시키고 `204 No Content`로 응답한다.
 
 ## 변경 절차
 
