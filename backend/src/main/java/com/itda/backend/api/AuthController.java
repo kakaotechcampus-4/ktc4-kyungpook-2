@@ -3,7 +3,11 @@ package com.itda.backend.api;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.response.ApiResponse;
 import jakarta.servlet.http.HttpServletResponse;
+import com.itda.backend.global.exception.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,6 +39,17 @@ public class AuthController {
             description = "access_token 쿠키를 만료시킵니다. 요청 전에 받은 XSRF-TOKEN 쿠키 값을 "
                     + "X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "쿠키 만료 완료. 본문은 { \"result\": \"SUCCESS\" }"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "CSRF 토큰 누락 또는 불일치 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
     public ApiResponse<Void> logout(HttpServletResponse response) {
         response.addHeader(HttpHeaders.SET_COOKIE, jwtCookie.expire().toString());
         return ApiResponse.success();

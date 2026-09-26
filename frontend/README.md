@@ -81,7 +81,7 @@ cd infra/docker && docker compose up -d --build
 
 | 경로 | 화면 |
 |---|---|
-| `/parent/invite` | P-01 초대 진입 · 본인 인증 (코드→휴대폰→OTP→약관 동의) |
+| `/parent/invite` | P-01 보호자 진입 (카카오 로그인→약관 동의→연결 요청 확인) |
 | `/parent/consent` | P-02 확인 · 동의 (기관별 실제 공유 항목 표시) |
 | `/parent/care-info` | 아이 상세정보 (온보딩 마지막 단계 겸 설정에서 재수정) |
 | `/parent` | P-03 홈 — 오늘의 기록, TODAY 요약, 연결된 기관, 최근 공유 활동 |
@@ -122,7 +122,7 @@ Next.js 시절엔 `src/proxy.ts`(서버 미들웨어)가 기관 경로와 `/pare
 **`clientLoader`** 가 그 역할을 합니다.
 
 - `app/routes/org/layout.tsx` — role !== "org" 면 `/login` 으로 리다이렉트
-- `app/routes/parent/guard.tsx` — role !== "parent" 면 `/parent/invite` 로 리다이렉트
+- `app/routes/parent/guard.tsx` — role !== "parent" 이거나 온보딩 미완이면 `/parent/invite` 로 리다이렉트
 
 `clientLoader` 가 끝나기 전까지는 `app/root.tsx` 의 **`HydrateFallback`**(로딩 화면)만
 보이고, 화면(`children`)은 절대 먼저 그려지지 않습니다 — 서버가 0ms 에 끊어주던 것을
