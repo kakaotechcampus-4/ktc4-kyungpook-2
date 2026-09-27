@@ -211,10 +211,15 @@
 **상태** · `pending_consent` 아이가 있으면 "○○는 아직 보호자 동의를 기다리는 중이라
 기록을 올릴 수 없습니다" 안내
 
-**호출 API** · `getChildren` (업로드 API는 신규 필요 — [api-spec.md](../api/api-spec.md) §4.3)
+**호출 API** · `getChildren` · `uploadRawRecords` · `getFileProgress` · `retryFailedEntries`
+([api-spec.md](../api/api-spec.md) §4.3)
 
-> ⚠️ 파이프라인 진행 표시는 현재 `setTimeout` 시뮬레이션입니다. 실제 연동 시 서버
-> 상태 폴링 또는 구독으로 교체합니다.
+- `uploadRawRecords` → `POST /api/v1/raw-records` · 구현됨
+- `getFileProgress` → `GET /api/v1/raw-records/progress` · 계약 확정, 구현 예정
+- `retryFailedEntries` → `POST /api/v1/raw-records/{id}/retry` · 계약 확정, 구현 예정
+
+> ⚠️ 진행 표시는 mock 모드에서 시뮬레이션입니다. 실제 모드는 `/progress` 를 폴링하는데,
+> 기록 단위 분할이 끝나기 전까지 `entries: []` 만 와서 "기록 등록 중"에 머무는 게 정상입니다.
 
 ---
 
