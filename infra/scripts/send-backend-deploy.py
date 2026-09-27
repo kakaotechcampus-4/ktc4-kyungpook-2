@@ -13,10 +13,13 @@ import time
 
 
 def build_request(args, script):
+    service = getattr(args, "service", "backend")
+    if service not in {"backend", "ai"}:
+        raise ValueError("unsupported service")
     if not re.fullmatch(r"[0-9a-f]{40}", args.commit):
         raise ValueError("commit must be a full SHA")
-    if not re.fullmatch(r"ghcr\.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:[0-9a-f]{64}", args.image):
-        raise ValueError("image must be the backend GHCR digest")
+    if not re.fullmatch(r"ghcr\.io/kakaotechcampus-4/ktc4-kyungpook-2-" + service + r"@sha256:[0-9a-f]{64}", args.image):
+        raise ValueError("image must be the service GHCR digest")
     if not re.fullmatch(r"i-[0-9a-f]{8}(?:[0-9a-f]{9})?", args.instance_id):
         raise ValueError("invalid EC2 instance ID")
     if not re.fullmatch(r"https?://[a-zA-Z0-9.-]+(?::[0-9]+)?", args.origin):
@@ -37,9 +40,9 @@ def build_request(args, script):
     return {
         "DocumentName": "AWS-RunShellScript",
         "InstanceIds": [args.instance_id],
-        "Comment": "Deploy backend " + args.commit,
+        "Comment": "Deploy " + service + " " + args.commit,
         "TimeoutSeconds": 120,
-        "Parameters": {"commands": [command], "executionTimeout": ["900"]},
+        "Parameters": {"commands": [command], "executionTimeout": ["1800"]},
     }
 
 
@@ -51,7 +54,7 @@ def aws_command(region, *arguments):
     )
 
 
-def wait_for_command(region, instance_id, command_id, *, timeout=1080):
+def wait_for_command(region, instance_id, command_id, *, timeout=1980):
     deadline = time.monotonic() + timeout
     last_status = None
     while time.monotonic() < deadline:
@@ -72,11 +75,22 @@ def wait_for_command(region, instance_id, command_id, *, timeout=1080):
                     output = invocation.get(key, "").strip()
                     if output:
                         print(output, flush=True)
+                if status == "Failed" and invocation.get("ResponseCode") == 75:
+                    return "superseded"
                 if status != "Success" or invocation.get("ResponseCode") != 0:
                     raise RuntimeError("Remote deployment failed: " + status)
-                return
+                return "deployed"
         time.sleep(5)
     raise TimeoutError("SSM result wait timed out; inspect command " + command_id)
+
+
+def render_script(service):
+    directory = Path(__file__).parent
+    script = (directory / f"deploy-{service}.sh").read_text()
+    source = 'source "$(dirname "${BASH_SOURCE[0]}")/deploy-common.sh"'
+    if script.count(source) != 1:
+        raise ValueError("deployment script must include the shared helper once")
+    return script.replace(source, (directory / "deploy-common.sh").read_text())
 
 
 def main():
@@ -85,10 +99,11 @@ def main():
     parser.add_argument("--image", required=True)
     parser.add_argument("--instance-id", required=True)
     parser.add_argument("--region", required=True)
+    parser.add_argument("--service", choices=["backend", "ai"], default="backend")
     parser.add_argument("--root", default="/home/ubuntu/ktc4-kyungpook-2")
     parser.add_argument("--origin", default="http://54.116.206.217")
     args = parser.parse_args()
-    script = Path(__file__).with_name("deploy-backend.sh").read_text()
+    script = render_script(args.service)
     request = build_request(args, script)
     fd, filename = tempfile.mkstemp(prefix="backend-ssm-", suffix=".json")
     try:
@@ -99,7 +114,11 @@ def main():
             raise RuntimeError(result.stderr.strip())
         command_id = json.loads(result.stdout)["Command"]["CommandId"]
         print("SSM command: " + command_id, flush=True)
-        wait_for_command(args.region, args.instance_id, command_id)
+        outcome = wait_for_command(args.region, args.instance_id, command_id)
+        if os.environ.get("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
+                stream.write("outcome=" + outcome + "\n")
+        print("Deployment outcome: " + outcome, flush=True)
     finally:
         os.unlink(filename)
 

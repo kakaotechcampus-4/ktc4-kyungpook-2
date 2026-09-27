@@ -148,8 +148,10 @@ Compose 환경에서는 `docker` 프로필이 활성화되고, `DB_URL`, `DB_USE
 ### 백엔드 CI/CD
 
 `develop`·`main` 대상 PR에서는 Java 21로 단위 테스트, Testcontainers PostgreSQL 통합
-테스트, 빌드를 실행합니다. `develop` push 및 `develop`에서의 수동 실행은 검증 성공 후
+테스트, 빌드를 실행합니다. 모든 `develop` push에서 `be-develop`의 마지막 성공 배포
+SHA부터 누적 변경을 비교합니다. BE 또는 공통 배포 설정이 바뀌었을 때 검증 성공 후
 Docker 이미지를 GHCR에 올리고, SSM을 통해 기존 EC2의 BE 컨테이너만 배포합니다.
+`develop`에서의 수동 실행은 BE를 강제 재배포합니다. 배포 생략·실패는 성공 기준을 갱신하지 않습니다.
 Nginx 재로딩과 상태·CORS·카카오 콜백 검증이 실패하면 이전 BE 이미지로 복구합니다.
 
 `BACKEND_IMAGE`는 Compose에서 사용할 이미지 참조입니다. 비어 있으면 로컬 빌드용
@@ -158,7 +160,7 @@ DB 컨테이너·볼륨은 재생성하지 않으며 `ddl-auto: update`와 현�
 이미지 복구는 DB 스키마 변경을 되돌리지 않습니다.
 
 GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
-[인프라 문서](../infra/README.md#백엔드-cicd)를 참고하세요.
+[인프라 문서](../infra/README.md#beai-cicd)를 참고하세요.
 
 ### 환경 변수
 

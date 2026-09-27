@@ -138,3 +138,32 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 
 구현이 아니라 **정책**이라 레포가 아닌 노션에 둡니다. 테스트 데이터를 만들 때 이 문서를 보고
 정답을 정하며, 구현이 바뀌어도 원칙은 바뀌지 않습니다.
+
+## CI/CD
+
+`.github/workflows/ai-ci-cd.yml`은 `develop`·`main` 대상 PR에서 Python 3.11의 의존성
+검사(`pip check`), pytest, Docker 빌드와 `/health` 상태 확인을 실행합니다.
+`tests/`는 입력 검증·이름 매칭·모킹한 LLM 응답과 실패를 검증하며 운영 키나 실제 Luna 호출을 사용하지 않습니다.
+모델을 호출하는 `evals/` 평가 스크립트는 CI에서 실행하지 않습니다. 테스트 보고서 보관 기간은 7일입니다.
+
+모든 `develop` push에서 `ai-develop`의 마지막 성공 배포 SHA부터 누적 변경을 비교합니다.
+AI 또는 공통 배포 설정 변경이 있으면 검증 후 GHCR 이미지를 게시하고 기존 EC2의 AI만 교체합니다.
+수동 실행은 Actions → AI CI/CD → Run workflow에서 `develop`을 선택하면 강제 재배포합니다.
+FE 배포와 mock 설정은 이 워크플로의 대상에 포함하지 않습니다.
+
+Compose의 `AI_IMAGE`가 비어 있으면 기존 `ktc-ai`를 사용합니다. 자동 배포는 SHA 태그로
+게시한 이미지의 digest를 사용하고, 상태와 revision 검증 후 서버 `infra/docker/.env`에 저장합니다.
+`AI/.env`와 평가 데이터 마운트는 유지하며 실패 시 이전 AI 이미지로 복구합니다.
+서버의 GHCR 로그인 계정에는 새 AI 패키지의 읽기 접근 권한도 필요합니다.
+
+로컬 테스트는 AI 디렉터리에서 다음과 같이 실행합니다.
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m pip check
+python -m pytest tests -v
+```
+
+AWS·GitHub 설정, 동시 배포 잠금, 성공 기록 및 최초 적용 절차는 [인프라 문서](../infra/README.md#beai-cicd)를 참고하세요.

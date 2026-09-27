@@ -26,22 +26,31 @@ DOCKER = r'''import json, os, pathlib, sys
 path = pathlib.Path(os.environ["FAKE_DOCKER_STATE"])
 state = json.loads(path.read_text())
 args = sys.argv[1:]
-state["commands"].append({"args": args, "image": os.environ.get("BACKEND_IMAGE", "")})
+state["commands"].append({"args": args, "image": os.environ.get(state["service"].upper() + "_IMAGE", "")})
 code = 0
 output = ""
 if args[0] == "compose":
     args = args[args.index("-f") + 2:]
     if args[0] == "ps":
-        output = "backend-id"
+        output = state["service"] + "-id"
     elif args[0] == "pull" and state["mode"] == "pull_failure":
         code = 1
     elif args[0] == "up":
-        state["image"] = os.environ["BACKEND_IMAGE"]
+        state["image"] = os.environ[state["service"].upper() + "_IMAGE"]
         state["phase"] = "new" if "ghcr.io/" in state["image"] else "old"
+        if state["phase"] == "new" and state["mode"] == "start_failure":
+            code = 1
     elif args[0] == "exec" and args[-1] == "reload" and state["phase"] == "new" and state["mode"] == "reload_failure":
         code = 1
 elif args[0] == "inspect":
-    output = state["image"] if args[2] == "{{.Config.Image}}" else "sha256:" + "a" * 64
+    if args[2] == "{{.Config.Image}}":
+        output = state["image"]
+    elif "revision" in args[2]:
+        output = "d" * 40 if state["mode"] == "revision_failure" else state["revision"]
+    else:
+        output = "sha256:" + "a" * 64
+elif args[:2] == ["image", "inspect"]:
+    output = "sha256:" + ("b" if state["mode"] == "digest_failure" else "a") * 64
 path.write_text(json.dumps(state))
 if output:
     print(output)
@@ -49,7 +58,9 @@ sys.exit(code)
 '''
 
 
-class DeployScriptTests(unittest.TestCase):
+class DeploymentFixture(unittest.TestCase):
+    service = "backend"
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -70,6 +81,7 @@ class DeployScriptTests(unittest.TestCase):
         remote = self.base / "origin.git"
         self.git("clone", "--bare", str(self.root), str(remote))
         self.git("remote", "add", "origin", str(remote))
+        self.git("fetch", "origin", "develop")
         self.git("reset", "--hard", self.old_commit)
         compose = self.root / "infra/docker"
         compose.mkdir(parents=True)
@@ -93,11 +105,14 @@ class DeployScriptTests(unittest.TestCase):
 
             def do_GET(self):
                 state = test.state()
-                if self.path.endswith("/api/health"):
+                if self.path.endswith("/health"):
                     failed = state["phase"] == "new" and state["mode"] == "health_failure"
                     self.send_response(503 if failed else 200)
                     self.end_headers()
-                    self.wfile.write(b'{"status":"ok"}')
+                    body = {"status": "ok"}
+                    if test.service == "ai":
+                        body["luna_configured"] = not (state["phase"] == "new" and state["mode"] == "luna_failure")
+                    self.wfile.write(json.dumps(body).encode())
                 elif self.path.endswith("/oauth2/authorization/kakao"):
                     bad = state["phase"] == "new" and state["mode"] == "oauth_failure"
                     callback = ORIGIN + ("/wrong-callback" if bad else "/login/oauth2/code/kakao")
@@ -121,9 +136,11 @@ class DeployScriptTests(unittest.TestCase):
         url = "http://127.0.0.1:" + str(self.server.server_port)
         self.environment = dict(os.environ, DEPLOY_ROOT=str(self.root),
                                 FAKE_DOCKER_STATE=str(self.state_file), HEALTHCHECK_TIMEOUT="1",
-                                BACKEND_HEALTH_URL=url + "/direct/api/health", PROXY_BASE_URL=url + "/proxy",
+                                AI_HEALTH_URL=url + "/health", BACKEND_HEALTH_URL=url + "/direct/api/health", PROXY_BASE_URL=url + "/proxy",
                                 PATH=str(executable_dir) + os.pathsep + os.environ["PATH"])
         self.environment.pop("BACKEND_IMAGE", None)
+        self.environment.pop("AI_IMAGE", None)
+        self.executable_dir = executable_dir
 
     def stop_server(self):
         self.server.shutdown()
@@ -135,13 +152,14 @@ class DeployScriptTests(unittest.TestCase):
         return result.stdout
 
     def set_state(self, mode):
-        self.state_file.write_text(json.dumps({"image": "ktc-backend", "phase": "old", "mode": mode, "commands": []}))
+        self.state_file.write_text(json.dumps({"service": self.service, "image": "ktc-" + self.service,
+                                              "revision": self.commit, "phase": "old", "mode": mode, "commands": []}))
 
     def state(self):
         return json.loads(self.state_file.read_text())
 
     def deploy(self, commit=None, image=IMAGE):
-        return subprocess.run(["bash", str(SCRIPTS / "deploy-backend.sh"), commit or self.commit, image],
+        return subprocess.run(["bash", str(SCRIPTS / ("deploy-" + self.service + ".sh")), commit or self.commit, image],
                               env=self.environment, capture_output=True, text=True, timeout=20)
 
     def assert_only_backend_recreated(self):
@@ -149,10 +167,12 @@ class DeployScriptTests(unittest.TestCase):
         updates = [args for args in commands if "up" in args]
         self.assertTrue(updates)
         for args in updates:
-            self.assertEqual(args[-1], "backend")
+            self.assertEqual(args[-1], self.service)
             self.assertIn("--no-deps", args)
             self.assertIn("--no-build", args)
 
+
+class DeployScriptTests(DeploymentFixture):
     def test_success_persists_digest_and_preserves_secrets_and_permissions(self):
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -208,7 +228,7 @@ class DeployScriptTests(unittest.TestCase):
     def test_older_commit_is_not_deployed(self):
         self.git("reset", "--hard", self.commit)
         result = self.deploy(commit=self.old_commit)
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 75)
         self.assertIn("older than server HEAD", result.stderr)
         self.assertEqual(self.state()["commands"], [])
 
@@ -230,7 +250,7 @@ class SenderTests(unittest.TestCase):
         self.assertIn("runuser -u ubuntu", command)
         self.assertIn("bash -s -- " + "c" * 40 + " " + IMAGE, command)
         self.assertEqual(request["InstanceIds"], ["i-0e30a4108bfd4ea9f"])
-        self.assertEqual(request["Parameters"]["executionTimeout"], ["900"])
+        self.assertEqual(request["Parameters"]["executionTimeout"], ["1800"])
 
     def test_injected_image_is_rejected(self):
         args = self.args()
@@ -260,6 +280,34 @@ class SenderTests(unittest.TestCase):
         command.return_value = subprocess.CompletedProcess([], 0, json.dumps({"Status": "Success", "ResponseCode": 1}), "")
         with self.assertRaises(RuntimeError):
             sender.wait_for_command("ap-northeast-2", "i-0e30a4108bfd4ea9f", "command")
+
+    @mock.patch.object(sender, "aws_command")
+    def test_only_remote_exit_75_is_superseded(self, command):
+        command.return_value = subprocess.CompletedProcess([], 0, json.dumps({"Status": "Failed", "ResponseCode": 75}), "")
+        self.assertEqual(sender.wait_for_command("region", "instance", "command"), "superseded")
+        command.return_value = subprocess.CompletedProcess([], 0, json.dumps({"Status": "TimedOut", "ResponseCode": 75}), "")
+        with self.assertRaises(RuntimeError):
+            sender.wait_for_command("region", "instance", "command")
+
+    def test_ai_request_and_reviewed_helper_are_bundled(self):
+        args = self.args()
+        args.service = "ai"
+        args.image = IMAGE.replace("-backend@", "-ai@")
+        script = sender.render_script("ai")
+        self.assertIn("flock -w", script)
+        self.assertNotIn('source "$(dirname', script)
+        subprocess.run(["bash", "-n"], input=script, text=True, check=True)
+        request = sender.build_request(args, script)
+        self.assertIn(args.image, request["Parameters"]["commands"][0])
+        self.assertEqual(request["Parameters"]["executionTimeout"], ["1800"])
+        args.image = IMAGE
+        with self.assertRaises(ValueError):
+            sender.build_request(args, script)
+
+    @mock.patch.object(sender.time, "monotonic", side_effect=[0, 1981])
+    def test_result_wait_has_a_bounded_timeout(self, _clock):
+        with self.assertRaises(TimeoutError):
+            sender.wait_for_command("region", "instance", "command")
 
 
 if __name__ == "__main__":

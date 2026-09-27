@@ -24,52 +24,8 @@ compose() {
   docker compose --project-directory "$compose_dir" -f "$compose_dir/compose.yaml" "$@"
 }
 
-wait_for_health() {
-  local url=$1 body deadline=$((SECONDS + health_timeout))
-  while ((SECONDS < deadline)); do
-    if body=$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
-      -H "Host: $host" "$url" 2>/dev/null) && \
-      printf '%s' "$body" | python3 -c 'import json,sys; assert json.load(sys.stdin) == {"status": "ok"}' 2>/dev/null; then
-      return 0
-    fi
-    sleep 2
-  done
-  echo "Health check timed out: $url" >&2
-  return 1
-}
-
-save_image_reference() {
-  # .env의 다른 줄과 파일 권한을 보존하고, 이미지 식별자만 원자적으로 갱신한다.
-  python3 - "$env_file" "$1" <<'PY'
-import os, pathlib, re, stat, sys, tempfile
-path = pathlib.Path(sys.argv[1])
-value = sys.argv[2]
-lines = path.read_text().splitlines(keepends=True)
-result = []
-written = False
-for line in lines:
-    if re.match(r"^\s*(?:export\s+)?BACKEND_IMAGE\s*=", line):
-        if not written:
-            result.append(f"BACKEND_IMAGE={value}\n")
-            written = True
-    else:
-        result.append(line)
-if not written:
-    if result and not result[-1].endswith("\n"):
-        result[-1] += "\n"
-    result.append(f"BACKEND_IMAGE={value}\n")
-mode = stat.S_IMODE(path.stat().st_mode)
-fd, temporary = tempfile.mkstemp(prefix=".env.backend-", dir=path.parent)
-try:
-    with os.fdopen(fd, "w") as output:
-        output.writelines(result)
-    os.chmod(temporary, mode)
-    os.replace(temporary, path)
-finally:
-    if os.path.exists(temporary):
-        os.unlink(temporary)
-PY
-}
+# shellcheck source=deploy-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/deploy-common.sh"
 
 on_exit() {
   local code=$?
@@ -80,10 +36,11 @@ on_exit() {
     local restored=1
     BACKEND_IMAGE=$rollback_image compose up -d --no-deps --no-build --pull never backend || restored=0
     wait_for_health "$backend_health_url" || restored=0
+    verify_restored_image backend "$old_image" || restored=0
     compose exec -T nginx nginx -t && compose exec -T nginx nginx -s reload || restored=0
     wait_for_health "$proxy_base_url/api/health" || restored=0
     if ((restored)); then
-      save_image_reference "$rollback_image" || restored=0
+      save_image_reference BACKEND_IMAGE "$rollback_image" || restored=0
     fi
     if ((restored)); then
       echo 'Previous backend restored; deployment remains failed' >&2
@@ -97,23 +54,8 @@ trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for tool in git docker curl python3 flock; do
-  command -v "$tool" >/dev/null || { echo "Required tool missing: $tool" >&2; exit 1; }
-done
-[[ -r $env_file && -w $env_file ]] || { echo 'Server Compose .env must be readable and writable' >&2; exit 1; }
-cd "$root"
-git_dir=$(git rev-parse --absolute-git-dir)
-exec 9> "$git_dir/backend-deploy.lock"
-flock -n 9 || { echo 'Another backend deployment is running' >&2; exit 1; }
-[[ -z $(git status --porcelain) ]] || { echo 'Server working tree is not clean' >&2; exit 1; }
-[[ $(git branch --show-current) == develop ]] || { echo 'Server must be on develop' >&2; exit 1; }
+prepare_checkout "$commit"
 
-echo "Preparing deployment of $commit"
-git fetch --quiet origin develop
-git merge-base --is-ancestor "$commit" origin/develop || { echo 'Commit is not on origin/develop' >&2; exit 1; }
-git merge-base --is-ancestor HEAD "$commit" || { echo 'Refusing to deploy a commit older than server HEAD' >&2; exit 1; }
-git merge --ff-only --quiet "$commit"
-[[ $(git rev-parse HEAD) == "$commit" ]] || { echo 'Server commit does not match deployment commit' >&2; exit 1; }
 BACKEND_IMAGE=$image compose config --quiet
 
 backend_id=$(compose ps --all --quiet backend)
@@ -128,8 +70,7 @@ BACKEND_IMAGE=$image compose pull backend
 rollback_required=1
 BACKEND_IMAGE=$image compose up -d --no-deps --no-build --pull never backend
 wait_for_health "$backend_health_url"
-running_id=$(compose ps --quiet backend)
-[[ $(docker inspect --format '{{.Config.Image}}' "$running_id") == "$image" ]] || { echo 'Unexpected running backend image' >&2; exit 1; }
+verify_running_image backend "$image" "$commit"
 compose exec -T nginx nginx -t
 compose exec -T nginx nginx -s reload
 wait_for_health "$proxy_base_url/api/health"
@@ -159,6 +100,6 @@ if response.code != 302 or callback != origin + "/login/oauth2/code/kakao":
 print("CORS and OAuth callback verified")
 PY
 
-save_image_reference "$image"
+save_image_reference BACKEND_IMAGE "$image"
 rollback_required=0
 echo "Backend deployment successful: $image"

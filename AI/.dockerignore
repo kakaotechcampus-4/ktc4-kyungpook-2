@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .venv/
 .git/
+build/
+.pytest_cache/

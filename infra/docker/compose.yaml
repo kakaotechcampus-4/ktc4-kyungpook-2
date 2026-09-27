@@ -53,6 +53,7 @@ services:
     mem_limit: 768m
     
   ai:
+    image: ${AI_IMAGE:-ktc-ai}
     build:
       context: ../../AI
       dockerfile: Dockerfile
