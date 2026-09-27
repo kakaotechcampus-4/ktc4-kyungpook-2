@@ -32,6 +32,7 @@ def load_dev_inputs(limit: int | None = None):
 def run_one(case: dict, graph) -> tuple[str, dict | None, str | None]:
     state = {
         "content": case["content"],
+        "subject_child_id": case.get("subject_child_id"),
         "subject_name": case.get("subject_name"),
     }
 
