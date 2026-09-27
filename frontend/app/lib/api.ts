@@ -299,9 +299,8 @@ export async function uploadRawRecords(files: File[]): Promise<FileProgress[]> {
 /**
  * 파일별 처리 현황. 최근 업로드가 먼저 온다.
  *
- * ⚠️ **이 엔드포인트는 백엔드에 없다.** RawRecordResponse 에는 파일 상태(status) 하나뿐이라
- *    파일에서 나온 기록이 건별로 어느 단계에 있는지 알 수 없다. FileProgress 형태로 달라고
- *    요청해야 한다.
+ * GET /api/v1/raw-records/progress — **계약 확정, 구현 예정** (api-spec.md O-26)
+ *    파일을 기록 단위로 나누기 전까지는 entries: [] 만 와서 "기록 등록 중"에 머문다. 정상이다.
  */
 export async function getFileProgress(): Promise<FileProgress[]> {
   if (USE_MOCK) {
@@ -313,7 +312,7 @@ export async function getFileProgress(): Promise<FileProgress[]> {
 
 /**
  * 실패한 기록을 다시 처리한다. 실패는 사람이 고를 게 아니라 시스템 오류라 재시도로 충분하다.
- * ⚠️ **이 엔드포인트는 백엔드에 없다.**
+ * POST /api/v1/raw-records/{id}/retry — **계약 확정, 구현 예정** (api-spec.md O-27)
  */
 export async function retryFailedEntries(rawRecordId: string): Promise<{ ok: true }> {
   if (USE_MOCK) {
