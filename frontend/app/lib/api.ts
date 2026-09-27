@@ -53,6 +53,8 @@ import type {
   PendingLink,
   SummaryItem,
   TimelineEntry,
+  UploadFailReason,
+  UploadResult,
 } from "@/lib/types";
 
 /**
@@ -264,36 +266,74 @@ export async function reassignSummaryChild(
  *
  * 즉시 응답하고 매칭 · 검증 · 요약은 백그라운드에서 돈다. 파일마다 한 번씩 부른다.
  * 응답은 RawRecordResponse(backend/.../dto/RawRecordResponse.java) 다.
+ *
+ * 한 파일이 실패해도 나머지는 이미 서버에 저장됐다. 그래서 전체를 실패로 던지지 않고
+ * 파일마다 결과를 돌려준다 — 화면이 실패한 것만 다시 올리게 해야 원본이 중복되지 않는다.
  */
-export async function uploadRawRecords(files: File[]): Promise<FileProgress[]> {
+export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
   if (USE_MOCK) {
     const now = new Date().toISOString();
-    const created = files.map((f, i) => ({
-      rawRecordId: `rr_mock_${Date.now()}_${i}`,
-      fileName: f.name,
-      uploadedAt: now,
-      entries: [],
-    }));
+    const results = files.map((file, i): UploadResult => {
+      const reason = mockRejectReason(file);
+      if (reason) return { ok: false, file, reason };
+      return {
+        ok: true,
+        file,
+        progress: {
+          rawRecordId: `rr_mock_${Date.now()}_${i}`,
+          fileName: file.name,
+          uploadedAt: now,
+          entries: [],
+        },
+      };
+    });
+    const created = results.flatMap((r) => (r.ok ? [r.progress] : []));
     for (const file of created) simulated.set(file.rawRecordId, Date.now());
     mock.FILE_PROGRESS.unshift(...created);
-    return created;
+    return results;
   }
-  return Promise.all(
-    files.map(async (file) => {
-      const form = new FormData();
-      form.append("file", file);
-      const saved = await request<{ id: number; originalFilename: string; createdAt: string }>(
-        "/api/v1/raw-records",
-        { method: "POST", body: form },
-      );
-      return {
-        rawRecordId: String(saved.id),
-        fileName: saved.originalFilename,
-        uploadedAt: saved.createdAt,
-        entries: [],
-      };
-    }),
+  const settled = await Promise.allSettled(files.map(uploadOne));
+  return settled.map((s, i) =>
+    s.status === "fulfilled"
+      ? { ok: true, file: files[i], progress: s.value }
+      : { ok: false, file: files[i], reason: uploadFailReasonOf(s.reason) },
   );
+}
+
+async function uploadOne(file: File): Promise<FileProgress> {
+  const form = new FormData();
+  form.append("file", file);
+  const saved = await request<{ id: number; originalFilename: string; createdAt: string }>(
+    "/api/v1/raw-records",
+    { method: "POST", body: form },
+  );
+  return {
+    rawRecordId: String(saved.id),
+    fileName: saved.originalFilename,
+    uploadedAt: saved.createdAt,
+    entries: [],
+  };
+}
+
+/**
+ * 상태 코드로만 가른다. nginx 가 25MB 에서 먼저 막으면 본문이 JSON 이 아니라 code 가 없다.
+ * 네트워크 오류(fetch 의 TypeError)도 temporary 다.
+ */
+function uploadFailReasonOf(err: unknown): UploadFailReason {
+  if (err instanceof ApiError && err.status === 400) return "invalid";
+  if (err instanceof ApiError && err.status === 413) return "too_large";
+  return "temporary";
+}
+
+/** mock 도 BE 와 같은 규칙으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
+const UPLOAD_EXTENSIONS = ["csv", "txt", "pdf", "jpg", "jpeg", "png", "hwp"];
+const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+
+function mockRejectReason(file: File): UploadFailReason | null {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!UPLOAD_EXTENSIONS.includes(ext)) return "invalid";
+  if (file.size > UPLOAD_MAX_BYTES) return "too_large";
+  return null;
 }
 
 /**
