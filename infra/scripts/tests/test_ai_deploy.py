@@ -57,6 +57,11 @@ class AIDeployTests(DeploymentFixture):
         self.assertEqual(self.state()["commands"], [])
         self.assertEqual(self.env_file.read_text(), self.original_env)
 
+    def test_tool_exit_75_is_failure_not_superseded(self):
+        self.set_state("unexpected_exit_75")
+        self.assertEqual(self.deploy().returncode, 1)
+        self.assertEqual(self.state()["image"], "ktc-ai")
+
     def test_dirty_files_are_preserved(self):
         (self.root / "tracked.txt").write_text("server-only change\n")
         result = self.deploy()

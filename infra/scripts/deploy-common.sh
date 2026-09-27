@@ -2,6 +2,7 @@
 # BE와 AI가 공유한다. SSM 전달 시에도 이 파일의 내용을 함께 전달한다.
 # root, env_file, health_timeout are supplied by each service wrapper.
 # shellcheck disable=SC2154
+deployment_superseded=0
 
 validate_image() {
   local service=$1 image=$2
@@ -27,6 +28,9 @@ prepare_checkout() {
   git fetch --quiet origin +refs/heads/develop:refs/remotes/origin/develop
   if [[ $commit != "$(git rev-parse origin/develop)" ]]; then
     echo 'Deployment superseded: commit is older than server HEAD or current origin/develop' >&2
+    # Read by the service wrapper's EXIT trap.
+    # shellcheck disable=SC2034
+    deployment_superseded=1
     exit 75
   fi
   if git merge-base --is-ancestor HEAD "$commit"; then

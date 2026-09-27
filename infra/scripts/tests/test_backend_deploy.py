@@ -35,6 +35,8 @@ if args[0] == "compose":
         output = state["service"] + "-id"
     elif args[0] == "pull" and state["mode"] == "pull_failure":
         code = 1
+    elif args[0] == "pull" and state["mode"] == "unexpected_exit_75":
+        code = 75
     elif args[0] == "up":
         state["image"] = os.environ[state["service"].upper() + "_IMAGE"]
         state["phase"] = "new" if "ghcr.io/" in state["image"] else "old"
@@ -217,6 +219,11 @@ class DeployScriptTests(DeploymentFixture):
         self.assertEqual(self.state()["image"], "ktc-backend")
         self.assertEqual(self.env_file.read_text(), self.original_env)
         self.assertFalse(any("up" in entry["args"] for entry in self.state()["commands"]))
+
+    def test_tool_exit_75_is_failure_not_superseded(self):
+        self.set_state("unexpected_exit_75")
+        self.assertEqual(self.deploy().returncode, 1)
+        self.assertEqual(self.state()["image"], "ktc-backend")
 
     def test_dirty_checkout_is_preserved(self):
         (self.root / "tracked.txt").write_text("local changes\n")

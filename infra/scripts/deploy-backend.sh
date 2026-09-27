@@ -30,6 +30,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/deploy-common.sh"
 on_exit() {
   local code=$?
   trap - EXIT
+  if ((code == 75 && deployment_superseded == 0)); then code=1; fi
   if ((code != 0 && rollback_required)); then
     echo 'Deployment failed; restoring previous backend image' >&2
     set +e

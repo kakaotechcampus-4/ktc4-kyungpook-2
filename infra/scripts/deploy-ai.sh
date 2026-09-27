@@ -20,6 +20,8 @@ compose() {
 on_exit() {
   local code=$?
   trap - EXIT
+  # Reserve 75 exclusively for a superseded checkout, never a tool failure.
+  if ((code == 75 && deployment_superseded == 0)); then code=1; fi
   if ((code != 0 && rollback_required)); then
     echo 'Deployment failed; restoring previous AI image' >&2
     set +e
