@@ -145,6 +145,21 @@ Compose 환경에서는 `docker` 프로필이 활성화되고, `DB_URL`, `DB_USE
 위해 **임시로 외부에 공개**돼 있으며(`"8080:8080"`), 운영에서는 제거하고 nginx로만 접근시킬
 예정입니다.
 
+### 백엔드 CI/CD
+
+`develop`·`main` 대상 PR에서는 Java 21로 단위 테스트, Testcontainers PostgreSQL 통합
+테스트, 빌드를 실행합니다. `develop` push 및 `develop`에서의 수동 실행은 검증 성공 후
+Docker 이미지를 GHCR에 올리고, SSM을 통해 기존 EC2의 BE 컨테이너만 배포합니다.
+Nginx 재로딩과 상태·CORS·카카오 콜백 검증이 실패하면 이전 BE 이미지로 복구합니다.
+
+`BACKEND_IMAGE`는 Compose에서 사용할 이미지 참조입니다. 비어 있으면 로컬 빌드용
+`ktc-backend`를 사용하고, CD는 성공한 이미지 digest를 서버 `.env`에 기록합니다.
+DB 컨테이너·볼륨은 재생성하지 않으며 `ddl-auto: update`와 현재 IP 설정은 유지합니다.
+이미지 복구는 DB 스키마 변경을 되돌리지 않습니다.
+
+GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
+[인프라 문서](../infra/README.md#백엔드-cicd)를 참고하세요.
+
 ### 환경 변수
 
 | 변수 | 기본값 | 설명 |
