@@ -8,7 +8,6 @@ import { PIPELINE_STAGES, stageStatesOf } from "@/lib/pipeline";
 export async function clientLoader() {
   const [children, files] = await Promise.all([getChildren(), getFileProgress()]);
   return {
-    active: children.filter((c) => c.status === "active"),
     pending: children.filter((c) => c.status === "pending_consent"),
     files,
   };
@@ -20,7 +19,7 @@ export async function clientLoader() {
  * — 창을 닫았다가 대시보드에서 다시 봐도 같은 현황이다.
  */
 export default function UploadPage() {
-  const { active, pending, files } = useLoaderData<typeof clientLoader>();
+  const { pending, files } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
   const [chosen, setChosen] = useState<File[]>([]);
   const [uploadedIds, setUploadedIds] = useState<string[]>([]);
@@ -59,43 +58,12 @@ export default function UploadPage() {
 
       <Card>
         <form className="flex flex-col gap-5">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[15px] font-semibold">아이 (선택)</span>
-            <select
-              defaultValue=""
-              className="tap rounded border border-line2 bg-surface px-3 text-[16px] outline-none focus:border-accent"
-            >
-              <option value="">자동 매칭에 맡기기</option>
-              {active.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} · {c.birthDate}
-                </option>
-              ))}
-            </select>
-            <span className="text-[13px] text-muted">
-              비워두면 자동으로 아이를 확인하고, 확신이 낮으면 확인이 필요한 기록으로 보냅니다.
-            </span>
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[15px] font-semibold">기록 유형</span>
-              <select className="tap rounded border border-line2 bg-surface px-3 text-[16px] outline-none focus:border-accent">
-                <option>관찰일지</option>
-                <option>활동일지</option>
-                <option>특이사항</option>
-                <option>사진</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[15px] font-semibold">기록 시각</span>
-              <input
-                type="datetime-local"
-                defaultValue="2026-08-21T11:40"
-                className="tap rounded border border-line2 bg-surface px-3 text-[16px] outline-none focus:border-accent"
-              />
-            </label>
-          </div>
+          {/* 아이 · 기록 유형 · 기록 시각은 받지 않는다. 파일 하나에 여러 아이의 기록이 섞여 있어
+              아이는 매칭이 판정하고, 시각은 파일 본문에서 뽑는다. */}
+          <p className="text-[14px] text-muted">
+            여러 아이의 기록이 한 파일에 섞여 있어도 됩니다. 아이는 자동으로 확인하고, 확신이
+            낮으면 확인이 필요한 기록으로 보냅니다.
+          </p>
 
           <div className="flex flex-col items-center gap-2 rounded border border-dashed border-line2 bg-paper px-6 py-10 text-center">
             <span aria-hidden className="text-2xl text-muted">
