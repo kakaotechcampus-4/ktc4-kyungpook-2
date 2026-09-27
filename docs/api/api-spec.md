@@ -24,7 +24,7 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 
 | # | 항목 | 현황 | 프론트 의견 |
 | --- | --- | --- | --- |
-| 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`, 배포 `http://13.125.56.179/login/oauth2/code/kakao`. 동의 항목은 현재 `profile_nickname`만 요청합니다(§2.4) | 전화번호 동의 항목 추가 여부는 매칭 키(§5.1)와 함께 결정이 필요합니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
+| 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`, 배포 `http://54.116.206.217/login/oauth2/code/kakao`. 동의 항목은 현재 `profile_nickname`만 요청합니다(§2.4) | 전화번호 동의 항목 추가 여부는 매칭 키(§5.1)와 함께 결정이 필요합니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
 | 2 | **세션 전달 방식** | **확정·구현됨** — `access_token` httpOnly 쿠키(1시간). 쓰기 요청은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보냅니다. refresh token은 없습니다 | - |
 | 3 | **필드 네이밍** | 프론트 타입은 camelCase, 일부 요청 바디는 snake_case | **camelCase 통일 제안** (Jackson 기본값과도 맞음). 이 문서는 전부 camelCase로 적었습니다. 프론트의 snake_case 요청 바디 3곳은 프론트가 수정합니다 |
 | 4 | **보호자–아이 연결 방식** | **확정** — 기관이 먼저 아이를 등록해두고, 보호자가 카카오 로그인하면 **대기 중 연결 요청**으로 노출합니다. 초대코드 방식은 제외 | 남은 확정 사항은 **매칭 키**입니다(§5.1). 기관이 등록한 아이와 카카오 로그인한 보호자를 서버가 무엇으로 이어줄지 정해야 합니다 |
