@@ -1,7 +1,13 @@
 package com.itda.backend.global.security;
 
+import com.itda.backend.domain.Organization;
+import com.itda.backend.domain.User;
+import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
+import com.itda.backend.repository.OrganizationRepository;
+import com.itda.backend.repository.UserRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +41,23 @@ class JwtCookieAuthTest {
     @Autowired
     private JwtProvider jwtProvider;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private OrganizationRepository organizationRepository;
+
+    /**
+     * 출입증의 subject 는 내부 userId 다. 실제로 존재하는 기관 담당자를 만들어 토큰을 발급한다 —
+     * 아무 숫자나 넣으면 보호 API 가 사용자를 찾지 못해 401 이 된다.
+     */
+    private String tokenForOrganizationUser(String kakaoId) {
+        Organization organization = organizationRepository.save(OrganizationFixture.center());
+        User user = userRepository.save(
+                UserFixture.organizationUser(kakaoId, "테스트", organization.getId()));
+        return jwtProvider.createToken(String.valueOf(user.getId()));
+    }
+
     @Test
     void protectedPathWithoutCookieIsUnauthorized() throws Exception {
         mockMvc.perform(get(PROTECTED))
@@ -44,7 +67,7 @@ class JwtCookieAuthTest {
     /** 쿠키만으로 인증이 선다. 프론트는 아무것도 붙이지 않는다. */
     @Test
     void protectedPathWithValidCookiePassesAuthentication() throws Exception {
-        String token = jwtProvider.createToken("384921");
+        String token = tokenForOrganizationUser("384921");
 
         mockMvc.perform(get(PROTECTED).cookie(new Cookie(JwtCookie.NAME, token)))
                 .andExpect(status().isOk());
@@ -62,7 +85,7 @@ class JwtCookieAuthTest {
      */
     @Test
     void authorizationHeaderNoLongerAuthenticates() throws Exception {
-        String token = jwtProvider.createToken("384921");
+        String token = tokenForOrganizationUser("384922");
 
         mockMvc.perform(get(PROTECTED).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isUnauthorized());
@@ -98,7 +121,7 @@ class JwtCookieAuthTest {
         mockMvc.perform(post("/api/v1/auth/logout")
                         .cookie(csrfCookie)
                         .header("X-XSRF-TOKEN", csrfCookie.getValue()))
-                .andExpect(status().isOk())
+                .andExpect(status().isNoContent())
                 .andExpect(cookie().maxAge(JwtCookie.NAME, 0))
                 .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")));
     }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
+import { RosterPicker } from "@/components/org/RosterPicker";
 import {
   Card,
   EmptyState,
@@ -9,14 +10,101 @@ import {
   PageHeader,
   ValidationBadge,
 } from "@/components/ui";
-import { decideGate1, getGate1Queue } from "@/lib/api";
+import { decideGate1, getChildren, getGate1Queue, reassignSummaryChild } from "@/lib/api";
+import type { Child, MatchBasis, SummaryItem } from "@/lib/types";
 
 export async function clientLoader() {
-  return { items: await getGate1Queue() };
+  const [items, roster] = await Promise.all([getGate1Queue(), getChildren()]);
+  return { items, roster };
+}
+
+function basisText(basis: MatchBasis): string {
+  if (basis.source === "cover") return `파일 표지: ${basis.name}`;
+  if (basis.source === "body") return `본문에 "${basis.name}" 등장`;
+  return "선생님이 직접 지정";
+}
+
+/**
+ * 왜 이 아이로 봤는지 한 줄 + 아동 변경.
+ * Gate 1 은 되돌릴 수 있는 단계라 매칭이 틀렸으면 반려하지 않고 여기서 바로 고친다.
+ */
+function MatchBasisRow({
+  item,
+  roster,
+  onChanged,
+}: {
+  item: SummaryItem;
+  roster: Child[];
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function apply() {
+    if (!selected) return;
+    setPending(true);
+    try {
+      await reassignSummaryChild(item.id, selected);
+      setOpen(false);
+      setSelected(null);
+      onChanged();
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="mb-4">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] text-ink2">
+        <span className="font-semibold">매칭 근거</span>
+        <span className="text-muted">·</span>
+        <span>{item.matchBasis ? basisText(item.matchBasis) : "근거 정보 없음"}</span>
+        {!open ? (
+          <button
+            onClick={() => setOpen(true)}
+            className="text-[14px] font-medium text-accentink underline"
+          >
+            아동 변경
+          </button>
+        ) : null}
+      </p>
+
+      {open ? (
+        <div className="mt-3 flex flex-col gap-3 rounded border border-line bg-surface2/50 p-3">
+          <RosterPicker
+            roster={roster}
+            value={selected}
+            onChange={setSelected}
+            excludeId={item.childId}
+            name={"reassign-" + item.id}
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={apply}
+              disabled={!selected || pending}
+              className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-line2 disabled:text-muted"
+            >
+              이 아이로 변경
+            </button>
+            <button
+              onClick={() => {
+                setOpen(false);
+                setSelected(null);
+              }}
+              className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function Gate1Page() {
-  const { items: queue } = useLoaderData<typeof clientLoader>();
+  const { items: queue, roster } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
   const [editing, setEditing] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -73,6 +161,12 @@ export default function Gate1Page() {
                   <ValidationBadge status={s.validation} />
                 </span>
               </div>
+
+              <MatchBasisRow
+                item={s}
+                roster={roster}
+                onChanged={() => revalidator.revalidate()}
+              />
 
               <p className="mb-2 text-[13px] font-semibold tracking-wider text-muted uppercase">
                 AI 요약 {editing === s.id ? "(수정 중)" : "(편집 가능)"}

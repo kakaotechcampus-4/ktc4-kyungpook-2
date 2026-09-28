@@ -75,6 +75,9 @@ def shortlist(state: MatchingState) -> dict:
     #: 성을 뗀 이름으로 걸린 아이들을 그 이름별로 모은다.
     #: "지안" 하나에 백지안·조지안·김지안 이 붙는다.
     given_groups: dict[str, set[int]] = {}
+    #: 같은 구간에 같은 유사도로 걸린 아이들. 오타가 여러 이름에 똑같이
+    #: 가까우면("임유젼" ↔ 임유진·임유전) 본문만으로는 고를 수 없다.
+    fuzzy_ties: dict[tuple, dict[int, float]] = {}
 
     for hit in hits:
         if hit.exact:
@@ -86,6 +89,9 @@ def shortlist(state: MatchingState) -> dict:
             # 받아 어느 쪽도 앞서지 않고, decide 가 multi 로 낸다.
             score = GIVEN_NAME_SCORE
             given_groups.setdefault(hit.name[1:], set()).add(hit.child_id)
+        elif not hit.exact and not hit.given_name:
+            score = _fuzzy_to_score(hit.ratio)
+            fuzzy_ties.setdefault((hit.start, hit.end), {})[hit.child_id] = hit.ratio
         elif hit.partial:
             # 이름이 단어의 일부로만 들어 있었다 ('은하수' 안의 '은하').
             # 후보로는 남기되 EXACT_SCORE 를 주지 않아, LLM 건너뛰기 경로에
@@ -135,6 +141,15 @@ def shortlist(state: MatchingState) -> dict:
             for g in given_groups.values()
             if len({cid for cid in g if cid in best}) >= 2
         ]
+        # 같은 구간에 최고 유사도가 같은 아이가 둘 이상이면 오타가 어느 쪽인지
+        # 편집거리로는 가릴 수 없다. 모델이 한 명을 골라도 근거가 아니다.
+        for ratios in fuzzy_ties.values():
+            if not ratios:
+                continue
+            top = max(ratios.values())
+            tied = {cid for cid, r in ratios.items() if r == top and cid in best}
+            if len(tied) >= 2:
+                groups.append(tied)
 
         hint_birthdate = state.get("hint_birthdate")
         for group in groups:
@@ -175,7 +190,9 @@ def shortlist(state: MatchingState) -> dict:
     return {
         #: 본문에도 표지에도 근거가 글자로 없는 상태.
         #: 별명·호칭만 있는 기록이 여기 해당한다.
-        "no_textual_anchor": not candidates and not hint_name,
+        # 후보가 걸러져 비는 것과, 근거가 애초에 없는 것은 다르다.
+        # 발견된 지점(hits)이 하나도 없을 때만 "근거 없음" 이다.
+        "no_textual_anchor": not hits and not hint_name,
         #: 이름이 겹쳐 구별이 안 되는 아이들. 모델이 한 명을 골라도 좁히지 않는다.
         "ambiguous_group": sorted(ambiguous_group),
         "hint_in_roster": bool(hint_name) and any(
