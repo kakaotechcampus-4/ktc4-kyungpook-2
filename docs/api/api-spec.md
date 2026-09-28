@@ -441,13 +441,13 @@ POST /api/v1/auth/signup   → 201 Created
 ```json
 [
   { "id": "mq_1",
-    "record": { "id": "raw_3", "fileName": "0821_활동일지.docx", "type": "활동일지",
-                "capturedAt": "2026-08-21T14:10:00+09:00", "preview": "…" },
+    "record": { "id": "raw_3", "fileName": "0821_활동일지.docx",
+                "capturedAt": "2026-08-21", "preview": "…" },
     "status": "multi",
     "confidence": 0.62,
     "multiReason": "ambiguous_identity",
     "hintMismatch": false,
-    "candidates": [ { "childId": "child_1", "name": "김하늘", "group": "햇살반" } ],
+    "candidates": [ { "childId": "child_1", "name": "김하늘", "birthDate": "2020-01-01", "confidence": 0.62 } ],
     "evidence": [ { "start": 12, "end": 15 } ] }
 ]
 ```
@@ -457,7 +457,11 @@ POST /api/v1/auth/signup   → 201 Created
 - `multiReason`: `status`가 `multi`일 때만 채워짐 — `ambiguous_identity` · `co_mention`
 - `hintMismatch`: 표지 힌트와 다른 아동으로 판단했는지
 - `evidence`: 판정 근거가 된 본문 구간(`{start, end}`, 유니코드 코드포인트 인덱스)
-- `record`/`candidates[].{name,group}`은 아직 JournalEntry·Child 연동 전이라 BE가 못 채웁니다 — 현재는 없이 내려갑니다
+- `record`/`candidates[].{name,birthDate}`은 이제 JournalEntry·Child 조회로 채워서 내려갑니다(PR #35, feat/be/#31).
+  다만 **`record.type`(기록 유형)과 `candidates[].group`(반)은 DB에 그 값을 담을 컬럼 자체가 없어서 여전히 못 채웁니다** —
+  `RawRecord`엔 기록 유형 컬럼이, `Child`엔 반 컬럼이 없습니다. 프론트 `types.ts`의 `RawRecord.type`/후보 `group`은 당장은 빈 값으로 와야 합니다.
+- 프론트 `types.ts`는 "화면에 숫자를 띄우면 교사가 근거로 삼게 된다"는 이유로 `confidence`를 일부러 타입에서 뺐는데,
+  BE는 위와 같이 최상위/후보별 `confidence`를 그대로 내려줍니다. 화면에서 안 쓰면 되지만, 필드 자체는 내려간다는 점 확인해주세요.
 
 **O-23 요청** · 프론트는 선택한 아이를 함께 보냅니다.
 

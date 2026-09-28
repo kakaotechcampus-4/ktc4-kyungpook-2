@@ -22,6 +22,7 @@ import com.itda.backend.dto.MatchingQueueItemResponse;
 import com.itda.backend.dto.RecordResponse;
 import com.itda.backend.exception.MatchingResultNotFoundException;
 import com.itda.backend.exception.MatchingResultValidationException;
+import com.itda.backend.repository.ChildOrganizationRepository;
 import com.itda.backend.repository.ChildRepository;
 import com.itda.backend.repository.JournalEntryRepository;
 import com.itda.backend.repository.MatchingResultRepository;
@@ -42,9 +43,12 @@ public class MatchingResultService {
     private final JournalEntryRepository journalEntryRepository;
     private final RawRecordRepository rawRecordRepository;
     private final ChildRepository childRepository;
+    private final ChildOrganizationRepository childOrganizationRepository;
+    private final UserService userService;
 
     @Transactional(readOnly = true)
-    public List<MatchingQueueItemResponse> getQueue(String institutionId) {
+    public List<MatchingQueueItemResponse> getQueue(String userId) {
+        String institutionId = String.valueOf(userService.getOrganizationIdOf(userId));
         // ponytail: 건별로 JournalEntry/RawRecord 조회 + candidates별 Child 조회 — N+1이지만
         // 지금 큐 규모에선 문제없다. 커지면 join 쿼리로 바꿀 것.
         return matchingResultRepository.findByStatusNot(MatchingStatus.AUTO).stream()
@@ -55,12 +59,14 @@ public class MatchingResultService {
     }
 
     @Transactional
-    public MatchingQueueItemResponse resolve(Long id, String action, Long childId, String reviewerId, String institutionId) {
+    public MatchingQueueItemResponse resolve(Long id, String action, Long childId, String reviewerId, String userId) {
+        Long organizationId = userService.getOrganizationIdOf(userId);
+
         MatchingResult matchingResult = matchingResultRepository.findById(id)
                 .orElseThrow(() -> new MatchingResultNotFoundException(id));
 
         // 다른 기관 소속이면 "권한 없음"이 아니라 "없음"으로 응답한다 (RawRecordService.getById와 같은 이유).
-        OwnedContext ctx = resolveOwnedContext(matchingResult.getJournalEntryId(), institutionId)
+        OwnedContext ctx = resolveOwnedContext(matchingResult.getJournalEntryId(), String.valueOf(organizationId))
                 .orElseThrow(() -> new MatchingResultNotFoundException(id));
 
         switch (action == null ? "" : action) {
@@ -68,10 +74,11 @@ public class MatchingResultService {
                 if (childId == null) {
                     throw new MatchingResultValidationException("childId is required for assign");
                 }
-                // 존재 여부만 확인한다. "우리 기관 소속인지"는 ChildOrganization이 실제 organizationId를
-                // 쓰는데 지금은 kakaoId(institutionId)뿐이라 아직 못 비교한다 — PR #43 이후 과제.
                 childRepository.findByIdAndDeletedAtIsNull(childId)
                         .orElseThrow(() -> new MatchingResultValidationException("child not found: " + childId));
+                if (!childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)) {
+                    throw new MatchingResultValidationException("child not in this institution: " + childId);
+                }
                 matchingResult.resolveAsAssigned(childId, reviewerId);
             }
             case "not_ours" -> matchingResult.resolveAsNotOurs(reviewerId);
