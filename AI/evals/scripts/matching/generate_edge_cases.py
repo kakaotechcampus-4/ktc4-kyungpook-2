@@ -17,7 +17,7 @@ from pathlib import Path
 
 random.seed(21)
 
-SRC_PATH = Path(__file__).parent.parent / "manifests" / "잇다_synthetic_100.json"
+SRC_PATH = Path(__file__).parent.parent.parent / "manifests" / "잇다_synthetic_100.json"
 
 with open(SRC_PATH, encoding="utf-8") as f:
     data = json.load(f)
@@ -166,7 +166,7 @@ for i, (trap_given, trap_sentence) in enumerate(TRAP_WORDS):
 
 all_cases = homonym_cases + trap_cases
 
-OUT_DIR = Path(__file__).parent.parent / "generated"
+OUT_DIR = Path(__file__).parent.parent.parent / "generated" / "matching"
 with open(OUT_DIR / "matching_동명이인_10건.json", "w", encoding="utf-8") as f:
     json.dump(homonym_cases, f, ensure_ascii=False, indent=2)
 

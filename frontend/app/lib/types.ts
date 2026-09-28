@@ -161,6 +161,21 @@ export interface FileProgress {
   entries: EntryProgress[];
 }
 
+/**
+ * 파일 하나의 업로드 결과. 여러 파일을 올리면 일부만 실패할 수 있어 파일마다 따로 돌려준다.
+ * 실패한 건 서버에 없으므로 원본 File 을 들고 있다가 그것만 다시 올린다.
+ */
+export type UploadResult =
+  | { ok: true; file: File; progress: FileProgress }
+  | { ok: false; file: File; reason: UploadFailReason };
+
+/**
+ * invalid   → 허용되지 않는 형식 (400)
+ * too_large → 용량 초과 (413)
+ * temporary → 저장 실패 · 네트워크 오류 등. 같은 파일을 다시 올리면 될 수 있다
+ */
+export type UploadFailReason = "invalid" | "too_large" | "temporary";
+
 export interface EntryProgress {
   id: string;
   /**

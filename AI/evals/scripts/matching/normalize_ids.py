@@ -3,7 +3,7 @@ import json
 import re
 from pathlib import Path
 
-GENERATED_DIR = Path(__file__).parent.parent / "generated"
+GENERATED_DIR = Path(__file__).parent.parent.parent / "generated" / "matching"
 INPUT_PATH = GENERATED_DIR / "matching_inputs_생성됨.json"
 OUTPUT_PATH = GENERATED_DIR / "matching_inputs_int.json"
 ID_MAP_PATH = GENERATED_DIR / "id_map.json"
