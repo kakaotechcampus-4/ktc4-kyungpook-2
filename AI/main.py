@@ -6,6 +6,8 @@ from fastapi import FastAPI
 
 from matching.graph import run_matching
 from matching.schemas import MatchingInput, MatchingOutput
+from validation.graph import run_validation
+from validation.schemas import ValidationInput, ValidationOutput
 
 load_dotenv()
 
@@ -26,6 +28,11 @@ def health():
 def matching(payload: MatchingInput) -> MatchingOutput:
     """일지 항목 한 건이 어느 아이의 것인지 판정한다."""
     return run_matching(payload)
+
+@app.post("/validation", response_model=ValidationOutput)
+def validation(payload: ValidationInput) -> ValidationOutput:
+    """일지 항목 한 건이 저장해도 안전한지 판정한다."""
+    return run_validation(payload)
 
 
 @app.get("/llm-test")
