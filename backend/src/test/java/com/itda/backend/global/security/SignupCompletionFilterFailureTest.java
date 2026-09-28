@@ -15,7 +15,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class SignupCompletionFilterFailureTest {
@@ -26,7 +25,7 @@ class SignupCompletionFilterFailureTest {
     }
 
     @Test
-    void databaseFailureIsNotTurnedIntoAnAuthenticationDecision() {
+    void databaseFailureReturns500WithoutClearingAuthentication() throws Exception {
         UserService service = mock(UserService.class);
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("database offline");
         when(service.isSignupCompleted("1")).thenThrow(failure);
@@ -37,8 +36,13 @@ class SignupCompletionFilterFailureTest {
         var response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
-        assertThatThrownBy(() -> filter.doFilter(request, response, chain)).isSameAs(failure);
-        assertThat(response.getContentAsByteArray()).isEmpty();
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(500);
+        assertThat(new ObjectMapper().readTree(response.getContentAsString()).get("code").asText())
+                .isEqualTo("INTERNAL_SERVER_ERROR");
+        assertThat(response.getContentAsString()).doesNotContain("database offline");
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal()).isEqualTo("1");
         verifyNoInteractions(chain);
     }
 }

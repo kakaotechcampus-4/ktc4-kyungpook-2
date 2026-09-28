@@ -41,6 +41,10 @@ class OpenApiDocumentationTest {
 						.value(containsString("SESSION_USER_NOT_FOUND")))
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].get.responses.403.description")
 						.value(containsString("SIGNUP_NOT_COMPLETED")))
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].get.responses.500.description")
+						.value(containsString("INTERNAL_SERVER_ERROR")))
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.500.description")
+						.value(containsString("INTERNAL_SERVER_ERROR")))
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.404").exists())
 				// 세션 조회는 보호 API 다 — 쿠키 인증 요구와 401 이 명세에 드러나야 한다.

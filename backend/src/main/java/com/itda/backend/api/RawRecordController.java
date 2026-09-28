@@ -72,7 +72,7 @@ public class RawRecordController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "500",
-                    description = "원본 파일 또는 기록 저장 실패 (RAW_RECORD_STORAGE_FAILED)",
+                    description = "원본 파일·기록 저장 실패 (RAW_RECORD_STORAGE_FAILED) 또는 가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
@@ -103,6 +103,11 @@ public class RawRecordController {
                     responseCode = "404",
                     description = "없는 기록이거나 다른 기관의 기록 (RAW_RECORD_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "500",
+                    description = "가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
     public ApiResponse<RawRecordResponse> getOne(
@@ -123,6 +128,11 @@ public class RawRecordController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "500",
+                    description = "가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })

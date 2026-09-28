@@ -14,7 +14,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.itda.backend.exception.UserErrorCode;
 import com.itda.backend.exception.UserException;
+import com.itda.backend.global.exception.CommonErrorCode;
 import com.itda.backend.service.UserService;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 가입을 마치지 않은(역할이 없는) 회원을 API 에서 막는다 → 403 SIGNUP_NOT_COMPLETED.
@@ -28,6 +30,7 @@ import com.itda.backend.service.UserService;
  * <p>{@code @Component} 로 두지 않는다. 그러면 Spring Boot 가 서블릿 필터로도 등록해 보안 체인 밖에서
  * 한 번 더 돈다. SecurityConfig 가 직접 만들어 JWT 필터 바로 뒤에 넣는다.
  */
+@Slf4j
 public class SignupCompletionFilter extends OncePerRequestFilter {
 
     private static final String API_PREFIX = "/api/";
@@ -69,6 +72,12 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
             } catch (UserException e) {
                 SecurityContextHolder.clearContext();
                 jsonErrorResponseWriter.write(response, e.getErrorCode());
+                return;
+            } catch (RuntimeException e) {
+                // 필터 예외를 /error 로 넘기면 ERROR 디스패치의 인증 실패가 401 로 바꿀 수 있다.
+                // 장애는 여기서 500 JSON 으로 끝내고 사용자의 인증 쿠키는 유지한다.
+                log.error("가입 상태 확인 중 서버 오류가 발생했습니다.", e);
+                jsonErrorResponseWriter.write(response, CommonErrorCode.INTERNAL_SERVER_ERROR);
                 return;
             }
         }
