@@ -10,7 +10,7 @@
 import json
 from pathlib import Path
 
-GENERATED_DIR = Path(__file__).parent.parent / "generated"
+GENERATED_DIR = Path(__file__).parent.parent.parent / "generated" / "matching"
 MAIN_PATH = GENERATED_DIR / "matching_inputs_1110.json"          # 기존 1,110건 (1,070 + 안전망 40)
 HOMONYM_PATH = GENERATED_DIR / "matching_동명이인_10건.json"       # 신규 10건
 SUBSTRING_PATH = GENERATED_DIR / "matching_이름부분포함_10건.json"  # 신규 10건
