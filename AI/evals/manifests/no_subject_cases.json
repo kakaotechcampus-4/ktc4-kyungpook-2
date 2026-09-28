@@ -1,0 +1,37 @@
+[
+  {
+    "case_id": "NOSUBJ_001",
+    "content": "오늘 낮잠을 푹 잤음. 특이사항 없음.",
+    "subject_name": null,
+    "expected_verdict": "REVIEW",
+    "note": "내용 자체는 완전 정상(PASS감)이지만, 대상 불명확이라 REVIEW여야 함"
+  },
+  {
+    "case_id": "NOSUBJ_002",
+    "content": "보호자 연락처는 010-1234-5678입니다.",
+    "subject_name": null,
+    "expected_verdict": "BLOCK",
+    "note": "구조적 개인정보(정규식)는 subject_known과 무관하게 항상 BLOCK 우선"
+  },
+  {
+    "case_id": "NOSUBJ_003",
+    "content": "이 아동은 자폐스펙트럼장애 진단을 받은 것으로 확인됨.",
+    "subject_name": null,
+    "expected_verdict": "REVIEW",
+    "note": "진단명은 정규식이 아니라 LLM+귀속검증 경로라, subject 모르면 LLM 결과 자체를 안 씀 -> REVIEW (BLOCK 아님, 대상불명확이 우선순위 더 앞)"
+  },
+  {
+    "case_id": "NOSUBJ_004",
+    "content": "너무 예뻐서 다른 아이들보다 더 마음이 쓰임.",
+    "subject_name": null,
+    "expected_verdict": "REVIEW",
+    "note": "감정적표현이 있어도, 대상불명확 사유로 REVIEW (이슈 유형은 그대로여도 결과는 같음)"
+  },
+  {
+    "case_id": "NOSUBJ_005",
+    "content": "민준이와 서연이가 놀잇감 문제로 다투었는데, 민준이가 먼저 밀쳤음.",
+    "subject_name": null,
+    "expected_verdict": "REVIEW",
+    "note": "다수아동언급이 있어도 마찬가지로 대상불명확 사유가 우선"
+  }
+]

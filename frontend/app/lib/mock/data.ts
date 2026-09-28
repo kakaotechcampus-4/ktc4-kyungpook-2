@@ -4,6 +4,9 @@ import type {
   CareReport,
   Child,
   ChatTurn,
+  EntryProgress,
+  EvidenceSpan,
+  FileProgress,
   InboxItem,
   Insight,
   Institution,
@@ -135,6 +138,23 @@ export const CHILDREN: Child[] = [
 
 /* 확인 필요 큐 (I-06) ──────────────────────────────── */
 
+/**
+ * 본문에서 word 가 처음 나오는 구간. AI 처럼 **코드포인트** 인덱스로 돌려준다.
+ * 손으로 숫자를 적으면 본문을 고칠 때마다 어긋나서 계산으로 둔다.
+ */
+function spanOf(text: string, word: string): EvidenceSpan {
+  const at = text.indexOf(word);
+  if (at === -1) throw new Error(`mock: "${word}" 가 본문에 없습니다`);
+  const start = Array.from(text.slice(0, at)).length;
+  return { start, end: start + Array.from(word).length };
+}
+
+const MQ_01 = "11:40 급식실 입장 직후 김OO가 소리를 지름. 손을 잡고 30까지 세자 진정됨.";
+const MQ_02 = "자유놀이 중 김OO와 이OO가 블록을 나눠 쌓았고, 서로 양보하는 모습을 보임.";
+const MQ_03 = "우리 반 막둥이가 새 신발을 자랑하며 친구들에게 보여줌.";
+const MQ_04 = "오후 자유놀이 중 정OO가 장난감을 두고 다툼이 있었고, 스스로 사과함.";
+const MQ_05 = "등원 직후 박OO 표정이 굳어 있었고, 인사에 반응하지 않음. 잠시 뒤 놀이에 참여함.";
+
 export const MATCHING_QUEUE: MatchingItem[] = [
   {
     id: "mq_01",
@@ -145,9 +165,9 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0821_관찰일지.docx",
       type: "관찰일지",
       capturedAt: "2026-08-21T11:40:00+09:00",
-      preview: "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
+      preview: MQ_01,
     },
-    evidence: [{ start: 6, end: 22 }],
+    evidence: [spanOf(MQ_01, "김OO")],
     candidates: [
       { childId: "child_1023", name: "김OO", group: "나비반 · 4세반", birthDate: "2021-03-14" },
       { childId: "child_1041", name: "김OO", group: "나비반 · 4세반", birthDate: "2021-09-02" },
@@ -162,9 +182,9 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0821_활동일지.docx",
       type: "활동일지",
       capturedAt: "2026-08-21T14:20:00+09:00",
-      preview: "자유놀이 중 블록을 나눠 쌓았고, 서로 양보하는 모습을 보임.",
+      preview: MQ_02,
     },
-    evidence: [{ start: 7, end: 17 }, { start: 19, end: 29 }],
+    evidence: [spanOf(MQ_02, "김OO"), spanOf(MQ_02, "이OO")],
     candidates: [
       { childId: "child_1023", name: "김OO", group: "나비반 · 4세반", birthDate: "2021-03-14" },
       { childId: "child_1055", name: "이OO", group: "나비반 · 4세반", birthDate: "2021-06-21" },
@@ -179,24 +199,25 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0821_특이사항.txt",
       type: "특이사항",
       capturedAt: "2026-08-21T15:05:00+09:00",
-      preview: "우리 반 막둥이가 새 신발을 자랑하며 친구들에게 보여줌.",
+      preview: MQ_03,
     },
-    evidence: [],
+    // 이름은 없지만 "막둥이" 가 누구를 가리키는지 사람이 판단할 단서다
+    evidence: [spanOf(MQ_03, "막둥이")],
     candidates: [],
   },
   {
     id: "mq_04",
     status: "unmatched",
     unmatchedReason: "not_in_roster",
-    hintName: "최OO",
+    hintName: "정OO",
     record: {
       id: "rrf_8c24",
-      fileName: "0821_최OO_관찰.docx",
+      fileName: "0821_정OO_관찰.docx",
       type: "관찰일지",
       capturedAt: "2026-08-21T16:30:00+09:00",
-      preview: "오후 자유놀이 중 장난감을 두고 다툼이 있었고, 스스로 사과함.",
+      preview: MQ_04,
     },
-    evidence: [],
+    evidence: [spanOf(MQ_04, "정OO")],
     candidates: [],
   },
   {
@@ -209,12 +230,58 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0820_이OO_활동일지.docx",
       type: "활동일지",
       capturedAt: "2026-08-20T10:10:00+09:00",
-      preview: "등원 직후 표정이 굳어 있었고, 인사에 반응하지 않음. 잠시 뒤 놀이에 참여함.",
+      preview: MQ_05,
     },
-    evidence: [{ start: 6, end: 29 }],
+    evidence: [spanOf(MQ_05, "박OO")],
     candidates: [
       { childId: "child_1077", name: "박OO", group: "민들레반 · 6세반", birthDate: "2019-11-08" },
     ],
+  },
+];
+
+/* 파일 단위 처리 현황 ─────────────────────────────── */
+
+const entries = (
+  prefix: string,
+  groups: [count: number, stageIndex: number, state: EntryProgress["state"]][],
+): EntryProgress[] => {
+  let n = 0;
+  return groups.flatMap(([count, stageIndex, state]) =>
+    Array.from({ length: count }, () => ({ id: `${prefix}_${++n}`, stageIndex, state })),
+  );
+};
+
+/**
+ * 업로드한 파일별로, 거기서 나온 기록이 지금 어느 단계에 있는지.
+ * 단계 인덱스는 lib/pipeline.ts 의 PIPELINE_STAGES 기준 (0 등록 · 1 매칭 · 2 검증 · 3 요약 · 4 1차 검토).
+ */
+export const FILE_PROGRESS: FileProgress[] = [
+  {
+    rawRecordId: "rr_0915",
+    fileName: "관찰일지_9월3주.docx",
+    uploadedAt: "2026-09-19T17:10:00+09:00",
+    entries: entries("rr_0915", [
+      [3, 5, "done"],
+      [8, 4, "waiting"],
+      [1, 3, "failed"],
+    ]),
+  },
+  {
+    rawRecordId: "rr_0821a",
+    fileName: "0821_관찰일지.docx",
+    uploadedAt: "2026-08-21T18:02:00+09:00",
+    entries: entries("rr_0821a", [
+      [2, 1, "waiting"],
+      [2, 2, "running"],
+      [1, 4, "waiting"],
+    ]),
+  },
+  {
+    rawRecordId: "rr_0821c",
+    fileName: "0821_특이사항.txt",
+    uploadedAt: "2026-08-21T18:05:00+09:00",
+    // 검증에서 BLOCK — 원본을 고쳐야 하므로 사람 대기다
+    entries: entries("rr_0821c", [[1, 2, "waiting"]]),
   },
 ];
 
@@ -258,6 +325,7 @@ export const GATE1_QUEUE: SummaryItem[] = [
     date: "2026-08-21",
     recordType: "활동일지",
     validation: "REVIEW",
+    matchBasis: { source: "body", name: "김OO" },
     content: "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
     flaggedSpan: "소리를 지름",
     flagReason: "진단처럼 읽히는 표현이 포함되어 확인이 필요합니다",
@@ -272,6 +340,7 @@ export const GATE1_QUEUE: SummaryItem[] = [
     date: "2026-08-20",
     recordType: "관찰일지",
     validation: "PASS",
+    matchBasis: { source: "cover", name: "김OO" },
     content:
       "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
     gate1Status: "pending",
@@ -285,6 +354,7 @@ export const GATE1_QUEUE: SummaryItem[] = [
     date: "2026-08-19",
     recordType: "활동일지",
     validation: "REVIEW",
+    matchBasis: { source: "cover", name: "이OO" },
     content: "식사 시간에 새로운 반찬을 두 번 거부한 뒤 세 번째 권유에 소량 섭취함.",
     flaggedSpan: "거부",
     flagReason: "확정적으로 읽힐 수 있는 표현입니다",

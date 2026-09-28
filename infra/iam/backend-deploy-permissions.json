@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DeployOnlyToBackendServer",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ssm:ap-northeast-2::document/AWS-RunShellScript",
+        "arn:aws:ec2:ap-northeast-2:782178410739:instance/i-0e30a4108bfd4ea9f"
+      ]
+    },
+    {
+      "Sid": "ReadDeploymentResult",
+      "Effect": "Allow",
+      "Action": "ssm:GetCommandInvocation",
+      "Resource": "*"
+    }
+  ]
+}

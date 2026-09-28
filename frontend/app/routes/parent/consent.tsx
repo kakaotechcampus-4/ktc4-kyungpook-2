@@ -1,43 +1,58 @@
 import { useState, useTransition } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { redirect, useLoaderData, useNavigate } from "react-router";
 import { grantRole, isOnboarded, markOnboarded } from "@/lib/auth";
-import { updateConsent } from "@/lib/api";
-import {
-  INSTITUTION_SHARE_FIELDS,
-  INVITING_INSTITUTION,
-  PARENT_CHILD,
-  PARENT_CHILDREN,
-} from "@/lib/mock/data";
+import { getConsentPreview, rejectLink, updateConsent } from "@/lib/api";
 import { InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
 
+const LINKS = "/parent/invite?step=links";
+
+/**
+ * 대상은 쿼리로 받는다 — P-01 의 연결 요청 목록이 "어느 아이 · 어느 기관"인지 지정해
+ * 보낸다. 쿼리가 빠졌으면 무엇에 동의하는지 알 수 없으므로 목록으로 되돌린다.
+ */
+export async function clientLoader({ request }: { request: Request }) {
+  const url = new URL(request.url);
+  const childId = url.searchParams.get("childId");
+  const institutionId = url.searchParams.get("institutionId");
+  if (!childId || !institutionId) return redirect(LINKS);
+  return { preview: await getConsentPreview(childId, institutionId) };
+}
+
 /**
  * P-02 확인 · 동의 — 한 화면에서 아이 확인 + 기관 확인 + 공유 범위 동의를 끝낸다.
  *
- * 첫 가입 때는 초대한 기관을, 이후에는 새로 권한을 요청한 기관을 그대로 보여준다 —
- * 둘 다 "아직 not_granted 상태인 기관"을 찾아서 쓰기 때문에 화면 하나로 겸한다.
+ * 첫 가입 때 초대한 기관이든, 나중에 새로 권한을 요청한 기관이든 P-01 에서 고른
+ * 연결 요청 하나를 그대로 보여준다. 요청을 찾지 못하면 다른 아이나 기관으로 채우지 않고
+ * "찾을 수 없음" 을 보여준다 — 엉뚱한 아이에 동의하게 만들면 안 된다.
  */
 export default function ParentConsentPage() {
-  /*
-   * 대상은 쿼리로 받는다 — P-01 의 연결 요청 목록이 "어느 아이 · 어느 기관"인지 지정해
-   * 보낸다. 쿼리 없이 들어온 경우(알림에서 온 재요청 등)에는 예전처럼 아직 동의하지 않은
-   * 첫 기관을 찾아 쓴다.
-   */
-  const [params] = useSearchParams();
-  const child = PARENT_CHILDREN.find((c) => c.id === params.get("childId")) ?? PARENT_CHILD;
-  const institutionId = params.get("institutionId");
-  const pendingRec =
-    child.institutions.find(
-      (i) => i.institution.id === institutionId && i.consent === "not_granted",
-    ) ?? child.institutions.find((i) => i.consent === "not_granted");
-  const institution = pendingRec?.institution ?? INVITING_INSTITUTION;
-  const { shared, notShared } = INSTITUTION_SHARE_FIELDS[institution.type];
-
+  const { preview } = useLoaderData<typeof clientLoader>();
   const [consented, setConsented] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [pending, start] = useTransition();
+  const [rejecting, startReject] = useTransition();
   const navigate = useNavigate();
+
+  if (!preview) {
+    return (
+      <div className="flex flex-col gap-5">
+        <div className="rounded-2xl border border-block/40 bg-blocksoft px-4 py-3">
+          <p className="mb-1 text-[16px] font-bold text-block">연결 요청을 찾을 수 없어요</p>
+          <p className="text-[15px] leading-7 text-ink2">이미 처리되었거나 잘못된 요청이에요.</p>
+        </div>
+        <button
+          onClick={() => navigate(LINKS)}
+          className="tap h-14 w-full rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2"
+        >
+          연결 요청 목록으로
+        </button>
+      </div>
+    );
+  }
+
+  const { child, institution, documentUrl, sharedFields, notSharedFields } = preview;
 
   if (mismatch) {
     return (
@@ -59,8 +74,17 @@ export default function ParentConsentPage() {
             {child.name} · {child.birthDate.replaceAll("-", ".")}생
           </p>
         </div>
-        <button className="tap h-14 w-full rounded-2xl bg-block px-4 text-[16px] font-bold text-white">
-          정보가 달라요 · 반려하기
+        <button
+          onClick={() =>
+            startReject(async () => {
+              await rejectLink(child.id, institution.id);
+              navigate(LINKS);
+            })
+          }
+          disabled={rejecting}
+          className="tap h-14 w-full rounded-2xl bg-block px-4 text-[16px] font-bold text-white disabled:opacity-60"
+        >
+          {rejecting ? "처리 중…" : "정보가 달라요 · 반려하기"}
         </button>
         <button
           onClick={() => setMismatch(false)}
@@ -107,23 +131,30 @@ export default function ParentConsentPage() {
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line px-4 py-3">
           <InstitutionIcon type={institution.type} />
           <InstitutionChip institution={institution} withName />
-          <button className="ml-auto text-[14px] text-accentink underline">
-            증빙서류 보기 ›
-          </button>
+          {documentUrl ? (
+            <a
+              href={documentUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="ml-auto text-[14px] text-accentink underline"
+            >
+              증빙서류 보기 ›
+            </a>
+          ) : null}
         </div>
       </section>
 
       <section className="rounded-2xl bg-surface2 px-4 py-4">
         <p className="mb-2 text-[13px] font-bold text-accentink">공유되는 정보</p>
         <ul className="flex flex-col gap-2">
-          {shared.map((label) => (
+          {sharedFields.map((label) => (
             <li key={label} className="text-[15px]">
               {label}
             </li>
           ))}
         </ul>
         <p className="mt-3 text-[14px] leading-6 text-muted">
-          {notShared.join(", ")}는 공유되지 않습니다.
+          {notSharedFields.join(", ")}는 공유되지 않습니다.
         </p>
       </section>
 
@@ -146,7 +177,7 @@ export default function ParentConsentPage() {
           onClick={() =>
             start(async () => {
               await updateConsent(child.id, institution.id, {
-                allowed_fields: shared,
+                allowed_fields: sharedFields,
                 action: "grant",
               });
               // 온보딩 중이면 돌봄 정보 입력(4단계)까지 이어가고, 이미 쓰던 보호자가

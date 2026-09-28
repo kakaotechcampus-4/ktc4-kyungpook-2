@@ -1,5 +1,5 @@
 import { useState, useTransition } from "react";
-import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
+import { Link, useLoaderData, useNavigate, useRevalidator, useSearchParams } from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
@@ -19,6 +19,8 @@ import type { PendingLink } from "@/lib/types";
  *  - 처음 오는 사람: intro → terms → links
  *  - 카카오에서 막 돌아온 사람(`/oauth/success` 가 보낸다): terms 부터
  *  - 이미 쓰고 있는 사람("아이 추가"로 들어온다): links 만
+ *  - P-02 에서 반려하거나 요청을 못 찾아 돌아온 사람(`?step=links`): links 만.
+ *    로그인 전이면 목록을 볼 수 없으니 쿼리를 무시하고 intro 부터 시작한다.
  */
 type Step = "intro" | "terms" | "links";
 
@@ -39,7 +41,11 @@ export async function clientLoader() {
 
 export default function ParentInvitePage() {
   const { loggedIn, onboarded, links } = useLoaderData<typeof clientLoader>();
-  const [step, setStep] = useState<Step>(loggedIn ? (onboarded ? "links" : "terms") : "intro");
+  const [params] = useSearchParams();
+  const [step, setStep] = useState<Step>(() => {
+    if (!loggedIn) return "intro";
+    return onboarded || params.get("step") === "links" ? "links" : "terms";
+  });
   const [agreed, setAgreed] = useState<string[]>([]);
   const [pending, start] = useTransition();
   const navigate = useNavigate();
