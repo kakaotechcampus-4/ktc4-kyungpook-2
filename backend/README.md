@@ -31,10 +31,58 @@ JWT 쿠키 인증과 CSRF 보호, 회원가입이 구현되어 있습니다. 로
 
 시연용 기관 시드는 없습니다. 기관은 회원가입으로만 만들어집니다.
 
-> **배포 DB(PostgreSQL)에 `users`·`organization` 테이블이 이미 있다면** 두 테이블을 지우고 배포하세요.
-> `docker` 프로필은 `ddl-auto: update`라 `users.role`의 NOT NULL과 `organization.name`의 UNIQUE 제약을
-> 걷어내지 못하고, 기존 행이 있으면 NOT NULL인 `organization.business_number` 컬럼 추가도 실패합니다.
-> 로컬(`local` 프로필)은 H2 인메모리에 `create-drop`이라 재기동하면 초기화되므로 해당하지 않습니다.
+없는 회원·탈퇴 회원을 가리키는 JWT는 보호 API 필터에서 `401 SESSION_USER_NOT_FOUND`로 차단합니다.
+동시 최초 로그인은 카카오 ID 중복 경합 후 새 트랜잭션에서 먼저 생성된 회원을 조회하므로 두 요청이
+같은 회원 ID를 사용합니다. 로그인 시 복구·닉네임 갱신과 회원가입은 회원 행의 잠금으로 조율합니다.
+
+> **기존 배포 데이터를 보존할 때 테이블을 삭제하지 마세요.** `docker` 프로필의 `ddl-auto: update`는
+> 이전 실험 스키마의 `users.role` NOT NULL이나 `organization.name` UNIQUE 제약을 제거하지 못합니다.
+> 기존 `organization` 행이 있다면 사업자등록번호도 실제 값으로 보완해야 합니다. 해당 스키마가 남아 있는
+> 환경은 백업 후 별도의 스키마 변경을 먼저 준비해야 하며, 아래 도구는 소유자 데이터 이전만 담당합니다.
+
+### 기존 원본 기록의 기관 소유자 이전
+
+이전 버전은 `raw_record.institution_id`에 카카오 ID를 저장했습니다. 새 버전은 가입 시 만든 기관 ID를
+저장하므로 기존 기록은 명시적 매핑을 통해 옮겨야 합니다. 카카오 ID와 기관 ID가 같은 숫자일 수 있어
+값만 보고 자동 추정하지 않습니다. PostgreSQL 16의 `psql`과 아래 수동 도구를 사용합니다.
+
+1. 회원·기관·원본 기록을 포함한 DB 전체를 `pg_dump`로 백업하고, 원본 파일도 보존합니다. 이전이 끝날
+   때까지 원본 기록 업로드·조회와 회원 소속 변경을 중단합니다. 이미 숫자가 겹치는 기록이 다른 기관에
+   보이는 일을 방지하려면 조회도 차단해야 합니다.
+2. 기존 기록 소유자가 새 버전에서 카카오 로그인과 기관 가입을 완료하도록 합니다. 전환 중 로그인·가입은
+   허용하되 원본 기록 API는 열지 않습니다. JWT subject가 카카오 ID에서 내부 ID로 바뀌므로 최초 배포 시
+   `JWT_SECRET`도 새 키로 교체하여 이전 토큰을 폐기합니다.
+3. 백업한 기존 기록 **전체**의 ID·카카오 ID를 새 기관 ID에 연결합니다. 새 버전으로 이미 생성한 기록이
+   섞인 DB용 도구가 아니며, 그런 환경에서는 별도로 이전 대상을 분리하는 절차가 필요합니다.
+   [CSV 예제](scripts/raw-record-owner-mapping.csv.example)를 복사해 실제 값으로 채웁니다.
+   헤더는 `raw_record_id,legacy_kakao_id,organization_id` 순서 그대로 사용합니다.
+4. CSV를 보관할 작업 디렉터리에서 아래 검증 명령을 실행합니다. `DATABASE_URL`은 운영자가 준비한
+   PostgreSQL 접속 문자열이며, 비밀번호는 명령에 직접 넣지 말고 `.pgpass` 등으로 제공합니다.
+
+```bash
+# 이 디렉터리의 raw-record-owner-mapping.csv 를 읽습니다.
+# /absolute/path/to/backend 는 실제 저장소의 backend 절대 경로로 바꿉니다.
+psql "$DATABASE_URL" -f /absolute/path/to/backend/scripts/migrate-raw-record-owners.sql
+```
+
+기본 모드는 이전 예정 내역과 건수를 출력한 뒤 `ROLLBACK`합니다. 빈 매핑, 기록 ID 중복·누락,
+소유자 불일치, 없는 기록·기관, 비활성 회원이나 다른 기관 소속은 오류로 중단됩니다. 검증 중에도 테이블
+잠금을 사용하므로 점검 시간에 실행하세요. 매핑 누락을 정확히 판정하도록 DB의 원본 기록 전체가 CSV에
+포함되어야 합니다.
+
+5. 검증 결과를 백업·CSV와 대조한 뒤 같은 디렉터리에서 적용합니다.
+
+```bash
+psql "$DATABASE_URL" -v apply=true -f /absolute/path/to/backend/scripts/migrate-raw-record-owners.sql
+```
+
+적용은 하나의 트랜잭션에서 `institution_id`만 갱신합니다. 기록 ID·파일 경로·파일 내용·생성 시각은
+변경하지 않습니다. 오류가 나면 연결 종료 시 전체 롤백되므로 일부만 이전되지 않습니다. CSV와 실행
+결과는 보관하고, 적용 후 같은 CSV를 반복 실행하지 마세요.
+
+6. 기관별 기존 기록 목록·상세 조회와 다른 기관의 접근 거부를 확인한 뒤 원본 기록 API를 다시 엽니다.
+   적용 후 문제가 확인되면 API를 계속 중단한 상태에서 사전 백업으로 복구하고 매핑을 다시 검증합니다.
+   도구는 서버 시작 시 자동 실행되지 않습니다.
 
 ## 기술 스택
 
