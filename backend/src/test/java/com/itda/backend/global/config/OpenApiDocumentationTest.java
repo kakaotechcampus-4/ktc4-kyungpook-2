@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -36,6 +37,10 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.413").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.500").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].get.responses.401.description")
+						.value(containsString("SESSION_USER_NOT_FOUND")))
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].get.responses.403.description")
+						.value(containsString("SIGNUP_NOT_COMPLETED")))
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.404").exists())
 				// 세션 조회는 보호 API 다 — 쿠키 인증 요구와 401 이 명세에 드러나야 한다.

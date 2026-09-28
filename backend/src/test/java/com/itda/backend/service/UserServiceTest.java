@@ -331,15 +331,14 @@ class UserServiceTest {
         assertThat(userService.isSignupCompleted("2")).isTrue();
     }
 
-    /**
-     * 회원을 못 찾으면 가입 미완료(403)로 막지 않는다. 필터를 통과시켜 서비스가 기존대로
-     * 401 SESSION_USER_NOT_FOUND 를 내게 한다 — 프론트는 401 을 "다시 로그인" 으로 처리한다.
-     */
     @Test
-    void unknownUserIsLeftToTheSessionCheck() {
+    void unknownUserIsRejectedBeforeSignupCheck() {
         given(userRepository.findByIdAndDeletedAtIsNull(404L)).willReturn(Optional.empty());
 
-        assertThat(userService.isSignupCompleted("404")).isTrue();
-        assertThat(userService.isSignupCompleted("not-a-number")).isTrue();
+        for (String principal : new String[]{"404", "not-a-number", "", "9223372036854775808"}) {
+            assertThatThrownBy(() -> userService.isSignupCompleted(principal))
+                    .isInstanceOfSatisfying(UserException.class,
+                            e -> assertThat(e.getErrorCode()).isEqualTo(UserErrorCode.SESSION_USER_NOT_FOUND));
+        }
     }
 }

@@ -86,17 +86,11 @@ public class UserService {
     /**
      * 가입 미완료 차단 필터가 쓴다.
      *
-     * <p>회원을 찾지 못하면 true 를 돌려 필터를 통과시킨다. 그 요청은 뒤에서 서비스가
-     * 401 SESSION_USER_NOT_FOUND 로 끝낸다 — 403 가입 미완료로 막으면 프론트가 로그인 화면이 아니라
-     * 가입 화면으로 보내게 된다.
+     * <p>없는 회원과 탈퇴 회원은 SESSION_USER_NOT_FOUND 예외로 차단한다.
      */
     @Transactional(readOnly = true)
     public boolean isSignupCompleted(String principal) {
-        try {
-            return getByPrincipal(principal).isSignupCompleted();
-        } catch (UserException e) {
-            return true;
-        }
+        return getByPrincipal(principal).isSignupCompleted();
     }
 
     @Transactional(readOnly = true)

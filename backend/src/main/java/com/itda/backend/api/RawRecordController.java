@@ -57,12 +57,12 @@ public class RawRecordController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "인증 필요",
+                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "CSRF 토큰 누락, 또는 기관 소속이 아닌 사용자",
+                    description = "CSRF 토큰 누락, 가입 미완료 (SIGNUP_NOT_COMPLETED), 또는 기관 소속이 아닌 사용자",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -91,12 +91,12 @@ public class RawRecordController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "인증 필요",
+                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -117,12 +117,12 @@ public class RawRecordController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "인증 필요",
+                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "기관 소속이 아닌 사용자",
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })

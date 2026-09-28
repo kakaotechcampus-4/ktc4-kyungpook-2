@@ -13,6 +13,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.itda.backend.exception.UserErrorCode;
+import com.itda.backend.exception.UserException;
 import com.itda.backend.service.UserService;
 
 /**
@@ -59,11 +60,17 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         // 비로그인 요청은 여기서 판단하지 않는다. 뒤의 인가 단계가 401 로 끝낸다.
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null
-                && authentication.getPrincipal() instanceof String userId
-                && !userService.isSignupCompleted(userId)) {
-            jsonErrorResponseWriter.write(response, UserErrorCode.SIGNUP_NOT_COMPLETED);
-            return;
+        if (authentication != null && authentication.getPrincipal() instanceof String userId) {
+            try {
+                if (!userService.isSignupCompleted(userId)) {
+                    jsonErrorResponseWriter.write(response, UserErrorCode.SIGNUP_NOT_COMPLETED);
+                    return;
+                }
+            } catch (UserException e) {
+                SecurityContextHolder.clearContext();
+                jsonErrorResponseWriter.write(response, e.getErrorCode());
+                return;
+            }
         }
         filterChain.doFilter(request, response);
     }

@@ -12,6 +12,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.context.annotation.Import;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.domain.Organization;
@@ -31,9 +34,19 @@ import com.itda.backend.repository.UserRepository;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Import(SignupCompletionFilterTest.ProtectedProbe.class)
 class SignupCompletionFilterTest {
 
-    private static final String PROTECTED = "/api/v1/raw-records";
+    // 회원 서비스를 호출하지 않아도 필터만으로 차단되는지 검증한다.
+    private static final String PROTECTED = "/api/v1/security-test/probe";
+
+    @RestController
+    static class ProtectedProbe {
+        @GetMapping(PROTECTED)
+        String probe() {
+            return "controller-reached";
+        }
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -117,5 +130,25 @@ class SignupCompletionFilterTest {
         mockMvc.perform(get(PROTECTED).cookie(new Cookie(JwtCookie.NAME, token)))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("SESSION_USER_NOT_FOUND"));
+    }
+
+    @Test
+    void tokenForDeletedUserIsUnauthorizedBeforeController() throws Exception {
+        User user = UserFixture.parent("filter-deleted", "탈퇴회원");
+        user.delete();
+        userRepository.saveAndFlush(user);
+
+        mockMvc.perform(get(PROTECTED).cookie(cookieFor(user)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("SESSION_USER_NOT_FOUND"));
+    }
+
+    @Test
+    void malformedUserIdIsUnauthorizedBeforeController() throws Exception {
+        for (String subject : new String[]{"not-a-number", "9223372036854775808"}) {
+            mockMvc.perform(get(PROTECTED).cookie(new Cookie(JwtCookie.NAME, jwtProvider.createToken(subject))))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("SESSION_USER_NOT_FOUND"));
+        }
     }
 }
