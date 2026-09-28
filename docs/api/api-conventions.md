@@ -125,7 +125,7 @@ HTTP/1.1 404 Not Found
 - 카카오 사용자 ID는 내부 회원(`users.kakao_id`)에 연결된다. 역할은 `PARENT`와 `ORGANIZATION`이 구현돼 있고 `ADMIN`은 아직 없다.
 - **역할은 회원가입(`POST /api/v1/auth/signup`)에서 사용자가 직접 정한다.** 카카오 로그인은 신원 확인만 하고, 처음 로그인한 사람은 역할 없는(`users.role = NULL`) 가입 미완료 회원으로 등록된다. 기관 담당자는 가입할 때 기관명·유형·사업자등록번호를 입력하고, 그 자리에서 기관이 만들어진다(기관 1곳당 계정 1개). 역할은 한 번 정해지면 바뀌지 않으며, 다시 가입을 요청하면 `409 ALREADY_SIGNED_UP`, 이미 등록된 사업자등록번호면 `409 DUPLICATE_BUSINESS_NUMBER`다.
 - 가입 미완료 회원은 `/api/v1/auth/me` · `/api/v1/auth/signup` · `/api/v1/auth/logout` 외의 API에서 `403 SIGNUP_NOT_COMPLETED`로 막힌다. 보안 필터 한 곳에서 확인하므로 새 API에도 자동으로 적용된다. `/auth/me`는 가입 미완료를 `401`이 아니라 `signupCompleted: false`로 알려준다.
-- 보호 API의 가입 확인 필터는 존재하지 않거나 탈퇴한 회원의 JWT를 `401 SESSION_USER_NOT_FOUND`로 즉시 차단한다. 각 API가 회원 서비스를 호출하는지와 관계없이 적용되며, 활성 가입 미완료 회원의 `403`과 구분한다. 데이터베이스 장애는 가입 완료나 인증 실패로 바꾸지 않는다.
+- 보호 API의 가입 확인 필터는 존재하지 않거나 탈퇴한 회원의 JWT를 `401 SESSION_USER_NOT_FOUND`로 즉시 차단한다. 각 API가 회원 서비스를 호출하는지와 관계없이 적용되며, 활성 가입 미완료 회원의 `403`과 구분한다. 데이터베이스 장애 등 예상하지 못한 조회 오류는 필터에서 `500 INTERNAL_SERVER_ERROR` JSON으로 응답하고 인증 쿠키는 유지한다.
 - 같은 카카오 계정으로 최초 로그인이 동시에 들어오면 회원은 한 번만 생성하고 두 요청 모두 같은 내부 회원 ID를 사용한다. 카카오 ID 유니크 제약 경합에 한해 롤백 후 새 트랜잭션에서 기존 회원을 한 번 조회한다.
 - **JWT의 subject는 내부 `userId`다.** 카카오 회원번호가 아니다. 역할과 소속 기관은 토큰에 담지 않고 요청마다 DB에서 읽는다 — 값이 바뀌면 다음 요청부터 바로 반영되고, 토큰에 박힌 옛 값이 남지 않는다.
 - 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다. 기관 전용 API를 기관 소속이 아닌 회원이 호출하면 `403 ORGANIZATION_NOT_ASSIGNED`다.
@@ -141,6 +141,7 @@ HTTP/1.1 404 Not Found
 - 보호 API 요청은 브라우저가 `access_token` 쿠키를 자동으로 전송하도록 `credentials: include`를 사용한다. 클라이언트는 JWT를 읽거나 `Authorization: Bearer` 헤더에 직접 넣지 않는다.
 - `POST`, `PUT`, `PATCH`, `DELETE` 요청에는 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 함께 보낸다. OAuth 로그인 시작·콜백 경로는 이 CSRF 검사에서 제외된다.
 - OAuth 인가 요청의 state 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로만 처리하며, **로그인 정보는 세션에 저장하지 않는다**(`JSESSIONID`만으로는 인증되지 않는다). refresh token 발급과 토큰 폐기 전략은 아직 없다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시키고 `204 No Content`로 응답한다.
+- API 인증 실패 요청의 RequestCache는 비활성화한다. 비로그인 API GET 요청을 저장하기 위한 세션·`JSESSIONID`는 생성하지 않으며, OAuth 인가 요청의 state 세션은 유지한다.
 
 ## 변경 절차
 
