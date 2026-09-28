@@ -30,6 +30,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final OrganizationRepository organizationRepository;
+    private final LoginUserTransactionService loginUserTransactionService;
 
     /**
      * 카카오 로그인 성공 시 회원을 찾거나 만든다.
@@ -40,21 +41,29 @@ public class UserService {
      * <p>탈퇴한 회원이면 새로 만들지 않고 되살린다. kakao_id 유니크 제약 때문에 새로 넣을 수 없다.
      * 역할과 소속도 탈퇴 전 값을 그대로 쓴다. 이미 있는 회원의 역할은 로그인으로 바뀌지 않는다.
      *
-     * <p>같은 카카오 계정으로 동시에 첫 로그인이 겹치면 uk_users_kakao_id 에 걸려
-     * 한쪽이 예외로 끝난다. 호출하는 성공 핸들러가 로그인 실패 화면으로 돌려보내고,
-     * 사용자가 다시 누르면 통과한다. 지금 규모에서는 재시도 장치를 두지 않는다.
+     * <p>동시 최초 로그인에서 카카오 ID 중복이 발생하면 롤백 후 새 트랜잭션에서
+     * 먼저 등록된 회원을 다시 찾는다. 다른 제약 위반은 숨기지 않는다.
      */
-    @Transactional
     public User findOrCreateByKakaoId(String kakaoId, String nickname) {
-        return userRepository.findByKakaoId(kakaoId)
-                .map(existing -> {
-                    if (existing.isDeleted()) {
-                        existing.restore();
-                    }
-                    existing.updateName(nickname);
-                    return existing;
-                })
-                .orElseGet(() -> userRepository.save(User.pending(kakaoId, nickname)));
+        try {
+            return loginUserTransactionService.findOrCreate(kakaoId, nickname);
+        } catch (DataIntegrityViolationException e) {
+            if (!isDuplicateKakaoId(e)) {
+                throw e;
+            }
+            return loginUserTransactionService.findExisting(kakaoId, nickname)
+                    .orElseThrow(() -> e);
+        }
+    }
+
+    private boolean isDuplicateKakaoId(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof org.hibernate.exception.ConstraintViolationException violation
+                    && "uk_users_kakao_id".equalsIgnoreCase(violation.getConstraintName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

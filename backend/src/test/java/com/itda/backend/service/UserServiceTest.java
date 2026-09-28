@@ -47,7 +47,8 @@ class UserServiceTest {
 
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, organizationRepository);
+        userService = new UserService(userRepository, organizationRepository,
+                new LoginUserTransactionService(userRepository));
     }
 
     /**
@@ -56,13 +57,13 @@ class UserServiceTest {
      */
     @Test
     void firstLoginCreatesUserWithoutRole() {
-        given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.empty());
-        given(userRepository.save(any(User.class))).willAnswer(i -> i.getArgument(0));
+        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.empty());
+        given(userRepository.saveAndFlush(any(User.class))).willAnswer(i -> i.getArgument(0));
 
         userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(captor.capture());
+        verify(userRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getName()).isEqualTo("박지현");
         assertThat(captor.getValue().getRole()).isNull();
         assertThat(captor.getValue().getOrganizationId()).isNull();
@@ -72,19 +73,19 @@ class UserServiceTest {
     @Test
     void existingUserIsReusedInsteadOfCreatingAnother() {
         User existing = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
-        given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(existing));
+        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(existing));
 
         User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
 
         assertThat(found).isSameAs(existing);
-        verify(userRepository, never()).save(any(User.class));
+        verify(userRepository, never()).saveAndFlush(any(User.class));
     }
 
     /** 가입을 마친 회원이 다시 로그인해도 역할과 소속은 그대로다. */
     @Test
     void loggingInAgainKeepsTheCompletedSignup() {
         User existing = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
-        given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(existing));
+        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(existing));
 
         User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
 
@@ -96,7 +97,7 @@ class UserServiceTest {
     @Test
     void nullNicknameDoesNotWipeTheStoredName() {
         User existing = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
-        given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(existing));
+        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(existing));
 
         User found = userService.findOrCreateByKakaoId(KAKAO_ID, null);
 
@@ -108,19 +109,19 @@ class UserServiceTest {
     void withdrawnUserIsRestoredInsteadOfCreatingANewRow() {
         User withdrawn = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
         withdrawn.delete();
-        given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(withdrawn));
+        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(withdrawn));
 
         User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
 
         assertThat(found).isSameAs(withdrawn);
         assertThat(found.isDeleted()).isFalse();
-        verify(userRepository, never()).save(any(User.class));
+        verify(userRepository, never()).saveAndFlush(any(User.class));
     }
 
     @Test
     void changedNicknameIsRefreshed() {
         User existing = UserFixture.organizationUser(KAKAO_ID, "옛이름", 7L);
-        given(userRepository.findByKakaoId(KAKAO_ID)).willReturn(Optional.of(existing));
+        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(existing));
 
         User found = userService.findOrCreateByKakaoId(KAKAO_ID, "새이름");
 

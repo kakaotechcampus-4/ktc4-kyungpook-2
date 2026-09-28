@@ -19,6 +19,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
      */
     Optional<User> findByKakaoId(String kakaoId);
 
+    /** 로그인 갱신과 회원가입이 서로의 변경을 덮어쓰지 않도록 탈퇴 회원까지 잠근다. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.kakaoId = :kakaoId")
+    Optional<User> findByKakaoIdForUpdate(@Param("kakaoId") String kakaoId);
+
     /** 로그인·세션 조회용. 탈퇴한 사용자는 인정하지 않는다. */
     Optional<User> findByIdAndDeletedAtIsNull(Long id);
 
