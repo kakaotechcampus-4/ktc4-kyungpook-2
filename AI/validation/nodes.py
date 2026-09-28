@@ -82,6 +82,31 @@ JSON 형식으로만 답하세요:
     return state
 
 
+def _narrowest_spans(spans: list[dict]) -> list[dict]:
+    """겹치는 근거 구간을 정리한다.
+
+    구조적 정규식과 모델 인용이 같은 곳을 가리키면 구간이 그대로 쌓인다.
+    예: "010-1234-5678" 과 "어머니 연락처는 010-1234-5678 이다."
+    화면에서 같은 자리가 두 번 칠해지므로 하나만 남긴다.
+
+    남기는 쪽은 좁은 구간이다 — 계약이 "판정 근거가 된 최소 구간만" 이라
+    넓은 인용이 정확한 히트를 덮어쓰지 않게 한다. 반환 순서는 start 기준으로
+    고정한다. 모델 응답 순서에 따라 배열이 흔들리지 않게 하기 위함이다.
+    """
+    unique = {(s["start"], s["end"]) for s in spans}
+    kept = [
+        (start, end)
+        for start, end in unique
+        if not any(
+            (other_start, other_end) != (start, end)
+            and other_start >= start
+            and other_end <= end
+            for other_start, other_end in unique
+        )
+    ]
+    return [{"start": start, "end": end} for start, end in sorted(kept)]
+
+
 def reflect(state: dict) -> dict:
     """반영: 최종 검사.
 
@@ -103,13 +128,13 @@ def reflect(state: dict) -> dict:
     if state.get("llm_error"):
         if verdict == "BLOCK":
             # 구조적 패턴(정규식)으로 이미 확정된 BLOCK은 모델 상태와 무관하게 유지
-            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": evidence}
-        return {**state, "verdict": "REVIEW", "issue_types": issue_types or ["모델호출실패"], "evidence": evidence}
+            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": _narrowest_spans(evidence)}
+        return {**state, "verdict": "REVIEW", "issue_types": issue_types or ["모델호출실패"], "evidence": _narrowest_spans(evidence)}
 
     if not state.get("subject_known"):
         if verdict == "BLOCK":
-            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": evidence}
-        return {**state, "verdict": "REVIEW", "issue_types": list(set(issue_types + ["대상불명확"])), "evidence": evidence}
+            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": _narrowest_spans(evidence)}
+        return {**state, "verdict": "REVIEW", "issue_types": list(set(issue_types + ["대상불명확"])), "evidence": _narrowest_spans(evidence)}
 
     for candidate in state.get("llm_issues", []):
         issue_type = candidate.get("issue_type")
@@ -133,4 +158,4 @@ def reflect(state: dict) -> dict:
         elif level == "REVIEW" and verdict != "BLOCK":
             verdict = "REVIEW"
 
-    return {**state, "verdict": verdict, "issue_types": list(set(issue_types)), "evidence": evidence}
+    return {**state, "verdict": verdict, "issue_types": list(set(issue_types)), "evidence": _narrowest_spans(evidence)}
