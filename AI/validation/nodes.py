@@ -33,6 +33,8 @@ def plan(state: dict) -> dict:
 
 def act(state: dict) -> dict:
     """행동: Luna 호출. 여기서만 LLM을 쓴다."""
+    print(f"[validation] journal_entry_id={state.get('journal_entry_id')} 처리 중")
+    
     content = state["content"]
     subject_name = state.get("subject_name")
 
