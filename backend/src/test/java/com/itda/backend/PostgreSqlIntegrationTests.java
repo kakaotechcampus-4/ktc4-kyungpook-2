@@ -8,6 +8,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -37,6 +41,9 @@ import com.itda.backend.service.UserService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.mockingDetails;
 
 @SpringBootTest
 @Testcontainers
@@ -56,9 +63,11 @@ class PostgreSqlIntegrationTests {
 		registry.add("spring.datasource.username", postgres::getUsername);
 		registry.add("spring.datasource.password", postgres::getPassword);
 		registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+		// 컨테이너가 스키마까지 폐기하므로 컨텍스트 종료 때 다시 접속해 DROP 하지 않는다.
+		registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
 	}
 
-	@Autowired
+	@MockitoSpyBean
 	private UserRepository userRepository;
 
 	@Autowired
@@ -66,6 +75,9 @@ class PostgreSqlIntegrationTests {
 
 	@Autowired
 	private UserService userService;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	@Test
 	void contextLoadsWithPostgreSql() {
@@ -187,5 +199,76 @@ class PostgreSqlIntegrationTests {
 				.map(id -> userRepository.findById(id).orElseThrow())
 				.filter(User::isSignupCompleted).count();
 		assertThat(signedUp).isEqualTo(1);
+	}
+
+	/** 두 조회가 모두 빈 결과를 본 뒤 INSERT 하도록 해 중복 경합을 확실하게 재현한다. */
+	@Test
+	void simultaneousFirstLoginsBothReturnTheSameUser() throws Exception {
+		CountDownLatch bothRead = new CountDownLatch(2);
+		var repositoryDelegate = mockingDetails(userRepository).getMockCreationSettings().getDefaultAnswer();
+		doAnswer(invocation -> {
+			Object result = repositoryDelegate.answer(invocation);
+			bothRead.countDown();
+			if (!bothRead.await(10, TimeUnit.SECONDS)) {
+				throw new IllegalStateException("동시 최초 조회 대기 시간 초과");
+			}
+			return result;
+		}).when(userRepository).findByKakaoIdForUpdate("pg-login-first");
+		List<Long> ids = new java.util.concurrent.CopyOnWriteArrayList<>();
+		try {
+			List<Throwable> results = runAtOnce(List.of(
+					() -> ids.add(userService.findOrCreateByKakaoId("pg-login-first", "첫번째").getId()),
+					() -> ids.add(userService.findOrCreateByKakaoId("pg-login-first", "두번째").getId())));
+			assertThat(results).containsOnlyNulls();
+			assertThat(ids).hasSize(2);
+			assertThat(ids.get(0)).isEqualTo(ids.get(1));
+			assertThat(userRepository.findAll().stream()
+					.filter(u -> u.getKakaoId().equals("pg-login-first")).count()).isEqualTo(1);
+		} finally {
+			reset(userRepository);
+		}
+	}
+
+	@Test
+	void loginWaitsForSignupAndKeepsItsRoleAndOrganization() throws Exception {
+		User pending = userRepository.saveAndFlush(User.pending("pg-login-signup", "옛이름"));
+		CountDownLatch signupLocked = new CountDownLatch(1);
+		CountDownLatch finishSignup = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> signup = executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
+				userRepository.findActiveByIdForUpdate(pending.getId()).orElseThrow();
+				signupLocked.countDown();
+				try {
+					if (!finishSignup.await(10, TimeUnit.SECONDS)) {
+						throw new IllegalStateException("가입 완료 대기 시간 초과");
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(e);
+				}
+				return userService.completeSignup(String.valueOf(pending.getId()), organizationSignup("2000000004"));
+			}));
+			assertThat(signupLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			CountDownLatch loginStarted = new CountDownLatch(1);
+			Future<User> login = executor.submit(() -> {
+				loginStarted.countDown();
+				return userService.findOrCreateByKakaoId("pg-login-signup", "새이름");
+			});
+			assertThat(loginStarted.await(10, TimeUnit.SECONDS)).isTrue();
+			assertThatThrownBy(() -> login.get(200, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+			finishSignup.countDown();
+			signup.get(10, TimeUnit.SECONDS);
+			User found = login.get(10, TimeUnit.SECONDS);
+			assertThat(found.getRole()).isEqualTo(UserRole.ORGANIZATION);
+			assertThat(found.getOrganizationId()).isNotNull();
+			User persisted = userRepository.findById(pending.getId()).orElseThrow();
+			assertThat(persisted.getOrganizationId()).isEqualTo(found.getOrganizationId());
+			assertThat(persisted.getRole()).isEqualTo(UserRole.ORGANIZATION);
+			assertThat(persisted.getName()).isEqualTo("새이름");
+		} finally {
+			finishSignup.countDown();
+			executor.shutdownNow();
+		}
 	}
 }
