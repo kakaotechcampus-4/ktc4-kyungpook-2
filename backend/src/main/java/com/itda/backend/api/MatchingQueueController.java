@@ -18,14 +18,9 @@ import com.itda.backend.service.MatchingResultService;
 import lombok.RequiredArgsConstructor;
 
 // docs/api/api-spec.md O-22, O-23.
-//
-// 🚨 팀원 리뷰(병합 전 수정 필요, 아직 미반영): matching_result는 organization_id를 직접
-// 갖지 않아서 journal_entry -> raw_record -> organization을 거쳐야 하는데, 기관별 접근
-// 제한이 아직 안 걸려있다 — 로그인만 하면 다른 기관 소속 매칭 결과까지 전부 조회/처리
-// 가능한 상태. JournalEntry/ChildOrganization 엔티티는 이제 있어서 연결 경로 자체는 만들
-// 수 있다(더 이상 엔티티 부재로 막혀있지 않음) — 다음 작업으로 실제 스코핑 추가 예정.
-// 단, raw_record.institutionId가 아직 카카오ID 임시값이라(PR #43 머지 전) 완전한 검증은
-// 그 이후에나 의미가 있다. 실제 운영 트래픽엔 그 전까지 열어두면 안 된다.
+// 기관별 접근 제한: journal_entry -> raw_record.institutionId로 확인한다(RawRecordController와
+// 같은 카카오ID 임시 패턴). child가 실제로 이 기관 소속인지는 ChildOrganization이 진짜
+// organizationId를 쓰는데 지금은 kakaoId뿐이라 아직 못 비교한다 — PR #43 이후 과제.
 @RestController
 @RequestMapping("/api/v1/matching-queue")
 @RequiredArgsConstructor
@@ -34,19 +29,18 @@ public class MatchingQueueController {
     private final MatchingResultService matchingResultService;
 
     @GetMapping
-    public ApiResponse<List<MatchingQueueItemResponse>> getQueue() {
-        List<MatchingQueueItemResponse> queue = matchingResultService.getQueue().stream()
-                .map(MatchingQueueItemResponse::from)
-                .toList();
-        return ApiResponse.success(queue);
+    public ApiResponse<List<MatchingQueueItemResponse>> getQueue(
+            @AuthenticationPrincipal String institutionId) {
+        return ApiResponse.success(matchingResultService.getQueue(institutionId));
     }
 
     @PostMapping("/{id}/resolve")
     public ApiResponse<MatchingQueueItemResponse> resolve(
             @PathVariable Long id,
             @RequestBody MatchingResolveRequest request,
-            @AuthenticationPrincipal String reviewerId) {
-        var resolved = matchingResultService.resolve(id, request.action(), request.childId(), reviewerId);
-        return ApiResponse.success(MatchingQueueItemResponse.from(resolved));
+            @AuthenticationPrincipal String institutionId) {
+        var resolved = matchingResultService.resolve(
+                id, request.action(), request.childId(), institutionId, institutionId);
+        return ApiResponse.success(resolved);
     }
 }
