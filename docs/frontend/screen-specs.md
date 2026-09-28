@@ -266,11 +266,16 @@
   일괄 버튼은 "대충 넘기기"를 유도합니다.
 - 후보가 있는데 선택하지 않으면 확정 버튼은 비활성입니다.
 
-**호출 API** · `getMatchingQueue`, `resolveMatchingItem`
+- 서버가 아직 보내지 않는 값(유형 · 반 · 미매칭 사유 · 표지 이름)이나 비어 온 값(기록 시각)은
+  그 칸을 숨깁니다. "undefined" 나 잘못된 날짜를 찍지 않습니다.
 
-> ⚠️ 현재 `resolveMatchingItem(id)`는 선택한 `childId`를 서버로 보내지 않습니다.
-> "이 기관 아동 아님"도 같은 함수를 부르기 때문에 서버가 둘을 구분하지 못합니다.
-> 실제 연동 전에 계약 합의가 필요합니다.
+**호출 API** · `getMatchingQueue`, `resolveMatchingItem`
+([api-spec.md](../api/api-spec.md) §4.3)
+
+- `getMatchingQueue` → `GET /api/v1/matching-queue` · 계약 확정, #35 merge 대기
+- `resolveMatchingItem` → `POST /api/v1/matching-queue/{id}/resolve` · 계약 확정, #35 merge 대기
+  - 후보·명부에서 고른 아이로 확정 → `{ "action": "assign", "childId": "…" }`
+  - 이 기관 아동 아님 → `{ "action": "not_ours" }`
 
 ---
 

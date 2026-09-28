@@ -391,8 +391,8 @@ POST /api/v1/auth/signup   → 201 Created
 | --- | --- | --- | --- | --- |
 | O-20 | POST | `/raw-records` | 원본 기록 업로드 (multipart) | I-05 |
 | O-21 | GET | `/raw-records/{id}/status` | 파이프라인 진행 상태 | I-03, I-05 |
-| O-22 | GET | `/matching-queue` | 확인 필요 큐 | I-03, I-06 |
-| O-23 | POST | `/matching-queue/{itemId}/resolve` | 아이 확정 / 제외 | I-06 |
+| O-22 | GET | `/matching-queue` | 확인 필요 큐 · **계약 확정, #35 merge 대기** | I-03, I-06 |
+| O-23 | POST | `/matching-queue/{itemId}/resolve` | 아이 확정 / 제외 · **계약 확정, #35 merge 대기** | I-06 |
 | O-24 | GET | `/validation-results?status=BLOCK` | 수정 요청 큐 | I-03, I-07 |
 | O-25 | POST | `/validation-results/{itemId}/resolve` | 재업로드 / 보류 | I-07 |
 | O-26 | GET | `/raw-records/progress` | 파일별 처리 현황 · **계약 확정, 구현 예정** | I-03, I-05 |
@@ -438,23 +438,6 @@ POST /api/v1/auth/signup   → 201 Created
 | `summarizing` | 요약 |
 | `gate1_pending` | 1차 검토 대기 |
 
-**O-26 응답** · 계약 확정, 구현 예정 (#35 merge 후). 최근 업로드가 먼저 옵니다.
-
-```json
-[
-  { "rawRecordId": "raw_1", "fileName": "0821_관찰일지.docx",
-    "uploadedAt": "2026-08-21T11:40:00+09:00",
-    "entries": [ { "id": "je_1", "stageIndex": 1, "state": "waiting" } ] }
-]
-```
-
-`state`: `running` 자동 진행 중 · `waiting` 사람 확인 대기 · `failed` 시스템 오류 · `done` 완료
-
-> 파일을 기록 단위로 나누는 작업이 끝나기 전까지는 `entries: []` 만 내려옵니다.
-> 화면은 "기록 등록 중"에 머무는데, 당분간 이 상태가 정상입니다.
-
-**O-27** · 계약 확정, 구현 예정. 해당 파일에서 `failed` 인 기록만 다시 처리합니다. 본문은 없습니다.
-
 **O-22 응답** · `status`가 `auto`인 건은 포함하지 않습니다.
 
 ```json
@@ -493,8 +476,8 @@ POST /api/v1/auth/signup   → 201 Created
 | `assign` | 선택한 아이로 확정 | 필수 |
 | `not_ours` | 우리 기관 아동 아님 (제외) | 없음 |
 
-> 현재 프론트 `resolveMatchingItem(id)`는 `childId`를 보내지 않습니다. 이 명세대로
-> 프론트를 수정할 예정입니다.
+> 프론트 `resolveMatchingItem(id, resolution)`이 이 형식으로 보냅니다. 후보나 명부에서 아이를
+> 고르면 `assign`, "이 기관 아동 아님"을 누르면 `not_ours`입니다.
 
 **O-24 응답**
 
@@ -512,6 +495,23 @@ POST /api/v1/auth/signup   → 201 Created
 한국어 문장으로 주세요. 코드값이 필요하면 `violationCode`를 별도로 추가해주세요.
 
 **O-25 요청** · `{ "action": "reupload" }` 또는 `{ "action": "hold" }`
+
+**O-26 응답** · 계약 확정, 구현 예정 (#35 merge 후). 최근 업로드가 먼저 옵니다.
+
+```json
+[
+  { "rawRecordId": "raw_1", "fileName": "0821_관찰일지.docx",
+    "uploadedAt": "2026-08-21T11:40:00+09:00",
+    "entries": [ { "id": "je_1", "stageIndex": 1, "state": "waiting" } ] }
+]
+```
+
+`state`: `running` 자동 진행 중 · `waiting` 사람 확인 대기 · `failed` 시스템 오류 · `done` 완료
+
+> 파일을 기록 단위로 나누는 작업이 끝나기 전까지는 `entries: []` 만 내려옵니다.
+> 화면은 "기록 등록 중"에 머무는데, 당분간 이 상태가 정상입니다.
+
+**O-27** · 계약 확정, 구현 예정. 해당 파일에서 `failed` 인 기록만 다시 처리합니다. 본문은 없습니다.
 
 ### 4.4 Gate 1 — 1차 검토
 
