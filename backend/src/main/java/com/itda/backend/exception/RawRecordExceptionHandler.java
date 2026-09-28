@@ -1,5 +1,6 @@
 package com.itda.backend.exception;
 
+import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -15,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 // 처리기가 정해진다 — Ambiguous 오류는 같은 advice 클래스 안에서 중복 선언할 때만 난다.
 @Slf4j
 @RestControllerAdvice
+@Order(0)
 public class RawRecordExceptionHandler {
 
     @ExceptionHandler(RawRecordValidationException.class)

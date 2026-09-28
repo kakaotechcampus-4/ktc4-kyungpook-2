@@ -1,8 +1,12 @@
 package com.itda.backend.global.exception;
 
 import com.itda.backend.exception.AuthException;
+import com.itda.backend.exception.OrganizationException;
+import com.itda.backend.exception.UserException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -20,9 +24,15 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  *
  * <p>아래 {@code Exception.class} catch-all 만 두면 이 예외들까지 전부 500 이 된다.
  * {@code @ExceptionHandler} 가 Spring 기본 예외 변환보다 먼저 매칭되기 때문이다.
+ *
+ * <p>catch-all 을 들고 있으므로 <b>반드시 가장 나중에</b> 물어봐야 한다. Spring 은
+ * @RestControllerAdvice 를 순서대로 훑다가 처음 매칭되는 하나로 끝내는데, 순서를 명시하지 않으면
+ * 빈 등록 순서(사실상 패키지 이름 순)가 정해버려 패키지를 옮기는 것만으로 도메인별 처리기가
+ * 영영 실행되지 않고 전부 500 이 될 수 있다.
  */
 @Slf4j
 @RestControllerAdvice
+@Order(Ordered.LOWEST_PRECEDENCE)
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -34,6 +44,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AuthException.class)
     public ResponseEntity<ErrorResponse> handleAuthException(AuthException e) {
         log.warn("인증 처리 실패: {}", e.getMessage());
+        return ResponseEntity.status(e.getErrorCode().getStatus())
+                .body(ErrorResponse.of(e.getErrorCode()));
+    }
+
+    @ExceptionHandler(UserException.class)
+    public ResponseEntity<ErrorResponse> handleUserException(UserException e) {
+        log.warn("사용자 처리 실패: {}", e.getMessage());
+        return ResponseEntity.status(e.getErrorCode().getStatus())
+                .body(ErrorResponse.of(e.getErrorCode()));
+    }
+
+    @ExceptionHandler(OrganizationException.class)
+    public ResponseEntity<ErrorResponse> handleOrganizationException(OrganizationException e) {
+        log.warn("기관 처리 실패: {}", e.getMessage());
         return ResponseEntity.status(e.getErrorCode().getStatus())
                 .body(ErrorResponse.of(e.getErrorCode()));
     }

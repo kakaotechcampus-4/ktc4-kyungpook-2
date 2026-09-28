@@ -2,6 +2,9 @@ package com.itda.backend.global.exception;
 
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
+import com.itda.backend.domain.User;
+import com.itda.backend.fixture.UserFixture;
+import com.itda.backend.repository.UserRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,12 +46,17 @@ class GlobalExceptionHandlerTest {
     @Autowired
     private JwtProvider jwtProvider;
 
+    @Autowired
+    private UserRepository userRepository;
+
     private Cookie authCookie;
     private Cookie csrfCookie;
 
     @BeforeEach
     void setUp() throws Exception {
-        authCookie = new Cookie(JwtCookie.NAME, jwtProvider.createToken("kakao-1"));
+        User member = userRepository.findByKakaoId("exception-handler-test")
+                .orElseGet(() -> userRepository.saveAndFlush(UserFixture.parent("exception-handler-test", "테스트회원")));
+        authCookie = new Cookie(JwtCookie.NAME, jwtProvider.createToken(String.valueOf(member.getId())));
         csrfCookie = mockMvc.perform(get("/api/health"))
                 .andReturn().getResponse().getCookie("XSRF-TOKEN");
     }

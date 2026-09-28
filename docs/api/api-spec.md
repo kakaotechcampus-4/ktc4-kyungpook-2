@@ -28,7 +28,7 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 | 2 | **세션 전달 방식** | **확정·구현됨** — `access_token` httpOnly 쿠키(1시간). 쓰기 요청은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보냅니다. refresh token은 없습니다 | - |
 | 3 | **필드 네이밍** | 프론트 타입은 camelCase, 일부 요청 바디는 snake_case | **camelCase 통일 제안** (Jackson 기본값과도 맞음). 이 문서는 전부 camelCase로 적었습니다. 프론트의 snake_case 요청 바디 3곳은 프론트가 수정합니다 |
 | 4 | **보호자–아이 연결 방식** | **확정** — 기관이 먼저 아이를 등록해두고, 보호자가 카카오 로그인하면 **대기 중 연결 요청**으로 노출합니다. 초대코드 방식은 제외 | 남은 확정 사항은 **매칭 키**입니다(§5.1). 기관이 등록한 아이와 카카오 로그인한 보호자를 서버가 무엇으로 이어줄지 정해야 합니다 |
-| 4-1 | **역할 구분** | 미정 | 카카오 계정 하나로 기관 담당자(`ORGANIZATION`)와 보호자(`PARENT`)를 어떻게 구분할지. 가입 시 선택 vs 기관 측 승인 |
+| 4-1 | **역할 구분** | **확정·구현됨** — 카카오 로그인 뒤 **회원가입에서 사용자가 직접 선택**합니다(§2.6). 기관은 기관명·유형·사업자등록번호를 함께 입력하며, 사업자등록번호는 형식만 검사합니다 | 로그인 직후 `/auth/me`의 `signupCompleted`가 `false`면 역할 선택 화면으로 보냅니다. sessionStorage로 역할을 정하던 방식은 이 흐름으로 바꿔야 합니다 |
 | 5 | **파이프라인 진행 상태** | 프론트는 `setTimeout` 시뮬레이션 | 폴링 / SSE / WebSocket 중 선택. 폴링이면 권장 주기와 상태 조회 엔드포인트가 필요합니다 |
 | 6 | **페이지네이션** | 미정 | 현재 프론트는 전체 조회를 가정합니다. 큐·타임라인·일지 목록에 커서 또는 오프셋 페이징이 필요하면 형식을 정해주세요 |
 | 7 | **파일 업로드** | 현재 구현: `POST /api/v1/raw-records` multipart, **파일 1개**(`file`), 최대 **20MB**, 허용 확장자 `csv` · `txt` · `pdf` · `jpg` · `jpeg` · `png` · `hwp` (§4.3) | 다중 업로드, `docx` 등 확장자 추가 여부 합의 필요 |
@@ -50,36 +50,61 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 ### 2.1 공통
 
 - 기본 경로: `/api/v1`
-- 보호 API는 인증 실패 시 `401 UNAUTHORIZED`, 역할 불일치 시 `403 FORBIDDEN`
-- 역할: `PARENT` · `ORGANIZATION` · `ADMIN`
+- 보호 API는 인증 실패 시 `401 UNAUTHORIZED`, 역할 불일치 시 `403`. 기관 전용 API(예: 원본 기록)를
+  기관 소속이 아닌 회원(보호자)이 호출하면 `403 ORGANIZATION_NOT_ASSIGNED`입니다
+- 역할: `PARENT` · `ORGANIZATION` (`ADMIN`은 아직 없음). 역할은 회원가입(§2.6)에서 정해집니다
+- 가입을 마치지 않은 회원이 `/auth/me` · `/auth/signup` · `/auth/logout` 외의 API를 호출하면
+  `403 SIGNUP_NOT_COMPLETED`입니다. 프론트는 역할 선택 화면으로 보냅니다
 
 ### 2.2 세션 조회 — 라우트 가드가 매 진입마다 호출
 
-> 상태: **미구현** — 회원 DB가 필요해 이슈 #34에서 구현 예정입니다.
+> **구현 완료.** 아래는 실제 응답입니다.
 
 ```http
 GET /api/v1/auth/me
 ```
 
+**가입 미완료** — 카카오 로그인만 하고 역할을 고르지 않은 상태. 정상 응답(`200`)입니다.
+
 ```json
 {
   "result": "SUCCESS",
-  "data": {
-    "role": "org",
-    "userId": "u_1",
-    "name": "박지현",
-    "institutionId": "inst_center_1"
-  }
+  "data": { "userId": "5", "name": "박지현", "signupCompleted": false }
 }
 ```
 
-| 필드 | 타입 | 설명 |
-| --- | --- | --- |
-| `role` | `"org"` \| `"parent"` \| `"admin"` | 프론트 `Role` 타입과 매핑 |
-| `institutionId` | string | `role === "org"`일 때만 |
+**가입 완료 — 기관**
 
-비로그인 요청에는 `401`을 반환해주세요. 프론트는 `401`을 "역할 없음"으로 해석해
-로그인 화면으로 보냅니다.
+```json
+{
+  "result": "SUCCESS",
+  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "signupCompleted": true }
+}
+```
+
+**가입 완료 — 보호자**
+
+```json
+{
+  "result": "SUCCESS",
+  "data": { "role": "parent", "userId": "5", "name": "박지현", "signupCompleted": true }
+}
+```
+
+| 필드 | 타입 | 항상 포함 | 설명 |
+| --- | --- | --- | --- |
+| `signupCompleted` | boolean | 예 | `false`면 가입 미완료. 프론트는 역할 선택 화면으로 보냅니다 |
+| `userId` | string | 예 | 내부 PK를 문자열로 직렬화한 값입니다 (`"u_1"` 같은 접두사는 붙지 않습니다) |
+| `name` | string | 아니오 | 카카오 닉네임. 동의를 거부하면 **이 필드가 빠집니다** |
+| `role` | `"org"` \| `"parent"` | 아니오 | `signupCompleted: true`일 때만. `admin`은 아직 없습니다 |
+| `institutionId` | string | 아니오 | `role === "org"`일 때만 |
+
+**프론트는 `signupCompleted`만 보고 분기합니다.** `role`이 없다고 로그인 화면으로 보내면
+안 됩니다 — 가입 미완료는 정상 상태입니다.
+
+비로그인 요청에는 `401`을 반환합니다. 프론트는 `401`을 "다시 로그인"으로 해석해
+로그인 화면으로 보냅니다. 출입증이 유효하더라도 그 회원이 DB에 없거나 탈퇴했으면(예: subject를
+내부 `userId`로 바꾸기 전에 발급된 토큰) 마찬가지로 `401`(`SESSION_USER_NOT_FOUND`)입니다.
 
 ### 2.3 로그아웃
 
@@ -87,8 +112,8 @@ GET /api/v1/auth/me
 POST /api/v1/auth/logout   → 204 No Content
 ```
 
-> 현재 구현: `200 OK` + `{ "result": "SUCCESS" }`로 응답하며 `access_token` 쿠키를 만료시킵니다.
-> `204` 변경은 이슈 #34에서 진행합니다. CSRF 헤더(`X-XSRF-TOKEN`)가 없으면 `403`입니다.
+> **구현 완료.** 서버가 `access_token` 쿠키를 만료시킵니다. 쓰기 요청이므로
+> `X-XSRF-TOKEN` 헤더가 필요하며, 없거나 일치하지 않으면 `403`입니다.
 
 ### 2.4 로그인 — 카카오
 
@@ -108,9 +133,16 @@ GET /login/oauth2/code/kakao           ← 카카오가 호출하는 콜백. 프
 | 성공 | `access_token` httpOnly 쿠키를 심고 `AUTH_SUCCESS_REDIRECT`(기본 `/oauth/success`)로 리다이렉트 |
 | 실패 (state 불일치, 동의 취소, 카카오 장애 등) | `AUTH_FAILURE_REDIRECT`(기본 `/login`)에 `?error=login_failed`를 붙여 리다이렉트 |
 
-로그인 응답에는 바디가 없습니다. 초안에 있던 `userId` · `role` · `name` · `isNewUser` ·
-`termsAgreed`는 로그인 후 §2.2 `GET /api/v1/auth/me`로 받는 방향이며, 필드 구성은 #34에서
-확정합니다.
+기관 담당자와 보호자가 **같은 주소**로 로그인합니다. 로그인은 신원 확인만 하고 역할을 정하지
+않습니다. 처음 로그인한 사람은 역할 없는 **가입 미완료** 회원으로 등록되고, 역할은
+[§2.6 회원가입](#26-회원가입)에서 정해집니다. 이미 가입한 회원의 역할은 다시 로그인해도 바뀌지 않습니다.
+(예전의 `?invite=` 파라미터로 역할을 정하던 방식은 폐기했습니다.)
+
+로그인 응답에는 바디가 없습니다. 로그인 직후 상태는
+[§2.2 `GET /api/v1/auth/me`](#22-세션-조회--라우트-가드가-매-진입마다-호출)의 `signupCompleted`로 확인합니다.
+`termsAgreed`는 아직 없습니다(약관 도메인 미구현).
+
+> §2.5 약관 동의는 아직 구현되지 않았습니다.
 
 ### 2.5 서비스 약관 동의
 
@@ -129,6 +161,70 @@ POST /api/v1/auth/terms
 
 필수 약관에 동의하지 않은 사용자가 보호 API를 호출하면 `403 TERMS_NOT_AGREED`를
 반환해주세요. 프론트가 약관 화면으로 되돌립니다.
+
+### 2.6 회원가입
+
+> **구현 완료.** 이메일·비밀번호 가입 폼은 없습니다. 카카오 로그인 → 역할 선택 → (기관이면)
+> 기관 정보 입력까지가 회원가입입니다.
+
+```http
+POST /api/v1/auth/signup   → 201 Created
+```
+
+출입증 쿠키가 필요하고(카카오 로그인이 끝난 상태), 쓰기 요청이므로 `X-XSRF-TOKEN` 헤더도 필요합니다.
+
+**요청 — 보호자**
+
+```json
+{ "role": "parent" }
+```
+
+**요청 — 기관**
+
+```json
+{
+  "role": "org",
+  "organizationName": "햇살아동발달센터",
+  "organizationType": "CENTER",
+  "businessNumber": "1234567890"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `role` | `"org"` \| `"parent"` | 예 | |
+| `organizationName` | string (최대 100자) | `role === "org"`일 때 | 기관명. 같은 이름의 기관이 여러 곳 있어도 됩니다 |
+| `organizationType` | `"SCHOOL"` \| `"CENTER"` \| `"ACTIVITY_SUPPORT"` | `role === "org"`일 때 | 백엔드 enum 값 그대로. 화면 표시용 변환은 프론트 몫입니다 |
+| `businessNumber` | string (`^\d{10}$`) | `role === "org"`일 때 | 사업자등록번호. 하이픈 없이 숫자 10자리. **형식만 검사하고 진위·체크섬은 검증하지 않습니다** |
+
+보호자는 `role`**만** 보냅니다. 기관 필드가 하나라도 섞이면(값이 맞든 틀리든) `400`입니다.
+기관 필드는 **아예 빼거나 `null`로** 보내 주세요. 빈 문자열 `""`도 보낸 값으로 보고 `400`입니다 —
+가입 화면에서 기관 입력란에 쓰다가 보호자로 바꿨다면, 폼의 `""` 값을 그대로 싣지 말고 필드를 빼 주세요.
+아이 연결은 가입과 별개입니다.
+
+**응답 — `201 Created`.** 본문은 §2.2의 가입 완료 응답과 같습니다.
+
+```json
+{
+  "result": "SUCCESS",
+  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "signupCompleted": true }
+}
+```
+
+**처리 규칙**
+
+1. 기관이면 입력한 정보로 기관을 새로 만들고 그 기관에 소속시킵니다 (기관 1곳당 계정 1개).
+2. 이미 가입을 마친 회원이 다시 호출하면 `409 ALREADY_SIGNED_UP`이고 역할은 바뀌지 않습니다.
+   멱등하지 않으므로 성공 후 재시도 버튼을 두지 않습니다.
+3. 이미 등록된 사업자등록번호면 `409 DUPLICATE_BUSINESS_NUMBER`입니다.
+
+| 상태 | 코드 | 조건 | 프론트 동작 |
+| --- | --- | --- | --- |
+| 400 | `INVALID_REQUEST` | `role` 누락·잘못된 값, 기관인데 기관 필드 누락, 보호자인데 기관 필드 포함, `businessNumber` 형식 오류, 없는 `organizationType` | 입력 오류 표시 |
+| 401 | `UNAUTHORIZED` · `SESSION_USER_NOT_FOUND` | 비로그인 · 없는 회원 | 로그인 화면으로 |
+| 403 | `FORBIDDEN` | CSRF 토큰 누락 또는 불일치 | |
+| 409 | `ALREADY_SIGNED_UP` | 이미 가입 완료 | `/auth/me`를 다시 불러 역할별 홈으로 |
+| 409 | `DUPLICATE_BUSINESS_NUMBER` | 이미 등록된 사업자등록번호 | "이미 등록된 사업자등록번호입니다" 표시, 재입력 유도 |
 
 ---
 
@@ -536,10 +632,16 @@ POST /api/v1/auth/terms
 초대코드 방식은 제외했습니다. 최초 연결은 **연결 요청(pending link)** 방식 하나로
 갑니다.
 
+> **백엔드 확인 필요.** 이 문서는 초대코드 방식을 제외한다고 적혀 있지만, DB 설계에는
+> 기관이 보호자에게 보내는 `invitation`(초대 코드)이 있습니다. 어느 쪽으로 갈지 정해서 이 절을
+> 정리해야 합니다. 어느 쪽이든 **역할 결정과는 무관합니다** — 보호자는 먼저 회원가입(§2.6)에서
+> `PARENT`로 가입하고, 그다음 이 절의 방식으로 아이와 연결됩니다. 로그인 주소의 `?invite=`로
+> 역할을 정하던 방식은 폐기했습니다.
+
 ```
 기관: 아이 등록 (O-11)  →  서버가 보호자 연결 요청 생성
                                     ↓
-보호자: 카카오 로그인 → 약관 동의 → 대기 중 연결 요청 확인 (G-01)
+보호자: 카카오 로그인 → 회원가입(§2.6) → 약관 동의 → 대기 중 연결 요청 확인 (G-01)
                                     ↓
         아이 정보 확인 → 기관 확인 → 공유 범위 동의 (G-02 → G-41)
 ```
@@ -775,6 +877,10 @@ POST /api/v1/auth/terms
 | 코드 | 상태 | 화면 문구 |
 | --- | --- | --- |
 | `KAKAO_AUTH_FAILED` | 401 | "카카오 로그인에 실패했어요. 다시 시도해주세요." (현재 로그인 실패는 JSON이 아니라 `/login?error=login_failed` 리다이렉트로 전달됩니다 — §2.4) |
+| `ORGANIZATION_NOT_ASSIGNED` | 403 | 기관 소속이 아닌 회원(보호자)이 기관 전용 API 호출 → "기관 담당자만 이용할 수 있어요" |
+| `SIGNUP_NOT_COMPLETED` | 403 | 가입 미완료 회원이 `/auth/me` · `/auth/signup` · `/auth/logout` 외 API 호출 → 역할 선택 화면으로 이동 |
+| `ALREADY_SIGNED_UP` | 409 | 이미 가입 완료 → `/auth/me` 재조회 후 역할별 홈으로 이동 (§2.6) |
+| `DUPLICATE_BUSINESS_NUMBER` | 409 | "이미 등록된 사업자등록번호입니다" (§2.6) |
 | `TERMS_NOT_AGREED` | 403 | 약관 동의 화면으로 이동 |
 | `INSTITUTION_CODE_NOT_FOUND` | 404 | "일치하는 기관을 찾지 못했어요. 코드를 다시 확인해주세요." (**G-44 연결 시도에만** 사용. 조회 G-43은 `data: null`로 응답) |
 | `LINK_REQUEST_NOT_FOUND` | 404 | "연결 요청을 찾지 못했어요" |
@@ -802,7 +908,7 @@ POST /api/v1/auth/terms
 
 | 순위 | 범위 | 엔드포인트 | 붙는 화면 |
 | --- | --- | --- | --- |
-| 1 | 인증 · 세션 | `/oauth2/authorization/kakao`(완료), `/auth/logout`(완료), `/auth/me`, `/auth/terms` | I-01, P-01, 전 화면 가드 |
+| 1 | 인증 · 세션 | `/oauth2/authorization/kakao`(완료), `/auth/logout`(완료), `/auth/me`(완료), `/auth/signup`(완료), `/auth/terms` | I-01, P-01, 전 화면 가드 |
 | 2 | 아동 조회 | O-10, O-13, O-14 | I-09, I-09-1 |
 | 3 | 기록 등록 · 큐 | O-20 ~ O-25 | I-05, I-06, I-07 |
 | 4 | Gate 1 | O-30, O-31 | I-08, I-03 |
