@@ -16,9 +16,16 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.itda.backend.domain.RawRecord;
 import com.itda.backend.dto.RawRecordResponse;
+import com.itda.backend.global.config.OpenApiConfig;
+import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.RawRecordService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
 // ponytail: 아직 Member/Institution 도메인이 없어서, 인증된 카카오ID(JwtAuthenticationFilter가
@@ -28,11 +35,46 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/v1/raw-records")
 @RequiredArgsConstructor
+@Tag(name = "원본 기록", description = "인증된 기관의 원본 기록 업로드와 조회")
 public class RawRecordController {
 
     private final RawRecordService rawRecordService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(
+            summary = "원본 기록 업로드",
+            description = "인증 쿠키가 필요합니다. 요청 전에 받은 XSRF-TOKEN 쿠키 값을 "
+                    + "X-XSRF-TOKEN 헤더에 포함해야 합니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "업로드 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "파일 누락, 허용되지 않은 확장자·형식, 너무 긴 파일명 (RAW_RECORD_INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "CSRF 토큰 누락 또는 권한 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "413",
+                    description = "파일 크기 20MB 초과 (RAW_RECORD_FILE_TOO_LARGE)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "500",
+                    description = "원본 파일 또는 기록 저장 실패 (RAW_RECORD_STORAGE_FAILED)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
     public ResponseEntity<ApiResponse<RawRecordResponse>> upload(
             @AuthenticationPrincipal String institutionId,
             @RequestParam("file") MultipartFile file) {
@@ -42,12 +84,37 @@ public class RawRecordController {
     }
 
     @GetMapping("/{id}")
+    @Operation(summary = "원본 기록 단건 조회")
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "없는 기록이거나 다른 기관의 기록 (RAW_RECORD_NOT_FOUND)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
     public ApiResponse<RawRecordResponse> getOne(
             @AuthenticationPrincipal String institutionId, @PathVariable Long id) {
         return ApiResponse.success(RawRecordResponse.from(rawRecordService.getById(id, institutionId)));
     }
 
     @GetMapping
+    @Operation(summary = "원본 기록 목록 조회")
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
     public ApiResponse<List<RawRecordResponse>> list(@AuthenticationPrincipal String institutionId) {
         List<RawRecordResponse> records = rawRecordService.getByInstitution(institutionId).stream()
                 .map(RawRecordResponse::from)

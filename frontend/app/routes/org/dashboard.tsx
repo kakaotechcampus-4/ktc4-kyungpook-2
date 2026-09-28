@@ -1,29 +1,31 @@
-import { Link, useLoaderData } from "react-router";
+import { useLoaderData, useRevalidator } from "react-router";
+import { FileProgressList, useProgressPolling } from "@/components/org/FileProgressList";
+import { Card, EmptyState, InstitutionChip, PageHeader, QueueCard } from "@/components/ui";
 import {
-  Card,
-  EmptyState,
-  InstitutionChip,
-  PageHeader,
-  PipelineStepper,
-  QueueCard,
-  ValidationBadge,
-} from "@/components/ui";
-import { getBlockedQueue, getGate1Queue, getInsights, getMatchingQueue } from "@/lib/api";
+  getBlockedQueue,
+  getFileProgress,
+  getGate1Queue,
+  getInsights,
+  getMatchingQueue,
+  retryFailedEntries,
+} from "@/lib/api";
 import { MY_INSTITUTION } from "@/lib/mock/data";
-import { GATE1_INDEX, PIPELINE_STAGES } from "@/lib/pipeline";
 
 export async function clientLoader() {
-  const [matching, blocked, gate1, insights] = await Promise.all([
+  const [matching, blocked, gate1, insights, files] = await Promise.all([
     getMatchingQueue(),
     getBlockedQueue(),
     getGate1Queue(),
     getInsights(),
+    getFileProgress(),
   ]);
-  return { matching, blocked, gate1, insights };
+  return { matching, blocked, gate1, insights, files };
 }
 
 export default function DashboardPage() {
-  const { matching, blocked, gate1, insights } = useLoaderData<typeof clientLoader>();
+  const { matching, blocked, gate1, insights, files } = useLoaderData<typeof clientLoader>();
+  const revalidator = useRevalidator();
+  useProgressPolling(files);
   const gate1Pending = gate1.filter((s) => s.gate1Status === "pending");
   const gate2Pending = insights.filter((i) => i.gate2Status === "pending");
   const isEmpty =
@@ -81,43 +83,20 @@ export default function DashboardPage() {
       <Card className="mt-7">
         <h2 className="mb-1 text-[17px] font-bold">처리 중인 기록</h2>
         <p className="mb-4 text-[14px] text-muted">
-          기록 등록부터 1차 검토 대기까지는 사람 개입 없이 자동으로 진행됩니다.
+          올린 파일마다 어디까지 처리됐는지 보여줍니다. 사람 확인이 필요한 건에서만 멈춥니다.
         </p>
 
-        <PipelineStepper
-          stages={[...PIPELINE_STAGES]}
-          currentIndex={3}
-          gateIndex={GATE1_INDEX}
-          className="mb-5"
-        />
-
-        <ul className="flex flex-col divide-y divide-line border-y border-line">
-          <li className="flex flex-wrap items-center justify-between gap-2 py-3">
-            <span className="text-[15px]">0821_관찰일지.docx</span>
-            <span className="flex items-center gap-2 text-[14px] text-muted">
-              <span className="inline-block h-1.5 w-40 overflow-hidden rounded bg-surface2">
-                <span className="block h-full w-3/5 bg-accent" />
-              </span>
-              검증 중 (3/5)
-            </span>
-          </li>
-          <li className="flex flex-wrap items-center justify-between gap-2 py-3">
-            <span className="text-[15px]">0821_활동일지.docx</span>
-            <span className="flex items-center gap-2 text-[14px]">
-              <ValidationBadge status="REVIEW" />
-              <span className="text-muted">1차 검토 대기</span>
-            </span>
-          </li>
-          <li className="flex flex-wrap items-center justify-between gap-2 py-3">
-            <span className="text-[15px]">0821_특이사항.txt</span>
-            <span className="flex items-center gap-2 text-[14px]">
-              <ValidationBadge status="BLOCK" />
-              <Link to="/queue/reinput" className="text-accentink underline">
-                수정 요청
-              </Link>
-            </span>
-          </li>
-        </ul>
+        {files.length === 0 ? (
+          <p className="text-[14px] text-muted">아직 올린 파일이 없습니다.</p>
+        ) : (
+          <FileProgressList
+            files={files}
+            onRetry={async (id) => {
+              await retryFailedEntries(id);
+              revalidator.revalidate();
+            }}
+          />
+        )}
       </Card>
     </>
   );

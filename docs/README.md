@@ -17,6 +17,17 @@
 | [frontend/screen-specs.md](frontend/screen-specs.md) | 화면별 기능 명세 (기관 15 · 학부모 13) |
 | [frontend/feature-spec.md](frontend/feature-spec.md) | 전체 기능 명세 · 상태 전이 · 제품 불변 규칙 |
 
+## AI
+
+| 문서 | 역할 |
+| --- | --- |
+| [AI/README.md](../AI/README.md) | 에이전트 구조 · 실행 방법 · API 계약 · 고칠 곳 |
+| [AI/evals/README.md](../AI/evals/README.md) | 테스트 데이터 형식 · 채점 방법 · 지표 읽는 법 |
+
+매칭 에이전트의 판정 기준(어떤 상황에서 `auto` / `review` / `multi` / `unmatched` 가
+정답인지)은 구현이 아니라 정책이므로 노션에서 관리합니다 →
+[AI · Matching Agent 자동 확정 판정 기준](https://app.notion.com/p/elice-track/AI-Matching-Agent-9-23-3e42bb98425780498d9ffb9db2d83819?v=e022bb98425783e2baac88bd5a3d8489&source=copy_link)
+
 프론트엔드 실행 방법과 스택은 [frontend/README.md](../frontend/README.md)에서 확인합니다.
 
 백엔드의 실행 방법과 현재 상태는 [backend/README.md](../backend/README.md), 구현·검토

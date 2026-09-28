@@ -20,15 +20,25 @@ class OpenApiDocumentationTest {
 	private MockMvc mockMvc;
 
 	@Test
-	void openApiDocumentIncludesBasicInfoAndBearerAuthenticationScheme() throws Exception {
+	void openApiDocumentIncludesCookieAuthenticationAndOauthLoginFlow() throws Exception {
 		mockMvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.openapi").value("3.1.0"))
 				.andExpect(jsonPath("$.info.title").value("ITDA API"))
 				.andExpect(jsonPath("$.info.version").value("v1"))
-				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type").value("http"))
-				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
-				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.bearerFormat").value("JWT"));
+				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.type").value("apiKey"))
+				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.in").value("cookie"))
+				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.name").value("access_token"))
+				.andExpect(jsonPath("$.paths['/oauth2/authorization/kakao'].get.responses.302").exists())
+				.andExpect(jsonPath("$.paths['/login/oauth2/code/kakao'].get.responses.302").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.201").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.413").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.500").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists());
 	}
 
 	@Test

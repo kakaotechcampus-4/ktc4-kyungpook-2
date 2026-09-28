@@ -11,9 +11,11 @@ import com.itda.backend.domain.MultiReason;
 
 import lombok.extern.slf4j.Slf4j;
 
-// ponytail: JournalEntry/Child/RawRecord 엔티티가 아직 없어서, api-spec.md O-22/
-// frontend/app/lib/types.ts(MatchingItem)가 요구하는 record(파일명/타입/미리보기)와
-// candidates[].{name,group,birthDate}는 아직 못 채운다 — 해당 도메인이 생기면 조인할 것.
+// ponytail: api-spec.md O-22/frontend/app/lib/types.ts(MatchingItem)가 요구하는
+// record(파일명/타입/미리보기)와 candidates[].{name,birthDate}는 아직 이 응답에 안 채워져
+// 있다 — JournalEntry/Child 엔티티는 이제 있어서(9/28 merge) journalEntryId/matchedChildId로
+// 조인해서 채울 수 있다, 다음 작업으로 예정. candidates[].group(반)은 Child에 그 필드 자체가
+// 없어서 이 조인만으론 여전히 못 채운다 — 별도 도메인 필요.
 // 팀원 리뷰 반영: candidates/evidence는 DB엔 TEXT로 저장돼있지만, FE 계약(MatchingItem)이
 // 실제 배열을 기대해서 여기서 JSON으로 파싱해 내려준다(문자열째로 내려주면 FE가 못 씀).
 // id/matchedChildId는 frontend/app/lib/types.ts(MatchingItem.id, candidates[].childId)가
