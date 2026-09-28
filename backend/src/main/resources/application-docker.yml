@@ -14,9 +14,8 @@ app:
       bucket: ${RAW_STORAGE_S3_BUCKET}
       region: ${AWS_REGION:ap-northeast-2}
   cors:
-    allowed-origins: http://54.116.206.217
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
   auth:
-    # 이걸 안 두면 기본값(localhost:3000)이 적용돼, 운영에서 로그인한 사용자가
-    # 자기 PC 주소로 리다이렉트된다.
-    success-redirect: ${AUTH_SUCCESS_REDIRECT:http://54.116.206.217/oauth/success}
-    failure-redirect: ${AUTH_FAILURE_REDIRECT:http://54.116.206.217/login}
+    # Compose가 PUBLIC_ORIGIN에서 만든 값을 전달한다. 누락 시 기동을 거부한다.
+    success-redirect: ${AUTH_SUCCESS_REDIRECT}
+    failure-redirect: ${AUTH_FAILURE_REDIRECT}

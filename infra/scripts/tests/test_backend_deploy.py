@@ -17,7 +17,7 @@ from urllib.parse import urlencode
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 IMAGE = "ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:" + "b" * 64
-ORIGIN = "http://54.116.206.217"
+ORIGIN = "http://deployment.test"
 spec = importlib.util.spec_from_file_location("sender", SCRIPTS / "send-backend-deploy.py")
 sender = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sender)
@@ -30,18 +30,44 @@ state["commands"].append({"args": args, "image": os.environ.get("BACKEND_IMAGE",
 code = 0
 output = ""
 if args[0] == "compose":
+    env_file = pathlib.Path(args[args.index("--env-file") + 1])
+    settings = dict(line.split("=", 1) for line in env_file.read_text().splitlines() if "=" in line and not line.startswith("#"))
+    origin = settings.get("PUBLIC_ORIGIN", "http://localhost")
     args = args[args.index("-f") + 2:]
-    if args[0] == "ps":
-        output = "backend-id"
+    if args[0] == "config" and "json" in args:
+        output = json.dumps({"services": {
+            "caddy": {"environment": {"PUBLIC_ORIGIN": origin}},
+            "backend": {"environment": {
+                "CORS_ALLOWED_ORIGINS": settings.get("CORS_ALLOWED_ORIGINS", origin),
+                "AUTH_COOKIE_SECURE": settings.get("AUTH_COOKIE_SECURE", "false"),
+                "AUTH_SUCCESS_REDIRECT": origin + "/oauth/success",
+                "AUTH_FAILURE_REDIRECT": origin + "/login",
+            }},
+        }})
+    elif args[0] == "ps":
+        output = "caddy-id" if args[-1] == "caddy" else "backend-id"
     elif args[0] == "pull" and state["mode"] == "pull_failure":
         code = 1
     elif args[0] == "up":
         state["image"] = os.environ["BACKEND_IMAGE"]
         state["phase"] = "new" if "ghcr.io/" in state["image"] else "old"
-    elif args[0] == "exec" and args[-1] == "reload" and state["phase"] == "new" and state["mode"] == "reload_failure":
-        code = 1
+    elif args[0] == "exec":
+        if "validate" in args and state["mode"] == "validate_failure":
+            code = 1
+        elif "wget" in args:
+            output = '{"apps":{"http":{"servers":{"old":{}}}}}'
+        elif "reload" in args:
+            if "/tmp/backend-deploy-rollback.json" in args:
+                state["active_config"] = "old"
+            elif state["mode"] == "reload_failure":
+                code = 1
+            else:
+                state["active_config"] = "new"
 elif args[0] == "inspect":
-    output = state["image"] if args[2] == "{{.Config.Image}}" else "sha256:" + "a" * 64
+    if args[-1] == "caddy-id":
+        output = "PUBLIC_ORIGIN=" + state["origin"]
+    else:
+        output = state["image"] if args[2] == "{{.Config.Image}}" else "sha256:" + "a" * 64
 path.write_text(json.dumps(state))
 if output:
     print(output)
@@ -61,6 +87,9 @@ class DeployScriptTests(unittest.TestCase):
         self.git("config", "user.email", "test@example.invalid")
         (self.root / ".gitignore").write_text(".env\n")
         (self.root / "tracked.txt").write_text("old\n")
+        scripts = self.root / "infra/scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "verify-proxy.py").write_text((SCRIPTS / "verify-proxy.py").read_text())
         self.git("add", ".")
         self.git("commit", "-m", "old")
         self.old_commit = self.git("rev-parse", "HEAD").strip()
@@ -74,7 +103,7 @@ class DeployScriptTests(unittest.TestCase):
         compose = self.root / "infra/docker"
         compose.mkdir(parents=True)
         self.env_file = compose / ".env"
-        self.original_env = "# preserved\nPOSTGRES_PASSWORD=test-secret\nJWT_SECRET=test-jwt\n"
+        self.original_env = "# preserved\nPOSTGRES_PASSWORD=test-secret\nJWT_SECRET=test-jwt\nPUBLIC_ORIGIN=" + ORIGIN + "\n"
         self.env_file.write_text(self.original_env)
         self.env_file.chmod(0o600)
         self.state_file = self.base / "docker.json"
@@ -95,12 +124,13 @@ class DeployScriptTests(unittest.TestCase):
                 state = test.state()
                 if self.path.endswith("/api/health"):
                     failed = state["phase"] == "new" and state["mode"] == "health_failure"
-                    self.send_response(503 if failed else 200)
+                    redirect = state["phase"] == "new" and state["mode"] == "redirect_failure" and not self.path.startswith("/direct/")
+                    self.send_response(308 if redirect else (503 if failed else 200))
                     self.end_headers()
                     self.wfile.write(b'{"status":"ok"}')
                 elif self.path.endswith("/oauth2/authorization/kakao"):
                     bad = state["phase"] == "new" and state["mode"] == "oauth_failure"
-                    callback = ORIGIN + ("/wrong-callback" if bad else "/login/oauth2/code/kakao")
+                    callback = test.environment["EXPECTED_PUBLIC_ORIGIN"] + ("/wrong-callback" if bad else "/login/oauth2/code/kakao")
                     self.send_response(302)
                     self.send_header("Location", "https://kauth.kakao.com/oauth/authorize?" + urlencode({"redirect_uri": callback}))
                     self.end_headers()
@@ -121,7 +151,8 @@ class DeployScriptTests(unittest.TestCase):
         url = "http://127.0.0.1:" + str(self.server.server_port)
         self.environment = dict(os.environ, DEPLOY_ROOT=str(self.root),
                                 FAKE_DOCKER_STATE=str(self.state_file), HEALTHCHECK_TIMEOUT="1",
-                                BACKEND_HEALTH_URL=url + "/direct/api/health", PROXY_BASE_URL=url + "/proxy",
+                                BACKEND_HEALTH_URL=url + "/direct/api/health", PROXY_PORT=str(self.server.server_port),
+                                EXPECTED_PUBLIC_ORIGIN=ORIGIN,
                                 PATH=str(executable_dir) + os.pathsep + os.environ["PATH"])
         self.environment.pop("BACKEND_IMAGE", None)
 
@@ -135,7 +166,8 @@ class DeployScriptTests(unittest.TestCase):
         return result.stdout
 
     def set_state(self, mode):
-        self.state_file.write_text(json.dumps({"image": "ktc-backend", "phase": "old", "mode": mode, "commands": []}))
+        self.state_file.write_text(json.dumps({"image": "ktc-backend", "phase": "old", "mode": mode,
+                                              "origin": ORIGIN, "active_config": "old", "commands": []}))
 
     def state(self):
         return json.loads(self.state_file.read_text())
@@ -178,8 +210,46 @@ class DeployScriptTests(unittest.TestCase):
     def test_oauth_failure_restores_previous_image(self):
         self.assert_rollback("oauth_failure")
 
-    def test_nginx_reload_failure_restores_previous_image(self):
+    def test_caddy_reload_failure_restores_previous_image(self):
         self.assert_rollback("reload_failure")
+
+    def test_redirect_with_success_json_is_not_healthy(self):
+        self.assert_rollback("redirect_failure")
+
+    def test_caddy_validate_failure_does_not_replace_backend(self):
+        self.set_state("validate_failure")
+        result = self.deploy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.state()["image"], "ktc-backend")
+        self.assertFalse(any("up" in entry["args"] for entry in self.state()["commands"]))
+
+    def test_origin_mismatch_cannot_be_hidden_by_shell_override(self):
+        self.env_file.write_text(self.original_env.replace(ORIGIN, "http://wrong.test"))
+        self.environment["PUBLIC_ORIGIN"] = ORIGIN
+        result = self.deploy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PUBLIC_ORIGIN mismatch", result.stderr)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.old_commit)
+        self.assertFalse(any("up" in entry["args"] for entry in self.state()["commands"]))
+
+    def test_running_caddy_origin_must_match(self):
+        state = self.state()
+        state["origin"] = "http://old.test"
+        self.state_file.write_text(json.dumps(state))
+        self.assertNotEqual(self.deploy().returncode, 0)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.old_commit)
+
+    def test_https_requires_secure_cookie_before_changes(self):
+        origin = ORIGIN.replace("http:", "https:")
+        self.env_file.write_text(self.original_env.replace(ORIGIN, origin))
+        self.environment["EXPECTED_PUBLIC_ORIGIN"] = origin
+        state = self.state()
+        state["origin"] = origin
+        self.state_file.write_text(json.dumps(state))
+        result = self.deploy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("AUTH_COOKIE_SECURE", result.stderr)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.old_commit)
 
     def assert_rollback(self, mode):
         self.set_state(mode)
@@ -187,6 +257,7 @@ class DeployScriptTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Previous backend restored", result.stderr, result.stdout + result.stderr)
         self.assertTrue(self.state()["image"].startswith("ktc-backend:rollback-"))
+        self.assertEqual(self.state()["active_config"], "old")
         self.assertEqual(self.env_file.read_text(), self.original_env + "BACKEND_IMAGE=" + self.state()["image"] + "\n")
         self.assert_only_backend_recreated()
 
@@ -210,7 +281,8 @@ class DeployScriptTests(unittest.TestCase):
         result = self.deploy(commit=self.old_commit)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("older than server HEAD", result.stderr)
-        self.assertEqual(self.state()["commands"], [])
+        self.assertFalse(any("up" in entry["args"] or "pull" in entry["args"]
+                             for entry in self.state()["commands"]))
 
     def test_mutable_image_tag_is_rejected_before_changes(self):
         result = self.deploy(image="ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend:latest")
@@ -228,6 +300,8 @@ class SenderTests(unittest.TestCase):
         request = sender.build_request(self.args(), "echo deployment\n")
         command = request["Parameters"]["commands"][0]
         self.assertIn("runuser -u ubuntu", command)
+        self.assertIn("EXPECTED_PUBLIC_ORIGIN=" + ORIGIN, command)
+        self.assertNotIn("env PUBLIC_ORIGIN=", command)
         self.assertIn("bash -s -- " + "c" * 40 + " " + IMAGE, command)
         self.assertEqual(request["InstanceIds"], ["i-0e30a4108bfd4ea9f"])
         self.assertEqual(request["Parameters"]["executionTimeout"], ["900"])
@@ -237,6 +311,14 @@ class SenderTests(unittest.TestCase):
         args.image = IMAGE + "; echo injected"
         with self.assertRaises(ValueError):
             sender.build_request(args, "echo deployment")
+
+    def test_origin_is_required(self):
+        result = subprocess.run([sys.executable, str(SCRIPTS / "send-backend-deploy.py"),
+                                 "--commit", "c" * 40, "--image", IMAGE,
+                                 "--instance-id", "i-0e30a4108bfd4ea9f", "--region", "ap-northeast-2"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--origin", result.stderr)
 
     @mock.patch.object(sender.time, "sleep")
     @mock.patch.object(sender, "aws_command")

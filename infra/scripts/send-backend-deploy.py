@@ -30,7 +30,7 @@ def build_request(args, script):
     command = (
         "set -eu\n"
         f"runuser -u ubuntu -- env DEPLOY_ROOT={shlex.quote(args.root)} "
-        f"PUBLIC_ORIGIN={shlex.quote(args.origin)} bash -s -- "
+        f"EXPECTED_PUBLIC_ORIGIN={shlex.quote(args.origin)} bash -s -- "
         f"{shlex.quote(args.commit)} {shlex.quote(args.image)} <<'{delimiter}'\n"
         f"{script}\n{delimiter}\n"
     )
@@ -86,7 +86,7 @@ def main():
     parser.add_argument("--instance-id", required=True)
     parser.add_argument("--region", required=True)
     parser.add_argument("--root", default="/home/ubuntu/ktc4-kyungpook-2")
-    parser.add_argument("--origin", default="http://54.116.206.217")
+    parser.add_argument("--origin", required=True)
     args = parser.parse_args()
     script = Path(__file__).with_name("deploy-backend.sh").read_text()
     request = build_request(args, script)
