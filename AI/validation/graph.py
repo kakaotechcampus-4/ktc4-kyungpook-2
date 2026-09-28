@@ -35,6 +35,7 @@ def run_validation(payload: ValidationInput) -> ValidationOutput:
     ② 그래프가 낸 결과를 다시 Pydantic 모델(ValidationOutput)로 포장한다.
     """
     state = {
+        "journal_entry_id": payload.journal_entry_id,
         "content": payload.content,
         "subject_child_id": payload.subject_child_id,
         "subject_name": payload.subject_name,
