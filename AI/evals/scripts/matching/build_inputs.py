@@ -2,8 +2,8 @@
 import json
 from pathlib import Path
 
-MANIFEST_PATH = Path(__file__).parent.parent / "manifests" / "잇다_synthetic_100.json"
-PIPELINE_PATH = Path(__file__).parent.parent / "manifests" / "잇다_파이프라인_테스트매니페스트.json"
+MANIFEST_PATH = Path(__file__).parent.parent.parent / "manifests" / "잇다_synthetic_100.json"
+PIPELINE_PATH = Path(__file__).parent.parent.parent / "manifests" / "잇다_파이프라인_테스트매니페스트.json"
 
 
 def build_roster(data):
@@ -73,8 +73,8 @@ if __name__ == "__main__":
     inputs = build_inputs()
     print(f"변환 완료: {len(inputs)}건")
 
-    output_dir = Path(__file__).parent.parent / "generated"
-    output_dir.mkdir(exist_ok=True)
+    output_dir = Path(__file__).parent.parent.parent / "generated" / "matching"
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     with open(output_dir / "matching_inputs_생성됨.json", "w", encoding="utf-8") as f:
         json.dump(inputs, f, ensure_ascii=False, indent=2)
