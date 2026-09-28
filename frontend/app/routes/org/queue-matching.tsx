@@ -163,7 +163,7 @@ function MatchingCard({
         <p className="mb-2 text-[15px] font-semibold">{item.record.fileName}</p>
         <div className="mb-3 text-[16px]">
           {/* AI 가 판정 근거로 인용한 구간을 그대로 표시한다 */}
-          <EvidenceText content={item.record.preview} spans={item.evidence} />
+          <EvidenceText content={item.record.preview ?? ""} spans={item.evidence} />
         </div>
         {item.evidence.length > 0 ? (
           <p className="mb-3 text-[13px] text-muted">
@@ -171,16 +171,7 @@ function MatchingCard({
             표시된 부분이 AI 가 판단 근거로 삼은 부분입니다
           </p>
         ) : null}
-        <p className="text-[13px] text-muted">
-          유형 · {item.record.type} &nbsp;|&nbsp; 기록 시각 ·{" "}
-          {new Date(item.record.capturedAt).toLocaleString("ko-KR", {
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-          {item.hintName ? <> &nbsp;|&nbsp; 파일 표지 · {item.hintName}</> : null}
-        </p>
+        <RecordMeta item={item} />
       </div>
 
       <h2 className="mb-3 text-[17px] font-bold">
@@ -224,7 +215,7 @@ function MatchingCard({
                 checked={selected === c.childId}
                 onChange={() => setSelected(c.childId)}
               />
-              <ChildBadge name={c.name} meta={`${c.group} · ${c.birthDate}`} />
+              <ChildBadge name={c.name} meta={childMeta(c)} />
             </label>
           ))}
         </fieldset>
@@ -233,12 +224,12 @@ function MatchingCard({
       {suggested && !pickingOther ? (
         <div className="mb-4 flex flex-col gap-3">
           <div className="flex items-center gap-3 rounded border border-accent bg-accentsoft/50 px-3 py-2.5">
-            <ChildBadge name={suggested.name} meta={`${suggested.group} · ${suggested.birthDate}`} />
+            <ChildBadge name={suggested.name} meta={childMeta(suggested)} />
             <span className="ml-auto text-[13px] font-medium text-accentink">AI 판정</span>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => submit({ action: "confirm", childId: suggested.childId })}
+              onClick={() => submit({ action: "assign", childId: suggested.childId })}
               disabled={pending}
               className="tap rounded bg-accent px-5 text-[15px] font-semibold text-white hover:bg-accentink disabled:opacity-60"
             >
@@ -299,7 +290,7 @@ function MatchingCard({
         {/* review 의 "맞아요" 는 위에 따로 있다. 여기는 직접 고른 아이로 확정하는 버튼이다 */}
         {item.status !== "review" || pickingOther ? (
           <button
-            onClick={() => selected && submit({ action: "confirm", childId: selected })}
+            onClick={() => selected && submit({ action: "assign", childId: selected })}
             disabled={!selected || pending}
             className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-line2 disabled:text-muted"
           >
@@ -318,19 +309,49 @@ function MatchingCard({
   );
 }
 
-function ChildBadge({ name, meta }: { name: string; meta: string }) {
+/**
+ * 유형 · 기록 시각 · 파일 표지. 서버가 아직 안 보내는 값(유형·표지 이름)이나
+ * 비어 온 값(날짜)은 칸째 뺀다 — "undefined" 나 1970년이 찍히지 않게.
+ */
+function RecordMeta({ item }: { item: MatchingItem }) {
+  const parts: string[] = [];
+  if (item.record.type) parts.push(`유형 · ${item.record.type}`);
+  if (item.record.capturedAt) {
+    parts.push(
+      "기록 시각 · " +
+        new Date(item.record.capturedAt).toLocaleString("ko-KR", {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+    );
+  }
+  if (item.hintName) parts.push(`파일 표지 · ${item.hintName}`);
+  if (parts.length === 0) return null;
+  return <p className="text-[13px] text-muted">{parts.join("  |  ")}</p>;
+}
+
+/** 반 · 생년월일. 서버에 반 정보가 아직 없어서 있는 것만 잇는다. */
+function childMeta(c: MatchingItem["candidates"][number]): string {
+  return [c.group, c.birthDate].filter(Boolean).join(" · ");
+}
+
+function ChildBadge({ name, meta }: { name: string | null; meta: string }) {
+  // 명부에서 찾지 못한(삭제된) 아이는 서버가 이름 없이 id 만 보낸다
+  const label = name ?? "이름 없음";
   return (
     <>
       <span
         aria-hidden
         className="flex size-8 items-center justify-center rounded-full bg-surface2 text-[14px] font-semibold text-ink2"
       >
-        {name.slice(0, 1)}
+        {label.slice(0, 1)}
       </span>
       <span>
-        <span className="block text-[16px] font-semibold">{name}</span>
+        <span className="block text-[16px] font-semibold">{label}</span>
         {/* 동명이인이면 이름도 반도 같다. 생년월일이 유일한 구분 근거다. */}
-        <span className="block text-[13px] text-muted tabular-nums">{meta}</span>
+        {meta ? <span className="block text-[13px] text-muted tabular-nums">{meta}</span> : null}
       </span>
     </>
   );

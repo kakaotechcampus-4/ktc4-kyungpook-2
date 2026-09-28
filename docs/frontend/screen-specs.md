@@ -200,20 +200,33 @@
 
 **기능**
 
-1. 아이 선택 (비워두면 자동 매칭에 맡김) — `active` 상태 아이만 목록에 노출
-2. 기록 유형 선택 (관찰일지 · 활동일지 · 특이사항 · 사진)
-3. 기록 시각 입력
-4. 파일 드래그앤드롭 / 선택 (다중)
-5. "등록하고 처리 시작" → 매칭 · 검증 · 요약 진행 상황을 단계 도식으로 표시
-6. 1차 검토 대기까지 도달하면 "다른 기록 등록" 버튼 노출
+1. 파일 드래그앤드롭 / 선택 (다중)
+2. "등록하고 처리 시작" → 매칭 · 검증 · 요약 진행 상황을 단계 도식으로 표시
+3. 1차 검토 대기까지 도달하면 "다른 기록 등록" 버튼 노출
+
+아이 · 기록 유형 · 기록 시각은 받지 않습니다. 파일 하나에 여러 아이의 기록이 섞여
+있으므로 아이는 매칭 에이전트가 판정하고(애매하면 확인 필요 큐로), 기록 시각은 파일
+본문에서 추출합니다. 아이를 확정해서 넣으려면 직접 입력 화면(신규 예정)을 씁니다.
 
 **상태** · `pending_consent` 아이가 있으면 "○○는 아직 보호자 동의를 기다리는 중이라
 기록을 올릴 수 없습니다" 안내
 
-**호출 API** · `getChildren` (업로드 API는 신규 필요 — [api-spec.md](../api/api-spec.md) §4.3)
+**일부 파일 업로드 실패** · 파일마다 따로 올리므로 일부만 실패할 수 있습니다. 성공한 파일은
+"방금 올린 파일"에 바로 들어가고, 실패한 파일은 업로드 카드 안에 이름과 사유를 보여줍니다.
 
-> ⚠️ 파이프라인 진행 표시는 현재 `setTimeout` 시뮬레이션입니다. 실제 연동 시 서버
-> 상태 폴링 또는 구독으로 교체합니다.
+- 형식 오류(400) · 용량 초과(413): 다시 올려도 같으므로 사유만 보여줌
+- 그 밖의 오류(500 · 네트워크): "실패한 파일만 다시 올리기"로 그 파일만 다시 올림
+- 성공한 파일은 다시 올리지 않습니다 — 원본 기록 중복을 막기 위해서입니다
+
+**호출 API** · `getChildren` · `uploadRawRecords` · `getFileProgress` · `retryFailedEntries`
+([api-spec.md](../api/api-spec.md) §4.3)
+
+- `uploadRawRecords` → `POST /api/v1/raw-records` · 구현됨
+- `getFileProgress` → `GET /api/v1/raw-records/progress` · 계약 확정, 구현 예정
+- `retryFailedEntries` → `POST /api/v1/raw-records/{id}/retry` · 계약 확정, 구현 예정
+
+> ⚠️ 진행 표시는 mock 모드에서 시뮬레이션입니다. 실제 모드는 `/progress` 를 폴링하는데,
+> 기록 단위 분할이 끝나기 전까지 `entries: []` 만 와서 "기록 등록 중"에 머무는 게 정상입니다.
 
 ---
 
@@ -253,11 +266,16 @@
   일괄 버튼은 "대충 넘기기"를 유도합니다.
 - 후보가 있는데 선택하지 않으면 확정 버튼은 비활성입니다.
 
-**호출 API** · `getMatchingQueue`, `resolveMatchingItem`
+- 서버가 아직 보내지 않는 값(유형 · 반 · 미매칭 사유 · 표지 이름)이나 비어 온 값(기록 시각)은
+  그 칸을 숨깁니다. "undefined" 나 잘못된 날짜를 찍지 않습니다.
 
-> ⚠️ 현재 `resolveMatchingItem(id)`는 선택한 `childId`를 서버로 보내지 않습니다.
-> "이 기관 아동 아님"도 같은 함수를 부르기 때문에 서버가 둘을 구분하지 못합니다.
-> 실제 연동 전에 계약 합의가 필요합니다.
+**호출 API** · `getMatchingQueue`, `resolveMatchingItem`
+([api-spec.md](../api/api-spec.md) §4.3)
+
+- `getMatchingQueue` → `GET /api/v1/matching-queue` · 계약 확정, #35 merge 대기
+- `resolveMatchingItem` → `POST /api/v1/matching-queue/{id}/resolve` · 계약 확정, #35 merge 대기
+  - 후보·명부에서 고른 아이로 확정 → `{ "action": "assign", "childId": "…" }`
+  - 이 기관 아동 아님 → `{ "action": "not_ours" }`
 
 ---
 

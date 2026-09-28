@@ -4,8 +4,8 @@
 
 ```bash
 cd AI
-python evals/run_eval.py ~/Downloads/matching_inputs.json /tmp/result.json
-python evals/score.py /tmp/result.json
+python evals/scripts/matching/run_eval.py ~/Downloads/matching_inputs.json /tmp/result.json
+python evals/scripts/matching/score.py /tmp/result.json
 ```
 
 실행과 채점을 나눈 것은 의도한 것이다. 실행은 LLM 을 부르므로 1,070건에 약 8분이
