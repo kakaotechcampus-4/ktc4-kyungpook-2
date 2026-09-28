@@ -139,14 +139,19 @@ export async function getTimeline(childId: string): Promise<TimelineEntry[]> {
 }
 
 /**
- * GET /api/v1/raw-records — **구현됨**
+ * GET /api/v1/matching-queue — **계약 확정, #35 merge 대기** (api-spec.md O-22)
  *
  * institutionId 는 서버가 인증 정보에서 가져가므로 보내지 않는다.
- * 매칭 상태별 필터는 아직 백엔드에 없다 — 추가되면 쿼리 파라미터를 붙인다.
+ * 서버는 근거 구간이 없으면 evidence 를 null 로 보낸다 — 화면이 배열만 다루도록 여기서 편다.
  */
 export async function getMatchingQueue(): Promise<MatchingItem[]> {
   if (USE_MOCK) return mock.MATCHING_QUEUE;
-  return request("/api/v1/raw-records");
+  const items = await request<MatchingItem[]>("/api/v1/matching-queue");
+  return items.map((item) => ({
+    ...item,
+    candidates: item.candidates ?? [],
+    evidence: item.evidence ?? [],
+  }));
 }
 
 /** GET /api/v1/validation-results?status=BLOCK */
@@ -215,8 +220,8 @@ export async function decideGate2(
 /**
  * 확인 필요 큐에서 아이를 확정(또는 "우리 기관 아동 아님"으로 제외)하면 큐에서 빠진다.
  *
- * ⚠️ **이 엔드포인트는 백엔드에 없다.** RawRecordController 에는 업로드·조회만 있다.
- *    본문 형태({ action, childId })는 FE 가 제안하는 계약이다. 백엔드와 합의가 필요하다.
+ * POST /api/v1/matching-queue/{id}/resolve — **계약 확정, #35 merge 대기** (api-spec.md O-23)
+ *    { action: "assign", childId } 또는 { action: "not_ours" }. childId 는 assign 에만 보낸다.
  */
 export async function resolveMatchingItem(
   id: string,
@@ -227,7 +232,7 @@ export async function resolveMatchingItem(
     if (idx !== -1) mock.MATCHING_QUEUE.splice(idx, 1);
     return { ok: true };
   }
-  return request(`/api/v1/raw-records/${id}/match`, {
+  return request(`/api/v1/matching-queue/${id}/resolve`, {
     method: "POST",
     body: JSON.stringify(resolution),
   });

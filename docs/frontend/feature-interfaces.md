@@ -121,10 +121,13 @@ interface RawRecord {
 ```ts
 interface MatchingItem {      // 확인 필요 큐 한 건
   id: string;
-  record: RawRecord;
+  // null · 없음 = 서버(#35)가 아직 못 채우는 값. 화면은 그 칸을 숨긴다
+  record: { id: string; fileName: string; type?: RawRecord["type"] | null;
+            capturedAt: string | null; preview: string | null };
   status: "review" | "multi" | "unmatched";
   // 동명이인이면 후보가 둘 이상 남는다. 이름·반이 같으므로 birthDate 가 유일한 구분 근거다.
-  candidates: { childId: string; name: string; group: string; birthDate: string }[];
+  candidates: { childId: string; name: string | null; group?: string | null;
+                birthDate: string | null }[];
   evidence: { start: number; end: number }[];   // 판정 근거 구간 (문자 인덱스)
   multiReason?: "co_mention" | "ambiguous_identity" | null;
   unmatchedReason?: "no_anchor" | "not_in_roster" | null;
@@ -270,7 +273,7 @@ interface ParentActivity {
 | `getChild` | `(id: string) => Promise<Child \| undefined>` | I-09-1 |
 | `getTimeline` | `(childId: string) => Promise<TimelineEntry[]>` | I-09-1 |
 | `getMatchingQueue` | `() => Promise<MatchingItem[]>` | I-03, I-06, 사이드바 배지 |
-| `resolveMatchingItem` | `(id: string) => Promise<{ ok: true }>` | I-06 |
+| `resolveMatchingItem` | `(id: string, resolution: { action: "assign"; childId: string } \| { action: "not_ours" }) => Promise<{ ok: true }>` | I-06 |
 | `getBlockedQueue` | `() => Promise<BlockedItem[]>` | I-03, I-07, 사이드바 배지 |
 | `resolveBlockedItem` | `(id: string, action: "reupload" \| "hold") => Promise<{ ok: true }>` | I-07 |
 | `getGate1Queue` | `() => Promise<SummaryItem[]>` | I-03, I-08 |

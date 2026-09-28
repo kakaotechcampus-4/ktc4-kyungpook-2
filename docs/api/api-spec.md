@@ -391,8 +391,8 @@ POST /api/v1/auth/signup   → 201 Created
 | --- | --- | --- | --- | --- |
 | O-20 | POST | `/raw-records` | 원본 기록 업로드 (multipart) | I-05 |
 | O-21 | GET | `/raw-records/{id}/status` | 파이프라인 진행 상태 | I-03, I-05 |
-| O-22 | GET | `/matching-queue` | 확인 필요 큐 | I-03, I-06 |
-| O-23 | POST | `/matching-queue/{itemId}/resolve` | 아이 확정 / 제외 | I-06 |
+| O-22 | GET | `/matching-queue` | 확인 필요 큐 · **계약 확정, #35 merge 대기** | I-03, I-06 |
+| O-23 | POST | `/matching-queue/{itemId}/resolve` | 아이 확정 / 제외 · **계약 확정, #35 merge 대기** | I-06 |
 | O-24 | GET | `/validation-results?status=BLOCK` | 수정 요청 큐 | I-03, I-07 |
 | O-25 | POST | `/validation-results/{itemId}/resolve` | 재업로드 / 보류 | I-07 |
 | O-26 | GET | `/raw-records/progress` | 파일별 처리 현황 · **계약 확정, 구현 예정** | I-03, I-05 |
@@ -481,8 +481,8 @@ POST /api/v1/auth/signup   → 201 Created
 | `assign` | 선택한 아이로 확정 | 필수 |
 | `not_ours` | 우리 기관 아동 아님 (제외) | 없음 |
 
-> 현재 프론트 `resolveMatchingItem(id)`는 `childId`를 보내지 않습니다. 이 명세대로
-> 프론트를 수정할 예정입니다.
+> 프론트 `resolveMatchingItem(id, resolution)`이 이 형식으로 보냅니다. 후보나 명부에서 아이를
+> 고르면 `assign`, "이 기관 아동 아님"을 누르면 `not_ours`입니다.
 
 **O-24 응답**
 
