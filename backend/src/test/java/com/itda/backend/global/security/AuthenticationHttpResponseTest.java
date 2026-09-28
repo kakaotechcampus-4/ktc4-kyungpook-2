@@ -78,6 +78,17 @@ class AuthenticationHttpResponseTest {
     }
 
     @Test
+    void anonymousGetDoesNotCreateASavedRequestSession() throws Exception {
+        for (int i = 0; i < 2; i++) {
+            var response = get(PROTECTED, null);
+            assertThat(response.statusCode()).isEqualTo(401);
+            assertThat(response.body()).contains("\"code\":\"UNAUTHORIZED\"");
+            assertThat(response.headers().allValues("Set-Cookie"))
+                    .noneMatch(cookie -> cookie.startsWith("JSESSIONID="));
+        }
+    }
+
+    @Test
     void oauthAuthorizationStillCreatesAStateSession() throws Exception {
         var response = get("/oauth2/authorization/kakao", null);
         assertThat(response.statusCode()).isEqualTo(302);

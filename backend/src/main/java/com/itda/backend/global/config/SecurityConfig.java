@@ -111,6 +111,8 @@ public class SecurityConfig {
                  */
                 .securityContext(context -> context
                         .securityContextRepository(new RequestAttributeSecurityContextRepository()))
+                // API의 401 요청을 세션에 저장하지 않는다. OAuth state 보관 세션은 별도로 유지된다.
+                .requestCache(cache -> cache.disable())
                 /*
                  * 규칙은 먼저 맞는 것이 이긴다. "/api/v1/auth/**" 를 통째로 열어두면
                  * 그 아래 새로 만드는 API 가 전부 인증 없이 뚫리므로, 열 것만 하나씩 적는다.
