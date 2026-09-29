@@ -154,6 +154,7 @@ const MQ_02 = "자유놀이 중 김OO와 이OO가 블록을 나눠 쌓았고, �
 const MQ_03 = "우리 반 막둥이가 새 신발을 자랑하며 친구들에게 보여줌.";
 const MQ_04 = "오후 자유놀이 중 정OO가 장난감을 두고 다툼이 있었고, 스스로 사과함.";
 const MQ_05 = "등원 직후 박OO 표정이 굳어 있었고, 인사에 반응하지 않음. 잠시 뒤 놀이에 참여함.";
+const MQ_06 = "점심 식사 후 최OO가 블록으로 높은 탑을 쌓고 친구들에게 자랑함.";
 
 export const MATCHING_QUEUE: MatchingItem[] = [
   {
@@ -236,6 +237,20 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     candidates: [
       { childId: "child_1077", name: "박OO", group: "민들레반 · 6세반", birthDate: "2019-11-08" },
     ],
+  },
+  {
+    // AI 호출이 실패한 건. 판정이 없으니 후보도 근거도 비어 온다.
+    id: "mq_06",
+    status: "failed",
+    record: {
+      id: "rrf_9d17",
+      fileName: "0820_활동일지.docx",
+      type: "활동일지",
+      capturedAt: "2026-08-20T13:50:00+09:00",
+      preview: MQ_06,
+    },
+    evidence: [],
+    candidates: [],
   },
 ];
 

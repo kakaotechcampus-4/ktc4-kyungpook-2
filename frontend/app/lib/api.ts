@@ -121,7 +121,7 @@ export class ApiError extends Error {
 
 /* ── 기관 ───────────────────────────────────────────── */
 
-/** GET /api/v1/institutions/{id}/children */
+/** GET /api/v1/institutions/me/children */
 export async function getChildren(): Promise<Child[]> {
   if (USE_MOCK) return mock.CHILDREN;
   return request("/api/v1/institutions/me/children");
