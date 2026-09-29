@@ -37,7 +37,7 @@
 | 5 | `invitation` | ✅ 확정 | ⬜ 미구현 | `status` 로 대체 |
 | 6 | `child_guardian` | ✅ 확정 | ⬜ 미구현 | `deleted_at` |
 | 7 | `sharing_consent` | ✅ 확정 | ⬜ 미구현 | `status` 로 대체 |
-| 8 | `raw_record` | ✅ 확정 | ⚠️ `RawRecord` — 설계와 다름 | `deleted_at` (코드엔 아직 없음) |
+| 8 | `raw_record` | ✅ 확정 | ⚠️ `RawRecord` — 일부 다름 | `deleted_at` |
 | 9 | `journal_entry` | ✅ 확정 | ✅ `JournalEntry` | `deleted_at` |
 | 10 | `matching_result` | ✅ 확정 | ⚠️ `MatchingResult` — 설계와 다름 | 삭제 없음 (이력) |
 | 11 | `validation_result` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
@@ -56,20 +56,14 @@
 
 > 기준: `backend/src/main/java/com/itda/backend/domain` · 대조일 2026-09-29.
 > 이 목록이 비면 설계와 코드가 일치하는 것이다. 코드를 설계에 맞추든, 설계를 코드에 맞추든 **맞춘 뒤 여기서 지운다.**
+> 이름·타입만 다르던 것(`stored_path`, TEXT 로 저장한 JSON 등)은 설계를 코드에 맞춰 이미 정리했다.
 
-| 테이블 | 설계 (이 문서) | 현재 코드 |
-| --- | --- | --- |
-| `raw_record` | `organization_id BIGINT` | `institution_id VARCHAR(255)` — 기관 ID를 문자열로 저장 |
-| `raw_record` | `storage_key`, `file_size` | `stored_path`, `size_bytes` |
-| `raw_record` | `hint_name`, `hint_birthdate` 있음 | **없음** |
-| `raw_record` | `updated_at`, `deleted_at` 있음 | **없음** — soft delete 불가 |
-| `raw_record` | status `UPLOADED` `PARSED` `PROCESSING` `COMPLETED` `FAILED` | status `PENDING` `REVIEW` `BLOCKED` `FAILED` |
-| `raw_record` | `content_type` NULL 허용 | NOT NULL |
-| `matching_result` | `candidates` `evidence` `raw_response` 는 `JSON` | `TEXT` 에 JSON 문자열로 저장 (JSON 컨버터 없음) |
-| `matching_result` | 이력이라 수정하지 않음, `updated_at` 없음 | 사람이 확인 큐에서 처리하면 **행을 수정**한다 (`status → AUTO`, `reviewer_id` 기록). `updated_at` 있음 |
-| `matching_result` | — | `model_version VARCHAR(100)`, `reviewer_id VARCHAR(255)` 추가 |
-| `human_review` | 🟡 초안, 나중에 구현 | 이미 구현됨 (`Approval` 엔티티) |
-| `invitation` `child_guardian` `sharing_consent` | ✅ 확정, 지금 만든다 | 아직 없음 |
+| 테이블 | 설계 | 현재 코드 | 비고 |
+| --- | --- | --- | --- |
+| `raw_record` | `organization_id BIGINT` | `institution_id VARCHAR(255)` | 기관 ID 숫자를 문자열로 저장. 배포 DB 컬럼 타입을 `ddl-auto`가 못 바꿔서 유지 중 (§6.1) |
+| `raw_record` | status 가 파이프라인 단계 (`UPLOADED` → `PARSED` → `PROCESSING` → `COMPLETED`) | status `PENDING` `REVIEW` `BLOCKED` `FAILED` 중 실제로는 `PENDING`(저장 성공)·`FAILED`(저장 실패)만 씀 | 파이프라인 단계는 API `O-21 stage`로 따로 내려준다 (§6.1) |
+| `matching_result` | 이력이라 수정하지 않음. 재처리는 새 행 | 사람이 확인 큐에서 처리하면 **기존 행을 수정**한다 (`status → AUTO`, `matched_child_id` 덮어씀, `reviewer_id` 기록) | §7.1 |
+| `matching_result` | 검토자는 `users.id` BIGINT (`human_review.reviewer_id`와 같게) | `reviewer_id VARCHAR(255)` 에 `users.id`를 문자열로 저장 | §7.1 |
 
 ---
 
@@ -166,8 +160,8 @@ erDiagram
 
     raw_record {
         bigint id PK
-        bigint organization_id FK
-        varchar storage_key
+        varchar institution_id FK "기관 ID 문자열"
+        varchar stored_path
         varchar hint_name
         date hint_birthdate
         varchar status
@@ -187,9 +181,9 @@ erDiagram
         bigint matched_child_id FK "NULL 허용"
         varchar status
         decimal confidence
-        json candidates
-        json evidence
-        json raw_response
+        text candidates "JSON 문자열"
+        text evidence "JSON 문자열"
+        text raw_response "JSON 문자열"
     }
     validation_result {
         bigint id PK
@@ -332,7 +326,8 @@ MatchingInput
 | 시각 컬럼 | `created_at`은 모든 테이블에. `updated_at`은 값이 바뀌는 테이블에만 |
 | **삭제** | **어떤 행도 `DELETE` 하지 않는다.** `deleted_at`에 시각을 기록한다 (§3.2) |
 | 열거형 | 문자열(`VARCHAR`)로 저장. DB `ENUM` 타입을 쓰지 않는다 |
-| AI 응답 보관 | 결과 테이블은 `raw_response JSON`에 응답 원본을 그대로 보관. 실제로 쓰는 값만 컬럼으로 승격 |
+| AI 응답 보관 | 결과 테이블은 `raw_response`에 응답 원본을 그대로 보관. 실제로 쓰는 값만 컬럼으로 승격 |
+| JSON 컬럼 | 지금은 JSON 컨버터가 없어서 **`TEXT`에 JSON 문자열로 저장**한다 (`matching_result`). 아래 초안 테이블의 `JSON` 표기도 구현 시 같은 방식을 따른다 |
 
 > **프론트 ID 직렬화는 아직 FE와 합의 전이다.** 프론트가 숫자로 바꾸겠다고 하면 이 규칙을 뒤집으면 된다. 백엔드는 어느 쪽이든 쉽다.
 
@@ -345,6 +340,10 @@ MatchingInput
 | `deleted_at` | DATETIME | **Y** | **삭제 표시.** `NULL`이면 살아 있는 행 |
 
 `deleted_at`을 찍을 때 `updated_at`도 같이 갱신된다(수정의 일종이다).
+
+**예외 — `raw_record.updated_at`은 DB에서 NULL을 허용한다.** 배포 DB에 이미 행이 있어서
+`ddl-auto: update`가 NOT NULL 컬럼을 추가하지 못하기 때문이다. 새 행과 수정되는 행은 코드가 항상 채운다.
+나중에 추가하는 컬럼도 기존 행이 있는 테이블이면 같은 문제가 생긴다 (§11.4).
 
 ### 3.2 삭제 — Soft Delete ✅ 확정
 
@@ -749,56 +748,52 @@ REVOKED
 
 ## 6. 수집
 
-### 6.1 `raw_record` ✅ — ⚠️ 코드와 다름
+### 6.1 `raw_record` ✅ — ⚠️ 일부 다름
 
 > **근거** — 이미 구현된 테이블 · AI `hint_name` / `hint_birthdate` 계약
 
 기관이 업로드한 원본 파일의 메타데이터. 하나의 `raw_record` 안에 여러 `journal_entry`가 존재한다.
 
-**설계**
-
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
-| `organization_id` | BIGINT | N | 업로드 기관 |
-| `storage_key` | VARCHAR(500) | N | S3 Object Key |
+| `institution_id` | VARCHAR(255) | N | 업로드 기관 ID. ⚠️ `organization.id`를 **문자열로** 저장 (아래 설명) |
 | `original_filename` | VARCHAR(255) | N |  |
-| `content_type` | VARCHAR(100) | Y |  |
-| `file_size` | BIGINT | Y |  |
-| `hint_name` | VARCHAR(100) | Y | 파일 표지에서 파싱한 아동 이름 |
-| `hint_birthdate` | DATE | Y | 파일 표지에서 파싱한 생년월일 |
-| `status` | VARCHAR(30) | N | 처리 상태 |
-| `created_at` | DATETIME | N |  |
-| `updated_at` | DATETIME | N |  |
-| `deleted_at` | DATETIME | Y | **삭제 표시.** 잘못 올린 파일을 목록에서 내릴 때 |
-
-**⚠️ 현재 코드 (`RawRecord`)**
-
-| Column | Type | NULL | 설명 |
-| --- | --- | --- | --- |
-| `id` | BIGINT | N | PK |
-| `institution_id` | VARCHAR(255) | N | 업로드 기관 ID를 **문자열로** 저장 |
-| `original_filename` | VARCHAR(255) | N |  |
-| `stored_path` | VARCHAR(255) | N | 저장소 경로 |
+| `stored_path` | VARCHAR(255) | N | 저장소 경로 (로컬 디스크 또는 S3 Object Key) |
 | `content_type` | VARCHAR(255) | N |  |
 | `size_bytes` | BIGINT | N |  |
-| `status` | VARCHAR(255) | N | `PENDING` `REVIEW` `BLOCKED` `FAILED` |
+| `hint_name` | VARCHAR(100) | Y | 파일 표지에서 파싱한 아동 이름 |
+| `hint_birthdate` | DATE | Y | 파일 표지에서 파싱한 생년월일 |
+| `status` | VARCHAR(255) | N | 저장 상태 |
 | `created_at` | DATETIME | N |  |
+| `updated_at` | DATETIME | **Y** | DB만 NULL 허용. 새 행·수정 행은 항상 채워짐 (§3.1 예외) |
+| `deleted_at` | DATETIME | Y | **삭제 표시.** 잘못 올린 파일을 목록에서 내릴 때 |
 
-`hint_name`·`hint_birthdate`·`updated_at`·`deleted_at`이 없다. §0.3 참고.
+**`institution_id`가 문자열인 이유** ⚠️
 
-**`status`** (설계)
+처음(9.9)엔 기관 도메인이 없어서 요청 파라미터·카카오 회원번호 문자열을 그대로 기관 식별자로 썼다.
+9.22에 실제 `organization.id`를 넣도록 바꿨지만, 배포 DB 컬럼 타입은 `ddl-auto: update`가 바꿔주지 않아
+문자열 컬럼을 유지했다. 비교할 때 `String.valueOf(organizationId)`로 맞춘다.
+프론트에 ID를 문자열로 내려주는 규칙(§3)과는 무관하다 — 그건 응답 DTO에서 변환한다.
+컬럼 타입 정리(`organization_id BIGINT`)는 마이그레이션 도구가 들어온 뒤의 과제다.
+
+**`status`** ⚠️ — 파일을 **저장했는지**만 나타낸다
 
 ```
-UPLOADED     업로드 완료 — 워커 대기
-PARSED       일지 분리 완료
-PROCESSING   파이프라인 진행 중
-COMPLETED    완료
-FAILED       실패
+PENDING      저장 성공 — 처리 대기
+FAILED       저장 실패
+REVIEW       (정의만 있고 아직 쓰는 곳 없음)
+BLOCKED      (정의만 있고 아직 쓰는 곳 없음)
 ```
 
-업로드는 **비동기로 처리한다.** S3에 저장하고 `UPLOADED` 상태로 즉시 응답한 뒤,
+설계는 이 컬럼으로 파이프라인 진행 단계(`UPLOADED` → `PARSED` → `PROCESSING` → `COMPLETED` / `FAILED`)를
+나타내려 했다. 현재는 파이프라인 단계를 API `GET /raw-records/{id}/status`(O-21)의 `stage`로 따로 내려주기로 했다
+(`docs/api/api-spec.md`). 파이프라인이 구현될 때 이 컬럼을 단계로 쓸지, 단계를 별도로 둘지 정한다.
+
+업로드는 **비동기로 처리한다.** 저장소에 저장하고 즉시 응답한 뒤,
 워커가 집어서 파이프라인을 실행한다. 화면은 상태를 폴링한다.
+
+**조회는 `findByIdAndDeletedAtIsNull` · `findByInstitutionIdAndDeletedAtIsNull`을 쓴다.**
 
 **`hint_name` / `hint_birthdate`**
 
@@ -807,7 +802,7 @@ FAILED       실패
 
 **`deleted_at`과 S3 객체**
 
-행에 삭제 표시를 해도 **S3 객체는 지우지 않는다.** 원본은 모든 처리 결과의 근거이고,
+행에 삭제 표시를 해도 **저장소의 파일(S3 객체)은 지우지 않는다.** 원본은 모든 처리 결과의 근거이고,
 객체를 지우면 이미 만들어진 `journal_entry`의 출처를 확인할 수 없다.
 S3 객체의 실제 파기는 개인정보 파기 절차(§3.2 마지막)에서 함께 다룬다.
 
@@ -895,20 +890,24 @@ FAILED             실패
 | `matched_child_id` | BIGINT | Y | 매칭된 아동 |
 | `confidence` | DECIMAL(5,4) | Y | 최고 후보 신뢰도 |
 | `multi_reason` | VARCHAR(30) | Y | 복수 후보인 이유 |
-| `candidates` | JSON | Y | 후보 목록 `[{child_id, confidence}]` — ⚠️ 코드는 `TEXT` |
-| `evidence` | JSON | Y | 판정 근거 구간 `[{start, end}]` — ⚠️ 코드는 `TEXT` |
+| `candidates` | TEXT | Y | 후보 목록 JSON 문자열 `[{child_id, confidence}]` |
+| `evidence` | TEXT | Y | 판정 근거 구간 JSON 문자열 `[{start, end}]` |
 | `hint_mismatch` | BOOLEAN | Y | 표지 힌트와 다른 아동으로 판단했는지 |
-| `raw_response` | JSON | Y | AI 응답 원본 — ⚠️ 코드는 `TEXT` |
-| `model_version` | VARCHAR(100) | Y | ⚠️ 코드에만 있음. 응답을 낸 모델 버전 |
-| `reviewer_id` | VARCHAR(255) | Y | ⚠️ 코드에만 있음. 사람이 확인 큐에서 처리했으면 그 사용자 ID(문자열). NULL이면 AI 자동 확정 |
+| `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
+| `model_version` | VARCHAR(100) | Y | 응답을 낸 모델 버전 |
+| `reviewer_id` | VARCHAR(255) | Y | 사람이 확인 큐에서 처리했으면 그 `users.id`(문자열). NULL이면 AI 자동 확정. ⚠️ 타입 §0.3 |
 | `created_at` | DATETIME | N |  |
-| `updated_at` | DATETIME | N | ⚠️ 코드에만 있음 |
+| `updated_at` | DATETIME | N | 사람이 처리할 때 갱신 |
 
 설계상 실행 이력이라 삭제하지 않는다. `deleted_at`을 두지 않는다.
 
 > ⚠️ **현재 코드는 이 행을 수정한다.** 교사가 확인 필요 큐에서 아이를 확정하거나 "우리 기관 아님"으로
 > 제외하면 `status`를 `AUTO`로 바꾸고 `reviewer_id`를 채운다 (AI 계약에 "사람이 확정함" 상태가 없어서
 > "더 이상 검토 필요 없음"의 뜻으로 `AUTO`를 재사용). 설계의 "이력은 새 행을 쌓는다"와 다르다. §0.3 참고.
+>
+> 그래서 사람이 처리한 행은 `status`·`matched_child_id` 컬럼만 봐서는 **AI가 처음에 뭐라고 판정했는지 알 수 없다.**
+> AI 원래 판정은 `raw_response`에만 남아 있다. 운영 중 AI 정확도(자동 확정률, 사람이 AI 추천을 뒤집은 비율)를 볼 때는
+> `raw_response`를 파싱해야 한다.
 
 **`status`** — AI 계약과 1:1로 일치시킨다. API(JSON)로는 소문자로 내보낸다
 
@@ -1206,7 +1205,7 @@ status   SHARED | BLOCKED | FAILED
 | 7 | Summary Agent 계약 | 입출력이 확정되면 `summary_result` 컬럼 조정<br>**요청할 것 — "일지 여러 건을 한 번에 받아 글 하나로" 만들어달라고 지금 전달** | AI |
 | 8 | 개인정보 파기 절차 | 정보주체가 파기를 요구할 때 실제 삭제·익명화를 어떻게 하는지. soft delete로는 해결되지 않는다 | 기획 + BE |
 | 9 | DB FK 제약 재검토 | JPA 연관관계를 쓰지 않는 것과 **DB에 FK 제약을 거는 것은 별개 결정**이다. `Long` 컬럼을 유지한 채 DB 제약만 추가하면 실수로 참조를 깨뜨리는 것을 막을 수 있다 | BE 전체 |
-| 10 | 설계와 코드 불일치 정리 | §0.3 의 `raw_record` · `matching_result` 차이를 코드를 설계에 맞출지, 설계를 코드에 맞출지 | BE |
+| 10 | 설계와 코드 불일치 정리 | §0.3 의 남은 4건 — `raw_record.institution_id` 타입, `raw_record.status` 의미, `matching_result` 수정 방식과 `reviewer_id` 타입 | BE + AI |
 
 ---
 
@@ -1324,4 +1323,6 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 
 | 날짜 | 내용 | PR |
 | --- | --- | --- |
-| 2026-09-29 | 노션 「DB 수정본(9.25)」을 레포로 옮김. 현재 엔티티와 대조해 §0.3 불일치 목록 추가 | |
+| 2026-09-29 | 노션 「DB 수정본(9.25)」을 레포로 옮김. 현재 엔티티와 대조해 §0.3 불일치 목록 추가 | #70 |
+| 2026-09-29 | 이름·타입 차이는 설계를 코드에 맞춤 (`stored_path` `size_bytes` `content_type` NOT NULL, JSON → TEXT, `model_version`·`reviewer_id`, `human_review` 구현 반영) | #70 |
+| 2026-09-29 | `raw_record`에 `hint_name` `hint_birthdate` `updated_at` `deleted_at` 추가. 조회에 `DeletedAtIsNull` 적용 | #70 |
