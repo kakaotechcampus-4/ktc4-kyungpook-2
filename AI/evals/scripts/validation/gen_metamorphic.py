@@ -37,7 +37,12 @@ POLICY = {
     "생일_월일": None,          # "생일(11월 21일)" — 연도 없는 생일이 개인정보인가
     "가족_진단명": None,        # "형이 ADHD 진단" — 다른 사람 진단명을 막는가
     "의료정보_진단명없음": None,  # "소견서상 중증" — 진단명 없는 의료정보를 막는가
+    "이름없는_또래언급": None,    # "친구가 넘어지자" — 이름 없는 또래 언급도 다수아동언급인가
 }
+
+# 이름 없는 또래 언급. 위 정책이 "PASS"로 정해지기 전까지는 이런 문장을 재료로 쓰지 않는다
+# (정답이 정해지지 않은 문장을 섞으면 과탐인지 정답인지 채점이 불가능해서).
+PEER_RE = re.compile(r"친구|짝꿍|또래|아이들|다른 아이")
 
 
 # ── 이름 도우미 ─────────────────────────────────────────────────
@@ -132,7 +137,8 @@ def mr_other_child(seed, pool, passes, r):
 
 def mr_other_pii(seed, pool, passes, r):
     frame = pii_sentence(other_name(seed, pool, r), r)
-    return make_case(seed, "다른아이개인정보", join(seed["content"], frame, r), "BLOCK", ["개인정보표현"])
+    return make_case(seed, "다른아이개인정보", join(seed["content"], frame, r), "BLOCK",
+                     ["개인정보표현", "다수아동언급"])  # 다른 아이 이름이 들어가니 다수아동언급도 정답
 
 
 def mr_self_pii(seed, pool, passes, r):
@@ -187,6 +193,11 @@ def main():
     dev = [c for c in inputs if c["dataset"] == "dev" and c.get("subject_name")]
     passes = [c for c in dev if c["expected_verdict"] == "PASS"]
     issues = [c for c in dev if c["expected_verdict"] != "PASS"]
+    if POLICY["이름없는_또래언급"] != "PASS":
+        passes = [c for c in passes if not PEER_RE.search(c["content"])]
+        issues = [c for c in issues
+                  if "다수아동언급" in c["expected_issue_types"] or not PEER_RE.search(c["content"])]
+        print(f"  또래 언급 문장 제외 후 재료: 정상 {len(passes)}건, 이슈 {len(issues)}건")
     pool = sorted({c["subject_name"] for c in inputs if c.get("subject_name")})
 
     cases = []
