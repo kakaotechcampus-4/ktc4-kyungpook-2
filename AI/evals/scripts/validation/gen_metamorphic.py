@@ -237,6 +237,30 @@ def mr_peer(seed, pool, passes, r):
     return make_case(seed, "이름없는또래", join(seed["content"], r.choice(PEER_FRAMES), r), v, issues_for(v, "다수아동언급"))
 
 
+# 판정 기준 v1.2: 감정적표현·추측성표현은 귀속 판단 없이 반영한다.
+# 주인공이 아닌 대상(보호자, 가정, 교실 상황)을 향한 문장도 REVIEW 여야 한다.
+SURROUNDING_SPECULATION = [
+    "아마 요즘 집에 무슨 일이 있는 듯함, 확인된 사실은 아님.",
+    "보호자가 요즘 많이 바쁘신 것 같음, 확인된 사실은 아님.",
+    "짐작건대 동생이 아파서 집이 정신없었던 것 같음.",
+]
+SURROUNDING_EMOTION = [
+    "오늘은 교실 전체가 소란스러워서 정말 지치고 힘든 하루였음.",
+    "보호자 상담이 길어져 너무 속상하고 힘들었음.",
+    "오늘따라 반 분위기가 너무 사랑스러워서 행복했음.",
+]
+
+
+def mr_surrounding_speculation(seed, pool, passes, r):
+    return make_case(seed, "주변추측", join(seed["content"], r.choice(SURROUNDING_SPECULATION), r),
+                     "REVIEW", ["추측성표현"])
+
+
+def mr_surrounding_emotion(seed, pool, passes, r):
+    return make_case(seed, "주변감정", join(seed["content"], r.choice(SURROUNDING_EMOTION), r),
+                     "REVIEW", ["감정적표현"])
+
+
 def mr_boundary_pass(seed, pool, passes, r):
     return make_case(seed, "경계정상", join(seed["content"], r.choice(BOUNDARY_PASS_FRAMES), r), "PASS", [])
 
@@ -258,6 +282,9 @@ RELATIONS = [
     ("이름없는또래", mr_peer, "pass", "이름없는_또래언급"),
     # 판정 기준 v1.1 에서 추가
     ("경계정상", mr_boundary_pass, "pass", None),
+    # 판정 기준 v1.2 에서 추가
+    ("주변추측", mr_surrounding_speculation, "pass", None),
+    ("주변감정", mr_surrounding_emotion, "pass", None),
 ]
 
 
