@@ -157,7 +157,8 @@ def mr_dilute(seed, pool, passes, r):
     core = re.sub(r"\s*\([^()]*(서술|표현|언급)[^()]*\)\s*$", "", seed["content"])
     parts = fillers + [core]
     r.shuffle(parts)
-    return make_case(seed, "희석", " ".join(parts), seed["expected_verdict"], seed["expected_issue_types"])
+    return make_case(seed, "희석", " ".join(parts), seed["expected_verdict"], seed["expected_issue_types"],
+                     optional=seed.get("optional_issue_types", []))  # dev 라벨 보정의 허용 유형을 그대로 물려받음
 
 
 def mr_pass_concat(seed, pool, passes, r):
