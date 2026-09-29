@@ -73,6 +73,7 @@ python3 evals/scripts/validation/run_suite.py                                # �
 | `test_no_subject.py` | 판정 대상을 모를 때 REVIEW 로 보내는 규칙 확인 | 노드 로직을 고칠 때마다 |
 | `gen_metamorphic.py` | dev 문장을 변형해 정답이 정해진 케이스 자동 생성 (LLM 호출 없음) | 처음 한 번, 판정 기준이 바뀔 때 |
 | `run_suite.py` | 실행 → 채점 → 틀린 원인 분류 → 지난번 대비 회귀 체크 | 코드를 고칠 때마다 |
+| `test_prompt_sync.py` | README 유형 정의 표와 프롬프트·config 가 같은지 검사 (LLM 호출 없음) | 판정 기준이나 프롬프트를 고칠 때마다 |
 | `pick_holdout_subset.py` | holdout 에서 재작성 대상 선정 | 이미 끝남, 다시 돌리지 않는다 |
 
 ## 입력 형식
@@ -95,9 +96,16 @@ python3 evals/scripts/validation/run_suite.py                                # �
 
 ## 판정 기준
 
-이 절이 판정의 기준이다. 프롬프트(`validation/nodes.py`)의 유형 정의, 귀속 예외
-(`validation/config.py`), 변형 테스트의 `POLICY` 는 항상 이 절과 같아야 한다.
-기준을 바꿀 때는 이 절을 먼저 고치고 커밋한 다음 코드를 고친다.
+이 절이 판정의 기준이다. 아래 세 곳은 항상 이 절과 같아야 한다.
+
+| 이 절 | 코드 | 일치 확인 |
+|---|---|---|
+| 유형 정의 표 (정의, 판정) | `validation/prompts.py` `ISSUE_DEFINITIONS`, `validation/config.py` `ISSUE_LEVEL` | `test_prompt_sync.py` 가 자동 검사 |
+| 근거의 귀속 예외 | `validation/config.py` `ATTRIBUTION_EXEMPT` | 사람이 확인 |
+| 결정한 경계 사례 | 변형 테스트 `gen_metamorphic.py` `POLICY` | 사람이 확인 |
+
+기준을 바꿀 때는 이 절을 먼저 고치고 커밋한 다음 코드를 고친다. 유형 정의 표의 문장은
+`ISSUE_DEFINITIONS` 에 그대로 옮긴다. 한 글자라도 다르면 `test_prompt_sync.py` 가 실패한다.
 
 ### 판정 3종
 
