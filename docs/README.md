@@ -9,6 +9,12 @@
 | [api/api-conventions.md](api/api-conventions.md) | 외부 API 경로, 응답 형식, 오류 코드, HTTP 상태 코드 규약 |
 | [api/api-spec.md](api/api-spec.md) | 프론트엔드가 요청하는 엔드포인트 명세 · 확정 필요 사항 · 구현 우선순위 |
 
+## DB
+
+| 문서 | 역할 |
+| --- | --- |
+| [db/schema.md](db/schema.md) | DB 스키마 원본 (노션은 사본). **엔티티를 바꾸면 같은 PR에서 갱신** |
+
 ## 프론트엔드
 
 | 문서 | 역할 |

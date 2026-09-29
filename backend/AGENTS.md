@@ -209,6 +209,7 @@ PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션을 변경한 경우�
 | --- | --- |
 | API 경로, 요청·응답, HTTP 상태, 오류 코드 | `docs/api/api-conventions.md`, 컨트롤러 OpenAPI annotation, `global.config.OpenApiConfig`, `/v3/api-docs` 검증 테스트 |
 | JDK, Spring Boot, 의존성, DB 변경 | `build.gradle`, `backend/README.md`, 이 문서의 기술 스택 |
+| Entity·테이블·컬럼·제약·enum 값 변경 | `docs/db/schema.md` (예외 없이 같은 PR에서 갱신) |
 | 실행 명령, 프로필, 환경 변수 변경 | `backend/README.md` |
 | 패키지 구조나 계층 책임 변경 | `backend/AGENTS.md` |
 | 인증·인가 API 계약 변경 | `docs/api/api-conventions.md`, `SecurityConfig`, `global.config.OpenApiConfig`, 관련 endpoint의 OpenAPI 보안 요구 사항 |

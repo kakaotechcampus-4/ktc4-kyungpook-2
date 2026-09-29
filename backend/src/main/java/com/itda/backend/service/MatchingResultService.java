@@ -103,7 +103,7 @@ public class MatchingResultService {
     private Optional<OwnedContext> resolveOwnedContext(Long journalEntryId, String institutionId) {
         return journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId)
                 .filter(entry -> entry.getRawRecordId() != null)
-                .flatMap(entry -> rawRecordRepository.findById(entry.getRawRecordId())
+                .flatMap(entry -> rawRecordRepository.findByIdAndDeletedAtIsNull(entry.getRawRecordId())
                         .filter(record -> record.getInstitutionId().equals(institutionId))
                         .map(record -> new OwnedContext(entry, record)));
     }
