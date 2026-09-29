@@ -9,6 +9,7 @@ import re
 
 from .config import ISSUE_LEVEL, STRUCTURAL_PII_PATTERNS, ATTRIBUTION_EXEMPT
 from .llm import ask_json, LlmError, spans_for_quotes
+from .prompts import build_messages
 
 
 def perceive(state: dict) -> dict:
@@ -32,49 +33,10 @@ def plan(state: dict) -> dict:
 
 
 def act(state: dict) -> dict:
-    """행동: Luna 호출. 여기서만 LLM을 쓴다."""
+    """행동: Luna 호출. 여기서만 LLM을 쓴다. 프롬프트 내용은 prompts.py 에 있다."""
     print(f"[validation] journal_entry_id={state.get('journal_entry_id')} 처리 중")
-    
-    content = state["content"]
-    subject_name = state.get("subject_name")
 
-    # 대상을 알면 이름을 명시하고, 모르면 모델한테도 "모른다"고 알려서
-    # attributed_to_subject를 스스로 false로 두게 유도한다 (2차 방어선).
-    subject_line = (
-        f'지금 판정 대상 아동은 "{subject_name}"입니다. 각 유형이 있다면, '
-        f'그것이 {subject_name} 본인에 대한 서술인지 판단하세요.'
-        if subject_name else
-        '이번 요청에는 판정 대상 아동 정보가 제공되지 않았습니다. '
-        '이 경우 attributed_to_subject는 항상 false로 표시하세요.'
-    )
-
-    messages = [{
-        "role": "user",
-
-        "content": f"""다음 관찰 기록에서 아래 7개 유형 중 해당하는 것이 있는지 판단하세요.
-
-BLOCK:
-- 진단명: 진단명, 장애 등급, 중증도, 소견서·검사 결과, 복용 약 등 의료·건강 정보. 진단명이 직접 쓰이지 않아도 해당한다 ("소견서상 중증")
-- 개인정보표현: 연락처, 주소, 생년월일 등 사람을 식별할 수 있는 정보. 연도 없는 생일("생일(11월 21일)")도 포함한다
-
-REVIEW:
-- 확정적표현: 진단은 아니지만 아이의 미래나 성향을 단정하는 서술 ("절대 바뀌지 않을 것")
-- 다수아동언급: 이름이나 호칭으로 특정되는 다른 아이가 한 명이라도 나온다. 이름 없는 "친구", "다른 아이들"은 해당하지 않는다
-- 추측성표현: 근거 없이 원인이나 사정을 추측한다 ("아마 집에서 무슨 일이", "짐작건대")
-- 감정적표현: 관찰이 아니라 작성자의 주관적 감정이 드러난다. 지나친 애정 표현, 힘들다는 하소연을 포함한다
-- 위험행동표현: 자해·타해·이탈·위험한 장소에서의 행동 등 아이의 안전을 위협하는 행동의 기록, 또는 그런 행동을 필요 이상으로 상세하게 묘사한 것
-
-판정 대상 아이가 아닌 다른 사람(가족, 다른 아이)에 대한 내용이어도 해당하면 빠짐없이 나열하세요.
-
-{subject_line}
-
-{subject_line}
-
-기록: {content}
-
-JSON 형식으로만 답하세요:
-{{"issues": [{{"issue_type": "진단명", "attributed_to_subject": true, "evidence_quote": "원문 인용"}}]}}"""
-    }]
+    messages = build_messages(state["content"], state.get("subject_name"))
 
     try:
         result = ask_json(messages)
