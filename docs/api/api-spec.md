@@ -438,20 +438,32 @@ POST /api/v1/auth/signup   → 201 Created
 | `summarizing` | 요약 |
 | `gate1_pending` | 1차 검토 대기 |
 
-**O-22 응답** · `MatchStatus`가 `confirmed`인 건은 포함하지 않습니다.
+**O-22 응답** · `status`가 `auto`인 건은 포함하지 않습니다.
 
 ```json
 [
   { "id": "mq_1",
-    "record": { "id": "raw_3", "fileName": "0821_활동일지.docx", "type": "활동일지",
-                "capturedAt": "2026-08-21T14:10:00+09:00", "preview": "…" },
+    "record": { "id": "raw_3", "fileName": "0821_활동일지.docx",
+                "capturedAt": "2026-08-21", "preview": "…" },
     "status": "multi",
     "confidence": 0.62,
-    "candidates": [ { "childId": "child_1", "name": "김하늘", "group": "햇살반" } ] }
+    "multiReason": "ambiguous_identity",
+    "hintMismatch": false,
+    "candidates": [ { "childId": "child_1", "name": "김하늘", "birthDate": "2020-01-01", "confidence": 0.62 } ],
+    "evidence": [ { "start": 12, "end": 15 } ] }
 ]
 ```
 
-`status`: `multi` · `unmatched` · `low` · `confidence`: 0.0~1.0 (`unmatched`면 `null`)
+- `status`: `auto` · `review` · `multi` · `unmatched` · `failed` — AI 매칭 에이전트 실제 계약(`AI/matching/schemas.py`)값 그대로 (9/22 팀 확인, 9/24 DB초안 반영). `failed`는 AI 호출 자체가 실패했을 때만 쓰는 BE 전용 값
+- `confidence`: 0.0~1.0, 항상 채워짐 (AI 계약 기본값 0.0) — `multi`면 후보 중 최고점과 같음
+- `multiReason`: `status`가 `multi`일 때만 채워짐 — `ambiguous_identity` · `co_mention`
+- `hintMismatch`: 표지 힌트와 다른 아동으로 판단했는지
+- `evidence`: 판정 근거가 된 본문 구간(`{start, end}`, 유니코드 코드포인트 인덱스)
+- `record`/`candidates[].{name,birthDate}`은 이제 JournalEntry·Child 조회로 채워서 내려갑니다(PR #35, feat/be/#31).
+  다만 **`record.type`(기록 유형)과 `candidates[].group`(반)은 DB에 그 값을 담을 컬럼 자체가 없어서 여전히 못 채웁니다** —
+  `RawRecord`엔 기록 유형 컬럼이, `Child`엔 반 컬럼이 없습니다. 프론트 `types.ts`의 `RawRecord.type`/후보 `group`은 당장은 빈 값으로 와야 합니다.
+- 프론트 `types.ts`는 "화면에 숫자를 띄우면 교사가 근거로 삼게 된다"는 이유로 `confidence`를 일부러 타입에서 뺐는데,
+  BE는 위와 같이 최상위/후보별 `confidence`를 그대로 내려줍니다. 화면에서 안 쓰면 되지만, 필드 자체는 내려간다는 점 확인해주세요.
 
 **O-23 요청** · 프론트는 선택한 아이를 함께 보냅니다.
 
