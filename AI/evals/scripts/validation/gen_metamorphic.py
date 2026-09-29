@@ -110,7 +110,8 @@ def join(a: str, b: str, r) -> str:
 
 
 # ── 변형 관계 ────────────────────────────────────────────────────
-def make_case(seed, relation, content, verdict, issues):
+def make_case(seed, relation, content, verdict, issues, optional=()):
+    """optional: 잡아도 되고 안 잡아도 되는 유형 (잡았다고 과탐, 안 잡았다고 미감지로 치지 않음)"""
     return {
         "case_id": f"MT_{relation}_{seed['case_id']}",
         "journal_entry_id": seed.get("journal_entry_id"),
@@ -119,6 +120,7 @@ def make_case(seed, relation, content, verdict, issues):
         "content": content,
         "expected_verdict": verdict,
         "expected_issue_types": issues,
+        "optional_issue_types": list(optional),
         "dataset": "metamorphic",
         "relation": relation,
         "seed_case_id": seed["case_id"],
@@ -138,7 +140,8 @@ def mr_other_child(seed, pool, passes, r):
 def mr_other_pii(seed, pool, passes, r):
     frame = pii_sentence(other_name(seed, pool, r), r)
     return make_case(seed, "다른아이개인정보", join(seed["content"], frame, r), "BLOCK",
-                     ["개인정보표현", "다수아동언급"])  # 다른 아이 이름이 들어가니 다수아동언급도 정답
+                     ["개인정보표현"],
+                     optional=["다수아동언급"])  # 다른 아이 이름이 들어가니 다수아동언급을 같이 잡아도 정답
 
 
 def mr_self_pii(seed, pool, passes, r):

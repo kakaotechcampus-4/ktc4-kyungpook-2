@@ -14,6 +14,8 @@
     python3 evals/scripts/validation/run_suite.py                              # dev 전체
     python3 evals/scripts/validation/run_suite.py --cases metamorphic_cases.json
     python3 evals/scripts/validation/run_suite.py --cases metamorphic_cases.json --limit 20
+    python3 evals/scripts/validation/run_suite.py --cases metamorphic_cases.json --rescore
+        (--rescore: LLM 을 다시 부르지 않고 지난 실행 결과로 채점만 다시 한다. 비용 0)
 
 결과:
     generated/validation/runs/<이름>_latest.json   이번 실행 결과 (다음 실행의 비교 기준)
@@ -64,7 +66,8 @@ def diagnose(case, out) -> list[str]:
     """틀린 이유 목록. 빈 목록이면 정답."""
     reasons = []
     expected = set(case["expected_issue_types"])
-    final = set(out["issue_types"])
+    optional = set(case.get("optional_issue_types", []))
+    final = set(out["issue_types"]) - optional
     seen = {i.get("issue_type") for i in out["llm_issues"]}
     attributed = {i.get("issue_type") for i in out["llm_issues"] if i.get("attributed_to_subject")}
 
@@ -99,24 +102,36 @@ def main():
     ap.add_argument("--cases", default="validation_inputs.json", help="generated/validation/ 안의 파일 이름")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--rescore", action="store_true", help="LLM 호출 없이 지난 결과로 다시 채점")
     args = ap.parse_args()
 
     cases = load_cases(args.cases, args.limit)
     run_name = Path(args.cases).stem
     print(f"실행 대상: {len(cases)}건 ({args.cases}, 동시 {args.workers}개)")
 
-    graph = build_graph()
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    latest_path = RUNS_DIR / f"{run_name}_latest.json"
+    prev_data = json.loads(latest_path.read_text(encoding="utf-8")) if latest_path.exists() else None
+
     outputs, errors = {}, []
-    with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futures = [ex.submit(run_one, c, graph) for c in cases]
-        for i, fut in enumerate(as_completed(futures), 1):
-            cid, out, err = fut.result()
-            if out is not None:
-                outputs[cid] = out
-            else:
-                errors.append((cid, err))
-            if i % 50 == 0 or i == len(cases):
-                print(f"  {i}/{len(cases)} 완료...")
+    if args.rescore:
+        if prev_data is None:
+            raise SystemExit("지난 실행 결과가 없음 — --rescore 없이 먼저 한 번 실행할 것")
+        outputs = {c["case_id"]: prev_data["outputs"][c["case_id"]]
+                   for c in cases if c["case_id"] in prev_data["outputs"]}
+        print(f"재채점: 지난 결과 {len(outputs)}건 사용 (LLM 호출 없음)")
+    else:
+        graph = build_graph()
+        with ThreadPoolExecutor(max_workers=args.workers) as ex:
+            futures = [ex.submit(run_one, c, graph) for c in cases]
+            for i, fut in enumerate(as_completed(futures), 1):
+                cid, out, err = fut.result()
+                if out is not None:
+                    outputs[cid] = out
+                else:
+                    errors.append((cid, err))
+                if i % 50 == 0 or i == len(cases):
+                    print(f"  {i}/{len(cases)} 완료...")
 
     # ── 채점 ──
     by_group = defaultdict(Counter)       # relation(없으면 expected 유형) 별 정답/전체
@@ -132,6 +147,8 @@ def main():
         reasons = diagnose(c, out)
         ok = not reasons and out["verdict"] == c["expected_verdict"]
         by_group[group]["total"] += 1
+        if out["verdict"] == c["expected_verdict"]:
+            by_group[group]["verdict_ok"] += 1
         if ok:
             by_group[group]["ok"] += 1
             passed_ids.add(c["case_id"])
@@ -144,11 +161,9 @@ def main():
         failures.append((s, c, out, reasons))
 
     # ── 회귀: 지난번엔 맞았는데 이번엔 틀린 것 ──
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    latest_path = RUNS_DIR / f"{run_name}_latest.json"
     regressions, fixed = [], []
-    if latest_path.exists():
-        prev = set(json.loads(latest_path.read_text(encoding="utf-8"))["passed_ids"])
+    if prev_data is not None and not args.rescore:
+        prev = set(prev_data["passed_ids"])
         now_failed = {c["case_id"] for _, c, _, _ in failures}
         regressions = sorted(prev & now_failed)
         fixed = sorted(passed_ids - prev)
@@ -160,16 +175,19 @@ def main():
     failures.sort(key=lambda f: order[f[0]])
     total = sum(g["total"] for g in by_group.values())
     ok = sum(g["ok"] for g in by_group.values())
+    vok = sum(g["verdict_ok"] for g in by_group.values())
 
     lines = [f"# {run_name} 결과", "",
-             f"- 정답 {ok}/{total}, 에러 {len(errors)}건",
+             f"- 판정 정답 {vok}/{total} · 유형까지 정답 {ok}/{total} · 에러 {len(errors)}건",
              f"- 치명적(BLOCK→PASS) **{sev['치명적']}** · 준치명적(REVIEW→PASS) **{sev['준치명적']}** "
              f"· 등급하락(BLOCK→REVIEW) {sev['등급하락']} · 과탐 {sev['과탐']}",
              f"- 원인: " + (", ".join(f"{k} {v}" for k, v in reason_count.most_common()) or "없음"),
              f"- 회귀(지난번 정답 → 이번 오답): **{len(regressions)}**건, 새로 맞힌 것: {len(fixed)}건",
-             "", "| 그룹 | 정답률 |", "|---|---|"]
+             "", "| 그룹 | 판정 정답 | 유형까지 정답 |", "|---|---|---|"]
     for g, cnt in sorted(by_group.items()):
-        lines.append(f"| {g} | {cnt['ok']}/{cnt['total']} ({cnt['ok'] / cnt['total'] * 100:.0f}%) |")
+        t = cnt["total"]
+        lines.append(f"| {g} | {cnt['verdict_ok']}/{t} ({cnt['verdict_ok'] / t * 100:.0f}%) "
+                     f"| {cnt['ok']}/{t} ({cnt['ok'] / t * 100:.0f}%) |")
     if regressions:
         lines += ["", "## 회귀", ""] + [f"- {cid}" for cid in regressions]
     lines += ["", "## 틀린 케이스", ""]
