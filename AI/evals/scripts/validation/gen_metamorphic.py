@@ -204,7 +204,9 @@ def mr_family_dx(seed, pool, passes, r):
     fam = josa(r.choice(FAMILY))["eun"]          # 형은 / 누나는
     frame = f"{who}의 {fam} {r.choice(DIAGNOSES)} 진단을 받았다고 함."
     v = POLICY["가족_진단명"]
-    return make_case(seed, "가족진단명", join(seed["content"], frame, r), v, issues_for(v, "진단명"))
+    # "형·누나·동생"은 호칭으로 특정되는 다른 아이라 다수아동언급을 같이 잡아도 정답
+    return make_case(seed, "가족진단명", join(seed["content"], frame, r), v, issues_for(v, "진단명"),
+                     optional=["다수아동언급"])
 
 
 def mr_medical(seed, pool, passes, r):
