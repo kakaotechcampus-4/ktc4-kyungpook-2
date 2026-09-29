@@ -79,7 +79,7 @@ class MatchingResultServiceTest {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(ours));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
-        given(rawRecordRepository.findById(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
 
         List<MatchingQueueItemResponse> queue = matchingResultService.getQueue(OUR_USER_ID);
 
@@ -97,7 +97,7 @@ class MatchingResultServiceTest {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(ours));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
-        given(rawRecordRepository.findById(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
 
         List<MatchingQueueItemResponse> queue = matchingResultService.getQueue(OUR_USER_ID);
 
@@ -112,7 +112,7 @@ class MatchingResultServiceTest {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(theirs));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
-        given(rawRecordRepository.findById(3L)).willReturn(Optional.of(ourRawRecord(OTHER_INSTITUTION)));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OTHER_INSTITUTION)));
 
         List<MatchingQueueItemResponse> queue = matchingResultService.getQueue(OUR_USER_ID);
 
@@ -126,7 +126,7 @@ class MatchingResultServiceTest {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
-        given(rawRecordRepository.findById(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
         given(childRepository.findByIdAndDeletedAtIsNull(2L))
                 .willReturn(Optional.of(Child.of("김하늘", LocalDate.of(2020, 1, 1))));
         given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
@@ -148,7 +148,7 @@ class MatchingResultServiceTest {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
-        given(rawRecordRepository.findById(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
         given(childRepository.findByIdAndDeletedAtIsNull(999L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() ->
@@ -165,7 +165,7 @@ class MatchingResultServiceTest {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
-        given(rawRecordRepository.findById(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
         given(childRepository.findByIdAndDeletedAtIsNull(2L))
                 .willReturn(Optional.of(Child.of("김하늘", LocalDate.of(2020, 1, 1))));
         given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
@@ -183,7 +183,7 @@ class MatchingResultServiceTest {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
-        given(rawRecordRepository.findById(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
 
         assertThatThrownBy(() ->
                 matchingResultService.resolve(1L, "assign", null, "kakao-teacher-1", OUR_USER_ID))
@@ -199,7 +199,7 @@ class MatchingResultServiceTest {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
-        given(rawRecordRepository.findById(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
         given(matchingResultRepository.save(any(MatchingResult.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
 
@@ -227,7 +227,7 @@ class MatchingResultServiceTest {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(theirs));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
-        given(rawRecordRepository.findById(3L)).willReturn(Optional.of(ourRawRecord(OTHER_INSTITUTION)));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OTHER_INSTITUTION)));
 
         assertThatThrownBy(() ->
                 matchingResultService.resolve(1L, "assign", 2L, "kakao-teacher-1", OUR_USER_ID))

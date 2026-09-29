@@ -140,7 +140,7 @@ class RawRecordServiceTest {
         RawRecord record = new RawRecord(
                 String.valueOf(ORGANIZATION_ID), "note.csv", "stored.csv", "text/csv", 10L,
                 RawRecordStatus.PENDING);
-        given(rawRecordRepository.findById(1L)).willReturn(Optional.of(record));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(record));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
         RawRecord found = rawRecordService.getById(1L, ORG_USER_ID);
@@ -153,7 +153,7 @@ class RawRecordServiceTest {
         RawRecord record = new RawRecord(
                 String.valueOf(ORGANIZATION_ID), "note.csv", "stored.csv", "text/csv", 10L,
                 RawRecordStatus.PENDING);
-        given(rawRecordRepository.findById(1L)).willReturn(Optional.of(record));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(record));
         given(userService.getOrganizationIdOf(OTHER_ORG_USER_ID)).willReturn(99L);
 
         assertThatThrownBy(() -> rawRecordService.getById(1L, OTHER_ORG_USER_ID))
@@ -164,11 +164,11 @@ class RawRecordServiceTest {
     @Test
     void getByInstitution_scopedToCallersOrganization() {
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
-        given(rawRecordRepository.findByInstitutionId(String.valueOf(ORGANIZATION_ID)))
+        given(rawRecordRepository.findByInstitutionIdAndDeletedAtIsNull(String.valueOf(ORGANIZATION_ID)))
                 .willReturn(java.util.List.of());
 
         assertThat(rawRecordService.getByInstitution(ORG_USER_ID)).isEmpty();
 
-        verify(rawRecordRepository).findByInstitutionId(String.valueOf(ORGANIZATION_ID));
+        verify(rawRecordRepository).findByInstitutionIdAndDeletedAtIsNull(String.valueOf(ORGANIZATION_ID));
     }
 }
