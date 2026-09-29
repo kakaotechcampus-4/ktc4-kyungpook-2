@@ -148,4 +148,19 @@ class MatchingServiceTest {
         assertThat(released).isEqualTo(2);
         assertThat(matchingService.claimPending(10)).hasSize(2);
     }
+
+    @Test
+    void 집어_갔던_일지를_대기로_돌려놓는다() {
+        RawRecord rawRecord = rawRecord(String.valueOf(ours.getId()));
+        JournalEntry claimed = entry(rawRecord);
+        JournalEntry notClaimed = entry(rawRecord);
+        matchingService.claimPending(1);
+
+        matchingService.release(List.of(claimed.getId(), notClaimed.getId()));
+        em.flush();
+        em.clear();
+
+        assertThat(em.find(JournalEntry.class, claimed.getId()).getStatus()).isEqualTo(JournalEntryStatus.PENDING);
+        assertThat(em.find(JournalEntry.class, notClaimed.getId()).getStatus()).isEqualTo(JournalEntryStatus.PENDING);
+    }
 }

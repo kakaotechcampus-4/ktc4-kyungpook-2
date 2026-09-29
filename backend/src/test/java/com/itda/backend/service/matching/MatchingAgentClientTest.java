@@ -9,6 +9,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.List;
@@ -26,6 +27,7 @@ import com.itda.backend.domain.MultiReason;
 import com.itda.backend.dto.request.MatchingAgentRequest;
 import com.itda.backend.dto.response.MatchingAgentResponse;
 import com.itda.backend.exception.MatchingAgentException;
+import com.itda.backend.exception.MatchingAgentUnavailableException;
 
 class MatchingAgentClientTest {
 
@@ -122,7 +124,8 @@ class MatchingAgentClientTest {
         server.expect(requestTo(AI + "/matching")).andRespond(withServerError());
         server.expect(requestTo(AI + "/matching")).andRespond(withServerError());
 
-        assertThatThrownBy(() -> client.match(request())).isInstanceOf(MatchingAgentException.class);
+        // AI 가 응답하지 못하는 상태라는 뜻 — 워커는 이 예외를 보고 이번 차례를 멈춘다.
+        assertThatThrownBy(() -> client.match(request())).isInstanceOf(MatchingAgentUnavailableException.class);
         server.verify();
     }
 
@@ -130,8 +133,29 @@ class MatchingAgentClientTest {
     void 요청이_잘못됐다는_응답은_다시_시도하지_않는다() {
         server.expect(requestTo(AI + "/matching")).andRespond(withBadRequest());
 
-        assertThatThrownBy(() -> client.match(request())).isInstanceOf(MatchingAgentException.class);
+        assertThatThrownBy(() -> client.match(request()))
+                .isInstanceOf(MatchingAgentException.class)
+                .isNotInstanceOf(MatchingAgentUnavailableException.class);
         server.verify();
+    }
+
+    @Test
+    void AI_상태_확인이_성공하면_사용_가능하다() {
+        server.expect(requestTo(AI + "/health")).andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"status\": \"ok\"}", MediaType.APPLICATION_JSON));
+
+        assertThat(client.isAvailable()).isTrue();
+    }
+
+    @Test
+    void AI_상태_확인이_실패하면_사용할_수_없다() {
+        server.expect(requestTo(AI + "/health")).andRespond(withServerError());
+        server.expect(requestTo(AI + "/health")).andRespond(request -> {
+            throw new ConnectException("Connection refused");
+        });
+
+        assertThat(client.isAvailable()).isFalse();
+        assertThat(client.isAvailable()).isFalse();
     }
 
     @Test

@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.dto.request.MatchingAgentRequest;
 import com.itda.backend.dto.response.MatchingAgentResponse;
 import com.itda.backend.exception.MatchingAgentException;
+import com.itda.backend.exception.MatchingAgentUnavailableException;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -54,7 +55,7 @@ public class MatchingAgentClient {
                 return new MatchingAgentReply(parse(body), body);
             } catch (ResourceAccessException | HttpServerErrorException e) {
                 if (attempt >= retryBackoffs.size()) {
-                    throw new MatchingAgentException(
+                    throw new MatchingAgentUnavailableException(
                             "matching agent call failed after retries journalEntryId=" + request.journalEntryId(), e);
                 }
                 log.warn("matching agent call failed, retrying journalEntryId={} attempt={}",
@@ -64,6 +65,16 @@ public class MatchingAgentClient {
                 throw new MatchingAgentException(
                         "matching agent rejected request journalEntryId=" + request.journalEntryId(), e);
             }
+        }
+    }
+
+    /** 일지를 집기 전에 AI 가 떠 있는지 본다. 꺼져 있을 때 일지를 집으면 전부 실패로 남기 때문이다. */
+    public boolean isAvailable() {
+        try {
+            restClient.get().uri("/health").retrieve().toBodilessEntity();
+            return true;
+        } catch (RestClientException e) {
+            return false;
         }
     }
 
@@ -82,6 +93,7 @@ public class MatchingAgentClient {
         try {
             Thread.sleep(backoff);
         } catch (InterruptedException e) {
+            // 앱 종료 중이다. 인터럽트 표시를 되살려 두면 워커가 보고 실패로 남기지 않고 멈춘다.
             Thread.currentThread().interrupt();
             throw new MatchingAgentException("interrupted while waiting to retry", e);
         }

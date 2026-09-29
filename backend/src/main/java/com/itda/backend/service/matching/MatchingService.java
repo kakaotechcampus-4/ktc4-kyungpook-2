@@ -63,6 +63,14 @@ public class MatchingService {
                 toText(rawRecord.getHintBirthdate()));
     }
 
+    /** 집어 갔지만 처리하지 않은 일지를 대기로 돌려놓는다. 이미 다른 상태로 바뀐 일지는 건드리지 않는다. */
+    @Transactional
+    public void release(List<Long> journalEntryIds) {
+        journalEntryRepository.findAllById(journalEntryIds).stream()
+                .filter(entry -> entry.getStatus() == JournalEntryStatus.MATCHING)
+                .forEach(JournalEntry::releaseMatching);
+    }
+
     /** 이전에 꺼진 앱이 처리하다 만 일지를 대기로 되돌린다. 워커가 첫 실행에서 한 번만 부른다. */
     @Transactional
     public int releaseStuck() {
