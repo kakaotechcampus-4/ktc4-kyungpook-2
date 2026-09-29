@@ -7,7 +7,7 @@ Validation Agent의 4단계 노드 — 인식/계획/행동/반영.
 """
 import re
 
-from .config import ISSUE_LEVEL, STRUCTURAL_PII_PATTERNS
+from .config import ISSUE_LEVEL, STRUCTURAL_PII_PATTERNS, ATTRIBUTION_EXEMPT
 from .llm import ask_json, LlmError, spans_for_quotes
 
 
@@ -143,7 +143,7 @@ def reflect(state: dict) -> dict:
         if issue_type not in ISSUE_LEVEL:
             continue  # 허용된 유형 목록 밖 값은 무시 (Matching의 "명부 밖 ID 무시"와 같은 원리)
 
-        if not candidate.get("attributed_to_subject"):
+        if issue_type not in ATTRIBUTION_EXEMPT and not candidate.get("attributed_to_subject"):
             continue  # ⚠️ 귀속 검증 핵심 지점
 
         quote = candidate.get("evidence_quote", "")
