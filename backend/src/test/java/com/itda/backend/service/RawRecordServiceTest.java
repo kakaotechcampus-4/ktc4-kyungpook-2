@@ -17,8 +17,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
+import com.itda.backend.domain.JournalEntry;
 import com.itda.backend.domain.RawRecord;
 import com.itda.backend.domain.RawRecordStatus;
 import com.itda.backend.exception.RawRecordNotFoundException;
@@ -26,6 +29,7 @@ import com.itda.backend.exception.RawRecordStorageException;
 import com.itda.backend.exception.RawRecordValidationException;
 import com.itda.backend.exception.UserErrorCode;
 import com.itda.backend.exception.UserException;
+import com.itda.backend.repository.JournalEntryRepository;
 import com.itda.backend.repository.RawRecordRepository;
 import com.itda.backend.service.storage.RawFileStorage;
 
@@ -47,11 +51,16 @@ class RawRecordServiceTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private JournalEntryRepository journalEntryRepository;
+
     private RawRecordService rawRecordService;
 
     @BeforeEach
     void setUp() {
-        rawRecordService = new RawRecordService(rawRecordRepository, rawFileStorage, userService);
+        // JournalEntrySplitter는 의존성 없는 순수 로직이라 목 대신 실제 구현을 쓴다.
+        rawRecordService = new RawRecordService(
+                rawRecordRepository, rawFileStorage, userService, journalEntryRepository, new JournalEntrySplitter());
     }
 
     /** 보호자처럼 기관 소속이 아닌 사용자는 파일이 저장소에 올라가기 전에 막혀야 한다. */
@@ -133,6 +142,73 @@ class RawRecordServiceTest {
         // 카카오 회원번호가 아니라 사용자의 소속 기관 id 로 기록된다.
         assertThat(saved.getInstitutionId()).isEqualTo(String.valueOf(ORGANIZATION_ID));
         verify(rawFileStorage, never()).delete(anyString());
+    }
+
+    /** 날짜 헤더 없는 txt/csv는 전체가 기록 1건으로 저장된다. */
+    @Test
+    void ingest_splitsTextFileWithoutDateHeaderIntoSingleJournalEntry() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "그냥 관찰 문장 하나".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRepository.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, times(1)).save(captor.capture());
+        assertThat(captor.getValue().getContent()).isEqualTo("그냥 관찰 문장 하나");
+        assertThat(captor.getValue().getSequenceNo()).isEqualTo(1);
+    }
+
+    /** 날짜 헤더가 있으면 헤더마다 기록이 나뉘고, 각 기록의 날짜도 채워진다. */
+    @Test
+    void ingest_splitsTextFileWithDateHeadersIntoMultipleJournalEntries() throws Exception {
+        String content = "9/15 자유놀이 중 블록을 높이 쌓았다.\n9/16 미술 시간에 그림을 완성함.";
+        MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", content.getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRepository.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, times(2)).save(captor.capture());
+        List<JournalEntry> saved = captor.getAllValues();
+        assertThat(saved.get(0).getContent()).isEqualTo("자유놀이 중 블록을 높이 쌓았다.");
+        assertThat(saved.get(0).getEntryDate().getMonthValue()).isEqualTo(9);
+        assertThat(saved.get(0).getEntryDate().getDayOfMonth()).isEqualTo(15);
+        assertThat(saved.get(1).getContent()).isEqualTo("미술 시간에 그림을 완성함.");
+    }
+
+    /** pdf처럼 아직 텍스트를 못 뽑는 형식은 기록 분리를 건너뛴다 — entries가 비는 게 정상이다. */
+    @Test
+    void ingest_skipsSplittingForNonExtractableExtension() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "note.pdf", "application/pdf", "%PDF-1.4 fake".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.pdf");
+        given(rawRecordRepository.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        verify(journalEntryRepository, never()).save(any());
+    }
+
+    /** 기록 분리 중 저장이 실패해도 업로드 응답(반환값)은 그대로 성공이어야 한다. */
+    @Test
+    void ingest_journalEntrySaveFailure_doesNotFailUpload() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRepository.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+        given(journalEntryRepository.save(any())).willThrow(new RuntimeException("db unavailable"));
+
+        RawRecord saved = rawRecordService.ingest(ORG_USER_ID, file);
+
+        assertThat(saved.getStoredPath()).isEqualTo("generated-uuid.txt");
     }
 
     @Test
