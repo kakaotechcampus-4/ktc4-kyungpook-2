@@ -66,7 +66,15 @@ def apply_overrides(inputs):
     applied = {}
     for case in inputs:
         for rule in rules:
-            if rule["match_contains"] not in case["content"]:
+            # match_contains: 문장 그대로 매칭
+            # match_template: 주인공 이름을 끼워서 매칭 (예: "{subject_name}가 먼저 밀쳤고")
+            if "match_template" in rule:
+                if not case.get("subject_name"):
+                    continue
+                needle = rule["match_template"].format(subject_name=case["subject_name"])
+            else:
+                needle = rule["match_contains"]
+            if needle not in case["content"]:
                 continue
             for t in rule.get("add_issue_types", []):
                 if t not in case["expected_issue_types"]:
