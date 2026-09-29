@@ -195,6 +195,19 @@ PEER_FRAMES = [
 ]
 
 
+# 판정 기준 v1.1 에서 "해당하지 않는다"고 정한 경계 사례. 전부 PASS 여야 한다.
+BOUNDARY_PASS_FRAMES = [
+    "블록이 무너지자 바구니를 밀쳐 뒤엎음.",           # 물건에만 하는 행동 → 위험행동 아님
+    "화가 나서 인형을 바닥에 내던짐.",                 # 물건에만 하는 행동 → 위험행동 아님
+    "계단을 손잡이 없이 혼자 오르내림.",               # 혼자 해낸 일상 동작 → 위험행동 아님
+    "미끄럼틀을 혼자 타고 내려옴.",                   # 혼자 해낸 일상 동작 → 위험행동 아님
+    "낮잠을 평소보다 한 시간 더 잠.",                  # 일상 관찰 → 의료정보 아님
+    "점심을 평소보다 적게 먹음.",                     # 일상 관찰 → 의료정보 아님
+    "옆자리 친구가 우는 걸 보고 등을 토닥여줌.",        # 이름 없는 또래 → 다수아동언급 아님
+    "짝꿍과 크레파스를 나눠 씀.",                     # 이름 없는 또래 → 다수아동언급 아님
+]
+
+
 def issues_for(verdict, issue):
     return [] if verdict == "PASS" else [issue]
 
@@ -223,7 +236,13 @@ def mr_peer(seed, pool, passes, r):
     return make_case(seed, "이름없는또래", join(seed["content"], r.choice(PEER_FRAMES), r), v, issues_for(v, "다수아동언급"))
 
 
+def mr_boundary_pass(seed, pool, passes, r):
+    return make_case(seed, "경계정상", join(seed["content"], r.choice(BOUNDARY_PASS_FRAMES), r), "PASS", [])
+
+
 # (관계 이름, 함수, seed 종류, 정책 키)
+# ⚠️ 새 변형은 항상 맨 뒤에 추가한다. 중간에 넣으면 앞 변형들의 무작위 선택이 달라져
+#    기존 케이스 문장이 바뀌고, 지난 결과와의 회귀 비교가 깨진다.
 RELATIONS = [
     ("다른아이등장", mr_other_child, "pass", None),
     ("다른아이개인정보", mr_other_pii, "pass", None),
@@ -236,6 +255,8 @@ RELATIONS = [
     ("의료정보", mr_medical, "pass", "의료정보_진단명없음"),
     ("위험행동", mr_risky, "pass", None),
     ("이름없는또래", mr_peer, "pass", "이름없는_또래언급"),
+    # 판정 기준 v1.1 에서 추가
+    ("경계정상", mr_boundary_pass, "pass", None),
 ]
 
 
