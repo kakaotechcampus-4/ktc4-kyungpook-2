@@ -6,6 +6,10 @@ README "판정 기준 > 유형 정의" 표의 각 줄(유형 | 판정 | 정의)�
   - validation/config.py 의 ISSUE_LEVEL (BLOCK/REVIEW)
 와 글자 하나까지 같아야 통과한다.
 
+README "근거의 귀속" 표에서 귀속 판단이 "하지 않음"인 유형은
+  - validation/config.py 의 ATTRIBUTION_EXEMPT
+와 같아야 통과한다.
+
 README 만 고치고 프롬프트를 안 고쳤거나, 그 반대면 여기서 잡힌다.
 
 실행 (AI 폴더에서):
@@ -17,10 +21,28 @@ from pathlib import Path
 AI_DIR = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(AI_DIR))
 
-from validation.config import ISSUE_LEVEL
+from validation.config import ISSUE_LEVEL, ATTRIBUTION_EXEMPT
 from validation.prompts import ISSUE_DEFINITIONS
 
 README = Path(__file__).parent / "README.md"
+
+
+def readme_table(heading: str) -> list[list[str]]:
+    """README 에서 heading 바로 아래 표의 데이터 행을 칸 목록으로 읽는다."""
+    lines = README.read_text(encoding="utf-8").splitlines()
+    start = lines.index(heading)
+    rows = []
+    for line in lines[start + 1:]:
+        if line.startswith("### "):
+            break
+        if not line.startswith("|") or line.startswith("|---") or line.startswith("| 유형"):
+            continue
+        rows.append([c.strip() for c in line.strip().strip("|").split("|")])
+    return rows
+
+
+def readme_attribution_exempt() -> set:
+    return {cells[0] for cells in readme_table("### 근거의 귀속") if cells[1] == "하지 않음"}
 
 
 def readme_definitions() -> dict:
@@ -58,13 +80,17 @@ def test_prompt_matches_readme():
     if list(readme) != list(ISSUE_DEFINITIONS):
         problems.append(f"순서 불일치: README {list(readme)} / prompts {list(ISSUE_DEFINITIONS)}")
 
+    exempt = readme_attribution_exempt()
+    if exempt != set(ATTRIBUTION_EXEMPT):
+        problems.append(f"귀속 예외 불일치: README {sorted(exempt)} / config {sorted(ATTRIBUTION_EXEMPT)}")
+
     assert not problems, "\n".join(problems)
 
 
 if __name__ == "__main__":
     try:
         test_prompt_matches_readme()
-        print(f"[PASS] README 유형 정의 {len(ISSUE_DEFINITIONS)}개와 프롬프트·config 가 일치")
+        print(f"[PASS] README 유형 정의 {len(ISSUE_DEFINITIONS)}개, 귀속 예외 {len(ATTRIBUTION_EXEMPT)}개가 프롬프트·config 와 일치")
     except AssertionError as e:
         print("[FAIL] README 와 프롬프트가 다름\n" + str(e))
         sys.exit(1)
