@@ -1,12 +1,15 @@
 """Exercise the real Caddyfile with a local CA and isolated Docker upstreams."""
 
 import importlib.util
+import http.server
 import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 import uuid
@@ -39,7 +42,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "public, max-age=60")
         self.end_headers()
-        result = {"status": "ok"} if self.path == "/api/health" else {"service": os.environ["ROLE"], "path": self.path, "headers": dict(self.headers)}
+        result = {"status": "ok"} if self.path == "/api/health" else {"service": os.environ["ROLE"], "instance": os.uname().nodename, "path": self.path, "headers": dict(self.headers)}
         self.wfile.write(json.dumps(result).encode())
 http.server.ThreadingHTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler).serve_forever()
 '''
@@ -110,6 +113,11 @@ class CaddyProxyTests(unittest.TestCase):
                 time.sleep(0.5)
         else:
             raise RuntimeError("Caddy did not become ready: " + cls.compose("logs", "--no-color", "caddy"))
+        cls.cert = cls.directory / "localhost.crt"
+        cls.key = cls.directory / "localhost.key"
+        for path in [cls.cert, cls.key]:
+            cls.compose("cp", "caddy:/data/caddy/certificates/local/localhost/" + path.name, str(path))
+        cls.key.chmod(0o600)
 
     @classmethod
     def compose(cls, *args, timeout=30):
@@ -125,6 +133,12 @@ class CaddyProxyTests(unittest.TestCase):
     def get(self, path, **kwargs):
         return proxy.request("https://localhost", path, local=True,
                              port=self.https_port, ca_bundle=self.ca, **kwargs)
+
+    def test_active_config_matches_adapted_caddyfile(self):
+        active = self.compose("exec", "-T", "caddy", "wget", "-qO-", "http://127.0.0.1:2019/config/")
+        candidate = self.compose("exec", "-T", "caddy", "caddy", "adapt", "--config",
+                                 "/etc/caddy/Caddyfile", "--adapter", "caddyfile", "--validate")
+        self.assertEqual(json.loads(active), json.loads(candidate))
 
     def test_routes_preserve_path_and_query(self):
         for path in ["/api/example?a=1", "/login/oauth2/code/kakao?code=test",
@@ -156,12 +170,59 @@ class CaddyProxyTests(unittest.TestCase):
         self.assertIsNone(headers.get("Alt-Svc"))
 
     def test_tls_rejects_untrusted_certificate(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(proxy.ProxyConnectionError) as error:
             proxy.check_health("https://localhost", local=True, port=self.https_port)
+        self.assertEqual(error.exception.returncode, 60)
 
     def test_tls_rejects_wrong_hostname(self):
-        with self.assertRaises(ValueError):
-            proxy.check_health("https://wrong.test", local=True, port=self.https_port, ca_bundle=self.ca)
+        # Caddy may reject unknown SNI before serving a certificate. This server
+        # always serves Caddy's trusted localhost certificate, including for wrong.test.
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(self.cert, self.key)
+        received_names = []
+        context.set_servername_callback(lambda _socket, name, _context: received_names.append(name))
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            options = dict(local=True, port=server.server_port, ca_bundle=self.ca)
+            proxy.check_health("https://localhost", **options)
+            with self.assertRaises(proxy.ProxyConnectionError) as error:
+                proxy.check_health("https://wrong.test", **options)
+            self.assertIn("wrong.test", received_names)
+            self.assertEqual(error.exception.returncode, 60)
+            self.assertRegex(error.exception.stderr.lower(), r"no alternative certificate|does not match|doesn't match")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def test_backend_recreation_recovers_without_caddy_reload(self):
+        previous_instance = json.loads(self.get("/api/example")[2])["instance"]
+        caddy_id = self.compose("ps", "--quiet", "caddy")
+        self.compose("up", "-d", "--no-deps", "--force-recreate", "backend")
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                status, _, body = self.get("/api/example")
+                if status == 200 and json.loads(body)["instance"] != previous_instance:
+                    break
+            except (ValueError, KeyError):
+                pass
+            time.sleep(0.5)
+        else:
+            self.fail("Caddy did not reach the recreated backend without reload")
+        self.assertEqual(self.compose("ps", "--quiet", "caddy"), caddy_id)
 
     def test_health_cors_and_oauth_use_verified_tls(self):
         proxy.check_proxy("https://localhost", local=True, port=self.https_port, ca_bundle=self.ca)

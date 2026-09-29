@@ -20,7 +20,7 @@ FE·AI·DB 컨테이너 배포와 Flyway 도입은 포함하지 않습니다.
 | --- | --- | --- |
 | `test` | `develop`·`main` 대상 PR, `develop` push, 수동 실행 | 배포 스크립트 테스트와 `./gradlew test integrationTest build` |
 | `publish` | `develop` push 또는 `develop` 수동 실행, 테스트 성공 후 | `linux/amd64` BE 이미지 빌드·GHCR 업로드 |
-| `deploy` | 이미지 업로드 성공 후, `CADDY_READY=true` | SSM 배포·Caddy 재로딩·내부 검증·외부 HTTPS API 확인 |
+| `deploy` | 이미지 업로드 성공 후, `CADDY_READY=true` | SSM 배포·Caddy 설정 변경 시 재로딩·내부 검증·외부 HTTPS API 확인 |
 
 모든 PR에서 검증하므로 경로 필터 때문에 필수 검사가 대기하는 문제를 피합니다.
 PR에는 AWS OIDC 권한과 패키지 업로드 권한을 부여하지 않습니다.
@@ -108,14 +108,17 @@ SSM은 Actions가 검증한 [`scripts/deploy-backend.sh`](scripts/deploy-backend
    서버 HEAD보다 오래된 커밋으로 돌아가는 배포는 거부합니다.
 3. 기존 이미지를 복구용 로컬 태그로 보관하고 새 이미지 digest를 다운로드합니다.
    다운로드 실패 시 실행 중인 BE는 그대로 유지합니다.
-   교체 전에 Caddyfile을 검사하고 기존 활성 JSON 설정을 백업합니다.
+   교체 전에 Caddyfile을 JSON으로 변환·검증하고 기존 활성 JSON 설정과 비교·백업합니다.
 4. `--no-deps --no-build --pull never`로 BE만 교체하고 직접 상태 확인을 최대 120초 기다립니다.
-5. Caddy를 재로딩한 뒤 프록시 상태·CORS·카카오 인가 요청의 콜백 주소를 검사합니다.
+5. Caddy 설정이 변경된 경우에만 검증한 JSON을 재로딩합니다. 설정이 같으면 재로딩을 생략합니다.
+   `backend:8080`으로 연결하므로 백엔드 컨테이너 교체만으로 Caddy를 재로딩할 필요는 없습니다.
+   이후 프록시 상태·CORS·카카오 인가 요청의 콜백 주소를 검사합니다.
    HTTPS는 도메인과 SNI를 유지한 채 루프백에 접속하여 시스템 CA로 인증서를 검증합니다.
    리다이렉트를 따라가지 않고 HTTP 상태 코드도 확인합니다.
 6. 성공하면 서버 `infra/docker/.env`의 `BACKEND_IMAGE`만 원자적으로 갱신합니다.
    다른 환경변수와 파일 권한은 보존합니다.
-7. 교체 후 검증이 실패하면 이전 이미지로 BE를 복구하고 백업한 Caddy 활성 JSON을 다시 로딩합니다.
+7. 교체 후 검증이 실패하면 이전 이미지로 BE를 복구합니다. Caddy 재로딩을 시도한 배포라면
+   백업한 Caddy 활성 JSON도 다시 로딩합니다.
    잘못된 새 Caddyfile을 복구 단계에서 다시 읽지 않습니다.
    복구 성공 여부를 로그에 남기며 워크플로는 실패로 표시합니다.
 
@@ -165,6 +168,8 @@ cd backend
 배포 테스트는 임시 Git 저장소·HTTP 서버·가짜 Docker를 사용하여 성공, 다운로드 실패,
 기동 실패, CORS·OAuth·Caddy 재로딩 실패 시 복구, 서버 수정 파일 보존, 오래된 커밋 거부를
 검증합니다. Docker 프록시 테스트는 임시 Caddy와 에코 서버, 내부 CA로 실제 HTTPS 경로를 확인합니다.
+백엔드 재생성 후 재로딩 없이 연결이 복구되는지 확인하고, 호스트 이름 불일치는 신뢰하는
+localhost 인증서를 항상 제공하는 별도 TLS 서버에서 curl의 인증서 검증 오류와 원인을 확인합니다.
 Docker가 없으면 해당 테스트는 건너뛰지만 CI에서는 `REQUIRE_DOCKER_TESTS=true`로 필수 실행합니다.
 실제 서버와 운영 DB에는 접근하지 않습니다.
 

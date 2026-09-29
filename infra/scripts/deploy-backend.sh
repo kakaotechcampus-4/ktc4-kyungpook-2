@@ -22,6 +22,9 @@ origin=''
 rollback_required=0
 rollback_image=''
 caddy_snapshot=''
+caddy_candidate=''
+caddy_changed=0
+caddy_reload_attempted=0
 
 compose() {
   # GitHub supplies an expectation, never a Compose override of the server .env.
@@ -113,10 +116,12 @@ on_exit() {
     local restored=1
     BACKEND_IMAGE=$rollback_image compose up -d --no-deps --no-build --pull never backend || restored=0
     wait_for_health "$backend_health_url" || restored=0
-    # Restore the active JSON, not the possibly invalid new Caddyfile.
-    compose exec -T caddy sh -c 'umask 077; cat > /tmp/backend-deploy-rollback.json' \
-      < "$caddy_snapshot" && \
-      compose exec -T caddy caddy reload --config /tmp/backend-deploy-rollback.json --force || restored=0
+    if ((caddy_reload_attempted)); then
+      # A failed reload may have applied the config; restore the saved active JSON.
+      compose exec -T caddy sh -c 'umask 077; cat > /tmp/backend-deploy-rollback.json' \
+        < "$caddy_snapshot" && \
+        compose exec -T caddy caddy reload --config /tmp/backend-deploy-rollback.json || restored=0
+    fi
     wait_for_proxy || restored=0
     verify_proxy verify || restored=0
     if ((restored)); then
@@ -130,7 +135,10 @@ on_exit() {
   fi
   if [[ -n $caddy_snapshot ]]; then
     rm -f "$caddy_snapshot"
-    compose exec -T caddy rm -f /tmp/backend-deploy-rollback.json >/dev/null 2>&1 || true
+  fi
+  [[ -z $caddy_candidate ]] || rm -f "$caddy_candidate"
+  if ((caddy_reload_attempted)); then
+    compose exec -T caddy rm -f /tmp/backend-deploy-candidate.json /tmp/backend-deploy-rollback.json >/dev/null 2>&1 || true
   fi
   exit "$code"
 }
@@ -159,11 +167,18 @@ git merge --ff-only --quiet "$commit"
 [[ $(git rev-parse HEAD) == "$commit" ]] || { echo 'Server commit does not match deployment commit' >&2; exit 1; }
 BACKEND_IMAGE=$image compose config --quiet
 origin=$(check_settings)
-# Reject invalid Caddyfiles before replacing the backend.
-compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+# Validate and compare effective JSON, ignoring Caddyfile comments and JSON formatting.
+caddy_candidate=$(mktemp "$git_dir/caddy-candidate.XXXXXX")
+compose exec -T caddy caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile --validate > "$caddy_candidate"
 caddy_snapshot=$(mktemp "$git_dir/caddy-active.XXXXXX")
 compose exec -T caddy wget -qO- http://127.0.0.1:2019/config/ > "$caddy_snapshot"
-python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin), dict)' < "$caddy_snapshot"
+caddy_changed=$(python3 - "$caddy_snapshot" "$caddy_candidate" <<'PY'
+import json, pathlib, sys
+active, candidate = [json.loads(pathlib.Path(path).read_text()) for path in sys.argv[1:]]
+assert isinstance(active, dict) and isinstance(candidate, dict)
+print(int(active != candidate))
+PY
+)
 
 backend_id=$(compose ps --all --quiet backend)
 [[ -n $backend_id ]] || { echo 'An existing backend is required for rollback' >&2; exit 1; }
@@ -179,7 +194,13 @@ BACKEND_IMAGE=$image compose up -d --no-deps --no-build --pull never backend
 wait_for_health "$backend_health_url"
 running_id=$(compose ps --quiet backend)
 [[ $(docker inspect --format '{{.Config.Image}}' "$running_id") == "$image" ]] || { echo 'Unexpected running backend image' >&2; exit 1; }
-compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
+if ((caddy_changed)); then
+  caddy_reload_attempted=1
+  compose exec -T caddy sh -c 'umask 077; cat > /tmp/backend-deploy-candidate.json' < "$caddy_candidate"
+  compose exec -T caddy caddy reload --config /tmp/backend-deploy-candidate.json
+else
+  echo 'Caddy configuration unchanged; skipping reload'
+fi
 wait_for_proxy
 verify_proxy verify
 echo 'CORS and OAuth callback verified'

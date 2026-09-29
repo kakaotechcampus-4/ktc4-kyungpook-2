@@ -52,14 +52,20 @@ if args[0] == "compose":
         state["image"] = os.environ["BACKEND_IMAGE"]
         state["phase"] = "new" if "ghcr.io/" in state["image"] else "old"
     elif args[0] == "exec":
-        if "validate" in args and state["mode"] == "validate_failure":
-            code = 1
+        if "adapt" in args:
+            if state["mode"] == "validate_failure":
+                code = 1
+            else:
+                version = "new" if state["config_changed"] else "old"
+                # Different JSON formatting/key order must not cause a reload.
+                output = json.dumps({"apps": {"http": {"servers": {version: {}}}}, "admin": {}}, indent=2)
         elif "wget" in args:
-            output = '{"apps":{"http":{"servers":{"old":{}}}}}'
+            output = '{"admin":{},"apps":{"http":{"servers":{"old":{}}}}}'
         elif "reload" in args:
             if "/tmp/backend-deploy-rollback.json" in args:
                 state["active_config"] = "old"
             elif state["mode"] == "reload_failure":
+                state["active_config"] = "new"
                 code = 1
             else:
                 state["active_config"] = "new"
@@ -167,7 +173,16 @@ class DeployScriptTests(unittest.TestCase):
 
     def set_state(self, mode):
         self.state_file.write_text(json.dumps({"image": "ktc-backend", "phase": "old", "mode": mode,
-                                              "origin": ORIGIN, "active_config": "old", "commands": []}))
+                                              "origin": ORIGIN, "active_config": "old", "commands": [],
+                                              "config_changed": mode == "reload_failure"}))
+
+    def set_config_changed(self):
+        state = self.state()
+        state["config_changed"] = True
+        self.state_file.write_text(json.dumps(state))
+
+    def reload_commands(self):
+        return [entry["args"] for entry in self.state()["commands"] if "reload" in entry["args"]]
 
     def state(self):
         return json.loads(self.state_file.read_text())
@@ -194,6 +209,24 @@ class DeployScriptTests(unittest.TestCase):
         self.assertNotIn("test-secret", result.stdout + result.stderr)
         self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.commit)
         self.assert_only_backend_recreated()
+        self.assertEqual(self.reload_commands(), [])
+        self.assertIn("skipping reload", result.stdout)
+
+    def test_changed_caddy_config_is_reloaded_without_force(self):
+        self.set_config_changed()
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.state()["active_config"], "new")
+        self.assertEqual(len(self.reload_commands()), 1)
+        self.assertNotIn("--force", self.reload_commands()[0])
+
+    def test_changed_caddy_config_is_restored_after_proxy_failure(self):
+        self.assert_rollback("cors_failure", config_changed=True)
+        self.assertEqual(len(self.reload_commands()), 2)
+
+    def test_changed_config_is_not_reloaded_if_backend_health_fails(self):
+        self.assert_rollback("health_failure", config_changed=True)
+        self.assertEqual(self.reload_commands(), [])
 
     def test_next_deployment_replaces_existing_image_reference(self):
         self.env_file.write_text(self.original_env + 'BACKEND_IMAGE="ktc-backend:previous"\n')
@@ -251,8 +284,10 @@ class DeployScriptTests(unittest.TestCase):
         self.assertIn("AUTH_COOKIE_SECURE", result.stderr)
         self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.old_commit)
 
-    def assert_rollback(self, mode):
+    def assert_rollback(self, mode, config_changed=False):
         self.set_state(mode)
+        if config_changed:
+            self.set_config_changed()
         result = self.deploy()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Previous backend restored", result.stderr, result.stdout + result.stderr)
@@ -260,6 +295,9 @@ class DeployScriptTests(unittest.TestCase):
         self.assertEqual(self.state()["active_config"], "old")
         self.assertEqual(self.env_file.read_text(), self.original_env + "BACKEND_IMAGE=" + self.state()["image"] + "\n")
         self.assert_only_backend_recreated()
+        if not config_changed and mode != "reload_failure":
+            self.assertEqual(self.reload_commands(), [])
+        self.assertEqual(list((self.root / ".git").glob("caddy-*.*")), [])
 
     def test_pull_failure_does_not_replace_backend(self):
         self.set_state("pull_failure")

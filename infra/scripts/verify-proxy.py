@@ -12,6 +12,13 @@ import tempfile
 from urllib.parse import parse_qs, urlparse
 
 
+class ProxyConnectionError(ValueError):
+    def __init__(self, result):
+        super().__init__(f"Proxy connection or certificate verification failed (curl exit {result.returncode})")
+        self.returncode = result.returncode
+        self.stderr = result.stderr
+
+
 def parse_origin(value):
     if not re.fullmatch(r"https?://[a-zA-Z0-9.-]+(?::[0-9]+)?", value):
         raise ValueError("Invalid public origin")
@@ -60,7 +67,7 @@ def request(origin, path, *, method="GET", headers=None, local=False, port=None,
                     "--write-out", "%{http_code}", origin + path]
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         if result.returncode:
-            raise ValueError("Proxy connection or certificate verification failed")
+            raise ProxyConnectionError(result)
         # curl can emit informational responses before the final response headers.
         blocks = header_path.read_text().strip().split("\n\n")
         response_headers = Parser().parsestr(blocks[-1].split("\n", 1)[1])
