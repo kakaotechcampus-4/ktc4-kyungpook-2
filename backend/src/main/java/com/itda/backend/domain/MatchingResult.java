@@ -104,6 +104,12 @@ public class MatchingResult {
         this.updatedAt = now;
     }
 
+    // AI 호출 자체가 실패한 경우(재시도까지 실패). 판정이 없으니 판정 컬럼은 전부 비운다.
+    public static MatchingResult failed(Long journalEntryId) {
+        return new MatchingResult(journalEntryId, null, null, MatchingStatus.FAILED,
+                null, null, null, null, null, null);
+    }
+
     // 선생님이 확인 필요 큐에서 아이를 직접 확정한 경우.
     // ponytail: AI 계약(MatchStatus)에는 "사람이 확정함"을 뜻하는 별도 값이 없어서,
     // AUTO를 "더 이상 검토가 필요 없다"는 의미로 재사용한다 — AI가 자동 확정했든

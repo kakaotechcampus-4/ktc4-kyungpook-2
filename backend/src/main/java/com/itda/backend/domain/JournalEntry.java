@@ -85,6 +85,43 @@ public class JournalEntry {
         this.childId = childId;
     }
 
+    /** 워커가 매칭 대상으로 집어 간다. 다른 워커 실행이 같은 일지를 다시 집지 않도록 대기 상태에서만 허용한다. */
+    public void startMatching() {
+        requireStatus(JournalEntryStatus.PENDING);
+        this.status = JournalEntryStatus.MATCHING;
+    }
+
+    /** AI가 자동 확정(auto)했다. 아동의 존재·소속 검증은 호출하는 Service 책임이다. */
+    public void confirmMatch(Long childId) {
+        requireStatus(JournalEntryStatus.MATCHING);
+        assignChild(childId);
+        this.status = JournalEntryStatus.MATCHED;
+    }
+
+    /** AI가 확정하지 못했다(review·multi·unmatched). 어떤 경우인지는 matching_result.status 가 가진다. */
+    public void requestMatchReview() {
+        requireStatus(JournalEntryStatus.MATCHING);
+        this.status = JournalEntryStatus.MATCH_REVIEW;
+    }
+
+    /** AI 호출 자체가 실패했다. */
+    public void failMatching() {
+        requireStatus(JournalEntryStatus.MATCHING);
+        this.status = JournalEntryStatus.FAILED;
+    }
+
+    /** 처리하던 앱이 꺼져서 매칭 중에 멈춘 일지를 다시 대기열로 돌린다. */
+    public void releaseMatching() {
+        requireStatus(JournalEntryStatus.MATCHING);
+        this.status = JournalEntryStatus.PENDING;
+    }
+
+    private void requireStatus(JournalEntryStatus expected) {
+        if (this.status != expected) {
+            throw new IllegalStateException("일지 상태가 " + expected + "가 아닙니다: " + this.status);
+        }
+    }
+
     public void delete() {
         this.deletedAt = LocalDateTime.now();
     }
