@@ -847,6 +847,7 @@ FK 제약이 없으므로 연쇄 동작이 없다. 원본을 내릴 때 **그 �
 ```
 PENDING            대기 (생성 시 기본값)
 MATCHING           매칭 중
+MATCHED            매칭 확정 — 검증 대기 (BE 추가)
 MATCH_REVIEW       사람 확인 필요
 CONSENT_BLOCKED    동의 대기 아동의 기록이라 정지
 VALIDATING         검증 중
@@ -855,6 +856,16 @@ GATE1_PENDING      1차 검토 대기
 COMPLETED          완료
 FAILED             실패
 ```
+
+매칭 워커는 AI 판정에 따라 이렇게 바꾼다. 판정의 세부(review / multi / unmatched)는 `matching_result.status`에 남는다.
+
+| AI 판정 | `journal_entry.status` | `child_id` |
+| --- | --- | --- |
+| `auto` | `MATCHED` | 판정된 아동으로 채움 |
+| `review` · `multi` · `unmatched` | `MATCH_REVIEW` | NULL 유지 |
+| 호출 실패 (재시도 2회 후) | `FAILED` | NULL 유지 |
+
+`MATCHED`는 초안에 없던 값이다. `VALIDATING`은 "검증 중"이라, 검증 워커가 집어 갈 "확정됐고 검증을 기다림" 상태가 따로 필요했다.
 
 **예시**
 
@@ -1326,3 +1337,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-09-29 | 노션 「DB 수정본(9.25)」을 레포로 옮김. 현재 엔티티와 대조해 §0.3 불일치 목록 추가 | #70 |
 | 2026-09-29 | 이름·타입 차이는 설계를 코드에 맞춤 (`stored_path` `size_bytes` `content_type` NOT NULL, JSON → TEXT, `model_version`·`reviewer_id`, `human_review` 구현 반영) | #70 |
 | 2026-09-29 | `raw_record`에 `hint_name` `hint_birthdate` `updated_at` `deleted_at` 추가. 조회에 `DeletedAtIsNull` 적용 | #70 |
+| 2026-09-30 | `journal_entry.status`에 `MATCHED` 추가, 매칭 워커의 상태 변경 규칙 추가 (§6.2) | PR_NUMBER |
