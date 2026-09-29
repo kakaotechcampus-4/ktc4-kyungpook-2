@@ -38,6 +38,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-${PUBLIC_ORIGIN:-http://localhost}}
+      AUTH_SUCCESS_REDIRECT: ${PUBLIC_ORIGIN:-http://localhost}/oauth/success
+      AUTH_FAILURE_REDIRECT: ${PUBLIC_ORIGIN:-http://localhost}/login
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       # 실제 배포(EC2/ECS)에서는 IAM Role로 자동 인증되어 비워둬도 됨.
       # 로컬에서 docker compose로 띄워 테스트할 때만 호스트 셸의 AWS 자격증명을 전달.
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
@@ -47,9 +51,8 @@ services:
       RAW_STORAGE_S3_BUCKET: ${RAW_STORAGE_S3_BUCKET:?RAW_STORAGE_S3_BUCKET is required}
       JAVA_TOOL_OPTIONS: -Xms128m -Xmx512m
     ports:
-      # Swagger 및 FE 직접 연동을 위해 임시로 외부에 공개한다.
-      # 운영에서는 이 항목을 제거하고 Nginx만 통해 접근시킨다.
-      - "8080:8080"
+      # 배포 상태 검사와 로컬 개발용. 외부 API·Swagger는 Caddy로 접근한다.
+      - "127.0.0.1:8080:8080"
     mem_limit: 768m
     
   ai:
@@ -80,19 +83,24 @@ services:
       - "127.0.0.1:3000:3000"
     mem_limit: 128m
 
-  nginx:
-    image: nginx:1.27-alpine
+  caddy:
+    image: caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
     restart: unless-stopped
     depends_on:
       - frontend
       - backend
     volumes:
-      - ../nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ../nginx/proxy-common.conf:/etc/nginx/proxy-common.inc:ro
+      - ../caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost}
     ports:
-      # 기본 외부 진입점. backend:8080 직접 공개는 개발·연동 확인용이다.
       - "80:80"
+      - "443:443"
     mem_limit: 128m
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:

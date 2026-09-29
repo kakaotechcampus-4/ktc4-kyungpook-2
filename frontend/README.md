@@ -46,8 +46,9 @@ touch AI/.env                                    # 비어 있어도 되지만 �
 cd infra/docker && docker compose up -d --build
 ```
 
-접속 주소는 **http://localhost** 입니다(nginx 80). 개발 서버의 3000 과 달리
-포트를 붙이지 않습니다. `/api/` 는 nginx 가 backend 로 넘깁니다.
+접속 주소는 **http://localhost** 입니다(Caddy 80). 개발 서버의 3000과 달리
+포트를 붙이지 않습니다. `/api/`는 Caddy가 backend로 넘깁니다.
+운영 HTTPS 설정은 [인프라 문서](../infra/README.md#caddy와-https)를 참고하세요.
 
 ## 화면
 
@@ -148,7 +149,7 @@ cp .env.example .env
 | `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false` 일 때만 실제 HTTP 호출 |
 | `VITE_AUTH_MOCK` | `true` | 로그인(`lib/auth.ts`). 데이터와 분리돼 있습니다 |
 | `VITE_AUTH_ORIGIN` | 빈 값 | 로그인 진입 주소의 오리진. **dev 는 `http://localhost:8080`** |
-| `VITE_API_BASE_URL` | 빈 값 | dev proxy 와 nginx 가 같은 오리진의 `/api` 를 넘기므로 비워 둡니다 |
+| `VITE_API_BASE_URL` | 빈 값 | dev proxy와 Caddy가 같은 오리진의 `/api`를 넘기므로 비워 둡니다 |
 
 **카카오 키는 프론트에 없습니다.** `client_id` · `client_secret` 모두 백엔드만 가집니다.
 로그인 전 과정을 백엔드가 처리하기 때문입니다(아래 "로그인" 참고).
@@ -157,7 +158,7 @@ cp .env.example .env
 `redirect_uri` 를 조립합니다. Vite 프록시를 거치면 그 값이 카카오 콘솔 등록값과 어긋나
 KOE006 으로 거절당합니다. 그래서 로그인 진입만 백엔드(8080)로 직접 보냅니다.
 출입증 쿠키는 포트를 구분하지 않으므로 3000 에서 그대로 쓸 수 있습니다.
-운영은 nginx 가 같은 오리진의 `/oauth2/` 를 백엔드로 넘기므로 비워 둡니다.
+운영은 Caddy가 같은 오리진의 `/oauth2/`를 백엔드로 넘기므로 비워 둡니다.
 
 **mock 스위치를 둘로 나눈 이유** — 백엔드에 열려 있는 것이 인증과 원본 기록뿐이라,
 하나로 묶으면 로그인을 켜는 순간 대시보드·아이 목록·게이트가 전부 빈 화면이 됩니다.

@@ -33,6 +33,8 @@ jobs:
         run: |
           bash -n infra/scripts/deploy-backend.sh
           python3 -m unittest discover -s infra/scripts/tests -p 'test_*.py' -v
+        env:
+          REQUIRE_DOCKER_TESTS: 'true'
       - name: Test and build backend
         working-directory: backend
         run: ./gradlew --no-daemon test integrationTest build
@@ -89,7 +91,7 @@ jobs:
   deploy:
     name: Deploy backend through SSM
     needs: publish
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop' && vars.CADDY_READY == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     concurrency:
@@ -103,6 +105,7 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
       BACKEND_IMAGE: ${{ needs.publish.outputs.image }}
+      PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -112,6 +115,8 @@ jobs:
           : "${AWS_ROLE_ARN:?Set repository variable AWS_ROLE_ARN}"
           : "${AWS_REGION:?Set repository variable AWS_REGION}"
           : "${EC2_INSTANCE_ID:?Set repository variable EC2_INSTANCE_ID}"
+          : "${PUBLIC_ORIGIN:?Set repository variable PUBLIC_ORIGIN}"
+          [[ "$PUBLIC_ORIGIN" == https://* ]] || { echo 'Production origin must use HTTPS'; exit 1; }
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
@@ -123,10 +128,14 @@ jobs:
             --commit "$GITHUB_SHA" \
             --image "$BACKEND_IMAGE" \
             --instance-id "$EC2_INSTANCE_ID" \
-            --region "$AWS_REGION"
+            --region "$AWS_REGION" \
+            --origin "$PUBLIC_ORIGIN"
       - name: Check public API
         run: |
-          curl --fail --silent --show-error --retry 5 --retry-all-errors \
-            --retry-delay 2 --connect-timeout 5 --max-time 10 \
-            http://54.116.206.217/api/health \
-            | python3 -c 'import json,sys; assert json.load(sys.stdin) == {"status": "ok"}'
+          for attempt in {1..6}; do
+            if python3 infra/scripts/verify-proxy.py health --origin "$PUBLIC_ORIGIN"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
