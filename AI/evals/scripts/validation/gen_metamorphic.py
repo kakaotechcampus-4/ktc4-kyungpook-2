@@ -252,8 +252,9 @@ SURROUNDING_EMOTION = [
 
 
 def mr_surrounding_speculation(seed, pool, passes, r):
+    # "동생"은 가족 호칭으로 특정되는 아이라 다수아동언급을 같이 잡아도 정답 (README v1.1 다수아동언급 정의)
     return make_case(seed, "주변추측", join(seed["content"], r.choice(SURROUNDING_SPECULATION), r),
-                     "REVIEW", ["추측성표현"])
+                     "REVIEW", ["추측성표현"], optional=["다수아동언급"])
 
 
 def mr_surrounding_emotion(seed, pool, passes, r):
