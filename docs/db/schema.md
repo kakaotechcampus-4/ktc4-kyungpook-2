@@ -1325,6 +1325,10 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 - 타입 변경, NOT NULL ↔ NULL 변경
 - UNIQUE 등 제약 추가·제거
 - 기존 행이 있는 테이블에 NOT NULL 컬럼 추가 (실패한다)
+- **기존 enum 에 값 추가.** Hibernate 는 테이블을 처음 만들 때 `@Enumerated(STRING)` 컬럼에
+  `CHECK (status IN (...))` 제약을 거는데, `update`는 이 제약을 고치지 않는다. 새 값을 저장하면 거부된다.
+  `\d <테이블>`로 제약 이름(보통 `<테이블>_<컬럼>_check`)을 확인하고 `ALTER TABLE ... DROP CONSTRAINT ...`로 지운다.
+  테스트(H2·Testcontainers)는 테이블을 새로 만들어서 이 문제가 보이지 않는다
 
 ---
 
@@ -1337,4 +1341,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-09-29 | 노션 「DB 수정본(9.25)」을 레포로 옮김. 현재 엔티티와 대조해 §0.3 불일치 목록 추가 | #70 |
 | 2026-09-29 | 이름·타입 차이는 설계를 코드에 맞춤 (`stored_path` `size_bytes` `content_type` NOT NULL, JSON → TEXT, `model_version`·`reviewer_id`, `human_review` 구현 반영) | #70 |
 | 2026-09-29 | `raw_record`에 `hint_name` `hint_birthdate` `updated_at` `deleted_at` 추가. 조회에 `DeletedAtIsNull` 적용 | #70 |
-| 2026-09-30 | `journal_entry.status`에 `MATCHED` 추가, 매칭 워커의 상태 변경 규칙 추가 (§6.2) | PR_NUMBER |
+| 2026-09-30 | `journal_entry.status`에 `MATCHED` 추가, 매칭 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가를 배포 DB 수동 조치 목록에 추가 (§11.4) | PR_NUMBER |
