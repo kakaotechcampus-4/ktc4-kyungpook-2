@@ -75,7 +75,7 @@ class MatchingResultServiceTest {
     @Test
     void getQueue_includesOnlyOwnInstitutionsEntries() {
         MatchingResult ours = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(ours));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
@@ -93,7 +93,7 @@ class MatchingResultServiceTest {
         // node.get(...).asLong()가 NPE를 던져서 큐 조회 전체가 500 났었다.
         MatchingResult ours = new MatchingResult(
                 1L, null, new BigDecimal("0.4"), MatchingStatus.MULTI, null, null,
-                "[{\"confidence\":0.8}]", null, null, "v1");
+                "[{\"confidence\":0.8}]", null, null, null, "v1");
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(ours));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
@@ -108,7 +108,7 @@ class MatchingResultServiceTest {
     @Test
     void getQueue_excludesOtherInstitutionsEntries() {
         MatchingResult theirs = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(theirs));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
@@ -122,7 +122,7 @@ class MatchingResultServiceTest {
     @Test
     void resolveAssign_setsMatchedChildAndAutoStatus() {
         MatchingResult matchingResult = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
@@ -144,7 +144,7 @@ class MatchingResultServiceTest {
     @Test
     void resolveAssign_unknownChildId_throwsValidationException() {
         MatchingResult matchingResult = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
@@ -161,7 +161,7 @@ class MatchingResultServiceTest {
         // 아이는 존재하지만 우리 기관 소속이 아닌 경우(다른 기관 아이를 잘못 assign) — PR #43로
         // child_organization이 실제 organizationId를 쓰게 돼서 비로소 이 체크가 가능해졌다.
         MatchingResult matchingResult = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
@@ -179,7 +179,7 @@ class MatchingResultServiceTest {
     @Test
     void resolveAssignWithoutChildId_throwsValidationException() {
         MatchingResult matchingResult = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
@@ -195,7 +195,7 @@ class MatchingResultServiceTest {
         // 버그 재발 방지: 예전엔 여기서 status를 UNMATCHED로 뒀는데, UNMATCHED는
         // findByStatusNot(AUTO) 큐 조건에 여전히 걸려서 "제외" 처리해도 큐에서 안 빠졌다.
         MatchingResult matchingResult = new MatchingResult(
-                1L, 5L, new BigDecimal("0.3"), MatchingStatus.MULTI, null, null, null, null, null, "v1");
+                1L, 5L, new BigDecimal("0.3"), MatchingStatus.MULTI, null, null, null, null, null, null, "v1");
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
@@ -223,7 +223,7 @@ class MatchingResultServiceTest {
     @Test
     void resolveOtherInstitutionsEntry_throwsNotFound() {
         MatchingResult theirs = new MatchingResult(
-                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, "v1");
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(theirs));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));

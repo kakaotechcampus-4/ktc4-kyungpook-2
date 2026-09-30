@@ -77,6 +77,7 @@ class MatchingResultRecorderTest {
         assertThat(result.getConfidence()).isEqualByComparingTo(new BigDecimal("0.9900"));
         assertThat(result.getHintMismatch()).isFalse();
         assertThat(result.getEvidence()).isEqualTo("[{\"start\":0,\"end\":3}]");
+        assertThat(result.getMentionedChildIds()).isEqualTo("[8]");
         assertThat(result.getReviewerId()).isNull();
         assertThat(result.getRawResponse()).isEqualTo(json);
         JournalEntry saved = reload(entry);
@@ -104,6 +105,8 @@ class MatchingResultRecorderTest {
         // 확인 필요 큐(MatchingResultService.buildCandidates)가 "child_id" 키로 읽는다.
         assertThat(result.getCandidates())
                 .isEqualTo("[{\"child_id\":8,\"confidence\":0.62},{\"child_id\":9,\"confidence\":0.6}]");
+        // 검증 단계가 "본문에 다른 아이 이름이 남았는지" 판단할 때 쓴다.
+        assertThat(result.getMentionedChildIds()).isEqualTo("[8,9]");
         JournalEntry saved = reload(entry);
         assertThat(saved.getStatus()).isEqualTo(JournalEntryStatus.MATCH_REVIEW);
         assertThat(saved.getChildId()).isNull();
@@ -121,7 +124,10 @@ class MatchingResultRecorderTest {
 
             recorder.record(entry.getId(), reply(json));
 
-            assertThat(onlyResultOf(entry.getId()).getStatus()).isEqualTo(MatchingStatus.fromJson(status));
+            MatchingResult result = onlyResultOf(entry.getId());
+            assertThat(result.getStatus()).isEqualTo(MatchingStatus.fromJson(status));
+            // 빈 목록은 "이름이 하나도 안 나왔다"는 뜻이라 null 과 구분해서 남긴다.
+            assertThat(result.getMentionedChildIds()).isEqualTo("[]");
             JournalEntry saved = reload(entry);
             assertThat(saved.getStatus()).isEqualTo(JournalEntryStatus.MATCH_REVIEW);
             assertThat(saved.getChildId()).isNull();
@@ -137,6 +143,7 @@ class MatchingResultRecorderTest {
         MatchingResult result = onlyResultOf(entry.getId());
         assertThat(result.getStatus()).isEqualTo(MatchingStatus.FAILED);
         assertThat(result.getRawResponse()).isNull();
+        assertThat(result.getMentionedChildIds()).isNull();
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
     }
 

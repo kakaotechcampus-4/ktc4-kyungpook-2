@@ -183,6 +183,7 @@ erDiagram
         decimal confidence
         text candidates "JSON 문자열"
         text evidence "JSON 문자열"
+        text mentioned_child_ids "JSON 문자열"
         text raw_response "JSON 문자열"
     }
     validation_result {
@@ -903,6 +904,7 @@ FAILED             실패
 | `multi_reason` | VARCHAR(30) | Y | 복수 후보인 이유 |
 | `candidates` | TEXT | Y | 후보 목록 JSON 문자열 `[{child_id, confidence}]` |
 | `evidence` | TEXT | Y | 판정 근거 구간 JSON 문자열 `[{start, end}]` |
+| `mentioned_child_ids` | TEXT | Y | 본문에 이름이 등장한 아동 전체 JSON 문자열 `[8, 12]` |
 | `hint_mismatch` | BOOLEAN | Y | 표지 힌트와 다른 아동으로 판단했는지 |
 | `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
 | `model_version` | VARCHAR(100) | Y | 응답을 낸 모델 버전 |
@@ -946,6 +948,25 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 매칭이 끝난 뒤 기관이 그 아이를 목록에서 뺄 수 있다. 이는 정상 상태다 — 행이 남아 있으므로
 이름은 계속 읽을 수 있고, 화면에서 "삭제된 아동"으로 표시한다.
 다만 **확인 필요 큐에는 삭제된 아동의 건을 띄우지 않는다.**
+
+**`mentioned_child_ids`** — 검증 단계의 입력이다
+
+본문에 이름이 등장한 아동 전체를 담는다. 후보든 아니든, 주인공이 아니어도 넣는다.
+`matched_child_id` 와 다른 값이 섞여 있는 것이 정상이다.
+
+```
+[8, 12]     본문에 8번과 12번 이름이 나왔다
+[]          아무 이름도 안 나왔다 (표지로만 판정한 경우)
+```
+
+**이 값을 버리면 검증이 "다수 아동 언급"과 다른 아이의 개인정보 노출을 독립적으로
+재판단할 근거를 잃는다.** `AI/matching/schemas.py` 주석에 그렇게 적혀 있다.
+
+`raw_response` 를 파싱해서 쓸 수도 있지만, 검증 워커가 매 건마다 JSON 을 풀어야 하고
+계약이 바뀌면 조용히 깨진다. 컬럼으로 둔다.
+
+> 오타로 비슷하게 걸린 아동은 **넣지 않는다.** 실제로 등장한 게 아니라 비슷했을 뿐이라,
+> 검증에 잘못된 신호를 준다 (`AI/matching/nodes.py`).
 
 **`evidence`**
 
@@ -1342,3 +1363,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-09-29 | 이름·타입 차이는 설계를 코드에 맞춤 (`stored_path` `size_bytes` `content_type` NOT NULL, JSON → TEXT, `model_version`·`reviewer_id`, `human_review` 구현 반영) | #70 |
 | 2026-09-29 | `raw_record`에 `hint_name` `hint_birthdate` `updated_at` `deleted_at` 추가. 조회에 `DeletedAtIsNull` 적용 | #70 |
 | 2026-09-30 | `journal_entry.status`에 `MATCHED` 추가, 매칭 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가를 배포 DB 수동 조치 목록에 추가 (§11.4) | #75 |
+| 2026-09-30 | `matching_result`에 `mentioned_child_ids` 추가 (§7.1, 설명은 #78과 같음) | #75 |

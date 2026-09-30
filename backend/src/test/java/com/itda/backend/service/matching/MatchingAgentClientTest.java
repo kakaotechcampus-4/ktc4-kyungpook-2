@@ -88,7 +88,7 @@ class MatchingAgentClientTest {
         assertThat(response.matchedChildId()).isNull();
         assertThat(response.confidence()).isEqualTo(0.62);
         assertThat(response.multiReason()).isEqualTo(MultiReason.CO_MENTION);
-        assertThat(response.mentionedChildIds()).containsExactly(8L, 9L);
+        assertThat(response.mentionedChildIds().toString()).isEqualTo("[8,9]");
         assertThat(response.candidates().toString()).isEqualTo(
                 "[{\"child_id\":8,\"confidence\":0.62},{\"child_id\":9,\"confidence\":0.6}]");
         assertThat(response.evidence().toString()).isEqualTo("[{\"start\":12,\"end\":15}]");

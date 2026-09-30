@@ -46,6 +46,7 @@ public class MatchingResultRecorder {
                 response.hintMismatch(),
                 toJson(response.candidates()),
                 toJson(response.evidence()),
+                toJson(response.mentionedChildIds()),
                 reply.rawJson(),
                 null));
 
