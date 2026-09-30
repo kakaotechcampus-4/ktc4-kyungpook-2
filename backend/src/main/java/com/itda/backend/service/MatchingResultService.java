@@ -54,6 +54,8 @@ public class MatchingResultService {
         // 지금 큐 규모에선 문제없다. 커지면 join 쿼리로 바꿀 것.
         return matchingResultRepository.findByStatusNot(MatchingStatus.AUTO).stream()
                 .flatMap(mr -> resolveOwnedContext(mr.getJournalEntryId(), institutionId)
+                        // 일지가 이미 처리됐으면(옛 결과 행 등) resolve 가 거절하므로 큐에서도 뺀다.
+                        .filter(ctx -> ctx.entry().isAwaitingReview())
                         .map(ctx -> buildResponse(mr, ctx))
                         .stream())
                 .toList();

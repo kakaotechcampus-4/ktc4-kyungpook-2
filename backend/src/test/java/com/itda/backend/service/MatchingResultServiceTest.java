@@ -102,6 +102,21 @@ class MatchingResultServiceTest {
     }
 
     @Test
+    void getQueue_excludesEntriesNotAwaitingReview() {
+        // 일지가 이미 처리됐으면(MATCHED 등) 남아 있는 옛 결과 행은 눌러도 거절되니 큐에 띄우지 않는다.
+        MatchingResult stale = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        JournalEntry resolved = ourJournalEntry();
+        resolved.confirmMatchByReviewer(5L);
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(stale));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(resolved));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+
+        assertThat(matchingResultService.getQueue(OUR_USER_ID)).isEmpty();
+    }
+
+    @Test
     void getQueue_skipsMalformedCandidateInsteadOfThrowing() {
         // 버그 재발 방지: AI가 candidates에 child_id/confidence 중 하나라도 빠뜨려 쓰면
         // node.get(...).asLong()가 NPE를 던져서 큐 조회 전체가 500 났었다.
