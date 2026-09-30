@@ -7,6 +7,7 @@ image=${2:?Usage: deploy-backend.sh COMMIT IMAGE_DIGEST}
 root=${DEPLOY_ROOT:-/home/ubuntu/ktc4-kyungpook-2}
 expected_origin=${EXPECTED_PUBLIC_ORIGIN:?EXPECTED_PUBLIC_ORIGIN is required}
 health_timeout=${HEALTHCHECK_TIMEOUT:-120}
+lock_timeout=${DEPLOY_LOCK_TIMEOUT:-300}
 backend_health_url=${BACKEND_HEALTH_URL:-http://127.0.0.1:8080/api/health}
 proxy_port=${PROXY_PORT:-}
 proxy_ca_bundle=${PROXY_CA_BUNDLE:-}
@@ -15,6 +16,7 @@ image_pattern='^ghcr\.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:[0-9a
 [[ $image =~ $image_pattern ]] || { echo 'An immutable backend GHCR image digest is required' >&2; exit 2; }
 [[ $expected_origin =~ ^https?://[a-zA-Z0-9.-]+(:[0-9]+)?$ ]] || { echo 'Invalid public origin' >&2; exit 2; }
 [[ $health_timeout =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid health-check timeout' >&2; exit 2; }
+[[ $lock_timeout =~ ^[0-9]+$ ]] || { echo 'Invalid lock timeout' >&2; exit 2; }
 compose_dir=$root/infra/docker
 env_file=$compose_dir/.env
 verifier=$root/infra/scripts/verify-proxy.py
@@ -25,6 +27,19 @@ caddy_snapshot=''
 caddy_candidate=''
 caddy_changed=0
 caddy_reload_attempted=0
+
+# .github/workflows/backend-ci-cd.yml의 paths와 같게 유지한다. 테스트가 일치 여부를 검사한다.
+# 이 경로가 바뀐 커밋은 BE 워크플로를 실행시키므로, 더 새 BE 배포가 뒤따른다.
+service_paths=(
+  'backend/**'
+  'infra/**'
+  '.github/workflows/backend-ci-cd.yml'
+  '!backend/**/*.md'
+  '!infra/**/*.md'
+  '!infra/scripts/deploy-ai.sh'
+  '!infra/scripts/verify-ai.py'
+  '!infra/scripts/tests/test_ai_deploy.py'
+)
 
 compose() {
   # GitHub supplies an expectation, never a Compose override of the server .env.
@@ -72,6 +87,39 @@ wait_for_proxy() {
   done
   echo 'Proxy health check timed out' >&2
   return 1
+}
+
+update_checkout() {
+  # 실행 중인 BE보다 오래된 커밋이나 더 새 BE·infra 변경을 덮는 커밋은 배포하지 않는다.
+  local running_revision=$1 path pathspecs=()
+  git merge-base --is-ancestor "$commit" origin/develop || { echo 'Commit is not on origin/develop' >&2; return 1; }
+  # 커밋 라벨이 없는 기존 이미지는 비교할 수 없어 통과시킨다.
+  if [[ $running_revision =~ ^[0-9a-f]{40}$ && $running_revision != "$commit" ]] && \
+    git merge-base --is-ancestor "$commit" "$running_revision" 2>/dev/null; then
+    echo 'Refusing to deploy a commit older than the running backend' >&2
+    return 1
+  fi
+  if git merge-base --is-ancestor HEAD "$commit"; then
+    git merge --ff-only --quiet "$commit"
+    return 0
+  fi
+  if ! git merge-base --is-ancestor "$commit" HEAD; then
+    echo 'Server HEAD and the deployment commit have diverged' >&2
+    return 1
+  fi
+  # 다른 서비스 배포가 checkout을 먼저 옮겼다. 그 사이 BE 변경이 없을 때만 그대로 쓴다.
+  for path in "${service_paths[@]}"; do
+    if [[ $path == '!'* ]]; then
+      pathspecs+=(":(exclude,glob)${path#!}")
+    else
+      pathspecs+=(":(glob)$path")
+    fi
+  done
+  if ! git diff --quiet "$commit" HEAD -- "${pathspecs[@]}"; then
+    echo 'Server checkout has newer backend changes; the run for that commit deploys them' >&2
+    return 1
+  fi
+  echo "Server checkout already contains $commit; keeping $(git rev-parse --short HEAD)"
 }
 
 save_image_reference() {
@@ -152,19 +200,20 @@ done
 [[ -r $env_file && -w $env_file ]] || { echo 'Server Compose .env must be readable and writable' >&2; exit 1; }
 cd "$root"
 git_dir=$(git rev-parse --absolute-git-dir)
-exec 9> "$git_dir/backend-deploy.lock"
-flock -n 9 || { echo 'Another backend deployment is running' >&2; exit 1; }
+# AI 배포와 같은 잠금을 쓴다. 둘 다 서버 checkout을 갱신한다.
+exec 9> "$git_dir/deploy.lock"
+flock -w "$lock_timeout" 9 || { echo 'Timed out waiting for another deployment' >&2; exit 1; }
 [[ -z $(git status --porcelain) ]] || { echo 'Server working tree is not clean' >&2; exit 1; }
 [[ $(git branch --show-current) == develop ]] || { echo 'Server must be on develop' >&2; exit 1; }
 [[ -r $verifier ]] || { echo 'Complete the initial Caddy migration before deployment' >&2; exit 1; }
 origin=$(check_settings)
+backend_id=$(compose ps --all --quiet backend)
+[[ -n $backend_id ]] || { echo 'An existing backend is required for rollback' >&2; exit 1; }
+running_revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$backend_id")
 
 echo "Preparing deployment of $commit"
 git fetch --quiet origin develop
-git merge-base --is-ancestor "$commit" origin/develop || { echo 'Commit is not on origin/develop' >&2; exit 1; }
-git merge-base --is-ancestor HEAD "$commit" || { echo 'Refusing to deploy a commit older than server HEAD' >&2; exit 1; }
-git merge --ff-only --quiet "$commit"
-[[ $(git rev-parse HEAD) == "$commit" ]] || { echo 'Server commit does not match deployment commit' >&2; exit 1; }
+update_checkout "$running_revision"
 BACKEND_IMAGE=$image compose config --quiet
 origin=$(check_settings)
 # Validate and compare effective JSON, ignoring Caddyfile comments and JSON formatting.
@@ -180,8 +229,6 @@ print(int(active != candidate))
 PY
 )
 
-backend_id=$(compose ps --all --quiet backend)
-[[ -n $backend_id ]] || { echo 'An existing backend is required for rollback' >&2; exit 1; }
 old_image=$(docker inspect --format '{{.Image}}' "$backend_id")
 rollback_image="ktc-backend:rollback-${old_image#sha256:}"
 docker tag "$old_image" "$rollback_image"

@@ -32,8 +32,18 @@ uvicorn main:app --reload --port 8000
 docker compose -f infra/docker/compose.yaml up -d --build ai
 ```
 
-> 서버에서는 `127.0.0.1:8000` 에만 바인드되고 nginx 가 라우팅하지 않습니다.
+> 서버에서는 `127.0.0.1:8000` 에만 바인드되고 Caddy 가 라우팅하지 않습니다.
 > 인증이 없는 엔드포인트라 외부에 열지 않습니다 — 확인하려면 서버 안에서 `curl localhost:8000` 을 씁니다.
+
+### 배포
+
+`develop` 에 병합되면 [AI CI/CD](../.github/workflows/ai-ci-cd.yml) 가 이미지를 빌드·확인한 뒤
+서버의 AI 컨테이너만 교체합니다. `*.md` 와 `evals/` 만 바꾸면 재배포하지 않습니다.
+`evals/` 는 이미지에 넣지 않고 서버 checkout 을 마운트해 씁니다.
+
+배포 확인은 `/health` 와 모델을 부르지 않는 `/matching` 한 건으로 하고, 서버 `AI/.env` 에
+Luna 키가 없으면 배포가 실패합니다. 실패했을 때 다시 배포하는 방법과 서버 절차는
+[인프라 문서](../infra/README.md#ai-cicd) 를 참고하세요.
 
 ---
 

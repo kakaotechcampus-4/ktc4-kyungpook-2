@@ -58,6 +58,8 @@ services:
     mem_limit: 768m
     
   ai:
+    # 로컬은 기존 빌드 이미지를, CD는 GHCR의 고정 digest를 사용한다.
+    image: ${AI_IMAGE:-ktc-ai}
     build:
       context: ../../AI
       dockerfile: Dockerfile

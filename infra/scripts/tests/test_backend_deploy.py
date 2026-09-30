@@ -1,24 +1,29 @@
 """Exercise deployments with real Git/HTTP and an isolated fake Docker CLI."""
 
 import argparse
+import fcntl
 import http.server
 import importlib.util
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 from urllib.parse import urlencode
 
 SCRIPTS = Path(__file__).resolve().parents[1]
+WORKFLOW = SCRIPTS.parents[1] / ".github/workflows/backend-ci-cd.yml"
 IMAGE = "ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:" + "b" * 64
 ORIGIN = "http://deployment.test"
-spec = importlib.util.spec_from_file_location("sender", SCRIPTS / "send-backend-deploy.py")
+spec = importlib.util.spec_from_file_location("sender", SCRIPTS / "send-deploy.py")
 sender = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sender)
 
@@ -72,7 +77,9 @@ if args[0] == "compose":
             else:
                 state["active_config"] = "new"
 elif args[0] == "inspect":
-    if args[-1] == "caddy-id":
+    if "Labels" in args[2]:
+        output = state["revision"]
+    elif args[-1] == "caddy-id":
         output = "PUBLIC_ORIGIN=" + state["origin"]
     else:
         output = state["image"] if args[2] == "{{.Config.Image}}" else "sha256:" + "a" * 64
@@ -81,6 +88,27 @@ if output:
     print(output)
 sys.exit(code)
 '''
+
+
+def workflow_path_filters(workflow):
+    """Return every `paths:` list of the workflow, in order."""
+    filters, current = [], None
+    for line in workflow.read_text().splitlines():
+        item = re.fullmatch(r"\s+- '([^']+)'", line)
+        if current is not None and item:
+            current.append(item.group(1))
+            continue
+        if current is not None:
+            filters.append(current)
+            current = None
+        if line.strip() == "paths:":
+            current = []
+    return filters
+
+
+def script_service_paths(script):
+    block = re.search(r"^service_paths=\(\n(.*?)^\)", script.read_text(), re.S | re.M).group(1)
+    return re.findall(r"'([^']+)'", block)
 
 
 class DeployScriptTests(unittest.TestCase):
@@ -104,9 +132,9 @@ class DeployScriptTests(unittest.TestCase):
         (self.root / "tracked.txt").write_text("new\n")
         self.git("commit", "-am", "new")
         self.commit = self.git("rev-parse", "HEAD").strip()
-        remote = self.base / "origin.git"
-        self.git("clone", "--bare", str(self.root), str(remote))
-        self.git("remote", "add", "origin", str(remote))
+        self.remote = self.base / "origin.git"
+        self.git("clone", "--bare", str(self.root), str(self.remote))
+        self.git("remote", "add", "origin", str(self.remote))
         self.git("reset", "--hard", self.old_commit)
         compose = self.root / "infra/docker"
         compose.mkdir(parents=True)
@@ -116,7 +144,7 @@ class DeployScriptTests(unittest.TestCase):
         self.env_file.chmod(0o600)
         self.state_file = self.base / "docker.json"
         self.set_state("success")
-        executable_dir = self.base / "bin"
+        executable_dir = self.bin = self.base / "bin"
         executable_dir.mkdir()
         (executable_dir / "docker").write_text("#!" + sys.executable + "\n" + DOCKER)
         (executable_dir / "flock").write_text("#!/bin/sh\nexit 0\n")
@@ -176,14 +204,35 @@ class DeployScriptTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join()
 
-    def git(self, *args):
-        result = subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True, check=True)
+    def git(self, *args, cwd=None):
+        result = subprocess.run(["git", *args], cwd=cwd or self.root, capture_output=True, text=True, check=True)
         return result.stdout
 
-    def set_state(self, mode):
+    def push_commit(self, relative, text):
+        """Add a commit on top of origin/develop, as another merge would."""
+        work = self.base / "work"
+        if not work.exists():
+            subprocess.run(["git", "clone", "--quiet", "--branch", "develop", str(self.remote), str(work)], check=True)
+            self.git("config", "user.name", "Deployment test", cwd=work)
+            self.git("config", "user.email", "test@example.invalid", cwd=work)
+        self.git("pull", "--quiet", "--ff-only", cwd=work)
+        target = work / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+        self.git("add", relative, cwd=work)
+        self.git("commit", "--quiet", "-m", "change " + relative, cwd=work)
+        self.git("push", "--quiet", "origin", "develop", cwd=work)
+        return self.git("rev-parse", "HEAD", cwd=work).strip()
+
+    def move_server_to(self, commit):
+        self.git("fetch", "--quiet", "origin", "develop")
+        self.git("merge", "--ff-only", "--quiet", commit)
+
+    def set_state(self, mode, revision=""):
         self.state_file.write_text(json.dumps({"image": "ktc-backend", "phase": "old", "mode": mode,
                                               "origin": ORIGIN, "active_config": "old", "commands": [],
-                                              "config_changed": mode == "reload_failure"}))
+                                              "config_changed": mode == "reload_failure",
+                                              "revision": revision}))
 
     def set_config_changed(self):
         state = self.state()
@@ -202,8 +251,9 @@ class DeployScriptTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=20)
 
     def deploy_through_ssm_command(self):
-        args = argparse.Namespace(commit=self.commit, image=IMAGE, instance_id="i-0e30a4108bfd4ea9f",
-                                  region="ap-northeast-2", root=str(self.root), origin=ORIGIN)
+        args = argparse.Namespace(service="backend", commit=self.commit, image=IMAGE,
+                                  instance_id="i-0e30a4108bfd4ea9f", region="ap-northeast-2",
+                                  root=str(self.root), origin=ORIGIN)
         script = (SCRIPTS / "deploy-backend.sh").read_text()
         command = sender.build_request(args, script)["Parameters"]["commands"][0]
         # SSM runs the command with sh, so run exactly what the sender would send.
@@ -340,13 +390,79 @@ class DeployScriptTests(unittest.TestCase):
         self.assertEqual((self.root / "tracked.txt").read_text(), "local changes\n")
         self.assertEqual(self.state()["commands"], [])
 
-    def test_older_commit_is_not_deployed(self):
-        self.git("reset", "--hard", self.commit)
-        result = self.deploy(commit=self.old_commit)
+    def assert_not_deployed(self, result, message):
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("older than server HEAD", result.stderr)
+        self.assertIn(message, result.stderr, result.stdout + result.stderr)
+        self.assertEqual(self.state()["image"], "ktc-backend")
+        self.assertEqual(self.env_file.read_text(), self.original_env)
         self.assertFalse(any("up" in entry["args"] or "pull" in entry["args"]
                              for entry in self.state()["commands"]))
+
+    # ── 역순 배포: AI 배포가 서버 checkout을 먼저 옮긴 경우 ──
+
+    def test_checkout_ahead_without_backend_changes_is_kept(self):
+        newer = self.push_commit("AI/main.py", "ai change\n")
+        self.move_server_to(newer)
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("already contains", result.stdout)
+        self.assertEqual(self.state()["image"], IMAGE)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), newer)
+
+    def test_checkout_ahead_with_ai_deploy_script_changes_is_kept(self):
+        newer = self.push_commit("infra/scripts/deploy-ai.sh", "echo ai\n")
+        self.move_server_to(newer)
+        self.assertEqual(self.deploy().returncode, 0)
+
+    def test_checkout_ahead_with_newer_infra_changes_is_refused(self):
+        newer = self.push_commit("infra/caddy/Caddyfile", "changed\n")
+        self.move_server_to(newer)
+        self.assert_not_deployed(self.deploy(), "newer backend changes")
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), newer)
+
+    def test_commit_older_than_running_backend_is_refused(self):
+        self.move_server_to(self.commit)
+        self.set_state("success", revision=self.commit)
+        self.assert_not_deployed(self.deploy(commit=self.old_commit), "older than the running backend")
+
+    def test_diverged_checkout_is_refused(self):
+        (self.root / "server-only.txt").write_text("local commit\n")
+        self.git("add", "server-only.txt")
+        self.git("commit", "-m", "server only")
+        self.assert_not_deployed(self.deploy(), "diverged")
+
+    # ── 공유 잠금: AI 배포와 같은 파일을 쓴다 ──
+
+    def use_real_flock(self):
+        if shutil.which("flock", path=os.environ["PATH"]) is None:
+            if os.environ.get("REQUIRE_FLOCK_TESTS") == "true":
+                self.fail("flock is required in CI")
+            self.skipTest("flock is not installed")
+        (self.bin / "flock").unlink()
+        lock = open(self.root / ".git/deploy.lock", "w")
+        self.addCleanup(lock.close)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return lock
+
+    def test_waits_for_lock_held_by_another_deployment(self):
+        lock = self.use_real_flock()
+        self.environment["DEPLOY_LOCK_TIMEOUT"] = "20"
+        process = subprocess.Popen(["bash", str(SCRIPTS / "deploy-backend.sh"), self.commit, IMAGE],
+                                   env=self.environment, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        time.sleep(1.5)
+        self.assertIsNone(process.poll())
+        self.assertFalse(any("up" in entry["args"] for entry in self.state()["commands"]))
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        stdout, stderr = process.communicate(timeout=20)
+        self.assertEqual(process.returncode, 0, stdout + stderr)
+        self.assertEqual(self.state()["image"], IMAGE)
+
+    def test_lock_timeout_fails_without_changes(self):
+        self.use_real_flock()
+        self.environment["DEPLOY_LOCK_TIMEOUT"] = "1"
+        self.assert_not_deployed(self.deploy(), "Timed out waiting for another deployment")
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.old_commit)
 
     def test_mutable_image_tag_is_rejected_before_changes(self):
         result = self.deploy(image="ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend:latest")
@@ -355,9 +471,17 @@ class DeployScriptTests(unittest.TestCase):
         self.assertEqual(self.state()["commands"], [])
 
 
+class ConsistencyTests(unittest.TestCase):
+    def test_script_paths_match_workflow_trigger(self):
+        filters = workflow_path_filters(WORKFLOW)
+        self.assertEqual(len(filters), 2)
+        for paths in filters:
+            self.assertEqual(paths, script_service_paths(SCRIPTS / "deploy-backend.sh"))
+
+
 class SenderTests(unittest.TestCase):
     def args(self):
-        return argparse.Namespace(commit="c" * 40, image=IMAGE, instance_id="i-0e30a4108bfd4ea9f",
+        return argparse.Namespace(service="backend", commit="c" * 40, image=IMAGE, instance_id="i-0e30a4108bfd4ea9f",
                                   region="ap-northeast-2", root="/home/ubuntu/ktc4-kyungpook-2", origin=ORIGIN)
 
     def test_script_runs_as_ubuntu_with_exact_commit_and_digest(self):
@@ -377,7 +501,7 @@ class SenderTests(unittest.TestCase):
             sender.build_request(args, "echo deployment")
 
     def test_origin_is_required(self):
-        result = subprocess.run([sys.executable, str(SCRIPTS / "send-backend-deploy.py"),
+        result = subprocess.run([sys.executable, str(SCRIPTS / "send-deploy.py"), "--service", "backend",
                                  "--commit", "c" * 40, "--image", IMAGE,
                                  "--instance-id", "i-0e30a4108bfd4ea9f", "--region", "ap-northeast-2"],
                                 capture_output=True, text=True)

@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .venv/
 .git/
+# 서버와 로컬 compose 모두 evals/를 마운트한다. 이미지에 굽지 않는다.
+evals/
