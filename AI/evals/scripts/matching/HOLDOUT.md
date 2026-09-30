@@ -13,12 +13,19 @@ holdout 아이 20명 전원의 이름이 `hint_name` 으로, 원문 144 종이 `
 지금은 `--dataset` 없이는 dev 만 나온다.
 
 ```bash
-python evals/scripts/matching/build_inputs.py                      # dev 665건
-python evals/scripts/matching/build_inputs.py --dataset holdout    # 405건, 경고 출력
+python evals/scripts/matching/build_inputs.py                              # dev 665건
+python evals/scripts/matching/build_inputs.py --dataset consumed-holdout   # 405건
+python evals/scripts/matching/normalize_ids.py --dataset dev               # 문자열 ID → 정수
 ```
 
-미등록 50 건은 `holdout` 요청에서 빠진다 — `UNMATCHED_WHEN_HINT_NOT_IN_ROSTER` 가
-그 케이스들에서 나왔으므로 이미 소모된 데이터다.
+세트 이름이 `holdout` 이 아니라 **`consumed-holdout`** 인 것은 의도한 것이다. 매니페스트의
+holdout 은 이미 소모됐고, 파일 이름이 `matching_inputs_consumed-holdout.json` 이라
+나중에 누가 이걸 "블라인드 점수" 로 보고할 수 없다. 회귀 확인에는 쓸 수 있다.
+
+미등록 50 건은 이 세트에서도 빠진다 — `UNMATCHED_WHEN_HINT_NOT_IN_ROSTER` 가
+그 케이스들에서 나왔으므로 역시 소모된 데이터다.
+
+**진짜 블라인드 점수가 필요하면 새 세트를 만들어야 한다.**
 
 ## 기준선과 나란히 본다
 
@@ -26,13 +33,28 @@ python evals/scripts/matching/build_inputs.py --dataset holdout    # 405건, 경
 표지만 읽는 세 줄짜리 코드가 같은 데이터에서 100% 를 받았다.
 
 ```bash
-python evals/scripts/matching/baseline.py <입력> /tmp/base.json          # 표지만
-python evals/scripts/matching/baseline.py <입력> /tmp/base2.json --mode both
-python evals/scripts/matching/score.py /tmp/base.json
+python evals/scripts/matching/baseline.py <입력> /tmp/b1.json --mode hint
+python evals/scripts/matching/baseline.py <입력> /tmp/b2.json --mode both
+python evals/scripts/matching/baseline.py <입력> /tmp/b3.json --mode body-first
+python evals/scripts/matching/score.py /tmp/b3.json
 ```
 
-**에이전트가 기준선을 못 넘으면 그 홀드아웃에서 에이전트는 실패한 것이다.**
-LLM 을 부르지 않으므로 즉시 끝나고 결과가 매번 같다.
+| mode | 규칙 |
+| --- | --- |
+| `hint` | 표지 이름을 명부에서 찾는다 |
+| `both` | 표지가 없으면 본문에서도 찾는다 |
+| `body-first` | **표지 이름이 본문에 없고 명부의 다른 이름이 본문에 있으면 그쪽을 고른다** |
+
+**`body-first` 를 못 넘으면 표지를 뒤집는 데 LLM 을 쓸 이유가 없다는 뜻이다.**
+셋 다 LLM 을 부르지 않으므로 즉시 끝나고 결과가 매번 같다.
+
+> 2026-09-30 60건 측정에서 `body-first` 는 **표지·본문 불일치 15건을 전부 맞혔다.**
+> 규칙으로 풀리는 자리는 규칙이 이미 다 푼다. 에이전트가 앞선 곳은 오타 15건,
+> 동명이인 5건, 이름 부분포함 5건이었다.
+>
+> 다만 `body-first` 는 맞는 아이를 고르면서도 `hint_mismatch` 를 0/15 로 남긴다 —
+> **표지가 틀렸다는 사실을 아무에게도 알리지 않고 조용히 덮어쓴다.** 교사가 확인할
+> 기회가 사라진다. 그래서 정답률만 비교하면 안 되고 `hint_mismatch` 를 같이 본다.
 
 ## 세트 구성 (60건 기준)
 
@@ -50,14 +72,19 @@ LLM 을 부르지 않으므로 즉시 끝나고 결과가 매번 같다.
 
 ### 만든 뒤 반드시 돌리는 자체 검사
 
-문장을 다 쓴 뒤, 에이전트를 부르기 **전에** 데이터가 자기모순이 없는지 확인한다.
+문장을 다 쓴 뒤, 에이전트를 부르기 **전에** 돌린다.
 
-- 표지 불일치 케이스의 본문에 표지 이름이 들어 있지 않은가
-- 단서 없음 케이스의 본문에 명부 이름이 하나도 없는가
-- 오타 이름이 명부의 다른 아이 이름과 실제로 일치하지 않는가
-- `unmatched` 정답인데 `expected_child_id` 가 채워져 있지 않은가
+```bash
+python evals/scripts/matching/verify_holdout.py <세트.json>
+```
 
-여기서 걸리면 에이전트가 아니라 문제가 틀린 것이다.
+표지 불일치 케이스의 본문에 표지 이름이 남아 있는지, 단서 없음 케이스에 명부 이름이
+섞여 있는지, 명부 밖 아이를 정답으로 적었는지 등을 본다. **여기서 걸리면 에이전트가
+아니라 문제가 틀린 것이다.**
+
+끝에 SHA-256 이 찍힌다. 세트 자체는 레포에 없으므로(아동 기록 형태라 커밋하지 않는다)
+**이 값으로 서로 같은 파일을 보고 있는지 대조한다.** 세트를 공유할 때는 파일과 함께
+이 해시를 적어 둔다.
 
 ## 실행 절차
 
@@ -74,6 +101,36 @@ LLM 을 부르지 않으므로 즉시 끝나고 결과가 매번 같다.
 실패를 보고 규칙을 고치기로 했다면, 그 세트는 소모됐다고 기록하고 다음 검증에는
 새 세트를 만든다.
 
+## 숫자를 읽는 법 — 표본이 얇다
+
+60건은 작다. 갈래별로는 5~15건이라 **한 건이 크게 움직인다.**
+
+| 갈래 | 건수 | 1건의 무게 |
+| --- | --- | --- |
+| 표지·본문 불일치 | 15 | 6.7%p |
+| 오타 (유형별) | 5 | 20%p |
+| 동명이인 | 5 | 20%p |
+
+**"오매칭 0/15" 는 "오매칭률이 0" 이라는 뜻이 아니다.** 15번 봐서 한 번도 안 나왔다는
+뜻이고, 여기서 말할 수 있는 것은 **실제 오매칭률이 대략 20% 미만**이라는 것까지다
+(0건 관측의 상한은 대략 3÷n 이다). 300건을 돌려야 1% 아래를 말할 수 있다.
+
+그래서 비율보다 **건수**를 통과 기준으로 삼는다.
+
+```
+✅ 오매칭 0건          auto 는 사람 확인을 건너뛰므로 여기가 가장 중요하다
+✅ 오탐 0건            명부에 없는 아이를 특정하지 않았는가
+🟡 정답률              참고치. %p 변화를 과잉 해석하지 않는다
+```
+
+### τ 스윕은 관찰일 뿐이다
+
+`score.py` 가 τ 를 바꿔가며 자동 확정 건수와 오매칭을 찍어 준다. **이건 보기만 한다.**
+
+홀드아웃 결과를 보고 τ 를 실제로 바꾸면 그 순간 튜닝이고, 그 세트는 소모된다.
+τ 를 조정하려면 dev 에서 정하고, 홀드아웃은 그 결정이 처음 보는 데이터에서
+버티는지 확인하는 데만 쓴다.
+
 ## 한계 — 자체 생성 세트일 때
 
 에이전트를 만든 사람이 문제도 내면 블라인드가 약해진다. 아는 규칙을 피해 가는
@@ -85,6 +142,10 @@ LLM 을 부르지 않으므로 즉시 끝나고 결과가 매번 같다.
 
 그래도 **"처음 보는 표현에서의 성능"** 은 이 방식으로 측정되지 않는다. 그건 다른
 사람이 만든 세트로만 알 수 있다.
+
+**빠뜨리기 쉬운 갈래**도 있다. 2026-09-30 세트에는 "표지가 맞고 본문에 다른 아이가
+스쳐 지나간다" 가 없었다. 하필 `body-first` 기준선이 그 케이스에서 무너지는데,
+세트에 없어서 기준선이 실제보다 좋아 보였다. 다음 세트에는 넣는다.
 
 ## 데이터는 커밋하지 않는다
 

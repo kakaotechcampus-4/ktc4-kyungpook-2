@@ -50,6 +50,28 @@ def by_body(case: dict) -> int | None:
     return hits[0]["child_id"] if len(hits) == 1 else None
 
 
+def by_body_first(case: dict) -> int | None:
+    """
+    본문을 표지보다 앞세운다. 표지 이름이 본문에 없고 명부의 다른 이름이 본문에
+    있으면 그쪽을 고른다 — "표지 A · 본문 B" 를 규칙만으로 맞히는 가장 싼 방법이다.
+
+    이 기준선을 못 넘으면, 표지를 뒤집는 데 LLM 을 쓸 이유가 없다는 뜻이 된다.
+    """
+    content = nfc(case["content"])
+    hint = nfc(case.get("hint_name"))
+    if hint and hint in content:
+        return by_hint(case)
+    body = by_body(case)
+    return body if body is not None else by_hint(case)
+
+
+PICKERS = {
+    "hint": by_hint,          # 표지만
+    "both": by_body,          # 표지가 없으면 본문에서도
+    "body-first": by_body_first,  # 본문이 표지와 어긋나면 본문을 따른다
+}
+
+
 def run_one(case: dict, mode: str) -> dict:
     record = {key: case.get(key) for key in PASSTHROUGH}
     record["expected_multi_reason"] = case.get("expected_multi_reason", "__skip__")
@@ -57,6 +79,8 @@ def run_one(case: dict, mode: str) -> dict:
     child_id = by_hint(case)
     if child_id is None and mode == "both":
         child_id = by_body(case)
+    elif mode == "body-first":
+        child_id = by_body_first(case)
 
     record.update(
         status="auto" if child_id is not None else "unmatched",
@@ -79,9 +103,10 @@ def main() -> None:
     ap.add_argument("dst", help="결과를 쓸 경로")
     ap.add_argument(
         "--mode",
-        choices=["hint", "both"],
+        choices=["hint", "both", "body-first"],
         default="hint",
-        help="hint = 표지만 본다 (기본) / both = 표지가 없으면 본문에서도 찾는다",
+        help="hint = 표지만 (기본) / both = 표지 없으면 본문도 / "
+             "body-first = 본문이 표지와 어긋나면 본문을 따른다 (가장 강한 기준선)",
     )
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
