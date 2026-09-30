@@ -24,15 +24,17 @@ def build_request(args, script):
     if not args.root.startswith("/") or "\n" in args.root:
         raise ValueError("root must be an absolute server path")
     # One quoted heredoc, executed as ubuntu, preserves its Docker login and .env ownership.
+    # Pass the script as an argument, not on stdin: `docker compose exec` forwards stdin even
+    # with -T, so it would swallow the unread rest of the script and bash would exit 0 early.
     delimiter = "BACKEND_DEPLOY_SCRIPT_" + args.commit
     if delimiter in script:
         raise ValueError("heredoc delimiter occurs in deployment script")
     command = (
         "set -eu\n"
+        f"script=$(cat <<'{delimiter}'\n{script}\n{delimiter}\n)\n"
         f"runuser -u ubuntu -- env DEPLOY_ROOT={shlex.quote(args.root)} "
-        f"EXPECTED_PUBLIC_ORIGIN={shlex.quote(args.origin)} bash -s -- "
-        f"{shlex.quote(args.commit)} {shlex.quote(args.image)} <<'{delimiter}'\n"
-        f"{script}\n{delimiter}\n"
+        f"EXPECTED_PUBLIC_ORIGIN={shlex.quote(args.origin)} bash -c \"$script\" deploy-backend.sh "
+        f"{shlex.quote(args.commit)} {shlex.quote(args.image)} </dev/null\n"
     )
     return {
         "DocumentName": "AWS-RunShellScript",

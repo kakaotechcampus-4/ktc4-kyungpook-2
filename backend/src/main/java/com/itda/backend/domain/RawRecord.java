@@ -85,6 +85,12 @@ public class RawRecord {
         this.updatedAt = this.createdAt;
     }
 
+    /** 파일명에서 뽑아낸 표지 힌트를 채운다. 명부 이름과 대조해서 찾은 값만 들어온다(RawRecordService). */
+    public void applyHint(String hintName, LocalDate hintBirthdate) {
+        this.hintName = hintName;
+        this.hintBirthdate = hintBirthdate;
+    }
+
     public void delete() {
         this.deletedAt = LocalDateTime.now();
     }

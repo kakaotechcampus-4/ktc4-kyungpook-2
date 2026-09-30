@@ -1,11 +1,18 @@
-# AI/evals/scripts/normalize_ids.py
+# AI/evals/scripts/matching/normalize_ids.py
+"""
+문자열 child_id 를 정수로 바꾼다. build_inputs.py 다음 단계다.
+
+    python evals/scripts/matching/normalize_ids.py [--dataset dev|consumed-holdout|all]
+    python evals/scripts/matching/normalize_ids.py --src <입력> --dst <출력>
+
+build_inputs.py 가 세트별로 파일을 나눠 내보내므로 여기서도 같은 이름을 따라간다.
+"""
+import argparse
 import json
 import re
 from pathlib import Path
 
 GENERATED_DIR = Path(__file__).parent.parent.parent / "generated" / "matching"
-INPUT_PATH = GENERATED_DIR / "matching_inputs_생성됨.json"
-OUTPUT_PATH = GENERATED_DIR / "matching_inputs_int.json"
 ID_MAP_PATH = GENERATED_DIR / "id_map.json"
 
 
@@ -20,8 +27,8 @@ def child_to_int(s: str | None) -> int | None:
     return n if kind == "dev" else 80 + n
 
 
-def main():
-    with open(INPUT_PATH, encoding="utf-8") as f:
+def main(src, dst):
+    with open(src, encoding="utf-8") as f:
         cases = json.load(f)
 
     child_id_map = {}      # 정수 -> 원래 문자열 (역추적용)
@@ -59,7 +66,8 @@ def main():
 
         out.append(c)
 
-    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with open(dst, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
 
     with open(ID_MAP_PATH, "w", encoding="utf-8") as f:
@@ -69,9 +77,21 @@ def main():
         )
 
     print(f"변환 완료: {len(out)}건")
-    print(f"저장: {OUTPUT_PATH}")
+    print(f"저장: {dst}")
     print(f"ID 매핑표: {ID_MAP_PATH}")
 
 
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dataset", choices=["dev", "consumed-holdout", "all"], default="dev")
+    ap.add_argument("--src", help="직접 지정하면 --dataset 을 무시한다")
+    ap.add_argument("--dst")
+    args = ap.parse_args()
+    args.src = Path(args.src) if args.src else GENERATED_DIR / f"matching_inputs_{args.dataset}.json"
+    args.dst = Path(args.dst) if args.dst else GENERATED_DIR / f"matching_inputs_{args.dataset}_int.json"
+    return args
+
+
 if __name__ == "__main__":
-    main()
+    parsed = parse_args()
+    main(parsed.src, parsed.dst)

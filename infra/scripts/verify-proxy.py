@@ -11,6 +11,9 @@ import sys
 import tempfile
 from urllib.parse import parse_qs, urlparse
 
+# .invalid is reserved and can never be an allowed frontend origin.
+CORS_PROBE_ORIGIN = "https://cors-check.invalid"
+
 
 class ProxyConnectionError(ValueError):
     def __init__(self, result):
@@ -82,10 +85,13 @@ def check_health(origin, **options):
 
 def check_proxy(origin, **options):
     check_health(origin, **options)
+    # The frontend and API share the public origin, so browsers do not use CORS and Spring adds
+    # no CORS headers to same-origin requests. Check that a foreign origin is rejected instead;
+    # check_settings verifies that the public origin is in the allowed list.
     status, headers, _ = request(origin, "/api/health", method="OPTIONS", headers={
-        "Origin": origin, "Access-Control-Request-Method": "GET",
+        "Origin": CORS_PROBE_ORIGIN, "Access-Control-Request-Method": "GET",
     }, **options)
-    if status != 200 or headers.get("Access-Control-Allow-Origin") != origin:
+    if status != 403 or "Access-Control-Allow-Origin" in headers:
         raise ValueError("CORS verification failed")
     status, headers, _ = request(origin, "/oauth2/authorization/kakao", **options)
     callback = parse_qs(urlparse(headers.get("Location", "")).query).get("redirect_uri", [""])[0]

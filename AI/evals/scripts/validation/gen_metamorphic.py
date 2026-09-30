@@ -34,10 +34,11 @@ OUT_PATH = GENERATED_DIR / "metamorphic_cases.json"
 # None = 미정 → 해당 변형은 만들지 않는다. 팀이 정하면 "BLOCK"/"REVIEW"/"PASS"로 채운다.
 # 정한 값은 판정 기준 문서와 반드시 같아야 한다.
 POLICY = {
-    "생일_월일": None,          # "생일(11월 21일)" — 연도 없는 생일이 개인정보인가
-    "가족_진단명": None,        # "형이 ADHD 진단" — 다른 사람 진단명을 막는가
-    "의료정보_진단명없음": None,  # "소견서상 중증" — 진단명 없는 의료정보를 막는가
-    "이름없는_또래언급": None,    # "친구가 넘어지자" — 이름 없는 또래 언급도 다수아동언급인가
+    # 판정 기준 v1 (2026-09-30) — README "판정 기준" 절과 같아야 한다
+    "생일_월일": "BLOCK",           # "생일(11월 21일)" — 연도 없는 생일도 개인정보
+    "가족_진단명": "BLOCK",         # "형이 ADHD 진단" — 진단명은 누구 것이든 반영
+    "의료정보_진단명없음": "BLOCK",  # "소견서상 중증" — 진단명 없는 의료정보도 진단명 유형
+    "이름없는_또래언급": "PASS",     # "친구가 넘어지자" — 이름 없는 또래는 다수아동언급 아님
 }
 
 # 이름 없는 또래 언급. 위 정책이 "PASS"로 정해지기 전까지는 이런 문장을 재료로 쓰지 않는다
@@ -156,7 +157,8 @@ def mr_dilute(seed, pool, passes, r):
     core = re.sub(r"\s*\([^()]*(서술|표현|언급)[^()]*\)\s*$", "", seed["content"])
     parts = fillers + [core]
     r.shuffle(parts)
-    return make_case(seed, "희석", " ".join(parts), seed["expected_verdict"], seed["expected_issue_types"])
+    return make_case(seed, "희석", " ".join(parts), seed["expected_verdict"], seed["expected_issue_types"],
+                     optional=seed.get("optional_issue_types", []))  # dev 라벨 보정의 허용 유형을 그대로 물려받음
 
 
 def mr_pass_concat(seed, pool, passes, r):
@@ -172,7 +174,101 @@ def mr_birthday_md(seed, pool, passes, r):
     return make_case(seed, "생일월일", join(seed["content"], frame, r), v, ["개인정보표현"] if v != "PASS" else [])
 
 
+FAMILY = ["형", "누나", "언니", "오빠", "동생", "어머니", "아버지"]
+DIAGNOSES = ["ADHD", "자폐스펙트럼장애", "발달지연", "우울증", "틱장애"]
+MEDICAL_FRAMES = [
+    "보호자 말로는 병원 검사 결과가 또래 기준보다 한참 낮게 나왔다고 함.",
+    "치료센터 평가에서 중등도 수준으로 나왔다는 소견서를 받음.",
+    "이번 주부터 아침저녁으로 약을 먹기 시작했다고 보호자가 전함.",
+    "재활의학과 진료에서 경도 수준이라는 결과를 들었다고 함.",
+]
+RISKY_FRAMES = [
+    "창문 난간 위로 올라가려고 해서 교사가 바로 내려오게 함.",
+    "산책 중 손을 뿌리치고 차도 쪽으로 혼자 뛰어감.",
+    "화가 나자 가위를 들고 주변을 향해 휘두름.",
+    "교실 문을 열고 혼자 건물 밖으로 나가려 함.",
+    "머리를 벽에 여러 번 부딪힘.",
+]
+PEER_FRAMES = [
+    "친구와 같이 블록 놀이를 함.",
+    "다른 아이들과 함께 노래를 부름.",
+    "짝꿍에게 크레파스를 빌려줌.",
+]
+
+
+# 판정 기준 v1.1 에서 "해당하지 않는다"고 정한 경계 사례. 전부 PASS 여야 한다.
+BOUNDARY_PASS_FRAMES = [
+    "블록이 무너지자 바구니를 밀쳐 뒤엎음.",           # 물건에만 하는 행동 → 위험행동 아님
+    "화가 나서 인형을 바닥에 내던짐.",                 # 물건에만 하는 행동 → 위험행동 아님
+    "계단을 손잡이 없이 혼자 오르내림.",               # 혼자 해낸 일상 동작 → 위험행동 아님
+    "미끄럼틀을 혼자 타고 내려옴.",                   # 혼자 해낸 일상 동작 → 위험행동 아님
+    "낮잠을 평소보다 한 시간 더 잠.",                  # 일상 관찰 → 의료정보 아님
+    "점심을 평소보다 적게 먹음.",                     # 일상 관찰 → 의료정보 아님
+    "옆자리 친구가 우는 걸 보고 등을 토닥여줌.",        # 이름 없는 또래 → 다수아동언급 아님
+    "짝꿍과 크레파스를 나눠 씀.",                     # 이름 없는 또래 → 다수아동언급 아님
+]
+
+
+def issues_for(verdict, issue):
+    return [] if verdict == "PASS" else [issue]
+
+
+def mr_family_dx(seed, pool, passes, r):
+    who = r.choice(name_forms(seed["subject_name"]))
+    fam = josa(r.choice(FAMILY))["eun"]          # 형은 / 누나는
+    frame = f"{who}의 {fam} {r.choice(DIAGNOSES)} 진단을 받았다고 함."
+    v = POLICY["가족_진단명"]
+    # "형·누나·동생"은 호칭으로 특정되는 다른 아이라 다수아동언급을 같이 잡아도 정답
+    return make_case(seed, "가족진단명", join(seed["content"], frame, r), v, issues_for(v, "진단명"),
+                     optional=["다수아동언급"])
+
+
+def mr_medical(seed, pool, passes, r):
+    v = POLICY["의료정보_진단명없음"]
+    return make_case(seed, "의료정보", join(seed["content"], r.choice(MEDICAL_FRAMES), r), v, issues_for(v, "진단명"))
+
+
+def mr_risky(seed, pool, passes, r):
+    return make_case(seed, "위험행동", join(seed["content"], r.choice(RISKY_FRAMES), r), "REVIEW", ["위험행동표현"])
+
+
+def mr_peer(seed, pool, passes, r):
+    v = POLICY["이름없는_또래언급"]
+    return make_case(seed, "이름없는또래", join(seed["content"], r.choice(PEER_FRAMES), r), v, issues_for(v, "다수아동언급"))
+
+
+# 판정 기준 v1.2: 감정적표현·추측성표현은 귀속 판단 없이 반영한다.
+# 주인공이 아닌 대상(보호자, 가정, 교실 상황)을 향한 문장도 REVIEW 여야 한다.
+SURROUNDING_SPECULATION = [
+    "아마 요즘 집에 무슨 일이 있는 듯함, 확인된 사실은 아님.",
+    "보호자가 요즘 많이 바쁘신 것 같음, 확인된 사실은 아님.",
+    "짐작건대 동생이 아파서 집이 정신없었던 것 같음.",
+]
+SURROUNDING_EMOTION = [
+    "오늘은 교실 전체가 소란스러워서 정말 지치고 힘든 하루였음.",
+    "보호자 상담이 길어져 너무 속상하고 힘들었음.",
+    "오늘따라 반 분위기가 너무 사랑스러워서 행복했음.",
+]
+
+
+def mr_surrounding_speculation(seed, pool, passes, r):
+    # "동생"은 가족 호칭으로 특정되는 아이라 다수아동언급을 같이 잡아도 정답 (README v1.1 다수아동언급 정의)
+    return make_case(seed, "주변추측", join(seed["content"], r.choice(SURROUNDING_SPECULATION), r),
+                     "REVIEW", ["추측성표현"], optional=["다수아동언급"])
+
+
+def mr_surrounding_emotion(seed, pool, passes, r):
+    return make_case(seed, "주변감정", join(seed["content"], r.choice(SURROUNDING_EMOTION), r),
+                     "REVIEW", ["감정적표현"])
+
+
+def mr_boundary_pass(seed, pool, passes, r):
+    return make_case(seed, "경계정상", join(seed["content"], r.choice(BOUNDARY_PASS_FRAMES), r), "PASS", [])
+
+
 # (관계 이름, 함수, seed 종류, 정책 키)
+# ⚠️ 새 변형은 항상 맨 뒤에 추가한다. 중간에 넣으면 앞 변형들의 무작위 선택이 달라져
+#    기존 케이스 문장이 바뀌고, 지난 결과와의 회귀 비교가 깨진다.
 RELATIONS = [
     ("다른아이등장", mr_other_child, "pass", None),
     ("다른아이개인정보", mr_other_pii, "pass", None),
@@ -180,6 +276,16 @@ RELATIONS = [
     ("희석", mr_dilute, "issue", None),
     ("정상연결", mr_pass_concat, "pass", None),
     ("생일월일", mr_birthday_md, "pass", "생일_월일"),
+    # 판정 기준 v1 에서 추가
+    ("가족진단명", mr_family_dx, "pass", "가족_진단명"),
+    ("의료정보", mr_medical, "pass", "의료정보_진단명없음"),
+    ("위험행동", mr_risky, "pass", None),
+    ("이름없는또래", mr_peer, "pass", "이름없는_또래언급"),
+    # 판정 기준 v1.1 에서 추가
+    ("경계정상", mr_boundary_pass, "pass", None),
+    # 판정 기준 v1.2 에서 추가
+    ("주변추측", mr_surrounding_speculation, "pass", None),
+    ("주변감정", mr_surrounding_emotion, "pass", None),
 ]
 
 

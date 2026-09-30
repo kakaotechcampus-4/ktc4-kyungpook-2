@@ -1,6 +1,8 @@
 package com.itda.backend.service;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -8,11 +10,15 @@ import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.itda.backend.domain.Child;
+import com.itda.backend.domain.JournalEntry;
 import com.itda.backend.domain.RawRecord;
 import com.itda.backend.domain.RawRecordStatus;
 import com.itda.backend.exception.RawRecordNotFoundException;
 import com.itda.backend.exception.RawRecordStorageException;
 import com.itda.backend.exception.RawRecordValidationException;
+import com.itda.backend.repository.ChildRepository;
+import com.itda.backend.repository.JournalEntryRepository;
 import com.itda.backend.repository.RawRecordRepository;
 import com.itda.backend.service.storage.RawFileStorage;
 
@@ -26,16 +32,23 @@ public class RawRecordService {
 
     // ponytail: 매직바이트 스니핑 없이 확장자/선언된 content-type 이중 화이트리스트로만 검증.
     // 팀 합의로 파일 종류가 늘어나면 이 목록만 넓히면 됨.
-    private static final Set<String> ALLOWED_EXTENSIONS =
-            Set.of("csv", "txt", "pdf", "jpg", "jpeg", "png", "hwp");
+    // jpg/jpeg/png/hwp는 이번 학기 범위 밖으로 제외(노션 "파일 형식 결정" 문서, 2026-09-29) —
+    // jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려움. docx는 아직 추가 전(다음 이슈).
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("csv", "txt", "pdf");
 
-    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
-            "text/csv", "text/plain", "application/pdf",
-            "image/jpeg", "image/png", "application/x-hwp", "application/haansofthwp");
+    private static final Set<String> ALLOWED_CONTENT_TYPES =
+            Set.of("text/csv", "text/plain", "application/pdf");
+
+    // 텍스트 추출이 아직 안 되는 형식 — 업로드는 받되 기록 분리는 건너뛴다(entries: [] 유지).
+    // pdf 추출(PDFBox)은 다음 이슈에서 추가한다.
+    private static final Set<String> TEXT_EXTRACTABLE_EXTENSIONS = Set.of("csv", "txt");
 
     private final RawRecordRepository rawRecordRepository;
     private final RawFileStorage rawFileStorage;
     private final UserService userService;
+    private final JournalEntryRepository journalEntryRepository;
+    private final JournalEntrySplitter journalEntrySplitter;
+    private final ChildRepository childRepository;
 
     /**
      * 인증된 사용자의 소속 기관을 찾는다.
@@ -55,7 +68,8 @@ public class RawRecordService {
     public RawRecord ingest(String userId, MultipartFile file) {
         // 기관 식별자는 이제 사용자의 소속 기관 id(숫자)라, 비어 있거나 컬럼 길이를 넘을 수 없다.
         // 예전에 있던 두 검사는 클라이언트가 보낸 값을 믿던 시절의 것이라 지웠다.
-        String institutionId = resolveInstitutionId(userId);
+        Long organizationId = userService.getOrganizationIdOf(userId);
+        String institutionId = String.valueOf(organizationId);
         if (file == null || file.isEmpty()) {
             throw new RawRecordValidationException("file is required");
         }
@@ -73,6 +87,20 @@ public class RawRecordService {
         String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
             throw new RawRecordValidationException("unsupported content type");
+        }
+
+        // rawFileStorage.store()보다 먼저 읽어둔다 — MultipartFile.transferTo()는 구현에 따라
+        // 파일을 "이동"시킬 수 있어서(Spring Javadoc), store() 이후에 다시 읽으면 실패할 수 있다.
+        // 여기서 실패해도 업로드 자체는 막지 않는다 — 못 읽으면 그냥 분리를 건너뛴다
+        // (store()가 곧이어 독자적으로 다시 읽는데, 정말 스트림이 깨졌다면 거기서도 실패해서
+        // 기존 RawRecordStorageException 경로로 자연스럽게 처리된다).
+        byte[] fileBytes = null;
+        if (TEXT_EXTRACTABLE_EXTENSIONS.contains(extension)) {
+            try {
+                fileBytes = file.getBytes();
+            } catch (IOException e) {
+                log.warn("failed to pre-read raw file bytes for splitting institutionId={}", institutionId, e);
+            }
         }
 
         String storedPath;
@@ -93,6 +121,7 @@ public class RawRecordService {
                 contentType,
                 file.getSize(),
                 RawRecordStatus.PENDING);
+        applyHintFromFilename(rawRecord, organizationId, displayFilename);
 
         RawRecord saved;
         try {
@@ -114,7 +143,71 @@ public class RawRecordService {
 
         log.info("raw record intake recorded id={} institutionId={} status={}",
                 saved.getId(), institutionId, saved.getStatus());
+
+        splitIntoJournalEntries(saved, fileBytes);
+
         return saved;
+    }
+
+    /**
+     * 업로드된 파일을 기록(JournalEntry) 단위로 쪼개서 저장한다. 응답(201)은 이미 위에서
+     * 확정된 값을 그대로 돌려주므로, 여기서 실패해도 업로드 자체는 성공으로 남는다 —
+     * 파일 저장에 실패하는 것과는 무게가 다르다(원본은 이미 안전하게 저장됨).
+     *
+     * <p>워커가 아니라 요청 안에서 동기로 처리한다 — AI 호출(매칭)은 여기서 하지 않는다,
+     * 그건 별도 워커가 PENDING 상태의 JournalEntry를 긁어가서 한다(노션 "기록 분리 기능" 문서).
+     */
+    private void splitIntoJournalEntries(RawRecord saved, byte[] fileBytes) {
+        if (fileBytes == null) {
+            // pdf 등 아직 텍스트를 못 뽑는 형식이거나, 사전 읽기 자체가 실패한 경우 —
+            // entries가 계속 비어있는 게 정상이다(O-26).
+            return;
+        }
+
+        String text = new String(fileBytes, StandardCharsets.UTF_8);
+        List<JournalEntrySplitter.SplitEntry> entries = journalEntrySplitter.split(text);
+        try {
+            int seq = 1;
+            for (JournalEntrySplitter.SplitEntry entry : entries) {
+                journalEntryRepository.save(
+                        JournalEntry.of(saved.getId(), entry.entryDate(), entry.content(), seq++));
+            }
+            log.info("split raw record id={} into {} journal entries", saved.getId(), entries.size());
+        } catch (RuntimeException e) {
+            // 업로드는 이미 성공했다 — 기록 분리 실패로 업로드 응답까지 실패시키지 않는다.
+            log.error("failed to save journal entries for rawRecordId={}", saved.getId(), e);
+        }
+    }
+
+    /**
+     * 파일명에 명부 아동 이름이 들어있으면 표지 힌트로 채운다(코드리뷰 반영, #71).
+     *
+     * <p>파일명 서식을 파싱하지 않는다 — 기관마다 서식이 달라서 강제하면 도입 장벽이 된다.
+     * 대신 명부 이름이 파일명에 포함되는지만 본다. 명부에 없는 값을 힌트로 넣으면 AI가
+     * 본문도 안 보고 unmatched로 떨어뜨리므로(matching/nodes.py), 정확히 한 명으로
+     * 좁혀지지 않으면 비워둔다 — 틀린 힌트가 힌트 없는 것보다 나쁘다.
+     *
+     * <p>macOS에서 만든 한글 파일명은 자모가 분리(NFD)돼서 온다 — 파일명·명부 이름 양쪽 다
+     * NFC로 정규화하지 않으면 눈에는 같아 보이는데 contains가 실패한다.
+     */
+    private void applyHintFromFilename(RawRecord rawRecord, Long organizationId, String displayFilename) {
+        String normalizedFilename = Normalizer.normalize(displayFilename, Normalizer.Form.NFC);
+
+        List<Child> hits = childRepository.findByOrganizationId(organizationId).stream()
+                .filter(child -> normalizedFilename.contains(Normalizer.normalize(child.getName(), Normalizer.Form.NFC)))
+                .toList();
+
+        if (hits.size() > 1) {
+            // "박서연"과 "서연"이 둘 다 명부에 있으면 짧은 이름도 걸린다 — 가장 긴 매칭만 남긴다.
+            int longestNameLength = hits.stream().mapToInt(child -> child.getName().length()).max().orElse(0);
+            hits = hits.stream().filter(child -> child.getName().length() == longestNameLength).toList();
+        }
+
+        if (hits.size() == 1) {
+            Child child = hits.get(0);
+            rawRecord.applyHint(child.getName(), child.getBirthdate());
+        }
+        // 0명이거나(파일명에 이름 없음) 동명이인으로 여전히 2명 이상이면 힌트를 비워둔다.
     }
 
     public RawRecord getById(Long id, String userId) {

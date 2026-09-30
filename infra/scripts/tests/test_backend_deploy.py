@@ -52,6 +52,8 @@ if args[0] == "compose":
         state["image"] = os.environ["BACKEND_IMAGE"]
         state["phase"] = "new" if "ghcr.io/" in state["image"] else "old"
     elif args[0] == "exec":
+        # Like the real CLI, exec forwards stdin even with -T.
+        sys.stdin.read()
         if "adapt" in args:
             if state["mode"] == "validate_failure":
                 code = 1
@@ -118,6 +120,7 @@ class DeployScriptTests(unittest.TestCase):
         executable_dir.mkdir()
         (executable_dir / "docker").write_text("#!" + sys.executable + "\n" + DOCKER)
         (executable_dir / "flock").write_text("#!/bin/sh\nexit 0\n")
+        (executable_dir / "runuser").write_text('#!/bin/sh\n[ "$1 $2 $3" = "-u ubuntu --" ] || exit 97\nshift 3\nexec "$@"\n')
         for executable in executable_dir.iterdir():
             executable.chmod(0o755)
         test = self
@@ -144,10 +147,16 @@ class DeployScriptTests(unittest.TestCase):
                     self.send_error(404)
 
             def do_OPTIONS(self):
+                # Like Spring: same-origin requests get no CORS headers, other origins are rejected.
+                # cors_failure models a backend that allows every origin.
                 state = test.state()
-                self.send_response(200)
-                if not (state["phase"] == "new" and state["mode"] == "cors_failure"):
-                    self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
+                origin = self.headers["Origin"]
+                permissive = state["phase"] == "new" and state["mode"] == "cors_failure"
+                if permissive:
+                    self.send_response(200)
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                else:
+                    self.send_response(200 if origin == "http://" + self.headers["Host"] else 403)
                 self.end_headers()
 
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -189,7 +198,17 @@ class DeployScriptTests(unittest.TestCase):
 
     def deploy(self, commit=None, image=IMAGE):
         return subprocess.run(["bash", str(SCRIPTS / "deploy-backend.sh"), commit or self.commit, image],
-                              env=self.environment, capture_output=True, text=True, timeout=20)
+                              env=self.environment, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=20)
+
+    def deploy_through_ssm_command(self):
+        args = argparse.Namespace(commit=self.commit, image=IMAGE, instance_id="i-0e30a4108bfd4ea9f",
+                                  region="ap-northeast-2", root=str(self.root), origin=ORIGIN)
+        script = (SCRIPTS / "deploy-backend.sh").read_text()
+        command = sender.build_request(args, script)["Parameters"]["commands"][0]
+        # SSM runs the command with sh, so run exactly what the sender would send.
+        return subprocess.run(["sh", "-c", command], env=self.environment, input="",
+                              capture_output=True, text=True, timeout=20)
 
     def assert_only_backend_recreated(self):
         commands = [entry["args"] for entry in self.state()["commands"]]
@@ -211,6 +230,13 @@ class DeployScriptTests(unittest.TestCase):
         self.assert_only_backend_recreated()
         self.assertEqual(self.reload_commands(), [])
         self.assertIn("skipping reload", result.stdout)
+
+    def test_ssm_command_runs_whole_script_although_exec_reads_stdin(self):
+        result = self.deploy_through_ssm_command()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Backend deployment successful", result.stdout)
+        self.assertEqual(self.state()["image"], IMAGE)
+        self.assertEqual(self.env_file.read_text(), self.original_env + "BACKEND_IMAGE=" + IMAGE + "\n")
 
     def test_changed_caddy_config_is_reloaded_without_force(self):
         self.set_config_changed()
@@ -340,7 +366,7 @@ class SenderTests(unittest.TestCase):
         self.assertIn("runuser -u ubuntu", command)
         self.assertIn("EXPECTED_PUBLIC_ORIGIN=" + ORIGIN, command)
         self.assertNotIn("env PUBLIC_ORIGIN=", command)
-        self.assertIn("bash -s -- " + "c" * 40 + " " + IMAGE, command)
+        self.assertIn('bash -c "$script" deploy-backend.sh ' + "c" * 40 + " " + IMAGE + " </dev/null", command)
         self.assertEqual(request["InstanceIds"], ["i-0e30a4108bfd4ea9f"])
         self.assertEqual(request["Parameters"]["executionTimeout"], ["900"])
 
