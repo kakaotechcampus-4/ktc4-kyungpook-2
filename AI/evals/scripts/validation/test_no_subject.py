@@ -20,7 +20,7 @@ from validation.graph import build_graph
 
 
 def load_cases():
-    path = Path(__file__).parent.parent.parent / "manifests" / "no_subject_cases.json"
+    path = Path(__file__).parent.parent.parent / "fixtures" / "no_subject_cases.json"
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
