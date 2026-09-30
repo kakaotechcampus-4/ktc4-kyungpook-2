@@ -11,35 +11,44 @@ import subprocess
 import tempfile
 import time
 
+# 서비스마다 서버에서 실행할 스크립트와 허용하는 이미지가 다르다.
+SERVICES = {
+    "backend": ("deploy-backend.sh", r"ghcr\.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:[0-9a-f]{64}"),
+    "ai": ("deploy-ai.sh", r"ghcr\.io/kakaotechcampus-4/ktc4-kyungpook-2-ai@sha256:[0-9a-f]{64}"),
+}
+
 
 def build_request(args, script):
+    script_name, image_pattern = SERVICES[args.service]
     if not re.fullmatch(r"[0-9a-f]{40}", args.commit):
         raise ValueError("commit must be a full SHA")
-    if not re.fullmatch(r"ghcr\.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:[0-9a-f]{64}", args.image):
-        raise ValueError("image must be the backend GHCR digest")
+    if not re.fullmatch(image_pattern, args.image):
+        raise ValueError("image must be the " + args.service + " GHCR digest")
     if not re.fullmatch(r"i-[0-9a-f]{8}(?:[0-9a-f]{9})?", args.instance_id):
         raise ValueError("invalid EC2 instance ID")
-    if not re.fullmatch(r"https?://[a-zA-Z0-9.-]+(?::[0-9]+)?", args.origin):
-        raise ValueError("invalid public origin")
+    environment = ["DEPLOY_ROOT=" + shlex.quote(args.root)]
+    if args.service == "backend":
+        if not args.origin or not re.fullmatch(r"https?://[a-zA-Z0-9.-]+(?::[0-9]+)?", args.origin):
+            raise ValueError("invalid public origin")
+        environment.append("EXPECTED_PUBLIC_ORIGIN=" + shlex.quote(args.origin))
     if not args.root.startswith("/") or "\n" in args.root:
         raise ValueError("root must be an absolute server path")
     # One quoted heredoc, executed as ubuntu, preserves its Docker login and .env ownership.
     # Pass the script as an argument, not on stdin: `docker compose exec` forwards stdin even
     # with -T, so it would swallow the unread rest of the script and bash would exit 0 early.
-    delimiter = "BACKEND_DEPLOY_SCRIPT_" + args.commit
+    delimiter = "DEPLOY_SCRIPT_" + args.commit
     if delimiter in script:
         raise ValueError("heredoc delimiter occurs in deployment script")
     command = (
         "set -eu\n"
         f"script=$(cat <<'{delimiter}'\n{script}\n{delimiter}\n)\n"
-        f"runuser -u ubuntu -- env DEPLOY_ROOT={shlex.quote(args.root)} "
-        f"EXPECTED_PUBLIC_ORIGIN={shlex.quote(args.origin)} bash -c \"$script\" deploy-backend.sh "
+        f"runuser -u ubuntu -- env {' '.join(environment)} bash -c \"$script\" {script_name} "
         f"{shlex.quote(args.commit)} {shlex.quote(args.image)} </dev/null\n"
     )
     return {
         "DocumentName": "AWS-RunShellScript",
         "InstanceIds": [args.instance_id],
-        "Comment": "Deploy backend " + args.commit,
+        "Comment": f"Deploy {args.service} {args.commit}",
         "TimeoutSeconds": 120,
         "Parameters": {"commands": [command], "executionTimeout": ["900"]},
     }
@@ -83,16 +92,19 @@ def wait_for_command(region, instance_id, command_id, *, timeout=1080):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--service", required=True, choices=sorted(SERVICES))
     parser.add_argument("--commit", required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--instance-id", required=True)
     parser.add_argument("--region", required=True)
     parser.add_argument("--root", default="/home/ubuntu/ktc4-kyungpook-2")
-    parser.add_argument("--origin", required=True)
+    parser.add_argument("--origin", help="required for backend")
     args = parser.parse_args()
-    script = Path(__file__).with_name("deploy-backend.sh").read_text()
+    if args.service == "backend" and not args.origin:
+        parser.error("--origin is required for backend")
+    script = Path(__file__).with_name(SERVICES[args.service][0]).read_text()
     request = build_request(args, script)
-    fd, filename = tempfile.mkstemp(prefix="backend-ssm-", suffix=".json")
+    fd, filename = tempfile.mkstemp(prefix=args.service + "-ssm-", suffix=".json")
     try:
         with os.fdopen(fd, "w") as stream:
             json.dump(request, stream)
