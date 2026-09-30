@@ -18,11 +18,15 @@ FE·AI·DB 컨테이너 배포와 Flyway 도입은 포함하지 않습니다.
 
 | 작업 | 실행 시점 | 내용 |
 | --- | --- | --- |
-| `test` | `develop`·`main` 대상 PR, `develop` push, 수동 실행 | 배포 스크립트 테스트와 `./gradlew test integrationTest build` |
-| `publish` | `develop` push 또는 `develop` 수동 실행, 테스트 성공 후 | `linux/amd64` BE 이미지 빌드·GHCR 업로드 |
+| `test` | 대상 경로를 바꾼 `develop`·`main` 대상 PR·`develop` push, 수동 실행 | 배포 스크립트 테스트와 `./gradlew test integrationTest build` |
+| `publish` | 대상 경로를 바꾼 `develop` push 또는 `develop` 수동 실행, 테스트 성공 후 | `linux/amd64` BE 이미지 빌드·GHCR 업로드 |
 | `deploy` | 이미지 업로드 성공 후, `CADDY_READY=true` | SSM 배포·Caddy 설정 변경 시 재로딩·내부 검증·외부 HTTPS API 확인 |
 
-모든 PR에서 검증하므로 경로 필터 때문에 필수 검사가 대기하는 문제를 피합니다.
+PR과 push는 `backend/`, `infra/`, 이 워크플로 파일이 바뀔 때만 실행합니다(두 폴더의 `*.md`는 제외).
+FE·AI·문서만 바꾼 병합은 BE를 다시 배포하지 않으므로 BE 중단과 로그인 세션 끊김이 생기지 않습니다.
+`infra/`를 포함하는 이유는 배포가 서버의 `compose.yaml`·`Caddyfile`·배포 스크립트를 함께 반영하기 때문입니다.
+건너뛴 커밋은 다음 배포 때 한꺼번에 반영됩니다. 바로 반영하려면 `develop`에서 수동 실행합니다.
+경로 필터로 건너뛴 PR은 검사가 생기지 않으므로, 이 검사를 필수 상태 검사로 지정하면 해당 PR이 병합되지 못합니다.
 PR에는 AWS OIDC 권한과 패키지 업로드 권한을 부여하지 않습니다.
 수동 실행도 선택한 브랜치가 `develop`일 때만 이미지를 게시하며, 배포는 `CADDY_READY=true`가 필요합니다.
 
