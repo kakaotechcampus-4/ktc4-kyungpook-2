@@ -40,15 +40,16 @@
 | 8 | `raw_record` | ✅ 확정 | ⚠️ `RawRecord` — 일부 다름 | `deleted_at` |
 | 9 | `journal_entry` | ✅ 확정 | ✅ `JournalEntry` | `deleted_at` |
 | 10 | `matching_result` | ✅ 확정 | ⚠️ `MatchingResult` — 설계와 다름 | 삭제 없음 (이력) |
-| 11 | `validation_result` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 11 | `validation_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 12 | `summary_result` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 13 | `human_review` | 🟡 초안 | ✅ `Approval` | 삭제 없음 (이력) |
 | 14 | `child_context` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 15 | `insight_result` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 16 | `sharing_history` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 
-**확정 10개는 AI 계약과 무관하거나 이미 확정된 것들이다.**
-🟡 나머지 6개는 Validation·Summary 에이전트 계약이 나온 뒤에 만든다.
+**확정 11개는 AI 계약과 무관하거나 이미 확정된 것들이다.**
+`validation_result` 는 Validation Agent 계약(`ValidationOutput`)이 나와서 확정으로 올렸다.
+🟡 나머지 5개는 Summary·Insight 에이전트 계약이 나온 뒤에 만든다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
 
@@ -191,8 +192,10 @@ erDiagram
         bigint journal_entry_id FK
         bigint matching_result_id FK
         bigint child_id FK
-        varchar decision
-        json raw_response
+        varchar verdict
+        text issue_types "JSON 문자열"
+        text evidence "JSON 문자열"
+        text raw_response "JSON 문자열"
     }
     summary_result {
         bigint id PK
@@ -949,7 +952,7 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 이름은 계속 읽을 수 있고, 화면에서 "삭제된 아동"으로 표시한다.
 다만 **확인 필요 큐에는 삭제된 아동의 건을 띄우지 않는다.**
 
-**`mentioned_child_ids`** — 검증 단계의 입력이다
+**`mentioned_child_ids`** — 매칭이 본문에서 찾은 이름 전체
 
 본문에 이름이 등장한 아동 전체를 담는다. 후보든 아니든, 주인공이 아니어도 넣는다.
 `matched_child_id` 와 다른 값이 섞여 있는 것이 정상이다.
@@ -959,14 +962,23 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 []          아무 이름도 안 나왔다 (표지로만 판정한 경우)
 ```
 
-**이 값을 버리면 검증이 "다수 아동 언급"과 다른 아이의 개인정보 노출을 독립적으로
-재판단할 근거를 잃는다.** `AI/matching/schemas.py` 주석에 그렇게 적혀 있다.
+> ⚠️ **아직 이 값을 읽는 곳이 없다.** `ValidationInput` 에는 이 필드가 없고
+> (`AI/validation/schemas.py`), 검증 에이전트는 본문만 보고 `다수아동언급` 을 판단한다.
+> **저장은 하되 쓰는 곳은 §10.2-11 에서 정한다.**
 
-`raw_response` 를 파싱해서 쓸 수도 있지만, 검증 워커가 매 건마다 JSON 을 풀어야 하고
-계약이 바뀌면 조용히 깨진다. 컬럼으로 둔다.
+쓸 수 있는 자리는 이렇다.
+
+- **검증과 교차 검증** — 코드가 찾은 이름 목록과 LLM 이 판단한 `다수아동언급` 은 서로
+  독립적인 신호다. 매칭은 이름 둘을 찾았는데 검증이 안 잡았다면 누락을 의심할 수 있고,
+  반대면 "친구가"·"짝꿍이" 처럼 이름 없는 언급이다
+- 화면에서 "이 기록에 다른 아이 이름이 남아 있습니다" 표시
+- 요약·공유 단계에서 다른 아이 이름 마스킹
+
+매칭이 내보내는 값이라 지금 안 받아두면 나중에 `raw_response` 를 파싱해 백필해야 한다.
+`candidates`·`evidence` 와 같은 방식으로 컬럼에 둔다.
 
 > 오타로 비슷하게 걸린 아동은 **넣지 않는다.** 실제로 등장한 게 아니라 비슷했을 뿐이라,
-> 검증에 잘못된 신호를 준다 (`AI/matching/nodes.py`).
+> 받는 쪽에 잘못된 신호를 준다 (`AI/matching/nodes.py`).
 
 **`evidence`**
 
@@ -1002,47 +1014,74 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 
 ## 8. 검증 · 요약 🟡
 
-### 8.1 `validation_result` 🟡 — ⬜ 미구현
+### 8.1 `validation_result` ✅ — ⬜ 미구현
 
-> **근거** — 프론트 `ValidationStatus = "PASS" | "REVIEW" | "BLOCK"` · `SummaryItem.flaggedSpan` / `flagReason`
-> **AI 계약 없음.** Validation Agent 구현 후 조정한다.
+> **근거** — `AI/validation/schemas.py` `ValidationOutput` 과 `AI/validation/config.py` `ISSUE_LEVEL`.
+> pydantic 으로 고정된 계약이다. 엔드포인트는 `POST /validation` (`#57` 머지 완료, 서버 반영 확인).
 
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
 | `journal_entry_id` | BIGINT | N | 대상 일지 |
 | `matching_result_id` | BIGINT | Y | 입력으로 쓴 매칭 결과 |
-| `child_id` | BIGINT | Y | 검증 대상 아동 |
-| `decision` | VARCHAR(20) | N | 판정 결과 |
-| `issue_codes` | JSON | Y | 검출된 문제 유형 |
-| `reason` | TEXT | Y | 판단 근거 |
-| `raw_response` | JSON | Y | AI 응답 원본 |
+| `child_id` | BIGINT | Y | 검증 대상 아동 (`subject_child_id`) |
+| `verdict` | VARCHAR(10) | N | 판정 결과 |
+| `issue_types` | TEXT | Y | 검출된 문제 유형 JSON 문자열 `["개인정보표현"]` |
+| `evidence` | TEXT | Y | 판정 근거 구간 JSON 문자열 `[{start, end}]` |
+| `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
 | `created_at` | DATETIME | N |  |
 
-**`decision`** — 프론트 타입과 일치
+설계상 실행 이력이라 삭제하지 않는다. `deleted_at` 을 두지 않는다.
+
+**`verdict`** — AI 계약과 1:1. API(JSON)로는 대문자 그대로 내보낸다
 
 ```
-PASS
-REVIEW
-BLOCK
+PASS     문제 없음 — 요약으로 넘긴다
+REVIEW   교사 확인 필요 — 수정 요청 큐로
+BLOCK    그대로 두면 위험 — 요약으로 넘기지 않는다
 ```
 
-**`issue_codes`** ⛔ **추정 — 확정 아님**
+> 🔴 **`BLOCK` 은 여기서 끊는다.** 개인정보가 든 기록이 요약으로 새면 Gate 1 이전에 이미 유출이다.
 
-아래 값은 **누구도 확정한 적 없다.** 초안 작성 시 예시로 적은 것이며,
-Validation Agent 계약이 나오면 전부 교체될 수 있다.
+**`issue_types`** — 한글 문자열이다. 영문 코드가 아니다
 
+`AI/validation/config.py` 의 `ISSUE_LEVEL` 키를 그대로 쓴다. 7개이고 이 목록 밖의 값은
+에이전트가 무시한다.
+
+| 등급 | 유형 |
+| --- | --- |
+| `BLOCK` | 진단명 · 개인정보표현 |
+| `REVIEW` | 확정적표현 · 다수아동언급 · 추측성표현 · 감정적표현 · 위험행동표현 |
+
+한 건에 여러 유형이 동시에 걸릴 수 있다. 그때 `verdict` 는 가장 무거운 등급을 따른다.
+
+```json
+{ "verdict": "BLOCK", "issue_types": ["개인정보표현"], "evidence": [{ "start": 23, "end": 36 }] }
 ```
-SENSITIVE_INFORMATION
-OTHER_CHILD_INFORMATION
-DEFINITIVE_EXPRESSION
-DANGEROUS_EXPRESSION
-```
+
+> 초안에 있던 `SENSITIVE_INFORMATION` 같은 영문 코드는 **누구도 확정한 적이 없는 추정값**이었다.
+> 실제 계약이 나왔으므로 전부 교체했다. `issue_codes` · `reason` 컬럼도 계약에 없어 지웠다 —
+> 판단 근거는 `reason` 문장이 아니라 `evidence` 구간으로 온다.
+
+**`evidence`** — 겹치지 않는 최소 구간만 온다
+
+구조적 정규식과 모델 인용이 같은 곳을 가리키면 좁은 쪽만 남는다 (`#59`). 화면에서
+같은 자리가 두 번 칠해지지 않는다.
+
+`start`/`end` 는 Python 문자열 인덱스(유니코드 코드포인트) 기준이다. 프론트에서
+하이라이트할 때는 `String.slice` 가 아니라 `Array.from(content).slice(start, end).join('')`
+로 복원해야 한다 — 이모지가 섞이면 JavaScript 인덱스가 밀린다.
+
+**입력에 `child_id` 가 반드시 필요하다**
+
+검증 요청에는 `subject_child_id` 와 `subject_name` 이 들어간다. **매칭 결과에서 넘겨야 한다.**
+없으면 에이전트가 판정 대상을 몰라 코드가 강제로 `REVIEW`(`대상불명확`)로 보낸다.
+`AI/validation/nodes.py` 의 `reflect` 가 1차 방어선이고 프롬프트 지시는 2차다.
 
 **`journal_entry_id`와 `matching_result_id`를 둘 다 두는 이유**
 
-`matching_result_id`로도 일지를 찾을 수 있지만, 검증 단계가 매칭 결과에 과도하게 의존하지 않도록
-`journal_entry_id`를 직접 보유한다.
+`matching_result_id` 로도 일지를 찾을 수 있지만, 검증 단계가 매칭 결과에 과도하게 의존하지 않도록
+`journal_entry_id` 를 직접 보유한다.
 
 ### 8.2 `summary_result` 🟡 — ⬜ 미구현
 
@@ -1233,10 +1272,11 @@ status   SHARED | BLOCKED | FAILED
 | 3 | 보호자 2명 동의 기준 | 한 명만 동의해도 활성화인지, 전원 동의가 필요한지 | 기획 |
 | 4 | 동의 철회 처리 | 철회 시 기존 기록을 어떻게 다루는지. `SUSPENDED` 이후 동작 | 기획 |
 | 5 | Summary 묶음 단위 | 일지 1건당 요약 1건인지, 같은 아동·같은 날짜를 묶는지<br>→ **프론트를 따라 묶음으로 갈 예정.** 요약 에이전트 계약이 나오면 스키마 방향을 뒤집는다 (`summary_result.journal_entry_id` → `journal_entry.summary_id`) | BE + AI |
-| 6 | Validation Agent 계약 | 입출력이 확정되면 `validation_result` 컬럼 조정 | AI |
+| 6 | ~~Validation Agent 계약~~ | **확정됨** — `ValidationOutput` 기준으로 §8.1 반영 완료 | ~~AI~~ |
 | 7 | Summary Agent 계약 | 입출력이 확정되면 `summary_result` 컬럼 조정<br>**요청할 것 — "일지 여러 건을 한 번에 받아 글 하나로" 만들어달라고 지금 전달** | AI |
 | 8 | 개인정보 파기 절차 | 정보주체가 파기를 요구할 때 실제 삭제·익명화를 어떻게 하는지. soft delete로는 해결되지 않는다 | 기획 + BE |
 | 9 | DB FK 제약 재검토 | JPA 연관관계를 쓰지 않는 것과 **DB에 FK 제약을 거는 것은 별개 결정**이다. `Long` 컬럼을 유지한 채 DB 제약만 추가하면 실수로 참조를 깨뜨리는 것을 막을 수 있다 | BE 전체 |
+| 11 | `mentioned_child_ids` 소비자 | 매칭이 내보내고 BE 가 저장하는데 읽는 곳이 없다.<br>→ `ValidationInput` 에 넣어 교차 검증할지, 화면 표시용으로만 둘지 (§7.1) | AI + BE |
 | 10 | 설계와 코드 불일치 정리 | §0.3 의 남은 4건 — `raw_record.institution_id` 타입, `raw_record.status` 의미, `matching_result` 수정 방식과 `reviewer_id` 타입 | BE + AI |
 
 ---
@@ -1363,4 +1403,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-09-29 | 이름·타입 차이는 설계를 코드에 맞춤 (`stored_path` `size_bytes` `content_type` NOT NULL, JSON → TEXT, `model_version`·`reviewer_id`, `human_review` 구현 반영) | #70 |
 | 2026-09-29 | `raw_record`에 `hint_name` `hint_birthdate` `updated_at` `deleted_at` 추가. 조회에 `DeletedAtIsNull` 적용 | #70 |
 | 2026-09-30 | `journal_entry.status`에 `MATCHED` 추가, 매칭 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가를 배포 DB 수동 조치 목록에 추가 (§11.4) | #75 |
-| 2026-09-30 | `matching_result`에 `mentioned_child_ids` 추가 (§7.1, 설명은 #78과 같음) | #75 |
+| 2026-09-30 | `matching_result.mentioned_child_ids` 엔티티에 반영 (§7.1 설명은 #78) | #75 |

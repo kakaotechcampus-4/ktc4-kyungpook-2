@@ -223,8 +223,9 @@ Compose는 CORS·로그인 완료 주소를 `PUBLIC_ORIGIN`에서 생성합니�
 
 ### 백엔드 CI/CD
 
-`develop`·`main` 대상 PR에서는 Java 21로 단위 테스트, Testcontainers PostgreSQL 통합
-테스트, 빌드를 실행합니다. `develop` push 및 `develop`에서의 수동 실행은 검증 성공 후
+`backend/`·`infra/`·워크플로 파일을 바꾼 `develop`·`main` 대상 PR에서는 Java 21로 단위 테스트,
+Testcontainers PostgreSQL 통합 테스트, 빌드를 실행합니다(`*.md`만 바꾸면 실행하지 않습니다).
+같은 경로를 바꾼 `develop` push 및 `develop`에서의 수동 실행은 검증 성공 후
 Docker 이미지를 GHCR에 올리고, SSM을 통해 기존 EC2의 BE 컨테이너만 배포합니다.
 Caddy 재로딩과 상태·CORS·카카오 콜백 검증이 실패하면 이전 BE 이미지와 활성 프록시 설정으로 복구합니다.
 실제 EC2 전환이 끝난 뒤 `CADDY_READY=true`를 설정해야 자동 배포가 실행됩니다.

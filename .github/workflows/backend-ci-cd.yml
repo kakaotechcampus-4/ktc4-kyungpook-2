@@ -1,10 +1,23 @@
 name: Backend CI/CD
 
 on:
+  # infra/도 포함한다. 배포가 서버의 compose.yaml·Caddyfile·배포 스크립트를 함께 반영한다.
   pull_request:
     branches: [develop, main]
+    paths:
+      - 'backend/**'
+      - 'infra/**'
+      - '.github/workflows/backend-ci-cd.yml'
+      - '!backend/**/*.md'
+      - '!infra/**/*.md'
   push:
     branches: [develop]
+    paths:
+      - 'backend/**'
+      - 'infra/**'
+      - '.github/workflows/backend-ci-cd.yml'
+      - '!backend/**/*.md'
+      - '!infra/**/*.md'
   workflow_dispatch:
 
 permissions:
