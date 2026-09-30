@@ -17,10 +17,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class JournalEntrySplitter {
 
-    // 줄 시작에서: "YYYY-MM-DD"/"YYYY.MM.DD" 또는 "M/D"/"M.D", 뒤에 괄호 요일(선택),
-    // 그 다음 공백·콜론·대시 중 하나 이상으로 헤더가 끝난다.
+    // 줄 시작에서: "YYYY-MM-DD"/"YYYY.MM.DD" 또는 "M/D"(짧은 형식은 슬래시만 — 코드리뷰로
+    // #71에서 확인됨: "3/4 정도를 혼자 해냈다"/"0.5 정도만 참여했다" 같은 본문이 점 구분과
+    // 겹쳐서 날짜로 오탐했다. 점은 4자리 연도 형식에만 쓰고 짧은 형식에서는 뺀다), 뒤에
+    // 괄호 요일(선택), 그 다음 공백·콜론·대시 중 하나 이상으로 헤더가 끝난다.
     private static final Pattern DATE_HEADER = Pattern.compile(
-            "^(?:(\\d{4})[-.](\\d{1,2})[-.](\\d{1,2})|(\\d{1,2})[/.](\\d{1,2}))"
+            "^(?:(\\d{4})[-.](\\d{1,2})[-.](\\d{1,2})|(\\d{1,2})/(\\d{1,2}))"
                     + "\\s*(?:\\([월화수목금토일]\\)|[월화수목금토일]요일)?\\s*[:\\-]?\\s*(.*)$");
 
     public record SplitEntry(LocalDate entryDate, String content) {
@@ -33,6 +35,29 @@ public class JournalEntrySplitter {
         }
 
         String[] lines = text.split("\\R", -1);
+
+        // 헤더 후보가 한 줄뿐이면 날짜 헤더가 아니라 본문일 가능성이 크다(코드리뷰 반영, #71) —
+        // 잘못 쪼개서 본문 앞부분을 잃는 것보다, 하루치 일지 하나를 entryDate 없이
+        // 통짜로 두는 편이 안전하다.
+        //
+        // ⚠️ 알려진 한계(코드리뷰로 확인됨, 미해결): "3/4 정도를 혼자 해냈다"와
+        // "2/3 이상 먹었다"처럼 슬래시 형식과 우연히 겹치는 본문 문장이 같은 파일에
+        // *두 줄 이상* 있으면, 이 카운트 가드를 통과해서 여전히 잘못 분리된다 — 이 가드는
+        // "오탐 후보가 딱 한 줄"인 경우만 막는다. 실제 관찰일지 샘플 없이는 "정도를"/"이상"
+        // 같은 조사로 이어지는 문장과 진짜 날짜 헤더를 구분할 근거가 없어서, 지금은 이
+        // 잔여 위험을 문서화·테스트로만 남겨둔다(JournalEntrySplitterTest 참고). 샘플이
+        // 오면 이 부분을 다시 볼 것.
+        long headerCandidateCount = 0;
+        for (String line : lines) {
+            if (DATE_HEADER.matcher(line.strip()).matches()) {
+                headerCandidateCount++;
+            }
+        }
+        if (headerCandidateCount < 2) {
+            result.add(new SplitEntry(null, text.strip()));
+            return result;
+        }
+
         LocalDate currentDate = null;
         StringBuilder buffer = new StringBuilder();
 
