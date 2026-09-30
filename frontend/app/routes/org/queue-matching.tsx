@@ -13,7 +13,11 @@ import { getChildren, getMatchingQueue, resolveMatchingItem } from "@/lib/api";
 import type { Child, MatchResolution, MatchingItem } from "@/lib/types";
 
 export async function clientLoader() {
-  const [items, roster] = await Promise.all([getMatchingQueue(), getChildren()]);
+  // 명부를 못 받아도 큐는 띄운다. "이 기관 아동 아님" 은 명부 없이도 처리할 수 있다.
+  const [items, roster] = await Promise.all([
+    getMatchingQueue(),
+    getChildren().catch((): Child[] => []),
+  ]);
   return { items, roster };
 }
 
@@ -32,6 +36,9 @@ function heading(item: MatchingItem): string {
     return item.unmatchedReason === "not_in_roster"
       ? "명부에 없는 이름입니다"
       : "누구의 기록인지 단서가 없습니다";
+  }
+  if (item.status === "failed") {
+    return "AI 판정을 받지 못했습니다";
   }
   return "이 아이가 맞는지 확인해주세요";
 }
@@ -60,6 +67,12 @@ function notice(item: MatchingItem): { title: string; message: string } {
           message:
             "본문과 표지 어디에도 아이를 가리키는 이름이 없어 후보를 만들지 못했습니다.",
         };
+  }
+  if (item.status === "failed") {
+    return {
+      title: "판정 실패",
+      message: "시스템 오류로 판정하지 못했습니다. 직접 골라주세요.",
+    };
   }
   return {
     title: "확인 필요",
@@ -245,7 +258,7 @@ function MatchingCard({
         </div>
       ) : null}
 
-      {item.status === "unmatched" || pickingOther ? (
+      {item.status === "unmatched" || item.status === "failed" || pickingOther ? (
         <div className="mb-4 flex flex-col gap-3">
           <RosterPicker
             roster={roster}

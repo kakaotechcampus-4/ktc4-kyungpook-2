@@ -175,7 +175,7 @@ public class RawRecordService {
 
     public RawRecord getById(Long id, String userId) {
         String institutionId = resolveInstitutionId(userId);
-        RawRecord record = rawRecordRepository.findById(id)
+        RawRecord record = rawRecordRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new RawRecordNotFoundException(id));
         // 다른 기관 소유 레코드는 "권한 없음"이 아니라 "없음"으로 응답한다 —
         // 403으로 응답하면 그 id가 실제로 존재한다는 사실 자체를 노출하게 된다.
@@ -189,7 +189,7 @@ public class RawRecordService {
     }
 
     public List<RawRecord> getByInstitution(String userId) {
-        return rawRecordRepository.findByInstitutionId(resolveInstitutionId(userId));
+        return rawRecordRepository.findByInstitutionIdAndDeletedAtIsNull(resolveInstitutionId(userId));
     }
 
     private String sanitizeDisplayName(String originalFilename) {

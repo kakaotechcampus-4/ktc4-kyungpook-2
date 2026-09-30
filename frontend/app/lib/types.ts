@@ -11,8 +11,9 @@ export type ValidationStatus = "PASS" | "REVIEW" | "BLOCK";
 /**
  * Matching Agent 결과 상태. AI 쪽 이름(`AI/matching/nodes.py` 의 decide)과 맞춘다.
  * `auto` 는 자동 확정이라 확인 큐에 오지 않는다.
+ * `failed` 는 AI 호출 자체가 실패한 건(네트워크·타임아웃)이라 후보도 근거도 없다.
  */
-export type MatchStatus = "auto" | "review" | "multi" | "unmatched";
+export type MatchStatus = "auto" | "review" | "multi" | "unmatched" | "failed";
 
 /** multi 로 내려온 이유 — 둘은 교사가 할 일이 서로 다르다 */
 export type MultiReason = "co_mention" | "ambiguous_identity";

@@ -2,3 +2,6 @@
 # git 히스토리는 지워지지 않는다 — 한 번 커밋되면 되돌릴 수 없다.
 *.json
 !expected_fields.example.json
+# fixtures/ 는 아이 데이터 없이 손으로 만든 파일만 — 새 파일은 여기 한 줄씩 추가
+!fixtures/no_subject_cases.json
+!fixtures/validation_label_overrides.json

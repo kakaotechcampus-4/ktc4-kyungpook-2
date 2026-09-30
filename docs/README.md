@@ -9,6 +9,12 @@
 | [api/api-conventions.md](api/api-conventions.md) | 외부 API 경로, 응답 형식, 오류 코드, HTTP 상태 코드 규약 |
 | [api/api-spec.md](api/api-spec.md) | 프론트엔드가 요청하는 엔드포인트 명세 · 확정 필요 사항 · 구현 우선순위 |
 
+## DB
+
+| 문서 | 역할 |
+| --- | --- |
+| [db/schema.md](db/schema.md) | DB 스키마 원본 (노션은 사본). **엔티티를 바꾸면 같은 PR에서 갱신** |
+
 ## 프론트엔드
 
 | 문서 | 역할 |
@@ -22,7 +28,7 @@
 | 문서 | 역할 |
 | --- | --- |
 | [AI/README.md](../AI/README.md) | 에이전트 구조 · 실행 방법 · API 계약 · 고칠 곳 |
-| [AI/evals/README.md](../AI/evals/README.md) | 테스트 데이터 형식 · 채점 방법 · 지표 읽는 법 |
+| [AI/evals/scripts/matching/README.md](../AI/evals/scripts/matching/README.md) | 매칭 테스트 데이터 형식 · 채점 방법 · 지표 읽는 법 |
 
 매칭 에이전트의 판정 기준(어떤 상황에서 `auto` / `review` / `multi` / `unmatched` 가
 정답인지)은 구현이 아니라 정책이므로 노션에서 관리합니다 →

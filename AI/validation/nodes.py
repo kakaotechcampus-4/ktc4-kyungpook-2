@@ -7,8 +7,9 @@ Validation Agent의 4단계 노드 — 인식/계획/행동/반영.
 """
 import re
 
-from .config import ISSUE_LEVEL, STRUCTURAL_PII_PATTERNS
+from .config import ISSUE_LEVEL, STRUCTURAL_PII_PATTERNS, ATTRIBUTION_EXEMPT
 from .llm import ask_json, LlmError, spans_for_quotes
+from .prompts import build_messages
 
 
 def perceive(state: dict) -> dict:
@@ -32,46 +33,10 @@ def plan(state: dict) -> dict:
 
 
 def act(state: dict) -> dict:
-    """행동: Luna 호출. 여기서만 LLM을 쓴다."""
+    """행동: Luna 호출. 여기서만 LLM을 쓴다. 프롬프트 내용은 prompts.py 에 있다."""
     print(f"[validation] journal_entry_id={state.get('journal_entry_id')} 처리 중")
-    
-    content = state["content"]
-    subject_name = state.get("subject_name")
 
-    # 대상을 알면 이름을 명시하고, 모르면 모델한테도 "모른다"고 알려서
-    # attributed_to_subject를 스스로 false로 두게 유도한다 (2차 방어선).
-    subject_line = (
-        f'지금 판정 대상 아동은 "{subject_name}"입니다. 각 유형이 있다면, '
-        f'그것이 {subject_name} 본인에 대한 서술인지 판단하세요.'
-        if subject_name else
-        '이번 요청에는 판정 대상 아동 정보가 제공되지 않았습니다. '
-        '이 경우 attributed_to_subject는 항상 false로 표시하세요.'
-    )
-
-    messages = [{
-        "role": "user",
-        "content": f"""다음 관찰 기록에서 아래 7개 유형 중 해당하는 것이 있는지 판단하세요.
-
-BLOCK:
-- 진단명: 확정적인 진단명이 명시됨
-- 개인정보표현: 연락처·생년월일·주소 등 개인 식별 정보
-
-REVIEW:
-- 확정적표현: 진단명은 아니지만 "절대 안 바뀐다"류의 단정적 서술
-- 다수아동언급: 한 기록에 아이 2명 이상 등장
-- 추측성표현: 근거 없이 원인을 추측하는 문장 ("아마~", "짐작건대~")
-- 감정적표현: 객관적 관찰이 아니라 작성자(교사)의 주관적 감정이 드러나는 서술.
-  지나친 애정 표현("너무 예뻐서", "사랑스러워서")이거나,
-  힘들다는 하소연("지치고 힘든 하루였음")도 포함됩니다.
-- 위험행동표현: 자해/타해 행동을 필요 이상으로 상세하게 묘사
-
-{subject_line}
-
-기록: {content}
-
-JSON 형식으로만 답하세요:
-{{"issues": [{{"issue_type": "진단명", "attributed_to_subject": true, "evidence_quote": "원문 인용"}}]}}"""
-    }]
+    messages = build_messages(state["content"], state.get("subject_name"))
 
     try:
         result = ask_json(messages)
@@ -143,7 +108,7 @@ def reflect(state: dict) -> dict:
         if issue_type not in ISSUE_LEVEL:
             continue  # 허용된 유형 목록 밖 값은 무시 (Matching의 "명부 밖 ID 무시"와 같은 원리)
 
-        if not candidate.get("attributed_to_subject"):
+        if issue_type not in ATTRIBUTION_EXEMPT and not candidate.get("attributed_to_subject"):
             continue  # ⚠️ 귀속 검증 핵심 지점
 
         quote = candidate.get("evidence_quote", "")

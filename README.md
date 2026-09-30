@@ -27,6 +27,10 @@ backend로, 나머지는 frontend로 넘깁니다. 운영에서는 `PUBLIC_ORIGI
 
 프론트엔드만 띄울 때는 [frontend/README.md](frontend/README.md) 를 참고하세요.
 
+## 팀 공통 규칙
+
+- **DB 구조(엔티티·컬럼·enum)를 바꾸면 [docs/db/schema.md](docs/db/schema.md)를 같은 PR에서 고친다.** 자세한 내용은 [AGENTS.md](AGENTS.md)
+
 ## 백엔드 문서 안내
 
 - 실행 방법, 설정 프로필, 현재 구현 상태: [backend/README.md](backend/README.md)
