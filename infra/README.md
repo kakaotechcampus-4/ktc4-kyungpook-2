@@ -117,6 +117,9 @@ SSM은 Actions가 검증한 [`scripts/deploy-backend.sh`](scripts/deploy-backend
 5. Caddy 설정이 변경된 경우에만 검증한 JSON을 재로딩합니다. 설정이 같으면 재로딩을 생략합니다.
    `backend:8080`으로 연결하므로 백엔드 컨테이너 교체만으로 Caddy를 재로딩할 필요는 없습니다.
    이후 프록시 상태·CORS·카카오 인가 요청의 콜백 주소를 검사합니다.
+   FE와 API가 같은 출처라 같은 출처 요청에는 CORS 헤더가 붙지 않습니다. 그래서 CORS는
+   허용될 수 없는 출처(`https://cors-check.invalid`)의 사전 요청이 403으로 거부되는지로 확인하고,
+   공개 주소가 허용 목록에 있는지는 배포 전 설정 검사에서 확인합니다.
    HTTPS는 도메인과 SNI를 유지한 채 루프백에 접속하여 시스템 CA로 인증서를 검증합니다.
    리다이렉트를 따라가지 않고 HTTP 상태 코드도 확인합니다.
 6. 성공하면 서버 `infra/docker/.env`의 `BACKEND_IMAGE`만 원자적으로 갱신합니다.
