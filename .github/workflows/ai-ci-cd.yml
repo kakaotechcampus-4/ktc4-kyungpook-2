@@ -1,0 +1,157 @@
+name: AI CI/CD
+
+on:
+  # AI 이미지와 AI 배포 파일만 본다. 평가 파일은 서버 checkout을 마운트해 쓰므로 재배포하지 않는다.
+  # 목록은 deploy-ai.sh의 service_paths와 같아야 한다(테스트가 검사).
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'AI/**'
+      - 'infra/docker/compose.yaml'
+      - 'infra/scripts/deploy-ai.sh'
+      - 'infra/scripts/verify-ai.py'
+      - 'infra/scripts/send-deploy.py'
+      - 'infra/scripts/tests/test_ai_deploy.py'
+      - '.github/workflows/ai-ci-cd.yml'
+      - '!AI/**/*.md'
+      - '!AI/evals/**'
+  push:
+    branches: [develop]
+    paths:
+      - 'AI/**'
+      - 'infra/docker/compose.yaml'
+      - 'infra/scripts/deploy-ai.sh'
+      - 'infra/scripts/verify-ai.py'
+      - 'infra/scripts/send-deploy.py'
+      - 'infra/scripts/tests/test_ai_deploy.py'
+      - '.github/workflows/ai-ci-cd.yml'
+      - '!AI/**/*.md'
+      - '!AI/evals/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-ai
+
+jobs:
+  test:
+    name: AI deploy tests and image smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Verify deployment scripts
+        run: |
+          bash -n infra/scripts/deploy-ai.sh
+          python3 -m unittest discover -s infra/scripts/tests -p 'test_ai_deploy.py' -v
+        env:
+          REQUIRE_FLOCK_TESTS: 'true'
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: AI
+          file: AI/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ktc-ai:ci
+          # BE와 캐시가 섞이지 않게 scope를 나눈다.
+          cache-from: type=gha,scope=ai
+      - name: Smoke test without Luna
+        run: |
+          docker run -d --name ai-smoke -p 127.0.0.1:8000:8000 ktc-ai:ci
+          for _ in {1..30}; do
+            if python3 infra/scripts/verify-ai.py --offline 2>/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          python3 infra/scripts/verify-ai.py --offline || true
+          docker logs ai-smoke
+          exit 1
+
+  publish:
+    name: Publish AI image
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.release.outputs.image }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: AI
+          file: AI/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # 배포 스크립트가 revision으로 실행 중인 것보다 오래된 이미지를 거부한다.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=ai
+          cache-to: type=gha,scope=ai,mode=max
+      - name: Export immutable image reference
+        id: release
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: printf 'image=%s@%s\n' "$IMAGE_NAME" "$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy AI through SSM
+    needs: publish
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: ai-develop-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      AI_IMAGE: ${{ needs.publish.outputs.image }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check deployment configuration
+        run: |
+          : "${AWS_ROLE_ARN:?Set repository variable AWS_ROLE_ARN}"
+          : "${AWS_REGION:?Set repository variable AWS_REGION}"
+          : "${EC2_INSTANCE_ID:?Set repository variable EC2_INSTANCE_ID}"
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: ai-deploy-${{ github.run_id }}
+      - name: Deploy and wait for remote verification
+        run: |
+          python3 infra/scripts/send-deploy.py \
+            --service ai \
+            --commit "$GITHUB_SHA" \
+            --image "$AI_IMAGE" \
+            --instance-id "$EC2_INSTANCE_ID" \
+            --region "$AWS_REGION"
