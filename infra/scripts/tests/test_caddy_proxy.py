@@ -24,8 +24,9 @@ from urllib.parse import urlencode
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_): pass
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", ""))
+        # Like Spring behind Caddy: same-origin requests get no CORS headers, other origins are rejected.
+        own = self.headers.get("X-Forwarded-Proto", "http") + "://" + self.headers.get("Host", "")
+        self.send_response(200 if self.headers.get("Origin") == own else 403)
         self.end_headers()
     def do_GET(self):
         if self.path == "/oauth2/authorization/kakao":

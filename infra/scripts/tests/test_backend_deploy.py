@@ -147,10 +147,16 @@ class DeployScriptTests(unittest.TestCase):
                     self.send_error(404)
 
             def do_OPTIONS(self):
+                # Like Spring: same-origin requests get no CORS headers, other origins are rejected.
+                # cors_failure models a backend that allows every origin.
                 state = test.state()
-                self.send_response(200)
-                if not (state["phase"] == "new" and state["mode"] == "cors_failure"):
-                    self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
+                origin = self.headers["Origin"]
+                permissive = state["phase"] == "new" and state["mode"] == "cors_failure"
+                if permissive:
+                    self.send_response(200)
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                else:
+                    self.send_response(200 if origin == "http://" + self.headers["Host"] else 403)
                 self.end_headers()
 
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
