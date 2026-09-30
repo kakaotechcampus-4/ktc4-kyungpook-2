@@ -167,8 +167,15 @@ def main():
         now_failed = {c["case_id"] for _, c, _, _ in failures}
         regressions = sorted(prev & now_failed)
         fixed = sorted(passed_ids - prev)
+    # --limit 으로 일부만 돌렸으면 지난 기록에 덮어쓰지 않고 합친다.
+    # (전에는 30건만 돌린 결과가 전체 기준점을 지워버려서 다음 회귀 비교가 30건으로 줄었다)
+    save_outputs, save_passed = outputs, passed_ids
+    if prev_data is not None and args.limit:
+        ran = {c["case_id"] for c in cases}
+        save_outputs = {**prev_data["outputs"], **outputs}
+        save_passed = (set(prev_data["passed_ids"]) - ran) | passed_ids
     latest_path.write_text(json.dumps(
-        {"passed_ids": sorted(passed_ids), "outputs": outputs}, ensure_ascii=False, indent=2), encoding="utf-8")
+        {"passed_ids": sorted(save_passed), "outputs": save_outputs}, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # ── 리포트 ──
     order = {"치명적": 0, "준치명적": 1, "등급하락": 2, "과탐": 3, "": 4}
