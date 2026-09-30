@@ -116,6 +116,30 @@ public class JournalEntry {
         this.status = JournalEntryStatus.PENDING;
     }
 
+    /** 사람이 확인해야 하는 상태인지 — AI가 확정하지 못했거나(MATCH_REVIEW) 호출이 실패했다(FAILED). */
+    public boolean isAwaitingReview() {
+        return this.status == JournalEntryStatus.MATCH_REVIEW || this.status == JournalEntryStatus.FAILED;
+    }
+
+    /** 선생님이 확인 필요 큐에서 아동을 골랐다. AI 자동 확정과 같은 상태로 보내 검증 단계가 이어 가져가게 한다. */
+    public void confirmMatchByReviewer(Long childId) {
+        requireAwaitingReview();
+        assignChild(childId);
+        this.status = JournalEntryStatus.MATCHED;
+    }
+
+    /** 선생님이 확인 필요 큐에서 제외했다. 아동 기록으로 쓰지 않고 여기서 끝낸다. */
+    public void exclude() {
+        requireAwaitingReview();
+        this.status = JournalEntryStatus.EXCLUDED;
+    }
+
+    private void requireAwaitingReview() {
+        if (!isAwaitingReview()) {
+            throw new IllegalStateException("사람 확인 대기 상태가 아닙니다: " + this.status);
+        }
+    }
+
     private void requireStatus(JournalEntryStatus expected) {
         if (this.status != expected) {
             throw new IllegalStateException("일지 상태가 " + expected + "가 아닙니다: " + this.status);

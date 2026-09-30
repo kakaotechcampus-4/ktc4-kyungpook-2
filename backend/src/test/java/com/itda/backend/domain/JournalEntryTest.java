@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -78,5 +79,56 @@ class JournalEntryTest {
     @Test
     void 확정할_아동은_필수다() {
         assertThatThrownBy(() -> matching().confirmMatch(null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private JournalEntry inReview() {
+        JournalEntry entry = matching();
+        entry.requestMatchReview();
+        return entry;
+    }
+
+    private JournalEntry failed() {
+        JournalEntry entry = matching();
+        entry.failMatching();
+        return entry;
+    }
+
+    @Test
+    void 사람_확인_대기는_확인_필요와_실패_상태다() {
+        assertThat(inReview().isAwaitingReview()).isTrue();
+        assertThat(failed().isAwaitingReview()).isTrue();
+        assertThat(pending().isAwaitingReview()).isFalse();
+        assertThat(matching().isAwaitingReview()).isFalse();
+    }
+
+    @Test
+    void 선생님이_아동을_고르면_AI_자동_확정과_같은_검증_대기_상태가_된다() {
+        for (JournalEntry entry : List.of(inReview(), failed())) {
+            entry.confirmMatchByReviewer(8L);
+
+            assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
+            assertThat(entry.getChildId()).isEqualTo(8L);
+        }
+    }
+
+    @Test
+    void 선생님이_제외하면_제외_상태가_되고_아동은_비어_있다() {
+        for (JournalEntry entry : List.of(inReview(), failed())) {
+            entry.exclude();
+
+            assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.EXCLUDED);
+            assertThat(entry.getChildId()).isNull();
+        }
+    }
+
+    @Test
+    void 사람_확인_대기가_아니면_선생님이_처리할_수_없다() {
+        JournalEntry matched = inReview();
+        matched.confirmMatchByReviewer(8L);
+
+        for (JournalEntry entry : List.of(pending(), matching(), matched)) {
+            assertThatThrownBy(() -> entry.confirmMatchByReviewer(9L)).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(entry::exclude).isInstanceOf(IllegalStateException.class);
+        }
     }
 }

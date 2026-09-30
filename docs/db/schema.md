@@ -853,6 +853,7 @@ PENDING            대기 (생성 시 기본값)
 MATCHING           매칭 중
 MATCHED            매칭 확정 — 검증 대기 (BE 추가)
 MATCH_REVIEW       사람 확인 필요
+EXCLUDED           선생님이 확인 필요 큐에서 제외 — 여기서 끝 (BE 추가)
 CONSENT_BLOCKED    동의 대기 아동의 기록이라 정지
 VALIDATING         검증 중
 SUMMARIZING        요약 중
@@ -870,6 +871,16 @@ FAILED             실패
 | 호출 실패 (재시도 2회 후) | `FAILED` | NULL 유지 |
 
 `MATCHED`는 초안에 없던 값이다. `VALIDATING`은 "검증 중"이라, 검증 워커가 집어 갈 "확정됐고 검증을 기다림" 상태가 따로 필요했다.
+
+선생님이 확인 필요 큐에서 처리하면(API O-23) `matching_result`와 함께 일지도 바꾼다. `MATCH_REVIEW`·`FAILED`인 일지만 처리할 수 있다.
+
+| 선생님 처리 | `journal_entry.status` | `child_id` |
+| --- | --- | --- |
+| `assign` (아이 확정) | `MATCHED` — AI 자동 확정과 같음 | 고른 아동으로 채움. 동의 완료(`ACTIVE`) 아동만 가능 |
+| `not_ours` (제외) | `EXCLUDED` | NULL 유지 |
+
+`EXCLUDED`도 초안에 없던 값이다. 제외하는 경우는 다른 기관 아이보다 여러 아이가 함께 나온 기록이나
+아이 기록이 아닌 줄(제목 등)이 기록으로 잘린 경우가 많다. 지우지 않고 남겨서 누가 제외했는지(`matching_result.reviewer_id`) 추적한다.
 
 **예시**
 
@@ -1403,4 +1414,5 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-09-29 | 이름·타입 차이는 설계를 코드에 맞춤 (`stored_path` `size_bytes` `content_type` NOT NULL, JSON → TEXT, `model_version`·`reviewer_id`, `human_review` 구현 반영) | #70 |
 | 2026-09-29 | `raw_record`에 `hint_name` `hint_birthdate` `updated_at` `deleted_at` 추가. 조회에 `DeletedAtIsNull` 적용 | #70 |
 | 2026-09-30 | `journal_entry.status`에 `MATCHED` 추가, 매칭 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가를 배포 DB 수동 조치 목록에 추가 (§11.4) | #75 |
+| 2026-09-30 | `journal_entry.status`에 `EXCLUDED` 추가, 선생님 처리(assign·not_ours) 시 일지 상태 변경 규칙 추가 (§6.2) | #75 |
 | 2026-09-30 | `matching_result.mentioned_child_ids` 엔티티에 반영 (§7.1 설명은 #78) | #75 |

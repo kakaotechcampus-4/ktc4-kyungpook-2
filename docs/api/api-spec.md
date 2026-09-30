@@ -490,6 +490,13 @@ POST /api/v1/auth/signup   → 201 Created
 > 프론트 `resolveMatchingItem(id, resolution)`이 이 형식으로 보냅니다. 후보나 명부에서 아이를
 > 고르면 `assign`, "이 기관 아동 아님"을 누르면 `not_ours`입니다.
 
+처리하면 기록(`journal_entry`)도 함께 바뀝니다 — `assign`은 검증 단계로 넘어가고, `not_ours`는 제외돼 여기서 끝납니다 (DB 스키마 §6.2).
+아래 경우는 `400 MATCHING_RESULT_INVALID_REQUEST`로 거절합니다.
+
+- `assign`인데 `childId`가 없거나, 없는 아동이거나, 이 기관 소속이 아님
+- `assign`으로 고른 아동이 **동의 완료(`active`) 상태가 아님** — AI 매칭 명단과 같은 기준
+- 이미 처리된 기록 (다른 선생님이 먼저 처리한 경우 등)
+
 **O-24 응답**
 
 ```json
