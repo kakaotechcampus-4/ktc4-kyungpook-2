@@ -69,7 +69,9 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.400").exists())
-				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.404").exists());
+				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].get.security[0].cookieAuth").exists());
 	}
 
 	@Test
