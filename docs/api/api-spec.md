@@ -335,13 +335,23 @@ POST /api/v1/auth/signup   → 201 Created
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| O-10 | GET | `/institutions/me/children` | 담당 아동 목록 | I-05, I-09, I-13 |
+| O-10 | GET | `/institutions/me/children` | 담당 아동 목록 · **구현됨** | I-05, I-09, I-13 |
 | O-11 | POST | `/institutions/me/children` | 아이 등록 | I-04 |
 | O-13 | GET | `/children/{childId}` | 아동 상세 | I-09-1 |
 | O-14 | GET | `/children/{childId}/context` | Child Context 타임라인 | I-09-1 |
 
 > 이전 초안에 있던 `O-12 초대코드 재발급`은 초대코드 방식을 제외하면서 삭제했습니다.
 > 번호는 혼동을 막기 위해 결번으로 둡니다.
+
+**O-10 응답** · RosterPicker(매칭 확인 · Gate 1 아동 변경)가 쓰는 필드만 우선 구현했습니다.
+
+```json
+[
+  { "id": "child_9", "name": "김하늘", "birthDate": "2017-03-14", "status": "active" }
+]
+```
+
+`school`/`institutions`/`care`는 아직 없습니다 — `Child` 엔티티에 그 컬럼 자체가 없습니다(O-11 구현 시 같이 채울 예정). `status`가 `active`가 아닌 아동도 포함해서 내려갑니다 — 필터링은 프론트 몫입니다(`RosterPicker.tsx`가 이미 그렇게 함).
 
 **O-11 요청**
 
