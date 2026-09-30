@@ -47,6 +47,18 @@ class MatchingServiceTest {
         Child other = em.persist(Child.of("박서연", LocalDate.of(2020, 5, 5)));
         em.persist(ChildOrganization.of(yujin.getId(), ours.getId()));
         em.persist(ChildOrganization.of(other.getId(), theirs.getId()));
+        activate(yujin);
+        activate(other);
+    }
+
+    // 아동은 동의 전(PENDING_CONSENT)으로 만들어지고, 동의 완료로 바꾸는 메서드는 아직 없다 (ChildRepositoryTest와 같은 방식).
+    private void activate(Child child) {
+        em.flush();
+        em.getEntityManager()
+                .createQuery("update Child c set c.status = com.itda.backend.domain.ChildStatus.ACTIVE where c.id = :id")
+                .setParameter("id", child.getId())
+                .executeUpdate();
+        em.clear();
     }
 
     private RawRecord rawRecord(String institutionId) {
@@ -99,6 +111,18 @@ class MatchingServiceTest {
                 new MatchingAgentRequest.RosterEntry(yujin.getId(), "임유진", "2019-11-26"));
         assertThat(request.hintName()).isEqualTo("임유진");
         assertThat(request.hintBirthdate()).isEqualTo("2019-11-26");
+    }
+
+    @Test
+    void 동의_전_아동은_명단에서_빠진다() {
+        Child pending = em.persist(Child.of("김하늘", LocalDate.of(2020, 1, 1)));
+        em.persist(ChildOrganization.of(pending.getId(), ours.getId()));
+        JournalEntry entry = entry(rawRecord(String.valueOf(ours.getId())));
+
+        MatchingAgentRequest request = matchingService.prepareRequest(entry.getId());
+
+        assertThat(request.roster()).extracting(MatchingAgentRequest.RosterEntry::childId)
+                .containsExactly(yujin.getId());
     }
 
     @Test
