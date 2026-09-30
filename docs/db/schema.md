@@ -65,7 +65,6 @@
 | `raw_record` | status 가 파이프라인 단계 (`UPLOADED` → `PARSED` → `PROCESSING` → `COMPLETED`) | status `PENDING` `REVIEW` `BLOCKED` `FAILED` 중 실제로는 `PENDING`(저장 성공)·`FAILED`(저장 실패)만 씀 | 파이프라인 단계는 API `O-21 stage`로 따로 내려준다 (§6.1) |
 | `matching_result` | 이력이라 수정하지 않음. 재처리는 새 행 | 사람이 확인 큐에서 처리하면 **기존 행을 수정**한다 (`status → AUTO`, `matched_child_id` 덮어씀, `reviewer_id` 기록) | §7.1 |
 | `matching_result` | 검토자는 `users.id` BIGINT (`human_review.reviewer_id`와 같게) | `reviewer_id VARCHAR(255)` 에 `users.id`를 문자열로 저장 | §7.1 |
-| `matching_result` | `mentioned_child_ids TEXT` | **컬럼 없음.** AI 출력의 이 필드를 버리고 있다 | 검증 단계 입력이다. `#75` 머지 전에 넣어야 백필을 피한다 (§7.1) |
 
 ---
 
@@ -942,7 +941,7 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 이름은 계속 읽을 수 있고, 화면에서 "삭제된 아동"으로 표시한다.
 다만 **확인 필요 큐에는 삭제된 아동의 건을 띄우지 않는다.**
 
-**`mentioned_child_ids`** — 검증 단계의 입력이다
+**`mentioned_child_ids`** — 매칭이 본문에서 찾은 이름 전체
 
 본문에 이름이 등장한 아동 전체를 담는다. 후보든 아니든, 주인공이 아니어도 넣는다.
 `matched_child_id` 와 다른 값이 섞여 있는 것이 정상이다.
@@ -952,14 +951,23 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 []          아무 이름도 안 나왔다 (표지로만 판정한 경우)
 ```
 
-**이 값을 버리면 검증이 "다수 아동 언급"과 다른 아이의 개인정보 노출을 독립적으로
-재판단할 근거를 잃는다.** `AI/matching/schemas.py` 주석에 그렇게 적혀 있다.
+> ⚠️ **아직 이 값을 읽는 곳이 없다.** `ValidationInput` 에는 이 필드가 없고
+> (`AI/validation/schemas.py`), 검증 에이전트는 본문만 보고 `다수아동언급` 을 판단한다.
+> **저장은 하되 쓰는 곳은 §10.2-11 에서 정한다.**
 
-`raw_response` 를 파싱해서 쓸 수도 있지만, 검증 워커가 매 건마다 JSON 을 풀어야 하고
-계약이 바뀌면 조용히 깨진다. 컬럼으로 둔다.
+쓸 수 있는 자리는 이렇다.
+
+- **검증과 교차 검증** — 코드가 찾은 이름 목록과 LLM 이 판단한 `다수아동언급` 은 서로
+  독립적인 신호다. 매칭은 이름 둘을 찾았는데 검증이 안 잡았다면 누락을 의심할 수 있고,
+  반대면 "친구가"·"짝꿍이" 처럼 이름 없는 언급이다
+- 화면에서 "이 기록에 다른 아이 이름이 남아 있습니다" 표시
+- 요약·공유 단계에서 다른 아이 이름 마스킹
+
+매칭이 내보내는 값이라 지금 안 받아두면 나중에 `raw_response` 를 파싱해 백필해야 한다.
+`candidates`·`evidence` 와 같은 방식으로 컬럼에 둔다.
 
 > 오타로 비슷하게 걸린 아동은 **넣지 않는다.** 실제로 등장한 게 아니라 비슷했을 뿐이라,
-> 검증에 잘못된 신호를 준다 (`AI/matching/nodes.py`).
+> 받는 쪽에 잘못된 신호를 준다 (`AI/matching/nodes.py`).
 
 **`evidence`**
 
@@ -1253,10 +1261,11 @@ status   SHARED | BLOCKED | FAILED
 | 3 | 보호자 2명 동의 기준 | 한 명만 동의해도 활성화인지, 전원 동의가 필요한지 | 기획 |
 | 4 | 동의 철회 처리 | 철회 시 기존 기록을 어떻게 다루는지. `SUSPENDED` 이후 동작 | 기획 |
 | 5 | Summary 묶음 단위 | 일지 1건당 요약 1건인지, 같은 아동·같은 날짜를 묶는지<br>→ **프론트를 따라 묶음으로 갈 예정.** 요약 에이전트 계약이 나오면 스키마 방향을 뒤집는다 (`summary_result.journal_entry_id` → `journal_entry.summary_id`) | BE + AI |
-| 6 | Validation Agent 계약 | 입출력이 확정되면 `validation_result` 컬럼 조정 | AI |
+| 6 | ~~Validation Agent 계약~~ | **확정됨** — `ValidationOutput` 기준으로 §8.1 반영 완료 | ~~AI~~ |
 | 7 | Summary Agent 계약 | 입출력이 확정되면 `summary_result` 컬럼 조정<br>**요청할 것 — "일지 여러 건을 한 번에 받아 글 하나로" 만들어달라고 지금 전달** | AI |
 | 8 | 개인정보 파기 절차 | 정보주체가 파기를 요구할 때 실제 삭제·익명화를 어떻게 하는지. soft delete로는 해결되지 않는다 | 기획 + BE |
 | 9 | DB FK 제약 재검토 | JPA 연관관계를 쓰지 않는 것과 **DB에 FK 제약을 거는 것은 별개 결정**이다. `Long` 컬럼을 유지한 채 DB 제약만 추가하면 실수로 참조를 깨뜨리는 것을 막을 수 있다 | BE 전체 |
+| 11 | `mentioned_child_ids` 소비자 | 매칭이 내보내고 BE 가 저장하는데 읽는 곳이 없다.<br>→ `ValidationInput` 에 넣어 교차 검증할지, 화면 표시용으로만 둘지 (§7.1) | AI + BE |
 | 10 | 설계와 코드 불일치 정리 | §0.3 의 남은 4건 — `raw_record.institution_id` 타입, `raw_record.status` 의미, `matching_result` 수정 방식과 `reviewer_id` 타입 | BE + AI |
 
 ---
