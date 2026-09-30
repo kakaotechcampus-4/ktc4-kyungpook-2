@@ -66,7 +66,7 @@ class ChildRepositoryTest {
         childOrganizationRepository.saveAndFlush(ChildOrganization.of(theirs.getId(), 2L));
         entityManager.clear();
 
-        List<Child> roster = childRepository.findActiveByOrganizationId(1L);
+        List<Child> roster = childRepository.findByOrganizationId(1L);
 
         assertThat(roster).extracting(Child::getName).containsExactly("임유진");
     }
@@ -79,6 +79,34 @@ class ChildRepositoryTest {
         childOrganizationRepository.saveAndFlush(link);
         entityManager.clear();
 
-        assertThat(childRepository.findActiveByOrganizationId(1L)).isEmpty();
+        assertThat(childRepository.findByOrganizationId(1L)).isEmpty();
+    }
+
+    /** 화면용 명부(findByOrganizationId)는 동의 전 아동도 포함해야 한다 — 화면에서 상태별로 걸러야 하니까. */
+    @Test
+    void 화면용_명부는_동의_전_아동도_포함한다() {
+        Child child = childRepository.saveAndFlush(Child.of("임유진", LocalDate.of(2019, 11, 26)));
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(child.getId(), 1L));
+        entityManager.clear();
+
+        assertThat(childRepository.findByOrganizationId(1L)).extracting(Child::getName).containsExactly("임유진");
+    }
+
+    /** AI 매칭 명부(findActiveByOrganizationId)는 동의 전 아동을 반드시 제외해야 한다 — 동의 없는 아이로 매칭되면 안 되니까. */
+    @Test
+    void 매칭_명부는_동의_전_아동을_제외한다() {
+        Child pending = childRepository.saveAndFlush(Child.of("임유진", LocalDate.of(2019, 11, 26)));
+        Child active = childRepository.saveAndFlush(Child.of("박서연", LocalDate.of(2020, 5, 5)));
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(pending.getId(), 1L));
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(active.getId(), 1L));
+        entityManager.getEntityManager()
+                .createQuery("update Child c set c.status = com.itda.backend.domain.ChildStatus.ACTIVE where c.id = :id")
+                .setParameter("id", active.getId())
+                .executeUpdate();
+        entityManager.clear();
+
+        List<Child> roster = childRepository.findActiveByOrganizationId(1L);
+
+        assertThat(roster).extracting(Child::getName).containsExactly("박서연");
     }
 }

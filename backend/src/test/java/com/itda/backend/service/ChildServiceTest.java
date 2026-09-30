@@ -30,7 +30,7 @@ class ChildServiceTest {
     void getRoster_mapsChildrenToRosterResponse() {
         ChildService childService = new ChildService(childRepository, userService);
         given(userService.getOrganizationIdOf(USER_ID)).willReturn(ORG_ID);
-        given(childRepository.findActiveByOrganizationId(ORG_ID))
+        given(childRepository.findByOrganizationId(ORG_ID))
                 .willReturn(List.of(Child.of("김하늘", LocalDate.of(2020, 1, 1))));
 
         List<ChildRosterResponse> roster = childService.getRoster(USER_ID);
