@@ -59,6 +59,12 @@ public class MatchingResult {
     @Column(columnDefinition = "TEXT")
     private String evidence;
 
+    // mentionedChildIds: AI/matching/schemas.py의 mentioned_child_ids (본문에 이름이 나온 아동 id 전체, 예: [8, 12]).
+    // 검증 단계가 다른 아동 이름이 남았는지 판단할 때 쓸 참고 정보다 (AI/validation 의 ValidationInput 에는 아직 없음).
+    // 빈 목록 []은 "아무 이름도 안 나옴"이라 null과 다르다.
+    @Column(columnDefinition = "TEXT")
+    private String mentionedChildIds;
+
     // rawResponse: Matching Agent 응답 원문 전체 (디버깅/재처리용, 기존 reason 컬럼 대체)
     @Column(columnDefinition = "TEXT")
     private String rawResponse;
@@ -87,6 +93,7 @@ public class MatchingResult {
             Boolean hintMismatch,
             String candidates,
             String evidence,
+            String mentionedChildIds,
             String rawResponse,
             String modelVersion) {
         this.journalEntryId = journalEntryId;
@@ -97,11 +104,18 @@ public class MatchingResult {
         this.hintMismatch = hintMismatch;
         this.candidates = candidates;
         this.evidence = evidence;
+        this.mentionedChildIds = mentionedChildIds;
         this.rawResponse = rawResponse;
         this.modelVersion = modelVersion;
         LocalDateTime now = LocalDateTime.now();
         this.createdAt = now;
         this.updatedAt = now;
+    }
+
+    // AI 호출 자체가 실패한 경우(재시도까지 실패). 판정이 없으니 판정 컬럼은 전부 비운다.
+    public static MatchingResult failed(Long journalEntryId) {
+        return new MatchingResult(journalEntryId, null, null, MatchingStatus.FAILED,
+                null, null, null, null, null, null, null);
     }
 
     // 선생님이 확인 필요 큐에서 아이를 직접 확정한 경우.

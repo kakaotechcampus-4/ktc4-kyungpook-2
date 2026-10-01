@@ -253,6 +253,8 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `RAW_STORAGE_S3_BUCKET` | 없음 (`docker` 필수) | `docker` 프로필의 원본 파일 버킷 |
 | `AWS_REGION` | `ap-northeast-2` | S3 리전 |
 | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | 없음 (`docker` 필수) | `docker` 프로필의 PostgreSQL 연결 정보 |
+| `AI_BASE_URL` | `http://localhost:8000` | 매칭 에이전트(AI) 주소. Compose는 서비스 이름으로 `http://ai:8000`을 전달 |
+| `MATCHING_WORKER_ENABLED` | `true` | 매칭 워커 사용 여부. 켜 두면 5초마다 대기(`PENDING`) 일지를 AI `POST /matching`에 보내 결과를 `matching_result`에 저장. 테스트 프로필은 끔 |
 
 ## 설정 프로필
 

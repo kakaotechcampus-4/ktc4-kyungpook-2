@@ -85,6 +85,67 @@ public class JournalEntry {
         this.childId = childId;
     }
 
+    /** 워커가 매칭 대상으로 집어 간다. 다른 워커 실행이 같은 일지를 다시 집지 않도록 대기 상태에서만 허용한다. */
+    public void startMatching() {
+        requireStatus(JournalEntryStatus.PENDING);
+        this.status = JournalEntryStatus.MATCHING;
+    }
+
+    /** AI가 자동 확정(auto)했다. 아동의 존재·소속 검증은 호출하는 Service 책임이다. */
+    public void confirmMatch(Long childId) {
+        requireStatus(JournalEntryStatus.MATCHING);
+        assignChild(childId);
+        this.status = JournalEntryStatus.MATCHED;
+    }
+
+    /** AI가 확정하지 못했다(review·multi·unmatched). 어떤 경우인지는 matching_result.status 가 가진다. */
+    public void requestMatchReview() {
+        requireStatus(JournalEntryStatus.MATCHING);
+        this.status = JournalEntryStatus.MATCH_REVIEW;
+    }
+
+    /** AI 호출 자체가 실패했다. */
+    public void failMatching() {
+        requireStatus(JournalEntryStatus.MATCHING);
+        this.status = JournalEntryStatus.FAILED;
+    }
+
+    /** 처리하던 앱이 꺼져서 매칭 중에 멈춘 일지를 다시 대기열로 돌린다. */
+    public void releaseMatching() {
+        requireStatus(JournalEntryStatus.MATCHING);
+        this.status = JournalEntryStatus.PENDING;
+    }
+
+    /** 사람이 확인해야 하는 상태인지 — AI가 확정하지 못했거나(MATCH_REVIEW) 호출이 실패했다(FAILED). */
+    public boolean isAwaitingReview() {
+        return this.status == JournalEntryStatus.MATCH_REVIEW || this.status == JournalEntryStatus.FAILED;
+    }
+
+    /** 선생님이 확인 필요 큐에서 아동을 골랐다. AI 자동 확정과 같은 상태로 보내 검증 단계가 이어 가져가게 한다. */
+    public void confirmMatchByReviewer(Long childId) {
+        requireAwaitingReview();
+        assignChild(childId);
+        this.status = JournalEntryStatus.MATCHED;
+    }
+
+    /** 선생님이 확인 필요 큐에서 제외했다. 아동 기록으로 쓰지 않고 여기서 끝낸다. */
+    public void exclude() {
+        requireAwaitingReview();
+        this.status = JournalEntryStatus.EXCLUDED;
+    }
+
+    private void requireAwaitingReview() {
+        if (!isAwaitingReview()) {
+            throw new IllegalStateException("사람 확인 대기 상태가 아닙니다: " + this.status);
+        }
+    }
+
+    private void requireStatus(JournalEntryStatus expected) {
+        if (this.status != expected) {
+            throw new IllegalStateException("일지 상태가 " + expected + "가 아닙니다: " + this.status);
+        }
+    }
+
     public void delete() {
         this.deletedAt = LocalDateTime.now();
     }

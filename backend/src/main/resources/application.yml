@@ -54,6 +54,19 @@ app:
     failure-redirect: ${AUTH_FAILURE_REDIRECT:http://localhost:3000/login}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  matching:
+    # 매칭 에이전트 주소. compose 에서는 서비스 이름으로 http://ai:8000 을 넘긴다.
+    ai-base-url: ${AI_BASE_URL:http://localhost:8000}
+    connect-timeout: 3s
+    # AI 가 LLM 응답을 60초(AI/matching/config.py LUNA_TIMEOUT)까지 기다린다. 이보다 짧으면
+    # 느린 정상 응답을 BE 가 먼저 끊고 재시도해서 LLM 을 여러 번 부르게 된다.
+    read-timeout: 65s
+    # 재시도 전에 쉬는 시간. 개수가 재시도 횟수다 (최초 1회 + 2회).
+    retry-backoffs: 2s,5s
+    worker:
+      enabled: ${MATCHING_WORKER_ENABLED:true}
+      delay-ms: 5000
+      batch-size: 10
 
 jwt:
   # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.

@@ -49,6 +49,8 @@ services:
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       AWS_REGION: ${AWS_REGION:-ap-northeast-2}
       RAW_STORAGE_S3_BUCKET: ${RAW_STORAGE_S3_BUCKET:?RAW_STORAGE_S3_BUCKET is required}
+      # 매칭 워커가 호출할 AI 주소. 같은 compose 네트워크의 서비스 이름 ai 로 붙는다.
+      AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
       JAVA_TOOL_OPTIONS: -Xms128m -Xmx512m
     ports:
       # 배포 상태 검사와 로컬 개발용. 외부 API·Swagger는 Caddy로 접근한다.

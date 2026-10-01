@@ -13,6 +13,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.Child;
+import com.itda.backend.domain.ChildStatus;
 import com.itda.backend.domain.JournalEntry;
 import com.itda.backend.domain.MatchingResult;
 import com.itda.backend.domain.MatchingStatus;
@@ -53,6 +54,8 @@ public class MatchingResultService {
         // 지금 큐 규모에선 문제없다. 커지면 join 쿼리로 바꿀 것.
         return matchingResultRepository.findByStatusNot(MatchingStatus.AUTO).stream()
                 .flatMap(mr -> resolveOwnedContext(mr.getJournalEntryId(), institutionId)
+                        // 일지가 이미 처리됐으면(옛 결과 행 등) resolve 가 거절하므로 큐에서도 뺀다.
+                        .filter(ctx -> ctx.entry().isAwaitingReview())
                         .map(ctx -> buildResponse(mr, ctx))
                         .stream())
                 .toList();
@@ -68,20 +71,32 @@ public class MatchingResultService {
         // 다른 기관 소속이면 "권한 없음"이 아니라 "없음"으로 응답한다 (RawRecordService.getById와 같은 이유).
         OwnedContext ctx = resolveOwnedContext(matchingResult.getJournalEntryId(), String.valueOf(organizationId))
                 .orElseThrow(() -> new MatchingResultNotFoundException(id));
+        // 이미 처리된 일지(다른 선생님이 먼저 처리 등)는 다시 처리하지 않는다.
+        if (!ctx.entry().isAwaitingReview()) {
+            throw new MatchingResultValidationException("journal entry is not awaiting review: " + ctx.entry().getStatus());
+        }
 
         switch (action == null ? "" : action) {
             case "assign" -> {
                 if (childId == null) {
                     throw new MatchingResultValidationException("childId is required for assign");
                 }
-                childRepository.findByIdAndDeletedAtIsNull(childId)
+                Child child = childRepository.findByIdAndDeletedAtIsNull(childId)
                         .orElseThrow(() -> new MatchingResultValidationException("child not found: " + childId));
                 if (!childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)) {
                     throw new MatchingResultValidationException("child not in this institution: " + childId);
                 }
+                // AI 명단(ChildRepository.findActiveByOrganizationId)과 같은 기준 — 동의 전 아동으로는 확정하지 않는다.
+                if (child.getStatus() != ChildStatus.ACTIVE) {
+                    throw new MatchingResultValidationException("child consent not completed: " + childId);
+                }
                 matchingResult.resolveAsAssigned(childId, reviewerId);
+                ctx.entry().confirmMatchByReviewer(childId);
             }
-            case "not_ours" -> matchingResult.resolveAsNotOurs(reviewerId);
+            case "not_ours" -> {
+                matchingResult.resolveAsNotOurs(reviewerId);
+                ctx.entry().exclude();
+            }
             default -> throw new MatchingResultValidationException("unsupported action: " + action);
         }
 

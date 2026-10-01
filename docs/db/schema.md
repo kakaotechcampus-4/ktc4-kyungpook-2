@@ -851,7 +851,9 @@ FK 제약이 없으므로 연쇄 동작이 없다. 원본을 내릴 때 **그 �
 ```
 PENDING            대기 (생성 시 기본값)
 MATCHING           매칭 중
+MATCHED            매칭 확정 — 검증 대기 (BE 추가)
 MATCH_REVIEW       사람 확인 필요
+EXCLUDED           선생님이 확인 필요 큐에서 제외 — 여기서 끝 (BE 추가)
 CONSENT_BLOCKED    동의 대기 아동의 기록이라 정지
 VALIDATING         검증 중
 SUMMARIZING        요약 중
@@ -859,6 +861,26 @@ GATE1_PENDING      1차 검토 대기
 COMPLETED          완료
 FAILED             실패
 ```
+
+매칭 워커는 AI 판정에 따라 이렇게 바꾼다. 판정의 세부(review / multi / unmatched)는 `matching_result.status`에 남는다.
+
+| AI 판정 | `journal_entry.status` | `child_id` |
+| --- | --- | --- |
+| `auto` | `MATCHED` | 판정된 아동으로 채움 |
+| `review` · `multi` · `unmatched` | `MATCH_REVIEW` | NULL 유지 |
+| 호출 실패 (재시도 2회 후) | `FAILED` | NULL 유지 |
+
+`MATCHED`는 초안에 없던 값이다. `VALIDATING`은 "검증 중"이라, 검증 워커가 집어 갈 "확정됐고 검증을 기다림" 상태가 따로 필요했다.
+
+선생님이 확인 필요 큐에서 처리하면(API O-23) `matching_result`와 함께 일지도 바꾼다. `MATCH_REVIEW`·`FAILED`인 일지만 처리할 수 있다.
+
+| 선생님 처리 | `journal_entry.status` | `child_id` |
+| --- | --- | --- |
+| `assign` (아이 확정) | `MATCHED` — AI 자동 확정과 같음 | 고른 아동으로 채움. 동의 완료(`ACTIVE`) 아동만 가능 |
+| `not_ours` (제외) | `EXCLUDED` | NULL 유지 |
+
+`EXCLUDED`도 초안에 없던 값이다. 제외하는 경우는 다른 기관 아이보다 여러 아이가 함께 나온 기록이나
+아이 기록이 아닌 줄(제목 등)이 기록으로 잘린 경우가 많다. 지우지 않고 남겨서 누가 제외했는지(`matching_result.reviewer_id`) 추적한다.
 
 **예시**
 
@@ -1375,6 +1397,10 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 - 타입 변경, NOT NULL ↔ NULL 변경
 - UNIQUE 등 제약 추가·제거
 - 기존 행이 있는 테이블에 NOT NULL 컬럼 추가 (실패한다)
+- **기존 enum 에 값 추가.** Hibernate 는 테이블을 처음 만들 때 `@Enumerated(STRING)` 컬럼에
+  `CHECK (status IN (...))` 제약을 거는데, `update`는 이 제약을 고치지 않는다. 새 값을 저장하면 거부된다.
+  `\d <테이블>`로 제약 이름(보통 `<테이블>_<컬럼>_check`)을 확인하고 `ALTER TABLE ... DROP CONSTRAINT ...`로 지운다.
+  테스트(H2·Testcontainers)는 테이블을 새로 만들어서 이 문제가 보이지 않는다
 
 ---
 
@@ -1387,3 +1413,6 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-09-29 | 노션 「DB 수정본(9.25)」을 레포로 옮김. 현재 엔티티와 대조해 §0.3 불일치 목록 추가 | #70 |
 | 2026-09-29 | 이름·타입 차이는 설계를 코드에 맞춤 (`stored_path` `size_bytes` `content_type` NOT NULL, JSON → TEXT, `model_version`·`reviewer_id`, `human_review` 구현 반영) | #70 |
 | 2026-09-29 | `raw_record`에 `hint_name` `hint_birthdate` `updated_at` `deleted_at` 추가. 조회에 `DeletedAtIsNull` 적용 | #70 |
+| 2026-09-30 | `journal_entry.status`에 `MATCHED` 추가, 매칭 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가를 배포 DB 수동 조치 목록에 추가 (§11.4) | #75 |
+| 2026-09-30 | `journal_entry.status`에 `EXCLUDED` 추가, 선생님 처리(assign·not_ours) 시 일지 상태 변경 규칙 추가 (§6.2). enum 값 추가라 §11.4 조치 대상 (서버는 9/30 조치로 해결됨) | #75 |
+| 2026-09-30 | `matching_result.mentioned_child_ids` 엔티티에 반영 (§7.1 설명은 #78) | #75 |
