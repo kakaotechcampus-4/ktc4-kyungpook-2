@@ -125,9 +125,10 @@ SSM은 Actions가 검증한 [`scripts/deploy-backend.sh`](scripts/deploy-backend
    리다이렉트를 따라가지 않고 HTTP 상태 코드도 확인합니다.
 6. 성공하면 서버 `infra/docker/.env`의 `BACKEND_IMAGE`만 원자적으로 갱신합니다.
    다른 환경변수와 파일 권한은 보존합니다.
-7. 교체 후 검증이 실패하면 이전 이미지로 BE를 복구합니다. Caddy 재로딩을 시도한 배포라면
-   백업한 Caddy 활성 JSON도 다시 로딩합니다.
+7. 교체 후 검증이 실패하면 서버 checkout을 이전 커밋으로 되돌린 뒤, 이전 compose.yaml로 이전 이미지를 다시 띄웁니다.
+   Caddy 재로딩을 시도한 배포라면 백업한 Caddy 활성 JSON도 다시 로딩합니다.
    잘못된 새 Caddyfile을 복구 단계에서 다시 읽지 않습니다.
+   교체 전(설정 검사·Caddyfile 검증·다운로드)에 실패해도 checkout을 되돌립니다.
    복구 성공 여부를 로그에 남기며 워크플로는 실패로 표시합니다.
 
 GitHub에서는 배포 작업을 직렬 실행하고 서버에서는 `flock`으로 BE·AI 배포가 겹치지 않게 합니다.
@@ -175,7 +176,7 @@ cd backend
 ```
 
 배포 테스트는 임시 Git 저장소·HTTP 서버·가짜 Docker를 사용하여 성공, 다운로드 실패,
-기동 실패, CORS·OAuth·Caddy 재로딩 실패 시 복구, 서버 수정 파일 보존, 오래된 커밋 거부,
+기동 실패, CORS·OAuth·Caddy 재로딩 실패 시 복구, 실패 시 checkout 복원, 서버 수정 파일 보존, 오래된 커밋 거부,
 AI 배포가 checkout을 먼저 옮긴 역순 배포, 공유 잠금 대기·시간 초과를 검증합니다. Docker 프록시 테스트는 임시 Caddy와 에코 서버, 내부 CA로 실제 HTTPS 경로를 확인합니다.
 백엔드 재생성 후 재로딩 없이 연결이 복구되는지 확인하고, 호스트 이름 불일치는 신뢰하는
 localhost 인증서를 항상 제공하는 별도 TLS 서버에서 curl의 인증서 검증 오류와 원인을 확인합니다.
@@ -218,7 +219,7 @@ SSM은 [`scripts/deploy-ai.sh`](scripts/deploy-ai.sh)를 `ubuntu` 계정으로 �
 4. 기존 이미지를 `ktc-ai:rollback-<id>`로 보관하고 새 digest를 받습니다. 다운로드에 실패해도 실행 중인 AI는 그대로입니다.
 5. `--no-deps --no-build --pull never`로 AI만 교체하고 확인을 최대 60초 기다립니다.
 6. 성공하면 서버 `infra/docker/.env`의 `AI_IMAGE`만 원자적으로 갱신합니다.
-   실패하면 이전 이미지로 복구하고 워크플로를 실패로 표시합니다.
+   실패하면 서버 checkout을 이전 커밋으로 되돌리고 이전 이미지로 복구한 뒤 워크플로를 실패로 표시합니다.
 
 ### 서버 checkout 갱신 규칙
 
@@ -234,6 +235,10 @@ BE·AI 배포는 모두 서버 checkout을 옮깁니다. 두 배포가 겹치거
 5. 이력이 갈라졌으면 실패합니다.
 
 4번의 경로는 각 스크립트의 `service_paths`이며, 워크플로 `paths`와 같아야 합니다. 테스트가 둘이 같은지 검사합니다.
+
+`compose.yaml`·Caddyfile은 checkout에 있는 파일로 검증하므로 3번의 fast-forward는 검증보다 먼저 일어납니다.
+그래서 배포가 어느 단계에서든 실패하면 3번으로 옮긴 checkout을 `git reset --keep`으로 이전 커밋에 되돌립니다.
+4번처럼 다른 서비스 배포가 옮긴 checkout은 되돌리지 않습니다.
 
 ### 최초 적용
 
@@ -384,5 +389,6 @@ PY
 실패한 최초 전환에서는 백엔드 이미지 복구만으로 HTTP·Nginx 운영 상태까지 돌아가지 않으므로
 위 전체 복구 절차가 필요합니다. Caddy 영구 볼륨은 보존합니다.
 
-일반 배포의 자동 복구는 이전 활성 Caddy JSON을 다시 로딩합니다. 저장소의 새 Caddyfile까지
-되돌리는 작업은 하지 않으므로 잘못된 배포 설정은 수정 커밋으로 해결한 뒤 Caddy를 재시작하세요.
+일반 배포의 자동 복구는 서버 checkout을 이전 커밋으로 되돌리고 이전 활성 Caddy JSON을 다시 로딩합니다.
+그래서 Caddy가 재시작돼도 검증되지 않은 새 Caddyfile을 읽지 않습니다. 잘못된 배포 설정은 수정 커밋으로 해결합니다.
+로그에 `Could not restore the server checkout`이 남으면 서버에서 `git status`와 `git log -1`을 확인하세요.
