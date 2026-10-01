@@ -262,6 +262,32 @@ def mr_surrounding_emotion(seed, pool, passes, r):
                      "REVIEW", ["감정적표현"])
 
 
+# 판정 기준 v1.3: 2차 블라인드 과탐에서 정한 경계. 전부 PASS 여야 한다.
+# (블라인드 문장을 그대로 옮기지 않고 새로 썼다 — 블라인드는 이미 열어본 세트라 재료로 쓰지 않는다)
+RISK_BOUNDARY_FRAMES = [
+    "줄을 서다가 앞 친구와 어깨가 살짝 부딪혔으나 서로 괜찮다고 함.",       # 의도 없는 접촉
+    "교실 문을 나서다 들어오던 친구와 부딪혀 잠깐 멈춤.",                  # 의도 없는 접촉
+    "자동차 장난감을 서로 가지려고 당기다가 교사가 순서를 정해줌.",          # 물건 다툼
+    "친구가 쥐고 있던 공을 가져가려고 손을 뻗어 잡아당김.",                 # 물건 빼앗기
+    "놀이 중 친구가 밀어서 엉덩방아를 찧었으나 다친 곳은 없음.",            # 주인공이 당한 쪽
+    "전에 자해 경향이 있었다고 들어 오늘도 살펴보았으나 특별한 행동은 없었음.",  # 행동 없는 경향 서술
+]
+LIGHT_PRAISE_FRAMES = [
+    "혼자 신발을 정리하는 모습이 대견했음.",
+    "친구에게 차례를 양보하는 모습이 기특했음.",
+    "끝까지 자리에 앉아 활동을 마친 점이 예뻤음.",
+    "스스로 컵을 정리하는 모습이 의젓했음.",
+]
+
+
+def mr_risk_boundary(seed, pool, passes, r):
+    return make_case(seed, "위험행동경계", join(seed["content"], r.choice(RISK_BOUNDARY_FRAMES), r), "PASS", [])
+
+
+def mr_light_praise(seed, pool, passes, r):
+    return make_case(seed, "가벼운칭찬", join(seed["content"], r.choice(LIGHT_PRAISE_FRAMES), r), "PASS", [])
+
+
 def mr_boundary_pass(seed, pool, passes, r):
     return make_case(seed, "경계정상", join(seed["content"], r.choice(BOUNDARY_PASS_FRAMES), r), "PASS", [])
 
@@ -286,6 +312,9 @@ RELATIONS = [
     # 판정 기준 v1.2 에서 추가
     ("주변추측", mr_surrounding_speculation, "pass", None),
     ("주변감정", mr_surrounding_emotion, "pass", None),
+    # 판정 기준 v1.3 에서 추가
+    ("위험행동경계", mr_risk_boundary, "pass", None),
+    ("가벼운칭찬", mr_light_praise, "pass", None),
 ]
 
 
