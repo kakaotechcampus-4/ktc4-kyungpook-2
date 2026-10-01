@@ -52,6 +52,10 @@ def run_one(case, graph):
     state = {k: case.get(k) for k in STATE_KEYS}
     try:
         s = graph.invoke(state)
+        if s.get("llm_error"):
+            # LLM 호출이 실패해도 그래프는 REVIEW["모델호출실패"]로 끝까지 돈다.
+            # 채점에 넣으면 '모델이 틀린 것'처럼 보이므로 실행 오류로 따로 센다.
+            return case["case_id"], None, "LLM 호출 실패 (llm_error)"
         return case["case_id"], {
             "verdict": s["verdict"],
             "issue_types": s["issue_types"],
@@ -133,6 +137,12 @@ def main():
                 if i % 50 == 0 or i == len(cases):
                     print(f"  {i}/{len(cases)} 완료...")
 
+    # ── 실행 오류·누락 ──
+    # 결과가 없는 케이스는 채점에서 빠진다. 빠진 만큼 점수가 좋아 보일 수 있으니 따로 세고, 있으면 실패로 끝낸다.
+    # (--rescore 에서는 지난 실행에 결과가 없던 케이스가 여기에 잡힌다)
+    error_msg = dict(errors)
+    missing = [c["case_id"] for c in cases if c["case_id"] not in outputs]
+
     # ── 채점 ──
     by_group = defaultdict(Counter)       # relation(없으면 expected 유형) 별 정답/전체
     sev = Counter()
@@ -167,11 +177,13 @@ def main():
         now_failed = {c["case_id"] for _, c, _, _ in failures}
         regressions = sorted(prev & now_failed)
         fixed = sorted(passed_ids - prev)
-    # --limit 으로 일부만 돌렸으면 지난 기록에 덮어쓰지 않고 합친다.
+    # --limit 으로 일부만 돌렸거나 실행 오류·누락이 있으면 지난 기록에 덮어쓰지 않고 합친다.
     # (전에는 30건만 돌린 결과가 전체 기준점을 지워버려서 다음 회귀 비교가 30건으로 줄었다)
+    # 실행 오류가 난 케이스는 지난번 상태를 그대로 둔다. 안 그러면 정답 목록에서 빠져서
+    # 다음 실행 때 틀려도 회귀로 안 잡히고, 맞으면 '새로 맞힌 것'으로 잘못 잡힌다.
     save_outputs, save_passed = outputs, passed_ids
-    if prev_data is not None and args.limit:
-        ran = {c["case_id"] for c in cases}
+    if prev_data is not None and (args.limit or missing):
+        ran = set(outputs)
         save_outputs = {**prev_data["outputs"], **outputs}
         save_passed = (set(prev_data["passed_ids"]) - ran) | passed_ids
     latest_path.write_text(json.dumps(
@@ -185,7 +197,7 @@ def main():
     vok = sum(g["verdict_ok"] for g in by_group.values())
 
     lines = [f"# {run_name} 결과", "",
-             f"- 판정 정답 {vok}/{total} · 유형까지 정답 {ok}/{total} · 에러 {len(errors)}건",
+             f"- 판정 정답 {vok}/{total} · 유형까지 정답 {ok}/{total} · 실행 오류·누락 **{len(missing)}**건",
              f"- 치명적(BLOCK→PASS) **{sev['치명적']}** · 준치명적(REVIEW→PASS) **{sev['준치명적']}** "
              f"· 등급하락(BLOCK→REVIEW) {sev['등급하락']} · 과탐 {sev['과탐']}",
              f"- 원인: " + (", ".join(f"{k} {v}" for k, v in reason_count.most_common()) or "없음"),
@@ -195,6 +207,9 @@ def main():
         t = cnt["total"]
         lines.append(f"| {g} | {cnt['verdict_ok']}/{t} ({cnt['verdict_ok'] / t * 100:.0f}%) "
                      f"| {cnt['ok']}/{t} ({cnt['ok'] / t * 100:.0f}%) |")
+    if missing:
+        lines += ["", "## 실행 오류·누락 (채점에서 빠짐)", ""] + [
+            f"- {cid}: {error_msg.get(cid, '지난 실행 결과에 없음')}" for cid in missing]
     if regressions:
         lines += ["", "## 회귀", ""] + [f"- {cid}" for cid in regressions]
     lines += ["", "## 틀린 케이스", ""]
@@ -214,8 +229,10 @@ def main():
         print(f"  … 외 {len(failures) - 10}건 → 리포트 참고")
     print(f"\n리포트: {RUNS_DIR / f'{run_name}_report.md'}")
 
-    # 치명적 오류나 회귀가 있으면 실패 코드로 끝낸다 → 나중에 CI에 그대로 쓸 수 있음
-    sys.exit(1 if sev["치명적"] or regressions else 0)
+    # 치명적 오류, 회귀, 실행 오류·누락 중 하나라도 있으면 실패 코드로 끝낸다 → 나중에 CI에 그대로 쓸 수 있음
+    if missing:
+        print(f"\n실행 오류·누락 {len(missing)}건 — 평가를 끝까지 못 돌렸으므로 실패로 종료")
+    sys.exit(1 if sev["치명적"] or regressions or missing else 0)
 
 
 if __name__ == "__main__":
