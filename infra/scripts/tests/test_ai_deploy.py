@@ -28,7 +28,11 @@ DOCKER = r'''import json, os, pathlib, sys
 path = pathlib.Path(os.environ["FAKE_DOCKER_STATE"])
 state = json.loads(path.read_text())
 args = sys.argv[1:]
-state["commands"].append({"args": args, "image": os.environ.get("AI_IMAGE", "")})
+entry = {"args": args, "image": os.environ.get("AI_IMAGE", "")}
+if "--project-directory" in args:
+    # Record which checkout Compose read, to see what each command was given.
+    entry["checkout"] = (pathlib.Path(args[args.index("--project-directory") + 1]).parents[1] / "AI/main.py").read_text().strip()
+state["commands"].append(entry)
 code = 0
 output = ""
 if args[0] == "compose":
@@ -246,6 +250,21 @@ class DeployScriptTests(unittest.TestCase):
         self.assertEqual(self.state()["image"], "ktc-ai")
         self.assertEqual(self.env_file.read_text(), self.original_env)
         self.assertFalse(any("up" in args for args in self.changed_containers()))
+        self.assert_checkout_restored()
+
+    def assert_checkout_restored(self):
+        # 검증하려고 옮긴 checkout을 되돌린다. 실패한 배포의 compose.yaml이 서버에 남지 않게 한다.
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.old_commit)
+        self.assertEqual((self.root / "AI/main.py").read_text(), "old\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_failure_keeps_checkout_moved_by_another_deployment(self):
+        # 이 배포가 옮긴 게 아니면 되돌리지 않는다. 되돌리면 BE 배포가 반영한 checkout을 깬다.
+        newer = self.push_commit("backend/App.java", "backend change\n")
+        self.move_server_to(newer)
+        self.set_state("pull_failure")
+        self.assertNotEqual(self.deploy().returncode, 0)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), newer)
 
     def test_health_failure_restores_previous_image(self):
         self.assert_rollback("health_failure")
@@ -260,10 +279,15 @@ class DeployScriptTests(unittest.TestCase):
         self.assertIn("Previous AI restored", result.stderr, result.stdout + result.stderr)
         self.assertTrue(self.state()["image"].startswith("ktc-ai:rollback-"))
         self.assertEqual(self.env_file.read_text(), self.original_env + "AI_IMAGE=" + self.state()["image"] + "\n")
+        self.assert_checkout_restored()
+        # 이전 이미지는 이전 compose.yaml로 다시 띄운다.
+        rollback_up = [entry for entry in self.state()["commands"] if "up" in entry["args"]][-1]
+        self.assertEqual(rollback_up["checkout"], "old")
 
     def test_missing_luna_key_stops_before_changes(self):
         self.ai_env_file.write_text("LUNA_API_URL=https://luna.invalid\nLUNA_API_KEY=\n")
         self.assert_unchanged(self.deploy(), "LUNA_API_KEY")
+        self.assert_checkout_restored()
 
     def test_dirty_checkout_is_preserved(self):
         (self.root / "AI/main.py").write_text("local changes\n")

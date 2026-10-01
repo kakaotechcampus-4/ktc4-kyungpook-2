@@ -31,7 +31,11 @@ DOCKER = r'''import json, os, pathlib, sys
 path = pathlib.Path(os.environ["FAKE_DOCKER_STATE"])
 state = json.loads(path.read_text())
 args = sys.argv[1:]
-state["commands"].append({"args": args, "image": os.environ.get("BACKEND_IMAGE", "")})
+entry = {"args": args, "image": os.environ.get("BACKEND_IMAGE", "")}
+if "--project-directory" in args:
+    # Record which checkout Compose read, to see what each command was given.
+    entry["checkout"] = (pathlib.Path(args[args.index("--project-directory") + 1]).parents[1] / "tracked.txt").read_text().strip()
+state["commands"].append(entry)
 code = 0
 output = ""
 if args[0] == "compose":
@@ -331,6 +335,13 @@ class DeployScriptTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.state()["image"], "ktc-backend")
         self.assertFalse(any("up" in entry["args"] for entry in self.state()["commands"]))
+        self.assert_checkout_restored()
+
+    def assert_checkout_restored(self):
+        # 검증하려고 옮긴 checkout을 되돌려, 재시작한 Caddy가 검증 안 된 설정을 읽지 않게 한다.
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.old_commit)
+        self.assertEqual((self.root / "tracked.txt").read_text(), "old\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
 
     def test_origin_mismatch_cannot_be_hidden_by_shell_override(self):
         self.env_file.write_text(self.original_env.replace(ORIGIN, "http://wrong.test"))
@@ -374,6 +385,10 @@ class DeployScriptTests(unittest.TestCase):
         if not config_changed and mode != "reload_failure":
             self.assertEqual(self.reload_commands(), [])
         self.assertEqual(list((self.root / ".git").glob("caddy-*.*")), [])
+        self.assert_checkout_restored()
+        # 이전 이미지는 이전 compose.yaml로 다시 띄운다.
+        rollback_up = [entry for entry in self.state()["commands"] if "up" in entry["args"]][-1]
+        self.assertEqual(rollback_up["checkout"], "old")
 
     def test_pull_failure_does_not_replace_backend(self):
         self.set_state("pull_failure")
@@ -382,6 +397,7 @@ class DeployScriptTests(unittest.TestCase):
         self.assertEqual(self.state()["image"], "ktc-backend")
         self.assertEqual(self.env_file.read_text(), self.original_env)
         self.assertFalse(any("up" in entry["args"] for entry in self.state()["commands"]))
+        self.assert_checkout_restored()
 
     def test_dirty_checkout_is_preserved(self):
         (self.root / "tracked.txt").write_text("local changes\n")
@@ -407,6 +423,14 @@ class DeployScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("already contains", result.stdout)
         self.assertEqual(self.state()["image"], IMAGE)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), newer)
+
+    def test_failure_keeps_checkout_moved_by_another_deployment(self):
+        # 이 배포가 옮긴 게 아니면 되돌리지 않는다. 되돌리면 AI 배포가 반영한 checkout을 깬다.
+        newer = self.push_commit("AI/main.py", "ai change\n")
+        self.move_server_to(newer)
+        self.set_state("pull_failure")
+        self.assertNotEqual(self.deploy().returncode, 0)
         self.assertEqual(self.git("rev-parse", "HEAD").strip(), newer)
 
     def test_checkout_ahead_with_ai_deploy_script_changes_is_kept(self):

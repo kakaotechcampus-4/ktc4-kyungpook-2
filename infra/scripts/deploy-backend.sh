@@ -27,6 +27,8 @@ caddy_snapshot=''
 caddy_candidate=''
 caddy_changed=0
 caddy_reload_attempted=0
+previous_head=''
+checkout_moved=0
 
 # .github/workflows/backend-ci-cd.yml의 paths와 같게 유지한다. 테스트가 일치 여부를 검사한다.
 # 이 경로가 바뀐 커밋은 BE 워크플로를 실행시키므로, 더 새 BE 배포가 뒤따른다.
@@ -100,7 +102,10 @@ update_checkout() {
     return 1
   fi
   if git merge-base --is-ancestor HEAD "$commit"; then
+    # compose.yaml·Caddyfile은 checkout에서 읽어 검증하므로 먼저 옮긴다. 실패하면 on_exit가 되돌린다.
+    previous_head=$(git rev-parse HEAD)
     git merge --ff-only --quiet "$commit"
+    checkout_moved=1
     return 0
   fi
   if ! git merge-base --is-ancestor "$commit" HEAD; then
@@ -120,6 +125,12 @@ update_checkout() {
     return 1
   fi
   echo "Server checkout already contains $commit; keeping $(git rev-parse --short HEAD)"
+}
+
+restore_checkout() {
+  # 이 배포가 옮긴 checkout만 되돌린다. 다른 서비스 배포가 옮긴 checkout은 그대로 둔다.
+  ((checkout_moved)) || return 0
+  git reset --quiet --keep "$previous_head" && checkout_moved=0
 }
 
 save_image_reference() {
@@ -158,10 +169,17 @@ PY
 on_exit() {
   local code=$?
   trap - EXIT
+  if ((code != 0 && !rollback_required)); then
+    set +e
+    # 컨테이너는 바뀌지 않았다. 재시작한 Caddy가 검증 안 된 Caddyfile을 읽지 않게 checkout만 되돌린다.
+    restore_checkout || echo 'Could not restore the server checkout; inspect git on the server' >&2
+  fi
   if ((code != 0 && rollback_required)); then
     echo 'Deployment failed; restoring previous backend image' >&2
     set +e
     local restored=1
+    # 이전 이미지는 이전 compose.yaml로 띄워야 하므로 checkout부터 되돌린다.
+    restore_checkout || restored=0
     BACKEND_IMAGE=$rollback_image compose up -d --no-deps --no-build --pull never backend || restored=0
     wait_for_health "$backend_health_url" || restored=0
     if ((caddy_reload_attempted)); then
