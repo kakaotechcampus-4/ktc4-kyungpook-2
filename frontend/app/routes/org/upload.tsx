@@ -9,7 +9,7 @@ import type { UploadFailReason, UploadResult } from "@/lib/types";
 type UploadFailure = Extract<UploadResult, { ok: false }>;
 
 const FAIL_MESSAGE: Record<UploadFailReason, string> = {
-  invalid: "올릴 수 없는 형식입니다 (csv · txt · pdf · jpg · png · hwp)",
+  invalid: "올릴 수 없는 형식입니다 (csv · txt · pdf)",
   too_large: "20MB를 넘는 파일입니다",
   temporary: "일시적인 오류로 저장하지 못했습니다",
 };
@@ -86,7 +86,7 @@ export default function UploadPage() {
               ⬆
             </span>
             <p className="text-[16px] font-semibold text-ink2">파일을 끌어다 놓거나 선택하세요</p>
-            <p className="text-[14px] text-muted">사진 · 일지 · 특이사항 메모</p>
+            <p className="text-[14px] text-muted">일지 · 특이사항 메모 (csv · txt · pdf)</p>
             <input
               key={inputKey}
               type="file"
