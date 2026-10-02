@@ -13,7 +13,8 @@ import { readSelectedChildId } from "@/lib/selectedChild";
  * 그 값을 매번 다시 읽어오는 지점이 된다.
  */
 export async function clientLoader() {
-  const { role } = await getSession();
+  const { loggedIn, signupCompleted, role } = await getSession();
+  if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   if (role !== "parent") return redirect("/parent/invite");
   // 카카오 로그인만 하고 약관·첫 기관 동의를 안 끝낸 사람은 아직 본 화면에 들어올 수 없다.
   if (!isOnboarded()) return redirect("/parent/invite");
