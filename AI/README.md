@@ -201,9 +201,15 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 
 ## 판정 기준은 어디에 있나
 
-**어떤 상황에서 어떤 status 가 정답인가**는 노션 문서에서 관리합니다.
+**어떤 상황에서 어떤 status 가 정답인가**는 레포 안에 있습니다.
 
-→ [AI · Matching Agent 자동 확정 판정 기준](https://app.notion.com/p/elice-track/AI-Matching-Agent-9-23-3e42bb98425780498d9ffb9db2d83819?v=e022bb98425783e2baac88bd5a3d8489&source=copy_link)
+| 에이전트 | 판정 기준 | 동기화 테스트 |
+| --- | --- | --- |
+| 매칭 | [matching/CRITERIA.md](matching/CRITERIA.md) | `evals/scripts/matching/test_criteria_sync.py` |
+| 검증 | [evals/scripts/validation/README.md](evals/scripts/validation/README.md) | `evals/scripts/validation/test_prompt_sync.py` |
 
-구현이 아니라 **정책**이라 레포가 아닌 노션에 둡니다. 테스트 데이터를 만들 때 이 문서를 보고
-정답을 정하며, 구현이 바뀌어도 원칙은 바뀌지 않습니다.
+**문서가 기준이고 코드가 그것을 따릅니다.** 둘이 어긋나면 동기화 테스트가 깨집니다.
+LLM 을 부르지 않으므로 즉시 끝납니다.
+
+바꿀 때는 **문서를 먼저 고치고 코드를 맞춥니다.** 순서가 반대면 기준이 구현을
+따라가게 되고, 그러면 "왜 이렇게 판정하나" 에 답할 수 없습니다.
