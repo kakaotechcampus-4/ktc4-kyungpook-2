@@ -7,8 +7,9 @@ Validation Agent의 4단계 노드 — 인식/계획/행동/반영.
 """
 import re
 
-from .config import ISSUE_LEVEL, STRUCTURAL_PII_PATTERNS
+from .config import ISSUE_LEVEL, STRUCTURAL_PII_PATTERNS, ATTRIBUTION_EXEMPT
 from .llm import ask_json, LlmError, spans_for_quotes
+from .prompts import build_messages
 
 
 def perceive(state: dict) -> dict:
@@ -32,44 +33,10 @@ def plan(state: dict) -> dict:
 
 
 def act(state: dict) -> dict:
-    """행동: Luna 호출. 여기서만 LLM을 쓴다."""
-    content = state["content"]
-    subject_name = state.get("subject_name")
+    """행동: Luna 호출. 여기서만 LLM을 쓴다. 프롬프트 내용은 prompts.py 에 있다."""
+    print(f"[validation] journal_entry_id={state.get('journal_entry_id')} 처리 중")
 
-    # 대상을 알면 이름을 명시하고, 모르면 모델한테도 "모른다"고 알려서
-    # attributed_to_subject를 스스로 false로 두게 유도한다 (2차 방어선).
-    subject_line = (
-        f'지금 판정 대상 아동은 "{subject_name}"입니다. 각 유형이 있다면, '
-        f'그것이 {subject_name} 본인에 대한 서술인지 판단하세요.'
-        if subject_name else
-        '이번 요청에는 판정 대상 아동 정보가 제공되지 않았습니다. '
-        '이 경우 attributed_to_subject는 항상 false로 표시하세요.'
-    )
-
-    messages = [{
-        "role": "user",
-        "content": f"""다음 관찰 기록에서 아래 7개 유형 중 해당하는 것이 있는지 판단하세요.
-
-BLOCK:
-- 진단명: 확정적인 진단명이 명시됨
-- 개인정보표현: 연락처·생년월일·주소 등 개인 식별 정보
-
-REVIEW:
-- 확정적표현: 진단명은 아니지만 "절대 안 바뀐다"류의 단정적 서술
-- 다수아동언급: 한 기록에 아이 2명 이상 등장
-- 추측성표현: 근거 없이 원인을 추측하는 문장 ("아마~", "짐작건대~")
-- 감정적표현: 객관적 관찰이 아니라 작성자(교사)의 주관적 감정이 드러나는 서술.
-  지나친 애정 표현("너무 예뻐서", "사랑스러워서")이거나,
-  힘들다는 하소연("지치고 힘든 하루였음")도 포함됩니다.
-- 위험행동표현: 자해/타해 행동을 필요 이상으로 상세하게 묘사
-
-{subject_line}
-
-기록: {content}
-
-JSON 형식으로만 답하세요:
-{{"issues": [{{"issue_type": "진단명", "attributed_to_subject": true, "evidence_quote": "원문 인용"}}]}}"""
-    }]
+    messages = build_messages(state["content"], state.get("subject_name"))
 
     try:
         result = ask_json(messages)
@@ -80,6 +47,31 @@ JSON 형식으로만 답하세요:
         state["llm_error"] = True
 
     return state
+
+
+def _narrowest_spans(spans: list[dict]) -> list[dict]:
+    """겹치는 근거 구간을 정리한다.
+
+    구조적 정규식과 모델 인용이 같은 곳을 가리키면 구간이 그대로 쌓인다.
+    예: "010-1234-5678" 과 "어머니 연락처는 010-1234-5678 이다."
+    화면에서 같은 자리가 두 번 칠해지므로 하나만 남긴다.
+
+    남기는 쪽은 좁은 구간이다 — 계약이 "판정 근거가 된 최소 구간만" 이라
+    넓은 인용이 정확한 히트를 덮어쓰지 않게 한다. 반환 순서는 start 기준으로
+    고정한다. 모델 응답 순서에 따라 배열이 흔들리지 않게 하기 위함이다.
+    """
+    unique = {(s["start"], s["end"]) for s in spans}
+    kept = [
+        (start, end)
+        for start, end in unique
+        if not any(
+            (other_start, other_end) != (start, end)
+            and other_start >= start
+            and other_end <= end
+            for other_start, other_end in unique
+        )
+    ]
+    return [{"start": start, "end": end} for start, end in sorted(kept)]
 
 
 def reflect(state: dict) -> dict:
@@ -103,20 +95,20 @@ def reflect(state: dict) -> dict:
     if state.get("llm_error"):
         if verdict == "BLOCK":
             # 구조적 패턴(정규식)으로 이미 확정된 BLOCK은 모델 상태와 무관하게 유지
-            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": evidence}
-        return {**state, "verdict": "REVIEW", "issue_types": issue_types or ["모델호출실패"], "evidence": evidence}
+            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": _narrowest_spans(evidence)}
+        return {**state, "verdict": "REVIEW", "issue_types": issue_types or ["모델호출실패"], "evidence": _narrowest_spans(evidence)}
 
     if not state.get("subject_known"):
         if verdict == "BLOCK":
-            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": evidence}
-        return {**state, "verdict": "REVIEW", "issue_types": list(set(issue_types + ["대상불명확"])), "evidence": evidence}
+            return {**state, "verdict": "BLOCK", "issue_types": issue_types, "evidence": _narrowest_spans(evidence)}
+        return {**state, "verdict": "REVIEW", "issue_types": list(set(issue_types + ["대상불명확"])), "evidence": _narrowest_spans(evidence)}
 
     for candidate in state.get("llm_issues", []):
         issue_type = candidate.get("issue_type")
         if issue_type not in ISSUE_LEVEL:
             continue  # 허용된 유형 목록 밖 값은 무시 (Matching의 "명부 밖 ID 무시"와 같은 원리)
 
-        if not candidate.get("attributed_to_subject"):
+        if issue_type not in ATTRIBUTION_EXEMPT and not candidate.get("attributed_to_subject"):
             continue  # ⚠️ 귀속 검증 핵심 지점
 
         quote = candidate.get("evidence_quote", "")
@@ -133,4 +125,4 @@ def reflect(state: dict) -> dict:
         elif level == "REVIEW" and verdict != "BLOCK":
             verdict = "REVIEW"
 
-    return {**state, "verdict": verdict, "issue_types": list(set(issue_types)), "evidence": evidence}
+    return {**state, "verdict": verdict, "issue_types": list(set(issue_types)), "evidence": _narrowest_spans(evidence)}

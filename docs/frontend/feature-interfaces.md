@@ -121,10 +121,13 @@ interface RawRecord {
 ```ts
 interface MatchingItem {      // 확인 필요 큐 한 건
   id: string;
-  record: RawRecord;
+  // null · 없음 = 서버(#35)가 아직 못 채우는 값. 화면은 그 칸을 숨긴다
+  record: { id: string; fileName: string; type?: RawRecord["type"] | null;
+            capturedAt: string | null; preview: string | null };
   status: "review" | "multi" | "unmatched";
   // 동명이인이면 후보가 둘 이상 남는다. 이름·반이 같으므로 birthDate 가 유일한 구분 근거다.
-  candidates: { childId: string; name: string; group: string; birthDate: string }[];
+  candidates: { childId: string; name: string | null; group?: string | null;
+                birthDate: string | null }[];
   evidence: { start: number; end: number }[];   // 판정 근거 구간 (문자 인덱스)
   multiReason?: "co_mention" | "ambiguous_identity" | null;
   unmatchedReason?: "no_anchor" | "not_in_roster" | null;
@@ -270,7 +273,7 @@ interface ParentActivity {
 | `getChild` | `(id: string) => Promise<Child \| undefined>` | I-09-1 |
 | `getTimeline` | `(childId: string) => Promise<TimelineEntry[]>` | I-09-1 |
 | `getMatchingQueue` | `() => Promise<MatchingItem[]>` | I-03, I-06, 사이드바 배지 |
-| `resolveMatchingItem` | `(id: string) => Promise<{ ok: true }>` | I-06 |
+| `resolveMatchingItem` | `(id: string, resolution: { action: "assign"; childId: string } \| { action: "not_ours" }) => Promise<{ ok: true }>` | I-06 |
 | `getBlockedQueue` | `() => Promise<BlockedItem[]>` | I-03, I-07, 사이드바 배지 |
 | `resolveBlockedItem` | `(id: string, action: "reupload" \| "hold") => Promise<{ ok: true }>` | I-07 |
 | `getGate1Queue` | `() => Promise<SummaryItem[]>` | I-03, I-08 |
@@ -339,12 +342,13 @@ csrfHeader(): Record<string, string>         // { "X-XSRF-TOKEN": ... } 또는 {
 - **CSRF 토큰이 필요합니다.** 쿠키가 자동 전송되므로 남의 사이트 폼에도 실립니다.
   백엔드가 `XSRF-TOKEN` 쿠키(이것만 httpOnly 가 아님)를 내려주고, `lib/api.ts` 가
   쓰기 요청마다 `X-XSRF-TOKEN` 헤더로 되돌립니다. 없으면 403 입니다.
-- `grantRole`은 **로그인이 아닙니다.** 백엔드에 사용자 테이블이 없어 JWT의 subject가
-  kakaoId뿐이고, 서버가 기관/학부모를 구분하지 못해 클라이언트가 임시로 들고 있습니다.
-  학부모 온보딩(P-02)과 로그인 착지 페이지(I-01b)가 부릅니다.
+- `grantRole`은 **로그인이 아닙니다.** 지금 프론트는 기관/학부모 역할을 서버에 묻지 않고
+  클라이언트에 임시로 들고 있습니다. 학부모 온보딩(P-02)과 로그인 착지 페이지(I-01b)가 부릅니다.
   출입증이 쿠키가 된 지금은 이 값이 **로그인 여부의 표시**도 겸합니다.
-- `GET /api/v1/auth/me`(역할 포함)가 열리면 `getSession()`/`grantRole()` **내부만** 그
-  응답으로 바꿉니다. 호출부(각 라우트의 `clientLoader`)는 그대로 둡니다.
+- 백엔드는 이미 회원(`users`)을 저장하고, `GET /api/v1/auth/me`로 역할과 가입 여부(`signupCompleted`)를
+  알려 줍니다(api-spec §2.2). 역할은 회원가입 `POST /api/v1/auth/signup`에서 사용자가 고릅니다(§2.6).
+  `getSession()`/`grantRole()` **내부만** 이 응답으로 바꾸고, `signupCompleted: false`면 역할 선택 화면으로 보냅니다.
+  호출부(각 라우트의 `clientLoader`)는 그대로 둡니다.
 - **state 검증은 프론트에 없습니다.** Spring Security 가 서버에서 처리합니다.
 
 ### 역할 경계

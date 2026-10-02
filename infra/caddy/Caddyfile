@@ -1,0 +1,31 @@
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$PUBLIC_ORIGIN:http://localhost} {
+	request_body {
+		max_size 25MiB
+	}
+
+	# /api 접두사와 OAuth 콜백 경로를 그대로 전달한다.
+	handle /api/* {
+		reverse_proxy backend:8080 {
+			transport http {
+				response_header_timeout 120s
+				read_timeout 120s
+			}
+		}
+	}
+
+	@backend path /oauth2/* /login/oauth2/* /swagger-ui /swagger-ui/* /swagger-ui.html /v3/api-docs /v3/api-docs/*
+	handle @backend {
+		reverse_proxy backend:8080
+	}
+
+	# 정적 자산의 캐시 헤더는 frontend가 정한다.
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

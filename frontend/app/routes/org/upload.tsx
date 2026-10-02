@@ -4,11 +4,19 @@ import { FileProgressList, useProgressPolling } from "@/components/org/FileProgr
 import { Card, Note, PageHeader, PipelineStepper } from "@/components/ui";
 import { getChildren, getFileProgress, retryFailedEntries, uploadRawRecords } from "@/lib/api";
 import { PIPELINE_STAGES, stageStatesOf } from "@/lib/pipeline";
+import type { UploadFailReason, UploadResult } from "@/lib/types";
+
+type UploadFailure = Extract<UploadResult, { ok: false }>;
+
+const FAIL_MESSAGE: Record<UploadFailReason, string> = {
+  invalid: "올릴 수 없는 형식입니다 (csv · txt · pdf)",
+  too_large: "20MB를 넘는 파일입니다",
+  temporary: "일시적인 오류로 저장하지 못했습니다",
+};
 
 export async function clientLoader() {
   const [children, files] = await Promise.all([getChildren(), getFileProgress()]);
   return {
-    active: children.filter((c) => c.status === "active"),
     pending: children.filter((c) => c.status === "pending_consent"),
     files,
   };
@@ -20,12 +28,13 @@ export async function clientLoader() {
  * — 창을 닫았다가 대시보드에서 다시 봐도 같은 현황이다.
  */
 export default function UploadPage() {
-  const { active, pending, files } = useLoaderData<typeof clientLoader>();
+  const { pending, files } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
   const [chosen, setChosen] = useState<File[]>([]);
   const [uploadedIds, setUploadedIds] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** 마지막으로 올린 묶음에서 실패한 파일. 전부 성공했으면 null */
+  const [outcome, setOutcome] = useState<{ total: number; failed: UploadFailure[] } | null>(null);
   /** 파일 입력을 비우려면 새로 그려야 한다 */
   const [inputKey, setInputKey] = useState(0);
 
@@ -33,18 +42,24 @@ export default function UploadPage() {
   const latest = mine[0];
   useProgressPolling(mine);
 
-  async function upload() {
-    if (chosen.length === 0) return;
+  // 형식 · 용량 문제는 같은 파일을 다시 올려도 또 실패하므로 다시 올리기에서 뺀다
+  const retryable = outcome?.failed.filter((f) => f.reason === "temporary") ?? [];
+
+  /** fromPicker 가 아니면(실패한 것 다시 올리기) 새로 골라둔 파일을 지우지 않는다 */
+  async function upload(targets: File[], fromPicker: boolean) {
+    if (targets.length === 0) return;
     setUploading(true);
-    setError(null);
     try {
-      const created = await uploadRawRecords(chosen);
-      setUploadedIds((ids) => [...created.map((f) => f.rawRecordId), ...ids]);
-      setChosen([]);
-      setInputKey((k) => k + 1);
+      const results = await uploadRawRecords(targets);
+      const failed = results.filter((r): r is UploadFailure => !r.ok);
+      const created = results.flatMap((r) => (r.ok ? [r.progress.rawRecordId] : []));
+      setUploadedIds((ids) => [...created, ...ids]);
+      setOutcome(failed.length > 0 ? { total: results.length, failed } : null);
+      if (fromPicker) {
+        setChosen([]);
+        setInputKey((k) => k + 1);
+      }
       revalidator.revalidate();
-    } catch {
-      setError("업로드하지 못했습니다. 잠시 뒤 다시 시도해주세요.");
     } finally {
       setUploading(false);
     }
@@ -59,50 +74,19 @@ export default function UploadPage() {
 
       <Card>
         <form className="flex flex-col gap-5">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[15px] font-semibold">아이 (선택)</span>
-            <select
-              defaultValue=""
-              className="tap rounded border border-line2 bg-surface px-3 text-[16px] outline-none focus:border-accent"
-            >
-              <option value="">자동 매칭에 맡기기</option>
-              {active.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} · {c.birthDate}
-                </option>
-              ))}
-            </select>
-            <span className="text-[13px] text-muted">
-              비워두면 자동으로 아이를 확인하고, 확신이 낮으면 확인이 필요한 기록으로 보냅니다.
-            </span>
-          </label>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[15px] font-semibold">기록 유형</span>
-              <select className="tap rounded border border-line2 bg-surface px-3 text-[16px] outline-none focus:border-accent">
-                <option>관찰일지</option>
-                <option>활동일지</option>
-                <option>특이사항</option>
-                <option>사진</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[15px] font-semibold">기록 시각</span>
-              <input
-                type="datetime-local"
-                defaultValue="2026-08-21T11:40"
-                className="tap rounded border border-line2 bg-surface px-3 text-[16px] outline-none focus:border-accent"
-              />
-            </label>
-          </div>
+          {/* 아이 · 기록 유형 · 기록 시각은 받지 않는다. 파일 하나에 여러 아이의 기록이 섞여 있어
+              아이는 매칭이 판정하고, 시각은 파일 본문에서 뽑는다. */}
+          <p className="text-[14px] text-muted">
+            여러 아이의 기록이 한 파일에 섞여 있어도 됩니다. 아이는 자동으로 확인하고, 확신이
+            낮으면 확인이 필요한 기록으로 보냅니다.
+          </p>
 
           <div className="flex flex-col items-center gap-2 rounded border border-dashed border-line2 bg-paper px-6 py-10 text-center">
             <span aria-hidden className="text-2xl text-muted">
               ⬆
             </span>
             <p className="text-[16px] font-semibold text-ink2">파일을 끌어다 놓거나 선택하세요</p>
-            <p className="text-[14px] text-muted">사진 · 일지 · 특이사항 메모</p>
+            <p className="text-[14px] text-muted">일지 · 특이사항 메모 (csv · txt · pdf)</p>
             <input
               key={inputKey}
               type="file"
@@ -115,7 +99,7 @@ export default function UploadPage() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={upload}
+              onClick={() => upload(chosen, true)}
               disabled={chosen.length === 0 || uploading}
               className="tap rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-line2 disabled:text-muted"
             >
@@ -125,7 +109,47 @@ export default function UploadPage() {
               <span className="text-[14px] text-muted">{chosen.length}개 파일 선택됨</span>
             ) : null}
           </div>
-          {error ? <p className="text-[14px] text-block">{error}</p> : null}
+          {outcome ? (
+            <div className="flex flex-col gap-3 rounded border border-block/40 bg-blocksoft px-4 py-3">
+              <p className="text-[15px] font-semibold">
+                {outcome.failed.length === outcome.total
+                  ? `${outcome.total}개 모두 올리지 못했습니다`
+                  : `${outcome.total}개 중 ${outcome.total - outcome.failed.length}개를 올렸습니다. ${outcome.failed.length}개는 올리지 못했습니다`}
+              </p>
+              <ul className="flex flex-col gap-2">
+                {outcome.failed.map((f, i) => (
+                  <li key={`${f.file.name}-${i}`} className="flex flex-col gap-0.5">
+                    <span className="text-[15px] font-medium break-all">
+                      <span aria-hidden className="text-block">
+                        ✕
+                      </span>{" "}
+                      {f.file.name}
+                    </span>
+                    <span className="text-[14px] text-muted">{FAIL_MESSAGE[f.reason]}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap items-center gap-3">
+                {retryable.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => upload(retryable.map((f) => f.file), false)}
+                    disabled={uploading}
+                    className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-line2 disabled:text-muted"
+                  >
+                    실패한 파일만 다시 올리기 ({retryable.length}개)
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setOutcome(null)}
+                  className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          ) : null}
         </form>
       </Card>
 

@@ -4,14 +4,14 @@
 
 ```
 Local Record → ①매칭 → ②검증 → ③요약 → [Gate 1] → ④인사이트 → [Gate 2] → ⑤공유
-                 ↑
-            현재 구현 완료
+               └─── 구현 완료 ───┘
 ```
 
 | 디렉터리 | 내용 |
 | --- | --- |
 | `matching/` | 매칭 에이전트 — 기록 한 줄이 어느 아동의 것인지 판정 |
-| `evals/` | 평가 스크립트 — 테스트 데이터 실행과 채점 ([README](evals/README.md)) |
+| `validation/` | 검증 에이전트 — 그 기록을 저장해도 안전한지 판정 |
+| `evals/` | 평가 스크립트 — 에이전트별로 나뉘어 있습니다 ([매칭](evals/scripts/matching/README.md)) |
 | `main.py` | FastAPI 서버 |
 
 ---
@@ -32,8 +32,18 @@ uvicorn main:app --reload --port 8000
 docker compose -f infra/docker/compose.yaml up -d --build ai
 ```
 
-> 서버에서는 `127.0.0.1:8000` 에만 바인드되고 nginx 가 라우팅하지 않습니다.
+> 서버에서는 `127.0.0.1:8000` 에만 바인드되고 Caddy 가 라우팅하지 않습니다.
 > 인증이 없는 엔드포인트라 외부에 열지 않습니다 — 확인하려면 서버 안에서 `curl localhost:8000` 을 씁니다.
+
+### 배포
+
+`develop` 에 병합되면 [AI CI/CD](../.github/workflows/ai-ci-cd.yml) 가 이미지를 빌드·확인한 뒤
+서버의 AI 컨테이너만 교체합니다. `*.md` 와 `evals/` 만 바꾸면 재배포하지 않습니다.
+`evals/` 는 이미지에 넣지 않고 서버 checkout 을 마운트해 씁니다.
+
+배포 확인은 `/health` 와 모델을 부르지 않는 `/matching` 한 건으로 하고, 서버 `AI/.env` 에
+Luna 키가 없으면 배포가 실패합니다. 실패했을 때 다시 배포하는 방법과 서버 절차는
+[인프라 문서](../infra/README.md#ai-cicd) 를 참고하세요.
 
 ---
 
@@ -42,8 +52,13 @@ docker compose -f infra/docker/compose.yaml up -d --build ai
 | 메서드 | 경로 | 역할 |
 | --- | --- | --- |
 | `GET` | `/health` | 상태 확인. `luna_configured` 로 키 설정 여부를 함께 알려줍니다 |
-| `POST` | `/matching` | 기록 한 줄을 받아 판정 하나를 돌려줍니다 |
+| `POST` | `/matching` | 기록 한 줄을 받아 어느 아동의 것인지 판정합니다 |
+| `POST` | `/validation` | 그 기록을 저장해도 안전한지 판정합니다 |
 | `GET` | `/llm-test` | Luna 연결 확인용 |
+
+---
+
+### `POST /matching`
 
 계약은 [matching/schemas.py](matching/schemas.py) 가 유일한 기준입니다. 아래는 요약입니다.
 
@@ -96,7 +111,55 @@ docker compose -f infra/docker/compose.yaml up -d --build ai
 
 ---
 
-## 그래프 구조
+### `POST /validation`
+
+계약은 [validation/schemas.py](validation/schemas.py) 가 유일한 기준입니다.
+
+**입력**
+
+```json
+{
+  "journal_entry_id": 1041,
+  "content": "박서연이 자유놀이 시간에 블록을 높이 쌓았다.",
+  "subject_child_id": 8,
+  "subject_name": "박서연"
+}
+```
+
+- `subject_child_id` / `subject_name` — **매칭 결과에서 넘겨야 합니다.** 판정 대상이
+  누구인지 모르면 귀속 검증이 성립하지 않아, 코드가 강제로 `REVIEW` 로 보냅니다
+
+**출력**
+
+```json
+{
+  "journal_entry_id": 1041,
+  "verdict": "BLOCK",
+  "issue_types": ["개인정보표현"],
+  "evidence": [{ "start": 23, "end": 36 }]
+}
+```
+
+| verdict | 뜻 | 백엔드가 할 일 |
+| --- | --- | --- |
+| `PASS` | 문제 없음 | 요약으로 넘김 |
+| `REVIEW` | 교사 확인 필요 | 수정 요청 큐로 |
+| `BLOCK` | 그대로 두면 위험 | **요약으로 넘기지 않음** |
+
+| 등급 | 이슈 유형 |
+| --- | --- |
+| `BLOCK` | 진단명 · 개인정보표현 |
+| `REVIEW` | 확정적표현 · 다수아동언급 · 추측성표현 · 감정적표현 · 위험행동표현 |
+
+전화번호·주민번호 형식은 모델 판단 없이 정규식으로 항상 `BLOCK` 입니다. 모델 호출이
+실패해도 이 판정은 유지됩니다.
+
+`evidence` 는 겹치지 않는 최소 구간만 담습니다. 구조적 히트와 모델 인용이 같은 곳을
+가리키면 좁은 쪽만 남습니다.
+
+---
+
+## 매칭 그래프 구조
 
 ```
 START → extract → shortlist ─┬─(이름 하나가 명확)──────────→ decide → END
@@ -113,6 +176,10 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 조건부 엣지가 이 그래프의 핵심입니다. **이름이 하나로 명확한 기록은 모델을 부르지 않는다**는
 결정이 코드가 아니라 그래프 구조로 드러납니다.
 
+검증 그래프는 분기 없이 `perceive → plan → act → reflect` 로 곧게 흐릅니다. 구조적 패턴을
+먼저 훑고(`perceive`), 모델에 물은 뒤(`act`), 마지막에 코드가 최종 판정을 내립니다(`reflect`).
+**모델 응답과 무관하게 지켜야 하는 규칙은 전부 `reflect` 에 있습니다.**
+
 ---
 
 ## 고칠 곳
@@ -124,6 +191,8 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 | 판정 규칙 | [matching/nodes.py](matching/nodes.py) |
 | 모델에게 주는 지시 | [matching/prompts.py](matching/prompts.py) |
 | 입출력 계약 | [matching/schemas.py](matching/schemas.py) |
+| 검증 이슈 유형 · 등급 | [validation/config.py](validation/config.py) |
+| 검증 판정 규칙 | [validation/nodes.py](validation/nodes.py) |
 
 `config.py` 의 플래그는 전부 되돌릴 수 있게 되어 있습니다. 규칙 하나를 끄고 평가를 돌리면
 그 규칙의 기여도를 바로 볼 수 있습니다.
@@ -132,9 +201,15 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 
 ## 판정 기준은 어디에 있나
 
-**어떤 상황에서 어떤 status 가 정답인가**는 노션 문서에서 관리합니다.
+**어떤 상황에서 어떤 status 가 정답인가**는 레포 안에 있습니다.
 
-→ [AI · Matching Agent 자동 확정 판정 기준](https://app.notion.com/p/elice-track/AI-Matching-Agent-9-23-3e42bb98425780498d9ffb9db2d83819?v=e022bb98425783e2baac88bd5a3d8489&source=copy_link)
+| 에이전트 | 판정 기준 | 동기화 테스트 |
+| --- | --- | --- |
+| 매칭 | [matching/CRITERIA.md](matching/CRITERIA.md) | `evals/scripts/matching/test_criteria_sync.py` |
+| 검증 | [evals/scripts/validation/README.md](evals/scripts/validation/README.md) | `evals/scripts/validation/test_prompt_sync.py` |
 
-구현이 아니라 **정책**이라 레포가 아닌 노션에 둡니다. 테스트 데이터를 만들 때 이 문서를 보고
-정답을 정하며, 구현이 바뀌어도 원칙은 바뀌지 않습니다.
+**문서가 기준이고 코드가 그것을 따릅니다.** 둘이 어긋나면 동기화 테스트가 깨집니다.
+LLM 을 부르지 않으므로 즉시 끝납니다.
+
+바꿀 때는 **문서를 먼저 고치고 코드를 맞춥니다.** 순서가 반대면 기준이 구현을
+따라가게 되고, 그러면 "왜 이렇게 판정하나" 에 답할 수 없습니다.

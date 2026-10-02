@@ -24,14 +24,14 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 
 | # | 항목 | 현황 | 프론트 의견 |
 | --- | --- | --- | --- |
-| 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`, 배포 `http://54.116.206.217/login/oauth2/code/kakao`. 동의 항목은 현재 `profile_nickname`만 요청합니다(§2.4) | 전화번호 동의 항목 추가 여부는 매칭 키(§5.1)와 함께 결정이 필요합니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
+| 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`(로컬 Compose의 Caddy를 거치면 `http://localhost/login/oauth2/code/kakao`), 운영 `https://iitda.duckdns.org/login/oauth2/code/kakao`. 동의 항목은 현재 `profile_nickname`만 요청합니다(§2.4) | 전화번호 동의 항목 추가 여부는 매칭 키(§5.1)와 함께 결정이 필요합니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
 | 2 | **세션 전달 방식** | **확정·구현됨** — `access_token` httpOnly 쿠키(1시간). 쓰기 요청은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보냅니다. refresh token은 없습니다 | - |
 | 3 | **필드 네이밍** | 프론트 타입은 camelCase, 일부 요청 바디는 snake_case | **camelCase 통일 제안** (Jackson 기본값과도 맞음). 이 문서는 전부 camelCase로 적었습니다. 프론트의 snake_case 요청 바디 3곳은 프론트가 수정합니다 |
 | 4 | **보호자–아이 연결 방식** | **확정** — 기관이 먼저 아이를 등록해두고, 보호자가 카카오 로그인하면 **대기 중 연결 요청**으로 노출합니다. 초대코드 방식은 제외 | 남은 확정 사항은 **매칭 키**입니다(§5.1). 기관이 등록한 아이와 카카오 로그인한 보호자를 서버가 무엇으로 이어줄지 정해야 합니다 |
 | 4-1 | **역할 구분** | **확정·구현됨** — 카카오 로그인 뒤 **회원가입에서 사용자가 직접 선택**합니다(§2.6). 기관은 기관명·유형·사업자등록번호를 함께 입력하며, 사업자등록번호는 형식만 검사합니다 | 로그인 직후 `/auth/me`의 `signupCompleted`가 `false`면 역할 선택 화면으로 보냅니다. sessionStorage로 역할을 정하던 방식은 이 흐름으로 바꿔야 합니다 |
 | 5 | **파이프라인 진행 상태** | 프론트는 `setTimeout` 시뮬레이션 | 폴링 / SSE / WebSocket 중 선택. 폴링이면 권장 주기와 상태 조회 엔드포인트가 필요합니다 |
 | 6 | **페이지네이션** | 미정 | 현재 프론트는 전체 조회를 가정합니다. 큐·타임라인·일지 목록에 커서 또는 오프셋 페이징이 필요하면 형식을 정해주세요 |
-| 7 | **파일 업로드** | 현재 구현: `POST /api/v1/raw-records` multipart, **파일 1개**(`file`), 최대 **20MB**, 허용 확장자 `csv` · `txt` · `pdf` · `jpg` · `jpeg` · `png` · `hwp` (§4.3) | 다중 업로드, `docx` 등 확장자 추가 여부 합의 필요 |
+| 7 | **파일 업로드** | 현재 구현: `POST /api/v1/raw-records` multipart, **파일 1개**(`file`), 최대 **20MB**, 허용 확장자 `csv` · `txt` · `pdf` (§4.3) — **결정됨**(2026-09-29): jpg/png/hwp는 이번 학기 범위 밖으로 제외 | 다중 업로드, `docx` 추가 여부는 여전히 논의 필요(다음 이슈에서 진행 예정) |
 | 8 | **RawRecord 응답 형식** | 현재 구현 응답이 프론트 `RawRecord` 타입과 다릅니다 (§3 RawRecord의 "현재 구현" 참고) | 프론트 `RawRecord` 타입(§3.2)과 매핑표 합의 필요 |
 
 ### 프론트가 이미 알고 있고 스스로 고칠 부분
@@ -236,7 +236,7 @@ POST /api/v1/auth/signup   → 201 Created
 ### Institution
 
 ```json
-{ "id": "inst_center_1", "name": "햇살아동발달센터", "type": "center", "verified": true }
+{ "id": "2", "name": "햇살아동발달센터", "type": "center", "verified": true }
 ```
 
 `type`: `school` · `center` · `assistant`
@@ -245,13 +245,13 @@ POST /api/v1/auth/signup   → 201 Created
 
 ```json
 {
-  "id": "child_1",
+  "id": "1",
   "name": "김하늘",
   "birthDate": "2017-03-14",
   "school": "○○초 2학년",
   "status": "active",
   "institutions": [
-    { "institution": { "id": "inst_school_1", "name": "○○초등학교", "type": "school", "verified": true },
+    { "institution": { "id": "1", "name": "○○초등학교", "type": "school", "verified": true },
       "consent": "granted" }
   ],
   "care": {
@@ -270,7 +270,7 @@ POST /api/v1/auth/signup   → 201 Created
 
 ```json
 {
-  "id": "raw_1",
+  "id": "1",
   "fileName": "0821_관찰일지.docx",
   "type": "관찰일지",
   "capturedAt": "2026-08-21T11:40:00+09:00",
@@ -278,15 +278,19 @@ POST /api/v1/auth/signup   → 201 Created
 }
 ```
 
-`type`: `관찰일지` · `활동일지` · `특이사항` · `사진`
+`type`: `관찰일지` · `활동일지` · `특이사항`
 (한국어 고정값을 그대로 쓸지, enum 코드값 + 표시명 분리로 갈지 의견 주세요.)
+
+> `사진`은 뺐습니다(#72) — 이미지 업로드 자체가 이번 학기 범위 밖으로 제외됐습니다(OCR 필요,
+> 이슈 #67). `RecordResponse`에는 애초에 `type`이 없어서 BE 구현과 지금 당장 어긋나는 부분은
+> 없습니다.
 
 **현재 구현** (`POST/GET /api/v1/raw-records`) · 위 형식과 다릅니다. 매핑은 §1-8에서 합의합니다.
 
 ```json
 {
   "id": 1,
-  "institutionId": "384921",
+  "institutionId": "3",
   "originalFilename": "0821_관찰일지.pdf",
   "contentType": "application/pdf",
   "sizeBytes": 20480,
@@ -297,8 +301,8 @@ POST /api/v1/auth/signup   → 201 Created
 
 | 필드 | 초안과 차이 |
 | --- | --- |
-| `id` | 숫자 |
-| `institutionId` | 회원 DB 전까지 로그인한 카카오 회원번호가 들어갑니다 (#34에서 기관 ID로 전환) |
+| `id` | 숫자 (문자열 규칙의 예외 — api-conventions.md 참고) |
+| `institutionId` | 업로드한 기관 회원의 소속 기관 ID (문자열) |
 | `originalFilename` | 초안의 `fileName` |
 | `status` | `PENDING` · `REVIEW` · `BLOCKED` · `FAILED` (파이프라인 단계 §4.3 O-21과 별개) |
 | `createdAt` | 서버 저장 시각. 현재 **시간대 오프셋이 없습니다** |
@@ -335,13 +339,23 @@ POST /api/v1/auth/signup   → 201 Created
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| O-10 | GET | `/institutions/me/children` | 담당 아동 목록 | I-05, I-09, I-13 |
+| O-10 | GET | `/institutions/me/children` | 담당 아동 목록 · **구현됨** | I-05, I-09, I-13 |
 | O-11 | POST | `/institutions/me/children` | 아이 등록 | I-04 |
 | O-13 | GET | `/children/{childId}` | 아동 상세 | I-09-1 |
 | O-14 | GET | `/children/{childId}/context` | Child Context 타임라인 | I-09-1 |
 
 > 이전 초안에 있던 `O-12 초대코드 재발급`은 초대코드 방식을 제외하면서 삭제했습니다.
 > 번호는 혼동을 막기 위해 결번으로 둡니다.
+
+**O-10 응답** · RosterPicker(매칭 확인 · Gate 1 아동 변경)가 쓰는 필드만 우선 구현했습니다.
+
+```json
+[
+  { "id": "9", "name": "김하늘", "birthDate": "2017-03-14", "status": "active" }
+]
+```
+
+`school`/`institutions`/`care`는 아직 없습니다 — `Child` 엔티티에 그 컬럼 자체가 없습니다(O-11 구현 시 같이 채울 예정). `status`가 `active`가 아닌 아동도 포함해서 내려갑니다 — 필터링은 프론트 몫입니다(`RosterPicker.tsx`가 이미 그렇게 함).
 
 **O-11 요청**
 
@@ -362,7 +376,7 @@ POST /api/v1/auth/signup   → 201 Created
 
 ```json
 {
-  "child": { "id": "child_9", "name": "김하늘", "birthDate": "2017-03-14",
+  "child": { "id": "9", "name": "김하늘", "birthDate": "2017-03-14",
              "status": "pending_consent", "institutions": [] }
 }
 ```
@@ -391,31 +405,35 @@ POST /api/v1/auth/signup   → 201 Created
 | --- | --- | --- | --- | --- |
 | O-20 | POST | `/raw-records` | 원본 기록 업로드 (multipart) | I-05 |
 | O-21 | GET | `/raw-records/{id}/status` | 파이프라인 진행 상태 | I-03, I-05 |
-| O-22 | GET | `/matching-queue` | 확인 필요 큐 | I-03, I-06 |
-| O-23 | POST | `/matching-queue/{itemId}/resolve` | 아이 확정 / 제외 | I-06 |
+| O-22 | GET | `/matching-queue` | 확인 필요 큐 · **구현됨** | I-03, I-06 |
+| O-23 | POST | `/matching-queue/{itemId}/resolve` | 아이 확정 / 제외 · **구현됨** | I-06 |
 | O-24 | GET | `/validation-results?status=BLOCK` | 수정 요청 큐 | I-03, I-07 |
 | O-25 | POST | `/validation-results/{itemId}/resolve` | 재업로드 / 보류 | I-07 |
+| O-26 | GET | `/raw-records/progress` | 파일별 처리 현황 · **계약 확정, 구현 예정** | I-03, I-05 |
+| O-27 | POST | `/raw-records/{id}/retry` | 실패한 기록 재처리 · **계약 확정, 구현 예정** | I-03, I-05 |
 
 **O-20 요청** · `multipart/form-data`
 
 | 필드 | 필수 | 설명 |
 | --- | --- | --- |
 | `file` | 예 | 다중 업로드 지원 여부 회신 필요 |
-| `recordType` | 예 | `관찰일지` · `활동일지` · `특이사항` · `사진` |
-| `capturedAt` | 예 | ISO 8601 |
-| `childId` | 아니오 | 비우면 자동 매칭 |
+
+아이 · 기록 유형 · 기록 시각은 받지 않습니다. 파일에는 여러 아이의 기록이 섞여 있어
+아이는 매칭이 판정하고, 기록 시각은 파일 본문에서 추출합니다. 아이를 확정해서 넣는
+경로는 직접 입력(`POST /journal-entries`, 신규 예정)으로 분리합니다.
 
 - `pending_consent` 상태 아이의 기록은 **거부**해주세요 →
   `409 CHILD_CONSENT_PENDING`
 - 용량 초과는 `413 FILE_TOO_LARGE`
 
-> **현재 구현** · `file` 한 개만 받습니다(`recordType` · `capturedAt` · `childId` 미지원).
+> **현재 구현** · `file` 한 개만 받습니다.
 >
 > | 항목 | 값 |
 > | --- | --- |
-> | 허용 확장자 | `csv` · `txt` · `pdf` · `jpg` · `jpeg` · `png` · `hwp` |
-> | 허용 Content-Type | `text/csv` · `text/plain` · `application/pdf` · `image/jpeg` · `image/png` · `application/x-hwp` · `application/haansofthwp` |
-> | 최대 크기 | 20MB (nginx는 25MB에서 먼저 차단) |
+> | 허용 확장자 | `csv` · `txt` · `pdf` (2026-09-29, 이슈 #67로 `jpg`·`jpeg`·`png`·`hwp` 제외 — jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려워 이번 학기 범위 밖) |
+> | 허용 Content-Type | `text/csv` · `text/plain` · `application/pdf` |
+> | 기록 분리(텍스트 추출) | `csv`·`txt`만 지원. `pdf`는 업로드는 되지만 아직 `JournalEntry`로 안 쪼개짐(`entries: []` 유지) — 다음 이슈에서 추가 |
+> | 최대 크기 | 20MB (Caddy는 25MiB에서 먼저 차단) |
 > | 성공 | `201 Created` |
 > | 오류 | 확장자·형식·파일명 오류 `400 RAW_RECORD_INVALID_REQUEST`, 용량 초과 `413 RAW_RECORD_FILE_TOO_LARGE`, 저장 실패 `500 RAW_RECORD_STORAGE_FAILED` |
 >
@@ -424,7 +442,7 @@ POST /api/v1/auth/signup   → 201 Created
 **O-21 응답** · 파이프라인 단계는 프론트 `PIPELINE_STAGES`와 맞춥니다.
 
 ```json
-{ "id": "raw_1", "stage": "validating", "stageIndex": 2, "totalStages": 5 }
+{ "id": "1", "stage": "validating", "stageIndex": 2, "totalStages": 5 }
 ```
 
 | `stage` | 라벨 |
@@ -435,25 +453,44 @@ POST /api/v1/auth/signup   → 201 Created
 | `summarizing` | 요약 |
 | `gate1_pending` | 1차 검토 대기 |
 
-**O-22 응답** · `MatchStatus`가 `confirmed`인 건은 포함하지 않습니다.
+**O-22 응답** · `status`가 `auto`인 건은 포함하지 않습니다.
 
 ```json
 [
-  { "id": "mq_1",
-    "record": { "id": "raw_3", "fileName": "0821_활동일지.docx", "type": "활동일지",
-                "capturedAt": "2026-08-21T14:10:00+09:00", "preview": "…" },
+  { "id": "1",
+    "journalEntryId": 7,
+    "matchedChildId": null,
     "status": "multi",
     "confidence": 0.62,
-    "candidates": [ { "childId": "child_1", "name": "김하늘", "group": "햇살반" } ] }
+    "multiReason": "ambiguous_identity",
+    "hintMismatch": false,
+    "record": { "id": "3", "fileName": "0821_활동일지.docx",
+                "preview": "…", "capturedAt": "2026-08-21" },
+    "candidates": [ { "childId": "1", "name": "김하늘", "birthDate": "2020-01-01", "confidence": 0.62 } ],
+    "evidence": [ { "start": 12, "end": 15 } ] }
 ]
 ```
 
-`status`: `multi` · `unmatched` · `low` · `confidence`: 0.0~1.0 (`unmatched`면 `null`)
+- `id`·`record.id`·`candidates[].childId`·`matchedChildId`는 문자열, `journalEntryId`는 숫자입니다 (api-conventions.md의 PK 규칙 참고)
+- `journalEntryId`: 이 결과가 가리키는 기록(`journal_entry`)의 ID
+- `matchedChildId`: 확정된 아동 ID. 큐에 남아 있는 항목은 아직 확정 전이라 보통 `null`입니다
+- 값이 없는 필드(`matchedChildId`·`multiReason`·`evidence` 등)는 생략되지 않고 `null`로 내려갑니다
+
+- `status`: `auto` · `review` · `multi` · `unmatched` · `failed` — AI 매칭 에이전트 실제 계약(`AI/matching/schemas.py`)값 그대로 (9/22 팀 확인, 9/24 DB초안 반영). `failed`는 AI 호출 자체가 실패했을 때만 쓰는 BE 전용 값
+- `confidence`: 0.0~1.0, 항상 채워짐 (AI 계약 기본값 0.0) — `multi`면 후보 중 최고점과 같음
+- `multiReason`: `status`가 `multi`일 때만 채워짐 — `ambiguous_identity` · `co_mention`
+- `hintMismatch`: 표지 힌트와 다른 아동으로 판단했는지
+- `evidence`: 판정 근거가 된 본문 구간(`{start, end}`, 유니코드 코드포인트 인덱스)
+- `record`/`candidates[].{name,birthDate}`은 이제 JournalEntry·Child 조회로 채워서 내려갑니다(PR #35, feat/be/#31).
+  다만 **`record.type`(기록 유형)과 `candidates[].group`(반)은 DB에 그 값을 담을 컬럼 자체가 없어서 여전히 못 채웁니다** —
+  `RawRecord`엔 기록 유형 컬럼이, `Child`엔 반 컬럼이 없습니다. 프론트 `types.ts`의 `RawRecord.type`/후보 `group`은 당장은 빈 값으로 와야 합니다.
+- 프론트 `types.ts`는 "화면에 숫자를 띄우면 교사가 근거로 삼게 된다"는 이유로 `confidence`를 일부러 타입에서 뺐는데,
+  BE는 위와 같이 최상위/후보별 `confidence`를 그대로 내려줍니다. 화면에서 안 쓰면 되지만, 필드 자체는 내려간다는 점 확인해주세요.
 
 **O-23 요청** · 프론트는 선택한 아이를 함께 보냅니다.
 
 ```json
-{ "action": "assign", "childId": "child_1" }
+{ "action": "assign", "childId": "1" }
 ```
 
 | `action` | 의미 | `childId` |
@@ -461,15 +498,54 @@ POST /api/v1/auth/signup   → 201 Created
 | `assign` | 선택한 아이로 확정 | 필수 |
 | `not_ours` | 우리 기관 아동 아님 (제외) | 없음 |
 
-> 현재 프론트 `resolveMatchingItem(id)`는 `childId`를 보내지 않습니다. 이 명세대로
-> 프론트를 수정할 예정입니다.
+> 프론트 `resolveMatchingItem(id, resolution)`이 이 형식으로 보냅니다. 후보나 명부에서 아이를
+> 고르면 `assign`, "이 기관 아동 아님"을 누르면 `not_ours`입니다.
+
+처리하면 기록(`journal_entry`)도 함께 바뀝니다 — `assign`은 검증 단계로 넘어가고, `not_ours`는 제외돼 여기서 끝납니다 (DB 스키마 §6.2).
+확인 필요 큐에는 아직 처리되지 않은 기록만 나옵니다.
+아래 경우는 `400 MATCHING_RESULT_INVALID_REQUEST`로 거절합니다.
+
+- `assign`인데 `childId`가 없거나, 없는 아동이거나, 이 기관 소속이 아님
+- `assign`으로 고른 아동이 **동의 완료(`active`) 상태가 아님** — AI 매칭 명단과 같은 기준
+- 이미 처리된 기록 (다른 선생님이 먼저 처리한 경우 등. 두 명이 거의 동시에 누르는 경우까지 막지는 않습니다)
+
+`childId`는 O-22의 `candidates[].childId`·O-10의 `id` 문자열을 그대로 보내면 됩니다(`"1"`, 숫자 `1`도 받습니다).
+`"child_1"`처럼 숫자로 읽을 수 없는 값은 `400 INVALID_REQUEST`입니다.
+
+**O-23 응답** · 처리한 항목을 O-22 항목과 같은 형식으로 돌려줍니다. `200 OK`.
+
+```json
+{ "id": "1",
+  "journalEntryId": 7,
+  "matchedChildId": "1",
+  "status": "auto",
+  "confidence": 0.62,
+  "multiReason": "ambiguous_identity",
+  "hintMismatch": false,
+  "record": { "id": "3", "fileName": "0821_활동일지.docx",
+              "preview": "…", "capturedAt": "2026-08-21" },
+  "candidates": [ { "childId": "1", "name": "김하늘", "birthDate": "2020-01-01", "confidence": 0.62 } ],
+  "evidence": [ { "start": 12, "end": 15 } ] }
+```
+
+- 처리하면 `status`는 `auto`가 됩니다. AI 계약에 "사람이 확정함"을 뜻하는 값이 따로 없어서, 사람이 처리한 경우도 "더 이상 확인할 필요 없음"이라는 뜻으로 `auto`를 씁니다
+- `matchedChildId`: `assign`이면 고른 아동 ID, `not_ours`이면 `null`
+- 나머지 필드(`confidence`·`candidates` 등)는 AI 판정 값 그대로입니다
+
+| 상태 | 코드 | 경우 |
+| --- | --- | --- |
+| 400 | `MATCHING_RESULT_INVALID_REQUEST` | 위 거절 조건, 지원하지 않는 `action` |
+| 400 | `INVALID_REQUEST` | 본문이 JSON이 아니거나 `childId`를 숫자로 읽을 수 없음 |
+| 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 회원이 아님 |
+| 403 | `FORBIDDEN` | `X-XSRF-TOKEN` 헤더 누락·불일치 (§1-2) |
+| 404 | `MATCHING_RESULT_NOT_FOUND` | 없는 항목이거나 다른 기관의 항목 |
 
 **O-24 응답**
 
 ```json
 [
-  { "id": "bq_1",
-    "record": { "id": "raw_5", "fileName": "0821_특이사항.txt", "type": "특이사항",
+  { "id": "1",
+    "record": { "id": "5", "fileName": "0821_특이사항.txt", "type": "특이사항",
                 "capturedAt": "2026-08-21T16:00:00+09:00", "preview": "…" },
     "childName": "김하늘",
     "violationReason": "다른 아이의 이름이 함께 적혀 있습니다" }
@@ -480,6 +556,23 @@ POST /api/v1/auth/signup   → 201 Created
 한국어 문장으로 주세요. 코드값이 필요하면 `violationCode`를 별도로 추가해주세요.
 
 **O-25 요청** · `{ "action": "reupload" }` 또는 `{ "action": "hold" }`
+
+**O-26 응답** · 계약 확정, 구현 예정. 최근 업로드가 먼저 옵니다.
+
+```json
+[
+  { "rawRecordId": "1", "fileName": "0821_관찰일지.docx",
+    "uploadedAt": "2026-08-21T11:40:00+09:00",
+    "entries": [ { "id": "1", "stageIndex": 1, "state": "waiting" } ] }
+]
+```
+
+`state`: `running` 자동 진행 중 · `waiting` 사람 확인 대기 · `failed` 시스템 오류 · `done` 완료
+
+> 파일을 기록 단위로 나누는 작업이 끝나기 전까지는 `entries: []` 만 내려옵니다.
+> 화면은 "기록 등록 중"에 머무는데, 당분간 이 상태가 정상입니다.
+
+**O-27** · 계약 확정, 구현 예정. 해당 파일에서 `failed` 인 기록만 다시 처리합니다. 본문은 없습니다.
 
 ### 4.4 Gate 1 — 1차 검토
 
@@ -492,7 +585,7 @@ POST /api/v1/auth/signup   → 201 Created
 
 ```json
 [
-  { "id": "sum_1", "childId": "child_1", "childName": "김하늘",
+  { "id": "1", "childId": "1", "childName": "김하늘",
     "institutionName": "햇살아동발달센터", "date": "2026-08-21",
     "recordType": "관찰일지", "validation": "REVIEW",
     "content": "오전 활동에서 또래와 …",
@@ -540,20 +633,20 @@ POST /api/v1/auth/signup   → 201 Created
 
 ```json
 [
-  { "id": "ins_1", "childId": "child_1", "childName": "김하늘",
+  { "id": "1", "childId": "1", "childName": "김하늘",
     "period": "2026년 8월 3주차",
     "content": "오후 시간대 …",
-    "primarySource": { "id": "inst_center_1", "name": "햇살아동발달센터",
+    "primarySource": { "id": "2", "name": "햇살아동발달센터",
                        "type": "center", "verified": true },
     "evidence": [
-      { "childContextId": "ctx_10", "date": "2026-08-19", "label": "관찰일지 요약",
-        "institution": { "id": "inst_center_1", "name": "햇살아동발달센터",
+      { "childContextId": "10", "date": "2026-08-19", "label": "관찰일지 요약",
+        "institution": { "id": "2", "name": "햇살아동발달센터",
                          "type": "center", "verified": true } }
     ],
     "targets": [
-      { "institution": { "id": "inst_school_1", "name": "○○초등학교",
+      { "institution": { "id": "1", "name": "○○초등학교",
                          "type": "school", "verified": true }, "consent": "granted" },
-      { "institution": { "id": "inst_assist_1", "name": "△△활동지원",
+      { "institution": { "id": "3", "name": "△△활동지원",
                          "type": "assistant", "verified": true }, "consent": "not_granted" }
     ],
     "gate2Status": "pending" }
@@ -568,7 +661,7 @@ POST /api/v1/auth/signup   → 201 Created
 **O-42 요청**
 
 ```json
-{ "decision": "approve", "targetInstitutionIds": ["inst_school_1"] }
+{ "decision": "approve", "targetInstitutionIds": ["1"] }
 ```
 
 | 규칙 | 내용 |
@@ -593,8 +686,8 @@ POST /api/v1/auth/signup   → 201 Created
 **O-50 응답** · `content`는 **원본이 아니라 수신자 기준으로 변환된 최소 정보**입니다.
 
 ```json
-[ { "id": "inb_1",
-    "from": { "id": "inst_school_1", "name": "○○초등학교", "type": "school", "verified": true },
+[ { "id": "1",
+    "from": { "id": "1", "name": "○○초등학교", "type": "school", "verified": true },
     "childName": "김하늘", "receivedAt": "2026-08-21 15:20",
     "content": "이동 전 5분 예고가 효과적이었습니다.", "read": false } ]
 ```
@@ -659,8 +752,8 @@ POST /api/v1/auth/signup   → 201 Created
 
 ```json
 [
-  { "child": { "id": "child_9", "name": "김하늘", "birthDate": "2017-03-14" },
-    "institution": { "id": "inst_school_1", "name": "○○초등학교",
+  { "child": { "id": "9", "name": "김하늘", "birthDate": "2017-03-14" },
+    "institution": { "id": "1", "name": "○○초등학교",
                      "type": "school", "verified": true },
     "requestedAt": "2026-08-20T10:00:00+09:00" }
 ]
@@ -688,7 +781,7 @@ POST /api/v1/auth/signup   → 201 Created
 ```json
 {
   "child": { "name": "김하늘", "birthDate": "2017-03-14" },
-  "institution": { "id": "inst_school_1", "name": "○○초등학교",
+  "institution": { "id": "1", "name": "○○초등학교",
                    "type": "school", "verified": true },
   "documentUrl": "https://…",
   "sharedFields": ["출결 시간", "활동 요약", "알레르기 정보"],
@@ -719,8 +812,8 @@ POST /api/v1/auth/signup   → 201 Created
 ```json
 { "child": { "…": "Child 모델" },
   "activity": [
-    { "id": "act_1", "at": "2026-08-21 15:20",
-      "text": "○○초등학교에 관찰 요약이 전달되었습니다", "journalId": "jnl_3" }
+    { "id": "1", "at": "2026-08-21 15:20",
+      "text": "○○초등학교에 관찰 요약이 전달되었습니다", "journalId": "3" }
   ] }
 ```
 
@@ -749,8 +842,8 @@ POST /api/v1/auth/signup   → 201 Created
 
 ```json
 [
-  { "id": "jnl_3", "childId": "child_1",
-    "institution": { "id": "inst_center_1", "name": "햇살아동발달센터",
+  { "id": "3", "childId": "1",
+    "institution": { "id": "2", "name": "햇살아동발달센터",
                      "type": "center", "verified": true },
     "date": "2026-08-21", "time": "15:20", "isNew": true, "tag": "활동",
     "summary": "오후 미술 활동에 끝까지 참여했어요",
@@ -785,9 +878,9 @@ POST /api/v1/auth/signup   → 201 Created
   "trendTitle": "활동 참여 시간",
   "trend": [ { "label": "1주", "value": 3 }, { "label": "2주", "value": 5 } ],
   "trendInsight": "2주 연속 늘고 있습니다.",
-  "trendEvidenceIds": ["jnl_1", "jnl_3"],
+  "trendEvidenceIds": ["1", "3"],
   "patterns": [ { "text": "이동 전 예고가 있으면 전환이 쉬웠습니다",
-                  "evidenceIds": ["jnl_2"] } ],
+                  "evidenceIds": ["2"] } ],
   "tips": ["집에서도 5분 전 예고를 해보세요"]
 }
 ```
@@ -812,7 +905,7 @@ POST /api/v1/auth/signup   → 201 Created
 기관.
 
 ```json
-[ { "institution": { "id": "inst_art_1", "name": "○○미술학원",
+[ { "institution": { "id": "4", "name": "○○미술학원",
                      "type": "center", "verified": true } } ]
 ```
 
@@ -847,8 +940,8 @@ POST /api/v1/auth/signup   → 201 Created
 | G-51 | POST | `/institution-requests/{id}/confirm` | 확인 처리 | P-12 |
 
 ```json
-[ { "id": "req_1",
-    "institution": { "id": "inst_school_1", "name": "○○초등학교",
+[ { "id": "1",
+    "institution": { "id": "1", "name": "○○초등학교",
                      "type": "school", "verified": true },
     "status": "needs_check",
     "items": ["실내화 준비", "체험학습 동의서 제출"] } ]
@@ -896,6 +989,8 @@ POST /api/v1/auth/signup   → 201 Created
 | `UNSUPPORTED_FILE_TYPE` | 400 | 허용되지 않은 확장자 (현재 구현: 입력 오류와 함께 `RAW_RECORD_INVALID_REQUEST`) |
 | `CHILD_NOT_FOUND` | 404 | 없는 아이 |
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |
+| `MATCHING_RESULT_INVALID_REQUEST` | 400 | 확인 필요 큐 처리 요청 거절 (O-23) |
+| `MATCHING_RESULT_NOT_FOUND` | 404 | 없거나 다른 기관의 확인 필요 큐 항목 (O-23) |
 | `SUMMARY_ALREADY_DECIDED` | 409 | 이미 승인/반려된 요약 재결정 |
 | `INSIGHT_ALREADY_SENT` | 409 | 이미 발송된 Insight 재발송 |
 | `NOT_PRIMARY_SOURCE` | 403 | 근거 제공 기관이 아닌 곳의 Gate 2 승인 시도 |

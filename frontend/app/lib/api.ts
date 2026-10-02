@@ -53,6 +53,8 @@ import type {
   PendingLink,
   SummaryItem,
   TimelineEntry,
+  UploadFailReason,
+  UploadResult,
 } from "@/lib/types";
 
 /**
@@ -119,7 +121,7 @@ export class ApiError extends Error {
 
 /* ── 기관 ───────────────────────────────────────────── */
 
-/** GET /api/v1/institutions/{id}/children */
+/** GET /api/v1/institutions/me/children */
 export async function getChildren(): Promise<Child[]> {
   if (USE_MOCK) return mock.CHILDREN;
   return request("/api/v1/institutions/me/children");
@@ -137,14 +139,19 @@ export async function getTimeline(childId: string): Promise<TimelineEntry[]> {
 }
 
 /**
- * GET /api/v1/raw-records — **구현됨**
+ * GET /api/v1/matching-queue — **계약 확정, #35 merge 대기** (api-spec.md O-22)
  *
  * institutionId 는 서버가 인증 정보에서 가져가므로 보내지 않는다.
- * 매칭 상태별 필터는 아직 백엔드에 없다 — 추가되면 쿼리 파라미터를 붙인다.
+ * 서버는 근거 구간이 없으면 evidence 를 null 로 보낸다 — 화면이 배열만 다루도록 여기서 편다.
  */
 export async function getMatchingQueue(): Promise<MatchingItem[]> {
   if (USE_MOCK) return mock.MATCHING_QUEUE;
-  return request("/api/v1/raw-records");
+  const items = await request<MatchingItem[]>("/api/v1/matching-queue");
+  return items.map((item) => ({
+    ...item,
+    candidates: item.candidates ?? [],
+    evidence: item.evidence ?? [],
+  }));
 }
 
 /** GET /api/v1/validation-results?status=BLOCK */
@@ -213,8 +220,8 @@ export async function decideGate2(
 /**
  * 확인 필요 큐에서 아이를 확정(또는 "우리 기관 아동 아님"으로 제외)하면 큐에서 빠진다.
  *
- * ⚠️ **이 엔드포인트는 백엔드에 없다.** RawRecordController 에는 업로드·조회만 있다.
- *    본문 형태({ action, childId })는 FE 가 제안하는 계약이다. 백엔드와 합의가 필요하다.
+ * POST /api/v1/matching-queue/{id}/resolve — **계약 확정, #35 merge 대기** (api-spec.md O-23)
+ *    { action: "assign", childId } 또는 { action: "not_ours" }. childId 는 assign 에만 보낸다.
  */
 export async function resolveMatchingItem(
   id: string,
@@ -225,7 +232,7 @@ export async function resolveMatchingItem(
     if (idx !== -1) mock.MATCHING_QUEUE.splice(idx, 1);
     return { ok: true };
   }
-  return request(`/api/v1/raw-records/${id}/match`, {
+  return request(`/api/v1/matching-queue/${id}/resolve`, {
     method: "POST",
     body: JSON.stringify(resolution),
   });
@@ -264,44 +271,81 @@ export async function reassignSummaryChild(
  *
  * 즉시 응답하고 매칭 · 검증 · 요약은 백그라운드에서 돈다. 파일마다 한 번씩 부른다.
  * 응답은 RawRecordResponse(backend/.../dto/RawRecordResponse.java) 다.
+ *
+ * 한 파일이 실패해도 나머지는 이미 서버에 저장됐다. 그래서 전체를 실패로 던지지 않고
+ * 파일마다 결과를 돌려준다 — 화면이 실패한 것만 다시 올리게 해야 원본이 중복되지 않는다.
  */
-export async function uploadRawRecords(files: File[]): Promise<FileProgress[]> {
+export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
   if (USE_MOCK) {
     const now = new Date().toISOString();
-    const created = files.map((f, i) => ({
-      rawRecordId: `rr_mock_${Date.now()}_${i}`,
-      fileName: f.name,
-      uploadedAt: now,
-      entries: [],
-    }));
+    const results = files.map((file, i): UploadResult => {
+      const reason = mockRejectReason(file);
+      if (reason) return { ok: false, file, reason };
+      return {
+        ok: true,
+        file,
+        progress: {
+          rawRecordId: `rr_mock_${Date.now()}_${i}`,
+          fileName: file.name,
+          uploadedAt: now,
+          entries: [],
+        },
+      };
+    });
+    const created = results.flatMap((r) => (r.ok ? [r.progress] : []));
     for (const file of created) simulated.set(file.rawRecordId, Date.now());
     mock.FILE_PROGRESS.unshift(...created);
-    return created;
+    return results;
   }
-  return Promise.all(
-    files.map(async (file) => {
-      const form = new FormData();
-      form.append("file", file);
-      const saved = await request<{ id: number; originalFilename: string; createdAt: string }>(
-        "/api/v1/raw-records",
-        { method: "POST", body: form },
-      );
-      return {
-        rawRecordId: String(saved.id),
-        fileName: saved.originalFilename,
-        uploadedAt: saved.createdAt,
-        entries: [],
-      };
-    }),
+  const settled = await Promise.allSettled(files.map(uploadOne));
+  return settled.map((s, i) =>
+    s.status === "fulfilled"
+      ? { ok: true, file: files[i], progress: s.value }
+      : { ok: false, file: files[i], reason: uploadFailReasonOf(s.reason) },
   );
+}
+
+async function uploadOne(file: File): Promise<FileProgress> {
+  const form = new FormData();
+  form.append("file", file);
+  const saved = await request<{ id: number; originalFilename: string; createdAt: string }>(
+    "/api/v1/raw-records",
+    { method: "POST", body: form },
+  );
+  return {
+    rawRecordId: String(saved.id),
+    fileName: saved.originalFilename,
+    uploadedAt: saved.createdAt,
+    entries: [],
+  };
+}
+
+/**
+ * 상태 코드로만 가른다. nginx 가 25MB 에서 먼저 막으면 본문이 JSON 이 아니라 code 가 없다.
+ * 네트워크 오류(fetch 의 TypeError)도 temporary 다.
+ */
+function uploadFailReasonOf(err: unknown): UploadFailReason {
+  if (err instanceof ApiError && err.status === 400) return "invalid";
+  if (err instanceof ApiError && err.status === 413) return "too_large";
+  return "temporary";
+}
+
+/** mock 도 BE 와 같은 규칙으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
+const UPLOAD_EXTENSIONS = ["csv", "txt", "pdf"];
+const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+
+function mockRejectReason(file: File): UploadFailReason | null {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!UPLOAD_EXTENSIONS.includes(ext)) return "invalid";
+  if (file.size > UPLOAD_MAX_BYTES) return "too_large";
+  return null;
 }
 
 /**
  * 파일별 처리 현황. 최근 업로드가 먼저 온다.
  *
- * ⚠️ **이 엔드포인트는 백엔드에 없다.** RawRecordResponse 에는 파일 상태(status) 하나뿐이라
- *    파일에서 나온 기록이 건별로 어느 단계에 있는지 알 수 없다. FileProgress 형태로 달라고
- *    요청해야 한다.
+ * GET /api/v1/raw-records/progress — **계약 확정, 구현 예정** (api-spec.md O-26)
+ *    파일을 기록 단위로 나누기 전까지는 entries: [] 만 와서 "기록 등록 중"에 머문다. 정상이다.
  */
 export async function getFileProgress(): Promise<FileProgress[]> {
   if (USE_MOCK) {
@@ -313,7 +357,7 @@ export async function getFileProgress(): Promise<FileProgress[]> {
 
 /**
  * 실패한 기록을 다시 처리한다. 실패는 사람이 고를 게 아니라 시스템 오류라 재시도로 충분하다.
- * ⚠️ **이 엔드포인트는 백엔드에 없다.**
+ * POST /api/v1/raw-records/{id}/retry — **계약 확정, 구현 예정** (api-spec.md O-27)
  */
 export async function retryFailedEntries(rawRecordId: string): Promise<{ ok: true }> {
   if (USE_MOCK) {

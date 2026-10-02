@@ -215,20 +215,24 @@ Compose 환경에서는 `docker` 프로필이 활성화되고, `DB_URL`, `DB_USE
 `DB_PASSWORD` 환경 변수로 PostgreSQL에 연결합니다. `JWT_SECRET`, `KAKAO_CLIENT_ID`,
 `KAKAO_CLIENT_SECRET`, `RAW_STORAGE_S3_BUCKET`이 비어 있으면 Compose가 실행을 거부합니다.
 
-외부 진입점은 nginx(80번 포트)입니다. 백엔드 8080 포트는 Swagger 확인과 프론트 직접 연동을
-위해 **임시로 외부에 공개**돼 있으며(`"8080:8080"`), 운영에서는 제거하고 nginx로만 접근시킬
-예정입니다.
+외부 진입점은 Caddy입니다. 기본값 `PUBLIC_ORIGIN=http://localhost`에서는 HTTP,
+운영 HTTPS 주소를 설정하면 인증서 발급·갱신과 HTTP 리다이렉트를 자동 처리합니다.
+백엔드 8080은 `127.0.0.1`에만 연결됩니다. Swagger는 같은 오리진의
+`/swagger-ui/index.html`, OpenAPI JSON은 `/v3/api-docs`로 접근합니다.
+Compose는 CORS·로그인 완료 주소를 `PUBLIC_ORIGIN`에서 생성합니다.
 
 ### 백엔드 CI/CD
 
-`develop`·`main` 대상 PR에서는 Java 21로 단위 테스트, Testcontainers PostgreSQL 통합
-테스트, 빌드를 실행합니다. `develop` push 및 `develop`에서의 수동 실행은 검증 성공 후
+`backend/`·`infra/`·워크플로 파일을 바꾼 `develop`·`main` 대상 PR에서는 Java 21로 단위 테스트,
+Testcontainers PostgreSQL 통합 테스트, 빌드를 실행합니다(`*.md`나 AI 전용 배포 파일만 바꾸면 실행하지 않습니다).
+같은 경로를 바꾼 `develop` push 및 `develop`에서의 수동 실행은 검증 성공 후
 Docker 이미지를 GHCR에 올리고, SSM을 통해 기존 EC2의 BE 컨테이너만 배포합니다.
-Nginx 재로딩과 상태·CORS·카카오 콜백 검증이 실패하면 이전 BE 이미지로 복구합니다.
+Caddy 재로딩과 상태·CORS·카카오 콜백 검증이 실패하면 이전 BE 이미지와 활성 프록시 설정으로 복구합니다.
+실제 EC2 전환이 끝난 뒤 `CADDY_READY=true`를 설정해야 자동 배포가 실행됩니다.
 
 `BACKEND_IMAGE`는 Compose에서 사용할 이미지 참조입니다. 비어 있으면 로컬 빌드용
 `ktc-backend`를 사용하고, CD는 성공한 이미지 digest를 서버 `.env`에 기록합니다.
-DB 컨테이너·볼륨은 재생성하지 않으며 `ddl-auto: update`와 현재 IP 설정은 유지합니다.
+DB 컨테이너·볼륨은 재생성하지 않으며 `ddl-auto: update`를 유지합니다.
 이미지 복구는 DB 스키마 변경을 되돌리지 않습니다.
 
 GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
@@ -243,11 +247,14 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `AUTH_SUCCESS_REDIRECT` | `http://localhost:3000/oauth/success` | 로그인 성공 후 보낼 프론트 주소 (`docker` 프로필은 배포 주소) |
 | `AUTH_FAILURE_REDIRECT` | `http://localhost:3000/login` | 로그인 실패 후 보낼 프론트 주소. `?error=login_failed`가 붙음 |
 | `AUTH_COOKIE_SECURE` | `false` | `access_token` 쿠키의 `Secure` 속성. HTTPS 적용 후 `true` |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | 허용 오리진(쉼표 구분). `docker` 프로필은 `application-docker.yml` 값으로 고정 |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | 허용 오리진(쉼표 구분). Compose는 미지정 시 `PUBLIC_ORIGIN`을 전달하고, `docker` 프로필에서는 필수 |
+| `PUBLIC_ORIGIN` | `http://localhost` (Compose) | Caddy 사이트 주소 및 CORS·로그인 완료 주소의 기준. 운영은 `https://iitda.duckdns.org` |
 | `RAW_STORAGE_DIR` | `./data/raw-storage` | 기본 프로필의 원본 파일 저장 경로 |
 | `RAW_STORAGE_S3_BUCKET` | 없음 (`docker` 필수) | `docker` 프로필의 원본 파일 버킷 |
 | `AWS_REGION` | `ap-northeast-2` | S3 리전 |
 | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | 없음 (`docker` 필수) | `docker` 프로필의 PostgreSQL 연결 정보 |
+| `AI_BASE_URL` | `http://localhost:8000` | 매칭 에이전트(AI) 주소. Compose는 서비스 이름으로 `http://ai:8000`을 전달 |
+| `MATCHING_WORKER_ENABLED` | `true` | 매칭 워커 사용 여부. 켜 두면 5초마다 대기(`PENDING`) 일지를 AI `POST /matching`에 보내 결과를 `matching_result`에 저장. 테스트 프로필은 끔 |
 
 ## 설정 프로필
 
@@ -265,7 +272,7 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | --- | --- |
 | API 경로, 응답 형식, 오류 코드, HTTP 상태 계약 | [API 규약](../docs/api/api-conventions.md) |
 | 패키지 구조, 계층 책임, 테스트와 문서 동기화 규칙 | [AGENTS.md](AGENTS.md) |
-| Docker·Nginx 등 인프라 실행 환경 | [인프라 문서](../infra/README.md) |
+| Docker·Caddy 등 인프라 실행 환경 | [인프라 문서](../infra/README.md) |
 
 새 API 구현과 계약 변경은 API 규약을 따른다. 인증·인가를 포함한 API 계약의 예정된
 방향도 API 규약에서 관리한다.

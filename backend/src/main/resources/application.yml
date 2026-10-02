@@ -36,7 +36,7 @@ spring:
 
 server:
   port: 8080
-  # nginx 뒤에 있을 때 X-Forwarded-* 를 신뢰한다. 기본값(NONE)이면 Spring 이 이 헤더를
+  # Caddy 뒤에 있을 때 X-Forwarded-* 를 신뢰한다. 기본값(NONE)이면 Spring 이 이 헤더를
   # 무시해서, redirect-uri 의 {baseUrl} 이 내부 주소나 잘못된 scheme 으로 만들어진다.
   # 특히 HTTPS 를 붙이면 http:// 로 조립돼 카카오가 KOE006 으로 거절한다.
   forward-headers-strategy: framework
@@ -46,7 +46,7 @@ app:
     base-dir: ${RAW_STORAGE_DIR:./data/raw-storage}
   auth:
     cookie:
-      # 운영이 아직 평문 HTTP 라 false. HTTPS 를 붙이면 true 로 켠다.
+      # 로컬 HTTP는 false, 운영 HTTPS는 true로 설정한다.
       # true 인데 HTTPS 가 아니면 브라우저가 쿠키를 보내지 않아 로그인이 전부 실패한다.
       secure: ${AUTH_COOKIE_SECURE:false}
     # 로그인이 끝난 뒤 사용자를 돌려보낼 프론트 주소.
@@ -54,6 +54,19 @@ app:
     failure-redirect: ${AUTH_FAILURE_REDIRECT:http://localhost:3000/login}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  matching:
+    # 매칭 에이전트 주소. compose 에서는 서비스 이름으로 http://ai:8000 을 넘긴다.
+    ai-base-url: ${AI_BASE_URL:http://localhost:8000}
+    connect-timeout: 3s
+    # AI 가 LLM 응답을 60초(AI/matching/config.py LUNA_TIMEOUT)까지 기다린다. 이보다 짧으면
+    # 느린 정상 응답을 BE 가 먼저 끊고 재시도해서 LLM 을 여러 번 부르게 된다.
+    read-timeout: 65s
+    # 재시도 전에 쉬는 시간. 개수가 재시도 횟수다 (최초 1회 + 2회).
+    retry-backoffs: 2s,5s
+    worker:
+      enabled: ${MATCHING_WORKER_ENABLED:true}
+      delay-ms: 5000
+      batch-size: 10
 
 jwt:
   # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.
