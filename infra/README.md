@@ -4,7 +4,7 @@
 
 - `docker/`: Docker 및 Docker Compose 설정
 - `caddy/`: 외부 리버스 프록시·자동 HTTPS 설정
-- `terraform/`: 클라우드 인프라 코드
+- `iam/`: GitHub Actions 배포 역할의 AWS IAM 신뢰·권한 정책
 - `scripts/`: 환경 구성과 배포 보조 스크립트
 
 비밀값은 커밋하지 않습니다. 환경 변수는 `.env.example`로만 공유합니다.

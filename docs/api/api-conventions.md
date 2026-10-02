@@ -132,6 +132,8 @@ HTTP/1.1 404 Not Found
 - **탈퇴는 행을 지우지 않고 `users.deleted_at`에 표시한다(soft delete).** 탈퇴한 회원의 출입증은 만료 전이어도 인정하지 않는다. 같은 카카오 계정으로 다시 로그인하면 새 회원을 만들지 않고 기존 행을 되살린다(`kakao_id` 유니크 제약 때문).
 - 토큰 서명은 유효하지만 그 회원이 DB에 없거나 탈퇴했으면 `404`가 아니라 `401 SESSION_USER_NOT_FOUND`다. 자격 증명이 더 이상 누구도 가리키지 못하는 상태라 다시 로그인해야 하고, 프론트도 `401`을 "역할 없음 → 로그인 화면"으로 해석한다.
 - **응답 본문의 PK는 문자열로 직렬화한다.** DB의 `BIGINT`를 그대로 내리면 클라이언트 쪽에서 정밀도가 깎일 수 있다. (AI 연동 경로는 정수 그대로 주고받는다.)
+  `"child_1"` 같은 접두사는 붙이지 않고 `"1"`처럼 숫자만 문자열로 내린다. 요청 본문의 ID는 문자열(`"1"`)과 숫자(`1`)를 모두 받는다.
+  현재 구현의 예외: `RawRecord`의 `id`와 확인 필요 큐 항목의 `journalEntryId`는 숫자로 나간다.
 - 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.yml.example) 참고).
 - 인증 방식은 JWT 쿠키다. 브라우저는 `GET /oauth2/authorization/kakao`로 이동해 카카오 로그인을 시작한다. 카카오 콜백(`GET /login/oauth2/code/kakao`)은 Spring Security가 처리하며, 클라이언트가 직접 호출하지 않는다. 성공 시 서버는 `access_token` httpOnly 쿠키를 발급하고 설정된 프론트엔드 주소로 리다이렉트한다.
 - 로그인 실패(state 불일치, 동의 취소, 카카오 장애 등)는 JSON 오류가 아니라 설정된 실패 주소에
