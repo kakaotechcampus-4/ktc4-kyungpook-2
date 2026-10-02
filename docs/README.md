@@ -30,9 +30,12 @@
 | [AI/README.md](../AI/README.md) | 에이전트 구조 · 실행 방법 · API 계약 · 고칠 곳 |
 | [AI/evals/scripts/matching/README.md](../AI/evals/scripts/matching/README.md) | 매칭 테스트 데이터 형식 · 채점 방법 · 지표 읽는 법 |
 
-매칭 에이전트의 판정 기준(어떤 상황에서 `auto` / `review` / `multi` / `unmatched` 가
-정답인지)은 구현이 아니라 정책이므로 노션에서 관리합니다 →
-[AI · Matching Agent 자동 확정 판정 기준](https://app.notion.com/p/elice-track/AI-Matching-Agent-9-23-3e42bb98425780498d9ffb9db2d83819?v=e022bb98425783e2baac88bd5a3d8489&source=copy_link)
+각 에이전트의 판정 기준은 레포 안에 있고, 문서와 코드가 어긋나면 테스트가 깨집니다.
+
+| 문서 | 역할 |
+| --- | --- |
+| [AI/matching/CRITERIA.md](../AI/matching/CRITERIA.md) | 매칭 — `auto` / `review` / `multi` / `unmatched` 판정 기준 |
+| [AI/evals/scripts/validation/README.md](../AI/evals/scripts/validation/README.md) | 검증 — `PASS` / `REVIEW` / `BLOCK` 과 이슈 유형 7개 |
 
 프론트엔드 실행 방법과 스택은 [frontend/README.md](../frontend/README.md)에서 확인합니다.
 
