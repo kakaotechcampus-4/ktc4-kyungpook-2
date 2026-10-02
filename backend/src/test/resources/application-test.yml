@@ -28,8 +28,11 @@ spring:
 app:
   cors:
     allowed-origins: http://localhost:3000
+  # 테스트 중에 워커가 실제 AI 를 부르지 않도록 끈다.
   matching:
-    # 테스트 중에 워커가 실제 AI 를 부르지 않도록 끈다.
+    worker:
+      enabled: false
+  validation:
     worker:
       enabled: false
 

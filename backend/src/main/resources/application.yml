@@ -3,6 +3,12 @@ spring:
     name: backend
   config:
     import: optional:application-secret.yml
+  task:
+    scheduling:
+      pool:
+        # 에이전트 워커(매칭·검증, 요약은 #91 예정) 하나에 스레드 하나. 기본값 1이면 워커들이 번갈아 돌아 단계별 속도가 나뉜다.
+        # 워커 수만큼 AI 를 동시에 부르므로 AI 동시 호출 한도(8)를 넘지 않게 둔다.
+        size: 3
   servlet:
     multipart:
       max-file-size: 20MB
@@ -66,6 +72,11 @@ app:
   matching:
     worker:
       enabled: ${MATCHING_WORKER_ENABLED:true}
+      delay-ms: 5000
+      batch-size: 10
+  validation:
+    worker:
+      enabled: ${VALIDATION_WORKER_ENABLED:true}
       delay-ms: 5000
       batch-size: 10
 

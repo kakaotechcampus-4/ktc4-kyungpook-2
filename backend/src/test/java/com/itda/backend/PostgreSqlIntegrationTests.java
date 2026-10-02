@@ -25,18 +25,24 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.itda.backend.domain.JournalEntry;
+import com.itda.backend.domain.JournalEntryStatus;
 import com.itda.backend.domain.Organization;
 import com.itda.backend.domain.OrganizationType;
 import com.itda.backend.domain.User;
 import com.itda.backend.domain.UserRole;
+import com.itda.backend.domain.ValidationResult;
+import com.itda.backend.domain.ValidationVerdict;
 import com.itda.backend.dto.request.SignupRequest;
 import com.itda.backend.exception.OrganizationErrorCode;
 import com.itda.backend.exception.OrganizationException;
 import com.itda.backend.exception.UserErrorCode;
 import com.itda.backend.exception.UserException;
 import com.itda.backend.fixture.UserFixture;
+import com.itda.backend.repository.JournalEntryRepository;
 import com.itda.backend.repository.OrganizationRepository;
 import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.ValidationResultRepository;
 import com.itda.backend.service.UserService;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,6 +85,12 @@ class PostgreSqlIntegrationTests {
 	@Autowired
 	private PlatformTransactionManager transactionManager;
 
+	@Autowired
+	private JournalEntryRepository journalEntryRepository;
+
+	@Autowired
+	private ValidationResultRepository validationResultRepository;
+
 	@Test
 	void contextLoadsWithPostgreSql() {
 	}
@@ -94,6 +106,30 @@ class PostgreSqlIntegrationTests {
 		assertThat(userRepository.findByKakaoId("pg-1")).isPresent();
 		assertThat(saved.getRole()).isEqualTo(UserRole.PARENT);
 		assertThat(saved.getCreatedAt()).isNotNull();
+	}
+
+	/**
+	 * 검증 워커가 쓰는 테이블·상태값이 PostgreSQL 에서 저장되는지 본다. enum 은 테이블을 처음 만들 때
+	 * CHECK 제약이 걸리므로 새 상태값(VALIDATION_BLOCKED)과 판정(BLOCK)이 실제로 들어가는지 확인한다.
+	 */
+	@Test
+	void validationResultAndNewJournalStatusesAreStored() {
+		JournalEntry entry = JournalEntry.of(null, null, "임유진의 연락처는 010-1234-5678", 1);
+		entry.startMatching();
+		entry.confirmMatch(8L);
+		entry.startValidating();
+		entry.blockValidation();
+		JournalEntry savedEntry = journalEntryRepository.save(entry);
+
+		ValidationResult saved = validationResultRepository.save(ValidationResult.of(savedEntry.getId(), null, 8L,
+				ValidationVerdict.BLOCK, "[\"개인정보표현\"]", "[{\"start\":10,\"end\":23}]", "{\"verdict\":\"BLOCK\"}"));
+
+		assertThat(journalEntryRepository.findById(savedEntry.getId()).orElseThrow().getStatus())
+				.isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+		ValidationResult found = validationResultRepository.findById(saved.getId()).orElseThrow();
+		assertThat(found.getVerdict()).isEqualTo(ValidationVerdict.BLOCK);
+		assertThat(found.getIssueTypes()).isEqualTo("[\"개인정보표현\"]");
+		assertThat(found.getCreatedAt()).isNotNull();
 	}
 
 	/** 유니크 제약은 엔티티를 만들 때 넣지 않으면 ddl-auto: update 가 나중에 붙여주지 않는다. */
