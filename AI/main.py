@@ -2,11 +2,13 @@ import os
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from matching.graph import run_matching
 from matching.schemas import MatchingInput, MatchingOutput
 from validation.graph import run_validation
+from validation.llm import LlmUnavailable, is_configured
 from validation.schemas import ValidationInput, ValidationOutput
 
 load_dotenv()
@@ -19,9 +21,22 @@ LUNA_API_URL = os.environ.get("LUNA_API_URL")
 LUNA_API_KEY = os.environ.get("LUNA_API_KEY")
 
 
+@app.exception_handler(LlmUnavailable)
+def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
+    """LLM 을 못 써서 판정을 못 했을 때. BE 는 5xx 면 재시도하고, 그래도 실패하면 FAILED 로 둔다.
+    실패 원인에는 Luna 엔드포인트 주소가 들어 있어서 응답에는 넣지 않고 서버 로그에만 남긴다."""
+    print(f"[validation] LLM 호출 실패: {exc}")
+    return JSONResponse(status_code=503, content={"detail": {"reason": "llm_unavailable", "message": "Luna 호출 실패"}})
+
+
 @app.get("/health")
-def health():
-    return {"status": "ok", "luna_configured": bool(LUNA_API_URL and LUNA_API_KEY)}
+def health() -> JSONResponse:
+    """Luna 설정이 없으면 503. BE 는 이걸 보고 일지를 보내지 않는다. (설정만 보고 실제 호출은 안 한다)"""
+    configured = is_configured()
+    return JSONResponse(
+        status_code=200 if configured else 503,
+        content={"status": "ok" if configured else "unavailable", "luna_configured": configured},
+    )
 
 
 @app.post("/matching", response_model=MatchingOutput)

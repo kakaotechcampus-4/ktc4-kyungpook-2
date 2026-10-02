@@ -42,9 +42,10 @@ def act(state: dict) -> dict:
         result = ask_json(messages)
         state["llm_issues"] = result.data.get("issues", [])
         state["llm_error"] = False
-    except LlmError:
+    except LlmError as exc:
         state["llm_issues"] = []
         state["llm_error"] = True
+        state["llm_error_detail"] = str(exc)
 
     return state
 
