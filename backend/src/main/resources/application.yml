@@ -59,8 +59,8 @@ app:
     base-url: ${AI_BASE_URL:http://localhost:8000}
     connect-timeout: 3s
     # AI 가 LLM 응답을 60초(AI/matching/config.py, AI/validation/config.py LUNA_TIMEOUT)까지 기다린다.
-    # 이보다 짧으면 느린 정상 응답을 BE 가 먼저 끊고 재시도해서 LLM 을 여러 번 부르게 된다.
-    read-timeout: 65s
+    # 이보다 짧으면 느린 정상 응답을 BE 가 먼저 끊고 재시도해서 LLM 을 여러 번 부르게 된다. AI 처리 시간까지 여유를 둔다.
+    read-timeout: 70s
     # 재시도 전에 쉬는 시간. 개수가 재시도 횟수다 (최초 1회 + 2회).
     retry-backoffs: 2s,5s
   matching:
