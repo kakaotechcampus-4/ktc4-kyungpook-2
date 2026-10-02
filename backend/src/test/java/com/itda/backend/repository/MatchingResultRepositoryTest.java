@@ -68,4 +68,15 @@ class MatchingResultRepositoryTest {
         assertThat(queue).hasSize(1);
         assertThat(queue.get(0).getStatus()).isEqualTo(MatchingStatus.REVIEW);
     }
+
+    @Test
+    void 일지의_가장_최근_매칭_결과를_찾는다() {
+        matchingResultRepository.save(MatchingResult.failed(1L));
+        MatchingResult latest = matchingResultRepository.save(MatchingResult.failed(1L));
+        matchingResultRepository.save(MatchingResult.failed(2L));
+
+        assertThat(matchingResultRepository.findFirstByJournalEntryIdOrderByIdDesc(1L))
+                .map(MatchingResult::getId).contains(latest.getId());
+        assertThat(matchingResultRepository.findFirstByJournalEntryIdOrderByIdDesc(3L)).isEmpty();
+    }
 }
