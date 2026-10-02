@@ -41,15 +41,15 @@
 | 9 | `journal_entry` | ✅ 확정 | ✅ `JournalEntry` | `deleted_at` |
 | 10 | `matching_result` | ✅ 확정 | ⚠️ `MatchingResult` — 설계와 다름 | 삭제 없음 (이력) |
 | 11 | `validation_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
-| 12 | `summary_result` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 12 | `summary_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 13 | `human_review` | 🟡 초안 | ✅ `Approval` | 삭제 없음 (이력) |
 | 14 | `child_context` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 15 | `insight_result` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 16 | `sharing_history` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 
 **확정 11개는 AI 계약과 무관하거나 이미 확정된 것들이다.**
-`validation_result` 는 Validation Agent 계약(`ValidationOutput`)이 나와서 확정으로 올렸다.
-🟡 나머지 5개는 Summary·Insight 에이전트 계약이 나온 뒤에 만든다.
+`validation_result` 와 `summary_result` 는 에이전트 계약이 나와서 확정으로 올렸다.
+🟡 나머지 4개는 Insight 에이전트 계약과 공유 정책이 정해진 뒤에 만든다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
 
@@ -148,7 +148,7 @@ erDiagram
     child ||--o{ matching_result : "매칭된 아동"
     journal_entry ||--o{ validation_result : ""
     matching_result ||--o{ validation_result : "입력으로 사용"
-    journal_entry ||--o{ summary_result : ""
+    summary_result ||--o{ journal_entry : "묶인 일지"
     validation_result ||--o{ summary_result : "입력으로 사용"
     child ||--o{ summary_result : ""
     users ||--o{ human_review : "검토자"
@@ -199,12 +199,15 @@ erDiagram
     }
     summary_result {
         bigint id PK
-        bigint journal_entry_id FK
-        bigint validation_result_id FK
         bigint child_id FK
-        text summary_text
+        date entry_date
+        int revision
+        text content
+        text claims "JSON 문자열"
+        text covered_entry_ids "JSON 문자열"
+        text uncovered_entry_ids "JSON 문자열"
         varchar status
-        json raw_response
+        text raw_response "JSON 문자열"
     }
     human_review {
         bigint id PK
@@ -423,6 +426,7 @@ organization.business_number                  UNIQUE
 invitation.code                               UNIQUE
 child_organization(child_id, organization_id) UNIQUE
 child_guardian(child_id, user_id)             UNIQUE
+summary_result(child_id, entry_date, revision) UNIQUE
 ```
 
 #### soft delete와 유니크 제약의 충돌 — 반드시 읽을 것
@@ -1094,36 +1098,118 @@ BLOCK    그대로 두면 위험 — 요약으로 넘기지 않는다
 `matching_result_id` 로도 일지를 찾을 수 있지만, 검증 단계가 매칭 결과에 과도하게 의존하지 않도록
 `journal_entry_id` 를 직접 보유한다.
 
-### 8.2 `summary_result` 🟡 — ⬜ 미구현
+### 8.2 `summary_result` ✅ — ⬜ 미구현
 
-> **근거** — 프론트 `SummaryItem`. **AI 계약 없음.**
+> **근거** — `AI/summary/schemas.py` `SummaryOutput`. pydantic 으로 고정된 계약이다.
+> 엔드포인트는 `POST /summary` (구현 예정).
+
+**묶음 단위는 아동 × 날짜다.** 기관을 가로지른다.
+
+같은 날 학교·센터·활동지원사에서 온 기록을 한 편으로 묶는다. 기관별로 쪼개면
+"학교에서는 혼자 했는데 센터에서는 도움이 필요했다" 는 문장이 아예 생길 수 없다.
+흩어진 기록을 잇는 것이 이 제품의 핵심이고, 그 일이 일어나는 자리가 여기다.
+
+**기관은 묶음 키가 아니라 문장마다 붙는다** — `claims[].institution_name`.
 
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
-| `journal_entry_id` | BIGINT | N | 대상 일지 |
-| `validation_result_id` | BIGINT | Y | 입력으로 쓴 검증 결과 |
 | `child_id` | BIGINT | N | 대상 아동 |
-| `summary_text` | TEXT | N | AI가 생성한 요약 원문 |
+| `entry_date` | DATE | N | 묶음 기준 날짜 |
+| `revision` | INT | N | 같은 날짜의 몇 번째 요약인지. 1 부터 |
+| `content` | TEXT | N | AI 가 쓴 요약 원문 |
+| `claims` | TEXT | Y | 문장별 근거 JSON 문자열 |
+| `covered_entry_ids` | TEXT | Y | 반영된 일지 JSON 문자열 `[1041, 1042]` |
+| `uncovered_entry_ids` | TEXT | Y | 반영되지 않은 일지 JSON 문자열 |
 | `status` | VARCHAR(30) | N | 처리 상태 |
-| `raw_response` | JSON | Y | AI 응답 원본 |
+| `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
+| `model_version` | VARCHAR(100) | Y | 응답을 낸 모델 버전 |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
+
+```
+UNIQUE (child_id, entry_date, revision)
+```
+
+설계상 실행 이력이라 삭제하지 않는다. `deleted_at` 을 두지 않는다.
+
+**`journal_entry` 가 요약을 가리킨다 — 방향이 뒤집혔다**
+
+초안은 `summary_result.journal_entry_id` 로 요약이 일지 하나를 가리켰다. 묶음으로
+가면서 N:1 이 되므로 반대가 된다.
+
+```
+journal_entry.summary_id BIGINT NULL    -- 신규. 어느 요약에 들어갔는지
+```
+
+§10.2-5 가 예고한 그 뒤집기다. 결정이 끝나 여기에 반영했다.
+
+**요약을 읽는 사람은 부모가 아니다**
+
+```
+요약  →  [Gate 1 교사 승인]  →  child_context  →  인사이트  →  [Gate 2]  →  부모
+                                    ↑
+                          다른 기관 담당자가 조회하는 곳 (O-14)
+```
+
+교사가 Gate 1 에서 검토하고, 승인된 뒤에는 **다음 돌봄을 하는 다른 기관 담당자**가
+`child_context` 타임라인에서 읽는다. 부모가 받는 것은 요약이 아니라 그다음 단계인
+인사이트다.
+
+그래서 말투는 **돌봄 기관의 전문가 기록체**를 따른다. 무슨 일이 있었고 어떤 대응이
+통했는지가 중심이다. 감상이나 애정 표현은 쓰지 않는다 — 검증 에이전트가 `감정적표현`
+으로 잡는 바로 그 서술이다.
+
+**길이는 고정하지 않는다.** 원문 건수와 내용에 따라 달라진다. 다만 재료보다 길게
+늘여 쓰지 않는다.
 
 **`status`**
 
 ```
 GENERATED         생성됨
 GATE1_PENDING     1차 검토 대기
-APPROVED          승인
+APPROVED          승인 — child_context 로 넘어감
 REJECTED          반려
+SUPERSEDED        같은 날짜에 더 새로운 revision 이 생겨 밀려남
 ```
 
-> ⚠️ **미해결** — 현재는 일지 1건당 요약 1건 구조다.
-> 프론트는 여러 일지를 묶은 요약(`sourceCount` 2 이상)도 표시한다.
-> 하루 단위 묶음 요약으로 갈 경우 구조가 바뀐다. → §10.2 미확정 사항 5번
+**같은 날 기록이 더 올라오면** (2026-10-02 결정)
 
----
+| 상황 | 처리 |
+| --- | --- |
+| 아직 승인 전 (`GENERATED` · `GATE1_PENDING`) | 같은 `revision` 을 **다시 생성해 덮어쓴다** |
+| 이미 승인·반려됨 (`APPROVED` · `REJECTED`) | `revision + 1` 로 **새 요약을 만든다** |
+
+승인된 글을 뒤에서 바꾸면 교사가 승인한 내용과 다른 기관이 읽는 내용이 달라진다.
+그래서 승인 뒤에는 고치지 않고 새로 쌓는다. 이전 판은 `SUPERSEDED` 로 남겨 이력을
+유지한다.
+
+**`content` 와 `child_context.content` 가 다른 이유**
+
+교사가 Gate 1 에서 문구를 고쳐 승인할 수 있다. AI 원문은 여기 `content` 에, 사람이
+승인한 최종본은 `child_context.content` 에 남는다. `matching_result` 에서 사람이
+행을 덮어써 AI 원판정을 잃은 문제(§0.3)를 여기서는 처음부터 피한다.
+
+**`claims` — 환각을 잡는 자리**
+
+요약의 각 문장이 어느 일지 어느 구간에서 나왔는지 담는다.
+
+```json
+[{ "text": "학교에서 블록을 다섯 층까지 쌓았다.", "journal_entry_id": 1041,
+   "institution_name": "햇살학교", "span": { "start": 0, "end": 18 } }]
+```
+
+모델이 지어낸 문장은 `span` 이 원문과 맞지 않아 코드가 버린다. 매칭·검증이 인용을
+원문에 대조하는 것과 같은 방법이다.
+
+**`uncovered_entry_ids` — 누락을 잡는 자리**
+
+```
+sources 5건을 넣었는데 covered 3건, uncovered 2건 → 두 건이 요약에 안 들어갔다
+```
+
+**비어 있는 것이 정상이다.** 비어 있지 않다고 늘 잘못은 아니지만 — "특이사항 없음"
+같은 기록은 뺄 수 있다 — 뺐다는 사실이 드러나야 사람이 판단할 수 있다.
 
 ## 9. 사람 검토 · 축적 · 공유 🟡
 
@@ -1282,9 +1368,9 @@ status   SHARED | BLOCKED | FAILED
 | 2 | 초대코드 만료 · 1회성 | `invitation` 만료 기간과 재사용 허용 여부 | 기획 |
 | 3 | 보호자 2명 동의 기준 | 한 명만 동의해도 활성화인지, 전원 동의가 필요한지 | 기획 |
 | 4 | 동의 철회 처리 | 철회 시 기존 기록을 어떻게 다루는지. `SUSPENDED` 이후 동작 | 기획 |
-| 5 | Summary 묶음 단위 | 일지 1건당 요약 1건인지, 같은 아동·같은 날짜를 묶는지<br>→ **프론트를 따라 묶음으로 갈 예정.** 요약 에이전트 계약이 나오면 스키마 방향을 뒤집는다 (`summary_result.journal_entry_id` → `journal_entry.summary_id`) | BE + AI |
+| 5 | ~~Summary 묶음 단위~~ | **확정됨 (2026-10-02)** — 아동 × 날짜로 묶는다. 방향을 뒤집어 §8.2 에 반영 완료 | ~~BE + AI~~ |
 | 6 | ~~Validation Agent 계약~~ | **확정됨** — `ValidationOutput` 기준으로 §8.1 반영 완료 | ~~AI~~ |
-| 7 | Summary Agent 계약 | 입출력이 확정되면 `summary_result` 컬럼 조정<br>**요청할 것 — "일지 여러 건을 한 번에 받아 글 하나로" 만들어달라고 지금 전달** | AI |
+| 7 | ~~Summary Agent 계약~~ | **확정됨** — `SummaryOutput` 기준으로 §8.2 반영 완료 | ~~AI~~ |
 | 8 | 개인정보 파기 절차 | 정보주체가 파기를 요구할 때 실제 삭제·익명화를 어떻게 하는지. soft delete로는 해결되지 않는다 | 기획 + BE |
 | 9 | DB FK 제약 재검토 | JPA 연관관계를 쓰지 않는 것과 **DB에 FK 제약을 거는 것은 별개 결정**이다. `Long` 컬럼을 유지한 채 DB 제약만 추가하면 실수로 참조를 깨뜨리는 것을 막을 수 있다 | BE 전체 |
 | 11 | `mentioned_child_ids` 소비자 | 매칭이 내보내고 BE 가 저장하는데 읽는 곳이 없다.<br>→ `ValidationInput` 에 넣어 교차 검증할지, 화면 표시용으로만 둘지 (§7.1) | AI + BE |
