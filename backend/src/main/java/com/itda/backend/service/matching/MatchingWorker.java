@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import com.itda.backend.dto.request.MatchingAgentRequest;
-import com.itda.backend.exception.MatchingAgentUnavailableException;
+import com.itda.backend.exception.AiAgentUnavailableException;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -104,7 +104,7 @@ public class MatchingWorker {
             }
             log.warn("matching failed journalEntryId={}", journalEntryId, e);
             recordFailure(journalEntryId);
-            return e instanceof MatchingAgentUnavailableException ? Outcome.AGENT_DOWN : Outcome.DONE;
+            return e instanceof AiAgentUnavailableException ? Outcome.AGENT_DOWN : Outcome.DONE;
         }
     }
 
