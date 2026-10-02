@@ -112,9 +112,10 @@
 실패는 여기로 오지 않습니다 — 백엔드가 `/login` 으로 돌려보냅니다
 (`app.auth.failure-redirect`).
 
-> 역할(기관/학부모)은 서버가 모릅니다. JWT 의 subject 가 kakaoId 뿐이라,
-> 기존 역할이 없으면 기관으로 두고 `grantRole("org")` 로 로컬에 기록합니다.
-> `GET /api/v1/auth/me` 가 열리면 그 응답으로 교체합니다.
+> 지금 프론트는 역할(기관/학부모)을 서버에 묻지 않고, 기존 역할이 없으면 기관으로 두고
+> `grantRole("org")` 로 로컬에 기록합니다.
+> 백엔드는 이미 `GET /api/v1/auth/me` 로 역할과 가입 여부(`signupCompleted`)를 알려 주므로
+> 그 응답으로 바꿔야 합니다(api-spec §2.2). 가입 미완료면 역할 선택 화면으로 보냅니다(§2.6).
 
 ---
 
@@ -272,8 +273,8 @@
 **호출 API** · `getMatchingQueue`, `resolveMatchingItem`
 ([api-spec.md](../api/api-spec.md) §4.3)
 
-- `getMatchingQueue` → `GET /api/v1/matching-queue` · 계약 확정, #35 merge 대기
-- `resolveMatchingItem` → `POST /api/v1/matching-queue/{id}/resolve` · 계약 확정, #35 merge 대기
+- `getMatchingQueue` → `GET /api/v1/matching-queue` · 백엔드 구현됨 (api-spec O-22)
+- `resolveMatchingItem` → `POST /api/v1/matching-queue/{id}/resolve` · 백엔드 구현됨 (api-spec O-23)
   - 후보·명부에서 고른 아이로 확정 → `{ "action": "assign", "childId": "…" }`
   - 이 기관 아동 아님 → `{ "action": "not_ours" }`
 
@@ -521,10 +522,10 @@
 > 만들어 두고, 보호자는 카카오로 로그인해 그 요청을 확인합니다 (api-spec §5.1).
 > 인증은 기관 화면(I-01)과 같은 카카오 하나입니다.
 >
-> 기관인지 보호자인지는 **누른 버튼**으로 구분합니다. 카카오로 떠나기 전에
-> `sessionStorage` 에 의도를 적어두고 `/oauth/success` 가 읽습니다 — 서버에 사용자
-> 테이블이 없어 역할을 알려주지 못하기 때문입니다.
-> `GET /api/v1/auth/me` 가 생기면 그 응답으로 대체합니다.
+> 지금 프론트는 기관인지 보호자인지를 **누른 버튼**으로 구분합니다. 카카오로 떠나기 전에
+> `sessionStorage` 에 의도를 적어두고 `/oauth/success` 가 읽습니다.
+> 백엔드는 이제 회원가입에서 사용자가 역할을 직접 고르고 `GET /api/v1/auth/me` 로 알려 주므로,
+> 이 방식은 그 흐름으로 바꿔야 합니다(api-spec §1 4-1, §2.6).
 
 ---
 
