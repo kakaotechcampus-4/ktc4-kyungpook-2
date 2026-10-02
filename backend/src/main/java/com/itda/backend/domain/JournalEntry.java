@@ -134,6 +134,36 @@ public class JournalEntry {
         this.status = JournalEntryStatus.EXCLUDED;
     }
 
+    /** 워커가 검증 대상으로 집어 간다. 매칭으로 아동이 확정된 일지에서만 허용한다. */
+    public void startValidating() {
+        requireStatus(JournalEntryStatus.MATCHED);
+        this.status = JournalEntryStatus.VALIDATING;
+    }
+
+    /** 검증 결과가 PASS·REVIEW 다. 요약 단계가 이어 가져간다. */
+    public void passValidation() {
+        requireStatus(JournalEntryStatus.VALIDATING);
+        this.status = JournalEntryStatus.VALIDATED;
+    }
+
+    /** 검증 결과가 BLOCK 이다. 개인정보가 든 기록이 요약으로 새지 않도록 여기서 멈춘다. */
+    public void blockValidation() {
+        requireStatus(JournalEntryStatus.VALIDATING);
+        this.status = JournalEntryStatus.VALIDATION_BLOCKED;
+    }
+
+    /** 검증 호출 자체가 실패했다. */
+    public void failValidation() {
+        requireStatus(JournalEntryStatus.VALIDATING);
+        this.status = JournalEntryStatus.FAILED;
+    }
+
+    /** 처리하던 앱이 꺼져서 검증 중에 멈춘 일지를 다시 검증 대기로 돌린다. 확정된 아동은 그대로 둔다. */
+    public void releaseValidating() {
+        requireStatus(JournalEntryStatus.VALIDATING);
+        this.status = JournalEntryStatus.MATCHED;
+    }
+
     private void requireAwaitingReview() {
         if (!isAwaitingReview()) {
             throw new IllegalStateException("사람 확인 대기 상태가 아닙니다: " + this.status);
