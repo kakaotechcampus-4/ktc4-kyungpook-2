@@ -125,6 +125,14 @@ export const CHILDREN: Child[] = [
     institutions: [{ institution: CENTER, consent: "not_granted" }],
   },
   {
+    // 동명이인 데모용 — child_1023 과 이름이 같다. 생년월일로만 구별된다 (확인 필요 큐 mq_01)
+    id: "child_1088",
+    name: "김OO",
+    birthDate: "2021-09-02",
+    status: "active",
+    institutions: [{ institution: CENTER, consent: "granted" }],
+  },
+  {
     // 다자녀 보호자 데모용 — child_1023 과 같은 보호자의 둘째 아이
     id: "child_2044",
     name: "최OO",
@@ -153,13 +161,16 @@ const MQ_01 = "11:40 급식실 입장 직후 김OO가 소리를 지름. 손을 �
 const MQ_02 = "자유놀이 중 김OO와 이OO가 블록을 나눠 쌓았고, 서로 양보하는 모습을 보임.";
 const MQ_03 = "우리 반 막둥이가 새 신발을 자랑하며 친구들에게 보여줌.";
 const MQ_04 = "오후 자유놀이 중 정OO가 장난감을 두고 다툼이 있었고, 스스로 사과함.";
-const MQ_05 = "등원 직후 박OO 표정이 굳어 있었고, 인사에 반응하지 않음. 잠시 뒤 놀이에 참여함.";
+const MQ_05 = "등원 직후 최OO 표정이 굳어 있었고, 인사에 반응하지 않음. 잠시 뒤 놀이에 참여함.";
 const MQ_06 = "점심 식사 후 최OO가 블록으로 높은 탑을 쌓고 친구들에게 자랑함.";
+const MQ_07 = "오후 간식 시간에 박OO가 컵을 엎었지만 스스로 휴지를 가져와 닦음.";
+const MQ_08 = "바깥놀이 시간에 미끄럼틀 차례를 기다리며 친구에게 먼저 양보함.";
 
 export const MATCHING_QUEUE: MatchingItem[] = [
   {
     id: "mq_01",
     status: "multi",
+    matchedChildId: null,
     multiReason: "ambiguous_identity",
     record: {
       id: "rrf_7f2a",
@@ -169,14 +180,16 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       preview: MQ_01,
     },
     evidence: [spanOf(MQ_01, "김OO")],
+    // 후보는 명부(CHILDREN)에 있는 아이여야 한다 — 화면이 명부와 맞춰보고 없으면 막는다
     candidates: [
-      { childId: "child_1023", name: "김OO", group: "나비반 · 4세반", birthDate: "2021-03-14" },
-      { childId: "child_1041", name: "김OO", group: "나비반 · 4세반", birthDate: "2021-09-02" },
+      { childId: "child_1023", name: "김OO", group: "나비반 · 4세반", birthDate: "2019-03-12" },
+      { childId: "child_1088", name: "김OO", group: "나비반 · 4세반", birthDate: "2021-09-02" },
     ],
   },
   {
     id: "mq_02",
     status: "multi",
+    matchedChildId: null,
     multiReason: "co_mention",
     record: {
       id: "rrf_7f3b",
@@ -187,13 +200,14 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     },
     evidence: [spanOf(MQ_02, "김OO"), spanOf(MQ_02, "이OO")],
     candidates: [
-      { childId: "child_1023", name: "김OO", group: "나비반 · 4세반", birthDate: "2021-03-14" },
-      { childId: "child_1055", name: "이OO", group: "나비반 · 4세반", birthDate: "2021-06-21" },
+      { childId: "child_1023", name: "김OO", group: "나비반 · 4세반", birthDate: "2019-03-12" },
+      { childId: "child_1041", name: "이OO", group: "나비반 · 4세반", birthDate: "2018-07-02" },
     ],
   },
   {
     id: "mq_03",
     status: "unmatched",
+    matchedChildId: null,
     unmatchedReason: "no_anchor",
     record: {
       id: "rrf_8c11",
@@ -209,6 +223,7 @@ export const MATCHING_QUEUE: MatchingItem[] = [
   {
     id: "mq_04",
     status: "unmatched",
+    matchedChildId: null,
     unmatchedReason: "not_in_roster",
     hintName: "정OO",
     record: {
@@ -222,8 +237,11 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     candidates: [],
   },
   {
+    // 표지(이OO)와 본문 판정(최OO)이 어긋나 확인으로 내려온 건.
+    // review 의 추천 아이는 matchedChildId 로만 온다 — candidates 는 multi 전용이다.
     id: "mq_05",
     status: "review",
+    matchedChildId: "child_2044",
     hintName: "이OO",
     hintMismatch: true,
     record: {
@@ -233,15 +251,44 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       capturedAt: "2026-08-20T10:10:00+09:00",
       preview: MQ_05,
     },
-    evidence: [spanOf(MQ_05, "박OO")],
-    candidates: [
-      { childId: "child_1077", name: "박OO", group: "민들레반 · 6세반", birthDate: "2019-11-08" },
-    ],
+    evidence: [spanOf(MQ_05, "최OO")],
+    candidates: [],
+  },
+  {
+    // 추천 아이가 명부에 있지만 보호자 동의 전이라 확정할 수 없는 건 (child_1077 은 pending_consent)
+    id: "mq_07",
+    status: "review",
+    matchedChildId: "child_1077",
+    record: {
+      id: "rrf_9d21",
+      fileName: "0820_관찰일지.docx",
+      type: "관찰일지",
+      capturedAt: "2026-08-20T15:40:00+09:00",
+      preview: MQ_07,
+    },
+    evidence: [spanOf(MQ_07, "박OO")],
+    candidates: [],
+  },
+  {
+    // 추천 아이가 명부에서 지워진 건 — 명부에서 찾지 못하면 직접 고르게 한다
+    id: "mq_08",
+    status: "review",
+    matchedChildId: "child_9001",
+    record: {
+      id: "rrf_9d35",
+      fileName: "0819_활동일지.docx",
+      type: "활동일지",
+      capturedAt: "2026-08-19T11:05:00+09:00",
+      preview: MQ_08,
+    },
+    evidence: [],
+    candidates: [],
   },
   {
     // AI 호출이 실패한 건. 판정이 없으니 후보도 근거도 비어 온다.
     id: "mq_06",
     status: "failed",
+    matchedChildId: null,
     record: {
       id: "rrf_9d17",
       fileName: "0820_활동일지.docx",
