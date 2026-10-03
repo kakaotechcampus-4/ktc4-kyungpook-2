@@ -80,6 +80,9 @@ services:
         # VITE_* 는 빌드 시점에 번들에 박힌다. 바꾸면 이미지를 다시 빌드해야 한다.
         VITE_API_BASE_URL: ${PUBLIC_API_BASE_URL-}
         VITE_USE_MOCK: ${USE_MOCK:-true}
+        # 인증 mock 은 데이터(USE_MOCK)와 별개다. 빠지면 Dockerfile 기본값 true 가 박혀
+        # /auth/me · 회원가입 흐름을 타지 않는다.
+        VITE_AUTH_MOCK: ${VITE_AUTH_MOCK:-true}
     restart: unless-stopped
     depends_on:
       - backend

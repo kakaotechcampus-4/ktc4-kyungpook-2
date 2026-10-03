@@ -8,11 +8,17 @@
  *   /login → (BE) /oauth2/authorization/kakao → 카카오
  *          → (BE) /login/oauth2/code/kakao → 쿠키 발급
  *          → /oauth/success   (실패 시 /login)
+ *          → GET /api/v1/auth/me
+ *              signupCompleted: true  → 역할별 첫 화면
+ *              signupCompleted: false → /signup → POST /api/v1/auth/signup
  *
  * 출입증이 httpOnly 쿠키라 이 파일은 토큰을 읽지도 지우지도 못한다.
  *  - 요청에 붙이는 일: 브라우저가 자동으로 한다 (lib/api.ts 의 credentials 참고)
+ *  - 로그인 여부·역할: 서버에 묻는다 (GET /api/v1/auth/me)
  *  - 로그아웃: 서버에 부탁해야 한다 (POST /api/v1/auth/logout)
  */
+
+import { ApiError } from "@/lib/apiError";
 
 /**
  * 인증만 실연동하고 나머지 데이터는 mock 으로 둘 수 있게 플래그를 분리했다
@@ -31,25 +37,70 @@ const USE_MOCK = import.meta.env.VITE_AUTH_MOCK !== "false";
 const AUTH_ORIGIN = import.meta.env.VITE_AUTH_ORIGIN ?? "";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
+/** mock 모드에서만 쓴다. 실연동에서는 역할을 서버(`/auth/me`)가 알려준다. */
 const ROLE_KEY = "itda_role";
 
 /**
- * 온보딩을 끝냈다는 표시. 역할과 따로 둔다 — 카카오 로그인 직후에 역할이 정해지는데,
+ * 온보딩을 끝냈다는 표시. 역할과 따로 둔다 — 보호자는 가입 직후에 역할이 정해지는데,
  * 약관 동의와 첫 기관 연결이 아직 안 끝난 상태를 그것과 구분할 방법이 필요하다.
+ * (BE 약관 API `/auth/terms` 가 아직 없어 로컬에 둔다.)
  */
 const ONBOARDED_KEY = "itda_parent_onboarded";
 
 /**
  * 로그인 의도. 카카오로 떠나기 전에 적어두고 `/oauth/success` 가 읽는다.
- * 서버는 기관인지 보호자인지 모른다(사용자 테이블이 없어 JWT subject 가 kakaoId 뿐이다).
- * 아는 것은 "어느 버튼을 눌렀는가" 하나뿐이라 그것을 들고 다녀야 한다.
- * 탭을 닫으면 사라져야 하므로 sessionStorage 를 쓴다.
+ * 역할을 정하지는 않는다 — 처음 가입하는 사람의 회원가입 화면에서 어느 역할을
+ * 먼저 골라둘지에만 쓴다. 탭을 닫으면 사라져야 하므로 sessionStorage 를 쓴다.
  */
 const INTENT_KEY = "itda_login_intent";
 
 export type Role = "org" | "parent" | null;
 
-/* ── 역할 ───────────────────────────────────────────── */
+/**
+ * 라우트 가드가 보는 세션.
+ *  - loggedIn=false            : 비로그인 → 로그인 화면
+ *  - loggedIn, !signupCompleted: 카카오 로그인만 하고 역할을 안 고름 → /signup
+ *  - signupCompleted           : role 이 정해져 있다
+ */
+export type Session = {
+  loggedIn: boolean;
+  signupCompleted: boolean;
+  role: Role;
+  /** 카카오 닉네임. 동의를 거부하면 없다. */
+  name?: string;
+};
+
+const ANONYMOUS: Session = { loggedIn: false, signupCompleted: false, role: null };
+
+/**
+ * GET /auth/me · POST /auth/signup 의 data.
+ * 값이 없는 필드는 null 이 아니라 **아예 빠진다**(BE CurrentUserResponse 의 NON_NULL).
+ */
+type MeResponse = {
+  signupCompleted: boolean;
+  userId: string;
+  name?: string;
+  role?: "org" | "parent";
+  institutionId?: string;
+};
+
+function toSession(me: MeResponse): Session {
+  return {
+    loggedIn: true,
+    signupCompleted: me.signupCompleted,
+    // signupCompleted 만 보고 분기한다. role 은 가입을 마쳤을 때만 믿는다.
+    role: me.signupCompleted ? (me.role ?? null) : null,
+    name: me.name,
+  };
+}
+
+/** 실패 응답 { result, code, message } 를 ApiError 로. */
+async function toApiError(res: Response): Promise<ApiError> {
+  const body = await res.json().catch(() => ({}));
+  return new ApiError(res.status, body.code ?? "UNKNOWN", body.message);
+}
+
+/* ── 역할 (mock 전용) ───────────────────────────────── */
 
 function readRole(): Role {
   try {
@@ -61,23 +112,16 @@ function readRole(): Role {
 }
 
 /**
- * 역할을 로컬에 기록한다. **로그인이 아니다.**
- *
- * 백엔드에 사용자 테이블이 없어 JWT 의 subject 가 kakaoId 뿐이고, 서버가 기관/학부모를
- * 구분할 방법이 없다. 그래서 역할은 아직 클라이언트가 들고 있는다.
- * 학부모 온보딩(routes/parent/consent.tsx)과 로그인 착지 페이지가 부른다.
- *
- * 출입증이 httpOnly 쿠키가 된 지금은 이 값이 **로그인 여부의 표시**도 겸한다 —
- * 쿠키를 JS 가 읽을 수 없어 다른 방법이 없다.
- *
- * TODO: BE 에 `GET /api/v1/auth/me`(역할 포함)가 생기면 이 함수와 readRole() 을
- *       그 응답으로 대체한다.
+ * mock 모드에서 역할을 로컬에 기록한다. **로그인이 아니다.**
+ * "mock 데이터로 둘러보기" 버튼이 부른다. 실연동에서는 아무것도 하지 않는다 —
+ * 역할은 회원가입(`signup()`)으로 서버에 정해지고 `/auth/me` 가 알려준다.
  */
 export function grantRole(role: "org" | "parent"): void {
+  if (!USE_MOCK) return;
   try {
     localStorage.setItem(ROLE_KEY, role);
   } catch {
-    // 무시 — getSession() 이 null 을 돌려주고 가드가 로그인 화면으로 보낸다.
+    // 무시 — getSession() 이 비로그인을 돌려주고 가드가 로그인 화면으로 보낸다.
   }
 }
 
@@ -112,13 +156,99 @@ export function isOnboarded(): boolean {
 
 /* ── 세션 ───────────────────────────────────────────── */
 
-export async function getSession(): Promise<{ role: Role }> {
-  return { role: readRole() };
+/**
+ * GET /api/v1/auth/me — 라우트 가드가 화면에 들어갈 때마다 부른다.
+ *
+ * 401 은 "다시 로그인" 이라 에러가 아니라 비로그인 세션으로 돌려준다.
+ * 그 밖의 실패(5xx·네트워크)는 그대로 던진다 — 비로그인으로 바꿔 삼키면
+ * 서버 장애가 "로그아웃됨" 으로 보인다.
+ *
+ * 이 GET 이 BE 의 XSRF-TOKEN 쿠키를 처음 심어주는 요청이기도 하다
+ * (BE CsrfCookieFilter). 그래서 signup() 같은 쓰기 요청 전에 한 번은 불려 있어야 한다.
+ */
+export async function getSession(): Promise<Session> {
+  if (USE_MOCK) {
+    const role = readRole();
+    return role ? { loggedIn: true, signupCompleted: true, role } : ANONYMOUS;
+  }
+
+  const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (res.status === 401) {
+    clearSession();
+    return ANONYMOUS;
+  }
+  if (!res.ok) throw await toApiError(res);
+  const body = await res.json();
+  return toSession(body.data as MeResponse);
+}
+
+/** 가입을 마친 사람이 처음 볼 화면. 보호자는 약관·첫 연결이 남았으면 온보딩으로. */
+export function homePathFor(role: "org" | "parent"): string {
+  if (role === "parent") return isOnboarded() ? "/parent" : "/parent/invite";
+  return "/dashboard";
 }
 
 /** mock 모드인지. 로그인 화면이 "둘러보기" 진입을 띄울지 판단하는 데만 쓴다. */
 export function isAuthMock(): boolean {
   return USE_MOCK;
+}
+
+/* ── 회원가입 ───────────────────────────────────────── */
+
+/** BE enum 값 그대로. 화면 표시 이름은 회원가입 화면이 붙인다. */
+export type OrganizationType = "SCHOOL" | "CENTER" | "ACTIVITY_SUPPORT";
+
+export type SignupInput =
+  | { role: "parent" }
+  | {
+      role: "org";
+      organizationName: string;
+      organizationType: OrganizationType;
+      /** 하이픈 없이 숫자 10자리 */
+      businessNumber: string;
+    };
+
+/**
+ * POST /api/v1/auth/signup → 201. 응답은 /auth/me 의 가입 완료 응답과 같다.
+ *
+ * 보호자는 role **만** 보낸다. 기관 필드가 `""` 로라도 섞이면 BE 가 400 을 준다.
+ * 그래서 폼 상태를 그대로 싣지 않고 역할별로 본문을 새로 만든다.
+ *
+ * 실패는 ApiError 로 던진다. 화면이 code 로 나눠 처리한다
+ * (ALREADY_SIGNED_UP · DUPLICATE_BUSINESS_NUMBER · INVALID_REQUEST).
+ */
+export async function signup(input: SignupInput): Promise<Session> {
+  if (USE_MOCK) {
+    grantRole(input.role);
+    return { loggedIn: true, signupCompleted: true, role: input.role };
+  }
+
+  const body =
+    input.role === "parent"
+      ? { role: "parent" }
+      : {
+          role: "org",
+          organizationName: input.organizationName,
+          organizationType: input.organizationType,
+          businessNumber: input.businessNumber,
+        };
+
+  const res = await fetch(`${API_BASE}/api/v1/auth/signup`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: { "content-type": "application/json", ...csrfHeader() },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    if (res.status === 401) clearSession();
+    throw await toApiError(res);
+  }
+  const json = await res.json();
+  return toSession(json.data as MeResponse);
 }
 
 /* ── 로그인 · 로그아웃 ──────────────────────────────── */
@@ -131,7 +261,7 @@ export function startKakaoLogin(intent: "org" | "parent"): void {
   try {
     sessionStorage.setItem(INTENT_KEY, intent);
   } catch {
-    // 무시 — 착지 페이지가 기존 역할로 판단하고, 그것도 없으면 기관으로 둔다.
+    // 무시 — 회원가입 화면에서 역할을 미리 골라두지 못할 뿐이다.
   }
   window.location.href = `${AUTH_ORIGIN}/oauth2/authorization/kakao`;
 }
@@ -162,7 +292,7 @@ export async function signOut(): Promise<void> {
       headers: csrfHeader(),
     });
   } catch {
-    // 네트워크 실패로 쿠키가 남아도 로컬 역할은 이미 지웠다. 가드가 로그인으로 보낸다.
+    // 네트워크 실패로 쿠키가 남아도 로컬 표시는 이미 지웠다. 가드가 /auth/me 로 다시 확인한다.
   }
 }
 
