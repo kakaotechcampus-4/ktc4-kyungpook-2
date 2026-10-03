@@ -331,7 +331,7 @@ function uploadFailReasonOf(err: unknown): UploadFailReason {
 }
 
 /** mock 도 BE 와 같은 규칙으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
-const UPLOAD_EXTENSIONS = ["csv", "txt", "pdf", "jpg", "jpeg", "png", "hwp"];
+const UPLOAD_EXTENSIONS = ["csv", "txt", "pdf"];
 const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
 function mockRejectReason(file: File): UploadFailReason | null {

@@ -109,7 +109,7 @@ export interface ConsentPreview {
 export interface RawRecord {
   id: string;
   fileName: string;
-  type: "관찰일지" | "활동일지" | "특이사항" | "사진";
+  type: "관찰일지" | "활동일지" | "특이사항";
   capturedAt: string;
   preview: string;
 }
