@@ -13,6 +13,7 @@ from .config import (
     AUTO_GATE,
     GIVEN_NAME_SCORE,
     IGNORE_UNGROUNDED_LLM_PICK,
+    REQUIRE_WINNER_NAME_FOR_AUTO,
     FUZZY_SCORE_MAX,
     FUZZY_SCORE_MIN,
     COMBINE_AGREEING_SCORES,
@@ -202,6 +203,10 @@ def shortlist(state: MatchingState) -> dict:
         # "본문에 이름이 등장했다" 는 사실만 담는다. 오타로 걸린 것은 넣지 않는다 —
         # 실제로 등장한 게 아니라 비슷했을 뿐이라, Validation 에 잘못된 신호를 준다.
         "mentioned_child_ids": sorted(exact_ids),
+        # 위와 지금은 값이 같지만 쓰임이 다르다. mentioned_child_ids 는 뒤에서
+        # llm_judge 가 대등 언급 ID 를 더해 "모델이 말한 것" 이 섞인다.
+        # 자동 확정의 근거는 코드가 글자로 확인한 것만이어야 하므로 따로 둔다.
+        "exact_child_ids": sorted(exact_ids),
         "co_mention": co_mention,
         "has_exact": bool(exact_ids),
     }
@@ -250,17 +255,27 @@ def llm_judge(state: MatchingState) -> dict:
         # 판단을 버리고 코드 후보로 되돌린다. decide 가 auto 로 내보내지 않는다.
         child_id = None
 
-    # 본문에 이름 근거가 없는데 모델이 코드가 못 본 아이를 골랐다면 무시한다.
-    # 근거 없이 명부에서 한 명을 집어낸 것이고, 다시 돌리면 다른 아이를 고른다.
-    # 표지를 뒤집는 판단은 본문에 명백한 근거가 있을 때만 성립한다.
+    # 모델이 고른 아이에게 글자 근거가 있는가 — 본문에 그 아이 이름이 있거나
+    # 표지가 그 아이를 가리키는가. 여기서 보는 것은 "고른 그 아이" 의 이름이다.
+    # 예전에는 has_exact 를 봐서 본문에 **다른** 아이 이름이 있기만 해도
+    # 통과했는데, 그러면 A 의 이름을 근거로 B 를 집어내는 셈이 된다
+    # (2026-10-03 멘토 리뷰).
     code_ids = {c["child_id"] for c in state.get("candidates", [])}
-    if (
-        IGNORE_UNGROUNDED_LLM_PICK
-        and child_id is not None
-        and child_id not in code_ids
-        and not state.get("has_exact")
-    ):
-        child_id = None
+    exact_ids = set(state.get("exact_child_ids") or ())
+    grounded = child_id is not None and (
+        child_id in exact_ids or _hint_confirms(state, child_id)
+    )
+
+    # 글자 근거가 없는 선택은 버린다. 두 경우다.
+    #   (a) 코드가 후보로도 안 본 아이 — 명부에서 그냥 집어낸 것이고,
+    #       다시 돌리면 다른 아이를 고른다.
+    #   (b) 본문에 이름이 그대로 있는 아이가 따로 있는데 그쪽을 고르지 않은 것 —
+    #       근거가 생긴 게 아니라 모델이 본문을 안 본 것이다.
+    ungrounded_pick = False
+    if IGNORE_UNGROUNDED_LLM_PICK and child_id is not None and not grounded:
+        if exact_ids or child_id not in code_ids:
+            ungrounded_pick = bool(exact_ids)
+            child_id = None
 
     try:
         llm_confidence = float(answer.get("confidence", 0.0))
@@ -271,7 +286,14 @@ def llm_judge(state: MatchingState) -> dict:
     if child_id is None:
         # 모델이 특정하지 못했다. 코드가 본 후보를 그대로 두고 사람에게 넘긴다.
         # 후보가 둘이면 multi(ambiguous_identity), 하나면 review 로 간다.
-        pass
+        if ungrounded_pick:
+            # 다만 본문에 이름이 그대로 있는 아이가 있다면 그 아이들만 남긴다.
+            # 퍼지로만 걸린 아이는 "이름이 비슷한 남" 이라 교사에게 보여줄
+            # 이유가 없다. 이걸 안 하면 모델이 오타 후보를 고른 순간 본문에
+            # 이름이 있는 아이가 후보 목록에서 통째로 사라진다 (M0134).
+            kept = [c for c in candidates if c["child_id"] in exact_ids]
+            if kept:
+                candidates = kept
     else:
         # 모델이 하나를 골랐으면 그것이 답이다 — "확신이 없으면 null" 이라고
         # 지시했으므로, 골랐다는 것은 판단이 섰다는 뜻이다.
@@ -356,6 +378,9 @@ def llm_judge(state: MatchingState) -> dict:
         "llm_error": None,
         "llm_usage": result.usage,
         "llm_off_roster": off_roster,
+        #: 모델이 글자 근거 없는 아이를 골랐고, 본문에 이름이 있는 아이가
+        #: 따로 있었다. 모델과 본문이 어긋난 것이라 자동 확정하지 않는다.
+        "llm_ungrounded_pick": ungrounded_pick,
         "candidates": candidates,
         "mentioned_child_ids": sorted(mentioned),
         # 대등 언급 여부는 모델 판단으로 덮는다. 코드는 "이름이 둘 이상 있다" 까지만
@@ -446,17 +471,31 @@ def _structural_auto(state: MatchingState, winner: int, candidates: list) -> boo
     흔들리는 것은 모델이 스스로 매기는 confidence 숫자다.
 
         1. 후보가 정확히 한 명이다
-        2. 근거가 글자로 존재한다 — 본문에 이름이 있거나 표지가 뒷받침한다
-        3. 근거를 부정하는 신호가 없다 — 대등 언급이 아니다
+        2. 근거가 글자로 존재한다 — **고른 아이 본인의** 이름이 본문에 있거나
+           표지가 그 아이를 뒷받침한다
+        3. 근거를 부정하는 신호가 없다 — 대등 언급이 아니고, 모델 판단이
+           본문과 어긋나지도 않았다
         4. 판단에 쓴 정보가 검증되었다 — 호출 성공, 명부 안의 ID
+
+    2번이 예전에는 has_exact("명부의 **누군가** 이름이 본문에 있다") 였다.
+    그래서 본문에 A 의 이름만 있고 모델이 B 를 고른 기록이 자동 확정됐다 —
+    B 의 근거는 어디에도 없는데 A 덕분에 통과한 것이다 (2026-10-03 멘토 리뷰).
     """
     if len(candidates) != 1:
         return False
     if state.get("co_mention"):
         return False
+    # 모델이 본문을 무시하고 다른 아이를 골랐다. 본문이 가리키는 아이로
+    # 되돌려놓긴 했지만, 둘이 어긋났다는 사실 자체가 사람이 볼 이유다.
+    if state.get("llm_ungrounded_pick"):
+        return False
     if state.get("llm_error") or state.get("llm_off_roster"):
         return False
-    return bool(state.get("has_exact")) or _hint_confirms(state, winner)
+    if _hint_confirms(state, winner):
+        return True
+    if not REQUIRE_WINNER_NAME_FOR_AUTO:
+        return bool(state.get("has_exact"))
+    return winner in set(state.get("exact_child_ids") or ())
 
 
 def decide(state: MatchingState) -> dict:
@@ -582,10 +621,12 @@ def decide(state: MatchingState) -> dict:
     # 관찰일지의 정상적인 형태이고(파일 표지에 이름, 본문에는 관찰 내용만),
     # 이때 표지를 안 믿으면 확인 큐가 100% 가 되어 서비스가 성립하지 않는다.
     #
-    # 표지를 뒤집는 신호는 위에서 이미 걸러졌다 —
-    # 본문에 다른 아이 이름이 그대로 있으면 has_exact 가 참이라 여기 오지 않고,
+    # 보는 것은 "고른 그 아이" 의 이름이다. 예전에는 has_exact 를 봐서, 본문에
+    # 다른 아이 이름이 있기만 하면 여기를 건너뛰었다. 멈춰야 할 신호를 통과
+    # 사유로 쓰고 있었던 셈이다 (2026-10-03 멘토 리뷰).
     # 오타로라도 다른 아이가 1위면 hint_mismatch 로 review 가 된다.
-    if not state.get("has_exact") and status == "auto":
+    winner_named = winner in set(state.get("exact_child_ids") or ())
+    if not winner_named and status == "auto":
         if not (ALLOW_AUTO_ON_HINT_ONLY and _hint_confirms(state, winner)):
             status = "review"
 
