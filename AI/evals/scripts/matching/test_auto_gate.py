@@ -58,6 +58,11 @@ def run(content, *, picks, hint_name=None, quotes=None, co_mention=False):
         nodes.ask_json = original
 
 
+#: 후보 목록까지 봐야 하는 케이스. {이름: 기대 후보 집합}
+EXPECT_CANDIDATES = {
+    "본문에 이름이 있는 아이는 후보에서 사라지지 않는다": {1, 2},
+}
+
 CASES = [
     # (이름, 본문, 모델이 고른 아이, 표지, 기대 status, 기대 아이, 왜)
     (
@@ -66,16 +71,17 @@ CASES = [
         3,  # 김지유 — 본문에 없고 "김지후가" 에 퍼지로만 걸린 아이
         None,
         "review",
-        None,
-        "본문에 있는 이름은 김지후다. 김지유의 근거는 글자로 존재하지 않는다",
+        1,
+        "김지유의 근거는 글자로 없다. 판단을 버리고 본문이 가리키는 김지후를 "
+        "추천하되, 모델과 본문이 어긋났으므로 사람이 본다",
     ),
     (
         "본문에 없는 아이를 고르면 그 판단을 버린다",
         "김지후가 블록을 높이 쌓았다.",
         2,  # 박서연 — 후보에도 없는 아이
         None,
-        "multi",
-        None,
+        "review",
+        1,
         "근거 없는 선택은 잡음이라 버린다. 박서연으로는 가지 않는다",
     ),
     (
@@ -102,8 +108,17 @@ CASES = [
         3,  # 표지는 김지후인데 모델은 김지유를 고름
         "김지후",
         "review",
-        None,
+        1,
         "표지와 모델이 어긋났고 모델 쪽에는 글자 근거가 없다",
+    ),
+    (
+        "본문에 이름이 있는 아이는 후보에서 사라지지 않는다",
+        "김지후가 박서연이를 도와주었다.",
+        3,  # 퍼지로만 걸린 김지유
+        None,
+        "multi",
+        None,
+        "교사에게 보일 후보는 글자 근거가 있는 둘이다 (M0134 재현)",
     ),
 ]
 
@@ -117,6 +132,12 @@ def main():
         ok = got[0] == want_status and (want_child is None or got[1] == want_child)
         print(f"  {'✓' if ok else '✗'} {name}")
         print(f"      기대 {want_status}/{want_child} · 실제 {got[0]}/{got[1]} — {why}")
+        if name in EXPECT_CANDIDATES:
+            want_ids = EXPECT_CANDIDATES[name]
+            got_ids = {c["child_id"] for c in final.get("candidates", [])}
+            cand_ok = got_ids == want_ids
+            ok = ok and cand_ok
+            print(f"      {'✓' if cand_ok else '✗'} 후보 기대 {sorted(want_ids)} · 실제 {sorted(got_ids)}")
         if not ok:
             failed += 1
     if failed:

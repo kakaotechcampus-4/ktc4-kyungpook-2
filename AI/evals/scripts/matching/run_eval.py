@@ -97,6 +97,7 @@ def run_one(case: dict) -> dict:
                 "co_mention": bool(final.get("co_mention")),
                 "llm_error": final.get("llm_error"),
                 "llm_off_roster": bool(final.get("llm_off_roster")),
+                "llm_ungrounded_pick": bool(final.get("llm_ungrounded_pick")),
                 "n_candidates": len(final.get("candidates", [])),
                 "all_candidates": [
                     c["child_id"] for c in final.get("candidates", [])
