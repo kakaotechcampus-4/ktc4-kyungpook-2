@@ -50,11 +50,17 @@ def check_flags(text):
 
 
 def check_no_threshold(text):
-    """요약에는 임계값이 없다. 생기면 문서가 먼저 말해야 한다."""
+    """
+    요약에는 판정 임계값이 없다. 생기면 문서가 먼저 말해야 한다.
+
+    LUNA_* 는 접속 설정이라 세지 않는다 — 판정 기준이 아니다.
+    """
     numeric = [
         n
         for n in dir(config)
-        if not n.startswith("_") and isinstance(getattr(config, n), (int, float))
+        if not n.startswith("_")
+        and not n.startswith("LUNA_")
+        and isinstance(getattr(config, n), (int, float))
         and not isinstance(getattr(config, n), bool)
     ]
     return [

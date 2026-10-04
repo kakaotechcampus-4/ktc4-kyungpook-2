@@ -47,3 +47,14 @@ DROP_SENTIMENT_KEEP_FACT = True
 #: 길이를 고정하지 않는다. 기록이 한 건인 날과 세 기관에서 온 날의
 #: 분량이 같을 이유가 없다.
 FIXED_LENGTH = False
+
+# ── Luna 호출 설정 ──────────────────────────────────────────────
+#: 판정 기준이 아니라 접속 설정이다. matching/validation 과 같은 값을 둔다.
+
+#: LUNA_API_URL 은 엔드포인트 base 만 담는다. 실제 경로는 여기서 붙인다.
+LUNA_CHAT_PATH = "/v1/chat/completions"
+
+LUNA_MODEL = "gpt-5.6-luna"
+
+#: 요약은 입력이 일지 여러 건이라 매칭·검증보다 길다. 넉넉하게 둔다.
+LUNA_TIMEOUT = 90.0

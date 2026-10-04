@@ -2,10 +2,14 @@ import os
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from matching.graph import run_matching
 from matching.schemas import MatchingInput, MatchingOutput
+from summary.graph import run_summary
+from summary.llm import LlmUnavailable
+from summary.schemas import SummaryInput, SummaryOutput
 from validation.graph import run_validation
 from validation.schemas import ValidationInput, ValidationOutput
 
@@ -33,6 +37,24 @@ def matching(payload: MatchingInput) -> MatchingOutput:
 def validation(payload: ValidationInput) -> ValidationOutput:
     """일지 항목 한 건이 저장해도 안전한지 판정한다."""
     return run_validation(payload)
+
+
+@app.exception_handler(LlmUnavailable)
+def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
+    """
+    모델을 못 써서 요약을 만들지 못했다. BE 는 5xx 면 재시도한다.
+
+    실패 원인에 Luna 엔드포인트 주소가 들어 있어서 응답에는 넣지 않고
+    서버 로그에만 남긴다.
+    """
+    print(f"[summary] LLM 호출 실패: {exc}")
+    return JSONResponse(status_code=503, content={"detail": "LLM 을 사용할 수 없습니다"})
+
+
+@app.post("/summary", response_model=SummaryOutput)
+def summary(payload: SummaryInput) -> SummaryOutput:
+    """같은 아이의 같은 날 일지 여러 건을 한 편의 요약으로 묶는다."""
+    return run_summary(payload)
 
 
 @app.get("/llm-test")
