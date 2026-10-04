@@ -207,6 +207,7 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 | --- | --- | --- |
 | 매칭 | [matching/CRITERIA.md](matching/CRITERIA.md) | `evals/scripts/matching/test_criteria_sync.py` |
 | 검증 | [evals/scripts/validation/README.md](evals/scripts/validation/README.md) | `evals/scripts/validation/test_prompt_sync.py` |
+| 요약 | [summary/CRITERIA.md](summary/CRITERIA.md) | `evals/scripts/summary/test_criteria_sync.py` |
 
 **문서가 기준이고 코드가 그것을 따릅니다.** 둘이 어긋나면 동기화 테스트가 깨집니다.
 LLM 을 부르지 않으므로 즉시 끝납니다.
