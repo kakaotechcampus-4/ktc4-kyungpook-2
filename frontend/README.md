@@ -60,7 +60,8 @@ cd infra/docker && docker compose up -d --build
 | 경로 | 화면 |
 |---|---|
 | `/login` | I-01 로그인 (카카오) |
-| `/oauth/success` | 로그인 후 착지 지점 — 화면 없이 역할에 맞는 첫 화면으로 보냅니다 |
+| `/oauth/success` | 로그인 후 착지 지점 — 화면 없이 `/auth/me` 를 물어 역할에 맞는 첫 화면(가입 전이면 `/signup`)으로 보냅니다 |
+| `/signup` | 회원가입 — 역할 선택, 기관이면 기관명·유형·사업자등록번호 (기관·보호자 공통) |
 | `/settings/org` | I-02 기관 등록 · 증빙서류 |
 | `/dashboard` | I-03 처리 현황 |
 | `/children/new` | I-04 아이 등록 · 초대코드 |
@@ -122,19 +123,18 @@ Next.js 시절엔 `src/proxy.ts`(서버 미들웨어)가 기관 경로와 `/pare
 전에 분리했습니다. SPA 에는 서버가 없어서, 대신 각 레이아웃 라우트의
 **`clientLoader`** 가 그 역할을 합니다.
 
-- `app/routes/org/layout.tsx` — role !== "org" 면 `/login` 으로 리다이렉트
-- `app/routes/parent/guard.tsx` — role !== "parent" 이거나 온보딩 미완이면 `/parent/invite` 로 리다이렉트
+- `app/routes/org/layout.tsx` — 가입 미완료면 `/signup`, role !== "org" 면 `/login` 으로 리다이렉트
+- `app/routes/parent/guard.tsx` — 가입 미완료면 `/signup`, role !== "parent" 이거나 온보딩 미완이면 `/parent/invite` 로 리다이렉트
 
 `clientLoader` 가 끝나기 전까지는 `app/root.tsx` 의 **`HydrateFallback`**(로딩 화면)만
 보이고, 화면(`children`)은 절대 먼저 그려지지 않습니다 — 서버가 0ms 에 끊어주던 것을
 클라이언트 로딩 한 박자로 대체한 것이라, "다른 역할 화면이 순간 노출"되는 문제는
 여전히 없습니다. 
 
-역할 판정은 지금 `localStorage`(`itda_role`, `app/lib/auth.ts`)만 봅니다. 백엔드에
-사용자 테이블이 없어 JWT 의 subject 가 kakaoId 뿐이고, 서버가 기관/학부모를 구분할
-방법이 없기 때문입니다. `GET /api/v1/auth/me`(역할 포함)가 열리면
-`getSession()`/`grantRole()` 내부만 그 응답으로 바꾸면 됩니다 — 호출부(각 라우트의
-`clientLoader`)는 그대로 둡니다.
+역할 판정은 `getSession()`(`app/lib/auth.ts`)이 화면에 들어갈 때마다
+`GET /api/v1/auth/me` 를 불러 서버에 묻습니다. 분기는 `signupCompleted` 만 봅니다 —
+`false` 면 카카오 로그인만 하고 역할을 안 고른 상태라 `/signup` 으로 보냅니다.
+mock 모드(`VITE_AUTH_MOCK=true`)에서만 `localStorage`(`itda_role`)를 봅니다.
 
 ## 환경 변수
 
@@ -193,7 +193,9 @@ API 가 404 를 내서 화면이 통째로 에러가 나는 것을 막기 위해
 
 1. 로그인 버튼이 `/oauth2/authorization/kakao` 로 **페이지를 이동**시킵니다
    (fetch 가 아닙니다 — 사용자가 카카오 도메인에서 직접 로그인해야 합니다)
-2. `/oauth/success` 가 착지 지점입니다. 화면을 그리지 않고 역할에 맞는 첫 화면으로 보냅니다
+2. `/oauth/success` 가 착지 지점입니다. 화면을 그리지 않고 `/auth/me` 를 물어 역할에 맞는
+   첫 화면으로 보냅니다. 처음 로그인한 사람은 `/signup` 에서 역할을 고르고
+   `POST /api/v1/auth/signup` 으로 가입을 마칩니다
 
 **출입증은 `access_token` httpOnly 쿠키입니다.** 브라우저가 자동으로 붙이므로
 `Authorization` 헤더를 만들지 않습니다. JS 가 읽을 수 없어 XSS 로도 훔칠 수 없습니다.

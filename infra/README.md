@@ -274,6 +274,25 @@ python3 infra/scripts/verify-ai.py --offline
 docker stop ai-local
 ```
 
+## 프론트 빌드 설정
+
+프론트는 CD가 없어 서버에서 직접 다시 빌드합니다. `VITE_*` 값은 빌드할 때 번들에 박히므로
+서버 `infra/docker/.env`를 바꾼 뒤에는 이미지를 다시 빌드해야 반영됩니다.
+
+| 변수 | 실연동 값 | 설명 |
+|---|---|---|
+| `USE_MOCK` | `false` | 데이터 mock. 프론트의 `VITE_USE_MOCK`으로 전달됩니다 |
+| `VITE_AUTH_MOCK` | `false` | 로그인 mock. `USE_MOCK`과 **별개**입니다. `true`면 `/auth/me`·회원가입을 타지 않고 "mock 데이터로 둘러보기" 버튼이 나옵니다 |
+
+```bash
+cd /home/ubuntu/ktc4-kyungpook-2
+docker compose -f infra/docker/compose.yaml build frontend
+docker compose -f infra/docker/compose.yaml up -d --no-deps --no-build frontend
+```
+
+새 브라우저에서 카카오 로그인 후 Network에 `GET /api/v1/auth/me`가 보이고,
+가입 전이면 `/signup`으로 이동해 제출 시 `POST /api/v1/auth/signup`이 발생하면 정상입니다.
+
 ## Caddy와 HTTPS
 
 로컬은 `.env.example`의 `PUBLIC_ORIGIN=http://localhost`, `AUTH_COOKIE_SECURE=false`를 사용합니다.

@@ -32,8 +32,12 @@ class MatchingState(TypedDict, total=False):
     mentioned_child_ids: list[int]
     co_mention: bool
     #: 본문에 이름이 그대로 적힌 아이가 한 명이라도 있었는지.
-    #: 없으면 판단 근거가 추론뿐이라 자동 확정하지 않는다.
+    #: 미등록 아동 판정에만 쓴다 — "이 명부의 누구도 본문에 없다" 는 뜻이다.
     has_exact: bool
+    #: 본문에 이름이 그대로 적힌 아이들의 ID. **코드가 글자로 확인한 것만** 담는다.
+    #: mentioned_child_ids 와 달리 llm_judge 가 건드리지 않는다 — 자동 확정의
+    #: 근거로 쓰이므로, 모델이 "얘도 나왔다" 고 말한 것이 섞이면 안 된다.
+    exact_child_ids: list[int]
     #: 표지 힌트의 이름이 명부에 있는지. 없으면 미등록 아동일 수 있다.
     hint_in_roster: bool
     #: 본문에도 표지에도 근거가 글자로 없는 상태.
@@ -49,6 +53,10 @@ class MatchingState(TypedDict, total=False):
     llm_error: str | None
     #: 모델이 명부에 없는 child_id 를 돌려줬는지. True 면 auto 로 확정하지 않는다.
     llm_off_roster: bool
+    #: 모델이 글자 근거 없는 아이를 골랐고, 본문에 이름이 있는 아이가 따로
+    #: 있었는지. 그 판단은 버리고 본문이 가리키는 아이를 후보로 남기지만,
+    #: 모델과 본문이 어긋났다는 사실 자체가 사람이 볼 이유라 auto 로 안 간다.
+    llm_ungrounded_pick: bool
     #: 토큰 사용량. cached_tokens 로 프롬프트 캐싱이 먹는지 확인한다.
     llm_usage: dict
 

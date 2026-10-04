@@ -132,8 +132,16 @@ export interface MatchingItem {
   };
   status: Exclude<MatchStatus, "auto">;
   /**
+   * AI 가 지목한 아이. **`review` 의 추천 아이는 여기로만 온다** — AI 계약상
+   * `candidates` 는 `multi` 일 때만 채워진다(AI/matching/graph.py). 이름·생년월일은
+   * 오지 않으니 화면이 명부에서 찾아 붙인다.
+   */
+  matchedChildId: string | null;
+  /**
+   * `multi` 의 후보들. 그 밖의 상태에서는 빈 배열이다.
    * 동명이인이면 후보가 둘 이상 남는다(AI 의 SPLIT_SAME_NAME_CANDIDATES).
    * 이름만으로는 구별이 안 되므로 **생년월일이 반드시 함께 와야 한다.**
+   * 명부에서 삭제된 아이는 서버가 이름·생년월일 없이 id 만 보낸다.
    */
   candidates: {
     childId: string;

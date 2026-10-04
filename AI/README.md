@@ -205,7 +205,7 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 
 | 에이전트 | 판정 기준 | 동기화 테스트 |
 | --- | --- | --- |
-| 매칭 | [matching/CRITERIA.md](matching/CRITERIA.md) | `evals/scripts/matching/test_criteria_sync.py` |
+| 매칭 | [matching/CRITERIA.md](matching/CRITERIA.md) | `evals/scripts/matching/test_criteria_sync.py`<br>`evals/scripts/matching/test_auto_gate.py` |
 | 검증 | [evals/scripts/validation/README.md](evals/scripts/validation/README.md) | `evals/scripts/validation/test_prompt_sync.py` |
 
 **문서가 기준이고 코드가 그것을 따릅니다.** 둘이 어긋나면 동기화 테스트가 깨집니다.

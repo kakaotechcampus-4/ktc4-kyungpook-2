@@ -20,6 +20,8 @@
  *      GET  /api/v1/institutions/me/children
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
+ *      GET  /api/v1/auth/me           (lib/auth.ts 에서 호출)
+ *      POST /api/v1/auth/signup       (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/logout       (lib/auth.ts 에서 호출)
  *
  *    institutionId 는 서버가 인증 정보에서 가져간다 — 클라이언트가 보내지 않는다.
@@ -34,6 +36,7 @@
  * 출입증은 access_token 쿠키. 쓰기 요청에는 X-XSRF-TOKEN 헤더가 필요하다.
  */
 
+import { ApiError } from "@/lib/apiError";
 import { clearSession, csrfHeader } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
@@ -165,15 +168,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body.data as T;
 }
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message?: string,
-  ) {
-    super(message ?? code);
-  }
-}
+export { ApiError };
 
 /* ── 기관 ───────────────────────────────────────────── */
 
@@ -205,6 +200,7 @@ export async function getMatchingQueue(): Promise<MatchingItem[]> {
   const items = await request<MatchingItem[]>("/api/v1/matching-queue");
   return items.map((item) => ({
     ...item,
+    matchedChildId: item.matchedChildId ?? null,
     candidates: item.candidates ?? [],
     evidence: item.evidence ?? [],
   }));
