@@ -146,7 +146,7 @@ cp .env.example .env
 
 | 변수 | 기본 | 설명 |
 |---|---|---|
-| `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false` 일 때만 실제 HTTP 호출 |
+| `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false` 여도 `BE_READY` 에서 `true` 인 기능만 실제 HTTP 호출 |
 | `VITE_AUTH_MOCK` | `true` | 로그인(`lib/auth.ts`). 데이터와 분리돼 있습니다 |
 | `VITE_AUTH_ORIGIN` | 빈 값 | 로그인 진입 주소의 오리진. **dev 는 `http://localhost:8080`** |
 | `VITE_API_BASE_URL` | 빈 값 | dev proxy와 Caddy가 같은 오리진의 `/api`를 넘기므로 비워 둡니다 |
@@ -164,6 +164,11 @@ KOE006 으로 거절당합니다. 그래서 로그인 진입만 백엔드(8080)�
 하나로 묶으면 로그인을 켜는 순간 대시보드·아이 목록·게이트가 전부 빈 화면이 됩니다.
 `VITE_AUTH_MOCK=false`, `VITE_USE_MOCK=true` 로 두면 **로그인만 실연동**하고
 나머지 화면은 mock 으로 유지할 수 있습니다.
+
+**데이터 mock 은 기능별로 해제합니다.** `lib/api.ts` 의 `BE_READY` 표에서 백엔드가 만든
+기능만 `true` 이고, 나머지는 `VITE_USE_MOCK=false` 여도 mock 을 돌려줍니다. 아직 없는
+API 가 404 를 내서 화면이 통째로 에러가 나는 것을 막기 위해서입니다. 백엔드가 기능을
+열면 그 키만 `true` 로 바꾸면 됩니다.
 
 `VITE_AUTH_MOCK=true` 일 때는 로그인 화면에 "mock 데이터로 둘러보기" 버튼이 나옵니다.
 백엔드 없이 기관 화면을 확인하는 용도이고, 실연동 빌드에서는 렌더링되지 않습니다.

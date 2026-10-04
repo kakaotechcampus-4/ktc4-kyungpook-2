@@ -44,7 +44,7 @@
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
-| `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false`일 때만 실제 HTTP 호출 |
+| `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false`여도 백엔드에 없는 기능은 mock (아래 참고) |
 | `VITE_AUTH_MOCK` | `true` | 로그인(`lib/auth.ts`). 데이터와 분리돼 있습니다 |
 | `VITE_AUTH_ORIGIN` | `""` | 로그인 진입 주소의 오리진. **dev 는 `http://localhost:8080`** |
 | `VITE_API_BASE_URL` | `""` | 백엔드 origin. dev proxy·nginx를 쓰면 비워 둡니다 |
@@ -53,6 +53,12 @@
 묶으면 로그인을 켜는 순간 대시보드·아이 목록·게이트가 전부 빈 화면이 됩니다.
 `VITE_AUTH_MOCK=false` + `VITE_USE_MOCK=true` 로 두면 **로그인만 실연동**하고 나머지는
 mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하나씩 옮겨갑니다.
+
+**데이터 mock 은 기능별로 해제합니다** — `lib/api.ts`의 `BE_READY` 표에서 백엔드가 만든
+기능만 `true`입니다. `VITE_USE_MOCK=false`여도 `false`인 기능은 mock 을 돌려주므로,
+아직 없는 API 때문에 대시보드 같은 화면이 통째로 에러가 나지 않습니다.
+백엔드가 기능을 열면 그 키만 `true`로 바꾸고 다시 빌드합니다. 목록과 그 처리 버튼은
+같은 키로 묶여 있어 함께 켜집니다. `VITE_USE_MOCK=true`면 표와 상관없이 전부 mock 입니다.
 
 `VITE_*`는 빌드 시점에 번들에 포함됩니다. 값이 바뀌면 재빌드가 필요합니다.
 
