@@ -64,6 +64,7 @@ def check_flags(text):
         ("SPLIT_SAME_NAME_CANDIDATES", True, "동명이인은 둘 다 후보로 남긴다"),
         ("ALLOW_AUTO_ON_HINT_ONLY", True, "표지만으로도 자동 확정을 허용한다"),
         ("IGNORE_UNGROUNDED_LLM_PICK", True, "근거 없는 모델 선택은 무시한다"),
+        ("REQUIRE_WINNER_NAME_FOR_AUTO", True, "고른 아이 본인의 이름이 본문에 있어야 자동 확정한다"),
     ]
     problems = []
     for name, expected, why in rules:
@@ -79,6 +80,7 @@ def check_known_limits(text):
         ("쉼표", "이름 뒤 쉼표로 퍼지가 거부되는 한계"),
         ("이름만", "성 없이 이름만 쓰면 auto 가 안 되는 한계"),
         ("독립적인 자기 동작", "조연을 대등 언급으로 잘못 보는 한계"),
+        ("exact_child_ids", "자동 확정 근거를 고른 아이 본인으로 좁힌 이유"),
     ]
     return [f"알려진 한계가 문서에서 사라졌다 — {why}" for key, why in limits if key not in text]
 

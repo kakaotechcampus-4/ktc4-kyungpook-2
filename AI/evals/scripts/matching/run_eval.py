@@ -89,6 +89,11 @@ def run_one(case: dict) -> dict:
             # 계약 밖의 값이라 결과 파일에만 남긴다.
             diag={
                 "has_exact": bool(final.get("has_exact")),
+                #: 코드가 글자로 확인한 ID 만. 자동 확정 근거가 고른 아이
+                #: 본인의 것인지 사후에 따져보려면 이 값이 있어야 한다.
+                "exact_child_ids": list(final.get("exact_child_ids") or []),
+                "winner_named": final.get("matched_child_id")
+                in set(final.get("exact_child_ids") or ()),
                 "co_mention": bool(final.get("co_mention")),
                 "llm_error": final.get("llm_error"),
                 "llm_off_roster": bool(final.get("llm_off_roster")),
