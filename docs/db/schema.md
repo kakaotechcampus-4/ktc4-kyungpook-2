@@ -875,6 +875,8 @@ FAILED             실패
 `MATCHED`는 초안에 없던 값이다. `VALIDATING`은 "검증 중"이라, 검증 워커가 집어 갈 "확정됐고 검증을 기다림" 상태가 따로 필요했다.
 
 선생님이 확인 필요 큐에서 처리하면(API O-23) `matching_result`와 함께 일지도 바꾼다. `MATCH_REVIEW`·`FAILED`인 일지만 처리할 수 있다.
+단, `matching_result.status`가 이미 `AUTO`(AI 자동 확정 또는 선생님이 처리 완료)면 거절한다. 일지 `FAILED`는
+매칭 호출 실패뿐 아니라 검증 호출 실패(아래 검증 표)로도 생기는데, 검증 실패 일지는 매칭이 이미 끝난 것이라 다시 처리하면 안 된다.
 
 | 선생님 처리 | `journal_entry.status` | `child_id` |
 | --- | --- | --- |
