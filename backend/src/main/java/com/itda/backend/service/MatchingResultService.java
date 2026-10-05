@@ -132,8 +132,9 @@ public class MatchingResultService {
         RecordResponse record = new RecordResponse(
                 String.valueOf(ctx.rawRecord().getId()),
                 ctx.rawRecord().getOriginalFilename(),
-                ctx.entry().getContent(),
-                ctx.entry().getEntryDate() == null ? null : ctx.entry().getEntryDate().toString());
+                preview(ctx.entry().getContent()),
+                ctx.entry().getEntryDate() == null ? null : ctx.entry().getEntryDate().toString(),
+                ctx.entry().getContent());
 
         return new MatchingQueueItemResponse(
                 String.valueOf(mr.getId()),
@@ -146,6 +147,16 @@ public class MatchingResultService {
                 record,
                 buildCandidates(mr.getCandidates(), mr.getId()),
                 parseJson(mr.getEvidence(), mr.getId()));
+    }
+
+    private static final int PREVIEW_LENGTH = 60;
+
+    // 목록용 짧은 미리보기 — 전체 본문은 RecordResponse.fullContent로 따로 내려간다(#111).
+    private String preview(String content) {
+        if (content == null) {
+            return null;
+        }
+        return content.length() <= PREVIEW_LENGTH ? content : content.substring(0, PREVIEW_LENGTH) + "…";
     }
 
     private List<CandidateResponse> buildCandidates(String candidatesJson, Long matchingResultId) {

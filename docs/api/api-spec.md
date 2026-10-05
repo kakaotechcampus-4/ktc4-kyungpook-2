@@ -455,9 +455,10 @@ POST /api/v1/auth/signup   → 201 Created
 
 **O-22 응답** · `status`가 `auto`인 건은 포함하지 않습니다.
 
-> `record.preview`는 더 이상 앞부분만 자르지 않고 기록 본문 전체를 담습니다(멘토 PR #86 리뷰 반영)
-> — 선생님이 매칭을 확정하기 전에 본문 뒷부분에 나오는 아이 이름이나 AI 판단 근거를 놓치지
-> 않아야 하기 때문입니다. 필드 이름은 호환을 위해 그대로 둡니다.
+> `record.fullContent`를 추가했습니다(멘토 PR #86 리뷰 반영, #111) — 목록의 `preview`(60자)는
+> 그대로 두고, 아이를 선택할 때 펼쳐 볼 전체 본문을 별도 필드로 내려줍니다. 본문 뒷부분에
+> 나오는 아이 이름이나 AI 판단 근거를 선생님이 놓치지 않기 위함입니다. `evidence`의
+> `{start, end}`는 `preview`가 아니라 `fullContent` 기준 유니코드 코드포인트 좌표입니다.
 
 ```json
 [
@@ -469,7 +470,7 @@ POST /api/v1/auth/signup   → 201 Created
     "multiReason": "ambiguous_identity",
     "hintMismatch": false,
     "record": { "id": "3", "fileName": "0821_활동일지.docx",
-                "preview": "…", "capturedAt": "2026-08-21" },
+                "preview": "…", "capturedAt": "2026-08-21", "fullContent": "…" },
     "candidates": [ { "childId": "1", "name": "김하늘", "birthDate": "2020-01-01", "confidence": 0.62 } ],
     "evidence": [ { "start": 12, "end": 15 } ] }
 ]

@@ -104,10 +104,11 @@ class MatchingResultServiceTest {
         assertThat(queue.get(0).record().fileName()).isEqualTo("0821_관찰일지.docx");
     }
 
-    // 코드리뷰 반영(멘토 PR #86): 본문을 앞 60자로 자르면 뒤에 나오는 아이 이름·판단 근거를
-    // 선생님이 못 보고 매칭을 확정하게 된다 — 더 이상 자르지 않고 전체를 내려준다.
+    // 코드리뷰 반영(멘토 PR #86, #111): 목록 미리보기(preview)는 60자로 그대로 유지하되,
+    // 아이 선택 시 펼쳐 볼 전체 본문(fullContent)을 별도로 내려줘서 뒤에 나오는 아이 이름·
+    // AI 판단 근거를 선생님이 놓치지 않게 한다.
     @Test
-    void getQueue_returnsFullContentWithoutTruncation() {
+    void getQueue_keepsShortPreviewButAlsoReturnsFullContent() {
         String longContent = "점심시간에 식사를 잘 마쳤고 ".repeat(10) + "뒷부분에 등장하는 중요한 이름: 김하늘";
         JournalEntry entry = JournalEntry.of(3L, LocalDate.of(2026, 9, 1), longContent, 1);
         entry.startMatching();
@@ -122,7 +123,8 @@ class MatchingResultServiceTest {
         List<MatchingQueueItemResponse> queue = matchingResultService.getQueue(OUR_USER_ID);
 
         assertThat(longContent.length()).isGreaterThan(60);
-        assertThat(queue.get(0).record().preview()).isEqualTo(longContent);
+        assertThat(queue.get(0).record().preview()).isEqualTo(longContent.substring(0, 60) + "…");
+        assertThat(queue.get(0).record().fullContent()).isEqualTo(longContent);
     }
 
     @Test
