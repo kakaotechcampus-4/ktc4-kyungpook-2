@@ -54,6 +54,7 @@ Luna 키가 없으면 배포가 실패합니다. 실패했을 때 다시 배포�
 | `GET` | `/health` | 상태 확인. Luna 키가 설정돼 있으면 200, 없으면 503 (`luna_configured` 로 함께 알려줍니다) |
 | `POST` | `/matching` | 기록 한 줄을 받아 어느 아동의 것인지 판정합니다 |
 | `POST` | `/validation` | 그 기록을 저장해도 안전한지 판정합니다. Luna 호출이 실패하면 503 (정규식으로 개인정보가 잡힌 경우는 200 + `BLOCK`) |
+| `POST` | `/summary` | 같은 아이의 같은 날 일지 여러 건을 한 편으로 묶습니다. Luna 호출이 실패하면 503 — 빈 요약을 200 으로 주지 않습니다 |
 | `GET` | `/llm-test` | Luna 연결 확인용 |
 
 ---
@@ -207,6 +208,7 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 | --- | --- | --- |
 | 매칭 | [matching/CRITERIA.md](matching/CRITERIA.md) | `evals/scripts/matching/test_criteria_sync.py`<br>`evals/scripts/matching/test_auto_gate.py` |
 | 검증 | [evals/scripts/validation/README.md](evals/scripts/validation/README.md) | `evals/scripts/validation/test_prompt_sync.py` |
+| 요약 | [summary/CRITERIA.md](summary/CRITERIA.md) | `evals/scripts/summary/test_criteria_sync.py`<br>`evals/scripts/summary/test_grounding.py` |
 
 **문서가 기준이고 코드가 그것을 따릅니다.** 둘이 어긋나면 동기화 테스트가 깨집니다.
 LLM 을 부르지 않으므로 즉시 끝납니다.

@@ -5,10 +5,13 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from common.errors import LlmUnavailable
 from matching.graph import run_matching
 from matching.schemas import MatchingInput, MatchingOutput
+from summary.graph import run_summary
+from summary.schemas import SummaryInput, SummaryOutput
 from validation.graph import run_validation
-from validation.llm import LlmUnavailable, is_configured
+from validation.llm import is_configured
 from validation.schemas import ValidationInput, ValidationOutput
 
 load_dotenv()
@@ -23,10 +26,21 @@ LUNA_API_KEY = os.environ.get("LUNA_API_KEY")
 
 @app.exception_handler(LlmUnavailable)
 def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
-    """LLM 을 못 써서 판정을 못 했을 때. BE 는 5xx 면 재시도하고, 그래도 실패하면 FAILED 로 둔다.
-    실패 원인에는 Luna 엔드포인트 주소가 들어 있어서 응답에는 넣지 않고 서버 로그에만 남긴다."""
-    print(f"[validation] LLM 호출 실패: {exc}")
-    return JSONResponse(status_code=503, content={"detail": {"reason": "llm_unavailable", "message": "Luna 호출 실패"}})
+    """
+    LLM 을 못 써서 결과를 내지 못했을 때. 검증·요약이 같이 쓴다.
+
+    BE 는 5xx 면 재시도하고, 그래도 실패하면 FAILED 로 둔다.
+    실패 원인에는 Luna 엔드포인트 주소가 들어 있어서 응답에는 넣지 않고
+    서버 로그에만 남긴다. 어느 에이전트였는지는 경로로 구분한다.
+
+    에이전트마다 예외를 따로 두면 안 된다 — main.py 에서 이름이 덮여
+    핸들러가 한쪽에만 걸리고 나머지는 500 으로 나간다. common/errors.py 참고.
+    """
+    print(f"[{request.url.path.strip('/') or 'unknown'}] LLM 호출 실패: {exc}")
+    return JSONResponse(
+        status_code=503,
+        content={"detail": {"reason": "llm_unavailable", "message": "Luna 호출 실패"}},
+    )
 
 
 @app.get("/health")
@@ -48,6 +62,12 @@ def matching(payload: MatchingInput) -> MatchingOutput:
 def validation(payload: ValidationInput) -> ValidationOutput:
     """일지 항목 한 건이 저장해도 안전한지 판정한다."""
     return run_validation(payload)
+
+
+@app.post("/summary", response_model=SummaryOutput)
+def summary(payload: SummaryInput) -> SummaryOutput:
+    """같은 아이의 같은 날 일지 여러 건을 한 편의 요약으로 묶는다."""
+    return run_summary(payload)
 
 
 @app.get("/llm-test")

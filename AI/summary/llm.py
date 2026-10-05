@@ -1,8 +1,10 @@
+# AI/summary/llm.py
 """
-Luna 호출과 응답 파싱.
+Luna 호출과 인용 대조.
 
 여기서만 외부 API를 만진다. 노드는 이 모듈의 함수만 부른다 —
 나중에 모델이 바뀌어도 고칠 곳이 한 군데다.
+matching/llm.py · validation/llm.py 와 같은 모양이다.
 """
 
 import json
@@ -14,8 +16,8 @@ import requests
 
 #: 503 으로 나가는 예외. 모든 에이전트가 **같은 클래스**를 쓴다 — 따로 두면
 #: main.py 에서 이름이 덮여 핸들러가 한쪽에만 걸린다 (common/errors.py 참고).
-#: LLM 판단 없이는 판정을 낼 수 없다.
-#: 여기서 다시 내보내므로 from validation.llm import LlmUnavailable 이 그대로 된다.
+#: 빈 요약을 200 으로 주면 "쓸 말이 없었다" 와 "모델이 죽었다" 가 구별되지 않는다.
+#: 여기서 다시 내보내므로 from summary.llm import LlmUnavailable 이 그대로 된다.
 from common.errors import LlmUnavailable  # noqa: F401
 
 from .config import LUNA_CHAT_PATH, LUNA_MODEL, LUNA_TIMEOUT
@@ -45,24 +47,8 @@ def _endpoint() -> tuple[str, str]:
     return url, key
 
 
-def is_configured() -> bool:
-    """
-    Luna 를 부를 설정(URL·키)이 있는지. /health 가 쓴다.
-    실제로 호출하지는 않는다 — 헬스체크마다 모델을 부르면 비용과 지연이 생긴다.
-    모델이 바뀌면 이 함수와 _endpoint 만 고치면 된다.
-    """
-    try:
-        _endpoint()
-    except LlmError:
-        return False
-    return True
-
-
 def _extract_text(payload: dict) -> str:
-    """
-    응답에서 모델이 쓴 텍스트를 꺼낸다.
-    Luna는 OpenAI 호환이라 choices[0].message.content 하나만 보면 된다.
-    """
+    """응답에서 모델이 쓴 텍스트를 꺼낸다. Luna 는 OpenAI 호환이다."""
     try:
         content = payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
@@ -77,6 +63,7 @@ def _extract_text(payload: dict) -> str:
 def _parse_json_block(text: str) -> dict:
     """
     모델이 준 텍스트에서 JSON 객체를 꺼낸다.
+
     형식을 강제해도 ```json 울타리를 두르거나 앞뒤에 문장을 붙이는 경우가 있어
     가장 바깥 중괄호 구간을 찾아서 파싱한다.
     """
@@ -96,9 +83,10 @@ def _parse_json_block(text: str) -> dict:
 
 def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResult:
     """
-    Luna에 물어보고 JSON 객체를 돌려받는다.
-    response_format으로 JSON 출력을 강제한다.
-    temperature는 보내지 않는다 — 이 모델은 기본값(1)만 허용한다.
+    Luna 에 물어보고 JSON 객체를 돌려받는다.
+
+    response_format 으로 JSON 출력을 강제한다.
+    temperature 는 보내지 않는다 — 이 모델은 기본값(1)만 허용한다.
     """
     url, key = _endpoint()
 
@@ -128,21 +116,21 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
     )
 
 
-def spans_for_quotes(content: str, quotes: list) -> list[dict]:
+def locate_quote(content: str, quote: str) -> dict | None:
     """
-    모델이 인용한 문자열을 본문 안 위치로 바꾼다.
-    모델에게 start/end 숫자를 직접 요구하지 않는다 — 글자 수를 세지 못해서
-    거의 틀린다. 인용문만 받고 위치는 코드가 찾는다.
-    원문에 없는 인용(조사를 바꾸거나 다듬은 경우)은 버린다.
+    인용 하나를 그 일지 본문 안 위치로 바꾼다. 못 찾으면 None 이다.
+
+    matching/validation 의 spans_for_quotes 와 같은 일인데, 요약은 인용이
+    **어느 일지의 것인지**까지 따져야 해서 한 건씩 받는다. 여러 일지를
+    묶어 놓고 아무 데서나 찾으면, 모델이 A 일지 내용이라고 말한 문장을
+    B 일지에서 찾아 통과시키게 된다.
+
+    원문에 없는 인용(조사를 바꾸거나 다듬은 경우)은 버린다. 다듬은 인용은
+    원문이 아니다 — CRITERIA.md §2 ①.
     """
-    spans: list[dict] = []
-    for quote in quotes or []:
-        if not isinstance(quote, str) or not quote.strip():
-            continue
-        index = content.find(quote)
-        if index < 0:
-            continue
-        span = {"start": index, "end": index + len(quote)}
-        if span not in spans:
-            spans.append(span)
-    return spans
+    if not isinstance(quote, str) or not quote.strip():
+        return None
+    index = content.find(quote)
+    if index < 0:
+        return None
+    return {"start": index, "end": index + len(quote)}
