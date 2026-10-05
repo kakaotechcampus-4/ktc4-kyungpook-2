@@ -9,7 +9,7 @@
 | `backend/` | Spring Boot API 서버 | [backend/README.md](backend/README.md) |
 | `frontend/` | 웹 애플리케이션 | [frontend/README.md](frontend/README.md) |
 | `AI/` | AI 서비스 | [AI/README.md](AI/README.md) |
-| `infra/` | Docker, Nginx 등 실행 환경 | [infra/README.md](infra/README.md) |
+| `infra/` | Docker, Caddy 등 실행 환경 | [infra/README.md](infra/README.md) |
 | `docs/` | 프로젝트 공통 문서 | [docs/README.md](docs/README.md) |
 
 ## 실행
@@ -20,10 +20,16 @@ touch AI/.env                                    # 비어 있어도 되지만 �
 cd infra/docker && docker compose up -d --build
 ```
 
-접속 주소는 **http://localhost** 입니다. nginx 가 80 번만 외부에 열고
-`/api/` 는 backend 로, 나머지는 frontend 로 넘깁니다.
+접속 주소는 **http://localhost** 입니다. Caddy가 `/api/`, OAuth 및 Swagger 요청을
+backend로, 나머지는 frontend로 넘깁니다. 운영에서는 `PUBLIC_ORIGIN`을 HTTPS 도메인으로
+설정하면 인증서 발급·갱신과 HTTP → HTTPS 이동을 자동 처리합니다.
+백엔드 8080은 로컬에서만 접근할 수 있습니다. 운영 전환 절차는 [인프라 문서](infra/README.md#caddy와-https)를 참고하세요.
 
 프론트엔드만 띄울 때는 [frontend/README.md](frontend/README.md) 를 참고하세요.
+
+## 팀 공통 규칙
+
+- **DB 구조(엔티티·컬럼·enum)를 바꾸면 [docs/db/schema.md](docs/db/schema.md)를 같은 PR에서 고친다.** 자세한 내용은 [AGENTS.md](AGENTS.md)
 
 ## 백엔드 문서 안내
 

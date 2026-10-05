@@ -13,8 +13,60 @@ import { getChildren, getMatchingQueue, resolveMatchingItem } from "@/lib/api";
 import type { Child, MatchResolution, MatchingItem } from "@/lib/types";
 
 export async function clientLoader() {
-  const [items, roster] = await Promise.all([getMatchingQueue(), getChildren()]);
-  return { items, roster };
+  // 명부를 못 받아도 큐는 띄운다. "이 기관 아동 아님" 은 명부 없이도 처리할 수 있다.
+  // 다만 추천 아이 이름도, 직접 고를 목록도 명부에서 오므로 실패했다는 사실은 화면에 알린다.
+  const [items, rosterResult] = await Promise.all([
+    getMatchingQueue(),
+    getChildren().then(
+      (roster) => ({ roster, rosterFailed: false }),
+      () => ({ roster: [] as Child[], rosterFailed: true }),
+    ),
+  ]);
+  return { items, ...rosterResult };
+}
+
+type Candidate = MatchingItem["candidates"][number];
+
+/** 이 아이로 확정할 수 없는 이유 */
+type BlockedReason = "not_in_roster" | "pending_consent" | "inactive";
+
+const BLOCKED_LABEL: Record<BlockedReason, string> = {
+  not_in_roster: "명부에 없음",
+  pending_consent: "보호자 동의 전",
+  inactive: "기록 중단 상태",
+};
+
+/** 화면에 띄울 아이 한 명. 서버가 준 값이 우선이고, 비어 있으면 명부로 채운다. */
+type ResolvedChild = Candidate & {
+  /** null 이면 확정할 수 있다 */
+  blocked: BlockedReason | null;
+};
+
+/**
+ * 아이 id 를 명부와 맞춰본다.
+ *
+ * 서버(O-23 resolve)는 명부에 없거나 동의 전인 아이로는 확정을 거부한다. 그런 아이를
+ * 고를 수 있게 두면 버튼을 눌렀을 때 에러만 나므로, 미리 막고 이유를 보여준다.
+ * 명부를 못 불러왔으면 판단할 근거가 없어 막지 않는다 — 서버 값만 믿는다.
+ */
+function resolveChild(
+  base: Candidate,
+  rosterById: Map<string, Child>,
+  rosterFailed: boolean,
+): ResolvedChild {
+  const r = rosterById.get(base.childId);
+  const resolved = {
+    ...base,
+    name: base.name ?? r?.name ?? null,
+    birthDate: base.birthDate ?? r?.birthDate ?? null,
+  };
+  let blocked: BlockedReason | null = null;
+  if (!rosterFailed) {
+    if (!r) blocked = "not_in_roster";
+    else if (r.status === "pending_consent") blocked = "pending_consent";
+    else if (r.status !== "active") blocked = "inactive";
+  }
+  return { ...resolved, blocked };
 }
 
 /**
@@ -32,6 +84,9 @@ function heading(item: MatchingItem): string {
     return item.unmatchedReason === "not_in_roster"
       ? "명부에 없는 이름입니다"
       : "누구의 기록인지 단서가 없습니다";
+  }
+  if (item.status === "failed") {
+    return "AI 판정을 받지 못했습니다";
   }
   return "이 아이가 맞는지 확인해주세요";
 }
@@ -61,6 +116,12 @@ function notice(item: MatchingItem): { title: string; message: string } {
             "본문과 표지 어디에도 아이를 가리키는 이름이 없어 후보를 만들지 못했습니다.",
         };
   }
+  if (item.status === "failed") {
+    return {
+      title: "판정 실패",
+      message: "시스템 오류로 판정하지 못했습니다. 직접 골라주세요.",
+    };
+  }
   return {
     title: "확인 필요",
     message: "AI 가 한 명을 지목했지만 확정하지 않았습니다.",
@@ -68,7 +129,7 @@ function notice(item: MatchingItem): { title: string; message: string } {
 }
 
 export default function MatchingQueuePage() {
-  const { items, roster } = useLoaderData<typeof clientLoader>();
+  const { items, roster, rosterFailed } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
   const [index, setIndex] = useState(0);
   const item = items[Math.min(index, items.length - 1)];
@@ -120,8 +181,24 @@ export default function MatchingQueuePage() {
             </div>
           </div>
 
+          {rosterFailed ? (
+            <div className="mb-4">
+              <ConfidenceWarning
+                tone="block"
+                title="명부 불러오기 실패"
+                message="아이 명부를 불러오지 못해 추천 아이를 확인하거나 직접 고를 수 없습니다. 새로고침해 주세요."
+              />
+            </div>
+          ) : null}
+
           {/* key 로 건이 바뀔 때마다 선택 상태를 초기화한다 */}
-          <MatchingCard key={item.id} item={item} roster={roster} onResolve={resolve} />
+          <MatchingCard
+            key={item.id}
+            item={item}
+            roster={roster}
+            rosterFailed={rosterFailed}
+            onResolve={resolve}
+          />
         </>
       )}
     </>
@@ -131,14 +208,16 @@ export default function MatchingQueuePage() {
 function MatchingCard({
   item,
   roster,
+  rosterFailed,
   onResolve,
 }: {
   item: MatchingItem;
   roster: Child[];
+  rosterFailed: boolean;
   onResolve: (resolution: MatchResolution) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
-  /** review 에서 "다른 아이" 를 누르면 명부 검색으로 바뀐다 */
+  /** review 의 "다른 아이", multi 의 "후보에 없는 아이" 를 누르면 명부 검색으로 바뀐다 */
   const [pickingOther, setPickingOther] = useState(false);
   const [pending, setPending] = useState(false);
   const info = notice(item);
@@ -152,7 +231,41 @@ function MatchingCard({
     }
   }
 
-  const suggested = item.status === "review" ? item.candidates[0] : undefined;
+  const rosterById = new Map(roster.map((c) => [c.id, c]));
+
+  /*
+   * review 의 추천 아이는 matchedChildId 로 온다(AI 계약상 candidates 는 multi 전용).
+   * 이름·생년월일은 오지 않아 명부에서 찾는다. 예전 응답 모양도 받도록 candidates[0] 을 뒤에 둔다.
+   */
+  const suggestedId =
+    item.status === "review" ? (item.matchedChildId ?? item.candidates[0]?.childId) : undefined;
+  const suggestedResolved = suggestedId
+    ? resolveChild(
+        item.candidates.find((c) => c.childId === suggestedId) ?? {
+          childId: suggestedId,
+          name: null,
+          birthDate: null,
+        },
+        rosterById,
+        rosterFailed,
+      )
+    : undefined;
+  // 이름도 모르는 아이를 "맞아요" 로 확정하게 둘 수는 없다. 그럴 땐 명부에서 직접 고른다.
+  const suggested =
+    suggestedResolved && !suggestedResolved.blocked && suggestedResolved.name
+      ? suggestedResolved
+      : undefined;
+  /** review 인데 추천 아이를 보여줄 수 없는 경우 — 처음부터 명부 검색을 띄운다 */
+  const suggestionMissing = item.status === "review" && !suggested;
+
+  const candidates =
+    item.status === "multi"
+      ? item.candidates.map((c) => resolveChild(c, rosterById, rosterFailed))
+      : [];
+
+  /** 명부에서 직접 고르는 중인가 */
+  const pickingFromRoster =
+    item.status === "unmatched" || item.status === "failed" || suggestionMissing || pickingOther;
 
   return (
     <Card>
@@ -163,7 +276,7 @@ function MatchingCard({
         <p className="mb-2 text-[15px] font-semibold">{item.record.fileName}</p>
         <div className="mb-3 text-[16px]">
           {/* AI 가 판정 근거로 인용한 구간을 그대로 표시한다 */}
-          <EvidenceText content={item.record.preview} spans={item.evidence} />
+          <EvidenceText content={item.record.preview ?? ""} spans={item.evidence} />
         </div>
         {item.evidence.length > 0 ? (
           <p className="mb-3 text-[13px] text-muted">
@@ -171,16 +284,7 @@ function MatchingCard({
             표시된 부분이 AI 가 판단 근거로 삼은 부분입니다
           </p>
         ) : null}
-        <p className="text-[13px] text-muted">
-          유형 · {item.record.type} &nbsp;|&nbsp; 기록 시각 ·{" "}
-          {new Date(item.record.capturedAt).toLocaleString("ko-KR", {
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-          {item.hintName ? <> &nbsp;|&nbsp; 파일 표지 · {item.hintName}</> : null}
-        </p>
+        <RecordMeta item={item} />
       </div>
 
       <h2 className="mb-3 text-[17px] font-bold">
@@ -209,36 +313,68 @@ function MatchingCard({
         ) : null}
       </div>
 
-      {item.status === "multi" ? (
-        <fieldset className="mb-4 flex flex-col gap-2">
-          <legend className="sr-only">후보 아이 선택</legend>
-          {item.candidates.map((c) => (
-            <label
-              key={c.childId}
-              className="tap flex cursor-pointer items-center gap-3 rounded border border-line2 px-3 hover:border-accent has-checked:border-accent has-checked:bg-accentsoft"
-            >
-              <input
-                type="radio"
-                name={"cand-" + item.id}
-                className="size-4"
-                checked={selected === c.childId}
-                onChange={() => setSelected(c.childId)}
-              />
-              <ChildBadge name={c.name} meta={`${c.group} · ${c.birthDate}`} />
-            </label>
-          ))}
-        </fieldset>
+      {/* 추천 아이를 보여줄 수 없으면 왜 직접 골라야 하는지 먼저 알린다 */}
+      {suggestionMissing ? (
+        <div className="mb-4">
+          <ConfidenceWarning
+            tone="block"
+            title="추천 아이 확인 불가"
+            message={missingSuggestionMessage(suggestedResolved)}
+          />
+        </div>
+      ) : null}
+
+      {item.status === "multi" && !pickingOther ? (
+        <div className="mb-4 flex flex-col gap-2">
+          <fieldset className="flex flex-col gap-2">
+            <legend className="sr-only">후보 아이 선택</legend>
+            {candidates.map((c) => (
+              <label
+                key={c.childId}
+                className={
+                  "tap flex items-center gap-3 rounded border border-line2 px-3 has-checked:border-accent has-checked:bg-accentsoft " +
+                  (c.blocked ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-accent")
+                }
+              >
+                <input
+                  type="radio"
+                  name={"cand-" + item.id}
+                  className="size-4"
+                  checked={selected === c.childId}
+                  disabled={c.blocked !== null}
+                  onChange={() => setSelected(c.childId)}
+                />
+                <ChildBadge name={c.name} meta={childMeta(c)} />
+                {c.blocked ? (
+                  <span className="ml-auto text-[13px] font-medium text-block">
+                    {BLOCKED_LABEL[c.blocked]}
+                  </span>
+                ) : null}
+              </label>
+            ))}
+          </fieldset>
+          {/* 후보가 전부 틀렸을 수도 있다. 명부에서 직접 고를 길을 열어 둔다. */}
+          <button
+            onClick={() => {
+              setPickingOther(true);
+              setSelected(null);
+            }}
+            className="self-start text-[14px] text-muted underline"
+          >
+            후보에 없는 아이 고르기
+          </button>
+        </div>
       ) : null}
 
       {suggested && !pickingOther ? (
         <div className="mb-4 flex flex-col gap-3">
           <div className="flex items-center gap-3 rounded border border-accent bg-accentsoft/50 px-3 py-2.5">
-            <ChildBadge name={suggested.name} meta={`${suggested.group} · ${suggested.birthDate}`} />
+            <ChildBadge name={suggested.name} meta={childMeta(suggested)} />
             <span className="ml-auto text-[13px] font-medium text-accentink">AI 판정</span>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => submit({ action: "confirm", childId: suggested.childId })}
+              onClick={() => submit({ action: "assign", childId: suggested.childId })}
               disabled={pending}
               className="tap rounded bg-accent px-5 text-[15px] font-semibold text-white hover:bg-accentink disabled:opacity-60"
             >
@@ -254,7 +390,7 @@ function MatchingCard({
         </div>
       ) : null}
 
-      {item.status === "unmatched" || pickingOther ? (
+      {pickingFromRoster ? (
         <div className="mb-4 flex flex-col gap-3">
           <RosterPicker
             roster={roster}
@@ -272,7 +408,7 @@ function MatchingCard({
               }}
               className="self-start text-[14px] text-muted underline"
             >
-              AI 판정으로 돌아가기
+              {item.status === "multi" ? "후보 목록으로 돌아가기" : "AI 판정으로 돌아가기"}
             </button>
           ) : null}
 
@@ -296,10 +432,10 @@ function MatchingCard({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {/* review 의 "맞아요" 는 위에 따로 있다. 여기는 직접 고른 아이로 확정하는 버튼이다 */}
-        {item.status !== "review" || pickingOther ? (
+        {/* review 의 "맞아요" 는 위에 따로 있다. 여기는 후보·명부에서 고른 아이로 확정하는 버튼이다 */}
+        {item.status !== "review" || pickingFromRoster ? (
           <button
-            onClick={() => selected && submit({ action: "confirm", childId: selected })}
+            onClick={() => selected && submit({ action: "assign", childId: selected })}
             disabled={!selected || pending}
             className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-line2 disabled:text-muted"
           >
@@ -318,19 +454,64 @@ function MatchingCard({
   );
 }
 
-function ChildBadge({ name, meta }: { name: string; meta: string }) {
+/** review 인데 추천 아이를 띄울 수 없을 때, 그 이유. */
+function missingSuggestionMessage(resolved: ResolvedChild | undefined): string {
+  if (!resolved) return "AI 가 추천한 아이 정보가 오지 않았습니다. 명부에서 직접 골라주세요.";
+  const who = resolved.name ? `추천된 아이(${resolved.name})` : "추천된 아이";
+  switch (resolved.blocked) {
+    case "pending_consent":
+      return `${who}는 아직 보호자 동의 전이라 확정할 수 없습니다. 명부에서 직접 골라주세요.`;
+    case "inactive":
+      return `${who}는 지금 기록을 받을 수 없는 상태입니다. 명부에서 직접 골라주세요.`;
+    default:
+      // 명부에 없거나, 명부를 못 불러와 이름조차 모르는 경우
+      return "추천된 아이를 명부에서 찾지 못했습니다. 명부에서 직접 골라주세요.";
+  }
+}
+
+/**
+ * 유형 · 기록 시각 · 파일 표지. 서버가 아직 안 보내는 값(유형·표지 이름)이나
+ * 비어 온 값(날짜)은 칸째 뺀다 — "undefined" 나 1970년이 찍히지 않게.
+ */
+function RecordMeta({ item }: { item: MatchingItem }) {
+  const parts: string[] = [];
+  if (item.record.type) parts.push(`유형 · ${item.record.type}`);
+  if (item.record.capturedAt) {
+    parts.push(
+      "기록 시각 · " +
+        new Date(item.record.capturedAt).toLocaleString("ko-KR", {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+    );
+  }
+  if (item.hintName) parts.push(`파일 표지 · ${item.hintName}`);
+  if (parts.length === 0) return null;
+  return <p className="text-[13px] text-muted">{parts.join("  |  ")}</p>;
+}
+
+/** 반 · 생년월일. 서버에 반 정보가 아직 없어서 있는 것만 잇는다. */
+function childMeta(c: MatchingItem["candidates"][number]): string {
+  return [c.group, c.birthDate].filter(Boolean).join(" · ");
+}
+
+function ChildBadge({ name, meta }: { name: string | null; meta: string }) {
+  // 명부에서 찾지 못한(삭제된) 아이는 서버가 이름 없이 id 만 보낸다
+  const label = name ?? "이름 없음";
   return (
     <>
       <span
         aria-hidden
         className="flex size-8 items-center justify-center rounded-full bg-surface2 text-[14px] font-semibold text-ink2"
       >
-        {name.slice(0, 1)}
+        {name ? name.slice(0, 1) : "?"}
       </span>
       <span>
-        <span className="block text-[16px] font-semibold">{name}</span>
+        <span className="block text-[16px] font-semibold">{label}</span>
         {/* 동명이인이면 이름도 반도 같다. 생년월일이 유일한 구분 근거다. */}
-        <span className="block text-[13px] text-muted tabular-nums">{meta}</span>
+        {meta ? <span className="block text-[13px] text-muted tabular-nums">{meta}</span> : null}
       </span>
     </>
   );

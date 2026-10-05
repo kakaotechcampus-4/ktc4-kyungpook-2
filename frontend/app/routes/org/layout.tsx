@@ -20,7 +20,9 @@ import { MY_INSTITUTION } from "@/lib/mock/data";
  * 배지가 실시간으로 줄어든다.
  */
 export async function clientLoader() {
-  const { role } = await getSession();
+  const { loggedIn, signupCompleted, role } = await getSession();
+  // 카카오 로그인만 하고 역할을 안 고른 사람 — 보호 API 가 403 SIGNUP_NOT_COMPLETED 를 준다.
+  if (loggedIn && !signupCompleted) return redirect("/signup?role=org");
   if (role !== "org") return redirect("/login");
 
   const [matching, blocked, gate1, insights, inbox] = await Promise.all([

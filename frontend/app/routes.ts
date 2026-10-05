@@ -4,6 +4,7 @@ export default [
   index("routes/root-redirect.tsx"),
   route("login", "routes/login.tsx"),
   route("oauth/success", "routes/oauth-success.tsx"),
+  route("signup", "routes/signup.tsx"),
 
   layout("routes/org/layout.tsx", [
     route("dashboard", "routes/org/dashboard.tsx"),

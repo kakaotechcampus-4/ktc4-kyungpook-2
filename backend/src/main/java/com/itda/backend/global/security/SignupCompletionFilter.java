@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 
 import com.itda.backend.exception.UserErrorCode;
 import com.itda.backend.exception.UserException;
@@ -51,7 +52,9 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI().substring(request.getContextPath().length());
+        // getRequestURI() 는 디코딩 전 값이라 "/%61pi/..." 가 "/api/" 로 시작하지 않는 것으로 보여 필터를 건너뛴다.
+        // 컨트롤러 매핑과 같은 기준인, 디코딩하고 ";" 파라미터를 뗀 애플리케이션 내부 경로로 판단한다.
+        String path = UrlPathHelper.defaultInstance.getPathWithinApplication(request);
         return !path.startsWith(API_PREFIX) || ALLOWED_BEFORE_SIGNUP.contains(path);
     }
 

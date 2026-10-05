@@ -9,10 +9,11 @@ import { grantRole, isAuthMock } from "@/lib/auth";
  *
  * 버튼은 백엔드의 `/oauth2/authorization/kakao` 로 **페이지를 이동시킨다**. 그 뒤로는
  * 전부 백엔드 몫이다 — state 발급, 카카오 인가, 토큰 교환, 출입증 쿠키 발급까지.
- * 끝나면 `/oauth/success` 로 돌아온다(실패하면 이 화면으로).
+ * 끝나면 `/oauth/success` 로 돌아온다(실패하면 이 화면으로). 처음 로그인한 사람은
+ * 거기서 회원가입(`/signup`)으로 넘어가 역할을 고른다.
  *
  * 보호자도 같은 카카오 로그인을 타지만 진입 화면은 `/parent/invite` 로 따로 둔다 —
- * 돌아왔을 때 기관인지 보호자인지 가릴 단서가 "어느 버튼을 눌렀는가" 뿐이기 때문이다.
+ * 보호자에게 맞는 안내 문구로 시작하기 위해서다.
  */
 export default function LoginPage() {
   const navigate = useNavigate();

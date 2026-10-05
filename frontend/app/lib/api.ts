@@ -1,8 +1,9 @@
 /**
  * API 심(seam).
  *
- * 지금은 전부 mock 을 돌려준다. 백엔드 엔드포인트가 열리면 각 함수 본문만
- * `request()` 호출로 바꾼다 — 화면 코드는 건드리지 않는다.
+ * 함수마다 mock 과 실제 호출(`request()`)을 둘 다 갖고 있고, 어느 쪽을 쓸지는
+ * 아래 `BE_READY` 의 기능별 스위치가 정한다. 백엔드가 기능을 열면 그 키만 true 로
+ * 바꾼다 — 화면 코드는 건드리지 않는다.
  * (멘토 피드백: "인터페이스만 맞게 가짜 API 연결한 후 나중에 실제 API 연결하기")
  *
  * ── 경로 ───────────────────────────────────────────────
@@ -12,10 +13,15 @@
  * ⚠️ **아래 목록에 없는 경로는 아직 백엔드에 구현돼 있지 않다.** 경로는 위 규약을
  *    따른 추정이므로, 백엔드가 만들 때 실제 경로를 확인하고 맞춰야 한다.
  *
- *    구현된 것 (2026-09-22 기준)
+ *    구현된 것 (2026-10-04 기준, BE_READY 에서 true 인 기능)
  *      POST /api/v1/raw-records       multipart: file → 201
  *      GET  /api/v1/raw-records/{id}
  *      GET  /api/v1/raw-records
+ *      GET  /api/v1/institutions/me/children
+ *      GET  /api/v1/matching-queue
+ *      POST /api/v1/matching-queue/{id}/resolve
+ *      GET  /api/v1/auth/me           (lib/auth.ts 에서 호출)
+ *      POST /api/v1/auth/signup       (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/logout       (lib/auth.ts 에서 호출)
  *
  *    institutionId 는 서버가 인증 정보에서 가져간다 — 클라이언트가 보내지 않는다.
@@ -30,6 +36,7 @@
  * 출입증은 access_token 쿠키. 쓰기 요청에는 X-XSRF-TOKEN 헤더가 필요하다.
  */
 
+import { ApiError } from "@/lib/apiError";
 import { clearSession, csrfHeader } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
@@ -53,6 +60,8 @@ import type {
   PendingLink,
   SummaryItem,
   TimelineEntry,
+  UploadFailReason,
+  UploadResult,
 } from "@/lib/types";
 
 /**
@@ -64,6 +73,58 @@ import type {
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+
+/**
+ * 기능별 mock 스위치. **백엔드가 만든 기능만 true** 로 둔다.
+ *
+ * `VITE_USE_MOCK=false` 여도 false 인 기능은 mock 을 돌려준다. 하나로 묶어 두면
+ * 실연동 빌드에서 아직 없는 API 가 404 를 내고, 그 화면(대시보드·사이드바 배지)이
+ * 통째로 에러 화면이 된다. 백엔드가 기능을 열면 여기서 true 로 바꾸는 것이 "mock 해제" 다.
+ *
+ * 조회와 처리(목록과 그 승인 버튼 등)는 같은 키로 묶는다. 목록은 mock 인데 처리만
+ * 실서버로 가면 없는 id 로 요청하게 된다.
+ */
+const BE_READY = {
+  /** 아이 명부 조회 (GET /institutions/me/children) */
+  children: true,
+  /** 아이 등록 + 초대코드 */
+  childRegister: false,
+  /** 아이 상세 · 타임라인 */
+  childProfile: false,
+  /** 아이 기록 기반 질의응답 */
+  chat: false,
+  /** 확인 필요 큐 조회 · 처리 (O-22, O-23) */
+  matchingQueue: true,
+  /** 수정 요청(BLOCK) 큐 조회 · 처리 */
+  blockedQueue: false,
+  /** 1차 검토 조회 · 승인 · 아이 변경 */
+  gate1: false,
+  /** 인사이트 조회 · 2차 공유 */
+  insights: false,
+  /** 원본 업로드 (POST /raw-records) */
+  upload: true,
+  /** 파일별 처리 현황 · 재시도 (O-26, O-27) */
+  fileProgress: false,
+  /** 기관 받은편지함 */
+  inbox: false,
+  /** 활동 기록 */
+  activity: false,
+  /** 보호자: 연결 대기 · 동의 미리보기 · 반려 · 동의 범위 */
+  guardianLinks: false,
+  /** 보호자: 아이 목록 · 홈 · 일지 · 리포트 · 오늘 요약 */
+  guardianHome: false,
+  /** 보호자: 기관 요청 알림 · 확인 · 거절 */
+  institutionRequests: false,
+  /** 보호자: 기관 코드로 연결 */
+  institutionCode: false,
+  /** 보호자: 돌봄 정보 */
+  careInfo: false,
+} satisfies Record<string, boolean>;
+
+/** 이 기능을 mock 으로 처리할지. 전체 mock 이거나 백엔드에 아직 없으면 true. */
+function mockFor(feature: keyof typeof BE_READY): boolean {
+  return USE_MOCK || !BE_READY[feature];
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   /*
@@ -107,55 +168,53 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body.data as T;
 }
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message?: string,
-  ) {
-    super(message ?? code);
-  }
-}
+export { ApiError };
 
 /* ── 기관 ───────────────────────────────────────────── */
 
-/** GET /api/v1/institutions/{id}/children */
+/** GET /api/v1/institutions/me/children */
 export async function getChildren(): Promise<Child[]> {
-  if (USE_MOCK) return mock.CHILDREN;
+  if (mockFor("children")) return mock.CHILDREN;
   return request("/api/v1/institutions/me/children");
 }
 
 export async function getChild(id: string): Promise<Child | undefined> {
-  if (USE_MOCK) return mock.CHILDREN.find((c) => c.id === id);
+  if (mockFor("childProfile")) return mock.CHILDREN.find((c) => c.id === id);
   return request(`/api/v1/children/${id}`);
 }
 
 /** GET /api/v1/children/{childId}/context */
 export async function getTimeline(childId: string): Promise<TimelineEntry[]> {
-  if (USE_MOCK) return mock.TIMELINE[childId] ?? [];
+  if (mockFor("childProfile")) return mock.TIMELINE[childId] ?? [];
   return request(`/api/v1/children/${childId}/context`);
 }
 
 /**
- * GET /api/v1/raw-records — **구현됨**
+ * GET /api/v1/matching-queue — **계약 확정, #35 merge 대기** (api-spec.md O-22)
  *
  * institutionId 는 서버가 인증 정보에서 가져가므로 보내지 않는다.
- * 매칭 상태별 필터는 아직 백엔드에 없다 — 추가되면 쿼리 파라미터를 붙인다.
+ * 서버는 근거 구간이 없으면 evidence 를 null 로 보낸다 — 화면이 배열만 다루도록 여기서 편다.
  */
 export async function getMatchingQueue(): Promise<MatchingItem[]> {
-  if (USE_MOCK) return mock.MATCHING_QUEUE;
-  return request("/api/v1/raw-records");
+  if (mockFor("matchingQueue")) return mock.MATCHING_QUEUE;
+  const items = await request<MatchingItem[]>("/api/v1/matching-queue");
+  return items.map((item) => ({
+    ...item,
+    matchedChildId: item.matchedChildId ?? null,
+    candidates: item.candidates ?? [],
+    evidence: item.evidence ?? [],
+  }));
 }
 
 /** GET /api/v1/validation-results?status=BLOCK */
 export async function getBlockedQueue(): Promise<BlockedItem[]> {
-  if (USE_MOCK) return mock.BLOCKED_QUEUE;
+  if (mockFor("blockedQueue")) return mock.BLOCKED_QUEUE;
   return request("/api/v1/validation-results?status=BLOCK");
 }
 
 /** GET /api/v1/summaries?gate1_status=pending */
 export async function getGate1Queue(): Promise<SummaryItem[]> {
-  if (USE_MOCK) return mock.GATE1_QUEUE;
+  if (mockFor("gate1")) return mock.GATE1_QUEUE;
   return request("/api/v1/summaries?gate1_status=pending");
 }
 
@@ -164,7 +223,7 @@ export async function decideGate1(
   summaryId: string,
   body: { decision: "approve" | "reject"; edited_content?: string; reason?: string },
 ) {
-  if (USE_MOCK) {
+  if (mockFor("gate1")) {
     const item = mock.GATE1_QUEUE.find((s) => s.id === summaryId);
     if (item) {
       item.gate1Status = body.decision === "approve" ? "approved" : "rejected";
@@ -181,12 +240,12 @@ export async function decideGate1(
 
 /** GET /api/v1/insights */
 export async function getInsights(): Promise<Insight[]> {
-  if (USE_MOCK) return mock.INSIGHTS;
+  if (mockFor("insights")) return mock.INSIGHTS;
   return request("/api/v1/insights");
 }
 
 export async function getInsight(id: string): Promise<Insight | undefined> {
-  if (USE_MOCK) return mock.INSIGHTS.find((i) => i.id === id);
+  if (mockFor("insights")) return mock.INSIGHTS.find((i) => i.id === id);
   return request(`/api/v1/insights/${id}`);
 }
 
@@ -199,7 +258,7 @@ export async function decideGate2(
   insightId: string,
   body: { decision: "approve" | "hold"; target_institution_ids: string[] },
 ) {
-  if (USE_MOCK) {
+  if (mockFor("insights")) {
     const item = mock.INSIGHTS.find((i) => i.id === insightId);
     if (item) item.gate2Status = body.decision === "approve" ? "approved" : "held";
     return { gate2_status: item?.gate2Status ?? "pending" };
@@ -213,19 +272,19 @@ export async function decideGate2(
 /**
  * 확인 필요 큐에서 아이를 확정(또는 "우리 기관 아동 아님"으로 제외)하면 큐에서 빠진다.
  *
- * ⚠️ **이 엔드포인트는 백엔드에 없다.** RawRecordController 에는 업로드·조회만 있다.
- *    본문 형태({ action, childId })는 FE 가 제안하는 계약이다. 백엔드와 합의가 필요하다.
+ * POST /api/v1/matching-queue/{id}/resolve — **계약 확정, #35 merge 대기** (api-spec.md O-23)
+ *    { action: "assign", childId } 또는 { action: "not_ours" }. childId 는 assign 에만 보낸다.
  */
 export async function resolveMatchingItem(
   id: string,
   resolution: MatchResolution,
 ): Promise<{ ok: true }> {
-  if (USE_MOCK) {
+  if (mockFor("matchingQueue")) {
     const idx = mock.MATCHING_QUEUE.findIndex((m) => m.id === id);
     if (idx !== -1) mock.MATCHING_QUEUE.splice(idx, 1);
     return { ok: true };
   }
-  return request(`/api/v1/raw-records/${id}/match`, {
+  return request(`/api/v1/matching-queue/${id}/resolve`, {
     method: "POST",
     body: JSON.stringify(resolution),
   });
@@ -241,7 +300,7 @@ export async function reassignSummaryChild(
   summaryId: string,
   childId: string,
 ): Promise<{ ok: true }> {
-  if (USE_MOCK) {
+  if (mockFor("gate1")) {
     const item = mock.GATE1_QUEUE.find((s) => s.id === summaryId);
     const child = mock.CHILDREN.find((c) => c.id === childId);
     if (item && child) {
@@ -264,47 +323,84 @@ export async function reassignSummaryChild(
  *
  * 즉시 응답하고 매칭 · 검증 · 요약은 백그라운드에서 돈다. 파일마다 한 번씩 부른다.
  * 응답은 RawRecordResponse(backend/.../dto/RawRecordResponse.java) 다.
+ *
+ * 한 파일이 실패해도 나머지는 이미 서버에 저장됐다. 그래서 전체를 실패로 던지지 않고
+ * 파일마다 결과를 돌려준다 — 화면이 실패한 것만 다시 올리게 해야 원본이 중복되지 않는다.
  */
-export async function uploadRawRecords(files: File[]): Promise<FileProgress[]> {
-  if (USE_MOCK) {
+export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
+  if (mockFor("upload")) {
     const now = new Date().toISOString();
-    const created = files.map((f, i) => ({
-      rawRecordId: `rr_mock_${Date.now()}_${i}`,
-      fileName: f.name,
-      uploadedAt: now,
-      entries: [],
-    }));
+    const results = files.map((file, i): UploadResult => {
+      const reason = mockRejectReason(file);
+      if (reason) return { ok: false, file, reason };
+      return {
+        ok: true,
+        file,
+        progress: {
+          rawRecordId: `rr_mock_${Date.now()}_${i}`,
+          fileName: file.name,
+          uploadedAt: now,
+          entries: [],
+        },
+      };
+    });
+    const created = results.flatMap((r) => (r.ok ? [r.progress] : []));
     for (const file of created) simulated.set(file.rawRecordId, Date.now());
     mock.FILE_PROGRESS.unshift(...created);
-    return created;
+    return results;
   }
-  return Promise.all(
-    files.map(async (file) => {
-      const form = new FormData();
-      form.append("file", file);
-      const saved = await request<{ id: number; originalFilename: string; createdAt: string }>(
-        "/api/v1/raw-records",
-        { method: "POST", body: form },
-      );
-      return {
-        rawRecordId: String(saved.id),
-        fileName: saved.originalFilename,
-        uploadedAt: saved.createdAt,
-        entries: [],
-      };
-    }),
+  const settled = await Promise.allSettled(files.map(uploadOne));
+  return settled.map((s, i) =>
+    s.status === "fulfilled"
+      ? { ok: true, file: files[i], progress: s.value }
+      : { ok: false, file: files[i], reason: uploadFailReasonOf(s.reason) },
   );
+}
+
+async function uploadOne(file: File): Promise<FileProgress> {
+  const form = new FormData();
+  form.append("file", file);
+  const saved = await request<{ id: number; originalFilename: string; createdAt: string }>(
+    "/api/v1/raw-records",
+    { method: "POST", body: form },
+  );
+  return {
+    rawRecordId: String(saved.id),
+    fileName: saved.originalFilename,
+    uploadedAt: saved.createdAt,
+    entries: [],
+  };
+}
+
+/**
+ * 상태 코드로만 가른다. nginx 가 25MB 에서 먼저 막으면 본문이 JSON 이 아니라 code 가 없다.
+ * 네트워크 오류(fetch 의 TypeError)도 temporary 다.
+ */
+function uploadFailReasonOf(err: unknown): UploadFailReason {
+  if (err instanceof ApiError && err.status === 400) return "invalid";
+  if (err instanceof ApiError && err.status === 413) return "too_large";
+  return "temporary";
+}
+
+/** mock 도 BE 와 같은 규칙으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
+const UPLOAD_EXTENSIONS = ["csv", "txt", "pdf"];
+const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+
+function mockRejectReason(file: File): UploadFailReason | null {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!UPLOAD_EXTENSIONS.includes(ext)) return "invalid";
+  if (file.size > UPLOAD_MAX_BYTES) return "too_large";
+  return null;
 }
 
 /**
  * 파일별 처리 현황. 최근 업로드가 먼저 온다.
  *
- * ⚠️ **이 엔드포인트는 백엔드에 없다.** RawRecordResponse 에는 파일 상태(status) 하나뿐이라
- *    파일에서 나온 기록이 건별로 어느 단계에 있는지 알 수 없다. FileProgress 형태로 달라고
- *    요청해야 한다.
+ * GET /api/v1/raw-records/progress — **계약 확정, 구현 예정** (api-spec.md O-26)
+ *    파일을 기록 단위로 나누기 전까지는 entries: [] 만 와서 "기록 등록 중"에 머문다. 정상이다.
  */
 export async function getFileProgress(): Promise<FileProgress[]> {
-  if (USE_MOCK) {
+  if (mockFor("fileProgress")) {
     tickSimulation();
     return mock.FILE_PROGRESS;
   }
@@ -313,10 +409,10 @@ export async function getFileProgress(): Promise<FileProgress[]> {
 
 /**
  * 실패한 기록을 다시 처리한다. 실패는 사람이 고를 게 아니라 시스템 오류라 재시도로 충분하다.
- * ⚠️ **이 엔드포인트는 백엔드에 없다.**
+ * POST /api/v1/raw-records/{id}/retry — **계약 확정, 구현 예정** (api-spec.md O-27)
  */
 export async function retryFailedEntries(rawRecordId: string): Promise<{ ok: true }> {
-  if (USE_MOCK) {
+  if (mockFor("fileProgress")) {
     const file = mock.FILE_PROGRESS.find((f) => f.rawRecordId === rawRecordId);
     for (const e of file?.entries ?? []) {
       if (e.state === "failed") e.state = "running";
@@ -377,7 +473,7 @@ export async function resolveBlockedItem(
   id: string,
   action: "reupload" | "hold",
 ): Promise<{ ok: true }> {
-  if (USE_MOCK) {
+  if (mockFor("blockedQueue")) {
     const idx = mock.BLOCKED_QUEUE.findIndex((b) => b.id === id);
     if (idx !== -1) mock.BLOCKED_QUEUE.splice(idx, 1);
     return { ok: true };
@@ -394,7 +490,7 @@ export async function registerChild(input: {
   birthDate: string;
 }): Promise<{ child: Child; inviteCode: string }> {
   const inviteCode = generateInviteCode();
-  if (USE_MOCK) {
+  if (mockFor("childRegister")) {
     const child: Child = {
       id: `child_${Math.random().toString(36).slice(2, 8)}`,
       name: input.name,
@@ -418,13 +514,13 @@ export function generateInviteCode(): string {
 
 /** GET /api/v1/institutions/me/inbox */
 export async function getInbox(): Promise<InboxItem[]> {
-  if (USE_MOCK) return mock.INBOX;
+  if (mockFor("inbox")) return mock.INBOX;
   return request("/api/v1/institutions/me/inbox");
 }
 
 /** POST /api/v1/children/{childId}/chat */
 export async function askChat(childId: string, question: string): Promise<ChatTurn> {
-  if (USE_MOCK) {
+  if (mockFor("chat")) {
     const hit = mock.CHAT_EXAMPLES.find((t) => t.question === question);
     return hit ?? { question, answer: null, sources: [] };
   }
@@ -436,7 +532,7 @@ export async function askChat(childId: string, question: string): Promise<ChatTu
 
 /** GET /api/v1/audit-logs */
 export async function getActivity(): Promise<ActivityLog[]> {
-  if (USE_MOCK) return mock.ACTIVITY;
+  if (mockFor("activity")) return mock.ACTIVITY;
   return request("/api/v1/audit-logs");
 }
 
@@ -452,7 +548,7 @@ export async function getActivity(): Promise<ActivityLog[]> {
  * 거절한 요청은 빼고 준다 — 알림 배지(getPendingInstitutionRequests)와 기준을 맞춘다.
  */
 export async function getPendingLinks(): Promise<PendingLink[]> {
-  if (USE_MOCK) {
+  if (mockFor("guardianLinks")) {
     return mock.PARENT_CHILDREN.flatMap((child) =>
       child.institutions
         .filter(
@@ -481,7 +577,7 @@ export async function getConsentPreview(
   childId: string,
   institutionId: string,
 ): Promise<ConsentPreview | null> {
-  if (USE_MOCK) {
+  if (mockFor("guardianLinks")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
     const rec = child?.institutions.find(
       (i) => i.institution.id === institutionId && i.consent === "not_granted",
@@ -514,7 +610,7 @@ export async function getConsentPreview(
  * P-02 에서 "우리 아이가 아니에요" 로 반려한다. 반려한 요청은 getPendingLinks 에서 빠진다.
  */
 export async function rejectLink(childId: string, institutionId: string) {
-  if (USE_MOCK) {
+  if (mockFor("guardianLinks")) {
     mock.DECLINED_INSTITUTION_REQUESTS.add(`${childId}:${institutionId}`);
     return { ok: true };
   }
@@ -527,7 +623,7 @@ export async function rejectLink(childId: string, institutionId: string) {
 
 /** GET /api/v1/guardians/me/children — 이 보호자에게 연결된 아이 전체 */
 export async function getParentChildren(): Promise<Child[]> {
-  if (USE_MOCK) return mock.PARENT_CHILDREN;
+  if (mockFor("guardianHome")) return mock.PARENT_CHILDREN;
   return request("/api/v1/guardians/me/children");
 }
 
@@ -539,7 +635,7 @@ export async function getParentHome(childId?: string): Promise<{
   child: Child;
   activity: ParentActivity[];
 }> {
-  if (USE_MOCK) {
+  if (mockFor("guardianHome")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId) ?? mock.PARENT_CHILD;
     return { child, activity: mock.PARENT_ACTIVITY[child.id] ?? [] };
   }
@@ -555,7 +651,7 @@ export async function getParentHome(childId?: string): Promise<{
 export async function getPendingInstitutionRequests(
   childId: string,
 ): Promise<{ institution: Institution }[]> {
-  if (USE_MOCK) {
+  if (mockFor("institutionRequests")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
     if (!child) return [];
     return child.institutions.filter(
@@ -569,7 +665,7 @@ export async function getPendingInstitutionRequests(
 
 /** 알림에서 "거절" — consent 는 그대로 두고(다시 요청할 수 있으니) 배지에서만 뺀다 */
 export async function declineInstitutionRequest(childId: string, institutionId: string) {
-  if (USE_MOCK) {
+  if (mockFor("institutionRequests")) {
     mock.DECLINED_INSTITUTION_REQUESTS.add(`${childId}:${institutionId}`);
     return { ok: true };
   }
@@ -584,7 +680,7 @@ export async function updateConsent(
   institutionId: string,
   body: { allowed_fields: string[]; action: "grant" | "revoke" },
 ) {
-  if (USE_MOCK) {
+  if (mockFor("guardianLinks")) {
     const child = mock.CHILDREN.find((c) => c.id === childId);
     const rec = child?.institutions.find((i) => i.institution.id === institutionId);
     if (rec) rec.consent = body.action === "grant" ? "granted" : "revoked";
@@ -598,7 +694,7 @@ export async function updateConsent(
 
 /** 기관 코드로 조회만 한다 — 아직 연결하지 않는다. */
 export async function lookupInstitutionByCode(code: string): Promise<Institution | null> {
-  if (USE_MOCK) return code.trim() ? mock.ART_ACADEMY : null;
+  if (mockFor("institutionCode")) return code.trim() ? mock.ART_ACADEMY : null;
   return request(`/api/v1/institutions/lookup?code=${encodeURIComponent(code)}`);
 }
 
@@ -610,7 +706,7 @@ export async function addInstitutionByCode(
   childId: string,
   code: string,
 ): Promise<{ institution: Institution } | null> {
-  if (USE_MOCK) {
+  if (mockFor("institutionCode")) {
     if (!code.trim()) return null;
     const child = mock.CHILDREN.find((c) => c.id === childId);
     if (!child) return null;
@@ -626,7 +722,7 @@ export async function addInstitutionByCode(
 
 /** 보호자가 온보딩·동의 관리 화면에서 입력하는 돌봄 정보 저장 */
 export async function updateChildCare(childId: string, care: ChildCareInfo) {
-  if (USE_MOCK) {
+  if (mockFor("careInfo")) {
     const child = mock.CHILDREN.find((c) => c.id === childId);
     if (child) child.care = care;
     return { ok: true };
@@ -639,7 +735,7 @@ export async function updateChildCare(childId: string, care: ChildCareInfo) {
 
 /** GET /api/v1/children/{childId}/journal — 타임라인/홈에 쓰는 일지 목록 (최신순) */
 export async function getJournal(childId: string): Promise<JournalEntry[]> {
-  if (USE_MOCK) {
+  if (mockFor("guardianHome")) {
     return mock.JOURNAL.filter((j) => j.childId === childId).sort((a, b) =>
       `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`),
     );
@@ -648,13 +744,13 @@ export async function getJournal(childId: string): Promise<JournalEntry[]> {
 }
 
 export async function getJournalEntry(id: string): Promise<JournalEntry | undefined> {
-  if (USE_MOCK) return mock.JOURNAL.find((j) => j.id === id);
+  if (mockFor("guardianHome")) return mock.JOURNAL.find((j) => j.id === id);
   return request(`/api/v1/journal/${id}`);
 }
 
 /** POST /api/v1/journal/{id}/flag — "이 내용이 이상해요": 기관에 재확인 요청 */
 export async function flagJournalEntry(id: string) {
-  if (USE_MOCK) {
+  if (mockFor("guardianHome")) {
     const entry = mock.JOURNAL.find((j) => j.id === id);
     if (entry) entry.flagged = true;
     return { ok: true };
@@ -667,25 +763,25 @@ export async function getCareReport(
   childId: string,
   period: "weekly" | "monthly",
 ): Promise<CareReport | null> {
-  if (USE_MOCK) return mock.CARE_REPORTS[childId]?.[period] ?? null;
+  if (mockFor("guardianHome")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
   return request(`/api/v1/children/${childId}/care-report?period=${period}`);
 }
 
 /** GET /api/v1/children/{childId}/institution-requests */
 export async function getInstitutionRequests(childId: string): Promise<InstitutionRequestItem[]> {
-  if (USE_MOCK) return mock.INSTITUTION_REQUESTS[childId] ?? [];
+  if (mockFor("institutionRequests")) return mock.INSTITUTION_REQUESTS[childId] ?? [];
   return request(`/api/v1/children/${childId}/institution-requests`);
 }
 
 /** 타임라인/홈 상단 TODAY 카드 — 아이별. 없으면 null (화면에서 숨김) */
 export async function getTodaySummary(childId: string): Promise<string | null> {
-  if (USE_MOCK) return mock.PARENT_TODAY_SUMMARY[childId] ?? null;
+  if (mockFor("guardianHome")) return mock.PARENT_TODAY_SUMMARY[childId] ?? null;
   return request(`/api/v1/children/${childId}/today-summary`);
 }
 
 /** POST /api/v1/institution-requests/{id}/confirm */
 export async function confirmInstitutionRequest(id: string) {
-  if (USE_MOCK) {
+  if (mockFor("institutionRequests")) {
     const req = Object.values(mock.INSTITUTION_REQUESTS)
       .flat()
       .find((r) => r.id === id);

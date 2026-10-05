@@ -11,8 +11,9 @@ export type ValidationStatus = "PASS" | "REVIEW" | "BLOCK";
 /**
  * Matching Agent 결과 상태. AI 쪽 이름(`AI/matching/nodes.py` 의 decide)과 맞춘다.
  * `auto` 는 자동 확정이라 확인 큐에 오지 않는다.
+ * `failed` 는 AI 호출 자체가 실패한 건(네트워크·타임아웃)이라 후보도 근거도 없다.
  */
-export type MatchStatus = "auto" | "review" | "multi" | "unmatched";
+export type MatchStatus = "auto" | "review" | "multi" | "unmatched" | "failed";
 
 /** multi 로 내려온 이유 — 둘은 교사가 할 일이 서로 다르다 */
 export type MultiReason = "co_mention" | "ambiguous_identity";
@@ -108,21 +109,46 @@ export interface ConsentPreview {
 export interface RawRecord {
   id: string;
   fileName: string;
-  type: "관찰일지" | "활동일지" | "특이사항" | "사진";
+  type: "관찰일지" | "활동일지" | "특이사항";
   capturedAt: string;
   preview: string;
 }
 
-/** 확인 필요 큐 한 건 */
+/**
+ * 확인 필요 큐 한 건 (api-spec O-22).
+ *
+ * `null` 이거나 없을 수 있는 필드는 BE(#35)가 아직 채우지 못하는 값이다.
+ * 유형(`type`)·반(`group`)·미매칭 이유·표지 이름은 보내지 않고, 원문·날짜·명부가
+ * 비어 있으면 `null` 이 온다. 화면은 값이 없으면 그 칸을 숨긴다.
+ */
 export interface MatchingItem {
   id: string;
-  record: RawRecord;
+  record: {
+    id: string;
+    fileName: string;
+    type?: RawRecord["type"] | null;
+    capturedAt: string | null;
+    preview: string | null;
+  };
   status: Exclude<MatchStatus, "auto">;
   /**
+   * AI 가 지목한 아이. **`review` 의 추천 아이는 여기로만 온다** — AI 계약상
+   * `candidates` 는 `multi` 일 때만 채워진다(AI/matching/graph.py). 이름·생년월일은
+   * 오지 않으니 화면이 명부에서 찾아 붙인다.
+   */
+  matchedChildId: string | null;
+  /**
+   * `multi` 의 후보들. 그 밖의 상태에서는 빈 배열이다.
    * 동명이인이면 후보가 둘 이상 남는다(AI 의 SPLIT_SAME_NAME_CANDIDATES).
    * 이름만으로는 구별이 안 되므로 **생년월일이 반드시 함께 와야 한다.**
+   * 명부에서 삭제된 아이는 서버가 이름·생년월일 없이 id 만 보낸다.
    */
-  candidates: { childId: string; name: string; group: string; birthDate: string }[];
+  candidates: {
+    childId: string;
+    name: string | null;
+    group?: string | null;
+    birthDate: string | null;
+  }[];
   /** 본문에서 이 판정의 근거가 된 구간. 화면에서 하이라이트한다. */
   evidence: EvidenceSpan[];
   multiReason?: MultiReason | null;
@@ -141,9 +167,10 @@ export interface MatchingItem {
  * 화면에 숫자를 띄우면 교사가 그 숫자를 근거로 삼게 되므로 상태 문구로만 표현한다.
  */
 
-/** 매칭 확인 화면에서 교사가 내린 결정 */
+/** 매칭 확인 화면에서 교사가 내린 결정 (api-spec O-23) */
 export type MatchResolution =
-  | { action: "confirm"; childId: string }
+  /** 고른 아이로 확정 */
+  | { action: "assign"; childId: string }
   /** 명부에 있는 아이가 아니다 — 파이프라인에서 뺀다 */
   | { action: "not_ours" };
 
@@ -160,6 +187,21 @@ export interface FileProgress {
   /** 파일에서 기록을 아직 떼어내지 못했으면 비어 있다 (기록 등록 단계) */
   entries: EntryProgress[];
 }
+
+/**
+ * 파일 하나의 업로드 결과. 여러 파일을 올리면 일부만 실패할 수 있어 파일마다 따로 돌려준다.
+ * 실패한 건 서버에 없으므로 원본 File 을 들고 있다가 그것만 다시 올린다.
+ */
+export type UploadResult =
+  | { ok: true; file: File; progress: FileProgress }
+  | { ok: false; file: File; reason: UploadFailReason };
+
+/**
+ * invalid   → 허용되지 않는 형식 (400)
+ * too_large → 용량 초과 (413)
+ * temporary → 저장 실패 · 네트워크 오류 등. 같은 파일을 다시 올리면 될 수 있다
+ */
+export type UploadFailReason = "invalid" | "too_large" | "temporary";
 
 export interface EntryProgress {
   id: string;
