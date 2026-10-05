@@ -1,131 +1,115 @@
-# AI/summary/schemas.py
+# AI/insight/schemas.py
 """
-Summary Agent 의 입출력 계약.
+Insight Agent 의 입출력 계약.
 
-matching/schemas.py · validation/schemas.py 와 같은 원칙이다 — 스펙을 문서로만
-두면 어긋나도 모르지만, 여기 pydantic 모델로 두면 어긋나는 순간 터진다.
+matching · validation · summary 와 같은 원칙이다 — 스펙을 pydantic 모델로 두면
+어긋나는 순간 터진다.
 
-앞의 두 에이전트와 다른 점이 둘 있다.
+앞의 에이전트들과 다른 점:
 
-1. **입력이 기록 한 건이 아니라 N 건이다.** 같은 아이의 같은 날 기록을 기관을
-   가로질러 묶는다. 학교에서는 혼자 했는데 센터에서는 도움이 필요했다는 차이는
-   묶어야만 보인다. 기관별로 쪼개면 그 문장이 아예 생길 수 없다.
+1. **입력이 일지가 아니라 승인된 요약의 claims 다.** 여러 날·여러 기관의
+   claims 를 모아 "상황 → 반응 → 대처와 결과" 묶음을 찾는다.
+2. **모델은 근거 번호(claim_id)만 가리킨다.** 출처(기관·날짜·일지), 기관 간 비교
+   여부, 수신 기관 후보는 코드가 계산한다.
 
-2. **판정이 아니라 생성이다.** 매칭·검증은 "무엇이다" 를 고르지만 요약은 글을
-   쓴다. 그래서 재야 할 것이 다르다 — 지어냈는가(환각)와 빠뜨렸는가(누락)다.
-   claims 와 uncovered_entry_ids 가 각각을 드러낸다.
-
-무엇을 쓰고 무엇을 버리는지는 CRITERIA.md 에 있다.
+무엇이 인사이트로 성립하고 무엇을 쓰지 않는지는 CRITERIA.md 에 있다.
 """
 
 from pydantic import BaseModel, Field
 
 
-class EvidenceSpan(BaseModel):
-    """
-    근거가 된 원문 구간. matching/validation 과 같은 모양이다.
-
-    start / end 는 Python 문자열 인덱스(유니코드 코드포인트) 기준이다.
-    프론트에서 하이라이트할 때는 String.slice 가 아니라
-    Array.from(content).slice(start, end).join('') 로 복원해야 한다.
-    """
-
-    start: int
-    end: int
-
-
 # ── 입력 ────────────────────────────────────────────────────────
 
 
-class SourceEntry(BaseModel):
-    """요약 재료가 되는 일지 한 건."""
+class InsightEvidence(BaseModel):
+    """claim 하나를 뒷받침하는 원본 일지 근거. summary.schemas.Evidence 와 같은 모양이다."""
 
     journal_entry_id: int
-    content: str
-
-    #: 어느 기관에서 쓴 기록인지. 요약 본문이 출처를 밝히는 데 쓴다.
-    #: 출력에는 되돌려주지 않는다 — journal_entry_id 로 조인하면 나오는
-    #: 값이라, 복사해두면 두 벌이 어긋난다.
-    institution_name: str | None = None
-    entry_date: str | None = None
+    quote: str
 
 
-class SummaryInput(BaseModel):
-    child_id: int
-    child_name: str
+class InsightClaim(BaseModel):
+    """
+    승인된 요약 문장 하나.
 
-    #: 묶음 기준 날짜. (child_id, entry_date) 하나당 요약 하나다.
+    claim_id 는 요약에 없는 값이라 BE 가 붙인다: "{summary_id}-{claims 배열 순서}".
+    요약이 배열 순서를 본문 순서로 못 박았으므로 같은 판 안에서는 바뀌지 않는다.
+    """
+
+    claim_id: str
+    text: str
     entry_date: str
 
-    #: 같은 아이·같은 날짜의 일지들. 여러 기관 것이 섞여 있는 것이 정상이다.
-    #:
-    #: ⚠️ 검증에서 BLOCK 판정된 기록은 여기 넣지 않는다. 개인정보가 든 기록이
-    #: 요약으로 들어가면 Gate 1 이전에 이미 유출이다. 거르는 쪽은 백엔드다 —
-    #: #100 의 워커가 VALIDATED 만 가져간다.
-    sources: list[SourceEntry]
+    #: 기관 간 비교와 수신 기관 추천에 쓴다. 이름은 받지 않는다 — 비교에 필요 없다.
+    institution_id: int
+    institution_type: str  # 학교 / 센터 / 학원
+
+    #: ⚠️ 최소 1개. Gate 1 에서 근거가 끊긴 "교사 작성" 문장은 넣지 않는다.
+    #: 원본으로 추적되지 않는 내용이 다른 기관으로 나가면 안 된다 (CRITERIA §2).
+    evidence: list[InsightEvidence] = Field(min_length=1)
+
+
+class Institution(BaseModel):
+    institution_id: int
+    institution_type: str
+
+
+class InsightInput(BaseModel):
+    child_id: int
+    child_name: str
+    period_from: str
+    period_to: str
+
+    claims: list[InsightClaim]
+
+    #: 아이의 소속 기관 중 보호자가 공유에 동의한 기관.
+    #: 수신 기관 후보는 이 목록 밖으로 나갈 수 없다 (CRITERIA §7). 모델에게 보여주지 않는다.
+    consented_institutions: list[Institution] = Field(default_factory=list)
 
 
 # ── 출력 ────────────────────────────────────────────────────────
 
 
-class Evidence(BaseModel):
-    """
-    요약 문장 하나를 뒷받침하는 근거 하나.
+class Support(BaseModel):
+    """기록된 대처 하나와 그 결과. 결과가 기록에 없는 대처는 코드가 버린다."""
 
-    한 문장이 여러 일지에 걸칠 수 있어 Claim 당 여러 개다. "학교에서는 혼자
-    했는데 센터에서는 도움이 필요했다" 가 그런 문장이고, 합치는 요약에서
-    환각이 가장 잘 생기는 곳도 두 기록을 잇는 바로 그 자리다. 근거를 하나만
-    달게 하면 연결 부분이 검사에서 통째로 빠진다.
-    """
-
-    journal_entry_id: int
-
-    #: 모델이 원문에서 그대로 따온 구절. 다듬으면 코드가 못 찾아 버려진다.
-    quote: str
-
-    #: quote 의 위치. **모델이 주지 않는다** — spans_for_quotes 가 찾는다.
-    #: 모델은 글자 수를 세지 못해 좌표를 거의 틀린다 (matching/llm.py:126).
-    #: 그래서 모델 응답을 받을 때는 None 이고, 코드가 채운 뒤 저장된다.
-    span: EvidenceSpan | None = None
+    action: str
+    result: str
+    claim_ids: list[str] = Field(min_length=1)
 
 
-class Claim(BaseModel):
-    """
-    요약 문장 하나와 그 근거들.
+class RecipientCandidate(BaseModel):
+    """수신 기관 후보. **코드가 계산한다.** 최종 선택은 Gate 2 의 교사가 한다."""
 
-    근거가 하나도 안 남은 문장은 버린다. 그래서 저장 시점의 evidence 는
-    비어 있을 수 없다.
-    """
+    institution_id: int
+    institution_type: str
 
-    text: str
-    evidence: list[Evidence] = Field(default_factory=list)
+    #: 이 인사이트의 근거가 나오지 않은 기관이면 True (새로 알게 되는 기관).
+    #: 기관 간 비교 인사이트는 관련 기관 전부 True.
+    recommended: bool
 
 
-class SummaryOutput(BaseModel):
-    child_id: int
-    entry_date: str
-
-    #: 요약 본문. **claims[].text 를 배열 순서대로 이은 것이다.**
-    #: 모델에게 따로 받지 않는다 — 따로 받으면 claims 밖 문장이 생겨
-    #: 환각 검사가 본문을 다 덮지 못한다.
-    #:
-    #: 읽는 사람은 **부모가 아니라 교사와 다른 기관 담당자다.** Gate 1 승인 뒤
-    #: child_context 로 쌓이고, 부모가 받는 것은 그다음 단계인 인사이트다.
+class Insight(BaseModel):
+    # ── 모델이 쓰는 것 ──
+    situation: str
+    behavior: str
+    supports: list[Support] = Field(default_factory=list)
+    claim_ids: list[str]
     content: str
 
-    #: 본문의 문장별 근거. 원문에서 못 찾은 인용은 코드가 버리고,
-    #: 근거가 0 개가 된 문장은 본문에서도 빠진다.
-    claims: list[Claim] = Field(default_factory=list)
+    # ── 코드가 채우는 것 (모델 응답을 받을 때는 비어 있다) ──
+    source_entry_ids: list[int] = Field(default_factory=list)
+    institution_types: list[str] = Field(default_factory=list)
+    cross_institution: bool = False
+    recipients: list[RecipientCandidate] = Field(default_factory=list)
 
-    #: 요약에 실제로 반영된 일지. **코드가 센다.**
-    #: 살아남은 근거가 가리키는 일지를 모은 것이고, 모델에게 묻지 않는다 —
-    #: 모델 보고는 측정이 아니라 자기채점이다.
-    covered_entry_ids: list[int] = Field(default_factory=list)
 
-    #: 반영되지 않은 일지. **비어 있는 것이 정상이다.**
-    #: 비어 있지 않다고 늘 잘못은 아니다 — "특이사항 없음" 같은 기록은 뺄 수
-    #: 있다. 다만 뺐다는 사실이 드러나야 사람이 판단할 수 있다.
-    uncovered_entry_ids: list[int] = Field(default_factory=list)
+class InsightOutput(BaseModel):
+    child_id: int
+    period_from: str
+    period_to: str
 
-    #: LLM 을 실제로 호출했는지. 호출률 측정용.
+    #: 비어 있는 것도 정답이다. 억지로 만든 패턴이 과잉해석이다 (CRITERIA §3).
+    insights: list[Insight] = Field(default_factory=list)
+
     llm_called: bool = False
