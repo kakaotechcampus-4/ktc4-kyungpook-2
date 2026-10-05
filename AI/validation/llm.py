@@ -19,6 +19,10 @@ class LlmError(RuntimeError):
     """Luna 호출 또는 응답 해석이 실패했을 때."""
 
 
+class LlmUnavailable(RuntimeError):
+    """LLM 판단 없이는 판정을 낼 수 없을 때. main.py 가 503 으로 바꿔 응답한다."""
+
+
 @dataclass
 class LlmResult:
     """모델 응답에서 우리가 쓰는 것만 담는다."""
@@ -35,6 +39,19 @@ def _endpoint() -> tuple[str, str]:
     if not url.rstrip("/").endswith(LUNA_CHAT_PATH):
         url = url.rstrip("/") + LUNA_CHAT_PATH
     return url, key
+
+
+def is_configured() -> bool:
+    """
+    Luna 를 부를 설정(URL·키)이 있는지. /health 가 쓴다.
+    실제로 호출하지는 않는다 — 헬스체크마다 모델을 부르면 비용과 지연이 생긴다.
+    모델이 바뀌면 이 함수와 _endpoint 만 고치면 된다.
+    """
+    try:
+        _endpoint()
+    except LlmError:
+        return False
+    return True
 
 
 def _extract_text(payload: dict) -> str:
