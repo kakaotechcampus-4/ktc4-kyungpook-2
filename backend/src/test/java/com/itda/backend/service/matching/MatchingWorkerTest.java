@@ -13,7 +13,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import java.time.Duration;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -25,15 +24,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import com.itda.backend.dto.request.MatchingAgentRequest;
-import com.itda.backend.exception.MatchingAgentException;
-import com.itda.backend.exception.MatchingAgentUnavailableException;
+import com.itda.backend.exception.AiAgentException;
+import com.itda.backend.exception.AiAgentUnavailableException;
 import com.itda.backend.exception.MatchingTargetException;
+import com.itda.backend.service.agent.WorkerProperties;
 
 @ExtendWith(MockitoExtension.class)
 class MatchingWorkerTest {
 
-    private static final MatchingProperties PROPERTIES = new MatchingProperties("http://ai:8000",
-            Duration.ofSeconds(3), Duration.ofSeconds(65), List.of(), new MatchingProperties.Worker(true, 5000, 10));
+    private static final MatchingProperties PROPERTIES = new MatchingProperties(new WorkerProperties(true, 5000, 10));
 
     @Mock
     private MatchingService matchingService;
@@ -79,7 +78,7 @@ class MatchingWorkerTest {
         given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L));
         given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
         given(matchingService.prepareRequest(2L)).willReturn(requestFor(2L));
-        given(client.match(requestFor(1L))).willThrow(new MatchingAgentException("422 from agent"));
+        given(client.match(requestFor(1L))).willThrow(new AiAgentException("422 from agent"));
         given(client.match(requestFor(2L))).willReturn(reply2);
 
         worker.run();
@@ -158,7 +157,7 @@ class MatchingWorkerTest {
     void 재시도까지_실패하면_그_건만_실패로_남기고_나머지는_대기로_돌려놓고_멈춘다() {
         given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L, 3L));
         given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
-        given(client.match(requestFor(1L))).willThrow(new MatchingAgentUnavailableException("down", null));
+        given(client.match(requestFor(1L))).willThrow(new AiAgentUnavailableException("down", null));
 
         worker.run();
 
@@ -174,7 +173,7 @@ class MatchingWorkerTest {
         given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
         given(client.match(requestFor(1L))).willAnswer(invocation -> {
             Thread.currentThread().interrupt();
-            throw new MatchingAgentException("interrupted while waiting to retry");
+            throw new AiAgentException("interrupted while waiting to retry");
         });
 
         try {
@@ -186,5 +185,6 @@ class MatchingWorkerTest {
         // 두 건 모두 MATCHING 으로 남기고, 다음에 켜질 때 releaseStuck 이 되돌린다.
         verify(recorder, never()).recordFailure(any());
         verify(matchingService, never()).prepareRequest(2L);
+        verify(matchingService, never()).release(any());
     }
 }

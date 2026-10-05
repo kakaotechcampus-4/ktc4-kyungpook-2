@@ -40,7 +40,7 @@
 | 8 | `raw_record` | ✅ 확정 | ⚠️ `RawRecord` — 일부 다름 | `deleted_at` |
 | 9 | `journal_entry` | ✅ 확정 | ✅ `JournalEntry` | `deleted_at` |
 | 10 | `matching_result` | ✅ 확정 | ⚠️ `MatchingResult` — 설계와 다름 | 삭제 없음 (이력) |
-| 11 | `validation_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 11 | `validation_result` | ✅ 확정 | ✅ `ValidationResult` | 삭제 없음 (이력) |
 | 12 | `summary_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 13 | `human_review` | 🟡 초안 | ✅ `Approval` | 삭제 없음 (이력) |
 | 14 | `child_context` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
@@ -861,6 +861,8 @@ MATCH_REVIEW       사람 확인 필요
 EXCLUDED           선생님이 확인 필요 큐에서 제외 — 여기서 끝 (BE 추가)
 CONSENT_BLOCKED    동의 대기 아동의 기록이라 정지
 VALIDATING         검증 중
+VALIDATED          검증 통과 (PASS·REVIEW) — 요약 대기 (BE 추가)
+VALIDATION_BLOCKED 검증에서 막힘 (BLOCK) — 수정 요청 큐 (BE 추가)
 SUMMARIZING        요약 중
 GATE1_PENDING      1차 검토 대기
 COMPLETED          완료
@@ -886,6 +888,26 @@ FAILED             실패
 
 `EXCLUDED`도 초안에 없던 값이다. 제외하는 경우는 다른 기관 아이보다 여러 아이가 함께 나온 기록이나
 아이 기록이 아닌 줄(제목 등)이 기록으로 잘린 경우가 많다. 지우지 않고 남겨서 누가 제외했는지(`matching_result.reviewer_id`) 추적한다.
+
+검증 워커는 `MATCHED`이고 `child_id`가 있는 일지를 `VALIDATING`으로 바꿔 집어 간 뒤 AI 판정에 따라 이렇게 바꾼다.
+AI 자동 확정과 선생님 확정 둘 다 `MATCHED`로 들어오므로 구분하지 않는다. 판정 세부는 `validation_result`에 남는다 (§8.1).
+
+| AI 판정 | `journal_entry.status` | `validation_result` |
+| --- | --- | --- |
+| `PASS` · `REVIEW` | `VALIDATED` (요약 대기) | 행 추가 |
+| `BLOCK` | `VALIDATION_BLOCKED` (수정 요청 큐) | 행 추가 |
+| 호출 실패 (4xx, 응답 해석 실패) | `FAILED` (그 건만, 다음 건 계속) | 행 없음 (`verdict` NOT NULL) |
+| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | `FAILED` (그 건만. 나머지는 `MATCHED`로 되돌리고 이번 차례 멈춤) | 행 없음 |
+
+`VALIDATED`·`VALIDATION_BLOCKED`도 초안에 없던 값이다. `BLOCK`에 `FAILED`를 쓰지 않는 이유는 `FAILED`가
+시스템 오류라는 뜻이고 확인 필요 큐(O-23)가 처리 대상으로 보기 때문이다.
+
+> **LLM 을 못 쓰면 AI 가 503 을 준다** (#98). 판정 없이 `REVIEW`로 오면 검증을 못 한 일지가 요약으로 새기 때문이다.
+> 정규식으로 개인정보가 잡힌 경우만 LLM 과 상관없이 200 + `BLOCK`이다. Luna 설정이 없으면 `/health`도 503 이라
+> 워커가 일지를 집지 않는다 (매칭 워커도 같은 `/health`를 본다).
+
+> ⚠️ **`FAILED`만으로는 매칭 실패인지 검증 실패인지 모른다.** `matching_result.status`로 구분한다
+> (매칭 실패 = `FAILED`, 검증 실패 = 매칭은 끝났으니 `AUTO`). 진행률(O-26)·재처리(O-27)에서 필요하면 따로 나눈다.
 
 **예시**
 
@@ -1030,7 +1052,7 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 
 ## 8. 검증 · 요약 🟡
 
-### 8.1 `validation_result` ✅ — ⬜ 미구현
+### 8.1 `validation_result` ✅
 
 > **근거** — `AI/validation/schemas.py` `ValidationOutput` 과 `AI/validation/config.py` `ISSUE_LEVEL`.
 > pydantic 으로 고정된 계약이다. 엔드포인트는 `POST /validation` (`#57` 머지 완료, 서버 반영 확인).
@@ -1097,7 +1119,10 @@ BLOCK    그대로 두면 위험 — 요약으로 넘기지 않는다
 **`journal_entry_id`와 `matching_result_id`를 둘 다 두는 이유**
 
 `matching_result_id` 로도 일지를 찾을 수 있지만, 검증 단계가 매칭 결과에 과도하게 의존하지 않도록
-`journal_entry_id` 를 직접 보유한다.
+`journal_entry_id` 를 직접 보유한다. `matching_result_id`는 그 일지의 가장 최근 매칭 결과다 (지금은 일지당 한 행).
+
+**저장 시점** — 검증 워커가 AI 응답을 받았을 때만 한 행을 쌓는다. 호출이 실패하면 판정이 없어 행을 남기지 않고
+일지만 `FAILED`가 된다 (§6.2). `issue_types`·`evidence`는 AI 가 보낸 JSON 그대로, `raw_response`는 응답 원문 전체다.
 
 ### 8.2 `summary_result` ✅ — ⬜ 미구현
 
@@ -1601,3 +1626,5 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-09-30 | `journal_entry.status`에 `MATCHED` 추가, 매칭 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가를 배포 DB 수동 조치 목록에 추가 (§11.4) | #75 |
 | 2026-09-30 | `journal_entry.status`에 `EXCLUDED` 추가, 선생님 처리(assign·not_ours) 시 일지 상태 변경 규칙 추가 (§6.2). enum 값 추가라 §11.4 조치 대상 (서버는 9/30 조치로 해결됨) | #75 |
 | 2026-09-30 | `matching_result.mentioned_child_ids` 엔티티에 반영 (§7.1 설명은 #78) | #75 |
+| 2026-10-01 | `validation_result` 구현 (`ValidationResult`). 저장 시점 설명 추가 (§8.1) | #90 |
+| 2026-10-01 | `journal_entry.status`에 `VALIDATED`·`VALIDATION_BLOCKED` 추가, 검증 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가지만 `journal_entry.status` CHECK 제약은 9/30에 제거돼 수동 조치 불필요 | #90 |

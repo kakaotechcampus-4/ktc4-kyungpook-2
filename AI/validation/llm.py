@@ -12,11 +12,19 @@ from dataclasses import dataclass, field
 
 import requests
 
+#: 503 으로 나가는 예외. 모든 에이전트가 **같은 클래스**를 쓴다 — 따로 두면
+#: main.py 에서 이름이 덮여 핸들러가 한쪽에만 걸린다 (common/errors.py 참고).
+#: LLM 판단 없이는 판정을 낼 수 없다.
+#: 여기서 다시 내보내므로 from validation.llm import LlmUnavailable 이 그대로 된다.
+from common.errors import LlmUnavailable  # noqa: F401
+
 from .config import LUNA_CHAT_PATH, LUNA_MODEL, LUNA_TIMEOUT
 
 
 class LlmError(RuntimeError):
     """Luna 호출 또는 응답 해석이 실패했을 때."""
+
+
 
 
 @dataclass
@@ -35,6 +43,19 @@ def _endpoint() -> tuple[str, str]:
     if not url.rstrip("/").endswith(LUNA_CHAT_PATH):
         url = url.rstrip("/") + LUNA_CHAT_PATH
     return url, key
+
+
+def is_configured() -> bool:
+    """
+    Luna 를 부를 설정(URL·키)이 있는지. /health 가 쓴다.
+    실제로 호출하지는 않는다 — 헬스체크마다 모델을 부르면 비용과 지연이 생긴다.
+    모델이 바뀌면 이 함수와 _endpoint 만 고치면 된다.
+    """
+    try:
+        _endpoint()
+    except LlmError:
+        return False
+    return True
 
 
 def _extract_text(payload: dict) -> str:

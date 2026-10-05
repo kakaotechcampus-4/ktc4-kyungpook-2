@@ -131,4 +131,73 @@ class JournalEntryTest {
             assertThatThrownBy(entry::exclude).isInstanceOf(IllegalStateException.class);
         }
     }
+
+    private JournalEntry matched() {
+        JournalEntry entry = matching();
+        entry.confirmMatch(8L);
+        return entry;
+    }
+
+    private JournalEntry validating() {
+        JournalEntry entry = matched();
+        entry.startValidating();
+        return entry;
+    }
+
+    @Test
+    void 매칭이_확정된_일지만_검증을_시작할_수_있다() {
+        JournalEntry entry = matched();
+
+        entry.startValidating();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATING);
+        assertThatThrownBy(entry::startValidating).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> pending().startValidating()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> inReview().startValidating()).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 검증을_통과하면_요약_대기_상태가_된다() {
+        JournalEntry entry = validating();
+
+        entry.passValidation();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+    }
+
+    @Test
+    void 검증에서_막히면_수정_요청_상태가_된다() {
+        JournalEntry entry = validating();
+
+        entry.blockValidation();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+    }
+
+    @Test
+    void 검증_호출이_실패하면_실패_상태가_된다() {
+        JournalEntry entry = validating();
+
+        entry.failValidation();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+    }
+
+    @Test
+    void 검증하다_멈춘_일지는_다시_검증_대기로_되돌리고_아동은_유지한다() {
+        JournalEntry entry = validating();
+
+        entry.releaseValidating();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
+        assertThat(entry.getChildId()).isEqualTo(8L);
+    }
+
+    @Test
+    void 검증_중이_아니면_검증_결과를_반영할_수_없다() {
+        assertThatThrownBy(() -> matched().passValidation()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> matched().blockValidation()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> matched().failValidation()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> matched().releaseValidating()).isInstanceOf(IllegalStateException.class);
+    }
 }

@@ -14,6 +14,12 @@ from dataclasses import dataclass, field
 
 import requests
 
+#: 503 으로 나가는 예외. 모든 에이전트가 **같은 클래스**를 쓴다 — 따로 두면
+#: main.py 에서 이름이 덮여 핸들러가 한쪽에만 걸린다 (common/errors.py 참고).
+#: 빈 요약을 200 으로 주면 "쓸 말이 없었다" 와 "모델이 죽었다" 가 구별되지 않는다.
+#: 여기서 다시 내보내므로 from summary.llm import LlmUnavailable 이 그대로 된다.
+from common.errors import LlmUnavailable  # noqa: F401
+
 from .config import LUNA_CHAT_PATH, LUNA_MODEL, LUNA_TIMEOUT
 
 
@@ -21,15 +27,6 @@ class LlmError(RuntimeError):
     """Luna 호출 또는 응답 해석이 실패했을 때."""
 
 
-class LlmUnavailable(LlmError):
-    """
-    모델을 못 써서 요약을 만들지 못했을 때. API 는 503 을 돌려주고 BE 가 재시도한다.
-
-    빈 요약을 200 으로 돌려주면 "그날 쓸 말이 없었다" 와 "모델이 죽었다" 가
-    구별되지 않는다. 교사는 빈 글을 승인하게 되고 일지는 반영된 것처럼 닫힌다.
-
-    #98 이 validation 에 같은 클래스를 넣는다. 머지되면 한 곳으로 합친다.
-    """
 
 
 @dataclass

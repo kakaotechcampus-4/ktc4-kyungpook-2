@@ -24,5 +24,14 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             + "order by e.id")
     List<JournalEntry> findMatchingTargets(@Param("status") JournalEntryStatus status, Limit limit);
 
+    /**
+     * 검증 워커가 처리할 일지. 아동이 비어 있으면 AI 가 판정 대상을 몰라 REVIEW(대상불명확)로 흘려보내므로 뺀다.
+     * 오래된 것부터 처리하도록 id 순으로 가져온다.
+     */
+    @Query("select e from JournalEntry e "
+            + "where e.status = :status and e.childId is not null and e.deletedAt is null "
+            + "order by e.id")
+    List<JournalEntry> findValidationTargets(@Param("status") JournalEntryStatus status, Limit limit);
+
     List<JournalEntry> findByStatusAndDeletedAtIsNull(JournalEntryStatus status);
 }

@@ -44,7 +44,7 @@
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
-| `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false`일 때만 실제 HTTP 호출 |
+| `VITE_USE_MOCK` | `true` | 데이터(`lib/api.ts`). `false`여도 백엔드에 없는 기능은 mock (아래 참고) |
 | `VITE_AUTH_MOCK` | `true` | 로그인(`lib/auth.ts`). 데이터와 분리돼 있습니다 |
 | `VITE_AUTH_ORIGIN` | `""` | 로그인 진입 주소의 오리진. **dev 는 `http://localhost:8080`** |
 | `VITE_API_BASE_URL` | `""` | 백엔드 origin. dev proxy·nginx를 쓰면 비워 둡니다 |
@@ -53,6 +53,12 @@
 묶으면 로그인을 켜는 순간 대시보드·아이 목록·게이트가 전부 빈 화면이 됩니다.
 `VITE_AUTH_MOCK=false` + `VITE_USE_MOCK=true` 로 두면 **로그인만 실연동**하고 나머지는
 mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하나씩 옮겨갑니다.
+
+**데이터 mock 은 기능별로 해제합니다** — `lib/api.ts`의 `BE_READY` 표에서 백엔드가 만든
+기능만 `true`입니다. `VITE_USE_MOCK=false`여도 `false`인 기능은 mock 을 돌려주므로,
+아직 없는 API 때문에 대시보드 같은 화면이 통째로 에러가 나지 않습니다.
+백엔드가 기능을 열면 그 키만 `true`로 바꾸고 다시 빌드합니다. 목록과 그 처리 버튼은
+같은 키로 묶여 있어 함께 켜집니다. `VITE_USE_MOCK=true`면 표와 상관없이 전부 mock 입니다.
 
 `VITE_*`는 빌드 시점에 번들에 포함됩니다. 값이 바뀌면 재빌드가 필요합니다.
 
@@ -124,8 +130,11 @@ interface MatchingItem {      // 확인 필요 큐 한 건
   // null · 없음 = 서버(#35)가 아직 못 채우는 값. 화면은 그 칸을 숨긴다
   record: { id: string; fileName: string; type?: RawRecord["type"] | null;
             capturedAt: string | null; preview: string | null };
-  status: "review" | "multi" | "unmatched";
-  // 동명이인이면 후보가 둘 이상 남는다. 이름·반이 같으므로 birthDate 가 유일한 구분 근거다.
+  status: "review" | "multi" | "unmatched" | "failed";
+  // AI 가 지목한 아이. review 의 추천 아이는 여기로만 온다 — 이름은 명부에서 찾아 붙인다
+  matchedChildId: string | null;
+  // multi 일 때만 채워진다. 동명이인이면 후보가 둘 이상 남는다.
+  // 이름·반이 같으므로 birthDate 가 유일한 구분 근거다. 삭제된 아이는 name·birthDate 가 null
   candidates: { childId: string; name: string | null; group?: string | null;
                 birthDate: string | null }[];
   evidence: { start: number; end: number }[];   // 판정 근거 구간 (문자 인덱스)
@@ -323,13 +332,17 @@ interface ParentActivity {
 
 ```ts
 type Role = "org" | "parent" | null;
+type Session = { loggedIn: boolean; signupCompleted: boolean; role: Role; name?: string };
 
-getSession(): Promise<{ role: Role }>        // 현재 세션의 역할
-grantRole(role: "org" | "parent"): void      // 역할을 로컬에 기록 — 로그인이 아닙니다
+getSession(): Promise<Session>               // GET /api/v1/auth/me — 401 이면 loggedIn: false
+signup(input: SignupInput): Promise<Session> // POST /api/v1/auth/signup — 실패는 ApiError(code)
+homePathFor(role: "org" | "parent"): string  // 가입을 마친 사람의 첫 화면
+grantRole(role: "org" | "parent"): void      // mock 전용 — 실연동에서는 아무것도 하지 않습니다
 clearSession(): void                         // 401 을 받았을 때 로컬 표시를 지웁니다
 isAuthMock(): boolean                        // mock 모드인지 (로그인 화면이 참조)
 
-startKakaoLogin(): void                      // /oauth2/authorization/kakao 로 페이지 이동
+startKakaoLogin(intent): void                // /oauth2/authorization/kakao 로 페이지 이동
+takeLoginIntent(): "org" | "parent" | null   // 누른 버튼 — 회원가입 화면에서 역할을 미리 고르는 데만 씁니다
 signOut(): Promise<void>                     // POST /api/v1/auth/logout — 서버가 쿠키를 지웁니다
 
 readCsrfToken(): string | null               // XSRF-TOKEN 쿠키
@@ -342,21 +355,22 @@ csrfHeader(): Record<string, string>         // { "X-XSRF-TOKEN": ... } 또는 {
 - **CSRF 토큰이 필요합니다.** 쿠키가 자동 전송되므로 남의 사이트 폼에도 실립니다.
   백엔드가 `XSRF-TOKEN` 쿠키(이것만 httpOnly 가 아님)를 내려주고, `lib/api.ts` 가
   쓰기 요청마다 `X-XSRF-TOKEN` 헤더로 되돌립니다. 없으면 403 입니다.
-- `grantRole`은 **로그인이 아닙니다.** 지금 프론트는 기관/학부모 역할을 서버에 묻지 않고
-  클라이언트에 임시로 들고 있습니다. 학부모 온보딩(P-02)과 로그인 착지 페이지(I-01b)가 부릅니다.
-  출입증이 쿠키가 된 지금은 이 값이 **로그인 여부의 표시**도 겸합니다.
-- 백엔드는 이미 회원(`users`)을 저장하고, `GET /api/v1/auth/me`로 역할과 가입 여부(`signupCompleted`)를
-  알려 줍니다(api-spec §2.2). 역할은 회원가입 `POST /api/v1/auth/signup`에서 사용자가 고릅니다(§2.6).
-  `getSession()`/`grantRole()` **내부만** 이 응답으로 바꾸고, `signupCompleted: false`면 역할 선택 화면으로 보냅니다.
-  호출부(각 라우트의 `clientLoader`)는 그대로 둡니다.
+- **역할과 로그인 여부는 서버에 묻습니다.** `getSession()`이 화면에 들어갈 때마다
+  `GET /api/v1/auth/me`를 부르고(api-spec §2.2), 분기는 `signupCompleted`만 봅니다.
+  `false`면 카카오 로그인만 하고 역할을 안 고른 상태라 `/signup`으로 보냅니다.
+- 역할은 회원가입 `POST /api/v1/auth/signup`에서 사용자가 고릅니다(§2.6). 보호자는 `role`만
+  보냅니다 — 기관 필드가 `""`로라도 섞이면 400이라 `signup()`이 역할별로 본문을 새로 만듭니다.
+- `grantRole`은 **mock 전용**입니다. "mock 데이터로 둘러보기" 버튼이 역할을 로컬(`itda_role`)에
+  적고, mock 모드의 `getSession()`이 그 값을 읽습니다.
 - **state 검증은 프론트에 없습니다.** Spring Security 가 서버에서 처리합니다.
 
 ### 역할 경계
 
 | 레이아웃 라우트 | 통과 조건 | 실패 시 |
 | --- | --- | --- |
-| `app/routes/org/layout.tsx` | `role === "org"` | `/login` 리다이렉트 |
-| `app/routes/parent/guard.tsx` | `role === "parent"` + 연결된 아이 1명 이상 | `/parent/invite` 리다이렉트 |
+| `app/routes/org/layout.tsx` | `role === "org"` | 가입 미완료면 `/signup?role=org`, 그 밖은 `/login` |
+| `app/routes/parent/guard.tsx` | `role === "parent"` + 연결된 아이 1명 이상 | 가입 미완료면 `/signup?role=parent`, 그 밖은 `/parent/invite` |
+| `app/routes/signup.tsx` | 로그인 + 가입 미완료 | 비로그인이면 `/login`, 가입 완료면 역할별 첫 화면 |
 
 `clientLoader`가 끝나기 전에는 로딩 화면(`root.tsx`의 `HydrateFallback`)만 보입니다.
 다른 역할의 화면이 순간 노출되는 경우는 없습니다.
@@ -372,7 +386,8 @@ csrfHeader(): Record<string, string>         // { "X-XSRF-TOKEN": ... } 또는 {
 
 | 이름 | 저장소 | 키 | 용도 |
 | --- | --- | --- | --- |
-| 역할 | localStorage | `itda_role` | 라우트 가드 (임시) |
+| 역할 | localStorage | `itda_role` | mock 모드의 라우트 가드 (실연동은 `/auth/me`) |
+| 로그인 의도 | sessionStorage | `itda_login_intent` | 회원가입 화면에서 역할을 미리 고름 |
 | 선택된 아이 | localStorage | `itda_selected_child` | 다자녀 전환 |
 
 ```ts
