@@ -132,7 +132,7 @@ public class MatchingResultService {
         RecordResponse record = new RecordResponse(
                 String.valueOf(ctx.rawRecord().getId()),
                 ctx.rawRecord().getOriginalFilename(),
-                preview(ctx.entry().getContent()),
+                ctx.entry().getContent(),
                 ctx.entry().getEntryDate() == null ? null : ctx.entry().getEntryDate().toString());
 
         return new MatchingQueueItemResponse(
@@ -146,15 +146,6 @@ public class MatchingResultService {
                 record,
                 buildCandidates(mr.getCandidates(), mr.getId()),
                 parseJson(mr.getEvidence(), mr.getId()));
-    }
-
-    private static final int PREVIEW_LENGTH = 60;
-
-    private String preview(String content) {
-        if (content == null) {
-            return null;
-        }
-        return content.length() <= PREVIEW_LENGTH ? content : content.substring(0, PREVIEW_LENGTH) + "…";
     }
 
     private List<CandidateResponse> buildCandidates(String candidatesJson, Long matchingResultId) {
