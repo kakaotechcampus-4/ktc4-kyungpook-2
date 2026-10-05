@@ -10,6 +10,10 @@ public enum JournalEntryStatus {
     EXCLUDED,
     CONSENT_BLOCKED,
     VALIDATING,
+    /** 검증을 통과해(PASS·REVIEW) 요약을 기다린다. REVIEW 의 문제 문장은 요약 뒤 Gate 1 에서 표시한다. BE가 추가했다. */
+    VALIDATED,
+    /** 검증에서 막혔다(BLOCK). 요약으로 넘기지 않고 수정 요청 큐로 간다. FAILED(시스템 오류)와 구분한다. BE가 추가했다. */
+    VALIDATION_BLOCKED,
     SUMMARIZING,
     GATE1_PENDING,
     COMPLETED,
