@@ -39,16 +39,7 @@ def gather(state: SummaryState) -> dict:
     찾으면, 모델이 A 일지 내용이라고 말한 문장을 B 일지에서 찾아 통과시키게 된다.
     근거가 어느 기록에서 왔는지가 요약의 전부라 그걸 섞으면 안 된다.
     """
-    by_id = {s.journal_entry_id: s.content for s in state["sources"]}
-    institution_of = {
-        s.journal_entry_id: s.institution_name for s in state["sources"]
-    }
-    return {
-        "by_id": by_id,
-        "institution_of": institution_of,
-        #: 본문에 등장했는지 확인할 기관명들. None 과 빈 문자열은 뺀다.
-        "institutions": sorted({n for n in institution_of.values() if n}),
-    }
+    return {"by_id": {s.journal_entry_id: s.content for s in state["sources"]}}
 
 
 # ── ② write ────────────────────────────────────────────────────
@@ -88,30 +79,22 @@ def _numbers(text: str) -> set[int]:
 
 def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> bool:
     """
-    문장에 나온 숫자와 기관명이 근거에 있는지 본다.
+    문장에 나온 숫자가 근거에 있는지 본다.
 
     환각이 가장 눈에 띄게 드러나는 자리다 — 모델은 "세 번" 을 "다섯 번" 으로
-    바꾸거나, 센터에서 있었던 일을 학교 것으로 옮겨 적는다.
+    바꾼다.
+
+    기관명 대조는 더 하지 않는다. 묶음이 한 기관 안에서만 이뤄지면서
+    "센터 일을 학교 것으로 옮겨 적는" 경우 자체가 입력에서 사라졌다.
 
     ⚠️ **사람 이름은 검사하지 못한다.** SummaryInput 에 명부가 없어서 어떤
     글자가 다른 아이 이름인지 알 방법이 없다. 매칭의 mentioned_child_ids 를
     입력으로 받으면 잡을 수 있다 (schema.md §10.2-11 과 연결된다).
     """
     quotes = " ".join(e["quote"] for e in evidence)
-
     # 날짜의 숫자는 입력으로 받은 값이라 지어낸 것이 아니다.
     known = _numbers(quotes) | _numbers(state.get("entry_date", ""))
-    if _numbers(text) - known:
-        return False
-
-    # 기관명을 적었다면 그 기관의 일지가 근거에 있어야 한다.
-    cited = {
-        state["institution_of"].get(e["journal_entry_id"]) for e in evidence
-    }
-    for name in state["institutions"]:
-        if name in text and name not in cited and name not in quotes:
-            return False
-    return True
+    return not (_numbers(text) - known)
 
 
 def ground(state: SummaryState) -> dict:
@@ -159,7 +142,7 @@ def ground(state: SummaryState) -> dict:
             dropped_claims.append(text)
             continue
 
-        # ③ 숫자·기관명이 근거에 없으면 버린다.
+        # ③ 숫자가 근거에 없으면 버린다.
         if CHECK_PROPER_NOUNS and kept and not _facts_grounded(text, kept, state):
             dropped_claims.append(text)
             continue

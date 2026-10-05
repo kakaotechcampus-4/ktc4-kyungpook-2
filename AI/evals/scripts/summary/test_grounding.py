@@ -5,6 +5,7 @@
     python evals/scripts/summary/test_grounding.py
 
 모델 응답을 고정해두고 **코드가 거르는 네 단계**(CRITERIA.md §2)만 본다.
+입력은 한 기관 것만 들어온다 — 묶음 단위가 아동 × 날짜 × 기관이다 (§1).
 실제 모델로는 이걸 잴 수 없다 — 모델이 매번 다른 문장을 쓰기 때문에
 "버려야 할 문장" 을 일부러 만들어낼 수가 없다. 매칭의 test_auto_gate.py 와
 같은 이유다.
@@ -20,16 +21,15 @@ from summary.graph import run_summary  # noqa: E402
 from summary.llm import LlmResult  # noqa: E402
 from summary.schemas import SourceEntry, SummaryInput  # noqa: E402
 
+#: 한 기관(햇살학교)이 같은 날 올린 기록 둘. 묶음은 기관 안에서만 일어난다.
 SOURCES = [
     SourceEntry(
         journal_entry_id=1041,
-        institution_name="햇살학교",
-        content="블록 놀이에서 혼자 다섯 층까지 쌓음. 교사 개입 없이 끝까지 함.",
+        content="오전 블록 놀이에서 혼자 다섯 층까지 쌓음. 교사 개입 없이 끝까지 함.",
     ),
     SourceEntry(
         journal_entry_id=1042,
-        institution_name="늘봄센터",
-        content="같은 블록 활동에서 3번 교사 손을 잡고 올림. 혼자서는 어려워함.",
+        content="오후 같은 블록 활동에서 3번 교사 손을 잡고 올림. 혼자서는 어려워함.",
     ),
 ]
 
@@ -44,6 +44,8 @@ def run(claims):
                 child_id=1,
                 child_name="김지후",
                 entry_date="2026-10-04",
+                institution_id=7,
+                institution_name="햇살학교",
                 sources=SOURCES,
             )
         )
@@ -57,10 +59,10 @@ def ev(entry_id, quote):
 
 CASES = [
     (
-        "기관을 가로지르는 문장이 근거 둘을 단다",
+        "하루의 흐름을 잇는 문장이 근거 둘을 단다",
         [
             {
-                "text": "학교에서는 혼자 쌓았고 센터에서는 도움이 필요했다.",
+                "text": "오전에는 혼자 쌓았고 오후에는 도움이 필요했다.",
                 "evidence": [
                     ev(1041, "혼자 다섯 층까지 쌓음"),
                     ev(1042, "교사 손을 잡고 올림"),
@@ -68,7 +70,7 @@ CASES = [
             }
         ],
         {"claims": 1, "covered": [1041, 1042], "uncovered": []},
-        "이 문장을 만들려고 기관을 가로질러 묶는다",
+        "한 기관 안에서도 하루에 여러 건이 올라온다. 그것을 잇는 것이 요약이다",
     ),
     (
         "다듬은 인용은 버린다",
@@ -99,15 +101,15 @@ CASES = [
         "인용은 원문에 있지만 문장의 숫자가 근거에 없다",
     ),
     (
-        "다른 기관 일로 옮겨 적으면 버린다",
+        "입력에 없는 기관 일을 지어내면 버린다",
         [
             {
-                "text": "햇살학교에서 교사 손을 잡고 올랐다.",
+                "text": "늘봄센터에서도 같은 활동을 2번 했다.",
                 "evidence": [ev(1042, "교사 손을 잡고 올림")],
             }
         ],
         {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
-        "근거는 늘봄센터 일지인데 문장은 햇살학교라고 적었다",
+        "다른 기관 기록은 애초에 입력에 없다. 숫자 2 가 근거에 없어 걸린다",
     ),
     (
         "다른 일지에서 인용을 찾아주지 않는다",

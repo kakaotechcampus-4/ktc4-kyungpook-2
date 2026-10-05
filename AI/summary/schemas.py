@@ -7,9 +7,10 @@ matching/schemas.py · validation/schemas.py 와 같은 원칙이다 — 스펙�
 
 앞의 두 에이전트와 다른 점이 둘 있다.
 
-1. **입력이 기록 한 건이 아니라 N 건이다.** 같은 아이의 같은 날 기록을 기관을
-   가로질러 묶는다. 학교에서는 혼자 했는데 센터에서는 도움이 필요했다는 차이는
-   묶어야만 보인다. 기관별로 쪼개면 그 문장이 아예 생길 수 없다.
+1. **입력이 기록 한 건이 아니라 N 건이다.** 같은 아이의 같은 날 기록을 묶는다.
+   다만 **한 기관 안에서만** 묶는다 — 기관을 가로지르면 Gate 1 에서 누가
+   승인하는지가 사라지고, 승인 전에 이미 섞인다. 기관을 가로지르는 비교는
+   `child_context` 를 읽는 인사이트가 한다 (schema.md §9.2).
 
 2. **판정이 아니라 생성이다.** 매칭·검증은 "무엇이다" 를 고르지만 요약은 글을
    쓴다. 그래서 재야 할 것이 다르다 — 지어냈는가(환각)와 빠뜨렸는가(누락)다.
@@ -38,15 +39,10 @@ class EvidenceSpan(BaseModel):
 
 
 class SourceEntry(BaseModel):
-    """요약 재료가 되는 일지 한 건."""
+    """요약 재료가 되는 일지 한 건. 전부 같은 기관 것이다."""
 
     journal_entry_id: int
     content: str
-
-    #: 어느 기관에서 쓴 기록인지. 요약 본문이 출처를 밝히는 데 쓴다.
-    #: 출력에는 되돌려주지 않는다 — journal_entry_id 로 조인하면 나오는
-    #: 값이라, 복사해두면 두 벌이 어긋난다.
-    institution_name: str | None = None
     entry_date: str | None = None
 
 
@@ -54,10 +50,16 @@ class SummaryInput(BaseModel):
     child_id: int
     child_name: str
 
-    #: 묶음 기준 날짜. (child_id, entry_date) 하나당 요약 하나다.
+    #: 묶음 기준 날짜. (child_id, entry_date, institution_id) 하나당 요약 하나다.
     entry_date: str
 
-    #: 같은 아이·같은 날짜의 일지들. 여러 기관 것이 섞여 있는 것이 정상이다.
+    #: 이 요약을 쓰는 기관. **묶음 키의 일부다.**
+    #: 보호자 동의가 기관별(sharing_consent)이고 Gate 1 승인 주체도 그 기관의
+    #: 작성자라, 기관을 가로질러 묶으면 승인할 사람이 없어진다.
+    institution_id: int
+    institution_name: str | None = None
+
+    #: 같은 아이·같은 날짜·**같은 기관**의 일지들.
     #:
     #: ⚠️ 검증에서 BLOCK 판정된 기록은 여기 넣지 않는다. 개인정보가 든 기록이
     #: 요약으로 들어가면 Gate 1 이전에 이미 유출이다. 거르는 쪽은 백엔드다 —
@@ -104,6 +106,7 @@ class Claim(BaseModel):
 class SummaryOutput(BaseModel):
     child_id: int
     entry_date: str
+    institution_id: int
 
     #: 요약 본문. **claims[].text 를 배열 순서대로 이은 것이다.**
     #: 모델에게 따로 받지 않는다 — 따로 받으면 claims 밖 문장이 생겨

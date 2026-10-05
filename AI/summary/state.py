@@ -19,15 +19,14 @@ class SummaryState(TypedDict, total=False):
     child_id: int
     child_name: str
     entry_date: str
+    #: 묶음 키의 일부. 한 기관 안에서만 묶는다 (CRITERIA.md §1).
+    institution_id: int
+    institution_name: str | None
     sources: list[SourceEntry]
 
     # ── gather 가 채운다 ──
     #: journal_entry_id → 그 일지 본문. 인용을 **그 일지 안에서만** 찾는다.
     by_id: dict[int, str]
-    #: journal_entry_id → 기관명. 기관을 옮겨 적었는지 보는 데 쓴다.
-    institution_of: dict[int, str | None]
-    #: 본문에 등장했는지 확인할 기관명 목록.
-    institutions: list[str]
 
     # ── write 가 채운다 ──
     llm_called: bool
