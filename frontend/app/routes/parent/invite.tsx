@@ -1,5 +1,12 @@
 import { useState, useTransition } from "react";
-import { Link, useLoaderData, useNavigate, useRevalidator, useSearchParams } from "react-router";
+import {
+  Link,
+  redirect,
+  useLoaderData,
+  useNavigate,
+  useRevalidator,
+  useSearchParams,
+} from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
@@ -31,7 +38,9 @@ const TERMS = [
 ] as const;
 
 export async function clientLoader() {
-  const { role } = await getSession();
+  const { loggedIn, signupCompleted, role } = await getSession();
+  // 카카오 로그인만 하고 가입을 안 끝낸 사람은 여기서 할 수 있는 게 없다 — 연결 요청 조회가 403 이다.
+  if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   // 로그인 전에는 대기 목록을 물어볼 수 없다 — 서버가 401 을 준다.
   if (role !== "parent") {
     return { loggedIn: false, onboarded: false, links: [] as PendingLink[] };
