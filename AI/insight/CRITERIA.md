@@ -26,11 +26,13 @@
 
 | 필드 | 뜻 |
 | --- | --- |
-| `claim_id` | 인사이트가 근거를 가리킬 때 쓰는 번호 |
+| `claim_id` | BE가 붙이는 번호. `{summary_id}-{claims 배열 순서}` |
 | `text` | claim 문장 |
-| `institution_type` | 기관 종류 (BE가 `journal_entry_id`로 조인해서 붙임) |
 | `entry_date` | 기록 날짜 |
-| `evidence` | `[{journal_entry_id, quote}]` |
+| `institution_id`, `institution_type` | 기관 번호와 종류 (BE가 `journal_entry_id`로 조인해서 붙임). 이름은 받지 않음 |
+| `evidence` | `[{journal_entry_id, quote}]`, 최소 1개 |
+
+입력에는 보호자가 동의한 기관 목록(`consented_institutions`)도 함께 옵니다. 수신 기관 후보 계산에만 쓰고 모델에게는 보여주지 않습니다.
 
 - Gate 1에서 근거가 끊긴 "교사 작성" 문장은 넣지 않습니다. 원본으로 추적되지 않는 내용이 다른 기관으로 나가면 안 되기 때문입니다.
 
