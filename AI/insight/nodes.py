@@ -63,7 +63,19 @@ def _evidence_count(ids: list[str], index: dict) -> int:
     return len(ids)
 
 
-def _clean_supports(raw, index: dict) -> list[Support]:
+def _institutions_grounded(texts: list[str], cited_types: set[str], known_types: set[str]) -> bool:
+    """
+    글에 나온 기관 종류가 전부 근거 claim 의 기관 종류 안에 있는가.
+    "센터에서는…" 이라고 썼는데 근거가 학교 claim 뿐이면 False.
+    """
+    if not config.REQUIRE_INSTITUTION_GROUNDING:
+        return True
+    joined = " ".join(texts)
+    mentioned = {t for t in known_types if t in joined}
+    return mentioned <= cited_types
+
+
+def _clean_supports(raw, index: dict, known_types: set[str]) -> list[Support]:
     """
     문제 있는 대처는 그 대처만 버린다 (§4).
 
@@ -85,6 +97,11 @@ def _clean_supports(raw, index: dict) -> list[Support]:
             continue
         if config.REQUIRE_SUPPORT_RESULT and not result:
             continue
+
+        support_types = {index[i]["institution_type"] for i in ids if i in index}
+        if not _institutions_grounded([action, result], support_types, known_types):
+            continue
+
         kept.append(Support(action=action, result=result, claim_ids=ids))
     return kept
 
@@ -114,6 +131,7 @@ def reflect(state: dict) -> dict:
       목록 밖 claim_id → 인사이트 버림
       근거 claim 이 최소 수 미만 → 인사이트 버림
       상황·반응·본문 중 비어 있는 것 → 인사이트 버림
+      본문에 나온 기관 종류가 근거 기관에 없음 → 인사이트 버림
       대처는 하나씩 검사해서 문제 있는 것만 버림
     그다음 출처·기관·수신 후보를 claim 에서 계산한다.
     """
@@ -121,6 +139,7 @@ def reflect(state: dict) -> dict:
         return {**state, "insights": []}  # API 에서는 503 으로 바뀐다 (graph.py)
 
     index = state["claim_index"]
+    known_types = set(config.INSTITUTION_TYPES) | {c["institution_type"] for c in state["claims"]}
     insights = []
 
     for raw in state["raw_insights"]:
@@ -139,15 +158,19 @@ def reflect(state: dict) -> dict:
             continue
 
         claims = [index[i] for i in ids]
+        cited_types = {c["institution_type"] for c in claims}
+        if not _institutions_grounded(list(texts.values()), cited_types, known_types):
+            continue
+
         inst_ids = {c["institution_id"] for c in claims}
         cross = len(inst_ids) >= 2
 
         insights.append(Insight(
             **texts,
-            supports=_clean_supports(raw.get("supports"), index),
+            supports=_clean_supports(raw.get("supports"), index, known_types),
             claim_ids=ids,
             source_entry_ids=sorted({e["journal_entry_id"] for c in claims for e in c["evidence"]}),
-            institution_types=sorted({c["institution_type"] for c in claims}),
+            institution_types=sorted(cited_types),
             cross_institution=cross,
             recipients=_recipients(inst_ids, cross, state.get("consented_institutions", [])),
         ))

@@ -19,7 +19,12 @@ from insight.prompts import WRITING_RULES, system_prompt  # noqa: E402
 CRITERIA = (AI_DIR / "insight" / "CRITERIA.md").read_text(encoding="utf-8")
 
 #: §4 성립 조건이 전제하는 플래그. 꺼지면 문서와 코드가 다르게 동작한다.
-REQUIRED_GATES = ("REQUIRE_VALID_CLAIM_IDS", "REQUIRE_SUPPORT_EVIDENCE", "REQUIRE_SUPPORT_RESULT")
+REQUIRED_GATES = (
+    "REQUIRE_VALID_CLAIM_IDS",
+    "REQUIRE_SUPPORT_EVIDENCE",
+    "REQUIRE_SUPPORT_RESULT",
+    "REQUIRE_INSTITUTION_GROUNDING",
+)
 
 
 def section(num: int) -> str:
