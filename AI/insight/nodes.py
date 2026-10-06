@@ -3,20 +3,21 @@
 Insight Agent 의 4단계 노드 — 인식/계획/행동/반영.
 
 모델은 인사이트 후보를 쓰고, 코드가 거른다 (CRITERIA §4).
-출처, 기관 간 비교 여부, 수신 기관 후보는 모델에게 묻지 않고 코드가 계산한다 (§3, §7).
+출처와 기관 간 비교 여부는 모델에게 묻지 않고 코드가 계산한다 (§3).
+수신 기관은 정하지 않는다. BE 가 Gate 2 시점의 동의로 정한다 (§7).
 """
 
 from . import config
 from .llm import LlmError, ask_json
 from .prompts import build_messages
-from .schemas import Insight, RecipientCandidate, Support
+from .schemas import Insight, Support
 
 
 def perceive(state: dict) -> dict:
     """
     인식: 동의하지 않은 기관의 claim 을 먼저 뺀 뒤, claim_id 색인을 만든다.
 
-    수신 쪽만 막으면, 철회된 기관 기록이 인사이트 재료로 들어가
+    받는 쪽만 막으면, 철회된 기관 기록이 인사이트 재료로 들어가
     그 내용이 다른 기관으로 흘러간다 (#109). BE 도 거르지만 여기서 한 번 더 거른다.
     동의 목록이 비어 있으면 아무 claim 도 쓰지 않는다 — 모르면 막는 쪽이 안전하다.
     """
@@ -125,23 +126,6 @@ def _clean_supports(raw, index: dict, known_types: set[str]) -> list[Support]:
     return kept
 
 
-def _recipients(source_inst_ids: set[int], cross: bool, consented: list[dict]) -> list[RecipientCandidate]:
-    """
-    수신 기관 후보 (§7). 후보는 동의한 기관 밖으로 나갈 수 없다.
-    추천 = 근거가 나오지 않은 기관. 기관 간 비교 인사이트는 전부 추천.
-    """
-    out = []
-    for inst in consented:
-        is_new = inst["institution_id"] not in source_inst_ids
-        recommended = (config.RECOMMEND_NEW_INSTITUTIONS and is_new) or (config.RECOMMEND_ALL_ON_CROSS and cross)
-        out.append(RecipientCandidate(
-            institution_id=inst["institution_id"],
-            institution_type=inst["institution_type"],
-            recommended=recommended,
-        ))
-    return out
-
-
 def reflect(state: dict) -> dict:
     """
     반영: 최종 결정은 코드가 한다.
@@ -152,7 +136,7 @@ def reflect(state: dict) -> dict:
       상황·반응·본문 중 비어 있는 것 → 인사이트 버림
       본문에 나온 기관 종류가 근거 기관에 없음 → 인사이트 버림
       대처는 하나씩 검사해서 문제 있는 것만 버림
-    그다음 출처·기관·수신 후보를 claim 에서 계산한다.
+    그다음 출처와 기관을 claim 에서 계산한다.
     """
     if state.get("llm_error"):
         return {**state, "insights": []}  # API 에서는 503 으로 바뀐다 (graph.py)
@@ -181,17 +165,16 @@ def reflect(state: dict) -> dict:
         if not _institutions_grounded(list(texts.values()), cited_types, known_types):
             continue
 
-        inst_ids = {c["institution_id"] for c in claims}
-        cross = len(inst_ids) >= 2
+        inst_ids = sorted({c["institution_id"] for c in claims})
 
         insights.append(Insight(
             **texts,
             supports=_clean_supports(raw.get("supports"), index, known_types),
             claim_ids=ids,
             source_entry_ids=sorted({e["journal_entry_id"] for c in claims for e in c["evidence"]}),
+            source_institution_ids=inst_ids,
             institution_types=sorted(cited_types),
-            cross_institution=cross,
-            recipients=_recipients(inst_ids, cross, state.get("consented_institutions", [])),
+            cross_institution=len(inst_ids) >= 2,
         ))
 
     if config.MAX_INSIGHTS is not None:

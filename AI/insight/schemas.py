@@ -9,8 +9,10 @@ matching · validation · summary 와 같은 원칙이다 — 스펙을 pydantic
 
 1. **입력이 일지가 아니라 승인된 요약의 claims 다.** 여러 날·여러 기관의
    claims 를 모아 "상황 → 반응 → 대처와 결과" 묶음을 찾는다.
-2. **모델은 근거 번호(claim_id)만 가리킨다.** 출처(기관·날짜·일지), 기관 간 비교
-   여부, 수신 기관 후보는 코드가 계산한다.
+2. **모델은 근거 번호(claim_id)만 가리킨다.** 출처(기관·날짜·일지)와 기관 간 비교
+   여부는 코드가 계산한다.
+3. **수신 기관은 정하지 않는다.** 근거를 낸 기관만 내고, 누구에게 보일지는 BE 가
+   Gate 2 시점의 동의로 정한다. 동의는 인사이트를 만든 뒤에도 바뀌기 때문이다.
 
 무엇이 인사이트로 성립하고 무엇을 쓰지 않는지는 CRITERIA.md 에 있다.
 """
@@ -40,7 +42,7 @@ class InsightClaim(BaseModel):
     text: str
     entry_date: str
 
-    #: 기관 간 비교와 수신 기관 추천에 쓴다. 이름은 받지 않는다 — 비교에 필요 없다.
+    #: 기관 간 비교와 기관 종류 대조에 쓴다. 이름은 받지 않는다.
     institution_id: int
     institution_type: str  # 학교 / 센터 / 학원
 
@@ -62,8 +64,9 @@ class InsightInput(BaseModel):
 
     claims: list[InsightClaim]
 
-    #: 아이의 소속 기관 중 보호자가 공유에 동의한 기관.
-    #: 수신 기관 후보는 이 목록 밖으로 나갈 수 없다 (CRITERIA §7). 모델에게 보여주지 않는다.
+    #: 보호자의 기관별 공유 동의(sharing_consent)가 ACTIVE 인 기관.
+    #: 이 밖의 기관 claim 은 재료에서 뺀다 (CRITERIA §7). 모델에게 보여주지 않는다.
+    #: sharing_consent 가 구현되기 전까지 BE 는 아이가 등록된 기관 전부를 넣는다.
     consented_institutions: list[Institution] = Field(default_factory=list)
 
 
@@ -78,17 +81,6 @@ class Support(BaseModel):
     claim_ids: list[str] = Field(min_length=1)
 
 
-class RecipientCandidate(BaseModel):
-    """수신 기관 후보. **코드가 계산한다.** 최종 선택은 Gate 2 의 교사가 한다."""
-
-    institution_id: int
-    institution_type: str
-
-    #: 이 인사이트의 근거가 나오지 않은 기관이면 True (새로 알게 되는 기관).
-    #: 기관 간 비교 인사이트는 관련 기관 전부 True.
-    recommended: bool
-
-
 class Insight(BaseModel):
     # ── 모델이 쓰는 것 ──
     situation: str
@@ -99,9 +91,10 @@ class Insight(BaseModel):
 
     # ── 코드가 채우는 것 (모델 응답을 받을 때는 비어 있다) ──
     source_entry_ids: list[int] = Field(default_factory=list)
+    #: 근거를 낸 기관. 수신 후보는 BE 가 Gate 2 시점에 이 값과 그때의 동의로 계산한다.
+    source_institution_ids: list[int] = Field(default_factory=list)
     institution_types: list[str] = Field(default_factory=list)
     cross_institution: bool = False
-    recipients: list[RecipientCandidate] = Field(default_factory=list)
 
 
 class InsightOutput(BaseModel):

@@ -6,6 +6,8 @@ CRITERIA.md 가 원본이고 이 파일이 따라간다. 플래그 이름은 CRI
 이름과 글자까지 같아야 한다 (test_criteria_sync.py 가 대조한다).
 """
 
+import os
+
 # ── 성립 조건 (CRITERIA §4) — 코드가 거른다 ─────────────────────
 
 #: 모델이 가리킨 claim_id 가 입력에 없으면 그 인사이트를 버린다.
@@ -24,6 +26,15 @@ REQUIRE_SUPPORT_EVIDENCE = True
 
 #: 대처마다 결과가 있어야 한다. 결과가 기록에 없는 대처는 쓰지 않는다.
 REQUIRE_SUPPORT_RESULT = True
+
+#: 본문에 나온 기관 종류가 근거 claim 의 기관 종류 안에 있어야 한다.
+#: 이름 대신 종류로 대조한다 — 프롬프트가 기관 이름을 쓰지 말라고 하고,
+#: 기관 간 비교 문장은 "학교에서는… 센터에서는…" 처럼 종류로 쓰인다.
+#: 한계: 같은 종류 기관이 둘이면(센터 두 곳) 구별하지 못한다.
+REQUIRE_INSTITUTION_GROUNDING = True
+
+#: 본문에서 찾을 기관 종류 단어. 입력 claim 의 종류도 함께 본다.
+INSTITUTION_TYPES = ("학교", "센터", "학원")
 
 
 # ── 쓰는 원칙 (CRITERIA §5) — 프롬프트에 들어간다 ──────────────
@@ -50,14 +61,13 @@ WRITING_RULE_FLAGS = (
 )
 
 
-# ── 수신 기관 후보 (CRITERIA §7) — 모델이 아니라 코드가 정한다 ──
+# ── 동의 (CRITERIA §7) — 모델이 아니라 코드가 정한다 ────────────
 
-#: 후보 중 이 인사이트의 근거가 나오지 않은 기관을 추천으로 표시한다.
-#: 근거를 쓴 기관은 이미 아는 내용이라, 새로 알게 되는 기관에 우선 의미가 있다.
-RECOMMEND_NEW_INSTITUTIONS = True
-
-#: 기관 간 비교 인사이트는 관련 기관 전부를 추천한다. 양쪽 모두 차이를 알아야 한다.
-RECOMMEND_ALL_ON_CROSS = True
+#: 동의하지 않은 기관의 claim 은 인사이트 재료에서 뺀다 (#109).
+#: 받는 쪽만 막으면 철회된 기관 기록이 재료로 들어가 다른 기관으로 흘러간다.
+#: 동의 목록이 비어 있으면 아무 claim 도 쓰지 않는다 — 모르면 막는다.
+#: 수신 후보는 인사이트가 정하지 않는다. BE 가 Gate 2 시점의 동의로 계산한다.
+FILTER_UNCONSENTED_SOURCES = True
 
 
 # ── 출력 크기 ───────────────────────────────────────────────────
@@ -66,25 +76,14 @@ RECOMMEND_ALL_ON_CROSS = True
 MAX_INSIGHTS = None
 
 
-# ── Luna (OpenAI 호환) — validation/config.py 와 같은 값 ───────
+# ── Luna (OpenAI 호환) — 판정 기준이 아니라 접속 설정 ──────────
 
 LUNA_CHAT_PATH = "/v1/chat/completions"
-LUNA_MODEL = "gpt-5.6-luna"
 
-#: temperature 는 기본값(1)만 허용된다. 흔들림은 프롬프트와 코드 규칙으로 잡는다.
+#: 모델은 .env 의 LUNA_MODEL 로 바꾼다. 없으면 기본값을 쓴다.
+#: 코드를 고치지 않고 로컬·서버에서 모델을 바꿔 비교할 수 있게 하기 위해서다.
+LUNA_MODEL = os.environ.get("LUNA_MODEL", "gpt-5.6-luna")
+
+#: temperature 는 보내지 않는다. 흔들림은 프롬프트와 코드 규칙으로 잡는다.
 #: 인사이트는 여러 날의 claims 를 한 번에 넣어 요청이 길어서, 지켜보고 필요하면 늘린다.
 LUNA_TIMEOUT = 60.0
-
-#: 본문에 나온 기관 종류가 근거 claim 의 기관 종류 안에 있어야 한다.
-#: 이름 대신 종류로 대조한다 — 프롬프트가 기관 이름을 쓰지 말라고 하고,
-#: 기관 간 비교 문장은 "학교에서는… 센터에서는…" 처럼 종류로 쓰인다.
-#: 한계: 같은 종류 기관이 둘이면(센터 두 곳) 구별하지 못한다.
-REQUIRE_INSTITUTION_GROUNDING = True
-
-#: 본문에서 찾을 기관 종류 단어. 입력 claim 의 종류도 함께 본다.
-INSTITUTION_TYPES = ("학교", "센터", "학원")
-
-#: 동의하지 않은 기관의 claim 은 인사이트 재료에서 뺀다 (#109).
-#: 수신 쪽만 막으면 철회된 기관 기록이 재료로 들어가 다른 기관으로 흘러간다.
-#: 동의 목록이 비어 있으면 아무 claim 도 쓰지 않는다 — 모르면 막는다.
-FILTER_UNCONSENTED_SOURCES = True
