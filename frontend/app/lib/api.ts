@@ -121,9 +121,22 @@ const BE_READY = {
   careInfo: false,
 } satisfies Record<string, boolean>;
 
+export type Feature = keyof typeof BE_READY;
+
 /** 이 기능을 mock 으로 처리할지. 전체 mock 이거나 백엔드에 아직 없으면 true. */
-function mockFor(feature: keyof typeof BE_READY): boolean {
+function mockFor(feature: Feature): boolean {
   return USE_MOCK || !BE_READY[feature];
+}
+
+/**
+ * 여러 기능의 숫자를 한데 모아 보여주는 곳(대시보드·사이드바 배지)용.
+ *
+ * 실연동 빌드에서 백엔드에 아직 없는 기능은 mock 대신 null 을 돌려준다. 모아 보는
+ * 화면에 실데이터와 mock 이 표시 없이 섞이면 무엇이 실제로 연결됐는지 알 수 없어서다.
+ * 화면은 null 을 "준비 중"으로 그린다. 전체 mock 모드에서는 평소대로 mock 을 돌려준다.
+ */
+export function loadIfReady<T>(feature: Feature, load: () => Promise<T>): Promise<T | null> {
+  return USE_MOCK || BE_READY[feature] ? load() : Promise.resolve(null);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
