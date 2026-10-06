@@ -64,7 +64,13 @@ def _evidence_count(ids: list[str], index: dict) -> int:
 
 
 def _clean_supports(raw, index: dict) -> list[Support]:
-    """근거 번호가 없거나 결과가 비어 있는 대처는 그 대처만 버린다 (§4)."""
+    """
+    문제 있는 대처는 그 대처만 버린다 (§4).
+
+    근거 번호가 하나도 없는 대처는 플래그와 무관하게 항상 건너뛴다.
+    Support.claim_ids 는 최소 1개라, 빈 채로 만들면 ValidationError 가 난다.
+    REQUIRE_SUPPORT_EVIDENCE 는 "가리킨 번호가 전부 입력에 있는가" 만 정한다.
+    """
     kept = []
     for s in raw if isinstance(raw, list) else []:
         if not isinstance(s, dict):
@@ -72,9 +78,10 @@ def _clean_supports(raw, index: dict) -> list[Support]:
         ids = _ids(s.get("claim_ids"))
         action = (s.get("action") or "").strip()
         result = (s.get("result") or "").strip()
-        if not action:
+
+        if not action or not ids:
             continue
-        if config.REQUIRE_SUPPORT_EVIDENCE and not _all_known(ids, index):
+        if config.REQUIRE_SUPPORT_EVIDENCE and not all(i in index for i in ids):
             continue
         if config.REQUIRE_SUPPORT_RESULT and not result:
             continue
