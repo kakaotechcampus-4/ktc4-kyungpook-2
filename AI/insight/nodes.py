@@ -13,8 +13,27 @@ from .schemas import Insight, RecipientCandidate, Support
 
 
 def perceive(state: dict) -> dict:
-    """인식: claim_id 로 claim 을 바로 찾을 수 있게 색인을 만든다."""
-    state["claim_index"] = {c["claim_id"]: c for c in state["claims"]}
+    """
+    인식: 동의하지 않은 기관의 claim 을 먼저 뺀 뒤, claim_id 색인을 만든다.
+
+    수신 쪽만 막으면, 철회된 기관 기록이 인사이트 재료로 들어가
+    그 내용이 다른 기관으로 흘러간다 (#109). BE 도 거르지만 여기서 한 번 더 거른다.
+    동의 목록이 비어 있으면 아무 claim 도 쓰지 않는다 — 모르면 막는 쪽이 안전하다.
+    """
+    claims = state["claims"]
+    dropped = []
+
+    if config.FILTER_UNCONSENTED_SOURCES:
+        allowed = {i["institution_id"] for i in state.get("consented_institutions", [])}
+        dropped = [c["claim_id"] for c in claims if c["institution_id"] not in allowed]
+        claims = [c for c in claims if c["institution_id"] in allowed]
+
+    if dropped:
+        print(f"[insight] 동의 밖 기관 claim {len(dropped)}건 제외")
+
+    state["claims"] = claims  # 프롬프트도 이 목록만 본다
+    state["dropped_claim_ids"] = dropped
+    state["claim_index"] = {c["claim_id"]: c for c in claims}
     return state
 
 

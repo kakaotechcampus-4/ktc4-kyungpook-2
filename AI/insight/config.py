@@ -83,3 +83,8 @@ REQUIRE_INSTITUTION_GROUNDING = True
 
 #: 본문에서 찾을 기관 종류 단어. 입력 claim 의 종류도 함께 본다.
 INSTITUTION_TYPES = ("학교", "센터", "학원")
+
+#: 동의하지 않은 기관의 claim 은 인사이트 재료에서 뺀다 (#109).
+#: 수신 쪽만 막으면 철회된 기관 기록이 재료로 들어가 다른 기관으로 흘러간다.
+#: 동의 목록이 비어 있으면 아무 claim 도 쓰지 않는다 — 모르면 막는다.
+FILTER_UNCONSENTED_SOURCES = True

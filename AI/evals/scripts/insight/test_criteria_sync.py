@@ -24,6 +24,7 @@ REQUIRED_GATES = (
     "REQUIRE_SUPPORT_EVIDENCE",
     "REQUIRE_SUPPORT_RESULT",
     "REQUIRE_INSTITUTION_GROUNDING",
+    "FILTER_UNCONSENTED_SOURCES",
 )
 
 
@@ -55,7 +56,7 @@ def main() -> int:
             errors.append(f"{flag} 가 꺼져 있다. CRITERIA §5 는 켜진 것을 전제한다")
     for flag in REQUIRED_GATES:
         if not getattr(config, flag, False):
-            errors.append(f"{flag} 가 꺼져 있다. CRITERIA §4 는 켜진 것을 전제한다")
+            errors.append(f"{flag} 가 꺼져 있다. CRITERIA §4·§7 은 켜진 것을 전제한다")
 
     # 4. 모델이 실제로 받는 프롬프트에 §5 문장이 전부 들어 있는가
     prompt = system_prompt()
