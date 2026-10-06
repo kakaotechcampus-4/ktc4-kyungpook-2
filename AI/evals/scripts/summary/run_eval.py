@@ -52,6 +52,9 @@ def _claim_record(claim: dict, by_id: dict) -> dict:
         evidence.append(
             {
                 "journal_entry_id": e["journal_entry_id"],
+                #: 인용문 자체. 사람이 "문장이 이 인용으로 설명되는가" 를 보려면
+                #: 길이가 아니라 글자가 있어야 한다 (score.py --sample).
+                "quote": e["quote"],
                 "quote_chars": quote_len,
                 "source_chars": source_len,
                 #: 1.0 이면 일지를 통째로 인용한 것이다. 대조는 통과하지만

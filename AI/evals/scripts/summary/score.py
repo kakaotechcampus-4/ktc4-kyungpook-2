@@ -126,10 +126,10 @@ def main() -> None:
         print(f"\n■ 뒷받침 표본 {len(picked)}건 (seed={args.seed})")
         print("   문장이 **정말 그 인용으로 설명되는지** 사람이 본다. 코드는 못 잡는다.")
         for i, c in enumerate(picked, 1):
-            srcs = ", ".join(str(e["journal_entry_id"]) for e in c["evidence"])
             print(f"\n   [{i}] {c['text']}")
-            print(f"       근거 일지 {srcs} · 인용 비율 "
-                  f"{[e['quote_ratio'] for e in c['evidence']]}")
+            for e in c["evidence"]:
+                print(f"       [{e['journal_entry_id']}] \"{e.get('quote', '')}\"  "
+                      f"({e['quote_chars']}/{e['source_chars']}자 = {e['quote_ratio']})")
 
     print("\n" + "─" * 60)
     print("0 건은 분모 없이 적지 않는다. 보고할 때 전체 건수를 함께 쓴다.")
