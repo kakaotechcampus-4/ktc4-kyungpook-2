@@ -863,6 +863,8 @@ CONSENT_BLOCKED    동의 대기 아동의 기록이라 정지
 VALIDATING         검증 중
 VALIDATED          검증 통과 (PASS·REVIEW) — 요약 대기 (BE 추가)
 VALIDATION_BLOCKED 검증에서 막힘 (BLOCK) — 수정 요청 큐 (BE 추가)
+REUPLOAD_REQUESTED 선생님이 수정한 원본을 다시 올리기로 함 — 여기서 끝 (BE 추가)
+VALIDATION_HELD    선생님이 보류함 — 여기서 끝 (BE 추가)
 SUMMARIZING        요약 중
 GATE1_PENDING      1차 검토 대기
 COMPLETED          완료
@@ -898,18 +900,27 @@ AI 자동 확정과 선생님 확정 둘 다 `MATCHED`로 들어오므로 구분
 | --- | --- | --- |
 | `PASS` · `REVIEW` | `VALIDATED` (요약 대기) | 행 추가 |
 | `BLOCK` | `VALIDATION_BLOCKED` (수정 요청 큐) | 행 추가 |
-| 호출 실패 (4xx, 응답 해석 실패) | `FAILED` (그 건만, 다음 건 계속) | 행 없음 (`verdict` NOT NULL) |
-| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | `FAILED` (그 건만. 나머지는 `MATCHED`로 되돌리고 이번 차례 멈춤) | 행 없음 |
+| 호출 실패 (4xx, 응답 해석 실패) | `FAILED` (그 건만, 다음 건 계속) | `verdict = FAILED` 로 행 추가 (#122) |
+| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | `FAILED` (그 건만. 나머지는 `MATCHED`로 되돌리고 이번 차례 멈춤) | `verdict = FAILED` 로 행 추가 (#122) |
 
 `VALIDATED`·`VALIDATION_BLOCKED`도 초안에 없던 값이다. `BLOCK`에 `FAILED`를 쓰지 않는 이유는 `FAILED`가
 시스템 오류라는 뜻이고 확인 필요 큐(O-23)가 처리 대상으로 보기 때문이다.
+
+수정 요청 큐(O-25)에서 선생님이 처리하면 `VALIDATION_BLOCKED`가 아래 둘 중 하나로 끝난다 (#122).
+
+| 선생님 선택 | `journal_entry.status` | 뜻 |
+| --- | --- | --- |
+| 수정한 원본 다시 올리기 | `REUPLOAD_REQUESTED` | 고친 내용이 **새 파일**로 올라온다. 원본은 고치지도 지우지도 않으므로(append-only) 이 일지는 대체될 예정이고 여기서 끝난다 |
+| 이 기록 보류 | `VALIDATION_HELD` | 다음 단계로 가지 않는다 |
 
 > **LLM 을 못 쓰면 AI 가 503 을 준다** (#98). 판정 없이 `REVIEW`로 오면 검증을 못 한 일지가 요약으로 새기 때문이다.
 > 정규식으로 개인정보가 잡힌 경우만 LLM 과 상관없이 200 + `BLOCK`이다. Luna 설정이 없으면 `/health`도 503 이라
 > 워커가 일지를 집지 않는다 (매칭 워커도 같은 `/health`를 본다).
 
-> ⚠️ **`FAILED`만으로는 매칭 실패인지 검증 실패인지 모른다.** `matching_result.status`로 구분한다
-> (매칭 실패 = `FAILED`, 검증 실패 = 매칭은 끝났으니 `AUTO`). 진행률(O-26)·재처리(O-27)에서 필요하면 따로 나눈다.
+> **`FAILED`만으로는 매칭 실패인지 검증 실패인지 모른다.** `journal_entry.status`는 두 경우에 같은 값이라,
+> 어느 단계에서 실패했는지는 결과 테이블로 구분한다 — 검증에서 실패했으면 `validation_result`에
+> `verdict = FAILED` 행이 있다 (#122. 그 전에는 행 자체가 없어서 `matching_result.status`로 돌려 짚어야 했다).
+> 실패 사유·재시도 횟수를 담을 컬럼은 아직 없다. 재시도·타임아웃 규약이 정해지면 그 계약에 맞춰 추가한다.
 
 **예시**
 
@@ -1079,7 +1090,13 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 PASS     문제 없음 — 요약으로 넘긴다
 REVIEW   교사 확인 필요 — 수정 요청 큐로
 BLOCK    그대로 두면 위험 — 요약으로 넘기지 않는다
+FAILED   AI 호출 자체가 실패 — AI 계약에 없는 BE 전용 값 (#122)
 ```
+
+`FAILED`는 `matching_result.status`의 `FAILED`와 같은 역할이다. 이 값이 없던 때는 검증 호출이
+실패하면 행을 아예 남기지 않아서, 실패 사실이 로그에만 있고 매칭 실패인지 검증 실패인지도
+일지 상태만으로는 구분할 수 없었다. 수정 요청 큐(O-24)는 `BLOCK`만 조회하므로 이 행은 큐에
+뜨지 않는다 — 재처리(O-27)가 대상을 찾는 데 쓴다.
 
 > 🔴 **`BLOCK` 은 여기서 끊는다.** 개인정보가 든 기록이 요약으로 새면 Gate 1 이전에 이미 유출이다.
 
@@ -1638,3 +1655,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-09-30 | `matching_result.mentioned_child_ids` 엔티티에 반영 (§7.1 설명은 #78) | #75 |
 | 2026-10-01 | `validation_result` 구현 (`ValidationResult`). 저장 시점 설명 추가 (§8.1) | #90 |
 | 2026-10-01 | `journal_entry.status`에 `VALIDATED`·`VALIDATION_BLOCKED` 추가, 검증 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가지만 `journal_entry.status` CHECK 제약은 9/30에 제거돼 수동 조치 불필요 | #90 |
+| 2026-10-07 | `journal_entry.status`에 `REUPLOAD_REQUESTED`·`VALIDATION_HELD` 추가 (수정 요청 큐 처리 결과), `validation_result.verdict`에 `FAILED` 추가 (검증 호출 실패를 행으로 남김). 둘 다 enum 값 추가라 CHECK 제약이 없는 현재 배포 DB에 수동 조치 불필요 | #122 |

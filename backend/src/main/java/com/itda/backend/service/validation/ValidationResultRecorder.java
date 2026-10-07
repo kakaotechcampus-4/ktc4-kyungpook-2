@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.itda.backend.domain.JournalEntry;
 import com.itda.backend.domain.ValidationResult;
+import com.itda.backend.domain.ValidationVerdict;
 import com.itda.backend.dto.response.ValidationAgentResponse;
 import com.itda.backend.repository.JournalEntryRepository;
 import com.itda.backend.repository.ValidationResultRepository;
@@ -47,7 +48,16 @@ public class ValidationResultRecorder {
         }
     }
 
-    /** 호출이 실패했다. 판정이 없어 결과 행은 남기지 않는다 (verdict 가 NOT NULL). */
+    /**
+     * 호출이 실패했다. 판정 대신 {@code verdict = FAILED} 로 행을 남긴다(#122).
+     *
+     * <p>예전에는 "판정이 없다"는 이유로 행을 남기지 않았는데, 그러면 실패 사실이 로그에만 남고
+     * 매칭 실패인지 검증 실패인지도 일지 상태만으로는 구분할 수 없었다. 매칭이 이미
+     * {@code MatchingStatus.FAILED} 로 행을 남기고 있어 그쪽과 대칭을 맞춘다.
+     *
+     * <p>실패 사유·재시도 횟수를 담을 컬럼은 아직 없다 — 재시도·타임아웃 규약이 정해진 뒤에
+     * 그 계약에 맞춰 추가한다. 지금은 "언제 어느 일지가 검증에서 실패했는지"까지만 남긴다.
+     */
     @Transactional
     public void recordFailure(Long journalEntryId) {
         JournalEntry entry = journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId).orElse(null);
@@ -55,6 +65,8 @@ public class ValidationResultRecorder {
             log.warn("journal entry deleted during validation, failure not recorded journalEntryId={}", journalEntryId);
             return;
         }
+        validationResultRepository.save(ValidationResult.of(
+                journalEntryId, null, entry.getChildId(), ValidationVerdict.FAILED, null, null, null));
         entry.failValidation();
     }
 

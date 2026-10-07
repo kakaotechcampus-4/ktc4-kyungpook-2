@@ -158,6 +158,32 @@ public class JournalEntry {
         this.status = JournalEntryStatus.FAILED;
     }
 
+    /** 검증에서 막힌(BLOCK) 기록을 선생님이 수정 요청 큐에서 처리할 수 있는 상태인지. */
+    public boolean isAwaitingReinput() {
+        return this.status == JournalEntryStatus.VALIDATION_BLOCKED;
+    }
+
+    /**
+     * 선생님이 원본을 고쳐 다시 올리기로 했다(#122). 원본은 수정하지 않고 새 파일로 올라오므로
+     * 이 일지는 대체될 예정이고 여기서 끝난다.
+     */
+    public void requestReupload() {
+        requireAwaitingReinput();
+        this.status = JournalEntryStatus.REUPLOAD_REQUESTED;
+    }
+
+    /** 선생님이 이 기록을 보류했다(#122). 다음 단계로 가지 않는다. */
+    public void holdAfterValidation() {
+        requireAwaitingReinput();
+        this.status = JournalEntryStatus.VALIDATION_HELD;
+    }
+
+    private void requireAwaitingReinput() {
+        if (!isAwaitingReinput()) {
+            throw new IllegalStateException("검증에서 막힌 기록이 아닙니다: " + this.status);
+        }
+    }
+
     /** 처리하던 앱이 꺼져서 검증 중에 멈춘 일지를 다시 검증 대기로 돌린다. 확정된 아동은 그대로 둔다. */
     public void releaseValidating() {
         requireStatus(JournalEntryStatus.VALIDATING);
