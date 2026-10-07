@@ -11,8 +11,8 @@ matching · validation · summary 와 같은 원칙이다 — 스펙을 pydantic
    claims 를 모아 "상황 → 반응 → 대처와 결과" 묶음을 찾는다.
 2. **모델은 근거 번호(claim_id)만 가리킨다.** 출처(기관·날짜·일지)와 기관 간 비교
    여부는 코드가 계산한다.
-3. **수신 기관은 정하지 않는다.** 근거를 낸 기관만 내고, 누구에게 보일지는 BE 가
-   Gate 2 시점의 동의로 정한다. 동의는 인사이트를 만든 뒤에도 바뀌기 때문이다.
+3. **누가 볼 수 있는지(허락)는 정하지 않는다.** 근거 기관과 쓸모 있는 기관 종류만 내고,
+   BE 가 Gate 2 시점의 동의와 겹쳐 후보와 추천을 정한다.
 
 무엇이 인사이트로 성립하고 무엇을 쓰지 않는지는 CRITERIA.md 에 있다.
 """
@@ -92,9 +92,14 @@ class Insight(BaseModel):
     claim_ids: list[str]
     content: str
 
+    #: 이 인사이트가 쓸모 있는 기관 종류. 허락이 아니라 추천 표시에만 쓴다 (CRITERIA §7).
+    #: 코드가 학교·센터·학원 밖의 값을 뺀다.
+    relevant_institution_types: list[str] = Field(default_factory=list)
+    relevance_reason: str = ""
+
     # ── 코드가 채우는 것 (모델 응답을 받을 때는 비어 있다) ──
     source_entry_ids: list[int] = Field(default_factory=list)
-    #: 근거를 낸 기관. 수신 후보는 BE 가 Gate 2 시점에 이 값과 그때의 동의로 계산한다.
+    #: 근거를 낸 기관. 수신 후보는 BE 가 Gate 2 시점의 동의로 계산한다.
     source_institution_ids: list[int] = Field(default_factory=list)
     institution_types: list[str] = Field(default_factory=list)
     cross_institution: bool = False

@@ -34,7 +34,7 @@ REQUIRE_SUPPORT_RESULT = True
 #: 한계: 같은 종류 기관이 둘이면(센터 두 곳) 구별하지 못한다.
 REQUIRE_INSTITUTION_GROUNDING = True
 
-#: 본문에서 찾을 기관 종류 단어. 입력 claim 의 종류도 함께 본다.
+#: 기관 종류 목록. 본문 대조와 쓸모 태그 거르기에 쓴다.
 INSTITUTION_TYPES = ("학교", "센터", "학원")
 
 
@@ -51,6 +51,7 @@ ONE_SITUATION = True           # 인사이트 하나에 상황 하나
 WRITE_INSTITUTION_TYPE = True  # 기관마다 다르면 기관 종류로 쓴다. 이름은 쓰지 않는다
 CROSS_WITHOUT_SUPPORT = True   # 대처가 없어도 기관마다 반응이 다르면 인사이트
 RELATE_RECORDS = True          # 기록 하나를 다시 말하지 않는다. 묶거나 비교한다
+TAG_RELEVANCE = True           # 쓸모 있는 기관은 상황으로 고른다. 근거 기관인지로 정하지 않는다
 
 #: 동기화 테스트가 CRITERIA §5 표와 대조할 목록.
 WRITING_RULE_FLAGS = (
@@ -65,15 +66,16 @@ WRITING_RULE_FLAGS = (
     "WRITE_INSTITUTION_TYPE",
     "CROSS_WITHOUT_SUPPORT",
     "RELATE_RECORDS",
+    "TAG_RELEVANCE",
 )
 
 
-# ── 동의 (CRITERIA §7) — 모델이 아니라 코드가 정한다 ────────────
+# ── 동의 (CRITERIA §7) — 허락은 모델이 아니라 코드·BE 가 정한다 ──
 
 #: 동의하지 않은 기관의 claim 은 인사이트 재료에서 뺀다 (#109).
 #: 받는 쪽만 막으면 철회된 기관 기록이 재료로 들어가 다른 기관으로 흘러간다.
 #: 동의 목록이 비어 있으면 아무 claim 도 쓰지 않는다 — 모르면 막는다.
-#: 수신 후보는 인사이트가 정하지 않는다. BE 가 Gate 2 시점의 동의로 계산한다.
+#: 수신 후보는 BE 가 Gate 2 시점의 동의로 계산하고, 모델의 쓸모 태그는 추천 표시에만 쓴다.
 FILTER_UNCONSENTED_SOURCES = True
 
 
