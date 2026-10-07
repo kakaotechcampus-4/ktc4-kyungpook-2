@@ -12,6 +12,7 @@ from pathlib import Path
 AI_DIR = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(AI_DIR))
 
+from insight import config  # noqa: E402
 from insight.nodes import perceive, plan, reflect  # noqa: E402
 
 TYPES = {1: "학교", 2: "센터", 3: "학원"}
@@ -109,7 +110,26 @@ def test_동의_목록이_비면_아무_claim도_쓰지_않는다():
     assert state["claims"] == []
     assert state["skip_llm"] is True
 
+# ── 근거 수 세는 법 (CRITERIA §10 미결) ─────────────────────────
 
+# 같은 날 학교·센터 claim 두 개. claim() 의 날짜는 모두 2026-01-08 이다.
+SAME_DAY = [claim("20-0", 1, 201), claim("20-50", 2, 202)]
+
+
+def test_지금은_같은_날_두_claim도_근거_2개로_센다():
+    # 결정이 바뀌면 이 테스트를 CRITERIA §10 과 같이 바꾼다
+    assert config.COUNT_DISTINCT_DATES is False
+    assert len(run(make_state(claims=SAME_DAY), [insight(["20-0", "20-50"])])) == 1
+
+
+def test_COUNT_DISTINCT_DATES를_켜면_같은_날은_1개로_센다():
+    original = config.COUNT_DISTINCT_DATES
+    try:
+        config.COUNT_DISTINCT_DATES = True
+        assert run(make_state(claims=SAME_DAY), [insight(["20-0", "20-50"])]) == []
+    finally:
+        config.COUNT_DISTINCT_DATES = original  # 다른 테스트에 영향이 없게 되돌린다
+        
 # ── 계획 ────────────────────────────────────────────────────────
 
 def test_claim이_최소_근거_수보다_적으면_모델을_부르지_않는다():
