@@ -42,8 +42,10 @@ public class RawRecordService {
     // jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려움. docx는 아직 추가 전(다음 이슈).
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("csv", "txt", "pdf");
 
+    // application/vnd.ms-excel: Windows가 .csv를 저장할 때 흔히 이 Content-Type으로 보낸다
+    // (#113, 최재혁님 리뷰) — 실제로 정상 csv 파일이 이 값 때문에 거부됐었다.
     private static final Set<String> ALLOWED_CONTENT_TYPES =
-            Set.of("text/csv", "text/plain", "application/pdf");
+            Set.of("text/csv", "application/vnd.ms-excel", "text/plain", "application/pdf");
 
     // 텍스트 추출이 아직 안 되는 형식 — 업로드는 받되 기록 분리는 건너뛴다(entries: [] 유지).
     // pdf 추출(PDFBox)은 다음 이슈에서 추가한다.
@@ -62,6 +64,7 @@ public class RawRecordService {
             Pattern.compile("(?<!\\d)(\\d{2})(\\d{2})(?!\\d)");
 
     private final RawRecordRepository rawRecordRepository;
+    private final RawRecordRecorder rawRecordRecorder;
     private final RawFileStorage rawFileStorage;
     private final UserService userService;
     private final JournalEntryRepository journalEntryRepository;
@@ -143,15 +146,13 @@ public class RawRecordService {
 
         RawRecord saved;
         try {
-            saved = rawRecordRepository.save(rawRecord);
+            saved = rawRecordRecorder.save(rawRecord);
         } catch (RuntimeException e) {
             // 원본은 append-only — DB 저장이 실패해도 이미 저장소에 올라간 파일은 지우지 않는다.
             // 대신 FAILED 상태로 별도 기록을 남겨서, 나중에 추적/재처리할 수 있게 한다.
             log.error("failed to persist raw record metadata for storedPath={}; raw file is kept", storedPath, e);
             try {
-                rawRecordRepository.save(new RawRecord(
-                        institutionId, displayFilename, storedPath, contentType, file.getSize(),
-                        RawRecordStatus.FAILED));
+                rawRecordRecorder.recordFailure(institutionId, displayFilename, storedPath, contentType, file.getSize());
             } catch (RuntimeException retryFailure) {
                 log.error("failed to record FAILED status for storedPath={}; "
                         + "raw file remains untracked in DB but preserved in storage", storedPath, retryFailure);
