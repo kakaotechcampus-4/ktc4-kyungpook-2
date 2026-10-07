@@ -211,7 +211,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "note.csv", "application/vnd.ms-excel", "a,b,c".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.csv");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
