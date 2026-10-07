@@ -27,6 +27,9 @@ class InsightEvidence(BaseModel):
     """claim 하나를 뒷받침하는 원본 일지 근거. summary.schemas.Evidence 와 같은 모양이다."""
 
     journal_entry_id: int
+
+    #: ⚠️ 원문 인용이라 다른 아이 이름이 남아 있다. claim 의 text 는 익명화됐지만 이건 아니다.
+    #: 모델 프롬프트에 넣지 않고, 출력으로도 옮기지 않는다 (CRITERIA §2).
     quote: str
 
 

@@ -19,6 +19,7 @@ MIN_EVIDENCE_CLAIMS = 2
 
 #: 근거 수를 "서로 다른 날" 로 셀지. False 면 서로 다른 claim 이면 된다.
 #: 정하지 않았다 (CRITERIA §10). 같은 날 두 기관 기록도 비교 근거가 되므로 일단 False.
+#: test_reflect.py 가 이 결정을 고정한다. 바꾸면 테스트도 같이 바꾼다.
 COUNT_DISTINCT_DATES = False
 
 #: 대처마다 자기 claim_ids 가 있어야 한다. 없으면 그 대처만 버린다.
@@ -47,6 +48,9 @@ DROP_SENTIMENT = True          # 작성자의 감정 평가는 빼고 사실만
 DROP_OTHER_CHILD_NAMES = True  # 다른 아이 이름을 쓰지 않는다
 KEEP_FAILED_SUPPORT = True     # 통하지 않은 대처도 남긴다
 ONE_SITUATION = True           # 인사이트 하나에 상황 하나
+WRITE_INSTITUTION_TYPE = True  # 기관마다 다르면 기관 종류로 쓴다. 이름은 쓰지 않는다
+CROSS_WITHOUT_SUPPORT = True   # 대처가 없어도 기관마다 반응이 다르면 인사이트
+RELATE_RECORDS = True          # 기록 하나를 다시 말하지 않는다. 묶거나 비교한다
 
 #: 동기화 테스트가 CRITERIA §5 표와 대조할 목록.
 WRITING_RULE_FLAGS = (
@@ -58,6 +62,9 @@ WRITING_RULE_FLAGS = (
     "DROP_OTHER_CHILD_NAMES",
     "KEEP_FAILED_SUPPORT",
     "ONE_SITUATION",
+    "WRITE_INSTITUTION_TYPE",
+    "CROSS_WITHOUT_SUPPORT",
+    "RELATE_RECORDS",
 )
 
 
@@ -81,7 +88,7 @@ MAX_INSIGHTS = None
 LUNA_CHAT_PATH = "/v1/chat/completions"
 
 #: 모델은 .env 의 LUNA_MODEL 로 바꾼다. 없으면 기본값을 쓴다.
-#: 코드를 고치지 않고 로컬·서버에서 모델을 바꿔 비교할 수 있게 하기 위해서다.
+#: 엔드포인트(LUNA_API_URL)도 모델마다 다를 수 있어 .env 에 같이 둔다 (CRITERIA §9 재현 조건).
 LUNA_MODEL = os.environ.get("LUNA_MODEL", "gpt-5.6-luna")
 
 #: temperature 는 보내지 않는다. 흔들림은 프롬프트와 코드 규칙으로 잡는다.

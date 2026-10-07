@@ -14,6 +14,7 @@ sys.path.insert(0, str(AI_DIR))
 
 from insight import config  # noqa: E402
 from insight.nodes import perceive, plan, reflect  # noqa: E402
+from insight.prompts import build_messages  # noqa: E402
 
 TYPES = {1: "학교", 2: "센터", 3: "학원"}
 
@@ -129,6 +130,21 @@ def test_COUNT_DISTINCT_DATES를_켜면_같은_날은_1개로_센다():
         assert run(make_state(claims=SAME_DAY), [insight(["20-0", "20-50"])]) == []
     finally:
         config.COUNT_DISTINCT_DATES = original  # 다른 테스트에 영향이 없게 되돌린다
+
+# ── §2 인용 비노출 ──────────────────────────────────────────────
+
+def test_프롬프트에_인용이_들어가지_않는다():
+    # text 는 요약이 익명화했고, quote 는 원문이라 다른 아이 이름이 남아 있다
+    named = claim("30-0", 1, 301)
+    named["text"] = "옆자리 아동이 과자를 나눠 주자 받아 먹었다."
+    named["evidence"] = [{"journal_entry_id": 301, "quote": "옆자리 서준호가 과자를 나눠 주자 받아서 먹음"}]
+
+    state = make_state(claims=[named, claim("31-0", 1, 302)])
+    state.update(child_name="테스트", period_from="2026-01-01", period_to="2026-01-31")
+    prompt = " ".join(m["content"] for m in build_messages(state))
+
+    assert "서준호" not in prompt                 # 인용 속 이름은 안 들어감
+    assert "옆자리 아동이 과자를" in prompt        # claim 문장은 들어감
         
 # ── 계획 ────────────────────────────────────────────────────────
 
