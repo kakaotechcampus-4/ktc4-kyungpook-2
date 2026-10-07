@@ -181,7 +181,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "0821_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -199,7 +199,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "2024-03-05_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -216,7 +216,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "학생9977_기록.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -234,7 +234,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "0821_관찰일지.txt", "text/plain", content.getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -260,7 +260,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "0821_관찰일지.txt", "text/plain", content.getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -282,7 +282,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "8월21일_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -300,7 +300,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "메모.txt", "text/plain", "표지\n내용만 있고 날짜는 없음".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
