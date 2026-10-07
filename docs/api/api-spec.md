@@ -414,8 +414,8 @@ POST /api/v1/auth/signup   → 201 Created
 | O-21 | GET | `/raw-records/{id}/status` | 파이프라인 진행 상태 | I-03, I-05 |
 | O-22 | GET | `/matching-queue` | 확인 필요 큐 · **구현됨** | I-03, I-06 |
 | O-23 | POST | `/matching-queue/{itemId}/resolve` | 아이 확정 / 제외 · **구현됨** | I-06 |
-| O-24 | GET | `/validation-results?status=BLOCK` | 수정 요청 큐 | I-03, I-07 |
-| O-25 | POST | `/validation-results/{itemId}/resolve` | 재업로드 / 보류 | I-07 |
+| O-24 | GET | `/validation-results?status=BLOCK` | 수정 요청 큐 · **구현됨** | I-03, I-07 |
+| O-25 | POST | `/validation-results/{itemId}/resolve` | 재업로드 / 보류 · **구현됨** | I-07 |
 | O-26 | GET | `/raw-records/progress` | 파일별 처리 현황 · **계약 확정, 구현 예정** | I-03, I-05 |
 | O-27 | POST | `/raw-records/{id}/retry` | 실패한 기록 재처리 · **계약 확정, 구현 예정** | I-03, I-05 |
 
@@ -566,6 +566,48 @@ POST /api/v1/auth/signup   → 201 Created
 
 `violationReason`은 **화면에 그대로 노출**되므로 선생님이 읽고 바로 조치할 수 있는
 한국어 문장으로 주세요. 코드값이 필요하면 `violationCode`를 별도로 추가해주세요.
+
+> **현재 구현** (#122) · `status`는 `BLOCK`만 받습니다. 다른 값은 `400`으로 거절합니다 —
+> 조용히 BLOCK으로 처리하면 화면이 엉뚱한 목록을 보여주기 때문입니다.
+>
+> ```json
+> [
+>   { "id": "11",
+>     "journalEntryId": 7,
+>     "record": { "id": "5", "fileName": "0821_특이사항.txt",
+>                 "capturedAt": "2026-08-21", "preview": "…", "fullContent": "…" },
+>     "childName": "김하늘",
+>     "violationReason": "전화번호·주민번호 같은 개인정보가 그대로 적혀 있습니다",
+>     "violationCode": ["개인정보표현"] }
+> ]
+> ```
+>
+> | 항목 | 값 |
+> | --- | --- |
+> | `violationReason` | AI가 보낸 `issue_types`를 선생님이 읽을 문장으로 바꾼 값. 유형이 여러 개면 ` / `로 잇습니다. AI가 목록에 없는 유형을 보내면 코드를 그대로 보여주고, 유형 자체가 없으면 "검증에서 문제가 발견됐습니다. 원본을 확인해주세요"로 내려갑니다 |
+> | `violationCode` | AI `issue_types` 원본 배열 (`진단명`·`개인정보표현` 등, `AI/validation/config.py`) |
+> | `record.fullContent` | 위반 문장이 60자 뒤에 있으면 미리보기만으로는 무엇을 고쳐야 할지 알 수 없어, 매칭 확인 큐(#111)와 같은 이유로 전체 본문도 함께 내려갑니다 |
+> | `record.type` | **내려가지 않습니다.** `RecordResponse`에 `type` 필드가 없습니다 — 기록 유형 값 목록이 아직 팀에서 안 정해졌습니다 |
+> | `capturedAt` | 기록 날짜(`YYYY-MM-DD`)입니다. 초안의 타임스탬프와 다릅니다 |
+>
+> 🙏 **FE 쪽에 두 가지 부탁드립니다.**
+>
+> 1. `BlockedItem.record` 가 `RawRecord` 타입이라 `type` 이 필수인데 BE 가 그 값을 주지 않습니다.
+>    `MatchingItem.record` 가 이미 `type?: RawRecord["type"] | null` 로 인라인 정의해 피해 간 것과
+>    같은 처리가 필요합니다. 지금 `queue-reinput.tsx` 는 `{item.record.type}` 을 그대로 렌더해서,
+>    실연동으로 바꾸면 `"김하늘 · "` 뒤가 비는 가운뎃점만 남습니다(mock 에는 값이 있어 안 보입니다).
+> 2. `record.fullContent` 를 `BlockedItem` 에 추가하고 화면에서 써 주세요. 지금은 `preview`(60자)만
+>    렌더하고 있어서, 위반 문장이 뒤쪽에 있으면 선생님이 무엇을 고쳐야 할지 볼 수 없습니다 —
+>    매칭 확인 큐에서 #111 → #104 로 함께 고쳤던 것과 같은 건입니다.
+>
+> **O-25 현재 구현** · `{ "action": "reupload" }` 또는 `{ "action": "hold" }`. 둘 다 그 일지의
+> 파이프라인을 여기서 끝냅니다(`REUPLOAD_REQUESTED` · `VALIDATION_HELD`). 원본 파일은 고치지도
+> 지우지도 않습니다 — 고친 내용은 새 파일로 올라옵니다(append-only).
+>
+> | 상태 | 코드 | 설명 |
+> | --- | --- | --- |
+> | 400 | `VALIDATION_RESULT_INVALID_REQUEST` | `action` 누락·오타, BLOCK이 아닌 결과, 이미 처리된 기록 |
+> | 404 | `VALIDATION_RESULT_NOT_FOUND` | 없는 항목이거나 다른 기관의 항목 |
 
 **O-25 요청** · `{ "action": "reupload" }` 또는 `{ "action": "hold" }`
 

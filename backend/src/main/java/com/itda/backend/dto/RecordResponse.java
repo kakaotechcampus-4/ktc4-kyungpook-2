@@ -8,4 +8,23 @@ package com.itda.backend.dto;
 // 목록 미리보기(preview)는 그대로 두고, 아이를 선택할 때 펼쳐 볼 전체 본문을 별도
 // 필드로 추가한다. evidence의 {start,end}는 이 필드 기준 유니코드 코드포인트 좌표다.
 public record RecordResponse(String id, String fileName, String preview, String capturedAt, String fullContent) {
+
+    private static final int PREVIEW_LENGTH = 60;
+
+    /**
+     * 기록 본문으로 목록용 미리보기와 전체 본문을 함께 채운다.
+     *
+     * <p>매칭 확인 큐와 수정 요청 큐가 같은 규칙을 써야 해서 여기 모아둔다 — 자르는 길이가
+     * 두 화면에서 갈라지면 같은 기록이 큐마다 다르게 보인다.
+     */
+    public static RecordResponse of(String id, String fileName, String content, String capturedAt) {
+        return new RecordResponse(id, fileName, preview(content), capturedAt, content);
+    }
+
+    private static String preview(String content) {
+        if (content == null) {
+            return null;
+        }
+        return content.length() <= PREVIEW_LENGTH ? content : content.substring(0, PREVIEW_LENGTH) + "…";
+    }
 }
