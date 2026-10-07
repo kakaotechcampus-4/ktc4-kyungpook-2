@@ -426,7 +426,7 @@ organization.business_number                  UNIQUE
 invitation.code                               UNIQUE
 child_organization(child_id, organization_id) UNIQUE
 child_guardian(child_id, user_id)             UNIQUE
-summary_result(child_id, entry_date, revision) UNIQUE
+summary_result(child_id, entry_date, institution_id, revision) UNIQUE
 ```
 
 #### soft delete와 유니크 제약의 충돌 — 반드시 읽을 것
@@ -1131,20 +1131,28 @@ BLOCK    그대로 두면 위험 — 요약으로 넘기지 않는다
 > **근거** — `AI/summary/schemas.py` `SummaryOutput`. pydantic 으로 고정된 계약이다.
 > 엔드포인트는 `POST /summary` (구현 예정).
 
-**묶음 단위는 아동 × 날짜다.** 기관을 가로지른다.
+**묶음 단위는 아동 × 날짜 × 기관이다** (2026-10-05 정정).
 
-같은 날 학교·센터·활동지원사에서 온 기록을 한 편으로 묶는다. 기관별로 쪼개면
-"학교에서는 혼자 했는데 센터에서는 도움이 필요했다" 는 문장이 아예 생길 수 없다.
-흩어진 기록을 잇는 것이 이 제품의 핵심이고, 그 일이 일어나는 자리가 여기다.
+초안은 기관을 가로질렀다. 되돌린 이유가 셋이다.
 
-**기관은 묶음 키가 아니라 문장마다 붙는다** — `claims[].institution_name`.
+1. **Gate 1 에 승인할 사람이 없어진다.** 승인 주체는 작성자인데, 세 기관을 묶으면
+   작성자가 셋이다. 한 교사가 다른 기관이 쓴 문장을 읽고 고쳐 내보내게 된다.
+2. **승인 전에 이미 섞인다.** BLOCK 기록을 요약에 넣지 않는 이유와 같다 — 교사가
+   그 글을 읽는 순간 이미 공유다.
+3. **동의가 기관별이다** (`sharing_consent.organization_id`). 묶으려면 매번 서로
+   `ACTIVE` 인지 확인해야 하고, 한 곳이 `REVOKED` 되면 합본을 다시 만들어야 한다.
+
+기관을 가로지르는 비교는 **인사이트**가 한다. §9.2 대로 인사이트는 원본이 아니라
+`child_context` 를 기반으로 분석하므로, 승인을 거친 글들 위에서 권한과 동의를
+한 번에 본다.
 
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
 | `child_id` | BIGINT | N | 대상 아동 |
 | `entry_date` | DATE | N | 묶음 기준 날짜 |
-| `revision` | INT | N | 같은 날짜의 몇 번째 요약인지. 1 부터 |
+| `institution_id` | BIGINT | N | **묶음 키의 일부.** 이 요약을 쓴 기관 |
+| `revision` | INT | N | 같은 날짜·같은 기관의 몇 번째 요약인지. 1 부터 |
 | `content` | TEXT | N | AI 가 쓴 요약 원문 |
 | `claims` | TEXT | Y | 문장별 근거 JSON 문자열 |
 | `covered_entry_ids` | TEXT | Y | 반영된 일지 JSON 문자열 `[1041, 1042]` |
@@ -1156,7 +1164,7 @@ BLOCK    그대로 두면 위험 — 요약으로 넘기지 않는다
 | `updated_at` | DATETIME | N |  |
 
 ```
-UNIQUE (child_id, entry_date, revision)
+UNIQUE (child_id, entry_date, institution_id, revision)
 ```
 
 설계상 실행 이력이라 삭제하지 않는다. `deleted_at` 을 두지 않는다.

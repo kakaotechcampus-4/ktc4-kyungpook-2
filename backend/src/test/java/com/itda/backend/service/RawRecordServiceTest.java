@@ -205,6 +205,21 @@ class RawRecordServiceTest {
         verify(journalEntryRepository, never()).save(any());
     }
 
+    /** Windows가 csv를 저장소에서 바로 올릴 때 보내는 content-type도 거부하지 않아야 한다(#113). */
+    @Test
+    void ingest_acceptsWindowsExcelCsvContentType() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "note.csv", "application/vnd.ms-excel", "a,b,c".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.csv");
+        given(rawRecordRepository.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        RawRecord saved = rawRecordService.ingest(ORG_USER_ID, file);
+
+        assertThat(saved).isNotNull();
+    }
+
     /** 기록 분리 중 저장이 실패해도 업로드 응답(반환값)은 그대로 성공이어야 한다. */
     @Test
     void ingest_journalEntrySaveFailure_doesNotFailUpload() throws Exception {

@@ -66,6 +66,8 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
         "child_id": payload.child_id,
         "child_name": payload.child_name,
         "entry_date": payload.entry_date,
+        "institution_id": payload.institution_id,
+        "institution_name": payload.institution_name,
         "sources": payload.sources,
     }
     result = GRAPH.invoke(state)
@@ -76,6 +78,7 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
     return SummaryOutput(
         child_id=payload.child_id,
         entry_date=payload.entry_date,
+        institution_id=payload.institution_id,
         content=result["content"],
         claims=[_to_claim(c) for c in result["claims"]],
         covered_entry_ids=result["covered_entry_ids"],

@@ -431,7 +431,7 @@ POST /api/v1/auth/signup   → 201 Created
 > | 항목 | 값 |
 > | --- | --- |
 > | 허용 확장자 | `csv` · `txt` · `pdf` (2026-09-29, 이슈 #67로 `jpg`·`jpeg`·`png`·`hwp` 제외 — jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려워 이번 학기 범위 밖) |
-> | 허용 Content-Type | `text/csv` · `text/plain` · `application/pdf` |
+> | 허용 Content-Type | `text/csv` · `application/vnd.ms-excel`(Windows가 csv에 흔히 붙이는 값, #113) · `text/plain` · `application/pdf` |
 > | 기록 분리(텍스트 추출) | `csv`·`txt`만 지원. `pdf`는 업로드는 되지만 아직 `JournalEntry`로 안 쪼개짐(`entries: []` 유지) — 다음 이슈에서 추가 |
 > | 최대 크기 | 20MB (Caddy는 25MiB에서 먼저 차단) |
 > | 성공 | `201 Created` |
@@ -455,6 +455,11 @@ POST /api/v1/auth/signup   → 201 Created
 
 **O-22 응답** · `status`가 `auto`인 건은 포함하지 않습니다.
 
+> `record.fullContent`를 추가했습니다(멘토 PR #86 리뷰 반영, #111) — 목록의 `preview`(60자)는
+> 그대로 두고, 아이를 선택할 때 펼쳐 볼 전체 본문을 별도 필드로 내려줍니다. 본문 뒷부분에
+> 나오는 아이 이름이나 AI 판단 근거를 선생님이 놓치지 않기 위함입니다. `evidence`의
+> `{start, end}`는 `preview`가 아니라 `fullContent` 기준 유니코드 코드포인트 좌표입니다.
+
 ```json
 [
   { "id": "1",
@@ -465,7 +470,7 @@ POST /api/v1/auth/signup   → 201 Created
     "multiReason": "ambiguous_identity",
     "hintMismatch": false,
     "record": { "id": "3", "fileName": "0821_활동일지.docx",
-                "preview": "…", "capturedAt": "2026-08-21" },
+                "preview": "…", "capturedAt": "2026-08-21", "fullContent": "…" },
     "candidates": [ { "childId": "1", "name": "김하늘", "birthDate": "2020-01-01", "confidence": 0.62 } ],
     "evidence": [ { "start": 12, "end": 15 } ] }
 ]
