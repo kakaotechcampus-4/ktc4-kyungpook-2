@@ -35,6 +35,7 @@ def check_flags(text):
         ("COVERAGE_FROM_EVIDENCE", True, "반영된 일지는 코드가 센다"),
         ("KEEP_HEDGES", True, "추측은 추측으로 남긴다"),
         ("DROP_SENTIMENT_KEEP_FACT", True, "감정은 빼되 사실은 남긴다"),
+        ("ANONYMIZE_OTHER_NAMES", True, "요약 대상이 아닌 사람의 이름은 쓰지 않는다"),
         ("FIXED_LENGTH", False, "길이를 고정하지 않는다"),
     ]
     problems = []
@@ -82,6 +83,8 @@ def check_decisions(text):
         ("자기충족", "검증 통과율로 요약 품질을 재지 않는다"),
         ("바뀐 문장만 검증한다", "교사가 고친 문장은 검증을 거치지 않았다"),
         ("인사이트는 근거가 있는 문장만", "추적되지 않는 내용은 밖으로 안 나간다"),
+        ("가명을 쓰지 않는다", "가명은 거짓 정보가 되고 원문 대조를 끊는다"),
+        ("명부 안팎을 구분하지 않는다", "익명화 수준을 나눌수록 식별성이 올라간다"),
     ]
     return [f"합의된 내용이 문서에서 사라졌다 — {why}" for key, why in decided if key not in text]
 
