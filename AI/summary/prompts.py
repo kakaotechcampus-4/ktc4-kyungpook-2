@@ -16,7 +16,12 @@ evals/scripts/summary/test_criteria_sync.py 가 셋이 같은지 검사한다.
 결과에 섞인다 — 그게 자기채점이다.
 """
 
-from .config import DROP_SENTIMENT_KEEP_FACT, FIXED_LENGTH, KEEP_HEDGES
+from .config import (
+    ANONYMIZE_OTHER_NAMES,
+    DROP_SENTIMENT_KEEP_FACT,
+    FIXED_LENGTH,
+    KEEP_HEDGES,
+)
 from .state import SummaryState
 
 # ── 규칙 문장 (config 플래그와 1:1) ──────────────────────────────
@@ -81,6 +86,17 @@ QUOTE_SPAN_RULE = (
     "띄엄띄엄 이어 붙이면 원문에서 찾지 못해 그 근거가 버려집니다."
 )
 
+#: 다른 아이의 이름이 요약 본문에 남으면 child_context 를 거쳐 다른 기관까지 간다.
+#: 검증이 '다수아동언급' 으로 잡지만 REVIEW 라 교사가 승인하면 통과한다.
+#: 그 뒤를 막는 것이 이 규칙이다.
+ANONYMIZE_RULE = (
+    "요약 대상 아이의 이름만 쓸 수 있습니다. 다른 아이가 나오면 **이름을 쓰지 말고** "
+    "\"다른 아동\", \"옆자리 아동\", \"같은 모둠 아동\" 처럼 관계로만 적으세요. "
+    "다만 **근거 인용(quote)은 원문 그대로** 둡니다 — 인용을 고치면 원문에서 찾지 못해 "
+    "그 근거가 버려집니다. 바꾸는 것은 요약 문장(text)뿐입니다. "
+    "교사·치료사 등 어른의 이름도 쓰지 말고 \"교사\" 로 적으세요."
+)
+
 OUTPUT_FORMAT = (
     "JSON 형식으로만 답하세요. claims 배열의 순서가 그대로 글의 순서가 됩니다:\n"
     '{"claims": [{"text": "요약 문장 하나.", '
@@ -91,6 +107,8 @@ OUTPUT_FORMAT = (
 def _rules() -> list[str]:
     """켜진 플래그에 해당하는 규칙만 내보낸다."""
     rules = [MERGE_RULE, EVIDENCE_RULE, QUOTE_SPAN_RULE]
+    if ANONYMIZE_OTHER_NAMES:
+        rules.append(ANONYMIZE_RULE)
     if KEEP_HEDGES:
         rules.append(HEDGE_RULE)
     if DROP_SENTIMENT_KEEP_FACT:
