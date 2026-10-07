@@ -104,6 +104,29 @@ class MatchingResultServiceTest {
         assertThat(queue.get(0).record().fileName()).isEqualTo("0821_관찰일지.docx");
     }
 
+    // 코드리뷰 반영(멘토 PR #86, #111): 목록 미리보기(preview)는 60자로 그대로 유지하되,
+    // 아이 선택 시 펼쳐 볼 전체 본문(fullContent)을 별도로 내려줘서 뒤에 나오는 아이 이름·
+    // AI 판단 근거를 선생님이 놓치지 않게 한다.
+    @Test
+    void getQueue_keepsShortPreviewButAlsoReturnsFullContent() {
+        String longContent = "점심시간에 식사를 잘 마쳤고 ".repeat(10) + "뒷부분에 등장하는 중요한 이름: 김하늘";
+        JournalEntry entry = JournalEntry.of(3L, LocalDate.of(2026, 9, 1), longContent, 1);
+        entry.startMatching();
+        entry.requestMatchReview();
+        MatchingResult ours = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(ours));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+
+        List<MatchingQueueItemResponse> queue = matchingResultService.getQueue(OUR_USER_ID);
+
+        assertThat(longContent.length()).isGreaterThan(60);
+        assertThat(queue.get(0).record().preview()).isEqualTo(longContent.substring(0, 60) + "…");
+        assertThat(queue.get(0).record().fullContent()).isEqualTo(longContent);
+    }
+
     @Test
     void getQueue_excludesEntriesNotAwaitingReview() {
         // 일지가 이미 처리됐으면(MATCHED 등) 남아 있는 옛 결과 행은 눌러도 거절되니 큐에 띄우지 않는다.

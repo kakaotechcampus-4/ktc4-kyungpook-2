@@ -133,7 +133,8 @@ public class MatchingResultService {
                 String.valueOf(ctx.rawRecord().getId()),
                 ctx.rawRecord().getOriginalFilename(),
                 preview(ctx.entry().getContent()),
-                ctx.entry().getEntryDate() == null ? null : ctx.entry().getEntryDate().toString());
+                ctx.entry().getEntryDate() == null ? null : ctx.entry().getEntryDate().toString(),
+                ctx.entry().getContent());
 
         return new MatchingQueueItemResponse(
                 String.valueOf(mr.getId()),
@@ -150,6 +151,7 @@ public class MatchingResultService {
 
     private static final int PREVIEW_LENGTH = 60;
 
+    // 목록용 짧은 미리보기 — 전체 본문은 RecordResponse.fullContent로 따로 내려간다(#111).
     private String preview(String content) {
         if (content == null) {
             return null;
