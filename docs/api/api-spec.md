@@ -431,7 +431,7 @@ POST /api/v1/auth/signup   → 201 Created
 > | 항목 | 값 |
 > | --- | --- |
 > | 허용 확장자 | `csv` · `txt` · `pdf` (2026-09-29, 이슈 #67로 `jpg`·`jpeg`·`png`·`hwp` 제외 — jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려워 이번 학기 범위 밖) |
-> | 허용 Content-Type | `text/csv` · `text/plain` · `application/pdf` |
+> | 허용 Content-Type | `text/csv` · `application/vnd.ms-excel`(Windows가 csv에 흔히 붙이는 값, #113) · `text/plain` · `application/pdf` |
 > | 기록 분리(텍스트 추출) | `csv`·`txt`만 지원. `pdf`는 업로드는 되지만 아직 `JournalEntry`로 안 쪼개짐(`entries: []` 유지) — 다음 이슈에서 추가 |
 > | 최대 크기 | 20MB (Caddy는 25MiB에서 먼저 차단) |
 > | 성공 | `201 Created` |

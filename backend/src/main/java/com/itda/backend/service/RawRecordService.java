@@ -36,8 +36,10 @@ public class RawRecordService {
     // jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려움. docx는 아직 추가 전(다음 이슈).
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("csv", "txt", "pdf");
 
+    // application/vnd.ms-excel: Windows가 .csv를 저장할 때 흔히 이 Content-Type으로 보낸다
+    // (#113, 최재혁님 리뷰) — 실제로 정상 csv 파일이 이 값 때문에 거부됐었다.
     private static final Set<String> ALLOWED_CONTENT_TYPES =
-            Set.of("text/csv", "text/plain", "application/pdf");
+            Set.of("text/csv", "application/vnd.ms-excel", "text/plain", "application/pdf");
 
     // 텍스트 추출이 아직 안 되는 형식 — 업로드는 받되 기록 분리는 건너뛴다(entries: [] 유지).
     // pdf 추출(PDFBox)은 다음 이슈에서 추가한다.
