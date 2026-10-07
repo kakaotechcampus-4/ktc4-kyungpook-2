@@ -3,9 +3,14 @@ package com.itda.backend.service;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.time.DateTimeException;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -42,6 +47,14 @@ public class RawRecordService {
     // 텍스트 추출이 아직 안 되는 형식 — 업로드는 받되 기록 분리는 건너뛴다(entries: [] 유지).
     // pdf 추출(PDFBox)은 다음 이슈에서 추가한다.
     private static final Set<String> TEXT_EXTRACTABLE_EXTENSIONS = Set.of("csv", "txt");
+
+    // "2026-08-21" · "2026.08.21" · "20260821" — 네 자리 연도가 있으면 그대로 믿는다.
+    private static final Pattern FILENAME_DATE_WITH_YEAR =
+            Pattern.compile("(20\\d{2})[-._]?(\\d{1,2})[-._]?(\\d{1,2})");
+
+    // "0821_관찰일지.txt" 의 MMDD. 앞뒤에 다른 숫자가 붙어 있으면(전화번호·학번 등) 보지 않는다.
+    private static final Pattern FILENAME_DATE_MONTH_DAY =
+            Pattern.compile("(?<!\\d)(\\d{2})(\\d{2})(?!\\d)");
 
     private final RawRecordRepository rawRecordRepository;
     private final RawFileStorage rawFileStorage;
@@ -166,16 +179,71 @@ public class RawRecordService {
 
         String text = new String(fileBytes, StandardCharsets.UTF_8);
         List<JournalEntrySplitter.SplitEntry> entries = journalEntrySplitter.split(text);
+        LocalDate fallbackDate = resolveFallbackDate(saved);
         try {
             int seq = 1;
             for (JournalEntrySplitter.SplitEntry entry : entries) {
+                LocalDate entryDate = entry.entryDate() == null ? fallbackDate : entry.entryDate();
                 journalEntryRepository.save(
-                        JournalEntry.of(saved.getId(), entry.entryDate(), entry.content(), seq++));
+                        JournalEntry.of(saved.getId(), entryDate, entry.content(), seq++));
             }
             log.info("split raw record id={} into {} journal entries", saved.getId(), entries.size());
         } catch (RuntimeException e) {
             // 업로드는 이미 성공했다 — 기록 분리 실패로 업로드 응답까지 실패시키지 않는다.
             log.error("failed to save journal entries for rawRecordId={}", saved.getId(), e);
+        }
+    }
+
+    /**
+     * 본문에서 날짜를 못 찾은 기록에 넣을 날짜를 정한다. 파일명 → 업로드 날짜 순으로 내려간다.
+     *
+     * <p>요약은 아동 × 날짜로 묶이므로(DB 스키마 §8.2) {@code entry_date} 가 비면 그 기록은
+     * 어느 묶음에도 들어가지 못하고 요약에서 통째로 빠진다. 추정한 날짜가 하루이틀 어긋나는
+     * 것보다 기록이 아예 사라지는 쪽이 나쁘다고 보고 채운다.
+     *
+     * <p><b>알려진 한계</b> — 추정값인지 본문에서 읽은 값인지 구분해 두는 컬럼이 없다.
+     * 추정이 틀리면 그 기록이 엉뚱한 날짜 묶음에 들어가는데, 교사가 Gate 1 에서 요약을 볼 때
+     * 날짜가 안 맞는 내용이 섞인 것으로 알아챌 수는 있다. 구분이 필요하다고 팀이 판단하면
+     * 그때 컬럼을 추가한다.
+     */
+    private LocalDate resolveFallbackDate(RawRecord saved) {
+        LocalDate uploadedOn = saved.getCreatedAt().toLocalDate();
+        return parseDateFromFilename(saved.getOriginalFilename(), uploadedOn).orElse(uploadedOn);
+    }
+
+    /**
+     * 파일명에서 기록 날짜를 뽑는다. 네 자리 연도가 있는 형식을 먼저 보고, 없으면 {@code MMDD} 를 본다.
+     *
+     * <p>{@code MMDD} 는 연도를 알 수 없어 업로드 연도로 둔다. 숫자 네 자리는 날짜가 아닐 수도
+     * 있어서({@code 학생1234.txt}) 실제 달·일로 성립할 때만 받는다 — 성립하지 않으면 비우고
+     * 호출한 쪽이 업로드 날짜로 내려간다.
+     */
+    private static Optional<LocalDate> parseDateFromFilename(String filename, LocalDate uploadedOn) {
+        Matcher full = FILENAME_DATE_WITH_YEAR.matcher(filename);
+        if (full.find()) {
+            Optional<LocalDate> parsed = toDate(
+                    Integer.parseInt(full.group(1)), Integer.parseInt(full.group(2)), Integer.parseInt(full.group(3)));
+            if (parsed.isPresent()) {
+                return parsed;
+            }
+        }
+
+        Matcher short4 = FILENAME_DATE_MONTH_DAY.matcher(filename);
+        while (short4.find()) {
+            Optional<LocalDate> parsed = toDate(
+                    uploadedOn.getYear(), Integer.parseInt(short4.group(1)), Integer.parseInt(short4.group(2)));
+            if (parsed.isPresent()) {
+                return parsed;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<LocalDate> toDate(int year, int month, int day) {
+        try {
+            return Optional.of(LocalDate.of(year, month, day));
+        } catch (DateTimeException e) {
+            return Optional.empty();
         }
     }
 
