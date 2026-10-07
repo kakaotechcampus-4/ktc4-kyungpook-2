@@ -340,7 +340,7 @@ POST /api/v1/auth/signup   → 201 Created
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
 | O-10 | GET | `/institutions/me/children` | 담당 아동 목록 · **구현됨** | I-05, I-09, I-13 |
-| O-11 | POST | `/institutions/me/children` | 아이 등록 | I-04 |
+| O-11 | POST | `/institutions/me/children` | 아이 등록 · **구현됨** | I-04 |
 | O-13 | GET | `/children/{childId}` | 아동 상세 | I-09-1 |
 | O-14 | GET | `/children/{childId}/context` | Child Context 타임라인 | I-09-1 |
 
@@ -355,37 +355,44 @@ POST /api/v1/auth/signup   → 201 Created
 ]
 ```
 
-`school`/`institutions`/`care`는 아직 없습니다 — `Child` 엔티티에 그 컬럼 자체가 없습니다(O-11 구현 시 같이 채울 예정). `status`가 `active`가 아닌 아동도 포함해서 내려갑니다 — 필터링은 프론트 몫입니다(`RosterPicker.tsx`가 이미 그렇게 함).
+`school`/`institutions`/`care`는 아직 없습니다 — `Child` 엔티티에 그 컬럼 자체가 없습니다(O-11 구현에서도 채우지 않았고, 별도 작업입니다). `status`가 `active`가 아닌 아동도 포함해서 내려갑니다 — 필터링은 프론트 몫입니다(`RosterPicker.tsx`가 이미 그렇게 함).
 
 **O-11 요청**
 
 ```json
-{
-  "name": "김하늘",
-  "birthDate": "2017-03-14",
-  "externalId": "2026-0031",
-  "guardianPhoneLast4": "1234"
-}
+{ "name": "김하늘", "birthDate": "2017-03-14" }
 ```
 
-`externalId`(기관 내부 아동 ID)는 선택입니다. `guardianPhoneLast4`는 **보호자 연결
-요청의 매칭 키**로 쓰이므로(§5.1) 사실상 필수에 가깝습니다.
-**보호자 전화번호 전체는 받지 않습니다.**
+- `name`: 필수. 앞뒤 공백을 떼고 1–100자입니다.
+- `birthDate`: 필수. **`yyyy-MM-dd` 문자열만** 받습니다. `"2017-03-14T00:00:00"`, `[2017, 3, 14]`, 숫자,
+  없는 날짜(`"2017-02-30"`), 미래 날짜는 400입니다. 하한(나이 상한)은 두지 않습니다.
+- 같은 이름·생일로 다시 등록해도 막지 않고 새 아동을 만듭니다. 다른 기관이 같은 아이를 등록해도 별도 아동(`id`)이 됩니다.
+
+> 이전 초안의 `externalId`(기관 내부 아동 ID)와 `guardianPhoneLast4`는 **이번 구현에서는 받지 않습니다.**
+> 보내도 무시합니다. 보호자 전화번호 전체도 받지 않습니다.
 
 **O-11 응답** · `201 Created`
 
 ```json
 {
-  "child": { "id": "9", "name": "김하늘", "birthDate": "2017-03-14",
-             "status": "pending_consent", "institutions": [] }
+  "child": { "id": "9", "name": "김하늘", "birthDate": "2017-03-14", "status": "pending_consent" }
 }
 ```
 
-등록 직후 아이는 `pending_consent` 상태입니다. 보호자가 카카오 로그인 후 이 기관과
-연결하고 공유 범위에 동의해야 `active`가 되며, 그 전에는 기록을 올릴 수 없습니다.
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | 이름 누락·공백·100자 초과, 생년월일 누락·형식 오류·없는 날짜·미래 날짜 |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입(역할 선택)을 끝내지 않음 |
+| 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 소속이 아닌 사용자(보호자) |
+| 403 | `FORBIDDEN` | CSRF 토큰 누락·불일치 |
 
-**이 등록 시점에 보호자 연결 요청(pending link)이 함께 생성되어야 합니다.** 보호자가
-로그인하면 G-01에서 이 요청을 보게 됩니다(§5.1).
+등록 직후 아이는 `pending_consent` 상태입니다. 보호자가 카카오 로그인 후 이 기관과
+연결하고 공유 범위에 동의해야 `active`가 되며, 그 전에는 기록을 올릴 수 없고 AI 매칭 명단에도 들어가지 않습니다.
+
+> **임시 계약입니다.** 보호자 연결은 **초대 코드 방식**(DB `invitation`)으로 후속 작업에서 구현합니다.
+> 그때 응답의 `child` 옆에 `inviteCode`가 추가되고, 아래 §5.1(연결 요청 방식)도 그 작업에서 정리합니다.
+> 지금은 등록해도 보호자 연결 수단이 만들어지지 않습니다.
 
 **O-14 응답** · 날짜 오름차순. **기록이 없는 날도 항목으로 포함하고 `entry`를 `null`로**
 주세요. 프론트는 빈 날을 "기록 없음"으로 표시하며, 추정치로 채우지 않습니다.
