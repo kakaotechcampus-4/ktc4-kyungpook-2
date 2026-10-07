@@ -11,7 +11,10 @@
   - 어느 패턴과도 맞지 않는 인사이트는 "남는 인사이트" 로 센다. 지어낸 패턴일 수 있다
   - 모든 패턴을 찾고 남는 인사이트가 0 이면 "완전 정답"
 
-모델은 temperature 를 고정할 수 없어 한 번 실행으로 판단하지 않는다 (CRITERIA §9).
+쓸모 태그는 정답 세트가 없어 분포만 본다 (CRITERIA §9).
+세 종류를 매번 다 고르면 이전 "추천" 처럼 신호가 되지 않는다.
+
+모델은 temperature 를 고정할 수 없어 한 번 실행으로 판단하지 않는다.
 결과에는 모델과 세트 경로를 함께 남긴다. 모델이 다르면 같은 세트도 숫자가 달라진다.
 """
 
@@ -19,7 +22,7 @@ import argparse
 import json
 import sys
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -151,6 +154,22 @@ def score(result: dict, sample: int) -> int:
     print("  본문에 근거 기관 종류가 모두 나옴", pct(*cross_mention))
     print("  cross_institution 참            ", pct(*cross_flag))
 
+    # ── 쓸모 태그 (정답 세트 없음 → 분포만 본다) ──
+    all_insights = [i for r in ok for i in r["insights"]]
+    tagged = [i for i in all_insights if i.get("relevant_institution_types")]
+    all_types = set(config.INSTITUTION_TYPES)
+    every = [i for i in tagged if set(i["relevant_institution_types"]) == all_types]
+    beyond = [i for i in tagged if set(i["relevant_institution_types"]) - set(i.get("institution_types", []))]
+    no_reason = [i for i in tagged if not i.get("relevance_reason")]
+    type_count = Counter(t for i in tagged for t in i["relevant_institution_types"])
+
+    print("\n■ 쓸모 태그 (정답 없음 — 신호가 되는지 본다)")
+    print("  태그 붙은 인사이트        ", pct(len(tagged), len(all_insights)))
+    print("  세 종류 모두 태그         ", pct(len(every), len(tagged)), " ← 높으면 신호가 안 됨")
+    print("  근거 기관 밖 태그 포함     ", pct(len(beyond), len(tagged)), " ← 새로 알려줄 기관")
+    print("  태그는 있는데 이유 없음   ", pct(len(no_reason), len(tagged)))
+    print("  종류별                    ", dict(type_count))
+
     print(f"\n■ 금지어 노출 {len(leaks)}건", leaks[:5])
 
     unstable = sorted(cid for (_, cid), v in verdicts.items() if len(set(v)) > 1)
@@ -166,13 +185,15 @@ def score(result: dict, sample: int) -> int:
             print(" ", r["case_id"], f"run{r['run']}", r["error"][:100])
 
     if sample:
-        print(f"\n■ 사람 판정용 표본 (최대 {sample}건) — 기록을 넘어선 일반화인지, 요약을 이어 붙였을 뿐인지 본다")
+        print(f"\n■ 사람 판정용 표본 (최대 {sample}건) — 일반화·이어 붙이기인지, 쓸모 태그가 상황에 맞는지 본다")
         shown = 0
         for r in ok:
             for i in r["insights"]:
                 if shown >= sample:
                     break
                 print(f"  [{r['case_id']} {r['category']} run{r['run']}] {i['content']}")
+                print(f"      근거 기관 {i.get('institution_types', [])} → 쓸모 {i.get('relevant_institution_types', [])}"
+                      f" | {i.get('relevance_reason', '')}")
                 shown += 1
 
     return 1 if errors else 0
