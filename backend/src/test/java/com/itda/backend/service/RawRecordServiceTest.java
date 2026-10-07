@@ -250,6 +250,52 @@ class RawRecordServiceTest {
                         LocalDate.of(LocalDate.now().getYear(), 9, 16));
     }
 
+    /**
+     * 표지처럼 날짜 헤더 앞에 있는 줄은 같은 파일의 첫 날짜를 물려받는다(코드리뷰 반영).
+     *
+     * <p>파일명 날짜를 주면 한 파일이 8/21·9/15·9/16 세 묶음으로 흩어진다 — 요약이 아동 × 날짜 ×
+     * 기관으로 묶이므로 같은 파일이 쪼개지면 안 된다.
+     */
+    @Test
+    void ingest_coverLineInheritsFirstDateInFileInsteadOfFilenameDate() throws Exception {
+        String content = "표지: 8월 관찰일지\n9/15 자유놀이를 했다.\n9/16 미술 시간.";
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "0821_관찰일지.txt", "text/plain", content.getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRepository.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        int thisYear = LocalDate.now().getYear();
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, times(3)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(JournalEntry::getEntryDate)
+                .containsExactly(
+                        LocalDate.of(thisYear, 9, 15),
+                        LocalDate.of(thisYear, 9, 15),
+                        LocalDate.of(thisYear, 9, 16));
+    }
+
+    /** 파일명이 한글 날짜 표기여도 읽는다 — 기관에서 흔한 형식이다. */
+    @Test
+    void ingest_fillsEntryDateFromKoreanFilenameFormat() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "8월21일_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRepository.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryDate())
+                .isEqualTo(LocalDate.of(LocalDate.now().getYear(), 8, 21));
+    }
+
     /** 어떤 경로로 들어오든 entry_date 가 빈 기록은 더 이상 저장되지 않는다. */
     @Test
     void ingest_neverSavesJournalEntryWithNullEntryDate() throws Exception {
