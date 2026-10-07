@@ -50,6 +50,9 @@ class RawRecordServiceTest {
     private RawRecordRepository rawRecordRepository;
 
     @Mock
+    private RawRecordRecorder rawRecordRecorder;
+
+    @Mock
     private RawFileStorage rawFileStorage;
 
     @Mock
@@ -70,7 +73,7 @@ class RawRecordServiceTest {
         lenient().when(childRepository.findByOrganizationId(any())).thenReturn(List.of());
         // JournalEntrySplitter는 의존성 없는 순수 로직이라 목 대신 실제 구현을 쓴다.
         rawRecordService = new RawRecordService(
-                rawRecordRepository, rawFileStorage, userService, journalEntryRepository,
+                rawRecordRepository, rawRecordRecorder, rawFileStorage, userService, journalEntryRepository,
                 new JournalEntrySplitter(), childRepository);
     }
 
@@ -113,17 +116,14 @@ class RawRecordServiceTest {
         assertThatThrownBy(() -> rawRecordService.ingest(ORG_USER_ID, file))
                 .isInstanceOf(RawRecordStorageException.class);
 
-        verify(rawRecordRepository, never()).save(any());
+        verify(rawRecordRecorder, never()).save(any());
     }
 
     @Test
     void dbSaveFailure_keepsStoredFileAndRecordsFailedStatus() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.csv", "text/csv", "a,b,c".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.csv");
-        // 첫 저장 시도는 실패, 두 번째(FAILED 상태 기록) 시도는 성공한다고 가정.
-        given(rawRecordRepository.save(any(RawRecord.class)))
-                .willThrow(new RuntimeException("db unavailable"))
-                .willAnswer(invocation -> invocation.getArgument(0));
+        given(rawRecordRecorder.save(any(RawRecord.class))).willThrow(new RuntimeException("db unavailable"));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
         assertThatThrownBy(() -> rawRecordService.ingest(ORG_USER_ID, file))
@@ -132,18 +132,16 @@ class RawRecordServiceTest {
         // append-only — 이미 저장소에 올라간 원본 파일은 지우지 않는다.
         verify(rawFileStorage, never()).delete(anyString());
 
-        ArgumentCaptor<RawRecord> captor = ArgumentCaptor.forClass(RawRecord.class);
-        verify(rawRecordRepository, times(2)).save(captor.capture());
-        RawRecord failedRecord = captor.getAllValues().get(1);
-        assertThat(failedRecord.getStatus()).isEqualTo(RawRecordStatus.FAILED);
-        assertThat(failedRecord.getStoredPath()).isEqualTo("generated-uuid.csv");
+        // 실패 기록은 별도 트랜잭션(REQUIRES_NEW)으로 분리된 RawRecordRecorder.recordFailure가 남긴다.
+        verify(rawRecordRecorder).recordFailure(
+                String.valueOf(ORGANIZATION_ID), "note.csv", "generated-uuid.csv", "text/csv", 5L);
     }
 
     @Test
     void dbSaveSucceeds_doesNotDeleteStoredFile() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.csv", "text/csv", "a,b,c".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.csv");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -160,7 +158,7 @@ class RawRecordServiceTest {
     void ingest_splitsTextFileWithoutDateHeaderIntoSingleJournalEntry() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "그냥 관찰 문장 하나".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -178,7 +176,7 @@ class RawRecordServiceTest {
         String content = "9/15 자유놀이 중 블록을 높이 쌓았다.\n9/16 미술 시간에 그림을 완성함.";
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", content.getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -198,7 +196,7 @@ class RawRecordServiceTest {
     void ingest_skipsSplittingForNonExtractableExtension() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.pdf", "application/pdf", "%PDF-1.4 fake".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.pdf");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -213,7 +211,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "note.csv", "application/vnd.ms-excel", "a,b,c".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.csv");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -227,7 +225,7 @@ class RawRecordServiceTest {
     void ingest_journalEntrySaveFailure_doesNotFailUpload() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "관찰 문장".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(journalEntryRepository.save(any())).willThrow(new RuntimeException("db unavailable"));
@@ -243,7 +241,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "0821_박서연_관찰일지.txt", "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))
@@ -261,7 +259,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "8월_3주차_활동.txt", "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))
@@ -281,7 +279,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "0821_김민준_관찰일지.txt", "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))
@@ -300,7 +298,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "0821_박서연_관찰일지.txt", "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))
@@ -319,7 +317,7 @@ class RawRecordServiceTest {
         String nfdFilename = Normalizer.normalize("0821_박서연_관찰일지.txt", Normalizer.Form.NFD);
         MockMultipartFile file = new MockMultipartFile("file", nfdFilename, "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))
