@@ -43,7 +43,7 @@
 | 11 | `validation_result` | ✅ 확정 | ✅ `ValidationResult` | 삭제 없음 (이력) |
 | 12 | `summary_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 13 | `human_review` | 🟡 초안 | ✅ `Approval` | 삭제 없음 (이력) |
-| 14 | `child_context` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 14 | `child_context` | ✅ 확정 | ✅ `ChildContext` | 삭제 없음 (이력) |
 | 15 | `insight_result` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 16 | `sharing_history` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 
@@ -1427,7 +1427,7 @@ summary_result.status → 지금 상태는?        (승인됨)
 human_review          → 어쩌다 그렇게 됐나?  (김교사가 9/21 승인)
 ```
 
-### 9.2 `child_context` 🟡 — ⬜ 미구현
+### 9.2 `child_context` ✅ — ✅ 구현됨 (`ChildContext`)
 
 > **근거** — 프론트 `TimelineEntry` (아동 타임라인 화면)
 
@@ -1442,9 +1442,36 @@ Insight는 원본이 아니라 이 테이블을 기반으로 분석한다.
 | `content` | TEXT | N | **사람이 승인한 최종본** |
 | `created_at` | DATETIME | N |  |
 
-**`summary_result.summary_text`와 다른 이유**
+설계상 승인 이력이라 수정하지도 삭제하지도 않는다. 승인이 바뀌면 새 행을 쌓으므로
+한 요약에 승인본이 여러 건 달릴 수 있다. `updated_at`·`deleted_at` 을 두지 않는다.
+
+**`summary_result.content`와 다른 이유**
 
 교사가 문구를 고쳐서 승인하는 경우(`CORRECTED`)가 있다. AI 원문과 최종본이 달라지므로 둘 다 남긴다.
+한쪽에 몰아 담으면 `matching_result` 가 사람 수정으로 AI 원판정을 잃었던 문제(§0.3)를 되풀이한다.
+
+**화면에 필요한 값은 컬럼으로 늘리지 않고 조인해서 채운다** (#142)
+
+프론트 `TimelineEntry` 가 요구하는 값이 초안 컬럼만으로는 안 나와서 컬럼 추가를 검토했으나,
+`summary_result_id` 로 조인하면 전부 나온다. 값을 복사해 두면 두 벌이 어긋난다.
+
+| 화면이 요구하는 값 | 어디서 오나 |
+| --- | --- |
+| `date` | `summary_result.entry_date` |
+| `version` | `summary_result.revision` |
+| `sourceCount` | `summary_result.covered_entry_ids` ⚠️ TEXT JSON 문자열이라 SQL 로는 못 센다 — 애플리케이션에서 파싱한다(`MatchingResultService` 가 `candidates` 를 다루는 방식과 같다) |
+| `institution`(`EvidenceRef`) | `summary_result.institution_id` |
+| `edited` | `human_review` 에 `target_type = SUMMARY` · `decision = CORRECTED` 행이 있는지 |
+| `validation` | 재료 일지들의 `validation_result.verdict` ⚠️ 재료가 N 건인데 화면은 한 값을 받는다 — **환원 규칙 미정.** 하나라도 `REVIEW` 면 `REVIEW` 로 보는 안이 유력하다(`BLOCK` 은 요약에 들어가지 않으므로 `PASS`·`REVIEW` 중 하나) |
+| `recordType` | **못 준다.** 기록 유형 값 목록이 아직 확정되지 않아 `raw_record` 에 컬럼 자체가 없다 |
+
+이 조인은 타임라인 조회 API(O-14)를 만들 때 함께 짠다. ⚠️ 표시한 둘은 조인만으로 끝나지
+않으므로 그때 파싱 코드와 환원 규칙을 함께 정한다.
+
+**`summary_result_id` 에 UNIQUE 를 건다** — 승인된 요약을 다시 승인하는 경로가 없다(§8.2).
+반려 상태가 없고, 승인 뒤 새 일지가 오면 그 요약을 고치는 게 아니라 `revision + 1` 로 새 요약을
+만들므로 승인본도 다른 요약을 가리킨다. 제약이 없으면 Gate 1 승인 API 를 두 번 호출했을 때
+같은 글이 조용히 두 번 쌓인다.
 
 ```
 summary_result.summary_text  = AI가 쓴 원문
@@ -1673,3 +1700,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-01 | `validation_result` 구현 (`ValidationResult`). 저장 시점 설명 추가 (§8.1) | #90 |
 | 2026-10-01 | `journal_entry.status`에 `VALIDATED`·`VALIDATION_BLOCKED` 추가, 검증 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가지만 `journal_entry.status` CHECK 제약은 9/30에 제거돼 수동 조치 불필요 | #90 |
 | 2026-10-07 | `journal_entry.status`에 `REUPLOAD_REQUESTED`·`VALIDATION_HELD` 추가 (수정 요청 큐 처리 결과), `validation_result.verdict`에 `FAILED` 추가 (검증 호출 실패를 행으로 남김). 둘 다 enum 값 추가라 CHECK 제약이 없는 현재 배포 DB에 수동 조치 불필요 | #122 |
+| 2026-10-09 | `child_context` 구현 (`ChildContext`). 화면에 필요한 날짜·기관·판수는 컬럼을 늘리지 않고 `summary_result_id` 로 조인해 채우기로 결정, §9.2 를 확정으로 올림 | #142 |
