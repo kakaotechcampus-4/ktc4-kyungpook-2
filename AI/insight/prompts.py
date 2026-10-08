@@ -24,7 +24,6 @@ WRITING_RULES = {
     "WRITE_INSTITUTION_TYPE": "기관마다 다르면 어느 기관인지 기관 종류로 쓴다. 기관 이름은 쓰지 않는다",
     "CROSS_WITHOUT_SUPPORT": "대처가 없어도 기관마다 반응이 다르면 인사이트로 쓴다",
     "RELATE_RECORDS": "기록 하나를 다시 말하지 않는다. 여러 기록을 묶거나 비교한 결과를 쓴다",
-    "TAG_RELEVANCE": "쓸모 있는 기관은 그 상황이 일어나는 기관 종류로 고른다. 근거를 낸 기관인지로 정하지 않는다",
 }
 
 
@@ -35,7 +34,6 @@ def _enabled_rules() -> list[str]:
 
 def system_prompt() -> str:
     rules = "\n".join(f"- {r}" for r in _enabled_rules())
-    types = "·".join(config.INSTITUTION_TYPES)
     return f"""당신은 발달장애 아동을 돌보는 학교·센터·학원의 관찰 요약을 읽고 인사이트를 찾는다.
 
 인사이트란 여러 기록을 겹쳐 봐야만 보이는 "상황 → 반응 → 대처와 결과" 묶음이다.
@@ -51,12 +49,8 @@ def system_prompt() -> str:
 - 인사이트 하나에 근거 claim 이 {config.MIN_EVIDENCE_CLAIMS}개 이상 있어야 한다. 한 번 있었던 일은 패턴이 아니다.
 - 대처(supports)는 기록에 있을 때만 쓴다. 대처마다 그 대처가 적힌 claim_id 와 결과를 쓴다.
   결과가 기록에 없는 대처는 쓰지 않는다. 대처가 없으면 빈 배열로 둔다.
-- 기관 이름과 날짜는 쓰지 않는다. 기관 종류({types})는 본문에 쓴다. 출처와 볼 수 있는 기관은 코드가 정한다.
+- 기관 이름과 날짜는 쓰지 않는다. 기관 종류(학교·센터·학원)는 본문에 쓴다. 출처와 받을 기관은 코드가 정한다.
 - 패턴이 없으면 insights 를 빈 배열로 둔다. 억지로 만들지 않는다.
-
-쓸모 태그
-- relevant_institution_types 에는 이 인사이트를 알면 다음 돌봄에 쓸 수 있는 기관 종류를 {types} 중에서 고른다.
-- relevance_reason 에는 그 이유를 한 문장으로 쓴다. 판단하기 어려우면 빈 배열과 빈 문자열로 둔다.
 
 쓰는 원칙
 {rules}
@@ -64,8 +58,7 @@ def system_prompt() -> str:
 JSON 으로만 답한다.
 {{"insights": [{{"situation": "언제, 어떤 맥락에서", "behavior": "그 상황에서 관찰된 반응",
   "supports": [{{"action": "누가 어떻게 했는지", "result": "어떻게 됐는지", "claim_ids": ["12-0"]}}],
-  "claim_ids": ["12-0", "15-1"], "content": "교사가 읽을 한두 문장",
-  "relevant_institution_types": ["학교", "센터"], "relevance_reason": "왜 그 기관에 쓸모 있는지 한 문장"}}]}}"""
+  "claim_ids": ["12-0", "15-1"], "content": "교사가 읽을 한두 문장"}}]}}"""
 
 
 def user_prompt(state: dict) -> str:

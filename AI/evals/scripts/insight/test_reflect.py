@@ -131,25 +131,6 @@ def test_COUNT_DISTINCT_DATES를_켜면_같은_날은_1개로_센다():
     finally:
         config.COUNT_DISTINCT_DATES = original  # 다른 테스트에 영향이 없게 되돌린다
 
-# ── §4·§7 쓸모 태그 ─────────────────────────────────────────────
-
-def test_쓸모_태그는_목록_밖_값만_빠지고_중복이_없다():
-    raw = insight(["10-0", "11-0"])
-    raw["relevant_institution_types"] = ["학교", "어린이집", "센터", "학교"]
-    raw["relevance_reason"] = "활동 전환은 학교와 센터 모두에서 일어난다"
-    out = run(make_state(), [raw])
-    assert len(out) == 1                                   # 틀린 값이 있어도 인사이트는 남음
-    assert out[0].relevant_institution_types == ["학교", "센터"]
-    assert out[0].relevance_reason != ""
-
-
-def test_쓸모_태그는_근거_기관이_아니어도_남는다():
-    raw = insight(["10-0", "12-0"])                         # 근거는 학교뿐
-    raw["relevant_institution_types"] = ["학원"]
-    raw["relevance_reason"] = "학원에서도 수업 전환이 있다"
-    out = run(make_state(), [raw])
-    assert out[0].relevant_institution_types == ["학원"]   # 상황으로 판단한 값이라 남김
-
 # ── §2 인용 비노출 ──────────────────────────────────────────────
 
 def test_프롬프트에_인용이_들어가지_않는다():
