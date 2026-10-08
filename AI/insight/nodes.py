@@ -4,7 +4,7 @@ Insight Agent 의 4단계 노드 — 인식/계획/행동/반영.
 
 모델은 인사이트 후보를 쓰고, 코드가 거른다 (CRITERIA §4).
 출처와 기관 간 비교 여부는 모델에게 묻지 않고 코드가 계산한다 (§3).
-누가 볼 수 있는지(허락)는 정하지 않는다. 쓸모 태그만 거르고, 후보와 추천은 BE 가 정한다 (§7).
+수신 기관은 정하지 않는다. BE 가 Gate 2 시점의 동의로 정한다 (§7).
 """
 
 from . import config
@@ -126,23 +126,6 @@ def _clean_supports(raw, index: dict, known_types: set[str]) -> list[Support]:
     return kept
 
 
-def _relevance(raw: dict) -> tuple[list[str], str]:
-    """
-    쓸모 태그 (§4·§7). 학교·센터·학원 밖의 값은 그 값만 뺀다.
-
-    허락이 아니라 추천 표시에만 쓰므로, 틀린 값이 있어도 인사이트는 버리지 않는다.
-    근거를 낸 기관이 아니어도 남긴다 — 상황으로 판단한 결과이기 때문이다.
-    남은 태그가 없으면 이유도 비운다.
-    """
-    value = raw.get("relevant_institution_types")
-    types = []
-    for t in value if isinstance(value, list) else []:
-        if isinstance(t, str) and t in config.INSTITUTION_TYPES and t not in types:
-            types.append(t)
-    reason = (raw.get("relevance_reason") or "").strip() if types else ""
-    return types, reason
-
-
 def reflect(state: dict) -> dict:
     """
     반영: 최종 결정은 코드가 한다.
@@ -153,7 +136,6 @@ def reflect(state: dict) -> dict:
       상황·반응·본문 중 비어 있는 것 → 인사이트 버림
       본문에 나온 기관 종류가 근거 기관에 없음 → 인사이트 버림
       대처는 하나씩 검사해서 문제 있는 것만 버림
-      쓸모 태그는 목록 밖 값만 뺌
     그다음 출처와 기관을 claim 에서 계산한다.
     """
     if state.get("llm_error"):
@@ -184,14 +166,11 @@ def reflect(state: dict) -> dict:
             continue
 
         inst_ids = sorted({c["institution_id"] for c in claims})
-        relevant_types, relevance_reason = _relevance(raw)
 
         insights.append(Insight(
             **texts,
             supports=_clean_supports(raw.get("supports"), index, known_types),
             claim_ids=ids,
-            relevant_institution_types=relevant_types,
-            relevance_reason=relevance_reason,
             source_entry_ids=sorted({e["journal_entry_id"] for c in claims for e in c["evidence"]}),
             source_institution_ids=inst_ids,
             institution_types=sorted(cited_types),
