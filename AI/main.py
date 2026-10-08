@@ -2,21 +2,25 @@ import os
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 
-from common.errors import LlmUnavailable
-from matching.graph import run_matching
-from matching.schemas import MatchingInput, MatchingOutput
-from insight.graph import run_insight
-from insight.schemas import InsightInput, InsightOutput
-from summary.graph import run_summary
-from summary.schemas import SummaryInput, SummaryOutput
-from validation.graph import run_validation
-from validation.llm import is_configured
-from validation.schemas import ValidationInput, ValidationOutput
-
+# 에이전트 config 가 import 시점에 환경변수를 읽으므로(.env 의 LUNA_MODEL 등),
+# 에이전트 모듈을 import 하기 전에 .env 를 먼저 읽는다. 서버(Docker)는 env_file 로
+# 프로세스 시작 전에 들어오므로 영향이 없고, 로컬 실행에서만 순서가 문제가 된다.
 load_dotenv()
+
+from fastapi import FastAPI, Request  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+
+from common.errors import LlmUnavailable  # noqa: E402
+from insight.graph import run_insight  # noqa: E402
+from insight.schemas import InsightInput, InsightOutput  # noqa: E402
+from matching.graph import run_matching  # noqa: E402
+from matching.schemas import MatchingInput, MatchingOutput  # noqa: E402
+from summary.graph import run_summary  # noqa: E402
+from summary.schemas import SummaryInput, SummaryOutput  # noqa: E402
+from validation.graph import run_validation  # noqa: E402
+from validation.llm import is_configured  # noqa: E402
+from validation.schemas import ValidationInput, ValidationOutput  # noqa: E402
 
 app = FastAPI(title="ITDA AI")
 
