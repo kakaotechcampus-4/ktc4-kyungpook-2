@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from common.errors import LlmUnavailable
 from matching.graph import run_matching
 from matching.schemas import MatchingInput, MatchingOutput
+from insight.graph import run_insight
+from insight.schemas import InsightInput, InsightOutput
 from summary.graph import run_summary
 from summary.schemas import SummaryInput, SummaryOutput
 from validation.graph import run_validation
@@ -27,7 +29,7 @@ LUNA_API_KEY = os.environ.get("LUNA_API_KEY")
 @app.exception_handler(LlmUnavailable)
 def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
     """
-    LLM 을 못 써서 결과를 내지 못했을 때. 검증·요약이 같이 쓴다.
+    LLM 을 못 써서 결과를 내지 못했을 때. 검증·요약·인사이트가 같이 쓴다.
 
     BE 는 5xx 면 재시도하고, 그래도 실패하면 FAILED 로 둔다.
     실패 원인에는 Luna 엔드포인트 주소가 들어 있어서 응답에는 넣지 않고
@@ -68,6 +70,11 @@ def validation(payload: ValidationInput) -> ValidationOutput:
 def summary(payload: SummaryInput) -> SummaryOutput:
     """같은 아이의 같은 날 일지 여러 건을 한 편의 요약으로 묶는다."""
     return run_summary(payload)
+
+@app.post("/insight", response_model=InsightOutput)
+def insight(payload: InsightInput) -> InsightOutput:
+    """한 아이의 승인된 요약들을 겹쳐 기관을 가로지르는 돌봄 패턴을 찾는다."""
+    return run_insight(payload)
 
 
 @app.get("/llm-test")
