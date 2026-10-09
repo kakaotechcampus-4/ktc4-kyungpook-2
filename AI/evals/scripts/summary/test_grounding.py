@@ -11,6 +11,7 @@
 같은 이유다.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -18,7 +19,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from summary import nodes  # noqa: E402
 from summary.graph import run_summary  # noqa: E402
-from summary.llm import LlmResult, NoGroundedClaims  # noqa: E402
+from summary.llm import LlmResult, LlmUnavailable, NoGroundedClaims  # noqa: E402
+from main import llm_unavailable  # noqa: E402
+
+
+class _FakeRequest:
+    """핸들러는 경로만 읽어 로그에 쓴다. FastAPI 를 띄우지 않기 위한 대역이다."""
+
+    url = type("U", (), {"path": "/summary"})()
+
+
+#: 503 의 detail.reason. 상태 코드가 같아도 BE 의 후속 처리가 다르다 (#148).
+#:   llm_unavailable      차례를 통째로 멈추고 나중에 다시
+#:   no_grounded_claims   그 묶음만 되돌리고 다음으로, 2번 넘으면 FAILED
+REASON_CASES = [
+    (LlmUnavailable, "llm_unavailable"),
+    (NoGroundedClaims, "no_grounded_claims"),
+]
 from summary.schemas import SourceEntry, SummaryInput  # noqa: E402
 
 #: 한 기관(햇살학교)이 같은 날 올린 기록 둘. 묶음은 기관 안에서만 일어난다.
@@ -237,6 +254,28 @@ def main():
         if not ok:
             failed += 1
     print("      ⚠️ 목록은 ACTIVE 명부 아이만 담긴다. false 가 '안 샌다' 는 뜻이 아니다")
+
+    print("\n■ 503 두 가지를 body 로 구분한다 (BE 후속 처리가 다르다)")
+    for exc, want in REASON_CASES:
+        got = exc.reason
+        ok = got == want
+        print(f"  {'✓' if ok else '✗'} {exc.__name__} → detail.reason = \"{got}\"")
+        if not ok:
+            print(f"      기대 \"{want}\"")
+            failed += 1
+    # 핸들러가 클래스 값을 읽는지. 문자열을 박아 두면 하위 예외가 묻힌다.
+    body = json.loads(
+        llm_unavailable(_FakeRequest(), NoGroundedClaims("child_id=1 …")).body
+    )
+    ok = body["detail"]["reason"] == "no_grounded_claims"
+    print(f"  {'✓' if ok else '✗'} 핸들러가 실제로 내보내는 body — {body}")
+    if not ok:
+        failed += 1
+    # 예외 메시지에는 아이 식별자와 Luna 주소가 들어 있다. body 로 나가면 안 된다.
+    ok = "child_id" not in json.dumps(body, ensure_ascii=False)
+    print(f"  {'✓' if ok else '✗'} 예외 메시지는 body 에 넣지 않는다 (로그로만)")
+    if not ok:
+        failed += 1
 
     if failed:
         print(f"\n  실패 {failed}건")
