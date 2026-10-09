@@ -66,6 +66,17 @@ class SummaryInput(BaseModel):
     #: #100 의 워커가 VALIDATED 만 가져간다.
     sources: list[SourceEntry]
 
+    #: 이 묶음의 일지 본문에 이름이 나온 **다른** 아이들. BE 가 매칭의
+    #: mentioned_child_ids 를 명부와 조인해 이름으로 바꿔 보낸다 (#146).
+    #:
+    #: ⚠️ **모델에게 보여주지 않는다.** 프롬프트에 넣으면 그 이름이 로그와
+    #: raw_response 에 남는다. 출력 대조에만 쓴다.
+    #:
+    #: ⚠️ ACTIVE 명부 아이만 담긴다. 동의 전 아동·다른 기관 아이·형제·교사·
+    #: 성을 뗀 이름·오타는 빠진다 — **동의하지 않은 사람일수록 빠진다.**
+    #: 그래서 차단이 아니라 측정·표시로만 쓴다 (CRITERIA §3).
+    other_child_names: list[str] = Field(default_factory=list)
+
 
 # ── 출력 ────────────────────────────────────────────────────────
 
@@ -133,6 +144,15 @@ class SummaryOutput(BaseModel):
     #: 비어 있지 않다고 늘 잘못은 아니다 — "특이사항 없음" 같은 기록은 뺄 수
     #: 있다. 다만 뺐다는 사실이 드러나야 사람이 판단할 수 있다.
     uncovered_entry_ids: list[int] = Field(default_factory=list)
+
+    #: 공유 전에 사람이 봐야 하는가. 교사가 Gate 1 에서 처리한다.
+    #: **막지는 않는다** — 경고로 띄우고 고칠지는 교사가 정한다
+    #: (2026-10-08 멘토 리뷰 P1).
+    needs_review: bool = False
+
+    #: 왜 봐야 하는지. 검증의 issue_types 와 같은 모양이다.
+    #: 지금은 "다른아동이름" 하나뿐이다.
+    review_reasons: list[str] = Field(default_factory=list)
 
     #: LLM 을 실제로 호출했는지. 호출률 측정용.
     llm_called: bool = False

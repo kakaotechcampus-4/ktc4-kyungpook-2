@@ -69,6 +69,7 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
         "institution_id": payload.institution_id,
         "institution_name": payload.institution_name,
         "sources": payload.sources,
+        "other_child_names": payload.other_child_names,
     }
     result = GRAPH.invoke(state)
 
@@ -93,5 +94,7 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
         claims=[_to_claim(c) for c in result["claims"]],
         covered_entry_ids=result["covered_entry_ids"],
         uncovered_entry_ids=result["uncovered_entry_ids"],
+        needs_review=result.get("needs_review", False),
+        review_reasons=result.get("review_reasons", []),
         llm_called=result.get("llm_called", False),
     )

@@ -158,6 +158,41 @@ CASES = [
 ]
 
 
+#: 익명화가 실패했는지 표시하는가. (요약 문장, 받은 이름 목록, 기대 review_reasons)
+NAME_CASES = [
+    ("익명화 성공", "옆자리 아동이 조각을 건네자 받아서 끼웠다.", ["박서연"], []),
+    ("이름이 남음", "옆자리 박서연이 조각을 건네자 받아서 끼웠다.", ["박서연"], ["다른아동이름"]),
+    (
+        "목록이 비면 못 잡는다",
+        "옆자리 박서연이 조각을 건네자 받아서 끼웠다.",
+        [],
+        [],
+    ),
+]
+
+
+def run_names(text, names):
+    """other_child_names 대조만 보는 작은 실행. 근거는 통과하게 둔다."""
+    original = nodes.ask_json
+    nodes.ask_json = lambda messages, **kw: LlmResult(
+        data={"claims": [{"text": text, "evidence": [ev(1041, "혼자 다섯 층까지 쌓음")]}]}
+    )
+    try:
+        return run_summary(
+            SummaryInput(
+                child_id=1,
+                child_name="김지후",
+                entry_date="2026-10-04",
+                institution_id=7,
+                institution_name="햇살학교",
+                sources=SOURCES,
+                other_child_names=names,
+            )
+        )
+    finally:
+        nodes.ask_json = original
+
+
 def main():
     print("■ 요약 환각 거르기 (모델 응답 고정, LLM 호출 없음)")
     failed = 0
@@ -192,6 +227,16 @@ def main():
     print(f'      실제 content = "{out.content}"')
     if not ok:
         failed += 1
+
+    print("\n■ 다른 아이 이름이 남았는지 표시 (막지는 않는다)")
+    for name, text, names, want in NAME_CASES:
+        out = run_names(text, names)
+        ok = out.review_reasons == want and out.needs_review == bool(want)
+        print(f"  {'✓' if ok else '✗'} {name}")
+        print(f"      받은 목록 {names} · needs_review={out.needs_review} {out.review_reasons}")
+        if not ok:
+            failed += 1
+    print("      ⚠️ 목록은 ACTIVE 명부 아이만 담긴다. false 가 '안 샌다' 는 뜻이 아니다")
 
     if failed:
         print(f"\n  실패 {failed}건")

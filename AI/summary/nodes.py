@@ -22,6 +22,7 @@ from .config import (
     COVERAGE_FROM_EVIDENCE,
     DROP_CLAIMS_WITHOUT_EVIDENCE,
     DROP_UNFOUND_QUOTES,
+    REVIEW_ON_OTHER_NAMES,
 )
 from .llm import LlmError, ask_json, locate_quote
 from .prompts import build_messages
@@ -198,8 +199,22 @@ def assemble(state: SummaryState) -> dict:
     else:
         covered = set()
 
+    # 익명화가 실패했는지 본다. 이름을 지우는 일은 프롬프트가 하고(ANONYMIZE_OTHER_NAMES),
+    # 여기서는 **남았는지만 센다.** 코드가 자동으로 고치면 프롬프트가 안 지켜졌다는
+    # 사실이 가려지고, 조사가 깨져 문장이 어색해진다 ("기관 내 아동가").
+    #
+    # ⚠️ 받은 목록은 ACTIVE 명부 아이만 담긴다. 형제·교사·동의 전 아동은 빠지므로
+    # 여기서 0 이 나와도 "안 샌다" 는 뜻이 아니다 (CRITERIA §3).
+    reasons: list[str] = []
+    if REVIEW_ON_OTHER_NAMES:
+        leaked = [n for n in (state.get("other_child_names") or []) if n and n in content]
+        if leaked:
+            reasons.append("다른아동이름")
+
     return {
         "content": content,
         "covered_entry_ids": sorted(covered),
         "uncovered_entry_ids": sorted(set(state["by_id"]) - covered),
+        "needs_review": bool(reasons),
+        "review_reasons": reasons,
     }
