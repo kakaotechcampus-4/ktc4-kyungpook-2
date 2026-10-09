@@ -35,13 +35,18 @@ def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
     실패 원인에는 Luna 엔드포인트 주소가 들어 있어서 응답에는 넣지 않고
     서버 로그에만 남긴다. 어느 에이전트였는지는 경로로 구분한다.
 
+    **무엇 때문인지는 detail.reason 으로 구분한다.** 상태 코드는 둘 다 503 이지만
+    BE 의 후속 처리가 다르다 — llm_unavailable 은 차례를 멈추고 나중에 다시,
+    no_grounded_claims 는 그 묶음만 되돌리고 다음으로 넘어간다 (#148 박찬진).
+    값은 예외 클래스가 들고 있다 (common/errors.py).
+
     에이전트마다 예외를 따로 두면 안 된다 — main.py 에서 이름이 덮여
     핸들러가 한쪽에만 걸리고 나머지는 500 으로 나간다. common/errors.py 참고.
     """
     print(f"[{request.url.path.strip('/') or 'unknown'}] LLM 호출 실패: {exc}")
     return JSONResponse(
         status_code=503,
-        content={"detail": {"reason": "llm_unavailable", "message": "Luna 호출 실패"}},
+        content={"detail": {"reason": exc.reason, "message": exc.message}},
     )
 
 

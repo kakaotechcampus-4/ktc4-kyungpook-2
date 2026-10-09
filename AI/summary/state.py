@@ -23,6 +23,8 @@ class SummaryState(TypedDict, total=False):
     institution_id: int
     institution_name: str | None
     sources: list[SourceEntry]
+    #: 본문에 남았는지 대조할 다른 아이 이름. 프롬프트에는 넣지 않는다.
+    other_child_names: list[str]
 
     # ── gather 가 채운다 ──
     #: journal_entry_id → 그 일지 본문. 인용을 **그 일지 안에서만** 찾는다.
@@ -49,3 +51,6 @@ class SummaryState(TypedDict, total=False):
     content: str
     covered_entry_ids: list[int]
     uncovered_entry_ids: list[int]
+    #: 공유 전에 사람이 봐야 하는가. 막지는 않는다.
+    needs_review: bool
+    review_reasons: list[str]

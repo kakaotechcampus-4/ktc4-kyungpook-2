@@ -25,6 +25,22 @@ from common.luna import model as luna_model
 from .config import LUNA_CHAT_PATH, LUNA_TIMEOUT
 
 
+#: 재료가 있는데 근거 있는 문장이 하나도 안 남았을 때. LlmUnavailable 을 물려받아
+#: 같은 핸들러가 503 으로 바꾼다 — BE 는 5xx 면 재시도하고, 4xx 면 그 건을 FAILED
+#: 로 끝낸다. 이것은 버그가 아니라 "이번 호출에서 모델이 근거를 못 댔다" 이므로
+#: 다시 부르면 될 수 있다 (#146).
+class NoGroundedClaims(LlmUnavailable):
+    """
+    근거가 남은 문장이 하나도 없다.
+
+    BE 는 이 reason 을 보고 **그 묶음만** 되돌려 다음 묶음으로 넘어간다.
+    같은 묶음이 두 번 넘게 여기 걸리면 FAILED 로 끝낸다 (#146 · #148).
+    """
+
+    reason = "no_grounded_claims"
+    message = "근거가 남은 문장이 없음"
+
+
 class LlmError(RuntimeError):
     """Luna 호출 또는 응답 해석이 실패했을 때."""
 
