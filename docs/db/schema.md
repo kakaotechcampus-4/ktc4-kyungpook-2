@@ -947,14 +947,17 @@ AI 자동 확정과 선생님 확정 둘 다 `MATCHED`로 들어오므로 구분
   아직 모른다.
 - 사람 손이 필요한 상태(`MATCH_REVIEW`·`FAILED`·`VALIDATION_HELD` 등)는 기다리지 않는다. 일지 하나 때문에 묶음 전체가
   무기한 멈추지 않게 하려는 것이다. 나중에 확정되면 승인 전 요약에 덮어쓰거나 새 판으로 들어간다.
-- 교사의 "지금 요약"(API O-32)은 마감·디바운스를 건너뛴다. 처리 중 조건은 그대로 지킨다.
+- 교사의 "지금 요약"(API O-32)은 마감·디바운스를 건너뛴다. 처리 중 조건은 그대로 지킨다 — 업로드 직후 눌러도 받아 두고
+  매칭·검증이 끝나면 요약한다. 요청은 그 날짜의 마감까지(이미 지난 날짜면 디바운스만큼)만 유효하고 메모리에만 둔다.
 - 승인 전 요약에 이미 들어간 `GATE1_PENDING` 일지는 같은 묶음에 새 `VALIDATED` 일지가 오면 함께 다시 집는다.
 
 | 결과 | 묶음의 `journal_entry.status` | `summary_result` |
 | --- | --- | --- |
 | 성공 | `GATE1_PENDING`. 요약에 반영되지 않은 일지(uncovered)도 같다 | 승인 전 판이 있으면 덮어쓰고, 없으면 새 판 |
 | 200 인데 본문이 빔 (근거를 못 찾아 문장이 모두 버려짐) | 호출 실패와 같음 | 남기지 않음 |
-| 호출 실패 (4xx, 응답 해석 실패, 재시도 2회 후에도 5xx·타임아웃) | 처음 요약하던 일지는 `FAILED`, 이미 승인 전 요약에 들어가 있던 일지는 `GATE1_PENDING` 으로 되돌림 | 남기지 않음 |
+| BE 근거 재검사에 걸림 (§8.2) | 호출 실패와 같음 | 남기지 않음 |
+| 호출 실패 (4xx, 응답 해석 실패) | 처음 요약하던 일지는 `FAILED`, 이미 승인 전 요약에 들어가 있던 일지는 `GATE1_PENDING` 으로 되돌림 | 남기지 않음 |
+| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | 실패로 남기지 않고 요약하기 전 상태로 되돌림 (그 묶음과 나머지 묶음 모두). 이번 차례 멈춤 | 남기지 않음 |
 
 요약 실패는 `summary_result`에 행을 남기지 않는다. 요약은 묶음 단위라 일지별 실패 행을 둘 자리가 없고, `status`에
 실패 값도 없다. `FAILED` 일지의 마지막 `validation_result.verdict`가 `PASS`·`REVIEW`면 요약 단계에서 실패한 것이다.
@@ -1056,7 +1059,8 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 ```
 
 > **요약 워커가 읽는다** (#91). 묶음의 일지마다 가장 최근 값을 합쳐 주인공을 빼고 이름으로 바꿔
-> `SummaryInput.other_child_names` 로 보낸다. 명부에서 삭제 표시된 아이도 넣는다 — 이름이 새는 것은 같다.
+> `other_child_names` 로 보낸다. 명부에서 삭제 표시된 아이도 넣는다 — 이름이 새는 것은 같다.
+> ⚠️ AI `SummaryInput` 에는 아직 이 필드가 없다. pydantic 이 모르는 필드를 버리므로 요청은 깨지지 않고, AI 가 반영하면 그때부터 쓰인다.
 > `ValidationInput` 에는 여전히 이 필드가 없고, 검증 에이전트는 본문만 보고 `다수아동언급` 을 판단한다 (§10.2-11).
 
 쓸 수 있는 자리는 이렇다.
@@ -1229,6 +1233,21 @@ UNIQUE (child_id, entry_date, institution_id, revision)
 ```
 
 설계상 실행 이력이라 삭제하지 않는다. `deleted_at` 을 두지 않는다.
+
+**저장 전 BE 근거 재검사** (멘토 리뷰 A4, #129) — AI 가 이미 인용을 원문에서 찾아 span 을 채우지만, AI 쪽 버그나
+계약 어긋남이 그대로 저장되지 않게 BE 가 한 번 더 대조한다 (`SummaryEvidenceChecker`). 하나라도 걸리면 응답을 고치지
+않고 요약 전체를 실패로 처리한다 (§6.2).
+
+```
+응답의 child_id·entry_date·institution_id 가 묶음과 같은가
+covered·uncovered 일지와 모든 근거의 journal_entry_id 가 이번 재료(AI 에 보낸 일지 중 아직 삭제되지 않은 것)에 있는가
+문장마다 근거가 하나 이상 있는가
+span 이 있고 0 <= start < end <= 원문 코드포인트 길이인가
+원문을 코드포인트 기준 [start, end) 로 자른 문자열이 quote 와 정확히 같은가
+```
+
+요약하는 사이 삭제된 일지를 근거로 들면 재료에 없으므로 요약 전체가 실패한다. 로그에는 위치(문장·근거 순번,
+일지 id)와 이유만 남기고 본문·인용 원문은 남기지 않는다.
 
 **`journal_entry` 가 요약을 가리킨다 — 방향이 뒤집혔다**
 
@@ -1570,7 +1589,7 @@ status   SHARED | BLOCKED | FAILED
 | 7 | ~~Summary Agent 계약~~ | **확정됨** — `SummaryOutput` 기준으로 §8.2 반영 완료 | ~~AI~~ |
 | 8 | 개인정보 파기 절차 | 정보주체가 파기를 요구할 때 실제 삭제·익명화를 어떻게 하는지. soft delete로는 해결되지 않는다 | 기획 + BE |
 | 9 | DB FK 제약 재검토 | JPA 연관관계를 쓰지 않는 것과 **DB에 FK 제약을 거는 것은 별개 결정**이다. `Long` 컬럼을 유지한 채 DB 제약만 추가하면 실수로 참조를 깨뜨리는 것을 막을 수 있다 | BE 전체 |
-| 11 | `mentioned_child_ids` 소비자 | 요약 워커가 읽는다 (#91) — 묶음의 값을 합쳐 주인공을 뺀 이름을 `SummaryInput.other_child_names` 로 보낸다. AI 는 프롬프트에 넣지 않고 요약 본문에 이름이 남았는지 재는 데만 쓴다.<br>→ 남은 것: Gate 1 승인 시 최종 본문에 그 이름이 남았으면 경고(차단 아님). 명부 밖 이름·성 뗀 이름은 못 잡는 한계가 있다 | AI + BE |
+| 11 | `mentioned_child_ids` 소비자 | 요약 워커가 읽는다 (#91) — 묶음의 값을 합쳐 주인공을 뺀 이름을 `other_child_names` 로 보낸다. ⚠️ AI `SummaryInput` 에는 아직 이 필드가 없어 지금은 버려진다 (AI 반영 예정). AI 는 프롬프트에 넣지 않고 요약 본문에 이름이 남았는지 재는 데만 쓴다.<br>→ 남은 것: Gate 1 승인 시 최종 본문에 그 이름이 남았으면 경고(차단 아님). 명부 밖 이름·성 뗀 이름은 못 잡는 한계가 있다 | AI + BE |
 | 12 | Gate 1 `decision` 에서 `REJECTED` 빼기 | 요약에 "반려" 상태를 두지 않기로 했다(§8.2). `human_review.decision` 은 이미 구현돼 있어 `APPROVED` · `CORRECTED` · `HOLD` 로 맞추는 BE 작업이 남는다 | BE + AI |
 | 10 | 설계와 코드 불일치 정리 | §0.3 의 남은 4건 — `raw_record.institution_id` 타입, `raw_record.status` 의미, `matching_result` 수정 방식과 `reviewer_id` 타입 | BE + AI |
 
@@ -1703,4 +1722,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-01 | `validation_result` 구현 (`ValidationResult`). 저장 시점 설명 추가 (§8.1) | #90 |
 | 2026-10-01 | `journal_entry.status`에 `VALIDATED`·`VALIDATION_BLOCKED` 추가, 검증 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가지만 `journal_entry.status` CHECK 제약은 9/30에 제거돼 수동 조치 불필요 | #90 |
 | 2026-10-07 | `journal_entry.status`에 `REUPLOAD_REQUESTED`·`VALIDATION_HELD` 추가 (수정 요청 큐 처리 결과), `validation_result.verdict`에 `FAILED` 추가 (검증 호출 실패를 행으로 남김). 둘 다 enum 값 추가라 CHECK 제약이 없는 현재 배포 DB에 수동 조치 불필요 | #122 |
-| 2026-10-09 | `summary_result` 구현 (`SummaryResult`), `journal_entry.summary_id` 추가. 요약 워커의 묶음 조건·상태 변경 규칙 추가 (§6.2). `mentioned_child_ids` 를 요약 요청의 `other_child_names` 로 사용 (§7.1, §10.2-11). 테이블·컬럼 추가라 `ddl-auto: update` 가 만든다 | #91 |
+| 2026-10-09 | `summary_result` 구현 (`SummaryResult`), `journal_entry.summary_id` 추가. 저장 전 BE 근거 재검사 (§8.2, A4). 요약 워커의 묶음 조건·상태 변경 규칙 추가 (§6.2). `mentioned_child_ids` 를 요약 요청의 `other_child_names` 로 사용 (§7.1, §10.2-11). 테이블·컬럼 추가라 `ddl-auto: update` 가 만든다 | #91 |
