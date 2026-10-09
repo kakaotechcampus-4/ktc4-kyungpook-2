@@ -35,8 +35,8 @@ REQUIRE_SUPPORT_RESULT = True
 #: 한계: 같은 종류 기관이 둘이면(센터 두 곳) 구별하지 못한다.
 REQUIRE_INSTITUTION_GROUNDING = True
 
-#: 본문에서 찾을 기관 종류 단어. 입력 claim 의 종류도 함께 본다.
-INSTITUTION_TYPES = ("학교", "센터", "학원")
+#: 기관 종류 목록. 본문 대조에 쓴다. BE enum 과 1:1 (SCHOOL·CENTER·ACTIVITY_SUPPORT).
+INSTITUTION_TYPES = ("학교", "센터", "활동지원사")
 
 
 # ── 쓰는 원칙 (CRITERIA §5) — 프롬프트에 들어간다 ──────────────
