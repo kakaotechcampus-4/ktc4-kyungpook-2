@@ -634,6 +634,25 @@ POST /api/v1/auth/signup   → 201 Created
 | --- | --- | --- | --- | --- |
 | O-30 | GET | `/summaries?gate1Status=pending` | 검토 대기 요약 목록 | I-03, I-08 |
 | O-31 | POST | `/summaries/{summaryId}/gate1` | 승인 / 수정 후 승인 / 반려 | I-08 |
+| O-32 | POST | `/summaries/run` | 지금 요약 · **구현됨** | I-08 |
+
+**O-32 요청**
+
+요약은 보통 `entry_date` 다음 날 03:00 에 아동 × 날짜 × 기관 묶음으로 자동으로 만들어집니다
+(`docs/db/schema.md` §8.2). 이 요청은 그 마감을 기다리지 않고 요약하게 합니다. 기관은 요청한 선생님의 기관입니다.
+
+```json
+{ "childId": 8, "entryDate": "2026-10-08" }
+```
+
+응답 `data` 는 `null` 입니다. 요약은 곧이어 워커가 만들고, 같은 날짜에 매칭·검증 중인 기록이 있으면 그것이 끝난 뒤에
+만듭니다. 결과는 O-30 에서 확인합니다.
+
+| 실패 | 상태 | 코드 |
+| --- | --- | --- |
+| `childId`·`entryDate` 누락, 날짜 형식 오류 | 400 | `INVALID_REQUEST` |
+| 그 아이·날짜에 요약할 새 기록(검증 통과)이 없음 | 400 | `SUMMARY_INVALID_REQUEST` |
+| 없는 아이이거나 다른 기관 소속 | 404 | `SUMMARY_CHILD_NOT_FOUND` |
 
 **O-30 응답**
 
@@ -1045,6 +1064,8 @@ POST /api/v1/auth/signup   → 201 Created
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |
 | `MATCHING_RESULT_INVALID_REQUEST` | 400 | 확인 필요 큐 처리 요청 거절 (O-23) |
 | `MATCHING_RESULT_NOT_FOUND` | 404 | 없거나 다른 기관의 확인 필요 큐 항목 (O-23) |
+| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 새 기록이 없어 지금 요약 거절 (O-32) |
+| `SUMMARY_CHILD_NOT_FOUND` | 404 | 없거나 다른 기관의 아이로 지금 요약 요청 (O-32) |
 | `SUMMARY_ALREADY_DECIDED` | 409 | 이미 승인/반려된 요약 재결정 |
 | `INSIGHT_ALREADY_SENT` | 409 | 이미 발송된 Insight 재발송 |
 | `NOT_PRIMARY_SOURCE` | 403 | 근거 제공 기관이 아닌 곳의 Gate 2 승인 시도 |
