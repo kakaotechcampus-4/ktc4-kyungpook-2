@@ -1,5 +1,6 @@
 package com.itda.backend.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,4 +15,7 @@ public interface MatchingResultRepository extends JpaRepository<MatchingResult, 
 
     /** 검증 결과에 어떤 매칭 결과를 입력으로 썼는지 남길 때 쓴다. 지금은 일지당 한 행이지만 재처리로 쌓이면 최신 것을 쓴다. */
     Optional<MatchingResult> findFirstByJournalEntryIdOrderByIdDesc(Long journalEntryId);
+
+    /** 요약 묶음의 일지들의 매칭 결과를 한 번에 가져온다. 재처리로 쌓인 옛 행도 함께 오므로 최신 것은 호출하는 쪽이 고른다. */
+    List<MatchingResult> findByJournalEntryIdIn(Collection<Long> journalEntryIds);
 }

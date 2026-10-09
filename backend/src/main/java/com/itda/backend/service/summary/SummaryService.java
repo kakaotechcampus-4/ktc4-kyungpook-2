@@ -5,16 +5,26 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.itda.backend.domain.Child;
 import com.itda.backend.domain.JournalEntry;
 import com.itda.backend.domain.JournalEntryStatus;
+import com.itda.backend.domain.MatchingResult;
+import com.itda.backend.domain.Organization;
+import com.itda.backend.dto.request.SummaryAgentRequest;
+import com.itda.backend.exception.SummaryTargetException;
 import com.itda.backend.repository.ChildRepository;
 import com.itda.backend.repository.InProgressKey;
 import com.itda.backend.repository.JournalEntryRepository;
@@ -35,6 +45,8 @@ public class SummaryService {
     private static final Set<JournalEntryStatus> IN_PROGRESS = Set.of(
             JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING,
             JournalEntryStatus.MATCHED, JournalEntryStatus.VALIDATING);
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final JournalEntryRepository journalEntryRepository;
     private final MatchingResultRepository matchingResultRepository;
@@ -111,6 +123,71 @@ public class SummaryService {
                 .max(LocalDateTime::compareTo).orElseThrow();
         Instant settled = lastUploaded.atZone(ZoneId.systemDefault()).toInstant().plus(properties.debounce());
         return !now.isBefore(cutoff) && !now.isBefore(settled);
+    }
+
+    /**
+     * 집어 간 묶음의 요약 요청을 만든다. AI 입력은 저장하지 않고 그때그때 조립한다 (DB 스키마 §2.2).
+     * 그새 삭제된 일지는 뺀다.
+     */
+    @Transactional(readOnly = true)
+    public SummaryAgentRequest prepareRequest(ClaimedSummaryGroup claimed) {
+        SummaryGroup group = claimed.group();
+        List<JournalEntry> entries = journalEntryRepository.findAllById(claimed.journalEntryIds()).stream()
+                .filter(entry -> !entry.isDeleted())
+                .sorted(Comparator.comparing(JournalEntry::getId))
+                .toList();
+        if (entries.isEmpty()) {
+            throw new SummaryTargetException("no journal entry left in summary group: " + group);
+        }
+        // 일지가 묶인 뒤에 아동·기관이 삭제 표시돼도 이 요약의 주인공·작성 기관은 그대로라 이름을 싣는다.
+        String childName = childRepository.findById(group.childId()).map(Child::getName).orElse(null);
+        String institutionName = organizationRepository.findById(group.institutionId())
+                .map(Organization::getName).orElse(null);
+        String entryDate = group.entryDate().toString();
+
+        List<SummaryAgentRequest.Source> sources = entries.stream()
+                .map(entry -> new SummaryAgentRequest.Source(entry.getId(), entry.getContent(), entryDate))
+                .toList();
+        return new SummaryAgentRequest(group.childId(), childName, entryDate, group.institutionId(),
+                institutionName, sources, otherChildNames(group.childId(), entries));
+    }
+
+    /**
+     * 묶음의 일지 본문에 이름이 나온 아이들(matching_result.mentioned_child_ids)을 합쳐 주인공을 뺀 이름 목록.
+     * 명부에서 빠진 아이도 이름이 새면 안 되므로 삭제 여부와 상관없이 찾는다.
+     */
+    private List<String> otherChildNames(Long childId, List<JournalEntry> entries) {
+        // 재처리로 매칭 결과가 쌓였으면 일지마다 가장 최근 것을 쓴다.
+        Map<Long, MatchingResult> latest = new HashMap<>();
+        for (MatchingResult result : matchingResultRepository.findByJournalEntryIdIn(
+                entries.stream().map(JournalEntry::getId).toList())) {
+            latest.merge(result.getJournalEntryId(), result, (a, b) -> a.getId() > b.getId() ? a : b);
+        }
+        Set<Long> others = new TreeSet<>();
+        latest.values().forEach(result -> others.addAll(parseIds(result.getMentionedChildIds())));
+        others.remove(childId);
+        if (others.isEmpty()) {
+            return List.of();
+        }
+        return childRepository.findAllById(others).stream()
+                .sorted(Comparator.comparing(Child::getId))
+                .map(Child::getName)
+                .distinct()
+                .toList();
+    }
+
+    private List<Long> parseIds(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<Long> ids = new ArrayList<>();
+            MAPPER.readTree(json).forEach(node -> ids.add(node.asLong()));
+            return ids;
+        } catch (JsonProcessingException e) {
+            log.warn("mentioned_child_ids is not a JSON array: {}", json);
+            return List.of();
+        }
     }
 
     private Long parseInstitutionId(SummaryCandidate c) {
