@@ -29,7 +29,7 @@ class SummaryResultRepositoryTest {
 
     @Test
     void 연관관계_없이_저장하고_생성_수정_시각을_남긴다() {
-        SummaryResult saved = summaryResultRepository.saveAndFlush(SummaryResult.of(8L, DATE, 3L, "요약 본문",
+        SummaryResult saved = summaryResultRepository.saveAndFlush(SummaryResult.of(8L, DATE, 3L, 1, "요약 본문",
                 "[{\"text\":\"요약 본문\"}]", "[1041]", "[1042]", "{\"content\":\"요약 본문\"}"));
         entityManager.clear();
 
@@ -51,17 +51,17 @@ class SummaryResultRepositoryTest {
 
     @Test
     void 같은_묶음의_같은_판은_두_번_저장할_수_없다() {
-        summaryResultRepository.saveAndFlush(SummaryResult.of(8L, DATE, 3L, "첫 요약", "[]", "[]", "[]", "{}"));
+        summaryResultRepository.saveAndFlush(SummaryResult.of(8L, DATE, 3L, 1, "첫 요약", "[]", "[]", "[]", "{}"));
 
         assertThatThrownBy(() -> summaryResultRepository.saveAndFlush(
-                SummaryResult.of(8L, DATE, 3L, "중복 요약", "[]", "[]", "[]", "{}")))
+                SummaryResult.of(8L, DATE, 3L, 1, "중복 요약", "[]", "[]", "[]", "{}")))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
     void 기관이_다르면_같은_아이_같은_날짜라도_따로_저장한다() {
-        summaryResultRepository.saveAndFlush(SummaryResult.of(8L, DATE, 3L, "학교 요약", "[]", "[]", "[]", "{}"));
-        summaryResultRepository.saveAndFlush(SummaryResult.of(8L, DATE, 4L, "센터 요약", "[]", "[]", "[]", "{}"));
+        summaryResultRepository.saveAndFlush(SummaryResult.of(8L, DATE, 3L, 1, "학교 요약", "[]", "[]", "[]", "{}"));
+        summaryResultRepository.saveAndFlush(SummaryResult.of(8L, DATE, 4L, 1, "센터 요약", "[]", "[]", "[]", "{}"));
 
         assertThat(summaryResultRepository.count()).isEqualTo(2);
     }

@@ -84,12 +84,12 @@ public class SummaryResult {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
-    private SummaryResult(Long childId, LocalDate entryDate, Long institutionId, String content, String claims,
-            String coveredEntryIds, String uncoveredEntryIds, String rawResponse) {
+    private SummaryResult(Long childId, LocalDate entryDate, Long institutionId, Integer revision, String content,
+            String claims, String coveredEntryIds, String uncoveredEntryIds, String rawResponse) {
         this.childId = childId;
         this.entryDate = entryDate;
         this.institutionId = institutionId;
-        this.revision = 1;
+        this.revision = revision;
         this.content = content;
         this.claims = claims;
         this.coveredEntryIds = coveredEntryIds;
@@ -98,21 +98,31 @@ public class SummaryResult {
         this.status = SummaryStatus.GATE1_PENDING;
     }
 
-    /** 그 묶음의 첫 요약을 만든다. 승인 뒤 쌓는 새 판(revision + 1)은 Gate 1 승인이 생길 때 추가한다. */
-    public static SummaryResult of(Long childId, LocalDate entryDate, Long institutionId, String content,
-            String claims, String coveredEntryIds, String uncoveredEntryIds, String rawResponse) {
+    /**
+     * 그 묶음의 새 판을 만든다. 첫 요약은 1, 승인된 판이 있으면 그다음 번호다 — 승인된 글은 고치지 않고 새로 쌓는다.
+     */
+    public static SummaryResult of(Long childId, LocalDate entryDate, Long institutionId, int revision,
+            String content, String claims, String coveredEntryIds, String uncoveredEntryIds, String rawResponse) {
         if (childId == null || entryDate == null || institutionId == null) {
             throw new IllegalArgumentException("요약 묶음의 아동·날짜·기관은 필수입니다.");
         }
+        if (revision < 1) {
+            throw new IllegalArgumentException("요약 판 번호는 1부터입니다: " + revision);
+        }
         requireContent(content);
-        return new SummaryResult(childId, entryDate, institutionId, content, claims, coveredEntryIds,
+        return new SummaryResult(childId, entryDate, institutionId, revision, content, claims, coveredEntryIds,
                 uncoveredEntryIds, rawResponse);
+    }
+
+    /** 승인 전이라 같은 묶음에 일지가 더 오면 덮어쓸 수 있는지. */
+    public boolean isBeforeApproval() {
+        return this.status == SummaryStatus.GENERATED || this.status == SummaryStatus.GATE1_PENDING;
     }
 
     /** 승인 전 요약을 같은 묶음의 새 결과로 덮어쓴다. 판 번호는 그대로다. */
     public void overwrite(String content, String claims, String coveredEntryIds, String uncoveredEntryIds,
             String rawResponse) {
-        if (this.status != SummaryStatus.GENERATED && this.status != SummaryStatus.GATE1_PENDING) {
+        if (!isBeforeApproval()) {
             throw new IllegalStateException("승인 전 요약만 덮어쓸 수 있습니다: " + this.status);
         }
         requireContent(content);

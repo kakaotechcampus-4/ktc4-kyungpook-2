@@ -12,7 +12,7 @@ class SummaryResultTest {
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
 
     private SummaryResult summary() {
-        return SummaryResult.of(8L, DATE, 3L, "블록 놀이에서 친구에게 양보했다.",
+        return SummaryResult.of(8L, DATE, 3L, 1, "블록 놀이에서 친구에게 양보했다.",
                 "[{\"text\":\"블록 놀이에서 친구에게 양보했다.\"}]", "[1041]", "[1042]", "{\"content\":\"...\"}");
     }
 
@@ -34,14 +34,22 @@ class SummaryResultTest {
 
     @Test
     void 묶음_키와_본문은_필수다() {
-        assertThatThrownBy(() -> SummaryResult.of(null, DATE, 3L, "본문", "[]", "[]", "[]", "{}"))
+        assertThatThrownBy(() -> SummaryResult.of(null, DATE, 3L, 1, "본문", "[]", "[]", "[]", "{}"))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> SummaryResult.of(8L, null, 3L, "본문", "[]", "[]", "[]", "{}"))
+        assertThatThrownBy(() -> SummaryResult.of(8L, null, 3L, 1, "본문", "[]", "[]", "[]", "{}"))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> SummaryResult.of(8L, DATE, null, "본문", "[]", "[]", "[]", "{}"))
+        assertThatThrownBy(() -> SummaryResult.of(8L, DATE, null, 1, "본문", "[]", "[]", "[]", "{}"))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> SummaryResult.of(8L, DATE, 3L, " ", "[]", "[]", "[]", "{}"))
+        assertThatThrownBy(() -> SummaryResult.of(8L, DATE, 3L, 1, " ", "[]", "[]", "[]", "{}"))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> SummaryResult.of(8L, DATE, 3L, 0, "본문", "[]", "[]", "[]", "{}"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 승인된_판이_있으면_다음_판으로_만든다() {
+        assertThat(SummaryResult.of(8L, DATE, 3L, 2, "새 일지만 묶은 요약", "[]", "[]", "[]", "{}").getRevision())
+                .isEqualTo(2);
     }
 
     @Test
