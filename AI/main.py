@@ -1,7 +1,11 @@
 import os
 
-import requests
 from dotenv import load_dotenv
+
+# import 보다 먼저 부른다 — 모듈이 읽히는 동안 .env 가 보여야 한다.
+load_dotenv()
+
+import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -13,8 +17,6 @@ from summary.schemas import SummaryInput, SummaryOutput
 from validation.graph import run_validation
 from validation.llm import is_configured
 from validation.schemas import ValidationInput, ValidationOutput
-
-load_dotenv()
 
 app = FastAPI(title="ITDA AI")
 

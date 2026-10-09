@@ -7,6 +7,8 @@
 전부 불리언이다. 기준은 CRITERIA.md 에 있고, test_criteria_sync.py 가 둘을 묶는다.
 """
 
+from common.luna import CHAT_PATH
+
 # ── 근거 거르기 ─────────────────────────────────────────────────
 
 #: 인용이 원문에 없으면 그 근거를 버린다. 모델이 조사를 바꾸거나 다듬은
@@ -57,12 +59,11 @@ ANONYMIZE_OTHER_NAMES = True
 FIXED_LENGTH = False
 
 # ── Luna 호출 설정 ──────────────────────────────────────────────
-#: 판정 기준이 아니라 접속 설정이다. matching/validation 과 같은 값을 둔다.
+#: 판정 기준이 아니라 접속 설정이다.
 
-#: LUNA_API_URL 은 엔드포인트 base 만 담는다. 실제 경로는 여기서 붙인다.
-LUNA_CHAT_PATH = "/v1/chat/completions"
+#: 접속 경로와 모델은 네 에이전트가 같이 쓴다 (common/luna.py).
+#: 모델은 .env 의 LUNA_MODEL 로 바꾼다.
+LUNA_CHAT_PATH = CHAT_PATH
 
-LUNA_MODEL = "gpt-5.6-luna"
-
-#: 요약은 입력이 일지 여러 건이라 매칭·검증보다 길다. 넉넉하게 둔다.
+#: 호출 제한시간만 에이전트마다 다르다.
 LUNA_TIMEOUT = 90.0
