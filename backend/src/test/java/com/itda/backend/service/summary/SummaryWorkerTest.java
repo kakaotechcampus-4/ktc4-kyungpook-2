@@ -159,7 +159,8 @@ class SummaryWorkerTest {
     }
 
     @Test
-    void 재시도까지_실패하면_그_묶음만_실패로_남기고_나머지는_되돌려놓고_멈춘다() {
+    void 재시도까지_실패하면_실패로_남기지_않고_그_묶음까지_되돌려놓고_멈춘다() {
+        // 요약 단계의 FAILED 는 다시 처리할 길이 없다. AI·LLM 이 잠깐 죽은 것이면 다음 차례에 다시 요약하게 둔다.
         ClaimedSummaryGroup first = group(8L, 1L);
         ClaimedSummaryGroup second = group(9L, 2L);
         ClaimedSummaryGroup third = group(10L, 3L);
@@ -169,8 +170,8 @@ class SummaryWorkerTest {
 
         worker.run();
 
-        verify(recorder).recordFailure(first);
-        verify(summaryService).release(List.of(second, third));
+        verify(recorder, never()).recordFailure(any());
+        verify(summaryService).release(List.of(first, second, third));
         verify(summaryService, never()).prepareRequest(second);
         verify(summaryService, never()).prepareRequest(third);
     }

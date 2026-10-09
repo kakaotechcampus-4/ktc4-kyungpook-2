@@ -15,8 +15,10 @@ import lombok.extern.slf4j.Slf4j;
  * 묶음의 일지가 GATE1_PENDING(교사 1차 검토 대기)이 되고, 호출 실패는 FAILED 가 된다.
  *
  * <p>구조는 {@link com.itda.backend.service.validation.ValidationWorker} 와 같고 처리 단위만 일지가 아니라 묶음이다.
- * 한 묶음씩 순서대로 처리하고, 실패는 그 묶음만 실패로 남긴다. 집기 전에 AI 상태를 보고, 재시도까지 응답이
- * 없으면 나머지 묶음을 되돌려놓고 멈춘다. 언제 묶음이 준비되는지는 {@link SummaryService#claimReadyGroups} 가 정한다.
+ * 한 묶음씩 순서대로 처리하고, 실패(4xx, 응답 해석 실패, 빈 본문)는 그 묶음만 실패로 남긴다. 집기 전에 AI 상태를
+ * 보고, 재시도까지 응답이 없으면 지금 묶음을 포함해 나머지를 되돌려놓고 멈춘다 — 검증 워커와 다른 점이다.
+ * AI {@code /health} 는 LLM 이 살아 있는지까지는 보지 않아서, LLM 장애가 이어지면 묶음마다 실패로 끝나기 때문이다.
+ * 언제 묶음이 준비되는지는 {@link SummaryService#claimReadyGroups} 가 정한다.
  */
 @Slf4j
 @Component
@@ -62,7 +64,9 @@ public class SummaryWorker {
         for (int i = 0; i < claimed.size(); i++) {
             Outcome outcome = process(claimed.get(i));
             if (outcome == Outcome.AGENT_DOWN) {
-                summaryService.release(claimed.subList(i + 1, claimed.size()));
+                // 지금 묶음도 되돌린다. 검증과 달리 요약 단계의 FAILED 는 다시 처리할 길이 없어서,
+                // AI·LLM 이 잠깐 죽은 것으로 묶음을 끝내 버리면 그 일지들은 Gate 1 에 영영 오지 못한다.
+                summaryService.release(claimed.subList(i, claimed.size()));
                 return;
             }
             if (outcome == Outcome.SHUTTING_DOWN) {
@@ -95,9 +99,14 @@ public class SummaryWorker {
                 log.info("stopping summary worker during shutdown group={}", claimed.group());
                 return Outcome.SHUTTING_DOWN;
             }
+            if (e instanceof AiAgentUnavailableException) {
+                log.warn("summary agent unavailable, releasing group={} journalEntryIds={}",
+                        claimed.group(), claimed.journalEntryIds(), e);
+                return Outcome.AGENT_DOWN;
+            }
             log.warn("summary failed group={} journalEntryIds={}", claimed.group(), claimed.journalEntryIds(), e);
             recordFailure(claimed);
-            return e instanceof AiAgentUnavailableException ? Outcome.AGENT_DOWN : Outcome.DONE;
+            return Outcome.DONE;
         }
     }
 
