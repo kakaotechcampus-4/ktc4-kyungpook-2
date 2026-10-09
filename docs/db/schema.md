@@ -41,7 +41,7 @@
 | 9 | `journal_entry` | ✅ 확정 | ✅ `JournalEntry` | `deleted_at` |
 | 10 | `matching_result` | ✅ 확정 | ⚠️ `MatchingResult` — 설계와 다름 | 삭제 없음 (이력) |
 | 11 | `validation_result` | ✅ 확정 | ✅ `ValidationResult` | 삭제 없음 (이력) |
-| 12 | `summary_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 12 | `summary_result` | ✅ 확정 | ✅ `SummaryResult` | 삭제 없음 (이력) |
 | 13 | `human_review` | 🟡 초안 | ✅ `Approval` | 삭제 없음 (이력) |
 | 14 | `child_context` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 15 | `insight_result` | 🟡 초안 | ⬜ 미구현 | 삭제 없음 (이력) |
@@ -829,7 +829,7 @@ S3 객체의 실제 파기는 개인정보 파기 절차(§3.2 마지막)에서 
 | `sequence_no` | INT | Y | 파일 내부 기록 순서 |
 | `child_id` | BIGINT | **Y** | 확정된 아동 |
 | `status` | VARCHAR(30) | N | 파이프라인 진행 상태 |
-| `summary_id` | BIGINT | Y | **신규.** 어느 요약에 들어갔는지 (§8.2) |
+| `summary_id` | BIGINT | Y | 어느 요약에 들어갔는지 (§8.2). 요약에 반영되지 않은 일지도 채운다 |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
 | `deleted_at` | DATETIME | Y | **삭제 표시.** 잘못 분리된 일지를 내릴 때 |
@@ -934,6 +934,34 @@ AI 자동 확정과 선생님 확정 둘 다 `MATCHED`로 들어오므로 구분
 > 정규식으로 개인정보가 잡힌 경우만 LLM 과 상관없이 200 + `BLOCK`이다. Luna 설정이 없으면 `/health`도 503 이라
 > 워커가 일지를 집지 않는다 (매칭 워커도 같은 `/health`를 본다).
 
+요약 워커(#91)는 일지 한 건이 아니라 **아동 × 날짜 × 기관 묶음**으로 집는다. 묶음에 `VALIDATED` 일지가 있고
+아래 셋을 모두 만족하면 묶음의 일지를 `SUMMARIZING`으로 바꿔 집어 간다 (AI/summary/CRITERIA.md §5, §8.2 "언제 묶는가").
+
+```
+마감       entry_date 다음 날 03:00 (KST) 이 지났다             app.summary.cutoff-time
+디바운스    묶음의 마지막 일지가 들어온(created_at) 지 30분이 지났다   app.summary.debounce
+처리 중 없음 같은 기관·같은 날짜에 PENDING·MATCHING·MATCHED·VALIDATING 일지가 없다
+```
+
+- "처리 중"은 같은 **아이**가 아니라 같은 **기관·날짜**로 본다. 매칭 전 일지는 `child_id`가 비어 있어 이 아이 일지인지
+  아직 모른다.
+- 사람 손이 필요한 상태(`MATCH_REVIEW`·`FAILED`·`VALIDATION_HELD` 등)는 기다리지 않는다. 일지 하나 때문에 묶음 전체가
+  무기한 멈추지 않게 하려는 것이다. 나중에 확정되면 승인 전 요약에 덮어쓰거나 새 판으로 들어간다.
+- 교사의 "지금 요약"(API O-32)은 마감·디바운스를 건너뛴다. 처리 중 조건은 그대로 지킨다 — 업로드 직후 눌러도 받아 두고
+  매칭·검증이 끝나면 요약한다. 요청은 그 날짜의 마감까지(이미 지난 날짜면 디바운스만큼)만 유효하고 메모리에만 둔다.
+- 승인 전 요약에 이미 들어간 `GATE1_PENDING` 일지는 같은 묶음에 새 `VALIDATED` 일지가 오면 함께 다시 집는다.
+
+| 결과 | 묶음의 `journal_entry.status` | `summary_result` |
+| --- | --- | --- |
+| 성공 | `GATE1_PENDING`. 요약에 반영되지 않은 일지(uncovered)도 같다 | 승인 전 판이 있으면 덮어쓰고, 없으면 새 판 |
+| 200 인데 본문이 빔 (근거를 못 찾아 문장이 모두 버려짐) | 호출 실패와 같음 | 남기지 않음 |
+| BE 근거 재검사에 걸림 (§8.2) | 호출 실패와 같음 | 남기지 않음 |
+| 호출 실패 (4xx, 응답 해석 실패) | 처음 요약하던 일지는 `FAILED`, 이미 승인 전 요약에 들어가 있던 일지는 `GATE1_PENDING` 으로 되돌림 | 남기지 않음 |
+| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | 실패로 남기지 않고 요약하기 전 상태로 되돌림 (그 묶음과 나머지 묶음 모두). 이번 차례 멈춤 | 남기지 않음 |
+
+요약 실패는 `summary_result`에 행을 남기지 않는다. 요약은 묶음 단위라 일지별 실패 행을 둘 자리가 없고, `status`에
+실패 값도 없다. `FAILED` 일지의 마지막 `validation_result.verdict`가 `PASS`·`REVIEW`면 요약 단계에서 실패한 것이다.
+
 > **`FAILED`만으로는 매칭 실패인지 검증 실패인지 모른다.** `journal_entry.status`는 두 경우에 같은 값이라,
 > 어느 단계에서 실패했는지는 결과 테이블로 구분한다 — 검증에서 실패했으면 `validation_result`에
 > `verdict = FAILED` 행이 있다 (#122. 그 전에는 행 자체가 없어서 `matching_result.status`로 돌려 짚어야 했다).
@@ -1030,9 +1058,10 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 []          아무 이름도 안 나왔다 (표지로만 판정한 경우)
 ```
 
-> ⚠️ **아직 이 값을 읽는 곳이 없다.** `ValidationInput` 에는 이 필드가 없고
-> (`AI/validation/schemas.py`), 검증 에이전트는 본문만 보고 `다수아동언급` 을 판단한다.
-> **저장은 하되 쓰는 곳은 §10.2-11 에서 정한다.**
+> **요약 워커가 읽는다** (#91). 묶음의 일지마다 가장 최근 값을 합쳐 주인공을 빼고 이름으로 바꿔
+> `other_child_names` 로 보낸다. 명부에서 삭제 표시된 아이도 넣는다 — 이름이 새는 것은 같다.
+> ⚠️ AI `SummaryInput` 에는 아직 이 필드가 없다. pydantic 이 모르는 필드를 버리므로 요청은 깨지지 않고, AI 가 반영하면 그때부터 쓰인다.
+> `ValidationInput` 에는 여전히 이 필드가 없고, 검증 에이전트는 본문만 보고 `다수아동언급` 을 판단한다 (§10.2-11).
 
 쓸 수 있는 자리는 이렇다.
 
@@ -1160,10 +1189,12 @@ FAILED   AI 호출 자체가 실패 — AI 계약에 없는 BE 전용 값 (#122)
 **저장 시점** — 검증 워커가 AI 응답을 받았을 때만 한 행을 쌓는다. 호출이 실패하면 판정이 없어 행을 남기지 않고
 일지만 `FAILED`가 된다 (§6.2). `issue_types`·`evidence`는 AI 가 보낸 JSON 그대로, `raw_response`는 응답 원문 전체다.
 
-### 8.2 `summary_result` ✅ — ⬜ 미구현
+### 8.2 `summary_result` ✅ — ✅ 구현 (`SummaryResult`, #91)
 
 > **근거** — `AI/summary/schemas.py` `SummaryOutput`. pydantic 으로 고정된 계약이다.
-> 엔드포인트는 `POST /summary` (구현 예정).
+> 엔드포인트는 `POST /summary`. 요약 워커의 상태 변경 규칙은 §6.2 에 있다.
+>
+> `model_version` 은 `SummaryOutput` 에 아직 모델 버전이 없어 비워 둔다.
 
 **묶음 단위는 아동 × 날짜 × 기관이다** (2026-10-05 정정).
 
@@ -1202,6 +1233,22 @@ UNIQUE (child_id, entry_date, institution_id, revision)
 ```
 
 설계상 실행 이력이라 삭제하지 않는다. `deleted_at` 을 두지 않는다.
+
+**저장 전 BE 근거 재검사** (멘토 리뷰 A4, #129) — AI 가 이미 인용을 원문에서 찾아 span 을 채우지만, AI 쪽 버그나
+계약 어긋남이 그대로 저장되지 않게 BE 가 한 번 더 대조한다 (`SummaryEvidenceChecker`). 하나라도 걸리면 응답을 고치지
+않고 요약 전체를 실패로 처리한다 (§6.2).
+
+```
+응답의 child_id·entry_date·institution_id 가 묶음과 같은가
+covered·uncovered 일지가 AI 에 보낸 일지인가 (요약하는 사이 삭제된 일지가 uncovered 에 있는 것은 정상)
+모든 근거의 journal_entry_id 가 AI 에 보낸 일지 중 아직 삭제되지 않은 것인가
+문장마다 근거가 하나 이상 있는가
+span 이 있고 0 <= start < end <= 원문 코드포인트 길이인가
+원문을 코드포인트 기준 [start, end) 로 자른 문자열이 quote 와 정확히 같은가
+```
+
+요약하는 사이 삭제된 일지를 근거로 들면 재료에 없으므로 요약 전체가 실패한다. 로그에는 위치(문장·근거 순번,
+일지 id)와 이유만 남기고 본문·인용 원문은 남기지 않는다.
 
 **`journal_entry` 가 요약을 가리킨다 — 방향이 뒤집혔다**
 
@@ -1277,13 +1324,16 @@ HOLD              교사 보류 — child_context 로 올라가지 않는다
 ```
 기본      entry_date 다음 날 03:00 (KST) 에 그 날짜를 1회 요약
 과거 날짜  마감이 지난 날짜의 일지가 들어오면 debounce 30분
-공통      같은 아이·같은 날짜에 처리 중인 일지가 없을 것
+공통      같은 기관·같은 날짜에 처리 중인 일지가 없을 것
 수동      교사가 "지금 요약" 으로 마감을 앞당길 수 있다
 ```
 
-분 단위 debounce 하나로는 안 된다. 학교가 오후 4시, 센터가 저녁 7시에 올리면 두
-편으로 쪼개지고, 그러면 기관을 가로질러 묶는 이유가 사라진다. 기관 **간** 간격은
-마감이 덮고, debounce 는 같은 사람이 연달아 올리는 간격만 덮는다.
+분 단위 debounce 하나로는 안 된다. 같은 기관이라도 여러 교사가 시간을 두고 올리면 두
+편으로 쪼개진다. 업로드 사이 간격은 마감이 덮고, debounce 는 마감이 지난 날짜의 일지를
+같은 사람이 연달아 올리는 간격만 덮는다.
+
+"처리 중"을 같은 아이가 아니라 같은 기관·날짜로 보는 이유는 매칭 전 일지에 `child_id`
+가 없어서다 (§6.2 요약 워커).
 
 > **03:00 과 30분은 임의값이다.** 실제 업로드 시각 분포를 보고 정한 것이 아니라
 > 하원 시각에서 거꾸로 잡았다. 숫자만 바꿀 수 있게 설정으로 둔다.
@@ -1535,12 +1585,12 @@ status   SHARED | BLOCKED | FAILED
 | 2 | 초대코드 만료 · 1회성 | `invitation` 만료 기간과 재사용 허용 여부 | 기획 |
 | 3 | 보호자 2명 동의 기준 | 한 명만 동의해도 활성화인지, 전원 동의가 필요한지 | 기획 |
 | 4 | 동의 철회 처리 | 철회 시 기존 기록을 어떻게 다루는지. `SUSPENDED` 이후 동작 | 기획 |
-| 5 | ~~Summary 묶음 단위~~ | **확정됨 (2026-10-02)** — 아동 × 날짜로 묶는다. 방향을 뒤집어 §8.2 에 반영 완료 | ~~BE + AI~~ |
+| 5 | ~~Summary 묶음 단위~~ | **확정됨 (2026-10-05 정정)** — 아동 × 날짜 × 기관으로 묶는다. §8.2 에 반영 완료 | ~~BE + AI~~ |
 | 6 | ~~Validation Agent 계약~~ | **확정됨** — `ValidationOutput` 기준으로 §8.1 반영 완료 | ~~AI~~ |
 | 7 | ~~Summary Agent 계약~~ | **확정됨** — `SummaryOutput` 기준으로 §8.2 반영 완료 | ~~AI~~ |
 | 8 | 개인정보 파기 절차 | 정보주체가 파기를 요구할 때 실제 삭제·익명화를 어떻게 하는지. soft delete로는 해결되지 않는다 | 기획 + BE |
 | 9 | DB FK 제약 재검토 | JPA 연관관계를 쓰지 않는 것과 **DB에 FK 제약을 거는 것은 별개 결정**이다. `Long` 컬럼을 유지한 채 DB 제약만 추가하면 실수로 참조를 깨뜨리는 것을 막을 수 있다 | BE 전체 |
-| 11 | `mentioned_child_ids` 소비자 | 매칭이 내보내고 BE 가 저장하는데 읽는 곳이 없다.<br>→ `ValidationInput` 에 넣어 교차 검증할지, 화면 표시용으로만 둘지 (§7.1) | AI + BE |
+| 11 | `mentioned_child_ids` 소비자 | 요약 워커가 읽는다 (#91) — 묶음의 값을 합쳐 주인공을 뺀 이름을 `other_child_names` 로 보낸다. ⚠️ AI `SummaryInput` 에는 아직 이 필드가 없어 지금은 버려진다 (AI 반영 예정). AI 는 프롬프트에 넣지 않고 요약 본문에 이름이 남았는지 재는 데만 쓴다.<br>→ 남은 것: Gate 1 승인 시 최종 본문에 그 이름이 남았으면 경고(차단 아님). 명부 밖 이름·성 뗀 이름은 못 잡는 한계가 있다 | AI + BE |
 | 12 | Gate 1 `decision` 에서 `REJECTED` 빼기 | 요약에 "반려" 상태를 두지 않기로 했다(§8.2). `human_review.decision` 은 이미 구현돼 있어 `APPROVED` · `CORRECTED` · `HOLD` 로 맞추는 BE 작업이 남는다 | BE + AI |
 | 10 | 설계와 코드 불일치 정리 | §0.3 의 남은 4건 — `raw_record.institution_id` 타입, `raw_record.status` 의미, `matching_result` 수정 방식과 `reviewer_id` 타입 | BE + AI |
 
@@ -1673,3 +1723,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-01 | `validation_result` 구현 (`ValidationResult`). 저장 시점 설명 추가 (§8.1) | #90 |
 | 2026-10-01 | `journal_entry.status`에 `VALIDATED`·`VALIDATION_BLOCKED` 추가, 검증 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가지만 `journal_entry.status` CHECK 제약은 9/30에 제거돼 수동 조치 불필요 | #90 |
 | 2026-10-07 | `journal_entry.status`에 `REUPLOAD_REQUESTED`·`VALIDATION_HELD` 추가 (수정 요청 큐 처리 결과), `validation_result.verdict`에 `FAILED` 추가 (검증 호출 실패를 행으로 남김). 둘 다 enum 값 추가라 CHECK 제약이 없는 현재 배포 DB에 수동 조치 불필요 | #122 |
+| 2026-10-09 | `summary_result` 구현 (`SummaryResult`), `journal_entry.summary_id` 추가. 저장 전 BE 근거 재검사 (§8.2, A4). 요약 워커의 묶음 조건·상태 변경 규칙 추가 (§6.2). `mentioned_child_ids` 를 요약 요청의 `other_child_names` 로 사용 (§7.1, §10.2-11). 테이블·컬럼 추가라 `ddl-auto: update` 가 만든다 | #91 |

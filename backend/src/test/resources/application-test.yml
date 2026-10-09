@@ -35,6 +35,9 @@ app:
   validation:
     worker:
       enabled: false
+  summary:
+    worker:
+      enabled: false
 
 jwt:
   secret: test-secret-key-for-unit-tests-only

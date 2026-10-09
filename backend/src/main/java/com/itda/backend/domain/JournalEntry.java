@@ -49,6 +49,10 @@ public class JournalEntry {
     @Column(name = "child_id")
     private Long childId;
 
+    // 어느 요약에 들어갔는지. 요약은 일지 N건을 묶으므로 요약이 아니라 일지가 가리킨다 (DB 스키마 §8.2).
+    @Column(name = "summary_id")
+    private Long summaryId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private JournalEntryStatus status;
@@ -188,6 +192,42 @@ public class JournalEntry {
     public void releaseValidating() {
         requireStatus(JournalEntryStatus.VALIDATING);
         this.status = JournalEntryStatus.MATCHED;
+    }
+
+    /**
+     * 워커가 요약 대상으로 집어 간다. 검증을 통과한 일지와, 승인 전 요약에 이미 들어간 일지(같은 묶음에 새 일지가
+     * 와서 다시 요약한다)에서 허용한다. 승인 전 요약은 같은 판을 덮어쓴다 (DB 스키마 §8.2).
+     */
+    public void startSummarizing() {
+        if (this.status != JournalEntryStatus.VALIDATED && this.status != JournalEntryStatus.GATE1_PENDING) {
+            throw new IllegalStateException("요약할 수 있는 상태가 아닙니다: " + this.status);
+        }
+        this.status = JournalEntryStatus.SUMMARIZING;
+    }
+
+    /** 요약이 저장됐다. 요약에 반영되지 않은 일지(uncovered)도 같은 요약을 가리키고 함께 Gate 1 을 기다린다. */
+    public void completeSummary(Long summaryId) {
+        requireStatus(JournalEntryStatus.SUMMARIZING);
+        if (summaryId == null) {
+            throw new IllegalArgumentException("요약 ID는 필수입니다.");
+        }
+        this.summaryId = summaryId;
+        this.status = JournalEntryStatus.GATE1_PENDING;
+    }
+
+    /**
+     * 요약 호출이 실패했다. 이미 승인 전 요약에 들어가 있던 일지는 그 요약이 그대로 유효하므로 Gate 1 대기로 돌리고,
+     * 처음 요약하던 일지만 실패로 남긴다.
+     */
+    public void failSummary() {
+        requireStatus(JournalEntryStatus.SUMMARIZING);
+        this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.FAILED;
+    }
+
+    /** 처리하던 앱이 꺼져서 요약 중에 멈춘 일지를 요약하기 전 상태로 돌린다. */
+    public void releaseSummarizing() {
+        requireStatus(JournalEntryStatus.SUMMARIZING);
+        this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.VALIDATED;
     }
 
     private void requireAwaitingReview() {
