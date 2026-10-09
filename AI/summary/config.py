@@ -7,6 +7,8 @@
 전부 불리언이다. 기준은 CRITERIA.md 에 있고, test_criteria_sync.py 가 둘을 묶는다.
 """
 
+from common.luna import CHAT_PATH
+
 # ── 근거 거르기 ─────────────────────────────────────────────────
 
 #: 인용이 원문에 없으면 그 근거를 버린다. 모델이 조사를 바꾸거나 다듬은
@@ -52,17 +54,21 @@ DROP_SENTIMENT_KEEP_FACT = True
 #: ⚠️ 이것은 **프롬프트 규칙이다.** 지켜졌는지 코드가 보장하지 못한다.
 ANONYMIZE_OTHER_NAMES = True
 
+#: 익명화가 실패해 다른 아이 이름이 본문에 남으면 "사람이 봐야 함" 으로 표시한다.
+#: 지우거나 막지 않는다 — 코드가 자동으로 고치면 프롬프트가 안 지켜졌다는 사실이
+#: 가려지고, 교사가 문맥을 보고 고치는 편이 낫다.
+REVIEW_ON_OTHER_NAMES = True
+
 #: 길이를 고정하지 않는다. 기록이 한 건인 날과 세 기관에서 온 날의
 #: 분량이 같을 이유가 없다.
 FIXED_LENGTH = False
 
 # ── Luna 호출 설정 ──────────────────────────────────────────────
-#: 판정 기준이 아니라 접속 설정이다. matching/validation 과 같은 값을 둔다.
+#: 판정 기준이 아니라 접속 설정이다.
 
-#: LUNA_API_URL 은 엔드포인트 base 만 담는다. 실제 경로는 여기서 붙인다.
-LUNA_CHAT_PATH = "/v1/chat/completions"
+#: 접속 경로와 모델은 네 에이전트가 같이 쓴다 (common/luna.py).
+#: 모델은 .env 의 LUNA_MODEL 로 바꾼다.
+LUNA_CHAT_PATH = CHAT_PATH
 
-LUNA_MODEL = "gpt-5.6-luna"
-
-#: 요약은 입력이 일지 여러 건이라 매칭·검증보다 길다. 넉넉하게 둔다.
+#: 호출 제한시간만 에이전트마다 다르다.
 LUNA_TIMEOUT = 90.0

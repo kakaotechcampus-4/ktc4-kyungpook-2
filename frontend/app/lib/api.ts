@@ -213,6 +213,7 @@ export async function getMatchingQueue(): Promise<MatchingItem[]> {
   const items = await request<MatchingItem[]>("/api/v1/matching-queue");
   return items.map((item) => ({
     ...item,
+    record: { ...item.record, fullContent: item.record.fullContent ?? null },
     matchedChildId: item.matchedChildId ?? null,
     candidates: item.candidates ?? [],
     evidence: item.evidence ?? [],

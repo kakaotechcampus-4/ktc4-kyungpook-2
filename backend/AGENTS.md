@@ -50,6 +50,7 @@ com.itda.backend
 │   ├── agent           # AI 서버 호출 공통 (재시도·상태 확인·접속 설정)
 │   ├── matching        # 매칭 에이전트 호출 워커와 결과 저장
 │   ├── validation      # 검증 에이전트 호출 워커와 결과 저장
+│   ├── summary         # 요약 에이전트 호출 워커와 결과 저장, 지금 요약 요청
 │   └── storage         # 외부 저장소 구현
 ├── repository          # Entity 영속화와 조회
 ├── domain              # Entity, enum 등 도메인 모델

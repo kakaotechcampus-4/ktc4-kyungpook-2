@@ -11,6 +11,7 @@
 같은 이유다.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -18,7 +19,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from summary import nodes  # noqa: E402
 from summary.graph import run_summary  # noqa: E402
-from summary.llm import LlmResult  # noqa: E402
+from summary.llm import LlmResult, LlmUnavailable, NoGroundedClaims  # noqa: E402
+from main import llm_unavailable  # noqa: E402
+
+
+class _FakeRequest:
+    """핸들러는 경로만 읽어 로그에 쓴다. FastAPI 를 띄우지 않기 위한 대역이다."""
+
+    url = type("U", (), {"path": "/summary"})()
+
+
+#: 503 의 detail.reason. 상태 코드가 같아도 BE 의 후속 처리가 다르다 (#148).
+#:   llm_unavailable      차례를 통째로 멈추고 나중에 다시
+#:   no_grounded_claims   그 묶음만 되돌리고 다음으로, 2번 넘으면 FAILED
+REASON_CASES = [
+    (LlmUnavailable, "llm_unavailable"),
+    (NoGroundedClaims, "no_grounded_claims"),
+]
 from summary.schemas import SourceEntry, SummaryInput  # noqa: E402
 
 #: 한 기관(햇살학교)이 같은 날 올린 기록 둘. 묶음은 기관 안에서만 일어난다.
@@ -80,13 +97,13 @@ CASES = [
                 "evidence": [ev(1041, "혼자서 다섯 층까지 쌓았음")],
             }
         ],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "원문은 '혼자 다섯 층까지 쌓음' 이다. 다듬은 인용은 원문이 아니다",
     ),
     (
         "근거가 없는 문장은 버린다",
         [{"text": "오늘 기분이 좋아 보였다.", "evidence": []}],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "지어낸 문장이 그대로 교사에게 가면 안 된다",
     ),
     (
@@ -97,8 +114,30 @@ CASES = [
                 "evidence": [ev(1042, "3번 교사 손을 잡고 올림")],
             }
         ],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "인용은 원문에 있지만 문장의 숫자가 근거에 없다",
+    ),
+    (
+        "날짜의 숫자를 횟수 근거로 쓰면 버린다",
+        [
+            {
+                "text": "블록을 4번 쌓았다.",
+                "evidence": [ev(1041, "혼자 다섯 층까지 쌓음")],
+            }
+        ],
+        "503",
+        "묶음 날짜가 2026-10-04 라고 해서 '4번' 이 근거를 얻으면 안 된다",
+    ),
+    (
+        "날짜 표현은 근거가 없어도 둔다",
+        [
+            {
+                "text": "10월 4일 오전 블록 놀이에 참여했다.",
+                "evidence": [ev(1041, "오전 블록 놀이에서 혼자 다섯 층까지 쌓음")],
+            }
+        ],
+        {"claims": 1, "covered": [1041], "uncovered": [1042]},
+        "월·일 단위가 붙고 묶음 날짜와 같으면 날짜를 가리킨 것이다",
     ),
     (
         "입력에 없는 기관 일을 지어내면 버린다",
@@ -108,7 +147,7 @@ CASES = [
                 "evidence": [ev(1042, "교사 손을 잡고 올림")],
             }
         ],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "다른 기관 기록은 애초에 입력에 없다. 숫자 2 가 근거에 없어 걸린다",
     ),
     (
@@ -119,7 +158,7 @@ CASES = [
                 "evidence": [ev(1042, "혼자 다섯 층까지 쌓음")],
             }
         ],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "그 구절은 1041 에 있다. 1042 라고 댔으면 근거가 틀린 것이다",
     ),
     (
@@ -136,16 +175,56 @@ CASES = [
 ]
 
 
+#: 익명화가 실패했는지 표시하는가. (요약 문장, 받은 이름 목록, 기대 review_reasons)
+NAME_CASES = [
+    ("익명화 성공", "옆자리 아동이 조각을 건네자 받아서 끼웠다.", ["박서연"], []),
+    ("이름이 남음", "옆자리 박서연이 조각을 건네자 받아서 끼웠다.", ["박서연"], ["다른아동이름"]),
+    (
+        "목록이 비면 못 잡는다",
+        "옆자리 박서연이 조각을 건네자 받아서 끼웠다.",
+        [],
+        [],
+    ),
+]
+
+
+def run_names(text, names):
+    """other_child_names 대조만 보는 작은 실행. 근거는 통과하게 둔다."""
+    original = nodes.ask_json
+    nodes.ask_json = lambda messages, **kw: LlmResult(
+        data={"claims": [{"text": text, "evidence": [ev(1041, "혼자 다섯 층까지 쌓음")]}]}
+    )
+    try:
+        return run_summary(
+            SummaryInput(
+                child_id=1,
+                child_name="김지후",
+                entry_date="2026-10-04",
+                institution_id=7,
+                institution_name="햇살학교",
+                sources=SOURCES,
+                other_child_names=names,
+            )
+        )
+    finally:
+        nodes.ask_json = original
+
+
 def main():
     print("■ 요약 환각 거르기 (모델 응답 고정, LLM 호출 없음)")
     failed = 0
     for name, claims, want, why in CASES:
-        out = run(claims)
-        got = {
-            "claims": len(out.claims),
-            "covered": out.covered_entry_ids,
-            "uncovered": out.uncovered_entry_ids,
-        }
+        try:
+            out = run(claims)
+            got = {
+                "claims": len(out.claims),
+                "covered": out.covered_entry_ids,
+                "uncovered": out.uncovered_entry_ids,
+            }
+        except NoGroundedClaims:
+            # 재료가 있는데 남은 문장이 0 이면 빈 요약을 200 으로 주지 않는다.
+            # BE 가 빈 claims 를 요약 전체 실패로 보기 때문이다 (#146).
+            got = "503"
         ok = got == want
         print(f"  {'✓' if ok else '✗'} {name}")
         print(f"      기대 {want}")
@@ -163,6 +242,38 @@ def main():
     ok = out.content == "혼자 다섯 층까지 쌓았다."
     print(f"  {'✓' if ok else '✗'} 본문은 살아남은 문장만으로 만든다")
     print(f'      실제 content = "{out.content}"')
+    if not ok:
+        failed += 1
+
+    print("\n■ 다른 아이 이름이 남았는지 표시 (막지는 않는다)")
+    for name, text, names, want in NAME_CASES:
+        out = run_names(text, names)
+        ok = out.review_reasons == want and out.needs_review == bool(want)
+        print(f"  {'✓' if ok else '✗'} {name}")
+        print(f"      받은 목록 {names} · needs_review={out.needs_review} {out.review_reasons}")
+        if not ok:
+            failed += 1
+    print("      ⚠️ 목록은 ACTIVE 명부 아이만 담긴다. false 가 '안 샌다' 는 뜻이 아니다")
+
+    print("\n■ 503 두 가지를 body 로 구분한다 (BE 후속 처리가 다르다)")
+    for exc, want in REASON_CASES:
+        got = exc.reason
+        ok = got == want
+        print(f"  {'✓' if ok else '✗'} {exc.__name__} → detail.reason = \"{got}\"")
+        if not ok:
+            print(f"      기대 \"{want}\"")
+            failed += 1
+    # 핸들러가 클래스 값을 읽는지. 문자열을 박아 두면 하위 예외가 묻힌다.
+    body = json.loads(
+        llm_unavailable(_FakeRequest(), NoGroundedClaims("child_id=1 …")).body
+    )
+    ok = body["detail"]["reason"] == "no_grounded_claims"
+    print(f"  {'✓' if ok else '✗'} 핸들러가 실제로 내보내는 body — {body}")
+    if not ok:
+        failed += 1
+    # 예외 메시지에는 아이 식별자와 Luna 주소가 들어 있다. body 로 나가면 안 된다.
+    ok = "child_id" not in json.dumps(body, ensure_ascii=False)
+    print(f"  {'✓' if ok else '✗'} 예외 메시지는 body 에 넣지 않는다 (로그로만)")
     if not ok:
         failed += 1
 

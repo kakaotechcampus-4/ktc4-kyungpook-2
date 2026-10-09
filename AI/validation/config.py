@@ -4,6 +4,8 @@
 matching/config.py와 같은 원칙 — 값이 바뀔 때 고칠 곳을 한 군데로 모아둔다.
 """
 
+from common.luna import CHAT_PATH
+
 # ── 이슈 유형 → 최종 등급 매핑 ──────────────────────────────────
 
 #: BLOCK: 그 자체로 위험해서 통과 자체를 막는 것
@@ -45,9 +47,9 @@ STRUCTURAL_PII_PATTERNS = [
 # matching/config.py에서 그대로 가져옴. 두 에이전트가 같은 엔드포인트를
 # 쓰지만, 폴더는 독립적으로 유지한다(트랙 B의 matching 작업과 안 얽히게).
 
-LUNA_CHAT_PATH = "/v1/chat/completions"
-LUNA_MODEL = "gpt-5.6-luna"
+#: 접속 경로와 모델은 네 에이전트가 같이 쓴다 (common/luna.py).
+#: 모델은 .env 의 LUNA_MODEL 로 바꾼다.
+LUNA_CHAT_PATH = CHAT_PATH
 
-#: temperature는 이 모델에서 기본값(1)만 허용된다. 0을 보내면 400이 난다.
-#: matching이 겪은 것과 같은 제약 — 판정의 흔들림은 프롬프트로 잡는다.
+#: 호출 제한시간만 에이전트마다 다르다.
 LUNA_TIMEOUT = 60.0
