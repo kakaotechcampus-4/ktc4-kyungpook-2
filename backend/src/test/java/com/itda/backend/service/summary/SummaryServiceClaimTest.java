@@ -235,4 +235,42 @@ class SummaryServiceClaimTest {
 
         assertThat(serviceAt(AFTER_CUTOFF).claimReadyGroups(1)).hasSize(1);
     }
+
+    private JournalEntry summarizingAgain() {
+        JournalEntry entry = validated(school, 8L);
+        entry.startSummarizing();
+        entry.completeSummary(50L);
+        entry.startSummarizing();
+        return em.persistAndFlush(entry);
+    }
+
+    @Test
+    void 집어_갔지만_처리하지_않은_묶음은_요약하기_전_상태로_돌려놓는다() {
+        JournalEntry fresh = validated(school, 8L);
+        fresh.startSummarizing();
+        em.persistAndFlush(fresh);
+        JournalEntry again = summarizingAgain();
+
+        serviceAt(AFTER_CUTOFF).release(List.of(new ClaimedSummaryGroup(
+                new SummaryGroup(8L, DATE, 3L), List.of(fresh.getId(), again.getId()))));
+
+        assertThat(statusOf(fresh)).isEqualTo(JournalEntryStatus.VALIDATED);
+        assertThat(statusOf(again)).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+    }
+
+    @Test
+    void 앱이_꺼져_요약_중에_멈춘_일지를_되돌린다() {
+        JournalEntry fresh = validated(school, 8L);
+        fresh.startSummarizing();
+        em.persistAndFlush(fresh);
+        JournalEntry again = summarizingAgain();
+        JournalEntry untouched = validated(school, 9L);
+
+        int released = serviceAt(AFTER_CUTOFF).releaseStuck();
+
+        assertThat(released).isEqualTo(2);
+        assertThat(statusOf(fresh)).isEqualTo(JournalEntryStatus.VALIDATED);
+        assertThat(statusOf(again)).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(statusOf(untouched)).isEqualTo(JournalEntryStatus.VALIDATED);
+    }
 }

@@ -190,6 +190,23 @@ public class SummaryService {
         }
     }
 
+    /** 집어 갔지만 처리하지 않은 묶음을 요약하기 전 상태로 돌려놓는다. 이미 다른 상태로 바뀐 일지는 건드리지 않는다. */
+    @Transactional
+    public void release(List<ClaimedSummaryGroup> groups) {
+        List<Long> ids = groups.stream().flatMap(g -> g.journalEntryIds().stream()).toList();
+        journalEntryRepository.findAllById(ids).stream()
+                .filter(entry -> entry.getStatus() == JournalEntryStatus.SUMMARIZING)
+                .forEach(JournalEntry::releaseSummarizing);
+    }
+
+    /** 이전에 꺼진 앱이 요약하다 만 일지를 되돌린다. 워커가 첫 실행에서 한 번만 부른다. */
+    @Transactional
+    public int releaseStuck() {
+        List<JournalEntry> stuck = journalEntryRepository.findByStatusAndDeletedAtIsNull(JournalEntryStatus.SUMMARIZING);
+        stuck.forEach(JournalEntry::releaseSummarizing);
+        return stuck.size();
+    }
+
     private Long parseInstitutionId(SummaryCandidate c) {
         try {
             return Long.valueOf(c.institutionId());
