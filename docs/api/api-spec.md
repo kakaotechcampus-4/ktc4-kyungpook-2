@@ -651,7 +651,7 @@ POST /api/v1/auth/signup   → 201 Created
 | 실패 | 상태 | 코드 |
 | --- | --- | --- |
 | `childId`·`entryDate` 누락, 날짜 형식 오류 | 400 | `INVALID_REQUEST` |
-| 그 아이·날짜에 요약할 새 기록(검증 통과)이 없음 | 400 | `SUMMARY_INVALID_REQUEST` |
+| 그 아이·날짜에 요약할 기록도, 매칭·검증 중인 기록도 없음 | 400 | `SUMMARY_INVALID_REQUEST` |
 | 없는 아이이거나 다른 기관 소속 | 404 | `SUMMARY_CHILD_NOT_FOUND` |
 
 **O-30 응답**
@@ -1064,7 +1064,7 @@ POST /api/v1/auth/signup   → 201 Created
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |
 | `MATCHING_RESULT_INVALID_REQUEST` | 400 | 확인 필요 큐 처리 요청 거절 (O-23) |
 | `MATCHING_RESULT_NOT_FOUND` | 404 | 없거나 다른 기관의 확인 필요 큐 항목 (O-23) |
-| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 새 기록이 없어 지금 요약 거절 (O-32) |
+| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 지금 요약 거절 (O-32) |
 | `SUMMARY_CHILD_NOT_FOUND` | 404 | 없거나 다른 기관의 아이로 지금 요약 요청 (O-32) |
 | `SUMMARY_ALREADY_DECIDED` | 409 | 이미 승인/반려된 요약 재결정 |
 | `INSIGHT_ALREADY_SENT` | 409 | 이미 발송된 Insight 재발송 |

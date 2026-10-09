@@ -179,27 +179,48 @@ class SummaryServiceClaimTest {
         assertThat(serviceAt(AFTER_CUTOFF).claimReadyGroups(10)).hasSize(1);
     }
 
+    private static final SummaryGroup GROUP = new SummaryGroup(8L, DATE, 3L);
+
+    private void requestRunUntil(LocalDateTime expiresAt) {
+        runRequests.request(GROUP, expiresAt.atZone(KST).toInstant());
+    }
+
+    private boolean stillRequested(LocalDateTime at) {
+        return runRequests.isRequested(GROUP, at.atZone(KST).toInstant());
+    }
+
     @Test
     void 지금_요약을_누르면_마감과_디바운스를_건너뛴다() {
         JournalEntry entry = uploadedAt(validated(school, 8L), DATE.atTime(16, 0));
-        runRequests.request(new SummaryGroup(8L, DATE, 3L));
+        requestRunUntil(AFTER_CUTOFF);
 
         List<ClaimedSummaryGroup> claimed = serviceAt(DATE.atTime(16, 1)).claimReadyGroups(10);
 
         assertThat(claimed).hasSize(1);
         assertThat(statusOf(entry)).isEqualTo(JournalEntryStatus.SUMMARIZING);
-        assertThat(runRequests.contains(new SummaryGroup(8L, DATE, 3L))).isFalse();
+        assertThat(stillRequested(DATE.atTime(16, 1))).isFalse();
     }
 
     @Test
     void 지금_요약을_눌러도_처리_중인_일지가_있으면_기다린다() {
         uploadedAt(validated(school, 8L), DATE.atTime(16, 0));
         uploadedAt(pending(school), DATE.atTime(16, 1));
-        runRequests.request(new SummaryGroup(8L, DATE, 3L));
+        requestRunUntil(AFTER_CUTOFF);
 
         assertThat(serviceAt(DATE.atTime(16, 2)).claimReadyGroups(10)).isEmpty();
         // 처리 중인 일지가 끝나면 이어서 요약하도록 요청은 남겨 둔다.
-        assertThat(runRequests.contains(new SummaryGroup(8L, DATE, 3L))).isTrue();
+        assertThat(stillRequested(DATE.atTime(16, 2))).isTrue();
+    }
+
+    @Test
+    void 만료된_지금_요약_요청은_디바운스를_건너뛰게_하지_않는다() {
+        // 10/8 에 눌렀지만 그날은 요약할 게 없어 요청만 남았다. 한참 뒤 10/8 일지가 새로 올라왔다.
+        requestRunUntil(AFTER_CUTOFF);
+        LocalDateTime later = LocalDateTime.of(2026, 10, 20, 14, 0);
+        uploadedAt(validated(school, 8L), later.minusMinutes(5));
+
+        assertThat(serviceAt(later).claimReadyGroups(10)).isEmpty();
+        assertThat(serviceAt(later.plusMinutes(30)).claimReadyGroups(10)).hasSize(1);
     }
 
     @Test

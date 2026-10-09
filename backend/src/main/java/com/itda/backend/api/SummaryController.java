@@ -41,7 +41,7 @@ public class SummaryController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
                     description = "childId·entryDate 누락·형식 오류 (INVALID_REQUEST), "
-                            + "요약할 새 일지가 없음 (SUMMARY_INVALID_REQUEST)",
+                            + "그 아이·날짜에 요약할 일지도 매칭·검증 중인 일지도 없음 (SUMMARY_INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(

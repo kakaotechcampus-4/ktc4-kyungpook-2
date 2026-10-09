@@ -1,6 +1,8 @@
 package com.itda.backend.service.summary;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 
@@ -22,4 +24,9 @@ import com.itda.backend.service.agent.WorkerProperties;
 @ConfigurationProperties(prefix = "app.summary")
 public record SummaryProperties(WorkerProperties worker, LocalTime cutoffTime, Duration debounce, ZoneId zone,
         Duration readTimeout) {
+
+    /** 그 날짜의 마감 — entry_date 다음 날 {@code cutoffTime}. 이 시각부터 그 날짜를 요약할 수 있다. */
+    public Instant cutoffOf(LocalDate entryDate) {
+        return entryDate.plusDays(1).atTime(cutoffTime).atZone(zone).toInstant();
+    }
 }

@@ -43,7 +43,7 @@ import lombok.extern.slf4j.Slf4j;
 public class SummaryService {
 
     /** 아직 자동 처리 중인 상태. 이 일지들이 끝나야 같은 기관·날짜를 묶는다. 사람 손이 필요한 상태는 기다리지 않는다. */
-    private static final Set<JournalEntryStatus> IN_PROGRESS = Set.of(
+    static final Set<JournalEntryStatus> IN_PROGRESS = Set.of(
             JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING,
             JournalEntryStatus.MATCHED, JournalEntryStatus.VALIDATING);
 
@@ -115,12 +115,11 @@ public class SummaryService {
         if (busy.contains(new InProgressKey(institutionId, group.entryDate()))) {
             return false;
         }
-        if (runRequests.contains(group)) {
+        Instant now = clock.instant();
+        if (runRequests.isRequested(group, now)) {
             return true;
         }
-        Instant now = clock.instant();
-        Instant cutoff = group.entryDate().plusDays(1).atTime(properties.cutoffTime())
-                .atZone(properties.zone()).toInstant();
+        Instant cutoff = properties.cutoffOf(group.entryDate());
         // createdAt 은 서버 기본 시간대의 LocalDateTime.now() 로 채워진다.
         LocalDateTime lastUploaded = members.stream().map(SummaryCandidate::createdAt)
                 .max(LocalDateTime::compareTo).orElseThrow();
