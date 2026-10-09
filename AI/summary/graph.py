@@ -10,7 +10,7 @@ matching/graph.py · validation/graph.py 와 같은 모양이다. 분기가 없�
 
 from langgraph.graph import END, StateGraph
 
-from .llm import LlmUnavailable
+from .llm import LlmUnavailable, NoGroundedClaims
 from .nodes import assemble, gather, ground, write
 from .schemas import Claim, Evidence, EvidenceSpan, SummaryInput, SummaryOutput
 from .state import SummaryState
@@ -43,7 +43,7 @@ def _to_claim(raw: dict) -> Claim:
             Evidence(
                 journal_entry_id=e["journal_entry_id"],
                 quote=e["quote"],
-                span=EvidenceSpan(**e["span"]) if e.get("span") else None,
+                span=EvidenceSpan(**e["span"]),
             )
             for e in raw["evidence"]
         ],
@@ -74,6 +74,16 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
 
     if result.get("llm_error"):
         raise LlmUnavailable(result["llm_error"])
+
+    # 재료를 받았는데 근거가 남은 문장이 하나도 없다. 빈 요약을 200 으로 돌려주면
+    # 교사가 빈 글을 승인하고 일지는 반영된 것처럼 닫힌다. BE 도 빈 claims 를
+    # 저장하지 않고 요약 전체 실패로 본다 (#146) — 그쪽은 되돌릴 수 없는 실패라,
+    # 다시 부르면 될 수 있는 이 경우는 503 으로 올려 재시도하게 한다.
+    if payload.sources and not result["claims"]:
+        raise NoGroundedClaims(
+            f"child_id={payload.child_id} {payload.entry_date} "
+            f"sources={len(payload.sources)} 중 근거가 남은 문장 0"
+        )
 
     return SummaryOutput(
         child_id=payload.child_id,

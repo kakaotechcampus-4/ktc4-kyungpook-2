@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from summary import nodes  # noqa: E402
 from summary.graph import run_summary  # noqa: E402
-from summary.llm import LlmResult  # noqa: E402
+from summary.llm import LlmResult, NoGroundedClaims  # noqa: E402
 from summary.schemas import SourceEntry, SummaryInput  # noqa: E402
 
 #: 한 기관(햇살학교)이 같은 날 올린 기록 둘. 묶음은 기관 안에서만 일어난다.
@@ -80,13 +80,13 @@ CASES = [
                 "evidence": [ev(1041, "혼자서 다섯 층까지 쌓았음")],
             }
         ],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "원문은 '혼자 다섯 층까지 쌓음' 이다. 다듬은 인용은 원문이 아니다",
     ),
     (
         "근거가 없는 문장은 버린다",
         [{"text": "오늘 기분이 좋아 보였다.", "evidence": []}],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "지어낸 문장이 그대로 교사에게 가면 안 된다",
     ),
     (
@@ -97,7 +97,7 @@ CASES = [
                 "evidence": [ev(1042, "3번 교사 손을 잡고 올림")],
             }
         ],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "인용은 원문에 있지만 문장의 숫자가 근거에 없다",
     ),
     (
@@ -108,7 +108,7 @@ CASES = [
                 "evidence": [ev(1041, "혼자 다섯 층까지 쌓음")],
             }
         ],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "묶음 날짜가 2026-10-04 라고 해서 '4번' 이 근거를 얻으면 안 된다",
     ),
     (
@@ -130,7 +130,7 @@ CASES = [
                 "evidence": [ev(1042, "교사 손을 잡고 올림")],
             }
         ],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "다른 기관 기록은 애초에 입력에 없다. 숫자 2 가 근거에 없어 걸린다",
     ),
     (
@@ -141,7 +141,7 @@ CASES = [
                 "evidence": [ev(1042, "혼자 다섯 층까지 쌓음")],
             }
         ],
-        {"claims": 0, "covered": [], "uncovered": [1041, 1042]},
+        "503",
         "그 구절은 1041 에 있다. 1042 라고 댔으면 근거가 틀린 것이다",
     ),
     (
@@ -162,12 +162,17 @@ def main():
     print("■ 요약 환각 거르기 (모델 응답 고정, LLM 호출 없음)")
     failed = 0
     for name, claims, want, why in CASES:
-        out = run(claims)
-        got = {
-            "claims": len(out.claims),
-            "covered": out.covered_entry_ids,
-            "uncovered": out.uncovered_entry_ids,
-        }
+        try:
+            out = run(claims)
+            got = {
+                "claims": len(out.claims),
+                "covered": out.covered_entry_ids,
+                "uncovered": out.uncovered_entry_ids,
+            }
+        except NoGroundedClaims:
+            # 재료가 있는데 남은 문장이 0 이면 빈 요약을 200 으로 주지 않는다.
+            # BE 가 빈 claims 를 요약 전체 실패로 보기 때문이다 (#146).
+            got = "503"
         ok = got == want
         print(f"  {'✓' if ok else '✗'} {name}")
         print(f"      기대 {want}")

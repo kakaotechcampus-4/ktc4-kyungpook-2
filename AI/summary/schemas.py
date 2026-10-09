@@ -85,10 +85,14 @@ class Evidence(BaseModel):
     #: 모델이 원문에서 그대로 따온 구절. 다듬으면 코드가 못 찾아 버려진다.
     quote: str
 
-    #: quote 의 위치. **모델이 주지 않는다** — spans_for_quotes 가 찾는다.
+    #: quote 의 위치. **모델이 주지 않는다** — 코드가 원문에서 찾아 채운다.
     #: 모델은 글자 수를 세지 못해 좌표를 거의 틀린다 (matching/llm.py:126).
-    #: 그래서 모델 응답을 받을 때는 None 이고, 코드가 채운 뒤 저장된다.
-    span: EvidenceSpan | None = None
+    #:
+    #: 이 계약은 **저장되는 모양**이라 필수다. 모델 응답을 받을 때는 비어 있지만
+    #: 그 상태는 여기까지 오지 않는다 — 원문에서 못 찾은 근거는 ground 가 버린다.
+    #: 예전에는 Optional 이었는데, BE 의 근거 재검사가 span 을 필수로 보고 있어
+    #: 없으면 요약 전체가 실패한다 (#146). 느슨한 쪽이 제 계약이었다.
+    span: EvidenceSpan
 
 
 class Claim(BaseModel):

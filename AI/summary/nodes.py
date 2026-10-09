@@ -146,12 +146,16 @@ def ground(state: SummaryState) -> dict:
                 dropped_evidence += 1
                 continue
             # ① 그 일지 안에서만 찾는다. 없는 일지를 댔으면 그것도 버린다.
+            #
+            # 못 찾으면 플래그와 무관하게 버린다. Evidence.span 이 필수라 빈 채로
+            # 만들면 ValidationError 가 나고, BE 의 근거 재검사도 span 없는 근거를
+            # 요약 전체 실패로 본다 (#146). DROP_UNFOUND_QUOTES 는 이제 "버린 것을
+            # 세는가" 만 정한다.
             span = locate_quote(by_id[entry_id], quote) if entry_id in by_id else None
             if span is None:
                 if DROP_UNFOUND_QUOTES:
                     dropped_evidence += 1
-                    continue
-                span = None
+                continue
             kept.append(
                 {"journal_entry_id": entry_id, "quote": quote, "span": span}
             )
