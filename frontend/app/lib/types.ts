@@ -128,7 +128,13 @@ export interface MatchingItem {
     fileName: string;
     type?: RawRecord["type"] | null;
     capturedAt: string | null;
+    /** 앞 60자만 자른 목록용 미리보기. 뒤쪽 아이 이름·근거는 잘린다 */
     preview: string | null;
+    /**
+     * 자르지 않은 전체 본문 (#112). 아이를 고를 때는 이걸 보여준다.
+     * `evidence` 좌표도 preview 가 아니라 이 값 기준이다.
+     */
+    fullContent: string | null;
   };
   status: Exclude<MatchStatus, "auto">;
   /**
