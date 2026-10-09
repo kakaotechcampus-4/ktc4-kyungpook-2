@@ -72,9 +72,19 @@ def write(state: SummaryState) -> dict:
 # ── ③ ground ───────────────────────────────────────────────────
 
 
+#: 문장 안에서 날짜를 가리키는 숫자. "10월 5일", "2026년" 처럼 단위가 붙은 것만 본다.
+#: "7번", "오전 10시" 는 여기 걸리지 않는다 — 그것은 관찰한 내용이다.
+DATE_UNIT = re.compile(r"(\d+)\s*[년월일]")
+
+
 def _numbers(text: str) -> set[int]:
     """숫자를 값으로 비교한다. "04" 와 "4" 가 다른 수로 취급되면 안 된다."""
     return {int(n) for n in re.findall(r"\d+", text or "")}
+
+
+def _date_numbers(text: str) -> set[int]:
+    """날짜 표현에 쓰인 숫자만. 연·월·일 단위가 붙은 것이다."""
+    return {int(n) for n in DATE_UNIT.findall(text or "")}
 
 
 def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> bool:
@@ -92,9 +102,18 @@ def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> boo
     입력으로 받으면 잡을 수 있다 (schema.md §10.2-11 과 연결된다).
     """
     quotes = " ".join(e["quote"] for e in evidence)
-    # 날짜의 숫자는 입력으로 받은 값이라 지어낸 것이 아니다.
-    known = _numbers(quotes) | _numbers(state.get("entry_date", ""))
-    return not (_numbers(text) - known)
+
+    # 날짜를 가리키는 숫자는 입력으로 받은 값이라 지어낸 것이 아니다. 다만
+    # **그 문장에서 날짜로 쓰였을 때만** 면제한다 — 단위(년·월·일)가 붙어 있고
+    # 묶음 날짜와 값이 같아야 한다.
+    #
+    # 예전에는 entry_date 의 숫자를 통째로 면제했다. 2026-10-07 에 쓴 요약이면
+    # "공을 7번 주고받았다", "10번", "2026번" 이 전부 통과했다 — 날짜 숫자가
+    # 관찰 횟수의 근거가 돼 버린 것이다 (2026-10-08 멘토 리뷰).
+    date_ok = _date_numbers(text) & _numbers(state.get("entry_date", ""))
+
+    # 나머지 숫자 — 횟수·시간·층수 같은 관찰 내용은 근거 인용에 그대로 있어야 한다.
+    return not (_numbers(text) - _numbers(quotes) - date_ok)
 
 
 def ground(state: SummaryState) -> dict:
