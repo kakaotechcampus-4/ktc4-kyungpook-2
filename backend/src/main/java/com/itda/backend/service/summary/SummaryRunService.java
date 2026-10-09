@@ -1,7 +1,6 @@
 package com.itda.backend.service.summary;
 
 import java.time.LocalDate;
-import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,10 +37,8 @@ public class SummaryRunService {
         }
         // 요약할 새 일지가 없는 요청을 받아 두면, 한참 뒤 그 날짜 일지가 올라왔을 때 디바운스 없이 요약돼 버린다.
         String institutionId = String.valueOf(organizationId);
-        boolean hasNewEntry = journalEntryRepository.findSummaryCandidates(List.of(JournalEntryStatus.VALIDATED))
-                .stream()
-                .anyMatch(c -> c.childId().equals(childId) && c.entryDate().equals(entryDate)
-                        && institutionId.equals(c.institutionId()));
+        boolean hasNewEntry = !journalEntryRepository.findGroupEntryIds(
+                JournalEntryStatus.VALIDATED, childId, entryDate, institutionId).isEmpty();
         if (!hasNewEntry) {
             throw new SummaryRunValidationException(
                     "no validated journal entry to summarize childId=" + childId + " entryDate=" + entryDate);

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,8 +69,10 @@ public class SummaryService {
     @Transactional
     public List<ClaimedSummaryGroup> claimReadyGroups(int limit) {
         Set<InProgressKey> busy = Set.copyOf(journalEntryRepository.findInProgressKeys(IN_PROGRESS));
-        Map<SummaryGroup, List<SummaryCandidate>> groups = groupCandidates(journalEntryRepository.findSummaryCandidates(
-                List.of(JournalEntryStatus.VALIDATED, JournalEntryStatus.GATE1_PENDING)));
+        // 새 일지(VALIDATED)로 묶음을 먼저 정한다. 승인 대기(GATE1_PENDING) 일지는 Gate 1 이 처리하기 전까지
+        // 계속 쌓이므로 매번 전부 읽지 않고, 집기로 한 묶음의 것만 가져온다.
+        Map<SummaryGroup, List<SummaryCandidate>> groups = groupCandidates(
+                journalEntryRepository.findSummaryCandidates(List.of(JournalEntryStatus.VALIDATED)));
 
         List<ClaimedSummaryGroup> claimed = new ArrayList<>();
         for (Map.Entry<SummaryGroup, List<SummaryCandidate>> e : groups.entrySet()) {
@@ -81,7 +84,11 @@ public class SummaryService {
             if (!isReady(group, members, busy)) {
                 continue;
             }
-            List<Long> ids = members.stream().map(SummaryCandidate::journalEntryId).toList();
+            List<Long> pending = journalEntryRepository.findGroupEntryIds(JournalEntryStatus.GATE1_PENDING,
+                    group.childId(), group.entryDate(), members.get(0).institutionId());
+            List<Long> ids = Stream.concat(pending.stream(), members.stream().map(SummaryCandidate::journalEntryId))
+                    .sorted()
+                    .toList();
             journalEntryRepository.findAllById(ids).forEach(JournalEntry::startSummarizing);
             runRequests.remove(group);
             claimed.add(new ClaimedSummaryGroup(group, ids));
@@ -103,10 +110,6 @@ public class SummaryService {
     }
 
     private boolean isReady(SummaryGroup group, List<SummaryCandidate> members, Set<InProgressKey> busy) {
-        boolean hasNewEntry = members.stream().anyMatch(c -> c.status() == JournalEntryStatus.VALIDATED);
-        if (!hasNewEntry) {
-            return false;
-        }
         // 기관·날짜만 같아도 기다린다 — 매칭 전 일지는 아동이 비어 있어 이 아이 일지인지 아직 모른다.
         String institutionId = members.get(0).institutionId();
         if (busy.contains(new InProgressKey(institutionId, group.entryDate()))) {
