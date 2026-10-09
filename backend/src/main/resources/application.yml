@@ -79,6 +79,17 @@ app:
       enabled: ${VALIDATION_WORKER_ENABLED:true}
       delay-ms: 5000
       batch-size: 10
+  summary:
+    worker:
+      enabled: ${SUMMARY_WORKER_ENABLED:true}
+      delay-ms: 5000
+      # 요약은 일지가 아니라 묶음(아동·날짜·기관) 단위로 집는다.
+      batch-size: 10
+    # entry_date 다음 날 이 시각이 지나야 그 날짜를 요약한다 (AI/summary/CRITERIA.md §5). 임의값이라 설정으로 둔다.
+    cutoff-time: "03:00"
+    # 묶음의 마지막 일지가 들어온 뒤 이만큼 더 기다린다. 마감이 지난 날짜의 일지를 연달아 올리는 경우를 한 번에 묶는다.
+    debounce: 30m
+    zone: Asia/Seoul
 
 jwt:
   # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.

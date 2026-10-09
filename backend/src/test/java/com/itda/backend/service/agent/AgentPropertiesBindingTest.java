@@ -3,6 +3,8 @@ package com.itda.backend.service.agent;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -11,6 +13,7 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import com.itda.backend.service.matching.MatchingProperties;
+import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.validation.ValidationProperties;
 
 /**
@@ -19,7 +22,8 @@ import com.itda.backend.service.validation.ValidationProperties;
  */
 class AgentPropertiesBindingTest {
 
-    @EnableConfigurationProperties({AiAgentProperties.class, MatchingProperties.class, ValidationProperties.class})
+    @EnableConfigurationProperties({AiAgentProperties.class, MatchingProperties.class, ValidationProperties.class,
+            SummaryProperties.class})
     static class Config {
     }
 
@@ -43,11 +47,22 @@ class AgentPropertiesBindingTest {
         runner.run(context -> {
             for (WorkerProperties worker : List.of(
                     context.getBean(MatchingProperties.class).worker(),
-                    context.getBean(ValidationProperties.class).worker())) {
+                    context.getBean(ValidationProperties.class).worker(),
+                    context.getBean(SummaryProperties.class).worker())) {
                 assertThat(worker.enabled()).isTrue();
                 assertThat(worker.delayMs()).isEqualTo(5000);
                 assertThat(worker.batchSize()).isEqualTo(10);
             }
+        });
+    }
+
+    @Test
+    void 요약_마감과_디바운스를_읽는다() {
+        runner.run(context -> {
+            SummaryProperties summary = context.getBean(SummaryProperties.class);
+            assertThat(summary.cutoffTime()).isEqualTo(LocalTime.of(3, 0));
+            assertThat(summary.debounce()).isEqualTo(Duration.ofMinutes(30));
+            assertThat(summary.zone()).isEqualTo(ZoneId.of("Asia/Seoul"));
         });
     }
 }
