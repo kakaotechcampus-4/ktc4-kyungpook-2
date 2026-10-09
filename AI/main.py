@@ -1,26 +1,24 @@
 import os
 
-import requests
 from dotenv import load_dotenv
 
-# 에이전트 config 가 import 시점에 환경변수를 읽으므로(.env 의 LUNA_MODEL 등),
-# 에이전트 모듈을 import 하기 전에 .env 를 먼저 읽는다. 서버(Docker)는 env_file 로
-# 프로세스 시작 전에 들어오므로 영향이 없고, 로컬 실행에서만 순서가 문제가 된다.
+# import 보다 먼저 부른다 — 모듈이 읽히는 동안 .env 가 보여야 한다.
 load_dotenv()
 
-from fastapi import FastAPI, Request  # noqa: E402
-from fastapi.responses import JSONResponse  # noqa: E402
+import requests
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
-from common.errors import LlmUnavailable  # noqa: E402
-from insight.graph import run_insight  # noqa: E402
-from insight.schemas import InsightInput, InsightOutput  # noqa: E402
-from matching.graph import run_matching  # noqa: E402
-from matching.schemas import MatchingInput, MatchingOutput  # noqa: E402
-from summary.graph import run_summary  # noqa: E402
-from summary.schemas import SummaryInput, SummaryOutput  # noqa: E402
-from validation.graph import run_validation  # noqa: E402
-from validation.llm import is_configured  # noqa: E402
-from validation.schemas import ValidationInput, ValidationOutput  # noqa: E402
+from common.errors import LlmUnavailable
+from insight.graph import run_insight
+from insight.schemas import InsightInput, InsightOutput
+from matching.graph import run_matching
+from matching.schemas import MatchingInput, MatchingOutput
+from summary.graph import run_summary
+from summary.schemas import SummaryInput, SummaryOutput
+from validation.graph import run_validation
+from validation.llm import is_configured
+from validation.schemas import ValidationInput, ValidationOutput
 
 app = FastAPI(title="ITDA AI")
 
@@ -39,13 +37,18 @@ def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
     실패 원인에는 Luna 엔드포인트 주소가 들어 있어서 응답에는 넣지 않고
     서버 로그에만 남긴다. 어느 에이전트였는지는 경로로 구분한다.
 
+    **무엇 때문인지는 detail.reason 으로 구분한다.** 상태 코드는 둘 다 503 이지만
+    BE 의 후속 처리가 다르다 — llm_unavailable 은 차례를 멈추고 나중에 다시,
+    no_grounded_claims 는 그 묶음만 되돌리고 다음으로 넘어간다 (#148 박찬진).
+    값은 예외 클래스가 들고 있다 (common/errors.py).
+
     에이전트마다 예외를 따로 두면 안 된다 — main.py 에서 이름이 덮여
     핸들러가 한쪽에만 걸리고 나머지는 500 으로 나간다. common/errors.py 참고.
     """
     print(f"[{request.url.path.strip('/') or 'unknown'}] LLM 호출 실패: {exc}")
     return JSONResponse(
         status_code=503,
-        content={"detail": {"reason": "llm_unavailable", "message": "Luna 호출 실패"}},
+        content={"detail": {"reason": exc.reason, "message": exc.message}},
     )
 
 
@@ -64,6 +67,7 @@ def matching(payload: MatchingInput) -> MatchingOutput:
     """일지 항목 한 건이 어느 아이의 것인지 판정한다."""
     return run_matching(payload)
 
+
 @app.post("/validation", response_model=ValidationOutput)
 def validation(payload: ValidationInput) -> ValidationOutput:
     """일지 항목 한 건이 저장해도 안전한지 판정한다."""
@@ -74,6 +78,7 @@ def validation(payload: ValidationInput) -> ValidationOutput:
 def summary(payload: SummaryInput) -> SummaryOutput:
     """같은 아이의 같은 날 일지 여러 건을 한 편의 요약으로 묶는다."""
     return run_summary(payload)
+
 
 @app.post("/insight", response_model=InsightOutput)
 def insight(payload: InsightInput) -> InsightOutput:

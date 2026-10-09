@@ -22,6 +22,7 @@ from .config import (
     COVERAGE_FROM_EVIDENCE,
     DROP_CLAIMS_WITHOUT_EVIDENCE,
     DROP_UNFOUND_QUOTES,
+    REVIEW_ON_OTHER_NAMES,
 )
 from .llm import LlmError, ask_json, locate_quote
 from .prompts import build_messages
@@ -72,9 +73,19 @@ def write(state: SummaryState) -> dict:
 # ── ③ ground ───────────────────────────────────────────────────
 
 
+#: 문장 안에서 날짜를 가리키는 숫자. "10월 5일", "2026년" 처럼 단위가 붙은 것만 본다.
+#: "7번", "오전 10시" 는 여기 걸리지 않는다 — 그것은 관찰한 내용이다.
+DATE_UNIT = re.compile(r"(\d+)\s*[년월일]")
+
+
 def _numbers(text: str) -> set[int]:
     """숫자를 값으로 비교한다. "04" 와 "4" 가 다른 수로 취급되면 안 된다."""
     return {int(n) for n in re.findall(r"\d+", text or "")}
+
+
+def _date_numbers(text: str) -> set[int]:
+    """날짜 표현에 쓰인 숫자만. 연·월·일 단위가 붙은 것이다."""
+    return {int(n) for n in DATE_UNIT.findall(text or "")}
 
 
 def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> bool:
@@ -92,9 +103,18 @@ def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> boo
     입력으로 받으면 잡을 수 있다 (schema.md §10.2-11 과 연결된다).
     """
     quotes = " ".join(e["quote"] for e in evidence)
-    # 날짜의 숫자는 입력으로 받은 값이라 지어낸 것이 아니다.
-    known = _numbers(quotes) | _numbers(state.get("entry_date", ""))
-    return not (_numbers(text) - known)
+
+    # 날짜를 가리키는 숫자는 입력으로 받은 값이라 지어낸 것이 아니다. 다만
+    # **그 문장에서 날짜로 쓰였을 때만** 면제한다 — 단위(년·월·일)가 붙어 있고
+    # 묶음 날짜와 값이 같아야 한다.
+    #
+    # 예전에는 entry_date 의 숫자를 통째로 면제했다. 2026-10-07 에 쓴 요약이면
+    # "공을 7번 주고받았다", "10번", "2026번" 이 전부 통과했다 — 날짜 숫자가
+    # 관찰 횟수의 근거가 돼 버린 것이다 (2026-10-08 멘토 리뷰).
+    date_ok = _date_numbers(text) & _numbers(state.get("entry_date", ""))
+
+    # 나머지 숫자 — 횟수·시간·층수 같은 관찰 내용은 근거 인용에 그대로 있어야 한다.
+    return not (_numbers(text) - _numbers(quotes) - date_ok)
 
 
 def ground(state: SummaryState) -> dict:
@@ -127,12 +147,16 @@ def ground(state: SummaryState) -> dict:
                 dropped_evidence += 1
                 continue
             # ① 그 일지 안에서만 찾는다. 없는 일지를 댔으면 그것도 버린다.
+            #
+            # 못 찾으면 플래그와 무관하게 버린다. Evidence.span 이 필수라 빈 채로
+            # 만들면 ValidationError 가 나고, BE 의 근거 재검사도 span 없는 근거를
+            # 요약 전체 실패로 본다 (#146). DROP_UNFOUND_QUOTES 는 이제 "버린 것을
+            # 세는가" 만 정한다.
             span = locate_quote(by_id[entry_id], quote) if entry_id in by_id else None
             if span is None:
                 if DROP_UNFOUND_QUOTES:
                     dropped_evidence += 1
-                    continue
-                span = None
+                continue
             kept.append(
                 {"journal_entry_id": entry_id, "quote": quote, "span": span}
             )
@@ -175,8 +199,22 @@ def assemble(state: SummaryState) -> dict:
     else:
         covered = set()
 
+    # 익명화가 실패했는지 본다. 이름을 지우는 일은 프롬프트가 하고(ANONYMIZE_OTHER_NAMES),
+    # 여기서는 **남았는지만 센다.** 코드가 자동으로 고치면 프롬프트가 안 지켜졌다는
+    # 사실이 가려지고, 조사가 깨져 문장이 어색해진다 ("기관 내 아동가").
+    #
+    # ⚠️ 받은 목록은 ACTIVE 명부 아이만 담긴다. 형제·교사·동의 전 아동은 빠지므로
+    # 여기서 0 이 나와도 "안 샌다" 는 뜻이 아니다 (CRITERIA §3).
+    reasons: list[str] = []
+    if REVIEW_ON_OTHER_NAMES:
+        leaked = [n for n in (state.get("other_child_names") or []) if n and n in content]
+        if leaked:
+            reasons.append("다른아동이름")
+
     return {
         "content": content,
         "covered_entry_ids": sorted(covered),
         "uncovered_entry_ids": sorted(set(state["by_id"]) - covered),
+        "needs_review": bool(reasons),
+        "review_reasons": reasons,
     }

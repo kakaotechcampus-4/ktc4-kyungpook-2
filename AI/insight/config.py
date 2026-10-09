@@ -6,7 +6,8 @@ CRITERIA.md 가 원본이고 이 파일이 따라간다. 플래그 이름은 CRI
 이름과 글자까지 같아야 한다 (test_criteria_sync.py 가 대조한다).
 """
 
-import os
+from common.luna import CHAT_PATH
+
 
 # ── 성립 조건 (CRITERIA §4) — 코드가 거른다 ─────────────────────
 
@@ -85,12 +86,9 @@ MAX_INSIGHTS = None
 
 # ── Luna (OpenAI 호환) — 판정 기준이 아니라 접속 설정 ──────────
 
-LUNA_CHAT_PATH = "/v1/chat/completions"
+#: 접속 경로와 모델은 네 에이전트가 같이 쓴다 (common/luna.py).
+#: 모델은 .env 의 LUNA_MODEL 로 바꾼다.
+LUNA_CHAT_PATH = CHAT_PATH
 
-#: 모델은 .env 의 LUNA_MODEL 로 바꾼다. 없으면 기본값을 쓴다.
-#: 엔드포인트(LUNA_API_URL)도 모델마다 다를 수 있어 .env 에 같이 둔다 (CRITERIA §9 재현 조건).
-LUNA_MODEL = os.environ.get("LUNA_MODEL", "gpt-5.6-luna")
-
-#: temperature 는 보내지 않는다. 흔들림은 프롬프트와 코드 규칙으로 잡는다.
-#: 인사이트는 여러 날의 claims 를 한 번에 넣어 요청이 길어서, 지켜보고 필요하면 늘린다.
+#: 호출 제한시간만 에이전트마다 다르다.
 LUNA_TIMEOUT = 60.0

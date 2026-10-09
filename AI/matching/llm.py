@@ -12,7 +12,9 @@ from dataclasses import dataclass, field
 
 import requests
 
-from .config import LUNA_CHAT_PATH, LUNA_MODEL, LUNA_TIMEOUT
+from common.luna import model as luna_model
+
+from .config import LUNA_CHAT_PATH, LUNA_TIMEOUT
 
 
 class LlmError(RuntimeError):
@@ -97,7 +99,7 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
         response = requests.post(
             url,
             json={
-                "model": LUNA_MODEL,
+                "model": luna_model(),
                 "response_format": {"type": "json_object"},
                 "messages": messages,
             },
