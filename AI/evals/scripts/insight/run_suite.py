@@ -31,8 +31,9 @@ sys.path.insert(0, str(AI_DIR))
 
 from dotenv import load_dotenv  # noqa: E402
 
-load_dotenv(AI_DIR / ".env")  # config 를 import 하기 전에 읽어야 LUNA_MODEL 이 반영된다
+load_dotenv(AI_DIR / ".env")
 
+from common.luna import model as luna_model
 from insight import config  # noqa: E402
 from insight.graph import run_insight  # noqa: E402
 from insight.schemas import InsightInput  # noqa: E402
@@ -64,12 +65,12 @@ def execute(cases_path: Path, runs: int, limit: int, workers: int, name: str) ->
     if limit:
         cases = cases[:limit]
     jobs = [(c, r) for r in range(1, runs + 1) for c in cases]
-    print(f"실행: {len(cases)}건 × {runs}회 = {len(jobs)}회 호출 (모델 {config.LUNA_MODEL})")
+    print(f"실행: {len(cases)}건 × {runs}회 = {len(jobs)}회 호출 (모델 {luna_model()})")
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         records = list(pool.map(lambda job: run_one(*job), jobs))
 
-    result = {"model": config.LUNA_MODEL, "cases": str(Path(cases_path).resolve()),
+    result = {"model": luna_model(), "cases": str(Path(cases_path).resolve()),
               "runs": runs, "records": records}
     RUNS.mkdir(parents=True, exist_ok=True)
     path = RUNS / f"{name}.json"
