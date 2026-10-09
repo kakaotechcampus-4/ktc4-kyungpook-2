@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.exception.AiAgentUnavailableException;
 
 import lombok.extern.slf4j.Slf4j;
@@ -91,8 +92,9 @@ public class SummaryWorker {
 
     private Outcome process(ClaimedSummaryGroup claimed) {
         try {
-            SummaryAgentReply reply = client.summarize(summaryService.prepareRequest(claimed));
-            recorder.record(claimed, reply);
+            SummaryAgentRequest request = summaryService.prepareRequest(claimed);
+            SummaryAgentReply reply = client.summarize(request);
+            recorder.record(claimed, request, reply);
             return Outcome.DONE;
         } catch (RuntimeException e) {
             if (Thread.currentThread().isInterrupted()) {

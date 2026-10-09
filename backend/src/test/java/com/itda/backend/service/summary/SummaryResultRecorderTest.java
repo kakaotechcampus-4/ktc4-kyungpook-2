@@ -18,12 +18,13 @@ import com.itda.backend.domain.JournalEntry;
 import com.itda.backend.domain.JournalEntryStatus;
 import com.itda.backend.domain.SummaryResult;
 import com.itda.backend.domain.SummaryStatus;
+import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.dto.response.SummaryAgentResponse;
 import com.itda.backend.repository.SummaryResultRepository;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(SummaryResultRecorder.class)
+@Import({SummaryResultRecorder.class, SummaryEvidenceChecker.class})
 class SummaryResultRecorderTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
@@ -65,12 +66,26 @@ class SummaryResultRecorderTest {
         return new ClaimedSummaryGroup(GROUP, Arrays.stream(entries).map(JournalEntry::getId).toList());
     }
 
-    private SummaryAgentReply reply(String content, String covered, String uncovered) throws Exception {
+    /** 워커가 AI 에 보낸 요청 — 묶음의 일지 원문. */
+    private SummaryAgentRequest sent(JournalEntry... entries) {
+        return new SummaryAgentRequest(8L, "김준호", "2026-10-08", 3L, "햇살초등학교",
+                Arrays.stream(entries)
+                        .map(e -> new SummaryAgentRequest.Source(e.getId(), e.getContent(), "2026-10-08"))
+                        .toList(),
+                List.of());
+    }
+
+    /** 계약대로 만든 AI 응답. 문장 하나가 {@code evidenceFrom} 원문 전체를 인용한다. */
+    private SummaryAgentReply reply(String content, JournalEntry evidenceFrom, String covered, String uncovered)
+            throws Exception {
+        String quote = evidenceFrom.getContent();
         String json = """
                 {"child_id": 8, "entry_date": "2026-10-08", "institution_id": 3, "content": "%s",
-                 "claims": [{"text": "%s", "evidence": []}],
+                 "claims": [{"text": "%s", "evidence": [
+                   {"journal_entry_id": %d, "quote": "%s", "span": {"start": 0, "end": %d}}]}],
                  "covered_entry_ids": %s, "uncovered_entry_ids": %s, "llm_called": true}
-                """.formatted(content, content, covered, uncovered);
+                """.formatted(content, content, evidenceFrom.getId(), quote,
+                quote.codePointCount(0, quote.length()), covered, uncovered);
         return new SummaryAgentReply(new ObjectMapper().readValue(json, SummaryAgentResponse.class), json);
     }
 
@@ -84,10 +99,10 @@ class SummaryResultRecorderTest {
     void 첫_요약은_1번째_판으로_저장하고_묶음의_일지를_모두_Gate1_대기로_보낸다() throws Exception {
         JournalEntry covered = summarizing("블록 놀이에서 친구에게 양보함");
         JournalEntry uncovered = summarizing("특이사항 없음");
-        SummaryAgentReply reply = reply("블록 놀이에서 친구에게 양보했다.",
+        SummaryAgentReply reply = reply("블록 놀이에서 친구에게 양보했다.", covered,
                 "[" + covered.getId() + "]", "[" + uncovered.getId() + "]");
 
-        recorder.record(claimed(covered, uncovered), reply);
+        recorder.record(claimed(covered, uncovered), sent(covered, uncovered), reply);
 
         List<SummaryResult> saved = summaryResultRepository.findAll();
         assertThat(saved).hasSize(1);
@@ -116,7 +131,7 @@ class SummaryResultRecorderTest {
         JournalEntry old = resummarizing(existing);
         JournalEntry late = summarizing("늦게 올라온 일지");
 
-        recorder.record(claimed(old, late), reply("다시 만든 요약", "[]", "[]"));
+        recorder.record(claimed(old, late), sent(old, late), reply("다시 만든 요약", late, "[]", "[]"));
 
         List<SummaryResult> saved = summaryResultRepository.findAll();
         assertThat(saved).hasSize(1);
@@ -140,7 +155,7 @@ class SummaryResultRecorderTest {
         em.clear();
         JournalEntry late = summarizing("승인 뒤에 올라온 일지");
 
-        recorder.record(claimed(late), reply("새 일지만 묶은 요약", "[]", "[]"));
+        recorder.record(claimed(late), sent(late), reply("새 일지만 묶은 요약", late, "[]", "[]"));
 
         em.flush();
         em.clear();
@@ -156,7 +171,7 @@ class SummaryResultRecorderTest {
     void 본문이_비어_오면_저장하지_않고_실패로_남긴다() throws Exception {
         JournalEntry entry = summarizing("블록 놀이를 했다.");
 
-        recorder.record(claimed(entry), reply("", "[]", "[" + entry.getId() + "]"));
+        recorder.record(claimed(entry), sent(entry), reply("", entry, "[]", "[" + entry.getId() + "]"));
 
         assertThat(summaryResultRepository.findAll()).isEmpty();
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
@@ -181,13 +196,46 @@ class SummaryResultRecorderTest {
     void 요약하는_사이_삭제된_일지는_건드리지_않는다() throws Exception {
         JournalEntry kept = summarizing("블록 놀이를 했다.");
         JournalEntry removed = summarizing("점심을 먹었다.");
+        SummaryAgentRequest request = sent(kept, removed);
         removed.delete();
         em.persistAndFlush(removed);
 
-        recorder.record(claimed(kept, removed), reply("블록 놀이를 했다.", "[]", "[]"));
+        recorder.record(claimed(kept, removed), request, reply("블록 놀이를 했다.", kept, "[]", "[]"));
 
         assertThat(reload(kept).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
         assertThat(reload(removed).getStatus()).isEqualTo(JournalEntryStatus.SUMMARIZING);
         assertThat(reload(removed).getSummaryId()).isNull();
+    }
+
+    @Test
+    void 근거가_원문과_맞지_않으면_저장하지_않고_실패로_남긴다() throws Exception {
+        JournalEntry entry = summarizing("블록 놀이를 했다.");
+        JournalEntry other = summarizing("점심을 먹었다.");
+        SummaryAgentReply reply = reply("블록 놀이를 했다.", other, "[]", "[]");
+        // 다른 일지 원문을 이 일지 id 로 인용한 응답 — AI 쪽 버그를 흉내 낸다.
+        String broken = reply.rawJson().replace("\"journal_entry_id\": " + other.getId(),
+                "\"journal_entry_id\": " + entry.getId());
+        SummaryAgentReply brokenReply = new SummaryAgentReply(
+                new ObjectMapper().readValue(broken, SummaryAgentResponse.class), broken);
+
+        recorder.record(claimed(entry, other), sent(entry, other), brokenReply);
+
+        assertThat(summaryResultRepository.findAll()).isEmpty();
+        assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertThat(reload(other).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+    }
+
+    @Test
+    void 요약하는_사이_삭제된_일지를_근거로_들면_요약_전체를_실패로_남긴다() throws Exception {
+        JournalEntry kept = summarizing("블록 놀이를 했다.");
+        JournalEntry removed = summarizing("점심을 먹었다.");
+        SummaryAgentRequest request = sent(kept, removed);
+        removed.delete();
+        em.persistAndFlush(removed);
+
+        recorder.record(claimed(kept, removed), request, reply("점심을 먹었다.", removed, "[]", "[]"));
+
+        assertThat(summaryResultRepository.findAll()).isEmpty();
+        assertThat(reload(kept).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
     }
 }

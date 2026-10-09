@@ -83,9 +83,9 @@ class SummaryWorkerTest {
 
         InOrder order = inOrder(client, recorder);
         order.verify(client).summarize(requestFor(first));
-        order.verify(recorder).record(first, reply1);
+        order.verify(recorder).record(first, requestFor(first), reply1);
         order.verify(client).summarize(requestFor(second));
-        order.verify(recorder).record(second, reply2);
+        order.verify(recorder).record(second, requestFor(second), reply2);
     }
 
     @Test
@@ -102,8 +102,8 @@ class SummaryWorkerTest {
         worker.run();
 
         verify(recorder).recordFailure(first);
-        verify(recorder, never()).record(eq(first), any());
-        verify(recorder).record(second, reply2);
+        verify(recorder, never()).record(eq(first), any(), any());
+        verify(recorder).record(second, requestFor(second), reply2);
         verify(recorder, never()).recordFailure(second);
     }
 
@@ -114,7 +114,7 @@ class SummaryWorkerTest {
         given(summaryService.claimReadyGroups(10)).willReturn(List.of(claimed));
         given(summaryService.prepareRequest(claimed)).willReturn(requestFor(claimed));
         given(client.summarize(requestFor(claimed))).willReturn(reply);
-        willThrow(new IllegalArgumentException("content missing")).given(recorder).record(claimed, reply);
+        willThrow(new IllegalArgumentException("content missing")).given(recorder).record(claimed, requestFor(claimed), reply);
 
         worker.run();
 
