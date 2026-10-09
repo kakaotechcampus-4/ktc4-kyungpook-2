@@ -87,6 +87,27 @@ psql "$DATABASE_URL" -v apply=true -f /absolute/path/to/backend/scripts/migrate-
    적용 후 문제가 확인되면 API를 계속 중단한 상태에서 사전 백업으로 복구하고 매핑을 다시 검증합니다.
    도구는 서버 시작 시 자동 실행되지 않습니다.
 
+### 테스트 아이 명부 넣기
+
+웹에서 업로드 → 매칭 → 검증을 확인하려면 명부에 `ACTIVE` 아이가 있어야 합니다. 아이 등록 API는
+`PENDING_CONSENT`로 넣고 `ACTIVE`로 바꾸는 기능(보호자 동의)이 아직 없어서,
+[`scripts/test-children.sql`](scripts/test-children.sql)로 테스트 아이 100명(`잇다_synthetic_100.json`의
+dev·holdout)을 직접 넣습니다. 서버의 `infra/docker`에서 실행합니다.
+
+```bash
+dbsql() { docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@"; }
+dbsql -v action=seed -v org_id=5 < ../../backend/scripts/test-children.sql               # 확인만 (ROLLBACK)
+dbsql -v action=seed -v org_id=5 -v apply=true < ../../backend/scripts/test-children.sql # 저장
+```
+
+`seed`는 아이가 없으면 만들고 `org_id` 기관 명부에 연결합니다. 다시 실행해도 중복되지 않습니다.
+여러 기관에 넣으면 같은 아이 행을 함께 씁니다(등록 API는 기관마다 따로 만듭니다).
+`unlink`는 그 기관 명부에서만 빼고, `purge`(`org_id`를 주면 거절)는 모든 기관에서 빼고 아이도 삭제 처리합니다.
+삭제는 `deleted_at`만 채웁니다. 실행했으면 이슈 #130에 기관과 action을 남깁니다.
+
+테스트 아이와 이름·생년월일이 같은 아이가 등록 API로 들어와 있으면 아무것도 바꾸지 않고 멈추며, 오류에
+그 `child.id`를 보여줍니다. 테스트하려고 등록한 아이라면 그 아이를 정리한 뒤 다시 실행합니다.
+
 ## 기술 스택
 
 | 항목 | 사용 기술 |
