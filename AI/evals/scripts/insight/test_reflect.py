@@ -16,7 +16,7 @@ from insight import config  # noqa: E402
 from insight.nodes import perceive, plan, reflect  # noqa: E402
 from insight.prompts import build_messages  # noqa: E402
 
-TYPES = {1: "학교", 2: "센터", 3: "학원"}
+TYPES = {1: "학교", 2: "센터", 3: "활동지원사"}
 
 
 def claim(cid: str, inst: int, jid: int) -> dict:
@@ -76,7 +76,7 @@ def test_근거에_없는_기관을_언급하면_버린다():
 
 
 def test_입력에_없는_기관_종류를_언급하면_버린다():
-    out = run(make_state(), [insight(["10-0", "11-0"], content="학원에서도 같은 모습이었다")])
+    out = run(make_state(), [insight(["10-0", "11-0"], content="활동지원사와 있을 때도 같은 모습이었다")])
     assert out == []
 
 
