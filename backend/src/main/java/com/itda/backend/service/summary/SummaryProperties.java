@@ -17,7 +17,9 @@ import com.itda.backend.service.agent.WorkerProperties;
  * @param cutoffTime entry_date 다음 날 이 시각이 지나야 그 날짜를 요약한다. 기관끼리 업로드 시각이 벌어지는 것을 덮는다
  * @param debounce   묶음의 마지막 일지가 들어온 뒤 이만큼 더 기다린다. 같은 사람이 연달아 올리는 간격을 덮는다
  * @param zone       마감 시각의 기준 시간대
+ * @param readTimeout 요약 에이전트 응답 대기 시간. AI 가 LLM 을 90초까지 기다리므로 그보다 길어야 한다
  */
 @ConfigurationProperties(prefix = "app.summary")
-public record SummaryProperties(WorkerProperties worker, LocalTime cutoffTime, Duration debounce, ZoneId zone) {
+public record SummaryProperties(WorkerProperties worker, LocalTime cutoffTime, Duration debounce, ZoneId zone,
+        Duration readTimeout) {
 }

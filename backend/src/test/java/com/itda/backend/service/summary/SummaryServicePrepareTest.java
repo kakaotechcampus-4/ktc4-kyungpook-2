@@ -68,7 +68,7 @@ class SummaryServicePrepareTest {
         summaryService = new SummaryService(journalEntryRepository, matchingResultRepository, childRepository,
                 organizationRepository, new SummaryRunRequests(),
                 new SummaryProperties(new WorkerProperties(true, 5000, 10), LocalTime.of(3, 0),
-                        Duration.ofMinutes(30), ZoneId.of("Asia/Seoul")),
+                        Duration.ofMinutes(30), ZoneId.of("Asia/Seoul"), Duration.ofSeconds(120)),
                 Clock.systemDefaultZone());
         school = em.persist(Organization.of("햇살초등학교", OrganizationType.SCHOOL, "1234567890"));
         rawRecordId = em.persist(new RawRecord(String.valueOf(school.getId()), "school.pdf", "kept/school.pdf",

@@ -63,6 +63,7 @@ class AgentPropertiesBindingTest {
             assertThat(summary.cutoffTime()).isEqualTo(LocalTime.of(3, 0));
             assertThat(summary.debounce()).isEqualTo(Duration.ofMinutes(30));
             assertThat(summary.zone()).isEqualTo(ZoneId.of("Asia/Seoul"));
+            assertThat(summary.readTimeout()).isEqualTo(Duration.ofSeconds(120));
         });
     }
 }

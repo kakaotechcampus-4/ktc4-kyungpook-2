@@ -90,6 +90,9 @@ app:
     # 묶음의 마지막 일지가 들어온 뒤 이만큼 더 기다린다. 마감이 지난 날짜의 일지를 연달아 올리는 경우를 한 번에 묶는다.
     debounce: 30m
     zone: Asia/Seoul
+    # 요약은 AI 가 LLM 을 90초(AI/summary/config.py LUNA_TIMEOUT)까지 기다린다. app.ai.read-timeout(70초)으로는
+    # 느린 정상 응답을 먼저 끊고 다시 불러서 LLM 을 여러 번 부르게 된다.
+    read-timeout: 120s
 
 jwt:
   # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.

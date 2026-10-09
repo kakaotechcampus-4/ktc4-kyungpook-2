@@ -69,7 +69,7 @@ class SummaryServiceClaimTest {
     private SummaryService serviceAt(LocalDateTime now) {
         Clock clock = Clock.fixed(now.atZone(KST).toInstant(), KST);
         SummaryProperties properties = new SummaryProperties(new WorkerProperties(true, 5000, 10),
-                LocalTime.of(3, 0), Duration.ofMinutes(30), KST);
+                LocalTime.of(3, 0), Duration.ofMinutes(30), KST, Duration.ofSeconds(120));
         return new SummaryService(journalEntryRepository, matchingResultRepository, childRepository,
                 organizationRepository, runRequests, properties, clock);
     }
