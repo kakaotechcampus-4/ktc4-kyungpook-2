@@ -2,6 +2,7 @@ package com.itda.backend.service.summary;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -23,11 +24,13 @@ import com.itda.backend.dto.response.SummaryAgentResponse;
 public class SummaryEvidenceChecker {
 
     /**
-     * @param sources 이번 요약의 재료 일지 id → 원문. AI 에 실제로 보낸 원문이고, 그새 삭제된 일지는 뺀 것이다 —
-     *                삭제된 일지를 가리키는 근거도 여기서 걸린다
+     * @param sentIds AI 에 보낸 일지 id 전체. AI 는 보낸 일지를 모두 covered 나 uncovered 에 넣으므로 두 목록은 이것과
+     *                대조한다 — 요약하는 사이 삭제된 일지가 uncovered 에 있는 것은 정상이다
+     * @param sources 근거로 쓸 수 있는 일지 id → 원문. AI 에 실제로 보낸 원문 중 아직 삭제되지 않은 것이다 —
+     *                삭제된 일지를 근거로 들면 여기서 걸린다
      * @return 문제가 있으면 그 사유, 없으면 빈 값
      */
-    public Optional<String> findProblem(SummaryGroup group, Map<Long, String> sources,
+    public Optional<String> findProblem(SummaryGroup group, Set<Long> sentIds, Map<Long, String> sources,
             SummaryAgentResponse response) {
         if (!group.childId().equals(response.childId())
                 || !group.entryDate().toString().equals(response.entryDate())
@@ -35,8 +38,8 @@ public class SummaryEvidenceChecker {
             return Optional.of("response is for another group childId=" + response.childId()
                     + " entryDate=" + response.entryDate() + " institutionId=" + response.institutionId());
         }
-        Optional<String> listed = checkEntryIds("covered_entry_ids", response.coveredEntryIds(), sources)
-                .or(() -> checkEntryIds("uncovered_entry_ids", response.uncoveredEntryIds(), sources));
+        Optional<String> listed = checkEntryIds("covered_entry_ids", response.coveredEntryIds(), sentIds)
+                .or(() -> checkEntryIds("uncovered_entry_ids", response.uncoveredEntryIds(), sentIds));
         if (listed.isPresent()) {
             return listed;
         }
@@ -60,12 +63,12 @@ public class SummaryEvidenceChecker {
         return Optional.empty();
     }
 
-    private Optional<String> checkEntryIds(String field, JsonNode ids, Map<Long, String> sources) {
+    private Optional<String> checkEntryIds(String field, JsonNode ids, Set<Long> sentIds) {
         if (ids == null || ids.isNull()) {
             return Optional.empty();
         }
         for (JsonNode id : ids) {
-            if (!sources.containsKey(id.asLong())) {
+            if (!sentIds.contains(id.asLong())) {
                 return Optional.of(field + " has entry not in group journalEntryId=" + id.asLong());
             }
         }

@@ -1240,7 +1240,8 @@ UNIQUE (child_id, entry_date, institution_id, revision)
 
 ```
 응답의 child_id·entry_date·institution_id 가 묶음과 같은가
-covered·uncovered 일지와 모든 근거의 journal_entry_id 가 이번 재료(AI 에 보낸 일지 중 아직 삭제되지 않은 것)에 있는가
+covered·uncovered 일지가 AI 에 보낸 일지인가 (요약하는 사이 삭제된 일지가 uncovered 에 있는 것은 정상)
+모든 근거의 journal_entry_id 가 AI 에 보낸 일지 중 아직 삭제되지 않은 것인가
 문장마다 근거가 하나 이상 있는가
 span 이 있고 0 <= start < end <= 원문 코드포인트 길이인가
 원문을 코드포인트 기준 [start, end) 로 자른 문자열이 quote 와 정확히 같은가

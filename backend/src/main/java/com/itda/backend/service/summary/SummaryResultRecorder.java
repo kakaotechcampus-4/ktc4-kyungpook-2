@@ -30,6 +30,7 @@ public class SummaryResultRecorder {
     private final JournalEntryRepository journalEntryRepository;
     private final SummaryResultRepository summaryResultRepository;
     private final SummaryEvidenceChecker evidenceChecker;
+    private final SummaryRunRequests runRequests;
 
     /**
      * 요약을 저장하고 묶음의 일지를 Gate 1 대기로 보낸다. 요약에 반영되지 않은 일지(uncovered)도 같은 요약을
@@ -45,6 +46,8 @@ public class SummaryResultRecorder {
     @Transactional
     public void record(ClaimedSummaryGroup claimed, SummaryAgentRequest request, SummaryAgentReply reply) {
         SummaryAgentResponse response = reply.response();
+        // "지금 요약" 요청은 결과를 남길 때 지운다. 집을 때 지우면 AI 장애로 묶음이 되돌아갔을 때 요청까지 사라진다.
+        runRequests.remove(claimed.group());
         if (response.content() == null || response.content().isBlank()) {
             log.warn("summary returned empty content, recorded as failure group={}", claimed.group());
             recordFailure(claimed);
@@ -61,7 +64,10 @@ public class SummaryResultRecorder {
                 .filter(source -> alive.contains(source.journalEntryId()))
                 .collect(Collectors.toMap(SummaryAgentRequest.Source::journalEntryId,
                         SummaryAgentRequest.Source::content));
-        Optional<String> problem = evidenceChecker.findProblem(claimed.group(), sources, response);
+        Set<Long> sentIds = request.sources().stream()
+                .map(SummaryAgentRequest.Source::journalEntryId)
+                .collect(Collectors.toSet());
+        Optional<String> problem = evidenceChecker.findProblem(claimed.group(), sentIds, sources, response);
         if (problem.isPresent()) {
             // 사유에는 위치와 이유만 있다. 본문·인용 원문은 아이 기록이라 로그에 남기지 않는다.
             log.warn("summary evidence check failed, recorded as failure group={} journalEntryIds={} reason={}",
@@ -99,6 +105,7 @@ public class SummaryResultRecorder {
      */
     @Transactional
     public void recordFailure(ClaimedSummaryGroup claimed) {
+        runRequests.remove(claimed.group());
         summarizingEntries(claimed).forEach(JournalEntry::failSummary);
     }
 

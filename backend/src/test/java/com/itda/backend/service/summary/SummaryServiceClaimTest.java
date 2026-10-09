@@ -198,7 +198,8 @@ class SummaryServiceClaimTest {
 
         assertThat(claimed).hasSize(1);
         assertThat(statusOf(entry)).isEqualTo(JournalEntryStatus.SUMMARIZING);
-        assertThat(stillRequested(DATE.atTime(16, 1))).isFalse();
+        // 집을 때는 지우지 않는다. AI 가 죽어 묶음이 되돌아가도 다음 차례에 다시 바로 요약하도록, 결과를 남길 때 지운다.
+        assertThat(stillRequested(DATE.atTime(16, 1))).isTrue();
     }
 
     @Test

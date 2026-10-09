@@ -90,7 +90,6 @@ public class SummaryService {
                     .sorted()
                     .toList();
             journalEntryRepository.findAllById(ids).forEach(JournalEntry::startSummarizing);
-            runRequests.remove(group);
             claimed.add(new ClaimedSummaryGroup(group, ids));
         }
         return claimed;

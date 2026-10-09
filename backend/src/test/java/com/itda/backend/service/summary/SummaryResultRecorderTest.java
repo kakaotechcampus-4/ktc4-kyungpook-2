@@ -2,6 +2,7 @@ package com.itda.backend.service.summary;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
@@ -24,7 +25,7 @@ import com.itda.backend.repository.SummaryResultRepository;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({SummaryResultRecorder.class, SummaryEvidenceChecker.class})
+@Import({SummaryResultRecorder.class, SummaryEvidenceChecker.class, SummaryRunRequests.class})
 class SummaryResultRecorderTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
@@ -38,6 +39,9 @@ class SummaryResultRecorderTest {
 
     @Autowired
     private TestEntityManager em;
+
+    @Autowired
+    private SummaryRunRequests runRequests;
 
     private JournalEntry summarizing(String content) {
         JournalEntry entry = JournalEntry.of(5L, DATE, content, 1);
@@ -200,7 +204,9 @@ class SummaryResultRecorderTest {
         removed.delete();
         em.persistAndFlush(removed);
 
-        recorder.record(claimed(kept, removed), request, reply("블록 놀이를 했다.", kept, "[]", "[]"));
+        // 계약대로 보낸 일지는 모두 covered 나 uncovered 에 들어온다.
+        recorder.record(claimed(kept, removed), request, reply("블록 놀이를 했다.", kept,
+                "[" + kept.getId() + "]", "[" + removed.getId() + "]"));
 
         assertThat(reload(kept).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
         assertThat(reload(removed).getStatus()).isEqualTo(JournalEntryStatus.SUMMARIZING);
@@ -237,5 +243,25 @@ class SummaryResultRecorderTest {
 
         assertThat(summaryResultRepository.findAll()).isEmpty();
         assertThat(reload(kept).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+    }
+
+    @Test
+    void 결과를_남기면_지금_요약_요청을_지운다() throws Exception {
+        JournalEntry ok = summarizing("블록 놀이를 했다.");
+        runRequests.request(GROUP, Instant.MAX);
+
+        recorder.record(claimed(ok), sent(ok), reply("블록 놀이를 했다.", ok, "[" + ok.getId() + "]", "[]"));
+
+        assertThat(runRequests.isRequested(GROUP, Instant.now())).isFalse();
+    }
+
+    @Test
+    void 실패로_남겨도_지금_요약_요청을_지운다() {
+        JournalEntry entry = summarizing("블록 놀이를 했다.");
+        runRequests.request(GROUP, Instant.MAX);
+
+        recorder.recordFailure(claimed(entry));
+
+        assertThat(runRequests.isRequested(GROUP, Instant.now())).isFalse();
     }
 }
