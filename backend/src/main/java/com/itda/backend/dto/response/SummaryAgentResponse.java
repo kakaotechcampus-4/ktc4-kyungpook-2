@@ -11,7 +11,8 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
  * <p>{@code claims}/{@code coveredEntryIds}/{@code uncoveredEntryIds} 는 AI 가 보낸 JSON 조각 그대로 두고
  * summary_result 에 그대로 저장한다.
  *
- * <p>200 이어도 {@code content} 가 빌 수 있다 — 근거를 원문에서 못 찾은 문장은 AI 가 버리므로 전부 버려지면 빈다.
+ * <p>근거를 원문에서 못 찾은 문장은 AI 가 버린다. 전부 버려지면 200 이 아니라 503({@code no_grounded_claims})으로 온다
+ * ({@link com.itda.backend.service.summary.SummaryAgentClient}).
  */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 @JsonIgnoreProperties(ignoreUnknown = true)
