@@ -67,6 +67,40 @@ class SummaryResultTest {
     }
 
     @Test
+    void 처음에는_사람이_볼_필요가_없는_것으로_만든다() {
+        SummaryResult result = summary();
+
+        assertThat(result.isNeedsReview()).isFalse();
+        assertThat(result.getReviewReasons()).isNull();
+    }
+
+    @Test
+    void 다른_아이_이름이_남았다는_표시를_남기고_다시_요약하면_새_결과로_바꾼다() {
+        SummaryResult result = summary();
+
+        result.markReview(true, "[\"다른아동이름\"]");
+        assertThat(result.isNeedsReview()).isTrue();
+        assertThat(result.getReviewReasons()).isEqualTo("[\"다른아동이름\"]");
+
+        // 다시 요약해 이름이 사라졌으면 표시도 사라져야 한다 — 남아 있으면 교사가 없는 문제를 찾는다.
+        result.markReview(false, "[]");
+        assertThat(result.isNeedsReview()).isFalse();
+        assertThat(result.getReviewReasons()).isEqualTo("[]");
+    }
+
+    @Test
+    void 덮어쓰면_이전_요약의_표시를_지운다() {
+        SummaryResult result = summary();
+        result.markReview(true, "[\"다른아동이름\"]");
+
+        // 새 본문에 대한 표시는 새 응답이 정한다. 이전 본문의 경고가 새 글에 붙어 있으면 안 된다.
+        result.overwrite("다시 만든 요약", "[]", "[]", "[]", "{}");
+
+        assertThat(result.isNeedsReview()).isFalse();
+        assertThat(result.getReviewReasons()).isNull();
+    }
+
+    @Test
     void 빈_본문으로는_덮어쓸_수_없다() {
         assertThatThrownBy(() -> summary().overwrite("", "[]", "[]", "[]", "{}"))
                 .isInstanceOf(IllegalArgumentException.class);

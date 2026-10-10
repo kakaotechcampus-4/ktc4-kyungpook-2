@@ -954,10 +954,10 @@ AI 자동 확정과 선생님 확정 둘 다 `MATCHED`로 들어오므로 구분
 | 결과 | 묶음의 `journal_entry.status` | `summary_result` |
 | --- | --- | --- |
 | 성공 | `GATE1_PENDING`. 요약에 반영되지 않은 일지(uncovered)도 같다 | 승인 전 판이 있으면 덮어쓰고, 없으면 새 판 |
-| 200 인데 본문이 빔 (근거를 못 찾아 문장이 모두 버려짐) | 호출 실패와 같음 | 남기지 않음 |
+| 근거가 남은 문장이 없음 (AI 503 `detail.reason = no_grounded_claims` 가 재시도 2회 후에도 계속, #148). 200 인데 본문이 비어 와도 같다 | 호출 실패와 같음 — 그 묶음만. 나머지 묶음은 계속 처리 | 남기지 않음 |
 | BE 근거 재검사에 걸림 (§8.2) | 호출 실패와 같음 | 남기지 않음 |
 | 호출 실패 (4xx, 응답 해석 실패) | 처음 요약하던 일지는 `FAILED`, 이미 승인 전 요약에 들어가 있던 일지는 `GATE1_PENDING` 으로 되돌림 | 남기지 않음 |
-| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | 실패로 남기지 않고 요약하기 전 상태로 되돌림 (그 묶음과 나머지 묶음 모두). 이번 차례 멈춤 | 남기지 않음 |
+| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 `llm_unavailable`, 사유를 읽을 수 없는 503 포함) | 실패로 남기지 않고 요약하기 전 상태로 되돌림 (그 묶음과 나머지 묶음 모두). 이번 차례 멈춤 | 남기지 않음 |
 
 요약 실패는 `summary_result`에 행을 남기지 않는다. 요약은 묶음 단위라 일지별 실패 행을 둘 자리가 없고, `status`에
 실패 값도 없다. `FAILED` 일지의 마지막 `validation_result.verdict`가 `PASS`·`REVIEW`면 요약 단계에서 실패한 것이다.
@@ -1223,8 +1223,8 @@ FAILED   AI 호출 자체가 실패 — AI 계약에 없는 BE 전용 값 (#122)
 | `covered_entry_ids` | TEXT | Y | 반영된 일지 JSON 문자열 `[1041, 1042]` |
 | `uncovered_entry_ids` | TEXT | Y | 반영되지 않은 일지 JSON 문자열 |
 | `status` | VARCHAR(30) | N | 처리 상태 |
-| `needs_review` | BOOLEAN | N | 공유 전에 사람이 봐야 하는가. 기본 `false` |
-| `review_reasons` | TEXT | Y | 왜 봐야 하는지 JSON 문자열 `["다른아동이름"]` |
+| `needs_review` | BOOLEAN | N | 공유 전에 사람이 봐야 하는가. 기본 `false`. 덮어쓸 때 새 응답 값으로 바뀐다 |
+| `review_reasons` | TEXT | Y | 왜 봐야 하는지 JSON 문자열 `["다른아동이름"]`. 응답에 없으면 NULL |
 | `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
 | `model_version` | VARCHAR(100) | Y | 응답을 낸 모델 버전 |
 | `created_at` | DATETIME | N |  |
@@ -1251,6 +1251,11 @@ span 이 있고 0 <= start < end <= 원문 코드포인트 길이인가
 
 요약하는 사이 삭제된 일지를 근거로 들면 재료에 없으므로 요약 전체가 실패한다. 로그에는 위치(문장·근거 순번,
 일지 id)와 이유만 남기고 본문·인용 원문은 남기지 않는다.
+
+**다른 아이 이름 표시** (멘토 리뷰 P1, #148) — AI 가 `other_child_names` 를 요약 본문과 대조해 이름이 남았으면
+`needs_review = true`, `review_reasons = ["다른아동이름"]` 을 준다. BE 는 그대로 저장하고 막지 않는다 — 교사가 Gate 1 에서
+보고 고칠지 정한다 (경고 표시는 Gate 1 조회 API 몫). 목록은 매칭이 명부에서 이름 전체로 찾은 아이만 담으므로 `false` 가
+"이름이 안 남았다"는 뜻은 아니다.
 
 **`journal_entry` 가 요약을 가리킨다 — 방향이 뒤집혔다**
 
@@ -1754,3 +1759,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-07 | `journal_entry.status`에 `REUPLOAD_REQUESTED`·`VALIDATION_HELD` 추가 (수정 요청 큐 처리 결과), `validation_result.verdict`에 `FAILED` 추가 (검증 호출 실패를 행으로 남김). 둘 다 enum 값 추가라 CHECK 제약이 없는 현재 배포 DB에 수동 조치 불필요 | #122 |
 | 2026-10-09 | `summary_result` 구현 (`SummaryResult`), `journal_entry.summary_id` 추가. 저장 전 BE 근거 재검사 (§8.2, A4). 요약 워커의 묶음 조건·상태 변경 규칙 추가 (§6.2). `mentioned_child_ids` 를 요약 요청의 `other_child_names` 로 사용 (§7.1, §10.2-11). 테이블·컬럼 추가라 `ddl-auto: update` 가 만든다 | #91 |
 | 2026-10-09 | `child_context` 구현 (`ChildContext`). 화면에 필요한 날짜·기관·판수는 컬럼을 늘리지 않고 `summary_result_id` 로 조인해 채우기로 결정, §9.2 를 확정으로 올림 | #142 |
+| 2026-10-10 | `summary_result.needs_review`·`review_reasons` 구현 (§8.2). 근거가 남지 않은 요약(503 `no_grounded_claims`)은 그 묶음만 실패로 남김 (§6.2). `needs_review` 는 `DEFAULT FALSE` 라 `ddl-auto: update` 가 기존 행이 있어도 컬럼을 더한다 | #149 |
