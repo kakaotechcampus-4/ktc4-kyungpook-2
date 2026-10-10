@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -13,6 +14,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -99,6 +102,29 @@ class MatchingResultServiceTest {
 
         assertThat(queue).hasSize(1);
         assertThat(queue.get(0).record().fileName()).isEqualTo("0821_관찰일지.docx");
+    }
+
+    // 코드리뷰 반영(멘토 PR #86, #111): 목록 미리보기(preview)는 60자로 그대로 유지하되,
+    // 아이 선택 시 펼쳐 볼 전체 본문(fullContent)을 별도로 내려줘서 뒤에 나오는 아이 이름·
+    // AI 판단 근거를 선생님이 놓치지 않게 한다.
+    @Test
+    void getQueue_keepsShortPreviewButAlsoReturnsFullContent() {
+        String longContent = "점심시간에 식사를 잘 마쳤고 ".repeat(10) + "뒷부분에 등장하는 중요한 이름: 김하늘";
+        JournalEntry entry = JournalEntry.of(3L, LocalDate.of(2026, 9, 1), longContent, 1);
+        entry.startMatching();
+        entry.requestMatchReview();
+        MatchingResult ours = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(ours));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+
+        List<MatchingQueueItemResponse> queue = matchingResultService.getQueue(OUR_USER_ID);
+
+        assertThat(longContent.length()).isGreaterThan(60);
+        assertThat(queue.get(0).record().preview()).isEqualTo(longContent.substring(0, 60) + "…");
+        assertThat(queue.get(0).record().fullContent()).isEqualTo(longContent);
     }
 
     @Test
@@ -212,6 +238,67 @@ class MatchingResultServiceTest {
                 .isInstanceOf(MatchingResultValidationException.class);
         assertThat(matchingResult.getStatus()).isEqualTo(MatchingStatus.REVIEW);
         assertThat(entry.getChildId()).isEqualTo(5L);
+    }
+
+    // 매칭은 AUTO로 끝났는데 검증 AI 호출이 실패해서 FAILED가 된 일지.
+    private JournalEntry validationFailedEntry() {
+        JournalEntry entry = JournalEntry.of(3L, LocalDate.of(2026, 9, 1), "점심시간에 식사를 잘함", 1);
+        entry.startMatching();
+        entry.confirmMatch(5L);
+        entry.startValidating();
+        entry.failValidation();
+        return entry;
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"assign", "not_ours"})
+    void resolve_alreadyAutoResult_throwsValidationException(String action) {
+        // 일지 FAILED는 매칭 실패뿐 아니라 검증 실패로도 생긴다(#107). 매칭 결과가 이미 AUTO면
+        // 이미 처리된 결과라 일지 상태가 FAILED여도 다시 처리하지 않는다.
+        MatchingResult matchingResult = new MatchingResult(
+                1L, 5L, new BigDecimal("0.95"), MatchingStatus.AUTO, null, null, null, null, null, null, "v1");
+        JournalEntry entry = validationFailedEntry();
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        // assign이 아이 검증 때문에 거절되는 게 아니라는 걸 보장하려고 처리 가능한 아이로 둔다.
+        lenient().when(childRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(activeChild()));
+        lenient().when(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
+                .thenReturn(true);
+
+        assertThatThrownBy(() ->
+                matchingResultService.resolve(1L, action, 2L, "kakao-teacher-1", OUR_USER_ID))
+                .isInstanceOf(MatchingResultValidationException.class);
+        assertThat(matchingResult.getMatchedChildId()).isEqualTo(5L);
+        assertThat(matchingResult.getReviewerId()).isNull();
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertThat(entry.getChildId()).isEqualTo(5L);
+    }
+
+    @Test
+    void resolveAssign_matchingFailedEntry_setsMatchedChild() {
+        // 매칭 AI 호출이 실패한 일지(결과도 FAILED)는 지금처럼 사람이 처리할 수 있어야 한다.
+        MatchingResult matchingResult = MatchingResult.failed(1L);
+        JournalEntry entry = JournalEntry.of(3L, LocalDate.of(2026, 9, 1), "점심시간에 식사를 잘함", 1);
+        entry.startMatching();
+        entry.failMatching();
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(childRepository.findByIdAndDeletedAtIsNull(2L)).willReturn(Optional.of(activeChild()));
+        given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
+                .willReturn(true);
+        given(matchingResultRepository.save(any(MatchingResult.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+
+        MatchingQueueItemResponse resolved =
+                matchingResultService.resolve(1L, "assign", 2L, "kakao-teacher-1", OUR_USER_ID);
+
+        assertThat(resolved.status()).isEqualTo(MatchingStatus.AUTO);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
+        assertThat(entry.getChildId()).isEqualTo(2L);
     }
 
     @Test

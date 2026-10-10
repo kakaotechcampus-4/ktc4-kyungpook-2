@@ -62,7 +62,7 @@ public class MatchingQueueController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "처리 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "action 누락·오타, assign인데 childId 없음, 존재하지 않는 childId (MATCHING_RESULT_INVALID_REQUEST)",
+                    description = "action 누락·오타, assign인데 childId 없음, 존재하지 않는 childId, 이미 처리된 결과 (MATCHING_RESULT_INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -50,6 +51,9 @@ class RawRecordServiceTest {
     private RawRecordRepository rawRecordRepository;
 
     @Mock
+    private RawRecordRecorder rawRecordRecorder;
+
+    @Mock
     private RawFileStorage rawFileStorage;
 
     @Mock
@@ -70,7 +74,7 @@ class RawRecordServiceTest {
         lenient().when(childRepository.findByOrganizationId(any())).thenReturn(List.of());
         // JournalEntrySplitter는 의존성 없는 순수 로직이라 목 대신 실제 구현을 쓴다.
         rawRecordService = new RawRecordService(
-                rawRecordRepository, rawFileStorage, userService, journalEntryRepository,
+                rawRecordRepository, rawRecordRecorder, rawFileStorage, userService, journalEntryRepository,
                 new JournalEntrySplitter(), childRepository);
     }
 
@@ -113,17 +117,14 @@ class RawRecordServiceTest {
         assertThatThrownBy(() -> rawRecordService.ingest(ORG_USER_ID, file))
                 .isInstanceOf(RawRecordStorageException.class);
 
-        verify(rawRecordRepository, never()).save(any());
+        verify(rawRecordRecorder, never()).save(any());
     }
 
     @Test
     void dbSaveFailure_keepsStoredFileAndRecordsFailedStatus() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.csv", "text/csv", "a,b,c".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.csv");
-        // 첫 저장 시도는 실패, 두 번째(FAILED 상태 기록) 시도는 성공한다고 가정.
-        given(rawRecordRepository.save(any(RawRecord.class)))
-                .willThrow(new RuntimeException("db unavailable"))
-                .willAnswer(invocation -> invocation.getArgument(0));
+        given(rawRecordRecorder.save(any(RawRecord.class))).willThrow(new RuntimeException("db unavailable"));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
         assertThatThrownBy(() -> rawRecordService.ingest(ORG_USER_ID, file))
@@ -132,18 +133,16 @@ class RawRecordServiceTest {
         // append-only — 이미 저장소에 올라간 원본 파일은 지우지 않는다.
         verify(rawFileStorage, never()).delete(anyString());
 
-        ArgumentCaptor<RawRecord> captor = ArgumentCaptor.forClass(RawRecord.class);
-        verify(rawRecordRepository, times(2)).save(captor.capture());
-        RawRecord failedRecord = captor.getAllValues().get(1);
-        assertThat(failedRecord.getStatus()).isEqualTo(RawRecordStatus.FAILED);
-        assertThat(failedRecord.getStoredPath()).isEqualTo("generated-uuid.csv");
+        // 실패 기록은 별도 트랜잭션(REQUIRES_NEW)으로 분리된 RawRecordRecorder.recordFailure가 남긴다.
+        verify(rawRecordRecorder).recordFailure(
+                String.valueOf(ORGANIZATION_ID), "note.csv", "generated-uuid.csv", "text/csv", 5L);
     }
 
     @Test
     void dbSaveSucceeds_doesNotDeleteStoredFile() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.csv", "text/csv", "a,b,c".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.csv");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -160,7 +159,7 @@ class RawRecordServiceTest {
     void ingest_splitsTextFileWithoutDateHeaderIntoSingleJournalEntry() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "그냥 관찰 문장 하나".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -172,13 +171,154 @@ class RawRecordServiceTest {
         assertThat(captor.getValue().getSequenceNo()).isEqualTo(1);
     }
 
+    // --- entry_date 채우기 -------------------------------------------------------
+    // 요약은 아동 × 날짜로 묶이므로(DB 스키마 §8.2) entry_date 가 비면 그 기록은 요약에서 통째로 빠진다.
+    // 본문에서 날짜를 못 찾으면 파일명 → 업로드 날짜 순으로 내려가며 채운다.
+
+    /** 본문에 날짜 헤더가 없으면 파일명의 MMDD 를 쓴다. 연도는 알 수 없어 업로드 연도로 둔다. */
+    @Test
+    void ingest_fillsEntryDateFromFilenameWhenContentHasNoDateHeader() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "0821_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryDate())
+                .isEqualTo(LocalDate.of(LocalDate.now().getYear(), 8, 21));
+    }
+
+    /** 파일명에 네 자리 연도가 있으면 그 연도를 그대로 믿는다. */
+    @Test
+    void ingest_fillsEntryDateFromFilenameWithFullYear() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "2024-03-05_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryDate()).isEqualTo(LocalDate.of(2024, 3, 5));
+    }
+
+    /** 파일명 숫자가 날짜로 성립하지 않으면(학번 등) 업로드 날짜로 내려간다. */
+    @Test
+    void ingest_fallsBackToUploadDateWhenFilenameHasNoUsableDate() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "학생9977_기록.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryDate()).isEqualTo(LocalDate.now());
+    }
+
+    /** 본문에서 읽은 날짜가 있으면 파일명 날짜로 덮어쓰지 않는다 — 본문이 항상 우선이다. */
+    @Test
+    void ingest_keepsDateFromContentEvenWhenFilenameHasDifferentDate() throws Exception {
+        String content = "9/15 자유놀이를 했다.\n9/16 미술 시간.";
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "0821_관찰일지.txt", "text/plain", content.getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(JournalEntry::getEntryDate)
+                .containsExactly(
+                        LocalDate.of(LocalDate.now().getYear(), 9, 15),
+                        LocalDate.of(LocalDate.now().getYear(), 9, 16));
+    }
+
+    /**
+     * 표지처럼 날짜 헤더 앞에 있는 줄은 같은 파일의 첫 날짜를 물려받는다(코드리뷰 반영).
+     *
+     * <p>파일명 날짜를 주면 한 파일이 8/21·9/15·9/16 세 묶음으로 흩어진다 — 요약이 아동 × 날짜 ×
+     * 기관으로 묶이므로 같은 파일이 쪼개지면 안 된다.
+     */
+    @Test
+    void ingest_coverLineInheritsFirstDateInFileInsteadOfFilenameDate() throws Exception {
+        String content = "표지: 8월 관찰일지\n9/15 자유놀이를 했다.\n9/16 미술 시간.";
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "0821_관찰일지.txt", "text/plain", content.getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        int thisYear = LocalDate.now().getYear();
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, times(3)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(JournalEntry::getEntryDate)
+                .containsExactly(
+                        LocalDate.of(thisYear, 9, 15),
+                        LocalDate.of(thisYear, 9, 15),
+                        LocalDate.of(thisYear, 9, 16));
+    }
+
+    /** 파일명이 한글 날짜 표기여도 읽는다 — 기관에서 흔한 형식이다. */
+    @Test
+    void ingest_fillsEntryDateFromKoreanFilenameFormat() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "8월21일_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryDate())
+                .isEqualTo(LocalDate.of(LocalDate.now().getYear(), 8, 21));
+    }
+
+    /** 어떤 경로로 들어오든 entry_date 가 빈 기록은 더 이상 저장되지 않는다. */
+    @Test
+    void ingest_neverSavesJournalEntryWithNullEntryDate() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "메모.txt", "text/plain", "표지\n내용만 있고 날짜는 없음".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, atLeastOnce()).save(captor.capture());
+        assertThat(captor.getAllValues()).isNotEmpty();
+        assertThat(captor.getAllValues()).extracting(JournalEntry::getEntryDate).doesNotContainNull();
+    }
+
     /** 날짜 헤더가 있으면 헤더마다 기록이 나뉘고, 각 기록의 날짜도 채워진다. */
     @Test
     void ingest_splitsTextFileWithDateHeadersIntoMultipleJournalEntries() throws Exception {
         String content = "9/15 자유놀이 중 블록을 높이 쌓았다.\n9/16 미술 시간에 그림을 완성함.";
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", content.getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -198,7 +338,7 @@ class RawRecordServiceTest {
     void ingest_skipsSplittingForNonExtractableExtension() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.pdf", "application/pdf", "%PDF-1.4 fake".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.pdf");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
 
@@ -207,12 +347,27 @@ class RawRecordServiceTest {
         verify(journalEntryRepository, never()).save(any());
     }
 
+    /** Windows가 csv를 저장소에서 바로 올릴 때 보내는 content-type도 거부하지 않아야 한다(#113). */
+    @Test
+    void ingest_acceptsWindowsExcelCsvContentType() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "note.csv", "application/vnd.ms-excel", "a,b,c".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.csv");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        RawRecord saved = rawRecordService.ingest(ORG_USER_ID, file);
+
+        assertThat(saved).isNotNull();
+    }
+
     /** 기록 분리 중 저장이 실패해도 업로드 응답(반환값)은 그대로 성공이어야 한다. */
     @Test
     void ingest_journalEntrySaveFailure_doesNotFailUpload() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "관찰 문장".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(journalEntryRepository.save(any())).willThrow(new RuntimeException("db unavailable"));
@@ -228,7 +383,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "0821_박서연_관찰일지.txt", "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))
@@ -246,7 +401,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "8월_3주차_활동.txt", "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))
@@ -266,7 +421,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "0821_김민준_관찰일지.txt", "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))
@@ -285,7 +440,7 @@ class RawRecordServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "0821_박서연_관찰일지.txt", "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))
@@ -304,7 +459,7 @@ class RawRecordServiceTest {
         String nfdFilename = Normalizer.normalize("0821_박서연_관찰일지.txt", Normalizer.Form.NFD);
         MockMultipartFile file = new MockMultipartFile("file", nfdFilename, "text/plain", "오늘 있었던 일".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
-        given(rawRecordRepository.save(any(RawRecord.class)))
+        given(rawRecordRecorder.save(any(RawRecord.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
         given(childRepository.findByOrganizationId(ORGANIZATION_ID))

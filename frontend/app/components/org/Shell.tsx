@@ -22,19 +22,20 @@ import { ME, MY_INSTITUTION } from "@/lib/mock/data";
  * 데이터/라우트/로직은 손대지 않았다. 필드 자체는 layout.tsx 반환 타입과
  * 맞춰두기 위해 남겨둔다.
  */
+/** null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다 */
 export interface OrgShellCounts {
-  matching: number;
-  reinput: number;
-  gate1: number;
-  gate2: number;
-  inbox: number;
+  matching: number | null;
+  reinput: number | null;
+  gate1: number | null;
+  gate2: number | null;
+  inbox: number | null;
 }
 
 interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  badge?: number;
+  badge?: number | null;
 }
 
 interface NavSection {

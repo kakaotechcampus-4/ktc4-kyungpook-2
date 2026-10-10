@@ -75,6 +75,11 @@ public class MatchingResultService {
         if (!ctx.entry().isAwaitingReview()) {
             throw new MatchingResultValidationException("journal entry is not awaiting review: " + ctx.entry().getStatus());
         }
+        // 일지 FAILED는 검증 호출 실패로도 생긴다 — 매칭 결과가 이미 AUTO(AI 확정 또는 사람이 처리함)면
+        // 매칭은 끝난 것이라 일지 상태만 보고 다시 처리하면 확정된 아이가 바뀌거나 제외돼 버린다.
+        if (matchingResult.getStatus() == MatchingStatus.AUTO) {
+            throw new MatchingResultValidationException("matching result already resolved: " + id);
+        }
 
         switch (action == null ? "" : action) {
             case "assign" -> {
@@ -124,10 +129,10 @@ public class MatchingResultService {
     }
 
     private MatchingQueueItemResponse buildResponse(MatchingResult mr, OwnedContext ctx) {
-        RecordResponse record = new RecordResponse(
+        RecordResponse record = RecordResponse.of(
                 String.valueOf(ctx.rawRecord().getId()),
                 ctx.rawRecord().getOriginalFilename(),
-                preview(ctx.entry().getContent()),
+                ctx.entry().getContent(),
                 ctx.entry().getEntryDate() == null ? null : ctx.entry().getEntryDate().toString());
 
         return new MatchingQueueItemResponse(
@@ -141,15 +146,6 @@ public class MatchingResultService {
                 record,
                 buildCandidates(mr.getCandidates(), mr.getId()),
                 parseJson(mr.getEvidence(), mr.getId()));
-    }
-
-    private static final int PREVIEW_LENGTH = 60;
-
-    private String preview(String content) {
-        if (content == null) {
-            return null;
-        }
-        return content.length() <= PREVIEW_LENGTH ? content : content.substring(0, PREVIEW_LENGTH) + "…";
     }
 
     private List<CandidateResponse> buildCandidates(String candidatesJson, Long matchingResultId) {
