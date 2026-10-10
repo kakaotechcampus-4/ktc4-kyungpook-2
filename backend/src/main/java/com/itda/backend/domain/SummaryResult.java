@@ -71,6 +71,15 @@ public class SummaryResult {
     @Column(nullable = false, length = 30)
     private SummaryStatus status;
 
+    // 요약 본문에 다른 아이 이름이 남아 공유 전에 교사가 봐야 하는지. 막지 않고 Gate 1 에서 경고로 띄운다 (멘토 P1, #148).
+    // 이미 행이 있는 테이블에 ddl-auto: update 로 NOT NULL 컬럼을 더하려면 기본값이 있어야 한다.
+    @Column(nullable = false, columnDefinition = "BOOLEAN NOT NULL DEFAULT FALSE")
+    private boolean needsReview;
+
+    // 왜 봐야 하는지. AI 가 보낸 JSON 배열 그대로다 — ["다른아동이름"].
+    @Column(columnDefinition = "TEXT")
+    private String reviewReasons;
+
     @Column(columnDefinition = "TEXT")
     private String rawResponse;
 
@@ -131,6 +140,15 @@ public class SummaryResult {
         this.coveredEntryIds = coveredEntryIds;
         this.uncoveredEntryIds = uncoveredEntryIds;
         this.rawResponse = rawResponse;
+    }
+
+    /**
+     * 교사가 봐야 하는지를 이번 요약 결과로 정한다. 덮어쓸 때도 부른다 — 다시 요약해 이름이 사라졌으면 표시도 지워야
+     * 교사가 없는 문제를 찾지 않는다.
+     */
+    public void markReview(boolean needsReview, String reviewReasons) {
+        this.needsReview = needsReview;
+        this.reviewReasons = reviewReasons;
     }
 
     private static void requireContent(String content) {

@@ -93,6 +93,13 @@ class SummaryResultRecorderTest {
         return new SummaryAgentReply(new ObjectMapper().readValue(json, SummaryAgentResponse.class), json);
     }
 
+    /** AI 가 요약 본문에 다른 아이 이름이 남았다고 표시한 응답. */
+    private SummaryAgentReply flagged(SummaryAgentReply reply) throws Exception {
+        String json = reply.rawJson().replace("\"llm_called\": true}",
+                "\"llm_called\": true, \"needs_review\": true, \"review_reasons\": [\"다른아동이름\"]}");
+        return new SummaryAgentReply(new ObjectMapper().readValue(json, SummaryAgentResponse.class), json);
+    }
+
     private JournalEntry reload(JournalEntry entry) {
         em.flush();
         em.clear();
@@ -169,6 +176,34 @@ class SummaryResultRecorderTest {
         assertThat(summaryResultRepository.findById(approved.getId()).orElseThrow().getContent())
                 .isEqualTo("승인된 요약");
         assertThat(reload(late).getSummaryId()).isEqualTo(newer.getId());
+    }
+
+    @Test
+    void 다른_아이_이름이_남았다는_표시를_함께_저장한다() throws Exception {
+        JournalEntry entry = summarizing("블록 놀이에서 친구에게 양보함");
+
+        recorder.record(claimed(entry), sent(entry),
+                flagged(reply("블록 놀이에서 친구에게 양보했다.", entry, "[" + entry.getId() + "]", "[]")));
+
+        SummaryResult summary = summaryResultRepository.findAll().get(0);
+        assertThat(summary.isNeedsReview()).isTrue();
+        assertThat(summary.getReviewReasons()).isEqualTo("[\"다른아동이름\"]");
+    }
+
+    @Test
+    void 덮어쓸_때_표시가_없는_응답이면_이전_표시를_지운다() throws Exception {
+        SummaryResult existing = SummaryResult.of(8L, DATE, 3L, 1, "이전 요약", "[]", "[]", "[]", "{}");
+        existing.markReview(true, "[\"다른아동이름\"]");
+        summaryResultRepository.saveAndFlush(existing);
+        JournalEntry old = resummarizing(existing);
+        JournalEntry late = summarizing("늦게 올라온 일지");
+
+        // needs_review 가 없는 응답 (#148 이전 AI) — 표시 없음으로 본다.
+        recorder.record(claimed(old, late), sent(old, late), reply("다시 만든 요약", late, "[]", "[]"));
+
+        SummaryResult summary = summaryResultRepository.findById(existing.getId()).orElseThrow();
+        assertThat(summary.isNeedsReview()).isFalse();
+        assertThat(summary.getReviewReasons()).isNull();
     }
 
     @Test

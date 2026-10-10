@@ -40,7 +40,8 @@ class SummaryAgentClientTest {
              "claims": [{"text": "블록 놀이에서 친구에게 양보했다.",
                          "evidence": [{"journal_entry_id": 1041, "quote": "친구에게 양보함",
                                        "span": {"start": 7, "end": 15}}]}],
-             "covered_entry_ids": [1041], "uncovered_entry_ids": [1042], "llm_called": true,
+             "covered_entry_ids": [1041], "uncovered_entry_ids": [1042],
+             "needs_review": true, "review_reasons": ["다른아동이름"], "llm_called": true,
              "added_later": "모르는 필드"}
             """;
 
@@ -111,6 +112,8 @@ class SummaryAgentClientTest {
         assertThat(response.claims().get(0).get("evidence").get(0).get("quote").asText()).isEqualTo("친구에게 양보함");
         assertThat(response.coveredEntryIds().toString()).isEqualTo("[1041]");
         assertThat(response.uncoveredEntryIds().toString()).isEqualTo("[1042]");
+        assertThat(response.needsReview()).isTrue();
+        assertThat(response.reviewReasons().toString()).isEqualTo("[\"다른아동이름\"]");
         assertThat(reply.rawJson()).isEqualTo(RESPONSE);
     }
 
