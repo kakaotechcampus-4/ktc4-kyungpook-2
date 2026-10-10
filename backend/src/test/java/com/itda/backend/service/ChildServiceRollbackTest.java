@@ -61,10 +61,10 @@ class ChildServiceRollbackTest {
     @Test
     void 기관_연결_저장에_실패하면_아동도_롤백된다() {
         given(userService.getOrganizationIdOf(USER_ID)).willReturn(1L);
-        given(childOrganizationRepository.save(any(ChildOrganization.class)))
+        given(childOrganizationRepository.saveAndFlush(any(ChildOrganization.class)))
                 .willThrow(new IllegalStateException("연결 저장 실패"));
 
-        assertThatThrownBy(() -> childService.register(USER_ID, new RegisterChildRequest(CHILD_NAME, "2017-03-14")))
+        assertThatThrownBy(() -> childService.register(USER_ID, new RegisterChildRequest(CHILD_NAME, "2017-03-14", null)))
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(childrenNamedForThisTest()).isEmpty();

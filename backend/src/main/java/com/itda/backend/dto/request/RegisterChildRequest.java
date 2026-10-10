@@ -22,6 +22,9 @@ import jakarta.validation.constraints.Size;
  * "2017-03-14T00:00:00" 이나 [2017, 3, 14] 도 LocalDate 로 바꿔주고, {@code @JsonFormat} 패턴을 써도
  * 배열은 통과하며 "2017-02-30" 을 2017-02-28 로 고쳐 받는다. "yyyy-MM-dd" 만 받으려고 문자열 형식과
  * 실제 달력 날짜를 {@link #isBirthDateValid()} 로 따로 본다. 실패는 전부 400 INVALID_REQUEST 다.
+ *
+ * <p>{@code externalId} 는 기관이 쓰는 관리번호로 선택이다. 앞뒤 공백을 떼고, 남는 게 없으면 "번호 없음"(null) 이다.
+ * 같은 기관 안 중복은 서비스와 DB 유니크 제약이 409 로 막는다.
  */
 public record RegisterChildRequest(
         @NotBlank
@@ -31,11 +34,16 @@ public record RegisterChildRequest(
         @Schema(type = "string", format = "date", example = "2017-03-14")
         @NotNull
         @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")
-        String birthDate
+        String birthDate,
+
+        @Schema(example = "2026-0031")
+        @Size(max = 50)
+        String externalId
 ) {
 
     public RegisterChildRequest {
         name = (name == null) ? null : name.strip();
+        externalId = (externalId == null || externalId.isBlank()) ? null : externalId.strip();
     }
 
     /**
