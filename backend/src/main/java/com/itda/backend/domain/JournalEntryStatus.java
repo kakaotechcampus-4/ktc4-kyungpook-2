@@ -14,6 +14,13 @@ public enum JournalEntryStatus {
     VALIDATED,
     /** 검증에서 막혔다(BLOCK). 요약으로 넘기지 않고 수정 요청 큐로 간다. FAILED(시스템 오류)와 구분한다. BE가 추가했다. */
     VALIDATION_BLOCKED,
+    /**
+     * 수정 요청 큐에서 선생님이 "수정한 원본 다시 올리기"를 눌렀다. 원본은 고치지 않고(append-only)
+     * 고친 내용을 새 파일로 올리므로, 이 일지는 대체될 예정이라 여기서 끝난다. BE가 추가했다(#122).
+     */
+    REUPLOAD_REQUESTED,
+    /** 수정 요청 큐에서 선생님이 "이 기록 보류"를 눌렀다. 다음 단계로 가지 않는다. BE가 추가했다(#122). */
+    VALIDATION_HELD,
     SUMMARIZING,
     GATE1_PENDING,
     COMPLETED,

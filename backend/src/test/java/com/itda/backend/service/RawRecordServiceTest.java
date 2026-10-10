@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -168,6 +169,147 @@ class RawRecordServiceTest {
         verify(journalEntryRepository, times(1)).save(captor.capture());
         assertThat(captor.getValue().getContent()).isEqualTo("그냥 관찰 문장 하나");
         assertThat(captor.getValue().getSequenceNo()).isEqualTo(1);
+    }
+
+    // --- entry_date 채우기 -------------------------------------------------------
+    // 요약은 아동 × 날짜로 묶이므로(DB 스키마 §8.2) entry_date 가 비면 그 기록은 요약에서 통째로 빠진다.
+    // 본문에서 날짜를 못 찾으면 파일명 → 업로드 날짜 순으로 내려가며 채운다.
+
+    /** 본문에 날짜 헤더가 없으면 파일명의 MMDD 를 쓴다. 연도는 알 수 없어 업로드 연도로 둔다. */
+    @Test
+    void ingest_fillsEntryDateFromFilenameWhenContentHasNoDateHeader() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "0821_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryDate())
+                .isEqualTo(LocalDate.of(LocalDate.now().getYear(), 8, 21));
+    }
+
+    /** 파일명에 네 자리 연도가 있으면 그 연도를 그대로 믿는다. */
+    @Test
+    void ingest_fillsEntryDateFromFilenameWithFullYear() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "2024-03-05_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryDate()).isEqualTo(LocalDate.of(2024, 3, 5));
+    }
+
+    /** 파일명 숫자가 날짜로 성립하지 않으면(학번 등) 업로드 날짜로 내려간다. */
+    @Test
+    void ingest_fallsBackToUploadDateWhenFilenameHasNoUsableDate() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "학생9977_기록.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryDate()).isEqualTo(LocalDate.now());
+    }
+
+    /** 본문에서 읽은 날짜가 있으면 파일명 날짜로 덮어쓰지 않는다 — 본문이 항상 우선이다. */
+    @Test
+    void ingest_keepsDateFromContentEvenWhenFilenameHasDifferentDate() throws Exception {
+        String content = "9/15 자유놀이를 했다.\n9/16 미술 시간.";
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "0821_관찰일지.txt", "text/plain", content.getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(JournalEntry::getEntryDate)
+                .containsExactly(
+                        LocalDate.of(LocalDate.now().getYear(), 9, 15),
+                        LocalDate.of(LocalDate.now().getYear(), 9, 16));
+    }
+
+    /**
+     * 표지처럼 날짜 헤더 앞에 있는 줄은 같은 파일의 첫 날짜를 물려받는다(코드리뷰 반영).
+     *
+     * <p>파일명 날짜를 주면 한 파일이 8/21·9/15·9/16 세 묶음으로 흩어진다 — 요약이 아동 × 날짜 ×
+     * 기관으로 묶이므로 같은 파일이 쪼개지면 안 된다.
+     */
+    @Test
+    void ingest_coverLineInheritsFirstDateInFileInsteadOfFilenameDate() throws Exception {
+        String content = "표지: 8월 관찰일지\n9/15 자유놀이를 했다.\n9/16 미술 시간.";
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "0821_관찰일지.txt", "text/plain", content.getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        int thisYear = LocalDate.now().getYear();
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, times(3)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(JournalEntry::getEntryDate)
+                .containsExactly(
+                        LocalDate.of(thisYear, 9, 15),
+                        LocalDate.of(thisYear, 9, 15),
+                        LocalDate.of(thisYear, 9, 16));
+    }
+
+    /** 파일명이 한글 날짜 표기여도 읽는다 — 기관에서 흔한 형식이다. */
+    @Test
+    void ingest_fillsEntryDateFromKoreanFilenameFormat() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "8월21일_관찰일지.txt", "text/plain", "날짜 없는 관찰 문장".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getEntryDate())
+                .isEqualTo(LocalDate.of(LocalDate.now().getYear(), 8, 21));
+    }
+
+    /** 어떤 경로로 들어오든 entry_date 가 빈 기록은 더 이상 저장되지 않는다. */
+    @Test
+    void ingest_neverSavesJournalEntryWithNullEntryDate() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "메모.txt", "text/plain", "표지\n내용만 있고 날짜는 없음".getBytes());
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.txt");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, atLeastOnce()).save(captor.capture());
+        assertThat(captor.getAllValues()).isNotEmpty();
+        assertThat(captor.getAllValues()).extracting(JournalEntry::getEntryDate).doesNotContainNull();
     }
 
     /** 날짜 헤더가 있으면 헤더마다 기록이 나뉘고, 각 기록의 날짜도 채워진다. */

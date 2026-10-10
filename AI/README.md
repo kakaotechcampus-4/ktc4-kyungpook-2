@@ -210,6 +210,8 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 | 검증 | [evals/scripts/validation/README.md](evals/scripts/validation/README.md) | `evals/scripts/validation/test_prompt_sync.py` |
 | 요약 | [summary/CRITERIA.md](summary/CRITERIA.md) | `evals/scripts/summary/test_criteria_sync.py`<br>`evals/scripts/summary/test_grounding.py` |
 
+요약을 **얼마나 잘 쓰는지** 재는 법은 [evals/scripts/summary/README.md](evals/scripts/summary/README.md) 에 있습니다. 환각·누락 지표만으로는 일지를 그대로 베낀 것과 구별되지 않아, 규칙 기준선과 나란히 채점합니다.
+
 **문서가 기준이고 코드가 그것을 따릅니다.** 둘이 어긋나면 동기화 테스트가 깨집니다.
 LLM 을 부르지 않으므로 즉시 끝납니다.
 

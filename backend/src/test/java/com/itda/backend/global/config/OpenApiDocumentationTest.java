@@ -78,7 +78,14 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.401").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.403").exists())
-				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.409").exists());
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.409").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.requestBody").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.404").exists())
+				.andExpect(jsonPath("$.components.schemas.RunSummaryRequest.properties.entryDateValid").doesNotExist());
 	}
 
 	/** 아동 등록·명부 스키마에 실제 필드만 있어야 한다. 검증용 메서드나 범위 밖 필드가 새면 안 된다. */

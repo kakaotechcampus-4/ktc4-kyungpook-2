@@ -121,14 +121,23 @@ class ValidationResultRecorderTest {
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.VALIDATING);
     }
 
+    /**
+     * 호출이 실패하면 verdict = FAILED 로 행을 남긴다(#122).
+     *
+     * <p>예전에는 "판정이 없다"는 이유로 행을 안 남겼는데, 그러면 실패가 로그에만 남고
+     * 매칭 실패인지 검증 실패인지 일지 상태만으로 구분할 수 없었다. 매칭이 이미
+     * MatchingStatus.FAILED 로 행을 남기고 있어 그쪽과 대칭을 맞췄다.
+     */
     @Test
-    void 호출이_실패하면_결과_없이_실패로_남긴다() {
+    void 호출이_실패하면_FAILED_판정으로_행을_남긴다() {
         JournalEntry entry = validatingEntry();
 
         recorder.recordFailure(entry.getId());
 
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
-        assertThat(resultsOf(entry.getId())).isEmpty();
+        assertThat(resultsOf(entry.getId()))
+                .singleElement()
+                .satisfies(result -> assertThat(result.getVerdict()).isEqualTo(ValidationVerdict.FAILED));
     }
 
     @Test
@@ -140,5 +149,6 @@ class ValidationResultRecorderTest {
         recorder.recordFailure(entry.getId());
 
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.VALIDATING);
+        assertThat(resultsOf(entry.getId())).isEmpty();
     }
 }
