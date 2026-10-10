@@ -1,6 +1,7 @@
 package com.itda.backend.global.exception;
 
 import com.itda.backend.exception.AuthException;
+import com.itda.backend.exception.ChildException;
 import com.itda.backend.exception.OrganizationException;
 import com.itda.backend.exception.UserException;
 import jakarta.validation.ConstraintViolationException;
@@ -58,6 +59,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(OrganizationException.class)
     public ResponseEntity<ErrorResponse> handleOrganizationException(OrganizationException e) {
         log.warn("기관 처리 실패: {}", e.getMessage());
+        return ResponseEntity.status(e.getErrorCode().getStatus())
+                .body(ErrorResponse.of(e.getErrorCode()));
+    }
+
+    @ExceptionHandler(ChildException.class)
+    public ResponseEntity<ErrorResponse> handleChildException(ChildException e) {
+        log.warn("아동 처리 실패: {}", e.getMessage());
         return ResponseEntity.status(e.getErrorCode().getStatus())
                 .body(ErrorResponse.of(e.getErrorCode()));
     }
