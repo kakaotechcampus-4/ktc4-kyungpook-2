@@ -77,26 +77,31 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.201").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.401").exists())
-				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.403").exists());
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.409").exists());
 	}
 
-	/** 아동 등록 요청·응답 스키마에 실제 필드만 있어야 한다. 검증용 메서드나 범위 밖 필드가 새면 안 된다. */
+	/** 아동 등록·명부 스키마에 실제 필드만 있어야 한다. 검증용 메서드나 범위 밖 필드가 새면 안 된다. */
 	@Test
 	void registerChildSchemasExposeOnlyContractFields() throws Exception {
 		mockMvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.length()").value(2))
+				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.length()").value(3))
+				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.externalId.maxLength").value(50))
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.name").exists())
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.birthDate.format").value("date"))
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.birthDateValid").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.birthDateValue").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.RegisteredChildResponse.properties.length()").value(1))
 				.andExpect(jsonPath("$.components.schemas.RegisteredChildResponse.properties.child").exists())
-				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.length()").value(4))
+				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.length()").value(5))
+				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.externalId").exists())
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.id").exists())
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.name").exists())
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.birthDate").exists())
-				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.status").exists());
+				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.status").exists())
+				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.length()").value(5))
+				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.externalId").exists());
 	}
 
 	@Test

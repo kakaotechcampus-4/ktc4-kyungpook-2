@@ -8,6 +8,6 @@ import com.itda.backend.domain.ChildStatus;
  */
 public record RegisteredChildResponse(RegisteredChild child) {
 
-    public record RegisteredChild(String id, String name, String birthDate, ChildStatus status) {
+    public record RegisteredChild(String id, String name, String birthDate, String externalId, ChildStatus status) {
     }
 }
