@@ -191,6 +191,21 @@ class SummaryResultRecorderTest {
     }
 
     @Test
+    void 사유가_있으면_표시가_빠진_응답이어도_봐야_하는_것으로_저장한다() throws Exception {
+        JournalEntry entry = summarizing("블록 놀이에서 친구에게 양보함");
+        SummaryAgentReply plain = reply("블록 놀이에서 친구에게 양보했다.", entry, "[" + entry.getId() + "]", "[]");
+        String json = plain.rawJson().replace("\"llm_called\": true}",
+                "\"llm_called\": true, \"review_reasons\": [\"다른아동이름\"]}");
+
+        recorder.record(claimed(entry), sent(entry),
+                new SummaryAgentReply(new ObjectMapper().readValue(json, SummaryAgentResponse.class), json));
+
+        SummaryResult summary = summaryResultRepository.findAll().get(0);
+        assertThat(summary.isNeedsReview()).isTrue();
+        assertThat(summary.getReviewReasons()).isEqualTo("[\"다른아동이름\"]");
+    }
+
+    @Test
     void 덮어쓸_때_표시가_없는_응답이면_이전_표시를_지운다() throws Exception {
         SummaryResult existing = SummaryResult.of(8L, DATE, 3L, 1, "이전 요약", "[]", "[]", "[]", "{}");
         existing.markReview(true, "[\"다른아동이름\"]");

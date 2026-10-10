@@ -15,6 +15,8 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+import org.hibernate.annotations.ColumnDefault;
+
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -73,7 +75,8 @@ public class SummaryResult {
 
     // 요약 본문에 다른 아이 이름이 남아 공유 전에 교사가 봐야 하는지. 막지 않고 Gate 1 에서 경고로 띄운다 (멘토 P1, #148).
     // 이미 행이 있는 테이블에 ddl-auto: update 로 NOT NULL 컬럼을 더하려면 기본값이 있어야 한다.
-    @Column(nullable = false, columnDefinition = "BOOLEAN NOT NULL DEFAULT FALSE")
+    @ColumnDefault("false")
+    @Column(nullable = false)
     private boolean needsReview;
 
     // 왜 봐야 하는지. AI 가 보낸 JSON 배열 그대로다 — ["다른아동이름"].
@@ -128,7 +131,10 @@ public class SummaryResult {
         return this.status == SummaryStatus.GENERATED || this.status == SummaryStatus.GATE1_PENDING;
     }
 
-    /** 승인 전 요약을 같은 묶음의 새 결과로 덮어쓴다. 판 번호는 그대로다. */
+    /**
+     * 승인 전 요약을 같은 묶음의 새 결과로 덮어쓴다. 판 번호는 그대로다. 이전 본문에 대한 표시({@link #markReview})는
+     * 지운다 — 새 본문의 표시는 새 응답이 정한다.
+     */
     public void overwrite(String content, String claims, String coveredEntryIds, String uncoveredEntryIds,
             String rawResponse) {
         if (!isBeforeApproval()) {
@@ -140,11 +146,12 @@ public class SummaryResult {
         this.coveredEntryIds = coveredEntryIds;
         this.uncoveredEntryIds = uncoveredEntryIds;
         this.rawResponse = rawResponse;
+        this.needsReview = false;
+        this.reviewReasons = null;
     }
 
     /**
-     * 교사가 봐야 하는지를 이번 요약 결과로 정한다. 덮어쓸 때도 부른다 — 다시 요약해 이름이 사라졌으면 표시도 지워야
-     * 교사가 없는 문제를 찾지 않는다.
+     * 교사가 봐야 하는지를 이번 요약 결과로 정한다. 새로 만들거나 덮어쓴 뒤에 부른다.
      */
     public void markReview(boolean needsReview, String reviewReasons) {
         this.needsReview = needsReview;

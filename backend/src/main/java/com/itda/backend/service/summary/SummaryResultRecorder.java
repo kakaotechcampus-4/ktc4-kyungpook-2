@@ -95,8 +95,12 @@ public class SummaryResultRecorder {
                     group.institutionId(), revision, response.content(), claims, covered, uncovered,
                     reply.rawJson()));
         }
-        // 필드가 없는 응답(#148 이전 AI)은 표시 없음으로 본다.
-        summary.markReview(Boolean.TRUE.equals(response.needsReview()), toJson(response.reviewReasons()));
+        // 필드가 없는 응답(#148 이전 AI)은 표시 없음으로 본다. 사유가 있는데 표시가 빠졌으면 경고 쪽으로 본다 —
+        // 이름이 샜는데 경고가 안 뜨는 쪽이 더 나쁘다.
+        JsonNode reasons = response.reviewReasons();
+        boolean needsReview = Boolean.TRUE.equals(response.needsReview())
+                || (reasons != null && reasons.isArray() && !reasons.isEmpty());
+        summary.markReview(needsReview, toJson(reasons));
         entries.forEach(entry -> entry.completeSummary(summary.getId()));
     }
 

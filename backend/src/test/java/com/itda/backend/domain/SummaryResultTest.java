@@ -89,6 +89,18 @@ class SummaryResultTest {
     }
 
     @Test
+    void 덮어쓰면_이전_요약의_표시를_지운다() {
+        SummaryResult result = summary();
+        result.markReview(true, "[\"다른아동이름\"]");
+
+        // 새 본문에 대한 표시는 새 응답이 정한다. 이전 본문의 경고가 새 글에 붙어 있으면 안 된다.
+        result.overwrite("다시 만든 요약", "[]", "[]", "[]", "{}");
+
+        assertThat(result.isNeedsReview()).isFalse();
+        assertThat(result.getReviewReasons()).isNull();
+    }
+
+    @Test
     void 빈_본문으로는_덮어쓸_수_없다() {
         assertThatThrownBy(() -> summary().overwrite("", "[]", "[]", "[]", "{}"))
                 .isInstanceOf(IllegalArgumentException.class);
