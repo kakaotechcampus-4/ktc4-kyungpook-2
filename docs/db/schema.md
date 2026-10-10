@@ -110,6 +110,7 @@ erDiagram
         bigint id PK
         bigint child_id FK
         bigint organization_id FK
+        varchar external_id "NULL 허용 - 기관 관리번호"
     }
     invitation {
         bigint id PK
@@ -425,6 +426,7 @@ users.kakao_id                                UNIQUE
 organization.business_number                  UNIQUE
 invitation.code                               UNIQUE
 child_organization(child_id, organization_id) UNIQUE
+child_organization(organization_id, external_id) UNIQUE
 child_guardian(child_id, user_id)             UNIQUE
 summary_result(child_id, entry_date, institution_id, revision) UNIQUE
 ```
@@ -458,6 +460,18 @@ summary_result(child_id, entry_date, institution_id, revision) UNIQUE
 
 `deleted_at IS NULL`인 행만 유니크로 보는 부분 인덱스(partial unique index)가 정석이지만,
 `ddl-auto: update`가 만들어주지 못하므로 쓰지 않는다.
+
+**예외: `child_organization(organization_id, external_id)` 는 되살리지 않고 비운다.**
+
+관리번호는 같은 아이가 돌아올 때가 아니라 **다른 아이가 그 번호를 받을 때** 충돌한다. 아이 등록은 항상
+새 `child`·새 연결 행을 만들기 때문에, 예전 행을 되살리는 방식으로는 풀 수 없다(되살리면 예전 아이가 돌아온다).
+그래서 연결을 해제할 때 `deleted_at`을 찍으면서 `external_id`를 NULL로 비운다. PostgreSQL 유니크 제약은
+NULL끼리 겹치는 것을 허용하므로, 해제된 행은 번호를 놓아 준다.
+
+```
+연결 해제 → deleted_at = now(), external_id = NULL   (ChildOrganization.delete())
+다시 연결 → deleted_at = NULL 만 되돌린다. 관리번호는 돌아오지 않는다 (ChildOrganization.restore())
+```
 
 ---
 
@@ -630,11 +644,21 @@ deleted_at != NULL   기관이 아이를 목록에서 뺀 상태. 조회 대상�
 | `id` | BIGINT | N | PK |
 | `child_id` | BIGINT | N |  |
 | `organization_id` | BIGINT | N |  |
+| `external_id` | VARCHAR(50) | Y | 기관이 쓰는 아동 관리번호. 선택 입력 |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
 | `deleted_at` | DATETIME | Y | **연결 해제 표시** |
 
 `(child_id, organization_id)` UNIQUE. 재연결은 §3.3 의 복구 규칙을 따른다.
+
+**`external_id` (관리번호)**
+
+기관이 아이를 구분하려고 붙인 번호다(예: `2026-0031`). 기관마다 번호가 다르므로 `child`가 아니라 연결이 가진다.
+
+- 아이 등록(O-11)에서 선택으로 받는다. 앞뒤 공백을 떼고, 비어 있으면 NULL, 최대 50자. 형식은 기관마다 달라 강제하지 않는다.
+- `(organization_id, external_id)` UNIQUE — **같은 기관 안에서만** 겹칠 수 없다. 다른 기관은 같은 번호를 써도 된다. NULL은 여럿이어도 된다.
+- 서비스가 먼저 조회해 `409 DUPLICATE_EXTERNAL_ID`를 주고, 동시 등록으로 조회를 함께 통과한 경우는 유니크 제약이 막아 같은 409로 바꾼다.
+- 연결을 해제하면 NULL로 비운다. 다시 연결해도 돌아오지 않는다(§3.3 예외).
 
 **왜 FK 컬럼 하나가 아니라 별도 테이블인가**
 
@@ -1638,3 +1662,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-09-30 | `matching_result.mentioned_child_ids` 엔티티에 반영 (§7.1 설명은 #78) | #75 |
 | 2026-10-01 | `validation_result` 구현 (`ValidationResult`). 저장 시점 설명 추가 (§8.1) | #90 |
 | 2026-10-01 | `journal_entry.status`에 `VALIDATED`·`VALIDATION_BLOCKED` 추가, 검증 워커의 상태 변경 규칙 추가 (§6.2). enum 값 추가지만 `journal_entry.status` CHECK 제약은 9/30에 제거돼 수동 조치 불필요 | #90 |
+| 2026-10-10 | `child_organization`에 `external_id`(기관 관리번호) 추가, `(organization_id, external_id)` UNIQUE와 연결 해제 시 번호를 비우는 규칙(§3.3, §5.2). UNIQUE 추가라 §11.4 수동 조치 필요 | #128 |
