@@ -13,11 +13,12 @@
  * ⚠️ **아래 목록에 없는 경로는 아직 백엔드에 구현돼 있지 않다.** 경로는 위 규약을
  *    따른 추정이므로, 백엔드가 만들 때 실제 경로를 확인하고 맞춰야 한다.
  *
- *    구현된 것 (2026-10-04 기준, BE_READY 에서 true 인 기능)
+ *    구현된 것 (2026-10-12 기준, BE_READY 에서 true 인 기능)
  *      POST /api/v1/raw-records       multipart: file → 201
  *      GET  /api/v1/raw-records/{id}
  *      GET  /api/v1/raw-records
  *      GET  /api/v1/institutions/me/children
+ *      POST /api/v1/institutions/me/children   → 201 (초대코드 없음)
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/auth/me           (lib/auth.ts 에서 호출)
@@ -90,7 +91,7 @@ const BE_READY = {
   /** 아이 명부 조회 (GET /institutions/me/children) */
   children: true,
   /** 아이 등록 (POST /institutions/me/children) */
-  childRegister: false,
+  childRegister: true,
   /** 아이 상세 · 타임라인 */
   childProfile: false,
   /** 아이 기록 기반 질의응답 */
