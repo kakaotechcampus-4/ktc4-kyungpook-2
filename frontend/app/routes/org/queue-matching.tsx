@@ -270,9 +270,12 @@ function MatchingCard({
   /*
    * 아이를 고르는 화면이라 60자 preview 가 아니라 전체 본문을 처음부터 펼쳐 둔다 —
    * 뒤쪽에 나오는 아이 이름이나 근거를 놓치면 잘못 확정한다 (멘토 리뷰, #112).
-   * evidence 좌표는 fullContent 기준이라, 본문이 없어 preview 로 대신할 땐 강조하지 않는다.
+   * evidence 좌표는 fullContent 기준이라, 본문이 없어 preview 로 대신할 땐 강조하지 않고
+   * 그 사실을 알린다 — 말없이 60자만 보이면 선생님이 그게 전부인 줄 안다 (멘토 리뷰, #150).
+   * 긴 본문은 카드가 끝없이 늘어나지 않게 높이를 묶고 안에서 스크롤한다.
    */
-  const evidence = item.record.fullContent != null ? item.evidence : [];
+  const hasFullContent = item.record.fullContent != null;
+  const evidence = hasFullContent ? item.evidence : [];
 
   return (
     <Card>
@@ -281,13 +284,26 @@ function MatchingCard({
           기록 본문
         </p>
         <p className="mb-2 text-[15px] font-semibold">{item.record.fileName}</p>
-        <div className="mb-3 text-[16px] whitespace-pre-wrap">
+        {/* 스크롤 영역이라 키보드로도 내릴 수 있게 포커스를 받는다 */}
+        <div
+          tabIndex={0}
+          aria-label="기록 본문"
+          className="mb-3 max-h-96 overflow-y-auto pr-1 text-[16px] whitespace-pre-wrap"
+        >
           {/* AI 가 판정 근거로 인용한 구간을 그대로 표시한다 */}
           <EvidenceText
             content={item.record.fullContent ?? item.record.preview ?? ""}
             spans={evidence}
           />
         </div>
+        {!hasFullContent ? (
+          <p role="status" className="mb-3 rounded bg-reviewsoft px-3 py-2 text-[14px] text-review">
+            {item.record.preview
+              ? "전체 본문을 불러오지 못해 앞부분 미리보기만 표시합니다."
+              : "본문을 불러오지 못했습니다. 파일 이름과 날짜로 확인해 주세요."}
+            {item.evidence.length > 0 ? " AI 판단 근거 표시도 함께 꺼졌습니다." : null}
+          </p>
+        ) : null}
         {evidence.length > 0 ? (
           <p className="mb-3 text-[13px] text-muted">
             <span className="mr-1 inline-block size-2.5 rounded-sm bg-accentsoft align-middle" />
