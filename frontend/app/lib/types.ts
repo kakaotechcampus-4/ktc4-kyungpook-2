@@ -75,9 +75,19 @@ export interface Child {
   /** 학교/학년 등 — 보호자 온보딩 화면에 짧게 표시 */
   school?: string;
   status: ChildStatus;
+  /** 기관이 아이마다 붙여 쓰는 관리번호 (예: 2026-0031). 없으면 null */
+  externalId?: string | null;
   institutions: { institution: Institution; consent: ConsentState }[];
   care?: ChildCareInfo;
 }
+
+/**
+ * 기관 아동 명부 한 줄 (GET /institutions/me/children).
+ *
+ * 서버는 id·name·birthDate·externalId·status 만 준다. 연결된 기관 목록은 다른 기관
+ * 정보를 보호자 동의 범위 안에서만 보여줘야 해서, 동의 기능이 생긴 뒤에 온다.
+ */
+export type ChildListItem = Omit<Child, "institutions"> & Partial<Pick<Child, "institutions">>;
 
 /**
  * 대기 중인 보호자–아이 연결 요청 (api-spec G-01).

@@ -47,6 +47,7 @@ import type {
   ChatTurn,
   Child,
   ChildCareInfo,
+  ChildListItem,
   ConsentPreview,
   FileProgress,
   InboxItem,
@@ -186,7 +187,7 @@ export { ApiError };
 /* ── 기관 ───────────────────────────────────────────── */
 
 /** GET /api/v1/institutions/me/children */
-export async function getChildren(): Promise<Child[]> {
+export async function getChildren(): Promise<ChildListItem[]> {
   if (mockFor("children")) return mock.CHILDREN;
   return request("/api/v1/institutions/me/children");
 }
