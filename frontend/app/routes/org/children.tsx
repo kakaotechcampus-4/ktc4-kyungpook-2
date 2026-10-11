@@ -35,7 +35,9 @@ export default function ChildrenPage() {
           const s = STATUS_LABEL[c.status];
           return (
             <Card key={c.id}>
-              <div className="mb-3 flex flex-wrap items-center gap-2.5">
+              <div
+                className={`flex flex-wrap items-center gap-2.5 ${c.institutions ? "mb-3" : ""}`}
+              >
                 <span
                   aria-hidden
                   className="flex size-9 items-center justify-center rounded-full bg-surface2 text-[15px] font-semibold text-ink2"
