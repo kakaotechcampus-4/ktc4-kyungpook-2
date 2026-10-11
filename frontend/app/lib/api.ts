@@ -59,6 +59,7 @@ import type {
   MatchResolution,
   ParentActivity,
   PendingLink,
+  RegisteredChild,
   SummaryItem,
   TimelineEntry,
   UploadFailReason,
@@ -88,7 +89,7 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const BE_READY = {
   /** 아이 명부 조회 (GET /institutions/me/children) */
   children: true,
-  /** 아이 등록 + 초대코드 */
+  /** 아이 등록 (POST /institutions/me/children) */
   childRegister: false,
   /** 아이 상세 · 타임라인 */
   childProfile: false,
@@ -499,22 +500,34 @@ export async function resolveBlockedItem(
   });
 }
 
-/** POST /api/v1/institutions/me/children — 등록 + 초대코드 발급 */
+/**
+ * POST /api/v1/institutions/me/children — 아이 등록.
+ *
+ * 서버는 아직 초대코드를 주지 않아서 inviteCode 는 mock 에서만 온다. 서버가 초대코드를
+ * 만들면 그때 필수로 바꾼다.
+ */
 export async function registerChild(input: {
   name: string;
   birthDate: string;
-}): Promise<{ child: Child; inviteCode: string }> {
-  const inviteCode = generateInviteCode();
+  /** 기관 관리번호. 비우면 서버가 "번호 없음"(null)으로 저장한다 */
+  externalId?: string;
+}): Promise<{ child: RegisteredChild; inviteCode?: string }> {
   if (mockFor("childRegister")) {
+    const externalId = input.externalId?.trim() || null;
+    if (externalId && mock.CHILDREN.some((c) => c.externalId === externalId)) {
+      throw new ApiError(409, "DUPLICATE_EXTERNAL_ID");
+    }
     const child: Child = {
       id: `child_${Math.random().toString(36).slice(2, 8)}`,
-      name: input.name,
+      name: input.name.trim(),
       birthDate: input.birthDate,
+      externalId,
       status: "pending_consent",
       institutions: [{ institution: mock.MY_INSTITUTION, consent: "not_granted" }],
     };
     mock.CHILDREN.push(child);
-    return { child, inviteCode };
+    const { id, name, birthDate, status } = child;
+    return { child: { id, name, birthDate, externalId, status }, inviteCode: generateInviteCode() };
   }
   return request("/api/v1/institutions/me/children", {
     method: "POST",

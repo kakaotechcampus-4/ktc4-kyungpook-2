@@ -89,6 +89,11 @@ export interface Child {
  */
 export type ChildListItem = Omit<Child, "institutions"> & Partial<Pick<Child, "institutions">>;
 
+/** 아이 등록 응답 (POST /institutions/me/children). 등록 직후라 status 는 항상 pending_consent 다 */
+export type RegisteredChild = Pick<Child, "id" | "name" | "birthDate" | "status"> & {
+  externalId: string | null;
+};
+
 /**
  * 대기 중인 보호자–아이 연결 요청 (api-spec G-01).
  *
