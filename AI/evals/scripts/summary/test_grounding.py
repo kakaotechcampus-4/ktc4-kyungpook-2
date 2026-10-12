@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from summary import nodes  # noqa: E402
+from summary.nodes import _numbers, _numbers_outside_dates  # noqa: E402
 from summary.graph import run_summary  # noqa: E402
 from summary.llm import LlmResult, LlmUnavailable, NoGroundedClaims  # noqa: E402
 from main import llm_unavailable  # noqa: E402
@@ -32,6 +33,19 @@ class _FakeRequest:
 #: 503 의 detail.reason. 상태 코드가 같아도 BE 의 후속 처리가 다르다 (#148).
 #:   llm_unavailable      차례를 통째로 멈추고 나중에 다시
 #:   no_grounded_claims   그 묶음만 되돌리고 다음으로, 2번 넘으면 FAILED
+#: 날짜 숫자 면제. **값이 아니라 자리**를 지운다 (2026-10-11 멘토 리뷰 P2).
+#: 묶음 날짜는 2026-10-07 기준이다.
+DATE_CASES = [
+    ("날짜이자 횟수 — 횟수는 근거를 본다", "10월 7일, 공을 7번 주고받았다.", "공을 주고받음", False),
+    ("날짜이자 횟수 — 근거가 있으면 통과", "10월 7일, 공을 7번 주고받았다.", "공을 7번 주고받음", True),
+    ("날짜만 있으면 통과", "10월 7일 기록이다.", "기록", True),
+    ("단위 없는 숫자는 근거를 본다", "공을 7번 주고받았다.", "공을 주고받음", False),
+    ("시각은 관찰 내용이다", "2026년 10월 7일 오전 10시에 왔다.", "오전에 옴", False),
+    ("연·월·일 전부 묶음 날짜면 통과", "2026년 10월 7일에 왔다.", "왔다", True),
+    ("다른 날짜는 원문에 있어야 한다", "8월 21일 관찰분이다.", "관찰", False),
+    ("층수에 근거가 있으면 통과", "블록을 5층까지 쌓았다.", "혼자 5층까지 쌓음", True),
+]
+
 REASON_CASES = [
     (LlmUnavailable, "llm_unavailable"),
     (NoGroundedClaims, "no_grounded_claims"),
@@ -254,6 +268,16 @@ def main():
         if not ok:
             failed += 1
     print("      ⚠️ 목록은 ACTIVE 명부 아이만 담긴다. false 가 '안 샌다' 는 뜻이 아니다")
+
+    print("\n■ 날짜 숫자는 자리만 면제한다 (묶음 날짜 2026-10-07)")
+    for name, text, quote, want_pass in DATE_CASES:
+        left = _numbers_outside_dates(text, "2026-10-07") - _numbers(quote)
+        got_pass = not left
+        ok = got_pass == want_pass
+        print(f"  {'✓' if ok else '✗'} {'통과' if got_pass else '버림'}  {name}")
+        print(f"      {text!r} · 인용 {quote!r} · 근거 없는 숫자 {left or '{}'}")
+        if not ok:
+            failed += 1
 
     print("\n■ 503 두 가지를 body 로 구분한다 (BE 후속 처리가 다르다)")
     for exc, want in REASON_CASES:

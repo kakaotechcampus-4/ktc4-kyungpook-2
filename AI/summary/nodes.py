@@ -83,9 +83,25 @@ def _numbers(text: str) -> set[int]:
     return {int(n) for n in re.findall(r"\d+", text or "")}
 
 
-def _date_numbers(text: str) -> set[int]:
-    """날짜 표현에 쓰인 숫자만. 연·월·일 단위가 붙은 것이다."""
-    return {int(n) for n in DATE_UNIT.findall(text or "")}
+def _numbers_outside_dates(text: str, entry_date: str) -> set[int]:
+    """
+    날짜로 쓰인 **자리**를 지우고 남은 숫자를 센다.
+
+    값이 아니라 자리를 지우는 것이 핵심이다. 값으로 빼면 같은 수가 한 문장에서
+    날짜로도 횟수로도 쓰일 때 둘 다 빠진다.
+
+        2026-10-07 · "10월 7일, 공을 7번 주고받았다"
+          값으로 뺄 때   {10, 7} - {10, 7} = {}       → "7번" 이 근거 없이 통과
+          자리로 뺄 때   "  , 공을 7번 …" → {7}       → 근거를 확인한다
+
+    단위(년·월·일)가 붙고 **묶음 날짜와 값이 같은** 자리만 지운다. 다른 날짜가
+    적혀 있으면(관찰일이 묶음 날짜와 다를 때) 그 숫자도 원문에 있어야 한다.
+    """
+    allowed = _numbers(entry_date)
+    blanked = DATE_UNIT.sub(
+        lambda m: " " if int(m.group(1)) in allowed else m.group(0), text or ""
+    )
+    return _numbers(blanked)
 
 
 def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> bool:
@@ -104,17 +120,18 @@ def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> boo
     """
     quotes = " ".join(e["quote"] for e in evidence)
 
-    # 날짜를 가리키는 숫자는 입력으로 받은 값이라 지어낸 것이 아니다. 다만
-    # **그 문장에서 날짜로 쓰였을 때만** 면제한다 — 단위(년·월·일)가 붙어 있고
-    # 묶음 날짜와 값이 같아야 한다.
+    # 날짜를 가리키는 숫자는 입력으로 받은 값이라 지어낸 것이 아니다. 그 **자리만**
+    # 지우고, 남은 숫자는 전부 근거 인용에 그대로 있어야 한다 — 횟수·시간·층수는
+    # 관찰한 내용이다.
     #
-    # 예전에는 entry_date 의 숫자를 통째로 면제했다. 2026-10-07 에 쓴 요약이면
-    # "공을 7번 주고받았다", "10번", "2026번" 이 전부 통과했다 — 날짜 숫자가
-    # 관찰 횟수의 근거가 돼 버린 것이다 (2026-10-08 멘토 리뷰).
-    date_ok = _date_numbers(text) & _numbers(state.get("entry_date", ""))
-
-    # 나머지 숫자 — 횟수·시간·층수 같은 관찰 내용은 근거 인용에 그대로 있어야 한다.
-    return not (_numbers(text) - _numbers(quotes) - date_ok)
+    # 두 번 고친 자리다.
+    #   ① entry_date 의 숫자를 통째로 면제했다. 2026-10-07 요약이면 "공을 7번",
+    #     "10번", "2026번" 이 전부 통과했다 (2026-10-08 멘토 리뷰).
+    #   ② 단위가 붙은 것만 면제하되 여전히 **값**으로 뺐다. "10월 7일, 공을 7번"
+    #     처럼 같은 수가 날짜로도 횟수로도 쓰이면 "7번" 까지 빠졌다
+    #     (2026-10-11 멘토 리뷰 P2).
+    left = _numbers_outside_dates(text, state.get("entry_date", ""))
+    return not (left - _numbers(quotes))
 
 
 def ground(state: SummaryState) -> dict:
