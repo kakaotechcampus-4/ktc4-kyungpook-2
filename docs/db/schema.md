@@ -667,7 +667,7 @@ deleted_at != NULL   기관이 아이를 목록에서 뺀 상태. 조회 대상�
 | `id` | BIGINT | N | PK |
 | `child_id` | BIGINT | N |  |
 | `organization_id` | BIGINT | N |  |
-| `external_id` | VARCHAR(50) | Y | 기관이 쓰는 아동 관리번호. 선택 입력 |
+| `external_id` | VARCHAR(50) | Y | 기관이 쓰는 아동 관리번호. 등록 시 필수 입력(필수 전 등록분·연결 해제 행은 NULL) |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
 | `deleted_at` | DATETIME | Y | **연결 해제 표시** |
@@ -678,7 +678,8 @@ deleted_at != NULL   기관이 아이를 목록에서 뺀 상태. 조회 대상�
 
 기관이 아이를 구분하려고 붙인 번호다(예: `2026-0031`). 기관마다 번호가 다르므로 `child`가 아니라 연결이 가진다.
 
-- 아이 등록(O-11)에서 선택으로 받는다. 앞뒤 공백을 떼고, 비어 있으면 NULL, 최대 50자. 형식은 기관마다 달라 강제하지 않는다.
+- 아이 등록(O-11)에서 **필수로** 받는다. 앞뒤 공백을 떼고 1–50자, 비어 있거나 공백뿐이면 400. 형식은 기관마다 달라 강제하지 않는다.
+- 그래도 컬럼은 NULL을 허용한다. 필수가 되기 전에 등록된 아이에게는 번호가 없고, 연결을 해제하면 번호를 비우기 때문이다.
 - `(organization_id, external_id)` UNIQUE — **같은 기관 안에서만** 겹칠 수 없다. 다른 기관은 같은 번호를 써도 된다. NULL은 여럿이어도 된다.
 - 서비스가 먼저 조회해 `409 DUPLICATE_EXTERNAL_ID`를 주고, 동시 등록으로 조회를 함께 통과한 경우는 유니크 제약이 막아 같은 409로 바꾼다.
 - 연결을 해제하면 NULL로 비운다. 다시 연결해도 돌아오지 않는다(§3.3 예외).
@@ -1849,3 +1850,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-09 | `child_context` 구현 (`ChildContext`). 화면에 필요한 날짜·기관·판수는 컬럼을 늘리지 않고 `summary_result_id` 로 조인해 채우기로 결정, §9.2 를 확정으로 올림 | #142 |
 | 2026-10-10 | `child_organization`에 `external_id`(기관 관리번호) 추가, `(organization_id, external_id)` UNIQUE와 연결 해제 시 번호를 비우는 규칙(§3.3, §5.2). UNIQUE 추가라 §11.4 수동 조치 필요 | #128 |
 | 2026-10-12 | `invitation`·`child_guardian` 구현 (`Invitation`·`ChildGuardian`). 초대코드 10분·일회용·여러 개 허용 확정(§10.1 #6, §10.2 #2 종료). `invitation.contact` 제거, 상태 `EXPIRED`→`CANCELLED`·`expires_at` 추가, `code` VARCHAR(8). `child_guardian`에 `invitation_id`·`linked_at` 추가, 해제 규칙(§5.4)과 잠금 순서(§3.3) 추가. 새 테이블이라 `ddl-auto: update`가 만들고 §11.4 수동 조치 불필요 | #159 |
+| 2026-10-13 | `child_organization.external_id`를 아이 등록 시 필수 입력으로 변경(요청 검증만, 컬럼은 NULL 허용 유지 — 기존 행·해제 행) (§5.2) | #159 |
