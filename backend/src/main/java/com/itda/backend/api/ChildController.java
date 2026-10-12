@@ -29,7 +29,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
 // docs/api/api-spec.md O-10(명부)·O-11(아이 등록). 명부는 RosterPicker.tsx에 필요한
-// id/name/birthDate/status만 — institutions[]/care 등 풀 스펙과 등록 시 보호자 초대 코드는 별도 작업.
+// id/name/birthDate/status와 기관 관리번호(externalId)만 — institutions[]/care 등 풀 스펙과
+// 등록 시 보호자 초대 코드는 별도 작업.
 @RestController
 @RequestMapping("/api/v1/institutions/me/children")
 @RequiredArgsConstructor
@@ -61,13 +62,15 @@ public class ChildController {
     @PostMapping
     @Operation(summary = "아이 등록",
             description = "인증된 기관에 아이를 등록합니다. 등록 직후 상태는 pending_consent 입니다. "
-                    + "birthDate 는 yyyy-MM-dd 문자열만 받습니다.")
+                    + "birthDate 는 yyyy-MM-dd 문자열만 받습니다. externalId(기관 관리번호)는 선택이며 "
+                    + "같은 기관 안에서는 겹칠 수 없습니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "등록 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "이름 누락·100자 초과, 생년월일 형식 오류·없는 날짜·미래 날짜 (INVALID_REQUEST)",
+                    description = "이름 누락·100자 초과, 생년월일 형식 오류·없는 날짜·미래 날짜, "
+                            + "관리번호 50자 초과 (INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -79,6 +82,11 @@ public class ChildController {
                     responseCode = "403",
                     description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 기관 소속이 아닌 사용자 "
                             + "(ORGANIZATION_NOT_ASSIGNED), CSRF 토큰 누락·불일치 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "같은 기관에서 이미 쓰고 있는 관리번호 (DUPLICATE_EXTERNAL_ID)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })

@@ -43,7 +43,7 @@ class RegisterChildApiTest {
 
     private static final String CHILDREN = "/api/v1/institutions/me/children";
     private static final String BODY = """
-            {"name": "김하늘", "birthDate": "2017-03-14"}
+            {"name": "김하늘", "birthDate": "2017-03-14", "externalId": "2026-0031"}
             """;
 
     @Autowired
@@ -76,6 +76,10 @@ class RegisterChildApiTest {
     }
 
     private MockHttpServletRequestBuilder registerWithCsrf(Cookie... cookies) throws Exception {
+        return registerWithCsrf(BODY, cookies);
+    }
+
+    private MockHttpServletRequestBuilder registerWithCsrf(String body, Cookie... cookies) throws Exception {
         Cookie csrf = csrfCookie();
         Cookie[] all = new Cookie[cookies.length + 1];
         System.arraycopy(cookies, 0, all, 0, cookies.length);
@@ -84,7 +88,7 @@ class RegisterChildApiTest {
                 .cookie(all)
                 .header("X-XSRF-TOKEN", csrf.getValue())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(BODY);
+                .content(body);
     }
 
     @Test
@@ -96,6 +100,7 @@ class RegisterChildApiTest {
                         .andExpect(status().isCreated())
                         .andExpect(jsonPath("$.result").value("SUCCESS"))
                         .andExpect(jsonPath("$.data.child.id").isString())
+                        .andExpect(jsonPath("$.data.child.externalId").value("2026-0031"))
                         .andExpect(jsonPath("$.data.child.status").value("pending_consent"))
                         .andReturn().getResponse().getContentAsString(),
                 "$.data.child.id");
@@ -106,7 +111,23 @@ class RegisterChildApiTest {
                 .andExpect(jsonPath("$.data[0].id").value(childId))
                 .andExpect(jsonPath("$.data[0].name").value("김하늘"))
                 .andExpect(jsonPath("$.data[0].birthDate").value("2017-03-14"))
+                .andExpect(jsonPath("$.data[0].externalId").value("2026-0031"))
                 .andExpect(jsonPath("$.data[0].status").value("pending_consent"));
+    }
+
+    @Test
+    void sameExternalIdInSameOrganizationIsConflict() throws Exception {
+        User user = organizationUser();
+        mockMvc.perform(registerWithCsrf(authCookie(user))).andExpect(status().isCreated());
+
+        mockMvc.perform(registerWithCsrf("""
+                        {"name": "임유진", "birthDate": "2019-11-26", "externalId": "2026-0031"}
+                        """, authCookie(user)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_EXTERNAL_ID"));
+
+        mockMvc.perform(get(CHILDREN).cookie(authCookie(user)))
+                .andExpect(jsonPath("$.data.length()").value(1));
     }
 
     @Test

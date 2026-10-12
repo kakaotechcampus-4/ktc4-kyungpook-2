@@ -60,4 +60,52 @@ class ChildOrganizationRepositoryTest {
         assertThatThrownBy(() -> childOrganizationRepository.saveAndFlush(ChildOrganization.of(1L, 10L)))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
+
+    @Test
+    void 같은_기관에서_같은_관리번호는_DB가_막는다() {
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(1L, 10L, "2026-0031"));
+
+        assertThatThrownBy(() -> childOrganizationRepository.saveAndFlush(ChildOrganization.of(2L, 10L, "2026-0031")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void 다른_기관은_같은_관리번호를_쓸_수_있다() {
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(1L, 10L, "2026-0031"));
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(2L, 20L, "2026-0031"));
+
+        assertThat(childOrganizationRepository.existsByOrganizationIdAndExternalId(10L, "2026-0031")).isTrue();
+        assertThat(childOrganizationRepository.existsByOrganizationIdAndExternalId(20L, "2026-0031")).isTrue();
+    }
+
+    @Test
+    void 관리번호가_없는_연결은_한_기관에_여럿_있을_수_있다() {
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(1L, 10L));
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(2L, 10L));
+
+        assertThat(childOrganizationRepository.findByOrganizationIdAndDeletedAtIsNull(10L)).hasSize(2);
+    }
+
+    @Test
+    void 연결을_해제하면_그_관리번호를_다른_아동이_쓸_수_있다() {
+        ChildOrganization link = childOrganizationRepository.saveAndFlush(ChildOrganization.of(1L, 10L, "2026-0031"));
+        link.delete();
+        childOrganizationRepository.saveAndFlush(link);
+
+        assertThat(childOrganizationRepository.existsByOrganizationIdAndExternalId(10L, "2026-0031")).isFalse();
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(2L, 10L, "2026-0031"));
+        assertThat(childOrganizationRepository.existsByOrganizationIdAndExternalId(10L, "2026-0031")).isTrue();
+    }
+
+    @Test
+    void 해제된_연결은_기관_명부용_조회에서_빠진다() {
+        childOrganizationRepository.saveAndFlush(ChildOrganization.of(1L, 10L, "A-1"));
+        ChildOrganization removed = childOrganizationRepository.saveAndFlush(ChildOrganization.of(2L, 10L, "A-2"));
+        removed.delete();
+        childOrganizationRepository.saveAndFlush(removed);
+
+        assertThat(childOrganizationRepository.findByOrganizationIdAndDeletedAtIsNull(10L))
+                .extracting(ChildOrganization::getChildId)
+                .containsExactly(1L);
+    }
 }
