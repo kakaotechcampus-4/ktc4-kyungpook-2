@@ -95,22 +95,53 @@ export type RegisteredChild = Pick<Child, "id" | "name" | "birthDate" | "status"
 };
 
 /**
- * 대기 중인 보호자–아이 연결 요청 (api-spec G-01).
+ * 보호자 초대 코드 (api-spec O-11 의 invitation · O-15 응답).
  *
- * 기관이 아이를 등록하면 서버가 만들고, 보호자가 카카오 로그인 뒤 이 목록에서
- * 확인·동의하면 사라진다. 초대코드를 대신하는 최초 연결 경로다.
+ * 10분짜리 일회용이다. code 는 하이픈 없는 8자라 화면에서 4-4 로 나눠 보여준다.
  */
-export interface PendingLink {
-  child: { id: string; name: string; birthDate: string };
-  institution: Institution;
-  /** ISO 8601. 화면은 앞 10자리만 잘라 날짜로 보여준다. */
-  requestedAt: string;
+export interface IssuedInvitation {
+  id: string;
+  code: string;
+  /** ISO 8601 (오프셋 포함). 화면은 브라우저 시계와 비교해 카운트다운한다 */
+  expiresAt: string;
+}
+
+/** 아직 쓸 수 있는 초대 코드 (api-spec O-16) */
+export interface LiveInvitation extends IssuedInvitation {
+  issuedAt: string;
+}
+
+/** 아이와 연결된 보호자 (api-spec O-18) */
+export interface ChildGuardian {
+  userId: string;
+  /** 카카오 닉네임. 동의하지 않았으면 null */
+  name: string | null;
+  linkedAt: string;
+  /** true 인 보호자만 우리 기관이 연결을 끊을 수 있다 (O-19) */
+  linkedByThisOrganization: boolean;
+}
+
+/**
+ * 초대 코드 수락 결과 (api-spec G-04).
+ *
+ * 수락은 아동 상태를 바꾸지 않는다. childStatus 는 아이의 실제 현재 상태다.
+ */
+export interface AcceptedInvitation {
+  childId: string;
+  childName: string;
+  organizationName: string;
+  /**
+   * 동의 미리보기(G-02)에 필요하다. 서버 응답에는 아직 없어 BE 에 추가를 요청해 두었다 —
+   * 지금은 mock 만 채운다.
+   */
+  organizationId?: string;
+  childStatus: ChildStatus;
 }
 
 /**
  * P-02 확인 · 동의 화면이 한 번에 그리는 정보 (api-spec G-02).
  *
- * 스펙 예시에는 child.id 가 없지만 동의(G-41)와 반려(G-03) 호출에 필요해서 받는다.
+ * 스펙 예시에는 child.id 가 없지만 동의(G-41)와 연결 해제(G-05) 호출에 필요해서 받는다.
  */
 export interface ConsentPreview {
   child: { id: string; name: string; birthDate: string };

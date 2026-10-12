@@ -54,6 +54,14 @@ const ONBOARDED_KEY = "itda_parent_onboarded";
  */
 const INTENT_KEY = "itda_login_intent";
 
+/**
+ * 초대 링크(`/parent/invite?code=`)로 받은 코드. 카카오 로그인과 회원가입을 다녀오는 동안
+ * 들고 있다가, 보호자 화면에 들어오면 수락(G-04)에 쓴다. 로그인 의도와 같은 이유로
+ * sessionStorage 다. 카톡 인앱 브라우저에서 외부 브라우저로 넘어가면 사라질 수 있어
+ * P-01 에 직접 입력 칸을 따로 둔다.
+ */
+const INVITE_CODE_KEY = "itda_invite_code";
+
 export type Role = "org" | "parent" | null;
 
 /**
@@ -185,10 +193,42 @@ export async function getSession(): Promise<Session> {
   return toSession(body.data as MeResponse);
 }
 
-/** 가입을 마친 사람이 처음 볼 화면. 보호자는 약관·첫 연결이 남았으면 온보딩으로. */
+/**
+ * 가입을 마친 사람이 처음 볼 화면. 보호자는 약관·첫 연결이 남았거나, 초대 링크로 받아 둔
+ * 코드가 있으면 온보딩(코드 수락)으로.
+ */
 export function homePathFor(role: "org" | "parent"): string {
-  if (role === "parent") return isOnboarded() ? "/parent" : "/parent/invite";
+  if (role === "parent") {
+    return isOnboarded() && !readInviteCode() ? "/parent" : "/parent/invite";
+  }
   return "/dashboard";
+}
+
+/* ── 초대 코드 ──────────────────────────────────────── */
+
+export function saveInviteCode(code: string): void {
+  try {
+    sessionStorage.setItem(INVITE_CODE_KEY, code);
+  } catch {
+    // 무시 — 로그인 뒤 코드를 직접 입력하면 된다.
+  }
+}
+
+export function readInviteCode(): string | null {
+  try {
+    return sessionStorage.getItem(INVITE_CODE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** 수락이 끝났거나(성공 · 이미 연결됨) 코드가 틀려 더 쓸 수 없을 때 지운다. */
+export function clearInviteCode(): void {
+  try {
+    sessionStorage.removeItem(INVITE_CODE_KEY);
+  } catch {
+    // 무시
+  }
 }
 
 /** mock 모드인지. 로그인 화면이 "둘러보기" 진입을 띄울지 판단하는 데만 쓴다. */
