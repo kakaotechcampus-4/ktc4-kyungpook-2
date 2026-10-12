@@ -29,8 +29,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
 // docs/api/api-spec.md O-10(명부)·O-11(아이 등록). 명부는 RosterPicker.tsx에 필요한
-// id/name/birthDate/status와 기관 관리번호(externalId)만 — institutions[]/care 등 풀 스펙과
-// 등록 시 보호자 초대 코드는 별도 작업.
+// id/name/birthDate/status와 기관 관리번호(externalId)만 — institutions[]/care 등 풀 스펙은 별도 작업.
+// 등록하면 보호자 초대 코드도 함께 발급한다(추가 발급·취소는 InvitationController).
 @RestController
 @RequestMapping("/api/v1/institutions/me/children")
 @RequiredArgsConstructor
@@ -63,7 +63,7 @@ public class ChildController {
     @Operation(summary = "아이 등록",
             description = "인증된 기관에 아이를 등록합니다. 등록 직후 상태는 pending_consent 입니다. "
                     + "birthDate 는 yyyy-MM-dd 문자열만 받습니다. externalId(기관 관리번호)는 선택이며 "
-                    + "같은 기관 안에서는 겹칠 수 없습니다.")
+                    + "같은 기관 안에서는 겹칠 수 없습니다. 보호자에게 보낼 초대 코드(10분, 일회용)를 함께 발급합니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "등록 성공"),
@@ -87,6 +87,11 @@ public class ChildController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
                     description = "같은 기관에서 이미 쓰고 있는 관리번호 (DUPLICATE_EXTERNAL_ID)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "503",
+                    description = "동시에 발급된 초대 코드와 겹침. 아이도 등록되지 않음. 다시 요청 (INVITE_CODE_ISSUE_FAILED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })

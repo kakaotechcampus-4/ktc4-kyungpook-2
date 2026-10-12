@@ -1,6 +1,8 @@
 package com.itda.backend.global.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -18,9 +20,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.api.ChildController;
+import com.itda.backend.api.GuardianController;
+import com.itda.backend.exception.InvitationErrorCode;
+import com.itda.backend.exception.InvitationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
+import com.itda.backend.service.ChildGuardianService;
 import com.itda.backend.service.ChildService;
+import com.itda.backend.service.InvitationService;
 
 /**
  * 잘못된 요청(4xx) 로그에 사용자가 보낸 값이 남지 않는지 실제 출력으로 확인한다.
@@ -28,7 +35,7 @@ import com.itda.backend.service.ChildService;
  * <p>검증 실패·본문 해석 실패의 예외 메시지에는 거부된 값이나 입력 일부가 들어갈 수 있다. 로그에는 예외 종류·상태
  * 코드·필드 이름만 남아야 한다. 로그가 아예 꺼져서 통과하는 일이 없도록 남아야 할 정보도 함께 확인한다.
  */
-@WebMvcTest(controllers = ChildController.class,
+@WebMvcTest(controllers = {ChildController.class, GuardianController.class},
         properties = "logging.level.com.itda.backend.global.exception=DEBUG")
 // MockMvc 기본 출력은 요청 본문을 콘솔에 찍어 로그 검사를 오염시키므로 끈다.
 @AutoConfigureMockMvc(addFilters = false, print = MockMvcPrint.NONE)
@@ -43,6 +50,12 @@ class GlobalExceptionHandlerLoggingTest {
 
     @MockitoBean
     private ChildService childService;
+
+    @MockitoBean
+    private InvitationService invitationService;
+
+    @MockitoBean
+    private ChildGuardianService childGuardianService;
 
     @MockitoBean
     private JwtProvider jwtProvider;
@@ -89,5 +102,20 @@ class GlobalExceptionHandlerLoggingTest {
 
         assertThat(output).doesNotContain(SECRET);
         assertThat(output).contains("NoResourceFoundException", "404");
+    }
+
+    /** 보호자가 입력한 초대 코드는 권한 그 자체다. 틀린 코드여도 로그에 남기지 않는다. */
+    @Test
+    void invalidInviteCodeLogsFixedMessageButNotCode(CapturedOutput output) throws Exception {
+        given(invitationService.accept(any(), any()))
+                .willThrow(new InvitationException(InvitationErrorCode.INVALID_INVITE_CODE));
+
+        mockMvc.perform(post("/api/v1/guardians/me/invitations/accept")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\": \"%s\"}".formatted(SECRET)))
+                .andExpect(status().isBadRequest());
+
+        assertThat(output).doesNotContain(SECRET);
+        assertThat(output).contains("초대 처리 실패");
     }
 }

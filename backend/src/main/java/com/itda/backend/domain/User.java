@@ -151,6 +151,10 @@ public class User {
         return this.role == UserRole.ORGANIZATION;
     }
 
+    public boolean isParent() {
+        return this.role == UserRole.PARENT;
+    }
+
     @PrePersist
     void onCreate() {
         this.createdAt = LocalDateTime.now();

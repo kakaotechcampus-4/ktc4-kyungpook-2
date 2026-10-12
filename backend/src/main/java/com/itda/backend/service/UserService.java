@@ -119,6 +119,18 @@ public class UserService {
         return user.getOrganizationId();
     }
 
+    /**
+     * 보호자 전용 API 가 쓸 보호자 식별자. 기관 담당자는 권한 문제로 막는다.
+     */
+    @Transactional(readOnly = true)
+    public Long getParentIdOf(String principal) {
+        User user = getByPrincipal(principal);
+        if (!user.isParent()) {
+            throw new UserException(UserErrorCode.PARENT_REQUIRED);
+        }
+        return user.getId();
+    }
+
     private User getByPrincipal(String principal) {
         // 탈퇴한 사용자의 출입증은 아직 만료 전이어도 인정하지 않는다.
         return userRepository.findByIdAndDeletedAtIsNull(parseUserId(principal))

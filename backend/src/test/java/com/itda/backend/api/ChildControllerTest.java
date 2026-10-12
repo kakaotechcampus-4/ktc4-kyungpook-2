@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import com.itda.backend.domain.ChildStatus;
 import com.itda.backend.dto.ChildRosterResponse;
 import com.itda.backend.dto.request.RegisterChildRequest;
+import com.itda.backend.dto.response.IssuedInvitationResponse;
 import com.itda.backend.dto.response.RegisteredChildResponse;
 import com.itda.backend.dto.response.RegisteredChildResponse.RegisteredChild;
 import com.itda.backend.exception.ChildErrorCode;
@@ -75,7 +77,8 @@ class ChildControllerTest {
 
     private void givenRegistered() {
         given(childService.register(any(), any())).willReturn(new RegisteredChildResponse(
-                new RegisteredChild("9", "김하늘", "2017-03-14", "2026-0031", ChildStatus.PENDING_CONSENT)));
+                new RegisteredChild("9", "김하늘", "2017-03-14", "2026-0031", ChildStatus.PENDING_CONSENT),
+                new IssuedInvitationResponse("3", "K7P3QX9M", OffsetDateTime.parse("2026-10-12T10:10:00+09:00"))));
     }
 
     @Test
@@ -91,7 +94,10 @@ class ChildControllerTest {
                 .andExpect(jsonPath("$.data.child.name").value("김하늘"))
                 .andExpect(jsonPath("$.data.child.birthDate").value("2017-03-14"))
                 .andExpect(jsonPath("$.data.child.externalId").value("2026-0031"))
-                .andExpect(jsonPath("$.data.child.status").value("pending_consent"));
+                .andExpect(jsonPath("$.data.child.status").value("pending_consent"))
+                .andExpect(jsonPath("$.data.invitation.id").value("3"))
+                .andExpect(jsonPath("$.data.invitation.code").value("K7P3QX9M"))
+                .andExpect(jsonPath("$.data.invitation.expiresAt").value("2026-10-12T10:10:00+09:00"));
     }
 
     @Test

@@ -79,6 +79,7 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.401").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.409").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.responses.503").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.requestBody").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.200").exists())
@@ -99,8 +100,11 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.birthDate.format").value("date"))
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.birthDateValid").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.birthDateValue").doesNotExist())
-				.andExpect(jsonPath("$.components.schemas.RegisteredChildResponse.properties.length()").value(1))
+				.andExpect(jsonPath("$.components.schemas.RegisteredChildResponse.properties.length()").value(2))
 				.andExpect(jsonPath("$.components.schemas.RegisteredChildResponse.properties.child").exists())
+				.andExpect(jsonPath("$.components.schemas.RegisteredChildResponse.properties.invitation").exists())
+				.andExpect(jsonPath("$.components.schemas.IssuedInvitationResponse.properties.length()").value(3))
+				.andExpect(jsonPath("$.components.schemas.IssuedInvitationResponse.properties.expiresAt.format").value("date-time"))
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.length()").value(5))
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.externalId").exists())
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.id").exists())
@@ -109,6 +113,53 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.status").exists())
 				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.length()").value(5))
 				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.externalId").exists());
+	}
+
+	/** 초대 코드·보호자 연결 API(O-15~O-19, G-04·G-05). 모두 쿠키 인증을 요구하고, 권한·소속 오류가 명세에 드러나야 한다. */
+	@Test
+	void invitationAndGuardianLinkApisAreDocumented() throws Exception {
+		String invitations = "$.paths['/api/v1/institutions/me/children/{childId}/invitations']";
+		String invitation = "$.paths['/api/v1/institutions/me/children/{childId}/invitations/{invitationId}']";
+		String guardians = "$.paths['/api/v1/institutions/me/children/{childId}/guardians']";
+		String guardian = "$.paths['/api/v1/institutions/me/children/{childId}/guardians/{guardianUserId}']";
+		String accept = "$.paths['/api/v1/guardians/me/invitations/accept']";
+		String myChild = "$.paths['/api/v1/guardians/me/children/{childId}']";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(invitations + ".post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(invitations + ".post.responses.201").exists())
+				.andExpect(jsonPath(invitations + ".post.responses.401").exists())
+				.andExpect(jsonPath(invitations + ".post.responses.403").exists())
+				.andExpect(jsonPath(invitations + ".post.responses.404.description").value(containsString("CHILD_NOT_FOUND")))
+				.andExpect(jsonPath(invitations + ".post.responses.503").exists())
+				.andExpect(jsonPath(invitations + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(invitations + ".get.responses.200").exists())
+				.andExpect(jsonPath(invitations + ".get.responses.404").exists())
+				.andExpect(jsonPath(invitation + ".delete.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(invitation + ".delete.responses.204").exists())
+				.andExpect(jsonPath(invitation + ".delete.responses.404.description").value(containsString("INVITATION_NOT_FOUND")))
+				.andExpect(jsonPath(guardians + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(guardians + ".get.responses.200").exists())
+				.andExpect(jsonPath(guardians + ".get.responses.404").exists())
+				.andExpect(jsonPath(guardian + ".delete.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(guardian + ".delete.responses.204").exists())
+				.andExpect(jsonPath(guardian + ".delete.responses.403.description")
+						.value(containsString("GUARDIAN_LINKED_BY_OTHER_ORGANIZATION")))
+				.andExpect(jsonPath(guardian + ".delete.responses.404.description").value(containsString("GUARDIAN_NOT_FOUND")))
+				.andExpect(jsonPath(accept + ".post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(accept + ".post.requestBody").exists())
+				.andExpect(jsonPath(accept + ".post.responses.200").exists())
+				.andExpect(jsonPath(accept + ".post.responses.400.description").value(containsString("INVALID_INVITE_CODE")))
+				.andExpect(jsonPath(accept + ".post.responses.401").exists())
+				.andExpect(jsonPath(accept + ".post.responses.403.description").value(containsString("PARENT_REQUIRED")))
+				.andExpect(jsonPath(accept + ".post.responses.409.description").value(containsString("LINK_ALREADY_EXISTS")))
+				.andExpect(jsonPath(myChild + ".delete.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(myChild + ".delete.responses.204").exists())
+				.andExpect(jsonPath(myChild + ".delete.responses.403").exists())
+				.andExpect(jsonPath("$.components.schemas.AcceptInvitationRequest.properties.length()").value(1))
+				.andExpect(jsonPath("$.components.schemas.AcceptedInvitationResponse.properties.childStatus").exists())
+				.andExpect(jsonPath("$.components.schemas.ChildGuardianResponse.properties.linkedByThisOrganization").exists());
 	}
 
 	@Test
