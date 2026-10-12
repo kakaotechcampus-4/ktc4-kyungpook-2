@@ -1,35 +1,34 @@
-import { useState, useTransition } from "react";
-import {
-  Link,
-  redirect,
-  useLoaderData,
-  useNavigate,
-  useRevalidator,
-  useSearchParams,
-} from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
-import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
-import { InstitutionChip } from "@/components/ui";
-import { getPendingLinks } from "@/lib/api";
-import { getSession, grantRole, isAuthMock, isOnboarded } from "@/lib/auth";
-import type { PendingLink } from "@/lib/types";
+import { ApiError, acceptInvitation } from "@/lib/api";
+import {
+  clearInviteCode,
+  getSession,
+  grantRole,
+  isAuthMock,
+  isOnboarded,
+  readInviteCode,
+  saveInviteCode,
+} from "@/lib/auth";
+import type { AcceptedInvitation } from "@/lib/types";
 
 /**
- * P-01 보호자 진입 — 카카오 로그인 · 약관 동의 · 연결 요청 확인.
+ * P-01 보호자 진입 — 카카오 로그인 · 약관 동의 · 초대 코드 수락 (docs/api/api-spec.md §5.1).
  *
- * 초대코드와 SMS 인증 단계는 없앴다. 기관이 아이를 등록하면 서버가 **연결 요청**을
- * 만들어 두고, 보호자는 카카오로 로그인해서 그 요청을 확인하는 방식이다
- * (docs/api/api-spec.md §5.1). 인증은 기관과 같은 카카오 하나로 통일했다.
+ * 기관이 아이를 등록하면 10분짜리 일회용 초대 코드가 나오고, 기관이 코드나 링크
+ * (`/parent/invite?code=K7P3QX9M`)를 카톡 등으로 보낸다. 링크의 코드는 sessionStorage 에
+ * 보관해서 카카오 로그인 · 회원가입을 다녀와도 남게 한다 (lib/auth.ts saveInviteCode).
  *
- * 한 화면에서 세 가지 진입을 다 받는다 —
- *  - 처음 오는 사람: intro → terms → links
+ *  - 처음 오는 사람: intro → terms → code → done
  *  - 카카오에서 막 돌아온 사람(`/oauth/success` 가 보낸다): terms 부터
- *  - 이미 쓰고 있는 사람("아이 추가"로 들어온다): links 만
- *  - P-02 에서 반려하거나 요청을 못 찾아 돌아온 사람(`?step=links`): links 만.
- *    로그인 전이면 목록을 볼 수 없으니 쿼리를 무시하고 intro 부터 시작한다.
+ *  - 이미 쓰고 있는 사람("아이 추가"나 새 링크로 들어온다): code 부터
+ *
+ * code 단계에 보관된 코드가 있으면 바로 수락한다. 링크가 안 열렸거나 sessionStorage 가
+ * 사라진 경우(카톡 인앱 브라우저 → 외부 브라우저)를 위해 직접 입력 칸도 둔다.
  */
-type Step = "intro" | "terms" | "links";
+type Step = "intro" | "terms" | "code" | "done";
 
 const TERMS = [
   { key: "tos", label: "서비스 이용약관 동의", required: true },
@@ -37,33 +36,124 @@ const TERMS = [
   { key: "notify", label: "새로운 소식 알림 받기", required: false },
 ] as const;
 
-export async function clientLoader() {
+export async function clientLoader({ request }: { request: Request }) {
+  const code = new URL(request.url).searchParams.get("code")?.trim();
+  if (code) saveInviteCode(code);
+
   const { loggedIn, signupCompleted, role } = await getSession();
-  // 카카오 로그인만 하고 가입을 안 끝낸 사람은 여기서 할 수 있는 게 없다 — 연결 요청 조회가 403 이다.
+  // 카카오 로그인만 하고 가입을 안 끝낸 사람은 가입부터 — 코드 수락이 403 이다.
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
-  // 로그인 전에는 대기 목록을 물어볼 수 없다 — 서버가 401 을 준다.
-  if (role !== "parent") {
-    return { loggedIn: false, onboarded: false, links: [] as PendingLink[] };
-  }
-  return { loggedIn: true, onboarded: isOnboarded(), links: await getPendingLinks() };
+  return {
+    role: loggedIn ? role : null,
+    onboarded: role === "parent" && isOnboarded(),
+    savedCode: readInviteCode(),
+  };
 }
 
 export default function ParentInvitePage() {
-  const { loggedIn, onboarded, links } = useLoaderData<typeof clientLoader>();
-  const [params] = useSearchParams();
+  const { role, onboarded, savedCode } = useLoaderData<typeof clientLoader>();
   const [step, setStep] = useState<Step>(() => {
-    if (!loggedIn) return "intro";
-    return onboarded || params.get("step") === "links" ? "links" : "terms";
+    if (role !== "parent") return "intro";
+    return onboarded ? "code" : "terms";
   });
   const [agreed, setAgreed] = useState<string[]>([]);
-  const [pending, start] = useTransition();
+  const [code, setCode] = useState(savedCode ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<AcceptedInvitation | "already_linked" | null>(null);
   const navigate = useNavigate();
   const revalidator = useRevalidator();
   const mock = isAuthMock();
+  const autoTried = useRef(false);
+
+  async function accept(input: string) {
+    if (!input.trim() || pending) return;
+    setError(null);
+    setPending(true);
+    try {
+      const accepted = await acceptInvitation(input.trim());
+      clearInviteCode();
+      setResult(accepted);
+      setStep("done");
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function handleError(err: unknown) {
+    if (!(err instanceof ApiError)) {
+      setError("네트워크 연결을 확인하고 다시 시도해 주세요.");
+      return;
+    }
+    switch (err.code) {
+      case "LINK_ALREADY_EXISTS":
+        // 이미 연결된 아이다 — 실패가 아니라 다음 단계로 넘어간다
+        clearInviteCode();
+        if (onboarded) {
+          navigate("/parent");
+          return;
+        }
+        setResult("already_linked");
+        setStep("done");
+        return;
+      case "INVALID_INVITE_CODE":
+        // 보관된 코드가 틀렸으면 다음 로그인 때 또 자동 수락하지 않게 지운다
+        clearInviteCode();
+        setError("코드가 올바르지 않거나 만료됐어요. 기관에 새 코드를 요청하세요.");
+        return;
+      case "INVALID_REQUEST":
+        setError("기관에서 받은 코드를 입력해 주세요.");
+        return;
+      case "PARENT_REQUIRED":
+        setError("기관 계정으로 로그인돼 있어요. 보호자 카카오 계정으로 다시 로그인해 주세요.");
+        return;
+      case "SIGNUP_NOT_COMPLETED":
+        navigate("/signup?role=parent", { replace: true });
+        return;
+    }
+    if (err.status === 401) {
+      // 로그인이 풀렸다. 코드는 보관돼 있으니 다시 로그인하면 이어서 수락한다.
+      setStep("intro");
+      revalidator.revalidate();
+      return;
+    }
+    if (err.status === 403) {
+      setError("보안 확인에 실패했습니다. 새로고침한 뒤 다시 시도해 주세요.");
+      return;
+    }
+    setError("잠시 후 다시 시도해 주세요.");
+  }
+
+  // 링크로 받아 둔 코드는 코드 단계에 들어오자마자 한 번만 수락한다
+  useEffect(() => {
+    if (step !== "code" || !savedCode || autoTried.current) return;
+    autoTried.current = true;
+    void accept(savedCode);
+  }, [step, savedCode]);
 
   const primary =
     "tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted";
+  const secondary =
+    "tap flex h-14 w-full items-center justify-center rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2 hover:bg-surface2";
   const requiredMissing = TERMS.some((t) => t.required && !agreed.includes(t.key));
+
+  if (role === "org") {
+    return (
+      <div className="flex flex-col gap-5">
+        <div className="rounded-2xl border border-block/40 bg-blocksoft px-4 py-3">
+          <p className="mb-1 text-[16px] font-bold text-block">기관 계정으로 로그인돼 있어요</p>
+          <p className="text-[15px] leading-7 text-ink2">
+            초대 코드는 보호자 계정으로만 쓸 수 있어요. 보호자에게 코드나 링크를 보내 주세요.
+          </p>
+        </div>
+        <Link to="/dashboard" className={secondary}>
+          기관 화면으로
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -87,8 +177,9 @@ export default function ParentInvitePage() {
               className="h-14 rounded-2xl"
             />
             <p className="text-[13px] leading-6 text-muted">
-              기관이 아이를 등록해 두면 로그인한 뒤 연결 요청으로 나타납니다. 따로 받아야 할
-              초대코드는 없습니다.
+              {savedCode
+                ? "기관에서 보낸 초대 코드를 받아 두었어요. 로그인하면 아이와 바로 연결됩니다."
+                : "로그인한 뒤 기관에서 받은 초대 코드를 입력하면 아이와 연결됩니다."}
             </p>
           </div>
 
@@ -109,7 +200,7 @@ export default function ParentInvitePage() {
                 onClick={() => {
                   grantRole("parent");
                   revalidator.revalidate();
-                  setStep("terms");
+                  setStep(isOnboarded() ? "code" : "terms");
                 }}
                 className="tap h-14 w-full rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2 hover:bg-surface2"
               >
@@ -123,7 +214,7 @@ export default function ParentInvitePage() {
       {step === "terms" ? (
         <>
           <div className="flex flex-col gap-4">
-            <StepProgress step={2} total={4} />
+            <StepProgress step={1} total={4} />
             <div>
               <h1 className="mb-1.5 text-[20px] font-extrabold tracking-tight">
                 서비스 이용에 동의해 주세요
@@ -137,7 +228,7 @@ export default function ParentInvitePage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              setStep("links");
+              setStep("code");
             }}
             className="flex flex-col gap-3"
           >
@@ -180,7 +271,7 @@ export default function ParentInvitePage() {
         </>
       ) : null}
 
-      {step === "links" ? (
+      {step === "code" ? (
         <div className="flex flex-col gap-4">
           {/*
             이미 쓰고 있는 보호자가 "아이 추가"로 들어온 경우 — 온보딩 진행 표시 대신
@@ -196,73 +287,128 @@ export default function ParentInvitePage() {
           )}
           <div>
             <h1 className="mb-1.5 text-[20px] font-extrabold tracking-tight">
-              연결 요청을 확인해 주세요
+              초대 코드를 입력해 주세요
             </h1>
             <p className="text-[15px] leading-7 text-ink2">
-              기관이 등록한 아이입니다. 눌러서 아이 정보와 공유 범위를 확인하고 동의 여부를
-              정해주세요.
+              기관에서 카톡 등으로 받은 8자리 코드입니다. 코드는 발급 후 10분 동안 한 번만 쓸 수
+              있어요.
             </p>
           </div>
 
-          {links.length === 0 ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line2 px-6 py-12 text-center">
-                <p className="text-[16px] font-bold text-ink2">아직 연결 요청이 없어요</p>
-                <p className="text-[14px] leading-6 text-muted">
-                  기관이 아이를 등록하면 여기에 나타납니다. 등록을 마쳤다고 들으셨다면 잠시 뒤
-                  다시 확인해 주세요.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => revalidator.revalidate()}
-                disabled={revalidator.state === "loading"}
-                className={primary}
-              >
-                {revalidator.state === "loading" ? "확인 중…" : "다시 확인"}
-              </button>
-              <p className="text-[13px] leading-6 text-muted">
-                기관에서 받은 기관 코드가 있다면 [설정 › 기관 권한]에서 직접 연결할 수 있습니다.
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void accept(code);
+            }}
+            className="flex flex-col gap-3"
+          >
+            <input
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value);
+                if (error) setError(null);
+              }}
+              maxLength={20}
+              autoCapitalize="characters"
+              autoComplete="one-time-code"
+              placeholder="K7P3-QX9M"
+              aria-label="초대 코드"
+              aria-invalid={error ? true : undefined}
+              className="tap h-14 rounded-2xl border border-line2 px-4 text-center font-mono text-[20px] tracking-[0.2em] uppercase outline-none focus:border-accent aria-invalid:border-block"
+            />
+            {error ? (
+              <p role="alert" className="rounded-2xl bg-blocksoft px-4 py-3 text-[14px] leading-6 text-block">
+                {error}
               </p>
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-2.5">
-              {links.map((link) => (
-                <li key={`${link.child.id}:${link.institution.id}`}>
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={() =>
-                      start(() =>
-                        navigate(
-                          `/parent/consent?childId=${encodeURIComponent(link.child.id)}&institutionId=${encodeURIComponent(link.institution.id)}`,
-                        ),
-                      )
-                    }
-                    className="tap flex w-full items-center gap-3 rounded-2xl border border-line px-4 py-3 text-left hover:border-accent"
-                  >
-                    <InstitutionIcon type={link.institution.type} />
-                    <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="text-[16px] font-bold">
-                        {link.child.name} · {link.child.birthDate.replaceAll("-", ".")}생
-                      </span>
-                      <InstitutionChip institution={link.institution} withName />
-                      {link.requestedAt ? (
-                        <span className="text-[13px] text-muted">
-                          {link.requestedAt.slice(0, 10).replaceAll("-", ".")} 요청
-                        </span>
-                      ) : null}
-                    </span>
-                    <span aria-hidden className="text-[18px] text-muted">
-                      ›
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+            ) : null}
+            <button disabled={!code.trim() || pending} className={primary}>
+              {pending ? "확인 중…" : "아이와 연결하기"}
+            </button>
+          </form>
+          <p className="text-[13px] leading-6 text-muted">
+            코드가 만료됐다면 기관에 새 코드를 요청하세요. 하이픈과 대소문자는 신경 쓰지 않아도
+            됩니다.
+          </p>
         </div>
       ) : null}
+
+      {step === "done" && result ? (
+        <AcceptedStep result={result} onboarded={onboarded} />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 수락 결과. 연결은 동의가 아니다 — 수락은 아동 상태를 바꾸지 않아서, 동의가 남았으면
+ * 동의 화면(P-02)으로 이어 준다.
+ */
+function AcceptedStep({
+  result,
+  onboarded,
+}: {
+  result: AcceptedInvitation | "already_linked";
+  onboarded: boolean;
+}) {
+  const primary =
+    "tap flex h-14 w-full items-center justify-center rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink";
+  const home = onboarded ? (
+    <Link
+      to="/parent"
+      className="tap flex h-14 w-full items-center justify-center rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2"
+    >
+      홈으로
+    </Link>
+  ) : null;
+
+  if (result === "already_linked") {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="rounded-2xl bg-accentsoft px-4 py-4">
+          <p className="mb-1 text-[16px] font-bold text-accentink">이미 연결된 아이예요</p>
+          <p className="text-[15px] leading-7 text-ink2">
+            이 코드의 아이는 이미 보호자님 계정과 연결돼 있어요. 코드는 쓰이지 않았습니다.
+          </p>
+        </div>
+        {home}
+      </div>
+    );
+  }
+
+  const needsConsent = result.childStatus === "pending_consent";
+  // 동의 미리보기(G-02)에 기관 id 가 필요한데 서버 응답에는 아직 없다 (BE 에 추가 요청함)
+  const consentPath = result.organizationId
+    ? `/parent/consent?childId=${encodeURIComponent(result.childId)}&institutionId=${encodeURIComponent(result.organizationId)}`
+    : null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {onboarded ? null : <StepProgress step={2} total={4} />}
+      <div className="rounded-2xl bg-accentsoft px-4 py-4">
+        <p className="mb-1 text-[16px] font-bold text-accentink">
+          {result.childName} 학생과 연결됐어요
+        </p>
+        <p className="text-[15px] leading-7 text-ink2">
+          <b className="font-semibold">{result.organizationName}</b>에서 보낸 코드로 연결했어요.
+          {needsConsent ? (
+            <>
+              {" "}
+              아직 <b className="font-semibold">공유 동의</b>가 남았어요. 동의해야 기관이 아이
+              기록을 올릴 수 있어요.
+            </>
+          ) : null}
+        </p>
+      </div>
+      {consentPath ? (
+        <Link to={consentPath} className={primary}>
+          {needsConsent ? "공유 동의하러 가기" : "공유 범위 확인하기"}
+        </Link>
+      ) : (
+        <p className="text-[14px] leading-6 text-muted">
+          공유 동의 화면은 준비 중이에요. 준비되면 이어서 안내해 드릴게요.
+        </p>
+      )}
+      {home}
     </div>
   );
 }
