@@ -72,7 +72,7 @@ class GlobalExceptionHandlerLoggingTest {
     void validationFailureLogsFieldAndCodeButNotRejectedValue(CapturedOutput output) throws Exception {
         String tooLongName = SECRET + "x".repeat(100);
 
-        postBadRequest("{\"name\": \"%s\", \"birthDate\": \"2017-03-14\"}".formatted(tooLongName));
+        postBadRequest("{\"name\": \"%s\", \"birthDate\": \"2017-03-14\", \"externalId\": \"A-1\"}".formatted(tooLongName));
 
         assertThat(output).doesNotContain(SECRET);
         assertThat(output).contains("MethodArgumentNotValidException", "400", "name:Size");
@@ -89,7 +89,7 @@ class GlobalExceptionHandlerLoggingTest {
 
     @Test
     void fieldTypeMismatchLogsFieldPathButNotInput(CapturedOutput output) throws Exception {
-        postBadRequest("{\"name\": {\"value\": \"%s\"}, \"birthDate\": \"2017-03-14\"}".formatted(SECRET));
+        postBadRequest("{\"name\": {\"value\": \"%s\"}, \"birthDate\": \"2017-03-14\", \"externalId\": \"A-1\"}".formatted(SECRET));
 
         assertThat(output).doesNotContain(SECRET);
         assertThat(output).contains("HttpMessageNotReadableException", "400", "path=name");

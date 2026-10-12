@@ -62,7 +62,7 @@ public class ChildController {
     @PostMapping
     @Operation(summary = "아이 등록",
             description = "인증된 기관에 아이를 등록합니다. 등록 직후 상태는 pending_consent 입니다. "
-                    + "birthDate 는 yyyy-MM-dd 문자열만 받습니다. externalId(기관 관리번호)는 선택이며 "
+                    + "birthDate 는 yyyy-MM-dd 문자열만 받습니다. externalId(기관 관리번호)는 필수이며 "
                     + "같은 기관 안에서는 겹칠 수 없습니다. 보호자에게 보낼 초대 코드(10분, 일회용)를 함께 발급합니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
@@ -70,7 +70,7 @@ public class ChildController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
                     description = "이름 누락·100자 초과, 생년월일 형식 오류·없는 날짜·미래 날짜, "
-                            + "관리번호 50자 초과 (INVALID_REQUEST)",
+                            + "관리번호 누락·공백·50자 초과 (INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(

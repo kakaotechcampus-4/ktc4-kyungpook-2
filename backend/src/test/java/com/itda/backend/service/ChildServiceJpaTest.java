@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -68,7 +69,7 @@ class ChildServiceJpaTest {
 
     @Test
     void 등록한_아동은_우리_기관_명부에_동의_대기로_나타난다() {
-        RegisteredChildResponse response = childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", null));
+        RegisteredChildResponse response = childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-1"));
         em.flush();
         em.clear();
 
@@ -82,18 +83,18 @@ class ChildServiceJpaTest {
 
     @Test
     void 등록한_아동은_다른_기관_명부에는_나타나지_않는다() {
-        childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", null));
+        childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-1"));
         em.flush();
         em.clear();
 
         assertThat(childRepository.findByOrganizationId(other.getId())).isEmpty();
     }
 
-    /** 중복 확인을 하지 않는다 — 같은 이름·생일이라도 새 아동으로 등록된다. */
+    /** 이름·생일은 중복 확인을 하지 않는다 — 관리번호만 다르면 같은 이름·생일이라도 새 아동으로 등록된다. */
     @Test
     void 같은_이름과_생일로_두_번_등록하면_두_명이_된다() {
-        childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", null));
-        childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", null));
+        childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-1"));
+        childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-2"));
         em.flush();
         em.clear();
 
@@ -103,8 +104,8 @@ class ChildServiceJpaTest {
     /** 다른 기관이 같은 아이를 등록해도 기존 아동을 찾지 않고 새 아동을 만든다. */
     @Test
     void 다른_기관이_같은_아이를_등록하면_별도_아동이_된다() {
-        RegisteredChildResponse first = childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", null));
-        RegisteredChildResponse second = childService.register(OTHER_USER, new RegisterChildRequest("김하늘", "2017-03-14", null));
+        RegisteredChildResponse first = childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-1"));
+        RegisteredChildResponse second = childService.register(OTHER_USER, new RegisterChildRequest("김하늘", "2017-03-14", "B-1"));
 
         assertThat(first.child().id()).isNotEqualTo(second.child().id());
     }
@@ -135,16 +136,6 @@ class ChildServiceJpaTest {
     }
 
     @Test
-    void 관리번호_없이는_여러_명을_등록할_수_있다() {
-        childService.register(OUR_USER, withExternalId(null));
-        childService.register(OUR_USER, withExternalId(null));
-        em.flush();
-        em.clear();
-
-        assertThat(childRepository.findByOrganizationId(ours.getId())).hasSize(2);
-    }
-
-    @Test
     void 명부에서_뺀_아이의_관리번호는_새_아이에게_다시_줄_수_있다() {
         RegisteredChildResponse first = childService.register(OUR_USER, withExternalId("2026-0031"));
         ChildOrganization link = childOrganizationRepository
@@ -159,10 +150,12 @@ class ChildServiceJpaTest {
         assertThat(second.child().id()).isNotEqualTo(first.child().id());
     }
 
+    /** 관리번호가 필수가 되기 전에 등록된 아이는 번호가 없다. 그런 아이도 명부에 null 로 나온다. */
     @Test
     void 명부_조회에_관리번호가_함께_나온다() {
         childService.register(OUR_USER, withExternalId("2026-0031"));
-        childService.register(OUR_USER, withExternalId(null));
+        Child legacy = em.persist(Child.of("임유진", LocalDate.of(2019, 11, 26)));
+        em.persist(ChildOrganization.of(legacy.getId(), ours.getId()));
         em.flush();
         em.clear();
 
