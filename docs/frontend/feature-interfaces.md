@@ -280,7 +280,7 @@ interface ParentActivity {
 | 함수 | 시그니처 | 사용 화면 |
 | --- | --- | --- |
 | `getChildren` | `() => Promise<Child[]>` | I-05, I-09, I-13 |
-| `getChild` | `(id: string) => Promise<Child \| undefined>` | I-09-1 |
+| `getChild` | `(id: string) => Promise<ChildListItem \| undefined>` — 상세 API 가 없어 명부가 실서버면 명부에서 찾음 | I-09-1 |
 | `getTimeline` | `(childId: string) => Promise<TimelineEntry[]>` | I-09-1 |
 | `getMatchingQueue` | `() => Promise<MatchingItem[]>` | I-03, I-06, 사이드바 배지 |
 | `resolveMatchingItem` | `(id: string, resolution: { action: "assign"; childId: string } \| { action: "not_ours" }) => Promise<{ ok: true }>` | I-06 |
@@ -291,8 +291,12 @@ interface ParentActivity {
 | `getInsights` | `() => Promise<Insight[]>` | I-03, I-10, I-11 |
 | `getInsight` | `(id: string) => Promise<Insight \| undefined>` | I-10 |
 | `decideGate2` | `(insightId: string, body: { decision: "approve" \| "hold"; target_institution_ids: string[] }) => Promise<{ gate2_status: Gate2Status }>` | I-11 |
-| `registerChild` | `({ name, birthDate }) => Promise<{ child: Child; inviteCode: string }>` — BE O-11은 구현됨. 단, 응답에 `inviteCode`가 아직 없고(초대 코드는 후속 작업) FE 연동도 후속 작업. BE는 `externalId`(기관 관리번호, 선택·50자·같은 기관 중복 시 409 `DUPLICATE_EXTERNAL_ID`)도 받음 — 지금 화면의 "기관 내부 아동 ID" 칸은 값을 보내지 않으므로 실연동 때 연결 필요 | I-04 |
-| `generateInviteCode` | `() => string` — **클라이언트 임시 구현. 서버 발급으로 대체 예정** | I-04 |
+| `registerChild` | `({ name, birthDate, externalId }) => Promise<{ child: RegisteredChild; invitation: IssuedInvitation }>` — O-11. 등록과 함께 서버가 첫 초대 코드를 발급. 503 `INVITE_CODE_ISSUE_FAILED`면 아이도 등록되지 않음 | I-04 |
+| `issueInvitation` | `(childId: string) => Promise<IssuedInvitation>` — O-15. 이전 코드는 그대로 살아 있음 | I-04, I-09-1 |
+| `getLiveInvitations` | `(childId: string) => Promise<LiveInvitation[]>` — O-16. 만료 · 사용 · 취소된 코드는 빠짐 | I-09-1 |
+| `cancelInvitation` | `(childId: string, invitationId: string) => Promise<void>` — O-17 | I-09-1 |
+| `getChildGuardians` | `(childId: string) => Promise<ChildGuardian[]>` — O-18 | I-09-1 |
+| `unlinkGuardian` | `(childId: string, guardianUserId: string) => Promise<void>` — O-19. 모든 기관에서 끊김 | I-09-1 |
 | `getInbox` | `() => Promise<InboxItem[]>` | I-12, 사이드바 배지 |
 | `askChat` | `(childId: string, question: string) => Promise<ChatTurn>` | I-13 |
 | `getActivity` | `() => Promise<ActivityLog[]>` | I-14 |
@@ -301,6 +305,8 @@ interface ParentActivity {
 
 | 함수 | 시그니처 | 사용 화면 |
 | --- | --- | --- |
+| `acceptInvitation` | `(code: string) => Promise<AcceptedInvitation>` — G-04. 400 `INVALID_INVITE_CODE` · 409 `LINK_ALREADY_EXISTS` · 403 `PARENT_REQUIRED` 는 `ApiError` 로 | P-01 |
+| `unlinkChild` | `(childId: string) => Promise<void>` — G-05. `BE_READY.guardianUnlink` 가 꺼져 있어 지금은 mock | P-02, P-04 |
 | `getParentChildren` | `() => Promise<Child[]>` | 전 화면 (아이 전환) |
 | `getParentHome` | `(childId?: string) => Promise<{ child: Child; activity: ParentActivity[] }>` | P-03, P-04, P-06, P-07 |
 | `getTodaySummary` | `(childId: string) => Promise<string \| null>` | P-03, P-07 |
