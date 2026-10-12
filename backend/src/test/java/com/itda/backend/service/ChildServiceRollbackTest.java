@@ -53,6 +53,9 @@ class ChildServiceRollbackTest {
     @MockitoBean
     private UserService userService;
 
+    @MockitoBean
+    private InvitationService invitationService;
+
     @AfterEach
     void cleanUp() {
         childRepository.deleteAll(childrenNamedForThisTest());

@@ -1,5 +1,6 @@
 package com.itda.backend.api;
 
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -102,6 +103,9 @@ class RegisterChildApiTest {
                         .andExpect(jsonPath("$.data.child.id").isString())
                         .andExpect(jsonPath("$.data.child.externalId").value("2026-0031"))
                         .andExpect(jsonPath("$.data.child.status").value("pending_consent"))
+                        .andExpect(jsonPath("$.data.invitation.id").isString())
+                        .andExpect(jsonPath("$.data.invitation.code").value(matchesPattern("[A-Z2-9]{8}")))
+                        .andExpect(jsonPath("$.data.invitation.expiresAt").isString())
                         .andReturn().getResponse().getContentAsString(),
                 "$.data.child.id");
 

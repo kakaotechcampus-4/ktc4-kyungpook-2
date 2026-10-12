@@ -29,6 +29,7 @@ public class ChildService {
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final UserService userService;
+    private final InvitationService invitationService;
 
     @Transactional(readOnly = true)
     public List<ChildRosterResponse> getRoster(String userId) {
@@ -67,6 +68,8 @@ public class ChildService {
      * 조회를 함께 통과한 경우는 유니크 제약이 막는다 — 그 예외도 500 이 아니라 같은 409 로 바꾼다.
      * saveAndFlush 로 즉시 INSERT 해야 제약 위반이 여기서 드러난다. 어느 쪽이든 예외가 밖으로 나가므로
      * 먼저 저장한 아동도 함께 롤백된다.
+     *
+     * <p>보호자에게 보낼 초대 코드도 같은 트랜잭션에서 발급한다. 코드를 못 만들면 아이 등록도 남지 않는다.
      */
     @Transactional
     public RegisteredChildResponse register(String userId, RegisterChildRequest request) {
@@ -84,12 +87,14 @@ public class ChildService {
             }
             throw new ChildException(ChildErrorCode.DUPLICATE_EXTERNAL_ID);
         }
-        return new RegisteredChildResponse(new RegisteredChild(
-                String.valueOf(child.getId()),
-                child.getName(),
-                child.getBirthdate().toString(),
-                externalId,
-                child.getStatus()));
+        return new RegisteredChildResponse(
+                new RegisteredChild(
+                        String.valueOf(child.getId()),
+                        child.getName(),
+                        child.getBirthdate().toString(),
+                        externalId,
+                        child.getStatus()),
+                invitationService.issue(organizationId, child.getId()));
     }
 
     private boolean isDuplicateExternalId(DataIntegrityViolationException exception) {

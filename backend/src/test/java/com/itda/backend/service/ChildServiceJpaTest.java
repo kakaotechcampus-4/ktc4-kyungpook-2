@@ -52,6 +52,9 @@ class ChildServiceJpaTest {
     @MockitoBean
     private UserService userService;
 
+    @MockitoBean
+    private InvitationService invitationService;
+
     private Organization ours;
     private Organization other;
 

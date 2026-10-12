@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.hibernate.exception.ConstraintViolationException;
@@ -26,6 +27,7 @@ import com.itda.backend.domain.ChildOrganization;
 import com.itda.backend.domain.ChildStatus;
 import com.itda.backend.dto.ChildRosterResponse;
 import com.itda.backend.dto.request.RegisterChildRequest;
+import com.itda.backend.dto.response.IssuedInvitationResponse;
 import com.itda.backend.dto.response.RegisteredChildResponse;
 import com.itda.backend.exception.ChildErrorCode;
 import com.itda.backend.exception.ChildException;
@@ -46,12 +48,14 @@ class ChildServiceTest {
     private ChildOrganizationRepository childOrganizationRepository;
     @Mock
     private UserService userService;
+    @Mock
+    private InvitationService invitationService;
 
     private ChildService childService;
 
     @BeforeEach
     void setUp() {
-        childService = new ChildService(childRepository, childOrganizationRepository, userService);
+        childService = new ChildService(childRepository, childOrganizationRepository, userService, invitationService);
     }
 
     private static Child childWithId(String name, LocalDate birthdate, Long id) {
@@ -97,6 +101,9 @@ class ChildServiceTest {
     void register_savesChildAndLinksItToMyOrganizationWithExternalId() {
         given(userService.getOrganizationIdOf(USER_ID)).willReturn(ORG_ID);
         givenChildSavedWithId(9L);
+        IssuedInvitationResponse invitation = new IssuedInvitationResponse(
+                "3", "K7P3QX9M", OffsetDateTime.parse("2026-10-12T10:10:00+09:00"));
+        given(invitationService.issue(ORG_ID, 9L)).willReturn(invitation);
 
         RegisteredChildResponse response = childService.register(
                 USER_ID, new RegisterChildRequest("김하늘", "2017-03-14", "2026-0031"));
@@ -117,6 +124,7 @@ class ChildServiceTest {
         assertThat(response.child().birthDate()).isEqualTo("2017-03-14");
         assertThat(response.child().externalId()).isEqualTo("2026-0031");
         assertThat(response.child().status()).isEqualTo(ChildStatus.PENDING_CONSENT);
+        assertThat(response.invitation()).isEqualTo(invitation);
     }
 
     @Test
