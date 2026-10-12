@@ -510,12 +510,12 @@ export async function resolveBlockedItem(
 export async function registerChild(input: {
   name: string;
   birthDate: string;
-  /** 기관 관리번호. 비우면 서버가 "번호 없음"(null)으로 저장한다 */
-  externalId?: string;
+  /** 기관 관리번호. 필수다 */
+  externalId: string;
 }): Promise<{ child: RegisteredChild; inviteCode?: string }> {
   if (mockFor("childRegister")) {
-    const externalId = input.externalId?.trim() || null;
-    if (externalId && mock.CHILDREN.some((c) => c.externalId === externalId)) {
+    const externalId = input.externalId.trim();
+    if (mock.CHILDREN.some((c) => c.externalId === externalId)) {
       throw new ApiError(409, "DUPLICATE_EXTERNAL_ID");
     }
     const child: Child = {

@@ -23,14 +23,14 @@ export default function ChildRegisterPage() {
 
   async function handleRegister(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!name.trim() || !birthDate) return;
+    if (!name.trim() || !birthDate || !externalId.trim()) return;
     setErrors({});
     setPending(true);
     try {
       await registerChild({
         name: name.trim(),
         birthDate,
-        externalId: externalId.trim() || undefined,
+        externalId: externalId.trim(),
       });
       // 목록이 새로 불러와지면서 방금 등록한 아이가 "보호자 동의 대기"로 보인다
       navigate("/children");
@@ -106,11 +106,9 @@ export default function ChildRegisterPage() {
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[15px] font-semibold">
-                기관 내부 아동 ID
-                <span className="ml-1 font-normal text-muted">(선택)</span>
-              </span>
+              <span className="text-[15px] font-semibold">기관 내부 아동 ID</span>
               <input
+                required
                 value={externalId}
                 onChange={(e) => {
                   setExternalId(e.target.value);
