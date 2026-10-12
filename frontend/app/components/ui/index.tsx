@@ -194,7 +194,8 @@ export function QueueCard({
   description,
 }: {
   title: string;
-  count: number;
+  /** null 이면 백엔드가 아직 없는 기능 — 숫자 대신 "준비 중"을 보인다 */
+  count: number | null;
   href: string;
   tone?: "neutral" | "human" | "block";
   description?: string;
@@ -213,10 +214,14 @@ export function QueueCard({
       className={`tap flex flex-col justify-between gap-2 rounded border p-4 transition-colors hover:border-accent ${toneClass}`}
     >
       <span className="text-[15px] font-semibold text-ink">{title}</span>
-      <span className={`text-3xl font-bold tabular-nums ${countClass}`}>
-        {count}
-        <span className="ml-1 text-[15px] font-medium text-muted">건</span>
-      </span>
+      {count === null ? (
+        <span className="text-[17px] font-semibold text-muted">준비 중</span>
+      ) : (
+        <span className={`text-3xl font-bold tabular-nums ${countClass}`}>
+          {count}
+          <span className="ml-1 text-[15px] font-medium text-muted">건</span>
+        </span>
+      )}
       {description ? <span className="text-[13px] text-muted">{description}</span> : null}
     </Link>
   );

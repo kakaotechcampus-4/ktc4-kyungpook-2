@@ -129,7 +129,8 @@ interface MatchingItem {      // 확인 필요 큐 한 건
   id: string;
   // null · 없음 = 서버(#35)가 아직 못 채우는 값. 화면은 그 칸을 숨긴다
   record: { id: string; fileName: string; type?: RawRecord["type"] | null;
-            capturedAt: string | null; preview: string | null };
+            capturedAt: string | null; preview: string | null;
+            fullContent: string | null };   // 전체 본문(#112). 화면은 이걸 펼쳐 두고, evidence 도 이 기준
   status: "review" | "multi" | "unmatched" | "failed";
   // AI 가 지목한 아이. review 의 추천 아이는 여기로만 온다 — 이름은 명부에서 찾아 붙인다
   matchedChildId: string | null;
@@ -290,7 +291,7 @@ interface ParentActivity {
 | `getInsights` | `() => Promise<Insight[]>` | I-03, I-10, I-11 |
 | `getInsight` | `(id: string) => Promise<Insight \| undefined>` | I-10 |
 | `decideGate2` | `(insightId: string, body: { decision: "approve" \| "hold"; target_institution_ids: string[] }) => Promise<{ gate2_status: Gate2Status }>` | I-11 |
-| `registerChild` | `({ name, birthDate }) => Promise<{ child: Child; inviteCode: string }>` | I-04 |
+| `registerChild` | `({ name, birthDate }) => Promise<{ child: Child; inviteCode: string }>` — BE O-11은 구현됨. 단, 응답에 `inviteCode`가 아직 없고(초대 코드는 후속 작업) FE 연동도 후속 작업. BE는 `externalId`(기관 관리번호, 선택·50자·같은 기관 중복 시 409 `DUPLICATE_EXTERNAL_ID`)도 받음 — 지금 화면의 "기관 내부 아동 ID" 칸은 값을 보내지 않으므로 실연동 때 연결 필요 | I-04 |
 | `generateInviteCode` | `() => string` — **클라이언트 임시 구현. 서버 발급으로 대체 예정** | I-04 |
 | `getInbox` | `() => Promise<InboxItem[]>` | I-12, 사이드바 배지 |
 | `askChat` | `(childId: string, question: string) => Promise<ChatTurn>` | I-13 |

@@ -53,7 +53,7 @@ class MatchingQueueControllerTest {
     void getQueue_excludesAutoStatus() throws Exception {
         var review = new MatchingQueueItemResponse(
                 "1", 1L, null, MatchingStatus.REVIEW, new BigDecimal("0.4"), null, null,
-                new RecordResponse("3", "0821_관찰일지.docx", "점심시간에…", "2026-08-21"),
+                new RecordResponse("3", "0821_관찰일지.docx", "점심시간에…", "2026-08-21", "점심시간에 식사를 잘함"),
                 List.of(),
                 MAPPER.readTree("[{\"start\":0,\"end\":3}]"));
         given(matchingResultService.getQueue(any())).willReturn(List.of(review));
@@ -73,7 +73,7 @@ class MatchingQueueControllerTest {
     void resolveAssign_updatesMatchedChild() throws Exception {
         var resolved = new MatchingQueueItemResponse(
                 "1", 1L, "2", MatchingStatus.AUTO, new BigDecimal("0.4"), null, null,
-                new RecordResponse("3", "0821_관찰일지.docx", "점심시간에…", "2026-08-21"),
+                new RecordResponse("3", "0821_관찰일지.docx", "점심시간에…", "2026-08-21", "점심시간에 식사를 잘함"),
                 List.of(), null);
         given(matchingResultService.resolve(eq(1L), eq("assign"), eq(2L), any(), any())).willReturn(resolved);
 

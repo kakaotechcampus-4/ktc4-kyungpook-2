@@ -267,18 +267,28 @@ function MatchingCard({
   const pickingFromRoster =
     item.status === "unmatched" || item.status === "failed" || suggestionMissing || pickingOther;
 
+  /*
+   * 아이를 고르는 화면이라 60자 preview 가 아니라 전체 본문을 처음부터 펼쳐 둔다 —
+   * 뒤쪽에 나오는 아이 이름이나 근거를 놓치면 잘못 확정한다 (멘토 리뷰, #112).
+   * evidence 좌표는 fullContent 기준이라, 본문이 없어 preview 로 대신할 땐 강조하지 않는다.
+   */
+  const evidence = item.record.fullContent != null ? item.evidence : [];
+
   return (
     <Card>
       <div className="mb-5 rounded bg-surface2 p-4">
         <p className="mb-1.5 text-[13px] font-semibold tracking-wider text-muted uppercase">
-          기록 미리보기
+          기록 본문
         </p>
         <p className="mb-2 text-[15px] font-semibold">{item.record.fileName}</p>
-        <div className="mb-3 text-[16px]">
+        <div className="mb-3 text-[16px] whitespace-pre-wrap">
           {/* AI 가 판정 근거로 인용한 구간을 그대로 표시한다 */}
-          <EvidenceText content={item.record.preview ?? ""} spans={item.evidence} />
+          <EvidenceText
+            content={item.record.fullContent ?? item.record.preview ?? ""}
+            spans={evidence}
+          />
         </div>
-        {item.evidence.length > 0 ? (
+        {evidence.length > 0 ? (
           <p className="mb-3 text-[13px] text-muted">
             <span className="mr-1 inline-block size-2.5 rounded-sm bg-accentsoft align-middle" />
             표시된 부분이 AI 가 판단 근거로 삼은 부분입니다

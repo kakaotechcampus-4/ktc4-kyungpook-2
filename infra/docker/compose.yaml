@@ -31,6 +31,9 @@ services:
       db:
         condition: service_healthy
     environment:
+      # #113: RawRecord.createdAt 등은 LocalDateTime.now()로 저장돼(타임존 정보 없음)
+      # 컨테이너 기본 타임존을 그대로 따른다. 서비스가 한국 시간만 다루므로 명시적으로 고정한다.
+      TZ: Asia/Seoul
       SPRING_PROFILES_ACTIVE: docker
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       DB_USERNAME: ${POSTGRES_USER}

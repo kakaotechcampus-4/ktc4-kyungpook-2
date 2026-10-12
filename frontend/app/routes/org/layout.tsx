@@ -7,6 +7,7 @@ import {
   getInbox,
   getInsights,
   getMatchingQueue,
+  loadIfReady,
 } from "@/lib/api";
 import { MY_INSTITUTION } from "@/lib/mock/data";
 
@@ -25,23 +26,25 @@ export async function clientLoader() {
   if (loggedIn && !signupCompleted) return redirect("/signup?role=org");
   if (role !== "org") return redirect("/login");
 
+  // 백엔드에 아직 없는 기능은 null → 배지를 띄우지 않는다 (loadIfReady 참고)
   const [matching, blocked, gate1, insights, inbox] = await Promise.all([
-    getMatchingQueue(),
-    getBlockedQueue(),
-    getGate1Queue(),
-    getInsights(),
-    getInbox(),
+    loadIfReady("matchingQueue", getMatchingQueue),
+    loadIfReady("blockedQueue", getBlockedQueue),
+    loadIfReady("gate1", getGate1Queue),
+    loadIfReady("insights", getInsights),
+    loadIfReady("inbox", getInbox),
   ]);
 
   return {
     counts: {
-      matching: matching.length,
-      reinput: blocked.length,
-      gate1: gate1.filter((s) => s.gate1Status === "pending").length,
-      gate2: insights.filter(
-        (i) => i.primarySource.id === MY_INSTITUTION.id && i.gate2Status === "pending",
-      ).length,
-      inbox: inbox.filter((i) => !i.read).length,
+      matching: matching?.length ?? null,
+      reinput: blocked?.length ?? null,
+      gate1: gate1?.filter((s) => s.gate1Status === "pending").length ?? null,
+      gate2:
+        insights?.filter(
+          (i) => i.primarySource.id === MY_INSTITUTION.id && i.gate2Status === "pending",
+        ).length ?? null,
+      inbox: inbox?.filter((i) => !i.read).length ?? null,
     },
   };
 }

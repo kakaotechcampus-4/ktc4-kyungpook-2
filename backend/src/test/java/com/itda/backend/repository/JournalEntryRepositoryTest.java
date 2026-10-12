@@ -112,4 +112,50 @@ class JournalEntryRepositoryTest {
         assertThat(journalEntryRepository.findByStatusAndDeletedAtIsNull(JournalEntryStatus.MATCHING))
                 .extracting(JournalEntry::getId).containsExactly(stuck.getId());
     }
+
+    private JournalEntry saveMatched(Long rawRecordId) {
+        JournalEntry entry = save(rawRecordId);
+        entry.startMatching();
+        entry.confirmMatch(8L);
+        return journalEntryRepository.saveAndFlush(entry);
+    }
+
+    @Test
+    void 검증_대상은_매칭이_확정된_일지를_id_순으로_가져온다() {
+        JournalEntry first = saveMatched(3L);
+        JournalEntry second = saveMatched(3L);
+        save(3L); // 아직 매칭 전
+        JournalEntry deleted = saveMatched(3L);
+        deleted.delete();
+        JournalEntry alreadyValidating = saveMatched(3L);
+        alreadyValidating.startValidating();
+        journalEntryRepository.saveAllAndFlush(List.of(deleted, alreadyValidating));
+        entityManager.clear();
+
+        List<JournalEntry> targets = journalEntryRepository.findValidationTargets(JournalEntryStatus.MATCHED, Limit.of(10));
+
+        assertThat(targets).extracting(JournalEntry::getId).containsExactly(first.getId(), second.getId());
+    }
+
+    @Test
+    void 검증_대상은_한_번에_정해진_개수만_가져온다() {
+        saveMatched(3L);
+        saveMatched(3L);
+        saveMatched(3L);
+
+        assertThat(journalEntryRepository.findValidationTargets(JournalEntryStatus.MATCHED, Limit.of(2))).hasSize(2);
+    }
+
+    @Test
+    void 아동이_비어_있는_일지는_검증_대상에서_뺀다() {
+        JournalEntry withoutChild = saveMatched(3L);
+        // 정상 경로로는 생기지 않는다. 판정 대상 없이 보내면 AI 가 REVIEW(대상불명확)로 흘려보내므로 막아 둔다.
+        entityManager.getEntityManager()
+                .createNativeQuery("update journal_entry set child_id = null where id = :id")
+                .setParameter("id", withoutChild.getId())
+                .executeUpdate();
+        entityManager.clear();
+
+        assertThat(journalEntryRepository.findValidationTargets(JournalEntryStatus.MATCHED, Limit.of(10))).isEmpty();
+    }
 }

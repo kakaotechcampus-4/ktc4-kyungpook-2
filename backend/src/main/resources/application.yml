@@ -3,6 +3,12 @@ spring:
     name: backend
   config:
     import: optional:application-secret.yml
+  task:
+    scheduling:
+      pool:
+        # 에이전트 워커(매칭·검증·요약) 하나에 스레드 하나. 기본값 1이면 워커들이 번갈아 돌아 단계별 속도가 나뉜다.
+        # 워커 수만큼 AI 를 동시에 부르므로 AI 동시 호출 한도(8)를 넘지 않게 둔다.
+        size: 4
   servlet:
     multipart:
       max-file-size: 20MB
@@ -54,19 +60,39 @@ app:
     failure-redirect: ${AUTH_FAILURE_REDIRECT:http://localhost:3000/login}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
-  matching:
-    # 매칭 에이전트 주소. compose 에서는 서비스 이름으로 http://ai:8000 을 넘긴다.
-    ai-base-url: ${AI_BASE_URL:http://localhost:8000}
+  ai:
+    # AI 서버 주소 (매칭·검증 에이전트 공통). compose 에서는 서비스 이름으로 http://ai:8000 을 넘긴다.
+    base-url: ${AI_BASE_URL:http://localhost:8000}
     connect-timeout: 3s
-    # AI 가 LLM 응답을 60초(AI/matching/config.py LUNA_TIMEOUT)까지 기다린다. 이보다 짧으면
-    # 느린 정상 응답을 BE 가 먼저 끊고 재시도해서 LLM 을 여러 번 부르게 된다.
-    read-timeout: 65s
+    # AI 가 LLM 응답을 60초(AI/matching/config.py, AI/validation/config.py LUNA_TIMEOUT)까지 기다린다.
+    # 이보다 짧으면 느린 정상 응답을 BE 가 먼저 끊고 재시도해서 LLM 을 여러 번 부르게 된다. AI 처리 시간까지 여유를 둔다.
+    read-timeout: 70s
     # 재시도 전에 쉬는 시간. 개수가 재시도 횟수다 (최초 1회 + 2회).
     retry-backoffs: 2s,5s
+  matching:
     worker:
       enabled: ${MATCHING_WORKER_ENABLED:true}
       delay-ms: 5000
       batch-size: 10
+  validation:
+    worker:
+      enabled: ${VALIDATION_WORKER_ENABLED:true}
+      delay-ms: 5000
+      batch-size: 10
+  summary:
+    worker:
+      enabled: ${SUMMARY_WORKER_ENABLED:true}
+      delay-ms: 5000
+      # 요약은 일지가 아니라 묶음(아동·날짜·기관) 단위로 집는다.
+      batch-size: 10
+    # entry_date 다음 날 이 시각이 지나야 그 날짜를 요약한다 (AI/summary/CRITERIA.md §5). 임의값이라 설정으로 둔다.
+    cutoff-time: "03:00"
+    # 묶음의 마지막 일지가 들어온 뒤 이만큼 더 기다린다. 마감이 지난 날짜의 일지를 연달아 올리는 경우를 한 번에 묶는다.
+    debounce: 30m
+    zone: Asia/Seoul
+    # 요약은 AI 가 LLM 을 90초(AI/summary/config.py LUNA_TIMEOUT)까지 기다린다. app.ai.read-timeout(70초)으로는
+    # 느린 정상 응답을 먼저 끊고 다시 불러서 LLM 을 여러 번 부르게 된다.
+    read-timeout: 120s
 
 jwt:
   # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.

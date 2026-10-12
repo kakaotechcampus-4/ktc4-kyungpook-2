@@ -139,8 +139,11 @@ class DeployScriptTests(unittest.TestCase):
                     self.send_error(404)
                 elif new and state["mode"] == "health_failure":
                     self.reply(503, {"status": "starting"})
+                elif new and state["mode"] == "luna_off":
+                    # 실제 AI 서버는 Luna 설정이 없으면 /health 를 503 으로 준다
+                    self.reply(503, {"status": "unavailable", "luna_configured": False})
                 else:
-                    self.reply(200, {"status": "ok", "luna_configured": not (new and state["mode"] == "luna_off")})
+                    self.reply(200, {"status": "ok", "luna_configured": True})
 
             def do_POST(self):
                 self.rfile.read(int(self.headers["Content-Length"]))

@@ -5,6 +5,8 @@
 코드 여기저기에 흩어져 있으면 그때 바꿀 수가 없다.
 """
 
+from common.luna import CHAT_PATH
+
 # ── status 결정 임계값 (전부 잠정. 채점 스크립트로 확정한다) ──────────
 
 #: 이 이상이면 자동 확정
@@ -181,14 +183,14 @@ UNMATCHED_WHEN_HINT_NOT_IN_ROSTER = True
 
 # ── Luna (OpenAI 호환) ──────────────────────────────────────────
 
-#: LUNA_API_URL 은 엔드포인트 base 만 담는다. 실제 경로는 여기서 붙인다.
-LUNA_CHAT_PATH = "/v1/chat/completions"
 
-#: 이 엔드포인트가 서빙하는 모델
-LUNA_MODEL = "gpt-5.6-luna"
 
 #: temperature 는 이 모델에서 기본값(1)만 허용된다.
 #: 0 을 보내면 400 이 난다. 판정의 흔들림은 프롬프트와 τ 로 잡는다.
 
-#: 한 번 호출에 기다리는 시간
+#: 접속 경로와 모델은 네 에이전트가 같이 쓴다 (common/luna.py).
+#: 모델은 .env 의 LUNA_MODEL 로 바꾼다.
+LUNA_CHAT_PATH = CHAT_PATH
+
+#: 호출 제한시간만 에이전트마다 다르다.
 LUNA_TIMEOUT = 60.0

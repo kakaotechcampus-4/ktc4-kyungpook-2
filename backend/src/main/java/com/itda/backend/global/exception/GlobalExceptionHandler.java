@@ -1,8 +1,11 @@
 package com.itda.backend.global.exception;
 
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.itda.backend.exception.AuthException;
+import com.itda.backend.exception.ChildException;
 import com.itda.backend.exception.OrganizationException;
 import com.itda.backend.exception.UserException;
+import java.util.stream.Collectors;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
@@ -11,6 +14,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -62,6 +68,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(ErrorResponse.of(e.getErrorCode()));
     }
 
+    @ExceptionHandler(ChildException.class)
+    public ResponseEntity<ErrorResponse> handleChildException(ChildException e) {
+        log.warn("아동 처리 실패: {}", e.getMessage());
+        return ResponseEntity.status(e.getErrorCode().getStatus())
+                .body(ErrorResponse.of(e.getErrorCode()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception e) {
         log.error("예상하지 못한 서버 오류", e);
@@ -89,8 +102,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
         if (statusCode.is5xxServerError()) {
             log.error("요청 처리 중 서버 오류", ex);
-        } else {
-            log.debug("잘못된 요청: {}", ex.getMessage());
+        } else if (log.isDebugEnabled()) {
+            log.debug("잘못된 요청: status={} exception={}{}", statusCode.value(), ex.getClass().getSimpleName(), safeDetail(ex));
         }
 
         return ResponseEntity.status(statusCode)
@@ -111,5 +124,35 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return statusCode.is5xxServerError()
                 ? CommonErrorCode.INTERNAL_SERVER_ERROR
                 : CommonErrorCode.INVALID_REQUEST;
+    }
+
+    /**
+     * 4xx 로그에 남겨도 되는 정보만 꺼낸다. 예외 메시지는 쓰지 않는다 — 검증 실패에는 거부된 값이,
+     * 본문 해석 실패·경로 변수 변환 실패·없는 경로에는 입력 일부가 들어 있어 개인정보가 로그에 남는다.
+     * 필드 이름과 위반 코드, 원인 예외 종류, JSON 필드 경로처럼 값이 없는 정보만 남긴다.
+     *
+     * <p>5xx 는 스택트레이스를 그대로 남기므로 원인 예외에 담긴 입력값까지 막아 주지는 않는다.
+     */
+    private static String safeDetail(Exception ex) {
+        if (ex instanceof MethodArgumentNotValidException invalid) {
+            String fields = invalid.getBindingResult().getAllErrors().stream()
+                    .map(error -> (error instanceof FieldError fieldError ? fieldError.getField() : error.getObjectName())
+                            + ":" + error.getCode())
+                    .collect(Collectors.joining(","));
+            return " fields=" + fields;
+        }
+        if (ex instanceof HttpMessageNotReadableException unreadable && unreadable.getCause() != null) {
+            Throwable cause = unreadable.getCause();
+            String detail = " cause=" + cause.getClass().getSimpleName();
+            if (cause instanceof JsonMappingException mapping && !mapping.getPath().isEmpty()) {
+                detail += " path=" + mapping.getPath().stream()
+                        .map(reference -> reference.getFieldName() != null
+                                ? reference.getFieldName()
+                                : "[" + reference.getIndex() + "]")
+                        .collect(Collectors.joining("."));
+            }
+            return detail;
+        }
+        return "";
     }
 }

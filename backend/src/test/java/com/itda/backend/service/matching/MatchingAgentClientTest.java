@@ -5,12 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import java.net.ConnectException;
-import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.List;
 
@@ -26,8 +22,9 @@ import com.itda.backend.domain.MatchingStatus;
 import com.itda.backend.domain.MultiReason;
 import com.itda.backend.dto.request.MatchingAgentRequest;
 import com.itda.backend.dto.response.MatchingAgentResponse;
-import com.itda.backend.exception.MatchingAgentException;
-import com.itda.backend.exception.MatchingAgentUnavailableException;
+import com.itda.backend.exception.AiAgentException;
+import com.itda.backend.service.agent.AiAgentClient;
+import com.itda.backend.service.agent.AiAgentProperties;
 
 class MatchingAgentClientTest {
 
@@ -47,10 +44,10 @@ class MatchingAgentClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl(AI);
         server = MockRestServiceServer.bindTo(builder).build();
-        // 백오프는 설정값이다. 테스트에서는 기다리지 않도록 0으로 둔다.
-        MatchingProperties properties = new MatchingProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(65),
-                List.of(Duration.ZERO, Duration.ZERO), new MatchingProperties.Worker(false, 5000, 10));
-        client = new MatchingAgentClient(builder.build(), new ObjectMapper(), properties);
+        // 재시도·상태 확인은 AiAgentClientTest 가 본다. 여기서는 매칭 계약(요청·응답 모양)만 본다.
+        AiAgentProperties properties = new AiAgentProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(65),
+                List.of());
+        client = new MatchingAgentClient(new AiAgentClient(builder.build(), new ObjectMapper(), properties));
     }
 
     private MatchingAgentRequest request() {
@@ -96,50 +93,6 @@ class MatchingAgentClientTest {
     }
 
     @Test
-    void 서버_오류는_두_번까지_다시_시도한다() {
-        server.expect(requestTo(AI + "/matching")).andRespond(withServerError());
-        server.expect(requestTo(AI + "/matching")).andRespond(withServerError());
-        server.expect(requestTo(AI + "/matching")).andRespond(withSuccess(MULTI_RESPONSE, MediaType.APPLICATION_JSON));
-
-        MatchingAgentReply reply = client.match(request());
-
-        assertThat(reply.response().status()).isEqualTo(MatchingStatus.MULTI);
-        server.verify();
-    }
-
-    @Test
-    void 응답이_없으면_다시_시도한다() {
-        server.expect(requestTo(AI + "/matching")).andRespond(request -> {
-            throw new SocketTimeoutException("Read timed out");
-        });
-        server.expect(requestTo(AI + "/matching")).andRespond(withSuccess(MULTI_RESPONSE, MediaType.APPLICATION_JSON));
-
-        assertThat(client.match(request()).response().status()).isEqualTo(MatchingStatus.MULTI);
-        server.verify();
-    }
-
-    @Test
-    void 세_번_모두_실패하면_예외를_던진다() {
-        server.expect(requestTo(AI + "/matching")).andRespond(withServerError());
-        server.expect(requestTo(AI + "/matching")).andRespond(withServerError());
-        server.expect(requestTo(AI + "/matching")).andRespond(withServerError());
-
-        // AI 가 응답하지 못하는 상태라는 뜻 — 워커는 이 예외를 보고 이번 차례를 멈춘다.
-        assertThatThrownBy(() -> client.match(request())).isInstanceOf(MatchingAgentUnavailableException.class);
-        server.verify();
-    }
-
-    @Test
-    void 요청이_잘못됐다는_응답은_다시_시도하지_않는다() {
-        server.expect(requestTo(AI + "/matching")).andRespond(withBadRequest());
-
-        assertThatThrownBy(() -> client.match(request()))
-                .isInstanceOf(MatchingAgentException.class)
-                .isNotInstanceOf(MatchingAgentUnavailableException.class);
-        server.verify();
-    }
-
-    @Test
     void AI_상태_확인이_성공하면_사용_가능하다() {
         server.expect(requestTo(AI + "/health")).andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("{\"status\": \"ok\"}", MediaType.APPLICATION_JSON));
@@ -148,20 +101,9 @@ class MatchingAgentClientTest {
     }
 
     @Test
-    void AI_상태_확인이_실패하면_사용할_수_없다() {
-        server.expect(requestTo(AI + "/health")).andRespond(withServerError());
-        server.expect(requestTo(AI + "/health")).andRespond(request -> {
-            throw new ConnectException("Connection refused");
-        });
-
-        assertThat(client.isAvailable()).isFalse();
-        assertThat(client.isAvailable()).isFalse();
-    }
-
-    @Test
     void 응답_본문이_JSON이_아니면_예외를_던진다() {
         server.expect(requestTo(AI + "/matching")).andRespond(withSuccess("<html>", MediaType.TEXT_HTML));
 
-        assertThatThrownBy(() -> client.match(request())).isInstanceOf(MatchingAgentException.class);
+        assertThatThrownBy(() -> client.match(request())).isInstanceOf(AiAgentException.class);
     }
 }

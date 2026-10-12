@@ -340,52 +340,67 @@ POST /api/v1/auth/signup   → 201 Created
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
 | O-10 | GET | `/institutions/me/children` | 담당 아동 목록 · **구현됨** | I-05, I-09, I-13 |
-| O-11 | POST | `/institutions/me/children` | 아이 등록 | I-04 |
+| O-11 | POST | `/institutions/me/children` | 아이 등록 · **구현됨** | I-04 |
 | O-13 | GET | `/children/{childId}` | 아동 상세 | I-09-1 |
 | O-14 | GET | `/children/{childId}/context` | Child Context 타임라인 | I-09-1 |
 
 > 이전 초안에 있던 `O-12 초대코드 재발급`은 초대코드 방식을 제외하면서 삭제했습니다.
 > 번호는 혼동을 막기 위해 결번으로 둡니다.
 
-**O-10 응답** · RosterPicker(매칭 확인 · Gate 1 아동 변경)가 쓰는 필드만 우선 구현했습니다.
+**O-10 응답** · RosterPicker(매칭 확인 · Gate 1 아동 변경)가 쓰는 필드와 기관 관리번호만 우선 구현했습니다.
 
 ```json
 [
-  { "id": "9", "name": "김하늘", "birthDate": "2017-03-14", "status": "active" }
+  { "id": "9", "name": "김하늘", "birthDate": "2017-03-14", "externalId": "2026-0031", "status": "active" },
+  { "id": "10", "name": "임유진", "birthDate": "2019-11-26", "externalId": null, "status": "pending_consent" }
 ]
 ```
 
-`school`/`institutions`/`care`는 아직 없습니다 — `Child` 엔티티에 그 컬럼 자체가 없습니다(O-11 구현 시 같이 채울 예정). `status`가 `active`가 아닌 아동도 포함해서 내려갑니다 — 필터링은 프론트 몫입니다(`RosterPicker.tsx`가 이미 그렇게 함).
+`externalId`는 이 기관이 붙인 관리번호입니다(O-11). 없으면 `null`입니다.
+
+`school`/`institutions`/`care`는 아직 없습니다 — `Child` 엔티티에 그 컬럼 자체가 없습니다(O-11 구현에서도 채우지 않았고, 별도 작업입니다). `status`가 `active`가 아닌 아동도 포함해서 내려갑니다 — 필터링은 프론트 몫입니다(`RosterPicker.tsx`가 이미 그렇게 함).
 
 **O-11 요청**
 
 ```json
-{
-  "name": "김하늘",
-  "birthDate": "2017-03-14",
-  "externalId": "2026-0031",
-  "guardianPhoneLast4": "1234"
-}
+{ "name": "김하늘", "birthDate": "2017-03-14", "externalId": "2026-0031" }
 ```
 
-`externalId`(기관 내부 아동 ID)는 선택입니다. `guardianPhoneLast4`는 **보호자 연결
-요청의 매칭 키**로 쓰이므로(§5.1) 사실상 필수에 가깝습니다.
-**보호자 전화번호 전체는 받지 않습니다.**
+- `name`: 필수. 앞뒤 공백을 떼고 1–100자입니다.
+- `birthDate`: 필수. **`yyyy-MM-dd` 문자열만** 받습니다. `"2017-03-14T00:00:00"`, `[2017, 3, 14]`, 숫자,
+  없는 날짜(`"2017-02-30"`), 미래 날짜는 400입니다. 하한(나이 상한)은 두지 않습니다.
+- `externalId`: 선택. 기관이 쓰는 아동 관리번호입니다. 앞뒤 공백을 떼고 최대 50자이며, 형식은 자유입니다.
+  없거나 빈 문자열이면 "번호 없음"(`null`)으로 저장합니다. **같은 기관 안에서는 겹칠 수 없습니다**(409).
+  다른 기관은 같은 번호를 써도 됩니다. 아이를 명부에서 빼면 그 번호는 다시 쓸 수 있습니다.
+- 같은 이름·생일로 다시 등록해도 막지 않고 새 아동을 만듭니다. 다른 기관이 같은 아이를 등록해도 별도 아동(`id`)이 됩니다.
+
+> 이전 초안의 `guardianPhoneLast4`는 받지 않습니다. 보내도 무시합니다. 보호자 전화번호 전체도 받지 않습니다 —
+> 보호자 연결은 기관이 초대 코드를 직접 전달하는 방식입니다.
 
 **O-11 응답** · `201 Created`
 
 ```json
 {
   "child": { "id": "9", "name": "김하늘", "birthDate": "2017-03-14",
-             "status": "pending_consent", "institutions": [] }
+             "externalId": "2026-0031", "status": "pending_consent" }
 }
 ```
 
-등록 직후 아이는 `pending_consent` 상태입니다. 보호자가 카카오 로그인 후 이 기관과
-연결하고 공유 범위에 동의해야 `active`가 되며, 그 전에는 기록을 올릴 수 없습니다.
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | 이름 누락·공백·100자 초과, 생년월일 누락·형식 오류·없는 날짜·미래 날짜, 관리번호 50자 초과 |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입(역할 선택)을 끝내지 않음 |
+| 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 소속이 아닌 사용자(보호자) |
+| 403 | `FORBIDDEN` | CSRF 토큰 누락·불일치 |
+| 409 | `DUPLICATE_EXTERNAL_ID` | 같은 기관에서 이미 쓰고 있는 관리번호 |
 
-**이 등록 시점에 보호자 연결 요청(pending link)이 함께 생성되어야 합니다.** 보호자가
-로그인하면 G-01에서 이 요청을 보게 됩니다(§5.1).
+등록 직후 아이는 `pending_consent` 상태입니다. 보호자가 카카오 로그인 후 이 기관과
+연결하고 공유 범위에 동의해야 `active`가 되며, 그 전에는 기록을 올릴 수 없고 AI 매칭 명단에도 들어가지 않습니다.
+
+> **임시 계약입니다.** 보호자 연결은 **초대 코드 방식**(DB `invitation`)으로 후속 작업에서 구현합니다.
+> 그때 응답의 `child` 옆에 `inviteCode`가 추가되고, 아래 §5.1(연결 요청 방식)도 그 작업에서 정리합니다.
+> 지금은 등록해도 보호자 연결 수단이 만들어지지 않습니다.
 
 **O-14 응답** · 날짜 오름차순. **기록이 없는 날도 항목으로 포함하고 `entry`를 `null`로**
 주세요. 프론트는 빈 날을 "기록 없음"으로 표시하며, 추정치로 채우지 않습니다.
@@ -407,8 +422,8 @@ POST /api/v1/auth/signup   → 201 Created
 | O-21 | GET | `/raw-records/{id}/status` | 파이프라인 진행 상태 | I-03, I-05 |
 | O-22 | GET | `/matching-queue` | 확인 필요 큐 · **구현됨** | I-03, I-06 |
 | O-23 | POST | `/matching-queue/{itemId}/resolve` | 아이 확정 / 제외 · **구현됨** | I-06 |
-| O-24 | GET | `/validation-results?status=BLOCK` | 수정 요청 큐 | I-03, I-07 |
-| O-25 | POST | `/validation-results/{itemId}/resolve` | 재업로드 / 보류 | I-07 |
+| O-24 | GET | `/validation-results?status=BLOCK` | 수정 요청 큐 · **구현됨** | I-03, I-07 |
+| O-25 | POST | `/validation-results/{itemId}/resolve` | 재업로드 / 보류 · **구현됨** | I-07 |
 | O-26 | GET | `/raw-records/progress` | 파일별 처리 현황 · **계약 확정, 구현 예정** | I-03, I-05 |
 | O-27 | POST | `/raw-records/{id}/retry` | 실패한 기록 재처리 · **계약 확정, 구현 예정** | I-03, I-05 |
 
@@ -431,7 +446,7 @@ POST /api/v1/auth/signup   → 201 Created
 > | 항목 | 값 |
 > | --- | --- |
 > | 허용 확장자 | `csv` · `txt` · `pdf` (2026-09-29, 이슈 #67로 `jpg`·`jpeg`·`png`·`hwp` 제외 — jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려워 이번 학기 범위 밖) |
-> | 허용 Content-Type | `text/csv` · `text/plain` · `application/pdf` |
+> | 허용 Content-Type | `text/csv` · `application/vnd.ms-excel`(Windows가 csv에 흔히 붙이는 값, #113) · `text/plain` · `application/pdf` |
 > | 기록 분리(텍스트 추출) | `csv`·`txt`만 지원. `pdf`는 업로드는 되지만 아직 `JournalEntry`로 안 쪼개짐(`entries: []` 유지) — 다음 이슈에서 추가 |
 > | 최대 크기 | 20MB (Caddy는 25MiB에서 먼저 차단) |
 > | 성공 | `201 Created` |
@@ -455,6 +470,11 @@ POST /api/v1/auth/signup   → 201 Created
 
 **O-22 응답** · `status`가 `auto`인 건은 포함하지 않습니다.
 
+> `record.fullContent`를 추가했습니다(멘토 PR #86 리뷰 반영, #111) — 목록의 `preview`(60자)는
+> 그대로 두고, 아이를 선택할 때 펼쳐 볼 전체 본문을 별도 필드로 내려줍니다. 본문 뒷부분에
+> 나오는 아이 이름이나 AI 판단 근거를 선생님이 놓치지 않기 위함입니다. `evidence`의
+> `{start, end}`는 `preview`가 아니라 `fullContent` 기준 유니코드 코드포인트 좌표입니다.
+
 ```json
 [
   { "id": "1",
@@ -465,7 +485,7 @@ POST /api/v1/auth/signup   → 201 Created
     "multiReason": "ambiguous_identity",
     "hintMismatch": false,
     "record": { "id": "3", "fileName": "0821_활동일지.docx",
-                "preview": "…", "capturedAt": "2026-08-21" },
+                "preview": "…", "capturedAt": "2026-08-21", "fullContent": "…" },
     "candidates": [ { "childId": "1", "name": "김하늘", "birthDate": "2020-01-01", "confidence": 0.62 } ],
     "evidence": [ { "start": 12, "end": 15 } ] }
 ]
@@ -555,6 +575,48 @@ POST /api/v1/auth/signup   → 201 Created
 `violationReason`은 **화면에 그대로 노출**되므로 선생님이 읽고 바로 조치할 수 있는
 한국어 문장으로 주세요. 코드값이 필요하면 `violationCode`를 별도로 추가해주세요.
 
+> **현재 구현** (#122) · `status`는 `BLOCK`만 받습니다. 다른 값은 `400`으로 거절합니다 —
+> 조용히 BLOCK으로 처리하면 화면이 엉뚱한 목록을 보여주기 때문입니다.
+>
+> ```json
+> [
+>   { "id": "11",
+>     "journalEntryId": 7,
+>     "record": { "id": "5", "fileName": "0821_특이사항.txt",
+>                 "capturedAt": "2026-08-21", "preview": "…", "fullContent": "…" },
+>     "childName": "김하늘",
+>     "violationReason": "전화번호·주민번호 같은 개인정보가 그대로 적혀 있습니다",
+>     "violationCode": ["개인정보표현"] }
+> ]
+> ```
+>
+> | 항목 | 값 |
+> | --- | --- |
+> | `violationReason` | AI가 보낸 `issue_types`를 선생님이 읽을 문장으로 바꾼 값. 유형이 여러 개면 ` / `로 잇습니다. AI가 목록에 없는 유형을 보내면 코드를 그대로 보여주고, 유형 자체가 없으면 "검증에서 문제가 발견됐습니다. 원본을 확인해주세요"로 내려갑니다 |
+> | `violationCode` | AI `issue_types` 원본 배열 (`진단명`·`개인정보표현` 등, `AI/validation/config.py`) |
+> | `record.fullContent` | 위반 문장이 60자 뒤에 있으면 미리보기만으로는 무엇을 고쳐야 할지 알 수 없어, 매칭 확인 큐(#111)와 같은 이유로 전체 본문도 함께 내려갑니다 |
+> | `record.type` | **내려가지 않습니다.** `RecordResponse`에 `type` 필드가 없습니다 — 기록 유형 값 목록이 아직 팀에서 안 정해졌습니다 |
+> | `capturedAt` | 기록 날짜(`YYYY-MM-DD`)입니다. 초안의 타임스탬프와 다릅니다 |
+>
+> 🙏 **FE 쪽에 두 가지 부탁드립니다.**
+>
+> 1. `BlockedItem.record` 가 `RawRecord` 타입이라 `type` 이 필수인데 BE 가 그 값을 주지 않습니다.
+>    `MatchingItem.record` 가 이미 `type?: RawRecord["type"] | null` 로 인라인 정의해 피해 간 것과
+>    같은 처리가 필요합니다. 지금 `queue-reinput.tsx` 는 `{item.record.type}` 을 그대로 렌더해서,
+>    실연동으로 바꾸면 `"김하늘 · "` 뒤가 비는 가운뎃점만 남습니다(mock 에는 값이 있어 안 보입니다).
+> 2. `record.fullContent` 를 `BlockedItem` 에 추가하고 화면에서 써 주세요. 지금은 `preview`(60자)만
+>    렌더하고 있어서, 위반 문장이 뒤쪽에 있으면 선생님이 무엇을 고쳐야 할지 볼 수 없습니다 —
+>    매칭 확인 큐에서 #111 → #104 로 함께 고쳤던 것과 같은 건입니다.
+>
+> **O-25 현재 구현** · `{ "action": "reupload" }` 또는 `{ "action": "hold" }`. 둘 다 그 일지의
+> 파이프라인을 여기서 끝냅니다(`REUPLOAD_REQUESTED` · `VALIDATION_HELD`). 원본 파일은 고치지도
+> 지우지도 않습니다 — 고친 내용은 새 파일로 올라옵니다(append-only).
+>
+> | 상태 | 코드 | 설명 |
+> | --- | --- | --- |
+> | 400 | `VALIDATION_RESULT_INVALID_REQUEST` | `action` 누락·오타, BLOCK이 아닌 결과, 이미 처리된 기록 |
+> | 404 | `VALIDATION_RESULT_NOT_FOUND` | 없는 항목이거나 다른 기관의 항목 |
+
 **O-25 요청** · `{ "action": "reupload" }` 또는 `{ "action": "hold" }`
 
 **O-26 응답** · 계약 확정, 구현 예정. 최근 업로드가 먼저 옵니다.
@@ -580,6 +642,26 @@ POST /api/v1/auth/signup   → 201 Created
 | --- | --- | --- | --- | --- |
 | O-30 | GET | `/summaries?gate1Status=pending` | 검토 대기 요약 목록 | I-03, I-08 |
 | O-31 | POST | `/summaries/{summaryId}/gate1` | 승인 / 수정 후 승인 / 반려 | I-08 |
+| O-32 | POST | `/summaries/run` | 지금 요약 · **구현됨** | I-08 |
+
+**O-32 요청**
+
+요약은 보통 `entry_date` 다음 날 03:00 에 아동 × 날짜 × 기관 묶음으로 자동으로 만들어집니다
+(`docs/db/schema.md` §8.2). 이 요청은 그 마감을 기다리지 않고 요약하게 합니다. 기관은 요청한 선생님의 기관입니다.
+
+```json
+{ "childId": 8, "entryDate": "2026-10-08" }
+```
+
+응답 `data` 는 `null` 입니다. 요약은 곧이어 워커가 만들고, 같은 날짜에 매칭·검증 중인 기록이 있으면 그것이 끝난 뒤에
+만듭니다. 그래서 업로드 직후에 눌러도 됩니다. 요청은 그 날짜의 마감(다음 날 03:00)까지만 유효합니다 — 그 뒤에는 어차피
+자동으로 요약됩니다. 결과는 O-30 에서 확인합니다.
+
+| 실패 | 상태 | 코드 |
+| --- | --- | --- |
+| `childId`·`entryDate` 누락, 날짜 형식 오류 | 400 | `INVALID_REQUEST` |
+| 그 아이·날짜에 요약할 기록도, 매칭·검증 중인 기록도 없음 | 400 | `SUMMARY_INVALID_REQUEST` |
+| 없는 아이이거나 다른 기관 소속 | 404 | `SUMMARY_CHILD_NOT_FOUND` |
 
 **O-30 응답**
 
@@ -991,6 +1073,8 @@ POST /api/v1/auth/signup   → 201 Created
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |
 | `MATCHING_RESULT_INVALID_REQUEST` | 400 | 확인 필요 큐 처리 요청 거절 (O-23) |
 | `MATCHING_RESULT_NOT_FOUND` | 404 | 없거나 다른 기관의 확인 필요 큐 항목 (O-23) |
+| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 지금 요약 거절 (O-32) |
+| `SUMMARY_CHILD_NOT_FOUND` | 404 | 없거나 다른 기관의 아이로 지금 요약 요청 (O-32) |
 | `SUMMARY_ALREADY_DECIDED` | 409 | 이미 승인/반려된 요약 재결정 |
 | `INSIGHT_ALREADY_SENT` | 409 | 이미 발송된 Insight 재발송 |
 | `NOT_PRIMARY_SOURCE` | 403 | 근거 제공 기관이 아닌 곳의 Gate 2 승인 시도 |

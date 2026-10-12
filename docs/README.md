@@ -35,6 +35,7 @@
 | 문서 | 역할 |
 | --- | --- |
 | [AI/matching/CRITERIA.md](../AI/matching/CRITERIA.md) | 매칭 — `auto` / `review` / `multi` / `unmatched` 판정 기준 |
+| [AI/summary/CRITERIA.md](../AI/summary/CRITERIA.md) | 요약 — 무엇을 쓰고 무엇을 버리는가 |
 | [AI/evals/scripts/validation/README.md](../AI/evals/scripts/validation/README.md) | 검증 — `PASS` / `REVIEW` / `BLOCK` 과 이슈 유형 7개 |
 
 프론트엔드 실행 방법과 스택은 [frontend/README.md](../frontend/README.md)에서 확인합니다.

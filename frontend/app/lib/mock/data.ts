@@ -157,11 +157,22 @@ function spanOf(text: string, word: string): EvidenceSpan {
   return { start, end: start + Array.from(word).length };
 }
 
-const MQ_01 = "11:40 급식실 입장 직후 김OO가 소리를 지름. 손을 잡고 30까지 세자 진정됨.";
-const MQ_02 = "자유놀이 중 김OO와 이OO가 블록을 나눠 쌓았고, 서로 양보하는 모습을 보임.";
+/**
+ * 서버(RecordResponse)처럼 앞 60자만 잘라 목록용 미리보기를 만든다.
+ * mq_01·02·05 는 아이 이름이 60자 뒤에 있어서, 미리보기만으로는 누구 기록인지 보이지 않는다.
+ */
+function recordText(full: string) {
+  return { preview: full.length <= 60 ? full : `${full.slice(0, 60)}…`, fullContent: full };
+}
+
+const MQ_01 =
+  "11:40 급식실 입장 직후 소리를 지르며 문 앞에 주저앉음. 담당 교사가 손을 잡고 30까지 함께 세자 조금씩 진정됨. 이후 자리에 앉아 식사를 마쳤고, 김OO는 평소 좋아하던 반찬을 먼저 집어 먹음.";
+const MQ_02 =
+  "자유놀이 중 김OO가 블록을 높이 쌓다가 무너지자 잠시 울먹였지만, 다시 처음부터 쌓기 시작함. 한참 뒤 옆자리의 이OO가 블록을 나눠 주었고, 둘이 서로 양보하며 끝까지 완성함.";
 const MQ_03 = "우리 반 막둥이가 새 신발을 자랑하며 친구들에게 보여줌.";
 const MQ_04 = "오후 자유놀이 중 정OO가 장난감을 두고 다툼이 있었고, 스스로 사과함.";
-const MQ_05 = "등원 직후 최OO 표정이 굳어 있었고, 인사에 반응하지 않음. 잠시 뒤 놀이에 참여함.";
+const MQ_05 =
+  "등원 직후 표정이 굳어 있었고, 교사의 인사에도 반응하지 않은 채 가방을 내려놓지 않음. 10분쯤 지나 좋아하는 자동차 장난감을 건네자 받아 들었음. 최OO는 그 뒤로 친구들 놀이에 스스로 참여함.";
 const MQ_06 = "점심 식사 후 최OO가 블록으로 높은 탑을 쌓고 친구들에게 자랑함.";
 const MQ_07 = "오후 간식 시간에 박OO가 컵을 엎었지만 스스로 휴지를 가져와 닦음.";
 const MQ_08 = "바깥놀이 시간에 미끄럼틀 차례를 기다리며 친구에게 먼저 양보함.";
@@ -177,7 +188,7 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0821_관찰일지.docx",
       type: "관찰일지",
       capturedAt: "2026-08-21T11:40:00+09:00",
-      preview: MQ_01,
+      ...recordText(MQ_01),
     },
     evidence: [spanOf(MQ_01, "김OO")],
     // 후보는 명부(CHILDREN)에 있는 아이여야 한다 — 화면이 명부와 맞춰보고 없으면 막는다
@@ -196,7 +207,7 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0821_활동일지.docx",
       type: "활동일지",
       capturedAt: "2026-08-21T14:20:00+09:00",
-      preview: MQ_02,
+      ...recordText(MQ_02),
     },
     evidence: [spanOf(MQ_02, "김OO"), spanOf(MQ_02, "이OO")],
     candidates: [
@@ -214,7 +225,7 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0821_특이사항.txt",
       type: "특이사항",
       capturedAt: "2026-08-21T15:05:00+09:00",
-      preview: MQ_03,
+      ...recordText(MQ_03),
     },
     // 이름은 없지만 "막둥이" 가 누구를 가리키는지 사람이 판단할 단서다
     evidence: [spanOf(MQ_03, "막둥이")],
@@ -231,7 +242,7 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0821_정OO_관찰.docx",
       type: "관찰일지",
       capturedAt: "2026-08-21T16:30:00+09:00",
-      preview: MQ_04,
+      ...recordText(MQ_04),
     },
     evidence: [spanOf(MQ_04, "정OO")],
     candidates: [],
@@ -249,7 +260,7 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0820_이OO_활동일지.docx",
       type: "활동일지",
       capturedAt: "2026-08-20T10:10:00+09:00",
-      preview: MQ_05,
+      ...recordText(MQ_05),
     },
     evidence: [spanOf(MQ_05, "최OO")],
     candidates: [],
@@ -264,7 +275,7 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0820_관찰일지.docx",
       type: "관찰일지",
       capturedAt: "2026-08-20T15:40:00+09:00",
-      preview: MQ_07,
+      ...recordText(MQ_07),
     },
     evidence: [spanOf(MQ_07, "박OO")],
     candidates: [],
@@ -279,7 +290,7 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0819_활동일지.docx",
       type: "활동일지",
       capturedAt: "2026-08-19T11:05:00+09:00",
-      preview: MQ_08,
+      ...recordText(MQ_08),
     },
     evidence: [],
     candidates: [],
@@ -294,7 +305,7 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       fileName: "0820_활동일지.docx",
       type: "활동일지",
       capturedAt: "2026-08-20T13:50:00+09:00",
-      preview: MQ_06,
+      ...recordText(MQ_06),
     },
     evidence: [],
     candidates: [],

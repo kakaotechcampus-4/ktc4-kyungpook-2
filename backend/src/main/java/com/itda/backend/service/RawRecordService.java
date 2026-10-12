@@ -3,9 +3,15 @@ package com.itda.backend.service;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.time.DateTimeException;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -36,14 +42,29 @@ public class RawRecordService {
     // jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려움. docx는 아직 추가 전(다음 이슈).
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("csv", "txt", "pdf");
 
+    // application/vnd.ms-excel: Windows가 .csv를 저장할 때 흔히 이 Content-Type으로 보낸다
+    // (#113, 최재혁님 리뷰) — 실제로 정상 csv 파일이 이 값 때문에 거부됐었다.
     private static final Set<String> ALLOWED_CONTENT_TYPES =
-            Set.of("text/csv", "text/plain", "application/pdf");
+            Set.of("text/csv", "application/vnd.ms-excel", "text/plain", "application/pdf");
 
     // 텍스트 추출이 아직 안 되는 형식 — 업로드는 받되 기록 분리는 건너뛴다(entries: [] 유지).
     // pdf 추출(PDFBox)은 다음 이슈에서 추가한다.
     private static final Set<String> TEXT_EXTRACTABLE_EXTENSIONS = Set.of("csv", "txt");
 
+    // "8월21일" · "2026년 8월 21일" — 한글 표기는 뜻이 분명해서 가장 먼저 본다.
+    private static final Pattern FILENAME_DATE_KOREAN =
+            Pattern.compile("(?:(20\\d{2})\\s*년\\s*)?(\\d{1,2})\\s*월\\s*(\\d{1,2})\\s*일");
+
+    // "2026-08-21" · "2026.08.21" · "20260821" — 네 자리 연도가 있으면 그대로 믿는다.
+    private static final Pattern FILENAME_DATE_WITH_YEAR =
+            Pattern.compile("(20\\d{2})[-._]?(\\d{1,2})[-._]?(\\d{1,2})");
+
+    // "0821_관찰일지.txt" 의 MMDD. 앞뒤에 다른 숫자가 붙어 있으면(전화번호·학번 등) 보지 않는다.
+    private static final Pattern FILENAME_DATE_MONTH_DAY =
+            Pattern.compile("(?<!\\d)(\\d{2})(\\d{2})(?!\\d)");
+
     private final RawRecordRepository rawRecordRepository;
+    private final RawRecordRecorder rawRecordRecorder;
     private final RawFileStorage rawFileStorage;
     private final UserService userService;
     private final JournalEntryRepository journalEntryRepository;
@@ -125,15 +146,13 @@ public class RawRecordService {
 
         RawRecord saved;
         try {
-            saved = rawRecordRepository.save(rawRecord);
+            saved = rawRecordRecorder.save(rawRecord);
         } catch (RuntimeException e) {
             // 원본은 append-only — DB 저장이 실패해도 이미 저장소에 올라간 파일은 지우지 않는다.
             // 대신 FAILED 상태로 별도 기록을 남겨서, 나중에 추적/재처리할 수 있게 한다.
             log.error("failed to persist raw record metadata for storedPath={}; raw file is kept", storedPath, e);
             try {
-                rawRecordRepository.save(new RawRecord(
-                        institutionId, displayFilename, storedPath, contentType, file.getSize(),
-                        RawRecordStatus.FAILED));
+                rawRecordRecorder.recordFailure(institutionId, displayFilename, storedPath, contentType, file.getSize());
             } catch (RuntimeException retryFailure) {
                 log.error("failed to record FAILED status for storedPath={}; "
                         + "raw file remains untracked in DB but preserved in storage", storedPath, retryFailure);
@@ -166,16 +185,98 @@ public class RawRecordService {
 
         String text = new String(fileBytes, StandardCharsets.UTF_8);
         List<JournalEntrySplitter.SplitEntry> entries = journalEntrySplitter.split(text);
+        LocalDate fallbackDate = resolveFallbackDate(saved, entries);
         try {
             int seq = 1;
             for (JournalEntrySplitter.SplitEntry entry : entries) {
+                LocalDate entryDate = entry.entryDate() == null ? fallbackDate : entry.entryDate();
                 journalEntryRepository.save(
-                        JournalEntry.of(saved.getId(), entry.entryDate(), entry.content(), seq++));
+                        JournalEntry.of(saved.getId(), entryDate, entry.content(), seq++));
             }
             log.info("split raw record id={} into {} journal entries", saved.getId(), entries.size());
         } catch (RuntimeException e) {
             // 업로드는 이미 성공했다 — 기록 분리 실패로 업로드 응답까지 실패시키지 않는다.
             log.error("failed to save journal entries for rawRecordId={}", saved.getId(), e);
+        }
+    }
+
+    /**
+     * 날짜를 확정하지 못한 기록에 넣을 날짜를 정한다. 같은 파일의 첫 날짜 → 파일명 → 업로드 날짜 순이다.
+     *
+     * <p>요약은 아동 × 날짜 × 기관으로 묶이므로(DB 스키마 §8.2) {@code entry_date} 가 비면 그 기록은
+     * 어느 묶음에도 들어가지 못하고 요약에서 통째로 빠진다. 추정한 날짜가 하루이틀 어긋나는 것보다
+     * 기록이 아예 사라지는 쪽이 나쁘다고 보고 채운다.
+     *
+     * <p><b>같은 파일의 첫 날짜를 가장 먼저 보는 이유</b> — 날짜 헤더 앞에 표지 줄이 있는 파일
+     * ({@code 표지: 8월 관찰일지 / 9/15 … / 9/16 …})에서 표지만 파일명 날짜를 받으면 한 파일이
+     * 서로 다른 날짜 묶음으로 흩어진다. 파일이 스스로 밝힌 날짜가 파일명보다 믿을 만하다.
+     *
+     * <p><b>알려진 한계</b> — 추정값인지 본문에서 읽은 값인지 구분해 두는 컬럼이 없다. 추정이
+     * 틀리면 그 기록이 엉뚱한 날짜 묶음에 들어가는데, 교사가 Gate 1 에서 요약을 볼 때 날짜가 안 맞는
+     * 내용이 섞인 것으로 알아챌 수는 있다. 구분이 필요하다고 팀이 판단하면 그때 컬럼을 추가한다.
+     */
+    private LocalDate resolveFallbackDate(RawRecord saved, List<JournalEntrySplitter.SplitEntry> entries) {
+        LocalDate firstDateInFile = entries.stream()
+                .map(JournalEntrySplitter.SplitEntry::entryDate)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        if (firstDateInFile != null) {
+            return firstDateInFile;
+        }
+
+        LocalDate uploadedOn = saved.getCreatedAt().toLocalDate();
+        return parseDateFromFilename(saved.getOriginalFilename(), uploadedOn).orElse(uploadedOn);
+    }
+
+    /**
+     * 파일명에서 기록 날짜를 뽑는다. 뜻이 분명한 형식부터 본다 — 한글 표기 → 네 자리 연도 → {@code MMDD}.
+     *
+     * <p>연도가 없는 형식({@code 8월21일} · {@code 0821})은 업로드 연도로 둔다. 숫자 네 자리는
+     * 날짜가 아닐 수도 있어서({@code 학생1234.txt}) 실제 달·일로 성립할 때만 받는다 — 성립하지
+     * 않으면 비우고 호출한 쪽이 업로드 날짜로 내려간다.
+     *
+     * <p><b>알려진 한계</b> — {@code MMDD} 는 버전 번호나 기관 코드와 구분할 수 없다.
+     * {@code 일지_v2_1130.txt} 를 11월 30일로, {@code 센터코드1203_일지.txt} 를 12월 3일로 읽는다
+     * (코드리뷰로 확인). 실제 기관 파일명 표본이 모이기 전에는 어느 쪽 오차가 더 나쁜지 판단할
+     * 근거가 없어서, 지금은 업로드 날짜로 내려가는 것보다 낫다고 보고 그대로 둔다.
+     */
+    private static Optional<LocalDate> parseDateFromFilename(String filename, LocalDate uploadedOn) {
+        Matcher korean = FILENAME_DATE_KOREAN.matcher(filename);
+        while (korean.find()) {
+            int year = korean.group(1) == null ? uploadedOn.getYear() : Integer.parseInt(korean.group(1));
+            Optional<LocalDate> parsed = toDate(
+                    year, Integer.parseInt(korean.group(2)), Integer.parseInt(korean.group(3)));
+            if (parsed.isPresent()) {
+                return parsed;
+            }
+        }
+
+        Matcher full = FILENAME_DATE_WITH_YEAR.matcher(filename);
+        while (full.find()) {
+            Optional<LocalDate> parsed = toDate(
+                    Integer.parseInt(full.group(1)), Integer.parseInt(full.group(2)), Integer.parseInt(full.group(3)));
+            if (parsed.isPresent()) {
+                return parsed;
+            }
+        }
+
+        Matcher short4 = FILENAME_DATE_MONTH_DAY.matcher(filename);
+        while (short4.find()) {
+            Optional<LocalDate> parsed = toDate(
+                    uploadedOn.getYear(), Integer.parseInt(short4.group(1)), Integer.parseInt(short4.group(2)));
+            if (parsed.isPresent()) {
+                return parsed;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<LocalDate> toDate(int year, int month, int day) {
+        try {
+            return Optional.of(LocalDate.of(year, month, day));
+        } catch (DateTimeException e) {
+            return Optional.empty();
         }
     }
 
