@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { InviteCodeCard } from "@/components/org/InviteCodeCard";
 import { Card, Note, PageHeader } from "@/components/ui";
-import { ApiError, registerChild } from "@/lib/api";
+import { ApiError, issueInvitation, registerChild } from "@/lib/api";
+import type { IssuedInvitation, RegisteredChild } from "@/lib/types";
 
 type FormErrors = { externalId?: string; form?: string };
 
@@ -13,6 +15,10 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/**
+ * I-04 아이 등록 — 등록하면 서버가 보호자 초대 코드를 함께 발급한다 (api-spec O-11).
+ * 기관은 코드나 링크를 카톡 등으로 보호자에게 직접 보낸다.
+ */
 export default function ChildRegisterPage() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
@@ -20,6 +26,11 @@ export default function ChildRegisterPage() {
   const [externalId, setExternalId] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
   const [pending, setPending] = useState(false);
+  const [registered, setRegistered] = useState<{
+    child: RegisteredChild;
+    /** 이번에 발급한 코드들, 최근 것이 먼저. 새로 발급해도 이전 코드는 살아 있다 */
+    invitations: IssuedInvitation[];
+  } | null>(null);
 
   async function handleRegister(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -27,17 +38,39 @@ export default function ChildRegisterPage() {
     setErrors({});
     setPending(true);
     try {
-      await registerChild({
+      const { child, invitation } = await registerChild({
         name: name.trim(),
         birthDate,
         externalId: externalId.trim(),
       });
-      // 목록이 새로 불러와지면서 방금 등록한 아이가 "보호자 동의 대기"로 보인다
-      navigate("/children");
+      setRegistered({ child, invitations: [invitation] });
     } catch (err) {
-      setPending(false);
       handleError(err);
+    } finally {
+      setPending(false);
     }
+  }
+
+  async function handleReissue() {
+    if (!registered) return;
+    setErrors({});
+    setPending(true);
+    try {
+      const invitation = await issueInvitation(registered.child.id);
+      setRegistered((r) => r && { ...r, invitations: [invitation, ...r.invitations] });
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function startOver() {
+    setRegistered(null);
+    setName("");
+    setBirthDate("");
+    setExternalId("");
+    setErrors({});
   }
 
   function handleError(err: unknown) {
@@ -56,6 +89,14 @@ export default function ChildRegisterPage() {
       case "INVALID_REQUEST":
         setErrors({ form: "이름·생년월일·관리번호를 확인해 주세요." });
         return;
+      case "INVITE_CODE_ISSUE_FAILED":
+        // 등록 중이었다면 아이도 등록되지 않았다 (한 트랜잭션). 그대로 다시 누르면 된다.
+        setErrors({
+          form: registered
+            ? "초대 코드를 만들지 못했어요. 다시 시도해 주세요."
+            : "초대 코드를 만들지 못해 등록되지 않았어요. 다시 시도해 주세요.",
+        });
+        return;
       case "SIGNUP_NOT_COMPLETED":
         navigate("/signup", { replace: true });
         return;
@@ -72,12 +113,78 @@ export default function ChildRegisterPage() {
 
   const inputClass =
     "tap rounded border border-line2 px-3 text-[16px] outline-none focus:border-accent aria-invalid:border-block";
+  const formError = errors.form ? (
+    <p role="alert" className="rounded bg-blocksoft px-3 py-2 text-[14px] text-block">
+      {errors.form}
+    </p>
+  ) : null;
+
+  if (registered) {
+    const { child, invitations } = registered;
+    return (
+      <>
+        <PageHeader
+          title="아이 등록 완료"
+          description="초대 코드나 링크를 보호자에게 카톡 등으로 직접 보내 주세요"
+        />
+
+        <Card>
+          <div className="flex flex-col gap-5">
+            <p className="text-[16px]">
+              <b className="font-semibold">{child.name}</b>
+              <span className="ml-2 text-[14px] text-muted tabular-nums">
+                {child.birthDate} 생 · #{child.externalId}
+              </span>
+            </p>
+
+            <div className="flex flex-col gap-3">
+              {invitations.map((invitation) => (
+                <InviteCodeCard key={invitation.id} invitation={invitation} />
+              ))}
+            </div>
+
+            <Note>
+              코드는 발급 후 <b className="font-semibold">10분</b> 동안 <b className="font-semibold">한 번</b>만
+              쓸 수 있습니다. 보호자가 늦게 확인했다면 새 코드를 발급해 다시 보내 주세요. 새로
+              발급해도 이전 코드는 그대로 쓸 수 있어, 보호자마다 따로 보낼 수 있습니다.
+            </Note>
+
+            {formError}
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleReissue}
+                disabled={pending}
+                className="tap rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
+              >
+                {pending ? "발급 중…" : "새 코드 발급"}
+              </button>
+              <Link
+                to={`/children/${encodeURIComponent(child.id)}`}
+                className="tap inline-flex items-center rounded border border-line2 px-5 text-[16px] font-semibold text-ink2 hover:bg-surface2"
+              >
+                아동 상세로
+              </Link>
+              <button
+                type="button"
+                onClick={startOver}
+                className="tap rounded border border-line2 px-5 text-[16px] font-semibold text-ink2 hover:bg-surface2"
+              >
+                다른 아이 등록
+              </button>
+            </div>
+          </div>
+        </Card>
+      </>
+    );
+  }
 
   return (
     <>
       <PageHeader
         title="아이 등록"
-        description="등록한 아이는 보호자가 동의하면 기록을 올릴 수 있는 상태가 됩니다"
+        description="등록하면 보호자에게 보낼 초대 코드가 함께 발급됩니다"
       />
 
       <Card>
@@ -130,22 +237,18 @@ export default function ChildRegisterPage() {
 
           <Note>
             등록하면 <b className="font-semibold">보호자 동의 대기</b> 상태가 됩니다. 보호자가
-            동의하기 전까지는 이 아이의 기록을 올릴 수 없습니다. 관리번호는 같은 이름의 아이를
-            구분하는 데 쓰이며, 우리 기관 안에서 겹칠 수 없습니다.
+            초대 코드로 연결하고 동의하기 전까지는 이 아이의 기록을 올릴 수 없습니다. 관리번호는
+            같은 이름의 아이를 구분하는 데 쓰이며, 우리 기관 안에서 겹칠 수 없습니다.
           </Note>
 
-          {errors.form ? (
-            <p role="alert" className="rounded bg-blocksoft px-3 py-2 text-[14px] text-block">
-              {errors.form}
-            </p>
-          ) : null}
+          {formError}
 
           <button
             type="submit"
             disabled={pending}
             className="tap self-start rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
           >
-            {pending ? "등록 중…" : "등록하기"}
+            {pending ? "등록 중…" : "등록하고 초대 코드 발급"}
           </button>
         </form>
       </Card>

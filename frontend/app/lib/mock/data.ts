@@ -3,6 +3,7 @@ import type {
   BlockedItem,
   CareReport,
   Child,
+  ChildGuardian,
   ChatTurn,
   EntryProgress,
   EvidenceSpan,
@@ -13,6 +14,7 @@ import type {
   InstitutionRequestItem,
   InstitutionType,
   JournalEntry,
+  LiveInvitation,
   MatchingItem,
   ParentActivity,
   SummaryItem,
@@ -717,12 +719,27 @@ export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
 export const DECLINED_INSTITUTION_REQUESTS = new Set<string>();
 
 /**
- * 연결 요청이 만들어진 시각 (G-01 mock) — 키는 "childId:institutionId".
- * 값이 없으면 화면이 날짜 줄을 숨긴다.
+ * 아이별 초대 코드 (O-15~O-17 mock). 만료 여부는 조회할 때 expiresAt 으로 거른다.
+ * 10분짜리라 미리 넣어 두면 화면을 열 때쯤 이미 만료돼 있어 비워 둔다.
  */
-export const PENDING_LINK_REQUESTED_AT: Record<string, string> = {
-  "child_1023:inst_speech_01": "2026-09-21T10:00:00+09:00",
+export const INVITATIONS: Record<string, LiveInvitation[]> = {};
+
+/** 아이별 연결된 보호자 (O-18, O-19 mock) */
+export const CHILD_GUARDIANS: Record<string, ChildGuardian[]> = {
+  child_1023: [
+    { userId: "41", name: "김보호", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true },
+    { userId: "52", name: null, linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false },
+  ],
+  child_1041: [
+    { userId: "63", name: "이보호", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true },
+  ],
 };
+
+/**
+ * 보호자가 초대 코드를 수락하면 연결되는 아이 (G-04 mock). 아직 이 보호자의 아이가 아니고
+ * 우리 기관 동의가 남은 아이라, 수락 뒤 동의 미리보기(G-02 mock)까지 이어서 볼 수 있다.
+ */
+export const INVITED_CHILD_ID = "child_1077";
 
 /** 학부모를 초대한 기관 (P-02 확인·동의 화면) */
 export const INVITING_INSTITUTION = SCHOOL;
