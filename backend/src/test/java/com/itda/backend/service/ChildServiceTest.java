@@ -127,6 +127,10 @@ class ChildServiceTest {
         assertThat(response.invitation()).isEqualTo(invitation);
     }
 
+    /**
+     * 요청은 관리번호를 필수로 받지만, 서비스는 번호 없이 불려도 중복 조회를 하지 않는다. 번호가 없는 기존 연결이
+     * 있으면 "external_id IS NULL" 조회가 참이 되어 엉뚱한 409 가 나기 때문이다.
+     */
     @Test
     void register_withoutExternalIdSkipsDuplicateCheck() {
         given(userService.getOrganizationIdOf(USER_ID)).willReturn(ORG_ID);
@@ -185,7 +189,7 @@ class ChildServiceTest {
                 .willThrow(new UserException(UserErrorCode.ORGANIZATION_NOT_ASSIGNED));
 
         assertThatThrownBy(() -> childService.register(
-                USER_ID, new RegisterChildRequest("김하늘", "2017-03-14", null)))
+                USER_ID, new RegisterChildRequest("김하늘", "2017-03-14", "2026-0031")))
                 .isInstanceOf(UserException.class);
 
         verify(childRepository, never()).save(any());

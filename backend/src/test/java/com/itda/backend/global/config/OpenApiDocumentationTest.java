@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItems;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -96,6 +97,7 @@ class OpenApiDocumentationTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.length()").value(3))
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.externalId.maxLength").value(50))
+				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.required", hasItems("name", "birthDate", "externalId")))
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.name").exists())
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.birthDate.format").value("date"))
 				.andExpect(jsonPath("$.components.schemas.RegisterChildRequest.properties.birthDateValid").doesNotExist())
