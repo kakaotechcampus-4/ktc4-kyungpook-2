@@ -34,8 +34,8 @@
 | 2 | `organization` | ✅ 확정 | ✅ `Organization` | 삭제 없음 |
 | 3 | `child` | ✅ 확정 | ✅ `Child` | `deleted_at` |
 | 4 | `child_organization` | ✅ 확정 | ✅ `ChildOrganization` | `deleted_at` |
-| 5 | `invitation` | ✅ 확정 | ⬜ 미구현 | `status` 로 대체 |
-| 6 | `child_guardian` | ✅ 확정 | ⬜ 미구현 | `deleted_at` |
+| 5 | `invitation` | ✅ 확정 | ⚠️ `Invitation` — 일부 다름 | `status` 로 대체 |
+| 6 | `child_guardian` | ✅ 확정 | ⚠️ `ChildGuardian` — 컬럼 추가 | `deleted_at` |
 | 7 | `sharing_consent` | ✅ 확정 | ⬜ 미구현 | `status` 로 대체 |
 | 8 | `raw_record` | ✅ 확정 | ⚠️ `RawRecord` — 일부 다름 | `deleted_at` |
 | 9 | `journal_entry` | ✅ 확정 | ✅ `JournalEntry` | `deleted_at` |
@@ -65,6 +65,9 @@
 | `raw_record` | status 가 파이프라인 단계 (`UPLOADED` → `PARSED` → `PROCESSING` → `COMPLETED`) | status `PENDING` `REVIEW` `BLOCKED` `FAILED` 중 실제로는 `PENDING`(저장 성공)·`FAILED`(저장 실패)만 씀 | 파이프라인 단계는 API `O-21 stage`로 따로 내려준다 (§6.1) |
 | `matching_result` | 이력이라 수정하지 않음. 재처리는 새 행 | 사람이 확인 큐에서 처리하면 **기존 행을 수정**한다 (`status → AUTO`, `matched_child_id` 덮어씀, `reviewer_id` 기록) | §7.1 |
 | `matching_result` | 검토자는 `users.id` BIGINT (`human_review.reviewer_id`와 같게) | `reviewer_id VARCHAR(255)` 에 `users.id`를 문자열로 저장 | §7.1 |
+| `invitation` | `contact VARCHAR(100)` (기관이 적은 보호자 연락처) | 컬럼 없음 | SMS·전화번호 확인을 쓰지 않기로 해서 뺐다 (§5.3) |
+| `invitation` | status `PENDING` `ACCEPTED` `EXPIRED`, 취소도 `EXPIRED` | status `PENDING` `ACCEPTED` `CANCELLED`, 만료는 `expires_at` 으로만 판단 | 만료를 상태로 두면 스케줄러가 필요하고 "취소"와 섞인다 (§5.3) |
+| `child_guardian` | `child_id` · `user_id` 만 | `invitation_id` · `linked_at` 추가 | 기관 해제 권한의 근거와 재연결 시각 (§5.4) |
 
 ---
 
@@ -81,6 +84,7 @@ erDiagram
     child ||--o{ child_organization : "다니는 기관들"
     organization ||--o{ invitation : "발송"
     child ||--o{ invitation : "대상"
+    invitation ||--o{ child_guardian : "연결 출처"
     child ||--o{ child_guardian : "보호자들"
     users ||--o{ child_guardian : "맡은 아이들"
     child ||--o{ sharing_consent : "동의 내역"
@@ -117,14 +121,16 @@ erDiagram
         bigint child_id FK
         bigint organization_id FK
         varchar code UK
-        varchar contact
         varchar status
         bigint accepted_user_id FK
+        datetime expires_at
     }
     child_guardian {
         bigint id PK
         bigint child_id FK
         bigint user_id FK
+        bigint invitation_id FK
+        datetime linked_at
     }
     sharing_consent {
         bigint id PK
@@ -392,7 +398,7 @@ journal_entry
 | 테이블 | 이유 |
 | --- | --- |
 | `organization` | 회원가입 시 기관 담당자가 직접 생성하며(9.23 변경), 아직 삭제 기능이 없다. 나중에 필요해지면 같은 규칙으로 `deleted_at`을 추가한다 |
-| `invitation` | `status = EXPIRED`가 이미 같은 일을 한다. 두 개를 같이 두면 "어느 쪽이 진짜인가"가 생긴다 |
+| `invitation` | `status = CANCELLED`(기관이 취소)가 이미 같은 일을 한다. 두 개를 같이 두면 "어느 쪽이 진짜인가"가 생긴다. 만료는 삭제가 아니라 `expires_at` 으로 판단한다 (§5.3) |
 | `sharing_consent` | `status = REVOKED`가 이미 같은 일을 한다. 위와 동일 |
 | `matching_result` `validation_result` `summary_result` `human_review` `child_context` `insight_result` `sharing_history` | 실행·검토 이력이라 애초에 삭제 개념이 없다. 잘못된 결과는 지우는 게 아니라 다시 실행해서 새 행을 쌓는다 |
 
@@ -460,6 +466,23 @@ summary_result(child_id, entry_date, institution_id, revision) UNIQUE
 
 `deleted_at IS NULL`인 행만 유니크로 보는 부분 인덱스(partial unique index)가 정석이지만,
 `ddl-auto: update`가 만들어주지 못하므로 쓰지 않는다.
+
+**`child_guardian` 은 행을 잠근 뒤 다시 확인한다.** 복구는 INSERT 가 아니라 UPDATE 라 유니크 제약이 막아 주지 않는다.
+같은 보호자가 코드 두 개로 동시에 수락하면 둘 다 "삭제된 행이 있다"를 보고 둘 다 복구할 수 있다.
+그래서 `SELECT ... FOR UPDATE` 로 행을 잠근 다음 살아 있는지 다시 보고, 복구할 때는 `invitation_id` 를 새 초대로 바꾼다.
+행이 아예 없을 때의 동시 INSERT 는 유니크 제약이 막는다 (`InvitationService.accept`).
+
+#### 잠금 순서 — 행 두 개 이상을 잠그는 작업은 이 순서를 지킨다
+
+```
+child → child_organization → invitation → child_guardian
+```
+
+순서가 하나뿐이라 교착(deadlock)이 생기지 않는다. 초대 코드 수락은 네 행을 모두 이 순서로 잠근다.
+그래서 아동 삭제나 명부 제외가 수락과 겹쳐도 수락은 그 행을 기다렸다가 커밋된 상태를 보고 판단한다.
+
+**아직 없는 "명부 제외"·"아동 삭제" 기능을 만들 때도 이 순서를 따른다** — `child` 를 먼저 잠그고 `child_organization` 을 잠근다.
+한 행만 잠그는 작업(초대 취소는 `invitation`, 보호자 해제는 `child_guardian`)은 순서와 무관하다.
 
 **예외: `child_organization(organization_id, external_id)` 는 되살리지 않고 비운다.**
 
@@ -688,11 +711,16 @@ SELECT c.* FROM child c
    AND c.deleted_at IS NULL
 ```
 
-### 5.3 `invitation` ✅ — ⬜ 미구현
+### 5.3 `invitation` ✅ — ⚠️ 일부 다름 (`Invitation`)
 
-> **근거** — 기획 변경: 부모 주도 → 기관 초대 방식
+> **근거** — 기획 변경: 부모 주도 → 기관 초대 방식 · 초대코드 설계(10.12): SMS 없이 기관이 코드를 직접 전달
 
-기관이 보호자에게 발송하는 초대. **보호자 계정이 아직 없는 상태에서 만들어진다.**
+기관이 보호자에게 건네는 **일회용 초대 코드**. **보호자 계정이 아직 없는 상태에서 만들어진다.**
+SMS·전화번호 확인은 비용 때문에 쓰지 않는다. 기관이 화면에 뜬 코드나 링크를 카톡 등으로 직접 보내고,
+보호자는 가입한 뒤 코드를 입력해 아이와 연결된다(`child_guardian`).
+
+> **코드는 본인 확인이 아니라 연결 권한이다.** 코드를 가진 사람이 누구인지는 확인하지 않는다.
+> 잘못 연결된 사람은 기관이나 본인이 해제한다(§5.4).
 
 > **회원가입과는 다른 개념이다 (9.23 명확화).** 이 초대는 "이 아이의 보호자 연결"을 위한
 > 것이지, 로그인 시 역할(기관/보호자)을 정하던 예전의 `?invite=` 방식과 무관하다. 보호자는
@@ -703,27 +731,51 @@ SELECT c.* FROM child c
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
 | `child_id` | BIGINT | N | 대상 아동 |
-| `organization_id` | BIGINT | N | 발송 기관 |
-| `code` | VARCHAR(50) | N | 초대 코드. UNIQUE |
-| `contact` | VARCHAR(100) | Y | 기관이 입력한 보호자 연락처 |
+| `organization_id` | BIGINT | N | 발급 기관 |
+| `code` | VARCHAR(8) | N | 초대 코드. UNIQUE |
 | `status` | VARCHAR(20) | N | 초대 상태 |
 | `accepted_user_id` | BIGINT | Y | 수락한 보호자 user ID |
+| `expires_at` | DATETIME | N | 만료 시각. 발급 후 10분 |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
 
 **`status`**
 
 ```
-PENDING
-ACCEPTED
-EXPIRED
+PENDING     발급됨. expires_at 전이면 쓸 수 있다
+ACCEPTED    보호자가 썼다 (accepted_user_id 기록)
+CANCELLED   기관이 취소했다
 ```
+
+**만료는 상태가 아니다.** `PENDING` 이어도 `expires_at` 이 지났으면 쓸 수 없다. "쓸 수 있는 코드"는 언제나
+`status = PENDING AND now < expires_at` 이다. 스케줄러가 상태를 바꿔 주지 않아도 정확하다.
+
+**코드 형식** — 대문자·숫자 31자(헷갈리는 `0 O 1 I L` 제외)에서 `SecureRandom` 으로 뽑은 8자리(31⁸ ≈ 8,500억).
+하이픈 없이 저장하고, 화면은 `XXXX-XXXX` 로 보여 준다. 입력은 공백·하이픈·대소문자를 무시한다.
+입력 시도 횟수는 제한하지 않는다 — 무차별 대입은 길이와 10분 만료·일회용으로 버틴다.
+
+**발급 규칙**
+
+- 아이 등록(O-11) 때 하나를 함께 발급하고, 기관은 언제든 추가 발급(O-15)·취소(O-17)할 수 있다.
+- 한 아이에 쓸 수 있는 코드가 **여러 개** 있어도 된다 — 엄마·아빠에게 따로 보낸다.
+- 새 코드는 기존 코드와 겹치지 않을 때까지 조회로 다시 뽑는다. 그 사이 다른 요청이 같은 코드를 먼저 저장해
+  유니크 제약에 걸리면 **트랜잭션 안에서 다시 저장하지 않는다**(PostgreSQL 은 실패한 트랜잭션을 더 쓸 수 없다).
+  요청 전체를 `503 INVITE_CODE_ISSUE_FAILED` 로 끝내고(O-11 이면 아이 등록도 롤백) 클라이언트가 다시 보낸다.
+
+**수락 규칙** (G-04)
+
+- 코드 소모(`ACCEPTED`)와 `child_guardian` 생성은 한 트랜잭션이다.
+- §3.3 잠금 순서대로 `child` → `child_organization` → `invitation` → `child_guardian` 을 잠근다.
+  아동이 삭제됐거나 발급 기관 명부에서 빠졌으면 쓸 수 없는 코드와 같은 `400 INVALID_INVITE_CODE` 다.
+- 만료는 **코드를 소모하기 직전의 시각**으로 다시 확인한다. 잠금을 기다리는 동안 만료됐을 수 있다.
+- 이미 연결된 보호자면 `409 LINK_ALREADY_EXISTS` 이고 코드는 쓰이지 않은 채 남는다.
+- **수락은 아동 상태(`child.status`)를 바꾸지 않는다.** 연결은 동의가 아니다.
 
 **수락해도, 취소해도 행은 삭제하지 않는다.** `status`만 바뀐다. 같은 코드의 재사용을 막고,
 누가 언제 초대했고 누가 수락했는지 이력이 남아야 하기 때문이다.
-이미 `status`가 삭제 역할을 하므로 `deleted_at`은 두지 않는다 — 초대 취소는 `EXPIRED`다.
+이미 `status`가 삭제 역할을 하므로 `deleted_at`은 두지 않는다 — 초대 취소는 `CANCELLED`다.
 
-### 5.4 `child_guardian` ✅ — ⬜ 미구현
+### 5.4 `child_guardian` ✅ — ⚠️ 컬럼 추가 (`ChildGuardian`)
 
 > **근거** — 기획: 보호자 2명 동의 기준 (미정 사항에 명시된 것 자체가 복수 보호자를 전제)
 
@@ -734,16 +786,29 @@ EXPIRED
 | `id` | BIGINT | N | PK |
 | `child_id` | BIGINT | N |  |
 | `user_id` | BIGINT | N | 보호자 user ID |
-| `created_at` | DATETIME | N |  |
+| `invitation_id` | BIGINT | N | 지금 연결을 만든 초대. 재연결하면 새 초대로 바뀐다 (10.12 추가) |
+| `linked_at` | DATETIME | N | 지금 연결이 생긴 시각. 재연결하면 바뀐다 (10.12 추가) |
+| `created_at` | DATETIME | N | 처음 연결된 시각 |
 | `updated_at` | DATETIME | N |  |
 | `deleted_at` | DATETIME | Y | **연결 해제 표시** |
 
-`(child_id, user_id)` UNIQUE. 재연결은 §3.3 의 복구 규칙을 따른다.
+`(child_id, user_id)` UNIQUE. 재연결은 §3.3 의 복구 규칙을 따르고, 행을 잠근 뒤 다시 확인한다.
 
 보호자가 여러 명일 수 있고(부·모), 한 보호자가 여러 아이를 가질 수 있어 N:M이다.
 
+**기관 구분 없는 전역 연결이다.** 아이가 기관 A·B 에 함께 다녀도 연결 행은 하나다.
+
 **보호자 권한 확인은 반드시 `deleted_at IS NULL`을 본다.** 빠뜨리면 연결을 끊은 사람이
 계속 아이 기록을 열람할 수 있다.
+
+**연결 해제 규칙**
+
+- 보호자 본인은 언제든 끊을 수 있다 (G-05).
+- 기관은 **자기 기관이 발급한 코드로 생긴 연결만** 끊을 수 있다 (O-19). `invitation_id` 가 가리키는 초대의
+  `organization_id` 로 판단한다. 다른 기관을 통해 들어온 보호자를 끊으면 그 기관의 판단을 뒤집게 된다.
+- 해제는 **전역**이다. 끊으면 모든 기관에서 이 보호자는 아이에 닿지 못한다.
+- 해제하면 그 보호자가 이 아이에 대해 남긴 `sharing_consent` 도 `REVOKED` 로 바꾼다 — 끊긴 사람의 동의로
+  공유가 계속되면 안 된다. **`sharing_consent` 를 구현할 때 적용한다**(지금은 테이블이 없다).
 
 ### 5.5 `sharing_consent` ✅ — ⬜ 미구현
 
@@ -775,6 +840,9 @@ REVOKED
 - 보호자가 여러 명일 때 **각자의 동의 레코드**가 필요하다.
 
 동의 철회가 곧 `REVOKED`이므로 `deleted_at`은 두지 않는다. 동의 기록은 어떤 경우에도 지우지 않는다.
+
+**보호자 연결(`child_guardian`)이 해제되면 그 보호자의 이 아이 동의를 모두 `REVOKED` 로 바꾼다** (§5.4).
+보호자 연결은 동의가 아니다 — 초대 코드 수락은 이 테이블에 아무것도 쓰지 않고 아동 상태도 바꾸지 않는다.
 
 ---
 
@@ -1627,6 +1695,7 @@ status   SHARED | BLOCKED | FAILED
 | 3 | 프론트 ID 타입 | **문자열로 직렬화해 내려준다** | DB·백엔드는 `BIGINT`/`Long`, AI에는 정수 그대로. 프론트에만 문자열 |
 | 4 | 삭제 방식 | **물리 삭제를 하지 않는다. `deleted_at`을 쓴다** | FK 제약이 없어 DB가 참조 무결성을 지켜주지 않기 때문이다. 대상 테이블 6개는 §3.2 |
 | 5 | `users.role` 결정 시점 | **(9.23 변경) 로그인 진입 경로가 아니라 회원가입 API에서 결정한다** | `role`은 NULL 허용으로 바뀌었다. 로그인 직후엔 NULL(가입 미완료), `POST /api/v1/auth/signup` 호출 시 확정되며 이후 바뀌지 않는다. `?invite=` 로그인 힌트 방식은 폐기 |
+| 6 | 초대코드 만료 · 1회성 | **(10.12 확정) 10분 만료, 일회용, 한 아이에 여러 개 허용** | SMS 없이 기관이 직접 전달한다. 8자리, 입력 시도 제한 없음, 만료는 `expires_at` 으로만 판단 (§5.3) |
 
 ### 10.2 아직 미확정
 
@@ -1635,7 +1704,7 @@ status   SHARED | BLOCKED | FAILED
 | # | 항목 | 내용 | 정할 사람 |
 | --- | --- | --- | --- |
 | 1 | Consent First 판정 시점 | 동의 대기 아동을 roster에서 빼는지, roster에는 넣되 매칭 후 정지하는지<br>→ **후자 권장.** "동의 대기 중이라 멈춤"을 화면에 정확히 표시할 수 있다 | BE + AI |
-| 2 | 초대코드 만료 · 1회성 | `invitation` 만료 기간과 재사용 허용 여부 | 기획 |
+| 2 | ~~초대코드 만료 · 1회성~~ | **확정됨 (2026-10-12)** — 10분·일회용·여러 개 허용. §10.1 #6, §5.3 에 반영 | ~~기획~~ |
 | 3 | 보호자 2명 동의 기준 | 한 명만 동의해도 활성화인지, 전원 동의가 필요한지 | 기획 |
 | 4 | 동의 철회 처리 | 철회 시 기존 기록을 어떻게 다루는지. `SUSPENDED` 이후 동작 | 기획 |
 | 5 | ~~Summary 묶음 단위~~ | **확정됨 (2026-10-05 정정)** — 아동 × 날짜 × 기관으로 묶는다. §8.2 에 반영 완료 | ~~BE + AI~~ |
@@ -1645,7 +1714,7 @@ status   SHARED | BLOCKED | FAILED
 | 9 | DB FK 제약 재검토 | JPA 연관관계를 쓰지 않는 것과 **DB에 FK 제약을 거는 것은 별개 결정**이다. `Long` 컬럼을 유지한 채 DB 제약만 추가하면 실수로 참조를 깨뜨리는 것을 막을 수 있다 | BE 전체 |
 | 11 | `mentioned_child_ids` 소비자 | 요약 워커가 읽는다 (#91) — 묶음의 값을 합쳐 주인공을 뺀 이름을 `other_child_names` 로 보낸다. ⚠️ AI `SummaryInput` 에는 아직 이 필드가 없어 지금은 버려진다 (AI 반영 예정). AI 는 프롬프트에 넣지 않고 요약 본문에 이름이 남았는지 재는 데만 쓴다.<br>→ 남은 것: Gate 1 승인 시 최종 본문에 그 이름이 남았으면 경고(차단 아님). 명부 밖 이름·성 뗀 이름은 못 잡는 한계가 있다 | AI + BE |
 | 12 | Gate 1 `decision` 에서 `REJECTED` 빼기 | 요약에 "반려" 상태를 두지 않기로 했다(§8.2). `human_review.decision` 은 이미 구현돼 있어 `APPROVED` · `CORRECTED` · `HOLD` 로 맞추는 BE 작업이 남는다 | BE + AI |
-| 10 | 설계와 코드 불일치 정리 | §0.3 의 남은 4건 — `raw_record.institution_id` 타입, `raw_record.status` 의미, `matching_result` 수정 방식과 `reviewer_id` 타입 | BE + AI |
+| 10 | 설계와 코드 불일치 정리 | §0.3 의 `raw_record` · `matching_result` 4건 — `raw_record.institution_id` 타입, `raw_record.status` 의미, `matching_result` 수정 방식과 `reviewer_id` 타입. (`invitation` · `child_guardian` 3건은 의도한 변경이라 설계를 코드에 맞출 대상이다) | BE + AI |
 
 ---
 
@@ -1779,3 +1848,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-09 | `summary_result` 구현 (`SummaryResult`), `journal_entry.summary_id` 추가. 저장 전 BE 근거 재검사 (§8.2, A4). 요약 워커의 묶음 조건·상태 변경 규칙 추가 (§6.2). `mentioned_child_ids` 를 요약 요청의 `other_child_names` 로 사용 (§7.1, §10.2-11). 테이블·컬럼 추가라 `ddl-auto: update` 가 만든다 | #91 |
 | 2026-10-09 | `child_context` 구현 (`ChildContext`). 화면에 필요한 날짜·기관·판수는 컬럼을 늘리지 않고 `summary_result_id` 로 조인해 채우기로 결정, §9.2 를 확정으로 올림 | #142 |
 | 2026-10-10 | `child_organization`에 `external_id`(기관 관리번호) 추가, `(organization_id, external_id)` UNIQUE와 연결 해제 시 번호를 비우는 규칙(§3.3, §5.2). UNIQUE 추가라 §11.4 수동 조치 필요 | #128 |
+| 2026-10-12 | `invitation`·`child_guardian` 구현 (`Invitation`·`ChildGuardian`). 초대코드 10분·일회용·여러 개 허용 확정(§10.1 #6, §10.2 #2 종료). `invitation.contact` 제거, 상태 `EXPIRED`→`CANCELLED`·`expires_at` 추가, `code` VARCHAR(8). `child_guardian`에 `invitation_id`·`linked_at` 추가, 해제 규칙(§5.4)과 잠금 순서(§3.3) 추가. 새 테이블이라 `ddl-auto: update`가 만들고 §11.4 수동 조치 불필요 | #159 |
