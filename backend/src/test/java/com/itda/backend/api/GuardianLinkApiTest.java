@@ -100,7 +100,7 @@ class GuardianLinkApiTest {
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name": "김하늘", "birthDate": "2017-03-14"}
+                                {"name": "김하늘", "birthDate": "2017-03-14", "externalId": "2026-0031"}
                                 """))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
