@@ -13,11 +13,12 @@
  * ⚠️ **아래 목록에 없는 경로는 아직 백엔드에 구현돼 있지 않다.** 경로는 위 규약을
  *    따른 추정이므로, 백엔드가 만들 때 실제 경로를 확인하고 맞춰야 한다.
  *
- *    구현된 것 (2026-10-04 기준, BE_READY 에서 true 인 기능)
+ *    구현된 것 (2026-10-12 기준, BE_READY 에서 true 인 기능)
  *      POST /api/v1/raw-records       multipart: file → 201
  *      GET  /api/v1/raw-records/{id}
  *      GET  /api/v1/raw-records
  *      GET  /api/v1/institutions/me/children
+ *      POST /api/v1/institutions/me/children   → 201 (초대코드 없음)
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/auth/me           (lib/auth.ts 에서 호출)
@@ -47,6 +48,7 @@ import type {
   ChatTurn,
   Child,
   ChildCareInfo,
+  ChildListItem,
   ConsentPreview,
   FileProgress,
   InboxItem,
@@ -58,6 +60,7 @@ import type {
   MatchResolution,
   ParentActivity,
   PendingLink,
+  RegisteredChild,
   SummaryItem,
   TimelineEntry,
   UploadFailReason,
@@ -87,8 +90,8 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const BE_READY = {
   /** 아이 명부 조회 (GET /institutions/me/children) */
   children: true,
-  /** 아이 등록 + 초대코드 */
-  childRegister: false,
+  /** 아이 등록 (POST /institutions/me/children) */
+  childRegister: true,
   /** 아이 상세 · 타임라인 */
   childProfile: false,
   /** 아이 기록 기반 질의응답 */
@@ -186,7 +189,7 @@ export { ApiError };
 /* ── 기관 ───────────────────────────────────────────── */
 
 /** GET /api/v1/institutions/me/children */
-export async function getChildren(): Promise<Child[]> {
+export async function getChildren(): Promise<ChildListItem[]> {
   if (mockFor("children")) return mock.CHILDREN;
   return request("/api/v1/institutions/me/children");
 }
@@ -498,22 +501,34 @@ export async function resolveBlockedItem(
   });
 }
 
-/** POST /api/v1/institutions/me/children — 등록 + 초대코드 발급 */
+/**
+ * POST /api/v1/institutions/me/children — 아이 등록.
+ *
+ * 서버는 아직 초대코드를 주지 않아서 inviteCode 는 mock 에서만 온다. 서버가 초대코드를
+ * 만들면 그때 필수로 바꾼다.
+ */
 export async function registerChild(input: {
   name: string;
   birthDate: string;
-}): Promise<{ child: Child; inviteCode: string }> {
-  const inviteCode = generateInviteCode();
+  /** 기관 관리번호. 필수다 */
+  externalId: string;
+}): Promise<{ child: RegisteredChild; inviteCode?: string }> {
   if (mockFor("childRegister")) {
+    const externalId = input.externalId.trim();
+    if (mock.CHILDREN.some((c) => c.externalId === externalId)) {
+      throw new ApiError(409, "DUPLICATE_EXTERNAL_ID");
+    }
     const child: Child = {
       id: `child_${Math.random().toString(36).slice(2, 8)}`,
-      name: input.name,
+      name: input.name.trim(),
       birthDate: input.birthDate,
+      externalId,
       status: "pending_consent",
       institutions: [{ institution: mock.MY_INSTITUTION, consent: "not_granted" }],
     };
     mock.CHILDREN.push(child);
-    return { child, inviteCode };
+    const { id, name, birthDate, status } = child;
+    return { child: { id, name, birthDate, externalId, status }, inviteCode: generateInviteCode() };
   }
   return request("/api/v1/institutions/me/children", {
     method: "POST",

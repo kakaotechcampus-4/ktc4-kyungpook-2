@@ -10,7 +10,7 @@ import {
   PageHeader,
 } from "@/components/ui";
 import { getChildren, getMatchingQueue, resolveMatchingItem } from "@/lib/api";
-import type { Child, MatchResolution, MatchingItem } from "@/lib/types";
+import type { ChildListItem, MatchResolution, MatchingItem } from "@/lib/types";
 
 export async function clientLoader() {
   // 명부를 못 받아도 큐는 띄운다. "이 기관 아동 아님" 은 명부 없이도 처리할 수 있다.
@@ -19,7 +19,7 @@ export async function clientLoader() {
     getMatchingQueue(),
     getChildren().then(
       (roster) => ({ roster, rosterFailed: false }),
-      () => ({ roster: [] as Child[], rosterFailed: true }),
+      () => ({ roster: [] as ChildListItem[], rosterFailed: true }),
     ),
   ]);
   return { items, ...rosterResult };
@@ -51,7 +51,7 @@ type ResolvedChild = Candidate & {
  */
 function resolveChild(
   base: Candidate,
-  rosterById: Map<string, Child>,
+  rosterById: Map<string, ChildListItem>,
   rosterFailed: boolean,
 ): ResolvedChild {
   const r = rosterById.get(base.childId);
@@ -212,7 +212,7 @@ function MatchingCard({
   onResolve,
 }: {
   item: MatchingItem;
-  roster: Child[];
+  roster: ChildListItem[];
   rosterFailed: boolean;
   onResolve: (resolution: MatchResolution) => Promise<void>;
 }) {
