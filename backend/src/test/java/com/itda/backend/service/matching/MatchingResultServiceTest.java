@@ -18,10 +18,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import com.itda.backend.domain.child.Child;
-import com.itda.backend.domain.child.ChildStatus;
+import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.matching.MatchingStatus;
 import com.itda.backend.domain.record.JournalEntry;
@@ -33,6 +32,7 @@ import com.itda.backend.exception.matching.MatchingResultNotFoundException;
 import com.itda.backend.exception.matching.MatchingResultValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
@@ -60,6 +60,8 @@ class MatchingResultServiceTest {
     @Mock
     private ChildOrganizationRepository childOrganizationRepository;
     @Mock
+    private SharingConsentRepository sharingConsentRepository;
+    @Mock
     private UserService userService;
 
     private MatchingResultService matchingResultService;
@@ -68,7 +70,7 @@ class MatchingResultServiceTest {
     void setUp() {
         matchingResultService = new MatchingResultService(
                 matchingResultRepository, journalEntryRepository, rawRecordRepository,
-                childRepository, childOrganizationRepository, userService);
+                childRepository, childOrganizationRepository, sharingConsentRepository, userService);
     }
 
     // 확인 필요 큐에 뜨는 일지 — 워커가 AI 에 물어봤는데 확정하지 못한 상태.
@@ -79,11 +81,14 @@ class MatchingResultServiceTest {
         return entry;
     }
 
-    // 아동은 동의 전으로 만들어지고 동의 완료로 바꾸는 메서드는 아직 없다.
-    private Child activeChild() {
-        Child child = Child.of("김하늘", LocalDate.of(2020, 1, 1));
-        ReflectionTestUtils.setField(child, "status", ChildStatus.ACTIVE);
-        return child;
+    // 매칭 확정은 child.status 가 아니라 이 기관에 대한 동의(sharing_consent)를 본다.
+    private Child child() {
+        return Child.of("김하늘", LocalDate.of(2020, 1, 1));
+    }
+
+    private void consentedToOurOrganization(boolean consented) {
+        given(sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(2L, OUR_ORG_ID, SharingConsentStatus.ACTIVE))
+                .willReturn(consented);
     }
 
     private RawRecord ourRawRecord(String institutionId) {
@@ -184,9 +189,10 @@ class MatchingResultServiceTest {
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
         given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
-        given(childRepository.findByIdAndDeletedAtIsNull(2L)).willReturn(Optional.of(activeChild()));
+        given(childRepository.findByIdForUpdate(2L)).willReturn(Optional.of(child()));
         given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
                 .willReturn(true);
+        consentedToOurOrganization(true);
         given(matchingResultRepository.save(any(MatchingResult.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
 
@@ -202,7 +208,7 @@ class MatchingResultServiceTest {
 
     @Test
     void resolveAssign_pendingConsentChild_throwsValidationException() {
-        // AI 명단(findActiveByOrganizationId)에서 빠지는 동의 전 아동은 사람이 직접 골라도 확정할 수 없다.
+        // AI 명단(findConsentedByOrganizationId)에서 빠지는 동의 전 아동은 사람이 직접 골라도 확정할 수 없다.
         MatchingResult matchingResult = new MatchingResult(
                 1L, null, new BigDecimal("0.4"), MatchingStatus.UNMATCHED, null, null, null, null, null, null, "v1");
         JournalEntry entry = ourJournalEntry();
@@ -210,15 +216,38 @@ class MatchingResultServiceTest {
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
         given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
-        given(childRepository.findByIdAndDeletedAtIsNull(2L))
-                .willReturn(Optional.of(Child.of("김하늘", LocalDate.of(2020, 1, 1))));
+        given(childRepository.findByIdForUpdate(2L)).willReturn(Optional.of(child()));
         given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
                 .willReturn(true);
+        consentedToOurOrganization(false);
 
         assertThatThrownBy(() ->
                 matchingResultService.resolve(1L, "assign", 2L, "kakao-teacher-1", OUR_USER_ID))
                 .isInstanceOf(MatchingResultValidationException.class);
         assertThat(matchingResult.getStatus()).isEqualTo(MatchingStatus.UNMATCHED);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCH_REVIEW);
+    }
+
+    @Test
+    void resolveAssign_childConsentedOnlyToOtherOrganization_throwsValidationException() {
+        // 다른 기관에만 동의해 child.status 가 ACTIVE 인 아이도 이 기관에서는 확정할 수 없다.
+        MatchingResult matchingResult = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.UNMATCHED, null, null, null, null, null, null, "v1");
+        JournalEntry entry = ourJournalEntry();
+        Child consentedElsewhere = child();
+        consentedElsewhere.activate();
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(childRepository.findByIdForUpdate(2L)).willReturn(Optional.of(consentedElsewhere));
+        given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
+                .willReturn(true);
+        consentedToOurOrganization(false);
+
+        assertThatThrownBy(() ->
+                matchingResultService.resolve(1L, "assign", 2L, "kakao-teacher-1", OUR_USER_ID))
+                .isInstanceOf(MatchingResultValidationException.class);
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCH_REVIEW);
     }
 
@@ -264,8 +293,11 @@ class MatchingResultServiceTest {
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
         given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
         // assign이 아이 검증 때문에 거절되는 게 아니라는 걸 보장하려고 처리 가능한 아이로 둔다.
-        lenient().when(childRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(Optional.of(activeChild()));
+        lenient().when(childRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(child()));
         lenient().when(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
+                .thenReturn(true);
+        lenient().when(sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(
+                        2L, OUR_ORG_ID, SharingConsentStatus.ACTIVE))
                 .thenReturn(true);
 
         assertThatThrownBy(() ->
@@ -288,9 +320,10 @@ class MatchingResultServiceTest {
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
         given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
-        given(childRepository.findByIdAndDeletedAtIsNull(2L)).willReturn(Optional.of(activeChild()));
+        given(childRepository.findByIdForUpdate(2L)).willReturn(Optional.of(child()));
         given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
                 .willReturn(true);
+        consentedToOurOrganization(true);
         given(matchingResultRepository.save(any(MatchingResult.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
 
@@ -310,7 +343,7 @@ class MatchingResultServiceTest {
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
         given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
-        given(childRepository.findByIdAndDeletedAtIsNull(999L)).willReturn(Optional.empty());
+        given(childRepository.findByIdForUpdate(999L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() ->
                 matchingResultService.resolve(1L, "assign", 999L, "kakao-teacher-1", OUR_USER_ID))
@@ -327,7 +360,7 @@ class MatchingResultServiceTest {
         given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
         given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
         given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
-        given(childRepository.findByIdAndDeletedAtIsNull(2L))
+        given(childRepository.findByIdForUpdate(2L))
                 .willReturn(Optional.of(Child.of("김하늘", LocalDate.of(2020, 1, 1))));
         given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
                 .willReturn(false);

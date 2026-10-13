@@ -3,6 +3,7 @@ package com.itda.backend.global.exception;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.itda.backend.exception.auth.AuthException;
 import com.itda.backend.exception.child.ChildException;
+import com.itda.backend.exception.consent.ConsentException;
 import com.itda.backend.exception.invitation.InvitationException;
 import com.itda.backend.exception.organization.OrganizationException;
 import com.itda.backend.exception.user.UserException;
@@ -79,6 +80,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvitationException.class)
     public ResponseEntity<ErrorResponse> handleInvitationException(InvitationException e) {
         log.warn("초대 처리 실패: {}", e.getMessage());
+        return ResponseEntity.status(e.getErrorCode().getStatus())
+                .body(ErrorResponse.of(e.getErrorCode()));
+    }
+
+    @ExceptionHandler(ConsentException.class)
+    public ResponseEntity<ErrorResponse> handleConsentException(ConsentException e) {
+        log.warn("동의 처리 실패: {}", e.getMessage());
         return ResponseEntity.status(e.getErrorCode().getStatus())
                 .body(ErrorResponse.of(e.getErrorCode()));
     }

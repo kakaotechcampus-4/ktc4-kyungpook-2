@@ -3,6 +3,7 @@ package com.itda.backend.service.insight;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,6 +22,9 @@ import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.summary.SummaryResult;
@@ -29,6 +33,7 @@ import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 
@@ -64,6 +69,8 @@ class InsightServiceTest {
     private OrganizationRepository organizationRepository;
     @Autowired
     private ChildRepository childRepository;
+    @Autowired
+    private SharingConsentRepository sharingConsentRepository;
 
     private InsightService insightService;
     private Child junho;
@@ -73,12 +80,31 @@ class InsightServiceTest {
     @BeforeEach
     void setUp() {
         insightService = new InsightService(childContextRepository, summaryResultRepository, approvalRepository,
-                childOrganizationRepository, organizationRepository, childRepository, new ObjectMapper());
+                childOrganizationRepository, organizationRepository, childRepository, sharingConsentRepository,
+                new ObjectMapper());
         junho = em.persist(Child.of("김준호", LocalDate.of(2019, 3, 1)));
         school = em.persist(Organization.of("햇살초등학교", OrganizationType.SCHOOL, "1234567890"));
         center = em.persist(Organization.of("햇살아동발달센터", OrganizationType.CENTER, "1234567891"));
         em.persist(ChildOrganization.of(junho.getId(), school.getId()));
         em.persist(ChildOrganization.of(junho.getId(), center.getId()));
+        // 따로 말하지 않는 테스트는 보호자가 두 기관 모두에 공유를 허락한 상태다.
+        consent(school);
+        consent(center);
+    }
+
+    private SharingConsent consent(Organization institution) {
+        return em.persist(SharingConsent.grant(junho.getId(), 100L, institution.getId(), List.of(ConsentField.DAILY_SUMMARY)));
+    }
+
+    private void revokeConsentsTo(Organization institution) {
+        em.getEntityManager()
+                .createQuery("select c from SharingConsent c where c.childId = :childId and c.organizationId = :organizationId",
+                        SharingConsent.class)
+                .setParameter("childId", junho.getId())
+                .setParameter("organizationId", institution.getId())
+                .getResultList()
+                .forEach(c -> c.revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, LocalDateTime.of(2026, 10, 8, 9, 0)));
+        em.flush();
     }
 
     /** Gate 1 을 통과한 요약 한 건. child_context 에 행이 있다는 것이 곧 승인이다. */
@@ -274,9 +300,51 @@ class InsightServiceTest {
                 .containsOnly(center.getId());
     }
 
+    /** 동의 목록은 sharing_consent 가 ACTIVE 인 기관이다. 다니기만 하고 허락하지 않은 기관은 빠진다. */
+    @Test
+    void 동의하지_않은_기관은_동의_목록과_재료에서_뺀다() {
+        em.getEntityManager().createQuery("delete from SharingConsent c where c.organizationId = :organizationId")
+                .setParameter("organizationId", center.getId())
+                .executeUpdate();
+        approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+        approved(center, LocalDate.of(2026, 10, 3), CLAIMS);
+
+        InsightAgentRequest request = prepare().orElseThrow();
+
+        assertThat(request.consentedInstitutions())
+                .extracting(InsightAgentRequest.Institution::institutionId)
+                .containsExactly(school.getId());
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::institutionId)
+                .containsOnly(school.getId());
+    }
+
+    /** 철회된 동의는 동의가 아니다. 철회 전에 승인된 요약도 재료로 쓰지 않는다. */
+    @Test
+    void 동의를_철회한_기관의_요약은_재료에서_뺀다() {
+        approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+        approved(center, LocalDate.of(2026, 10, 3), CLAIMS);
+        revokeConsentsTo(center);
+
+        InsightAgentRequest request = prepare().orElseThrow();
+
+        assertThat(request.consentedInstitutions())
+                .extracting(InsightAgentRequest.Institution::institutionId)
+                .containsExactly(school.getId());
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::institutionId)
+                .containsOnly(school.getId());
+    }
+
+    @Test
+    void 모든_동의가_철회되면_부르지_않는다() {
+        approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+        revokeConsentsTo(school);
+        revokeConsentsTo(center);
+
+        assertThat(prepare()).isEmpty();
+    }
+
     /**
-     * sharing_consent 가 아직 없어 아이가 등록된 기관 전부를 넣는다 (AI/insight/schemas.py).
-     * 연결이 끊긴 기관은 더 이상 다니지 않으므로 뺀다.
+     * 명부에서 빠질 때 동의를 끄는 경로가 아직 앱에 없다. 동의가 남아 있어도 더 이상 다니지 않는 기관은 뺀다.
      */
     @Test
     void 연결이_끊긴_기관은_동의_목록에서_뺀다() {

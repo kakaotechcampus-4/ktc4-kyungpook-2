@@ -13,8 +13,8 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
  *
  * @param periodFrom             재료가 된 기간 시작 (ISO, 예: "2026-10-01")
  * @param consentedInstitutions  보호자가 공유에 동의한 기관. 이 밖의 기관 claim 은 재료에서 뺀다
- *                               (AI/insight/CRITERIA.md §7). {@code sharing_consent} 가 구현되기 전까지는
- *                               아이가 등록된 기관 전부를 넣는다 — 계약이 그렇게 정해 뒀다
+ *                               (AI/insight/CRITERIA.md §7). {@code sharing_consent} 가 ACTIVE 이고 아이가 지금
+ *                               명부에 있는 기관이다 (DB 스키마 §5.5, {@code InsightService})
  */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record InsightAgentRequest(
@@ -30,8 +30,8 @@ public record InsightAgentRequest(
      *
      * <p>AI 쪽 기본값({@code Field(default_factory=list)})은 <b>키가 없을 때만</b> 쓰인다. 값이 명시적으로
      * {@code null} 이면 {@code list[Institution]} 검증에 걸려 422 가 되고, 422 는 계약 위반이라 재시도 없이
-     * 바로 실패한다. 조회 결과가 없는 경우가 실제 경로다 — {@code sharing_consent} 구현 전에는 아이가 등록된
-     * 기관을 그대로 넣는데, 그 조회가 비면 {@code null} 이 흘러들어올 수 있다.
+     * 바로 실패한다. 조회 결과가 없는 경우가 실제 경로다 — 동의가 모두 철회된 아이면 동의 기관 조회가 비고,
+     * 그 결과가 {@code null} 로 흘러들어올 수 있다.
      */
     public InsightAgentRequest {
         claims = claims == null ? List.of() : claims;

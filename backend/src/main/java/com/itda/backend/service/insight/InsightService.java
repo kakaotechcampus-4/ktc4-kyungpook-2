@@ -22,6 +22,8 @@ import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.SharingConsent;
+import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.request.insight.InsightAgentRequest;
@@ -29,6 +31,7 @@ import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 
@@ -63,6 +66,7 @@ public class InsightService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
     private final ChildRepository childRepository;
+    private final SharingConsentRepository sharingConsentRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -170,18 +174,24 @@ public class InsightService {
     }
 
     /**
-     * 보호자가 공유에 동의한 기관.
+     * 보호자가 공유에 동의한 기관 — {@code sharing_consent} 가 ACTIVE 이고, 아이가 지금 그 기관 명부에 있는 곳
+     * (DB 스키마 §5.5, {@code AI/insight/CRITERIA.md} §7).
      *
-     * <p>⚠️ 아직 {@code sharing_consent} 가 없어서 <b>아이가 지금 다니는 기관 전부</b>를 넣는다 — 계약이
-     * 그렇게 정해 뒀다 ({@code AI/insight/schemas.py}). 그 테이블이 생기면 <b>이 메서드만</b> 바꾸면 된다.
+     * <p>명부 소속도 함께 본다. 명부에서 빠질 때 동의를 끄는 경로가 아직 앱에 없어서(테스트 아이 스크립트만 끈다),
+     * 동의만 보면 더 이상 다니지 않는 기관이 남을 수 있다. 둘 다 맞아야 넣는다 — 모르면 막는다.
      *
-     * <p><b>등록 기관과 요약의 기관은 같은 집합이 아니다.</b> {@code child_context} 는 지우지 않고 쌓이기만
-     * 해서, 연결을 끊은 기관의 승인본은 그대로 남는다. 그래서 {@code prepare} 가 이 목록으로 재료를 한 번 더
-     * 거른다 — 지금 거를 것이 없더라도 끊는 경로가 생기는 날 바로 맞는 동작이 된다.
+     * <p><b>동의 기관과 요약의 기관은 같은 집합이 아니다.</b> {@code child_context} 는 지우지 않고 쌓이기만
+     * 해서, 동의를 철회했거나 연결을 끊은 기관의 승인본은 그대로 남는다. 그래서 {@code prepare} 가 이 목록으로
+     * 재료를 한 번 더 거른다.
      */
     private List<InsightAgentRequest.Institution> consentedInstitutionsOf(Long childId) {
-        List<Long> organizationIds = childOrganizationRepository.findByChildIdAndDeletedAtIsNull(childId).stream()
+        Set<Long> enrolled = childOrganizationRepository.findByChildIdAndDeletedAtIsNull(childId).stream()
                 .map(ChildOrganization::getOrganizationId)
+                .collect(Collectors.toSet());
+        List<Long> organizationIds = sharingConsentRepository
+                .findByChildIdAndStatus(childId, SharingConsentStatus.ACTIVE).stream()
+                .map(SharingConsent::getOrganizationId)
+                .filter(enrolled::contains)
                 .distinct()
                 .toList();
         return organizationRepository.findAllById(organizationIds).stream()
