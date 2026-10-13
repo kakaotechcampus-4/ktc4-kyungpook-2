@@ -11,7 +11,7 @@ import {
   ValidationBadge,
 } from "@/components/ui";
 import { decideGate1, getChildren, getGate1Queue, reassignSummaryChild } from "@/lib/api";
-import type { Child, MatchBasis, SummaryItem } from "@/lib/types";
+import type { ChildListItem, MatchBasis, SummaryItem } from "@/lib/types";
 
 export async function clientLoader() {
   const [items, roster] = await Promise.all([getGate1Queue(), getChildren()]);
@@ -34,7 +34,7 @@ function MatchBasisRow({
   onChanged,
 }: {
   item: SummaryItem;
-  roster: Child[];
+  roster: ChildListItem[];
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);

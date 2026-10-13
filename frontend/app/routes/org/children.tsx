@@ -35,7 +35,9 @@ export default function ChildrenPage() {
           const s = STATUS_LABEL[c.status];
           return (
             <Card key={c.id}>
-              <div className="mb-3 flex flex-wrap items-center gap-2.5">
+              <div
+                className={`flex flex-wrap items-center gap-2.5 ${c.institutions ? "mb-3" : ""}`}
+              >
                 <span
                   aria-hidden
                   className="flex size-9 items-center justify-center rounded-full bg-surface2 text-[15px] font-semibold text-ink2"
@@ -48,6 +50,9 @@ export default function ChildrenPage() {
                 >
                   {c.name}
                 </Link>
+                {c.externalId ? (
+                  <span className="text-[14px] text-muted tabular-nums">#{c.externalId}</span>
+                ) : null}
                 <span className="text-[14px] text-muted tabular-nums">{c.birthDate}</span>
                 <span
                   className={`ml-auto rounded px-2 py-0.5 text-[13px] font-semibold ${s.cls}`}
@@ -56,17 +61,22 @@ export default function ChildrenPage() {
                 </span>
               </div>
 
-              <p className="mb-2 text-[13px] font-semibold tracking-wider text-muted uppercase">
-                연결된 기관
-              </p>
-              <ul className="flex flex-wrap gap-x-5 gap-y-2">
-                {c.institutions.map(({ institution, consent }) => (
-                  <li key={institution.id} className="flex items-center gap-2 text-[15px]">
-                    <InstitutionChip institution={institution} withName />
-                    <ConsentStatus state={consent} />
-                  </li>
-                ))}
-              </ul>
+              {/* 서버는 아직 연결된 기관 목록을 주지 않는다 (ChildListItem 참고) */}
+              {c.institutions ? (
+                <>
+                  <p className="mb-2 text-[13px] font-semibold tracking-wider text-muted uppercase">
+                    연결된 기관
+                  </p>
+                  <ul className="flex flex-wrap gap-x-5 gap-y-2">
+                    {c.institutions.map(({ institution, consent }) => (
+                      <li key={institution.id} className="flex items-center gap-2 text-[15px]">
+                        <InstitutionChip institution={institution} withName />
+                        <ConsentStatus state={consent} />
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
             </Card>
           );
         })}

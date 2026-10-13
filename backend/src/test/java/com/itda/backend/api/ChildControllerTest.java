@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import com.itda.backend.domain.ChildStatus;
 import com.itda.backend.dto.ChildRosterResponse;
 import com.itda.backend.dto.request.RegisterChildRequest;
+import com.itda.backend.dto.response.IssuedInvitationResponse;
 import com.itda.backend.dto.response.RegisteredChildResponse;
 import com.itda.backend.dto.response.RegisteredChildResponse.RegisteredChild;
 import com.itda.backend.exception.ChildErrorCode;
@@ -75,7 +77,8 @@ class ChildControllerTest {
 
     private void givenRegistered() {
         given(childService.register(any(), any())).willReturn(new RegisteredChildResponse(
-                new RegisteredChild("9", "김하늘", "2017-03-14", "2026-0031", ChildStatus.PENDING_CONSENT)));
+                new RegisteredChild("9", "김하늘", "2017-03-14", "2026-0031", ChildStatus.PENDING_CONSENT),
+                new IssuedInvitationResponse("3", "K7P3QX9M", OffsetDateTime.parse("2026-10-12T10:10:00+09:00"))));
     }
 
     @Test
@@ -83,7 +86,7 @@ class ChildControllerTest {
         givenRegistered();
 
         register("""
-                {"name": "김하늘", "birthDate": "2017-03-14"}
+                {"name": "김하늘", "birthDate": "2017-03-14", "externalId": "2026-0031"}
                 """)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
@@ -91,7 +94,10 @@ class ChildControllerTest {
                 .andExpect(jsonPath("$.data.child.name").value("김하늘"))
                 .andExpect(jsonPath("$.data.child.birthDate").value("2017-03-14"))
                 .andExpect(jsonPath("$.data.child.externalId").value("2026-0031"))
-                .andExpect(jsonPath("$.data.child.status").value("pending_consent"));
+                .andExpect(jsonPath("$.data.child.status").value("pending_consent"))
+                .andExpect(jsonPath("$.data.invitation.id").value("3"))
+                .andExpect(jsonPath("$.data.invitation.code").value("K7P3QX9M"))
+                .andExpect(jsonPath("$.data.invitation.expiresAt").value("2026-10-12T10:10:00+09:00"));
     }
 
     @Test
@@ -99,7 +105,7 @@ class ChildControllerTest {
         givenRegistered();
 
         register("""
-                {"name": "  김하늘  ", "birthDate": "2017-03-14"}
+                {"name": "  김하늘  ", "birthDate": "2017-03-14", "externalId": "2026-0031"}
                 """)
                 .andExpect(status().isCreated());
 
@@ -115,7 +121,7 @@ class ChildControllerTest {
         givenRegistered();
 
         register("""
-                {"name": "김하늘", "birthDate": "2017-03-14", "guardianPhoneLast4": "1234"}
+                {"name": "김하늘", "birthDate": "2017-03-14", "guardianPhoneLast4": "1234", "externalId": "2026-0031"}
                 """)
                 .andExpect(status().isCreated());
     }
@@ -134,21 +140,15 @@ class ChildControllerTest {
         assertThat(captor.getValue().externalId()).isEqualTo("2026-0031");
     }
 
-    /** 관리번호는 선택이다. 없거나 비어 있으면 "번호 없음"(null) 으로 넘긴다. */
+    /** 관리번호는 필수다. 없거나 비어 있거나 공백뿐이면 400 이다. */
     @ParameterizedTest
     @ValueSource(strings = {
             "{\"name\": \"김하늘\", \"birthDate\": \"2017-03-14\"}",
             "{\"name\": \"김하늘\", \"birthDate\": \"2017-03-14\", \"externalId\": null}",
             "{\"name\": \"김하늘\", \"birthDate\": \"2017-03-14\", \"externalId\": \"\"}",
             "{\"name\": \"김하늘\", \"birthDate\": \"2017-03-14\", \"externalId\": \"   \"}"})
-    void register_treatsMissingOrBlankExternalIdAsNone(String body) throws Exception {
-        givenRegistered();
-
-        register(body).andExpect(status().isCreated());
-
-        ArgumentCaptor<RegisterChildRequest> captor = ArgumentCaptor.forClass(RegisterChildRequest.class);
-        verify(childService).register(any(), captor.capture());
-        assertThat(captor.getValue().externalId()).isNull();
+    void register_rejectsMissingOrBlankExternalId(String body) throws Exception {
+        expectInvalidRequest(body);
     }
 
     @Test
@@ -181,24 +181,24 @@ class ChildControllerTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "{\"birthDate\": \"2017-03-14\"}",
-            "{\"name\": null, \"birthDate\": \"2017-03-14\"}",
-            "{\"name\": \"\", \"birthDate\": \"2017-03-14\"}",
-            "{\"name\": \"   \", \"birthDate\": \"2017-03-14\"}"})
+            "{\"birthDate\": \"2017-03-14\", \"externalId\": \"2026-0031\"}",
+            "{\"name\": null, \"birthDate\": \"2017-03-14\", \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"\", \"birthDate\": \"2017-03-14\", \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"   \", \"birthDate\": \"2017-03-14\", \"externalId\": \"2026-0031\"}"})
     void register_rejectsMissingOrBlankName(String body) throws Exception {
         expectInvalidRequest(body);
     }
 
     @Test
     void register_rejectsNameLongerThan100AfterStrip() throws Exception {
-        expectInvalidRequest("{\"name\": \"%s\", \"birthDate\": \"2017-03-14\"}".formatted("가".repeat(101)));
+        expectInvalidRequest("{\"name\": \"%s\", \"birthDate\": \"2017-03-14\", \"externalId\": \"2026-0031\"}".formatted("가".repeat(101)));
     }
 
     @Test
     void register_acceptsNameOf100CharsSurroundedBySpaces() throws Exception {
         givenRegistered();
 
-        register("{\"name\": \"  %s  \", \"birthDate\": \"2017-03-14\"}".formatted("가".repeat(100)))
+        register("{\"name\": \"  %s  \", \"birthDate\": \"2017-03-14\", \"externalId\": \"2026-0031\"}".formatted("가".repeat(100)))
                 .andExpect(status().isCreated());
     }
 
@@ -206,29 +206,29 @@ class ChildControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {
             "{\"name\": \"김하늘\"}",
-            "{\"name\": \"김하늘\", \"birthDate\": null}",
-            "{\"name\": \"김하늘\", \"birthDate\": \"\"}",
-            "{\"name\": \"김하늘\", \"birthDate\": \"2017/03/14\"}",
-            "{\"name\": \"김하늘\", \"birthDate\": \"2017-3-14\"}",
-            "{\"name\": \"김하늘\", \"birthDate\": \"2017-03-14T00:00:00\"}",
-            "{\"name\": \"김하늘\", \"birthDate\": [2017, 3, 14]}",
-            "{\"name\": \"김하늘\", \"birthDate\": 20170314}",
-            "{\"name\": \"김하늘\", \"birthDate\": \"2017-02-30\"}",
-            "{\"name\": \"김하늘\", \"birthDate\": \"2017-13-01\"}"})
+            "{\"name\": \"김하늘\", \"birthDate\": null, \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"김하늘\", \"birthDate\": \"\", \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"김하늘\", \"birthDate\": \"2017/03/14\", \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"김하늘\", \"birthDate\": \"2017-3-14\", \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"김하늘\", \"birthDate\": \"2017-03-14T00:00:00\", \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"김하늘\", \"birthDate\": [2017, 3, 14], \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"김하늘\", \"birthDate\": 20170314, \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"김하늘\", \"birthDate\": \"2017-02-30\", \"externalId\": \"2026-0031\"}",
+            "{\"name\": \"김하늘\", \"birthDate\": \"2017-13-01\", \"externalId\": \"2026-0031\"}"})
     void register_rejectsBirthDateThatIsNotAStrictCalendarDate(String body) throws Exception {
         expectInvalidRequest(body);
     }
 
     @Test
     void register_rejectsFutureBirthDate() throws Exception {
-        expectInvalidRequest("{\"name\": \"김하늘\", \"birthDate\": \"%s\"}".formatted(LocalDate.now().plusDays(1)));
+        expectInvalidRequest("{\"name\": \"김하늘\", \"birthDate\": \"%s\", \"externalId\": \"2026-0031\"}".formatted(LocalDate.now().plusDays(1)));
     }
 
     @Test
     void register_acceptsBirthDateOfToday() throws Exception {
         givenRegistered();
 
-        register("{\"name\": \"김하늘\", \"birthDate\": \"%s\"}".formatted(LocalDate.now()))
+        register("{\"name\": \"김하늘\", \"birthDate\": \"%s\", \"externalId\": \"2026-0031\"}".formatted(LocalDate.now()))
                 .andExpect(status().isCreated());
     }
 
@@ -238,7 +238,7 @@ class ChildControllerTest {
                 .willThrow(new UserException(UserErrorCode.ORGANIZATION_NOT_ASSIGNED));
 
         register("""
-                {"name": "김하늘", "birthDate": "2017-03-14"}
+                {"name": "김하늘", "birthDate": "2017-03-14", "externalId": "2026-0031"}
                 """)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.result").value("FAIL"))

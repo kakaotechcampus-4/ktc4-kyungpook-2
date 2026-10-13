@@ -1,31 +1,31 @@
 import { useState, useTransition } from "react";
 import { redirect, useLoaderData, useNavigate } from "react-router";
 import { grantRole, isOnboarded, markOnboarded } from "@/lib/auth";
-import { getConsentPreview, rejectLink, updateConsent } from "@/lib/api";
+import { getConsentPreview, unlinkChild, updateConsent } from "@/lib/api";
 import { InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
 
-const LINKS = "/parent/invite?step=links";
+const INVITE = "/parent/invite";
 
 /**
- * 대상은 쿼리로 받는다 — P-01 의 연결 요청 목록이 "어느 아이 · 어느 기관"인지 지정해
- * 보낸다. 쿼리가 빠졌으면 무엇에 동의하는지 알 수 없으므로 목록으로 되돌린다.
+ * 대상은 쿼리로 받는다 — P-01 이 초대 코드를 수락한 뒤 "어느 아이 · 어느 기관"인지 지정해
+ * 보낸다. 쿼리가 빠졌으면 무엇에 동의하는지 알 수 없으므로 코드 입력 화면으로 되돌린다.
  */
 export async function clientLoader({ request }: { request: Request }) {
   const url = new URL(request.url);
   const childId = url.searchParams.get("childId");
   const institutionId = url.searchParams.get("institutionId");
-  if (!childId || !institutionId) return redirect(LINKS);
+  if (!childId || !institutionId) return redirect(INVITE);
   return { preview: await getConsentPreview(childId, institutionId) };
 }
 
 /**
  * P-02 확인 · 동의 — 한 화면에서 아이 확인 + 기관 확인 + 공유 범위 동의를 끝낸다.
  *
- * 첫 가입 때 초대한 기관이든, 나중에 새로 권한을 요청한 기관이든 P-01 에서 고른
- * 연결 요청 하나를 그대로 보여준다. 요청을 찾지 못하면 다른 아이나 기관으로 채우지 않고
- * "찾을 수 없음" 을 보여준다 — 엉뚱한 아이에 동의하게 만들면 안 된다.
+ * P-01 에서 초대 코드로 연결한 아이와 그 코드를 준 기관을 보여준다. 찾지 못하면 다른 아이나
+ * 기관으로 채우지 않고 "찾을 수 없음" 을 보여준다 — 엉뚱한 아이에 동의하게 만들면 안 된다.
+ * 우리 아이가 아니면 연결을 끊는다(G-05). 코드는 본인 확인이 아니라서 잘못 연결될 수 있다.
  */
 export default function ParentConsentPage() {
   const { preview } = useLoaderData<typeof clientLoader>();
@@ -39,14 +39,16 @@ export default function ParentConsentPage() {
     return (
       <div className="flex flex-col gap-5">
         <div className="rounded-2xl border border-block/40 bg-blocksoft px-4 py-3">
-          <p className="mb-1 text-[16px] font-bold text-block">연결 요청을 찾을 수 없어요</p>
-          <p className="text-[15px] leading-7 text-ink2">이미 처리되었거나 잘못된 요청이에요.</p>
+          <p className="mb-1 text-[16px] font-bold text-block">동의할 내용을 찾을 수 없어요</p>
+          <p className="text-[15px] leading-7 text-ink2">
+            이미 동의했거나 연결이 끊긴 아이예요. 기관에서 받은 코드가 있다면 다시 입력해 주세요.
+          </p>
         </div>
         <button
-          onClick={() => navigate(LINKS)}
+          onClick={() => navigate(INVITE)}
           className="tap h-14 w-full rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2"
         >
-          연결 요청 목록으로
+          코드 입력 화면으로
         </button>
       </div>
     );
@@ -62,7 +64,7 @@ export default function ParentConsentPage() {
             아이 정보가 일치하지 않아요
           </p>
           <p className="text-[15px] leading-7 text-ink2">
-            화면에 표시된 이름과 생년월일이 우리 아이와 다르다면, 등록을 거부하고 기관에
+            화면에 표시된 이름과 생년월일이 우리 아이와 다르다면, 연결을 끊고 기관에
             알려주세요.
           </p>
         </div>
@@ -77,14 +79,14 @@ export default function ParentConsentPage() {
         <button
           onClick={() =>
             startReject(async () => {
-              await rejectLink(child.id, institution.id);
-              navigate(LINKS);
+              await unlinkChild(child.id);
+              navigate(INVITE);
             })
           }
           disabled={rejecting}
           className="tap h-14 w-full rounded-2xl bg-block px-4 text-[16px] font-bold text-white disabled:opacity-60"
         >
-          {rejecting ? "처리 중…" : "정보가 달라요 · 반려하기"}
+          {rejecting ? "처리 중…" : "정보가 달라요 · 연결 끊기"}
         </button>
         <button
           onClick={() => setMismatch(false)}

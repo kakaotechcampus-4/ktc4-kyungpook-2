@@ -53,6 +53,9 @@ class ChildServiceRollbackTest {
     @MockitoBean
     private UserService userService;
 
+    @MockitoBean
+    private InvitationService invitationService;
+
     @AfterEach
     void cleanUp() {
         childRepository.deleteAll(childrenNamedForThisTest());
@@ -64,7 +67,7 @@ class ChildServiceRollbackTest {
         given(childOrganizationRepository.saveAndFlush(any(ChildOrganization.class)))
                 .willThrow(new IllegalStateException("연결 저장 실패"));
 
-        assertThatThrownBy(() -> childService.register(USER_ID, new RegisterChildRequest(CHILD_NAME, "2017-03-14", null)))
+        assertThatThrownBy(() -> childService.register(USER_ID, new RegisterChildRequest(CHILD_NAME, "2017-03-14", "A-1")))
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(childrenNamedForThisTest()).isEmpty();

@@ -21,6 +21,9 @@ public enum UserErrorCode implements ErrorCode {
     /** 로그인은 됐지만 기관 소속이 아니다. 기관 전용 API 에서 막힌다. */
     ORGANIZATION_NOT_ASSIGNED(HttpStatus.FORBIDDEN, "ORGANIZATION_NOT_ASSIGNED", "기관 소속 사용자만 이용할 수 있습니다."),
 
+    /** 로그인은 됐지만 보호자가 아니다. 보호자 전용 API(초대 코드 수락 등)에서 막힌다. */
+    PARENT_REQUIRED(HttpStatus.FORBIDDEN, "PARENT_REQUIRED", "보호자만 이용할 수 있습니다."),
+
     /** 카카오 로그인만 하고 가입(역할 선택)을 마치지 않았다. /auth/me · /auth/signup · /auth/logout 외에는 막힌다. */
     SIGNUP_NOT_COMPLETED(HttpStatus.FORBIDDEN, "SIGNUP_NOT_COMPLETED", "회원가입을 먼저 완료해주세요."),
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLoaderData } from "react-router";
+import { Link, useLoaderData, useNavigate } from "react-router";
 import { InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
@@ -9,6 +9,7 @@ import {
   getParentChildren,
   getParentHome,
   getPendingInstitutionRequests,
+  unlinkChild,
   updateConsent,
 } from "@/lib/api";
 import { ME } from "@/lib/mock/data";
@@ -31,6 +32,9 @@ export default function ParentSettingsPage() {
   const [institutions, setInstitutions] = useState(child.institutions);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const setLocal = (instId: string, consent: ConsentState) =>
     setInstitutions((list) =>
@@ -48,6 +52,20 @@ export default function ParentSettingsPage() {
       await updateConsent(child.id, instId, { allowed_fields: [], action: "revoke" });
       setLocal(instId, "revoked");
       setConfirming(null);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  /** G-05. 끊으면 이 아이는 목록에서 빠지니 홈으로 돌아가 남은 아이를 다시 고른다 */
+  async function unlink() {
+    setPending(true);
+    setUnlinkError(null);
+    try {
+      await unlinkChild(child.id);
+      navigate("/parent", { replace: true });
+    } catch {
+      setUnlinkError("연결을 끊지 못했어요. 새로고침한 뒤 다시 시도해 주세요.");
     } finally {
       setPending(false);
     }
@@ -81,6 +99,15 @@ export default function ParentSettingsPage() {
         </span>
         <button className="tap shrink-0 rounded-2xl border border-line2 px-3 text-[13px] font-semibold text-ink2">
           수정
+        </button>
+        <button
+          onClick={() => {
+            setUnlinkError(null);
+            setUnlinking(true);
+          }}
+          className="tap shrink-0 rounded-2xl border border-line2 px-3 text-[13px] font-semibold text-block"
+        >
+          연결 해제
         </button>
       </div>
 
@@ -159,6 +186,42 @@ export default function ParentSettingsPage() {
       <p className="text-[13px] leading-6 text-muted">
         권한을 끄면 그 기관은 더 이상 아이 기록을 볼 수 없습니다.
       </p>
+
+      {unlinking ? (
+        <div
+          role="dialog"
+          aria-modal
+          className="fixed inset-0 z-10 flex items-end justify-center bg-ink/40"
+        >
+          <div className="w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] rounded-t-3xl bg-surface p-5 pb-7">
+            <p className="mb-2 text-[18px] font-extrabold">{child.name}와의 연결을 끊을까요?</p>
+            <p className="mb-5 text-[15px] leading-7 text-ink2">
+              끊으면 이 아이의 기록과 소식을 더 볼 수 없어요.{" "}
+              <b className="font-semibold">다시 연결하려면 기관에서 새 초대 코드를 받아야 해요.</b>
+            </p>
+            {unlinkError ? (
+              <p role="alert" className="mb-3 rounded-2xl bg-blocksoft px-4 py-3 text-[14px] text-block">
+                {unlinkError}
+              </p>
+            ) : null}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setUnlinking(false)}
+                className="tap h-14 flex-1 rounded-2xl border border-line2 text-[16px] font-bold text-ink2"
+              >
+                취소
+              </button>
+              <button
+                disabled={pending}
+                onClick={unlink}
+                className="tap h-14 flex-1 rounded-2xl bg-block text-[16px] font-bold text-white disabled:opacity-50"
+              >
+                {pending ? "처리 중…" : "연결 끊기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {target ? (
         <div

@@ -3,6 +3,7 @@ import type {
   BlockedItem,
   CareReport,
   Child,
+  ChildGuardian,
   ChatTurn,
   EntryProgress,
   EvidenceSpan,
@@ -13,6 +14,7 @@ import type {
   InstitutionRequestItem,
   InstitutionType,
   JournalEntry,
+  LiveInvitation,
   MatchingItem,
   ParentActivity,
   SummaryItem,
@@ -171,8 +173,16 @@ const MQ_02 =
   "자유놀이 중 김OO가 블록을 높이 쌓다가 무너지자 잠시 울먹였지만, 다시 처음부터 쌓기 시작함. 한참 뒤 옆자리의 이OO가 블록을 나눠 주었고, 둘이 서로 양보하며 끝까지 완성함.";
 const MQ_03 = "우리 반 막둥이가 새 신발을 자랑하며 친구들에게 보여줌.";
 const MQ_04 = "오후 자유놀이 중 정OO가 장난감을 두고 다툼이 있었고, 스스로 사과함.";
-const MQ_05 =
-  "등원 직후 표정이 굳어 있었고, 교사의 인사에도 반응하지 않은 채 가방을 내려놓지 않음. 10분쯤 지나 좋아하는 자동차 장난감을 건네자 받아 들었음. 최OO는 그 뒤로 친구들 놀이에 스스로 참여함.";
+// 하루 전체를 적은 긴 일지 — 본문 영역이 최대 높이에서 멈추고 스크롤되는지 보는 데모 (#150)
+const MQ_05 = [
+  "등원 직후 표정이 굳어 있었고, 교사의 인사에도 반응하지 않은 채 가방을 내려놓지 않음. 10분쯤 지나 좋아하는 자동차 장난감을 건네자 받아 들었음. 최OO는 그 뒤로 친구들 놀이에 스스로 참여함.",
+  "10:30 미술 활동. 물감 색을 고를 때 한참 망설였지만 교사가 두 가지만 골라 보여주자 파란색을 골라 끝까지 칠함. 붓을 씻는 순서를 기다리는 동안 손을 흔들며 기다리기 어려워했고, 순서 카드를 보여주니 다시 줄에 섬.",
+  "11:20 바깥놀이. 모래놀이터에서 혼자 구덩이를 파다가 친구가 다가오자 삽을 하나 건네줌. 함께 물길을 만들며 웃는 모습이 여러 번 보였음. 들어갈 시간을 알리자 처음에는 싫다고 했지만 5분 전 예고를 한 번 더 하자 스스로 정리함.",
+  "12:00 점심. 새로 나온 나물 반찬은 냄새를 맡아 보고 먹지 않았음. 억지로 권하지 않고 옆 친구가 먹는 모습을 보여주니 한 젓가락 맛보았음. 밥과 국은 남기지 않고 다 먹음.",
+  "13:30 낮잠. 잠들기까지 20분 정도 뒤척였고 담요를 머리끝까지 덮어야 안정됨. 깨어난 뒤 잠시 멍하게 앉아 있다가 간식 소리를 듣고 일어남.",
+  "15:00 간식 후 자유놀이. 블록 영역에서 지난주에 만들던 주차장을 다시 이어서 만들고 싶다고 말로 표현함. 원하는 것을 먼저 말한 것은 이번 주 들어 처음이라 기록해 둠.",
+  "16:20 하원. 보호자를 보자 뛰어가 안겼고, 오늘 만든 그림을 직접 보여주며 설명함. 내일 아침 등원 때 표정이 다시 굳는지 살펴볼 예정.",
+].join("\n\n");
 const MQ_06 = "점심 식사 후 최OO가 블록으로 높은 탑을 쌓고 친구들에게 자랑함.";
 const MQ_07 = "오후 간식 시간에 박OO가 컵을 엎었지만 스스로 휴지를 가져와 닦음.";
 const MQ_08 = "바깥놀이 시간에 미끄럼틀 차례를 기다리며 친구에게 먼저 양보함.";
@@ -291,6 +301,24 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       type: "활동일지",
       capturedAt: "2026-08-19T11:05:00+09:00",
       ...recordText(MQ_08),
+    },
+    evidence: [],
+    candidates: [],
+  },
+  {
+    // 일지 본문이 비어 있는 건. 서버(RecordResponse.of)는 preview 와 fullContent 를 같은 본문으로
+    // 만들어서 둘이 함께 null 로 온다. 화면은 본문을 못 불러왔다고 안내한다 (#150).
+    id: "mq_09",
+    status: "unmatched",
+    matchedChildId: null,
+    unmatchedReason: "no_anchor",
+    record: {
+      id: "rrf_9d48",
+      fileName: "0819_관찰일지.hwp",
+      type: "관찰일지",
+      capturedAt: "2026-08-19T09:50:00+09:00",
+      preview: null,
+      fullContent: null,
     },
     evidence: [],
     candidates: [],
@@ -691,12 +719,27 @@ export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
 export const DECLINED_INSTITUTION_REQUESTS = new Set<string>();
 
 /**
- * 연결 요청이 만들어진 시각 (G-01 mock) — 키는 "childId:institutionId".
- * 값이 없으면 화면이 날짜 줄을 숨긴다.
+ * 아이별 초대 코드 (O-15~O-17 mock). 만료 여부는 조회할 때 expiresAt 으로 거른다.
+ * 10분짜리라 미리 넣어 두면 화면을 열 때쯤 이미 만료돼 있어 비워 둔다.
  */
-export const PENDING_LINK_REQUESTED_AT: Record<string, string> = {
-  "child_1023:inst_speech_01": "2026-09-21T10:00:00+09:00",
+export const INVITATIONS: Record<string, LiveInvitation[]> = {};
+
+/** 아이별 연결된 보호자 (O-18, O-19 mock) */
+export const CHILD_GUARDIANS: Record<string, ChildGuardian[]> = {
+  child_1023: [
+    { userId: "41", name: "김보호", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true },
+    { userId: "52", name: null, linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false },
+  ],
+  child_1041: [
+    { userId: "63", name: "이보호", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true },
+  ],
 };
+
+/**
+ * 보호자가 초대 코드를 수락하면 연결되는 아이 (G-04 mock). 아직 이 보호자의 아이가 아니고
+ * 우리 기관 동의가 남은 아이라, 수락 뒤 동의 미리보기(G-02 mock)까지 이어서 볼 수 있다.
+ */
+export const INVITED_CHILD_ID = "child_1077";
 
 /** 학부모를 초대한 기관 (P-02 확인·동의 화면) */
 export const INVITING_INSTITUTION = SCHOOL;
