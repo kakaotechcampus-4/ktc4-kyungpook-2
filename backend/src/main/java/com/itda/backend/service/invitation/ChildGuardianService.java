@@ -20,6 +20,7 @@ import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.exception.invitation.InvitationErrorCode;
 import com.itda.backend.exception.invitation.InvitationException;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.invitation.InvitationRepository;
@@ -50,6 +51,7 @@ public class ChildGuardianService {
     private final OrganizationChildGuard organizationChildGuard;
     private final UserService userService;
     private final ChildRepository childRepository;
+    private final ChildOrganizationRepository childOrganizationRepository;
     private final ConsentService consentService;
     private final Clock clock;
 
@@ -78,12 +80,22 @@ public class ChildGuardianService {
                 .toList();
     }
 
-    /** O-19 기관이 보호자 연결을 끊는다. 자기 기관 코드로 생긴 연결이 아니면 403 이다. 끊긴 보호자의 동의도 끈다. */
+    /**
+     * O-19 기관이 보호자 연결을 끊는다. 자기 기관 코드로 생긴 연결이 아니면 403 이다. 끊긴 보호자의 동의도 끈다.
+     *
+     * <p>아동을 먼저 잠그고 그 뒤에 삭제·명부 소속을 본다. {@link OrganizationChildGuard} 를 쓰지 않는 이유다 —
+     * 가드가 잠금 없이 아동을 읽어 두면 잠금 조회가 그 낡은 엔티티를 그대로 돌려주고, 동의 철회로 상태가 바뀔 때
+     * 그사이 커밋된 삭제({@code deleted_at})까지 덮어써 되돌린다.
+     */
     @Transactional
     public void unlinkByOrganization(String userId, Long childId, Long guardianUserId) {
-        Long organizationId = organizationChildGuard.requireRosterChild(userId, childId);
+        Long organizationId = userService.getOrganizationIdOf(userId);
         Child child = childRepository.findByIdForUpdate(childId)
+                .filter(found -> !found.isDeleted())
                 .orElseThrow(() -> new ChildException(ChildErrorCode.CHILD_NOT_FOUND));
+        if (!childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)) {
+            throw new ChildException(ChildErrorCode.CHILD_NOT_FOUND);
+        }
         ChildGuardian guardian = childGuardianRepository.findByChildIdAndUserIdForUpdate(childId, guardianUserId)
                 .filter(found -> !found.isDeleted())
                 .orElseThrow(() -> new InvitationException(InvitationErrorCode.GUARDIAN_NOT_FOUND));

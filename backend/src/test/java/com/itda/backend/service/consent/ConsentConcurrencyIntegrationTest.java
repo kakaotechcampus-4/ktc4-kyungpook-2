@@ -51,6 +51,7 @@ import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.user.User;
+import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.exception.consent.ConsentException;
 import com.itda.backend.exception.matching.MatchingResultValidationException;
 import com.itda.backend.fixture.OrganizationFixture;
@@ -245,11 +246,34 @@ class ConsentConcurrencyIntegrationTest {
     }
 
     /**
+     * 기관이 보호자를 끊는 동안 아동이 삭제됐다. 잠그기 전에 아동을 읽어 두면, 잠금 조회는 그 낡은 엔티티를 그대로
+     * 돌려주고 동의 철회로 상태가 바뀔 때 {@code deleted_at = null} 까지 다시 저장해 삭제를 되돌린다.
+     * 아동을 먼저 잠그고 그 뒤에 삭제·명부 소속을 봐야 한다.
+     */
+    @Test
+    void 기관의_연결_해제_중에_아동이_삭제되면_404이고_삭제는_그대로다() throws Exception {
+        grant().call();
+
+        List<String> outcomes = inOrderWhileHeld(
+                "UPDATE child SET deleted_at = now() WHERE id = " + child.getId(),
+                () -> {
+                    childGuardianService.unlinkByOrganization(STAFF, child.getId(), mother.getId());
+                    return null;
+                });
+
+        assertThat(outcomes).containsExactly("CHILD_NOT_FOUND");
+        assertThat(childRepository.findById(child.getId()).orElseThrow().isDeleted()).isTrue();
+        assertThat(activeConsents()).hasSize(1);
+    }
+
+    /**
      * 홀더가 {@code holderSql} 로 행을 잠근 채 있는 동안 작업을 <b>하나씩</b> 보내, 앞 작업이 줄을 선 것을 확인한 뒤
-     * 다음 작업을 보낸다. 모두 줄을 서면 홀더를 롤백해 잠금을 푼다. 각 작업의 결과를 "OK" 또는 실패 이름으로 돌려준다.
+     * 다음 작업을 보낸다. 모두 줄을 서면 홀더를 끝낸다 — SELECT ... FOR UPDATE 면 롤백(잠금만 풀기), UPDATE 면
+     * 커밋(변경을 확정)한다. 각 작업의 결과를 "OK" 또는 실패 이름으로 돌려준다.
      */
     @SafeVarargs
     private List<String> inOrderWhileHeld(String holderSql, Callable<Object>... tasks) throws Exception {
+        boolean commitHolder = holderSql.startsWith("UPDATE");
         ExecutorService executor = Executors.newFixedThreadPool(tasks.length);
         List<Future<Object>> futures = new ArrayList<>();
         boolean holderFinished = false;
@@ -265,7 +289,11 @@ class ConsentConcurrencyIntegrationTest {
                     futures.add(executor.submit(tasks[i]));
                     waitUntilBlockedBy(holderPid, i + 1);
                 }
-                holder.rollback();
+                if (commitHolder) {
+                    holder.commit();
+                } else {
+                    holder.rollback();
+                }
                 holderFinished = true;
 
                 List<String> outcomes = new ArrayList<>();
@@ -294,6 +322,9 @@ class ConsentConcurrencyIntegrationTest {
         } catch (ExecutionException e) {
             if (e.getCause() instanceof ConsentException consentException) {
                 return consentException.getErrorCode().name();
+            }
+            if (e.getCause() instanceof ChildException childException) {
+                return childException.getErrorCode().name();
             }
             if (e.getCause() instanceof MatchingResultValidationException) {
                 return MATCHING_REJECTED;
