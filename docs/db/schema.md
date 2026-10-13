@@ -505,8 +505,13 @@ UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변�
 | 작업 | 잠그는 행 (순서대로) |
 | --- | --- |
 | 동의 부여·철회 (G-41) | `child` → `child_organization` → `child_guardian`. 동의 행은 따로 잠그지 않는다 |
-| 보호자 연결 해제 (G-05·O-19) | `child` → `child_guardian`. 끊긴 보호자의 동의를 같은 트랜잭션에서 철회한다 |
+| 보호자 연결 해제 (G-05·O-19) | `child` → `child_guardian`. O-19 는 `child` 를 잠근 뒤에 삭제·명부 소속을 본다. 끊긴 보호자의 동의를 같은 트랜잭션에서 철회한다 |
 | 사람의 매칭 확정 (O-23 assign) | `child`. 잠근 뒤 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 새 확정이 성공하지 않는다 |
+
+**잠그기 전에 같은 행을 엔티티로 읽지 않는다.** JPA 는 이미 읽어 둔 엔티티가 있으면 잠금 조회(`findByIdForUpdate`)가
+행을 잠그기만 하고 그 낡은 엔티티를 그대로 돌려준다. 그 엔티티의 상태를 바꾸면 모든 컬럼을 UPDATE 하므로, 그사이
+다른 트랜잭션이 커밋한 값(예: 아동 삭제의 `deleted_at`)을 덮어써 되돌린다. 권한 확인처럼 잠금 전에 할 일이 있으면
+그 행을 읽지 않는 방식(존재 여부 조회 등)으로 하거나, 잠근 뒤에 한다.
 그래서 아동 삭제나 명부 제외가 수락과 겹쳐도 수락은 그 행을 기다렸다가 커밋된 상태를 보고 판단한다.
 
 **아직 없는 "명부 제외"·"아동 삭제" 기능을 만들 때도 이 순서를 따른다** — `child` 를 먼저 잠그고 `child_organization` 을 잠근다.
@@ -2061,4 +2066,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-13 | `human_review`(§9.1) 확정. `decision` 에서 `REJECTED` 빼고 `APPROVED`·`CORRECTED`·`HOLD` 로 (§10.2-12 는 코드 반영이 남아 그대로 둠). **enum 값 추가라 §11.4 수동 조치 필요** — `human_review.decision` CHECK 제약을 확인하고 있으면 DROP 해야 `HOLD` 가 저장된다 | 미생성 |
 | 2026-10-13 | §9.2 의 "인사이트가 읽는 글" 설명 정정 — 인사이트 입력은 `child_context.content` 가 아니라 `summary_result.claims` 다. 교사가 고쳐 승인한 요약(`CORRECTED`)은 재료에서 통째로 뺀다는 10/9 결정(`AI/insight/CRITERIA.md` §10)을 §10.1 #7 로 등록 | 미생성 |
 | 2026-10-13 | 인사이트 0건일 때 재호출을 무엇으로 막을지를 §10.2-13 으로 등록. `insight_result.revision` 은 중복 실행을 막지 못하며 클레임·잠금이 그 역할이라는 점 명시. Gate 2 화면이 "다른 아이 이름 보장 없음"을 표시해야 한다는 경고 추가 (§9.3) | 미생성 |
-| 2026-10-13 | `sharing_consent` 구현 (`SharingConsent`). `scope` 를 JSON → TEXT(JSON 배열 문자열)로, `revoked_by`·`revoked_at`·`revoke_reason`(`GUARDIAN_REVOKED`·`GUARDIAN_UNLINKED`·`ROSTER_REMOVED`) 추가, 인덱스 `(child_id, organization_id)` (§5.5). 매칭 대상을 기관별 동의로 판정하고 `child.status` 는 화면용 요약으로 계산 (§5.1, §10.1 #8·#9, §10.2 #1·#3·#4·#14). 잠금 순서에 `sharing_consent` 추가, 동의 부여·철회·연결 해제·매칭 확정은 `child` 부터 잠금 (§3.3). 연결 해제 시 그 보호자의 동의 철회 (§5.4). 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #184 |
+| 2026-10-13 | `sharing_consent` 구현 (`SharingConsent`). `scope` 를 JSON → TEXT(JSON 배열 문자열)로, `revoked_by`·`revoked_at`·`revoke_reason`(`GUARDIAN_REVOKED`·`GUARDIAN_UNLINKED`·`ROSTER_REMOVED`) 추가, 인덱스 `(child_id, organization_id)` (§5.5). 매칭 대상을 기관별 동의로 판정하고 `child.status` 는 화면용 요약으로 계산 (§5.1, §10.1 #8·#9, §10.2 #1·#3·#4·#14). 잠금 순서에 `sharing_consent` 추가, 동의 부여·철회·연결 해제·매칭 확정은 `child` 부터 잠금 (§3.3). 연결 해제 시 그 보호자의 동의 철회 (§5.4). 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #187 |
