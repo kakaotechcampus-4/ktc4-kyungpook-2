@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.child.ChildStatus;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
+import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.invitation.Invitation;
 import com.itda.backend.domain.organization.Organization;
@@ -34,6 +40,7 @@ import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.service.child.OrganizationChildGuard;
+import com.itda.backend.service.consent.ConsentService;
 import com.itda.backend.service.user.UserService;
 
 /**
@@ -42,7 +49,8 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({ChildGuardianService.class, OrganizationChildGuard.class, ChildGuardianServiceJpaTest.ClockConfig.class})
+@Import({ChildGuardianService.class, OrganizationChildGuard.class, ConsentService.class,
+        ChildGuardianServiceJpaTest.ClockConfig.class})
 class ChildGuardianServiceJpaTest {
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 12, 10, 0);
@@ -51,6 +59,7 @@ class ChildGuardianServiceJpaTest {
     private static final String THIRD_USER = "u-third";
     private static final String MOTHER = "u-mother";
     private static final String STRANGER = "u-stranger";
+    private static final Long OUR_STAFF_ID = 777L;
 
     @TestConfiguration
     static class ClockConfig {
@@ -96,6 +105,25 @@ class ChildGuardianServiceJpaTest {
         given(userService.getOrganizationIdOf(THIRD_USER)).willReturn(third.getId());
         given(userService.getParentIdOf(MOTHER)).willReturn(mother.getId());
         given(userService.getParentIdOf(STRANGER)).willReturn(stranger.getId());
+        given(userService.getUserIdOf(OUR_USER)).willReturn(OUR_STAFF_ID);
+    }
+
+    private void consent(User guardian, Organization organization) {
+        em.persist(SharingConsent.grant(child.getId(), guardian.getId(), organization.getId(), List.of(ConsentField.DAILY_SUMMARY)));
+        em.merge(child).activate();
+        em.flush();
+        em.clear();
+    }
+
+    private List<SharingConsent> consentsOf(User guardian) {
+        em.flush();
+        em.clear();
+        return em.getEntityManager()
+                .createQuery("select c from SharingConsent c where c.childId = :childId and c.guardianId = :guardianId",
+                        SharingConsent.class)
+                .setParameter("childId", child.getId())
+                .setParameter("guardianId", guardian.getId())
+                .getResultList();
     }
 
     private void link(User guardian, Organization through) {
@@ -193,6 +221,50 @@ class ChildGuardianServiceJpaTest {
         assertThatThrownBy(() -> childGuardianService.unlinkBySelf(STRANGER, child.getId()))
                 .isInstanceOfSatisfying(InvitationException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(InvitationErrorCode.CHILD_NOT_LINKED));
+    }
+
+    /** 끊긴 사람의 동의로 공유가 계속되면 안 된다. 남은 보호자의 동의는 그대로 두므로 아이는 계속 active 다. */
+    @Test
+    void 기관이_보호자를_끊으면_그_보호자의_동의만_꺼진다() {
+        consent(mother, ours);
+        consent(father, ours);
+
+        childGuardianService.unlinkByOrganization(OUR_USER, child.getId(), mother.getId());
+
+        assertThat(consentsOf(mother)).singleElement().satisfies(consent -> {
+            assertThat(consent.getStatus()).isEqualTo(SharingConsentStatus.REVOKED);
+            assertThat(consent.getRevokeReason()).isEqualTo(ConsentRevokeReason.GUARDIAN_UNLINKED);
+            assertThat(consent.getRevokedBy()).isEqualTo(OUR_STAFF_ID);
+            assertThat(consent.getRevokedAt()).isEqualTo(NOW);
+        });
+        assertThat(consentsOf(father)).singleElement()
+                .satisfies(consent -> assertThat(consent.isActive()).isTrue());
+        assertThat(em.find(Child.class, child.getId()).getStatus()).isEqualTo(ChildStatus.ACTIVE);
+    }
+
+    /** 연결 해제는 전역이라 모든 기관에 대한 그 사람의 동의가 꺼진다. 남은 동의가 없으면 아이는 suspended 다. */
+    @Test
+    void 보호자가_스스로_끊으면_모든_기관의_자기_동의가_꺼진다() {
+        consent(mother, ours);
+        consent(mother, other);
+
+        childGuardianService.unlinkBySelf(MOTHER, child.getId());
+
+        assertThat(consentsOf(mother)).hasSize(2).allSatisfy(consent -> {
+            assertThat(consent.getStatus()).isEqualTo(SharingConsentStatus.REVOKED);
+            assertThat(consent.getRevokeReason()).isEqualTo(ConsentRevokeReason.GUARDIAN_UNLINKED);
+            assertThat(consent.getRevokedBy()).isEqualTo(mother.getId());
+        });
+        assertThat(em.find(Child.class, child.getId()).getStatus()).isEqualTo(ChildStatus.SUSPENDED);
+    }
+
+    @Test
+    void 동의하지_않은_보호자를_끊어도_아이_상태는_바뀌지_않는다() {
+        childGuardianService.unlinkBySelf(MOTHER, child.getId());
+        em.flush();
+        em.clear();
+
+        assertThat(em.find(Child.class, child.getId()).getStatus()).isEqualTo(ChildStatus.PENDING_CONSENT);
     }
 
     private static void assertChildNotFound(ThrowingCallable call) {
