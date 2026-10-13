@@ -20,9 +20,11 @@ WRITING_RULES = {
     "DROP_SENTIMENT": "작성자의 감정 평가는 빼고 사실만 남긴다",
     "DROP_OTHER_CHILD_NAMES": "다른 아이 이름을 쓰지 않는다",
     "KEEP_FAILED_SUPPORT": "통하지 않은 대처도 남긴다. 피해야 할 방법도 유용한 정보다",
-    "ONE_SITUATION": "인사이트 하나에 상황 하나만 담는다",
+    "ONE_SITUATION": "인사이트 하나에 상황 하나만 담는다. 같은 상황이면 기관이나 장면 이름이 달라도 한 인사이트에 함께 담는다",
+    "SAME_SITUATION": "같은 상황인지는 장면 이름이나 겹치는 단어가 아니라 아이에게 요구되는 것이 같은지로 판단한다",
     "WRITE_INSTITUTION_TYPE": "기관마다 다르면 어느 기관인지 기관 종류로 쓴다. 기관 이름은 쓰지 않는다",
-    "CROSS_WITHOUT_SUPPORT": "대처가 없어도 기관마다 반응이 다르면 인사이트로 쓴다",
+    "CROSS_WITHOUT_SUPPORT": "대처가 없어도 같은 상황에서 기관마다 반응이 다르면 인사이트로 쓴다. 상황이 다르면 기관이 달라도 묶지 않는다",
+    "DROP_ADVICE_TAIL": "끝에 조언이나 활용 문장을 붙이지 않는다",
     "RELATE_RECORDS": "기록 하나를 다시 말하지 않는다. 여러 기록을 묶거나 비교한 결과를 쓴다",
 }
 

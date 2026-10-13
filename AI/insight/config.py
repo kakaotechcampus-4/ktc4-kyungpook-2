@@ -48,9 +48,11 @@ KEEP_HEDGES = True             # 원문이 추측이면 추측으로 남긴다
 DROP_SENTIMENT = True          # 작성자의 감정 평가는 빼고 사실만
 DROP_OTHER_CHILD_NAMES = True  # 다른 아이 이름을 쓰지 않는다
 KEEP_FAILED_SUPPORT = True     # 통하지 않은 대처도 남긴다
-ONE_SITUATION = True           # 인사이트 하나에 상황 하나
+ONE_SITUATION = True           # 인사이트 하나에 상황 하나. 같은 상황은 기관·장면 이름이 달라도 함께
+SAME_SITUATION = True          # 같은 상황은 아이에게 요구되는 것이 같은지로 판단 (v0.7)
 WRITE_INSTITUTION_TYPE = True  # 기관마다 다르면 기관 종류로 쓴다. 이름은 쓰지 않는다
-CROSS_WITHOUT_SUPPORT = True   # 대처가 없어도 기관마다 반응이 다르면 인사이트
+CROSS_WITHOUT_SUPPORT = True   # 대처가 없어도 같은 상황에서 기관마다 반응이 다르면 인사이트
+DROP_ADVICE_TAIL = True        # 끝에 조언·활용 문장을 붙이지 않는다 (v0.7)
 RELATE_RECORDS = True          # 기록 하나를 다시 말하지 않는다. 묶거나 비교한다
 
 #: 동기화 테스트가 CRITERIA §5 표와 대조할 목록.
@@ -63,8 +65,10 @@ WRITING_RULE_FLAGS = (
     "DROP_OTHER_CHILD_NAMES",
     "KEEP_FAILED_SUPPORT",
     "ONE_SITUATION",
+    "SAME_SITUATION",
     "WRITE_INSTITUTION_TYPE",
     "CROSS_WITHOUT_SUPPORT",
+    "DROP_ADVICE_TAIL",
     "RELATE_RECORDS",
 )
 
