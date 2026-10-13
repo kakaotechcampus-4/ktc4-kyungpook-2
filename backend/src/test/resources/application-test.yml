@@ -38,6 +38,9 @@ app:
   summary:
     worker:
       enabled: false
+  insight:
+    worker:
+      enabled: false
 
 jwt:
   secret: test-secret-key-for-unit-tests-only
