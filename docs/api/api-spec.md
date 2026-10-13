@@ -724,7 +724,7 @@ O-15 ~ O-19 공통 오류:
 ```json
 [
   { "id": 50, "childId": 8, "childName": "김하늘", "entryDate": "2026-10-08", "revision": 1,
-    "status": "GATE1_PENDING",
+    "status": "GATE1_PENDING", "version": "2026-10-09T03:05:12.345678", "processing": false,
     "content": "오전 활동에서 블록을 다섯 층까지 쌓았다 …",
     "needsReview": true, "reviewReasons": ["다른아동이름"],
     "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
@@ -734,8 +734,10 @@ O-15 ~ O-19 공통 오류:
 
 | 필드 | 뜻 |
 | --- | --- |
+| `version` | 결정(O-31)할 때 그대로 돌려보내는 값. 해석하지 마세요 |
+| `processing` | 같은 날 이 아이 기록 중 아직 요약에 반영되지 않은 것이 있음(매칭·검증·요약 중). 곧 요약이 바뀌므로 열기·승인 버튼을 막아주세요 |
 | `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
-| `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요 |
+| `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
 | `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유(`issue_types` 원본) |
 
 `reviewFlags` 는 검증이 짚은 구간이 **요약 문장의 근거 구간과 같은 일지에서 겹칠 때만** 나옵니다. 요약에 안 실린
@@ -746,30 +748,36 @@ O-15 ~ O-19 공통 오류:
 **O-31 요청**
 
 ```json
-{ "decision": "approve" }
+{ "decision": "approve", "version": "2026-10-09T03:05:12.345678" }
 ```
 
 ```json
-{ "decision": "approve", "editedContent": "선생님이 고친 본문" }
+{ "decision": "approve", "editedContent": "선생님이 고친 본문", "version": "2026-10-09T03:05:12.345678" }
 ```
 
 ```json
-{ "decision": "hold" }
+{ "decision": "hold", "version": "2026-10-09T03:05:12.345678" }
 ```
 
 | 필드 | 조건 |
 | --- | --- |
 | `decision` | `approve` \| `hold` \| `remove` (반려는 없습니다 — 고쳐서 승인하거나 보류·제거합니다) |
 | `editedContent` | `approve` 일 때만. 빈 문자열 불가. 보류·제거에 보내면 400 |
+| `version` | 필수. O-30 에서 받은 값 그대로 |
 
 | 결정 | 요약 | 그 요약의 일지 | 기록(`decision`) |
 | --- | --- | --- | --- |
 | 승인 (`editedContent` 없음 또는 AI 원문과 같음) | 승인 | 요약에 안 들어간 일지까지 모두 완료 | `APPROVED` |
-| 고쳐서 승인 (AI 원문과 한 글자라도 다름) | 승인. 고친 본문이 아동 타임라인에 올라감 | 위와 같음 | `CORRECTED` |
+| 고쳐서 승인 (AI 원문과 한 글자라도 다름. 줄바꿈 방식·앞뒤 공백 차이는 무시) | 승인. 고친 본문이 아동 타임라인에 올라감 | 위와 같음 | `CORRECTED` |
 | 보류 | 보류함으로 | 함께 보류 (같은 날 새 기록이 와도 묶이지 않음) | `HOLD` |
 | 제거 | 제거 | 모두 삭제. **되돌릴 수 없음** | `REMOVED` |
 
 승인과 제거는 되돌릴 수 없으니 확인 팝업을 띄워주세요. 고친 본문은 MVP 에서 다시 검증하지 않습니다.
+
+**보류함**은 보류 해제(O-33)와 제거만 둡니다. 보류된 요약을 승인하려면 보류를 해제한 뒤 검토 목록에서 합니다.
+
+`409 SUMMARY_CHANGED` 를 받으면 "요약이 새 기록으로 바뀌었어요" 안내를 띄우고 목록으로 돌아가 다시 불러와 주세요 —
+교사가 화면을 연 사이 같은 날 기록이 들어와 요약이 다시 만들어진 경우입니다.
 
 **응답** · 초안
 
@@ -779,10 +787,12 @@ O-15 ~ O-19 공통 오류:
 
 | 실패 | 상태 | 코드 |
 | --- | --- | --- |
-| `decision` 누락·허용되지 않은 값, 빈 `editedContent`, 승인이 아닌데 `editedContent` | 400 | `INVALID_REQUEST` |
+| `decision`·`version` 누락, 허용되지 않은 값, 빈 `editedContent`, 승인이 아닌데 `editedContent` | 400 | `INVALID_REQUEST` |
 | 없는 요약이거나 다른 기관 요약 | 404 | `SUMMARY_NOT_FOUND` |
-| 이미 처리된 요약 (검토 대기가 아님) | 409 | `SUMMARY_ALREADY_REVIEWED` |
+| 이미 처리된 요약 | 409 | `SUMMARY_ALREADY_REVIEWED` |
+| 보류된 요약을 승인·보류 (보류 해제 먼저) | 409 | `SUMMARY_HELD` |
 | 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
+| 목록에서 본 뒤 요약이 새 기록으로 바뀜 — 목록을 다시 불러오기 | 409 | `SUMMARY_CHANGED` |
 
 **O-33 보류 해제** · 본문 없음
 
@@ -1183,6 +1193,8 @@ O-15 ~ O-19 공통 오류:
 | `SUMMARY_NOT_FOUND` | 404 | 없거나 다른 기관의 요약 (O-31 · O-33) |
 | `SUMMARY_ALREADY_REVIEWED` | 409 | 이미 처리된 요약 재결정 (O-31) |
 | `SUMMARY_REGENERATING` | 409 | 새 기록을 반영해 요약을 다시 만드는 중 (O-31 · O-33) |
+| `SUMMARY_CHANGED` | 409 | 목록에서 본 뒤 요약이 새 기록으로 바뀜 (O-31) |
+| `SUMMARY_HELD` | 409 | 보류된 요약을 승인·보류 — 보류 해제 먼저 (O-31) |
 | `SUMMARY_NOT_HELD` | 409 | 보류되지 않은 요약 보류 해제 (O-33) |
 | `INSIGHT_ALREADY_SENT` | 409 | 이미 발송된 Insight 재발송 |
 | `NOT_PRIMARY_SOURCE` | 403 | 근거 제공 기관이 아닌 곳의 Gate 2 승인 시도 |

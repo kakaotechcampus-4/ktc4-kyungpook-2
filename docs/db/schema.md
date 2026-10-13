@@ -1085,13 +1085,18 @@ AI 자동 확정과 선생님 확정 둘 다 `MATCHED`로 들어오므로 구분
 | 승인 · 수정 후 승인 | `GATE1_PENDING` → `COMPLETED` | 끝. 다시 요약 대상이 되지 않는다 |
 | 보류 | `GATE1_PENDING` → `GATE1_HELD` | 같은 묶음에 새 일지가 와도 함께 묶이지 않는다 |
 | 보류 해제 | `GATE1_HELD` → `GATE1_PENDING` | 같은 요약을 가리킨 채 다시 Gate 1 대기 |
-| 제거 | 상태는 그대로, `deleted_at` 표시 | 되돌릴 수 없다 |
+| 제거 (검토 대기 또는 보류함에서) | 상태는 그대로, `deleted_at` 표시 | 되돌릴 수 없다 |
 
 같은 묶음(아동·날짜·기관)에 `SUMMARIZING` 일지가 있으면 결정과 보류 해제를 받지 않는다(409 `SUMMARY_REGENERATING`).
 요약 결과는 그 묶음의 최신 판이 대기면 덮어쓰므로, 지금 승인하면 곧 바뀔 글이 올라가고 다시 만든 글이 새 판으로
 쌓여 같은 일지가 두 번 올라간다. 이 요약의 일지가 집히지 않았어도 묶음 단위로 본다.
 워커는 묶음을 집을 때 그 묶음의 `summary_result` 행을 잠그고 최신 판을 고른다. Gate 1 도 요약 행을 잠그므로,
 커밋 전인 결정을 기다렸다가 결정 뒤 상태로 고른다 — 승인된 일지를 다시 집지 않는다.
+
+교사가 목록을 연 뒤 워커가 같은 요약을 새 일지까지 묶어 덮어쓸 수도 있다(id·판 번호 그대로). 목록이 판 표시
+(`version` = `summary_result.updated_at`)를 내려주고 결정이 그 값을 돌려받아, 다르면 409 `SUMMARY_CHANGED` 다.
+받으면 교사가 못 본 일지가 승인과 함께 끝나거나 제거와 함께 지워진다. 목록의 `processing` 은 같은 묶음에 아직 요약에
+반영되지 않은 일지(매칭·검증 중은 기관·날짜 단위, `VALIDATED`·`SUMMARIZING` 은 묶음 단위)가 있다는 표시다.
 
 요약 실패는 `summary_result`에 행을 남기지 않는다. 요약은 묶음 단위라 일지별 실패 행을 둘 자리가 없고, `status`에
 실패 값도 없다. `FAILED` 일지의 마지막 `validation_result.verdict`가 `PASS`·`REVIEW`면 요약 단계에서 실패한 것이다.
@@ -1436,15 +1441,16 @@ REMOVED           교사 제거 — 그 요약의 일지도 모두 삭제 표시
 
 **"반려" 상태를 두지 않는다** (2026-10-04 결정). 입력이 그대로면 재생성해도 같은
 글이 나와서, 반려는 갈 곳이 없는 상태가 된다. 교사가 할 수 있는 일은 넷이다 (#178).
-`GATE1_PENDING` 인 요약만 결정할 수 있고, 이미 처리된 요약은 409 `SUMMARY_ALREADY_REVIEWED` 다.
+`GATE1_PENDING` 인 요약은 모든 결정을, 보류함(`HOLD`)은 **제거만** 받는다. 보류된 요약의 승인·보류는 409
+`SUMMARY_HELD` 다 — 보류를 해제한 뒤 검토 목록에서 승인한다. 이미 처리된 요약은 409 `SUMMARY_ALREADY_REVIEWED` 다.
 동시에 두 결정이 와도 하나만 반영되도록 요약 행을 잠그고(`SELECT ... FOR UPDATE`) 상태를 본다.
 
 | 교사 행동 | `status` | `human_review.decision` | 결과 |
 | --- | --- | --- | --- |
 | 승인 | `APPROVED` | `APPROVED` | AI 원문이 `child_context.content` 로 |
-| **수정 후 승인** | `APPROVED` | `CORRECTED` | 고친 본문이 `child_context.content` 로. 본문이 AI 원문과 **한 글자라도 다르면** 이 값이다. 기본 경로다 |
+| **수정 후 승인** | `APPROVED` | `CORRECTED` | 고친 본문이 `child_context.content` 로. 본문이 AI 원문과 **한 글자라도 다르면** 이 값이다(줄바꿈 방식 CRLF·앞뒤 공백 차이는 무시). 기본 경로다 |
 | 보류 | `HOLD` | `HOLD` | 올라가지 않는다. 보류함에서 해제할 수 있다 |
-| 제거 | `REMOVED` | `REMOVED` | 그 요약의 일지를 모두 삭제 표시한다. 되돌릴 수 없다 |
+| 제거 | `REMOVED` | `REMOVED` | 그 요약의 일지를 모두 삭제 표시한다. 되돌릴 수 없다. 보류함에서도 바로 할 수 있다 |
 | 보류 해제 | `HOLD` → `GATE1_PENDING` | `REOPENED` | 다시 검토 대기 |
 
 보류·제거 사유는 받지 않는다(`comment` 비움). 한 기관에 담당자가 한 명이라 권한은 요약의 기관이 요청
