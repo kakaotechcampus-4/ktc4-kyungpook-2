@@ -59,9 +59,9 @@ import com.itda.backend.service.user.UserService;
 /**
  * Gate 1 결정이 다른 결정·요약 워커와 겹칠 때와 새 enum 값 저장을 PostgreSQL 에서 확인한다.
  *
- * <p>다른 커넥션(홀더)이 요약을 보류로 바꾼 채 커밋하지 않고 잡아 둔다. 승인 요청이 홀더 때문에 멈췄는지
- * {@code pg_blocking_pids} 로 확인한 뒤 홀더를 커밋해, 승인이 잠금을 기다린 다음 최신 상태(보류)로 판단해
- * 409 를 내는지 본다. 잠그지 않고 읽으면 커밋 전 값(대기)을 보고 보류를 승인으로 덮어쓴다.
+ * <p>다른 커넥션(홀더)이 요약을 승인으로 바꾼 채 커밋하지 않고 잡아 둔다. 승인 요청이 홀더 때문에 멈췄는지
+ * {@code pg_blocking_pids} 로 확인한 뒤 홀더를 커밋해, 승인이 잠금을 기다린 다음 최신 상태(승인됨)로 판단해
+ * 409 를 내는지 본다. 잠그지 않고 읽으면 커밋 전 값(대기)을 보고 두 번 승인한다.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -171,22 +171,24 @@ class SummaryGate1ConcurrencyIntegrationTest {
 
     @Test
     void 다른_결정이_먼저_잡고_있으면_기다렸다가_이미_처리된_요약으로_거절한다() throws Exception {
+        String version = versionOf(summary.getId());
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try (Connection holder = dataSource.getConnection()) {
             holder.setAutoCommit(false);
             int holderPid = backendPid(holder);
             try (Statement statement = holder.createStatement()) {
-                statement.executeUpdate("UPDATE summary_result SET status = 'HOLD' WHERE id = " + summary.getId());
+                statement.executeUpdate(
+                        "UPDATE summary_result SET status = 'APPROVED' WHERE id = " + summary.getId());
             }
 
             Future<?> approve = executor.submit(
-                    () -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null));
+                    () -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, version));
             waitUntilBlockedBy(holderPid);
             holder.commit();
 
             try {
                 approve.get(10, TimeUnit.SECONDS);
-                fail("보류된 요약을 승인했습니다. 잠그지 않고 커밋 전 상태를 읽었을 수 있습니다.");
+                fail("이미 승인된 요약을 다시 승인했습니다. 잠그지 않고 커밋 전 상태를 읽었을 수 있습니다.");
             } catch (ExecutionException e) {
                 assertThat(e.getCause()).isInstanceOf(SummaryException.class);
                 assertThat(((SummaryException) e.getCause()).getErrorCode())
@@ -197,7 +199,7 @@ class SummaryGate1ConcurrencyIntegrationTest {
         }
 
         assertThat(summaryResultRepository.findById(summary.getId()).orElseThrow().getStatus())
-                .isEqualTo(SummaryStatus.HOLD);
+                .isEqualTo(SummaryStatus.APPROVED);
         assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).isEmpty();
         assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, summary.getId()))
                 .isEmpty();
@@ -206,12 +208,12 @@ class SummaryGate1ConcurrencyIntegrationTest {
     @Test
     void 새로_더한_상태와_결정값을_저장한다() {
         // 새 테이블에서는 Hibernate 가 새 enum 값으로 CHECK 제약을 만든다. 배포 DB 는 §11.4 수동 조치가 필요하다.
-        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null);
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
         assertThat(journalEntryRepository.findById(entry.getId()).orElseThrow().getStatus())
                 .isEqualTo(JournalEntryStatus.GATE1_HELD);
 
         service.reopen(TEACHER, summary.getId());
-        service.decide(TEACHER, summary.getId(), Gate1Action.REMOVE, null);
+        service.decide(TEACHER, summary.getId(), Gate1Action.REMOVE, null, versionOf(summary.getId()));
 
         assertThat(summaryResultRepository.findById(summary.getId()).orElseThrow().getStatus())
                 .isEqualTo(SummaryStatus.REMOVED);
@@ -219,6 +221,10 @@ class SummaryGate1ConcurrencyIntegrationTest {
         assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, summary.getId()))
                 .extracting(a -> a.getDecision())
                 .containsExactlyInAnyOrder(ApprovalDecision.HOLD, ApprovalDecision.REOPENED, ApprovalDecision.REMOVED);
+    }
+
+    private String versionOf(Long summaryId) {
+        return Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow());
     }
 
     private static int backendPid(Connection connection) throws SQLException {

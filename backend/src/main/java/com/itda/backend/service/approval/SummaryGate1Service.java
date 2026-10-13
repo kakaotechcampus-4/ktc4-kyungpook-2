@@ -46,14 +46,19 @@ public class SummaryGate1Service {
      * 제거하면 모두 삭제 표시된다.
      *
      * @param editedContent 승인할 때 고친 본문. 없거나 AI 원문과 같으면 그대로 승인이다.
+     * @param version       교사가 목록에서 받은 판 표시 ({@link Gate1Version})
      */
     @Transactional
-    public Gate1DecisionResponse decide(String userId, Long summaryId, Gate1Action action, String editedContent) {
+    public Gate1DecisionResponse decide(String userId, Long summaryId, Gate1Action action, String editedContent,
+            String version) {
         SummaryResult summary = lockOwnedSummary(userId, summaryId);
-        if (summary.getStatus() != SummaryStatus.GATE1_PENDING) {
-            throw new SummaryException(SummaryErrorCode.ALREADY_REVIEWED, summaryId);
-        }
+        requireDecidable(summary, action);
         requireNotRegenerating(summary);
+        // 교사가 본 뒤 워커가 같은 요약을 새 일지까지 묶어 덮어썼다. 그대로 받으면 교사가 못 본 일지가 승인과 함께
+        // 끝나거나(승인) 지워진다(제거).
+        if (!Gate1Version.of(summary).equals(version)) {
+            throw new SummaryException(SummaryErrorCode.CHANGED, summaryId);
+        }
 
         List<JournalEntry> entries = journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId);
         ApprovalDecision decision = switch (action) {
@@ -102,6 +107,20 @@ public class SummaryGate1Service {
         summary.remove();
         entries.forEach(JournalEntry::delete);
         return ApprovalDecision.REMOVED;
+    }
+
+    /** 검토 대기는 모든 결정을, 보류함은 제거만 받는다. 보류된 요약의 승인은 보류를 해제한 뒤 검토 목록에서 한다. */
+    private static void requireDecidable(SummaryResult summary, Gate1Action action) {
+        if (summary.getStatus() == SummaryStatus.GATE1_PENDING) {
+            return;
+        }
+        if (summary.getStatus() == SummaryStatus.HOLD) {
+            if (action == Gate1Action.REMOVE) {
+                return;
+            }
+            throw new SummaryException(SummaryErrorCode.HELD, summary.getId());
+        }
+        throw new SummaryException(SummaryErrorCode.ALREADY_REVIEWED, summary.getId());
     }
 
     /**

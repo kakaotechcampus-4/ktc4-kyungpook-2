@@ -33,6 +33,7 @@ import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
+import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.user.UserService;
 
 /** Gate 1 — 교사가 요약을 승인·수정 후 승인·보류·제거하고, 보류함에서 보류를 해제한다. */
@@ -59,6 +60,9 @@ class SummaryGate1ServiceTest {
 
     @Autowired
     private ApprovalRepository approvalRepository;
+
+    @Autowired
+    private SummaryResultRepository summaryResultRepository;
 
     @MockitoBean
     private UserService userService;
@@ -121,6 +125,11 @@ class SummaryGate1ServiceTest {
         return em.find(JournalEntry.class, entry.getId());
     }
 
+    /** 교사가 목록에서 받은 판 표시. 결정할 때 그대로 돌려보낸다. */
+    private String versionOf(Long summaryId) {
+        return Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow());
+    }
+
     private List<Approval> history() {
         return approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, summary.getId());
     }
@@ -129,7 +138,8 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 그대로_승인하면_요약은_승인되고_AI_원문이_아동_맥락으로_올라간다() {
-        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null);
+        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null,
+                versionOf(summary.getId()));
 
         assertThat(response.summaryId()).isEqualTo(summary.getId());
         assertThat(response.decision()).isEqualTo("APPROVED");
@@ -149,7 +159,7 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 원문과_같은_본문을_보내면_그대로_승인으로_본다() {
-        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, AI_TEXT);
+        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, AI_TEXT, versionOf(summary.getId()));
 
         assertThat(history()).singleElement()
                 .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.APPROVED));
@@ -159,7 +169,8 @@ class SummaryGate1ServiceTest {
     void 한_글자라도_고쳐_승인하면_수정_후_승인이고_고친_본문이_올라간다() {
         String edited = AI_TEXT.replace("양보했다.", "양보했다!");
 
-        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, edited);
+        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, edited,
+                versionOf(summary.getId()));
 
         assertThat(response.decision()).isEqualTo("CORRECTED");
         SummaryResult reloaded = reloadSummary();
@@ -174,7 +185,7 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 승인하면_요약에_안_들어간_일지까지_그_요약의_일지가_모두_완료된다() {
-        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null);
+        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, versionOf(summary.getId()));
 
         assertThat(reload(covered).getStatus()).isEqualTo(JournalEntryStatus.COMPLETED);
         assertThat(reload(uncovered).getStatus()).isEqualTo(JournalEntryStatus.COMPLETED);
@@ -184,7 +195,8 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 보류하면_요약과_그_일지가_보류된다() {
-        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null);
+        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null,
+                versionOf(summary.getId()));
 
         assertThat(response.decision()).isEqualTo("HOLD");
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
@@ -199,7 +211,8 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 제거하면_요약은_제거되고_그_일지는_모두_삭제_표시된다() {
-        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.REMOVE, null);
+        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.REMOVE, null,
+                versionOf(summary.getId()));
 
         assertThat(response.decision()).isEqualTo("REMOVED");
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.REMOVED);
@@ -216,11 +229,12 @@ class SummaryGate1ServiceTest {
     void 다른_기관의_요약은_없는_것으로_응답한다() {
         SummaryResult others = summaryOf(OTHER_ORG);
 
-        assertThatThrownBy(() -> service.decide(TEACHER, others.getId(), Gate1Action.APPROVE, null))
+        assertThatThrownBy(() -> service.decide(TEACHER, others.getId(), Gate1Action.APPROVE, null,
+                versionOf(others.getId())))
                 .isInstanceOf(SummaryException.class)
                 .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.NOT_FOUND);
-        assertThatThrownBy(() -> service.decide(TEACHER, 9999L, Gate1Action.APPROVE, null))
+        assertThatThrownBy(() -> service.decide(TEACHER, 9999L, Gate1Action.APPROVE, null, "v"))
                 .isInstanceOf(SummaryException.class)
                 .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.NOT_FOUND);
@@ -228,12 +242,12 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 이미_처리된_요약은_다시_결정할_수_없다() {
-        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null);
+        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, versionOf(summary.getId()));
         em.flush();
         em.clear();
 
         for (Gate1Action action : Gate1Action.values()) {
-            assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), action, null))
+            assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), action, null, versionOf(summary.getId())))
                     .isInstanceOf(SummaryException.class)
                     .extracting(e -> ((SummaryException) e).getErrorCode())
                     .isEqualTo(SummaryErrorCode.ALREADY_REVIEWED);
@@ -249,7 +263,8 @@ class SummaryGate1ServiceTest {
         em.flush();
         em.clear();
 
-        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null))
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null,
+                versionOf(summary.getId())))
                 .isInstanceOf(SummaryException.class)
                 .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.REGENERATING);
@@ -260,7 +275,7 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 보류를_해제하면_요약과_그_일지가_다시_Gate1_대기가_된다() {
-        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null);
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
         em.flush();
         em.clear();
 
@@ -302,7 +317,8 @@ class SummaryGate1ServiceTest {
         // 묶음 단위로 막는다.
         newEntrySummarizingInSameGroup();
 
-        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null))
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null,
+                versionOf(summary.getId())))
                 .isInstanceOf(SummaryException.class)
                 .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.REGENERATING);
@@ -312,7 +328,7 @@ class SummaryGate1ServiceTest {
     void 같은_묶음을_요약하는_중이면_보류를_해제할_수_없다() {
         // 보류한 판이 최신이라 워커는 새 일지만 집었다. 지금 해제하면 요약 결과가 이 판을 새 일지만으로 덮어써
         // 이 판의 일지가 요약에서 사라진 채 승인될 수 있다.
-        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null);
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
         em.flush();
         newEntrySummarizingInSameGroup();
 
@@ -326,7 +342,7 @@ class SummaryGate1ServiceTest {
     @Test
     void 줄바꿈_방식이나_앞뒤_공백만_다르면_고친_것으로_보지_않는다() {
         // 입력창을 거치면 끝에 줄바꿈이 붙거나 CRLF 로 바뀌곤 한다. 고친 것으로 보면 인사이트에서 빠진다.
-        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, AI_TEXT + "\r\n");
+        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, AI_TEXT + "\r\n", versionOf(summary.getId()));
 
         assertThat(history()).singleElement()
                 .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.APPROVED));
@@ -339,10 +355,66 @@ class SummaryGate1ServiceTest {
         SummaryResult multiLine = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(1), ORG, 1,
                 "첫 문장.\n둘째 문장.", "[]", "[]", "[]", "{}"));
 
-        service.decide(TEACHER, multiLine.getId(), Gate1Action.APPROVE, "첫 문장.\r\n둘째 문장.");
+        service.decide(TEACHER, multiLine.getId(), Gate1Action.APPROVE, "첫 문장.\r\n둘째 문장.",
+                versionOf(multiLine.getId()));
 
         assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, multiLine.getId()))
                 .singleElement().satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.APPROVED));
+    }
+
+    // ── 교사가 본 판 ──
+
+    @Test
+    void 교사가_목록을_연_뒤_요약이_새_일지로_다시_만들어졌으면_결정할_수_없다() {
+        String seen = versionOf(summary.getId());
+        // 그 사이 같은 날 일지가 들어와 워커가 같은 요약을 덮어썼다. id 와 판 번호는 그대로다.
+        SummaryResult overwritten = em.find(SummaryResult.class, summary.getId());
+        overwritten.overwrite("새 일지까지 반영한 요약", "[]", "[]", "[]", "{}");
+        em.flush();
+        em.clear();
+
+        for (Gate1Action action : Gate1Action.values()) {
+            assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), action, null, seen))
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
+                    .isEqualTo(SummaryErrorCode.CHANGED);
+        }
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+        assertThat(history()).isEmpty();
+    }
+
+    // ── 보류함 ──
+
+    @Test
+    void 보류함에서_바로_제거하면_요약과_그_일지가_지워진다() {
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
+        em.flush();
+        em.clear();
+
+        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.REMOVE, null,
+                versionOf(summary.getId()));
+
+        assertThat(response.status()).isEqualTo("REMOVED");
+        assertThat(reload(covered).isDeleted()).isTrue();
+        assertThat(reload(uncovered).isDeleted()).isTrue();
+        assertThat(history()).extracting(Approval::getDecision)
+                .containsExactlyInAnyOrder(ApprovalDecision.HOLD, ApprovalDecision.REMOVED);
+    }
+
+    @Test
+    void 보류된_요약은_보류를_해제한_뒤에_승인한다() {
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
+        em.flush();
+        em.clear();
+
+        for (Gate1Action action : new Gate1Action[] {Gate1Action.APPROVE, Gate1Action.HOLD}) {
+            assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), action, null,
+                    versionOf(summary.getId())))
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
+                    .isEqualTo(SummaryErrorCode.HELD);
+        }
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
     }
 }
 

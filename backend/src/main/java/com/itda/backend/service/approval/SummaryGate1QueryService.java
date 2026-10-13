@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.domain.validation.ValidationResult;
@@ -30,6 +31,7 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
+import com.itda.backend.service.summary.SummaryService;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -97,6 +99,8 @@ public class SummaryGate1QueryService {
                         s.getEntryDate(),
                         s.getRevision(),
                         s.getStatus().name(),
+                        Gate1Version.of(s),
+                        isProcessing(s),
                         s.getContent(),
                         s.isNeedsReview(),
                         parseStrings(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
@@ -104,6 +108,25 @@ public class SummaryGate1QueryService {
                         reviewFlags(s, entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId()),
                                 latestValidation)))
                 .toList();
+    }
+
+    /**
+     * 같은 묶음에 아직 요약에 반영되지 않은 일지가 있는지. 요약을 기다리거나(VALIDATED) 요약 중이면(SUMMARIZING) 곧 이
+     * 요약이 바뀐다. 매칭·검증 중인 일지는 아동을 모를 수 있어 워커처럼 기관·날짜로 본다 (SummaryService.IN_PROGRESS).
+     */
+    private boolean isProcessing(SummaryResult summary) {
+        String institutionId = String.valueOf(summary.getInstitutionId());
+        if (journalEntryRepository.existsInProgress(SummaryService.IN_PROGRESS, institutionId,
+                summary.getEntryDate())) {
+            return true;
+        }
+        for (JournalEntryStatus status : List.of(JournalEntryStatus.VALIDATED, JournalEntryStatus.SUMMARIZING)) {
+            if (!journalEntryRepository.findGroupEntryIds(status, summary.getChildId(), summary.getEntryDate(),
+                    institutionId).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static SummaryStatus toSummaryStatus(String gate1Status) {

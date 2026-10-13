@@ -47,7 +47,8 @@ public class SummaryController {
             summary = "Gate 1 검토 목록 · 보류함",
             description = "우리 기관의 요약을 오래된 날짜부터 반환합니다. gate1Status=pending 이면 검토 대기, hold 면 보류함입니다. "
                     + "요약 본문, 다른 아이 이름 경고(needsReview·reviewReasons), 요약에 안 들어간 일지와 원문, "
-                    + "요약에 들어간 원본의 검증 REVIEW 사유를 함께 줍니다. 응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
+                    + "요약에 들어간 원본의 검증 REVIEW 사유를 함께 줍니다. processing 이 true 면 같은 묶음에 아직 요약에 "
+                    + "반영되지 않은 기록이 있어 곧 요약이 바뀝니다. 응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
@@ -109,7 +110,9 @@ public class SummaryController {
             description = "요약을 승인·수정 후 승인·보류·제거합니다. 승인할 때 editedContent 를 보내 AI 원문과 한 글자라도 "
                     + "다르면 수정 후 승인(CORRECTED)이고, 고친 본문이 아동 맥락에 올라갑니다. 승인하면 그 요약의 일지가 "
                     + "요약에 안 들어간 것까지 모두 완료되고, 보류하면 함께 보류되며(보류함에서 해제 가능), 제거하면 "
-                    + "모두 삭제 표시됩니다. 승인과 제거는 되돌릴 수 없습니다. 응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
+                    + "모두 삭제 표시됩니다. 승인과 제거는 되돌릴 수 없습니다. 보류된 요약은 제거만 받고, 승인은 보류 해제 뒤에 "
+                    + "합니다. version 은 목록에서 받은 값을 그대로 보내고, 그 사이 요약이 새 기록으로 바뀌었으면 409 입니다. "
+                    + "응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
@@ -133,7 +136,9 @@ public class SummaryController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
                     description = "이미 처리된 요약 (SUMMARY_ALREADY_REVIEWED), "
-                            + "새 일지를 반영해 다시 요약하는 중 (SUMMARY_REGENERATING)",
+                            + "새 일지를 반영해 다시 요약하는 중 (SUMMARY_REGENERATING), "
+                            + "목록에서 본 뒤 요약이 바뀜 (SUMMARY_CHANGED), "
+                            + "보류된 요약을 승인·보류 (SUMMARY_HELD)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
@@ -142,7 +147,8 @@ public class SummaryController {
             @Valid @RequestBody Gate1DecisionRequest request,
             @AuthenticationPrincipal String userId) {
         return ApiResponse.success(
-                summaryGate1Service.decide(userId, summaryId, request.action(), request.editedContent()));
+                summaryGate1Service.decide(userId, summaryId, request.action(), request.editedContent(),
+                        request.version()));
     }
 
     @PostMapping("/{summaryId}/reopen")

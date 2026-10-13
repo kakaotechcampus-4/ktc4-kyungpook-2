@@ -115,10 +115,10 @@ class SummaryControllerTest {
 
     @Test
     void gate1_passesDecisionAndEditedContentToService() throws Exception {
-        given(summaryGate1Service.decide(any(), eq(50L), eq(Gate1Action.APPROVE), eq("고친 본문")))
+        given(summaryGate1Service.decide(any(), eq(50L), eq(Gate1Action.APPROVE), eq("고친 본문"), eq("v1")))
                 .willReturn(new Gate1DecisionResponse(50L, "APPROVED", "CORRECTED"));
 
-        decide("{\"decision\": \"approve\", \"editedContent\": \"고친 본문\"}")
+        decide("{\"decision\": \"approve\", \"editedContent\": \"고친 본문\", \"version\": \"v1\"}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summaryId").value(50))
                 .andExpect(jsonPath("$.data.status").value("APPROVED"))
@@ -127,49 +127,53 @@ class SummaryControllerTest {
 
     @Test
     void gate1_acceptsHoldAndRemoveWithoutEditedContent() throws Exception {
-        decide("{\"decision\": \"hold\"}").andExpect(status().isOk());
-        decide("{\"decision\": \"remove\"}").andExpect(status().isOk());
+        decide("{\"decision\": \"hold\", \"version\": \"v1\"}").andExpect(status().isOk());
+        decide("{\"decision\": \"remove\", \"version\": \"v1\"}").andExpect(status().isOk());
 
-        verify(summaryGate1Service).decide(any(), eq(50L), eq(Gate1Action.HOLD), eq(null));
-        verify(summaryGate1Service).decide(any(), eq(50L), eq(Gate1Action.REMOVE), eq(null));
+        verify(summaryGate1Service).decide(any(), eq(50L), eq(Gate1Action.HOLD), eq(null), eq("v1"));
+        verify(summaryGate1Service).decide(any(), eq(50L), eq(Gate1Action.REMOVE), eq(null), eq("v1"));
     }
 
     @Test
     void gate1_rejectsInvalidRequest() throws Exception {
         for (String body : new String[] {
                 "{}",
-                "{\"decision\": \"reject\"}",
-                "{\"decision\": \"APPROVE\"}",
-                "{\"decision\": \"approve\", \"editedContent\": \"  \"}",
+                // 교사가 본 판 표시가 없으면 그 사이 바뀐 글을 승인하는지 알 수 없다.
+                "{\"decision\": \"approve\"}",
+                "{\"decision\": \"reject\", \"version\": \"v1\"}",
+                "{\"decision\": \"APPROVE\", \"version\": \"v1\"}",
+                "{\"decision\": \"approve\", \"editedContent\": \"  \", \"version\": \"v1\"}",
                 // 보류·제거에 고친 본문을 보내면 버려진다. 조용히 무시하지 않고 막는다.
-                "{\"decision\": \"hold\", \"editedContent\": \"고친 본문\"}"}) {
+                "{\"decision\": \"hold\", \"editedContent\": \"고친 본문\", \"version\": \"v1\"}"}) {
             decide(body).andExpect(status().isBadRequest());
         }
 
-        verify(summaryGate1Service, never()).decide(any(), any(), any(), any());
+        verify(summaryGate1Service, never()).decide(any(), any(), any(), any(), any());
     }
 
     @Test
     void gate1_returns404WhenSummaryIsNotInInstitution() throws Exception {
-        given(summaryGate1Service.decide(any(), any(), any(), any())).willThrow(new SummaryException(SummaryErrorCode.NOT_FOUND, 50L));
+        given(summaryGate1Service.decide(any(), any(), any(), any(), any())).willThrow(new SummaryException(SummaryErrorCode.NOT_FOUND, 50L));
 
-        decide("{\"decision\": \"approve\"}")
+        decide("{\"decision\": \"approve\", \"version\": \"v1\"}")
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("SUMMARY_NOT_FOUND"));
     }
 
     @Test
     void gate1_returns409WhenAlreadyReviewedOrRegenerating() throws Exception {
-        given(summaryGate1Service.decide(any(), any(), any(), any()))
+        given(summaryGate1Service.decide(any(), any(), any(), any(), any()))
                 .willThrow(new SummaryException(SummaryErrorCode.ALREADY_REVIEWED, 50L))
-                .willThrow(new SummaryException(SummaryErrorCode.REGENERATING, 50L));
+                .willThrow(new SummaryException(SummaryErrorCode.REGENERATING, 50L))
+                .willThrow(new SummaryException(SummaryErrorCode.CHANGED, 50L))
+                .willThrow(new SummaryException(SummaryErrorCode.HELD, 50L));
 
-        decide("{\"decision\": \"approve\"}")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("SUMMARY_ALREADY_REVIEWED"));
-        decide("{\"decision\": \"approve\"}")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("SUMMARY_REGENERATING"));
+        for (String code : new String[] {"SUMMARY_ALREADY_REVIEWED", "SUMMARY_REGENERATING", "SUMMARY_CHANGED",
+                "SUMMARY_HELD"}) {
+            decide("{\"decision\": \"approve\", \"version\": \"v1\"}")
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value(code));
+        }
     }
 
     @Test
@@ -197,7 +201,7 @@ class SummaryControllerTest {
     void list_returnsPendingSummariesByDefault() throws Exception {
         given(summaryGate1QueryService.getSummaries(any(), eq("pending"))).willReturn(List.of(
                 new Gate1SummaryResponse(50L, 8L, "김준호", LocalDate.of(2026, 10, 8), 1, "GATE1_PENDING",
-                        "요약 본문", true, List.of("다른아동이름"),
+                        "v1", false, "요약 본문", true, List.of("다른아동이름"),
                         List.of(new Gate1SummaryResponse.UncoveredEntry(1042L, "낮잠을 잤다.")),
                         List.of(new Gate1SummaryResponse.ReviewFlag(1041L, List.of("추측성표현"))))));
 
@@ -205,6 +209,8 @@ class SummaryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value(50))
                 .andExpect(jsonPath("$.data[0].entryDate").value("2026-10-08"))
+                .andExpect(jsonPath("$.data[0].version").value("v1"))
+                .andExpect(jsonPath("$.data[0].processing").value(false))
                 .andExpect(jsonPath("$.data[0].reviewReasons[0]").value("다른아동이름"))
                 .andExpect(jsonPath("$.data[0].uncoveredEntries[0].journalEntryId").value(1042))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].issueTypes[0]").value("추측성표현"));

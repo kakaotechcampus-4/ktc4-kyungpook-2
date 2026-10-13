@@ -170,9 +170,11 @@ public class SummaryResult {
         this.status = SummaryStatus.HOLD;
     }
 
-    /** 교사가 Gate 1 에서 제거했다. 되돌릴 수 없다. */
+    /** 교사가 Gate 1 에서, 또는 보류함에서 제거했다. 되돌릴 수 없다. */
     public void remove() {
-        requireStatus(SummaryStatus.GATE1_PENDING);
+        if (this.status != SummaryStatus.GATE1_PENDING && this.status != SummaryStatus.HOLD) {
+            throw new IllegalStateException("검토 대기나 보류된 요약만 제거할 수 있습니다: " + this.status);
+        }
         this.status = SummaryStatus.REMOVED;
     }
 

@@ -18,6 +18,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
@@ -230,6 +232,43 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         assertThat(item.uncoveredEntries()).containsExactly(new UncoveredEntry(forgotten.getId(), "낮잠을 잤다."));
+    }
+
+    @Test
+    void 결정할_때_돌려보낼_판_표시를_준다() {
+        SummaryResult s = summary(ORG, DATE, "[]", List.of(), List.of());
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).version()).isEqualTo(Gate1Version.of(s));
+    }
+
+    private Long schoolRecord() {
+        return em.persist(new RawRecord(String.valueOf(ORG), "school.pdf", "kept/school.pdf", "application/pdf", 12,
+                RawRecordStatus.PENDING)).getId();
+    }
+
+    @Test
+    void 같은_묶음에_아직_요약에_반영되지_않은_일지가_있으면_처리_중으로_표시한다() {
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isFalse();
+
+        // 검증을 통과해 요약을 기다리는 같은 아이·같은 날 일지. 곧 이 요약을 다시 만든다.
+        JournalEntry waiting = JournalEntry.of(schoolRecord(), DATE, "점심을 먹었다.", 2);
+        waiting.startMatching();
+        waiting.confirmMatch(junho);
+        waiting.startValidating();
+        waiting.passValidation();
+        em.persistAndFlush(waiting);
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
+    }
+
+    @Test
+    void 같은_기관_같은_날에_매칭_전_일지가_있으면_처리_중으로_표시한다() {
+        // 매칭 전이라 누구 일지인지 모른다. 이 아이 일지일 수 있다.
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        em.persistAndFlush(JournalEntry.of(schoolRecord(), DATE, "누구 기록인지 모름", 3));
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
     }
 }
 

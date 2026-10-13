@@ -75,6 +75,7 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.approval.Gate1Version;
 import com.itda.backend.service.matching.MatchingAgentClient;
 import com.itda.backend.service.matching.MatchingAgentReply;
 import com.itda.backend.service.matching.MatchingProperties;
@@ -197,13 +198,14 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].issueTypes[0]").value("위험행동표현"))
                 .andReturn().getResponse().getContentAsString();
         Long id = ((Number) JsonPath.read(listed, "$.data[0].id")).longValue();
+        String version = JsonPath.read(listed, "$.data[0].version");
 
         // 고쳐서 승인
         String edited = BLOCKS + " 친구와 부딪혔다.";
         mockMvc.perform(withAuth(post("/api/v1/summaries/" + id + "/gate1"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("decision", "approve", "editedContent", edited))))
+                                Map.of("decision", "approve", "editedContent", edited, "version", version))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("APPROVED"))
                 .andExpect(jsonPath("$.data.decision").value("CORRECTED"));
@@ -233,7 +235,7 @@ class Gate1PipelineIntegrationTest {
     }
 
     @Test
-    void 보류한_요약은_보류함에서_해제하고_제거하면_일지가_지워진다() throws Exception {
+    void 보류한_요약은_보류함에서_해제하거나_바로_제거한다() throws Exception {
         upload("2026-10-08 " + BLOCKS + "\n");
         runPipeline();
         Long blocks = entryIdOf(BLOCKS);
@@ -246,11 +248,18 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(jsonPath("$.data", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].id").value(summaryId));
 
+        // 보류된 채로는 승인하지 않는다 — 보류를 해제한 뒤 검토 목록에서 승인한다.
+        decide(summaryId, "approve")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SUMMARY_HELD"));
+
         mockMvc.perform(withAuth(post("/api/v1/summaries/" + summaryId + "/reopen")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("GATE1_PENDING"));
         assertThat(statusOf(blocks)).isEqualTo(JournalEntryStatus.GATE1_PENDING);
 
+        // 다시 보류해 보류함에서 바로 제거한다.
+        decide(summaryId, "hold").andExpect(jsonPath("$.data.status").value("HOLD"));
         decide(summaryId, "remove").andExpect(jsonPath("$.data.status").value("REMOVED"));
         assertThat(journalEntryRepository.findById(blocks).orElseThrow().isDeleted()).isTrue();
         decide(summaryId, "approve")
@@ -258,7 +267,8 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(jsonPath("$.code").value("SUMMARY_ALREADY_REVIEWED"));
         assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, summaryId))
                 .extracting(Approval::getDecision)
-                .containsExactlyInAnyOrder(ApprovalDecision.HOLD, ApprovalDecision.REOPENED, ApprovalDecision.REMOVED);
+                .containsExactlyInAnyOrder(ApprovalDecision.HOLD, ApprovalDecision.REOPENED, ApprovalDecision.HOLD,
+                        ApprovalDecision.REMOVED);
     }
 
     // ── 흐름 ──
@@ -289,7 +299,8 @@ class Gate1PipelineIntegrationTest {
             throws Exception {
         return mockMvc.perform(withAuth(post("/api/v1/summaries/" + summaryId + "/gate1"))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"decision\": \"" + decision + "\"}"));
+                .content("{\"decision\": \"%s\", \"version\": \"%s\"}".formatted(decision,
+                        Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow()))));
     }
 
     private MockHttpServletRequestBuilder withAuth(MockHttpServletRequestBuilder request) throws Exception {

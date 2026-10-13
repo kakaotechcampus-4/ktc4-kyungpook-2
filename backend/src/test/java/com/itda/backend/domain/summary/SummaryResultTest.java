@@ -152,6 +152,18 @@ class SummaryResultTest {
     }
 
     @Test
+    void 보류된_요약은_보류함에서_바로_제거할_수_있지만_승인은_보류를_해제한_뒤에_한다() {
+        SummaryResult held = summary();
+        held.hold();
+
+        assertThatThrownBy(held::approve).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(held::hold).isInstanceOf(IllegalStateException.class);
+
+        held.remove();
+        assertThat(held.getStatus()).isEqualTo(SummaryStatus.REMOVED);
+    }
+
+    @Test
     void 보류된_요약만_보류_해제할_수_있다() {
         SummaryResult pending = summary();
         SummaryResult approved = summary();

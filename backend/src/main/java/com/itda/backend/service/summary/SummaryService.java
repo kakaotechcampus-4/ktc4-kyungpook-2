@@ -45,7 +45,7 @@ import lombok.extern.slf4j.Slf4j;
 public class SummaryService {
 
     /** 아직 자동 처리 중인 상태. 이 일지들이 끝나야 같은 기관·날짜를 묶는다. 사람 손이 필요한 상태는 기다리지 않는다. */
-    static final Set<JournalEntryStatus> IN_PROGRESS = Set.of(
+    public static final Set<JournalEntryStatus> IN_PROGRESS = Set.of(
             JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING,
             JournalEntryStatus.MATCHED, JournalEntryStatus.VALIDATING);
 
