@@ -23,6 +23,9 @@ import lombok.NoArgsConstructor;
  *
  * <p>{@code status} 와 {@code deletedAt} 은 다른 것이다 — {@code SUSPENDED} 는 동의가 없어 처리를
  * 멈춘 상태이고, {@code deletedAt} 은 기관이 목록에서 뺀 상태다 (DB 스키마 §5.1).
+ *
+ * <p>{@code status} 는 기관별 동의({@code sharing_consent})를 요약한 화면용 값이다. 어느 기관이 이 아이를
+ * 매칭에 쓸 수 있는지는 이 값이 아니라 그 기관에 대한 동의로 판단한다.
  */
 @Entity
 @Table(name = "child")
@@ -68,6 +71,19 @@ public class Child {
             throw new IllegalArgumentException("아동 생년월일은 필수입니다.");
         }
         return new Child(name, birthdate);
+    }
+
+    /**
+     * 어느 기관이든 살아 있는 동의가 생겼다. 화면용 요약 상태일 뿐이다 — 매칭 대상인지는 기관별 동의로 판단한다
+     * (DB 스키마 §5.1).
+     */
+    public void activate() {
+        this.status = ChildStatus.ACTIVE;
+    }
+
+    /** 동의한 적은 있지만 살아 있는 동의가 하나도 남지 않았다. */
+    public void suspend() {
+        this.status = ChildStatus.SUSPENDED;
     }
 
     public void delete() {
