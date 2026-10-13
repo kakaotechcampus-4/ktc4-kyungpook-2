@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.record;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import com.itda.backend.service.JournalEntrySplitter.SplitEntry;
+import com.itda.backend.service.record.JournalEntrySplitter.SplitEntry;
 
 class JournalEntrySplitterTest {
 

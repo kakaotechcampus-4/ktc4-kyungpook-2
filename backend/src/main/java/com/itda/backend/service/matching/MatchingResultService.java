@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.matching;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +28,8 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
+import com.itda.backend.service.record.RawRecordService;
+import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

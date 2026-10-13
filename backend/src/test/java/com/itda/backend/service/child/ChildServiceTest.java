@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.child;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,6 +35,8 @@ import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.invitation.InvitationService;
+import com.itda.backend.service.user.UserService;
 
 @ExtendWith(MockitoExtension.class)
 class ChildServiceTest {

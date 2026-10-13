@@ -14,7 +14,7 @@ import com.itda.backend.dto.response.invitation.ChildGuardianResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
-import com.itda.backend.service.ChildGuardianService;
+import com.itda.backend.service.invitation.ChildGuardianService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;

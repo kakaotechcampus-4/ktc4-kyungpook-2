@@ -27,7 +27,7 @@ import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.ValidationQueueService;
+import com.itda.backend.service.validation.ValidationQueueService;
 
 @WebMvcTest(ValidationResultController.class)
 @AutoConfigureMockMvc(addFilters = false)

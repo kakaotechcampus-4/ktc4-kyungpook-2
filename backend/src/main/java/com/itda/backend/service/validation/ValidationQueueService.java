@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.validation;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -26,6 +26,8 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
+import com.itda.backend.service.matching.MatchingResultService;
+import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

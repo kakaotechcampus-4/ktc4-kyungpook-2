@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.record;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,6 +37,7 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.service.storage.RawFileStorage;
+import com.itda.backend.service.user.UserService;
 
 @ExtendWith(MockitoExtension.class)
 class RawRecordServiceTest {

@@ -17,7 +17,7 @@ import com.itda.backend.dto.response.invitation.LiveInvitationResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
-import com.itda.backend.service.InvitationService;
+import com.itda.backend.service.invitation.InvitationService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;

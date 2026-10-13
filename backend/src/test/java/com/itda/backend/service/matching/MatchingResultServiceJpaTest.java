@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.matching;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
@@ -25,6 +25,7 @@ import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.service.user.UserService;
 
 /** resolve 가 matching_result 와 journal_entry 를 한 트랜잭션에서 실제로 저장하는지 DB 로 확인한다. */
 @DataJpaTest

@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.invitation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -58,6 +58,7 @@ import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.invitation.InvitationRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.user.UserService;
 
 /**
  * 초대 코드 수락이 동시에 진행되는 다른 작업과 겹칠 때를 PostgreSQL 에서 재현한다.

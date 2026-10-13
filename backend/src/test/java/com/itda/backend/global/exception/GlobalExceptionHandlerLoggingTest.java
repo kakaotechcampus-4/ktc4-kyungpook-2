@@ -25,9 +25,9 @@ import com.itda.backend.exception.invitation.InvitationErrorCode;
 import com.itda.backend.exception.invitation.InvitationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.ChildGuardianService;
-import com.itda.backend.service.ChildService;
-import com.itda.backend.service.InvitationService;
+import com.itda.backend.service.child.ChildService;
+import com.itda.backend.service.invitation.ChildGuardianService;
+import com.itda.backend.service.invitation.InvitationService;
 
 /**
  * 잘못된 요청(4xx) 로그에 사용자가 보낸 값이 남지 않는지 실제 출력으로 확인한다.

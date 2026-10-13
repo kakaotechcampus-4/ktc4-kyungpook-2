@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.invitation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

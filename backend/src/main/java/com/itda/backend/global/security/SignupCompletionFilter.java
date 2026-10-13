@@ -16,7 +16,7 @@ import org.springframework.web.util.UrlPathHelper;
 import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
 import com.itda.backend.global.exception.CommonErrorCode;
-import com.itda.backend.service.UserService;
+import com.itda.backend.service.user.UserService;
 import lombok.extern.slf4j.Slf4j;
 
 /**

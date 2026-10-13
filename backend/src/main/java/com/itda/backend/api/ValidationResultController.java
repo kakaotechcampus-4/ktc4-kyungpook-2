@@ -17,7 +17,7 @@ import com.itda.backend.exception.validation.ValidationResultValidationException
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
-import com.itda.backend.service.ValidationQueueService;
+import com.itda.backend.service.validation.ValidationQueueService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;

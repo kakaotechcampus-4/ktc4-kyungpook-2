@@ -12,7 +12,7 @@ import com.itda.backend.exception.summary.SummaryChildNotFoundException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
-import com.itda.backend.service.UserService;
+import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 

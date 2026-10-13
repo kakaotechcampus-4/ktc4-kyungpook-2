@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.user;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;

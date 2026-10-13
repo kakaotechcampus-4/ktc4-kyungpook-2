@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.child;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,6 +28,8 @@ import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.invitation.InvitationService;
+import com.itda.backend.service.user.UserService;
 
 /** register 가 child 와 child_organization 을 실제로 저장해 O-10 명부에 나타나는지 DB 로 확인한다. */
 @DataJpaTest

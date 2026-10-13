@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.user;
 
 import java.util.Optional;
 

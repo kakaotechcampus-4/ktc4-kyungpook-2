@@ -28,7 +28,7 @@ import com.itda.backend.exception.matching.MatchingResultNotFoundException;
 import com.itda.backend.exception.matching.MatchingResultValidationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.MatchingResultService;
+import com.itda.backend.service.matching.MatchingResultService;
 
 @WebMvcTest(MatchingQueueController.class)
 @AutoConfigureMockMvc(addFilters = false)

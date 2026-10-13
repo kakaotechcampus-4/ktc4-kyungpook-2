@@ -38,7 +38,7 @@ import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.ChildService;
+import com.itda.backend.service.child.ChildService;
 
 @WebMvcTest(ChildController.class)
 @AutoConfigureMockMvc(addFilters = false)

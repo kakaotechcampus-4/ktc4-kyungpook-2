@@ -19,7 +19,7 @@ import com.itda.backend.dto.response.record.RawRecordResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
-import com.itda.backend.service.RawRecordService;
+import com.itda.backend.service.record.RawRecordService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;

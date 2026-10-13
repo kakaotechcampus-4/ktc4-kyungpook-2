@@ -15,7 +15,7 @@ import com.itda.backend.dto.response.matching.MatchingQueueItemResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
-import com.itda.backend.service.MatchingResultService;
+import com.itda.backend.service.matching.MatchingResultService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;

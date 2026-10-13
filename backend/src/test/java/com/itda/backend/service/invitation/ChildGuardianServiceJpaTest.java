@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.invitation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +33,8 @@ import com.itda.backend.exception.invitation.InvitationException;
 import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
+import com.itda.backend.service.child.OrganizationChildGuard;
+import com.itda.backend.service.user.UserService;
 
 /**
  * 보호자 연결 조회·해제. 아이는 우리 기관과 다른 기관에 함께 다니고, 보호자 한 명은 우리 코드로,

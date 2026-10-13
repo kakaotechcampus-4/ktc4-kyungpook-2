@@ -28,8 +28,8 @@ import com.itda.backend.exception.summary.SummaryChildNotFoundException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
-import com.itda.backend.service.UserService;
 import com.itda.backend.service.agent.WorkerProperties;
+import com.itda.backend.service.user.UserService;
 
 /** "지금 요약" — 교사가 자기 기관 아이의 그 날짜 묶음을 마감 전에 요약하도록 요청한다. */
 @DataJpaTest

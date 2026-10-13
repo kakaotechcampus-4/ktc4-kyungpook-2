@@ -29,7 +29,7 @@ import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.user.UserRepository;
-import com.itda.backend.service.RawRecordService;
+import com.itda.backend.service.record.RawRecordService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

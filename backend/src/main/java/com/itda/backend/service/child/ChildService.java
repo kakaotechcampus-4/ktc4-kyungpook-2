@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.child;
 
 import java.util.HashMap;
 import java.util.List;
@@ -19,6 +19,8 @@ import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.invitation.InvitationService;
+import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 

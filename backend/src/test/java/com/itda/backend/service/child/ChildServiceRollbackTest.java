@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.child;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,6 +22,8 @@ import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.dto.request.child.RegisterChildRequest;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.invitation.InvitationService;
+import com.itda.backend.service.user.UserService;
 
 /**
  * 기관 연결 저장이 실패하면 먼저 저장한 아동도 남지 않아야 한다.

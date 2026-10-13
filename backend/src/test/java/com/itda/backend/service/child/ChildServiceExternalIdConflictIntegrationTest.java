@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.child;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,6 +42,7 @@ import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.service.user.UserService;
 
 /**
  * 사전 조회를 통과한 뒤 실제 DB 유니크 제약에 걸리는 경로를 PostgreSQL 에서 재현한다.

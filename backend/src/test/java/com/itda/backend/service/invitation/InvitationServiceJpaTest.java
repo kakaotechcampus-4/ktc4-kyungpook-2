@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.invitation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,6 +40,8 @@ import com.itda.backend.exception.user.UserException;
 import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
+import com.itda.backend.service.child.OrganizationChildGuard;
+import com.itda.backend.service.user.UserService;
 
 /** 초대 코드 발급·조회·취소·수락이 실제 DB 행을 어떻게 남기는지 확인한다. 시각은 테스트가 정한다. */
 @DataJpaTest

@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

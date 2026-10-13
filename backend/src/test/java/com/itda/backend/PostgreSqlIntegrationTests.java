@@ -43,7 +43,7 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
-import com.itda.backend.service.UserService;
+import com.itda.backend.service.user.UserService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

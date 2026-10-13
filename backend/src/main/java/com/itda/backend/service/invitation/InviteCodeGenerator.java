@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.invitation;
 
 import java.security.SecureRandom;
 import java.util.Locale;

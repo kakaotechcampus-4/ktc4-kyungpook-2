@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.invitation;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -26,6 +26,8 @@ import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.invitation.InvitationRepository;
 import com.itda.backend.repository.invitation.InvitationTarget;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.service.child.OrganizationChildGuard;
+import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 

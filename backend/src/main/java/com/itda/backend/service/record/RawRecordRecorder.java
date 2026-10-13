@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.record;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.repository.record.RawRecordRepository;
+import com.itda.backend.service.user.LoginUserTransactionService;
 
 import lombok.RequiredArgsConstructor;
 

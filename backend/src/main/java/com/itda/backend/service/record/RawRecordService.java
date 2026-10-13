@@ -1,4 +1,4 @@
-package com.itda.backend.service;
+package com.itda.backend.service.record;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +27,7 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.service.storage.RawFileStorage;
+import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
