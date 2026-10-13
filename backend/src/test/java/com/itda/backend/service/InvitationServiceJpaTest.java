@@ -243,6 +243,7 @@ class InvitationServiceJpaTest {
 
         assertThat(response.childId()).isEqualTo(String.valueOf(child.getId()));
         assertThat(response.childName()).isEqualTo("김하늘");
+        assertThat(response.organizationId()).isEqualTo(String.valueOf(ours.getId()));
         assertThat(response.organizationName()).isEqualTo(ours.getName());
         assertThat(response.childStatus()).isEqualTo(ChildStatus.PENDING_CONSENT);
         Invitation invitation = stored(issued);

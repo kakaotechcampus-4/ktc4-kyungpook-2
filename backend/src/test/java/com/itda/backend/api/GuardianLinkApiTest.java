@@ -59,6 +59,7 @@ class GuardianLinkApiTest {
 
     private User staff;
     private User parent;
+    private String organizationId;
     private String childId;
     private String code;
 
@@ -94,6 +95,7 @@ class GuardianLinkApiTest {
     @BeforeEach
     void setUp() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
+        organizationId = String.valueOf(organization.getId());
         staff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
         parent = userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호"));
 
@@ -120,6 +122,8 @@ class GuardianLinkApiTest {
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.childId").value(childId))
                 .andExpect(jsonPath("$.data.childName").value("김하늘"))
+                // 동의 화면(동의 미리보기)으로 넘어가려면 어느 기관에 대한 연결인지 알아야 한다.
+                .andExpect(jsonPath("$.data.organizationId").value(organizationId))
                 .andExpect(jsonPath("$.data.organizationName").value("햇살아동발달센터"))
                 .andExpect(jsonPath("$.data.childStatus").value("pending_consent"));
 
