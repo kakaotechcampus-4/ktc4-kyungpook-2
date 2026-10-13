@@ -134,7 +134,7 @@ public class SummaryGate1Service {
      * <p>워커도 묶음을 집을 때 이 요약 행을 잠그므로, 여기서 잠근 뒤 보는 일지 상태는 커밋된 최신 값이다.
      */
     private void requireNotRegenerating(SummaryResult summary) {
-        if (summaryResultRepository.existsByChildIdAndEntryDateAndInstitutionIdAndRevisionGreaterThan(
+        if (summaryResultRepository.existsNewerRevision(
                 summary.getChildId(), summary.getEntryDate(), summary.getInstitutionId(), summary.getRevision())) {
             return;
         }

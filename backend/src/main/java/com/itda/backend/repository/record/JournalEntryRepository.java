@@ -68,7 +68,8 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<JournalEntry> findBySummaryIdAndDeletedAtIsNull(Long summaryId);
 
     /** Gate 1 목록용. 여러 요약에 든 삭제되지 않은 일지를 한 번에. */
-    List<JournalEntry> findBySummaryIdInAndDeletedAtIsNullOrderByIdAsc(Collection<Long> summaryIds);
+    @Query("select e from JournalEntry e where e.summaryId in :summaryIds and e.deletedAt is null order by e.id")
+    List<JournalEntry> findLiveBySummaryIds(@Param("summaryIds") Collection<Long> summaryIds);
 
     /** 그 기관·날짜에 주어진 상태(매칭·검증 진행 중)의 일지가 남아 있는지. */
     @Query("select count(e) > 0 from JournalEntry e join RawRecord r on r.id = e.rawRecordId "

@@ -76,7 +76,7 @@ public class SummaryGate1QueryService {
         SummaryStatus status = toSummaryStatus(gate1Status);
         Long organizationId = userService.getOrganizationIdOf(userId);
         List<SummaryResult> summaries =
-                summaryResultRepository.findByInstitutionIdAndStatusOrderByEntryDateAscIdAsc(organizationId, status);
+                summaryResultRepository.findGate1List(organizationId, status);
         if (summaries.isEmpty()) {
             return List.of();
         }
@@ -88,7 +88,7 @@ public class SummaryGate1QueryService {
         // 요약에 든 일지는 AI 가 보낸 목록이 아니라 그 요약을 가리키는 일지로 정한다. 승인하면 이 일지가 모두 끝나므로,
         // AI 가 어느 목록에도 넣지 않은 일지도 교사가 봐야 한다.
         Map<Long, List<JournalEntry>> entriesBySummary = journalEntryRepository
-                .findBySummaryIdInAndDeletedAtIsNullOrderByIdAsc(summaries.stream().map(SummaryResult::getId).toList())
+                .findLiveBySummaryIds(summaries.stream().map(SummaryResult::getId).toList())
                 .stream().collect(Collectors.groupingBy(JournalEntry::getSummaryId));
         Map<Long, Set<Long>> covered = new HashMap<>();
         Set<Long> coveredIds = new HashSet<>();
