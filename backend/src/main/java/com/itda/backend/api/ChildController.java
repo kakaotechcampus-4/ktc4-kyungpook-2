@@ -13,13 +13,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.itda.backend.dto.ChildRosterResponse;
-import com.itda.backend.dto.request.RegisterChildRequest;
-import com.itda.backend.dto.response.RegisteredChildResponse;
+import com.itda.backend.dto.request.child.RegisterChildRequest;
+import com.itda.backend.dto.response.child.ChildRosterResponse;
+import com.itda.backend.dto.response.child.RegisteredChildResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
-import com.itda.backend.service.ChildService;
+import com.itda.backend.service.child.ChildService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;

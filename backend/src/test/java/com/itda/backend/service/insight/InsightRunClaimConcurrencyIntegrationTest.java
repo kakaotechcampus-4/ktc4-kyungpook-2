@@ -28,8 +28,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import com.itda.backend.domain.InsightRun;
-import com.itda.backend.repository.InsightRunRepository;
+import com.itda.backend.domain.insight.InsightRun;
+import com.itda.backend.repository.insight.InsightRunRepository;
 
 /**
  * 집기 경합. {@code insight_run} 을 둔 이유의 절반이 "워커 둘이 같은 아이를 동시에 집어도 하나만 남는다"

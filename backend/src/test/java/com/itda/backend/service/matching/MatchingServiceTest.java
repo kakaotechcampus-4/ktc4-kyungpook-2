@@ -14,16 +14,16 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.ChildOrganization;
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.OrganizationType;
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.domain.RawRecordStatus;
-import com.itda.backend.dto.request.MatchingAgentRequest;
-import com.itda.backend.exception.MatchingTargetException;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.organization.OrganizationType;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.dto.request.matching.MatchingAgentRequest;
+import com.itda.backend.exception.matching.MatchingTargetException;
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -55,7 +55,7 @@ class MatchingServiceTest {
     private void activate(Child child) {
         em.flush();
         em.getEntityManager()
-                .createQuery("update Child c set c.status = com.itda.backend.domain.ChildStatus.ACTIVE where c.id = :id")
+                .createQuery("update Child c set c.status = com.itda.backend.domain.child.ChildStatus.ACTIVE where c.id = :id")
                 .setParameter("id", child.getId())
                 .executeUpdate();
         em.clear();

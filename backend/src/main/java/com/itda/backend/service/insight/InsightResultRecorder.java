@@ -10,12 +10,12 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.itda.backend.domain.InsightResult;
-import com.itda.backend.domain.InsightRun;
-import com.itda.backend.domain.InsightRunStatus;
-import com.itda.backend.dto.response.InsightAgentResponse;
-import com.itda.backend.repository.InsightResultRepository;
-import com.itda.backend.repository.InsightRunRepository;
+import com.itda.backend.domain.insight.InsightResult;
+import com.itda.backend.domain.insight.InsightRun;
+import com.itda.backend.domain.insight.InsightRunStatus;
+import com.itda.backend.dto.response.insight.InsightAgentResponse;
+import com.itda.backend.repository.insight.InsightResultRepository;
+import com.itda.backend.repository.insight.InsightRunRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

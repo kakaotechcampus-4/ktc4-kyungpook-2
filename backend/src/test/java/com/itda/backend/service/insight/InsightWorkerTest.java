@@ -27,12 +27,12 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.UnexpectedRollbackException;
 
-import com.itda.backend.domain.InsightRun;
-import com.itda.backend.dto.request.InsightAgentRequest;
-import com.itda.backend.dto.response.InsightAgentResponse;
-import com.itda.backend.exception.AiAgentException;
-import com.itda.backend.exception.AiAgentUnavailableException;
-import com.itda.backend.repository.SummaryResultRepository;
+import com.itda.backend.domain.insight.InsightRun;
+import com.itda.backend.dto.request.insight.InsightAgentRequest;
+import com.itda.backend.dto.response.insight.InsightAgentResponse;
+import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentUnavailableException;
+import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.agent.WorkerProperties;
 
 @ExtendWith(MockitoExtension.class)

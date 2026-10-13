@@ -15,13 +15,13 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.domain.InsightResult;
-import com.itda.backend.domain.InsightRun;
-import com.itda.backend.domain.InsightRunStatus;
-import com.itda.backend.domain.InsightStatus;
-import com.itda.backend.dto.response.InsightAgentResponse;
-import com.itda.backend.repository.InsightResultRepository;
-import com.itda.backend.repository.InsightRunRepository;
+import com.itda.backend.domain.insight.InsightResult;
+import com.itda.backend.domain.insight.InsightRun;
+import com.itda.backend.domain.insight.InsightRunStatus;
+import com.itda.backend.domain.insight.InsightStatus;
+import com.itda.backend.dto.response.insight.InsightAgentResponse;
+import com.itda.backend.repository.insight.InsightResultRepository;
+import com.itda.backend.repository.insight.InsightRunRepository;
 
 /**
  * 집기·저장. {@code claim} 이 {@code REQUIRES_NEW} 라 테스트가 트랜잭션을 들고 있으면 안 되므로

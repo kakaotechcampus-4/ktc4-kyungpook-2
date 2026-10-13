@@ -6,11 +6,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Map;
 
-import com.itda.backend.exception.UserErrorCode;
-import com.itda.backend.exception.UserException;
+import com.itda.backend.exception.user.UserErrorCode;
+import com.itda.backend.exception.user.UserException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.UserService;
+import com.itda.backend.service.user.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

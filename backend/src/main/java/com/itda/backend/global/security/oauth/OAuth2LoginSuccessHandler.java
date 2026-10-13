@@ -1,9 +1,9 @@
 package com.itda.backend.global.security.oauth;
 
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.UserService;
+import com.itda.backend.service.user.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;

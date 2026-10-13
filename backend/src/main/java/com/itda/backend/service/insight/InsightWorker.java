@@ -12,10 +12,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.UnexpectedRollbackException;
 
-import com.itda.backend.domain.InsightRun;
-import com.itda.backend.dto.request.InsightAgentRequest;
-import com.itda.backend.exception.AiAgentUnavailableException;
-import com.itda.backend.repository.SummaryResultRepository;
+import com.itda.backend.domain.insight.InsightRun;
+import com.itda.backend.dto.request.insight.InsightAgentRequest;
+import com.itda.backend.exception.agent.AiAgentUnavailableException;
+import com.itda.backend.repository.summary.SummaryResultRepository;
 
 import lombok.extern.slf4j.Slf4j;
 

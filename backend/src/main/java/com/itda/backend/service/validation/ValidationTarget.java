@@ -1,6 +1,6 @@
 package com.itda.backend.service.validation;
 
-import com.itda.backend.dto.request.ValidationAgentRequest;
+import com.itda.backend.dto.request.validation.ValidationAgentRequest;
 
 /**
  * 검증 한 건의 입력. 요청과 함께 그 요청을 만든 매칭 결과를 들고 다녀서 결과를 저장할 때 다시 조회하지 않는다.

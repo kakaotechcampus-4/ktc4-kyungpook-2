@@ -13,8 +13,8 @@ import org.springframework.web.client.RestClientException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.exception.AiAgentException;
-import com.itda.backend.exception.AiAgentUnavailableException;
+import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentUnavailableException;
 
 import lombok.extern.slf4j.Slf4j;
 

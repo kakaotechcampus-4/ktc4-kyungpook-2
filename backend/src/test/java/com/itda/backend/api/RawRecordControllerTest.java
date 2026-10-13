@@ -22,12 +22,12 @@ import com.itda.backend.global.jwt.JwtCookie;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.domain.RawRecordStatus;
-import com.itda.backend.exception.RawRecordNotFoundException;
-import com.itda.backend.exception.RawRecordValidationException;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.exception.record.RawRecordNotFoundException;
+import com.itda.backend.exception.record.RawRecordValidationException;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.RawRecordService;
+import com.itda.backend.service.record.RawRecordService;
 
 // addFilters(false)라 필터 체인이 안 돈다 — JwtAuthenticationFilter가 실제로 하는 일
 // (SecurityContext principal에 카카오ID(String)를 심는 것)을 authenticateAs(...)로 직접

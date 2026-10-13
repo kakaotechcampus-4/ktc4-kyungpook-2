@@ -2,7 +2,7 @@ package com.itda.backend.service.insight;
 
 import java.util.Map;
 
-import com.itda.backend.domain.OrganizationType;
+import com.itda.backend.domain.organization.OrganizationType;
 
 /**
  * 기관 종류를 인사이트 에이전트가 쓰는 한국어로 바꾼다.

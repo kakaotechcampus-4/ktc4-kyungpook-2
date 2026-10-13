@@ -19,8 +19,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.itda.backend.exception.SummaryChildNotFoundException;
-import com.itda.backend.exception.SummaryRunValidationException;
+import com.itda.backend.exception.summary.SummaryChildNotFoundException;
+import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.summary.SummaryRunService;
