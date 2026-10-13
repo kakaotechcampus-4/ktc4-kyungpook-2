@@ -9,7 +9,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,18 +38,25 @@ import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.exception.summary.SummaryConflictException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.summary.ClaimedSummaryGroup;
+import com.itda.backend.service.summary.SummaryGroup;
+import com.itda.backend.service.summary.SummaryRunRequests;
+import com.itda.backend.service.summary.SummaryService;
 import com.itda.backend.service.user.UserService;
 
 /**
- * Gate 1 결정이 다른 결정과 겹칠 때와 새 enum 값 저장을 PostgreSQL 에서 확인한다.
+ * Gate 1 결정이 다른 결정·요약 워커와 겹칠 때와 새 enum 값 저장을 PostgreSQL 에서 확인한다.
  *
  * <p>다른 커넥션(홀더)이 요약을 보류로 바꾼 채 커밋하지 않고 잡아 둔다. 승인 요청이 홀더 때문에 멈췄는지
  * {@code pg_blocking_pids} 로 확인한 뒤 홀더를 커밋해, 승인이 잠금을 기다린 다음 최신 상태(보류)로 판단해
@@ -62,6 +71,7 @@ class SummaryGate1ConcurrencyIntegrationTest {
     private static final Long ORG = 3L;
     private static final Long CHILD = 8L;
     private static final String TEACHER = "99";
+    private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
 
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -81,23 +91,25 @@ class SummaryGate1ConcurrencyIntegrationTest {
     @Autowired private JournalEntryRepository journalEntryRepository;
     @Autowired private ChildContextRepository childContextRepository;
     @Autowired private ApprovalRepository approvalRepository;
+    @Autowired private RawRecordRepository rawRecordRepository;
+    @Autowired private SummaryService summaryService;
+    @Autowired private SummaryRunRequests runRequests;
     @Autowired private DataSource dataSource;
 
     @MockitoBean private UserService userService;
 
+    private Long rawRecordId;
     private SummaryResult summary;
     private JournalEntry entry;
 
     @BeforeEach
     void setUp() {
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
-        summary = summaryResultRepository.save(SummaryResult.of(CHILD, LocalDate.of(2026, 10, 8), ORG, 1,
+        rawRecordId = rawRecordRepository.save(new RawRecord(String.valueOf(ORG), "school.pdf", "kept/school.pdf",
+                "application/pdf", 12, RawRecordStatus.PENDING)).getId();
+        summary = summaryResultRepository.save(SummaryResult.of(CHILD, DATE, ORG, 1,
                 "블록 놀이에서 친구에게 양보했다.", "[]", "[]", "[]", "{}"));
-        JournalEntry pending = JournalEntry.of(1L, LocalDate.of(2026, 10, 8), "블록 놀이를 했다.", 1);
-        pending.startMatching();
-        pending.confirmMatch(CHILD);
-        pending.startValidating();
-        pending.passValidation();
+        JournalEntry pending = validated();
         pending.startSummarizing();
         pending.completeSummary(summary.getId());
         entry = journalEntryRepository.save(pending);
@@ -110,7 +122,50 @@ class SummaryGate1ConcurrencyIntegrationTest {
             statement.executeUpdate("DELETE FROM child_context");
             statement.executeUpdate("DELETE FROM journal_entry");
             statement.executeUpdate("DELETE FROM summary_result");
+            statement.executeUpdate("DELETE FROM raw_record");
         }
+    }
+
+    private JournalEntry validated() {
+        JournalEntry e = JournalEntry.of(rawRecordId, DATE, "블록 놀이를 했다.", 1);
+        e.startMatching();
+        e.confirmMatch(CHILD);
+        e.startValidating();
+        e.passValidation();
+        return e;
+    }
+
+    @Test
+    void 승인이_먼저_잡고_있으면_워커는_기다렸다가_승인된_일지를_다시_묶지_않는다() throws Exception {
+        JournalEntry late = journalEntryRepository.save(validated());
+        // 마감·디바운스를 건너뛰게 해 지금 바로 집도록 한다.
+        runRequests.request(new SummaryGroup(CHILD, DATE, ORG), Instant.now().plusSeconds(600));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        List<ClaimedSummaryGroup> claimed;
+        try (Connection holder = dataSource.getConnection()) {
+            holder.setAutoCommit(false);
+            int holderPid = backendPid(holder);
+            // Gate 1 승인이 요약 행을 잠그고 일지를 완료로 바꾼 채 아직 커밋하지 않았다.
+            try (Statement statement = holder.createStatement()) {
+                statement.executeQuery("SELECT id FROM summary_result WHERE id = " + summary.getId() + " FOR UPDATE");
+                statement.executeUpdate("UPDATE summary_result SET status = 'APPROVED' WHERE id = " + summary.getId());
+                statement.executeUpdate("UPDATE journal_entry SET status = 'COMPLETED' WHERE id = " + entry.getId());
+            }
+
+            Future<List<ClaimedSummaryGroup>> claim = executor.submit(() -> summaryService.claimReadyGroups(10));
+            waitUntilBlockedBy(holderPid);
+            holder.commit();
+            claimed = claim.get(10, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        // 승인된 판의 일지는 끝났다. 새 일지만 새 판으로 요약한다.
+        assertThat(claimed).containsExactly(
+                new ClaimedSummaryGroup(new SummaryGroup(CHILD, DATE, ORG), List.of(late.getId())));
+        assertThat(journalEntryRepository.findById(entry.getId()).orElseThrow().getStatus())
+                .isEqualTo(JournalEntryStatus.COMPLETED);
     }
 
     @Test

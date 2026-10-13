@@ -22,6 +22,8 @@ import com.itda.backend.domain.approval.ApprovalReviewType;
 import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryStatus;
@@ -61,6 +63,7 @@ class SummaryGate1ServiceTest {
     @MockitoBean
     private UserService userService;
 
+    private Long rawRecordId;
     private SummaryResult summary;
     private JournalEntry covered;
     private JournalEntry uncovered;
@@ -68,6 +71,8 @@ class SummaryGate1ServiceTest {
     @BeforeEach
     void setUp() {
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
+        rawRecordId = em.persist(new RawRecord(String.valueOf(ORG), "school.pdf", "kept/school.pdf",
+                "application/pdf", 12, RawRecordStatus.PENDING)).getId();
         summary = summaryOf(ORG);
         covered = entryIn(summary);
         uncovered = entryIn(summary);
@@ -81,14 +86,27 @@ class SummaryGate1ServiceTest {
     }
 
     private JournalEntry entryIn(SummaryResult target) {
-        JournalEntry entry = JournalEntry.of(1L, DATE, "블록 놀이를 했다.", 1);
+        JournalEntry entry = validated();
+        entry.startSummarizing();
+        entry.completeSummary(target.getId());
+        return em.persistAndFlush(entry);
+    }
+
+    private JournalEntry validated() {
+        JournalEntry entry = JournalEntry.of(rawRecordId, DATE, "블록 놀이를 했다.", 1);
         entry.startMatching();
         entry.confirmMatch(CHILD);
         entry.startValidating();
         entry.passValidation();
-        entry.startSummarizing();
-        entry.completeSummary(target.getId());
-        return em.persistAndFlush(entry);
+        return entry;
+    }
+
+    /** 같은 묶음의 새 일지만 워커가 집어 간 상태. 이 요약의 일지는 하나도 집히지 않았다. */
+    private void newEntrySummarizingInSameGroup() {
+        JournalEntry fresh = validated();
+        fresh.startSummarizing();
+        em.persistAndFlush(fresh);
+        em.clear();
     }
 
     private SummaryResult reloadSummary() {
@@ -270,6 +288,33 @@ class SummaryGate1ServiceTest {
 
         assertThatThrownBy(() -> service.reopen(TEACHER, others.getId()))
                 .isInstanceOf(SummaryNotFoundException.class);
+    }
+
+    @Test
+    void 이_요약의_일지가_집히지_않았어도_같은_묶음을_요약하는_중이면_결정할_수_없다() {
+        // 이 요약의 일지가 모두 지워졌거나, 다른 판의 일지만 집힌 경우다. 요약 결과는 최신 판을 덮어쓸 수 있으므로
+        // 묶음 단위로 막는다.
+        newEntrySummarizingInSameGroup();
+
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null))
+                .isInstanceOf(SummaryConflictException.class)
+                .extracting(e -> ((SummaryConflictException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.REGENERATING);
+    }
+
+    @Test
+    void 같은_묶음을_요약하는_중이면_보류를_해제할_수_없다() {
+        // 보류한 판이 최신이라 워커는 새 일지만 집었다. 지금 해제하면 요약 결과가 이 판을 새 일지만으로 덮어써
+        // 이 판의 일지가 요약에서 사라진 채 승인될 수 있다.
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null);
+        em.flush();
+        newEntrySummarizingInSameGroup();
+
+        assertThatThrownBy(() -> service.reopen(TEACHER, summary.getId()))
+                .isInstanceOf(SummaryConflictException.class)
+                .extracting(e -> ((SummaryConflictException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.REGENERATING);
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
     }
 }
 

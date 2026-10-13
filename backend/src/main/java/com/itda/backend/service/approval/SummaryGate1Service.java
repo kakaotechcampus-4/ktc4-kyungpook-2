@@ -53,12 +53,7 @@ public class SummaryGate1Service {
         if (summary.getStatus() != SummaryStatus.GATE1_PENDING) {
             throw new SummaryConflictException(SummaryErrorCode.ALREADY_REVIEWED, summaryId);
         }
-        // 워커가 새 일지와 함께 다시 요약하는 중이면 곧 본문이 바뀐다. 지금 승인하면 바뀌기 전 글이 올라가고,
-        // 다시 만든 글은 새 판으로 쌓여 같은 일지가 두 번 올라간다.
-        if (journalEntryRepository.existsBySummaryIdAndStatusAndDeletedAtIsNull(summaryId,
-                JournalEntryStatus.SUMMARIZING)) {
-            throw new SummaryConflictException(SummaryErrorCode.REGENERATING, summaryId);
-        }
+        requireNotRegenerating(summary);
 
         List<JournalEntry> entries = journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId);
         ApprovalDecision decision = switch (action) {
@@ -77,6 +72,7 @@ public class SummaryGate1Service {
         if (summary.getStatus() != SummaryStatus.HOLD) {
             throw new SummaryConflictException(SummaryErrorCode.NOT_HELD, summaryId);
         }
+        requireNotRegenerating(summary);
         summary.reopen();
         journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId).stream()
                 .filter(e -> e.getStatus() == JournalEntryStatus.GATE1_HELD)
@@ -105,6 +101,20 @@ public class SummaryGate1Service {
         summary.remove();
         entries.forEach(JournalEntry::delete);
         return ApprovalDecision.REMOVED;
+    }
+
+    /**
+     * 같은 묶음을 워커가 요약하는 중이면 결정을 받지 않는다. 요약 결과는 그 묶음의 최신 판이 대기면 덮어쓰므로, 지금
+     * 승인하면 곧 바뀔 글이 올라가고 다시 만든 글은 새 판으로 쌓여 같은 일지가 두 번 올라간다. 보류 해제도 같다 —
+     * 해제한 판이 새 일지만 담은 결과로 덮어써질 수 있다. 이 판의 일지가 집히지 않았어도 묶음 단위로 본다.
+     *
+     * <p>워커도 묶음을 집을 때 이 요약 행을 잠그므로, 여기서 잠근 뒤 보는 일지 상태는 커밋된 최신 값이다.
+     */
+    private void requireNotRegenerating(SummaryResult summary) {
+        if (journalEntryRepository.existsInGroup(JournalEntryStatus.SUMMARIZING, summary.getChildId(),
+                summary.getEntryDate(), String.valueOf(summary.getInstitutionId()))) {
+            throw new SummaryConflictException(SummaryErrorCode.REGENERATING, summary.getId());
+        }
     }
 
     private static List<JournalEntry> pendingOf(List<JournalEntry> entries) {

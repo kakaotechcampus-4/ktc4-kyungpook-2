@@ -24,6 +24,17 @@ public interface SummaryResultRepository extends JpaRepository<SummaryResult, Lo
     List<SummaryResult> findByInstitutionIdAndStatusOrderByEntryDateAscIdAsc(Long institutionId,
             SummaryStatus status);
 
+    /**
+     * 요약 워커가 묶음을 집을 때 그 묶음의 판을 최신 판부터 잠근다. Gate 1 결정·보류 해제도 요약 행을 잠그므로, 결정이
+     * 커밋되기 전에 옛 상태를 보고 승인된 일지를 다시 묶거나, 집는 사이에 판이 바뀌는 일이 없다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from SummaryResult s "
+            + "where s.childId = :childId and s.entryDate = :entryDate and s.institutionId = :institutionId "
+            + "order by s.revision desc")
+    List<SummaryResult> findGroupForUpdate(@Param("childId") Long childId, @Param("entryDate") LocalDate entryDate,
+            @Param("institutionId") Long institutionId);
+
     /** Gate 1 결정용. 두 결정이 동시에 와도 한쪽만 대기 상태에서 바꾸도록 행을 잠근다. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from SummaryResult s where s.id = :id")

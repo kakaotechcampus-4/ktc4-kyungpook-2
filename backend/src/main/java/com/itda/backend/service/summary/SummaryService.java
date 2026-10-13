@@ -98,10 +98,13 @@ public class SummaryService {
         return claimed;
     }
 
-    /** 그 묶음의 최신 판이 Gate 1 대기면 그 판에 든 Gate 1 대기 일지 id. 레코더도 최신 판만 덮어쓴다. */
+    /**
+     * 그 묶음의 최신 판이 Gate 1 대기면 그 판에 든 Gate 1 대기 일지 id. 레코더도 최신 판만 덮어쓴다.
+     * 묶음의 판을 잠근 뒤에 읽는다 — 커밋 전인 Gate 1 결정을 기다렸다가 결정 뒤 상태로 고른다.
+     */
     private List<Long> findLatestPendingEntryIds(SummaryGroup group) {
-        return summaryResultRepository.findFirstByChildIdAndEntryDateAndInstitutionIdOrderByRevisionDesc(
-                        group.childId(), group.entryDate(), group.institutionId())
+        return summaryResultRepository.findGroupForUpdate(group.childId(), group.entryDate(), group.institutionId())
+                .stream().findFirst()
                 .filter(latest -> latest.getStatus() == SummaryStatus.GATE1_PENDING)
                 .map(latest -> journalEntryRepository.findIdsBySummaryIdAndStatus(
                         latest.getId(), JournalEntryStatus.GATE1_PENDING))
