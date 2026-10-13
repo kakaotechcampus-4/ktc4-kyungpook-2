@@ -47,7 +47,8 @@ public class MatchingService {
                 .orElseThrow(() -> new MatchingTargetException("raw record not found: " + entry.getRawRecordId()));
         Long organizationId = organizationIdOf(rawRecord);
 
-        List<MatchingAgentRequest.RosterEntry> roster = childRepository.findActiveByOrganizationId(organizationId)
+        // 이 기관에 대한 동의가 있는 아이만 명부에 넣는다. 다른 기관에만 동의한 아이는 빠진다.
+        List<MatchingAgentRequest.RosterEntry> roster = childRepository.findConsentedByOrganizationId(organizationId)
                 .stream()
                 .map(child -> new MatchingAgentRequest.RosterEntry(
                         child.getId(), child.getName(), child.getBirthdate().toString()))

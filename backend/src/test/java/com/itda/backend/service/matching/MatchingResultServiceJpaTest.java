@@ -5,6 +5,7 @@ import static org.mockito.BDDMockito.given;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.matching.MatchingStatus;
 import com.itda.backend.domain.organization.Organization;
@@ -61,11 +64,10 @@ class MatchingResultServiceJpaTest {
         entry = em.persist(pending);
         matchingResult = em.persist(new MatchingResult(entry.getId(), null, new BigDecimal("0.4"),
                 MatchingStatus.REVIEW, null, null, null, null, null, null, null));
+        // 매칭 확정은 이 기관에 대한 동의가 있는 아이만 받는다.
+        child.activate();
+        em.persist(SharingConsent.grant(child.getId(), 100L, ours.getId(), List.of(ConsentField.DAILY_SUMMARY)));
         em.flush();
-        em.getEntityManager()
-                .createQuery("update Child c set c.status = com.itda.backend.domain.child.ChildStatus.ACTIVE where c.id = :id")
-                .setParameter("id", child.getId())
-                .executeUpdate();
         em.clear();
         given(userService.getOrganizationIdOf(USER_ID)).willReturn(ours.getId());
     }

@@ -13,7 +13,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
-import com.itda.backend.domain.child.ChildStatus;
+import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.matching.MatchingStatus;
 import com.itda.backend.domain.record.JournalEntry;
@@ -25,6 +25,7 @@ import com.itda.backend.exception.matching.MatchingResultNotFoundException;
 import com.itda.backend.exception.matching.MatchingResultValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
@@ -47,6 +48,7 @@ public class MatchingResultService {
     private final RawRecordRepository rawRecordRepository;
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
+    private final SharingConsentRepository sharingConsentRepository;
     private final UserService userService;
 
     @Transactional(readOnly = true)
@@ -88,13 +90,18 @@ public class MatchingResultService {
                 if (childId == null) {
                     throw new MatchingResultValidationException("childId is required for assign");
                 }
-                Child child = childRepository.findByIdAndDeletedAtIsNull(childId)
+                // 아동 행을 잠근 뒤 동의를 본다. 동의 부여·철회도 이 행을 먼저 잠그므로, 철회가 커밋된 뒤에는
+                // 새 확정이 성공하지 않는다. 잠그지 않으면 "동의 확인 → 철회 커밋 → 확정" 순서로 끼어들 수 있다.
+                childRepository.findByIdForUpdate(childId)
+                        .filter(child -> !child.isDeleted())
                         .orElseThrow(() -> new MatchingResultValidationException("child not found: " + childId));
                 if (!childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)) {
                     throw new MatchingResultValidationException("child not in this institution: " + childId);
                 }
-                // AI 명단(ChildRepository.findActiveByOrganizationId)과 같은 기준 — 동의 전 아동으로는 확정하지 않는다.
-                if (child.getStatus() != ChildStatus.ACTIVE) {
+                // AI 명단(ChildRepository.findConsentedByOrganizationId)과 같은 기준 — 이 기관에 동의하지 않은
+                // 아동으로는 확정하지 않는다. 다른 기관에만 동의해 child.status 가 ACTIVE 인 아이도 막힌다.
+                if (!sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(
+                        childId, organizationId, SharingConsentStatus.ACTIVE)) {
                     throw new MatchingResultValidationException("child consent not completed: " + childId);
                 }
                 matchingResult.resolveAsAssigned(childId, reviewerId);

@@ -23,6 +23,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.child.ChildStatus;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.invitation.Invitation;
 import com.itda.backend.domain.invitation.InvitationStatus;
@@ -261,10 +263,10 @@ class InvitationServiceJpaTest {
     /** 연결은 동의가 아니다. 수락은 아동 상태를 바꾸지 않고 실제 현재 상태를 돌려준다. */
     @Test
     void 수락은_아동_상태를_바꾸지_않고_실제_상태를_돌려준다() {
-        em.getEntityManager()
-                .createQuery("update Child c set c.status = com.itda.backend.domain.child.ChildStatus.ACTIVE where c.id = :id")
-                .setParameter("id", child.getId())
-                .executeUpdate();
+        // 다른 보호자가 이미 동의해 둔 아이
+        child.activate();
+        em.persist(SharingConsent.grant(child.getId(), 100L, ours.getId(), List.of(ConsentField.DAILY_SUMMARY)));
+        em.flush();
         IssuedInvitationResponse issued = issue();
 
         AcceptedInvitationResponse response = invitationService.accept(PARENT, issued.code());
