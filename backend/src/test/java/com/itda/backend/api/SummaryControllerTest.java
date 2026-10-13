@@ -2,6 +2,7 @@ package com.itda.backend.api;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -19,10 +20,16 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
+import com.itda.backend.exception.summary.SummaryConflictException;
+import com.itda.backend.exception.summary.SummaryErrorCode;
+import com.itda.backend.exception.summary.SummaryNotFoundException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
+import com.itda.backend.service.approval.Gate1Action;
+import com.itda.backend.service.approval.SummaryGate1Service;
 import com.itda.backend.service.summary.SummaryRunService;
 
 @WebMvcTest(SummaryController.class)
@@ -36,6 +43,9 @@ class SummaryControllerTest {
 
     @MockitoBean
     private SummaryRunService summaryRunService;
+
+    @MockitoBean
+    private SummaryGate1Service summaryGate1Service;
 
     @MockitoBean
     private JwtProvider jwtProvider;
@@ -89,5 +99,70 @@ class SummaryControllerTest {
                         .content("{\"childId\": 8, \"entryDate\": \"2026-10-08\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("SUMMARY_INVALID_REQUEST"));
+    }
+
+    private static final String GATE1_URL = "/api/v1/summaries/50/gate1";
+
+    private org.springframework.test.web.servlet.ResultActions decide(String body) throws Exception {
+        return mockMvc.perform(post(GATE1_URL).contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    @Test
+    void gate1_passesDecisionAndEditedContentToService() throws Exception {
+        given(summaryGate1Service.decide(any(), eq(50L), eq(Gate1Action.APPROVE), eq("고친 본문")))
+                .willReturn(new Gate1DecisionResponse(50L, "APPROVED", "CORRECTED"));
+
+        decide("{\"decision\": \"approve\", \"editedContent\": \"고친 본문\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.summaryId").value(50))
+                .andExpect(jsonPath("$.data.status").value("APPROVED"))
+                .andExpect(jsonPath("$.data.decision").value("CORRECTED"));
+    }
+
+    @Test
+    void gate1_acceptsHoldAndRemoveWithoutEditedContent() throws Exception {
+        decide("{\"decision\": \"hold\"}").andExpect(status().isOk());
+        decide("{\"decision\": \"remove\"}").andExpect(status().isOk());
+
+        verify(summaryGate1Service).decide(any(), eq(50L), eq(Gate1Action.HOLD), eq(null));
+        verify(summaryGate1Service).decide(any(), eq(50L), eq(Gate1Action.REMOVE), eq(null));
+    }
+
+    @Test
+    void gate1_rejectsInvalidRequest() throws Exception {
+        for (String body : new String[] {
+                "{}",
+                "{\"decision\": \"reject\"}",
+                "{\"decision\": \"APPROVE\"}",
+                "{\"decision\": \"approve\", \"editedContent\": \"  \"}",
+                // 보류·제거에 고친 본문을 보내면 버려진다. 조용히 무시하지 않고 막는다.
+                "{\"decision\": \"hold\", \"editedContent\": \"고친 본문\"}"}) {
+            decide(body).andExpect(status().isBadRequest());
+        }
+
+        verify(summaryGate1Service, never()).decide(any(), any(), any(), any());
+    }
+
+    @Test
+    void gate1_returns404WhenSummaryIsNotInInstitution() throws Exception {
+        given(summaryGate1Service.decide(any(), any(), any(), any())).willThrow(new SummaryNotFoundException(50L));
+
+        decide("{\"decision\": \"approve\"}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("SUMMARY_NOT_FOUND"));
+    }
+
+    @Test
+    void gate1_returns409WhenAlreadyReviewedOrRegenerating() throws Exception {
+        given(summaryGate1Service.decide(any(), any(), any(), any()))
+                .willThrow(new SummaryConflictException(SummaryErrorCode.ALREADY_REVIEWED, 50L))
+                .willThrow(new SummaryConflictException(SummaryErrorCode.REGENERATING, 50L));
+
+        decide("{\"decision\": \"approve\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SUMMARY_ALREADY_REVIEWED"));
+        decide("{\"decision\": \"approve\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SUMMARY_REGENERATING"));
     }
 }

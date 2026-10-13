@@ -26,4 +26,15 @@ public class SummaryExceptionHandler {
         return ResponseEntity.status(SummaryErrorCode.CHILD_NOT_FOUND.getStatus())
                 .body(ErrorResponse.of(SummaryErrorCode.CHILD_NOT_FOUND));
     }
+
+    @ExceptionHandler(SummaryNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleSummaryNotFound(SummaryNotFoundException e) {
+        return ResponseEntity.status(SummaryErrorCode.NOT_FOUND.getStatus())
+                .body(ErrorResponse.of(SummaryErrorCode.NOT_FOUND));
+    }
+
+    @ExceptionHandler(SummaryConflictException.class)
+    public ResponseEntity<ErrorResponse> handleConflict(SummaryConflictException e) {
+        return ResponseEntity.status(e.getErrorCode().getStatus()).body(ErrorResponse.of(e.getErrorCode()));
+    }
 }
