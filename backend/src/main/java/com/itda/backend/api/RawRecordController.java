@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.itda.backend.domain.record.RawRecord;
-import com.itda.backend.dto.RawRecordResponse;
+import com.itda.backend.dto.response.record.RawRecordResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;

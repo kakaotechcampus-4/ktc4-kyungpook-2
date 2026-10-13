@@ -1,7 +1,7 @@
 package com.itda.backend.api;
 
-import com.itda.backend.dto.request.SignupRequest;
-import com.itda.backend.dto.response.CurrentUserResponse;
+import com.itda.backend.dto.request.user.SignupRequest;
+import com.itda.backend.dto.response.user.CurrentUserResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.jwt.JwtCookie;

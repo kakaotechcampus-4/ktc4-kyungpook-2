@@ -25,7 +25,7 @@ import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.invitation.Invitation;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.user.User;
-import com.itda.backend.dto.response.ChildGuardianResponse;
+import com.itda.backend.dto.response.invitation.ChildGuardianResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.exception.invitation.InvitationErrorCode;

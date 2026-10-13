@@ -19,8 +19,8 @@ import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryStatus;
-import com.itda.backend.dto.request.SummaryAgentRequest;
-import com.itda.backend.dto.response.SummaryAgentResponse;
+import com.itda.backend.dto.request.summary.SummaryAgentRequest;
+import com.itda.backend.dto.response.summary.SummaryAgentResponse;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 
 @DataJpaTest

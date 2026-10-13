@@ -33,7 +33,7 @@ import com.itda.backend.domain.user.User;
 import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
-import com.itda.backend.dto.request.SignupRequest;
+import com.itda.backend.dto.request.user.SignupRequest;
 import com.itda.backend.exception.organization.OrganizationErrorCode;
 import com.itda.backend.exception.organization.OrganizationException;
 import com.itda.backend.exception.user.UserErrorCode;

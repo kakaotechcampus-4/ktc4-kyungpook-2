@@ -27,11 +27,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import com.itda.backend.domain.child.ChildStatus;
-import com.itda.backend.dto.ChildRosterResponse;
-import com.itda.backend.dto.request.RegisterChildRequest;
-import com.itda.backend.dto.response.IssuedInvitationResponse;
-import com.itda.backend.dto.response.RegisteredChildResponse;
-import com.itda.backend.dto.response.RegisteredChildResponse.RegisteredChild;
+import com.itda.backend.dto.request.child.RegisterChildRequest;
+import com.itda.backend.dto.response.child.ChildRosterResponse;
+import com.itda.backend.dto.response.child.RegisteredChildResponse;
+import com.itda.backend.dto.response.child.RegisteredChildResponse.RegisteredChild;
+import com.itda.backend.dto.response.invitation.IssuedInvitationResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.exception.user.UserErrorCode;

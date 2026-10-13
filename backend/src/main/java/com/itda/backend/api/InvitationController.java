@@ -12,8 +12,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.itda.backend.dto.response.IssuedInvitationResponse;
-import com.itda.backend.dto.response.LiveInvitationResponse;
+import com.itda.backend.dto.response.invitation.IssuedInvitationResponse;
+import com.itda.backend.dto.response.invitation.LiveInvitationResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;

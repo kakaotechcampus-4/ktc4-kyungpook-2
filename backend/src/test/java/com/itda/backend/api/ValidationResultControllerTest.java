@@ -21,8 +21,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.itda.backend.dto.RecordResponse;
-import com.itda.backend.dto.ValidationQueueItemResponse;
+import com.itda.backend.dto.response.record.RecordResponse;
+import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
 import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
 import com.itda.backend.global.jwt.JwtCookie;

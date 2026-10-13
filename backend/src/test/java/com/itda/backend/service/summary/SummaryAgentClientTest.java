@@ -22,8 +22,8 @@ import org.springframework.test.web.client.response.DefaultResponseCreator;
 import org.springframework.web.client.RestClient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.dto.request.SummaryAgentRequest;
-import com.itda.backend.dto.response.SummaryAgentResponse;
+import com.itda.backend.dto.request.summary.SummaryAgentRequest;
+import com.itda.backend.dto.response.summary.SummaryAgentResponse;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.summary.SummaryNoGroundedClaimsException;

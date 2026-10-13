@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
-import com.itda.backend.dto.request.RegisterChildRequest;
+import com.itda.backend.dto.request.child.RegisterChildRequest;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 

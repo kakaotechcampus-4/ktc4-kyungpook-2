@@ -35,7 +35,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.organization.Organization;
-import com.itda.backend.dto.request.RegisterChildRequest;
+import com.itda.backend.dto.request.child.RegisterChildRequest;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.fixture.OrganizationFixture;

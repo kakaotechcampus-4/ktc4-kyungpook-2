@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
-import com.itda.backend.dto.response.ValidationAgentResponse;
+import com.itda.backend.dto.response.validation.ValidationAgentResponse;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
 

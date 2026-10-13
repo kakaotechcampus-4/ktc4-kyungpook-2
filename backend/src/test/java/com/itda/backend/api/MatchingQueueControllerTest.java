@@ -22,8 +22,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.matching.MatchingStatus;
-import com.itda.backend.dto.MatchingQueueItemResponse;
-import com.itda.backend.dto.RecordResponse;
+import com.itda.backend.dto.response.matching.MatchingQueueItemResponse;
+import com.itda.backend.dto.response.record.RecordResponse;
 import com.itda.backend.exception.matching.MatchingResultNotFoundException;
 import com.itda.backend.exception.matching.MatchingResultValidationException;
 import com.itda.backend.global.jwt.JwtCookie;

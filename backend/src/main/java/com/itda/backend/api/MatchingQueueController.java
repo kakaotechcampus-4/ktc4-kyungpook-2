@@ -10,8 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.itda.backend.dto.MatchingQueueItemResponse;
-import com.itda.backend.dto.MatchingResolveRequest;
+import com.itda.backend.dto.request.matching.MatchingResolveRequest;
+import com.itda.backend.dto.response.matching.MatchingQueueItemResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;

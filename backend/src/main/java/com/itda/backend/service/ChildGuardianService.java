@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.invitation.Invitation;
 import com.itda.backend.domain.user.User;
-import com.itda.backend.dto.response.ChildGuardianResponse;
+import com.itda.backend.dto.response.invitation.ChildGuardianResponse;
 import com.itda.backend.exception.invitation.InvitationErrorCode;
 import com.itda.backend.exception.invitation.InvitationException;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;

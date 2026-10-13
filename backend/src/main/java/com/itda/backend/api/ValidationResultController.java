@@ -11,8 +11,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.itda.backend.dto.ValidationQueueItemResponse;
-import com.itda.backend.dto.ValidationResolveRequest;
+import com.itda.backend.dto.request.validation.ValidationResolveRequest;
+import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;

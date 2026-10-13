@@ -21,7 +21,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.BDDMockito.given;
 
-import com.itda.backend.dto.response.CurrentUserResponse;
+import com.itda.backend.dto.response.user.CurrentUserResponse;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.UserService;

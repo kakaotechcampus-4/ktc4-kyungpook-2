@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.record.JournalEntry;
-import com.itda.backend.dto.response.MatchingAgentResponse;
+import com.itda.backend.dto.response.matching.MatchingAgentResponse;
 import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 

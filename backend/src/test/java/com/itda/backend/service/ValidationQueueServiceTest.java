@@ -24,7 +24,7 @@ import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
-import com.itda.backend.dto.ValidationQueueItemResponse;
+import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
 import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
 import com.itda.backend.repository.child.ChildRepository;

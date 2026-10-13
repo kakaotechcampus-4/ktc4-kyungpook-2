@@ -28,7 +28,7 @@ import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
-import com.itda.backend.dto.MatchingQueueItemResponse;
+import com.itda.backend.dto.response.matching.MatchingQueueItemResponse;
 import com.itda.backend.exception.matching.MatchingResultNotFoundException;
 import com.itda.backend.exception.matching.MatchingResultValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;

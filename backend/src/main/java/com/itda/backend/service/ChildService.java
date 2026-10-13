@@ -11,10 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
-import com.itda.backend.dto.ChildRosterResponse;
-import com.itda.backend.dto.request.RegisterChildRequest;
-import com.itda.backend.dto.response.RegisteredChildResponse;
-import com.itda.backend.dto.response.RegisteredChildResponse.RegisteredChild;
+import com.itda.backend.dto.request.child.RegisterChildRequest;
+import com.itda.backend.dto.response.child.ChildRosterResponse;
+import com.itda.backend.dto.response.child.RegisteredChildResponse;
+import com.itda.backend.dto.response.child.RegisteredChildResponse.RegisteredChild;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;

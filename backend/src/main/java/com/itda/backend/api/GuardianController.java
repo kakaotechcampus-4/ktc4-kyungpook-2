@@ -11,8 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.itda.backend.dto.request.AcceptInvitationRequest;
-import com.itda.backend.dto.response.AcceptedInvitationResponse;
+import com.itda.backend.dto.request.invitation.AcceptInvitationRequest;
+import com.itda.backend.dto.response.invitation.AcceptedInvitationResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;

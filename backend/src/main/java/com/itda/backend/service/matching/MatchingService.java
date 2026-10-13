@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
-import com.itda.backend.dto.request.MatchingAgentRequest;
+import com.itda.backend.dto.request.matching.MatchingAgentRequest;
 import com.itda.backend.exception.matching.MatchingTargetException;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
