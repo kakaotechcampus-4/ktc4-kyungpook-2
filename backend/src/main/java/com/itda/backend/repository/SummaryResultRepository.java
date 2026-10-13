@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.itda.backend.domain.SummaryResult;
 
@@ -24,4 +26,13 @@ public interface SummaryResultRepository extends JpaRepository<SummaryResult, Lo
      * 자바에서 한 주치만 남기게 된다. {@code child_context} 는 지우지 않고 쌓이기만 해서 그 수가 계속 는다.
      */
     List<SummaryResult> findByChildIdAndEntryDateBetween(Long childId, LocalDate from, LocalDate to);
+
+    /**
+     * 그 기간에 요약이 하나라도 있는 아이들. 인사이트 워커가 누구를 볼지 고르는 데 쓴다.
+     *
+     * <p>승인 여부는 보지 않는다 — 승인·동의·근거를 따지는 자리는 {@code InsightService.prepare} 하나로
+     * 두는 게 낫다. 여기서는 <b>볼 필요조차 없는 아이</b>를 빼는 것이 목적이다.
+     */
+    @Query("select distinct s.childId from SummaryResult s where s.entryDate between :from and :to")
+    List<Long> findChildIdsWithSummaryBetween(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }
