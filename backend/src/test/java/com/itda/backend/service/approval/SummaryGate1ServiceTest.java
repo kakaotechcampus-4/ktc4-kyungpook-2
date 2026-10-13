@@ -233,4 +233,43 @@ class SummaryGate1ServiceTest {
                 .isEqualTo(SummaryErrorCode.REGENERATING);
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
     }
+
+    // ── 보류 해제 ──
+
+    @Test
+    void 보류를_해제하면_요약과_그_일지가_다시_Gate1_대기가_된다() {
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null);
+        em.flush();
+        em.clear();
+
+        Gate1DecisionResponse response = service.reopen(TEACHER, summary.getId());
+
+        assertThat(response.status()).isEqualTo("GATE1_PENDING");
+        assertThat(response.decision()).isEqualTo("REOPENED");
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+        assertThat(reload(covered).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(reload(uncovered).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(history()).extracting(Approval::getDecision)
+                .containsExactlyInAnyOrder(ApprovalDecision.HOLD, ApprovalDecision.REOPENED);
+    }
+
+    @Test
+    void 보류된_요약이_아니면_보류_해제할_수_없다() {
+        assertThatThrownBy(() -> service.reopen(TEACHER, summary.getId()))
+                .isInstanceOf(SummaryConflictException.class)
+                .extracting(e -> ((SummaryConflictException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.NOT_HELD);
+        assertThat(history()).isEmpty();
+    }
+
+    @Test
+    void 다른_기관의_요약은_보류_해제할_수_없다() {
+        SummaryResult others = summaryOf(OTHER_ORG);
+        others.hold();
+        em.flush();
+
+        assertThatThrownBy(() -> service.reopen(TEACHER, others.getId()))
+                .isInstanceOf(SummaryNotFoundException.class);
+    }
 }
+

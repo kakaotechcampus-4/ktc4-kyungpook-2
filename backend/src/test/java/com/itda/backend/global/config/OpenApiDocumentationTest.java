@@ -97,6 +97,11 @@ class OpenApiDocumentationTest {
 						containsString("SUMMARY_NOT_FOUND")))
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.409.description",
 						containsString("SUMMARY_ALREADY_REVIEWED")))
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.responses.409.description",
+						containsString("SUMMARY_NOT_HELD")))
 				// 요청 스키마는 decision · editedContent 둘뿐이다. 검증용 메서드가 필드로 새면 안 된다.
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.length()").value(2))
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.editedContentValid").doesNotExist());

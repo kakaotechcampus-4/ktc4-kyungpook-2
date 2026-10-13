@@ -25,7 +25,7 @@ import com.itda.backend.service.user.UserService;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Gate 1 — 교사가 요약을 승인·수정 후 승인·보류·제거한다 (DB 스키마 §8.2, §9.1).
+ * Gate 1 — 교사가 요약을 승인·수정 후 승인·보류·제거하고, 보류함에서 보류를 해제한다 (DB 스키마 §8.2, §9.1).
  *
  * <p>한 기관에 담당자가 한 명이라 권한은 기관 소속만 본다. 결정마다 {@code human_review} 에 한 줄 남긴다.
  * 동시에 두 결정이 와도 한쪽만 반영되도록 요약 행을 잠그고 상태를 본다. 승인은 {@code child_context} 의
@@ -68,6 +68,21 @@ public class SummaryGate1Service {
         };
         approvalRepository.save(Approval.gate1(summaryId, Long.valueOf(userId), decision));
         return new Gate1DecisionResponse(summaryId, summary.getStatus().name(), decision.name());
+    }
+
+    /** 보류함에서 보류를 해제한다. 요약과 그 일지가 다시 Gate 1 대기로 돌아온다. */
+    @Transactional
+    public Gate1DecisionResponse reopen(String userId, Long summaryId) {
+        SummaryResult summary = lockOwnedSummary(userId, summaryId);
+        if (summary.getStatus() != SummaryStatus.HOLD) {
+            throw new SummaryConflictException(SummaryErrorCode.NOT_HELD, summaryId);
+        }
+        summary.reopen();
+        journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId).stream()
+                .filter(e -> e.getStatus() == JournalEntryStatus.GATE1_HELD)
+                .forEach(JournalEntry::reopenGate1);
+        approvalRepository.save(Approval.gate1(summaryId, Long.valueOf(userId), ApprovalDecision.REOPENED));
+        return new Gate1DecisionResponse(summaryId, summary.getStatus().name(), ApprovalDecision.REOPENED.name());
     }
 
     private ApprovalDecision approve(SummaryResult summary, List<JournalEntry> entries, String editedContent) {

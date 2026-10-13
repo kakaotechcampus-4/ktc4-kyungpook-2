@@ -165,4 +165,26 @@ class SummaryControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("SUMMARY_REGENERATING"));
     }
+
+    @Test
+    void reopen_returnsReopenedSummary() throws Exception {
+        given(summaryGate1Service.reopen(any(), eq(50L)))
+                .willReturn(new Gate1DecisionResponse(50L, "GATE1_PENDING", "REOPENED"));
+
+        mockMvc.perform(post("/api/v1/summaries/50/reopen"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("GATE1_PENDING"))
+                .andExpect(jsonPath("$.data.decision").value("REOPENED"));
+    }
+
+    @Test
+    void reopen_returns409WhenSummaryIsNotHeld() throws Exception {
+        given(summaryGate1Service.reopen(any(), any()))
+                .willThrow(new SummaryConflictException(SummaryErrorCode.NOT_HELD, 50L));
+
+        mockMvc.perform(post("/api/v1/summaries/50/reopen"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SUMMARY_NOT_HELD"));
+    }
 }
+

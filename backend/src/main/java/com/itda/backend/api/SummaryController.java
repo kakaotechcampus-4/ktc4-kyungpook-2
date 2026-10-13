@@ -108,4 +108,35 @@ public class SummaryController {
         return ApiResponse.success(
                 summaryGate1Service.decide(userId, summaryId, request.action(), request.editedContent()));
     }
+
+    @PostMapping("/{summaryId}/reopen")
+    @Operation(
+            summary = "보류 해제",
+            description = "보류함의 요약을 다시 Gate 1 검토 대기로 돌립니다. 그 요약의 일지도 함께 돌아옵니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "보류 해제"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "없는 요약이거나 다른 기관 요약 (SUMMARY_NOT_FOUND)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "보류된 요약이 아님 (SUMMARY_NOT_HELD)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<Gate1DecisionResponse> reopen(
+            @PathVariable Long summaryId,
+            @AuthenticationPrincipal String userId) {
+        return ApiResponse.success(summaryGate1Service.reopen(userId, summaryId));
+    }
 }
+
