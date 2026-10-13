@@ -230,6 +230,24 @@ public class JournalEntry {
         this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.VALIDATED;
     }
 
+    /** 이 일지가 든 요약이 승인됐다. 다시 요약 대상이 되지 않는다. */
+    public void completeGate1() {
+        requireStatus(JournalEntryStatus.GATE1_PENDING);
+        this.status = JournalEntryStatus.COMPLETED;
+    }
+
+    /** 이 일지가 든 요약이 보류됐다. 같은 묶음에 새 일지가 와도 함께 묶이지 않는다. */
+    public void holdGate1() {
+        requireStatus(JournalEntryStatus.GATE1_PENDING);
+        this.status = JournalEntryStatus.GATE1_HELD;
+    }
+
+    /** 이 일지가 든 요약의 보류가 해제됐다. 같은 요약을 가리킨 채 Gate 1 대기로 돌아온다. */
+    public void reopenGate1() {
+        requireStatus(JournalEntryStatus.GATE1_HELD);
+        this.status = JournalEntryStatus.GATE1_PENDING;
+    }
+
     private void requireAwaitingReview() {
         if (!isAwaitingReview()) {
             throw new IllegalStateException("사람 확인 대기 상태가 아닙니다: " + this.status);

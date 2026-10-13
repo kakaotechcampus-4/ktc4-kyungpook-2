@@ -158,6 +158,36 @@ public class SummaryResult {
         this.reviewReasons = reviewReasons;
     }
 
+    /** 교사가 Gate 1 에서 승인했다. 고친 본문은 여기가 아니라 child_context 에 남는다 — 이 행은 AI 원문을 그대로 둔다. */
+    public void approve() {
+        requireStatus(SummaryStatus.GATE1_PENDING);
+        this.status = SummaryStatus.APPROVED;
+    }
+
+    /** 교사가 Gate 1 에서 보류했다. 같은 묶음에 새 일지가 와도 이 판은 덮어쓰지 않는다. */
+    public void hold() {
+        requireStatus(SummaryStatus.GATE1_PENDING);
+        this.status = SummaryStatus.HOLD;
+    }
+
+    /** 교사가 Gate 1 에서 제거했다. 되돌릴 수 없다. */
+    public void remove() {
+        requireStatus(SummaryStatus.GATE1_PENDING);
+        this.status = SummaryStatus.REMOVED;
+    }
+
+    /** 보류함에서 보류를 해제해 다시 Gate 1 대기로 돌린다. */
+    public void reopen() {
+        requireStatus(SummaryStatus.HOLD);
+        this.status = SummaryStatus.GATE1_PENDING;
+    }
+
+    private void requireStatus(SummaryStatus expected) {
+        if (this.status != expected) {
+            throw new IllegalStateException("요약 상태가 " + expected + "가 아닙니다: " + this.status);
+        }
+    }
+
     private static void requireContent(String content) {
         if (content == null || content.isBlank()) {
             throw new IllegalArgumentException("요약 본문은 필수입니다.");

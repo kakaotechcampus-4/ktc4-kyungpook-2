@@ -23,6 +23,9 @@ public enum JournalEntryStatus {
     VALIDATION_HELD,
     SUMMARIZING,
     GATE1_PENDING,
+    /** 이 일지가 든 요약을 교사가 Gate 1 에서 보류했다. 워커가 다시 집어 가지 않고, 보류 해제하면 GATE1_PENDING 으로 돌아온다. BE가 추가했다(#178). */
+    GATE1_HELD,
+    /** 이 일지가 든 요약이 Gate 1 에서 승인됐다. 요약에 안 들어간 일지(uncovered)도 함께 끝난다. */
     COMPLETED,
     FAILED
 }
