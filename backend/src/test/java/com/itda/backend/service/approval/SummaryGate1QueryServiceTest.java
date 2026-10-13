@@ -13,6 +13,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
+import jakarta.persistence.EntityManagerFactory;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -48,6 +51,9 @@ class SummaryGate1QueryServiceTest {
 
     @MockitoBean
     private UserService userService;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     private Long junho;
 
@@ -302,5 +308,47 @@ class SummaryGate1QueryServiceTest {
         assertThat(pending).filteredOn(item -> item.revision() == 2)
                 .singleElement().satisfies(item -> assertThat(item.processing()).isTrue());
     }
-}
 
+    /** 검토 대기 요약을 {@code count} 개 만들고(날짜마다 하나, 일지 둘씩) 목록 조회가 날린 SQL 수를 센다. */
+    private long queriesForPendingList(int count) {
+        Long record = schoolRecord();
+        for (int i = 0; i < count; i++) {
+            LocalDate date = DATE.minusDays(i);
+            JournalEntry covered = entry("블록 놀이를 했다.");
+            JournalEntry uncovered = entry("낮잠을 잤다.");
+            summary(ORG, date, "[" + claim(covered, 0, 4) + "]", List.of(covered), List.of(uncovered));
+            validated(covered, ValidationVerdict.REVIEW, "[\"추측성표현\"]", "[]");
+            // 같은 날 요약을 기다리는 일지 — 이 요약은 processing 이다.
+            JournalEntry waiting = JournalEntry.of(record, date, "점심을 먹었다.", 3);
+            waiting.startMatching();
+            waiting.confirmMatch(junho);
+            waiting.startValidating();
+            waiting.passValidation();
+            em.persist(waiting);
+        }
+        em.flush();
+        em.clear();
+
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        List<Gate1SummaryResponse> items = service.getSummaries(TEACHER, "pending");
+        long queries = statistics.getPrepareStatementCount();
+        statistics.setStatisticsEnabled(false);
+
+        assertThat(items).hasSize(count).allSatisfy(item -> assertThat(item.processing()).isTrue());
+        return queries;
+    }
+
+    @Test
+    void 목록_조회의_SQL_수는_요약_수와_상관없이_같다() {
+        long one = queriesForPendingList(1);
+        em.getEntityManager().createQuery("delete from SummaryResult").executeUpdate();
+        em.getEntityManager().createQuery("delete from JournalEntry").executeUpdate();
+        em.getEntityManager().createQuery("delete from ValidationResult").executeUpdate();
+        long twenty = queriesForPendingList(20);
+
+        // 요약마다 묶음 상태를 따로 물으면 요약 수에 비례해 늘어난다(N+1).
+        assertThat(twenty).as("요약 1개: %d번, 요약 20개: %d번", one, twenty).isEqualTo(one);
+    }
+}

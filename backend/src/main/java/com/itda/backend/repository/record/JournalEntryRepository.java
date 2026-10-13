@@ -77,6 +77,24 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     boolean existsInProgress(@Param("statuses") Collection<JournalEntryStatus> statuses,
             @Param("institutionId") String institutionId, @Param("entryDate") LocalDate entryDate);
 
+    /**
+     * Gate 1 목록용. 한 기관의 주어진 날짜들 중 주어진 상태인 일지가 있는 묶음(아동·날짜). 요약마다 따로 묻지 않고
+     * 목록 전체를 한 번에 본다.
+     */
+    @Query("select distinct new com.itda.backend.repository.record.GroupKey(e.childId, e.entryDate) "
+            + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where e.status in :statuses and r.institutionId = :institutionId and e.entryDate in :entryDates "
+            + "and e.childId is not null and e.deletedAt is null")
+    List<GroupKey> findGroupKeys(@Param("statuses") Collection<JournalEntryStatus> statuses,
+            @Param("institutionId") String institutionId, @Param("entryDates") Collection<LocalDate> entryDates);
+
+    /** Gate 1 목록용. 한 기관의 주어진 날짜들 중 주어진 상태(매칭·검증 진행 중)의 일지가 남아 있는 날짜. */
+    @Query("select distinct e.entryDate from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where e.status in :statuses and r.institutionId = :institutionId and e.entryDate in :entryDates "
+            + "and e.deletedAt is null")
+    List<LocalDate> findInProgressDates(@Param("statuses") Collection<JournalEntryStatus> statuses,
+            @Param("institutionId") String institutionId, @Param("entryDates") Collection<LocalDate> entryDates);
+
     /** 주어진 상태(매칭·검증 진행 중)의 일지가 남아 있는 기관·날짜. */
     @Query("select distinct new com.itda.backend.repository.record.InProgressKey(r.institutionId, e.entryDate) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "

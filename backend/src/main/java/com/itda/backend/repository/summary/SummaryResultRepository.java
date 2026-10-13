@@ -1,6 +1,7 @@
 package com.itda.backend.repository.summary;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,6 +44,14 @@ public interface SummaryResultRepository extends JpaRepository<SummaryResult, Lo
     /** 그 묶음에 이 판보다 새 판이 있는지. 워커는 최신 판만 덮어쓰므로, 새 판이 있으면 이 판은 더 바뀌지 않는다. */
     boolean existsByChildIdAndEntryDateAndInstitutionIdAndRevisionGreaterThan(Long childId, LocalDate entryDate,
             Long institutionId, Integer revision);
+
+    /** Gate 1 목록용. 한 기관의 주어진 아동·날짜 묶음마다 가장 큰 판 번호. 요약마다 따로 묻지 않고 한 번에 본다. */
+    @Query("select new com.itda.backend.repository.summary.LatestRevision(s.childId, s.entryDate, max(s.revision)) "
+            + "from SummaryResult s "
+            + "where s.institutionId = :institutionId and s.childId in :childIds and s.entryDate in :entryDates "
+            + "group by s.childId, s.entryDate")
+    List<LatestRevision> findLatestRevisions(@Param("institutionId") Long institutionId,
+            @Param("childIds") Collection<Long> childIds, @Param("entryDates") Collection<LocalDate> entryDates);
 
     /** Gate 1 목록. 오래된 날짜부터 처리하도록 날짜순이다. */
     List<SummaryResult> findByInstitutionIdAndStatusOrderByEntryDateAscIdAsc(Long institutionId,

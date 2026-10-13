@@ -1,5 +1,6 @@
 package com.itda.backend.service.approval;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,7 +29,9 @@ import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.record.GroupKey;
 import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.summary.LatestRevision;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
 import com.itda.backend.service.summary.SummaryService;
@@ -90,6 +93,7 @@ public class SummaryGate1QueryService {
             coveredIds.addAll(ids);
         }
         Map<Long, ValidationResult> latestValidation = latestValidationOf(coveredIds);
+        Set<Long> processing = processingSummaryIds(organizationId, summaries);
 
         return summaries.stream()
                 .map(s -> new Gate1SummaryResponse(
@@ -100,7 +104,7 @@ public class SummaryGate1QueryService {
                         s.getRevision(),
                         s.getStatus().name(),
                         Gate1Version.of(s),
-                        isProcessing(s),
+                        processing.contains(s.getId()),
                         s.getContent(),
                         s.isNeedsReview(),
                         parseStrings(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
@@ -111,29 +115,40 @@ public class SummaryGate1QueryService {
     }
 
     /**
-     * 같은 묶음에 아직 요약에 반영되지 않은 일지가 있어 곧 이 요약이 바뀌는지. 요약을 기다리거나(VALIDATED) 요약 중이면
+     * 같은 묶음에 아직 요약에 반영되지 않은 일지가 있어 곧 바뀌는 요약들. 요약을 기다리거나(VALIDATED) 요약 중이면
      * (SUMMARIZING) 바뀐다. 매칭·검증 중인 일지는 아동을 모를 수 있어 워커처럼 기관·날짜로 본다
      * (SummaryService.IN_PROGRESS). 워커는 최신 판이 대기일 때만 덮어쓰므로, 보류된 판이나 옛 판은 바뀌지 않는다.
+     *
+     * <p>요약마다 따로 묻지 않고 목록의 아동·날짜로 세 번만 물어 코드에서 맞춘다 — 요약 수와 상관없이 SQL 수가 같다.
      */
-    private boolean isProcessing(SummaryResult summary) {
-        if (summary.getStatus() != SummaryStatus.GATE1_PENDING
-                || summaryResultRepository.existsByChildIdAndEntryDateAndInstitutionIdAndRevisionGreaterThan(
-                        summary.getChildId(), summary.getEntryDate(), summary.getInstitutionId(),
-                        summary.getRevision())) {
-            return false;
+    private Set<Long> processingSummaryIds(Long organizationId, List<SummaryResult> summaries) {
+        List<SummaryResult> pending = summaries.stream()
+                .filter(s -> s.getStatus() == SummaryStatus.GATE1_PENDING)
+                .toList();
+        if (pending.isEmpty()) {
+            return Set.of();
         }
-        String institutionId = String.valueOf(summary.getInstitutionId());
-        if (journalEntryRepository.existsInProgress(SummaryService.IN_PROGRESS, institutionId,
-                summary.getEntryDate())) {
-            return true;
-        }
-        for (JournalEntryStatus status : List.of(JournalEntryStatus.VALIDATED, JournalEntryStatus.SUMMARIZING)) {
-            if (!journalEntryRepository.findGroupEntryIds(status, summary.getChildId(), summary.getEntryDate(),
-                    institutionId).isEmpty()) {
-                return true;
+        Set<Long> childIds = pending.stream().map(SummaryResult::getChildId).collect(Collectors.toSet());
+        Set<LocalDate> dates = pending.stream().map(SummaryResult::getEntryDate).collect(Collectors.toSet());
+        String institutionId = String.valueOf(organizationId);
+
+        Map<GroupKey, Integer> latestRevision = summaryResultRepository
+                .findLatestRevisions(organizationId, childIds, dates).stream()
+                .collect(Collectors.toMap(r -> new GroupKey(r.childId(), r.entryDate()), LatestRevision::revision));
+        Set<LocalDate> busyDates = new HashSet<>(
+                journalEntryRepository.findInProgressDates(SummaryService.IN_PROGRESS, institutionId, dates));
+        Set<GroupKey> waitingGroups = new HashSet<>(journalEntryRepository.findGroupKeys(
+                List.of(JournalEntryStatus.VALIDATED, JournalEntryStatus.SUMMARIZING), institutionId, dates));
+
+        Set<Long> processing = new HashSet<>();
+        for (SummaryResult s : pending) {
+            GroupKey group = new GroupKey(s.getChildId(), s.getEntryDate());
+            boolean latest = s.getRevision().equals(latestRevision.get(group));
+            if (latest && (busyDates.contains(s.getEntryDate()) || waitingGroups.contains(group))) {
+                processing.add(s.getId());
             }
         }
-        return false;
+        return processing;
     }
 
     private static SummaryStatus toSummaryStatus(String gate1Status) {
