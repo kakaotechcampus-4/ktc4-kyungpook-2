@@ -206,6 +206,36 @@ class SummaryGate1ConcurrencyIntegrationTest {
     }
 
     @Test
+    void 다른_기관의_요청은_요약을_잠그지_않고_바로_없음으로_응답한다() throws Exception {
+        // 다른 기관 사용자가 남의 요약 id 로 결정을 보내도 그 행을 잠그면 안 된다 — 잠그면 그 기관의 결정과 워커가
+        // 기다리고, 기다리는 시간으로 id 가 있는지도 드러난다.
+        given(userService.getOrganizationIdOf("other")).willReturn(ORG + 1);
+        String version = versionOf(summary.getId());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection holder = dataSource.getConnection()) {
+            holder.setAutoCommit(false);
+            try (Statement statement = holder.createStatement()) {
+                statement.executeQuery("SELECT id FROM summary_result WHERE id = " + summary.getId() + " FOR UPDATE");
+            }
+
+            Future<?> foreign = executor.submit(
+                    () -> service.decide("other", summary.getId(), Gate1Action.APPROVE, null, version));
+            try {
+                foreign.get(3, TimeUnit.SECONDS);
+                fail("다른 기관 요약을 결정했습니다.");
+            } catch (ExecutionException e) {
+                assertThat(e.getCause()).isInstanceOf(SummaryException.class);
+                assertThat(((SummaryException) e.getCause()).getErrorCode()).isEqualTo(SummaryErrorCode.NOT_FOUND);
+            } catch (java.util.concurrent.TimeoutException e) {
+                fail("다른 기관 요청이 요약 행 잠금을 기다렸습니다.");
+            }
+            holder.rollback();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void 새로_더한_상태와_결정값을_저장한다() {
         // 새 테이블에서는 Hibernate 가 새 enum 값으로 CHECK 제약을 만든다. 배포 DB 는 §11.4 수동 조치가 필요하다.
         service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
@@ -224,7 +254,8 @@ class SummaryGate1ConcurrencyIntegrationTest {
     }
 
     private String versionOf(Long summaryId) {
-        return Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow());
+        return Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow(),
+                journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId));
     }
 
     private static int backendPid(Connection connection) throws SQLException {

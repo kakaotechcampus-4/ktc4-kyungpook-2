@@ -106,6 +106,9 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.parameters[0].name").value("gate1Status"))
 				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.responses.403").exists())
 				// 요청 스키마는 decision · editedContent · version 셋뿐이다. 검증용 메서드가 필드로 새면 안 된다.
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.length()").value(3))
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.required", hasItems("decision", "version")))

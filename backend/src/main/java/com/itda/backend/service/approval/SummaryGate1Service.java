@@ -57,13 +57,12 @@ public class SummaryGate1Service {
         if (summary.getStatus() == SummaryStatus.GATE1_PENDING) {
             requireNotRegenerating(summary);
         }
+        List<JournalEntry> entries = journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId);
         // 교사가 본 뒤 워커가 같은 요약을 새 일지까지 묶어 덮어썼다. 그대로 받으면 교사가 못 본 일지가 승인과 함께
         // 끝나거나(승인) 지워진다(제거).
-        if (!Gate1Version.of(summary).equals(version)) {
+        if (!Gate1Version.of(summary, entries).equals(version)) {
             throw new SummaryException(SummaryErrorCode.CHANGED, summaryId);
         }
-
-        List<JournalEntry> entries = journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId);
         ApprovalDecision decision = switch (action) {
             case APPROVE -> approve(summary, entries, editedContent);
             case HOLD -> hold(summary, entries);
@@ -159,9 +158,9 @@ public class SummaryGate1Service {
 
     private SummaryResult lockOwnedSummary(String userId, Long summaryId) {
         Long organizationId = userService.getOrganizationIdOf(userId);
-        // 다른 기관 요약이면 "권한 없음"이 아니라 "없음"으로 응답한다
-        return summaryResultRepository.findByIdForUpdate(summaryId)
-                .filter(s -> s.getInstitutionId().equals(organizationId))
+        // 다른 기관 요약이면 "권한 없음"이 아니라 "없음"으로 응답한다. 기관 조건을 잠금 조회에 넣어, 남의 요약 행은
+        // 잠그지 않는다 — 잠그면 그 기관의 결정과 워커가 기다리고, 기다린 시간으로 id 가 있는지도 드러난다.
+        return summaryResultRepository.findByIdAndInstitutionIdForUpdate(summaryId, organizationId)
                 .orElseThrow(() -> new SummaryException(SummaryErrorCode.NOT_FOUND, summaryId));
     }
 }

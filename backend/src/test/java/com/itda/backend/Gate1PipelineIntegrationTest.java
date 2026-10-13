@@ -299,7 +299,8 @@ class Gate1PipelineIntegrationTest {
         return mockMvc.perform(withAuth(post("/api/v1/summaries/" + summaryId + "/gate1"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"decision\": \"%s\", \"version\": \"%s\"}".formatted(decision,
-                        Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow()))));
+                        Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow(),
+                                journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId)))));
     }
 
     private MockHttpServletRequestBuilder withAuth(MockHttpServletRequestBuilder request) throws Exception {

@@ -34,7 +34,6 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.LatestRevision;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
-import com.itda.backend.service.summary.SummaryService;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -56,6 +55,14 @@ import lombok.extern.slf4j.Slf4j;
 public class SummaryGate1QueryService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** 아직 아동을 모르는 일지. 이 아이 일지일 수 있어 기관·날짜로 본다. */
+    private static final Set<JournalEntryStatus> CHILD_UNKNOWN =
+            Set.of(JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING);
+
+    /** 아동이 정해졌지만 아직 요약에 반영되지 않은 일지. 그 아이 묶음만 본다. */
+    private static final Set<JournalEntryStatus> NOT_YET_SUMMARIZED = Set.of(JournalEntryStatus.MATCHED,
+            JournalEntryStatus.VALIDATING, JournalEntryStatus.VALIDATED, JournalEntryStatus.SUMMARIZING);
 
     private final UserService userService;
     private final SummaryResultRepository summaryResultRepository;
@@ -103,7 +110,7 @@ public class SummaryGate1QueryService {
                         s.getEntryDate(),
                         s.getRevision(),
                         s.getStatus().name(),
-                        Gate1Version.of(s),
+                        Gate1Version.of(s, entriesBySummary.getOrDefault(s.getId(), List.of())),
                         processing.contains(s.getId()),
                         s.getContent(),
                         s.isNeedsReview(),
@@ -115,9 +122,10 @@ public class SummaryGate1QueryService {
     }
 
     /**
-     * 같은 묶음에 아직 요약에 반영되지 않은 일지가 있어 곧 바뀌는 요약들. 요약을 기다리거나(VALIDATED) 요약 중이면
-     * (SUMMARIZING) 바뀐다. 매칭·검증 중인 일지는 아동을 모를 수 있어 워커처럼 기관·날짜로 본다
-     * (SummaryService.IN_PROGRESS). 워커는 최신 판이 대기일 때만 덮어쓰므로, 보류된 판이나 옛 판은 바뀌지 않는다.
+     * 같은 묶음에 아직 요약에 반영되지 않은 일지가 있어 곧 바뀌는 요약들. 아동이 정해진 일지(매칭 확정 뒤 검증·요약
+     * 대기·요약 중)는 그 아이 묶음만 본다. 매칭 전·매칭 중 일지는 누구 것인지 몰라 기관·날짜로 본다 — 다른 아이 일지
+     * 때문에 그날 모든 요약을 막지 않으려는 것이다. 워커는 최신 판이 대기일 때만 덮어쓰므로, 보류된 판이나 옛 판은
+     * 바뀌지 않는다.
      *
      * <p>요약마다 따로 묻지 않고 목록의 아동·날짜로 세 번만 물어 코드에서 맞춘다 — 요약 수와 상관없이 SQL 수가 같다.
      */
@@ -136,9 +144,9 @@ public class SummaryGate1QueryService {
                 .findLatestRevisions(organizationId, childIds, dates).stream()
                 .collect(Collectors.toMap(r -> new GroupKey(r.childId(), r.entryDate()), LatestRevision::revision));
         Set<LocalDate> busyDates = new HashSet<>(
-                journalEntryRepository.findInProgressDates(SummaryService.IN_PROGRESS, institutionId, dates));
-        Set<GroupKey> waitingGroups = new HashSet<>(journalEntryRepository.findGroupKeys(
-                List.of(JournalEntryStatus.VALIDATED, JournalEntryStatus.SUMMARIZING), institutionId, dates));
+                journalEntryRepository.findInProgressDates(CHILD_UNKNOWN, institutionId, dates));
+        Set<GroupKey> waitingGroups = new HashSet<>(
+                journalEntryRepository.findGroupKeys(NOT_YET_SUMMARIZED, institutionId, dates));
 
         Set<Long> processing = new HashSet<>();
         for (SummaryResult s : pending) {

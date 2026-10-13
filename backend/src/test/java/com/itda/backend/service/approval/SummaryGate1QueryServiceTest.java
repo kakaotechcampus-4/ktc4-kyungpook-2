@@ -244,7 +244,8 @@ class SummaryGate1QueryServiceTest {
     void 결정할_때_돌려보낼_판_표시를_준다() {
         SummaryResult s = summary(ORG, DATE, "[]", List.of(), List.of());
 
-        assertThat(service.getSummaries(TEACHER, "pending").get(0).version()).isEqualTo(Gate1Version.of(s));
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).version())
+                .isEqualTo(Gate1Version.of(s, List.of()));
     }
 
     private Long schoolRecord() {
@@ -307,6 +308,30 @@ class SummaryGate1QueryServiceTest {
                 .singleElement().satisfies(item -> assertThat(item.processing()).isFalse());
         assertThat(pending).filteredOn(item -> item.revision() == 2)
                 .singleElement().satisfies(item -> assertThat(item.processing()).isTrue());
+    }
+
+    @Test
+    void 다른_아이의_일지가_검증_중이면_이_아이_요약은_처리_중이_아니다() {
+        // 매칭이 끝난 일지는 누구 것인지 안다. 다른 아이 일지 때문에 그날 모든 요약의 승인을 막지 않는다.
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        JournalEntry others = JournalEntry.of(schoolRecord(), DATE, "민지가 그림을 그렸다.", 4);
+        others.startMatching();
+        others.confirmMatch(junho + 1);
+        others.startValidating();
+        em.persistAndFlush(others);
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isFalse();
+    }
+
+    @Test
+    void 이_아이의_일지가_검증_중이면_처리_중이다() {
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        JournalEntry mine = JournalEntry.of(schoolRecord(), DATE, "점심을 먹었다.", 4);
+        mine.startMatching();
+        mine.confirmMatch(junho);
+        em.persistAndFlush(mine);
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
     }
 
     /** 검토 대기 요약을 {@code count} 개 만들고(날짜마다 하나, 일지 둘씩) 목록 조회가 날린 SQL 수를 센다. */

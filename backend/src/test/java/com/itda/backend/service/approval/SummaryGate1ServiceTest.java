@@ -32,6 +32,7 @@ import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.repository.approval.ApprovalRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.user.UserService;
@@ -63,6 +64,9 @@ class SummaryGate1ServiceTest {
 
     @Autowired
     private SummaryResultRepository summaryResultRepository;
+
+    @Autowired
+    private JournalEntryRepository journalEntryRepository;
 
     @MockitoBean
     private UserService userService;
@@ -127,7 +131,8 @@ class SummaryGate1ServiceTest {
 
     /** 교사가 목록에서 받은 판 표시. 결정할 때 그대로 돌려보낸다. */
     private String versionOf(Long summaryId) {
-        return Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow());
+        return Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow(),
+                journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId));
     }
 
     private List<Approval> history() {
@@ -440,6 +445,21 @@ class SummaryGate1ServiceTest {
                 versionOf(summary.getId()));
 
         assertThat(response.status()).isEqualTo("APPROVED");
+    }
+
+    @Test
+    void 요약_글이_그대로여도_요약에_든_일지가_늘었으면_바뀐_것으로_본다() {
+        // 워커가 새 일지까지 묶어 다시 요약했는데 AI 가 같은 글을 돌려줬다. 요약 행은 그대로라 수정 시각도 그대로다.
+        // 교사는 새 일지를 본 적이 없으니, 받으면 그 일지가 승인과 함께 끝난다.
+        String seen = versionOf(summary.getId());
+        entryIn(em.find(SummaryResult.class, summary.getId()));
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, seen))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.CHANGED);
     }
 }
 

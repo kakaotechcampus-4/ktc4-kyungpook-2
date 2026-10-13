@@ -62,6 +62,11 @@ public class SummaryController {
                     responseCode = "401",
                     description = "인증 필요",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
     public ApiResponse<List<Gate1SummaryResponse>> list(
@@ -129,6 +134,11 @@ public class SummaryController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED), CSRF 토큰 누락 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
                     description = "없는 요약이거나 다른 기관 요약 (SUMMARY_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
@@ -162,6 +172,11 @@ public class SummaryController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
                     description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED), CSRF 토큰 누락 (FORBIDDEN)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(

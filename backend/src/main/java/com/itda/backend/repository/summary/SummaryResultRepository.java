@@ -68,8 +68,12 @@ public interface SummaryResultRepository extends JpaRepository<SummaryResult, Lo
     List<SummaryResult> findGroupForUpdate(@Param("childId") Long childId, @Param("entryDate") LocalDate entryDate,
             @Param("institutionId") Long institutionId);
 
-    /** Gate 1 결정용. 두 결정이 동시에 와도 한쪽만 대기 상태에서 바꾸도록 행을 잠근다. */
+    /**
+     * Gate 1 결정용. 두 결정이 동시에 와도 한쪽만 대기 상태에서 바꾸도록 행을 잠근다. 기관 조건을 함께 걸어 다른 기관
+     * 요약 행은 잠그지 않는다.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select s from SummaryResult s where s.id = :id")
-    Optional<SummaryResult> findByIdForUpdate(@Param("id") Long id);
+    @Query("select s from SummaryResult s where s.id = :id and s.institutionId = :institutionId")
+    Optional<SummaryResult> findByIdAndInstitutionIdForUpdate(@Param("id") Long id,
+            @Param("institutionId") Long institutionId);
 }
