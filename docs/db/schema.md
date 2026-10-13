@@ -46,12 +46,13 @@
 | 14 | `child_context` | ✅ 확정 | ✅ `ChildContext` | 삭제 없음 (이력) |
 | 15 | `insight_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 16 | `sharing_history` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 17 | `insight_run` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
 
-**16개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
+**17개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
 `insight_result`·`sharing_history` 는 Insight 에이전트 계약(`AI/insight/schemas.py`)과 Gate 2 공유 정책이
 정해져서 확정으로 올렸다. `human_review` 는 Gate 1 결정값이 `APPROVED`·`CORRECTED`·`HOLD` 로 정해지며 확정됐다.
 
-**설계 확정과 구현은 별개다.** `insight_result`·`sharing_history` 는 아직 엔티티가 없고,
+**설계 확정과 구현은 별개다.** `insight_result`·`sharing_history`·`insight_run` 은 아직 엔티티가 없고,
 `human_review` 는 엔티티(`Approval`)만 있고 검토 API 가 없다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
@@ -164,6 +165,7 @@ erDiagram
     summary_result ||--o{ child_context : "승인된 요약"
     child ||--o{ child_context : "아동별 축적"
     child ||--o{ insight_result : ""
+    child ||--o{ insight_run : "인사이트 실행 기록"
     insight_result ||--o{ sharing_history : ""
     child ||--o{ sharing_history : ""
     organization ||--o{ sharing_history : "발신"
@@ -232,6 +234,15 @@ erDiagram
         bigint child_id FK
         bigint summary_result_id FK
         text content
+    }
+    insight_run {
+        bigint id PK
+        bigint child_id FK
+        date period_from
+        date period_to
+        int revision
+        varchar status
+        int insight_count
     }
     insight_result {
         bigint id PK
@@ -412,7 +423,7 @@ journal_entry
 | `organization` | 회원가입 시 기관 담당자가 직접 생성하며(9.23 변경), 아직 삭제 기능이 없다. 나중에 필요해지면 같은 규칙으로 `deleted_at`을 추가한다 |
 | `invitation` | `status = CANCELLED`(기관이 취소)가 이미 같은 일을 한다. 두 개를 같이 두면 "어느 쪽이 진짜인가"가 생긴다. 만료는 삭제가 아니라 `expires_at` 으로 판단한다 (§5.3) |
 | `sharing_consent` | `status = REVOKED`가 이미 같은 일을 한다. 위와 동일 |
-| `matching_result` `validation_result` `summary_result` `human_review` `child_context` `insight_result` `sharing_history` | 실행·검토 이력이라 애초에 삭제 개념이 없다. 잘못된 결과는 지우는 게 아니라 다시 실행해서 새 행을 쌓는다 |
+| `matching_result` `validation_result` `summary_result` `human_review` `child_context` `insight_result` `sharing_history` `insight_run` | 실행·검토 이력이라 애초에 삭제 개념이 없다. 잘못된 결과는 지우는 게 아니라 다시 실행해서 새 행을 쌓는다 |
 
 #### 조회 규칙 — 이게 핵심이다
 
@@ -449,7 +460,8 @@ child_organization(organization_id, external_id) UNIQUE
 child_guardian(child_id, user_id)             UNIQUE
 summary_result(child_id, entry_date, institution_id, revision) UNIQUE
 child_context.summary_result_id               UNIQUE
-sharing_history(insight_result_id, receiver_type, receiver_id) UNIQUE
+sharing_history(insight_result_id, receiver_type, receiver_id, status) UNIQUE
+insight_run(child_id, period_from, period_to, revision) UNIQUE
 ```
 
 #### soft delete와 유니크 제약의 충돌 — 반드시 읽을 것
@@ -1831,6 +1843,71 @@ UNIQUE (insight_result_id, receiver_type, receiver_id, status)
 > 연결 상태 테이블(`child_organization`·`child_guardian`)은 기존 행을 되살리는 방식이지만(§3.3),
 > 그건 **상태** 테이블의 규칙이다. 여기는 **사건** 이력이라 반대로 쌓는다.
 
+### 9.5 `insight_run` ✅ — ⬜ 미구현
+
+> **근거** — 인사이트 워커. 2026-10-13 팀 합의
+
+**인사이트 워커가 "이 아이의 이 기간은 처리했다"를 남기는 자리.** 다른 워커에는 없는 테이블이라
+왜 필요한지부터 적는다.
+
+**앞의 워커들은 입력 행이 상태를 들고 있다**
+
+| 워커 | 처리 표시 |
+| --- | --- |
+| 매칭 · 검증 · 요약 | `journal_entry.status` (§6.2) |
+| 인사이트 | **없다** |
+
+인사이트의 입력은 `child_context` 인데, 이건 승인 이력이라 고치지 않는다 — `updated_at` 조차
+두지 않았다(§9.2). 표시를 남길 데가 없다.
+
+**결과 행이 생기는 것으로 갈음할 수도 없다.** 인사이트가 0건인 것이 정상이기 때문이다
+(`AI/insight/CRITERIA.md` §3 — 억지로 만든 패턴이 과잉해석이다). 0건이면 `insight_result` 에
+행이 안 생기고, 그러면 **워커가 돌 때마다 같은 아이에게 LLM 을 다시 부른다.**
+
+| Column | Type | NULL | 설명 |
+| --- | --- | --- | --- |
+| `id` | BIGINT | N | PK |
+| `child_id` | BIGINT | N | 대상 아동 |
+| `period_from` | DATE | N | 재료가 된 기간 시작 |
+| `period_to` | DATE | N | 재료가 된 기간 끝 |
+| `revision` | INT | N | 같은 아동·같은 기간의 몇 번째 실행인지. 1 부터 |
+| `status` | VARCHAR(20) | N | 실행 상태 |
+| `insight_count` | INT | Y | 낸 인사이트 수. `DONE` 일 때만 채운다. **0 도 정상이다** |
+| `created_at` | DATETIME | N |  |
+| `updated_at` | DATETIME | N | 집은 뒤 결과가 정해지면 바뀐다 |
+
+```
+status   RUNNING | DONE | FAILED
+```
+
+```
+UNIQUE (child_id, period_from, period_to, revision)
+```
+
+**집는 것 자체가 INSERT 다.** 워커 둘이 같은 아이·같은 기간을 동시에 집으면 제약에 걸린 쪽이 진다.
+`SummaryService.claimReadyGroups` 가 하던 일을 DB 제약이 대신한다.
+
+**`insight_result.revision` 의 경합도 여기서 사라진다.** §9.3 에 적어 둔 대로 `revision` 자체는
+중복 실행을 막지 못한다 — 한 번 실행이 여러 행이라 행 단위로 걸 자연키가 없기 때문이다.
+판 번호를 이 테이블에서 정하고 결과 행은 그것을 받아 쓰면, 경합은 이 UNIQUE 하나로 끝난다.
+
+**`FAILED` 로 끝난 실행은 다음 차례에 `revision + 1` 로 다시 집는다.** 실패한 판을 지우거나
+고치지 않는 것은 다른 이력 테이블과 같다(§3.2). 앱이 죽어 `RUNNING` 으로 남은 행은 **워커가 켜진 뒤
+첫 차례에 `FAILED` 로 되돌린다** — 집기가 `FAILED` 만 가져가므로 두면 그 아동·기간이 영영 처리되지 않는다
+(`SummaryWorker` 의 `releaseStuck` 과 같은 자리다).
+
+**기간은 지난 주 일요일에서 끊는다.** "어제까지 N일" 로 잡으면 자정마다 키가 하루씩 밀려서, 같은 아이가
+6일이 겹치는 창으로 **매일** 다시 돌고 비슷한 인사이트가 Gate 2 대기 목록에 쌓인다. UNIQUE 는 키가
+같을 때만 중복을 막으므로 **창이 실제로 넘어갈 때까지 키가 그대로여야 한다** — 요약이 `entry_date` 라는
+데이터 쪽 기준에 묶이는 것(§8.2)과 같은 이유다.
+
+**재료가 없으면 집지 않는다.** 승인된 요약이 없거나 동의가 없어서 호출하지 않은 경우까지 `DONE` 으로
+남기면, 그 뒤에 교사가 그 기간의 요약을 승인하거나 동의가 들어와도 **다시 보지 않는다.**
+"낼 것이 없었다" 와 "아직 묻지 않았다" 는 다르다 — 이 테이블이 답하는 것은 앞쪽뿐이다.
+
+**이 테이블은 "처리했는가" 만 답한다.** 무엇이 나왔는지는 `insight_result` 가, 교사가 어떻게
+판단했는지는 `human_review` 가 답한다. 셋을 한 테이블에 담으면 §0.3 에서 겪은 문제를 되풀이한다.
+
 ---
 
 ## 10. 결정 사항 · 미확정 사항
@@ -1865,7 +1942,7 @@ UNIQUE (insight_result_id, receiver_type, receiver_id, status)
 | 11 | `mentioned_child_ids` 소비자 | 요약 워커가 읽는다 (#91) — 묶음의 값을 합쳐 주인공을 뺀 이름을 `other_child_names`로 보낸다. AI `SummaryInput`에 반영됐고 (#146), 프롬프트에 넣지 않고 요약 본문에 이름이 남았는지 검사한다.<br>BE는 `needs_review`·`review_reasons`를 저장한다 (#149).<br>→ 남은 것: Gate 1 조회 API에서 내려주기 및 승인 시 최종 본문 경고(차단 아님). 명부 밖 이름·성 뗀 이름은 못 잡는 한계가 있다 | AI + BE |
 | 12 | Gate 1 `decision` 에서 `REJECTED` 빼기 | 요약에 "반려" 상태를 두지 않기로 했다(§8.2). `human_review.decision` 은 이미 구현돼 있어 `APPROVED` · `CORRECTED` · `HOLD` 로 맞추는 BE 작업이 남는다 | BE + AI |
 | 10 | 설계와 코드 불일치 정리 | §0.3의 `raw_record`·`matching_result` 4건 및 요약 검토 경고·Gate 1 결정 enum·후속 워커의 아동 상태 재확인. `invitation`·`child_guardian`은 #159에서 설계를 코드에 맞췄으므로 목록에서 제거 | BE + AI |
-| 13 | 인사이트 0건일 때 재호출을 무엇으로 막는지 | 인사이트가 비어 있는 것은 정상이고(§9.3) 그때는 `insight_result` 에 행이 남지 않는다. 그러면 "이 아동·기간을 이미 처리했다"를 기록하는 자리가 없어 **패턴이 없는 아이는 틱마다 LLM 을 다시 부른다.** 요약은 `journal_entry.status` 가 그 역할을 하는데(§6.2) 인사이트에는 대응물이 없다.<br>→ 워커를 만들 때 정한다(§9.3 의 클레임 방식, 아동별 마지막 처리 기간 컬럼, 빈 결과용 상태 행 중 하나) | BE (이정민) |
+| 13 | ~~인사이트 0건일 때 재호출을 무엇으로 막는지~~ | **확정됨 (2026-10-13)** — `insight_run` 테이블로 실행을 기록한다. 0건도 `DONE` + `insight_count = 0` 으로 남아 재호출하지 않고, 집는 것이 INSERT 라 동시 실행 중복도 같이 막힌다. §9.5 에 반영 완료 | ~~BE~~ |
 
 ---
 
@@ -2008,3 +2085,5 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-13 | `human_review`(§9.1) 확정. `decision` 에서 `REJECTED` 빼고 `APPROVED`·`CORRECTED`·`HOLD` 로 (§10.2-12 는 코드 반영이 남아 그대로 둠). **enum 값 추가라 §11.4 수동 조치 필요** — `human_review.decision` CHECK 제약을 확인하고 있으면 DROP 해야 `HOLD` 가 저장된다 | 미생성 |
 | 2026-10-13 | §9.2 의 "인사이트가 읽는 글" 설명 정정 — 인사이트 입력은 `child_context.content` 가 아니라 `summary_result.claims` 다. 교사가 고쳐 승인한 요약(`CORRECTED`)은 재료에서 통째로 뺀다는 10/9 결정(`AI/insight/CRITERIA.md` §10)을 §10.1 #7 로 등록 | 미생성 |
 | 2026-10-13 | 인사이트 0건일 때 재호출을 무엇으로 막을지를 §10.2-13 으로 등록. `insight_result.revision` 은 중복 실행을 막지 못하며 클레임·잠금이 그 역할이라는 점 명시. Gate 2 화면이 "다른 아이 이름 보장 없음"을 표시해야 한다는 경고 추가 (§9.3) | 미생성 |
+| 2026-10-13 | `insight_run`(§9.5) 추가 — 인사이트 워커의 실행 기록. 인사이트 0건이 정상이라 결과 행만으로는 "처리했다"를 남길 수 없고, 입력인 `child_context` 는 고치지 않는 테이블이라 거기에도 못 남긴다. `(child_id, period_from, period_to, revision)` UNIQUE 로 집기를 INSERT 로 만들어 동시 실행 중복도 함께 막는다(§9.3 이 적어 둔 `revision` 경합 해소). §10.2-13 종료. 팀 합의 후 진행. 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #173 |
+| 2026-10-13 | `sharing_history` UNIQUE 요약 목록(§3.3)에 빠져 있던 `status` 보충 — §9.4 본문과 달랐다 | #173 |
