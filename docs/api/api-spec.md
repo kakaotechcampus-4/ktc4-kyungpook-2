@@ -405,9 +405,11 @@ POST /api/v1/auth/signup   → 201 Created
 | 409 | `DUPLICATE_EXTERNAL_ID` | 같은 기관에서 이미 쓰고 있는 관리번호 |
 | 503 | `INVITE_CODE_ISSUE_FAILED` | 동시에 발급된 코드와 겹침(거의 일어나지 않음). 아이도 등록되지 않았으니 다시 요청 |
 
-등록 직후 아이는 `pending_consent` 상태입니다. 보호자가 초대 코드로 연결(G-04)하고 공유 범위에 동의해야
-`active`가 되며, 그 전에는 기록을 올릴 수 없고 AI 매칭 명단에도 들어가지 않습니다.
-**연결만으로는 `active`가 되지 않습니다** — 동의는 별도 단계입니다.
+등록 직후 아이는 `pending_consent` 상태입니다. 보호자가 초대 코드로 연결(G-04)하고 **이 기관에** 공유 동의(G-41)를
+해야 이 기관의 AI 매칭 명단에 들어갑니다. **연결만으로는 `active`가 되지 않습니다** — 동의는 별도 단계입니다.
+
+> **동의는 기관별입니다 (#184).** `status`는 "어느 기관이든 동의가 있으면 `active`, 모두 철회됐으면 `suspended`"인
+> 요약입니다. 아이가 학교에만 동의했으면 우리 기관 명부에도 `active`로 보이지만, 우리 기관 매칭 명단에는 들어가지 않습니다.
 
 **O-15 응답** · `201 Created` · 우리 기관 명부의 아이에게 코드를 하나 더 발급합니다. 한 아이에 쓸 수 있는 코드가
 여러 개 있어도 됩니다(엄마·아빠에게 따로 보내기). 응답은 O-11의 `invitation`과 같습니다.
@@ -576,7 +578,8 @@ O-15 ~ O-19 공통 오류:
 아래 경우는 `400 MATCHING_RESULT_INVALID_REQUEST`로 거절합니다.
 
 - `assign`인데 `childId`가 없거나, 없는 아동이거나, 이 기관 소속이 아님
-- `assign`으로 고른 아동이 **동의 완료(`active`) 상태가 아님** — AI 매칭 명단과 같은 기준
+- `assign`으로 고른 아동이 **이 기관에 동의하지 않음** — AI 매칭 명단과 같은 기준. 다른 기관에만 동의해 `status`가
+  `active`인 아이도 거절합니다. 보호자가 동의를 철회한 뒤에는 새 확정이 성공하지 않습니다(이미 확정된 기록은 그대로 둡니다)
 - 이미 처리된 기록 (다른 선생님이 먼저 처리한 경우 등. 두 명이 거의 동시에 누르는 경우까지 막지는 않습니다)
 
 `childId`는 O-22의 `candidates[].childId`·O-10의 `id` 문자열을 그대로 보내면 됩니다(`"1"`, 숫자 `1`도 받습니다).
@@ -876,7 +879,7 @@ O-15 ~ O-19 공통 오류:
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| G-02 | GET | `/children/{childId}/consent-preview?institutionId=` | 아이 · 기관 · 공유 범위 미리보기 | P-02 |
+| G-02 | GET | `/children/{childId}/consent-preview?institutionId=` | 아이 · 기관 · 공유 범위 미리보기 · **구현됨** | P-02 |
 | G-04 | POST | `/guardians/me/invitations/accept` | 초대 코드 수락 · **구현됨** | P-01 |
 | G-05 | DELETE | `/guardians/me/children/{childId}` | 아이 연결 해제(본인) · **구현됨** | P-11 |
 
@@ -900,8 +903,7 @@ O-15 ~ O-19 공통 오류:
 
 - `organizationId`: 코드를 발급한 기관 ID(문자열)입니다. 수락 뒤 이 기관에 대한 동의 미리보기(G-02)를 부를 때
   `institutionId`로 그대로 넘기면 됩니다.
-- 수락은 연결일 뿐 동의가 아니라 `childStatus`는 바뀌지 않습니다. 동의 미리보기(G-02)·동의 저장(G-41)은
-  **아직 BE에 구현되지 않았습니다.**
+- 수락은 연결일 뿐 동의가 아니라 `childStatus`는 바뀌지 않습니다. 이어서 동의 미리보기(G-02) → 동의 저장(G-41)을 부릅니다.
 
 | 상태 | `code` | 상황 |
 | --- | --- | --- |
@@ -916,27 +918,45 @@ O-15 ~ O-19 공통 오류:
 **G-05** · `204 No Content` · 보호자 본인이 연결을 끊습니다. 연결되지 않은 아이면 `403 FORBIDDEN`,
 기관 담당자가 부르면 `403 PARENT_REQUIRED`입니다. 같은 아이에 다시 연결하려면 기관에서 새 코드를 받습니다.
 
-**G-02 응답** · P-02 화면이 한 번에 그리는 정보입니다.
+**G-02 응답** · `200 OK` · P-02 화면이 한 번에 그리는 정보입니다. 아무것도 저장하지 않습니다.
 
 ```json
 {
-  "child": { "name": "김하늘", "birthDate": "2017-03-14" },
+  "child": { "id": "9", "name": "김하늘", "birthDate": "2017-03-14" },
   "institution": { "id": "1", "name": "○○초등학교",
-                   "type": "school", "verified": true },
-  "documentUrl": "https://…",
+                   "type": "school", "verified": false },
+  "documentUrl": null,
   "sharedFields": ["출결 시간", "활동 요약", "알레르기 정보"],
-  "notSharedFields": ["사진과 영상", "의료 기록"]
+  "notSharedFields": ["사진과 영상", "의료 기록"],
+  "allowedFields": ["daily_summary", "weekly_insight"]
 }
 ```
 
-`sharedFields` / `notSharedFields`는 현재 프론트가 기관 **유형별 상수**로 들고
-있습니다. 서버가 실제 동의 범위를 내려주면 상수를 제거하겠습니다.
+| 필드 | 설명 |
+| --- | --- |
+| `child.id` | 동의(G-41)·연결 해제(G-05) 호출에 씁니다 |
+| `institution.type` | `school` · `center` · `assistant` (DB의 `ACTIVITY_SUPPORT`가 `assistant`) |
+| `institution.verified` | 언제나 `false`입니다. 사업자등록번호는 형식만 보고 진위는 확인하지 않습니다 |
+| `documentUrl` | 증빙서류 저장 기능이 없어 언제나 `null`입니다. 프론트는 버튼을 숨깁니다 |
+| `sharedFields` · `notSharedFields` | 화면 설명 문구입니다(아래 표). **저장되지 않습니다** |
+| `allowedFields` | **동의할 때 G-41에 그대로 돌려보낼 항목 코드**입니다. 실제로 저장·적용되는 것은 이 값입니다 |
+
+유형별 설명 문구는 프론트가 들고 있던 상수를 서버로 옮긴 것입니다. 프론트는 상수를 지우고 이 값을 쓰면 됩니다.
 
 | 유형 | 공유됨 | 공유 안 됨 |
 | --- | --- | --- |
 | `school` | 출결 시간, 활동 요약, 알레르기 정보 | 사진과 영상, 의료 기록 |
 | `center` | 관찰 요약, 변화 추이, 집에서 해본 방법 | 복지카드 정보 |
 | `assistant` | 하원 시간, 이동 경로, 필요한 지원 방법 | 학습 기록 |
+
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | `institutionId` 누락·형식 오류 |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입을 끝내지 않음 |
+| 403 | `PARENT_REQUIRED` | 보호자가 아닌 사용자(기관 담당자) |
+| 403 | `FORBIDDEN` | 이 보호자와 연결되지 않은 아이 |
+| 404 | `CONSENT_TARGET_NOT_FOUND` | 삭제된 아이, 아이가 명부에 없는 기관, **이미 이 기관에 동의가 있음**(다른 보호자의 동의 포함). 이유를 나누지 않습니다. 프론트는 이미 404를 "동의할 것 없음"으로 처리합니다. 철회된 뒤에는 다시 200입니다 |
 
 ### 5.2 아이 · 홈
 
@@ -1033,7 +1053,7 @@ O-15 ~ O-19 공통 오류:
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
 | G-40 | GET | `/children/{childId}/institution-requests/pending` | 대기 중 권한 요청 | P-03, P-04, P-07, P-09, P-11 |
-| G-41 | PUT | `/children/{childId}/consent-scopes/{institutionId}` | 동의 부여 / 회수 | P-02, P-04, P-11 |
+| G-41 | PUT | `/children/{childId}/consent-scopes/{institutionId}` | 동의 부여 / 회수 · **구현됨** | P-02, P-04, P-11 |
 | G-42 | POST | `/children/{childId}/institution-requests/{institutionId}/decline` | 요청 거절 | P-11 |
 | G-43 | GET | `/institutions/lookup?code=` | 기관 코드 조회 | P-13 |
 | G-44 | POST | `/children/{childId}/institutions` | 기관 코드로 연결 | P-13 |
@@ -1057,11 +1077,50 @@ O-15 ~ O-19 공통 오류:
 
 | 필드 | 설명 |
 | --- | --- |
-| `action` | `grant` \| `revoke` |
-| `allowedFields` | 동의 항목. `revoke`에서는 무시됩니다 |
+| `action` | `grant` \| `revoke`. 필수 |
+| `allowedFields` | 동의 항목 코드 `daily_summary` · `weekly_insight`. **`grant`에서 필수(1개 이상)**, `revoke`에서는 생략해도 되고 보내도 무시합니다. 같은 코드가 두 번 오면 하나로 합칩니다 |
 
-**규칙** · `revoke`는 **앞으로의 전달만** 차단합니다. 이미 보낸 정보는 회수되지
-않습니다. 프론트는 이 사실을 회수 확인 시트에 반드시 표시합니다.
+> **프론트 수정 필요 (#184).** 지금 `api.ts`는 `allowed_fields`(snake_case)에 **한국어 문구**(`sharedFields`)를 담아 보냅니다.
+> 서버는 명세대로 camelCase `allowedFields`에 **코드**만 받습니다 — 그대로면 `400 INVALID_REQUEST`입니다.
+> G-02 응답의 `allowedFields`를 그대로 보내 주세요.
+
+**G-41 응답** · `200 OK` · 바뀐 뒤의 상태를 돌려줍니다. 아이 목록을 다시 부르지 않고 화면을 고칠 수 있습니다.
+
+```json
+{ "childStatus": "active", "consent": "granted", "allowedFields": ["daily_summary", "weekly_insight"] }
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `childStatus` | 아이 전체 요약 상태(§4.2 O-11 참고). 어느 기관이든 동의가 있으면 `active`, 모두 철회됐으면 `suspended` |
+| `consent` | **이 기관**에 대한 동의 상태 `granted` · `revoked` · `not_granted` |
+| `allowedFields` | 이 기관에 지금 공유되는 항목. `granted`가 아니면 빈 배열 |
+
+**규칙**
+
+- **보호자 한 명만 동의해도** 그 기관 공유가 켜집니다.
+- **공유 항목은 기관 단위로 하나입니다.** 마지막으로 동의한 보호자의 `allowedFields`가 그 기관 전체에 적용됩니다
+  (엄마가 두 항목에 동의한 뒤 아빠가 한 항목으로 동의하면 그 기관은 한 항목만 공유됩니다).
+- **보호자 한 명이 `revoke`하면 그 기관에 대한 모든 보호자의 동의가 꺼집니다.** 끄는 쪽을 우선합니다.
+  다른 보호자가 다시 `grant`하면 다시 켜집니다.
+- 같은 요청을 여러 번 보내도 결과가 같습니다. 끌 동의가 없는 `revoke`는 아무것도 바꾸지 않고 `200`과 현재 상태를 돌려줍니다.
+- `revoke`는 **앞으로의 전달만** 차단합니다. 이미 보낸 정보는 회수되지 않습니다. 프론트는 이 사실을 회수 확인 시트에 반드시 표시합니다.
+- 보호자 연결이 끊기면(G-05·O-19) 그 보호자의 동의는 모든 기관에서 자동으로 꺼집니다. 다른 보호자의 동의는 그대로입니다.
+
+> **화면 안내 필요.** 위 규칙 중 "한 보호자의 철회가 다른 보호자의 동의까지 끈다", "마지막 동의의 항목이 기관 전체에
+> 적용된다"는 사용자가 예상하기 어렵습니다. 동의 화면(P-02)과 회수 확인 시트(P-04·P-11)에 안내해 주세요.
+
+> **이번 범위의 한계 (#184).** 철회하면 그 기관 매칭 명단에서 바로 빠지고 새 매칭 확정도 막히지만,
+> **철회 전에 이미 매칭돼 AI 처리 중인 기록**은 검증·요약까지 계속 진행됩니다. 이 차단은 후속 작업입니다.
+
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | `action` 누락·모르는 값. `grant`의 `allowedFields` 누락·빈 배열·모르는 코드·`null` 항목(`["daily_summary", null]`) |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입을 끝내지 않음 |
+| 403 | `PARENT_REQUIRED` | 보호자가 아닌 사용자(기관 담당자) |
+| 403 | `FORBIDDEN` | 이 보호자와 연결되지 않은 아이, CSRF 토큰 누락·불일치 |
+| 404 | `CONSENT_TARGET_NOT_FOUND` | 삭제된 아이, 아이가 명부에 없는 기관. 동의할 수 있는 기관은 아이가 지금 명부에 올라 있는 기관뿐입니다 |
 
 **G-42** — 거절은 `consent`를 바꾸지 않습니다(`not_granted` 유지). 기관이 다시 요청할
 수 있어야 하므로, **알림 목록에서만 제외**되도록 "이 보호자가 이 기관 요청을 거절함"을
@@ -1123,6 +1182,7 @@ O-15 ~ O-19 공통 오류:
 | `GUARDIAN_NOT_FOUND` | 404 | 이 아이와 연결되지 않은 보호자 (O-19) |
 | `GUARDIAN_LINKED_BY_OTHER_ORGANIZATION` | 403 | "다른 기관을 통해 연결된 보호자는 해제할 수 없습니다" (O-19) |
 | `INVITE_CODE_ISSUE_FAILED` | 503 | "초대 코드를 만들지 못했어요. 잠시 후 다시 시도해주세요." (O-11·O-15) |
+| `CONSENT_TARGET_NOT_FOUND` | 404 | 동의할 기관이 없음 — 삭제된 아이, 명부에 없는 기관, (G-02) 이미 동의한 기관. G-02는 프론트가 "동의할 것 없음"으로 처리 (G-02·G-41) |
 | `CONSENT_NOT_GRANTED` | 403 | Gate 2에서 미동의 기관 선택 시 |
 | `CHILD_CONSENT_PENDING` | 409 | "보호자 동의가 완료되기 전에는 기록을 올릴 수 없습니다" |
 
@@ -1154,7 +1214,7 @@ O-15 ~ O-19 공통 오류:
 | 2 | 아동 조회 | O-10, O-13, O-14 | I-09, I-09-1 |
 | 3 | 기록 등록 · 큐 | O-20 ~ O-25 | I-05, I-06, I-07 |
 | 4 | Gate 1 | O-30, O-31 | I-08, I-03 |
-| 5 | 보호자 연결 · 동의 | O-15 ~ O-19, G-04 · G-05(완료), G-02, G-41 | I-04, I-09-1, P-01, P-02 |
+| 5 | 보호자 연결 · 동의 | O-15 ~ O-19, G-04 · G-05, G-02, G-41 (모두 완료) | I-04, I-09-1, P-01, P-02 |
 | 6 | 보호자 열람 | G-10 ~ G-22 | P-03, P-07, P-08 |
 | 7 | Insight · Gate 2 | O-40 ~ O-42 | I-10, I-11 |
 | 8 | 동의 관리 · 알림 | G-40, G-42 ~ G-51 | P-04, P-11, P-12, P-13 |
