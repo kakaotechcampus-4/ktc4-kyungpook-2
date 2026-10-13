@@ -31,4 +31,13 @@ public interface ChildOrganizationRepository extends JpaRepository<ChildOrganiza
     boolean existsByOrganizationIdAndExternalId(Long organizationId, String externalId);
 
     List<ChildOrganization> findByOrganizationIdAndDeletedAtIsNull(Long organizationId);
+
+    /**
+     * 이 아이가 지금 다니는 기관들.
+     *
+     * <p>인사이트가 {@code consented_institutions} 를 채우는 데 쓴다 — {@code sharing_consent} 가
+     * 생기기 전까지는 "등록된 기관 전부" 가 동의 목록을 대신한다 (AI/insight/schemas.py).
+     * 연결이 끊긴 행을 빼지 않으면 더 이상 다니지 않는 기관의 기록까지 재료로 들어간다.
+     */
+    List<ChildOrganization> findByChildIdAndDeletedAtIsNull(Long childId);
 }

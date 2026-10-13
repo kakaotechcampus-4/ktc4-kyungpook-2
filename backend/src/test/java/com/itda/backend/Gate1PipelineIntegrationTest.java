@@ -14,15 +14,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-
-import javax.sql.DataSource;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -51,6 +47,8 @@ import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
@@ -70,6 +68,7 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
@@ -133,12 +132,12 @@ class Gate1PipelineIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JwtProvider jwtProvider;
     @Autowired private ObjectMapper objectMapper;
-    @Autowired private DataSource dataSource;
 
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private ChildRepository childRepository;
     @Autowired private ChildOrganizationRepository childOrganizationRepository;
+    @Autowired private SharingConsentRepository sharingConsentRepository;
     @Autowired private JournalEntryRepository journalEntryRepository;
     @Autowired private SummaryResultRepository summaryResultRepository;
     @Autowired private ChildContextRepository childContextRepository;
@@ -161,16 +160,16 @@ class Gate1PipelineIntegrationTest {
     private SummaryWorker summaryWorker;
 
     @BeforeEach
-    void setUp() throws SQLException {
+    void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         teacher = userRepository.save(UserFixture.organizationUser(
                 "pipeline-" + UUID.randomUUID(), "이선생", organization.getId()));
         junho = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1)));
         childOrganizationRepository.save(ChildOrganization.of(junho.getId(), organization.getId()));
-        // 보호자 동의 API 가 아직 없어 동의 완료(ACTIVE)는 직접 넣는다 — 매칭 명부는 ACTIVE 아동만 받는다.
-        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
-            statement.executeUpdate("UPDATE child SET status = 'ACTIVE' WHERE id = " + junho.getId());
-        }
+        // 매칭 명부는 이 기관에 살아 있는 동의가 있는 아이만 받는다 (DB 스키마 §5.1).
+        User guardian = userRepository.save(UserFixture.parent("parent-" + UUID.randomUUID(), "김보호"));
+        sharingConsentRepository.save(SharingConsent.grant(junho.getId(), guardian.getId(), organization.getId(),
+                List.of(ConsentField.DAILY_SUMMARY)));
 
         matchingWorker = new MatchingWorker(matchingService, fakeMatchingAgent(), matchingResultRecorder,
                 matchingProperties);
@@ -328,19 +327,20 @@ class Gate1PipelineIntegrationTest {
 
     // ── 가짜 AI ──
 
-    /** 모든 일지를 준호로 자동 확정한다. */
+    /** 명부에 준호가 있으면 준호로 자동 확정한다. 동의가 없어 명부에서 빠지면 매칭되지 않는다. */
     private MatchingAgentClient fakeMatchingAgent() {
         MatchingAgentClient client = mock(MatchingAgentClient.class);
         given(client.isAvailable()).willReturn(true);
         given(client.match(any())).willAnswer(invocation -> {
             MatchingAgentRequest request = invocation.getArgument(0);
+            boolean onRoster = request.roster().stream().anyMatch(r -> junho.getId().equals(r.childId()));
             ObjectNode json = objectMapper.createObjectNode()
                     .put("journal_entry_id", request.journalEntryId())
-                    .put("status", "auto")
-                    .put("matched_child_id", junho.getId())
-                    .put("confidence", 0.98)
-                    .put("hint_mismatch", false)
-                    .put("llm_called", true);
+                    .put("status", onRoster ? "auto" : "unmatched");
+            if (onRoster) {
+                json.put("matched_child_id", junho.getId());
+            }
+            json.put("confidence", 0.98).put("hint_mismatch", false).put("llm_called", true);
             json.putArray("evidence");
             json.putArray("mentioned_child_ids");
             json.putArray("candidates");

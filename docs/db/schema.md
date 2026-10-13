@@ -36,7 +36,7 @@
 | 4 | `child_organization` | ✅ 확정 | ✅ `ChildOrganization` | `deleted_at` |
 | 5 | `invitation` | ✅ 확정 | ✅ `Invitation` | `status` 로 대체 |
 | 6 | `child_guardian` | ✅ 확정 | ✅ `ChildGuardian` | `deleted_at` |
-| 7 | `sharing_consent` | ✅ 확정 | ⬜ 미구현 | `status` 로 대체 |
+| 7 | `sharing_consent` | ✅ 확정 | ✅ `SharingConsent` | `status` 로 대체 |
 | 8 | `raw_record` | ✅ 확정 | ⚠️ `RawRecord` — 일부 다름 | `deleted_at` |
 | 9 | `journal_entry` | ✅ 확정 | ✅ `JournalEntry` | `deleted_at` |
 | 10 | `matching_result` | ✅ 확정 | ⚠️ `MatchingResult` — 설계와 다름 | 삭제 없음 (이력) |
@@ -46,12 +46,13 @@
 | 14 | `child_context` | ✅ 확정 | ✅ `ChildContext` | 삭제 없음 (이력) |
 | 15 | `insight_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
 | 16 | `sharing_history` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 17 | `insight_run` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
 
-**16개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
+**17개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
 `insight_result`·`sharing_history` 는 Insight 에이전트 계약(`AI/insight/schemas.py`)과 Gate 2 공유 정책이
 정해져서 확정으로 올렸다. `human_review` 는 Gate 1 결정값이 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 정해지며 확정됐다.
 
-**설계 확정과 구현은 별개다.** `insight_result`·`sharing_history` 는 아직 엔티티가 없다.
+**설계 확정과 구현은 별개다.** `insight_result`·`sharing_history`·`insight_run` 은 아직 엔티티가 없다.
 `human_review` 는 Gate 1 결정 API(#178)가 쓰고, Gate 2 는 아직 없다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
@@ -68,7 +69,7 @@
 | `raw_record` | status 가 파이프라인 단계 (`UPLOADED` → `PARSED` → `PROCESSING` → `COMPLETED`) | status `PENDING` `REVIEW` `BLOCKED` `FAILED` 중 실제로는 `PENDING`(저장 성공)·`FAILED`(메타데이터 저장 실패 후 별도 기록)만 씀 | 파이프라인 단계는 API `O-21 stage`로 따로 내려줄 계획이나 아직 미구현 (§6.1) |
 | `matching_result` | 이력이라 수정하지 않음. 재처리는 새 행 | 사람이 확인 큐에서 처리하면 **기존 행을 수정**한다 (`status → AUTO`, `matched_child_id` 덮어씀, `reviewer_id` 기록) | §7.1 |
 | `matching_result` | 검토자는 `users.id` BIGINT (`human_review.reviewer_id`와 같게) | `reviewer_id VARCHAR(255)` 에 `users.id`를 문자열로 저장 | §7.1 |
-| `child`·`journal_entry` | 삭제되지 않고 `ACTIVE`인 아동의 일지만 워커가 처리 (§5.1) | 매칭 명부와 사람의 매칭 확정에서만 확인. 검증·요약 워커는 아동 삭제·상태를 재확인하지 않음 | 동의 철회·아동 삭제 후 후속 처리 차단은 미구현 |
+| `child`·`journal_entry` | 삭제되지 않고 그 기관에 동의(`sharing_consent` ACTIVE)가 있는 아동의 일지만 워커가 처리 (§5.1) | 매칭 명부와 사람의 매칭 확정에서만 확인. 검증·요약 워커와 매칭 결과 저장(`MatchingResultRecorder`)은 아동 삭제·동의를 재확인하지 않음 | AI 처리 중 동의 철회·아동 삭제 후 후속 처리 차단은 미구현 (#184 후속) |
 
 ---
 
@@ -138,8 +139,11 @@ erDiagram
         bigint child_id FK
         bigint guardian_id FK
         bigint organization_id FK
-        json scope
+        text scope "JSON 배열 문자열"
         varchar status
+        bigint revoked_by FK "NULL 허용"
+        datetime revoked_at "NULL 허용"
+        varchar revoke_reason "NULL 허용"
     }
 ```
 
@@ -163,6 +167,7 @@ erDiagram
     summary_result ||--o{ child_context : "승인된 요약"
     child ||--o{ child_context : "아동별 축적"
     child ||--o{ insight_result : ""
+    child ||--o{ insight_run : "인사이트 실행 기록"
     insight_result ||--o{ sharing_history : ""
     child ||--o{ sharing_history : ""
     organization ||--o{ sharing_history : "발신"
@@ -232,6 +237,15 @@ erDiagram
         bigint summary_result_id FK
         text content
     }
+    insight_run {
+        bigint id PK
+        bigint child_id FK
+        date period_from
+        date period_to
+        int revision
+        varchar status
+        int insight_count
+    }
     insight_result {
         bigint id PK
         bigint child_id FK
@@ -272,9 +286,10 @@ Organization → Child 등록 → Invitation 발송
                               ↓
                    보호자 카카오 로그인 → ChildGuardian
                               ↓
-                       SharingConsent 동의
+                SharingConsent 동의 (기관별)
                               ↓
-                   child.status = ACTIVE  ← 여기서부터 파이프라인 가동
+          그 기관 매칭 명부에 들어감  ← 여기서부터 그 기관의 파이프라인 가동
+          child.status = ACTIVE     ← 화면용 요약 (어느 기관이든 동의가 있으면)
 
 [파이프라인]
 RawRecord          원본 파일 + 표지 힌트          ✅
@@ -411,7 +426,7 @@ journal_entry
 | `organization` | 회원가입 시 기관 담당자가 직접 생성하며(9.23 변경), 아직 삭제 기능이 없다. 나중에 필요해지면 같은 규칙으로 `deleted_at`을 추가한다 |
 | `invitation` | `status = CANCELLED`(기관이 취소)가 이미 같은 일을 한다. 두 개를 같이 두면 "어느 쪽이 진짜인가"가 생긴다. 만료는 삭제가 아니라 `expires_at` 으로 판단한다 (§5.3) |
 | `sharing_consent` | `status = REVOKED`가 이미 같은 일을 한다. 위와 동일 |
-| `matching_result` `validation_result` `summary_result` `human_review` `child_context` `insight_result` `sharing_history` | 실행·검토 이력이라 애초에 삭제 개념이 없다. 잘못된 결과는 지우는 게 아니라 다시 실행해서 새 행을 쌓는다 |
+| `matching_result` `validation_result` `summary_result` `human_review` `child_context` `insight_result` `sharing_history` `insight_run` | 실행·검토 이력이라 애초에 삭제 개념이 없다. 잘못된 결과는 지우는 게 아니라 다시 실행해서 새 행을 쌓는다 |
 
 #### 조회 규칙 — 이게 핵심이다
 
@@ -448,7 +463,8 @@ child_organization(organization_id, external_id) UNIQUE
 child_guardian(child_id, user_id)             UNIQUE
 summary_result(child_id, entry_date, institution_id, revision) UNIQUE
 child_context.summary_result_id               UNIQUE
-sharing_history(insight_result_id, receiver_type, receiver_id) UNIQUE
+sharing_history(insight_result_id, receiver_type, receiver_id, status) UNIQUE
+insight_run(child_id, period_from, period_to, revision) UNIQUE
 ```
 
 #### soft delete와 유니크 제약의 충돌 — 반드시 읽을 것
@@ -489,14 +505,28 @@ sharing_history(insight_result_id, receiver_type, receiver_id) UNIQUE
 #### 잠금 순서 — 행 두 개 이상을 잠그는 작업은 이 순서를 지킨다
 
 ```
-child → child_organization → invitation → child_guardian
+child → child_organization → invitation → child_guardian → sharing_consent
 ```
 
-순서가 하나뿐이라 교착(deadlock)이 생기지 않는다. 초대 코드 수락은 네 행을 모두 이 순서로 잠근다.
+순서가 하나뿐이라 교착(deadlock)이 생기지 않는다. 초대 코드 수락은 앞의 네 행을 모두 이 순서로 잠근다.
+
+**동의를 바꾸거나 동의를 보고 결정하는 작업은 모두 `child` 를 먼저 잠근다.** `sharing_consent` 는 이력 테이블이라
+UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변경을 한 줄로 세운다.
+
+| 작업 | 잠그는 행 (순서대로) |
+| --- | --- |
+| 동의 부여·철회 (G-41) | `child` → `child_organization` → `child_guardian`. 동의 행은 따로 잠그지 않는다 |
+| 보호자 연결 해제 (G-05·O-19) | `child` → `child_guardian`. O-19 는 `child` 를 잠근 뒤에 삭제·명부 소속을 본다. 끊긴 보호자의 동의를 같은 트랜잭션에서 철회한다 |
+| 사람의 매칭 확정 (O-23 assign) | `child`. 잠근 뒤 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 새 확정이 성공하지 않는다 |
+
+**잠그기 전에 같은 행을 엔티티로 읽지 않는다.** JPA 는 이미 읽어 둔 엔티티가 있으면 잠금 조회(`findByIdForUpdate`)가
+행을 잠그기만 하고 그 낡은 엔티티를 그대로 돌려준다. 그 엔티티의 상태를 바꾸면 모든 컬럼을 UPDATE 하므로, 그사이
+다른 트랜잭션이 커밋한 값(예: 아동 삭제의 `deleted_at`)을 덮어써 되돌린다. 권한 확인처럼 잠금 전에 할 일이 있으면
+그 행을 읽지 않는 방식(존재 여부 조회 등)으로 하거나, 잠근 뒤에 한다.
 그래서 아동 삭제나 명부 제외가 수락과 겹쳐도 수락은 그 행을 기다렸다가 커밋된 상태를 보고 판단한다.
 
 **아직 없는 "명부 제외"·"아동 삭제" 기능을 만들 때도 이 순서를 따른다** — `child` 를 먼저 잠그고 `child_organization` 을 잠근다.
-한 행만 잠그는 작업(초대 취소는 `invitation`, 보호자 해제는 `child_guardian`)은 순서와 무관하다.
+한 행만 잠그는 작업(초대 취소는 `invitation`)은 순서와 무관하다. 보호자 해제는 동의를 함께 끄므로 `child` 부터 잠근다.
 
 **예외: `child_organization(organization_id, external_id)` 는 되살리지 않고 비운다.**
 
@@ -656,13 +686,19 @@ class RosterEntry(BaseModel):
 **`status`**
 
 ```
-PENDING_CONSENT   보호자 동의 대기 — 파이프라인이 돌지 않는다 (생성 시 기본값)
-ACTIVE            동의 완료 — 파이프라인 가동
-SUSPENDED         동의 철회 — 파이프라인 정지
+PENDING_CONSENT   동의한 적이 한 번도 없다 (생성 시 기본값)
+ACTIVE            어느 기관이든 살아 있는 동의(sharing_consent ACTIVE)가 하나라도 있다
+SUSPENDED         동의한 적은 있지만 모두 철회됐다
 ```
 
-기획의 **Consent First**를 표현하는 컬럼이다. 현재는 매칭 명부와 사람이 매칭을 확정하는 경로에서 `ACTIVE`를 확인한다.
-동의 부여·철회 API와 아동 상태 변경 경로는 아직 구현되지 않았다.
+기획의 **Consent First**를 요약해 보여 주는 **화면용 값**이다 (#184 에서 기관별 판정으로 바꿈).
+**어느 기관이 이 아이를 매칭에 쓸 수 있는지는 이 값이 아니라 그 기관에 대한 동의(§5.5)로 판단한다.**
+학교에만 동의한 아이도 `ACTIVE` 라서, 이 값으로 거르면 동의하지 않은 센터 명부에도 그 아이가 들어간다.
+
+- 매칭 명부(`ChildRepository.findConsentedByOrganizationId`)와 사람의 매칭 확정(O-23 assign)은
+  "그 기관에 `ACTIVE` 동의가 있는가"를 본다.
+- 이 값은 동의 부여·철회·연결 해제 때 같은 트랜잭션에서 위 규칙으로 다시 계산한다(`ConsentService`).
+  동의 행은 지우지 않으므로 한 번 `ACTIVE`/`SUSPENDED` 가 되면 `PENDING_CONSENT` 로 돌아가지 않는다.
 
 **`status`와 `deleted_at`은 다른 것이다**
 
@@ -671,9 +707,10 @@ status = SUSPENDED   동의가 없어서 처리를 멈춘 상태. 아이는 기�
 deleted_at != NULL   기관이 아이를 목록에서 뺀 상태. 조회 대상에서 빠진다
 ```
 
-설계상 워커는 `deleted_at IS NULL AND status = 'ACTIVE'` 일 때만 처리해야 한다.
-현재 매칭 명부는 두 조건을 확인하지만, 검증·요약 워커는 일지의 상태·삭제 여부만 확인하고
-아동 삭제·상태를 재확인하지 않는다 (§0.3). 매칭 뒤 아동이 삭제되거나 동의를 철회한 경우의 차단은 남은 작업이다.
+설계상 워커는 아동이 삭제되지 않았고 **일지 소속 기관에 동의가 있을 때만** 처리해야 한다.
+현재 매칭 명부와 사람의 매칭 확정은 두 조건을 확인하지만, 검증·요약 워커와 매칭 결과 저장은 일지의 상태·삭제 여부만
+확인하고 아동 삭제·동의를 재확인하지 않는다 (§0.3). AI 처리 중(호출이 나간 뒤) 아동이 삭제되거나 동의가 철회된
+경우의 차단은 #184 후속 작업이다.
 
 ### 5.2 `child_organization` ✅
 
@@ -827,10 +864,11 @@ CANCELLED   기관이 취소했다
 - 기관은 **자기 기관이 발급한 코드로 생긴 연결만** 끊을 수 있다 (O-19). `invitation_id` 가 가리키는 초대의
   `organization_id` 로 판단한다. 다른 기관을 통해 들어온 보호자를 끊으면 그 기관의 판단을 뒤집게 된다.
 - 해제는 **전역**이다. 끊으면 모든 기관에서 이 보호자는 아이에 닿지 못한다.
-- 해제하면 그 보호자가 이 아이에 대해 남긴 `sharing_consent` 도 `REVOKED` 로 바꾼다 — 끊긴 사람의 동의로
-  공유가 계속되면 안 된다. **`sharing_consent` 를 구현할 때 적용한다**(지금은 테이블이 없다).
+- 해제하면 그 보호자가 이 아이에 대해 남긴 `sharing_consent` 도 모든 기관에서 `REVOKED` 로 바꾼다
+  (`revoke_reason = GUARDIAN_UNLINKED`, `revoked_by` = 끊은 사람) — 끊긴 사람의 동의로 공유가 계속되면 안 된다.
+  다른 보호자의 동의는 그대로 둔다. 동의를 함께 바꾸므로 해제도 `child` → `child_guardian` 순서로 잠근다 (§3.3).
 
-### 5.5 `sharing_consent` ✅ — ⬜ 미구현
+### 5.5 `sharing_consent` ✅ — ✅ 구현 (`SharingConsent`, #184)
 
 > **근거** — 기획: Consent First · 추가 BE 도메인으로 `Consent` 명시 · 프론트 `ConsentField`
 
@@ -840,12 +878,18 @@ CANCELLED   기관이 취소했다
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
 | `child_id` | BIGINT | N | 대상 아동 |
-| `guardian_id` | BIGINT | N | 보호자 user ID |
+| `guardian_id` | BIGINT | N | 동의한 보호자 user ID |
 | `organization_id` | BIGINT | N | 공유 대상 기관 |
-| `scope` | JSON | N | 공유 허용 범위 |
+| `scope` | TEXT | N | 공유 허용 항목. JSON 배열 문자열 (`["daily_summary","weekly_insight"]`) |
 | `status` | VARCHAR(20) | N | 동의 상태 |
+| `revoked_by` | BIGINT | Y | 철회한 사용자 ID. 보호자 본인이 아닐 수 있다(다른 보호자, 연결을 끊은 기관 담당자). 사람이 아닌 경로면 NULL (#184 추가) |
+| `revoked_at` | DATETIME | Y | 철회 시각 (#184 추가) |
+| `revoke_reason` | VARCHAR(30) | Y | 철회 사유 (#184 추가) |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
+
+인덱스 `(child_id, organization_id)`. **UNIQUE 는 걸지 않는다** — 이력 테이블이라 같은 (아동, 보호자, 기관)에
+철회된 행과 새 행이 함께 있다. 중복 `ACTIVE` 행은 `child` 행 잠금으로 막는다 (§3.3).
 
 **`status`**
 
@@ -853,6 +897,29 @@ CANCELLED   기관이 취소했다
 ACTIVE
 REVOKED
 ```
+
+**`scope`** — `daily_summary` · `weekly_insight` 코드만 담는다. 비어 있거나 `null` 이 섞인 배열은 받지 않고,
+중복은 합쳐 정해진 순서로 저장한다. 동의 화면(G-02)의 한국어 문구("출결 시간" 등)는 기관 유형별 설명일 뿐 저장하지 않는다.
+
+**`revoke_reason`**
+
+```
+GUARDIAN_REVOKED    보호자가 "공유 중단"(G-41 revoke). 그 기관의 모든 보호자 동의가 함께 꺼진다
+GUARDIAN_UNLINKED   보호자 연결 해제(G-05 본인, O-19 기관). 끊긴 그 보호자의 동의만 꺼진다
+ROSTER_REMOVED      아이가 기관 명부에서 빠졌다. 지금은 테스트 아이 스크립트만 쓴다 (revoked_by NULL)
+```
+
+**규칙** (#184 확정, §10.1 #8)
+
+- **보호자 한 명만 동의해도 그 기관 공유가 켜진다.**
+- **공유 항목은 기관 단위로 하나다.** 동의(grant)할 때마다 그 기관의 `ACTIVE` 행을 모두 같은 `scope` 로 맞춘다.
+  마지막으로 동의한 보호자의 항목이 기관 전체에 적용된다. 그 보호자의 `ACTIVE` 행이 없으면 새로 만든다.
+- **같은 보호자가 다시 동의하면 행을 새로 만들지 않고 `scope` 만 고친다.** 새 행은 그 보호자의 첫 동의이거나 철회 뒤 재동의일 때만.
+  범위 변경 이력은 남지 않는다 (§10.2 #14).
+- **보호자 한 명이 철회하면 그 기관의 모든 보호자 동의가 꺼진다.** 끄는 쪽을 우선한다(Consent First).
+  철회할 동의가 없으면 아무것도 바꾸지 않는다.
+- 동의할 수 있는 기관은 아이가 지금 명부에 올라 있는 기관(`child_organization` 살아 있음)뿐이다.
+- 철회는 앞으로의 전달만 막는다. 이미 보낸 정보는 회수되지 않는다.
 
 **연결 테이블의 컬럼이 아니라 별도 테이블인 이유**
 
@@ -1019,7 +1086,7 @@ FAILED             실패
 
 | 선생님 처리 | `journal_entry.status` | `child_id` |
 | --- | --- | --- |
-| `assign` (아이 확정) | `MATCHED` — AI 자동 확정과 같음 | 고른 아동으로 채움. 동의 완료(`ACTIVE`) 아동만 가능 |
+| `assign` (아이 확정) | `MATCHED` — AI 자동 확정과 같음 | 고른 아동으로 채움. 그 기관에 동의(`sharing_consent` ACTIVE)가 있는 아동만 가능. 아동 행을 잠근 뒤 확인한다 (§3.3) |
 | `not_ours` (제외) | `EXCLUDED` | NULL 유지 |
 
 `EXCLUDED`도 초안에 없던 값이다. 제외하는 경우는 다른 기관 아이보다 여러 아이가 함께 나온 기록이나
@@ -1878,6 +1945,71 @@ UNIQUE (insight_result_id, receiver_type, receiver_id, status)
 > 연결 상태 테이블(`child_organization`·`child_guardian`)은 기존 행을 되살리는 방식이지만(§3.3),
 > 그건 **상태** 테이블의 규칙이다. 여기는 **사건** 이력이라 반대로 쌓는다.
 
+### 9.5 `insight_run` ✅ — ⬜ 미구현
+
+> **근거** — 인사이트 워커. 2026-10-13 팀 합의
+
+**인사이트 워커가 "이 아이의 이 기간은 처리했다"를 남기는 자리.** 다른 워커에는 없는 테이블이라
+왜 필요한지부터 적는다.
+
+**앞의 워커들은 입력 행이 상태를 들고 있다**
+
+| 워커 | 처리 표시 |
+| --- | --- |
+| 매칭 · 검증 · 요약 | `journal_entry.status` (§6.2) |
+| 인사이트 | **없다** |
+
+인사이트의 입력은 `child_context` 인데, 이건 승인 이력이라 고치지 않는다 — `updated_at` 조차
+두지 않았다(§9.2). 표시를 남길 데가 없다.
+
+**결과 행이 생기는 것으로 갈음할 수도 없다.** 인사이트가 0건인 것이 정상이기 때문이다
+(`AI/insight/CRITERIA.md` §3 — 억지로 만든 패턴이 과잉해석이다). 0건이면 `insight_result` 에
+행이 안 생기고, 그러면 **워커가 돌 때마다 같은 아이에게 LLM 을 다시 부른다.**
+
+| Column | Type | NULL | 설명 |
+| --- | --- | --- | --- |
+| `id` | BIGINT | N | PK |
+| `child_id` | BIGINT | N | 대상 아동 |
+| `period_from` | DATE | N | 재료가 된 기간 시작 |
+| `period_to` | DATE | N | 재료가 된 기간 끝 |
+| `revision` | INT | N | 같은 아동·같은 기간의 몇 번째 실행인지. 1 부터 |
+| `status` | VARCHAR(20) | N | 실행 상태 |
+| `insight_count` | INT | Y | 낸 인사이트 수. `DONE` 일 때만 채운다. **0 도 정상이다** |
+| `created_at` | DATETIME | N |  |
+| `updated_at` | DATETIME | N | 집은 뒤 결과가 정해지면 바뀐다 |
+
+```
+status   RUNNING | DONE | FAILED
+```
+
+```
+UNIQUE (child_id, period_from, period_to, revision)
+```
+
+**집는 것 자체가 INSERT 다.** 워커 둘이 같은 아이·같은 기간을 동시에 집으면 제약에 걸린 쪽이 진다.
+`SummaryService.claimReadyGroups` 가 하던 일을 DB 제약이 대신한다.
+
+**`insight_result.revision` 의 경합도 여기서 사라진다.** §9.3 에 적어 둔 대로 `revision` 자체는
+중복 실행을 막지 못한다 — 한 번 실행이 여러 행이라 행 단위로 걸 자연키가 없기 때문이다.
+판 번호를 이 테이블에서 정하고 결과 행은 그것을 받아 쓰면, 경합은 이 UNIQUE 하나로 끝난다.
+
+**`FAILED` 로 끝난 실행은 다음 차례에 `revision + 1` 로 다시 집는다.** 실패한 판을 지우거나
+고치지 않는 것은 다른 이력 테이블과 같다(§3.2). 앱이 죽어 `RUNNING` 으로 남은 행은 **워커가 켜진 뒤
+첫 차례에 `FAILED` 로 되돌린다** — 집기가 `FAILED` 만 가져가므로 두면 그 아동·기간이 영영 처리되지 않는다
+(`SummaryWorker` 의 `releaseStuck` 과 같은 자리다).
+
+**기간은 지난 주 일요일에서 끊는다.** "어제까지 N일" 로 잡으면 자정마다 키가 하루씩 밀려서, 같은 아이가
+6일이 겹치는 창으로 **매일** 다시 돌고 비슷한 인사이트가 Gate 2 대기 목록에 쌓인다. UNIQUE 는 키가
+같을 때만 중복을 막으므로 **창이 실제로 넘어갈 때까지 키가 그대로여야 한다** — 요약이 `entry_date` 라는
+데이터 쪽 기준에 묶이는 것(§8.2)과 같은 이유다.
+
+**재료가 없으면 집지 않는다.** 승인된 요약이 없거나 동의가 없어서 호출하지 않은 경우까지 `DONE` 으로
+남기면, 그 뒤에 교사가 그 기간의 요약을 승인하거나 동의가 들어와도 **다시 보지 않는다.**
+"낼 것이 없었다" 와 "아직 묻지 않았다" 는 다르다 — 이 테이블이 답하는 것은 앞쪽뿐이다.
+
+**이 테이블은 "처리했는가" 만 답한다.** 무엇이 나왔는지는 `insight_result` 가, 교사가 어떻게
+판단했는지는 `human_review` 가 답한다. 셋을 한 테이블에 담으면 §0.3 에서 겪은 문제를 되풀이한다.
+
 ---
 
 ## 10. 결정 사항 · 미확정 사항
@@ -1893,6 +2025,8 @@ UNIQUE (insight_result_id, receiver_type, receiver_id, status)
 | 5 | `users.role` 결정 시점 | **(9.23 변경) 로그인 진입 경로가 아니라 회원가입 API에서 결정한다** | `role`은 NULL 허용으로 바뀌었다. 로그인 직후엔 NULL(가입 미완료), `POST /api/v1/auth/signup` 호출 시 확정되며 이후 바뀌지 않는다. `?invite=` 로그인 힌트 방식은 폐기 |
 | 6 | 초대코드 만료 · 1회성 | **(10.12 확정) 10분 만료, 일회용, 한 아이에 여러 개 허용** | SMS 없이 기관이 직접 전달한다. 8자리, 입력 시도 제한 없음, 만료는 `expires_at` 으로만 판단 (§5.3) |
 | 7 | 교사가 고쳐 승인한 요약(`CORRECTED`)의 인사이트 처리 | **(10.9 확정) MVP 는 그 요약의 `claims` 를 통째로 뺀다** | 출처 `AI/insight/CRITERIA.md` §10. 고친 본문과 `claims` 가 어긋나 교사가 지운 문장이 근거째 남기 때문이다. 이후엔 "최종 본문에 그대로 남은 claim 만 살리는" 방식으로 간다(요약 CRITERIA §4). **BE 구현이 남았다** — 재료 조회에서 `human_review.decision = CORRECTED` 인 요약을 거른다 (§9.2) |
+| 8 | 보호자 여럿의 동의 · 철회 | **(10.13 확정, #184) 한 명만 동의해도 그 기관 공유가 켜지고, 한 명이 철회하면 그 기관의 모든 보호자 동의가 꺼진다.** 공유 항목은 기관 단위로 하나이고 마지막 동의가 기관 전체에 적용된다 | 끄는 쪽을 우선한다(Consent First). 사용자가 예상하기 어려운 규칙이라 동의 화면·회수 확인 시트에 안내가 필요하다 (FE). §5.5 |
+| 9 | 매칭 대상 판정 단위 | **(10.13 확정, #184) 기관별 동의로 판정한다.** 매칭 명부·사람의 매칭 확정은 그 기관에 `sharing_consent` ACTIVE 가 있는 아이만. `child.status` 는 화면용 요약 | 아이 전체 상태로 판정하면 학교에만 동의한 아이가 센터 명부에도 들어간다. 상태 규칙은 §5.1 |
 
 ### 10.2 아직 미확정
 
@@ -1900,10 +2034,10 @@ UNIQUE (insight_result_id, receiver_type, receiver_id, status)
 
 | # | 항목 | 내용 | 정할 사람 |
 | --- | --- | --- | --- |
-| 1 | Consent First 판정 시점 | **현재 구현은 ACTIVE 아동만 roster에 넣는다** (`ChildRepository.findActiveByOrganizationId`). 매칭 후 검증·요약 단계의 상태 재확인은 미구현 (§5.1). 동의 대기 아동을 포함한 뒤 정지하는 대안은 현재 동작이 아니다 | BE + AI |
+| 1 | Consent First 판정 시점 | **현재 구현은 그 기관에 동의가 있는 아동만 roster에 넣는다** (`ChildRepository.findConsentedByOrganizationId`, §10.1 #9). 매칭 후 검증·요약 단계와 매칭 결과 저장의 동의 재확인은 미구현 (§5.1, #184 후속). 동의 대기 아동을 포함한 뒤 정지하는 대안은 현재 동작이 아니다 | BE + AI |
 | 2 | ~~초대코드 만료 · 1회성~~ | **확정됨 (2026-10-12)** — 10분·일회용·여러 개 허용. §10.1 #6, §5.3 에 반영 | ~~기획~~ |
-| 3 | 보호자 2명 동의 기준 | 한 명만 동의해도 활성화인지, 전원 동의가 필요한지 | 기획 |
-| 4 | 동의 철회 처리 | 철회 시 기존 기록을 어떻게 다루는지. `SUSPENDED` 이후 동작 | 기획 |
+| 3 | ~~보호자 2명 동의 기준~~ | **확정됨 (2026-10-13, #184)** — 한 명이면 충분, 한 명의 철회로 기관 전체가 꺼진다. §10.1 #8 | ~~기획~~ |
+| 4 | 동의 철회 처리 | 아동 상태 규칙은 확정(§5.1: 살아 있는 동의가 없으면 `SUSPENDED`)했고, 철회는 앞으로의 전달만 막는다(이미 보낸 정보는 회수하지 않음).<br>→ 남은 것: **AI 처리 중 철회된 일지**를 어디서 막고, 철회 뒤 도착한 AI 결과를 어떻게 보류할지(결과 이력 보존, Gate 1 노출 차단, 재동의 시 재개). #184 후속 | 기획 + BE |
 | 5 | ~~Summary 묶음 단위~~ | **확정됨 (2026-10-05 정정)** — 아동 × 날짜 × 기관으로 묶는다. §8.2 에 반영 완료 | ~~BE + AI~~ |
 | 6 | ~~Validation Agent 계약~~ | **확정됨** — `ValidationOutput` 기준으로 §8.1 반영 완료 | ~~AI~~ |
 | 7 | ~~Summary Agent 계약~~ | **확정됨** — `SummaryOutput` 기준으로 §8.2 반영 완료 | ~~AI~~ |
@@ -1912,7 +2046,8 @@ UNIQUE (insight_result_id, receiver_type, receiver_id, status)
 | 11 | `mentioned_child_ids` 소비자 | 요약 워커가 읽는다 (#91) — 묶음의 값을 합쳐 주인공을 뺀 이름을 `other_child_names`로 보낸다. AI `SummaryInput`에 반영됐고 (#146), 프롬프트에 넣지 않고 요약 본문에 이름이 남았는지 검사한다.<br>BE는 `needs_review`·`review_reasons`를 저장한다 (#149).<br>Gate 1 목록(O-30)이 내려준다 (#178).<br>→ 남은 것: 승인 시 최종 본문 경고(차단 아님). 명부 밖 이름·성 뗀 이름은 못 잡는 한계가 있다 | AI + BE |
 | 12 | ~~Gate 1 `decision` 에서 `REJECTED` 빼기~~ | **해결됨 (2026-10-13, #178)** — `ApprovalDecision` 을 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 맞췄다 (§9.1) | ~~BE + AI~~ |
 | 10 | 설계와 코드 불일치 정리 | §0.3의 `raw_record`·`matching_result` 4건 및 후속 워커의 아동 상태 재확인. Gate 1 결정 enum 은 #178 에서 맞췄다. `invitation`·`child_guardian`은 #159에서 설계를 코드에 맞췄으므로 목록에서 제거 | BE + AI |
-| 13 | 인사이트 0건일 때 재호출을 무엇으로 막는지 | 인사이트가 비어 있는 것은 정상이고(§9.3) 그때는 `insight_result` 에 행이 남지 않는다. 그러면 "이 아동·기간을 이미 처리했다"를 기록하는 자리가 없어 **패턴이 없는 아이는 틱마다 LLM 을 다시 부른다.** 요약은 `journal_entry.status` 가 그 역할을 하는데(§6.2) 인사이트에는 대응물이 없다.<br>→ 워커를 만들 때 정한다(§9.3 의 클레임 방식, 아동별 마지막 처리 기간 컬럼, 빈 결과용 상태 행 중 하나) | BE (이정민) |
+| 13 | ~~인사이트 0건일 때 재호출을 무엇으로 막는지~~ | **확정됨 (2026-10-13)** — `insight_run` 테이블로 실행을 기록한다. 0건도 `DONE` + `insight_count = 0` 으로 남아 재호출하지 않고, 집는 것이 INSERT 라 동시 실행 중복도 같이 막힌다. §9.5 에 반영 완료 | ~~BE~~ |
+| 14 | 동의 범위 변경 이력 | 같은 보호자가 다시 동의하면 `sharing_consent.scope` 를 제자리에서 고친다(§5.5). 철회 이력은 남지만 "언제 어떤 항목으로 바꿨는지"는 남지 않는다. 필요하면 변경마다 새 행을 쌓거나 별도 이력을 둔다 | 기획 + BE |
 
 ---
 
@@ -2063,4 +2198,7 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-13 | `human_review`(§9.1) 확정. `decision` 에서 `REJECTED` 빼고 `APPROVED`·`CORRECTED`·`HOLD` 로 (§10.2-12 는 코드 반영이 남아 그대로 둠). **enum 값 추가라 §11.4 수동 조치 필요** — `human_review.decision` CHECK 제약을 확인하고 있으면 DROP 해야 `HOLD` 가 저장된다 | 미생성 |
 | 2026-10-13 | §9.2 의 "인사이트가 읽는 글" 설명 정정 — 인사이트 입력은 `child_context.content` 가 아니라 `summary_result.claims` 다. 교사가 고쳐 승인한 요약(`CORRECTED`)은 재료에서 통째로 뺀다는 10/9 결정(`AI/insight/CRITERIA.md` §10)을 §10.1 #7 로 등록 | 미생성 |
 | 2026-10-13 | 인사이트 0건일 때 재호출을 무엇으로 막을지를 §10.2-13 으로 등록. `insight_result.revision` 은 중복 실행을 막지 못하며 클레임·잠금이 그 역할이라는 점 명시. Gate 2 화면이 "다른 아이 이름 보장 없음"을 표시해야 한다는 경고 추가 (§9.3) | 미생성 |
+| 2026-10-13 | `insight_run`(§9.5) 추가 — 인사이트 워커의 실행 기록. 인사이트 0건이 정상이라 결과 행만으로는 "처리했다"를 남길 수 없고, 입력인 `child_context` 는 고치지 않는 테이블이라 거기에도 못 남긴다. `(child_id, period_from, period_to, revision)` UNIQUE 로 집기를 INSERT 로 만들어 동시 실행 중복도 함께 막는다(§9.3 이 적어 둔 `revision` 경합 해소). §10.2-13 종료. 팀 합의 후 진행. 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #173 |
+| 2026-10-13 | `sharing_history` UNIQUE 요약 목록(§3.3)에 빠져 있던 `status` 보충 — §9.4 본문과 달랐다 | #173 |
+| 2026-10-13 | `sharing_consent` 구현 (`SharingConsent`). `scope` 를 JSON → TEXT(JSON 배열 문자열)로, `revoked_by`·`revoked_at`·`revoke_reason`(`GUARDIAN_REVOKED`·`GUARDIAN_UNLINKED`·`ROSTER_REMOVED`) 추가, 인덱스 `(child_id, organization_id)` (§5.5). 매칭 대상을 기관별 동의로 판정하고 `child.status` 는 화면용 요약으로 계산 (§5.1, §10.1 #8·#9, §10.2 #1·#3·#4·#14). 잠금 순서에 `sharing_consent` 추가, 동의 부여·철회·연결 해제·매칭 확정은 `child` 부터 잠금 (§3.3). 연결 해제 시 그 보호자의 동의 철회 (§5.4). 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #187 |
 | 2026-10-13 | Gate 1 구현. `summary_result.status` 에 `REMOVED`, `journal_entry.status` 에 `GATE1_HELD` 추가, `human_review.decision` 을 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 (`REJECTED` 삭제). 승인·수정 후 승인·보류·제거·보류 해제 때 요약·일지 상태와 `child_context`·`human_review` 기록 규칙(§6.2, §8.2, §9.1, §9.2). 요약 워커가 최신 판의 일지만 다시 묶도록 변경(§6.2). claim 정리·고친 문장 재검증은 MVP 이후로 표시(§8.2). §0.3 의 `human_review` 불일치와 §10.2-12 해소. **enum 값 추가라 §11.4 수동 조치 필요** — `human_review`·`summary_result`·`journal_entry` CHECK 제약 확인 | #178 |

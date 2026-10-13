@@ -16,6 +16,8 @@ import org.springframework.test.context.ActiveProfiles;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.record.JournalEntry;
@@ -47,17 +49,15 @@ class MatchingServiceTest {
         Child other = em.persist(Child.of("박서연", LocalDate.of(2020, 5, 5)));
         em.persist(ChildOrganization.of(yujin.getId(), ours.getId()));
         em.persist(ChildOrganization.of(other.getId(), theirs.getId()));
-        activate(yujin);
-        activate(other);
+        consent(yujin, ours);
+        consent(other, theirs);
     }
 
-    // 아동은 동의 전(PENDING_CONSENT)으로 만들어지고, 동의 완료로 바꾸는 메서드는 아직 없다 (ChildRepositoryTest와 같은 방식).
-    private void activate(Child child) {
+    // 매칭 명부는 child.status 가 아니라 그 기관에 대한 동의(sharing_consent)로 정해진다.
+    private void consent(Child child, Organization organization) {
+        em.merge(child).activate();
+        em.persist(SharingConsent.grant(child.getId(), 100L, organization.getId(), List.of(ConsentField.DAILY_SUMMARY)));
         em.flush();
-        em.getEntityManager()
-                .createQuery("update Child c set c.status = com.itda.backend.domain.child.ChildStatus.ACTIVE where c.id = :id")
-                .setParameter("id", child.getId())
-                .executeUpdate();
         em.clear();
     }
 
@@ -117,6 +117,22 @@ class MatchingServiceTest {
     void 동의_전_아동은_명단에서_빠진다() {
         Child pending = em.persist(Child.of("김하늘", LocalDate.of(2020, 1, 1)));
         em.persist(ChildOrganization.of(pending.getId(), ours.getId()));
+        JournalEntry entry = entry(rawRecord(String.valueOf(ours.getId())));
+
+        MatchingAgentRequest request = matchingService.prepareRequest(entry.getId());
+
+        assertThat(request.roster()).extracting(MatchingAgentRequest.RosterEntry::childId)
+                .containsExactly(yujin.getId());
+    }
+
+    /** 다른 기관에만 동의한 아이는 child.status 가 ACTIVE 여도 이 기관 명단에 들어가지 않는다. */
+    @Test
+    void 다른_기관에만_동의한_아동은_명단에서_빠진다() {
+        Organization school = em.persist(Organization.of("○○초", OrganizationType.SCHOOL, "1111111111"));
+        Child sky = em.persist(Child.of("김하늘", LocalDate.of(2020, 1, 1)));
+        em.persist(ChildOrganization.of(sky.getId(), ours.getId()));
+        em.persist(ChildOrganization.of(sky.getId(), school.getId()));
+        consent(sky, school);
         JournalEntry entry = entry(rawRecord(String.valueOf(ours.getId())));
 
         MatchingAgentRequest request = matchingService.prepareRequest(entry.getId());

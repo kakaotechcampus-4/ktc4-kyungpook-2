@@ -79,7 +79,7 @@ com.itda.backend
 - `global`은 설정, 보안, JWT, 공통 응답·예외처럼 여러 계층에서 공유하는 횡단 관심사에만 사용한다.
 - OAuth2 핸들러처럼 Spring Security 구성에 결합된 구현은 `global.security.oauth`에 둔다.
 - 새 최상위 패키지는 기존 계층으로 표현할 수 없는 횡단 관심사일 때만 추가한다.
-- 계층 안은 기능 하위 패키지로 나눈다. 기능 이름은 `user` `organization` `child` `invitation` `record` `matching` `validation` `summary` `approval` `insight`를 쓴다.
+- 계층 안은 기능 하위 패키지로 나눈다. 기능 이름은 `user` `organization` `child` `invitation` `consent` `record` `matching` `validation` `summary` `approval` `insight`를 쓴다.
   - 새 클래스는 계층 루트가 아니라 해당 기능 하위 패키지에 둔다(예: 아동 등록 요청 → `dto/request/child`).
   - 맞는 기능이 없으면 이름을 정해 이 목록에 추가한다.
   - 기능이 아닌 기술 관심사는 `service.agent`·`service.storage`·`exception.agent`·`exception.auth`에 둔다.

@@ -36,7 +36,7 @@ public class ChildService {
     @Transactional(readOnly = true)
     public List<ChildRosterResponse> getRoster(String userId) {
         // O-10 명부 화면용 — pending_consent 아동도 포함해서 내려주고 화면에서 상태별로 구분한다.
-        // AI 매칭 명부처럼 동의 완료 아동만 필요하면 findActiveByOrganizationId를 쓴다.
+        // AI 매칭 명부처럼 이 기관에 동의한 아동만 필요하면 findConsentedByOrganizationId를 쓴다.
         Long organizationId = userService.getOrganizationIdOf(userId);
         Map<Long, String> externalIds = externalIdsByChildId(organizationId);
         return childRepository.findByOrganizationId(organizationId).stream()
@@ -64,7 +64,7 @@ public class ChildService {
      *
      * <p>중복 확인을 하지 않는다. 같은 이름·생일이어도, 다른 기관에 이미 있는 아이여도 새 아동이다.
      * 기관끼리 서로의 아동을 조회할 수 없고, 같은 아이인지는 보호자 연결 단계에서 확인한다.
-     * 새 아동은 PENDING_CONSENT 라서 AI 매칭 명부에는 보호자 동의 뒤에야 들어간다.
+     * 새 아동은 PENDING_CONSENT 라서 AI 매칭 명부에는 보호자가 이 기관에 동의한 뒤에야 들어간다.
      *
      * <p>관리번호만은 같은 기관 안에서 겹칠 수 없다. 먼저 조회로 거르고, 두 요청이 동시에 같은 번호로 들어와
      * 조회를 함께 통과한 경우는 유니크 제약이 막는다 — 그 예외도 500 이 아니라 같은 409 로 바꾼다.

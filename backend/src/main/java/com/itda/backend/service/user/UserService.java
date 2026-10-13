@@ -131,6 +131,14 @@ public class UserService {
         return user.getId();
     }
 
+    /**
+     * 탈퇴하지 않은 회원의 id. 역할은 보지 않는다 — 누가 한 일인지 기록할 때 쓴다(예: 동의를 끈 기관 담당자).
+     */
+    @Transactional(readOnly = true)
+    public Long getUserIdOf(String principal) {
+        return getByPrincipal(principal).getId();
+    }
+
     private User getByPrincipal(String principal) {
         // 탈퇴한 사용자의 출입증은 아직 만료 전이어도 인정하지 않는다.
         return userRepository.findByIdAndDeletedAtIsNull(parseUserId(principal))
