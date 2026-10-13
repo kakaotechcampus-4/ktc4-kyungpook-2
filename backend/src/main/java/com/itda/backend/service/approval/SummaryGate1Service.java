@@ -53,7 +53,10 @@ public class SummaryGate1Service {
             String version) {
         SummaryResult summary = lockOwnedSummary(userId, summaryId);
         requireDecidable(summary, action);
-        requireNotRegenerating(summary);
+        // 보류된 판은 워커가 덮어쓰지 않는다(새 일지는 새 판이 된다). 보류함에서 제거할 때는 볼 필요가 없다.
+        if (summary.getStatus() == SummaryStatus.GATE1_PENDING) {
+            requireNotRegenerating(summary);
+        }
         // 교사가 본 뒤 워커가 같은 요약을 새 일지까지 묶어 덮어썼다. 그대로 받으면 교사가 못 본 일지가 승인과 함께
         // 끝나거나(승인) 지워진다(제거).
         if (!Gate1Version.of(summary).equals(version)) {
@@ -127,10 +130,15 @@ public class SummaryGate1Service {
      * 같은 묶음을 워커가 요약하는 중이면 결정을 받지 않는다. 요약 결과는 그 묶음의 최신 판이 대기면 덮어쓰므로, 지금
      * 승인하면 곧 바뀔 글이 올라가고 다시 만든 글은 새 판으로 쌓여 같은 일지가 두 번 올라간다. 보류 해제도 같다 —
      * 해제한 판이 새 일지만 담은 결과로 덮어써질 수 있다. 이 판의 일지가 집히지 않았어도 묶음 단위로 본다.
+     * 최신 판이 아니면 워커가 덮어쓰지 않으므로 보지 않는다.
      *
      * <p>워커도 묶음을 집을 때 이 요약 행을 잠그므로, 여기서 잠근 뒤 보는 일지 상태는 커밋된 최신 값이다.
      */
     private void requireNotRegenerating(SummaryResult summary) {
+        if (summaryResultRepository.existsByChildIdAndEntryDateAndInstitutionIdAndRevisionGreaterThan(
+                summary.getChildId(), summary.getEntryDate(), summary.getInstitutionId(), summary.getRevision())) {
+            return;
+        }
         if (!journalEntryRepository.findGroupEntryIds(JournalEntryStatus.SUMMARIZING, summary.getChildId(),
                 summary.getEntryDate(), String.valueOf(summary.getInstitutionId())).isEmpty()) {
             throw new SummaryException(SummaryErrorCode.REGENERATING, summary.getId());

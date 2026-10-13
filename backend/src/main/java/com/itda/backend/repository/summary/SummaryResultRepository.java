@@ -20,6 +20,10 @@ public interface SummaryResultRepository extends JpaRepository<SummaryResult, Lo
     Optional<SummaryResult> findFirstByChildIdAndEntryDateAndInstitutionIdOrderByRevisionDesc(
             Long childId, LocalDate entryDate, Long institutionId);
 
+    /** 그 묶음에 이 판보다 새 판이 있는지. 워커는 최신 판만 덮어쓰므로, 새 판이 있으면 이 판은 더 바뀌지 않는다. */
+    boolean existsByChildIdAndEntryDateAndInstitutionIdAndRevisionGreaterThan(Long childId, LocalDate entryDate,
+            Long institutionId, Integer revision);
+
     /** Gate 1 목록. 오래된 날짜부터 처리하도록 날짜순이다. */
     List<SummaryResult> findByInstitutionIdAndStatusOrderByEntryDateAscIdAsc(Long institutionId,
             SummaryStatus status);

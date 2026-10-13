@@ -270,5 +270,37 @@ class SummaryGate1QueryServiceTest {
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
     }
+
+    private void validatedInSameGroup() {
+        JournalEntry waiting = JournalEntry.of(schoolRecord(), DATE, "점심을 먹었다.", 2);
+        waiting.startMatching();
+        waiting.confirmMatch(junho);
+        waiting.startValidating();
+        waiting.passValidation();
+        em.persistAndFlush(waiting);
+    }
+
+    @Test
+    void 보류된_요약은_새_일지가_와도_바뀌지_않으므로_처리_중으로_표시하지_않는다() {
+        SummaryResult held = summary(ORG, DATE, "[]", List.of(), List.of());
+        held.hold();
+        validatedInSameGroup();
+
+        assertThat(service.getSummaries(TEACHER, "hold").get(0).processing()).isFalse();
+    }
+
+    @Test
+    void 최신_판이_아닌_요약은_처리_중으로_표시하지_않는다() {
+        SummaryResult older = summary(ORG, DATE, "[]", List.of(), List.of());
+        em.persistAndFlush(SummaryResult.of(junho, DATE, ORG, 2, "2판", "[]", "[]", "[]", "{}"));
+        validatedInSameGroup();
+
+        List<Gate1SummaryResponse> pending = service.getSummaries(TEACHER, "pending");
+
+        assertThat(pending).filteredOn(item -> item.id().equals(older.getId()))
+                .singleElement().satisfies(item -> assertThat(item.processing()).isFalse());
+        assertThat(pending).filteredOn(item -> item.revision() == 2)
+                .singleElement().satisfies(item -> assertThat(item.processing()).isTrue());
+    }
 }
 

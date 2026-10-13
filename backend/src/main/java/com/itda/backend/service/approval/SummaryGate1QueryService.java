@@ -111,10 +111,17 @@ public class SummaryGate1QueryService {
     }
 
     /**
-     * 같은 묶음에 아직 요약에 반영되지 않은 일지가 있는지. 요약을 기다리거나(VALIDATED) 요약 중이면(SUMMARIZING) 곧 이
-     * 요약이 바뀐다. 매칭·검증 중인 일지는 아동을 모를 수 있어 워커처럼 기관·날짜로 본다 (SummaryService.IN_PROGRESS).
+     * 같은 묶음에 아직 요약에 반영되지 않은 일지가 있어 곧 이 요약이 바뀌는지. 요약을 기다리거나(VALIDATED) 요약 중이면
+     * (SUMMARIZING) 바뀐다. 매칭·검증 중인 일지는 아동을 모를 수 있어 워커처럼 기관·날짜로 본다
+     * (SummaryService.IN_PROGRESS). 워커는 최신 판이 대기일 때만 덮어쓰므로, 보류된 판이나 옛 판은 바뀌지 않는다.
      */
     private boolean isProcessing(SummaryResult summary) {
+        if (summary.getStatus() != SummaryStatus.GATE1_PENDING
+                || summaryResultRepository.existsByChildIdAndEntryDateAndInstitutionIdAndRevisionGreaterThan(
+                        summary.getChildId(), summary.getEntryDate(), summary.getInstitutionId(),
+                        summary.getRevision())) {
+            return false;
+        }
         String institutionId = String.valueOf(summary.getInstitutionId());
         if (journalEntryRepository.existsInProgress(SummaryService.IN_PROGRESS, institutionId,
                 summary.getEntryDate())) {
@@ -224,7 +231,7 @@ public class SummaryGate1QueryService {
 
     private static List<Long> parseIds(String raw, Long summaryId) {
         List<Long> ids = new ArrayList<>();
-        for (JsonNode node : readArray(raw, "summary_result.entry_ids", summaryId)) {
+        for (JsonNode node : readArray(raw, "summary_result.covered_entry_ids", summaryId)) {
             if (node.canConvertToLong()) {
                 ids.add(node.asLong());
             }

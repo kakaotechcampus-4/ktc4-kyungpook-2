@@ -416,5 +416,30 @@ class SummaryGate1ServiceTest {
         }
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
     }
+
+    @Test
+    void 보류함에서_제거는_같은_묶음을_요약하는_중이어도_할_수_있다() {
+        // 보류된 판은 워커가 덮어쓰지 않는다 — 새 일지는 새 판이 된다. 제거와 부딪힐 일이 없다.
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
+        em.flush();
+        newEntrySummarizingInSameGroup();
+
+        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.REMOVE, null,
+                versionOf(summary.getId()));
+
+        assertThat(response.status()).isEqualTo("REMOVED");
+    }
+
+    @Test
+    void 최신_판이_아닌_요약은_같은_묶음을_요약하는_중이어도_결정할_수_있다() {
+        // 1판을 보류한 사이 2판이 생겼고 1판을 보류 해제했다. 워커는 최신 판(2판)만 덮어쓰므로 1판은 바뀌지 않는다.
+        em.persistAndFlush(SummaryResult.of(CHILD, DATE, ORG, 2, "2판", "[]", "[]", "[]", "{}"));
+        newEntrySummarizingInSameGroup();
+
+        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null,
+                versionOf(summary.getId()));
+
+        assertThat(response.status()).isEqualTo("APPROVED");
+    }
 }
 
