@@ -6,6 +6,9 @@
   - 반복 패턴: 같은 상황 3회 (대처 성공·실패 섞음) → 그 claim 들을 근거로 한 인사이트
   - 기관 간 차이: 같은 상황, 학교와 센터 반응이 다름 → cross_institution 인사이트
   - 대조군: 서로 무관한 관찰만 → 빈 배열
+  - 장면 이름만 다른 같은 상황(renamed): 기관마다 장면 이름이 다르지만 아이에게 요구되는 것이 같음 → cross 인사이트
+  - 단어만 같은 다른 상황(similar): 같은 단어가 들어가지만 아이에게 요구되는 것이 다름 → 빈 배열
+    (renamed·similar 는 블라인드 v1 에서 드러난 "쪼개기"·"묶기" 실수를 재려고 추가. 기존 26건 뒤에 붙인다)
 
 채점: 출력 인사이트의 claim_ids 가 심은 claim 과 MIN_EVIDENCE_CLAIMS 개 이상 겹치면 찾은 것으로 본다.
 """
@@ -27,7 +30,9 @@ OUT = AI_DIR / "evals" / "generated" / "insight" / "insight_cases.json"
 INSTITUTIONS = {1: "학교", 2: "센터", 3: "학원"}
 NAMES = ["박서아", "최도윤", "정하린", "윤시우", "강지호", "한예린", "오민재", "서지안", "임하준", "송유나",
          "배서진", "조은우", "권다온", "문시현", "신하율", "류지후", "남윤서", "홍도현", "고아린", "장태윤",
-         "유서하", "표지율", "진하람", "육도윤", "추예서", "변시온"]
+         "유서하", "표지율", "진하람", "육도윤", "추예서", "변시온",
+         # renamed·similar 8건용 (맨 뒤에 붙여 기존 26건의 이름이 바뀌지 않게 함)
+         "구하윤", "방서율", "석지민", "여도하", "왕시아", "제하온", "편서준", "황보율"]
 PEERS = ["김도하", "이수아", "백현우", "차예준", "노하준", "탁서윤", "엄지환"]
 
 # (claim 문장, 원본 일지 인용) — [기본, 통한 대처, 통하지 않은 대처]
@@ -56,6 +61,34 @@ CROSS = [
      "센터": ("손을 씻을 때 물놀이를 하며 끝내지 않았다.", "물놀이를 하며 끝내지 않음")},
     {"학교": ("인사할 때 먼저 손을 흔들었다.", "먼저 손을 흔듦"),
      "센터": ("인사할 때 교사를 쳐다보지 않았다.", "교사를 쳐다보지 않음")},
+]
+
+# 같은 상황인데 기관마다 장면 이름이 다름 — 아이에게 요구되는 것이 같다 (묶어야 정답)
+RENAMED = [
+    {"학교": ("짝 활동에서 교구를 번갈아 썼다.", "교구를 번갈아 씀"),          # 차례대로 나눠 쓰기
+     "센터": ("자유놀이에서 장난감을 혼자 쥐고 건네지 않았다.", "장난감을 건네지 않음")},
+    {"학교": ("국어가 끝나고 체육관으로 갈 때 바로 일어섰다.", "바로 일어섬"),   # 활동 전환
+     "센터": ("감각치료가 끝나고 언어치료실로 옮길 때 문 앞에서 멈춰 울었다.", "문 앞에서 멈춰 울음")},
+    {"학교": ("음악실 리코더 소리에 귀를 막았지만 자리를 지켰다.", "귀를 막았지만 자리를 지킴"),  # 큰 소리 견디기
+     "센터": ("체육관에 공 튀는 소리가 울리자 밖으로 뛰어나갔다.", "밖으로 뛰어나감")},
+    {"학교": ("급식에 나온 처음 보는 반찬을 한 입 먹어봤다.", "처음 보는 반찬을 한 입 먹음"),  # 처음 보는 음식
+     "센터": ("간식으로 처음 보는 과일을 내밀자 손으로 밀어냈다.", "과일을 손으로 밀어냄")},
+]
+
+# 같은 단어가 들어가지만 아이에게 요구되는 것이 다름 (묶으면 오답)
+SIMILAR = [
+    [("급식 줄에서 차례를 기다렸다.", "차례를 기다림"),                 # 기다리기
+     ("도서관에서 책을 줄 맞춰 꽂았다.", "책을 줄 맞춰 꽂음"),            # 정리
+     ("줄넘기를 세 번 넘었다.", "줄넘기 세 번")],                        # 대근육
+    [("음악 시간에 큰 소리로 노래를 불렀다.", "큰 소리로 노래함"),        # 참여
+     ("큰 소리가 나자 귀를 막았다.", "귀를 막음"),                       # 감각
+     ("이름을 부르자 큰 소리로 대답했다.", "큰 소리로 대답함")],          # 호명 반응
+    [("쌓은 블록이 무너지자 울었다.", "블록이 무너지자 울음"),            # 좌절 견디기
+     ("블록을 색깔별로 나눴다.", "색깔별로 나눔"),                       # 분류
+     ("블록을 바구니에 정리했다.", "바구니에 정리함")],                   # 정리
+    [("비누로 손을 씻었다.", "비누로 손을 씻음"),                        # 위생
+     ("손을 들어 발표했다.", "손을 들어 발표함"),                        # 참여
+     ("친구 손을 잡고 걸었다.", "친구 손을 잡고 걸음")],                  # 또래 관계
 ]
 
 # 서로 무관한 하루짜리 관찰. 아이 한 명 안에서는 겹치지 않게 뽑는다.
@@ -114,7 +147,7 @@ def pick_dates(n):
 def make_case(child_id, category):
     name = NAMES[child_id - 1]
     noise = [draft(random.choice([1, 2]), t, q) for t, q in random.sample(NOISE, 5 if category != "control" else 8)]
-    planted, forbidden, cross = [], [], False
+    planted, decoys, forbidden, cross = [], [], [], False
 
     if category == "repeat":
         texts = REPEAT[child_id % len(REPEAT)]
@@ -140,8 +173,15 @@ def make_case(child_id, category):
             d["text"] += f" 옆에 있던 {peer}이(가) 지켜봤다."
             forbidden.append(peer)
         cross = len({d["institution_id"] for d in planted}) >= 2
+    elif category == "renamed":
+        pair = RENAMED[child_id % len(RENAMED)]
+        planted = [draft(1, *pair["학교"]), draft(2, *pair["센터"]), draft(1, *pair["학교"])]
+        cross = True
+    elif category == "similar":
+        # 학교·센터에 섞어 넣어 "기관 간 차이"로 잘못 묶을 유혹도 함께 준다. 정답은 빈 배열.
+        decoys = [draft(inst, t, q) for inst, (t, q) in zip([1, 2, 1], SIMILAR[child_id % len(SIMILAR)])]
 
-    drafts = planted + noise
+    drafts = planted + decoys + noise
     random.shuffle(drafts)
     inp = assemble(child_id, name, drafts, pick_dates(len(drafts)))
     InsightInput(**inp)  # 계약에 안 맞으면 여기서 터진다
@@ -156,14 +196,15 @@ def make_case(child_id, category):
         "input": inp,
         "expected": {
             "patterns": expected_patterns,
-            "empty": category == "control",
+            "empty": category in ("control", "similar"),
             "forbidden_terms": forbidden,
         },
     }
 
 
 def main():
-    plan = ["repeat"] * 6 + ["cross"] * 4 + ["control"] * 10 + ["names"] * 6
+    # 새 갈래는 항상 맨 뒤에. 앞에 넣으면 난수 순서가 바뀌어 기존 케이스가 달라진다.
+    plan = ["repeat"] * 6 + ["cross"] * 4 + ["control"] * 10 + ["names"] * 6 + ["renamed"] * 4 + ["similar"] * 4
     cases = [make_case(i + 1, cat) for i, cat in enumerate(plan)]
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(cases, ensure_ascii=False, indent=2), encoding="utf-8")
