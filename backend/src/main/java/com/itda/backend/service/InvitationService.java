@@ -153,7 +153,8 @@ public class InvitationService {
                 .map(organization -> organization.getName())
                 .orElse(null);
         return new AcceptedInvitationResponse(
-                String.valueOf(child.getId()), child.getName(), organizationName, child.getStatus());
+                String.valueOf(child.getId()), child.getName(), String.valueOf(target.organizationId()),
+                organizationName, child.getStatus());
     }
 
     /**

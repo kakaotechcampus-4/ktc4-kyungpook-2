@@ -894,8 +894,14 @@ O-15 ~ O-19 공통 오류:
 **G-04 응답** · `200 OK`
 
 ```json
-{ "childId": "9", "childName": "김하늘", "organizationName": "○○초등학교", "childStatus": "pending_consent" }
+{ "childId": "9", "childName": "김하늘", "organizationId": "1", "organizationName": "○○초등학교",
+  "childStatus": "pending_consent" }
 ```
+
+- `organizationId`: 코드를 발급한 기관 ID(문자열)입니다. 수락 뒤 이 기관에 대한 동의 미리보기(G-02)를 부를 때
+  `institutionId`로 그대로 넘기면 됩니다.
+- 수락은 연결일 뿐 동의가 아니라 `childStatus`는 바뀌지 않습니다. 동의 미리보기(G-02)·동의 저장(G-41)은
+  **아직 BE에 구현되지 않았습니다.**
 
 | 상태 | `code` | 상황 |
 | --- | --- | --- |

@@ -161,6 +161,7 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(myChild + ".delete.responses.403").exists())
 				.andExpect(jsonPath("$.components.schemas.AcceptInvitationRequest.properties.length()").value(1))
 				.andExpect(jsonPath("$.components.schemas.AcceptedInvitationResponse.properties.childStatus").exists())
+				.andExpect(jsonPath("$.components.schemas.AcceptedInvitationResponse.properties.organizationId").exists())
 				.andExpect(jsonPath("$.components.schemas.ChildGuardianResponse.properties.linkedByThisOrganization").exists());
 	}
 
