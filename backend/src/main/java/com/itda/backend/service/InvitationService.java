@@ -20,12 +20,12 @@ import com.itda.backend.dto.response.IssuedInvitationResponse;
 import com.itda.backend.dto.response.LiveInvitationResponse;
 import com.itda.backend.exception.InvitationErrorCode;
 import com.itda.backend.exception.InvitationException;
-import com.itda.backend.repository.ChildGuardianRepository;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.InvitationRepository;
-import com.itda.backend.repository.InvitationTarget;
-import com.itda.backend.repository.OrganizationRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.invitation.ChildGuardianRepository;
+import com.itda.backend.repository.invitation.InvitationRepository;
+import com.itda.backend.repository.invitation.InvitationTarget;
+import com.itda.backend.repository.organization.OrganizationRepository;
 
 import lombok.RequiredArgsConstructor;
 

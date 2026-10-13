@@ -16,9 +16,9 @@ import com.itda.backend.domain.user.User;
 import com.itda.backend.dto.response.ChildGuardianResponse;
 import com.itda.backend.exception.InvitationErrorCode;
 import com.itda.backend.exception.InvitationException;
-import com.itda.backend.repository.ChildGuardianRepository;
-import com.itda.backend.repository.InvitationRepository;
-import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.invitation.ChildGuardianRepository;
+import com.itda.backend.repository.invitation.InvitationRepository;
+import com.itda.backend.repository.user.UserRepository;
 
 import lombok.RequiredArgsConstructor;
 

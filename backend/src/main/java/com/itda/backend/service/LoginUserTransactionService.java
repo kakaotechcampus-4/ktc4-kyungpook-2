@@ -7,7 +7,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.user.User;
-import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.user.UserRepository;
 
 import lombok.RequiredArgsConstructor;
 

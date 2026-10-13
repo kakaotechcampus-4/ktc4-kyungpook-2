@@ -15,8 +15,8 @@ import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.dto.response.SummaryAgentResponse;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.SummaryResultRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.summary.SummaryResultRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

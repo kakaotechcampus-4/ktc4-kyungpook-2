@@ -26,9 +26,9 @@ import com.itda.backend.domain.user.User;
 import com.itda.backend.exception.RawRecordNotFoundException;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.RawRecordRepository;
-import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.record.RawRecordRepository;
+import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.RawRecordService;
 
 import static org.assertj.core.api.Assertions.assertThat;

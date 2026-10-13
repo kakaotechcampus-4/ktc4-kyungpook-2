@@ -17,8 +17,8 @@ import com.itda.backend.dto.response.RegisteredChildResponse;
 import com.itda.backend.dto.response.RegisteredChildResponse.RegisteredChild;
 import com.itda.backend.exception.ChildErrorCode;
 import com.itda.backend.exception.ChildException;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.ChildRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
 
 import lombok.RequiredArgsConstructor;
 

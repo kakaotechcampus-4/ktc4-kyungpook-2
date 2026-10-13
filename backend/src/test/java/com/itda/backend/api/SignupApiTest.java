@@ -25,8 +25,8 @@ import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.UserRepository;
 
 /**
  * POST /api/v1/auth/signup — 보안 필터·검증·예외 처리까지 실제로 거친다.

@@ -8,8 +8,8 @@ import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.ValidationAgentResponse;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.ValidationResultRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.validation.ValidationResultRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

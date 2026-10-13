@@ -26,8 +26,8 @@ import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.exception.SummaryChildNotFoundException;
 import com.itda.backend.exception.SummaryRunValidationException;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.JournalEntryRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.service.UserService;
 import com.itda.backend.service.agent.WorkerProperties;
 

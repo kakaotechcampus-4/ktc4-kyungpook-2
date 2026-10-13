@@ -26,12 +26,12 @@ import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.exception.SummaryTargetException;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.InProgressKey;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.MatchingResultRepository;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.SummaryCandidate;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.matching.MatchingResultRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.record.InProgressKey;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.record.SummaryCandidate;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

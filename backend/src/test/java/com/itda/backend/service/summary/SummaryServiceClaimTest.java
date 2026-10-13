@@ -21,10 +21,10 @@ import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.MatchingResultRepository;
-import com.itda.backend.repository.OrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.matching.MatchingResultRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.service.agent.WorkerProperties;
 
 /** 요약할 묶음을 고르는 조건 — 마감(다음 날 03:00), 디바운스(30분), 같은 기관·날짜에 처리 중인 일지 없음. */

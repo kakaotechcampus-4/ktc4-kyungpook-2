@@ -27,10 +27,10 @@ import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.ValidationQueueItemResponse;
 import com.itda.backend.exception.ValidationResultNotFoundException;
 import com.itda.backend.exception.ValidationResultValidationException;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.RawRecordRepository;
-import com.itda.backend.repository.ValidationResultRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.record.RawRecordRepository;
+import com.itda.backend.repository.validation.ValidationResultRepository;
 
 @ExtendWith(MockitoExtension.class)
 class ValidationQueueServiceTest {

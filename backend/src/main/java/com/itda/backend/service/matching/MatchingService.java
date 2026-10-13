@@ -12,10 +12,10 @@ import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.dto.request.MatchingAgentRequest;
 import com.itda.backend.exception.MatchingTargetException;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.RawRecordRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.record.RawRecordRepository;
 
 import lombok.RequiredArgsConstructor;
 

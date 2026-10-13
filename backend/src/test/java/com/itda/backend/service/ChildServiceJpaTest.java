@@ -26,8 +26,8 @@ import com.itda.backend.dto.response.RegisteredChildResponse;
 import com.itda.backend.exception.ChildErrorCode;
 import com.itda.backend.exception.ChildException;
 import com.itda.backend.fixture.OrganizationFixture;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.ChildRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
 
 /** register 가 child 와 child_organization 을 실제로 저장해 O-10 명부에 나타나는지 DB 로 확인한다. */
 @DataJpaTest

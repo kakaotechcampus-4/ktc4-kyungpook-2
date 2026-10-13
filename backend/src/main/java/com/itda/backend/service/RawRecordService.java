@@ -23,9 +23,9 @@ import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.exception.RawRecordNotFoundException;
 import com.itda.backend.exception.RawRecordStorageException;
 import com.itda.backend.exception.RawRecordValidationException;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.RawRecordRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.service.storage.RawFileStorage;
 
 import lombok.RequiredArgsConstructor;

@@ -29,8 +29,8 @@ import com.itda.backend.exception.OrganizationException;
 import com.itda.backend.exception.UserErrorCode;
 import com.itda.backend.exception.UserException;
 import com.itda.backend.fixture.UserFixture;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.UserRepository;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {

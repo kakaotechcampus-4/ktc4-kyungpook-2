@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import com.itda.backend.domain.user.User;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

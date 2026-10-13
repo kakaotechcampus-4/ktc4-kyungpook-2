@@ -20,7 +20,7 @@ import com.itda.backend.domain.matching.MultiReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.dto.response.MatchingAgentResponse;
-import com.itda.backend.repository.MatchingResultRepository;
+import com.itda.backend.repository.matching.MatchingResultRepository;
 
 @DataJpaTest
 @ActiveProfiles("test")

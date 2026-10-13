@@ -20,8 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.dto.request.RegisterChildRequest;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.ChildRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
 
 /**
  * 기관 연결 저장이 실패하면 먼저 저장한 아동도 남지 않아야 한다.

@@ -28,10 +28,10 @@ import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.exception.SummaryTargetException;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.MatchingResultRepository;
-import com.itda.backend.repository.OrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.matching.MatchingResultRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.service.agent.WorkerProperties;
 
 /** 요약 요청 조립 — 묶음의 일지들, 아동·기관 이름, 본문에 이름이 나온 다른 아이들. */

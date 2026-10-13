@@ -39,9 +39,9 @@ import com.itda.backend.dto.request.RegisterChildRequest;
 import com.itda.backend.exception.ChildErrorCode;
 import com.itda.backend.exception.ChildException;
 import com.itda.backend.fixture.OrganizationFixture;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.OrganizationRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
 
 /**
  * 사전 조회를 통과한 뒤 실제 DB 유니크 제약에 걸리는 경로를 PostgreSQL 에서 재현한다.

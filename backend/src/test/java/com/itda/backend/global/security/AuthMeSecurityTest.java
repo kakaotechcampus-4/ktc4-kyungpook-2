@@ -19,8 +19,8 @@ import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.UserRepository;
 
 /**
  * GET /api/v1/auth/me 의 성공·인증 실패 경로.

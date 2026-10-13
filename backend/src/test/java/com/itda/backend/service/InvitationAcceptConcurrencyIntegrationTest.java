@@ -52,12 +52,12 @@ import com.itda.backend.exception.InvitationException;
 import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
-import com.itda.backend.repository.ChildGuardianRepository;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.InvitationRepository;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.invitation.ChildGuardianRepository;
+import com.itda.backend.repository.invitation.InvitationRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.UserRepository;
 
 /**
  * 초대 코드 수락이 동시에 진행되는 다른 작업과 겹칠 때를 PostgreSQL 에서 재현한다.

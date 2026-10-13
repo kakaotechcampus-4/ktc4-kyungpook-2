@@ -10,8 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.exception.SummaryChildNotFoundException;
 import com.itda.backend.exception.SummaryRunValidationException;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.JournalEntryRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.service.UserService;
 
 import lombok.RequiredArgsConstructor;

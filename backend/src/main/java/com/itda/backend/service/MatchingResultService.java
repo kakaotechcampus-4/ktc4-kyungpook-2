@@ -23,11 +23,11 @@ import com.itda.backend.dto.MatchingQueueItemResponse;
 import com.itda.backend.dto.RecordResponse;
 import com.itda.backend.exception.MatchingResultNotFoundException;
 import com.itda.backend.exception.MatchingResultValidationException;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.MatchingResultRepository;
-import com.itda.backend.repository.RawRecordRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.matching.MatchingResultRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.record.RawRecordRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

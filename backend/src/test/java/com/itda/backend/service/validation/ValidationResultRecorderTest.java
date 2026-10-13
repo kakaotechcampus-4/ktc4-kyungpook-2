@@ -19,7 +19,7 @@ import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.request.ValidationAgentRequest;
 import com.itda.backend.dto.response.ValidationAgentResponse;
-import com.itda.backend.repository.ValidationResultRepository;
+import com.itda.backend.repository.validation.ValidationResultRepository;
 
 @DataJpaTest
 @ActiveProfiles("test")

@@ -33,9 +33,9 @@ import com.itda.backend.exception.RawRecordStorageException;
 import com.itda.backend.exception.RawRecordValidationException;
 import com.itda.backend.exception.UserErrorCode;
 import com.itda.backend.exception.UserException;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.RawRecordRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.service.storage.RawFileStorage;
 
 @ExtendWith(MockitoExtension.class)
