@@ -13,8 +13,8 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
  *
  * @param periodFrom             재료가 된 기간 시작 (ISO, 예: "2026-10-01")
  * @param consentedInstitutions  보호자가 공유에 동의한 기관. 이 밖의 기관 claim 은 재료에서 뺀다
- *                               (AI/insight/CRITERIA.md §7). {@code sharing_consent} 가 ACTIVE 인 기관으로 채운다
- *                               (DB 스키마 §5.5). 인사이트 워커는 아직 없다
+ *                               (AI/insight/CRITERIA.md §7). {@code sharing_consent} 가 ACTIVE 인 기관이어야 한다
+ *                               (DB 스키마 §5.5). 지금은 {@code InsightService} 가 아이가 다니는 기관 전부를 넣는다
  */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record InsightAgentRequest(
