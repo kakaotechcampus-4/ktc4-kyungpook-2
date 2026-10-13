@@ -24,4 +24,7 @@ public interface ChildGuardianRepository extends JpaRepository<ChildGuardian, Lo
             @Param("childId") Long childId, @Param("userId") Long userId);
 
     List<ChildGuardian> findByChildIdAndDeletedAtIsNullOrderByLinkedAtAsc(Long childId);
+
+    /** 보호자 권한 확인용. 해제된 연결은 권한이 아니다. */
+    boolean existsByChildIdAndUserIdAndDeletedAtIsNull(Long childId, Long userId);
 }
