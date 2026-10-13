@@ -26,19 +26,19 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-import com.itda.backend.domain.ChildStatus;
-import com.itda.backend.dto.ChildRosterResponse;
-import com.itda.backend.dto.request.RegisterChildRequest;
-import com.itda.backend.dto.response.IssuedInvitationResponse;
-import com.itda.backend.dto.response.RegisteredChildResponse;
-import com.itda.backend.dto.response.RegisteredChildResponse.RegisteredChild;
-import com.itda.backend.exception.ChildErrorCode;
-import com.itda.backend.exception.ChildException;
-import com.itda.backend.exception.UserErrorCode;
-import com.itda.backend.exception.UserException;
+import com.itda.backend.domain.child.ChildStatus;
+import com.itda.backend.dto.request.child.RegisterChildRequest;
+import com.itda.backend.dto.response.child.ChildRosterResponse;
+import com.itda.backend.dto.response.child.RegisteredChildResponse;
+import com.itda.backend.dto.response.child.RegisteredChildResponse.RegisteredChild;
+import com.itda.backend.dto.response.invitation.IssuedInvitationResponse;
+import com.itda.backend.exception.child.ChildErrorCode;
+import com.itda.backend.exception.child.ChildException;
+import com.itda.backend.exception.user.UserErrorCode;
+import com.itda.backend.exception.user.UserException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.ChildService;
+import com.itda.backend.service.child.ChildService;
 
 @WebMvcTest(ChildController.class)
 @AutoConfigureMockMvc(addFilters = false)

@@ -20,10 +20,10 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.dto.request.InsightAgentRequest;
-import com.itda.backend.dto.response.InsightAgentResponse;
-import com.itda.backend.exception.AiAgentException;
-import com.itda.backend.exception.AiAgentUnavailableException;
+import com.itda.backend.dto.request.insight.InsightAgentRequest;
+import com.itda.backend.dto.response.insight.InsightAgentResponse;
+import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.service.agent.AiAgentClient;
 import com.itda.backend.service.agent.AiAgentProperties;
 

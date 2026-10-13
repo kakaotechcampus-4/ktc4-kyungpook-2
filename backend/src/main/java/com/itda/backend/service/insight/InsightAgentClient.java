@@ -2,8 +2,8 @@ package com.itda.backend.service.insight;
 
 import org.springframework.stereotype.Component;
 
-import com.itda.backend.dto.request.InsightAgentRequest;
-import com.itda.backend.dto.response.InsightAgentResponse;
+import com.itda.backend.dto.request.insight.InsightAgentRequest;
+import com.itda.backend.dto.response.insight.InsightAgentResponse;
 import com.itda.backend.service.agent.AiAgentClient;
 
 import lombok.RequiredArgsConstructor;

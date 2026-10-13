@@ -10,13 +10,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.SummaryResult;
-import com.itda.backend.dto.request.SummaryAgentRequest;
-import com.itda.backend.dto.response.SummaryAgentResponse;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.SummaryResultRepository;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.summary.SummaryResult;
+import com.itda.backend.dto.request.summary.SummaryAgentRequest;
+import com.itda.backend.dto.response.summary.SummaryAgentResponse;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.summary.SummaryResultRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

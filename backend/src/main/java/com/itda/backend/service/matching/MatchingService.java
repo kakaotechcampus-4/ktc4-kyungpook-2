@@ -7,15 +7,15 @@ import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.dto.request.MatchingAgentRequest;
-import com.itda.backend.exception.MatchingTargetException;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.RawRecordRepository;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.dto.request.matching.MatchingAgentRequest;
+import com.itda.backend.exception.matching.MatchingTargetException;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.record.RawRecordRepository;
 
 import lombok.RequiredArgsConstructor;
 

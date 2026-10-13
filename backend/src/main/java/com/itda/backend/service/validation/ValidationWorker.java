@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import com.itda.backend.exception.AiAgentUnavailableException;
+import com.itda.backend.exception.agent.AiAgentUnavailableException;
 
 import lombok.extern.slf4j.Slf4j;
 

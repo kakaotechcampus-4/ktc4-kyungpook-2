@@ -1,12 +1,12 @@
 package com.itda.backend.api;
 
-import com.itda.backend.dto.request.SignupRequest;
-import com.itda.backend.dto.response.CurrentUserResponse;
+import com.itda.backend.dto.request.user.SignupRequest;
+import com.itda.backend.dto.response.user.CurrentUserResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.response.ApiResponse;
-import com.itda.backend.service.UserService;
+import com.itda.backend.service.user.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;

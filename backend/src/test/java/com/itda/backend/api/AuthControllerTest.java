@@ -21,10 +21,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.BDDMockito.given;
 
-import com.itda.backend.dto.response.CurrentUserResponse;
+import com.itda.backend.dto.response.user.CurrentUserResponse;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.UserService;
+import com.itda.backend.service.user.UserService;
 
 // addFilters(false) 라 필터 체인이 돌지 않는다 — JwtAuthenticationFilter 가 하는 일
 // (SecurityContext principal 에 내부 userId(String) 를 심는 것)을 authenticateAs(...) 로

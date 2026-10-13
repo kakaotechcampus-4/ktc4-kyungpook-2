@@ -9,7 +9,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.dto.response.SummaryAgentResponse;
+import com.itda.backend.dto.response.summary.SummaryAgentResponse;
 
 /** 요약 저장 직전 BE 근거 재검사 (멘토 리뷰 A4, #129). */
 class SummaryEvidenceCheckerTest {
