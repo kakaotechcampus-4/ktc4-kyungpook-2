@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -74,19 +73,21 @@ public class SummaryGate1QueryService {
                 .findAllById(summaries.stream().map(SummaryResult::getChildId).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(Child::getId, Child::getName));
 
-        Map<Long, List<Long>> covered = new HashMap<>();
-        Map<Long, List<Long>> uncovered = new HashMap<>();
-        Set<Long> entryIds = new HashSet<>();
+        // 요약에 든 일지는 AI 가 보낸 목록이 아니라 그 요약을 가리키는 일지로 정한다. 승인하면 이 일지가 모두 끝나므로,
+        // AI 가 어느 목록에도 넣지 않은 일지도 교사가 봐야 한다.
+        Map<Long, List<JournalEntry>> entriesBySummary = journalEntryRepository
+                .findBySummaryIdInAndDeletedAtIsNullOrderByIdAsc(summaries.stream().map(SummaryResult::getId).toList())
+                .stream().collect(Collectors.groupingBy(JournalEntry::getSummaryId));
+        Map<Long, Set<Long>> covered = new HashMap<>();
+        Set<Long> coveredIds = new HashSet<>();
         for (SummaryResult s : summaries) {
-            covered.put(s.getId(), parseIds(s.getCoveredEntryIds(), s.getId()));
-            uncovered.put(s.getId(), parseIds(s.getUncoveredEntryIds(), s.getId()));
-            entryIds.addAll(covered.get(s.getId()));
-            entryIds.addAll(uncovered.get(s.getId()));
+            Set<Long> ids = new HashSet<>(parseIds(s.getCoveredEntryIds(), s.getId()));
+            ids.retainAll(entriesBySummary.getOrDefault(s.getId(), List.of()).stream()
+                    .map(JournalEntry::getId).toList());
+            covered.put(s.getId(), ids);
+            coveredIds.addAll(ids);
         }
-        Map<Long, JournalEntry> entries = journalEntryRepository.findAllById(entryIds).stream()
-                .filter(e -> !e.isDeleted())
-                .collect(Collectors.toMap(JournalEntry::getId, Function.identity()));
-        Map<Long, ValidationResult> latestValidation = latestValidationOf(entries.keySet());
+        Map<Long, ValidationResult> latestValidation = latestValidationOf(coveredIds);
 
         return summaries.stream()
                 .map(s -> new Gate1SummaryResponse(
@@ -99,8 +100,9 @@ public class SummaryGate1QueryService {
                         s.getContent(),
                         s.isNeedsReview(),
                         parseStrings(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
-                        uncoveredEntries(uncovered.get(s.getId()), entries),
-                        reviewFlags(s, covered.get(s.getId()), entries, latestValidation)))
+                        uncoveredEntries(entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId())),
+                        reviewFlags(s, entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId()),
+                                latestValidation)))
                 .toList();
     }
 
@@ -114,21 +116,21 @@ public class SummaryGate1QueryService {
         };
     }
 
-    private static List<UncoveredEntry> uncoveredEntries(List<Long> ids, Map<Long, JournalEntry> entries) {
-        return ids.stream()
-                .map(entries::get)
-                .filter(e -> e != null)
+    private static List<UncoveredEntry> uncoveredEntries(List<JournalEntry> entries, Set<Long> coveredIds) {
+        return entries.stream()
+                .filter(e -> !coveredIds.contains(e.getId()))
                 .map(e -> new UncoveredEntry(e.getId(), e.getContent()))
                 .toList();
     }
 
-    private List<ReviewFlag> reviewFlags(SummaryResult summary, List<Long> coveredIds,
-            Map<Long, JournalEntry> entries, Map<Long, ValidationResult> latestValidation) {
+    private List<ReviewFlag> reviewFlags(SummaryResult summary, List<JournalEntry> entries, Set<Long> coveredIds,
+            Map<Long, ValidationResult> latestValidation) {
         Map<Long, List<Span>> claimSpans = parseClaimSpans(summary);
         List<ReviewFlag> flags = new ArrayList<>();
-        for (Long entryId : coveredIds) {
+        for (JournalEntry entry : entries) {
+            Long entryId = entry.getId();
             ValidationResult validation = latestValidation.get(entryId);
-            if (!entries.containsKey(entryId) || validation == null
+            if (!coveredIds.contains(entryId) || validation == null
                     || validation.getVerdict() != ValidationVerdict.REVIEW) {
                 continue;
             }

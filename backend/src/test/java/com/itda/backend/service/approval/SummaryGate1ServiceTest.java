@@ -31,7 +31,6 @@ import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
-import com.itda.backend.exception.summary.SummaryNotFoundException;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.service.user.UserService;
@@ -218,9 +217,13 @@ class SummaryGate1ServiceTest {
         SummaryResult others = summaryOf(OTHER_ORG);
 
         assertThatThrownBy(() -> service.decide(TEACHER, others.getId(), Gate1Action.APPROVE, null))
-                .isInstanceOf(SummaryNotFoundException.class);
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.NOT_FOUND);
         assertThatThrownBy(() -> service.decide(TEACHER, 9999L, Gate1Action.APPROVE, null))
-                .isInstanceOf(SummaryNotFoundException.class);
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.NOT_FOUND);
     }
 
     @Test
@@ -288,7 +291,9 @@ class SummaryGate1ServiceTest {
         em.flush();
 
         assertThatThrownBy(() -> service.reopen(TEACHER, others.getId()))
-                .isInstanceOf(SummaryNotFoundException.class);
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.NOT_FOUND);
     }
 
     @Test
@@ -316,6 +321,28 @@ class SummaryGate1ServiceTest {
                 .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.REGENERATING);
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
+    }
+
+    @Test
+    void 줄바꿈_방식이나_앞뒤_공백만_다르면_고친_것으로_보지_않는다() {
+        // 입력창을 거치면 끝에 줄바꿈이 붙거나 CRLF 로 바뀌곤 한다. 고친 것으로 보면 인사이트에서 빠진다.
+        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, AI_TEXT + "\r\n");
+
+        assertThat(history()).singleElement()
+                .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.APPROVED));
+        assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).singleElement()
+                .satisfies(c -> assertThat(c.getContent()).isEqualTo(AI_TEXT));
+    }
+
+    @Test
+    void 여러_줄_본문의_줄바꿈_방식만_다르면_고친_것으로_보지_않는다() {
+        SummaryResult multiLine = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(1), ORG, 1,
+                "첫 문장.\n둘째 문장.", "[]", "[]", "[]", "{}"));
+
+        service.decide(TEACHER, multiLine.getId(), Gate1Action.APPROVE, "첫 문장.\r\n둘째 문장.");
+
+        assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, multiLine.getId()))
+                .singleElement().satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.APPROVED));
     }
 }
 

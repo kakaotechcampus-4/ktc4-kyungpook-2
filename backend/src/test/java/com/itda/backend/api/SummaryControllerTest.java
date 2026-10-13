@@ -27,7 +27,6 @@ import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
-import com.itda.backend.exception.summary.SummaryNotFoundException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -152,7 +151,7 @@ class SummaryControllerTest {
 
     @Test
     void gate1_returns404WhenSummaryIsNotInInstitution() throws Exception {
-        given(summaryGate1Service.decide(any(), any(), any(), any())).willThrow(new SummaryNotFoundException(50L));
+        given(summaryGate1Service.decide(any(), any(), any(), any())).willThrow(new SummaryException(SummaryErrorCode.NOT_FOUND, 50L));
 
         decide("{\"decision\": \"approve\"}")
                 .andExpect(status().isNotFound())

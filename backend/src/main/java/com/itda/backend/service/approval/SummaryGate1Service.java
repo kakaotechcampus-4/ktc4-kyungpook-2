@@ -16,7 +16,6 @@ import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
-import com.itda.backend.exception.summary.SummaryNotFoundException;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
@@ -83,8 +82,9 @@ public class SummaryGate1Service {
     }
 
     private ApprovalDecision approve(SummaryResult summary, List<JournalEntry> entries, String editedContent) {
-        boolean corrected = editedContent != null && !editedContent.equals(summary.getContent());
-        String finalContent = corrected ? editedContent : summary.getContent();
+        boolean corrected = editedContent != null
+                && !normalize(editedContent).equals(normalize(summary.getContent()));
+        String finalContent = corrected ? normalize(editedContent) : summary.getContent();
         summary.approve();
         childContextRepository.save(ChildContext.of(summary.getChildId(), summary.getId(), finalContent));
         // 요약에 안 들어간 일지도 같은 요약을 가리킨다. 함께 끝내지 않으면 다음 요약에 다시 묶인다.
@@ -112,10 +112,18 @@ public class SummaryGate1Service {
      * <p>워커도 묶음을 집을 때 이 요약 행을 잠그므로, 여기서 잠근 뒤 보는 일지 상태는 커밋된 최신 값이다.
      */
     private void requireNotRegenerating(SummaryResult summary) {
-        if (journalEntryRepository.existsInGroup(JournalEntryStatus.SUMMARIZING, summary.getChildId(),
-                summary.getEntryDate(), String.valueOf(summary.getInstitutionId()))) {
+        if (!journalEntryRepository.findGroupEntryIds(JournalEntryStatus.SUMMARIZING, summary.getChildId(),
+                summary.getEntryDate(), String.valueOf(summary.getInstitutionId())).isEmpty()) {
             throw new SummaryException(SummaryErrorCode.REGENERATING, summary.getId());
         }
+    }
+
+    /**
+     * 입력창을 거치며 생기는 차이(CRLF, 앞뒤 공백·줄바꿈)는 고친 것으로 보지 않는다. 고친 것으로 보면 인사이트가 그 요약을
+     * 통째로 뺀다 (§10.1 #7). 본문 안의 글자는 한 글자라도 다르면 고친 것이다.
+     */
+    private static String normalize(String content) {
+        return content.replace("\r\n", "\n").replace('\r', '\n').strip();
     }
 
     private static List<JournalEntry> pendingOf(List<JournalEntry> entries) {
@@ -127,6 +135,6 @@ public class SummaryGate1Service {
         // 다른 기관 요약이면 "권한 없음"이 아니라 "없음"으로 응답한다
         return summaryResultRepository.findByIdForUpdate(summaryId)
                 .filter(s -> s.getInstitutionId().equals(organizationId))
-                .orElseThrow(() -> new SummaryNotFoundException(summaryId));
+                .orElseThrow(() -> new SummaryException(SummaryErrorCode.NOT_FOUND, summaryId));
     }
 }

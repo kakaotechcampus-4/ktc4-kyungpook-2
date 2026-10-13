@@ -55,14 +55,31 @@ class SummaryGate1QueryServiceTest {
         junho = em.persist(Child.of("김준호", LocalDate.of(2020, 3, 1))).getId();
     }
 
+    /** 요약 워커가 집어 간 일지. 요약이 저장되면 {@link #summary} 가 그 요약을 가리키게 한다. */
     private JournalEntry entry(String content) {
-        return em.persistAndFlush(JournalEntry.of(1L, DATE, content, 1));
+        JournalEntry entry = JournalEntry.of(1L, DATE, content, 1);
+        entry.startMatching();
+        entry.confirmMatch(junho);
+        entry.startValidating();
+        entry.passValidation();
+        entry.startSummarizing();
+        return em.persistAndFlush(entry);
     }
 
+    /** 요약을 저장하고, 보낸 일지(covered·uncovered)가 그 요약을 가리키게 한다 — 레코더와 같다. */
     private SummaryResult summary(Long institutionId, LocalDate date, String claims, List<JournalEntry> covered,
             List<JournalEntry> uncovered) {
-        return em.persistAndFlush(SummaryResult.of(junho, date, institutionId, 1, "요약 본문", claims,
+        SummaryResult summary = em.persistAndFlush(SummaryResult.of(junho, date, institutionId, 1, "요약 본문", claims,
                 ids(covered), ids(uncovered), "{}"));
+        covered.forEach(e -> link(e, summary));
+        uncovered.forEach(e -> link(e, summary));
+        em.flush();
+        return summary;
+    }
+
+    private void link(JournalEntry entry, SummaryResult summary) {
+        entry.completeSummary(summary.getId());
+        em.merge(entry);
     }
 
     private static String ids(List<JournalEntry> entries) {
@@ -198,6 +215,21 @@ class SummaryGate1QueryServiceTest {
                     .extracting(e -> ((SummaryException) e).getErrorCode())
                     .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
         }
+    }
+
+    @Test
+    void AI가_어느_목록에도_넣지_않은_일지도_요약에_안_들어간_일지로_보여준다() {
+        // AI 가 covered·uncovered 어디에도 넣지 않아도 그 일지는 이 요약을 가리키고, 승인하면 함께 끝난다.
+        // 목록에 안 보이면 교사가 보지도 못한 기록이 승인과 함께 사라진다.
+        JournalEntry used = entry("블록 놀이를 했다.");
+        JournalEntry forgotten = entry("낮잠을 잤다.");
+        SummaryResult s = summary(ORG, DATE, "[" + claim(used, 0, 4) + "]", List.of(used), List.of());
+        link(forgotten, s);
+        em.flush();
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.uncoveredEntries()).containsExactly(new UncoveredEntry(forgotten.getId(), "낮잠을 잤다."));
     }
 }
 

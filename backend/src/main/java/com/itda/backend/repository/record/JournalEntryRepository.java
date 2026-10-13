@@ -67,12 +67,8 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     /** 한 요약(판)에 든 삭제되지 않은 일지. 요약에 안 들어간 일지(uncovered)도 같은 요약을 가리킨다. */
     List<JournalEntry> findBySummaryIdAndDeletedAtIsNull(Long summaryId);
 
-    /** 한 묶음(아동·날짜·기관)에 주어진 상태인 일지가 있는지. */
-    @Query("select count(e) > 0 from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
-            + "where e.status = :status and e.childId = :childId and e.entryDate = :entryDate "
-            + "and r.institutionId = :institutionId and e.deletedAt is null")
-    boolean existsInGroup(@Param("status") JournalEntryStatus status, @Param("childId") Long childId,
-            @Param("entryDate") LocalDate entryDate, @Param("institutionId") String institutionId);
+    /** Gate 1 목록용. 여러 요약에 든 삭제되지 않은 일지를 한 번에. */
+    List<JournalEntry> findBySummaryIdInAndDeletedAtIsNullOrderByIdAsc(Collection<Long> summaryIds);
 
     /** 그 기관·날짜에 주어진 상태(매칭·검증 진행 중)의 일지가 남아 있는지. */
     @Query("select count(e) > 0 from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
