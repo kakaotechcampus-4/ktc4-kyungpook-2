@@ -35,6 +35,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.itda.backend.domain.approval.ApprovalDecision;
+import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
@@ -42,7 +43,7 @@ import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryStatus;
-import com.itda.backend.exception.summary.SummaryConflictException;
+import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
@@ -187,8 +188,8 @@ class SummaryGate1ConcurrencyIntegrationTest {
                 approve.get(10, TimeUnit.SECONDS);
                 fail("보류된 요약을 승인했습니다. 잠그지 않고 커밋 전 상태를 읽었을 수 있습니다.");
             } catch (ExecutionException e) {
-                assertThat(e.getCause()).isInstanceOf(SummaryConflictException.class);
-                assertThat(((SummaryConflictException) e.getCause()).getErrorCode())
+                assertThat(e.getCause()).isInstanceOf(SummaryException.class);
+                assertThat(((SummaryException) e.getCause()).getErrorCode())
                         .isEqualTo(SummaryErrorCode.ALREADY_REVIEWED);
             }
         } finally {

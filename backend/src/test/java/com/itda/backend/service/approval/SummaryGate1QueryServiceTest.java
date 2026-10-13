@@ -1,6 +1,7 @@
 package com.itda.backend.service.approval;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
@@ -18,12 +19,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.summary.SummaryResult;
-import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
+import com.itda.backend.exception.summary.SummaryErrorCode;
+import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.service.user.UserService;
 
 /** Gate 1 검토 목록 — 요약 본문, 다른 아이 이름 경고, 요약에 안 들어간 일지, 요약에 들어간 원본의 REVIEW 사유. */
@@ -87,7 +89,7 @@ class SummaryGate1QueryServiceTest {
         held.hold();
         em.flush();
 
-        List<Gate1SummaryResponse> pending = service.getSummaries(TEACHER, SummaryStatus.GATE1_PENDING);
+        List<Gate1SummaryResponse> pending = service.getSummaries(TEACHER, "pending");
 
         assertThat(pending).extracting(Gate1SummaryResponse::id).containsExactly(earlier.getId(), later.getId());
         assertThat(pending.get(0).childName()).isEqualTo("김준호");
@@ -102,7 +104,7 @@ class SummaryGate1QueryServiceTest {
         held.hold();
         em.flush();
 
-        assertThat(service.getSummaries(TEACHER, SummaryStatus.HOLD))
+        assertThat(service.getSummaries(TEACHER, "hold"))
                 .extracting(Gate1SummaryResponse::id).containsExactly(held.getId());
     }
 
@@ -112,7 +114,7 @@ class SummaryGate1QueryServiceTest {
         s.markReview(true, "[\"다른아동이름\"]");
         em.flush();
 
-        Gate1SummaryResponse item = service.getSummaries(TEACHER, SummaryStatus.GATE1_PENDING).get(0);
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         assertThat(item.needsReview()).isTrue();
         assertThat(item.reviewReasons()).containsExactly("다른아동이름");
@@ -125,7 +127,7 @@ class SummaryGate1QueryServiceTest {
         deleted.delete();
         summary(ORG, DATE, "[]", List.of(), List.of(left, deleted));
 
-        Gate1SummaryResponse item = service.getSummaries(TEACHER, SummaryStatus.GATE1_PENDING).get(0);
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         assertThat(item.uncoveredEntries()).containsExactly(new UncoveredEntry(left.getId(), "낮잠을 잤다."));
     }
@@ -136,7 +138,7 @@ class SummaryGate1QueryServiceTest {
         validated(overlapped, ValidationVerdict.REVIEW, "[\"위험행동표현\",\"추측성표현\"]", "[{\"start\":5,\"end\":12}]");
         summary(ORG, DATE, "[" + claim(overlapped, 0, 8) + "]", List.of(overlapped), List.of());
 
-        Gate1SummaryResponse item = service.getSummaries(TEACHER, SummaryStatus.GATE1_PENDING).get(0);
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         assertThat(item.reviewFlags())
                 .containsExactly(new ReviewFlag(overlapped.getId(), List.of("위험행동표현", "추측성표현")));
@@ -149,7 +151,7 @@ class SummaryGate1QueryServiceTest {
         // 끝은 포함하지 않는다 — [0, 11) 과 [11, 24) 는 겹치지 않는다.
         summary(ORG, DATE, "[" + claim(apart, 0, 11) + "]", List.of(apart), List.of());
 
-        assertThat(service.getSummaries(TEACHER, SummaryStatus.GATE1_PENDING).get(0).reviewFlags()).isEmpty();
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags()).isEmpty();
     }
 
     @Test
@@ -158,7 +160,7 @@ class SummaryGate1QueryServiceTest {
         validated(unknown, ValidationVerdict.REVIEW, "[\"대상불명확\"]", "[]");
         summary(ORG, DATE, "[" + claim(unknown, 0, 4) + "]", List.of(unknown), List.of());
 
-        assertThat(service.getSummaries(TEACHER, SummaryStatus.GATE1_PENDING).get(0).reviewFlags())
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags())
                 .containsExactly(new ReviewFlag(unknown.getId(), List.of("대상불명확")));
     }
 
@@ -169,7 +171,7 @@ class SummaryGate1QueryServiceTest {
         validated(recheckedPass, ValidationVerdict.PASS, "[]", "[]");
         summary(ORG, DATE, "[" + claim(recheckedPass, 0, 4) + "]", List.of(recheckedPass), List.of());
 
-        assertThat(service.getSummaries(TEACHER, SummaryStatus.GATE1_PENDING).get(0).reviewFlags()).isEmpty();
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags()).isEmpty();
     }
 
     @Test
@@ -180,10 +182,22 @@ class SummaryGate1QueryServiceTest {
         s.markReview(true, "not json");
         em.flush();
 
-        Gate1SummaryResponse item = service.getSummaries(TEACHER, SummaryStatus.GATE1_PENDING).get(0);
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         // 구간을 못 읽으면 비어 있는 것과 같다 — 숨기기보다 보여주는 쪽이 안전하다.
         assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of()));
         assertThat(item.reviewReasons()).isEmpty();
     }
+
+    @Test
+    void 검토_대기와_보류함_말고는_조회하지_않는다() {
+        // 다른 값을 조용히 대기 목록으로 처리하면 화면이 엉뚱한 목록을 보여준다.
+        for (String unsupported : new String[] {"approved", "rejected", "HOLD", "GATE1_PENDING"}) {
+            assertThatThrownBy(() -> service.getSummaries(TEACHER, unsupported))
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
+                    .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+        }
+    }
 }
+

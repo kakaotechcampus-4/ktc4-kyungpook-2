@@ -3,7 +3,7 @@ package com.itda.backend.dto.request.summary;
 import java.util.Locale;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.itda.backend.service.approval.Gate1Action;
+import com.itda.backend.domain.approval.Gate1Action;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;

@@ -21,12 +21,6 @@ public class SummaryExceptionHandler {
                 .body(new ErrorResponse("FAIL", SummaryErrorCode.INVALID_REQUEST.getCode(), e.getMessage()));
     }
 
-    @ExceptionHandler(SummaryListValidationException.class)
-    public ResponseEntity<ErrorResponse> handleListValidation(SummaryListValidationException e) {
-        return ResponseEntity.status(SummaryErrorCode.INVALID_REQUEST.getStatus())
-                .body(new ErrorResponse("FAIL", SummaryErrorCode.INVALID_REQUEST.getCode(), e.getMessage()));
-    }
-
     @ExceptionHandler(SummaryChildNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(SummaryChildNotFoundException e) {
         return ResponseEntity.status(SummaryErrorCode.CHILD_NOT_FOUND.getStatus())
@@ -39,8 +33,8 @@ public class SummaryExceptionHandler {
                 .body(ErrorResponse.of(SummaryErrorCode.NOT_FOUND));
     }
 
-    @ExceptionHandler(SummaryConflictException.class)
-    public ResponseEntity<ErrorResponse> handleConflict(SummaryConflictException e) {
+    @ExceptionHandler(SummaryException.class)
+    public ResponseEntity<ErrorResponse> handleSummaryException(SummaryException e) {
         return ResponseEntity.status(e.getErrorCode().getStatus()).body(ErrorResponse.of(e.getErrorCode()));
     }
 }

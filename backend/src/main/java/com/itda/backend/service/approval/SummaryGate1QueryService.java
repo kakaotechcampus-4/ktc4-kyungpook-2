@@ -25,6 +25,8 @@ import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
+import com.itda.backend.exception.summary.SummaryErrorCode;
+import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
@@ -57,9 +59,10 @@ public class SummaryGate1QueryService {
     private final ChildRepository childRepository;
     private final ValidationResultRepository validationResultRepository;
 
-    /** 요청 교사 기관의 그 상태(GATE1_PENDING · HOLD) 요약을 오래된 날짜부터. */
+    /** 요청 교사 기관의 검토 대기(pending) 또는 보류함(hold) 요약을 오래된 날짜부터. */
     @Transactional(readOnly = true)
-    public List<Gate1SummaryResponse> getSummaries(String userId, SummaryStatus status) {
+    public List<Gate1SummaryResponse> getSummaries(String userId, String gate1Status) {
+        SummaryStatus status = toSummaryStatus(gate1Status);
         Long organizationId = userService.getOrganizationIdOf(userId);
         List<SummaryResult> summaries =
                 summaryResultRepository.findByInstitutionIdAndStatusOrderByEntryDateAscIdAsc(organizationId, status);
@@ -99,6 +102,16 @@ public class SummaryGate1QueryService {
                         uncoveredEntries(uncovered.get(s.getId()), entries),
                         reviewFlags(s, covered.get(s.getId()), entries, latestValidation)))
                 .toList();
+    }
+
+    private static SummaryStatus toSummaryStatus(String gate1Status) {
+        return switch (gate1Status) {
+            case "pending" -> SummaryStatus.GATE1_PENDING;
+            case "hold" -> SummaryStatus.HOLD;
+            // 다른 값을 조용히 대기 목록으로 처리하면 화면이 엉뚱한 목록을 보여준다.
+            default -> throw new SummaryException(SummaryErrorCode.INVALID_REQUEST,
+                    "unsupported gate1Status: " + gate1Status);
+        };
     }
 
     private static List<UncoveredEntry> uncoveredEntries(List<Long> ids, Map<Long, JournalEntry> entries) {

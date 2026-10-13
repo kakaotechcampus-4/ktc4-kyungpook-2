@@ -13,10 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.itda.backend.dto.request.summary.Gate1DecisionRequest;
 import com.itda.backend.dto.request.summary.RunSummaryRequest;
-import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
-import com.itda.backend.exception.summary.SummaryListValidationException;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
@@ -69,13 +67,7 @@ public class SummaryController {
             @Parameter(schema = @Schema(allowableValues = {"pending", "hold"}))
             @RequestParam(defaultValue = "pending") String gate1Status,
             @AuthenticationPrincipal String userId) {
-        SummaryStatus status = switch (gate1Status) {
-            case "pending" -> SummaryStatus.GATE1_PENDING;
-            case "hold" -> SummaryStatus.HOLD;
-            // 다른 값을 조용히 대기 목록으로 처리하면 화면이 엉뚱한 목록을 보여준다.
-            default -> throw new SummaryListValidationException("unsupported gate1Status: " + gate1Status);
-        };
-        return ApiResponse.success(summaryGate1QueryService.getSummaries(userId, status));
+        return ApiResponse.success(summaryGate1QueryService.getSummaries(userId, gate1Status));
     }
 
     @PostMapping("/run")

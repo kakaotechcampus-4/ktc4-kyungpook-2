@@ -22,17 +22,16 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
-import com.itda.backend.exception.summary.SummaryConflictException;
+import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryNotFoundException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.service.approval.Gate1Action;
+import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.service.approval.SummaryGate1QueryService;
 import com.itda.backend.service.approval.SummaryGate1Service;
 import com.itda.backend.service.summary.SummaryRunService;
@@ -163,8 +162,8 @@ class SummaryControllerTest {
     @Test
     void gate1_returns409WhenAlreadyReviewedOrRegenerating() throws Exception {
         given(summaryGate1Service.decide(any(), any(), any(), any()))
-                .willThrow(new SummaryConflictException(SummaryErrorCode.ALREADY_REVIEWED, 50L))
-                .willThrow(new SummaryConflictException(SummaryErrorCode.REGENERATING, 50L));
+                .willThrow(new SummaryException(SummaryErrorCode.ALREADY_REVIEWED, 50L))
+                .willThrow(new SummaryException(SummaryErrorCode.REGENERATING, 50L));
 
         decide("{\"decision\": \"approve\"}")
                 .andExpect(status().isConflict())
@@ -188,7 +187,7 @@ class SummaryControllerTest {
     @Test
     void reopen_returns409WhenSummaryIsNotHeld() throws Exception {
         given(summaryGate1Service.reopen(any(), any()))
-                .willThrow(new SummaryConflictException(SummaryErrorCode.NOT_HELD, 50L));
+                .willThrow(new SummaryException(SummaryErrorCode.NOT_HELD, 50L));
 
         mockMvc.perform(post("/api/v1/summaries/50/reopen"))
                 .andExpect(status().isConflict())
@@ -197,7 +196,7 @@ class SummaryControllerTest {
 
     @Test
     void list_returnsPendingSummariesByDefault() throws Exception {
-        given(summaryGate1QueryService.getSummaries(any(), eq(SummaryStatus.GATE1_PENDING))).willReturn(List.of(
+        given(summaryGate1QueryService.getSummaries(any(), eq("pending"))).willReturn(List.of(
                 new Gate1SummaryResponse(50L, 8L, "김준호", LocalDate.of(2026, 10, 8), 1, "GATE1_PENDING",
                         "요약 본문", true, List.of("다른아동이름"),
                         List.of(new Gate1SummaryResponse.UncoveredEntry(1042L, "낮잠을 잤다.")),
@@ -213,23 +212,21 @@ class SummaryControllerTest {
     }
 
     @Test
-    void list_mapsGate1StatusToSummaryStatus() throws Exception {
-        mockMvc.perform(get("/api/v1/summaries").param("gate1Status", "pending")).andExpect(status().isOk());
+    void list_passesGate1StatusToService() throws Exception {
         mockMvc.perform(get("/api/v1/summaries").param("gate1Status", "hold")).andExpect(status().isOk());
 
-        verify(summaryGate1QueryService).getSummaries(any(), eq(SummaryStatus.GATE1_PENDING));
-        verify(summaryGate1QueryService).getSummaries(any(), eq(SummaryStatus.HOLD));
+        verify(summaryGate1QueryService).getSummaries(any(), eq("hold"));
     }
 
     @Test
-    void list_rejectsUnsupportedGate1Status() throws Exception {
-        for (String value : new String[] {"approved", "rejected", "HOLD"}) {
-            mockMvc.perform(get("/api/v1/summaries").param("gate1Status", value))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("SUMMARY_INVALID_REQUEST"));
-        }
+    void list_returns400WithoutEchoingInput() throws Exception {
+        given(summaryGate1QueryService.getSummaries(any(), any()))
+                .willThrow(new SummaryException(SummaryErrorCode.INVALID_REQUEST, "unsupported gate1Status: <x>"));
 
-        verify(summaryGate1QueryService, never()).getSummaries(any(), any());
+        mockMvc.perform(get("/api/v1/summaries").param("gate1Status", "<x>"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("SUMMARY_INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value(SummaryErrorCode.INVALID_REQUEST.getMessage()));
     }
 }
 

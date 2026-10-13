@@ -7,13 +7,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
+import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
-import com.itda.backend.exception.summary.SummaryConflictException;
+import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryNotFoundException;
 import com.itda.backend.repository.approval.ApprovalRepository;
@@ -51,7 +52,7 @@ public class SummaryGate1Service {
     public Gate1DecisionResponse decide(String userId, Long summaryId, Gate1Action action, String editedContent) {
         SummaryResult summary = lockOwnedSummary(userId, summaryId);
         if (summary.getStatus() != SummaryStatus.GATE1_PENDING) {
-            throw new SummaryConflictException(SummaryErrorCode.ALREADY_REVIEWED, summaryId);
+            throw new SummaryException(SummaryErrorCode.ALREADY_REVIEWED, summaryId);
         }
         requireNotRegenerating(summary);
 
@@ -70,7 +71,7 @@ public class SummaryGate1Service {
     public Gate1DecisionResponse reopen(String userId, Long summaryId) {
         SummaryResult summary = lockOwnedSummary(userId, summaryId);
         if (summary.getStatus() != SummaryStatus.HOLD) {
-            throw new SummaryConflictException(SummaryErrorCode.NOT_HELD, summaryId);
+            throw new SummaryException(SummaryErrorCode.NOT_HELD, summaryId);
         }
         requireNotRegenerating(summary);
         summary.reopen();
@@ -113,7 +114,7 @@ public class SummaryGate1Service {
     private void requireNotRegenerating(SummaryResult summary) {
         if (journalEntryRepository.existsInGroup(JournalEntryStatus.SUMMARIZING, summary.getChildId(),
                 summary.getEntryDate(), String.valueOf(summary.getInstitutionId()))) {
-            throw new SummaryConflictException(SummaryErrorCode.REGENERATING, summary.getId());
+            throw new SummaryException(SummaryErrorCode.REGENERATING, summary.getId());
         }
     }
 

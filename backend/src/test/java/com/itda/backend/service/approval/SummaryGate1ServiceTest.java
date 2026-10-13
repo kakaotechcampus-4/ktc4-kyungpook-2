@@ -18,6 +18,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
+import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.domain.approval.ApprovalReviewType;
 import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.record.JournalEntry;
@@ -28,7 +29,7 @@ import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
-import com.itda.backend.exception.summary.SummaryConflictException;
+import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryNotFoundException;
 import com.itda.backend.repository.approval.ApprovalRepository;
@@ -230,8 +231,8 @@ class SummaryGate1ServiceTest {
 
         for (Gate1Action action : Gate1Action.values()) {
             assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), action, null))
-                    .isInstanceOf(SummaryConflictException.class)
-                    .extracting(e -> ((SummaryConflictException) e).getErrorCode())
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
                     .isEqualTo(SummaryErrorCode.ALREADY_REVIEWED);
         }
         assertThat(history()).hasSize(1);
@@ -246,8 +247,8 @@ class SummaryGate1ServiceTest {
         em.clear();
 
         assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null))
-                .isInstanceOf(SummaryConflictException.class)
-                .extracting(e -> ((SummaryConflictException) e).getErrorCode())
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.REGENERATING);
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
     }
@@ -274,8 +275,8 @@ class SummaryGate1ServiceTest {
     @Test
     void 보류된_요약이_아니면_보류_해제할_수_없다() {
         assertThatThrownBy(() -> service.reopen(TEACHER, summary.getId()))
-                .isInstanceOf(SummaryConflictException.class)
-                .extracting(e -> ((SummaryConflictException) e).getErrorCode())
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.NOT_HELD);
         assertThat(history()).isEmpty();
     }
@@ -297,8 +298,8 @@ class SummaryGate1ServiceTest {
         newEntrySummarizingInSameGroup();
 
         assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null))
-                .isInstanceOf(SummaryConflictException.class)
-                .extracting(e -> ((SummaryConflictException) e).getErrorCode())
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.REGENERATING);
     }
 
@@ -311,8 +312,8 @@ class SummaryGate1ServiceTest {
         newEntrySummarizingInSameGroup();
 
         assertThatThrownBy(() -> service.reopen(TEACHER, summary.getId()))
-                .isInstanceOf(SummaryConflictException.class)
-                .extracting(e -> ((SummaryConflictException) e).getErrorCode())
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.REGENERATING);
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
     }
