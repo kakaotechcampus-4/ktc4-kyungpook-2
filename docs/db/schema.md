@@ -41,7 +41,7 @@
 | 9 | `journal_entry` | ✅ 확정 | ✅ `JournalEntry` | `deleted_at` |
 | 10 | `matching_result` | ✅ 확정 | ⚠️ `MatchingResult` — 설계와 다름 | 삭제 없음 (이력) |
 | 11 | `validation_result` | ✅ 확정 | ✅ `ValidationResult` | 삭제 없음 (이력) |
-| 12 | `summary_result` | ✅ 확정 | ⚠️ `SummaryResult` — 검토 경고 컬럼 미구현 | 삭제 없음 (이력) |
+| 12 | `summary_result` | ✅ 확정 | ✅ `SummaryResult` | 삭제 없음 (이력) |
 | 13 | `human_review` | ✅ 확정 | ✅ `Approval` | 삭제 없음 (이력) |
 | 14 | `child_context` | ✅ 확정 | ✅ `ChildContext` | 삭제 없음 (이력) |
 | 15 | `insight_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
@@ -68,7 +68,6 @@
 | `raw_record` | status 가 파이프라인 단계 (`UPLOADED` → `PARSED` → `PROCESSING` → `COMPLETED`) | status `PENDING` `REVIEW` `BLOCKED` `FAILED` 중 실제로는 `PENDING`(저장 성공)·`FAILED`(메타데이터 저장 실패 후 별도 기록)만 씀 | 파이프라인 단계는 API `O-21 stage`로 따로 내려줄 계획이나 아직 미구현 (§6.1) |
 | `matching_result` | 이력이라 수정하지 않음. 재처리는 새 행 | 사람이 확인 큐에서 처리하면 **기존 행을 수정**한다 (`status → AUTO`, `matched_child_id` 덮어씀, `reviewer_id` 기록) | §7.1 |
 | `matching_result` | 검토자는 `users.id` BIGINT (`human_review.reviewer_id`와 같게) | `reviewer_id VARCHAR(255)` 에 `users.id`를 문자열로 저장 | §7.1 |
-| `summary_result` | AI 계약의 `needs_review`·`review_reasons`를 컬럼으로 저장 | DTO·엔티티에 해당 필드 없음. AI 응답 원문인 `raw_response`에만 남음 | 아래 §8.2 컬럼 표는 현재 구현을 기준으로 하고, 미구현 계약을 별도 명시 |
 | `human_review` | Gate 1 결정은 승인·수정 후 승인·보류 (§8.2) | `ApprovalDecision`은 `APPROVED`·`REJECTED`·`CORRECTED`, `HOLD` 없음 | 검토 API도 아직 없음. §10.2 #12 |
 | `child`·`journal_entry` | 삭제되지 않고 `ACTIVE`인 아동의 일지만 워커가 처리 (§5.1) | 매칭 명부와 사람의 매칭 확정에서만 확인. 검증·요약 워커는 아동 삭제·상태를 재확인하지 않음 | 동의 철회·아동 삭제 후 후속 처리 차단은 미구현 |
 
@@ -1070,10 +1069,10 @@ AI 자동 확정과 선생님 확정 둘 다 `MATCHED`로 들어오므로 구분
 | 결과 | 묶음의 `journal_entry.status` | `summary_result` |
 | --- | --- | --- |
 | 성공 | `GATE1_PENDING`. 요약에 반영되지 않은 일지(uncovered)도 같다 | 승인 전 판이 있으면 덮어쓰고, 없으면 새 판 |
-| 200 인데 본문이 빔 (근거를 못 찾아 문장이 모두 버려짐) | 호출 실패와 같음 | 남기지 않음 |
+| 근거가 남은 문장이 없음 (AI 503 `detail.reason = no_grounded_claims` 가 재시도 2회 후에도 계속, #148). 200 인데 본문이 비어 와도 같다 | 호출 실패와 같음 — 그 묶음만. 나머지 묶음은 계속 처리 | 남기지 않음 |
 | BE 근거 재검사에 걸림 (§8.2) | 호출 실패와 같음 | 남기지 않음 |
 | 호출 실패 (4xx, 응답 해석 실패) | 처음 요약하던 일지는 `FAILED`, 이미 승인 전 요약에 들어가 있던 일지는 `GATE1_PENDING` 으로 되돌림 | 남기지 않음 |
-| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | 실패로 남기지 않고 요약하기 전 상태로 되돌림 (그 묶음과 나머지 묶음 모두). 이번 차례 멈춤 | 남기지 않음 |
+| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 `llm_unavailable`, 사유를 읽을 수 없는 503 포함) | 실패로 남기지 않고 요약하기 전 상태로 되돌림 (그 묶음과 나머지 묶음 모두). 이번 차례 멈춤 | 남기지 않음 |
 
 요약 실패는 `summary_result`에 행을 남기지 않는다. 요약은 묶음 단위라 일지별 실패 행을 둘 자리가 없고, `status`에
 실패 값도 없다. `FAILED` 일지의 마지막 `validation_result.verdict`가 `PASS`·`REVIEW`면 요약 단계에서 실패한 것이다.
@@ -1179,7 +1178,7 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 > **요약 워커가 읽는다** (#91). 묶음의 일지마다 가장 최근 값을 합쳐 주인공을 빼고 이름으로 바꿔
 > `other_child_names` 로 보낸다. 명부에서 삭제 표시된 아이도 넣는다 — 이름이 새는 것은 같다.
 > AI `SummaryInput.other_child_names`는 구현돼 있다 (#146). AI는 요약 본문에 다른 아동 이름이 남았는지 검사하고
-> `needs_review`·`review_reasons`로 경고한다. BE는 아직 두 경고 필드를 DTO·컬럼으로 받지 않는다 (§8.2).
+> `needs_review`·`review_reasons`로 경고한다. BE는 두 값을 `summary_result`에 저장한다 (§8.2, #149).
 > `ValidationInput` 에는 여전히 이 필드가 없고, 검증 에이전트는 본문만 보고 `다수아동언급` 을 판단한다 (§10.2-11).
 
 쓸 수 있는 자리는 이렇다.
@@ -1343,15 +1342,12 @@ FAILED   AI 호출 자체가 실패 — AI 계약에 없는 BE 전용 값 (#122)
 | `covered_entry_ids` | TEXT | Y | 반영된 일지 JSON 문자열 `[1041, 1042]` |
 | `uncovered_entry_ids` | TEXT | Y | 반영되지 않은 일지 JSON 문자열 |
 | `status` | VARCHAR(30) | N | 처리 상태 |
+| `needs_review` | BOOLEAN | N | 공유 전에 사람이 봐야 하는가. 기본 `false`. 덮어쓸 때 새 응답 값으로 바뀐다 |
+| `review_reasons` | TEXT | Y | 왜 봐야 하는지 JSON 문자열 `["다른아동이름"]`. 응답에 없으면 NULL |
 | `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
 | `model_version` | VARCHAR(100) | Y | 응답을 낸 모델 버전 |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
-
-**현재 구현에 없는 AI 계약 필드** — `SummaryOutput`은 `needs_review`(boolean)와
-`review_reasons`(문자열 배열)를 보내지만, `SummaryAgentResponse`·`SummaryResult`에는 해당 필드가 없다.
-`@JsonIgnoreProperties(ignoreUnknown = true)`로 DTO 변환에서 무시하며, 응답 원문인 `raw_response`에만 보존한다.
-Gate 1에서 경고를 표시하려면 두 필드의 수신·저장·조회 계약을 구현해야 한다 (§0.3).
 
 ```
 UNIQUE (child_id, entry_date, institution_id, revision)
@@ -1374,6 +1370,11 @@ span 이 있고 0 <= start < end <= 원문 코드포인트 길이인가
 
 요약하는 사이 삭제된 일지를 근거로 들면 재료에 없으므로 요약 전체가 실패한다. 로그에는 위치(문장·근거 순번,
 일지 id)와 이유만 남기고 본문·인용 원문은 남기지 않는다.
+
+**다른 아이 이름 표시** (멘토 리뷰 P1, #148) — AI 가 `other_child_names` 를 요약 본문과 대조해 이름이 남았으면
+`needs_review = true`, `review_reasons = ["다른아동이름"]` 을 준다. BE 는 그대로 저장하고 막지 않는다 — 교사가 Gate 1 에서
+보고 고칠지 정한다 (경고 표시는 Gate 1 조회 API 몫). 목록은 매칭이 명부에서 이름 전체로 찾은 아이만 담으므로 `false` 가
+"이름이 안 남았다"는 뜻은 아니다.
 
 **`journal_entry` 가 요약을 가리킨다 — 방향이 뒤집혔다**
 
@@ -1861,7 +1862,7 @@ UNIQUE (insight_result_id, receiver_type, receiver_id, status)
 | 7 | ~~Summary Agent 계약~~ | **확정됨** — `SummaryOutput` 기준으로 §8.2 반영 완료 | ~~AI~~ |
 | 8 | 개인정보 파기 절차 | 정보주체가 파기를 요구할 때 실제 삭제·익명화를 어떻게 하는지. soft delete로는 해결되지 않는다 | 기획 + BE |
 | 9 | DB FK 제약 재검토 | JPA 연관관계를 쓰지 않는 것과 **DB에 FK 제약을 거는 것은 별개 결정**이다. `Long` 컬럼을 유지한 채 DB 제약만 추가하면 실수로 참조를 깨뜨리는 것을 막을 수 있다 | BE 전체 |
-| 11 | `mentioned_child_ids` 소비자 | 요약 워커가 읽는다 (#91) — 묶음의 값을 합쳐 주인공을 뺀 이름을 `other_child_names`로 보낸다. AI `SummaryInput`에 반영됐고 (#146), 프롬프트에 넣지 않고 요약 본문에 이름이 남았는지 검사한다.<br>→ 남은 것: BE의 `needs_review`·`review_reasons` 수신·저장·조회 및 Gate 1 승인 시 최종 본문 경고(차단 아님). 명부 밖 이름·성 뗀 이름은 못 잡는 한계가 있다 | AI + BE |
+| 11 | `mentioned_child_ids` 소비자 | 요약 워커가 읽는다 (#91) — 묶음의 값을 합쳐 주인공을 뺀 이름을 `other_child_names`로 보낸다. AI `SummaryInput`에 반영됐고 (#146), 프롬프트에 넣지 않고 요약 본문에 이름이 남았는지 검사한다.<br>BE는 `needs_review`·`review_reasons`를 저장한다 (#149).<br>→ 남은 것: Gate 1 조회 API에서 내려주기 및 승인 시 최종 본문 경고(차단 아님). 명부 밖 이름·성 뗀 이름은 못 잡는 한계가 있다 | AI + BE |
 | 12 | Gate 1 `decision` 에서 `REJECTED` 빼기 | 요약에 "반려" 상태를 두지 않기로 했다(§8.2). `human_review.decision` 은 이미 구현돼 있어 `APPROVED` · `CORRECTED` · `HOLD` 로 맞추는 BE 작업이 남는다 | BE + AI |
 | 10 | 설계와 코드 불일치 정리 | §0.3의 `raw_record`·`matching_result` 4건 및 요약 검토 경고·Gate 1 결정 enum·후속 워커의 아동 상태 재확인. `invitation`·`child_guardian`은 #159에서 설계를 코드에 맞췄으므로 목록에서 제거 | BE + AI |
 | 13 | 인사이트 0건일 때 재호출을 무엇으로 막는지 | 인사이트가 비어 있는 것은 정상이고(§9.3) 그때는 `insight_result` 에 행이 남지 않는다. 그러면 "이 아동·기간을 이미 처리했다"를 기록하는 자리가 없어 **패턴이 없는 아이는 틱마다 LLM 을 다시 부른다.** 요약은 `journal_entry.status` 가 그 역할을 하는데(§6.2) 인사이트에는 대응물이 없다.<br>→ 워커를 만들 때 정한다(§9.3 의 클레임 방식, 아동별 마지막 처리 기간 컬럼, 빈 결과용 상태 행 중 하나) | BE (이정민) |
@@ -1997,6 +1998,7 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-07 | `journal_entry.status`에 `REUPLOAD_REQUESTED`·`VALIDATION_HELD` 추가 (수정 요청 큐 처리 결과), `validation_result.verdict`에 `FAILED` 추가 (검증 호출 실패를 행으로 남김). 둘 다 enum 값 추가라 CHECK 제약이 없는 현재 배포 DB에 수동 조치 불필요 | #122 |
 | 2026-10-09 | `summary_result` 구현 (`SummaryResult`), `journal_entry.summary_id` 추가. 저장 전 BE 근거 재검사 (§8.2, A4). 요약 워커의 묶음 조건·상태 변경 규칙 추가 (§6.2). `mentioned_child_ids` 를 요약 요청의 `other_child_names` 로 사용 (§7.1, §10.2-11). 테이블·컬럼 추가라 `ddl-auto: update` 가 만든다 | #91 |
 | 2026-10-09 | `child_context` 구현 (`ChildContext`). 화면에 필요한 날짜·기관·판수는 컬럼을 늘리지 않고 `summary_result_id` 로 조인해 채우기로 결정, §9.2 를 확정으로 올림 | #142 |
+| 2026-10-10 | `summary_result.needs_review`·`review_reasons` 구현 (§8.2). 근거가 남지 않은 요약(503 `no_grounded_claims`)은 그 묶음만 실패로 남김 (§6.2). `needs_review` 는 `DEFAULT FALSE` 라 `ddl-auto: update` 가 기존 행이 있어도 컬럼을 더한다. 10/12 대조에서 남긴 미구현 표시(§0, §0.3, §7.1, §8.2, §10.2-11)는 이 구현에 맞춰 정리 | #149 |
 | 2026-10-10 | `child_organization`에 `external_id`(기관 관리번호) 추가, `(organization_id, external_id)` UNIQUE와 연결 해제 시 번호를 비우는 규칙(§3.3, §5.2). UNIQUE 추가라 §11.4 수동 조치 필요 | #128 |
 | 2026-10-12 | `invitation`·`child_guardian` 구현 (`Invitation`·`ChildGuardian`). 초대코드 10분·일회용·여러 개 허용 확정(§10.1 #6, §10.2 #2 종료). `invitation.contact` 제거, 상태 `EXPIRED`→`CANCELLED`·`expires_at` 추가, `code` VARCHAR(8). `child_guardian`에 `invitation_id`·`linked_at` 추가, 해제 규칙(§5.4)과 잠금 순서(§3.3) 추가. 새 테이블이라 `ddl-auto: update`가 만들고 §11.4 수동 조치 불필요 | #159 |
 | 2026-10-12 | BE·문서 대조: 요약 경고 컬럼 미구현·Gate 1 enum·후속 워커 상태 확인 차이를 §0.3에 명시. `child_context` UNIQUE·검증 REVIEW/실패 저장·동기 파일 분리·날짜 대체 순서·AI 이름 경고 계약·구현 현황·배포 절차의 오래된 설명 정정. 엔티티 변경 없음 | 미생성 (로컬 문서 정정) |

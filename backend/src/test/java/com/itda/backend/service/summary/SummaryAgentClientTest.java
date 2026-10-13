@@ -2,6 +2,7 @@ package com.itda.backend.service.summary;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.ExpectedCount.times;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -17,6 +18,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.client.response.DefaultResponseCreator;
 import org.springframework.web.client.RestClient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +26,7 @@ import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.dto.response.SummaryAgentResponse;
 import com.itda.backend.exception.AiAgentException;
 import com.itda.backend.exception.AiAgentUnavailableException;
+import com.itda.backend.exception.SummaryNoGroundedClaimsException;
 import com.itda.backend.service.agent.AiAgentClient;
 import com.itda.backend.service.agent.AiAgentProperties;
 
@@ -37,8 +40,17 @@ class SummaryAgentClientTest {
              "claims": [{"text": "블록 놀이에서 친구에게 양보했다.",
                          "evidence": [{"journal_entry_id": 1041, "quote": "친구에게 양보함",
                                        "span": {"start": 7, "end": 15}}]}],
-             "covered_entry_ids": [1041], "uncovered_entry_ids": [1042], "llm_called": true,
+             "covered_entry_ids": [1041], "uncovered_entry_ids": [1042],
+             "needs_review": true, "review_reasons": ["다른아동이름"], "llm_called": true,
              "added_later": "모르는 필드"}
+            """;
+
+    private static final String NO_GROUNDED_CLAIMS = """
+            {"detail": {"reason": "no_grounded_claims", "message": "근거가 남은 문장이 없음"}}
+            """;
+
+    private static final String LLM_UNAVAILABLE = """
+            {"detail": {"reason": "llm_unavailable", "message": "Luna 호출 실패"}}
             """;
 
     private MockRestServiceServer server;
@@ -46,12 +58,21 @@ class SummaryAgentClientTest {
 
     @BeforeEach
     void setUp() {
+        // 재시도·상태 확인은 AiAgentClientTest 가 본다. 여기서는 요약 계약(요청·응답 모양)만 본다.
+        client = clientWithRetries(List.of());
+    }
+
+    private SummaryAgentClient clientWithRetries(List<Duration> retryBackoffs) {
         RestClient.Builder builder = RestClient.builder().baseUrl(AI);
         server = MockRestServiceServer.bindTo(builder).build();
-        // 재시도·상태 확인은 AiAgentClientTest 가 본다. 여기서는 요약 계약(요청·응답 모양)만 본다.
         AiAgentProperties properties = new AiAgentProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(120),
-                List.of());
-        client = new SummaryAgentClient(new AiAgentClient(builder.build(), new ObjectMapper(), properties));
+                retryBackoffs);
+        return new SummaryAgentClient(new AiAgentClient(builder.build(), new ObjectMapper(), properties),
+                new ObjectMapper());
+    }
+
+    private static DefaultResponseCreator unavailable(String body) {
+        return withStatus(HttpStatus.SERVICE_UNAVAILABLE).contentType(MediaType.APPLICATION_JSON).body(body);
     }
 
     private SummaryAgentRequest request() {
@@ -91,14 +112,59 @@ class SummaryAgentClientTest {
         assertThat(response.claims().get(0).get("evidence").get(0).get("quote").asText()).isEqualTo("친구에게 양보함");
         assertThat(response.coveredEntryIds().toString()).isEqualTo("[1041]");
         assertThat(response.uncoveredEntryIds().toString()).isEqualTo("[1042]");
+        assertThat(response.needsReview()).isTrue();
+        assertThat(response.reviewReasons().toString()).isEqualTo("[\"다른아동이름\"]");
         assertThat(reply.rawJson()).isEqualTo(RESPONSE);
     }
 
     @Test
     void LLM을_못_써서_503이면_AI를_쓸_수_없는_것으로_본다() {
-        server.expect(requestTo(AI + "/summary")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body("{\"detail\": {\"reason\": \"llm_unavailable\"}}"));
+        server.expect(requestTo(AI + "/summary")).andRespond(unavailable(LLM_UNAVAILABLE));
+
+        assertThatThrownBy(() -> client.summarize(request())).isInstanceOf(AiAgentUnavailableException.class);
+    }
+
+    @Test
+    void 근거가_남은_문장이_없어_503이면_AI_장애가_아니라_그_묶음의_실패로_본다() {
+        server.expect(requestTo(AI + "/summary")).andRespond(unavailable(NO_GROUNDED_CLAIMS));
+
+        assertThatThrownBy(() -> client.summarize(request()))
+                .isInstanceOf(SummaryNoGroundedClaimsException.class)
+                .isNotInstanceOf(AiAgentUnavailableException.class);
+    }
+
+    @Test
+    void 사유를_읽을_수_없는_503은_AI를_쓸_수_없는_것으로_본다() {
+        server.expect(requestTo(AI + "/summary")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        assertThatThrownBy(() -> client.summarize(request())).isInstanceOf(AiAgentUnavailableException.class);
+    }
+
+    @Test
+    void 재시도까지_계속_근거가_남지_않으면_그_묶음의_실패로_본다() {
+        client = clientWithRetries(List.of(Duration.ZERO, Duration.ZERO));
+        server.expect(times(3), requestTo(AI + "/summary")).andRespond(unavailable(NO_GROUNDED_CLAIMS));
+
+        assertThatThrownBy(() -> client.summarize(request())).isInstanceOf(SummaryNoGroundedClaimsException.class);
+        server.verify();
+    }
+
+    @Test
+    void 재시도에서_근거가_남으면_그_응답을_쓴다() {
+        client = clientWithRetries(List.of(Duration.ZERO, Duration.ZERO));
+        server.expect(requestTo(AI + "/summary")).andRespond(unavailable(NO_GROUNDED_CLAIMS));
+        server.expect(requestTo(AI + "/summary")).andRespond(withSuccess(RESPONSE, MediaType.APPLICATION_JSON));
+
+        SummaryAgentReply reply = client.summarize(request());
+
+        assertThat(reply.response().content()).isEqualTo("블록 놀이에서 친구에게 양보했다.");
+    }
+
+    @Test
+    void 마지막_재시도가_LLM_장애면_AI를_쓸_수_없는_것으로_본다() {
+        client = clientWithRetries(List.of(Duration.ZERO, Duration.ZERO));
+        server.expect(times(2), requestTo(AI + "/summary")).andRespond(unavailable(NO_GROUNDED_CLAIMS));
+        server.expect(requestTo(AI + "/summary")).andRespond(unavailable(LLM_UNAVAILABLE));
 
         assertThatThrownBy(() -> client.summarize(request())).isInstanceOf(AiAgentUnavailableException.class);
     }

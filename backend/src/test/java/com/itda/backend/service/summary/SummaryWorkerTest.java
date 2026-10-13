@@ -30,6 +30,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.exception.AiAgentException;
 import com.itda.backend.exception.AiAgentUnavailableException;
+import com.itda.backend.exception.SummaryNoGroundedClaimsException;
 import com.itda.backend.exception.SummaryTargetException;
 import com.itda.backend.service.agent.WorkerProperties;
 
@@ -105,6 +106,25 @@ class SummaryWorkerTest {
         verify(recorder, never()).record(eq(first), any(), any());
         verify(recorder).record(second, requestFor(second), reply2);
         verify(recorder, never()).recordFailure(second);
+    }
+
+    @Test
+    void 근거가_남지_않은_묶음은_그_묶음만_실패로_남기고_나머지를_되돌리지_않는다() {
+        ClaimedSummaryGroup first = group(8L, 1L);
+        ClaimedSummaryGroup second = group(9L, 2L);
+        SummaryAgentReply reply2 = new SummaryAgentReply(null, "{}");
+        given(summaryService.claimReadyGroups(10)).willReturn(List.of(first, second));
+        given(summaryService.prepareRequest(first)).willReturn(requestFor(first));
+        given(summaryService.prepareRequest(second)).willReturn(requestFor(second));
+        given(client.summarize(requestFor(first)))
+                .willThrow(new SummaryNoGroundedClaimsException("no grounded claims", null));
+        given(client.summarize(requestFor(second))).willReturn(reply2);
+
+        worker.run();
+
+        verify(recorder).recordFailure(first);
+        verify(recorder).record(second, requestFor(second), reply2);
+        verify(summaryService, never()).release(any());
     }
 
     @Test

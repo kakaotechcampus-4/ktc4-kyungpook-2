@@ -38,7 +38,7 @@ public class SummaryResultRecorder {
      *
      * <p>그 묶음에 승인 전 요약이 있으면 같은 판을 덮어쓰고, 승인된 판만 있으면 다음 판으로 쌓는다 (DB 스키마 §8.2).
      *
-     * <p>200 이어도 본문이 비어 올 수 있다(근거를 못 찾은 문장을 AI 가 모두 버린 경우). 교사가 검토할 글이 없으므로
+     * <p>근거가 남은 문장이 없으면 AI 는 200 대신 503 을 준다(#148). 그래도 본문이 비어 오면 교사가 검토할 글이 없으므로
      * 저장하지 않고 호출 실패와 같이 처리한다. 근거 재검사({@link SummaryEvidenceChecker})에 걸려도 같다.
      *
      * @param request AI 에 실제로 보낸 요청. 근거는 DB 를 다시 읽은 원문이 아니라 보낸 원문과 대조한다
@@ -95,6 +95,12 @@ public class SummaryResultRecorder {
                     group.institutionId(), revision, response.content(), claims, covered, uncovered,
                     reply.rawJson()));
         }
+        // 필드가 없는 응답(#148 이전 AI)은 표시 없음으로 본다. 사유가 있는데 표시가 빠졌으면 경고 쪽으로 본다 —
+        // 이름이 샜는데 경고가 안 뜨는 쪽이 더 나쁘다.
+        JsonNode reasons = response.reviewReasons();
+        boolean needsReview = Boolean.TRUE.equals(response.needsReview())
+                || (reasons != null && reasons.isArray() && !reasons.isEmpty());
+        summary.markReview(needsReview, toJson(reasons));
         entries.forEach(entry -> entry.completeSummary(summary.getId()));
     }
 

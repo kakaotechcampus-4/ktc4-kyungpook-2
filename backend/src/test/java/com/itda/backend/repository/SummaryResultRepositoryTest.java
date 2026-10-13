@@ -45,6 +45,8 @@ class SummaryResultRepositoryTest {
         assertThat(found.getCoveredEntryIds()).isEqualTo("[1041]");
         assertThat(found.getUncoveredEntryIds()).isEqualTo("[1042]");
         assertThat(found.getRawResponse()).isEqualTo("{\"content\":\"요약 본문\"}");
+        assertThat(found.isNeedsReview()).isFalse();
+        assertThat(found.getReviewReasons()).isNull();
         assertThat(found.getCreatedAt()).isNotNull();
         assertThat(found.getUpdatedAt()).isNotNull();
     }
