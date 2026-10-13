@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.itda.backend.dto.ValidationQueueItemResponse;
 import com.itda.backend.dto.ValidationResolveRequest;
-import com.itda.backend.exception.ValidationResultValidationException;
+import com.itda.backend.exception.validation.ValidationResultValidationException;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;

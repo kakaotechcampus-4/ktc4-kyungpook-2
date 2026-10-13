@@ -21,8 +21,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.api.ChildController;
 import com.itda.backend.api.GuardianController;
-import com.itda.backend.exception.InvitationErrorCode;
-import com.itda.backend.exception.InvitationException;
+import com.itda.backend.exception.invitation.InvitationErrorCode;
+import com.itda.backend.exception.invitation.InvitationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.ChildGuardianService;

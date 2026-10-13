@@ -24,8 +24,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
-import com.itda.backend.exception.RawRecordNotFoundException;
-import com.itda.backend.exception.RawRecordValidationException;
+import com.itda.backend.exception.record.RawRecordNotFoundException;
+import com.itda.backend.exception.record.RawRecordValidationException;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.RawRecordService;
 

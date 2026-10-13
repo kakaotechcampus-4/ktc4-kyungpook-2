@@ -28,10 +28,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import com.itda.backend.dto.request.SummaryAgentRequest;
-import com.itda.backend.exception.AiAgentException;
-import com.itda.backend.exception.AiAgentUnavailableException;
-import com.itda.backend.exception.SummaryNoGroundedClaimsException;
-import com.itda.backend.exception.SummaryTargetException;
+import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentUnavailableException;
+import com.itda.backend.exception.summary.SummaryNoGroundedClaimsException;
+import com.itda.backend.exception.summary.SummaryTargetException;
 import com.itda.backend.service.agent.WorkerProperties;
 
 @ExtendWith(MockitoExtension.class)

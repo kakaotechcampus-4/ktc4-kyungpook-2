@@ -23,8 +23,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.request.ValidationAgentRequest;
 import com.itda.backend.dto.response.ValidationAgentResponse;
-import com.itda.backend.exception.AiAgentException;
-import com.itda.backend.exception.AiAgentUnavailableException;
+import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.service.agent.AiAgentClient;
 import com.itda.backend.service.agent.AiAgentProperties;
 

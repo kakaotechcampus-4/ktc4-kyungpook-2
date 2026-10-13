@@ -13,8 +13,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.UrlPathHelper;
 
-import com.itda.backend.exception.UserErrorCode;
-import com.itda.backend.exception.UserException;
+import com.itda.backend.exception.user.UserErrorCode;
+import com.itda.backend.exception.user.UserException;
 import com.itda.backend.global.exception.CommonErrorCode;
 import com.itda.backend.service.UserService;
 import lombok.extern.slf4j.Slf4j;

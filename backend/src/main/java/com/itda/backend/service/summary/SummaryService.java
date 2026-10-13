@@ -25,7 +25,7 @@ import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.dto.request.SummaryAgentRequest;
-import com.itda.backend.exception.SummaryTargetException;
+import com.itda.backend.exception.summary.SummaryTargetException;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;

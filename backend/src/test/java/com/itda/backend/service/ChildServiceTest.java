@@ -29,10 +29,10 @@ import com.itda.backend.dto.ChildRosterResponse;
 import com.itda.backend.dto.request.RegisterChildRequest;
 import com.itda.backend.dto.response.IssuedInvitationResponse;
 import com.itda.backend.dto.response.RegisteredChildResponse;
-import com.itda.backend.exception.ChildErrorCode;
-import com.itda.backend.exception.ChildException;
-import com.itda.backend.exception.UserErrorCode;
-import com.itda.backend.exception.UserException;
+import com.itda.backend.exception.child.ChildErrorCode;
+import com.itda.backend.exception.child.ChildException;
+import com.itda.backend.exception.user.UserErrorCode;
+import com.itda.backend.exception.user.UserException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 

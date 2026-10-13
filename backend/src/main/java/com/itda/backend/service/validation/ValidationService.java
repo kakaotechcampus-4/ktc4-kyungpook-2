@@ -11,7 +11,7 @@ import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.dto.request.ValidationAgentRequest;
-import com.itda.backend.exception.ValidationTargetException;
+import com.itda.backend.exception.validation.ValidationTargetException;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;

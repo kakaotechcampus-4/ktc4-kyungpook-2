@@ -23,8 +23,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.dto.RecordResponse;
 import com.itda.backend.dto.ValidationQueueItemResponse;
-import com.itda.backend.exception.ValidationResultNotFoundException;
-import com.itda.backend.exception.ValidationResultValidationException;
+import com.itda.backend.exception.validation.ValidationResultNotFoundException;
+import com.itda.backend.exception.validation.ValidationResultValidationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.ValidationQueueService;

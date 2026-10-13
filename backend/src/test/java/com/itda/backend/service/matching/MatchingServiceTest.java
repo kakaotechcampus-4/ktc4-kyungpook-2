@@ -23,7 +23,7 @@ import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.dto.request.MatchingAgentRequest;
-import com.itda.backend.exception.MatchingTargetException;
+import com.itda.backend.exception.matching.MatchingTargetException;
 
 @DataJpaTest
 @ActiveProfiles("test")

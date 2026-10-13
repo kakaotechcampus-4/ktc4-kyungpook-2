@@ -48,7 +48,7 @@ import com.itda.backend.domain.invitation.Invitation;
 import com.itda.backend.domain.invitation.InvitationStatus;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.user.User;
-import com.itda.backend.exception.InvitationException;
+import com.itda.backend.exception.invitation.InvitationException;
 import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;

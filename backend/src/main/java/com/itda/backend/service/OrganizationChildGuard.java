@@ -2,8 +2,8 @@ package com.itda.backend.service;
 
 import org.springframework.stereotype.Component;
 
-import com.itda.backend.exception.ChildErrorCode;
-import com.itda.backend.exception.ChildException;
+import com.itda.backend.exception.child.ChildErrorCode;
+import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 
