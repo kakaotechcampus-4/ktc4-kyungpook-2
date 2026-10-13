@@ -793,6 +793,7 @@ O-15 ~ O-19 공통 오류:
 | --- | --- | --- |
 | 없는 요약이거나 다른 기관 요약 | 404 | `SUMMARY_NOT_FOUND` |
 | 보류된 요약이 아님 | 409 | `SUMMARY_NOT_HELD` |
+| 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
 
 ### 4.5 Insight · Gate 2
 
@@ -1181,7 +1182,7 @@ O-15 ~ O-19 공통 오류:
 | `SUMMARY_CHILD_NOT_FOUND` | 404 | 없거나 다른 기관의 아이로 지금 요약 요청 (O-32) |
 | `SUMMARY_NOT_FOUND` | 404 | 없거나 다른 기관의 요약 (O-31 · O-33) |
 | `SUMMARY_ALREADY_REVIEWED` | 409 | 이미 처리된 요약 재결정 (O-31) |
-| `SUMMARY_REGENERATING` | 409 | 새 기록을 반영해 요약을 다시 만드는 중 (O-31) |
+| `SUMMARY_REGENERATING` | 409 | 새 기록을 반영해 요약을 다시 만드는 중 (O-31 · O-33) |
 | `SUMMARY_NOT_HELD` | 409 | 보류되지 않은 요약 보류 해제 (O-33) |
 | `INSIGHT_ALREADY_SENT` | 409 | 이미 발송된 Insight 재발송 |
 | `NOT_PRIMARY_SOURCE` | 403 | 근거 제공 기관이 아닌 곳의 Gate 2 승인 시도 |

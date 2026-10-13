@@ -165,7 +165,8 @@ public class SummaryController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
-                    description = "보류된 요약이 아님 (SUMMARY_NOT_HELD)",
+                    description = "보류된 요약이 아님 (SUMMARY_NOT_HELD), "
+                            + "새 일지를 반영해 다시 요약하는 중 (SUMMARY_REGENERATING)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
