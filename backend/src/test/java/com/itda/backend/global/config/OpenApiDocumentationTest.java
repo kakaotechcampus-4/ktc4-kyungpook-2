@@ -165,6 +165,36 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.ChildGuardianResponse.properties.linkedByThisOrganization").exists());
 	}
 
+	/** 동의 미리보기·저장 API(G-02·G-41). 요청 스키마에 조건부 검증 메서드가 필드처럼 새면 안 된다. */
+	@Test
+	void consentApisAreDocumented() throws Exception {
+		String preview = "$.paths['/api/v1/children/{childId}/consent-preview']";
+		String scopes = "$.paths['/api/v1/children/{childId}/consent-scopes/{institutionId}']";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(preview + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(preview + ".get.responses.200").exists())
+				.andExpect(jsonPath(preview + ".get.responses.401").exists())
+				.andExpect(jsonPath(preview + ".get.responses.403.description").value(containsString("PARENT_REQUIRED")))
+				.andExpect(jsonPath(preview + ".get.responses.404.description").value(containsString("CONSENT_TARGET_NOT_FOUND")))
+				.andExpect(jsonPath(scopes + ".put.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(scopes + ".put.requestBody").exists())
+				.andExpect(jsonPath(scopes + ".put.responses.200").exists())
+				.andExpect(jsonPath(scopes + ".put.responses.400.description").value(containsString("INVALID_REQUEST")))
+				.andExpect(jsonPath(scopes + ".put.responses.401").exists())
+				.andExpect(jsonPath(scopes + ".put.responses.403.description").value(containsString("FORBIDDEN")))
+				.andExpect(jsonPath(scopes + ".put.responses.404.description").value(containsString("CONSENT_TARGET_NOT_FOUND")))
+				.andExpect(jsonPath("$.components.schemas.UpdateConsentRequest.properties.length()").value(2))
+				.andExpect(jsonPath("$.components.schemas.UpdateConsentRequest.properties.action").exists())
+				.andExpect(jsonPath("$.components.schemas.UpdateConsentRequest.properties.allowedFields").exists())
+				.andExpect(jsonPath("$.components.schemas.UpdateConsentRequest.properties.allowedFieldsValidForAction").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.allowedFields").exists())
+				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.documentUrl").exists())
+				.andExpect(jsonPath("$.components.schemas.ConsentResponse.properties.length()").value(3))
+				.andExpect(jsonPath("$.components.schemas.InstitutionResponse.properties.verified").exists());
+	}
+
 	@Test
 	void swaggerUiIsAvailable() throws Exception {
 		mockMvc.perform(get("/swagger-ui/index.html"))
