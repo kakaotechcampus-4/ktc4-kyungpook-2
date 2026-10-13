@@ -24,6 +24,7 @@ import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.summary.SummaryTargetException;
 import com.itda.backend.repository.child.ChildRepository;
@@ -32,6 +33,7 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.InProgressKey;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.SummaryCandidate;
+import com.itda.backend.repository.summary.SummaryResultRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +55,7 @@ public class SummaryService {
     private final MatchingResultRepository matchingResultRepository;
     private final ChildRepository childRepository;
     private final OrganizationRepository organizationRepository;
+    private final SummaryResultRepository summaryResultRepository;
     private final SummaryRunRequests runRequests;
     private final SummaryProperties properties;
     private final Clock clock;
@@ -63,8 +66,9 @@ public class SummaryService {
      * <p>준비 조건은 셋이다. 마감(entry_date 다음 날 03:00)이 지났고, 묶음의 마지막 일지가 들어온 뒤 디바운스(30분)가
      * 지났고, 같은 기관·같은 날짜에 매칭·검증 중인 일지가 없어야 한다. "지금 요약" 을 누른 묶음은 앞의 둘을 건너뛴다.
      *
-     * <p>새로 검증을 통과한 일지(VALIDATED)가 있는 묶음만 집는다. 승인 전 요약에 이미 들어간 일지(GATE1_PENDING)는
-     * 그 새 일지와 함께 다시 요약하도록 같이 담는다.
+     * <p>새로 검증을 통과한 일지(VALIDATED)가 있는 묶음만 집는다. 그 묶음의 최신 판이 아직 Gate 1 대기면, 그 판에 든
+     * 일지(GATE1_PENDING)도 새 일지와 함께 다시 요약하도록 같이 담는다. 보류된 일지(GATE1_HELD)와 보류 해제된 옛 판의
+     * 일지는 담지 않는다 — 다른 판의 일지가 섞이면 한 일지가 두 요약에 올라간다.
      */
     @Transactional
     public List<ClaimedSummaryGroup> claimReadyGroups(int limit) {
@@ -84,8 +88,7 @@ public class SummaryService {
             if (!isReady(group, members, busy)) {
                 continue;
             }
-            List<Long> pending = journalEntryRepository.findGroupEntryIds(JournalEntryStatus.GATE1_PENDING,
-                    group.childId(), group.entryDate(), members.get(0).institutionId());
+            List<Long> pending = findLatestPendingEntryIds(group);
             List<Long> ids = Stream.concat(pending.stream(), members.stream().map(SummaryCandidate::journalEntryId))
                     .sorted()
                     .toList();
@@ -93,6 +96,16 @@ public class SummaryService {
             claimed.add(new ClaimedSummaryGroup(group, ids));
         }
         return claimed;
+    }
+
+    /** 그 묶음의 최신 판이 Gate 1 대기면 그 판에 든 Gate 1 대기 일지 id. 레코더도 최신 판만 덮어쓴다. */
+    private List<Long> findLatestPendingEntryIds(SummaryGroup group) {
+        return summaryResultRepository.findFirstByChildIdAndEntryDateAndInstitutionIdOrderByRevisionDesc(
+                        group.childId(), group.entryDate(), group.institutionId())
+                .filter(latest -> latest.getStatus() == SummaryStatus.GATE1_PENDING)
+                .map(latest -> journalEntryRepository.findIdsBySummaryIdAndStatus(
+                        latest.getId(), JournalEntryStatus.GATE1_PENDING))
+                .orElse(List.of());
     }
 
     private Map<SummaryGroup, List<SummaryCandidate>> groupCandidates(List<SummaryCandidate> candidates) {

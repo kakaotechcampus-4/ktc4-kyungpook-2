@@ -57,6 +57,13 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<Long> findGroupEntryIds(@Param("status") JournalEntryStatus status, @Param("childId") Long childId,
             @Param("entryDate") LocalDate entryDate, @Param("institutionId") String institutionId);
 
+    /** 한 요약(판)에 든 일지 중 주어진 상태인 것의 id. */
+    @Query("select e.id from JournalEntry e "
+            + "where e.summaryId = :summaryId and e.status = :status and e.deletedAt is null "
+            + "order by e.id")
+    List<Long> findIdsBySummaryIdAndStatus(@Param("summaryId") Long summaryId,
+            @Param("status") JournalEntryStatus status);
+
     /** 그 기관·날짜에 주어진 상태(매칭·검증 진행 중)의 일지가 남아 있는지. */
     @Query("select count(e) > 0 from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and r.institutionId = :institutionId and e.entryDate = :entryDate "
