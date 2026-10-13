@@ -1,5 +1,6 @@
 package com.itda.backend.repository.validation;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,4 +14,7 @@ public interface ValidationResultRepository extends JpaRepository<ValidationResu
     // 정렬만으로는 중복이 걸러지지 않는다 — 일지당 한 건으로 줄이는 것, 소속 기관 필터,
     // "지금도 막힌 상태인지" 확인은 모두 ValidationQueueService 가 한다.
     List<ValidationResult> findByVerdictOrderByIdDesc(ValidationVerdict verdict);
+
+    // Gate 1 목록. 일지당 최신 것을 고르도록 최신순이다 — 고르는 것은 SummaryGate1QueryService 가 한다.
+    List<ValidationResult> findByJournalEntryIdInOrderByIdDesc(Collection<Long> journalEntryIds);
 }

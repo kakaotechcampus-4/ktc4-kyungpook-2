@@ -1,22 +1,31 @@
 package com.itda.backend.api;
 
+import java.util.List;
+
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.itda.backend.dto.request.summary.Gate1DecisionRequest;
 import com.itda.backend.dto.request.summary.RunSummaryRequest;
+import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
+import com.itda.backend.exception.summary.SummaryListValidationException;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
+import com.itda.backend.service.approval.SummaryGate1QueryService;
 import com.itda.backend.service.approval.SummaryGate1Service;
 import com.itda.backend.service.summary.SummaryRunService;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -33,6 +42,41 @@ public class SummaryController {
 
     private final SummaryRunService summaryRunService;
     private final SummaryGate1Service summaryGate1Service;
+    private final SummaryGate1QueryService summaryGate1QueryService;
+
+    @GetMapping
+    @Operation(
+            summary = "Gate 1 검토 목록 · 보류함",
+            description = "우리 기관의 요약을 오래된 날짜부터 반환합니다. gate1Status=pending 이면 검토 대기, hold 면 보류함입니다. "
+                    + "요약 본문, 다른 아이 이름 경고(needsReview·reviewReasons), 요약에 안 들어간 일지와 원문, "
+                    + "요약에 들어간 원본의 검증 REVIEW 사유를 함께 줍니다. 응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "지원하지 않는 gate1Status (SUMMARY_INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<List<Gate1SummaryResponse>> list(
+            @Parameter(schema = @Schema(allowableValues = {"pending", "hold"}))
+            @RequestParam(defaultValue = "pending") String gate1Status,
+            @AuthenticationPrincipal String userId) {
+        SummaryStatus status = switch (gate1Status) {
+            case "pending" -> SummaryStatus.GATE1_PENDING;
+            case "hold" -> SummaryStatus.HOLD;
+            // 다른 값을 조용히 대기 목록으로 처리하면 화면이 엉뚱한 목록을 보여준다.
+            default -> throw new SummaryListValidationException("unsupported gate1Status: " + gate1Status);
+        };
+        return ApiResponse.success(summaryGate1QueryService.getSummaries(userId, status));
+    }
 
     @PostMapping("/run")
     @Operation(

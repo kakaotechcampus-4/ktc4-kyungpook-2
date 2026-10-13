@@ -6,11 +6,13 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +22,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
 import com.itda.backend.exception.summary.SummaryConflictException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -29,6 +33,7 @@ import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.approval.Gate1Action;
+import com.itda.backend.service.approval.SummaryGate1QueryService;
 import com.itda.backend.service.approval.SummaryGate1Service;
 import com.itda.backend.service.summary.SummaryRunService;
 
@@ -46,6 +51,9 @@ class SummaryControllerTest {
 
     @MockitoBean
     private SummaryGate1Service summaryGate1Service;
+
+    @MockitoBean
+    private SummaryGate1QueryService summaryGate1QueryService;
 
     @MockitoBean
     private JwtProvider jwtProvider;
@@ -185,6 +193,43 @@ class SummaryControllerTest {
         mockMvc.perform(post("/api/v1/summaries/50/reopen"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("SUMMARY_NOT_HELD"));
+    }
+
+    @Test
+    void list_returnsPendingSummariesByDefault() throws Exception {
+        given(summaryGate1QueryService.getSummaries(any(), eq(SummaryStatus.GATE1_PENDING))).willReturn(List.of(
+                new Gate1SummaryResponse(50L, 8L, "김준호", LocalDate.of(2026, 10, 8), 1, "GATE1_PENDING",
+                        "요약 본문", true, List.of("다른아동이름"),
+                        List.of(new Gate1SummaryResponse.UncoveredEntry(1042L, "낮잠을 잤다.")),
+                        List.of(new Gate1SummaryResponse.ReviewFlag(1041L, List.of("추측성표현"))))));
+
+        mockMvc.perform(get("/api/v1/summaries"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(50))
+                .andExpect(jsonPath("$.data[0].entryDate").value("2026-10-08"))
+                .andExpect(jsonPath("$.data[0].reviewReasons[0]").value("다른아동이름"))
+                .andExpect(jsonPath("$.data[0].uncoveredEntries[0].journalEntryId").value(1042))
+                .andExpect(jsonPath("$.data[0].reviewFlags[0].issueTypes[0]").value("추측성표현"));
+    }
+
+    @Test
+    void list_mapsGate1StatusToSummaryStatus() throws Exception {
+        mockMvc.perform(get("/api/v1/summaries").param("gate1Status", "pending")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/summaries").param("gate1Status", "hold")).andExpect(status().isOk());
+
+        verify(summaryGate1QueryService).getSummaries(any(), eq(SummaryStatus.GATE1_PENDING));
+        verify(summaryGate1QueryService).getSummaries(any(), eq(SummaryStatus.HOLD));
+    }
+
+    @Test
+    void list_rejectsUnsupportedGate1Status() throws Exception {
+        for (String value : new String[] {"approved", "rejected", "HOLD"}) {
+            mockMvc.perform(get("/api/v1/summaries").param("gate1Status", value))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("SUMMARY_INVALID_REQUEST"));
+        }
+
+        verify(summaryGate1QueryService, never()).getSummaries(any(), any());
     }
 }
 

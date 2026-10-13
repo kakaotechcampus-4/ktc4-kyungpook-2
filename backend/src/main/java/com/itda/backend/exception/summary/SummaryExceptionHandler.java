@@ -21,6 +21,12 @@ public class SummaryExceptionHandler {
                 .body(new ErrorResponse("FAIL", SummaryErrorCode.INVALID_REQUEST.getCode(), e.getMessage()));
     }
 
+    @ExceptionHandler(SummaryListValidationException.class)
+    public ResponseEntity<ErrorResponse> handleListValidation(SummaryListValidationException e) {
+        return ResponseEntity.status(SummaryErrorCode.INVALID_REQUEST.getStatus())
+                .body(new ErrorResponse("FAIL", SummaryErrorCode.INVALID_REQUEST.getCode(), e.getMessage()));
+    }
+
     @ExceptionHandler(SummaryChildNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(SummaryChildNotFoundException e) {
         return ResponseEntity.status(SummaryErrorCode.CHILD_NOT_FOUND.getStatus())
