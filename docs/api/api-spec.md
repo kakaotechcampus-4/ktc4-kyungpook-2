@@ -727,7 +727,7 @@ O-15 ~ O-19 공통 오류:
 ```json
 [
   { "id": 50, "childId": 8, "childName": "김하늘", "entryDate": "2026-10-08", "revision": 1,
-    "status": "GATE1_PENDING", "version": "2026-10-09T03:05:12.345678", "processing": false,
+    "status": "GATE1_PENDING", "version": "2026-10-09T03:05:12.345678/1041,1042", "processing": false,
     "content": "오전 활동에서 블록을 다섯 층까지 쌓았다 …",
     "needsReview": true, "reviewReasons": ["다른아동이름"],
     "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
@@ -737,7 +737,7 @@ O-15 ~ O-19 공통 오류:
 
 | 필드 | 뜻 |
 | --- | --- |
-| `version` | 결정(O-31)할 때 그대로 돌려보내는 값. 해석하지 마세요 |
+| `version` | 결정(O-31)할 때 그대로 돌려보내는 값(요약 수정 시각 + 요약에 든 일지 id). 해석하지 말고 문자열 그대로 보내주세요 |
 | `processing` | 같은 날 이 아이 기록 중 아직 요약에 반영되지 않은 것이 있어 곧 이 요약이 바뀜(검증·요약 중). 매칭 전이라 누구 기록인지 모르는 것이 있어도 켜집니다. 열기·승인 버튼을 막아주세요. 보류함 항목과 옛 판은 항상 `false` |
 | `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
 | `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
@@ -751,15 +751,15 @@ O-15 ~ O-19 공통 오류:
 **O-31 요청**
 
 ```json
-{ "decision": "approve", "version": "2026-10-09T03:05:12.345678" }
+{ "decision": "approve", "version": "2026-10-09T03:05:12.345678/1041,1042" }
 ```
 
 ```json
-{ "decision": "approve", "editedContent": "선생님이 고친 본문", "version": "2026-10-09T03:05:12.345678" }
+{ "decision": "approve", "editedContent": "선생님이 고친 본문", "version": "2026-10-09T03:05:12.345678/1041,1042" }
 ```
 
 ```json
-{ "decision": "hold", "version": "2026-10-09T03:05:12.345678" }
+{ "decision": "hold", "version": "2026-10-09T03:05:12.345678/1041,1042" }
 ```
 
 | 필드 | 조건 |
