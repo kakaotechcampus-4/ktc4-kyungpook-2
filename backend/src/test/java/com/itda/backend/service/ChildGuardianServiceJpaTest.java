@@ -19,12 +19,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.ChildGuardian;
-import com.itda.backend.domain.ChildOrganization;
-import com.itda.backend.domain.Invitation;
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.invitation.ChildGuardian;
+import com.itda.backend.domain.invitation.Invitation;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.dto.response.ChildGuardianResponse;
 import com.itda.backend.exception.ChildErrorCode;
 import com.itda.backend.exception.ChildException;

@@ -16,7 +16,7 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.UserRepository;

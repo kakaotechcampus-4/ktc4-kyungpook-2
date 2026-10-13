@@ -15,16 +15,16 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.ChildOrganization;
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.MatchingResult;
-import com.itda.backend.domain.MatchingStatus;
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.OrganizationType;
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.domain.RawRecordStatus;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.matching.MatchingResult;
+import com.itda.backend.domain.matching.MatchingStatus;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.organization.OrganizationType;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 
 /** resolve 가 matching_result 와 journal_entry 를 한 트랜잭션에서 실제로 저장하는지 DB 로 확인한다. */
 @DataJpaTest
@@ -62,7 +62,7 @@ class MatchingResultServiceJpaTest {
                 MatchingStatus.REVIEW, null, null, null, null, null, null, null));
         em.flush();
         em.getEntityManager()
-                .createQuery("update Child c set c.status = com.itda.backend.domain.ChildStatus.ACTIVE where c.id = :id")
+                .createQuery("update Child c set c.status = com.itda.backend.domain.child.ChildStatus.ACTIVE where c.id = :id")
                 .setParameter("id", child.getId())
                 .executeUpdate();
         em.clear();

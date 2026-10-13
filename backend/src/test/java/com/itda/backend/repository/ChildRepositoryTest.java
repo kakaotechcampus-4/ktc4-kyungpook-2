@@ -12,9 +12,9 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.ChildOrganization;
-import com.itda.backend.domain.ChildStatus;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.child.ChildStatus;
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -100,7 +100,7 @@ class ChildRepositoryTest {
         childOrganizationRepository.saveAndFlush(ChildOrganization.of(pending.getId(), 1L));
         childOrganizationRepository.saveAndFlush(ChildOrganization.of(active.getId(), 1L));
         entityManager.getEntityManager()
-                .createQuery("update Child c set c.status = com.itda.backend.domain.ChildStatus.ACTIVE where c.id = :id")
+                .createQuery("update Child c set c.status = com.itda.backend.domain.child.ChildStatus.ACTIVE where c.id = :id")
                 .setParameter("id", active.getId())
                 .executeUpdate();
         entityManager.clear();

@@ -1,9 +1,9 @@
 package com.itda.backend.global.exception;
 
+import com.itda.backend.domain.user.User;
+import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.domain.User;
-import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.repository.UserRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;

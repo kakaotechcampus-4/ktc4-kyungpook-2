@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
-import com.itda.backend.domain.ValidationVerdict;
+import com.itda.backend.domain.validation.ValidationVerdict;
 
 /**
  * 검증 에이전트 응답. 필드는 {@code AI/validation/schemas.py} 의 ValidationOutput 과 1:1 이다.

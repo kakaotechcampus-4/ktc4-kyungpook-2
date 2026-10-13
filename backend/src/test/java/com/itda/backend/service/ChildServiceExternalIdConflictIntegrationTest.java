@@ -33,8 +33,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.Organization;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.dto.request.RegisterChildRequest;
 import com.itda.backend.exception.ChildErrorCode;
 import com.itda.backend.exception.ChildException;

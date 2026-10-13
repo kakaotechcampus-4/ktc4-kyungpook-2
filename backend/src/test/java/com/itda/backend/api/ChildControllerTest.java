@@ -26,7 +26,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-import com.itda.backend.domain.ChildStatus;
+import com.itda.backend.domain.child.ChildStatus;
 import com.itda.backend.dto.ChildRosterResponse;
 import com.itda.backend.dto.request.RegisterChildRequest;
 import com.itda.backend.dto.response.IssuedInvitationResponse;

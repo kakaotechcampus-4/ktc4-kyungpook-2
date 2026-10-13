@@ -15,10 +15,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.SummaryResult;
-import com.itda.backend.domain.SummaryStatus;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.summary.SummaryResult;
+import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.dto.response.SummaryAgentResponse;
 import com.itda.backend.repository.SummaryResultRepository;

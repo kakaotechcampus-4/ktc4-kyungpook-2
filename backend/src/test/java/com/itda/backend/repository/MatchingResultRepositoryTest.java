@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.MatchingResult;
-import com.itda.backend.domain.MatchingStatus;
+import com.itda.backend.domain.matching.MatchingResult;
+import com.itda.backend.domain.matching.MatchingStatus;
 
 @DataJpaTest
 @ActiveProfiles("test")

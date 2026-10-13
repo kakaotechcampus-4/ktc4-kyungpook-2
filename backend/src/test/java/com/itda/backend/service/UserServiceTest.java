@@ -18,10 +18,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.OrganizationType;
-import com.itda.backend.domain.User;
-import com.itda.backend.domain.UserRole;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.organization.OrganizationType;
+import com.itda.backend.domain.user.User;
+import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.dto.request.SignupRequest;
 import com.itda.backend.dto.response.CurrentUserResponse;
 import com.itda.backend.exception.OrganizationErrorCode;

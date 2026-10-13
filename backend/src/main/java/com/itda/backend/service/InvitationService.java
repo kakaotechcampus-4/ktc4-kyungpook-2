@@ -12,9 +12,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.ChildGuardian;
-import com.itda.backend.domain.Invitation;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.invitation.ChildGuardian;
+import com.itda.backend.domain.invitation.Invitation;
 import com.itda.backend.dto.response.AcceptedInvitationResponse;
 import com.itda.backend.dto.response.IssuedInvitationResponse;
 import com.itda.backend.dto.response.LiveInvitationResponse;

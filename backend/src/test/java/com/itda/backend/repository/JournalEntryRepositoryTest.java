@@ -12,8 +12,8 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.data.domain.Limit;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
 
 @DataJpaTest
 @ActiveProfiles("test")

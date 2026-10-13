@@ -10,7 +10,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.itda.backend.domain.ChildGuardian;
+import com.itda.backend.domain.invitation.ChildGuardian;
 
 public interface ChildGuardianRepository extends JpaRepository<ChildGuardian, Long> {
 

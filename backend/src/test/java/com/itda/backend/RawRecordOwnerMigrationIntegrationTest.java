@@ -19,10 +19,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.domain.RawRecordStatus;
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.exception.RawRecordNotFoundException;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;

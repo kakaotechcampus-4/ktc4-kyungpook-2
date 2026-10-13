@@ -12,8 +12,8 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.SummaryResult;
-import com.itda.backend.domain.SummaryStatus;
+import com.itda.backend.domain.summary.SummaryResult;
+import com.itda.backend.domain.summary.SummaryStatus;
 
 @DataJpaTest
 @ActiveProfiles("test")

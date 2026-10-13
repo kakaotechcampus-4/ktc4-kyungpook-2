@@ -1,7 +1,7 @@
 package com.itda.backend.fixture;
 
-import com.itda.backend.domain.User;
-import com.itda.backend.domain.UserRole;
+import com.itda.backend.domain.user.User;
+import com.itda.backend.domain.user.UserRole;
 
 /**
  * 가입을 마친 회원을 만든다. 운영 코드에는 "처음부터 역할이 있는 회원" 을 만드는 길이 없다 —

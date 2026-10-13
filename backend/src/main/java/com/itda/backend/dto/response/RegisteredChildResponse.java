@@ -1,6 +1,6 @@
 package com.itda.backend.dto.response;
 
-import com.itda.backend.domain.ChildStatus;
+import com.itda.backend.domain.child.ChildStatus;
 
 /**
  * POST /api/v1/institutions/me/children 의 응답. O-10 명부 항목과 필드가 같아도 따로 둔다 —

@@ -17,8 +17,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.ChildOrganization;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.dto.request.RegisterChildRequest;
 import com.itda.backend.repository.ChildOrganizationRepository;
 import com.itda.backend.repository.ChildRepository;

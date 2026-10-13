@@ -22,9 +22,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.ChildOrganization;
-import com.itda.backend.domain.ChildStatus;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.child.ChildStatus;
 import com.itda.backend.dto.ChildRosterResponse;
 import com.itda.backend.dto.request.RegisterChildRequest;
 import com.itda.backend.dto.response.IssuedInvitationResponse;

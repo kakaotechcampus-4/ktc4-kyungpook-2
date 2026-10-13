@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;

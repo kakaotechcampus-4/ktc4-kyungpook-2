@@ -7,7 +7,7 @@ import java.time.LocalDate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.JournalEntryStatus;
+import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.exception.SummaryChildNotFoundException;
 import com.itda.backend.exception.SummaryRunValidationException;
 import com.itda.backend.repository.ChildOrganizationRepository;

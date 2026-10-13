@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;

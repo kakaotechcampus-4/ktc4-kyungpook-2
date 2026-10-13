@@ -4,8 +4,8 @@ import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.itda.backend.domain.ValidationResult;
-import com.itda.backend.domain.ValidationVerdict;
+import com.itda.backend.domain.validation.ValidationResult;
+import com.itda.backend.domain.validation.ValidationVerdict;
 
 public interface ValidationResultRepository extends JpaRepository<ValidationResult, Long> {
 

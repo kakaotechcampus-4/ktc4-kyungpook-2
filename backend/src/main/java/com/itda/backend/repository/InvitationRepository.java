@@ -11,7 +11,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.itda.backend.domain.Invitation;
+import com.itda.backend.domain.invitation.Invitation;
 
 public interface InvitationRepository extends JpaRepository<Invitation, Long> {
 
@@ -38,7 +38,7 @@ public interface InvitationRepository extends JpaRepository<Invitation, Long> {
     /** 지금 쓸 수 있는 코드만, 최근 발급 순으로. */
     @Query("select i from Invitation i "
             + "where i.childId = :childId and i.organizationId = :organizationId "
-            + "and i.status = com.itda.backend.domain.InvitationStatus.PENDING and i.expiresAt > :now "
+            + "and i.status = com.itda.backend.domain.invitation.InvitationStatus.PENDING and i.expiresAt > :now "
             + "order by i.createdAt desc, i.id desc")
     List<Invitation> findLive(
             @Param("childId") Long childId, @Param("organizationId") Long organizationId, @Param("now") LocalDateTime now);

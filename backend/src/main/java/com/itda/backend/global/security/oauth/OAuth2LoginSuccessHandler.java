@@ -1,6 +1,6 @@
 package com.itda.backend.global.security.oauth;
 
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.UserService;

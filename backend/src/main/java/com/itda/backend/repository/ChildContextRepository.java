@@ -4,7 +4,7 @@ import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.itda.backend.domain.ChildContext;
+import com.itda.backend.domain.summary.ChildContext;
 
 public interface ChildContextRepository extends JpaRepository<ChildContext, Long> {
 

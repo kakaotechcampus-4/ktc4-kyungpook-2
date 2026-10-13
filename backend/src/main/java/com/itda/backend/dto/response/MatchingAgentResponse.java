@@ -4,8 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
-import com.itda.backend.domain.MatchingStatus;
-import com.itda.backend.domain.MultiReason;
+import com.itda.backend.domain.matching.MatchingStatus;
+import com.itda.backend.domain.matching.MultiReason;
 
 /**
  * 매칭 에이전트 응답. 필드는 {@code AI/matching/schemas.py} 의 MatchingOutput 과 1:1 이다.

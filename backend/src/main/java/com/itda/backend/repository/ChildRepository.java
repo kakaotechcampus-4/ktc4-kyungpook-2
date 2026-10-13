@@ -10,7 +10,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.itda.backend.domain.Child;
+import com.itda.backend.domain.child.Child;
 
 public interface ChildRepository extends JpaRepository<Child, Long> {
 
@@ -37,6 +37,6 @@ public interface ChildRepository extends JpaRepository<Child, Long> {
     // 매칭 대상으로 새는 걸 이름만으로는 못 막던 문제를 고친다.
     @Query("select c from Child c, ChildOrganization co "
             + "where co.childId = c.id and co.organizationId = :organizationId "
-            + "and co.deletedAt is null and c.deletedAt is null and c.status = com.itda.backend.domain.ChildStatus.ACTIVE")
+            + "and co.deletedAt is null and c.deletedAt is null and c.status = com.itda.backend.domain.child.ChildStatus.ACTIVE")
     List<Child> findActiveByOrganizationId(@Param("organizationId") Long organizationId);
 }

@@ -4,8 +4,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.domain.RawRecordStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.repository.RawRecordRepository;
 
 import lombok.RequiredArgsConstructor;

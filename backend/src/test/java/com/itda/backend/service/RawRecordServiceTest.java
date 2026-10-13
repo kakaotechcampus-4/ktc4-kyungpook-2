@@ -24,10 +24,10 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.domain.RawRecordStatus;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.exception.RawRecordNotFoundException;
 import com.itda.backend.exception.RawRecordStorageException;
 import com.itda.backend.exception.RawRecordValidationException;

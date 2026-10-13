@@ -2,8 +2,8 @@ package com.itda.backend.fixture;
 
 import java.util.concurrent.atomic.AtomicLong;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.OrganizationType;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.organization.OrganizationType;
 
 /**
  * 테스트용 기관. 기관 시드가 없어졌으므로 기관이 필요한 테스트는 직접 만든다.

@@ -1,7 +1,7 @@
 package com.itda.backend.global.security;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;

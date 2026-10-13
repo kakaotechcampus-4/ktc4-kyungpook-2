@@ -7,10 +7,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.Approval;
-import com.itda.backend.domain.ApprovalDecision;
-import com.itda.backend.domain.ApprovalReviewType;
-import com.itda.backend.domain.ApprovalTargetType;
+import com.itda.backend.domain.approval.Approval;
+import com.itda.backend.domain.approval.ApprovalDecision;
+import com.itda.backend.domain.approval.ApprovalReviewType;
+import com.itda.backend.domain.approval.ApprovalTargetType;
 
 @DataJpaTest
 @ActiveProfiles("test")

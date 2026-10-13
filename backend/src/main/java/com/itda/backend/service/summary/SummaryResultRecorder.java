@@ -10,9 +10,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.SummaryResult;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.dto.response.SummaryAgentResponse;
 import com.itda.backend.repository.JournalEntryRepository;

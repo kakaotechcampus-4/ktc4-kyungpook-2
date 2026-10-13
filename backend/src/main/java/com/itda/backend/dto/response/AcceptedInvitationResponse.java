@@ -1,6 +1,6 @@
 package com.itda.backend.dto.response;
 
-import com.itda.backend.domain.ChildStatus;
+import com.itda.backend.domain.child.ChildStatus;
 
 /**
  * G-04 수락 결과. 연결만 됐을 뿐 동의는 아니다 — 수락은 아동 상태를 바꾸지 않고,

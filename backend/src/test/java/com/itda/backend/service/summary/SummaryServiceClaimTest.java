@@ -17,10 +17,10 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.domain.RawRecordStatus;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.repository.ChildRepository;
 import com.itda.backend.repository.JournalEntryRepository;
 import com.itda.backend.repository.MatchingResultRepository;

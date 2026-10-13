@@ -5,7 +5,7 @@ import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.itda.backend.domain.RawRecord;
+import com.itda.backend.domain.record.RawRecord;
 
 public interface RawRecordRepository extends JpaRepository<RawRecord, Long> {
 

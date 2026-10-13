@@ -5,7 +5,7 @@ import java.util.Locale;
 
 import org.springframework.stereotype.Component;
 
-import com.itda.backend.domain.Invitation;
+import com.itda.backend.domain.invitation.Invitation;
 
 /**
  * 초대 코드를 만들고, 보호자가 입력한 값을 저장 형식으로 맞춘다.

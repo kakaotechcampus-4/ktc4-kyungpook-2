@@ -22,8 +22,8 @@ import com.itda.backend.global.jwt.JwtCookie;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.domain.RawRecordStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.exception.RawRecordNotFoundException;
 import com.itda.backend.exception.RawRecordValidationException;
 import com.itda.backend.global.jwt.JwtProvider;

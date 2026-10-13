@@ -4,9 +4,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.User;
-import com.itda.backend.domain.UserRole;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.User;
+import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.dto.request.SignupRequest;
 import com.itda.backend.dto.response.CurrentUserResponse;
 import com.itda.backend.exception.OrganizationErrorCode;

@@ -5,7 +5,7 @@ import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.itda.backend.domain.SummaryResult;
+import com.itda.backend.domain.summary.SummaryResult;
 
 public interface SummaryResultRepository extends JpaRepository<SummaryResult, Long> {
 

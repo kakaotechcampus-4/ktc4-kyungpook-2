@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.user.User;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 

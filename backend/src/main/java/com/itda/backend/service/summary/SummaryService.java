@@ -19,11 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.MatchingResult;
-import com.itda.backend.domain.Organization;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.matching.MatchingResult;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.dto.request.SummaryAgentRequest;
 import com.itda.backend.exception.SummaryTargetException;
 import com.itda.backend.repository.ChildRepository;

@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-import com.itda.backend.domain.OrganizationType;
+import com.itda.backend.domain.organization.OrganizationType;
 
 /**
  * POST /api/v1/auth/signup 의 요청. 카카오 로그인 뒤 1회성 가입 화면에서 보낸다.

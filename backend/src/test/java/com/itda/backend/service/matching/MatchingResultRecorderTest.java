@@ -14,11 +14,11 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.MatchingResult;
-import com.itda.backend.domain.MatchingStatus;
-import com.itda.backend.domain.MultiReason;
+import com.itda.backend.domain.matching.MatchingResult;
+import com.itda.backend.domain.matching.MatchingStatus;
+import com.itda.backend.domain.matching.MultiReason;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.dto.response.MatchingAgentResponse;
 import com.itda.backend.repository.MatchingResultRepository;
 

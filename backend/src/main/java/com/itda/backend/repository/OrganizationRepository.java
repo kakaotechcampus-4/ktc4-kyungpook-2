@@ -2,7 +2,7 @@ package com.itda.backend.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.itda.backend.domain.Organization;
+import com.itda.backend.domain.organization.Organization;
 
 public interface OrganizationRepository extends JpaRepository<Organization, Long> {
 

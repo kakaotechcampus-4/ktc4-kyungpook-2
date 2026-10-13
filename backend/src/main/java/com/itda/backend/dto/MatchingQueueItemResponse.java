@@ -4,8 +4,8 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.itda.backend.domain.MatchingStatus;
-import com.itda.backend.domain.MultiReason;
+import com.itda.backend.domain.matching.MatchingStatus;
+import com.itda.backend.domain.matching.MultiReason;
 
 // ponytail: JournalEntry/RawRecord/Child 조인·JSON 파싱이 필요해서(id/matchedChildId도
 // frontend/app/lib/types.ts 기대에 맞춰 String으로 변환) MatchingResultService가 값을

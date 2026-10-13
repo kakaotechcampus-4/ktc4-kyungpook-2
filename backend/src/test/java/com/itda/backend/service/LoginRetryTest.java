@@ -7,7 +7,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.repository.OrganizationRepository;
 import com.itda.backend.repository.UserRepository;
 

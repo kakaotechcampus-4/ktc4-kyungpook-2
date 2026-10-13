@@ -8,8 +8,8 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.ValidationResult;
-import com.itda.backend.domain.ValidationVerdict;
+import com.itda.backend.domain.validation.ValidationResult;
+import com.itda.backend.domain.validation.ValidationVerdict;
 
 @DataJpaTest
 @ActiveProfiles("test")

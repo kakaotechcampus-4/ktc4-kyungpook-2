@@ -2,8 +2,8 @@ package com.itda.backend.dto;
 
 import java.time.LocalDateTime;
 
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.domain.RawRecordStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 
 public record RawRecordResponse(
         Long id,

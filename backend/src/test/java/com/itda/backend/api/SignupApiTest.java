@@ -19,9 +19,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.User;
-import com.itda.backend.domain.UserRole;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.User;
+import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;

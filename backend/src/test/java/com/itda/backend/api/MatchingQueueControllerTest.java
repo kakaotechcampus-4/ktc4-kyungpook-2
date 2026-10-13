@@ -21,7 +21,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.domain.MatchingStatus;
+import com.itda.backend.domain.matching.MatchingStatus;
 import com.itda.backend.dto.MatchingQueueItemResponse;
 import com.itda.backend.dto.RecordResponse;
 import com.itda.backend.exception.MatchingResultNotFoundException;

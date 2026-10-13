@@ -10,7 +10,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.ChildContext;
+import com.itda.backend.domain.summary.ChildContext;
 
 @DataJpaTest
 @ActiveProfiles("test")

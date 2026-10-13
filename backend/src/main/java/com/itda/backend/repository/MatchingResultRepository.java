@@ -6,8 +6,8 @@ import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.itda.backend.domain.MatchingResult;
-import com.itda.backend.domain.MatchingStatus;
+import com.itda.backend.domain.matching.MatchingResult;
+import com.itda.backend.domain.matching.MatchingStatus;
 
 public interface MatchingResultRepository extends JpaRepository<MatchingResult, Long> {
 

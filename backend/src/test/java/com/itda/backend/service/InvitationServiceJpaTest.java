@@ -20,14 +20,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import com.itda.backend.domain.Child;
-import com.itda.backend.domain.ChildGuardian;
-import com.itda.backend.domain.ChildOrganization;
-import com.itda.backend.domain.ChildStatus;
-import com.itda.backend.domain.Invitation;
-import com.itda.backend.domain.InvitationStatus;
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.child.ChildStatus;
+import com.itda.backend.domain.invitation.ChildGuardian;
+import com.itda.backend.domain.invitation.Invitation;
+import com.itda.backend.domain.invitation.InvitationStatus;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.dto.response.AcceptedInvitationResponse;
 import com.itda.backend.dto.response.IssuedInvitationResponse;
 import com.itda.backend.dto.response.LiveInvitationResponse;
@@ -260,7 +260,7 @@ class InvitationServiceJpaTest {
     @Test
     void 수락은_아동_상태를_바꾸지_않고_실제_상태를_돌려준다() {
         em.getEntityManager()
-                .createQuery("update Child c set c.status = com.itda.backend.domain.ChildStatus.ACTIVE where c.id = :id")
+                .createQuery("update Child c set c.status = com.itda.backend.domain.child.ChildStatus.ACTIVE where c.id = :id")
                 .setParameter("id", child.getId())
                 .executeUpdate();
         IssuedInvitationResponse issued = issue();

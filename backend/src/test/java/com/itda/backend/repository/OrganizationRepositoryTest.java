@@ -10,8 +10,8 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.OrganizationType;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.organization.OrganizationType;
 
 @DataJpaTest
 @ActiveProfiles("test")

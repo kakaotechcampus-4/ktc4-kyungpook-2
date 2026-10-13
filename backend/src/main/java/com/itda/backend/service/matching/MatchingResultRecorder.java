@@ -7,8 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.MatchingResult;
+import com.itda.backend.domain.matching.MatchingResult;
+import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.dto.response.MatchingAgentResponse;
 import com.itda.backend.repository.JournalEntryRepository;
 import com.itda.backend.repository.MatchingResultRepository;

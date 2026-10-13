@@ -2,8 +2,8 @@ package com.itda.backend.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
-import com.itda.backend.domain.User;
-import com.itda.backend.domain.UserRole;
+import com.itda.backend.domain.user.User;
+import com.itda.backend.domain.user.UserRole;
 
 /**
  * GET /api/v1/auth/me 의 응답. 프론트 라우트 가드가 화면마다 호출한다.
