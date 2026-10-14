@@ -252,6 +252,29 @@ class JournalEntryTest {
     }
 
     @Test
+    void 검증을_빠져나가면_되돌린_횟수를_0으로_돌린다() {
+        // 횟수는 "지금 단계" 의 것이다. 나중에 검증을 다시 하는 경로가 생겨도 처음부터 센다.
+        JournalEntry passed = validating();
+        passed.releaseValidatingAfterAgentDown();
+        passed.startValidating();
+        passed.passValidation();
+
+        JournalEntry blocked = validating();
+        blocked.releaseValidatingAfterAgentDown();
+        blocked.startValidating();
+        blocked.blockValidation();
+
+        JournalEntry failed = validating();
+        failed.releaseValidatingAfterAgentDown();
+        failed.startValidating();
+        failed.failValidation();
+
+        assertThat(passed.getAgentRetryCount()).isZero();
+        assertThat(blocked.getAgentRetryCount()).isZero();
+        assertThat(failed.getAgentRetryCount()).isZero();
+    }
+
+    @Test
     void 검증_중이_아니면_검증_결과를_반영할_수_없다() {
         assertThatThrownBy(() -> matched().passValidation()).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> matched().blockValidation()).isInstanceOf(IllegalStateException.class);
