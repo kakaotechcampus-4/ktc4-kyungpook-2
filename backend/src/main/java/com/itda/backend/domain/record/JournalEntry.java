@@ -67,8 +67,8 @@ public class JournalEntry {
     private LocalDateTime deletedAt;
 
     // AI 다운으로 지금 단계(매칭 또는 검증)를 되돌린 횟수 (#153). 배포 DB 에 행이 있어 NOT NULL 로 추가할 수 없어서
-    // NULL 을 허용하고 0 으로 읽는다 (DB 스키마 §11.4). 단계 대기열에 새로 들어올 때(지금은 검증 대기 MATCHED) 0 으로
-    // 돌린다. 실패로 끝난 일지에는 남겨 둔다 — 상한 때문에 실패했다는 흔적이다.
+    // NULL 을 허용하고 0 으로 읽는다 (DB 스키마 §11.4). 매칭 대기(PENDING)는 0 으로 만들어지고, 검증 대기(MATCHED)로
+    // 들어올 때 0 으로 돌린다. 매칭·검증 중이 아닌 상태에 남은 값은 뜻이 없다 — 실패 사유는 #180 이 따로 남긴다.
     @Column(name = "agent_retry_count")
     private Integer agentRetryCount;
 
@@ -105,9 +105,7 @@ public class JournalEntry {
     /** AI가 자동 확정(auto)했다. 아동의 존재·소속 검증은 호출하는 Service 책임이다. */
     public void confirmMatch(Long childId) {
         requireStatus(JournalEntryStatus.MATCHING);
-        assignChild(childId);
-        this.status = JournalEntryStatus.MATCHED;
-        resetAgentRetryCount();
+        enterValidationQueue(childId);
     }
 
     /** AI가 확정하지 못했다(review·multi·unmatched). 어떤 경우인지는 matching_result.status 가 가진다. */
@@ -142,9 +140,7 @@ public class JournalEntry {
     /** 선생님이 확인 필요 큐에서 아동을 골랐다. AI 자동 확정과 같은 상태로 보내 검증 단계가 이어 가져가게 한다. */
     public void confirmMatchByReviewer(Long childId) {
         requireAwaitingReview();
-        assignChild(childId);
-        this.status = JournalEntryStatus.MATCHED;
-        resetAgentRetryCount();
+        enterValidationQueue(childId);
     }
 
     /** 선생님이 확인 필요 큐에서 제외했다. 아동 기록으로 쓰지 않고 여기서 끝낸다. */
@@ -224,9 +220,13 @@ public class JournalEntry {
         this.agentRetryCount = getAgentRetryCount() + 1;
     }
 
-    // 매칭에서 쓴 횟수가 검증으로 넘어가면 검증은 시작하자마자 상한에 걸린다. 다른 단계 대기열로 들어오는 전이가
-    // 새로 생기면(예: 실패한 일지를 다시 매칭) 그 전이에서도 부른다.
-    private void resetAgentRetryCount() {
+    /**
+     * 매칭이 확정돼 검증 대기로 들어간다. AI 다운으로 되돌린 횟수를 0 으로 돌린다 — 매칭에서 쓴 횟수가 넘어가면 검증은
+     * 시작하자마자 상한에 걸린다. 검증 대기로 들어오는 새 경로는 이 메서드를 쓴다 (검증 중 되돌리기는 제외).
+     */
+    private void enterValidationQueue(Long childId) {
+        assignChild(childId);
+        this.status = JournalEntryStatus.MATCHED;
         this.agentRetryCount = 0;
     }
 

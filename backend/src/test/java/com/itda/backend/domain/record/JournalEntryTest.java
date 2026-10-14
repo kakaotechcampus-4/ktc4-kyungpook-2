@@ -252,20 +252,6 @@ class JournalEntryTest {
     }
 
     @Test
-    void 실패로_끝난_일지에는_되돌린_횟수가_남는다() {
-        // 상한 때문에 실패했다는 흔적이다. 4xx 같은 다른 실패와 구별할 수 있다.
-        JournalEntry entry = validating();
-        entry.releaseValidatingAfterAgentDown();
-        entry.startValidating();
-        entry.releaseValidatingAfterAgentDown();
-        entry.startValidating();
-
-        entry.failValidation();
-
-        assertThat(entry.getAgentRetryCount()).isEqualTo(2);
-    }
-
-    @Test
     void 검증_중이_아니면_검증_결과를_반영할_수_없다() {
         assertThatThrownBy(() -> matched().passValidation()).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> matched().blockValidation()).isInstanceOf(IllegalStateException.class);

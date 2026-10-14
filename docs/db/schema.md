@@ -1013,7 +1013,7 @@ S3 객체의 실제 파기는 개인정보 파기 절차(§3.2 마지막)에서 
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
 | `deleted_at` | DATETIME | Y | **삭제 표시.** 잘못 분리된 일지를 내릴 때 |
-| `agent_retry_count` | INT | Y | AI 다운으로 지금 단계(매칭·검증)를 되돌린 횟수 (#153). NULL 은 0. 단계 대기열에 새로 들어올 때(지금은 `MATCHED`) 0 으로. 실패로 끝난 일지에는 남는다 (상한 때문에 실패했다는 흔적) |
+| `agent_retry_count` | INT | Y | AI 다운으로 지금 단계(매칭·검증)를 되돌린 횟수 (#153). NULL 은 0. `PENDING` 으로 만들 때 0, 매칭이 확정돼 `MATCHED` 로 들어올 때 0 으로. **`MATCHING`·`VALIDATING`·되돌려진 대기 상태에서만 뜻이 있고**, 다른 상태에 남은 값은 지난 단계의 것이다 (실패 사유로 읽지 않는다 — #180) |
 
 기관 컬럼이 없다 — 어느 기관의 일지인지는 `raw_record_id`로 `raw_record`를 거쳐 찾는다.
 
