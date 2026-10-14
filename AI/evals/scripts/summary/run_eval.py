@@ -38,6 +38,8 @@ EXPECTED = (
     "expected_facts",
     #: 요약에 나오면 안 되는 문자열 (다른 아이 이름 등). 코드가 본다.
     "expected_absent",
+    #: 엔드포인트가 내야 하는 상태. 없으면 200 으로 본다.
+    "expected_status",
 )
 
 PASSTHROUGH = ("case_id", "category", "difficulty", "note")
@@ -87,6 +89,9 @@ def run_one(case: dict) -> dict:
                 "institution_id": payload.institution_id,
                 "institution_name": payload.institution_name,
                 "sources": payload.sources,
+                # 빠뜨리면 assemble 이 늘 빈 목록을 봐서 needs_review 가 켜지지 않는다.
+                # 익명화가 실패해도 채점에 안 잡히므로 names 갈래가 통째로 헛돈다.
+                "other_child_names": payload.other_child_names,
             }
         )
         by_id = final["by_id"]
@@ -96,6 +101,11 @@ def run_one(case: dict) -> dict:
             claims=claims,
             covered_entry_ids=final["covered_entry_ids"],
             uncovered_entry_ids=final["uncovered_entry_ids"],
+            # 엔드포인트가 실제로 낼 상태. run_summary 와 같은 규칙이다 (graph.py) —
+            # 재료를 받았는데 근거가 남은 문장이 0 이면 빈 요약을 200 으로 주지 않는다.
+            status=503 if (payload.sources and not final["claims"]) else 200,
+            needs_review=final.get("needs_review", False),
+            review_reasons=final.get("review_reasons", []),
             llm_called=final.get("llm_called", False),
             error=final.get("llm_error"),
             diag={
@@ -111,6 +121,7 @@ def run_one(case: dict) -> dict:
     except Exception as exc:  # noqa: BLE001 - 한 건이 죽어도 나머지는 돌려야 한다
         record.update(
             content="", claims=[], covered_entry_ids=[], uncovered_entry_ids=[],
+            status=None, needs_review=False, review_reasons=[],
             llm_called=False, error=f"{type(exc).__name__}: {exc}", diag={},
         )
     return record
