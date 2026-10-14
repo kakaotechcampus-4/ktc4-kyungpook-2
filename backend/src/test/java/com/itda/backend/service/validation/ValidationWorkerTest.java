@@ -13,6 +13,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -27,13 +30,14 @@ import com.itda.backend.dto.request.validation.ValidationAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.validation.ValidationTargetException;
+import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.agent.WorkerProperties;
 
 @ExtendWith(MockitoExtension.class)
 class ValidationWorkerTest {
 
-    private static final AgentDownProperties AGENT_DOWN = new AgentDownProperties(2);
+    private static final AgentDownProperties AGENT_DOWN = new AgentDownProperties(2, Duration.ofSeconds(30));
     private static final ValidationProperties PROPERTIES = new ValidationProperties(new WorkerProperties(true, 5000, 10));
 
     @Mock
@@ -44,10 +48,11 @@ class ValidationWorkerTest {
     private ValidationResultRecorder recorder;
 
     private ValidationWorker worker;
+    private final MutableClock clock = new MutableClock(LocalDateTime.of(2026, 10, 14, 10, 0));
 
     @BeforeEach
     void setUp() {
-        worker = new ValidationWorker(validationService, client, recorder, PROPERTIES, AGENT_DOWN);
+        worker = new ValidationWorker(validationService, client, recorder, PROPERTIES, AGENT_DOWN, clock);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -199,11 +204,40 @@ class ValidationWorkerTest {
                 .withBean(ValidationResultRecorder.class, () -> mock(ValidationResultRecorder.class))
                 .withBean(ValidationProperties.class, () -> PROPERTIES)
                 .withBean(AgentDownProperties.class, () -> AGENT_DOWN)
+                .withBean(Clock.class, () -> clock)
                 .withUserConfiguration(ValidationWorker.class);
 
         runner.withPropertyValues("app.validation.worker.enabled=false")
                 .run(context -> assertThat(context).doesNotHaveBean(ValidationWorker.class));
         runner.withPropertyValues("app.validation.worker.enabled=true")
                 .run(context -> assertThat(context).hasSingleBean(ValidationWorker.class));
+    }
+    @Test
+    void AI_다운_뒤_쉬는_동안은_AI_상태도_안_보고_일지를_안_집는다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L));
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+        worker.run();
+
+        clock.advance(Duration.ofSeconds(29));
+        worker.run();
+
+        verify(validationService, times(1)).claimMatched(anyInt());
+        verify(client, times(1)).isAvailable();
+    }
+
+    @Test
+    void AI_다운_뒤_쉬는_시간이_지나면_다시_집는다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L), List.of());
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+        worker.run();
+
+        clock.advance(Duration.ofSeconds(30));
+        worker.run();
+
+        verify(validationService, times(2)).claimMatched(10);
     }
 }

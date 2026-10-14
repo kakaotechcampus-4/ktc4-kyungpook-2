@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -174,9 +175,9 @@ class Gate1PipelineIntegrationTest {
                 List.of(ConsentField.DAILY_SUMMARY)));
 
         matchingWorker = new MatchingWorker(matchingService, fakeMatchingAgent(), matchingResultRecorder,
-                matchingProperties, agentDownProperties);
+                matchingProperties, agentDownProperties, Clock.systemDefaultZone());
         validationWorker = new ValidationWorker(validationService, fakeValidationAgent(), validationResultRecorder,
-                validationProperties, agentDownProperties);
+                validationProperties, agentDownProperties, Clock.systemDefaultZone());
         summaryWorker = new SummaryWorker(summaryService, fakeSummaryAgent(), summaryResultRecorder,
                 summaryProperties);
     }

@@ -13,6 +13,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -27,13 +30,14 @@ import com.itda.backend.dto.request.matching.MatchingAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.matching.MatchingTargetException;
+import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.agent.WorkerProperties;
 
 @ExtendWith(MockitoExtension.class)
 class MatchingWorkerTest {
 
-    private static final AgentDownProperties AGENT_DOWN = new AgentDownProperties(2);
+    private static final AgentDownProperties AGENT_DOWN = new AgentDownProperties(2, Duration.ofSeconds(30));
     private static final MatchingProperties PROPERTIES = new MatchingProperties(new WorkerProperties(true, 5000, 10));
 
     @Mock
@@ -44,10 +48,11 @@ class MatchingWorkerTest {
     private MatchingResultRecorder recorder;
 
     private MatchingWorker worker;
+    private final MutableClock clock = new MutableClock(LocalDateTime.of(2026, 10, 14, 10, 0));
 
     @BeforeEach
     void setUp() {
-        worker = new MatchingWorker(matchingService, client, recorder, PROPERTIES, AGENT_DOWN);
+        worker = new MatchingWorker(matchingService, client, recorder, PROPERTIES, AGENT_DOWN, clock);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -126,6 +131,7 @@ class MatchingWorkerTest {
                 .withBean(MatchingResultRecorder.class, () -> mock(MatchingResultRecorder.class))
                 .withBean(MatchingProperties.class, () -> PROPERTIES)
                 .withBean(AgentDownProperties.class, () -> AGENT_DOWN)
+                .withBean(Clock.class, () -> clock)
                 .withUserConfiguration(MatchingWorker.class);
 
         runner.withPropertyValues("app.matching.worker.enabled=false")
@@ -204,5 +210,33 @@ class MatchingWorkerTest {
         verify(recorder, never()).recordFailure(any());
         verify(matchingService, never()).prepareRequest(2L);
         verify(matchingService, never()).release(any());
+    }
+    @Test
+    void AI_다운_뒤_쉬는_동안은_AI_상태도_안_보고_일지를_안_집는다() {
+        given(matchingService.claimPending(10)).willReturn(List.of(1L));
+        given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
+        given(client.match(requestFor(1L))).willThrow(new AiAgentUnavailableException("down", null));
+        given(matchingService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+        worker.run();
+
+        clock.advance(Duration.ofSeconds(29));
+        worker.run();
+
+        verify(matchingService, times(1)).claimPending(anyInt());
+        verify(client, times(1)).isAvailable();
+    }
+
+    @Test
+    void AI_다운_뒤_쉬는_시간이_지나면_다시_집는다() {
+        given(matchingService.claimPending(10)).willReturn(List.of(1L), List.of());
+        given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
+        given(client.match(requestFor(1L))).willThrow(new AiAgentUnavailableException("down", null));
+        given(matchingService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+        worker.run();
+
+        clock.advance(Duration.ofSeconds(30));
+        worker.run();
+
+        verify(matchingService, times(2)).claimPending(10);
     }
 }

@@ -1,5 +1,8 @@
 package com.itda.backend.service.matching;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,6 +26,9 @@ import lombok.extern.slf4j.Slf4j;
  * 전부 FAILED 가 되므로, 집기 전에 AI 상태를 보고, 재시도까지 응답이 없으면(AI 다운) 처리 중이던 일지까지
  * 대기로 돌려놓고 멈춘다. 같은 일지가 상한({@code app.ai.agent-down.max-releases})을 넘겨 다운을 만나면 그 일지만
  * FAILED 로 남겨 확인 필요 큐로 보낸다 (#153).
+ *
+ * <p>AI 다운을 만나면 {@code app.ai.agent-down.pause} 동안 AI 상태도 보지 않고 쉰다. 쉬지 않으면 다음 차례에 바로
+ * 다시 불러 짧은 장애에도 상한을 채운다.
  */
 @Slf4j
 @Component
@@ -34,6 +40,8 @@ public class MatchingWorker {
     private final MatchingResultRecorder recorder;
     private final int batchSize;
     private final int maxReleases;
+    private final Duration pause;
+    private final Clock clock;
 
     /**
      * 앱이 켜진 뒤 첫 실행인지. 멈춘 일지 되돌리기를 ApplicationReadyEvent 가 아니라 여기서 하는 이유는,
@@ -45,17 +53,23 @@ public class MatchingWorker {
     /** AI 가 꺼져 있다는 로그를 상태가 바뀔 때만 남기려고 둔다 (5초마다 같은 경고가 쌓이지 않게). */
     private boolean agentDown;
 
+    /** AI 다운을 만난 뒤 이 시각까지는 AI 상태도 보지 않고 쉰다. 같은 스레드에서만 읽고 쓴다. */
+    private Instant pausedUntil = Instant.MIN;
+
     public MatchingWorker(
             MatchingService matchingService,
             MatchingAgentClient client,
             MatchingResultRecorder recorder,
             MatchingProperties properties,
-            AgentDownProperties agentDown) {
+            AgentDownProperties agentDown,
+            Clock clock) {
         this.matchingService = matchingService;
         this.client = client;
         this.recorder = recorder;
         this.batchSize = properties.worker().batchSize();
         this.maxReleases = agentDown.maxReleases();
+        this.pause = agentDown.pause();
+        this.clock = clock;
     }
 
     @Scheduled(fixedDelayString = "${app.matching.worker.delay-ms}")
@@ -67,7 +81,7 @@ public class MatchingWorker {
             }
             released = true;
         }
-        if (!agentAvailable()) {
+        if (clock.instant().isBefore(pausedUntil) || !agentAvailable()) {
             return;
         }
 
@@ -76,6 +90,8 @@ public class MatchingWorker {
             Outcome outcome = process(claimed.get(i));
             if (outcome == Outcome.AGENT_DOWN) {
                 matchingService.release(claimed.subList(i + 1, claimed.size()));
+                pausedUntil = clock.instant().plus(pause);
+                log.info("matching agent down, pausing for {}", pause);
                 return;
             }
             if (outcome == Outcome.SHUTTING_DOWN) {

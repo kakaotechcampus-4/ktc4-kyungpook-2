@@ -47,6 +47,7 @@ class AgentPropertiesBindingTest {
         runner.run(context -> {
             AgentDownProperties agentDown = context.getBean(AgentDownProperties.class);
             assertThat(agentDown.maxReleases()).isEqualTo(2);
+            assertThat(agentDown.pause()).isEqualTo(Duration.ofSeconds(30));
         });
     }
 

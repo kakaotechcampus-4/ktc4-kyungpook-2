@@ -1,5 +1,7 @@
 package com.itda.backend.service.agent;
 
+import java.time.Duration;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -10,7 +12,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * 상관없이 503 으로 준다), 횟수 제한 없이 되돌리면 그런 일지가 대기열 맨 앞을 영영 막는다. 그래서 상한을 둔다 (#153).
  *
  * @param maxReleases AI 다운으로 되돌리는 최대 횟수. 이만큼 되돌린 뒤 또 다운이면 그 일지는 실패로 남긴다
+ * @param pause       AI 다운 뒤 그 워커가 일지를 집지 않고 쉬는 시간. 쉬지 않으면 다음 차례(5초 뒤)에 바로 다시 불러서
+ *                    1분도 안 되는 짧은 장애에도 상한을 채운다
  */
 @ConfigurationProperties(prefix = "app.ai.agent-down")
-public record AgentDownProperties(int maxReleases) {
+public record AgentDownProperties(int maxReleases, Duration pause) {
 }

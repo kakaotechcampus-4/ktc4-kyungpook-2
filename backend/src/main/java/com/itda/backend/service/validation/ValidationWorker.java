@@ -1,5 +1,8 @@
 package com.itda.backend.service.validation;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,6 +23,9 @@ import lombok.extern.slf4j.Slf4j;
  * 일지까지 검증 대기로 돌려놓고 멈춘다. LLM 만 죽어 있으면 {@code /health} 는 통과하고 AI 가 503 을 주는데, 예전에는
  * 이때 차례마다 일지가 한 건씩 FAILED 로 빠졌다. 같은 일지가 상한({@code app.ai.agent-down.max-releases})을 넘겨
  * 다운을 만나면 그 일지만 FAILED 로 남긴다 (#153).
+ *
+ * <p>AI 다운을 만나면 {@code app.ai.agent-down.pause} 동안 AI 상태도 보지 않고 쉰다. 쉬지 않으면 다음 차례에 바로
+ * 다시 불러 짧은 장애에도 상한을 채운다.
  */
 @Slf4j
 @Component
@@ -31,6 +37,8 @@ public class ValidationWorker {
     private final ValidationResultRecorder recorder;
     private final int batchSize;
     private final int maxReleases;
+    private final Duration pause;
+    private final Clock clock;
 
     /** 앱이 켜진 뒤 첫 실행인지. 되돌리기를 여기서 하는 이유는 MatchingWorker 와 같다 (집기와 겹치지 않게). */
     private boolean released;
@@ -38,17 +46,23 @@ public class ValidationWorker {
     /** AI 가 꺼져 있다는 로그를 상태가 바뀔 때만 남기려고 둔다 (5초마다 같은 경고가 쌓이지 않게). */
     private boolean agentDown;
 
+    /** AI 다운을 만난 뒤 이 시각까지는 AI 상태도 보지 않고 쉰다. 같은 스레드에서만 읽고 쓴다. */
+    private Instant pausedUntil = Instant.MIN;
+
     public ValidationWorker(
             ValidationService validationService,
             ValidationAgentClient client,
             ValidationResultRecorder recorder,
             ValidationProperties properties,
-            AgentDownProperties agentDown) {
+            AgentDownProperties agentDown,
+            Clock clock) {
         this.validationService = validationService;
         this.client = client;
         this.recorder = recorder;
         this.batchSize = properties.worker().batchSize();
         this.maxReleases = agentDown.maxReleases();
+        this.pause = agentDown.pause();
+        this.clock = clock;
     }
 
     @Scheduled(fixedDelayString = "${app.validation.worker.delay-ms}")
@@ -60,7 +74,7 @@ public class ValidationWorker {
             }
             released = true;
         }
-        if (!agentAvailable()) {
+        if (clock.instant().isBefore(pausedUntil) || !agentAvailable()) {
             return;
         }
 
@@ -69,6 +83,8 @@ public class ValidationWorker {
             Outcome outcome = process(claimed.get(i));
             if (outcome == Outcome.AGENT_DOWN) {
                 validationService.release(claimed.subList(i + 1, claimed.size()));
+                pausedUntil = clock.instant().plus(pause);
+                log.info("validation agent down, pausing for {}", pause);
                 return;
             }
             if (outcome == Outcome.SHUTTING_DOWN) {
