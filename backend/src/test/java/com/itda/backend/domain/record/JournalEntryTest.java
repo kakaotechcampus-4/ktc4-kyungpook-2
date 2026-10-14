@@ -252,26 +252,17 @@ class JournalEntryTest {
     }
 
     @Test
-    void 검증을_빠져나가면_되돌린_횟수를_0으로_돌린다() {
-        // 횟수는 "지금 단계" 의 것이다. 나중에 검증을 다시 하는 경로가 생겨도 처음부터 센다.
-        JournalEntry passed = validating();
-        passed.releaseValidatingAfterAgentDown();
-        passed.startValidating();
-        passed.passValidation();
+    void 실패로_끝난_일지에는_되돌린_횟수가_남는다() {
+        // 상한 때문에 실패했다는 흔적이다. 4xx 같은 다른 실패와 구별할 수 있다.
+        JournalEntry entry = validating();
+        entry.releaseValidatingAfterAgentDown();
+        entry.startValidating();
+        entry.releaseValidatingAfterAgentDown();
+        entry.startValidating();
 
-        JournalEntry blocked = validating();
-        blocked.releaseValidatingAfterAgentDown();
-        blocked.startValidating();
-        blocked.blockValidation();
+        entry.failValidation();
 
-        JournalEntry failed = validating();
-        failed.releaseValidatingAfterAgentDown();
-        failed.startValidating();
-        failed.failValidation();
-
-        assertThat(passed.getAgentRetryCount()).isZero();
-        assertThat(blocked.getAgentRetryCount()).isZero();
-        assertThat(failed.getAgentRetryCount()).isZero();
+        assertThat(entry.getAgentRetryCount()).isEqualTo(2);
     }
 
     @Test

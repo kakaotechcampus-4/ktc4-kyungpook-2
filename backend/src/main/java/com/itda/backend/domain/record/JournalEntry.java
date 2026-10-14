@@ -67,7 +67,8 @@ public class JournalEntry {
     private LocalDateTime deletedAt;
 
     // AI 다운으로 지금 단계(매칭 또는 검증)를 되돌린 횟수 (#153). 배포 DB 에 행이 있어 NOT NULL 로 추가할 수 없어서
-    // NULL 을 허용하고 0 으로 읽는다 (DB 스키마 §11.4). 매칭·검증 단계를 빠져나가면 0 으로 돌린다.
+    // NULL 을 허용하고 0 으로 읽는다 (DB 스키마 §11.4). 단계 대기열에 새로 들어올 때(지금은 검증 대기 MATCHED) 0 으로
+    // 돌린다. 실패로 끝난 일지에는 남겨 둔다 — 상한 때문에 실패했다는 흔적이다.
     @Column(name = "agent_retry_count")
     private Integer agentRetryCount;
 
@@ -162,21 +163,18 @@ public class JournalEntry {
     public void passValidation() {
         requireStatus(JournalEntryStatus.VALIDATING);
         this.status = JournalEntryStatus.VALIDATED;
-        resetAgentRetryCount();
     }
 
     /** 검증 결과가 BLOCK 이다. 개인정보가 든 기록이 요약으로 새지 않도록 여기서 멈춘다. */
     public void blockValidation() {
         requireStatus(JournalEntryStatus.VALIDATING);
         this.status = JournalEntryStatus.VALIDATION_BLOCKED;
-        resetAgentRetryCount();
     }
 
     /** 검증 호출 자체가 실패했다. */
     public void failValidation() {
         requireStatus(JournalEntryStatus.VALIDATING);
         this.status = JournalEntryStatus.FAILED;
-        resetAgentRetryCount();
     }
 
     /** 검증에서 막힌(BLOCK) 기록을 선생님이 수정 요청 큐에서 처리할 수 있는 상태인지. */
@@ -226,7 +224,8 @@ public class JournalEntry {
         this.agentRetryCount = getAgentRetryCount() + 1;
     }
 
-    // 횟수는 지금 단계의 것이다. 매칭에서 쓴 횟수가 검증으로 넘어가면 검증은 시작하자마자 상한에 걸린다.
+    // 매칭에서 쓴 횟수가 검증으로 넘어가면 검증은 시작하자마자 상한에 걸린다. 다른 단계 대기열로 들어오는 전이가
+    // 새로 생기면(예: 실패한 일지를 다시 매칭) 그 전이에서도 부른다.
     private void resetAgentRetryCount() {
         this.agentRetryCount = 0;
     }

@@ -213,6 +213,7 @@ class MatchingWorkerTest {
         verify(matchingService, never()).prepareRequest(2L);
         verify(matchingService, never()).release(any());
     }
+
     @Test
     void AI_다운_뒤_쉬는_동안은_AI_상태도_안_보고_일지를_안_집는다() {
         given(matchingService.claimPending(10)).willReturn(List.of(1L));
@@ -241,6 +242,7 @@ class MatchingWorkerTest {
 
         verify(matchingService, times(2)).claimPending(10);
     }
+
     @Test
     void 나머지_일지를_되돌리다_실패해도_AI_다운_뒤에는_쉰다() {
         given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L));
@@ -259,6 +261,7 @@ class MatchingWorkerTest {
 
         verify(matchingService, times(1)).claimPending(anyInt());
     }
+
     @Test
     void AI_다운_뒤_되돌리기가_실패해도_실패로_남기지_않고_멈춰서_쉰다() {
         given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L));
@@ -271,6 +274,7 @@ class MatchingWorkerTest {
         worker.run();
 
         verify(recorder, never()).recordFailure(any());
+        verify(matchingService).release(List.of(2L));
         verify(matchingService, never()).prepareRequest(2L);
         verify(matchingService, times(1)).claimPending(anyInt());
     }

@@ -214,6 +214,7 @@ class ValidationWorkerTest {
         runner.withPropertyValues("app.validation.worker.enabled=true")
                 .run(context -> assertThat(context).hasSingleBean(ValidationWorker.class));
     }
+
     @Test
     void AI_다운_뒤_쉬는_동안은_AI_상태도_안_보고_일지를_안_집는다() {
         given(validationService.claimMatched(10)).willReturn(List.of(1L));
@@ -242,6 +243,7 @@ class ValidationWorkerTest {
 
         verify(validationService, times(2)).claimMatched(10);
     }
+
     @Test
     void 나머지_일지를_되돌리다_실패해도_AI_다운_뒤에는_쉰다() {
         given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
@@ -260,6 +262,7 @@ class ValidationWorkerTest {
 
         verify(validationService, times(1)).claimMatched(anyInt());
     }
+
     @Test
     void AI_다운_뒤_되돌리기가_실패해도_실패로_남기지_않고_멈춰서_쉰다() {
         given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
@@ -272,6 +275,7 @@ class ValidationWorkerTest {
         worker.run();
 
         verify(recorder, never()).recordFailure(any());
+        verify(validationService).release(List.of(2L));
         verify(validationService, never()).prepareRequest(2L);
         verify(validationService, times(1)).claimMatched(anyInt());
     }
