@@ -35,6 +35,8 @@ dependencies {
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.9.1'
 	implementation platform('software.amazon.awssdk:bom:2.54.14')
 	implementation 'software.amazon.awssdk:s3'
+	// AI 서버 호출 클라이언트. 자동 재시도를 끄려고 직접 설정한다 (AiAgentClientConfig, #153). 버전은 Spring Boot 가 관리
+	implementation 'org.apache.httpcomponents.client5:httpclient5'
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
