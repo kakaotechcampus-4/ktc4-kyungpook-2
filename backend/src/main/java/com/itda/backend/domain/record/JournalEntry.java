@@ -66,12 +66,18 @@ public class JournalEntry {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    // AI 다운으로 지금 단계(매칭 또는 검증)를 되돌린 횟수 (#153). 배포 DB 에 행이 있어 NOT NULL 로 추가할 수 없어서
+    // NULL 을 허용하고 0 으로 읽는다 (DB 스키마 §11.4). 매칭이 끝나 검증 대기가 되면 0 으로 돌린다.
+    @Column(name = "agent_retry_count")
+    private Integer agentRetryCount;
+
     private JournalEntry(Long rawRecordId, LocalDate entryDate, String content, Integer sequenceNo) {
         this.rawRecordId = rawRecordId;
         this.entryDate = entryDate;
         this.content = content;
         this.sequenceNo = sequenceNo;
         this.status = JournalEntryStatus.PENDING;
+        this.agentRetryCount = 0;
     }
 
     public static JournalEntry of(Long rawRecordId, LocalDate entryDate, String content, Integer sequenceNo) {
@@ -100,6 +106,7 @@ public class JournalEntry {
         requireStatus(JournalEntryStatus.MATCHING);
         assignChild(childId);
         this.status = JournalEntryStatus.MATCHED;
+        resetAgentRetryCount();
     }
 
     /** AI가 확정하지 못했다(review·multi·unmatched). 어떤 경우인지는 matching_result.status 가 가진다. */
@@ -120,6 +127,12 @@ public class JournalEntry {
         this.status = JournalEntryStatus.PENDING;
     }
 
+    /** AI 가 다운이라 매칭하지 못했다. 일지 잘못이 아니므로 실패로 남기지 않고 대기로 되돌리고 횟수를 센다. */
+    public void releaseMatchingAfterAgentDown() {
+        releaseMatching();
+        countAgentRetry();
+    }
+
     /** 사람이 확인해야 하는 상태인지 — AI가 확정하지 못했거나(MATCH_REVIEW) 호출이 실패했다(FAILED). */
     public boolean isAwaitingReview() {
         return this.status == JournalEntryStatus.MATCH_REVIEW || this.status == JournalEntryStatus.FAILED;
@@ -130,6 +143,7 @@ public class JournalEntry {
         requireAwaitingReview();
         assignChild(childId);
         this.status = JournalEntryStatus.MATCHED;
+        resetAgentRetryCount();
     }
 
     /** 선생님이 확인 필요 큐에서 제외했다. 아동 기록으로 쓰지 않고 여기서 끝낸다. */
@@ -192,6 +206,26 @@ public class JournalEntry {
     public void releaseValidating() {
         requireStatus(JournalEntryStatus.VALIDATING);
         this.status = JournalEntryStatus.MATCHED;
+    }
+
+    /** AI 가 다운이라 검증하지 못했다. 일지 잘못이 아니므로 실패로 남기지 않고 검증 대기로 되돌리고 횟수를 센다. */
+    public void releaseValidatingAfterAgentDown() {
+        releaseValidating();
+        countAgentRetry();
+    }
+
+    /** AI 다운으로 지금 단계를 되돌린 횟수. 컬럼이 비어 있는(추가 전부터 있던) 행은 0 이다. */
+    public int getAgentRetryCount() {
+        return this.agentRetryCount == null ? 0 : this.agentRetryCount;
+    }
+
+    private void countAgentRetry() {
+        this.agentRetryCount = getAgentRetryCount() + 1;
+    }
+
+    // 매칭에서 쓴 횟수가 검증으로 넘어가면 검증은 시작하자마자 상한에 걸린다.
+    private void resetAgentRetryCount() {
+        this.agentRetryCount = 0;
     }
 
     /**

@@ -27,11 +27,13 @@ import com.itda.backend.dto.request.matching.MatchingAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.matching.MatchingTargetException;
+import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.agent.WorkerProperties;
 
 @ExtendWith(MockitoExtension.class)
 class MatchingWorkerTest {
 
+    private static final AgentDownProperties AGENT_DOWN = new AgentDownProperties(2);
     private static final MatchingProperties PROPERTIES = new MatchingProperties(new WorkerProperties(true, 5000, 10));
 
     @Mock
@@ -45,7 +47,7 @@ class MatchingWorkerTest {
 
     @BeforeEach
     void setUp() {
-        worker = new MatchingWorker(matchingService, client, recorder, PROPERTIES);
+        worker = new MatchingWorker(matchingService, client, recorder, PROPERTIES, AGENT_DOWN);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -123,6 +125,7 @@ class MatchingWorkerTest {
                 .withBean(MatchingAgentClient.class, () -> mock(MatchingAgentClient.class))
                 .withBean(MatchingResultRecorder.class, () -> mock(MatchingResultRecorder.class))
                 .withBean(MatchingProperties.class, () -> PROPERTIES)
+                .withBean(AgentDownProperties.class, () -> AGENT_DOWN)
                 .withUserConfiguration(MatchingWorker.class);
 
         runner.withPropertyValues("app.matching.worker.enabled=false")
@@ -154,17 +157,32 @@ class MatchingWorkerTest {
     }
 
     @Test
-    void 재시도까지_실패하면_그_건만_실패로_남기고_나머지는_대기로_돌려놓고_멈춘다() {
+    void AI_다운이면_처리_중이던_일지도_실패로_남기지_않고_나머지와_함께_대기로_돌려놓고_멈춘다() {
         given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L, 3L));
         given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
         given(client.match(requestFor(1L))).willThrow(new AiAgentUnavailableException("down", null));
+        given(matchingService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+
+        worker.run();
+
+        verify(recorder, never()).recordFailure(any());
+        verify(matchingService).release(List.of(2L, 3L));
+        verify(matchingService, never()).prepareRequest(2L);
+        verify(matchingService, never()).prepareRequest(3L);
+    }
+
+    @Test
+    void AI_다운으로_되돌린_횟수가_상한을_넘으면_그_건은_실패로_남겨_확인_필요_큐로_보낸다() {
+        given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L));
+        given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
+        given(client.match(requestFor(1L))).willThrow(new AiAgentUnavailableException("down", null));
+        given(matchingService.releaseAfterAgentDown(1L, 2)).willReturn(false);
 
         worker.run();
 
         verify(recorder).recordFailure(1L);
-        verify(matchingService).release(List.of(2L, 3L));
+        verify(matchingService).release(List.of(2L));
         verify(matchingService, never()).prepareRequest(2L);
-        verify(matchingService, never()).prepareRequest(3L);
     }
 
     @Test

@@ -22,7 +22,7 @@ import com.itda.backend.service.validation.ValidationProperties;
  */
 class AgentPropertiesBindingTest {
 
-    @EnableConfigurationProperties({AiAgentProperties.class, MatchingProperties.class, ValidationProperties.class,
+    @EnableConfigurationProperties({AiAgentProperties.class, AgentDownProperties.class, MatchingProperties.class, ValidationProperties.class,
             SummaryProperties.class})
     static class Config {
     }
@@ -39,6 +39,14 @@ class AgentPropertiesBindingTest {
             assertThat(ai.connectTimeout()).isEqualTo(Duration.ofSeconds(3));
             assertThat(ai.readTimeout()).isEqualTo(Duration.ofSeconds(70));
             assertThat(ai.retryBackoffs()).containsExactly(Duration.ofSeconds(2), Duration.ofSeconds(5));
+        });
+    }
+
+    @Test
+    void AI_다운_처리_설정을_읽는다() {
+        runner.run(context -> {
+            AgentDownProperties agentDown = context.getBean(AgentDownProperties.class);
+            assertThat(agentDown.maxReleases()).isEqualTo(2);
         });
     }
 

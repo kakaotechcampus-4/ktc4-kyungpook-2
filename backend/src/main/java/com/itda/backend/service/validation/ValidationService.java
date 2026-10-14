@@ -67,6 +67,27 @@ public class ValidationService {
                 .forEach(JournalEntry::releaseValidating);
     }
 
+    /**
+     * AI 가 다운이라 검증하지 못한 일지를 실패로 남기지 않고 검증 대기로 되돌린다 (#153).
+     *
+     * @return 되돌렸거나 되돌릴 필요가 없으면(이미 다른 상태) {@code true}. 이미 {@code maxReleases} 번 되돌린
+     *         일지면 그대로 두고 {@code false} — 워커가 실패로 남긴다
+     */
+    @Transactional
+    public boolean releaseAfterAgentDown(Long journalEntryId, int maxReleases) {
+        JournalEntry entry = journalEntryRepository.findById(journalEntryId)
+                .filter(found -> found.getStatus() == JournalEntryStatus.VALIDATING)
+                .orElse(null);
+        if (entry == null) {
+            return true;
+        }
+        if (entry.getAgentRetryCount() >= maxReleases) {
+            return false;
+        }
+        entry.releaseValidatingAfterAgentDown();
+        return true;
+    }
+
     /** 이전에 꺼진 앱이 처리하다 만 일지를 검증 대기로 되돌린다. 워커가 첫 실행에서 한 번만 부른다. */
     @Transactional
     public int releaseStuck() {

@@ -12,7 +12,7 @@ import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 @Configuration
-@EnableConfigurationProperties(AiAgentProperties.class)
+@EnableConfigurationProperties({AiAgentProperties.class, AgentDownProperties.class})
 public class AiAgentClientConfig {
 
     /**

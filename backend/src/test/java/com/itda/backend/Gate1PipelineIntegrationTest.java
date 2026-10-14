@@ -74,6 +74,7 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.approval.Gate1Version;
 import com.itda.backend.service.matching.MatchingAgentClient;
 import com.itda.backend.service.matching.MatchingAgentReply;
@@ -145,6 +146,7 @@ class Gate1PipelineIntegrationTest {
 
     @Autowired private MatchingService matchingService;
     @Autowired private MatchingResultRecorder matchingResultRecorder;
+    @Autowired private AgentDownProperties agentDownProperties;
     @Autowired private MatchingProperties matchingProperties;
     @Autowired private ValidationService validationService;
     @Autowired private ValidationResultRecorder validationResultRecorder;
@@ -172,9 +174,9 @@ class Gate1PipelineIntegrationTest {
                 List.of(ConsentField.DAILY_SUMMARY)));
 
         matchingWorker = new MatchingWorker(matchingService, fakeMatchingAgent(), matchingResultRecorder,
-                matchingProperties);
+                matchingProperties, agentDownProperties);
         validationWorker = new ValidationWorker(validationService, fakeValidationAgent(), validationResultRecorder,
-                validationProperties);
+                validationProperties, agentDownProperties);
         summaryWorker = new SummaryWorker(summaryService, fakeSummaryAgent(), summaryResultRecorder,
                 summaryProperties);
     }

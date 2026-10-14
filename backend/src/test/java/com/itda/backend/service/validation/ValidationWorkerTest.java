@@ -27,11 +27,13 @@ import com.itda.backend.dto.request.validation.ValidationAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.validation.ValidationTargetException;
+import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.agent.WorkerProperties;
 
 @ExtendWith(MockitoExtension.class)
 class ValidationWorkerTest {
 
+    private static final AgentDownProperties AGENT_DOWN = new AgentDownProperties(2);
     private static final ValidationProperties PROPERTIES = new ValidationProperties(new WorkerProperties(true, 5000, 10));
 
     @Mock
@@ -45,7 +47,7 @@ class ValidationWorkerTest {
 
     @BeforeEach
     void setUp() {
-        worker = new ValidationWorker(validationService, client, recorder, PROPERTIES);
+        worker = new ValidationWorker(validationService, client, recorder, PROPERTIES, AGENT_DOWN);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -139,17 +141,33 @@ class ValidationWorkerTest {
     }
 
     @Test
-    void 재시도까지_실패하면_그_건만_실패로_남기고_나머지는_검증_대기로_돌려놓고_멈춘다() {
+    void AI_다운이면_처리_중이던_일지도_실패로_남기지_않고_나머지와_함께_검증_대기로_돌려놓고_멈춘다() {
+        // LLM 만 죽어 있으면 /health 는 통과하고 AI 가 503 을 준다. 지금까지는 차례마다 1건씩 FAILED 로 빠졌다.
         given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L, 3L));
         given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
         given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+
+        worker.run();
+
+        verify(recorder, never()).recordFailure(any());
+        verify(validationService).release(List.of(2L, 3L));
+        verify(validationService, never()).prepareRequest(2L);
+        verify(validationService, never()).prepareRequest(3L);
+    }
+
+    @Test
+    void AI_다운으로_되돌린_횟수가_상한을_넘으면_그_건은_실패로_남긴다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(false);
 
         worker.run();
 
         verify(recorder).recordFailure(1L);
-        verify(validationService).release(List.of(2L, 3L));
+        verify(validationService).release(List.of(2L));
         verify(validationService, never()).prepareRequest(2L);
-        verify(validationService, never()).prepareRequest(3L);
     }
 
     @Test
@@ -180,6 +198,7 @@ class ValidationWorkerTest {
                 .withBean(ValidationAgentClient.class, () -> mock(ValidationAgentClient.class))
                 .withBean(ValidationResultRecorder.class, () -> mock(ValidationResultRecorder.class))
                 .withBean(ValidationProperties.class, () -> PROPERTIES)
+                .withBean(AgentDownProperties.class, () -> AGENT_DOWN)
                 .withUserConfiguration(ValidationWorker.class);
 
         runner.withPropertyValues("app.validation.worker.enabled=false")

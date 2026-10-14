@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import com.itda.backend.dto.request.matching.MatchingAgentRequest;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
+import com.itda.backend.service.agent.AgentDownProperties;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -19,7 +20,9 @@ import lombok.extern.slf4j.Slf4j;
  * 겹쳐 돌지 않으므로, 매칭·검증·요약을 합쳐도 동시 호출은 워커 수를 넘지 않는다.
  *
  * <p>실패는 그 일지 한 건만 FAILED 로 남긴다. 다만 AI 가 꺼져 있을 때 일지를 계속 집으면 대기 중인 일지가
- * 전부 FAILED 가 되므로, 집기 전에 AI 상태를 보고, 재시도까지 응답이 없으면 나머지를 대기로 돌려놓고 멈춘다.
+ * 전부 FAILED 가 되므로, 집기 전에 AI 상태를 보고, 재시도까지 응답이 없으면(AI 다운) 처리 중이던 일지까지
+ * 대기로 돌려놓고 멈춘다. 같은 일지가 상한({@code app.ai.agent-down.max-releases})을 넘겨 다운을 만나면 그 일지만
+ * FAILED 로 남겨 확인 필요 큐로 보낸다 (#153).
  */
 @Slf4j
 @Component
@@ -30,6 +33,7 @@ public class MatchingWorker {
     private final MatchingAgentClient client;
     private final MatchingResultRecorder recorder;
     private final int batchSize;
+    private final int maxReleases;
 
     /**
      * 앱이 켜진 뒤 첫 실행인지. 멈춘 일지 되돌리기를 ApplicationReadyEvent 가 아니라 여기서 하는 이유는,
@@ -45,11 +49,13 @@ public class MatchingWorker {
             MatchingService matchingService,
             MatchingAgentClient client,
             MatchingResultRecorder recorder,
-            MatchingProperties properties) {
+            MatchingProperties properties,
+            AgentDownProperties agentDown) {
         this.matchingService = matchingService;
         this.client = client;
         this.recorder = recorder;
         this.batchSize = properties.worker().batchSize();
+        this.maxReleases = agentDown.maxReleases();
     }
 
     @Scheduled(fixedDelayString = "${app.matching.worker.delay-ms}")
@@ -103,9 +109,31 @@ public class MatchingWorker {
                 log.info("stopping matching worker during shutdown journalEntryId={}", journalEntryId);
                 return Outcome.SHUTTING_DOWN;
             }
+            if (e instanceof AiAgentUnavailableException) {
+                log.warn("matching agent unavailable journalEntryId={}", journalEntryId, e);
+                releaseOrFail(journalEntryId);
+                return Outcome.AGENT_DOWN;
+            }
             log.warn("matching failed journalEntryId={}", journalEntryId, e);
             recordFailure(journalEntryId);
-            return e instanceof AiAgentUnavailableException ? Outcome.AGENT_DOWN : Outcome.DONE;
+            return Outcome.DONE;
+        }
+    }
+
+    /**
+     * AI 다운은 일지 잘못이 아니라서 실패로 남기지 않고 대기로 되돌린다. 이미 상한만큼 되돌린 일지면 실패로 남긴다 —
+     * AI 가 이 일지만 계속 거절하는 경우를 다운과 구별할 수 없어서, 그런 일지가 대기열 맨 앞을 막지 않게 한다.
+     */
+    private void releaseOrFail(Long journalEntryId) {
+        try {
+            if (!matchingService.releaseAfterAgentDown(journalEntryId, maxReleases)) {
+                log.warn("matching agent down {} times in a row, recording as failure journalEntryId={}",
+                        maxReleases + 1, journalEntryId);
+                recordFailure(journalEntryId);
+            }
+        } catch (RuntimeException releaseError) {
+            // 일지는 처리 중 상태로 남는다. 다음에 켜질 때 releaseStuck 이 되돌린다.
+            log.error("could not release matching after agent down journalEntryId={}", journalEntryId, releaseError);
         }
     }
 
