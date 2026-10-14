@@ -25,7 +25,7 @@ API 계약은 API 규약을, 의존성과 버전은 `build.gradle`을 기준으�
 | API 문서 | Springdoc OpenAPI |
 | 데이터 접근 | Spring Data JPA |
 | 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
-| AI 서버 호출 | Spring `RestClient` + Apache HttpClient 5 (자동 재시도 끔) |
+| AI 서버 호출 | Spring `RestClient` + Apache HttpClient 5 (503·429 자동 재시도 끔) |
 | 운영 데이터베이스 | PostgreSQL |
 | 테스트 데이터베이스 | H2 PostgreSQL 호환 모드 |
 | 테스트 | Spring Boot Test, JUnit 5, Spring Security Test, Testcontainers PostgreSQL |
