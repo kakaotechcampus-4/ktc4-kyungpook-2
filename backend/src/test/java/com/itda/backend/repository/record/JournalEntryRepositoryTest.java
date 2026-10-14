@@ -158,4 +158,29 @@ class JournalEntryRepositoryTest {
 
         assertThat(journalEntryRepository.findValidationTargets(JournalEntryStatus.MATCHED, Limit.of(10))).isEmpty();
     }
+
+    private JournalEntry inSummary(Long summaryId) {
+        JournalEntry entry = JournalEntry.of(3L, LocalDate.of(2026, 9, 1), "기록", 1);
+        entry.startMatching();
+        entry.confirmMatch(8L);
+        entry.startValidating();
+        entry.passValidation();
+        entry.startSummarizing();
+        entry.completeSummary(summaryId);
+        return journalEntryRepository.saveAndFlush(entry);
+    }
+
+    @Test
+    void 한_요약에_든_일지_중_주어진_상태이고_삭제되지_않은_것만_가져온다() {
+        JournalEntry kept = inSummary(50L);
+        JournalEntry held = inSummary(50L);
+        held.holdGate1();
+        JournalEntry deleted = inSummary(50L);
+        deleted.delete();
+        inSummary(51L);
+        journalEntryRepository.flush();
+
+        assertThat(journalEntryRepository.findIdsBySummaryIdAndStatus(50L, JournalEntryStatus.GATE1_PENDING))
+                .containsExactly(kept.getId());
+    }
 }

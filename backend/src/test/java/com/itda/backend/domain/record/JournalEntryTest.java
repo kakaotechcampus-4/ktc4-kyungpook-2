@@ -296,4 +296,35 @@ class JournalEntryTest {
 
         assertThatThrownBy(() -> entry.completeSummary(null)).isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void 요약이_승인되면_Gate1_대기_일지는_완료된다() {
+        JournalEntry entry = gate1Pending();
+
+        entry.completeGate1();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.COMPLETED);
+        assertThat(entry.getSummaryId()).isEqualTo(50L);
+    }
+
+    @Test
+    void 요약이_보류되면_일지도_보류되고_보류_해제하면_Gate1_대기로_돌아온다() {
+        JournalEntry entry = gate1Pending();
+
+        entry.holdGate1();
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.GATE1_HELD);
+        // 보류된 일지는 워커가 다시 집어 가지 않는다.
+        assertThatThrownBy(entry::startSummarizing).isInstanceOf(IllegalStateException.class);
+
+        entry.reopenGate1();
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(entry.getSummaryId()).isEqualTo(50L);
+    }
+
+    @Test
+    void Gate1_대기가_아니면_승인_보류를_반영할_수_없고_보류된_일지만_보류_해제할_수_있다() {
+        assertThatThrownBy(() -> validated().completeGate1()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> validated().holdGate1()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> gate1Pending().reopenGate1()).isInstanceOf(IllegalStateException.class);
+    }
 }

@@ -105,4 +105,71 @@ class SummaryResultTest {
         assertThatThrownBy(() -> summary().overwrite("", "[]", "[]", "[]", "{}"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void 승인하면_승인_상태가_되고_더는_덮어쓸_수_없다() {
+        SummaryResult result = summary();
+
+        result.approve();
+
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.APPROVED);
+        assertThat(result.isBeforeApproval()).isFalse();
+        assertThatThrownBy(() -> result.overwrite("다시", "[]", "[]", "[]", "{}"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 보류하면_보류_상태가_되고_보류_해제하면_Gate1_대기로_돌아온다() {
+        SummaryResult result = summary();
+
+        result.hold();
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.HOLD);
+        // 보류된 판은 승인 전이 아니다 — 같은 묶음에 새 일지가 와도 이 판을 덮어쓰지 않고 새 판을 만든다.
+        assertThat(result.isBeforeApproval()).isFalse();
+
+        result.reopen();
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+    }
+
+    @Test
+    void 제거하면_제거_상태가_된다() {
+        SummaryResult result = summary();
+
+        result.remove();
+
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.REMOVED);
+        assertThat(result.isBeforeApproval()).isFalse();
+    }
+
+    @Test
+    void Gate1_대기가_아니면_승인_보류_제거할_수_없다() {
+        SummaryResult approved = summary();
+        approved.approve();
+
+        assertThatThrownBy(approved::approve).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(approved::hold).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(approved::remove).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 보류된_요약은_보류함에서_바로_제거할_수_있지만_승인은_보류를_해제한_뒤에_한다() {
+        SummaryResult held = summary();
+        held.hold();
+
+        assertThatThrownBy(held::approve).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(held::hold).isInstanceOf(IllegalStateException.class);
+
+        held.remove();
+        assertThat(held.getStatus()).isEqualTo(SummaryStatus.REMOVED);
+    }
+
+    @Test
+    void 보류된_요약만_보류_해제할_수_있다() {
+        SummaryResult pending = summary();
+        SummaryResult approved = summary();
+        approved.approve();
+
+        assertThatThrownBy(pending::reopen).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(approved::reopen).isInstanceOf(IllegalStateException.class);
+    }
 }

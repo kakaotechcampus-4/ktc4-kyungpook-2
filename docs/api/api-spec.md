@@ -693,9 +693,12 @@ O-15 ~ O-19 공통 오류:
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| O-30 | GET | `/summaries?gate1Status=pending` | 검토 대기 요약 목록 | I-03, I-08 |
-| O-31 | POST | `/summaries/{summaryId}/gate1` | 승인 / 수정 후 승인 / 반려 | I-08 |
+| O-30 | GET | `/summaries?gate1Status=pending\|hold` | 검토 대기 목록 · 보류함 · **초안 구현** | I-03, I-08 |
+| O-31 | POST | `/summaries/{summaryId}/gate1` | 승인 / 수정 후 승인 / 보류 / 제거 · **구현됨** | I-08 |
 | O-32 | POST | `/summaries/run` | 지금 요약 · **구현됨** | I-08 |
+| O-33 | POST | `/summaries/{summaryId}/reopen` | 보류 해제 · **구현됨** | I-08 |
+
+> O-30 · O-31 · O-33 의 응답 모양은 와이어프레임 합의 전 초안입니다(#178). 화면이 정해지면 #183 에서 확정합니다.
 
 **O-32 요청**
 
@@ -716,45 +719,94 @@ O-15 ~ O-19 공통 오류:
 | 그 아이·날짜에 요약할 기록도, 매칭·검증 중인 기록도 없음 | 400 | `SUMMARY_INVALID_REQUEST` |
 | 없는 아이이거나 다른 기관 소속 | 404 | `SUMMARY_CHILD_NOT_FOUND` |
 
-**O-30 응답**
+**O-30 응답** · 초안
+
+우리 기관의 요약을 오래된 날짜부터 줍니다. `gate1Status` 는 `pending`(기본값, 검토 대기)과 `hold`(보류함)만
+받고 다른 값은 `400 SUMMARY_INVALID_REQUEST` 입니다.
 
 ```json
 [
-  { "id": "1", "childId": "1", "childName": "김하늘",
-    "institutionName": "햇살아동발달센터", "date": "2026-08-21",
-    "recordType": "관찰일지", "validation": "REVIEW",
-    "content": "오전 활동에서 또래와 …",
-    "flaggedSpan": "또래와 다툼이 있었던 것으로 보입니다",
-    "flagReason": "관찰되지 않은 추정 표현",
-    "gate1Status": "pending", "sourceCount": 2 }
+  { "id": 50, "childId": 8, "childName": "김하늘", "entryDate": "2026-10-08", "revision": 1,
+    "status": "GATE1_PENDING", "version": "2026-10-09T03:05:12.345678/1041,1042", "processing": false,
+    "content": "오전 활동에서 블록을 다섯 층까지 쌓았다 …",
+    "needsReview": true, "reviewReasons": ["다른아동이름"],
+    "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
+    "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"] } ] }
 ]
 ```
 
-- `flaggedSpan`은 `content` **안에 그대로 포함된 부분 문자열**이어야 합니다. 프론트가
-  본문에서 그 문장을 찾아 하이라이트합니다.
-- 프론트는 `gate1Status`가 `pending`과 `rejected`인 항목을 모두 화면에 씁니다
-  (반려 이력 표시). 필터는 프론트에서 합니다.
+| 필드 | 뜻 |
+| --- | --- |
+| `version` | 결정(O-31)할 때 그대로 돌려보내는 값(요약 수정 시각 + 요약에 든 일지 id). 해석하지 말고 문자열 그대로 보내주세요 |
+| `processing` | 같은 날 이 아이 기록 중 아직 요약에 반영되지 않은 것이 있어 곧 이 요약이 바뀜(검증·요약 중). 매칭 전이라 누구 기록인지 모르는 것이 있어도 켜집니다. 열기·승인 버튼을 막아주세요. 보류함 항목과 옛 판은 항상 `false` |
+| `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
+| `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
+| `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유(`issue_types` 원본) |
+
+`reviewFlags` 는 검증이 짚은 구간이 **요약 문장의 근거 구간과 같은 일지에서 겹칠 때만** 나옵니다. 요약에 안 실린
+부분의 문제까지 띄우지 않기 위해서입니다. 검증 사유와 구간이 짝지어져 있지 않아 일지 단위로 판단하고, 겹치면 그 일지의
+사유를 모두 줍니다. 검증 구간이 비어 있으면(어디가 문제인지 모름) 줍니다. 하이라이트(`flaggedSpan`)는 하지 않습니다.
+사유 단위로 거르는 것은 검증 `issues` 필드가 생긴 뒤입니다(#179).
 
 **O-31 요청**
 
 ```json
-{ "decision": "approve", "editedContent": "선생님이 수정한 본문" }
+{ "decision": "approve", "version": "2026-10-09T03:05:12.345678/1041,1042" }
 ```
 
 ```json
-{ "decision": "reject", "reason": "관찰하지 않은 내용이 포함됨" }
+{ "decision": "approve", "editedContent": "선생님이 고친 본문", "version": "2026-10-09T03:05:12.345678/1041,1042" }
+```
+
+```json
+{ "decision": "hold", "version": "2026-10-09T03:05:12.345678/1041,1042" }
 ```
 
 | 필드 | 조건 |
 | --- | --- |
-| `decision` | `approve` \| `reject` |
-| `editedContent` | `approve` + 수정했을 때만 |
-| `reason` | `reject`일 때 필수 |
+| `decision` | `approve` \| `hold` \| `remove` (반려는 없습니다 — 고쳐서 승인하거나 보류·제거합니다) |
+| `editedContent` | `approve` 일 때만. 빈 문자열 불가. 보류·제거에 보내면 400 |
+| `version` | 필수. O-30 에서 받은 값 그대로 |
 
-**응답** · `{ "gate1Status": "approved" }`
+| 결정 | 요약 | 그 요약의 일지 | 기록(`decision`) |
+| --- | --- | --- | --- |
+| 승인 (`editedContent` 없음 또는 AI 원문과 같음) | 승인 | 요약에 안 들어간 일지까지 모두 완료 | `APPROVED` |
+| 고쳐서 승인 (AI 원문과 한 글자라도 다름. 줄바꿈 방식·앞뒤 공백 차이는 무시) | 승인. 고친 본문이 아동 타임라인에 올라감 | 위와 같음 | `CORRECTED` |
+| 보류 | 보류함으로 | 함께 보류 (같은 날 새 기록이 와도 묶이지 않음) | `HOLD` |
+| 제거 | 제거 | 모두 삭제. **되돌릴 수 없음** | `REMOVED` |
 
-승인 시 Child Context에 적재하고, 반려 시 저장하지 않고 원본으로부터 요약을 재생성해
-다시 `pending`으로 만들어주세요.
+승인과 제거는 되돌릴 수 없으니 확인 팝업을 띄워주세요. 고친 본문은 MVP 에서 다시 검증하지 않습니다.
+
+**보류함**은 보류 해제(O-33)와 제거만 둡니다. 보류된 요약을 승인하려면 보류를 해제한 뒤 검토 목록에서 합니다.
+
+`409 SUMMARY_CHANGED` 를 받으면 "요약이 새 기록으로 바뀌었어요" 안내를 띄우고 목록으로 돌아가 다시 불러와 주세요 —
+교사가 화면을 연 사이 같은 날 기록이 들어와 요약이 다시 만들어진 경우입니다.
+
+**응답** · 초안
+
+```json
+{ "summaryId": 50, "status": "APPROVED", "decision": "CORRECTED" }
+```
+
+| 실패 | 상태 | 코드 |
+| --- | --- | --- |
+| `decision`·`version` 누락, 허용되지 않은 값, 빈 `editedContent`, 승인이 아닌데 `editedContent` | 400 | `INVALID_REQUEST` |
+| 없는 요약이거나 다른 기관 요약 | 404 | `SUMMARY_NOT_FOUND` |
+| 이미 처리된 요약 | 409 | `SUMMARY_ALREADY_REVIEWED` |
+| 보류된 요약을 승인·보류 (보류 해제 먼저) | 409 | `SUMMARY_HELD` |
+| 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
+| 목록에서 본 뒤 요약이 새 기록으로 바뀜 — 목록을 다시 불러오기 | 409 | `SUMMARY_CHANGED` |
+
+**O-33 보류 해제** · 본문 없음
+
+보류함의 요약과 그 일지를 다시 검토 대기로 돌립니다. 응답은 O-31 과 같은 모양입니다
+(`{ "summaryId": 50, "status": "GATE1_PENDING", "decision": "REOPENED" }`).
+
+| 실패 | 상태 | 코드 |
+| --- | --- | --- |
+| 없는 요약이거나 다른 기관 요약 | 404 | `SUMMARY_NOT_FOUND` |
+| 보류된 요약이 아님 | 409 | `SUMMARY_NOT_HELD` |
+| 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
 
 ### 4.5 Insight · Gate 2
 
@@ -1196,9 +1248,14 @@ O-15 ~ O-19 공통 오류:
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |
 | `MATCHING_RESULT_INVALID_REQUEST` | 400 | 확인 필요 큐 처리 요청 거절 (O-23) |
 | `MATCHING_RESULT_NOT_FOUND` | 404 | 없거나 다른 기관의 확인 필요 큐 항목 (O-23) |
-| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 지금 요약 거절 (O-32) |
+| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 지금 요약 거절 (O-32), 지원하지 않는 `gate1Status` (O-30) |
 | `SUMMARY_CHILD_NOT_FOUND` | 404 | 없거나 다른 기관의 아이로 지금 요약 요청 (O-32) |
-| `SUMMARY_ALREADY_DECIDED` | 409 | 이미 승인/반려된 요약 재결정 |
+| `SUMMARY_NOT_FOUND` | 404 | 없거나 다른 기관의 요약 (O-31 · O-33) |
+| `SUMMARY_ALREADY_REVIEWED` | 409 | 이미 처리된 요약 재결정 (O-31) |
+| `SUMMARY_REGENERATING` | 409 | 새 기록을 반영해 요약을 다시 만드는 중 (O-31 · O-33) |
+| `SUMMARY_CHANGED` | 409 | 목록에서 본 뒤 요약이 새 기록으로 바뀜 (O-31) |
+| `SUMMARY_HELD` | 409 | 보류된 요약을 승인·보류 — 보류 해제 먼저 (O-31) |
+| `SUMMARY_NOT_HELD` | 409 | 보류되지 않은 요약 보류 해제 (O-33) |
 | `INSIGHT_ALREADY_SENT` | 409 | 이미 발송된 Insight 재발송 |
 | `NOT_PRIMARY_SOURCE` | 403 | 근거 제공 기관이 아닌 곳의 Gate 2 승인 시도 |
 
@@ -1213,7 +1270,7 @@ O-15 ~ O-19 공통 오류:
 | 1 | 인증 · 세션 | `/oauth2/authorization/kakao`(완료), `/auth/logout`(완료), `/auth/me`(완료), `/auth/signup`(완료), `/auth/terms` | I-01, P-01, 전 화면 가드 |
 | 2 | 아동 조회 | O-10, O-13, O-14 | I-09, I-09-1 |
 | 3 | 기록 등록 · 큐 | O-20 ~ O-25 | I-05, I-06, I-07 |
-| 4 | Gate 1 | O-30, O-31 | I-08, I-03 |
+| 4 | Gate 1 | O-30, O-31, O-33 | I-08, I-03 |
 | 5 | 보호자 연결 · 동의 | O-15 ~ O-19, G-04 · G-05, G-02, G-41 (모두 완료) | I-04, I-09-1, P-01, P-02 |
 | 6 | 보호자 열람 | G-10 ~ G-22 | P-03, P-07, P-08 |
 | 7 | Insight · Gate 2 | O-40 ~ O-42 | I-10, I-11 |
