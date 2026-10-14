@@ -239,4 +239,22 @@ class MatchingWorkerTest {
 
         verify(matchingService, times(2)).claimPending(10);
     }
+    @Test
+    void 나머지_일지를_되돌리다_실패해도_AI_다운_뒤에는_쉰다() {
+        given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L));
+        given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
+        given(client.match(requestFor(1L))).willThrow(new AiAgentUnavailableException("down", null));
+        given(matchingService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+        willThrow(new IllegalStateException("db hiccup")).given(matchingService).release(List.of(2L));
+        try {
+            worker.run();
+        } catch (IllegalStateException ignored) {
+            // 예외는 스케줄러가 로그로 남긴다. 여기서는 쉬기가 걸렸는지만 본다.
+        }
+
+        clock.advance(Duration.ofSeconds(29));
+        worker.run();
+
+        verify(matchingService, times(1)).claimPending(anyInt());
+    }
 }

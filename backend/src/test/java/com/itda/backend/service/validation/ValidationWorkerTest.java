@@ -240,4 +240,22 @@ class ValidationWorkerTest {
 
         verify(validationService, times(2)).claimMatched(10);
     }
+    @Test
+    void 나머지_일지를_되돌리다_실패해도_AI_다운_뒤에는_쉰다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+        willThrow(new IllegalStateException("db hiccup")).given(validationService).release(List.of(2L));
+        try {
+            worker.run();
+        } catch (IllegalStateException ignored) {
+            // 예외는 스케줄러가 로그로 남긴다. 여기서는 쉬기가 걸렸는지만 본다.
+        }
+
+        clock.advance(Duration.ofSeconds(29));
+        worker.run();
+
+        verify(validationService, times(1)).claimMatched(anyInt());
+    }
 }

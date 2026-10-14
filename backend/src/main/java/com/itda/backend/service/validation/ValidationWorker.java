@@ -82,9 +82,10 @@ public class ValidationWorker {
         for (int i = 0; i < claimed.size(); i++) {
             Outcome outcome = process(claimed.get(i));
             if (outcome == Outcome.AGENT_DOWN) {
-                validationService.release(claimed.subList(i + 1, claimed.size()));
+                // 쉬기를 먼저 건다. 되돌리기가 실패해 예외가 나가도 다음 차례에 바로 다시 부르지 않게.
                 pausedUntil = clock.instant().plus(pause);
                 log.info("validation agent down, pausing for {}", pause);
+                validationService.release(claimed.subList(i + 1, claimed.size()));
                 return;
             }
             if (outcome == Outcome.SHUTTING_DOWN) {
