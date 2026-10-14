@@ -121,8 +121,7 @@ public class ValidationWorker {
             }
             if (e instanceof AiAgentUnavailableException) {
                 log.warn("validation agent unavailable journalEntryId={}", journalEntryId, e);
-                releaseOrFail(journalEntryId);
-                return Outcome.AGENT_DOWN;
+                return releaseOrFail(journalEntryId);
             }
             log.warn("validation failed journalEntryId={}", journalEntryId, e);
             recordFailure(journalEntryId);
@@ -133,18 +132,24 @@ public class ValidationWorker {
     /**
      * AI 다운은 일지 잘못이 아니라서 실패로 남기지 않고 검증 대기로 되돌린다. 이미 상한만큼 되돌린 일지면 실패로 남긴다 —
      * AI 가 이 일지만 계속 거절하는 경우를 다운과 구별할 수 없어서, 그런 일지가 대기열 맨 앞을 막지 않게 한다.
+     *
+     * @return 되돌렸으면 {@link Outcome#AGENT_DOWN} (나머지도 되돌리고 쉰다). 실패로 남겼으면 {@link Outcome#DONE} —
+     *         그 일지는 빠졌으니 다음 일지를 계속한다. 정말 다운이면 다음 일지에서 다시 다운을 만나 그때 멈춘다
      */
-    private void releaseOrFail(Long journalEntryId) {
+    private Outcome releaseOrFail(Long journalEntryId) {
         try {
-            if (!validationService.releaseAfterAgentDown(journalEntryId, maxReleases)) {
-                log.warn("validation agent down {} times in a row, recording as failure journalEntryId={}",
-                        maxReleases + 1, journalEntryId);
-                recordFailure(journalEntryId);
+            if (validationService.releaseAfterAgentDown(journalEntryId, maxReleases)) {
+                return Outcome.AGENT_DOWN;
             }
         } catch (RuntimeException releaseError) {
             // 일지는 처리 중 상태로 남는다. 다음에 켜질 때 releaseStuck 이 되돌린다.
             log.error("could not release validation after agent down journalEntryId={}", journalEntryId, releaseError);
+            return Outcome.AGENT_DOWN;
         }
+        log.warn("validation agent down {} times in a row, recording as failure journalEntryId={}",
+                maxReleases + 1, journalEntryId);
+        recordFailure(journalEntryId);
+        return Outcome.DONE;
     }
 
     private void recordFailure(Long journalEntryId) {

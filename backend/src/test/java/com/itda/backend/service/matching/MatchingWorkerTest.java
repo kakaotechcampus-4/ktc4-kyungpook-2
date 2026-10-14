@@ -183,12 +183,14 @@ class MatchingWorkerTest {
         given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
         given(client.match(requestFor(1L))).willThrow(new AiAgentUnavailableException("down", null));
         given(matchingService.releaseAfterAgentDown(1L, 2)).willReturn(false);
+        given(matchingService.prepareRequest(2L)).willReturn(requestFor(2L));
 
         worker.run();
 
+        // 그 일지는 빠졌으니 대기열을 멈추지 않는다 — AI 가 이 일지만 거절하는 경우 나머지는 정상으로 처리된다.
         verify(recorder).recordFailure(1L);
-        verify(matchingService).release(List.of(2L));
-        verify(matchingService, never()).prepareRequest(2L);
+        verify(matchingService).prepareRequest(2L);
+        verify(matchingService, never()).release(any());
     }
 
     @Test

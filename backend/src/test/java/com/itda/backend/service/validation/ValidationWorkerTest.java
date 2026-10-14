@@ -167,12 +167,14 @@ class ValidationWorkerTest {
         given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
         given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
         given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(false);
+        given(validationService.prepareRequest(2L)).willReturn(targetFor(2L));
 
         worker.run();
 
+        // 그 일지는 빠졌으니 대기열을 멈추지 않는다 — AI 가 이 일지만 거절하는 경우 나머지는 정상으로 처리된다.
         verify(recorder).recordFailure(1L);
-        verify(validationService).release(List.of(2L));
-        verify(validationService, never()).prepareRequest(2L);
+        verify(validationService).prepareRequest(2L);
+        verify(validationService, never()).release(any());
     }
 
     @Test
