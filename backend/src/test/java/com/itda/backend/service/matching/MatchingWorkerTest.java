@@ -259,4 +259,19 @@ class MatchingWorkerTest {
 
         verify(matchingService, times(1)).claimPending(anyInt());
     }
+    @Test
+    void AI_다운_뒤_되돌리기가_실패해도_실패로_남기지_않고_멈춰서_쉰다() {
+        given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L));
+        given(matchingService.prepareRequest(1L)).willReturn(requestFor(1L));
+        given(client.match(requestFor(1L))).willThrow(new AiAgentUnavailableException("down", null));
+        willThrow(new IllegalStateException("db hiccup")).given(matchingService).releaseAfterAgentDown(1L, 2);
+
+        worker.run();
+        clock.advance(Duration.ofSeconds(29));
+        worker.run();
+
+        verify(recorder, never()).recordFailure(any());
+        verify(matchingService, never()).prepareRequest(2L);
+        verify(matchingService, times(1)).claimPending(anyInt());
+    }
 }

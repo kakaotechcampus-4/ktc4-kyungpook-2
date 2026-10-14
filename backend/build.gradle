@@ -35,7 +35,8 @@ dependencies {
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.9.1'
 	implementation platform('software.amazon.awssdk:bom:2.54.14')
 	implementation 'software.amazon.awssdk:s3'
-	// AI 서버 호출 클라이언트. 503·429 자동 재시도를 끄려고 직접 설정한다 (AiAgentClientConfig, #153). 버전은 Spring Boot 가 관리
+	// AI 서버 호출 클라이언트. 503·429 자동 재시도를 끄려고 직접 설정한다 (AiAgentClientConfig, #153).
+	// 버전은 이 선언 전부터 Spring Boot 의존성 관리가 정한 값(5.5)을 따른다. AWS SDK apache5-client 는 5.6 을 원해 낮춰져 있다
 	implementation 'org.apache.httpcomponents.client5:httpclient5'
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'

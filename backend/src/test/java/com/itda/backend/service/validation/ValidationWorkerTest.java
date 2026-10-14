@@ -260,4 +260,19 @@ class ValidationWorkerTest {
 
         verify(validationService, times(1)).claimMatched(anyInt());
     }
+    @Test
+    void AI_다운_뒤_되돌리기가_실패해도_실패로_남기지_않고_멈춰서_쉰다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        willThrow(new IllegalStateException("db hiccup")).given(validationService).releaseAfterAgentDown(1L, 2);
+
+        worker.run();
+        clock.advance(Duration.ofSeconds(29));
+        worker.run();
+
+        verify(recorder, never()).recordFailure(any());
+        verify(validationService, never()).prepareRequest(2L);
+        verify(validationService, times(1)).claimMatched(anyInt());
+    }
 }
