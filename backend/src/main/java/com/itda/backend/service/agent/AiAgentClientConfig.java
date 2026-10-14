@@ -33,8 +33,9 @@ public class AiAgentClientConfig {
     /**
      * AI 서버를 부르는 요청 팩토리. 요약처럼 응답 대기 시간만 다른 클라이언트도 이걸 쓴다.
      *
-     * <p>Apache HttpClient 5 는 기본으로 503·429 를 한 번 더 보낸다. 재시도는 {@link AiAgentClient} 한 곳에서만
-     * 하므로 여기서 끈다. 켜 두면 설정한 3번이 실제로는 6번이 된다 (#153). 재시도 정책은 {@link #retryStrategy()}.
+     * <p>Apache HttpClient 5 는 기본으로 503·429 를 한 번 더 보낸다. 응답을 보고 다시 보내는 것은
+     * {@link AiAgentClient} 한 곳에서만 하므로 여기서 끈다. 켜 두면 설정한 3번이 실제로는 6번이 된다 (#153).
+     * 연결이 끊긴 GET 을 한 번 다시 보내는 것만 남긴다 — {@link #retryStrategy()}.
      */
     public static ClientHttpRequestFactory requestFactory(Duration connectTimeout, Duration readTimeout) {
         ClientHttpRequestFactorySettings settings = ClientHttpRequestFactorySettings.defaults()

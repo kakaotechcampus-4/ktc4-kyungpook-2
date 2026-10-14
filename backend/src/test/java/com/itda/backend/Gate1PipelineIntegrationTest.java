@@ -148,6 +148,7 @@ class Gate1PipelineIntegrationTest {
     @Autowired private MatchingService matchingService;
     @Autowired private MatchingResultRecorder matchingResultRecorder;
     @Autowired private AgentDownProperties agentDownProperties;
+    @Autowired private Clock clock;
     @Autowired private MatchingProperties matchingProperties;
     @Autowired private ValidationService validationService;
     @Autowired private ValidationResultRecorder validationResultRecorder;
@@ -175,9 +176,9 @@ class Gate1PipelineIntegrationTest {
                 List.of(ConsentField.DAILY_SUMMARY)));
 
         matchingWorker = new MatchingWorker(matchingService, fakeMatchingAgent(), matchingResultRecorder,
-                matchingProperties, agentDownProperties, Clock.systemDefaultZone());
+                matchingProperties, agentDownProperties, clock);
         validationWorker = new ValidationWorker(validationService, fakeValidationAgent(), validationResultRecorder,
-                validationProperties, agentDownProperties, Clock.systemDefaultZone());
+                validationProperties, agentDownProperties, clock);
         summaryWorker = new SummaryWorker(summaryService, fakeSummaryAgent(), summaryResultRecorder,
                 summaryProperties);
     }
