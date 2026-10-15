@@ -1,7 +1,7 @@
 import { useState, useTransition } from "react";
-import { redirect, useLoaderData, useNavigate } from "react-router";
+import { Link, redirect, useLoaderData, useNavigate } from "react-router";
 import { grantRole, isOnboarded, markOnboarded } from "@/lib/auth";
-import { getConsentPreview, unlinkChild, updateConsent } from "@/lib/api";
+import { ApiError, getConsentPreview, grantConsent, unlinkChild } from "@/lib/api";
 import { InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
@@ -31,6 +31,7 @@ export default function ParentConsentPage() {
   const { preview } = useLoaderData<typeof clientLoader>();
   const [consented, setConsented] = useState(false);
   const [mismatch, setMismatch] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [rejecting, startReject] = useTransition();
   const navigate = useNavigate();
@@ -54,7 +55,33 @@ export default function ParentConsentPage() {
     );
   }
 
-  const { child, institution, documentUrl, sharedFields, notSharedFields } = preview;
+  const { child, institution, documentUrl, sharedFields, notSharedFields, allowedFields } =
+    preview;
+
+  function save() {
+    setSaveError(null);
+    start(async () => {
+      try {
+        await grantConsent(child.id, institution.id, allowedFields);
+      } catch (err) {
+        if (err instanceof ApiError && err.code === "SIGNUP_NOT_COMPLETED") {
+          navigate("/signup?role=parent", { replace: true });
+          return;
+        }
+        setSaveError(saveErrorMessage(err));
+        return;
+      }
+      // 온보딩 중이면 돌봄 정보 입력(4단계)까지 이어가고, 이미 쓰던 보호자가
+      // 새 기관 요청을 승인한 것이면 홈으로 돌아간다.
+      if (isOnboarded()) {
+        navigate("/parent");
+      } else {
+        grantRole("parent"); // 쿼리로 바로 들어온 경우를 위한 보정
+        markOnboarded();
+        navigate("/parent/care-info?onboarding=1");
+      }
+    });
+  }
 
   if (mismatch) {
     return (
@@ -175,24 +202,13 @@ export default function ParentConsentPage() {
 
       {/* 하단 고정 — 스크롤 위치와 무관하게 동의 버튼이 보여야 한다 */}
       <div className="fixed bottom-0 left-1/2 w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] -translate-x-1/2 border-t border-line bg-surface px-4 py-3">
+        {saveError ? (
+          <p role="alert" className="mb-2 text-center text-[14px] leading-6 text-block">
+            {saveError}
+          </p>
+        ) : null}
         <button
-          onClick={() =>
-            start(async () => {
-              await updateConsent(child.id, institution.id, {
-                allowed_fields: sharedFields,
-                action: "grant",
-              });
-              // 온보딩 중이면 돌봄 정보 입력(4단계)까지 이어가고, 이미 쓰던 보호자가
-              // 새 기관 요청을 승인한 것이면 홈으로 돌아간다.
-              if (isOnboarded()) {
-                navigate("/parent");
-              } else {
-                grantRole("parent"); // 쿼리로 바로 들어온 경우를 위한 보정
-                markOnboarded();
-                navigate("/parent/care-info?onboarding=1");
-              }
-            })
-          }
+          onClick={save}
           disabled={!consented || pending}
           className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted"
         >
@@ -204,6 +220,50 @@ export default function ParentConsentPage() {
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** 동의 저장 실패를 보호자가 할 수 있는 일로 바꿔 말한다 (api-spec G-41 오류) */
+function saveErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiError)) return "네트워크 연결을 확인하고 다시 시도해 주세요.";
+  if (err.code === "CONSENT_TARGET_NOT_FOUND") {
+    return "기관 명부에서 아이 정보를 찾을 수 없어요. 기관에 확인해 주세요.";
+  }
+  if (err.code === "PARENT_REQUIRED") {
+    return "기관 계정으로 로그인돼 있어요. 보호자 카카오 계정으로 다시 로그인해 주세요.";
+  }
+  if (err.status === 401) return "로그인이 풀렸어요. 다시 로그인한 뒤 시도해 주세요.";
+  // 연결이 끊긴 아이이거나 CSRF 토큰 문제다. 둘 다 새로고침하면 미리보기부터 다시 확인한다.
+  if (err.status === 403) return "보안 확인에 실패했습니다. 새로고침한 뒤 다시 시도해 주세요.";
+  return "일시적인 오류로 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+}
+
+/**
+ * 미리보기(G-02)를 불러오지 못했을 때. 404(동의할 것이 없음)는 loader 가 null 로 바꿔
+ * 화면에서 안내하므로, 여기에는 401 · 403 · 서버 오류 · 네트워크 오류만 온다.
+ */
+export function ErrorBoundary({ error }: { error: unknown }) {
+  const forbidden = error instanceof ApiError && error.status === 403;
+  const unauthorized = error instanceof ApiError && error.status === 401;
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="rounded-2xl border border-block/40 bg-blocksoft px-4 py-3">
+        <p className="mb-1 text-[16px] font-bold text-block">동의 화면을 불러오지 못했어요</p>
+        <p className="text-[15px] leading-7 text-ink2">
+          {unauthorized
+            ? "로그인이 풀렸어요. 다시 로그인한 뒤 기관에서 받은 코드를 입력해 주세요."
+            : forbidden
+              ? "보호자님 계정과 연결된 아이가 아니에요. 기관에서 받은 코드를 다시 입력해 주세요."
+              : "잠시 뒤 다시 시도해 주세요."}
+        </p>
+      </div>
+      <Link
+        to={INVITE}
+        className="tap flex h-14 w-full items-center justify-center rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2"
+      >
+        코드 입력 화면으로
+      </Link>
     </div>
   );
 }

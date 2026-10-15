@@ -129,7 +129,7 @@ const BE_READY = {
   /** 활동 기록 */
   activity: false,
   /** 보호자: 초대 코드 수락 뒤 동의 화면(P-02)의 미리보기 · 동의 (G-02, G-41) */
-  guardianConsent: false,
+  guardianConsent: true,
   /**
    * 보호자: 설정 · 알림 화면의 동의 부여 · 철회 (G-41). 서버에는 있지만 끈다 — 이 화면들의
    * 아이 목록(guardianHome)이 아직 mock 이라 서버에 없는 아이 id 로 요청하게 된다.
