@@ -58,7 +58,9 @@ import type {
   ChildCareInfo,
   ChildGuardian,
   ChildListItem,
+  ConsentField,
   ConsentPreview,
+  ConsentResult,
   FileProgress,
   InboxItem,
   Insight,
@@ -126,7 +128,13 @@ const BE_READY = {
   inbox: false,
   /** 활동 기록 */
   activity: false,
-  /** 보호자: 동의 미리보기 · 동의 범위 (G-02, G-41) */
+  /** 보호자: 초대 코드 수락 뒤 동의 화면(P-02)의 미리보기 · 동의 (G-02, G-41) */
+  guardianConsent: false,
+  /**
+   * 보호자: 설정 · 알림 화면의 동의 부여 · 철회 (G-41). 서버에는 있지만 끈다 — 이 화면들의
+   * 아이 목록(guardianHome)이 아직 mock 이라 서버에 없는 아이 id 로 요청하게 된다.
+   * guardianHome 을 켤 때 같이 켠다.
+   */
   guardianLinks: false,
   /** 보호자: 초대 코드 수락 (G-04) */
   guardianInvite: true,
@@ -736,7 +744,7 @@ export async function getConsentPreview(
   childId: string,
   institutionId: string,
 ): Promise<ConsentPreview | null> {
-  if (mockFor("guardianLinks")) {
+  if (mockFor("guardianConsent")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
     const rec = child?.institutions.find(
       (i) => i.institution.id === institutionId && i.consent === "not_granted",
@@ -750,6 +758,8 @@ export async function getConsentPreview(
       documentUrl: null,
       sharedFields: shared,
       notSharedFields: notShared,
+      // 서버도 기관 유형과 관계없이 이 두 항목을 내려준다 (ConsentFieldCatalog)
+      allowedFields: ["daily_summary", "weekly_insight"],
     };
   }
   try {
@@ -816,7 +826,41 @@ export async function declineInstitutionRequest(childId: string, institutionId: 
   });
 }
 
-/** PUT /api/v1/children/{childId}/consent-scopes/{institutionId} */
+/**
+ * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — P-02 의 동의 (api-spec G-41).
+ *
+ * allowedFields 는 미리보기(G-02)가 준 코드를 그대로 보낸다. 화면 문구(sharedFields)를
+ * 보내면 서버가 모르는 항목이라 400 으로 거절한다.
+ * 실패는 ApiError 로 던진다 — 404 CONSENT_TARGET_NOT_FOUND 는 그 사이 아이가 삭제됐거나
+ * 기관 명부에서 빠진 경우다.
+ */
+export async function grantConsent(
+  childId: string,
+  institutionId: string,
+  allowedFields: ConsentField[],
+): Promise<ConsentResult> {
+  if (mockFor("guardianConsent")) {
+    const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
+    const rec = child?.institutions.find((i) => i.institution.id === institutionId);
+    if (!child || !rec) throw new ApiError(404, "CONSENT_TARGET_NOT_FOUND");
+    rec.consent = "granted";
+    child.status = "active";
+    return { childStatus: "active", consent: "granted", allowedFields };
+  }
+  return request(
+    `/api/v1/children/${encodeURIComponent(childId)}/consent-scopes/${encodeURIComponent(institutionId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ action: "grant", allowedFields }),
+    },
+  );
+}
+
+/**
+ * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — 설정 · 알림 화면용.
+ * 아직 mock 만 쓴다(guardianLinks). 본문 모양이 서버(allowedFields, 코드값)와 달라
+ * 켜기 전에 grantConsent 처럼 맞춰야 한다.
+ */
 export async function updateConsent(
   childId: string,
   institutionId: string,

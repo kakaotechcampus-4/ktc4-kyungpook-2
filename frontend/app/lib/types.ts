@@ -130,11 +130,8 @@ export interface AcceptedInvitation {
   childId: string;
   childName: string;
   organizationName: string;
-  /**
-   * 동의 미리보기(G-02)에 필요하다. 서버 응답에는 아직 없어 BE 에 추가를 요청해 두었다 —
-   * 지금은 mock 만 채운다.
-   */
-  organizationId?: string;
+  /** 코드를 발급한 기관. 수락 뒤 이 기관에 대한 동의 미리보기(G-02)를 부를 때 쓴다 */
+  organizationId: string;
   childStatus: ChildStatus;
 }
 
@@ -148,8 +145,20 @@ export interface ConsentPreview {
   institution: Institution;
   /** 증빙서류. 없으면 null — 화면에서 버튼을 숨긴다 */
   documentUrl: string | null;
+  /** 화면에 보여 줄 설명 문구. 저장하지 않는다 */
   sharedFields: string[];
   notSharedFields: string[];
+  /** 동의할 때 G-41 에 그대로 돌려보낼 항목 코드. 저장되는 것은 이 값이다 */
+  allowedFields: ConsentField[];
+}
+
+/** 동의 부여 · 철회 결과 (api-spec G-41). 바뀐 뒤의 상태다 */
+export interface ConsentResult {
+  childStatus: ChildStatus;
+  /** 이 기관에 대한 동의 상태 */
+  consent: ConsentState;
+  /** 이 기관에 지금 공유되는 항목. granted 가 아니면 빈 배열 */
+  allowedFields: ConsentField[];
 }
 
 export interface RawRecord {
