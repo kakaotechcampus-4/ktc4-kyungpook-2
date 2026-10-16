@@ -1213,19 +1213,26 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 아이가 정해지지 않은 일지는 검증 워커가 집지 않으므로 되돌리지 않고 id 만 보여준다. 사용법은 `backend/README.md`.
 
 **#180 전에 생긴 `FAILED`** — 배포 DB 에는 검증·요약에서 실패해 `FAILED` 로 남은 일지가 있을 수 있다. 원인을 몰라
-옮기지 않았다. 매칭 결과가 `AUTO` 라 확인 필요 큐에도 뜨지 않는다. 마지막 `validation_result` 로 단계를 안다.
+옮기지 않았다. 매칭 결과가 `AUTO` 라 확인 필요 큐에도 뜨지 않는다. 마지막 검증 결과로 단계를 안다 — `FAILED` 면 검증,
+`PASS`·`REVIEW` 면 요약에서 실패했다. 검증 행이 없는데 매칭 결과가 `AUTO` 면 검증 실패에 행을 남기기 전(#122)의
+검증 실패다. 둘 다 아니면 매칭 실패라 확인 필요 큐에 뜬다.
 
 ```sql
 SELECT e.id, e.child_id, e.entry_date,
-       CASE v.verdict WHEN 'FAILED' THEN 'VALIDATION' ELSE 'SUMMARY' END AS failed_stage
+       CASE WHEN v.verdict = 'FAILED' THEN 'VALIDATION'
+            WHEN v.verdict IN ('PASS', 'REVIEW') THEN 'SUMMARY'
+            WHEN v.verdict IS NULL AND m.status = 'AUTO' THEN 'VALIDATION (#122 전)'
+            ELSE 'MATCHING' END AS failed_stage
 FROM journal_entry e
-JOIN LATERAL (SELECT verdict FROM validation_result r WHERE r.journal_entry_id = e.id
-              ORDER BY r.id DESC LIMIT 1) v ON true
+LEFT JOIN LATERAL (SELECT verdict FROM validation_result r WHERE r.journal_entry_id = e.id
+                   ORDER BY r.id DESC LIMIT 1) v ON true
+LEFT JOIN LATERAL (SELECT status FROM matching_result r WHERE r.journal_entry_id = e.id
+                   ORDER BY r.id DESC LIMIT 1) m ON true
 WHERE e.status = 'FAILED' AND e.deleted_at IS NULL
 ORDER BY e.id;
 ```
 
-검증 행이 없는 `FAILED` 는 매칭 실패다. AI 다운으로 되돌린 횟수는 `agent_retry_count` 가 센다 (#153).
+AI 다운으로 되돌린 횟수는 `agent_retry_count` 가 센다 (#153).
 
 **예시**
 
