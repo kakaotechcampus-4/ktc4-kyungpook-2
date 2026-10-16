@@ -33,6 +33,16 @@ public class ValidationResultRecorder {
             return;
         }
         ValidationAgentResponse response = reply.response();
+        // FAILED 는 BE 가 호출 실패를 남기려고 둔 값이라 AI 가 보낼 수 없다. 판정이 없는 응답과 함께 계약 위반으로 보고,
+        // 무엇을 보냈는지 봐야 고칠 수 있으니 응답 원문을 FAILED 행에 남긴다.
+        if (response.verdict() == null || response.verdict() == ValidationVerdict.FAILED) {
+            log.warn("validation verdict missing or not in contract, recorded as system error journalEntryId={}",
+                    journalEntryId);
+            validationResultRepository.save(ValidationResult.of(journalEntryId, target.matchingResultId(),
+                    target.request().subjectChildId(), ValidationVerdict.FAILED, null, null, reply.rawJson()));
+            entry.failValidation(FailureReason.RESPONSE_UNREADABLE);
+            return;
+        }
 
         validationResultRepository.save(ValidationResult.of(
                 journalEntryId,
@@ -46,6 +56,7 @@ public class ValidationResultRecorder {
         switch (response.verdict()) {
             case PASS, REVIEW -> entry.passValidation();
             case BLOCK -> entry.blockValidation();
+            case FAILED -> throw new IllegalStateException("FAILED verdict is handled above");
         }
     }
 

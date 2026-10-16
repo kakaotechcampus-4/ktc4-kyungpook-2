@@ -145,6 +145,33 @@ class ValidationResultRecorderTest {
     }
 
     @Test
+    void 판정이_없거나_AI_계약에_없는_FAILED면_응답_원문과_함께_FAILED_행을_남기고_RESPONSE_UNREADABLE로_멈춘다()
+            throws Exception {
+        // FAILED 는 BE 가 호출 실패를 남기려고 만든 값이라 AI 가 보낼 수 없다. 무엇을 보냈는지 봐야 고칠 수 있어 원문을 남긴다.
+        JournalEntry noVerdict = validatingEntry();
+        JournalEntry failedVerdict = validatingEntry();
+        String noVerdictJson = "{\"journal_entry_id\": %d}".formatted(noVerdict.getId());
+        ValidationAgentReply noVerdictReply = new ValidationAgentReply(
+                new ObjectMapper().readValue(noVerdictJson, ValidationAgentResponse.class), noVerdictJson);
+
+        recorder.record(target(noVerdict), noVerdictReply);
+        recorder.record(target(failedVerdict), reply(failedVerdict, "FAILED", "[]", "[]"));
+
+        for (JournalEntry entry : List.of(noVerdict, failedVerdict)) {
+            JournalEntry reloaded = reload(entry);
+            assertThat(reloaded.getStatus()).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
+            assertThat(reloaded.getFailureStage()).isEqualTo(FailureStage.VALIDATION);
+            assertThat(reloaded.getFailureReason()).isEqualTo(FailureReason.RESPONSE_UNREADABLE);
+            assertThat(resultsOf(entry.getId()))
+                    .singleElement()
+                    .satisfies(result -> {
+                        assertThat(result.getVerdict()).isEqualTo(ValidationVerdict.FAILED);
+                        assertThat(result.getRawResponse()).isNotNull();
+                    });
+        }
+    }
+
+    @Test
     void 실패를_남길_때_일지가_삭제됐으면_건드리지_않는다() {
         JournalEntry entry = validatingEntry();
         entry.delete();

@@ -103,20 +103,6 @@ class ValidationAgentClientTest {
     }
 
     @Test
-    void 판정이_없거나_AI_계약에_없는_FAILED면_응답을_못_읽었다고_본다() {
-        // FAILED 는 BE 가 호출 실패를 남기려고 만든 값이라 AI 가 보낼 수 없다. 그대로 받으면 기록할 곳이 없다.
-        server.expect(requestTo(AI + "/validation")).andRespond(withSuccess(
-                "{\"journal_entry_id\": 1041}", MediaType.APPLICATION_JSON));
-        server.expect(requestTo(AI + "/validation")).andRespond(withSuccess(
-                "{\"journal_entry_id\": 1041, \"verdict\": \"FAILED\"}", MediaType.APPLICATION_JSON));
-
-        assertThatThrownBy(() -> client.validate(request()))
-                .isInstanceOf(AiAgentUnreadableResponseException.class);
-        assertThatThrownBy(() -> client.validate(request()))
-                .isInstanceOf(AiAgentUnreadableResponseException.class);
-    }
-
-    @Test
     void 요청이_계약과_다르다는_422는_거절로_본다() {
         server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY)
                 .contentType(MediaType.APPLICATION_JSON)
