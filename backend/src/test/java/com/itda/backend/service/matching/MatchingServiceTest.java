@@ -203,4 +203,55 @@ class MatchingServiceTest {
         assertThat(em.find(JournalEntry.class, claimed.getId()).getStatus()).isEqualTo(JournalEntryStatus.PENDING);
         assertThat(em.find(JournalEntry.class, notClaimed.getId()).getStatus()).isEqualTo(JournalEntryStatus.PENDING);
     }
+
+    private JournalEntry reload(JournalEntry entry) {
+        em.flush();
+        em.clear();
+        return em.find(JournalEntry.class, entry.getId());
+    }
+
+    @Test
+    void AI_다운이면_상한까지는_대기로_되돌리고_횟수를_센다() {
+        JournalEntry entry = entry(rawRecord(String.valueOf(ours.getId())));
+        matchingService.claimPending(10);
+
+        boolean released = matchingService.releaseAfterAgentDown(entry.getId(), 2);
+
+        assertThat(released).isTrue();
+        assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.PENDING);
+        assertThat(reload(entry).getAgentRetryCount()).isEqualTo(1);
+    }
+
+    @Test
+    void AI_다운으로_이미_상한만큼_되돌렸으면_되돌리지_않는다() {
+        JournalEntry entry = entry(rawRecord(String.valueOf(ours.getId())));
+        for (int i = 0; i < 2; i++) {
+            matchingService.claimPending(10);
+            matchingService.releaseAfterAgentDown(entry.getId(), 2);
+        }
+        matchingService.claimPending(10);
+
+        boolean released = matchingService.releaseAfterAgentDown(entry.getId(), 2);
+
+        // 실패로 남기는 건 워커가 recorder 로 한다. 여기서는 매칭 중 그대로 둔다.
+        assertThat(released).isFalse();
+        assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.MATCHING);
+        assertThat(reload(entry).getAgentRetryCount()).isEqualTo(2);
+    }
+
+    @Test
+    void 횟수_컬럼이_비어_있는_기존_일지도_0번으로_보고_센다() {
+        // 배포 DB 의 기존 행은 컬럼이 추가될 때 NULL 로 채워진다 (DB 스키마 §11.4).
+        JournalEntry entry = entry(rawRecord(String.valueOf(ours.getId())));
+        matchingService.claimPending(10);
+        em.flush();
+        em.getEntityManager()
+                .createNativeQuery("update journal_entry set agent_retry_count = null where id = ?1")
+                .setParameter(1, entry.getId())
+                .executeUpdate();
+        em.clear();
+
+        assertThat(matchingService.releaseAfterAgentDown(entry.getId(), 2)).isTrue();
+        assertThat(reload(entry).getAgentRetryCount()).isEqualTo(1);
+    }
 }

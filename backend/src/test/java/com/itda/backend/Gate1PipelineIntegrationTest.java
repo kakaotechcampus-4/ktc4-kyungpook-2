@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +75,7 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.approval.Gate1Version;
 import com.itda.backend.service.matching.MatchingAgentClient;
 import com.itda.backend.service.matching.MatchingAgentReply;
@@ -145,6 +147,8 @@ class Gate1PipelineIntegrationTest {
 
     @Autowired private MatchingService matchingService;
     @Autowired private MatchingResultRecorder matchingResultRecorder;
+    @Autowired private AgentDownProperties agentDownProperties;
+    @Autowired private Clock clock;
     @Autowired private MatchingProperties matchingProperties;
     @Autowired private ValidationService validationService;
     @Autowired private ValidationResultRecorder validationResultRecorder;
@@ -172,9 +176,9 @@ class Gate1PipelineIntegrationTest {
                 List.of(ConsentField.DAILY_SUMMARY)));
 
         matchingWorker = new MatchingWorker(matchingService, fakeMatchingAgent(), matchingResultRecorder,
-                matchingProperties);
+                matchingProperties, agentDownProperties, clock);
         validationWorker = new ValidationWorker(validationService, fakeValidationAgent(), validationResultRecorder,
-                validationProperties);
+                validationProperties, agentDownProperties, clock);
         summaryWorker = new SummaryWorker(summaryService, fakeSummaryAgent(), summaryResultRecorder,
                 summaryProperties);
     }

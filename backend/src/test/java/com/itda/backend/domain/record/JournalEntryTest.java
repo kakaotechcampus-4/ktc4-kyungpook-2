@@ -69,11 +69,56 @@ class JournalEntryTest {
     }
 
     @Test
+    void 처음_만든_일지는_AI_다운으로_되돌린_횟수가_0이다() {
+        assertThat(pending().getAgentRetryCount()).isZero();
+    }
+
+    @Test
+    void AI_다운으로_매칭을_되돌리면_대기로_가고_되돌린_횟수가_는다() {
+        JournalEntry entry = matching();
+
+        entry.releaseMatchingAfterAgentDown();
+        entry.startMatching();
+        entry.releaseMatchingAfterAgentDown();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.PENDING);
+        assertThat(entry.getAgentRetryCount()).isEqualTo(2);
+    }
+
+    @Test
+    void 앱이_꺼져서_되돌린_것은_AI_다운_횟수에_세지_않는다() {
+        JournalEntry entry = matching();
+
+        entry.releaseMatching();
+
+        assertThat(entry.getAgentRetryCount()).isZero();
+    }
+
+    @Test
+    void 매칭이_끝나_검증_대기가_되면_되돌린_횟수를_0으로_돌린다() {
+        // 매칭에서 쓴 횟수가 검증 단계로 넘어가면 검증은 시작하자마자 상한에 걸린다.
+        JournalEntry byAgent = matching();
+        byAgent.releaseMatchingAfterAgentDown();
+        byAgent.startMatching();
+        byAgent.confirmMatch(8L);
+
+        JournalEntry byReviewer = matching();
+        byReviewer.releaseMatchingAfterAgentDown();
+        byReviewer.startMatching();
+        byReviewer.failMatching();
+        byReviewer.confirmMatchByReviewer(8L);
+
+        assertThat(byAgent.getAgentRetryCount()).isZero();
+        assertThat(byReviewer.getAgentRetryCount()).isZero();
+    }
+
+    @Test
     void 매칭_중이_아니면_결과를_반영할_수_없다() {
         assertThatThrownBy(() -> pending().confirmMatch(8L)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> pending().requestMatchReview()).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> pending().failMatching()).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> pending().releaseMatching()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> pending().releaseMatchingAfterAgentDown()).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -191,6 +236,19 @@ class JournalEntryTest {
 
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
         assertThat(entry.getChildId()).isEqualTo(8L);
+    }
+
+    @Test
+    void AI_다운으로_검증을_되돌리면_검증_대기로_가고_되돌린_횟수가_는다() {
+        JournalEntry entry = validating();
+
+        entry.releaseValidatingAfterAgentDown();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
+        assertThat(entry.getChildId()).isEqualTo(8L);
+        assertThat(entry.getAgentRetryCount()).isEqualTo(1);
+        assertThatThrownBy(() -> matched().releaseValidatingAfterAgentDown())
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test

@@ -128,6 +128,7 @@ dbsql -v action=seed -v org_id=5 -v apply=true < ../../backend/scripts/test-chil
 | 인증 | Spring Security, OAuth2 Client(카카오), JJWT 0.12.6 |
 | 데이터 접근 | Spring Data JPA |
 | 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
+| AI 서버 호출 | Spring `RestClient` + Apache HttpClient 5. 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, HTTP 클라이언트는 연결이 끊긴 GET 만 1회 다시 보낸다 |
 | API 문서 | Springdoc OpenAPI 2.9.1, Swagger UI |
 | 운영 DB | PostgreSQL |
 | 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |
