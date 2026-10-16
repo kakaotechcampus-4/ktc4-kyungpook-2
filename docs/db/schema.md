@@ -44,15 +44,15 @@
 | 12 | `summary_result` | ✅ 확정 | ✅ `SummaryResult` | 삭제 없음 (이력) |
 | 13 | `human_review` | ✅ 확정 | ✅ `Approval` | 삭제 없음 (이력) |
 | 14 | `child_context` | ✅ 확정 | ✅ `ChildContext` | 삭제 없음 (이력) |
-| 15 | `insight_result` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 15 | `insight_result` | ✅ 확정 | ✅ `InsightResult` | 삭제 없음 (이력) |
 | 16 | `sharing_history` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
-| 17 | `insight_run` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 17 | `insight_run` | ✅ 확정 | ✅ `InsightRun` | 삭제 없음 (이력) |
 
 **17개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
 `insight_result`·`sharing_history` 는 Insight 에이전트 계약(`AI/insight/schemas.py`)과 Gate 2 공유 정책이
 정해져서 확정으로 올렸다. `human_review` 는 Gate 1 결정값이 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 정해지며 확정됐다.
 
-**설계 확정과 구현은 별개다.** `insight_result`·`sharing_history`·`insight_run` 은 아직 엔티티가 없다.
+**설계 확정과 구현은 별개다.** `sharing_history` 는 아직 엔티티가 없다.
 `human_review` 는 Gate 1 결정 API(#178)가 쓰고, Gate 2 는 아직 없다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
@@ -245,6 +245,7 @@ erDiagram
         int revision
         varchar status
         int insight_count
+        bigint last_context_id
     }
     insight_result {
         bigint id PK
@@ -1799,7 +1800,7 @@ summary_result.content       = AI가 쓴 원문
 child_context.content        = 교사가 승인한 최종본 — 다른 기관 담당자가 타임라인에서 읽는 글
 ```
 
-### 9.3 `insight_result` ✅ — ⬜ 미구현
+### 9.3 `insight_result` ✅ — ✅ 구현됨 (`InsightResult`)
 
 > **근거** — `AI/insight/schemas.py` 의 `InsightOutput` · 프론트 `Insight` 타입
 > **AI 계약 확정됨** (2026-10-13 반영). `summary_result` 와 같은 방식으로 담는다.
@@ -1954,7 +1955,7 @@ UNIQUE (insight_result_id, receiver_type, receiver_id, status)
 > 연결 상태 테이블(`child_organization`·`child_guardian`)은 기존 행을 되살리는 방식이지만(§3.3),
 > 그건 **상태** 테이블의 규칙이다. 여기는 **사건** 이력이라 반대로 쌓는다.
 
-### 9.5 `insight_run` ✅ — ⬜ 미구현
+### 9.5 `insight_run` ✅ — ✅ 구현됨 (`InsightRun`)
 
 > **근거** — 인사이트 워커. 2026-10-13 팀 합의
 
@@ -1984,6 +1985,7 @@ UNIQUE (insight_result_id, receiver_type, receiver_id, status)
 | `revision` | INT | N | 같은 아동·같은 기간의 몇 번째 실행인지. 1 부터 |
 | `status` | VARCHAR(20) | N | 실행 상태 |
 | `insight_count` | INT | Y | 낸 인사이트 수. `DONE` 일 때만 채운다. **0 도 정상이다** |
+| `last_context_id` | BIGINT | Y | 그 실행이 본 `child_context` 중 가장 큰 id. "어디까지 봤나" |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N | 집은 뒤 결과가 정해지면 바뀐다 |
 
@@ -2001,6 +2003,36 @@ UNIQUE (child_id, period_from, period_to, revision)
 **`insight_result.revision` 의 경합도 여기서 사라진다.** §9.3 에 적어 둔 대로 `revision` 자체는
 중복 실행을 막지 못한다 — 한 번 실행이 여러 행이라 행 단위로 걸 자연키가 없기 때문이다.
 판 번호를 이 테이블에서 정하고 결과 행은 그것을 받아 쓰면, 경합은 이 UNIQUE 하나로 끝난다.
+
+**`last_context_id` — 재료가 늘면 다시 집는다** (2026-10-16, 멘토 리뷰 #191)
+
+Gate 1 승인은 교사가 틈틈이 한다. 한 주치가 한 번에 올라오지 않는다.
+
+```
+월  요약 3건 승인 → 인사이트 생성 → DONE
+수  같은 주 2건 더 승인 → ?
+```
+
+"이 기간을 처리했다" 만 기억하면 수요일에 승인된 2건은 **영영 반영되지 않는다.** 그래서 그 실행이
+**어디까지 보고 끝냈는지**를 함께 남긴다.
+
+`child_context` 는 승인 이력이라 지우지 않고 쌓이기만 하므로(§9.2) id 가 단조 증가한다. 새 승인이
+생기면 반드시 더 큰 id 가 생긴다 — 값 하나로 "늘었나" 를 판정할 수 있다.
+
+| 상태 | 판정 |
+| --- | --- |
+| 실행 기록 없음 · `FAILED` | 집는다 |
+| `DONE` 인데 더 큰 `child_context.id` 가 생겼다 | **`revision + 1` 로 다시 집는다** |
+| `DONE` 이고 그대로 | 건너뛴다 (재호출 방지, §10.2-13) |
+
+**요약 개수를 세지 않는 이유** — 승인을 취소하는 경로가 없어 지금은 개수로도 되지만, 뜻이
+"늘었다" 가 아니라 "달라졌다" 라서 나중에 취소가 생기면 판정이 흔들린다. 눈금은 한 방향이어야 한다.
+
+**Gate 1 이 이 테이블을 깨우지 않는 이유** — 승인하는 쪽이 인사이트 테이블을 건드리면 팀 간 결합이
+생긴다. 인사이트가 제 눈금을 보고 스스로 판단한다.
+
+**`NULL` 은 "눈금을 모른다" 로 본다.** 이 컬럼이 생기기 전 행이 그렇다. 그때는 다시 집는다 —
+한 번 더 도는 쪽이 빠뜨리는 쪽보다 낫다.
 
 **`FAILED` 로 끝난 실행은 다음 차례에 `revision + 1` 로 다시 집는다.** 실패한 판을 지우거나
 고치지 않는 것은 다른 이력 테이블과 같다(§3.2). 앱이 죽어 `RUNNING` 으로 남은 행은 **워커가 켜진 뒤
@@ -2212,3 +2244,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-13 | `sharing_consent` 구현 (`SharingConsent`). `scope` 를 JSON → TEXT(JSON 배열 문자열)로, `revoked_by`·`revoked_at`·`revoke_reason`(`GUARDIAN_REVOKED`·`GUARDIAN_UNLINKED`·`ROSTER_REMOVED`) 추가, 인덱스 `(child_id, organization_id)` (§5.5). 매칭 대상을 기관별 동의로 판정하고 `child.status` 는 화면용 요약으로 계산 (§5.1, §10.1 #8·#9, §10.2 #1·#3·#4·#14). 잠금 순서에 `sharing_consent` 추가, 동의 부여·철회·연결 해제·매칭 확정은 `child` 부터 잠금 (§3.3). 연결 해제 시 그 보호자의 동의 철회 (§5.4). 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #187 |
 | 2026-10-13 | Gate 1 구현. `summary_result.status` 에 `REMOVED`, `journal_entry.status` 에 `GATE1_HELD` 추가, `human_review.decision` 을 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 (`REJECTED` 삭제). 승인·수정 후 승인·보류·제거·보류 해제 때 요약·일지 상태와 `child_context`·`human_review` 기록 규칙(§6.2, §8.2, §9.1, §9.2). 요약 워커가 최신 판의 일지만 다시 묶도록 변경(§6.2). claim 정리·고친 문장 재검증은 MVP 이후로 표시(§8.2). §0.3 의 `human_review` 불일치와 §10.2-12 해소. **enum 값 추가라 §11.4 수동 조치 필요** — `human_review`·`summary_result`·`journal_entry` CHECK 제약 확인 | #178 |
 | 2026-10-14 | `journal_entry.agent_retry_count` 추가 — AI 다운이면 매칭·검증 일지를 `FAILED` 로 남기지 않고 되돌리며 횟수를 센다. 2번 넘으면 `FAILED` (§6.2). 기존 행이 있어 NULL 허용으로 추가하고 NULL 은 0 으로 읽어 §11.4 수동 조치 불필요 | #153 |
+| 2026-10-16 | `insight_run` 에 `last_context_id` 추가 (§9.5) — 인사이트를 만든 뒤 같은 기간에 요약이 더 승인되면 다시 집는다. Gate 1 승인은 교사가 틈틈이 하므로 한 주치가 한 번에 올라오지 않는데, "처리했다" 만 기억하면 뒤에 승인된 기록이 영영 빠졌다(멘토 리뷰 #191). `child_context` 가 지우지 않고 쌓여 id 가 단조 증가하는 것을 눈금으로 쓴다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #197 |

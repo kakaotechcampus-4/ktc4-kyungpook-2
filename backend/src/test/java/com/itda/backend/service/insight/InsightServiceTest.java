@@ -115,7 +115,7 @@ class InsightServiceTest {
         return summary;
     }
 
-    private Optional<InsightAgentRequest> prepare() {
+    private Optional<PreparedInsight> prepare() {
         em.flush();
         em.clear();
         return insightService.prepare(junho.getId(), FROM, TO);
@@ -125,7 +125,7 @@ class InsightServiceTest {
     void 승인된_요약의_문장을_claim으로_편다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.childId()).isEqualTo(junho.getId());
         assertThat(request.childName()).isEqualTo("김준호");
@@ -147,7 +147,7 @@ class InsightServiceTest {
     void claim_id는_요약_id와_배열_순서로_만든다() {
         SummaryResult summary = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::claimId)
                 .containsExactly(summary.getId() + "-0", summary.getId() + "-1");
@@ -164,7 +164,7 @@ class InsightServiceTest {
                  {"text": "살아남는 문장", "evidence": [{"journal_entry_id": 1041, "quote": "원문 인용"}]}]
                 """);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::claimId)
                 .containsExactly(summary.getId() + "-1");
@@ -176,7 +176,7 @@ class InsightServiceTest {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
         approved(center, LocalDate.of(2026, 10, 3), CLAIMS);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::institutionType)
                 .containsExactly("학교", "학교", "센터", "센터");
@@ -195,7 +195,7 @@ class InsightServiceTest {
         SummaryResult later = approved(school, LocalDate.of(2026, 10, 6), CLAIMS);
         SummaryResult earlier = approved(center, LocalDate.of(2026, 10, 2), CLAIMS);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::claimId)
                 .containsExactly(earlier.getId() + "-0", earlier.getId() + "-1",
@@ -208,7 +208,7 @@ class InsightServiceTest {
         SummaryResult first = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
         SummaryResult second = approved(center, LocalDate.of(2026, 10, 2), CLAIMS);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::claimId)
                 .containsExactly(first.getId() + "-0", first.getId() + "-1",
@@ -227,7 +227,7 @@ class InsightServiceTest {
         em.persistAndFlush(new Approval(ApprovalTargetType.SUMMARY, corrected.getId(),
                 ApprovalReviewType.GATE1, 1L, ApprovalDecision.CORRECTED, "추정 표현을 뺐습니다"));
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::institutionId)
                 .containsOnly(center.getId());
@@ -240,7 +240,7 @@ class InsightServiceTest {
         em.persistAndFlush(new Approval(ApprovalTargetType.SUMMARY, summary.getId(),
                 ApprovalReviewType.GATE1, 1L, ApprovalDecision.APPROVED, null));
 
-        assertThat(prepare().orElseThrow().claims()).hasSize(2);
+        assertThat(prepare().orElseThrow().request().claims()).hasSize(2);
     }
 
     /**
@@ -255,7 +255,7 @@ class InsightServiceTest {
                  {"text": "근거 키 자체가 없는 문장"}]
                 """);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::text)
                 .containsExactly("근거가 붙은 문장");
@@ -267,7 +267,7 @@ class InsightServiceTest {
         approved(school, LocalDate.of(2026, 10, 8), CLAIMS);
         approved(center, LocalDate.of(2026, 10, 1), CLAIMS);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::entryDate)
                 .containsOnly("2026-10-01");
@@ -294,7 +294,7 @@ class InsightServiceTest {
         approved(school, LocalDate.of(2026, 10, 2), "{깨진 JSON");
         approved(center, LocalDate.of(2026, 10, 3), CLAIMS);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::institutionId)
                 .containsOnly(center.getId());
@@ -309,7 +309,7 @@ class InsightServiceTest {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
         approved(center, LocalDate.of(2026, 10, 3), CLAIMS);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.consentedInstitutions())
                 .extracting(InsightAgentRequest.Institution::institutionId)
@@ -325,7 +325,7 @@ class InsightServiceTest {
         approved(center, LocalDate.of(2026, 10, 3), CLAIMS);
         revokeConsentsTo(center);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.consentedInstitutions())
                 .extracting(InsightAgentRequest.Institution::institutionId)
@@ -354,7 +354,7 @@ class InsightServiceTest {
         link.delete();
         em.persistAndFlush(link);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.consentedInstitutions())
                 .extracting(InsightAgentRequest.Institution::institutionId)
@@ -390,7 +390,7 @@ class InsightServiceTest {
         link.delete();
         em.persistAndFlush(link);
 
-        InsightAgentRequest request = prepare().orElseThrow();
+        InsightAgentRequest request = prepare().orElseThrow().request();
 
         assertThat(request.claims()).extracting(InsightAgentRequest.Claim::institutionId)
                 .containsOnly(school.getId());

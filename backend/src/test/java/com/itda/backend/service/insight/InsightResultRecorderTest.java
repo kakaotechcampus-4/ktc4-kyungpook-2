@@ -17,11 +17,15 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightRun;
+import com.itda.backend.domain.summary.ChildContext;
+import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.insight.InsightRunStatus;
 import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.dto.response.insight.InsightAgentResponse;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.insight.InsightRunRepository;
+import com.itda.backend.repository.summary.ChildContextRepository;
+import com.itda.backend.repository.summary.SummaryResultRepository;
 
 /**
  * 집기·저장. {@code claim} 이 {@code REQUIRES_NEW} 라 테스트가 트랜잭션을 들고 있으면 안 되므로
@@ -44,11 +48,30 @@ class InsightResultRecorderTest {
     private InsightResultRepository insightResultRepository;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private SummaryResultRepository summaryResultRepository;
+    @Autowired
+    private ChildContextRepository childContextRepository;
 
     @BeforeEach
     void setUp() {
         insightResultRepository.deleteAll();
         insightRunRepository.deleteAll();
+        childContextRepository.deleteAll();
+        summaryResultRepository.deleteAll();
+    }
+
+    /**
+     * 승인된 요약 한 건을 만든다. <b>눈금 비교가 살아 있으려면 재료가 실제로 있어야 한다</b> —
+     * 없으면 {@code findMaxIdInPeriod} 가 늘 {@code null} 이라 비교 분기에 닿지 못한다.
+     *
+     * @return 그 승인본의 {@code child_context.id} (= 그 시점의 눈금)
+     */
+    private Long approve(LocalDate entryDate) {
+        SummaryResult summary = summaryResultRepository.saveAndFlush(SummaryResult.of(
+                CHILD, entryDate, 3L, 1, "요약 본문", "[]", "[]", "[]", "{}"));
+        return childContextRepository
+                .saveAndFlush(ChildContext.of(CHILD, summary.getId(), "승인된 본문")).getId();
     }
 
     private InsightAgentResponse response(String json) throws Exception {
@@ -85,7 +108,7 @@ class InsightResultRecorderTest {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
         recorder.record(run, response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}");
+                """), "{}", 41L);
 
         assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
         assertThat(insightRunRepository.findAll()).singleElement()
@@ -98,7 +121,7 @@ class InsightResultRecorderTest {
     @Test
     void 결과가_있는_기간도_다시_집지_않는다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
-        recorder.record(run, oneInsight(), "{\"raw\": true}");
+        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L);
 
         assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
     }
@@ -133,7 +156,7 @@ class InsightResultRecorderTest {
     void 응답을_인사이트_행으로_남긴다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, oneInsight(), "{\"raw\": true}");
+        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L);
 
         List<InsightResult> saved = insightResultRepository.findByStatusOrderByIdDesc(InsightStatus.GATE2_PENDING);
         assertThat(saved).singleElement().satisfies(result -> {
@@ -161,7 +184,7 @@ class InsightResultRecorderTest {
                    {"situation": "상황", "behavior": "반응", "content": "  "},
                    {"situation": "상황2", "behavior": "반응2", "content": "제대로 된 본문"}],
                  "llm_called": true}
-                """), "{}");
+                """), "{}", 41L);
 
         assertThat(insightResultRepository.findAll()).singleElement()
                 .satisfies(result -> assertThat(result.getContent()).isEqualTo("제대로 된 본문"));
@@ -173,7 +196,7 @@ class InsightResultRecorderTest {
     void 저장한_인사이트는_Gate2_대기로_들어간다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, oneInsight(), "{}");
+        recorder.record(run, oneInsight(), "{}", 41L);
 
         assertThat(insightResultRepository.findAll()).singleElement()
                 .satisfies(result -> assertThat(result.getStatus()).isEqualTo(InsightStatus.GATE2_PENDING));
@@ -196,7 +219,7 @@ class InsightResultRecorderTest {
     void 응답의_insights가_null이어도_끝낸_것으로_남긴다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, new InsightAgentResponse(CHILD, null, null, null, false), null);
+        recorder.record(run, new InsightAgentResponse(CHILD, null, null, null, false), null, 41L);
 
         assertThat(insightRunRepository.findAll()).singleElement().satisfies(saved -> {
             assertThat(saved.getStatus()).isEqualTo(InsightRunStatus.DONE);
@@ -205,25 +228,58 @@ class InsightResultRecorderTest {
     }
 
     @Test
-    void 끝난_기간은_다뤘다고_답한다() throws Exception {
+    void 끝난_기간은_다시_집지_않는다() throws Exception {
+        Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}");
+                """), "{}", mark);
 
-        assertThat(recorder.alreadyHandled(CHILD, FROM, TO)).isTrue();
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
+    }
+
+    /**
+     * 멘토 리뷰(#191) — Gate 1 승인은 틈틈이 일어난다. 끝난 뒤에 같은 기간에 승인이 더 생기면
+     * 그 기록도 반영돼야 한다.
+     */
+    @Test
+    void 끝난_뒤_같은_기간에_승인이_더_생기면_다시_집는다() throws Exception {
+        Long mark = approve(FROM.plusDays(1));
+        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
+                {"child_id": 8, "insights": [], "llm_called": true}
+                """), "{}", mark);
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
+
+        approve(FROM.plusDays(3));
+
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isTrue();
+        assertThat(recorder.claim(CHILD, FROM, TO)).get()
+                .satisfies(run -> assertThat(run.getRevision()).isEqualTo(2));
+    }
+
+    /** 기간 밖 승인은 이 기간의 눈금이 아니다. */
+    @Test
+    void 기간_밖에_승인이_생겨도_다시_집지_않는다() throws Exception {
+        Long mark = approve(FROM.plusDays(1));
+        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
+                {"child_id": 8, "insights": [], "llm_called": true}
+                """), "{}", mark);
+
+        approve(TO.plusDays(1));
+
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
     }
 
     @Test
-    void 아직_안_본_기간은_다루지_않았다고_답한다() {
-        assertThat(recorder.alreadyHandled(CHILD, FROM, TO)).isFalse();
+    void 아직_안_본_기간은_집는다() {
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isTrue();
     }
 
     /** 실패한 판은 다시 집어야 하므로 "다뤘다" 가 아니다. */
     @Test
-    void 실패한_기간은_다루지_않은_것으로_답한다() {
+    void 실패한_기간은_다시_집는다() {
         recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow());
 
-        assertThat(recorder.alreadyHandled(CHILD, FROM, TO)).isFalse();
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isTrue();
     }
 
     /**
@@ -237,17 +293,17 @@ class InsightResultRecorderTest {
 
         assertThat(recorder.releaseStuck()).isEqualTo(1);
 
-        assertThat(recorder.alreadyHandled(CHILD, FROM, TO)).isFalse();
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isTrue();
         assertThat(recorder.claim(CHILD, FROM, TO)).get()
                 .satisfies(run -> assertThat(run.getRevision()).isEqualTo(2));
     }
 
     @Test
     void 끝난_실행은_되돌리지_않는다() throws Exception {
-        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), oneInsight(), "{}");
+        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), oneInsight(), "{}", 41L);
 
         assertThat(recorder.releaseStuck()).isZero();
-        assertThat(recorder.alreadyHandled(CHILD, FROM, TO)).isTrue();
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
     }
 
     private Optional<InsightRun> latest() {
