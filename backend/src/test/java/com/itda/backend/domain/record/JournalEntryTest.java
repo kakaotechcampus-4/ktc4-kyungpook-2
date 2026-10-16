@@ -56,7 +56,10 @@ class JournalEntryTest {
 
         entry.failMatching();
 
+        // 매칭 실패는 확인 필요 큐에서 사람이 아이를 고른다. 시스템 오류가 아니라 실패 원인을 남기지 않는다.
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertThat(entry.getFailureStage()).isNull();
+        assertThat(entry.getFailureReason()).isNull();
     }
 
     @Test
@@ -220,12 +223,29 @@ class JournalEntryTest {
     }
 
     @Test
-    void 검증_호출이_실패하면_실패_상태가_된다() {
+    void 검증_호출이_실패하면_시스템_오류로_멈추고_단계와_원인을_남긴다() {
         JournalEntry entry = validating();
 
-        entry.failValidation();
+        entry.failValidation(FailureReason.REQUEST_REJECTED);
 
-        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
+        assertThat(entry.getFailureStage()).isEqualTo(FailureStage.VALIDATION);
+        assertThat(entry.getFailureReason()).isEqualTo(FailureReason.REQUEST_REJECTED);
+    }
+
+    @Test
+    void 시스템_오류로_멈출_때는_원인이_필수다() {
+        assertThatThrownBy(() -> validating().failValidation(null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 시스템_오류로_멈춘_일지는_확인_필요_큐에서_처리하지_않는다() {
+        JournalEntry entry = validating();
+
+        entry.failValidation(FailureReason.INTERNAL_ERROR);
+
+        assertThat(entry.isAwaitingReview()).isFalse();
     }
 
     @Test
@@ -255,7 +275,8 @@ class JournalEntryTest {
     void 검증_중이_아니면_검증_결과를_반영할_수_없다() {
         assertThatThrownBy(() -> matched().passValidation()).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> matched().blockValidation()).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> matched().failValidation()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> matched().failValidation(FailureReason.INTERNAL_ERROR))
+                .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> matched().releaseValidating()).isInstanceOf(IllegalStateException.class);
     }
 

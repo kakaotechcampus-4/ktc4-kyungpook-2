@@ -72,6 +72,16 @@ public class JournalEntry {
     @Column(name = "agent_retry_count")
     private Integer agentRetryCount;
 
+    // 시스템 오류(SYSTEM_ERROR)로 멈춘 단계와 원인 (#180). 그 상태일 때만 채우고 다른 상태에서는 비어 있다.
+    // 고친 뒤 되돌리는 SQL 이 두 값으로 고르고 함께 비운다 (backend/scripts/recover-system-errors.sql).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "failure_stage", length = 30)
+    private FailureStage failureStage;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "failure_reason", length = 30)
+    private FailureReason failureReason;
+
     private JournalEntry(Long rawRecordId, LocalDate entryDate, String content, Integer sequenceNo) {
         this.rawRecordId = rawRecordId;
         this.entryDate = entryDate;
@@ -167,10 +177,10 @@ public class JournalEntry {
         this.status = JournalEntryStatus.VALIDATION_BLOCKED;
     }
 
-    /** 검증 호출 자체가 실패했다. */
-    public void failValidation() {
+    /** 검증 호출이 실패했거나 결과를 남길 수 없다. 다시 돌려도 같으므로 시스템 오류로 멈추고 원인을 남긴다. */
+    public void failValidation(FailureReason reason) {
         requireStatus(JournalEntryStatus.VALIDATING);
-        this.status = JournalEntryStatus.FAILED;
+        stopBySystemError(FailureStage.VALIDATION, reason);
     }
 
     /** 검증에서 막힌(BLOCK) 기록을 선생님이 수정 요청 큐에서 처리할 수 있는 상태인지. */
@@ -282,6 +292,15 @@ public class JournalEntry {
     public void reopenGate1() {
         requireStatus(JournalEntryStatus.GATE1_HELD);
         this.status = JournalEntryStatus.GATE1_PENDING;
+    }
+
+    private void stopBySystemError(FailureStage stage, FailureReason reason) {
+        if (reason == null) {
+            throw new IllegalArgumentException("시스템 오류 원인은 필수입니다.");
+        }
+        this.status = JournalEntryStatus.SYSTEM_ERROR;
+        this.failureStage = stage;
+        this.failureReason = reason;
     }
 
     private void requireAwaitingReview() {

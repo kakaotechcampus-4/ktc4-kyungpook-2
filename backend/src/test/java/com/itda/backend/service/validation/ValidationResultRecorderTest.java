@@ -13,6 +13,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.itda.backend.domain.record.FailureReason;
+import com.itda.backend.domain.record.FailureStage;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.validation.ValidationResult;
@@ -122,19 +124,21 @@ class ValidationResultRecorderTest {
     }
 
     /**
-     * 호출이 실패하면 verdict = FAILED 로 행을 남긴다(#122).
+     * 호출이 실패하면 verdict = FAILED 로 행을 남기고(#122), 일지는 시스템 오류로 멈추며 단계·원인을 남긴다(#180).
      *
-     * <p>예전에는 "판정이 없다"는 이유로 행을 안 남겼는데, 그러면 실패가 로그에만 남고
-     * 매칭 실패인지 검증 실패인지 일지 상태만으로 구분할 수 없었다. 매칭이 이미
+     * <p>행을 남기는 이유: 예전에는 "판정이 없다"는 이유로 행을 안 남겨 실패가 로그에만 남았다. 매칭이 이미
      * MatchingStatus.FAILED 로 행을 남기고 있어 그쪽과 대칭을 맞췄다.
      */
     @Test
-    void 호출이_실패하면_FAILED_판정으로_행을_남긴다() {
+    void 호출이_실패하면_FAILED_판정으로_행을_남기고_일지는_시스템_오류가_된다() {
         JournalEntry entry = validatingEntry();
 
-        recorder.recordFailure(entry.getId());
+        recorder.recordFailure(entry.getId(), FailureReason.REQUEST_REJECTED);
 
-        assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        JournalEntry reloaded = reload(entry);
+        assertThat(reloaded.getStatus()).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
+        assertThat(reloaded.getFailureStage()).isEqualTo(FailureStage.VALIDATION);
+        assertThat(reloaded.getFailureReason()).isEqualTo(FailureReason.REQUEST_REJECTED);
         assertThat(resultsOf(entry.getId()))
                 .singleElement()
                 .satisfies(result -> assertThat(result.getVerdict()).isEqualTo(ValidationVerdict.FAILED));
@@ -146,7 +150,7 @@ class ValidationResultRecorderTest {
         entry.delete();
         em.persistAndFlush(entry);
 
-        recorder.recordFailure(entry.getId());
+        recorder.recordFailure(entry.getId(), FailureReason.INTERNAL_ERROR);
 
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.VALIDATING);
         assertThat(resultsOf(entry.getId())).isEmpty();
