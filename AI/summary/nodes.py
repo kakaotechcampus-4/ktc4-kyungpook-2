@@ -83,6 +83,39 @@ def _numbers(text: str) -> set[int]:
     return {int(n) for n in re.findall(r"\d+", text or "")}
 
 
+#: 횟수를 나타내는 말. 날짜 단위(년·월·일)는 여기 들어가지 않는다.
+#:
+#: 고유어 수사만 본다 — 한자어(일·이·삼·사)는 조사나 일반 낱말과 겹쳐
+#: "사 번" 과 "사번(社番)" 을 가릴 수 없다. 오탐이 나는 쪽이 더 나쁘다.
+COUNT = re.compile(r"(\d+|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|여러|몇)\s*(번|회|차례)")
+
+#: 고유어 수사 → 숫자. "세 번" 과 "3번" 이 다르게 세어지면 안 된다.
+_NUM_WORD = {"한": "1", "두": "2", "세": "3", "네": "4", "다섯": "5",
+             "여섯": "6", "일곱": "7", "여덟": "8", "아홉": "9", "열": "10"}
+
+#: 같은 뜻의 단위는 묶는다. "세 번" 과 "세 차례" 가 갈리면 안 된다.
+_UNIT_GROUP = {"번": "회", "회": "회", "차례": "회"}
+
+
+def _counts(text: str) -> set[tuple[str, str]]:
+    r"""
+    문장에 쓰인 횟수를 (값, 단위) 쌍으로 모은다.
+
+    숫자만 비교하면 세 가지를 놓친다.
+      ① "세 번" — 한글 수사는 \d+ 에 안 걸린다
+      ② "여러 번" — 수량 표현인데 숫자가 아니다
+      ③ "7번" 인데 인용에 "7층" 이 있으면 통과한다 — 값은 같고 단위가 다르다
+    (2026-10-14 멘토 리뷰 P2)
+
+    "여러"·"몇" 은 숫자로 바꾸지 않고 그대로 둔다. 원문에 "여러 번" 이 있으면
+    요약도 "여러 번" 이어야 하고, 구체적인 횟수로 바꾸면 그게 환각이다.
+    """
+    pairs = set()
+    for num, unit in COUNT.findall(text or ""):
+        pairs.add((_NUM_WORD.get(num, num), _UNIT_GROUP[unit]))
+    return pairs
+
+
 def _numbers_outside_dates(text: str, entry_date: str) -> set[int]:
     """
     날짜로 쓰인 **자리**를 지우고 남은 숫자를 센다.
@@ -131,7 +164,12 @@ def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> boo
     #     처럼 같은 수가 날짜로도 횟수로도 쓰이면 "7번" 까지 빠졌다
     #     (2026-10-11 멘토 리뷰 P2).
     left = _numbers_outside_dates(text, state.get("entry_date", ""))
-    return not (left - _numbers(quotes))
+    if left - _numbers(quotes):
+        return False
+
+    # 횟수는 (값, 단위) 로 따로 본다. 위 검사는 값만 보기 때문에 한글 수사와
+    # "여러 번" 을 놓치고, 단위가 달라도 같은 값이면 통과시킨다.
+    return not (_counts(text) - _counts(quotes))
 
 
 def ground(state: SummaryState) -> dict:

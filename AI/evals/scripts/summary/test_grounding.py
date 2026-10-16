@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from summary import nodes  # noqa: E402
-from summary.nodes import _numbers, _numbers_outside_dates  # noqa: E402
+from summary.nodes import _counts, _numbers, _numbers_outside_dates  # noqa: E402
 from summary.graph import run_summary  # noqa: E402
 from summary.llm import LlmResult, LlmUnavailable, NoGroundedClaims  # noqa: E402
 from main import llm_unavailable  # noqa: E402
@@ -44,6 +44,16 @@ DATE_CASES = [
     ("연·월·일 전부 묶음 날짜면 통과", "2026년 10월 7일에 왔다.", "왔다", True),
     ("다른 날짜는 원문에 있어야 한다", "8월 21일 관찰분이다.", "관찰", False),
     ("층수에 근거가 있으면 통과", "블록을 5층까지 쌓았다.", "혼자 5층까지 쌓음", True),
+]
+
+#: 횟수는 (값, 단위) 로 본다. 숫자만 보면 셋을 놓친다 (2026-10-14 멘토 리뷰 P2).
+COUNT_CASES = [
+    ("한글 수사도 센다", "10월 7일, 공을 세 번 주고받았다.", "공을 주고받았다", False),
+    ("'여러 번'도 근거를 본다", "공을 여러 번 주고받았다.", "공을 주고받았다", False),
+    ("단위가 다르면 근거가 아니다", "공을 7번 주고받았다.", "7층 놀이방에서 놀았다", False),
+    ("세 번 ↔ 3번 은 같다", "공을 세 번 주고받았다.", "공을 3번 주고받음", True),
+    ("번 ↔ 차례 는 같다", "공을 세 번 주고받았다.", "세 차례 주고받음", True),
+    ("'여러 번'이 원문에 있으면 통과", "여러 번 여닫았다.", "창문을 여러 번 여닫음", True),
 ]
 
 REASON_CASES = [
@@ -276,6 +286,16 @@ def main():
         ok = got_pass == want_pass
         print(f"  {'✓' if ok else '✗'} {'통과' if got_pass else '버림'}  {name}")
         print(f"      {text!r} · 인용 {quote!r} · 근거 없는 숫자 {left or '{}'}")
+        if not ok:
+            failed += 1
+
+    print("\n■ 횟수는 (값, 단위) 로 본다 (묶음 날짜 2026-10-07)")
+    for name, text, quote, want_pass in COUNT_CASES:
+        left = _numbers_outside_dates(text, "2026-10-07") - _numbers(quote)
+        got_pass = not left and not (_counts(text) - _counts(quote))
+        ok = got_pass == want_pass
+        print(f"  {'✓' if ok else '✗'} {'통과' if got_pass else '버림'}  {name}")
+        print(f"      {text!r} · 인용 {quote!r}")
         if not ok:
             failed += 1
 
