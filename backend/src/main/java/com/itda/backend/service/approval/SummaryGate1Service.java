@@ -145,8 +145,11 @@ public class SummaryGate1Service {
     }
 
     /**
-     * 입력창을 거치며 생기는 차이(CRLF, 앞뒤 공백·줄바꿈)는 고친 것으로 보지 않는다. 고친 것으로 보면 인사이트가 그 요약을
-     * 통째로 뺀다 (§10.1 #7). 본문 안의 글자는 한 글자라도 다르면 고친 것이다.
+     * 입력창을 거치며 생기는 차이(CRLF, 앞뒤 공백·줄바꿈)는 고친 것으로 보지 않는다. 고친 것으로 보면 인사이트가 그 요약의
+     * claim 을 최종본과 대조해 남은 것만 쓴다 (§10.1 #7). 본문 안의 글자는 한 글자라도 다르면 고친 것이다.
+     *
+     * <p>⚠️ {@code InsightService} 에 같은 함수가 있고 <b>같은 기준이어야 한다</b> — 한쪽만 바뀌면 교사가 손대지 않은
+     * 문장이 인사이트에서 빠진다. {@code InsightServiceTest} 가 두 결과를 대조한다.
      */
     private static String normalize(String content) {
         return content.replace("\r\n", "\n").replace('\r', '\n').strip();
