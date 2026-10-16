@@ -28,6 +28,12 @@ public enum JournalEntryStatus {
     /** 이 일지가 든 요약이 Gate 1 에서 승인됐다. 요약에 안 들어간 일지(uncovered)도 함께 끝난다. */
     COMPLETED,
     /**
+     * 요약에 근거가 남은 문장이 하나도 없어(AI 503 {@code no_grounded_claims}) 재시도 뒤에도 요약하지 못했다. 주로 모델이
+     * 인용을 원문과 다르게 옮긴 경우라 다시 요약하면 될 수 있다. 워커가 다시 집지 않고, 교사가 묶음 카드에서 다시 요약하거나
+     * 제외한다(#182). BE가 추가했다(#180).
+     */
+    SUMMARY_FAILED,
+    /**
      * 코드 버그나 AI 계약 위반으로 검증·요약이 멈췄다. 다시 돌려도 같으므로 워커가 집지 않고, 관리자가 고친 뒤
      * 원인({@code failure_reason})별로 골라 되돌린다. 어느 단계인지는 {@code failure_stage} 가 가진다. BE가 추가했다(#180).
      */

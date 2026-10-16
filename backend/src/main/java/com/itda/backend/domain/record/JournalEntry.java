@@ -262,12 +262,26 @@ public class JournalEntry {
     }
 
     /**
-     * 요약 호출이 실패했다. 이미 승인 전 요약에 들어가 있던 일지는 그 요약이 그대로 유효하므로 Gate 1 대기로 돌리고,
-     * 처음 요약하던 일지만 실패로 남긴다.
+     * 근거가 남은 문장이 없어 요약하지 못했다. 다시 요약하면 될 수 있다. 이미 승인 전 요약에 들어가 있던 일지는 그 요약이
+     * 그대로 유효하므로 Gate 1 대기로 돌리고, 처음 요약하던 일지만 요약 실패로 남긴다.
      */
     public void failSummary() {
         requireStatus(JournalEntryStatus.SUMMARIZING);
-        this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.FAILED;
+        this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.SUMMARY_FAILED;
+    }
+
+    /**
+     * 요약 호출이 실패했거나 결과를 남길 수 없다. 다시 돌려도 같으므로 처음 요약하던 일지는 시스템 오류로 멈추고 원인을
+     * 남긴다. 이미 승인 전 요약에 들어가 있던 일지는 {@link #failSummary()} 와 같이 Gate 1 대기로 돌린다.
+     */
+    public void failSummaryBySystemError(FailureReason reason) {
+        requireStatus(JournalEntryStatus.SUMMARIZING);
+        requireFailureReason(reason);
+        if (this.summaryId != null) {
+            this.status = JournalEntryStatus.GATE1_PENDING;
+            return;
+        }
+        stopBySystemError(FailureStage.SUMMARY, reason);
     }
 
     /** 처리하던 앱이 꺼져서 요약 중에 멈춘 일지를 요약하기 전 상태로 돌린다. */
@@ -295,12 +309,16 @@ public class JournalEntry {
     }
 
     private void stopBySystemError(FailureStage stage, FailureReason reason) {
-        if (reason == null) {
-            throw new IllegalArgumentException("시스템 오류 원인은 필수입니다.");
-        }
+        requireFailureReason(reason);
         this.status = JournalEntryStatus.SYSTEM_ERROR;
         this.failureStage = stage;
         this.failureReason = reason;
+    }
+
+    private static void requireFailureReason(FailureReason reason) {
+        if (reason == null) {
+            throw new IllegalArgumentException("시스템 오류 원인은 필수입니다.");
+        }
     }
 
     private void requireAwaitingReview() {
