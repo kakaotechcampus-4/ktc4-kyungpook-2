@@ -64,8 +64,9 @@ SET status = CASE p.stage WHEN 'VALIDATION' THEN 'MATCHED' ELSE 'VALIDATED' END,
     failure_reason = NULL,
     updated_at = localtimestamp
 FROM recover_targets t, recover_params p
--- 다른 실행이 먼저 되돌려 워커가 이미 집어 갔을 수 있으니 아직 시스템 오류인 행만 바꾼다.
+-- 대상을 고른 뒤 다른 실행이 되돌려 워커가 다시 실패로 남겼을 수 있다. 아직 고른 단계·원인 그대로인 행만 바꾼다.
 WHERE e.id = t.id AND t.child_id IS NOT NULL AND e.status = 'SYSTEM_ERROR'
+  AND e.failure_stage = p.stage AND e.failure_reason = p.reason
 RETURNING e.id AS recovered_journal_entry_id, e.status;
 COMMIT;
 \else
