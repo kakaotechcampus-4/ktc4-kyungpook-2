@@ -14,7 +14,9 @@ import org.springframework.web.client.RestClientException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentRejectedException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
+import com.itda.backend.exception.agent.AiAgentUnreadableResponseException;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -72,7 +74,7 @@ public class AiAgentClient {
                         path, context, attempt + 1, e);
                 sleep(retryBackoffs.get(attempt));
             } catch (RestClientException e) {
-                throw new AiAgentException(
+                throw new AiAgentRejectedException(
                         "agent rejected request path=" + path + " " + context, e);
             }
         }
@@ -80,12 +82,12 @@ public class AiAgentClient {
 
     public <T> T parse(String body, Class<T> type) {
         if (body == null || body.isBlank()) {
-            throw new AiAgentException("agent returned empty body");
+            throw new AiAgentUnreadableResponseException("agent returned empty body");
         }
         try {
             return objectMapper.readValue(body, type);
         } catch (JsonProcessingException e) {
-            throw new AiAgentException("agent returned unreadable body", e);
+            throw new AiAgentUnreadableResponseException("agent returned unreadable body", e);
         }
     }
 
