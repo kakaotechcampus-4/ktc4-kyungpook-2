@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.net.ConnectException;
@@ -18,6 +19,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -104,6 +106,27 @@ class AiAgentClientTest {
         // BE 가 계약과 다른 요청을 보냈다는 뜻 — 다시 보내도 같으므로 시스템 오류(REQUEST_REJECTED)가 된다.
         assertThatThrownBy(() -> client.post("/validation", Map.of(), 1041L))
                 .isInstanceOf(AiAgentRejectedException.class);
+        server.verify();
+    }
+
+    @Test
+    void 잠시_뒤에_다시_하라는_408_429는_거절로_보지_않고_다시_시도한다() {
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.REQUEST_TIMEOUT));
+        server.expect(requestTo(AI + "/validation")).andRespond(withSuccess(BODY, MediaType.APPLICATION_JSON));
+
+        assertThat(client.post("/validation", Map.of(), 1041L)).isEqualTo(BODY);
+        server.verify();
+    }
+
+    @Test
+    void 잠시_뒤에_다시_하라는_응답이_끝까지_계속되면_AI를_쓸_수_없다고_본다() {
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        assertThatThrownBy(() -> client.post("/validation", Map.of(), 1041L))
+                .isInstanceOf(AiAgentUnavailableException.class);
         server.verify();
     }
 
