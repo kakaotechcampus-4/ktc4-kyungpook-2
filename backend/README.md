@@ -118,6 +118,26 @@ dbsql -v action=seed -v org_id=5 -v apply=true < ../../backend/scripts/test-chil
 아무것도 바꾸지 않고 멈추며, 오류에 그 `child.id`와 상태를 보여줍니다. 테스트하려고 등록한 아이라면 그 아이를 정리한 뒤
 다시 실행합니다. 실행했으면 이슈 #130에 기관과 action을 남깁니다.
 
+### 시스템 오류로 멈춘 일지 되돌리기
+
+검증·요약 중 코드 버그나 AI 계약 위반으로 멈춘 일지는 `SYSTEM_ERROR`가 되고, 어느 단계(`failure_stage`)에서 왜
+(`failure_reason`) 멈췄는지 남습니다(DB 스키마 §6.2 "실패 상태와 원인 코드"). 원인을 고친 뒤
+[`scripts/recover-system-errors.sql`](scripts/recover-system-errors.sql)로 **고친 원인의 일지만** 골라 다시 처리하게 합니다.
+서버의 `infra/docker`에서 위의 `dbsql`로 실행합니다.
+
+```bash
+dbsql -c "SELECT failure_stage, failure_reason, count(*) FROM journal_entry
+          WHERE status = 'SYSTEM_ERROR' AND deleted_at IS NULL GROUP BY 1, 2;"                              # 원인별 건수
+dbsql -v stage=VALIDATION -v reason=AGENT_UNAVAILABLE < ../../backend/scripts/recover-system-errors.sql             # 확인만 (ROLLBACK)
+dbsql -v stage=VALIDATION -v reason=AGENT_UNAVAILABLE -v apply=true < ../../backend/scripts/recover-system-errors.sql # 되돌리기
+```
+
+- `stage`는 `VALIDATION`·`SUMMARY`, `reason`은 `REQUEST_REJECTED`·`RESPONSE_UNREADABLE`·`EVIDENCE_MISMATCH`·
+  `AGENT_UNAVAILABLE`·`INTERNAL_ERROR` 중 하나입니다. 빠지거나 틀리면 아무것도 바꾸지 않고 멈춥니다.
+- 검증은 검증 대기(`MATCHED`), 요약은 요약 대기(`VALIDATED`)로 돌아가고 두 실패 컬럼이 비워집니다. 워커가 다시 집습니다.
+- 아이가 정해지지 않은 일지는 검증 워커가 집지 않아 되돌리지 않고 `skipped_journal_entry_id_without_child`로 id만 보여줍니다.
+- 버그를 고치기 전에 되돌리면 같은 원인으로 다시 멈춥니다. 서버 시작 시 자동 실행되지 않습니다.
+
 ## 기술 스택
 
 | 항목 | 사용 기술 |
