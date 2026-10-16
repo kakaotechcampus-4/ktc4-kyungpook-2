@@ -77,7 +77,7 @@ public class InsightService {
      * @param periodTo   재료가 될 관찰 날짜 끝 (포함)
      */
     @Transactional(readOnly = true)
-    public Optional<InsightAgentRequest> prepare(Long childId, LocalDate periodFrom, LocalDate periodTo) {
+    public Optional<PreparedInsight> prepare(Long childId, LocalDate periodFrom, LocalDate periodTo) {
         Child child = childRepository.findByIdAndDeletedAtIsNull(childId).orElse(null);
         if (child == null) {
             log.warn("child not found, insight skipped childId={}", childId);
@@ -93,7 +93,8 @@ public class InsightService {
                 .map(InsightAgentRequest.Institution::institutionId)
                 .collect(Collectors.toSet());
 
-        List<SummaryResult> approved = approvedSummariesIn(childId, periodFrom, periodTo);
+        ApprovedMaterial material = approvedSummariesIn(childId, periodFrom, periodTo);
+        List<SummaryResult> approved = material.summaries();
         if (approved.isEmpty()) {
             return Optional.empty();
         }
@@ -119,8 +120,10 @@ public class InsightService {
             return Optional.empty();
         }
 
-        return Optional.of(new InsightAgentRequest(
-                childId, child.getName(), periodFrom.toString(), periodTo.toString(), claims, consented));
+        return Optional.of(new PreparedInsight(
+                new InsightAgentRequest(childId, child.getName(), periodFrom.toString(), periodTo.toString(),
+                        claims, consented),
+                material.lastContextId()));
     }
 
     /**
@@ -131,30 +134,47 @@ public class InsightService {
      * 지운 문장이 근거를 달고 그대로 다른 기관에 나간다. MVP 는 그 요약을 쓰지 않는 쪽으로 정했다 —
      * 최종 본문에 남은 claim 만 살리는 방식은 그다음이다 ({@code AI/insight/CRITERIA.md} §10).
      */
-    private List<SummaryResult> approvedSummariesIn(Long childId, LocalDate periodFrom, LocalDate periodTo) {
+    /**
+     * 재료가 된 요약과, 그것을 고를 때 본 {@code child_context} 중 가장 큰 id.
+     *
+     * <p>눈금을 따로 조회하지 않고 <b>같은 조회 결과에서</b> 뽑는 이유 — 기본 격리 수준(READ COMMITTED)에서는
+     * 한 트랜잭션 안에서도 조회마다 스냅샷이 새로 잡힌다. 다시 조회하면 그 사이 커밋된 승인이 눈금에만 잡히고
+     * 재료에는 안 들어가, 그 승인이 "봤다" 로 기록된 채 영영 빠진다 — 이 PR 이 고치는 바로 그 버그다.
+     */
+    private record ApprovedMaterial(List<SummaryResult> summaries, Long lastContextId) {
+        static ApprovedMaterial empty() {
+            return new ApprovedMaterial(List.of(), null);
+        }
+    }
+
+    private ApprovedMaterial approvedSummariesIn(Long childId, LocalDate periodFrom, LocalDate periodTo) {
         // 기간을 먼저 좁힌다. 승인본부터 집으면 그 아이의 승인 이력 전체를 올려 놓고 한 주치만 남기게 된다.
         List<SummaryResult> inPeriod =
                 summaryResultRepository.findByChildIdAndEntryDateBetween(childId, periodFrom, periodTo);
         if (inPeriod.isEmpty()) {
-            return List.of();
+            return ApprovedMaterial.empty();
         }
 
         List<Long> summaryIds = inPeriod.stream().map(SummaryResult::getId).toList();
-        Set<Long> approvedIds = childContextRepository.findBySummaryResultIdIn(summaryIds).stream()
+        List<ChildContext> contexts = childContextRepository.findBySummaryResultIdIn(summaryIds);
+        if (contexts.isEmpty()) {
+            return ApprovedMaterial.empty();
+        }
+        Set<Long> approvedIds = contexts.stream()
                 .map(ChildContext::getSummaryResultId)
                 .collect(Collectors.toSet());
-        if (approvedIds.isEmpty()) {
-            return List.of();
-        }
+        // 눈금은 방금 읽은 그 행들에서 뽑는다. 다시 조회하면 스냅샷이 달라진다.
+        Long lastContextId = contexts.stream().map(ChildContext::getId).max(Long::compareTo).orElseThrow();
 
         Set<Long> corrected = correctedAmong(summaryIds);
-        return inPeriod.stream()
+        List<SummaryResult> summaries = inPeriod.stream()
                 .filter(summary -> approvedIds.contains(summary.getId()))
                 .filter(summary -> !corrected.contains(summary.getId()))
                 // child_context 는 승인순이라 8월 기록을 10월에 승인하면 맨 앞에 온다.
                 // 인사이트는 기간의 흐름을 보므로 관찰 날짜로 다시 세운다.
                 .sorted(Comparator.comparing(SummaryResult::getEntryDate).thenComparing(SummaryResult::getId))
                 .toList();
+        return new ApprovedMaterial(summaries, lastContextId);
     }
 
     /** {@code review_type} 을 보지 않는 것은 일부러다 — {@code target_type = SUMMARY} 가 이미 Gate 1 을 뜻한다 (§9.1). */
