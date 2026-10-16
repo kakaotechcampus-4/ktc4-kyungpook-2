@@ -1014,7 +1014,9 @@ S3 객체의 실제 파기는 개인정보 파기 절차(§3.2 마지막)에서 
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
 | `deleted_at` | DATETIME | Y | **삭제 표시.** 잘못 분리된 일지를 내릴 때 |
-| `agent_retry_count` | INT | Y | AI 다운으로 지금 단계(매칭·검증)를 되돌린 횟수 (#153). NULL 은 0. `PENDING` 으로 만들 때 0, 매칭이 확정돼 `MATCHED` 로 들어올 때 0 으로. **`MATCHING`·`VALIDATING`·되돌려진 대기 상태에서만 뜻이 있고**, 다른 상태에 남은 값은 지난 단계의 것이다 (실패 사유로 읽지 않는다 — #180) |
+| `agent_retry_count` | INT | Y | AI 다운으로 지금 단계(매칭·검증)를 되돌린 횟수 (#153). NULL 은 0. `PENDING` 으로 만들 때 0, 매칭이 확정돼 `MATCHED` 로 들어올 때 0 으로. **`MATCHING`·`VALIDATING`·되돌려진 대기 상태에서만 뜻이 있고**, 다른 상태에 남은 값은 지난 단계의 것이다 (실패 원인은 `failure_reason` 으로 읽는다) |
+| `failure_stage` | VARCHAR(30) | Y | `SYSTEM_ERROR` 로 멈춘 단계 — `VALIDATION`·`SUMMARY` (#180). 그 상태일 때만 채운다. 되돌릴 자리가 단계마다 달라서 둔다 |
+| `failure_reason` | VARCHAR(30) | Y | `SYSTEM_ERROR` 로 멈춘 원인 코드 (#180, 아래 "실패 상태와 원인 코드"). 그 상태일 때만 채운다 |
 
 기관 컬럼이 없다 — 어느 기관의 일지인지는 `raw_record_id`로 `raw_record`를 거쳐 찾는다.
 
@@ -1069,7 +1071,9 @@ SUMMARIZING        요약 중
 GATE1_PENDING      1차 검토 대기
 GATE1_HELD         이 일지가 든 요약을 교사가 보류함 — 보류 해제하면 GATE1_PENDING (BE 추가, #178)
 COMPLETED          완료 — 이 일지가 든 요약이 Gate 1 에서 승인됨
-FAILED             실패
+SUMMARY_FAILED     근거가 남은 문장이 없어 요약하지 못함 — 다시 요약할 수 있음 (BE 추가, #180)
+SYSTEM_ERROR       코드 버그·AI 계약 위반으로 검증·요약이 멈춤 — 관리자가 고친 뒤 되돌림 (BE 추가, #180)
+FAILED             매칭 호출 실패 — 확인 필요 큐 (#180 전에는 검증·요약 실패도 이 값)
 ```
 
 매칭 워커는 AI 판정에 따라 이렇게 바꾼다. 판정의 세부(review / multi / unmatched)는 `matching_result.status`에 남는다.
@@ -1085,7 +1089,7 @@ FAILED             실패
 
 선생님이 확인 필요 큐에서 처리하면(API O-23) `matching_result`와 함께 일지도 바꾼다. `MATCH_REVIEW`·`FAILED`인 일지만 처리할 수 있다.
 단, `matching_result.status`가 이미 `AUTO`(AI 자동 확정 또는 선생님이 처리 완료)면 거절한다. 일지 `FAILED`는
-매칭 호출 실패뿐 아니라 검증 호출 실패(아래 검증 표)로도 생기는데, 검증 실패 일지는 매칭이 이미 끝난 것이라 다시 처리하면 안 된다.
+#180 전에는 검증·요약 호출 실패로도 생겼고 배포 DB 에 남아 있는데, 그 일지는 매칭이 이미 끝난 것이라 다시 처리하면 안 된다.
 
 | 선생님 처리 | `journal_entry.status` | `child_id` |
 | --- | --- | --- |
@@ -1102,18 +1106,19 @@ AI 자동 확정과 선생님 확정 둘 다 `MATCHED`로 들어오므로 구분
 | --- | --- | --- |
 | `PASS` · `REVIEW` | `VALIDATED` (요약 대기) | 행 추가 |
 | `BLOCK` | `VALIDATION_BLOCKED` (수정 요청 큐) | 행 추가 |
-| 호출 실패 (4xx, 응답 해석 실패) | `FAILED` (그 건만, 다음 건 계속) | `verdict = FAILED` 로 행 추가 (#122) |
-| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | `MATCHED` 로 되돌리고 `agent_retry_count` + 1. 나머지도 되돌리고 이번 차례 멈춤, 워커는 30초 쉼. **이미 2번 되돌린 일지면 `FAILED`**, 다음 건 계속 (#153) | 되돌리면 남기지 않음. `FAILED` 면 `verdict = FAILED` 로 행 추가 |
+| 호출 실패 (4xx, 응답 해석 실패, 판정 없음·계약에 없는 판정, 매칭된 아이 없음, 저장 오류) | `SYSTEM_ERROR` + `failure_stage = VALIDATION` + 원인 코드 (그 건만, 다음 건 계속, #180) | `verdict = FAILED` 로 행 추가 (#122) |
+| AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | `MATCHED` 로 되돌리고 `agent_retry_count` + 1. 나머지도 되돌리고 이번 차례 멈춤, 워커는 30초 쉼. **이미 2번 되돌린 일지면 `SYSTEM_ERROR` (`AGENT_UNAVAILABLE`)**, 다음 건 계속 (#153, #180) | 되돌리면 남기지 않음. 시스템 오류면 `verdict = FAILED` 로 행 추가 |
 
 **AI 다운으로 되돌리는 횟수에 상한(`app.ai.agent-down.max-releases`, 2)을 둔 이유** — AI 다운은 일지 잘못이 아니라
 실패로 남기지 않는다. 하지만 검증 AI 는 Luna 호출이 실패하면 이유와 상관없이 503 `llm_unavailable` 을 줘서, Luna 가
 이 일지만 거절하는 경우(입력 길이 초과, 콘텐츠 필터 등)도 BE 에는 다운으로 보인다. 횟수 제한 없이 되돌리면 그런 일지가
 대기열 맨 앞(오래된 순)에 남아 뒤의 일지가 처리되지 않는다. 둘을 나누려면 AI 쪽 수정이 필요하고 모델이 200 으로
 거부하는 경우는 그래도 못 잡아서, MVP 에서는 구분하지 않고 상한으로 함께 정리한다 (#153).
-AI 다운 뒤 30초(`app.ai.agent-down.pause`) 쉬므로, LLM 이 1분 넘게 죽어 있어야 첫 `FAILED` 가 생긴다.
+AI 다운 뒤 30초(`app.ai.agent-down.pause`) 쉬므로, LLM 이 1분 넘게 죽어 있어야 첫 시스템 오류가 생긴다.
+AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 상태와 원인 코드").
 
-`VALIDATED`·`VALIDATION_BLOCKED`도 초안에 없던 값이다. `BLOCK`에 `FAILED`를 쓰지 않는 이유는 `FAILED`가
-시스템 오류라는 뜻이고 확인 필요 큐(O-23)가 처리 대상으로 보기 때문이다.
+`VALIDATED`·`VALIDATION_BLOCKED`도 초안에 없던 값이다. `BLOCK`에 실패 상태를 쓰지 않는 이유는 `BLOCK`이
+정상 판정이고 교사가 수정 요청 큐에서 처리하기 때문이다 — 실패 상태는 시스템이 처리하지 못했다는 뜻이다.
 
 수정 요청 큐(O-25)에서 선생님이 처리하면 `VALIDATION_BLOCKED`가 아래 둘 중 하나로 끝난다 (#122).
 
@@ -1137,7 +1142,7 @@ AI 다운 뒤 30초(`app.ai.agent-down.pause`) 쉬므로, LLM 이 1분 넘게 �
 
 - "처리 중"은 같은 **아이**가 아니라 같은 **기관·날짜**로 본다. 매칭 전 일지는 `child_id`가 비어 있어 이 아이 일지인지
   아직 모른다.
-- 사람 손이 필요한 상태(`MATCH_REVIEW`·`FAILED`·`VALIDATION_HELD` 등)는 기다리지 않는다. 일지 하나 때문에 묶음 전체가
+- 사람 손이 필요한 상태(`MATCH_REVIEW`·`FAILED`·`VALIDATION_HELD`·`SUMMARY_FAILED`·`SYSTEM_ERROR` 등)는 기다리지 않는다. 일지 하나 때문에 묶음 전체가
   무기한 멈추지 않게 하려는 것이다. 나중에 확정되면 승인 전 요약에 덮어쓰거나 새 판으로 들어간다.
 - 교사의 "지금 요약"(API O-32)은 마감·디바운스를 건너뛴다. 처리 중 조건은 그대로 지킨다 — 업로드 직후 눌러도 받아 두고
   매칭·검증이 끝나면 요약한다. 요청은 그 날짜의 마감까지(이미 지난 날짜면 디바운스만큼)만 유효하고 메모리에만 둔다.
@@ -1149,9 +1154,10 @@ AI 다운 뒤 30초(`app.ai.agent-down.pause`) 쉬므로, LLM 이 1분 넘게 �
 | 결과 | 묶음의 `journal_entry.status` | `summary_result` |
 | --- | --- | --- |
 | 성공 | `GATE1_PENDING`. 요약에 반영되지 않은 일지(uncovered)도 같다 | 승인 전 판이 있으면 덮어쓰고, 없으면 새 판 |
-| 근거가 남은 문장이 없음 (AI 503 `detail.reason = no_grounded_claims` 가 재시도 2회 후에도 계속, #148). 200 인데 본문이 비어 와도 같다 | 호출 실패와 같음 — 그 묶음만. 나머지 묶음은 계속 처리 | 남기지 않음 |
-| BE 근거 재검사에 걸림 (§8.2) | 호출 실패와 같음 | 남기지 않음 |
-| 호출 실패 (4xx, 응답 해석 실패) | 처음 요약하던 일지는 `FAILED`, 이미 승인 전 요약에 들어가 있던 일지는 `GATE1_PENDING` 으로 되돌림 | 남기지 않음 |
+| 근거가 남은 문장이 없음 (AI 503 `detail.reason = no_grounded_claims` 가 재시도 2회 후에도 계속, #148) | 처음 요약하던 일지는 `SUMMARY_FAILED` (다시 요약할 수 있음, #180), 이미 승인 전 요약에 들어가 있던 일지는 `GATE1_PENDING` 으로 되돌림. 그 묶음만, 나머지 묶음은 계속 처리 | 남기지 않음 |
+| 200 인데 본문이 빔 | 처음 요약하던 일지는 `SYSTEM_ERROR` (`RESPONSE_UNREADABLE`) — AI 계약상 근거가 없으면 503 이라 나오면 안 되는 응답이다. 나머지는 위와 같음 | 남기지 않음 |
+| BE 근거 재검사에 걸림 (§8.2) | 처음 요약하던 일지는 `SYSTEM_ERROR` (`EVIDENCE_MISMATCH`). 나머지는 위와 같음 | 남기지 않음 |
+| 호출 실패 (4xx, 응답 해석 실패, 저장 오류) | 처음 요약하던 일지는 `SYSTEM_ERROR` (`REQUEST_REJECTED`·`RESPONSE_UNREADABLE`·`INTERNAL_ERROR`). 나머지는 위와 같음 | 남기지 않음 |
 | AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx 가 재시도 2회 후에도 계속. LLM 실패 503 `llm_unavailable`, 사유를 읽을 수 없는 503 포함) | 실패로 남기지 않고 요약하기 전 상태로 되돌림 (그 묶음과 나머지 묶음 모두). 이번 차례 멈춤 | 남기지 않음 |
 
 교사가 Gate 1(API O-31)에서 결정하면 그 요약을 가리키는(`summary_id`) 일지가 함께 바뀐다 (#178).
@@ -1178,12 +1184,48 @@ AI 다운 뒤 30초(`app.ai.agent-down.pause`) 쉬므로, LLM 이 1분 넘게 �
 표시다. 최신 판이면서 검토 대기인 요약에만 켜진다 — 보류된 판이나 옛 판은 바뀌지 않는다.
 
 요약 실패는 `summary_result`에 행을 남기지 않는다. 요약은 묶음 단위라 일지별 실패 행을 둘 자리가 없고, `status`에
-실패 값도 없다. `FAILED` 일지의 마지막 `validation_result.verdict`가 `PASS`·`REVIEW`면 요약 단계에서 실패한 것이다.
+실패 값도 없다. 일지 상태(`SUMMARY_FAILED`·`SYSTEM_ERROR` + `failure_stage = SUMMARY`)로 안다.
 
-> **`FAILED`만으로는 매칭 실패인지 검증 실패인지 모른다.** `journal_entry.status`는 두 경우에 같은 값이라,
-> 어느 단계에서 실패했는지는 결과 테이블로 구분한다 — 검증에서 실패했으면 `validation_result`에
-> `verdict = FAILED` 행이 있다 (#122. 그 전에는 행 자체가 없어서 `matching_result.status`로 돌려 짚어야 했다).
-> 실패 사유를 담을 컬럼은 아직 없다 (#180). AI 다운으로 되돌린 횟수는 `agent_retry_count` 가 센다 (#153).
+**실패 상태와 원인 코드 (#180)** — 실패를 처리하는 사람에 따라 셋으로 나눈다. `EXCLUDED`("우리 아이 아님")와는 섞지 않는다.
+
+| 상태 | 언제 | 누가 · 어떻게 |
+| --- | --- | --- |
+| `FAILED` | 매칭 호출 실패 | 교사가 확인 필요 큐(O-23)에서 아이를 고른다 |
+| `SUMMARY_FAILED` | 요약에 근거가 남은 문장이 없음. 주로 모델이 인용을 원문과 다르게 옮긴 경우 | 교사가 묶음 카드에서 다시 요약하거나 제외한다 (#182) |
+| `SYSTEM_ERROR` | 코드 버그·AI 계약 위반. 다시 돌려도 같다 | 관리자가 고친 뒤 원인별로 골라 되돌린다 |
+
+`SYSTEM_ERROR` 일 때만 `failure_stage`·`failure_reason` 을 채운다. 세부(어느 문장·근거인지, 일지 id)는 로그에 남기고,
+아이 기록이라 본문은 DB 에 옮겨 적지 않는다. 예외를 원인으로 바꾸는 곳은 `AgentFailureReasons` 한 곳이다.
+
+| `failure_reason` | 단계 | 뜻 | 고칠 곳 |
+| --- | --- | --- | --- |
+| `REQUEST_REJECTED` | 검증 · 요약 | AI 가 요청을 거절함 (4xx, FastAPI 422 포함) | BE 요청 |
+| `RESPONSE_UNREADABLE` | 검증 · 요약 | AI 응답을 못 읽음 (본문 없음, JSON 아님, 필수 값 빠짐, 검증 판정 없음·`FAILED`, 요약 본문이 빈 200) | AI 응답 |
+| `EVIDENCE_MISMATCH` | 요약 | BE 근거 재검사에 걸림 (§8.2) | AI 근거 계산 |
+| `AGENT_UNAVAILABLE` | 검증 | AI 다운으로 되돌린 횟수가 상한을 넘음 (#153) | 없음 — AI 가 살아나면 되돌린다 |
+| `INTERNAL_ERROR` | 검증 · 요약 | 위에 없는 BE 오류 (매칭된 아이 없음, DB 오류 등) | BE |
+
+"요약할 내용 없음"(멘토 A3, AI #196 후속)은 아직 계약이 없어 여기 없다. 정상 결과로 오게 되면 빈 본문 중 그 표시가 붙은
+응답만 `RESPONSE_UNREADABLE` 에서 빼서 정상으로 처리한다 (`SummaryResultRecorder.isEmptyContent`).
+
+**되돌리기** — 고친 뒤 [`backend/scripts/recover-system-errors.sql`](../../backend/scripts/recover-system-errors.sql)로 단계와
+원인을 골라 되돌린다. 검증은 `MATCHED`(`agent_retry_count = 0`), 요약은 `VALIDATED` 로 돌리고 두 실패 컬럼을 비운다.
+아이가 정해지지 않은 일지는 검증 워커가 집지 않으므로 되돌리지 않고 id 만 보여준다. 사용법은 `backend/README.md`.
+
+**#180 전에 생긴 `FAILED`** — 배포 DB 에는 검증·요약에서 실패해 `FAILED` 로 남은 일지가 있을 수 있다. 원인을 몰라
+옮기지 않았다. 매칭 결과가 `AUTO` 라 확인 필요 큐에도 뜨지 않는다. 마지막 `validation_result` 로 단계를 안다.
+
+```sql
+SELECT e.id, e.child_id, e.entry_date,
+       CASE v.verdict WHEN 'FAILED' THEN 'VALIDATION' ELSE 'SUMMARY' END AS failed_stage
+FROM journal_entry e
+JOIN LATERAL (SELECT verdict FROM validation_result r WHERE r.journal_entry_id = e.id
+              ORDER BY r.id DESC LIMIT 1) v ON true
+WHERE e.status = 'FAILED' AND e.deleted_at IS NULL
+ORDER BY e.id;
+```
+
+검증 행이 없는 `FAILED` 는 매칭 실패다. AI 다운으로 되돌린 횟수는 `agent_retry_count` 가 센다 (#153).
 
 **예시**
 
@@ -2210,6 +2252,16 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 \d journal_entry     status CHECK 가 있으면 DROP     (GATE1_HELD 추가. 9/30 에 지웠으면 없다)
 ```
 
+**실패 상태 분리 (#180) 배포 전 확인** — `journal_entry.status` 에 `SUMMARY_FAILED`·`SYSTEM_ERROR` 가 늘었다.
+
+```
+\d journal_entry     status CHECK 가 있으면 DROP     (9/30 에 지웠으면 없다)
+```
+
+새 컬럼 `failure_stage`·`failure_reason` 은 NULL 허용이라 `update` 가 기존 행이 있어도 더한다. **`update` 가 컬럼을
+더할 때도 enum 값으로 CHECK 제약(`journal_entry_failure_stage_check`·`journal_entry_failure_reason_check`)을 함께 건다**
+(10/16 PostgreSQL 16 에서 확인). 지금은 문제없지만, 나중에 원인 코드를 더하면 그 CHECK 를 DROP 해야 저장된다.
+
 ---
 
 ## 변경 이력
@@ -2245,3 +2297,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-13 | Gate 1 구현. `summary_result.status` 에 `REMOVED`, `journal_entry.status` 에 `GATE1_HELD` 추가, `human_review.decision` 을 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 (`REJECTED` 삭제). 승인·수정 후 승인·보류·제거·보류 해제 때 요약·일지 상태와 `child_context`·`human_review` 기록 규칙(§6.2, §8.2, §9.1, §9.2). 요약 워커가 최신 판의 일지만 다시 묶도록 변경(§6.2). claim 정리·고친 문장 재검증은 MVP 이후로 표시(§8.2). §0.3 의 `human_review` 불일치와 §10.2-12 해소. **enum 값 추가라 §11.4 수동 조치 필요** — `human_review`·`summary_result`·`journal_entry` CHECK 제약 확인 | #178 |
 | 2026-10-14 | `journal_entry.agent_retry_count` 추가 — AI 다운이면 매칭·검증 일지를 `FAILED` 로 남기지 않고 되돌리며 횟수를 센다. 2번 넘으면 `FAILED` (§6.2). 기존 행이 있어 NULL 허용으로 추가하고 NULL 은 0 으로 읽어 §11.4 수동 조치 불필요 | #153 |
 | 2026-10-16 | `insight_run` 에 `last_context_id` 추가 (§9.5) — 인사이트를 만든 뒤 같은 기간에 요약이 더 승인되면 다시 집는다. Gate 1 승인은 교사가 틈틈이 하므로 한 주치가 한 번에 올라오지 않는데, "처리했다" 만 기억하면 뒤에 승인된 기록이 영영 빠졌다(멘토 리뷰 #191). `child_context` 가 지우지 않고 쌓여 id 가 단조 증가하는 것을 눈금으로 쓴다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #197 |
+| 2026-10-16 | 실패 상태 분리. `journal_entry.status` 에 `SUMMARY_FAILED`(근거 0개, 다시 요약 가능)·`SYSTEM_ERROR`(관리자 확인) 추가, `failure_stage`·`failure_reason` 컬럼 추가. 검증·요약 실패를 `FAILED` 에서 옮기고 `FAILED` 는 매칭 실패만 (§6.2 "실패 상태와 원인 코드"). 원인별 되돌리기 스크립트 추가. 옛 `FAILED` 는 그대로 두고 찾는 SQL 만 둠. **enum 값 추가라 §11.4 확인 필요** — `journal_entry.status` CHECK (9/30 에 지웠으면 없음). 컬럼은 NULL 허용이라 `ddl-auto: update` 가 더한다 | 미생성 |
