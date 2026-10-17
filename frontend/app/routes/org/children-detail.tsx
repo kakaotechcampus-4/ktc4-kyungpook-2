@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
 import { InviteCodeCard } from "@/components/org/InviteCodeCard";
+import { NotReadyState } from "@/components/org/NotReady";
 import {
   Card,
   ConsentStatus,
@@ -17,6 +18,7 @@ import {
   getChildGuardians,
   getLiveInvitations,
   getTimeline,
+  isReady,
   issueInvitation,
   unlinkGuardian,
 } from "@/lib/api";
@@ -88,7 +90,10 @@ export default function ChildDetailPage() {
 
       <h2 className="mb-3 text-[17px] font-bold">기록 타임라인 (승인된 요약)</h2>
 
-      {withEntry.length === 0 ? (
+      {/* 타임라인 API 가 아직 없다. 비어 있다고 하면 "승인된 요약이 없다"로 읽혀 준비 중으로 둔다 */}
+      {!isReady("childProfile") ? (
+        <NotReadyState />
+      ) : withEntry.length === 0 ? (
         <>
           <EmptyState
             icon="◦"

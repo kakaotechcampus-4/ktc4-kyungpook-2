@@ -130,6 +130,8 @@ const BE_READY = {
   inbox: false,
   /** 활동 기록 */
   activity: false,
+  /** 기관 정보 · 증빙서류 (기관 설정 화면). 지금은 API 없이 mock 값만 띄운다 */
+  institutionSettings: false,
   /** 보호자: 초대 코드 수락 뒤 동의 화면(P-02)의 미리보기 · 동의 (G-02, G-41) */
   guardianConsent: true,
   /**
@@ -171,7 +173,15 @@ function mockFor(feature: Feature): boolean {
  * 화면은 null 을 "준비 중"으로 그린다. 전체 mock 모드에서는 평소대로 mock 을 돌려준다.
  */
 export function loadIfReady<T>(feature: Feature, load: () => Promise<T>): Promise<T | null> {
-  return USE_MOCK || BE_READY[feature] ? load() : Promise.resolve(null);
+  return isReady(feature) ? load() : Promise.resolve(null);
+}
+
+/**
+ * 이 기능의 화면을 그대로 보여도 되는지. 전체 mock 이거나 백엔드에 있으면 true.
+ * false 면 화면은 mock 데이터 대신 "준비 중"을 보인다(components/org/NotReady).
+ */
+export function isReady(feature: Feature): boolean {
+  return USE_MOCK || BE_READY[feature];
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
