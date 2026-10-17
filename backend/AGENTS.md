@@ -25,6 +25,7 @@ API 계약은 API 규약을, 의존성과 버전은 `build.gradle`을 기준으�
 | API 문서 | Springdoc OpenAPI |
 | 데이터 접근 | Spring Data JPA |
 | 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
+| AI 서버 호출 | Spring `RestClient` + Apache HttpClient 5 (503·429 자동 재시도 끔) |
 | 운영 데이터베이스 | PostgreSQL |
 | 테스트 데이터베이스 | H2 PostgreSQL 호환 모드 |
 | 테스트 | Spring Boot Test, JUnit 5, Spring Security Test, Testcontainers PostgreSQL |
@@ -47,17 +48,20 @@ API 계약은 API 규약을, 의존성과 버전은 `build.gradle`을 기준으�
 com.itda.backend
 ├── api                 # Controller
 ├── service             # 유스케이스와 트랜잭션
+│   ├── <기능>          # 기능별 유스케이스, 에이전트 호출 워커와 결과 저장
 │   ├── agent           # AI 서버 호출 공통 (재시도·상태 확인·접속 설정)
-│   ├── matching        # 매칭 에이전트 호출 워커와 결과 저장
-│   ├── validation      # 검증 에이전트 호출 워커와 결과 저장
-│   ├── summary         # 요약 에이전트 호출 워커와 결과 저장, 지금 요약 요청
 │   └── storage         # 외부 저장소 구현
-├── repository          # Entity 영속화와 조회
-├── domain              # Entity, enum 등 도메인 모델
+├── repository
+│   └── <기능>          # Entity 영속화와 조회, 조회용 projection
+├── domain
+│   └── <기능>          # Entity, enum 등 도메인 모델
 ├── dto
-│   ├── request
-│   └── response
-├── exception           # 기능별 예외와 오류 코드
+│   ├── request/<기능>
+│   └── response/<기능>
+├── exception
+│   ├── <기능>          # 기능별 예외·오류 코드·예외 처리기
+│   ├── agent           # 여러 기능이 쓰는 AI 호출 예외
+│   └── auth            # 로그인·토큰 인증 예외
 └── global              # 설정, 보안, JWT, 공통 응답·예외 등 횡단 관심사
     ├── config
     ├── exception
@@ -76,6 +80,11 @@ com.itda.backend
 - `global`은 설정, 보안, JWT, 공통 응답·예외처럼 여러 계층에서 공유하는 횡단 관심사에만 사용한다.
 - OAuth2 핸들러처럼 Spring Security 구성에 결합된 구현은 `global.security.oauth`에 둔다.
 - 새 최상위 패키지는 기존 계층으로 표현할 수 없는 횡단 관심사일 때만 추가한다.
+- 계층 안은 기능 하위 패키지로 나눈다. 기능 이름은 `user` `organization` `child` `invitation` `consent` `record` `matching` `validation` `summary` `approval` `insight`를 쓴다.
+  - 새 클래스는 계층 루트가 아니라 해당 기능 하위 패키지에 둔다(예: 아동 등록 요청 → `dto/request/child`).
+  - 맞는 기능이 없으면 이름을 정해 이 목록에 추가한다.
+  - 기능이 아닌 기술 관심사는 `service.agent`·`service.storage`·`exception.agent`·`exception.auth`에 둔다.
+  - `api`는 컨트롤러가 적어 한 폴더에 둔다.
 
 ## 코드 컨벤션
 
@@ -91,7 +100,7 @@ com.itda.backend
 
 ### DTO
 
-- Request DTO와 Response DTO를 각각 `dto/request`, `dto/response`에 둔다.
+- Request DTO와 Response DTO를 각각 `dto/request/<기능>`, `dto/response/<기능>`에 둔다.
 - DTO 이름은 용도를 드러내도록 `{행위}{도메인}Request`, `{도메인}Response` 형식을 사용한다.
 - 서로 다른 유스케이스의 DTO는 필드가 같더라도 목적이 다르면 분리한다.
 - DTO는 불변 객체를 우선하며, 적합한 경우 Java `record`를 사용한다.

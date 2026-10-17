@@ -1,8 +1,23 @@
 import { useRef, useState } from "react";
+import { NotReadyPage } from "@/components/org/NotReady";
 import { Card, InstitutionChip, Note, PageHeader } from "@/components/ui";
+import { isReady } from "@/lib/api";
 import { MY_INSTITUTION } from "@/lib/mock/data";
 
-export default function OrgSettingsPage() {
+/** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function OrgSettingsRoute() {
+  if (!isReady("institutionSettings")) {
+    return (
+      <NotReadyPage
+        title="기관 설정"
+        description="기관 정보와 증빙서류 검증 상태입니다"
+      />
+    );
+  }
+  return <OrgSettingsPage />;
+}
+
+function OrgSettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [doc, setDoc] = useState({ name: "인가증_2026.pdf", status: "verified" as "verified" | "reviewing" });
 
@@ -76,7 +91,7 @@ export default function OrgSettingsPage() {
       </Card>
 
       <Note>
-        증빙서류 검증이 끝나기 전에는 아이 등록과 초대코드 발급이 열리지 않습니다. 이 서류는
+        증빙서류 검증이 끝나기 전에는 아이 등록이 열리지 않습니다. 이 서류는
         보호자가 동의할 때 그대로 확인합니다.
       </Note>
     </>

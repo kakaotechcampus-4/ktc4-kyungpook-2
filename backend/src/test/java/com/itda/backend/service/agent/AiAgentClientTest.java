@@ -24,8 +24,8 @@ import org.springframework.web.client.RestClient;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.exception.AiAgentException;
-import com.itda.backend.exception.AiAgentUnavailableException;
+import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentUnavailableException;
 
 class AiAgentClientTest {
 

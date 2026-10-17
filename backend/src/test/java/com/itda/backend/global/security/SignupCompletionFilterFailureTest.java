@@ -5,7 +5,7 @@ import java.util.List;
 import jakarta.servlet.FilterChain;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.service.UserService;
+import com.itda.backend.service.user.UserService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;

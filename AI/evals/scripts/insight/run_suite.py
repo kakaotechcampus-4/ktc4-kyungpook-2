@@ -90,6 +90,13 @@ def finds(insight: dict, pattern_ids: list[str]) -> bool:
     return len(set(insight["claim_ids"]) & set(pattern_ids)) >= config.MIN_EVIDENCE_CLAIMS
 
 
+def spans_institutions(insight: dict, pattern_ids: list[str], types_of: dict) -> bool:
+    """기관 간 차이 패턴은 인사이트 하나가 두 기관 이상의 근거를 함께 품어야 한다.
+    학교 것만, 센터 것만 따로 묶으면(쪼개기) 비교가 사라지므로 찾은 것으로 보지 않는다."""
+    shared = set(insight["claim_ids"]) & set(pattern_ids)
+    return len({types_of[c] for c in shared}) >= 2
+
+
 def score(result: dict, sample: int) -> int:
     cases_path = result.get("cases", str(DEFAULT_CASES))  # 기준점 파일에는 경로가 없다
     cases = {c["case_id"]: c for c in load_cases(cases_path)}
@@ -104,6 +111,7 @@ def score(result: dict, sample: int) -> int:
                                 "insights": 0, "extra": 0})
     verdicts = defaultdict(list)                  # (갈래, case_id) → 실행별 완전 정답 여부
     cross_mention, cross_flag, leaks = [0, 0], [0, 0], []
+    split = [0, 0]                                # 기관 간 차이 패턴을 기관별로 쪼갠 횟수 / 전체
 
     for r in ok:
         case = cases[r["case_id"]]
@@ -114,6 +122,11 @@ def score(result: dict, sample: int) -> int:
         used, found = set(), 0
         for p in exp["patterns"]:
             hits = [k for k, i in enumerate(insights) if finds(i, p["claim_ids"])]
+            if p.get("cross_institution"):
+                split[1] += 1
+                whole = [k for k in hits if spans_institutions(insights[k], p["claim_ids"], types_of)]
+                split[0] += int(not whole and len(hits) >= 2)   # 기관별로 나눠 묶음
+                hits = whole                                     # 쪼갠 인사이트는 남는 인사이트로 셈
             if not hits:
                 continue
             found += 1
@@ -154,6 +167,7 @@ def score(result: dict, sample: int) -> int:
     print("\n■ 기관 간 차이 패턴 — 찾은 경우")
     print("  본문에 근거 기관 종류가 모두 나옴", pct(*cross_mention))
     print("  cross_institution 참            ", pct(*cross_flag))
+    print("  기관별로 쪼갬 (전체 패턴 기준)    ", pct(*split), " ← 0 이어야 함")
 
     # ── 쓸모 태그 (정답 세트 없음 → 분포만 본다) ──
     all_insights = [i for r in ok for i in r["insights"]]

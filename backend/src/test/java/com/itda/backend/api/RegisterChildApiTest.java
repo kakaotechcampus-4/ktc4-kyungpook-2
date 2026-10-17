@@ -1,5 +1,6 @@
 package com.itda.backend.api;
 
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -20,14 +21,14 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import com.jayway.jsonpath.JsonPath;
 
-import com.itda.backend.domain.Organization;
-import com.itda.backend.domain.User;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.UserRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.UserRepository;
 
 /**
  * POST /api/v1/institutions/me/children — 보안 필터·검증·저장까지 실제로 거친다.
@@ -102,6 +103,9 @@ class RegisterChildApiTest {
                         .andExpect(jsonPath("$.data.child.id").isString())
                         .andExpect(jsonPath("$.data.child.externalId").value("2026-0031"))
                         .andExpect(jsonPath("$.data.child.status").value("pending_consent"))
+                        .andExpect(jsonPath("$.data.invitation.id").isString())
+                        .andExpect(jsonPath("$.data.invitation.code").value(matchesPattern("[A-Z2-9]{8}")))
+                        .andExpect(jsonPath("$.data.invitation.expiresAt").isString())
                         .andReturn().getResponse().getContentAsString(),
                 "$.data.child.id");
 

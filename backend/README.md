@@ -87,6 +87,37 @@ psql "$DATABASE_URL" -v apply=true -f /absolute/path/to/backend/scripts/migrate-
    적용 후 문제가 확인되면 API를 계속 중단한 상태에서 사전 백업으로 복구하고 매핑을 다시 검증합니다.
    도구는 서버 시작 시 자동 실행되지 않습니다.
 
+### 테스트 아이 명부 넣기
+
+웹에서 업로드 → 매칭 → 검증을 확인하려면 매칭 명부에 아이가 있어야 합니다. 매칭 명부는 **그 기관에 보호자 동의가 있는
+아이**만 씁니다(DB 스키마 §5.1). 테스트 아이 100명에게 일일이 초대 코드 수락과 동의를 할 수 없으니,
+[`scripts/test-children.sql`](scripts/test-children.sql)이 테스트 아이 100명(`잇다_synthetic_100.json`의 dev·holdout)과
+함께 테스트 보호자·사용된 초대·보호자 연결·동의를 앱과 같은 모양으로 직접 넣습니다.
+
+**새 BE를 먼저 배포합니다.** `sharing_consent` 테이블은 BE가 만들고(`ddl-auto: update`), 테이블이 없으면 스크립트가 바로 멈춥니다.
+배포 직후부터 스크립트를 돌리기 전까지는 예전에 넣은 테스트 아이가 매칭 명부에서 빠집니다.
+
+서버의 `infra/docker`에서 실행합니다. 기관 id는 이슈 #130 댓글이나 아래 조회로 확인합니다.
+
+```bash
+dbsql() { docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@"; }
+dbsql -c "SELECT u.name, o.id, o.name FROM users u JOIN organization o ON o.id = u.organization_id;"   # 기관 id
+dbsql -v action=seed -v org_id=5 < ../../backend/scripts/test-children.sql               # 확인만 (ROLLBACK)
+dbsql -v action=seed -v org_id=5 -v apply=true < ../../backend/scripts/test-children.sql # 저장
+```
+
+- `seed`는 아이가 없으면 만들고 `org_id` 기관 명부에 연결한 뒤, 테스트 보호자(`kakao_id = test-guardian-130`)와 연결하고
+  그 기관에 동의(`daily_summary`·`weekly_insight`)를 넣습니다. 다시 실행해도 빠진 것만 채웁니다 — 이미 연결된 아이에게는
+  초대 행을 새로 만들지 않습니다. 예전 판 스크립트로 넣은 아이(`ACTIVE`, 연결·동의 없음)에게 돌리면 연결과 동의가 채워집니다.
+- 여러 기관에 넣으면 같은 아이 행을 함께 쓰고, 기관마다 동의가 따로 생깁니다(등록 API는 기관마다 따로 만듭니다).
+- `unlink`는 그 기관 명부에서만 빼고 그 기관 동의를 철회합니다. `purge`(`org_id`를 주면 거절)는 모든 기관에서 빼고 동의를
+  모두 철회한 뒤 아이를 삭제 처리합니다. 철회는 `REVOKED`(`revoke_reason = ROSTER_REMOVED`)로 남고, 삭제는 `deleted_at`만 채웁니다.
+- 아이 상태는 앱과 같은 규칙으로 다시 계산합니다(살아 있는 동의가 있으면 `ACTIVE`, 모두 철회됐으면 `SUSPENDED`).
+
+테스트 아이와 이름·생년월일이 같은데 테스트 아이가 아닌 아이(등록 API로 만든 아이, 실제 보호자가 연결된 아이)가 있으면
+아무것도 바꾸지 않고 멈추며, 오류에 그 `child.id`와 상태를 보여줍니다. 테스트하려고 등록한 아이라면 그 아이를 정리한 뒤
+다시 실행합니다. 실행했으면 이슈 #130에 기관과 action을 남깁니다.
+
 ## 기술 스택
 
 | 항목 | 사용 기술 |
@@ -97,6 +128,7 @@ psql "$DATABASE_URL" -v apply=true -f /absolute/path/to/backend/scripts/migrate-
 | 인증 | Spring Security, OAuth2 Client(카카오), JJWT 0.12.6 |
 | 데이터 접근 | Spring Data JPA |
 | 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
+| AI 서버 호출 | Spring `RestClient` + Apache HttpClient 5. 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, HTTP 클라이언트는 연결이 끊긴 GET 만 1회 다시 보낸다 |
 | API 문서 | Springdoc OpenAPI 2.9.1, Swagger UI |
 | 운영 DB | PostgreSQL |
 | 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |

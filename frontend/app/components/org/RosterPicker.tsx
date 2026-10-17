@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Child } from "@/lib/types";
+import type { ChildListItem } from "@/lib/types";
 
 /**
  * 명부에서 아이를 직접 찾아 고른다 — 매칭 확인(unmatched · "다른 아이")과 Gate 1 아동 변경이 함께 쓴다.
@@ -14,7 +14,7 @@ export function RosterPicker({
   excludeId,
   name,
 }: {
-  roster: Child[];
+  roster: ChildListItem[];
   value: string | null;
   onChange: (childId: string) => void;
   /** 지금 지정된 아이 — "다른 아이" 를 고르는 중이라 목록에서 뺀다 */

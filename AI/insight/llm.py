@@ -15,7 +15,7 @@ import requests
 #: 503 으로 나가는 예외. 모든 에이전트가 **같은 클래스**를 쓴다 — 따로 두면
 #: main.py 에서 이름이 덮여 핸들러가 한쪽에만 걸린다 (common/errors.py 참고).
 #: LLM 판단 없이는 판정을 낼 수 없다.
-#: 여기서 다시 내보내므로 from validation.llm import LlmUnavailable 이 그대로 된다.
+#: 여기서 다시 내보내므로 from insight.llm import LlmUnavailable 이 그대로 된다.
 from common.errors import LlmUnavailable  # noqa: F401
 
 from common.luna import model as luna_model

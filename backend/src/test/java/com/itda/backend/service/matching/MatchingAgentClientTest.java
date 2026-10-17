@@ -18,11 +18,11 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.itda.backend.domain.MatchingStatus;
-import com.itda.backend.domain.MultiReason;
-import com.itda.backend.dto.request.MatchingAgentRequest;
-import com.itda.backend.dto.response.MatchingAgentResponse;
-import com.itda.backend.exception.AiAgentException;
+import com.itda.backend.domain.matching.MatchingStatus;
+import com.itda.backend.domain.matching.MultiReason;
+import com.itda.backend.dto.request.matching.MatchingAgentRequest;
+import com.itda.backend.dto.response.matching.MatchingAgentResponse;
+import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.service.agent.AiAgentClient;
 import com.itda.backend.service.agent.AiAgentProperties;
 
