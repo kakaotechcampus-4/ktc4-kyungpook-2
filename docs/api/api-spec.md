@@ -651,7 +651,7 @@ O-15 ~ O-19 공통 오류:
 > | `record.type` | **내려가지 않습니다.** `RecordResponse`에 `type` 필드가 없습니다 — 기록 유형 값 목록이 아직 팀에서 안 정해졌습니다 |
 > | `capturedAt` | 기록 날짜(`YYYY-MM-DD`)입니다. 초안의 타임스탬프와 다릅니다 |
 >
-> 🙏 **FE 쪽에 두 가지 부탁드립니다.**
+> ✅ **FE 반영됨 (2026-10-17, `feat/fe/blocked-queue-real`)** — 아래 두 가지 모두 반영했습니다.
 >
 > 1. `BlockedItem.record` 가 `RawRecord` 타입이라 `type` 이 필수인데 BE 가 그 값을 주지 않습니다.
 >    `MatchingItem.record` 가 이미 `type?: RawRecord["type"] | null` 로 인라인 정의해 피해 간 것과

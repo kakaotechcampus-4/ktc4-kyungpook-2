@@ -28,7 +28,9 @@
  *      DELETE /api/v1/guardians/me/children/{childId}   → 204 (아래 guardianUnlink 참고)
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
- *      GET  /api/v1/auth/me           (lib/auth.ts 에서 호출)
+ *      GET  /api/v1/validation-results?status=BLOCK
+ *      POST /api/v1/validation-results/{id}/resolve
+ *      GET  /api/v1/auth/me          (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/signup       (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/logout       (lib/auth.ts 에서 호출)
  *
@@ -114,8 +116,8 @@ const BE_READY = {
   chat: false,
   /** 확인 필요 큐 조회 · 처리 (O-22, O-23) */
   matchingQueue: true,
-  /** 수정 요청(BLOCK) 큐 조회 · 처리 */
-  blockedQueue: false,
+  /** 수정 요청(BLOCK) 큐 조회 · 처리 (O-24, O-25) */
+  blockedQueue: true,
   /** 1차 검토 조회 · 승인 · 아이 변경 */
   gate1: false,
   /** 인사이트 조회 · 2차 공유 */
@@ -258,10 +260,20 @@ export async function getMatchingQueue(): Promise<MatchingItem[]> {
   }));
 }
 
-/** GET /api/v1/validation-results?status=BLOCK */
+/** GET /api/v1/validation-results?status=BLOCK (api-spec O-24) */
 export async function getBlockedQueue(): Promise<BlockedItem[]> {
   if (mockFor("blockedQueue")) return mock.BLOCKED_QUEUE;
-  return request("/api/v1/validation-results?status=BLOCK");
+  const items = await request<BlockedItem[]>("/api/v1/validation-results?status=BLOCK");
+  return items.map((item) => ({
+    ...item,
+    record: {
+      ...item.record,
+      capturedAt: item.record.capturedAt ?? null,
+      preview: item.record.preview ?? null,
+      fullContent: item.record.fullContent ?? null,
+    },
+    childName: item.childName ?? null,
+  }));
 }
 
 /** GET /api/v1/summaries?gate1_status=pending */
@@ -520,7 +532,13 @@ function tickSimulation() {
   }
 }
 
-/** 재입력 요청 큐 항목을 처리(재업로드 또는 보류)하면 큐에서 빠진다. */
+/**
+ * POST /api/v1/validation-results/{id}/resolve (api-spec O-25)
+ *
+ * 둘 다 그 일지의 처리를 여기서 끝내고 큐에서 뺀다. 원본은 고치지도 지우지도 않는다 —
+ * reupload 는 "고친 내용을 새 파일로 올리겠다"는 표시일 뿐, 업로드는 따로 해야 한다.
+ * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
+ */
 export async function resolveBlockedItem(
   id: string,
   action: "reupload" | "hold",

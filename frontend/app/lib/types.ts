@@ -279,12 +279,32 @@ export interface EntryProgress {
   state: "running" | "waiting" | "failed" | "done";
 }
 
-/** 재입력 요청 큐 한 건 */
+/**
+ * 수정 요청(BLOCK) 큐 한 건 (api-spec O-24).
+ *
+ * `record` 는 확인 필요 큐와 같은 모양이다(BE RecordResponse). 유형(`type`)은 BE 가 아직
+ * 보내지 않고, 날짜는 `YYYY-MM-DD` 로 온다. 비어 있으면 화면이 그 칸을 숨긴다.
+ */
 export interface BlockedItem {
   id: string;
-  record: RawRecord;
+  /** 검증 결과가 붙은 일지 id. 화면에서는 쓰지 않는다 */
+  journalEntryId?: number;
+  record: {
+    id: string;
+    fileName: string;
+    type?: RawRecord["type"] | null;
+    capturedAt: string | null;
+    /** 앞 60자만 자른 목록용 미리보기 */
+    preview: string | null;
+    /** 자르지 않은 전체 본문. 막힌 문장이 60자 뒤에 있을 수 있어 이걸 보여준다 */
+    fullContent: string | null;
+  };
+  /** 매칭 전에 막혔으면 아이를 모른다 */
   childName: string | null;
+  /** 화면에 그대로 띄우는 한국어 문장. 사유가 여럿이면 " / " 로 이어져 온다 */
   violationReason: string;
+  /** AI 가 보낸 위반 유형 원본(`진단명` · `개인정보표현` 등). 화면에서는 쓰지 않는다 */
+  violationCode?: string[];
 }
 
 /** Gate 1 검토 대기 한 건 */

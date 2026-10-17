@@ -395,10 +395,11 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
     violationReason: "다른 아이 이름이 함께 포함되어 있습니다",
     record: {
       id: "rrf_a301",
-      fileName: "0819_관찰일지.docx",
+      fileName: "0819_관찰일지.txt",
       type: "관찰일지",
-      capturedAt: "2026-08-19T14:20:00+09:00",
+      capturedAt: "2026-08-19",
       preview: "김OO와 이OO가 함께 블록놀이를 했고, 이OO가 먼저 자리를 떠났다.",
+      fullContent: "김OO와 이OO가 함께 블록놀이를 했고, 이OO가 먼저 자리를 떠났다.",
     },
   },
   {
@@ -408,9 +409,13 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
     record: {
       id: "rrf_a402",
       fileName: "0818_특이사항.txt",
-      type: "특이사항",
-      capturedAt: "2026-08-18T16:00:00+09:00",
-      preview: "요즘 상태를 보면 자폐 성향이 심해지고 있는 것으로 보인다.",
+      type: null,
+      capturedAt: "2026-08-18",
+      // 막힌 문장이 60자 뒤에 있는 경우 — 미리보기로는 무엇을 고칠지 보이지 않는다
+      preview:
+        "오전 간식 시간에는 평소처럼 자리에 앉아 우유를 마셨고, 친구가 건넨 과자도 받아 먹었다. 바깥놀이…",
+      fullContent:
+        "오전 간식 시간에는 평소처럼 자리에 앉아 우유를 마셨고, 친구가 건넨 과자도 받아 먹었다. 바깥놀이 시간에는 미끄럼틀 앞에서 차례를 기다렸다. 요즘 상태를 보면 자폐 성향이 심해지고 있는 것으로 보인다.",
     },
   },
 ];
