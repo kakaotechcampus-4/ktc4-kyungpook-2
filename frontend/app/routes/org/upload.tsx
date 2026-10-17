@@ -2,14 +2,23 @@ import { useState } from "react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
 import { FileProgressList, useProgressPolling } from "@/components/org/FileProgressList";
 import { Card, Note, PageHeader, PipelineStepper } from "@/components/ui";
-import { getChildren, getFileProgress, retryFailedEntries, uploadRawRecords } from "@/lib/api";
+import {
+  getChildren,
+  getFileProgress,
+  retryFailedEntries,
+  UPLOAD_EXTENSIONS,
+  uploadRawRecords,
+} from "@/lib/api";
 import { PIPELINE_STAGES, stageStatesOf } from "@/lib/pipeline";
 import type { UploadFailReason, UploadResult } from "@/lib/types";
 
 type UploadFailure = Extract<UploadResult, { ok: false }>;
 
+/** "csv · txt" */
+const EXTENSIONS_LABEL = UPLOAD_EXTENSIONS.join(" · ");
+
 const FAIL_MESSAGE: Record<UploadFailReason, string> = {
-  invalid: "올릴 수 없는 형식입니다 (csv · txt · pdf)",
+  invalid: `올릴 수 없는 형식입니다 (${EXTENSIONS_LABEL})`,
   too_large: "20MB를 넘는 파일입니다",
   temporary: "일시적인 오류로 저장하지 못했습니다",
 };
@@ -86,11 +95,13 @@ export default function UploadPage() {
               ⬆
             </span>
             <p className="text-[16px] font-semibold text-ink2">파일을 끌어다 놓거나 선택하세요</p>
-            <p className="text-[14px] text-muted">일지 · 특이사항 메모 (csv · txt · pdf)</p>
+            <p className="text-[14px] text-muted">일지 · 특이사항 메모 ({EXTENSIONS_LABEL})</p>
+            <p className="text-[13px] text-muted">PDF는 곧 지원할 예정입니다</p>
             <input
               key={inputKey}
               type="file"
               multiple
+              accept={UPLOAD_EXTENSIONS.map((ext) => `.${ext}`).join(",")}
               onChange={(e) => setChosen(Array.from(e.target.files ?? []))}
               className="mt-2 text-[14px]"
             />

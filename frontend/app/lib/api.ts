@@ -401,11 +401,16 @@ export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
     mock.FILE_PROGRESS.unshift(...created);
     return results;
   }
-  const settled = await Promise.allSettled(files.map(uploadOne));
-  return settled.map((s, i) =>
-    s.status === "fulfilled"
-      ? { ok: true, file: files[i], progress: s.value }
-      : { ok: false, file: files[i], reason: uploadFailReasonOf(s.reason) },
+  return Promise.all(
+    files.map(async (file): Promise<UploadResult> => {
+      // BE 는 pdf 도 받지만 아직 기록으로 나누지 못해 아무것도 생기지 않는다 — 보내기 전에 거절한다
+      if (!hasUploadExtension(file)) return { ok: false, file, reason: "invalid" };
+      try {
+        return { ok: true, file, progress: await uploadOne(file) };
+      } catch (err) {
+        return { ok: false, file, reason: uploadFailReasonOf(err) };
+      }
+    }),
   );
 }
 
@@ -434,13 +439,21 @@ function uploadFailReasonOf(err: unknown): UploadFailReason {
   return "temporary";
 }
 
-/** mock 도 BE 와 같은 규칙으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
-const UPLOAD_EXTENSIONS = ["csv", "txt", "pdf"];
+/**
+ * 올릴 수 있는 형식. BE 는 pdf 도 받지만 기록으로 나누는 단계가 pdf 를 건너뛰어,
+ * 올려도 처리 현황에 아무것도 나오지 않는다. pdf 를 지원하면 여기에 다시 넣는다.
+ */
+export const UPLOAD_EXTENSIONS = ["csv", "txt"];
+/** mock 도 BE 와 같은 용량 제한으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
 const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
-function mockRejectReason(file: File): UploadFailReason | null {
+function hasUploadExtension(file: File): boolean {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (!UPLOAD_EXTENSIONS.includes(ext)) return "invalid";
+  return UPLOAD_EXTENSIONS.includes(ext);
+}
+
+function mockRejectReason(file: File): UploadFailReason | null {
+  if (!hasUploadExtension(file)) return "invalid";
   if (file.size > UPLOAD_MAX_BYTES) return "too_large";
   return null;
 }
