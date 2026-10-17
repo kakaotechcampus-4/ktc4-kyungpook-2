@@ -376,10 +376,7 @@ function AcceptedStep({
   }
 
   const needsConsent = result.childStatus === "pending_consent";
-  // 동의 미리보기(G-02)에 기관 id 가 필요한데 서버 응답에는 아직 없다 (BE 에 추가 요청함)
-  const consentPath = result.organizationId
-    ? `/parent/consent?childId=${encodeURIComponent(result.childId)}&institutionId=${encodeURIComponent(result.organizationId)}`
-    : null;
+  const consentPath = `/parent/consent?childId=${encodeURIComponent(result.childId)}&institutionId=${encodeURIComponent(result.organizationId)}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -399,15 +396,9 @@ function AcceptedStep({
           ) : null}
         </p>
       </div>
-      {consentPath ? (
-        <Link to={consentPath} className={primary}>
-          {needsConsent ? "공유 동의하러 가기" : "공유 범위 확인하기"}
-        </Link>
-      ) : (
-        <p className="text-[14px] leading-6 text-muted">
-          공유 동의 화면은 준비 중이에요. 준비되면 이어서 안내해 드릴게요.
-        </p>
-      )}
+      <Link to={consentPath} className={primary}>
+        {needsConsent ? "공유 동의하러 가기" : "공유 범위 확인하기"}
+      </Link>
       {home}
     </div>
   );
