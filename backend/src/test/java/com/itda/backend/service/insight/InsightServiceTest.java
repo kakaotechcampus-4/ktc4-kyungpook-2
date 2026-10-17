@@ -115,6 +115,17 @@ class InsightServiceTest {
         return summary;
     }
 
+    /** 교사가 고쳐서 승인한 요약. {@code finalContent} 가 교사가 남긴 최종본이다. */
+    private SummaryResult correctedApproval(Organization institution, LocalDate entryDate, String claims,
+            String finalContent) {
+        SummaryResult summary = em.persistAndFlush(SummaryResult.of(junho.getId(), entryDate,
+                institution.getId(), 1, "요약 본문", claims, "[1041]", "[]", "{}"));
+        em.persistAndFlush(ChildContext.of(junho.getId(), summary.getId(), finalContent));
+        em.persistAndFlush(new Approval(ApprovalTargetType.SUMMARY, summary.getId(),
+                ApprovalReviewType.GATE1, 1L, ApprovalDecision.CORRECTED, "일부 문장을 뺐습니다"));
+        return summary;
+    }
+
     private Optional<PreparedInsight> prepare() {
         em.flush();
         em.clear();
@@ -216,16 +227,113 @@ class InsightServiceTest {
     }
 
     /**
-     * 교사가 고쳐서 승인한 요약은 통째로 뺀다 (schema.md §10.1 #7).
-     * 고친 본문은 child_context 에만 있고 claims 는 AI 원문 그대로라, 교사가 지운 문장이
-     * 근거를 달고 그대로 다른 기관에 나간다.
+     * 멘토 리뷰(#191 A4) — 고쳐 승인한 요약도 인사이트에 넣는다. 다만 교사가 <b>지운</b> 문장은
+     * claims 에 근거째 남아 있으므로, 최종본에 그대로 남은 것만 보낸다 (§10.1 #7).
      */
     @Test
-    void 교사가_고쳐_승인한_요약은_재료에서_뺀다() {
-        SummaryResult corrected = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+    void 고쳐_승인한_요약은_최종본에_남은_문장만_보낸다() {
+        SummaryResult corrected = correctedApproval(school, LocalDate.of(2026, 10, 2), CLAIMS,
+                "점심 줄에서 차례를 기다렸다.");
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::text)
+                .containsExactly("점심 줄에서 차례를 기다렸다.");
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::claimId)
+                .containsExactly(corrected.getId() + "-0");
+    }
+
+    /** 교사가 지운 문장이 되살아나면 안 된다 — 이 작업의 핵심 안전 조건이다. */
+    @Test
+    void 교사가_지운_문장은_보내지_않는다() {
+        correctedApproval(school, LocalDate.of(2026, 10, 2), CLAIMS, "블록을 혼자 다섯 층 쌓았다.");
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::text)
+                .doesNotContain("점심 줄에서 차례를 기다렸다.");
+    }
+
+    /**
+     * 줄바꿈 표기만 다른 것은 고친 것이 아니다 — Gate 1 의 판정 기준과 같아야 한다.
+     *
+     * <p>두 기록을 잇는 문장은 길어서 줄바꿈을 품는다 (§8.2 의 claims 예시가 그렇다). 그 문장이
+     * 최종본에는 CRLF 로, claims 에는 LF 로 들어 있으면 글자 그대로 비교할 때 어긋나서,
+     * 교사가 손대지 않았는데도 claim 이 날아간다.
+     */
+    @Test
+    void 줄바꿈_표기만_다르면_그대로_남은_것으로_본다() {
+        correctedApproval(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "학교에서는 혼자 쌓았고\\n센터에서는 도움이 필요했다.",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "혼자 다섯 층까지 쌓음"}]}]
+                """,
+                // 교사는 문장을 건드리지 않았고, 최종본만 CRLF 로 저장됐다
+                "학교에서는 혼자 쌓았고\r\n센터에서는 도움이 필요했다.");
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).hasSize(1);
+    }
+
+    /**
+     * 앞뒤 공백·줄바꿈도 고친 것이 아니다 — 입력창을 거치면 생긴다. Gate 1 이 {@code strip()} 을 두는 이유다.
+     */
+    @Test
+    void 앞뒤_공백만_붙어도_그대로_남은_것으로_본다() {
+        correctedApproval(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "점심 줄에서 차례를 기다렸다.",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "줄에서 차례를 기다림"}]}]
+                """,
+                "\n  점심 줄에서 차례를 기다렸다.  \n");
+
+        assertThat(prepare().orElseThrow().request().claims()).hasSize(1);
+    }
+
+    /**
+     * ⚠️ <b>알고 남겨 둔 구멍</b> — 부분 문자열 대조라, 지운 문장이 남은 문장 안에 들어 있으면 살아남는다.
+     * 같은 날 같은 아이를 쓴 문장들이라 실제로 일어난다. 2단계(최종본 기준 claim 재생성)가 고칠 자리이고,
+     * 이 테스트는 "지금은 이렇게 동작한다" 를 드러내 두려고 둔다.
+     */
+    @Test
+    void 지운_문장이_남은_문장에_들어_있으면_아직_걸러지지_않는다() {
+        correctedApproval(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "혼자 쌓았다.",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "혼자 쌓음"}]},
+                 {"text": "블록을 혼자 쌓았다.",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "블록을 혼자 쌓음"}]}]
+                """,
+                // 교사는 첫 문장을 지우고 둘째만 남겼다
+                "블록을 혼자 쌓았다.");
+
+        assertThat(prepare().orElseThrow().request().claims())
+                .extracting(InsightAgentRequest.Claim::text)
+                .containsExactly("혼자 쌓았다.", "블록을 혼자 쌓았다.");
+    }
+
+    /**
+     * Gate 1 이 "고쳤는가" 를 판정하는 기준과 <b>같아야 한다</b>. 한쪽만 바뀌면 교사가 손대지 않은
+     * 문장이 인사이트에서 빠진다 — 두 곳에 같은 함수가 있어서 조용히 어긋날 수 있다.
+     *
+     * <p>{@code InstitutionTypeNames} 가 AI 계약 값과 맞는지 보는 테스트와 같은 자리다.
+     */
+    @Test
+    void 고침_판정_기준이_Gate_1과_같다() {
+        String raw = "\r\n  학교에서는 혼자 쌓았고\r\n센터에서는 도움이 필요했다.  \r\n";
+
+        // Gate 1 이 "안 고쳤다" 로 보는 입력은 인사이트도 "그대로 남았다" 로 봐야 한다
+        correctedApproval(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "학교에서는 혼자 쌓았고\\n센터에서는 도움이 필요했다.",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "혼자 다섯 층까지 쌓음"}]}]
+                """, raw);
+
+        assertThat(prepare().orElseThrow().request().claims()).hasSize(1);
+    }
+
+    /** 고친 요약의 문장이 하나도 안 남으면 그 요약은 재료에서 빠진다. */
+    @Test
+    void 남은_문장이_없으면_그_요약은_빠진다() {
+        correctedApproval(school, LocalDate.of(2026, 10, 2), CLAIMS, "교사가 처음부터 새로 쓴 글.");
         approved(center, LocalDate.of(2026, 10, 3), CLAIMS);
-        em.persistAndFlush(new Approval(ApprovalTargetType.SUMMARY, corrected.getId(),
-                ApprovalReviewType.GATE1, 1L, ApprovalDecision.CORRECTED, "추정 표현을 뺐습니다"));
 
         InsightAgentRequest request = prepare().orElseThrow().request();
 

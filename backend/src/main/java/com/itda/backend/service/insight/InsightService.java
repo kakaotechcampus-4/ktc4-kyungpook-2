@@ -51,7 +51,7 @@ import lombok.extern.slf4j.Slf4j;
  * child_context(child_id)        승인된 요약 id
  *   → summary_result(id IN ...)  entry_date · institution_id · claims
  *   → 기간으로 거른다
- *   → CORRECTED 요약 제거
+ *   → CORRECTED 요약은 최종본에 남은 claim 만
  *   → organization(id IN ...)    institution_type
  * </pre>
  */
@@ -94,14 +94,15 @@ public class InsightService {
                 .collect(Collectors.toSet());
 
         ApprovedMaterial material = approvedSummariesIn(childId, periodFrom, periodTo);
-        List<SummaryResult> approved = material.summaries();
+        List<ApprovedSummary> approved = material.summaries();
         if (approved.isEmpty()) {
             return Optional.empty();
         }
 
         Map<Long, Organization> institutions = institutionsOf(approved);
         List<InsightAgentRequest.Claim> claims = new ArrayList<>();
-        for (SummaryResult summary : approved) {
+        for (ApprovedSummary approvedSummary : approved) {
+            SummaryResult summary = approvedSummary.summary();
             if (!consentedIds.contains(summary.getInstitutionId())) {
                 // 동의가 없거나 철회된 기관의 기록이다. AI 도 거르지만 BE 가 먼저 막는다 (CRITERIA §7)
                 // — 받는 쪽만 막으면 그 기관의 원문 인용이 재료로 들어가 다른 기관으로 흘러간다.
@@ -114,7 +115,7 @@ public class InsightService {
                         summary.getId(), summary.getInstitutionId());
                 continue;
             }
-            claims.addAll(claimsOf(summary, institution));
+            claims.addAll(claimsOf(approvedSummary, institution));
         }
         if (claims.isEmpty()) {
             return Optional.empty();
@@ -127,24 +128,25 @@ public class InsightService {
     }
 
     /**
-     * 승인된 요약 중 기간 안의 것만. {@code child_context} 에 행이 있다는 것이 곧 Gate 1 통과다.
-     *
-     * <p>⚠️ <b>교사가 고쳐서 승인한 요약({@code CORRECTED})은 통째로 뺀다</b> (§10.1 #7). 고친 본문은
-     * {@code child_context.content} 에만 있고 {@code summary_result.claims} 는 AI 원문 그대로라, 교사가
-     * 지운 문장이 근거를 달고 그대로 다른 기관에 나간다. MVP 는 그 요약을 쓰지 않는 쪽으로 정했다 —
-     * 최종 본문에 남은 claim 만 살리는 방식은 그다음이다 ({@code AI/insight/CRITERIA.md} §10).
-     */
-    /**
      * 재료가 된 요약과, 그것을 고를 때 본 {@code child_context} 중 가장 큰 id.
      *
      * <p>눈금을 따로 조회하지 않고 <b>같은 조회 결과에서</b> 뽑는 이유 — 기본 격리 수준(READ COMMITTED)에서는
      * 한 트랜잭션 안에서도 조회마다 스냅샷이 새로 잡힌다. 다시 조회하면 그 사이 커밋된 승인이 눈금에만 잡히고
      * 재료에는 안 들어가, 그 승인이 "봤다" 로 기록된 채 영영 빠진다 — 이 PR 이 고치는 바로 그 버그다.
      */
-    private record ApprovedMaterial(List<SummaryResult> summaries, Long lastContextId) {
+    private record ApprovedMaterial(List<ApprovedSummary> summaries, Long lastContextId) {
         static ApprovedMaterial empty() {
             return new ApprovedMaterial(List.of(), null);
         }
+    }
+
+    /**
+     * 승인된 요약 한 건과 교사가 승인한 최종본.
+     *
+     * @param approvedContent {@code child_context.content}. 교사가 고쳤으면 고친 글이다
+     * @param corrected       교사가 본문을 고쳐서 승인했는지. 그러면 claim 을 최종본과 대조한다 (§10.1 #7)
+     */
+    private record ApprovedSummary(SummaryResult summary, String approvedContent, boolean corrected) {
     }
 
     private ApprovedMaterial approvedSummariesIn(Long childId, LocalDate periodFrom, LocalDate periodTo) {
@@ -160,19 +162,20 @@ public class InsightService {
         if (contexts.isEmpty()) {
             return ApprovedMaterial.empty();
         }
-        Set<Long> approvedIds = contexts.stream()
-                .map(ChildContext::getSummaryResultId)
-                .collect(Collectors.toSet());
+        // 요약 하나에 승인본은 하나다 (§9.2 UNIQUE).
+        Map<Long, String> approvedContents = contexts.stream()
+                .collect(Collectors.toMap(ChildContext::getSummaryResultId, ChildContext::getContent));
         // 눈금은 방금 읽은 그 행들에서 뽑는다. 다시 조회하면 스냅샷이 달라진다.
         Long lastContextId = contexts.stream().map(ChildContext::getId).max(Long::compareTo).orElseThrow();
 
         Set<Long> corrected = correctedAmong(summaryIds);
-        List<SummaryResult> summaries = inPeriod.stream()
-                .filter(summary -> approvedIds.contains(summary.getId()))
-                .filter(summary -> !corrected.contains(summary.getId()))
+        List<ApprovedSummary> summaries = inPeriod.stream()
+                .filter(summary -> approvedContents.containsKey(summary.getId()))
                 // child_context 는 승인순이라 8월 기록을 10월에 승인하면 맨 앞에 온다.
                 // 인사이트는 기간의 흐름을 보므로 관찰 날짜로 다시 세운다.
                 .sorted(Comparator.comparing(SummaryResult::getEntryDate).thenComparing(SummaryResult::getId))
+                .map(summary -> new ApprovedSummary(summary, approvedContents.get(summary.getId()),
+                        corrected.contains(summary.getId())))
                 .toList();
         return new ApprovedMaterial(summaries, lastContextId);
     }
@@ -187,8 +190,9 @@ public class InsightService {
                 .collect(Collectors.toSet());
     }
 
-    private Map<Long, Organization> institutionsOf(List<SummaryResult> summaries) {
-        List<Long> ids = summaries.stream().map(SummaryResult::getInstitutionId).distinct().toList();
+    private Map<Long, Organization> institutionsOf(List<ApprovedSummary> summaries) {
+        List<Long> ids = summaries.stream()
+                .map(approved -> approved.summary().getInstitutionId()).distinct().toList();
         return organizationRepository.findAllById(ids).stream()
                 .collect(Collectors.toMap(Organization::getId, Function.identity()));
     }
@@ -233,7 +237,8 @@ public class InsightService {
      *
      * <p>{@code span} 은 에이전트 계약에 없어서 버린다.
      */
-    private List<InsightAgentRequest.Claim> claimsOf(SummaryResult summary, Organization institution) {
+    private List<InsightAgentRequest.Claim> claimsOf(ApprovedSummary approved, Organization institution) {
+        SummaryResult summary = approved.summary();
         JsonNode claims = readClaims(summary);
         if (claims == null || !claims.isArray()) {
             return List.of();
@@ -241,6 +246,9 @@ public class InsightService {
 
         String institutionType = InstitutionTypeNames.of(institution.getType());
         String entryDate = summary.getEntryDate().toString();
+        // 고쳐 승인한 요약은 최종본과 대조한다. 안 고쳤으면 본문이 claims 를 이어 붙인 것이라 대조가 없다.
+        String approvedContent = approved.corrected() ? normalize(approved.approvedContent()) : null;
+
         List<InsightAgentRequest.Claim> prepared = new ArrayList<>();
         for (int order = 0; order < claims.size(); order++) {
             JsonNode claim = claims.get(order);
@@ -251,11 +259,31 @@ public class InsightService {
                 // 안 되고(CRITERIA §2), 계약도 evidence 를 최소 1건으로 막아 뒀다 — 보내면 422 다.
                 continue;
             }
+            if (approvedContent != null && !approvedContent.contains(normalize(text))) {
+                // 교사가 고치거나 지운 문장이다. claims 는 AI 원문 그대로라 최종본과 어긋나 있고,
+                // 그대로 보내면 교사가 뺀 내용이 근거째 다른 기관으로 나간다 (§10.1 #7).
+                continue;
+            }
+            // ponytail: 부분 문자열 대조라, 지운 문장이 남은 문장 안에 들어 있으면 살아남는다
+            // ("혼자 쌓았다." 를 지우고 "블록을 혼자 쌓았다." 를 남긴 경우). 같은 날 같은 아이를 쓴
+            // 문장들이라 짧은 문장이 긴 문장에 포함되는 일이 실제로 있다. 문장 단위로 끊어 맞추려면
+            // 한국어 문장 분리가 필요한데, 2단계(최종본 기준 claim 재생성)가 그 일을 제대로 한다.
             prepared.add(new InsightAgentRequest.Claim(
                     summary.getId() + "-" + order, text, entryDate,
                     institution.getId(), institutionType, evidence));
         }
         return prepared;
+    }
+
+    /**
+     * 비교 전 다듬기. Gate 1 이 "고쳤는가" 를 판정할 때 쓰는 것과 <b>같은 기준</b>이어야 한다
+     * ({@code SummaryGate1Service}) — 교사가 줄바꿈만 건드려도 claim 이 전부 날아가면 안 된다.
+     *
+     * <p>⚠️ 문단을 다시 흘리거나 중간 띄어쓰기를 바꾸면 그 claim 은 빠진다. 보내지 않는 쪽이라
+     * 안전하지만 고친 문장 자체는 못 살린다 — 그래서 다음 단계가 "최종본 기준으로 claim 재생성" 이다.
+     */
+    private static String normalize(String content) {
+        return content.replace("\r\n", "\n").replace('\r', '\n').strip();
     }
 
     private List<InsightAgentRequest.Evidence> evidenceOf(JsonNode evidence) {
