@@ -96,55 +96,77 @@ _TENS = {"열": 10, "스물": 20, "서른": 30, "마흔": 40, "쉰": 50,
 _BIG = {"백": 100, "천": 1000}
 
 #: 값을 정할 수 없는 수량. 숫자로 바꾸지 않고 토큰 그대로 비교한다.
-#: 원문이 "여러 번" 인데 요약이 "세 번" 이면 그게 환각이다.
-_VAGUE = ("두세", "서너", "네댓", "너덧", "여러", "몇", "수")
+#: 원문이 "한두 번" 인데 요약이 "두 번" 이면 그게 환각이다.
+_VAGUE = ("한두", "두어", "두세", "서너", "서넛", "네댓", "네다섯", "너덧",
+          "대여섯", "예닐곱", "일여덟", "여남은", "여러", "몇몇", "몇",
+          "수십", "수백", "수천", "수")
 
 #: 수량 뒤에 오는 단위. 날짜 단위(년·월·일)는 넣지 않는다 — 그쪽은
 #: _numbers_outside_dates 가 묶음 날짜와 대조한다.
 #: 같은 뜻은 묶는다. "세 번" 과 "세 차례" 가 갈리면 안 된다.
 _UNIT_GROUP = {
     "번": "회", "회": "회", "차례": "회",
-    "개": "개", "장": "장", "명": "명", "층": "층", "칸": "칸",
-    "바퀴": "바퀴", "걸음": "걸음", "쪽": "쪽",
+    "바퀴": "바퀴", "걸음": "걸음", "칸": "칸",
+    "개": "개", "장": "장", "명": "명", "층": "층", "쪽": "쪽",
     "분": "분", "시간": "시간", "초": "초",
 }
 
-#: 긴 것부터 본다 — "차례" 를 "차"+"례" 로, "열두" 를 "두" 로 읽지 않기 위해서다.
-_UNIT_RE = "|".join(sorted(_UNIT_GROUP, key=len, reverse=True))
-_NUM_RE = "|".join([
-    # 복합 수사를 한자리보다 먼저 (열두 → 12, 아니면 "두" 만 걸려 2 가 된다)
+#: 수량이 아닌 수식어. 아는 수사와 겹치는 말을 뺀다 ("이 장" 의 "이").
+NOT_QUANTITY = {"이", "그", "저", "요", "매", "지난", "이번", "저번", "요번"}
+
+#: 아는 수사. 복합(열두)을 한자리보다 먼저 본다.
+#:
+#: **단위 앞의 한글을 전부 수량으로 보는 방식은 접었다.** 오탐이 더 크다 —
+#: "교사 회의" 가 (교사, 회), "자전거 바퀴" 가 (자전거, 바퀴), "점심 시간" 이
+#: (점심, 시간) 으로 읽혀 정상 문장을 버린다 (2026-10-18 측정).
+#: 대신 목록을 한 번에 크게 넓히고, **여기 없는 표현은 못 잡는다**고 적어 둔다.
+_KNOWN = "|".join([
     rf"(?:{'|'.join(_TENS)})(?:{'|'.join(_ONES)})",
     "|".join(sorted(_TENS, key=len, reverse=True)),
     "|".join(sorted(_VAGUE, key=len, reverse=True)),
     "|".join(sorted(_ONES, key=len, reverse=True)),
     "|".join(_BIG),
-    r"\d+",
 ])
 
+#: 긴 것부터 본다 — "차례" 를 "차"+"례" 로 읽지 않기 위해서다.
+_UNIT_RE = "|".join(sorted(_UNIT_GROUP, key=len, reverse=True))
+
+#: 단위 뒤에는 조사·어미·문장부호만 올 수 있다 — "장난감" 의 "장" 을 집지 않는다.
+_TAIL = r"(?=[을를이가은는에의와과도만씩째쯤적까부보마처밖\s,.)\]]|$)"
+
 #: 앞에 글자가 붙어 있으면 세지 않는다 — "총열두" 처럼 다른 낱말의 꼬리를 집지 않게.
-COUNT = re.compile(rf"(?<![0-9가-힣])({_NUM_RE})\s*({_UNIT_RE})")
+COUNT = re.compile(rf"(?<![0-9가-힣])(\d+|{_KNOWN})\s*({_UNIT_RE})" + _TAIL)
 
 #: 부정 표현. "한 번도 울지 않았다" 는 횟수 주장이 아니다.
 #: "안" 은 넣지 않는다 — "안았다" · "책상 안에" 와 겹쳐 오탐이 난다.
 NEGATION = re.compile(r"않|못하|못 |없")
 
 
-def _count_value(token: str) -> str:
+def _count_value(token: str) -> str | None:
     """
     수사를 숫자로 바꾼다. "열두" 는 10 + 2 다.
 
-    모호한 수량("여러"·"두세")과 아라비아 숫자는 그대로 둔다. 모호한 것을 숫자로
-    바꾸면 원문의 "여러 번" 과 요약의 "세 번" 이 같아져 환각이 통과한다.
+    **못 읽는 말은 토큰 그대로 돌려준다.** "한두"·"대여섯" 처럼 값을 정할 수 없는
+    것을 숫자로 바꾸면, 원문의 "한두 번" 과 요약의 "두 번" 이 같아져 환각이
+    통과한다. 수량이 아닌 수식어면 None 이다.
     """
-    if token.isdigit() or token in _VAGUE:
+    if token.isdigit():
         return token
+    if token in NOT_QUANTITY:
+        return None
     for tens, value in _TENS.items():
         if token.startswith(tens):
             rest = token[len(tens):]
-            return str(value + _ONES[rest]) if rest else str(value)
+            if not rest:
+                return str(value)
+            if rest in _ONES:
+                return str(value + _ONES[rest])
+            return token          # "열몇" 처럼 못 읽는 조합은 그대로
+    if token in _ONES:
+        return str(_ONES[token])
     if token in _BIG:
         return str(_BIG[token])
-    return str(_ONES[token])
+    return token                   # 모르는 수량 표현 — 그대로 대조한다
 
 
 def _counts(text: str) -> set[tuple[str, str]]:
@@ -165,7 +187,11 @@ def _counts(text: str) -> set[tuple[str, str]]:
         # 뒤쪽은 횟수를 주장하므로 근거가 있어야 한다.
         if text[m.end():m.end() + 1] == "도" and NEGATION.search(text):
             continue
-        pairs.add((_count_value(m.group(1)), _UNIT_GROUP[m.group(2)]))
+        value = _count_value(m.group(1))
+        unit = m.group(2)
+        if value is None:
+            continue              # 수량이 아닌 수식어 ("이 장면", "매번")
+        pairs.add((value, _UNIT_GROUP[unit]))
     return pairs
 
 
