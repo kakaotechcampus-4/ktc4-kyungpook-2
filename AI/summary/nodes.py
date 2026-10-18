@@ -122,8 +122,11 @@ _NUM_RE = "|".join([
 ])
 
 #: 앞에 글자가 붙어 있으면 세지 않는다 — "총열두" 처럼 다른 낱말의 꼬리를 집지 않게.
-#: 단위 뒤의 "도" 도 뺀다 — "한 번도 울지 않았다" 는 횟수 주장이 아니라 부정이다.
-COUNT = re.compile(rf"(?<![0-9가-힣])({_NUM_RE})\s*({_UNIT_RE})(?!도)")
+COUNT = re.compile(rf"(?<![0-9가-힣])({_NUM_RE})\s*({_UNIT_RE})")
+
+#: 부정 표현. "한 번도 울지 않았다" 는 횟수 주장이 아니다.
+#: "안" 은 넣지 않는다 — "안았다" · "책상 안에" 와 겹쳐 오탐이 난다.
+NEGATION = re.compile(r"않|못하|못 |없")
 
 
 def _count_value(token: str) -> str:
@@ -154,7 +157,16 @@ def _counts(text: str) -> set[tuple[str, str]]:
       ③ "7번" 인데 인용에 "7층" 이 있으면 통과한다 — 값은 같고 단위가 다르다
       ④ "열두 번" — 한자리를 먼저 보면 "두" 만 걸려 2회가 된다
     """
-    return {(_count_value(num), _UNIT_GROUP[unit]) for num, unit in COUNT.findall(text or "")}
+    text = text or ""
+    pairs = set()
+    for m in COUNT.finditer(text):
+        # 단위 뒤에 "도" 가 붙고 문장이 부정이면 횟수 주장이 아니다.
+        # "한 번도 울지 않았다" 는 빼고, "세 번도 넘게 시도했다" 는 센다 —
+        # 뒤쪽은 횟수를 주장하므로 근거가 있어야 한다.
+        if text[m.end():m.end() + 1] == "도" and NEGATION.search(text):
+            continue
+        pairs.add((_count_value(m.group(1)), _UNIT_GROUP[m.group(2)]))
+    return pairs
 
 
 def _numbers_outside_dates(text: str, entry_date: str) -> set[int]:
