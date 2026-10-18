@@ -83,15 +83,24 @@ def _numbers(text: str) -> set[int]:
     return {int(n) for n in re.findall(r"\d+", text or "")}
 
 
+#: 고유어 수사. 한자어(일·이·삼·사)는 보지 않는다 — 조사나 일반 낱말과 겹쳐
+#: "사 번" 과 "사번(社番)" 을 가릴 수 없다. 놓치는 쪽이 오탐보다 낫다.
+_ONES = {"한": 1, "두": 2, "세": 3, "네": 4, "다섯": 5,
+         "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9}
+_TENS = {"열": 10, "스물": 20, "서른": 30}
+
 #: 횟수를 나타내는 말. 날짜 단위(년·월·일)는 여기 들어가지 않는다.
 #:
-#: 고유어 수사만 본다 — 한자어(일·이·삼·사)는 조사나 일반 낱말과 겹쳐
-#: "사 번" 과 "사번(社番)" 을 가릴 수 없다. 오탐이 나는 쪽이 더 나쁘다.
-COUNT = re.compile(r"(\d+|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|여러|몇)\s*(번|회|차례)")
-
-#: 고유어 수사 → 숫자. "세 번" 과 "3번" 이 다르게 세어지면 안 된다.
-_NUM_WORD = {"한": "1", "두": "2", "세": "3", "네": "4", "다섯": "5",
-             "여섯": "6", "일곱": "7", "여덟": "8", "아홉": "9", "열": "10"}
+#: 복합 수사를 **한자리보다 먼저** 본다. 뒤에 두면 "열두 번" 에서 "두" 만 걸려
+#: 2회로 읽는다 (2026-10-17 멘토 리뷰 P2).
+#:
+#: 앞에 글자가 붙어 있으면 세지 않는다 — "총열두" 처럼 다른 낱말의 꼬리를
+#: 수사로 잘못 집는 것을 막는다.
+_ONE = "|".join(_ONES)
+_TEN = "|".join(_TENS)
+COUNT = re.compile(
+    rf"(?<![0-9가-힣])((?:{_TEN})(?:{_ONE})|{_TEN}|{_ONE}|\d+|여러|몇)\s*(번|회|차례)"
+)
 
 #: 같은 뜻의 단위는 묶는다. "세 번" 과 "세 차례" 가 갈리면 안 된다.
 _UNIT_GROUP = {"번": "회", "회": "회", "차례": "회"}
@@ -112,8 +121,19 @@ def _counts(text: str) -> set[tuple[str, str]]:
     """
     pairs = set()
     for num, unit in COUNT.findall(text or ""):
-        pairs.add((_NUM_WORD.get(num, num), _UNIT_GROUP[unit]))
+        pairs.add((_count_value(num), _UNIT_GROUP[unit]))
     return pairs
+
+
+def _count_value(token: str) -> str:
+    """수사를 숫자로 바꾼다. "열두" 는 10 + 2 다. "여러"·"몇" 은 그대로 둔다."""
+    if token.isdigit() or token in ("여러", "몇"):
+        return token
+    for tens, value in _TENS.items():
+        if token.startswith(tens):
+            rest = token[len(tens):]
+            return str(value + _ONES[rest]) if rest else str(value)
+    return str(_ONES[token])
 
 
 def _numbers_outside_dates(text: str, entry_date: str) -> set[int]:
