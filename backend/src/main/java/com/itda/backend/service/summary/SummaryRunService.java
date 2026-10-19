@@ -7,12 +7,12 @@ import java.time.LocalDate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.exception.SummaryChildNotFoundException;
-import com.itda.backend.exception.SummaryRunValidationException;
-import com.itda.backend.repository.ChildOrganizationRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.service.UserService;
+import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.exception.summary.SummaryChildNotFoundException;
+import com.itda.backend.exception.summary.SummaryRunValidationException;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 

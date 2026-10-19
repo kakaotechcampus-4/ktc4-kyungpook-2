@@ -7,15 +7,15 @@ import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.JournalEntry;
-import com.itda.backend.domain.JournalEntryStatus;
-import com.itda.backend.domain.RawRecord;
-import com.itda.backend.dto.request.MatchingAgentRequest;
-import com.itda.backend.exception.MatchingTargetException;
-import com.itda.backend.repository.ChildRepository;
-import com.itda.backend.repository.JournalEntryRepository;
-import com.itda.backend.repository.OrganizationRepository;
-import com.itda.backend.repository.RawRecordRepository;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.dto.request.matching.MatchingAgentRequest;
+import com.itda.backend.exception.matching.MatchingTargetException;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.record.RawRecordRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -47,7 +47,8 @@ public class MatchingService {
                 .orElseThrow(() -> new MatchingTargetException("raw record not found: " + entry.getRawRecordId()));
         Long organizationId = organizationIdOf(rawRecord);
 
-        List<MatchingAgentRequest.RosterEntry> roster = childRepository.findActiveByOrganizationId(organizationId)
+        // 이 기관에 대한 동의가 있는 아이만 명부에 넣는다. 다른 기관에만 동의한 아이는 빠진다.
+        List<MatchingAgentRequest.RosterEntry> roster = childRepository.findConsentedByOrganizationId(organizationId)
                 .stream()
                 .map(child -> new MatchingAgentRequest.RosterEntry(
                         child.getId(), child.getName(), child.getBirthdate().toString()))
@@ -69,6 +70,27 @@ public class MatchingService {
         journalEntryRepository.findAllById(journalEntryIds).stream()
                 .filter(entry -> entry.getStatus() == JournalEntryStatus.MATCHING)
                 .forEach(JournalEntry::releaseMatching);
+    }
+
+    /**
+     * AI 가 다운이라 매칭하지 못한 일지를 실패로 남기지 않고 대기로 되돌린다 (#153).
+     *
+     * @return 되돌렸거나 되돌릴 필요가 없으면(이미 다른 상태) {@code true}. 이미 {@code maxReleases} 번 되돌린
+     *         일지면 그대로 두고 {@code false} — 워커가 실패로 남겨 확인 필요 큐로 보낸다
+     */
+    @Transactional
+    public boolean releaseAfterAgentDown(Long journalEntryId, int maxReleases) {
+        JournalEntry entry = journalEntryRepository.findById(journalEntryId)
+                .filter(found -> found.getStatus() == JournalEntryStatus.MATCHING)
+                .orElse(null);
+        if (entry == null) {
+            return true;
+        }
+        if (entry.getAgentRetryCount() >= maxReleases) {
+            return false;
+        }
+        entry.releaseMatchingAfterAgentDown();
+        return true;
     }
 
     /** 이전에 꺼진 앱이 처리하다 만 일지를 대기로 되돌린다. 워커가 첫 실행에서 한 번만 부른다. */

@@ -1,0 +1,31 @@
+package com.itda.backend.domain.record;
+
+public enum JournalEntryStatus {
+    PENDING,
+    MATCHING,
+    /** 매칭으로 아동이 확정돼 검증을 기다린다. DB 스키마 §6.2 초안에 없던 값을 BE가 추가했다. */
+    MATCHED,
+    MATCH_REVIEW,
+    /** 선생님이 확인 필요 큐에서 제외했다("이 기관 아동 아님"). 여기서 끝나고 다음 단계로 가지 않는다. BE가 추가했다. */
+    EXCLUDED,
+    CONSENT_BLOCKED,
+    VALIDATING,
+    /** 검증을 통과해(PASS·REVIEW) 요약을 기다린다. REVIEW 의 문제 문장은 요약 뒤 Gate 1 에서 표시한다. BE가 추가했다. */
+    VALIDATED,
+    /** 검증에서 막혔다(BLOCK). 요약으로 넘기지 않고 수정 요청 큐로 간다. FAILED(시스템 오류)와 구분한다. BE가 추가했다. */
+    VALIDATION_BLOCKED,
+    /**
+     * 수정 요청 큐에서 선생님이 "수정한 원본 다시 올리기"를 눌렀다. 원본은 고치지 않고(append-only)
+     * 고친 내용을 새 파일로 올리므로, 이 일지는 대체될 예정이라 여기서 끝난다. BE가 추가했다(#122).
+     */
+    REUPLOAD_REQUESTED,
+    /** 수정 요청 큐에서 선생님이 "이 기록 보류"를 눌렀다. 다음 단계로 가지 않는다. BE가 추가했다(#122). */
+    VALIDATION_HELD,
+    SUMMARIZING,
+    GATE1_PENDING,
+    /** 이 일지가 든 요약을 교사가 Gate 1 에서 보류했다. 워커가 다시 집어 가지 않고, 보류 해제하면 GATE1_PENDING 으로 돌아온다. BE가 추가했다(#178). */
+    GATE1_HELD,
+    /** 이 일지가 든 요약이 Gate 1 에서 승인됐다. 요약에 안 들어간 일지(uncovered)도 함께 끝난다. */
+    COMPLETED,
+    FAILED
+}

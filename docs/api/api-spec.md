@@ -24,10 +24,10 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 
 | # | 항목 | 현황 | 프론트 의견 |
 | --- | --- | --- | --- |
-| 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`(로컬 Compose의 Caddy를 거치면 `http://localhost/login/oauth2/code/kakao`), 운영 `https://iitda.duckdns.org/login/oauth2/code/kakao`. 동의 항목은 현재 `profile_nickname`만 요청합니다(§2.4) | 전화번호 동의 항목 추가 여부는 매칭 키(§5.1)와 함께 결정이 필요합니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
+| 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`(로컬 Compose의 Caddy를 거치면 `http://localhost/login/oauth2/code/kakao`), 운영 `https://iitda.duckdns.org/login/oauth2/code/kakao`. 동의 항목은 현재 `profile_nickname`만 요청합니다(§2.4) | 보호자 연결은 초대 코드 방식으로 확정돼(§5.1) 전화번호 동의 항목은 필요 없습니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
 | 2 | **세션 전달 방식** | **확정·구현됨** — `access_token` httpOnly 쿠키(1시간). 쓰기 요청은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보냅니다. refresh token은 없습니다 | - |
 | 3 | **필드 네이밍** | 프론트 타입은 camelCase, 일부 요청 바디는 snake_case | **camelCase 통일 제안** (Jackson 기본값과도 맞음). 이 문서는 전부 camelCase로 적었습니다. 프론트의 snake_case 요청 바디 3곳은 프론트가 수정합니다 |
-| 4 | **보호자–아이 연결 방식** | **확정** — 기관이 먼저 아이를 등록해두고, 보호자가 카카오 로그인하면 **대기 중 연결 요청**으로 노출합니다. 초대코드 방식은 제외 | 남은 확정 사항은 **매칭 키**입니다(§5.1). 기관이 등록한 아이와 카카오 로그인한 보호자를 서버가 무엇으로 이어줄지 정해야 합니다 |
+| 4 | **보호자–아이 연결 방식** | **확정·구현됨 (10.12 변경)** — **초대 코드** 방식입니다. 기관이 아이를 등록하면 10분짜리 일회용 코드가 나오고, 기관이 카톡 등으로 직접 보냅니다. 보호자는 가입한 뒤 코드를 입력해 연결됩니다(§5.1). SMS·전화번호 대조는 쓰지 않습니다. 이전의 "대기 중 연결 요청" 방식은 매칭 키를 정할 수 없어 폐기했습니다 | 링크(`/parent/invite?code=…`)로 보내면 로그인·가입 동안 코드를 sessionStorage에 들고 있다가 가입 뒤 G-04를 부르면 됩니다. 링크가 안 열리는 경우를 위해 코드 입력 칸도 남겨 주세요 |
 | 4-1 | **역할 구분** | **확정·구현됨** — 카카오 로그인 뒤 **회원가입에서 사용자가 직접 선택**합니다(§2.6). 기관은 기관명·유형·사업자등록번호를 함께 입력하며, 사업자등록번호는 형식만 검사합니다 | 로그인 직후 `/auth/me`의 `signupCompleted`가 `false`면 역할 선택 화면으로 보냅니다. sessionStorage로 역할을 정하던 방식은 이 흐름으로 바꿔야 합니다 |
 | 5 | **파이프라인 진행 상태** | 프론트는 `setTimeout` 시뮬레이션 | 폴링 / SSE / WebSocket 중 선택. 폴링이면 권장 주기와 상태 조회 엔드포인트가 필요합니다 |
 | 6 | **페이지네이션** | 미정 | 현재 프론트는 전체 조회를 가정합니다. 큐·타임라인·일지 목록에 커서 또는 오프셋 페이징이 필요하면 형식을 정해주세요 |
@@ -340,12 +340,16 @@ POST /api/v1/auth/signup   → 201 Created
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
 | O-10 | GET | `/institutions/me/children` | 담당 아동 목록 · **구현됨** | I-05, I-09, I-13 |
-| O-11 | POST | `/institutions/me/children` | 아이 등록 · **구현됨** | I-04 |
+| O-11 | POST | `/institutions/me/children` | 아이 등록 + 초대 코드 발급 · **구현됨** | I-04 |
 | O-13 | GET | `/children/{childId}` | 아동 상세 | I-09-1 |
 | O-14 | GET | `/children/{childId}/context` | Child Context 타임라인 | I-09-1 |
+| O-15 | POST | `/institutions/me/children/{childId}/invitations` | 초대 코드 추가 발급 · **구현됨** | I-04, I-09-1 |
+| O-16 | GET | `/institutions/me/children/{childId}/invitations` | 쓸 수 있는 초대 코드 목록 · **구현됨** | I-04, I-09-1 |
+| O-17 | DELETE | `/institutions/me/children/{childId}/invitations/{invitationId}` | 초대 코드 취소 · **구현됨** | I-04, I-09-1 |
+| O-18 | GET | `/institutions/me/children/{childId}/guardians` | 연결된 보호자 목록 · **구현됨** | I-09-1 |
+| O-19 | DELETE | `/institutions/me/children/{childId}/guardians/{guardianUserId}` | 보호자 연결 해제 · **구현됨** | I-09-1 |
 
-> 이전 초안에 있던 `O-12 초대코드 재발급`은 초대코드 방식을 제외하면서 삭제했습니다.
-> 번호는 혼동을 막기 위해 결번으로 둡니다.
+> 이전 초안에 있던 `O-12 초대코드 재발급`은 결번으로 둡니다. 재발급은 "취소(O-17) 후 새로 발급(O-15)"입니다.
 
 **O-10 응답** · RosterPicker(매칭 확인 · Gate 1 아동 변경)가 쓰는 필드와 기관 관리번호만 우선 구현했습니다.
 
@@ -356,7 +360,7 @@ POST /api/v1/auth/signup   → 201 Created
 ]
 ```
 
-`externalId`는 이 기관이 붙인 관리번호입니다(O-11). 없으면 `null`입니다.
+`externalId`는 이 기관이 붙인 관리번호입니다(O-11). 등록할 때 필수지만, 필수가 되기 전에 등록된 아이는 번호가 없어 `null`입니다.
 
 `school`/`institutions`/`care`는 아직 없습니다 — `Child` 엔티티에 그 컬럼 자체가 없습니다(O-11 구현에서도 채우지 않았고, 별도 작업입니다). `status`가 `active`가 아닌 아동도 포함해서 내려갑니다 — 필터링은 프론트 몫입니다(`RosterPicker.tsx`가 이미 그렇게 함).
 
@@ -369,22 +373,27 @@ POST /api/v1/auth/signup   → 201 Created
 - `name`: 필수. 앞뒤 공백을 떼고 1–100자입니다.
 - `birthDate`: 필수. **`yyyy-MM-dd` 문자열만** 받습니다. `"2017-03-14T00:00:00"`, `[2017, 3, 14]`, 숫자,
   없는 날짜(`"2017-02-30"`), 미래 날짜는 400입니다. 하한(나이 상한)은 두지 않습니다.
-- `externalId`: 선택. 기관이 쓰는 아동 관리번호입니다. 앞뒤 공백을 떼고 최대 50자이며, 형식은 자유입니다.
-  없거나 빈 문자열이면 "번호 없음"(`null`)으로 저장합니다. **같은 기관 안에서는 겹칠 수 없습니다**(409).
+- `externalId`: **필수.** 기관이 쓰는 아동 관리번호입니다. 앞뒤 공백을 떼고 1–50자이며, 형식은 자유입니다.
+  없거나 빈 문자열·공백뿐이면 400입니다. **같은 기관 안에서는 겹칠 수 없습니다**(409).
   다른 기관은 같은 번호를 써도 됩니다. 아이를 명부에서 빼면 그 번호는 다시 쓸 수 있습니다.
 - 같은 이름·생일로 다시 등록해도 막지 않고 새 아동을 만듭니다. 다른 기관이 같은 아이를 등록해도 별도 아동(`id`)이 됩니다.
 
 > 이전 초안의 `guardianPhoneLast4`는 받지 않습니다. 보내도 무시합니다. 보호자 전화번호 전체도 받지 않습니다 —
-> 보호자 연결은 기관이 초대 코드를 직접 전달하는 방식입니다.
+> 보호자 연결은 기관이 초대 코드를 직접 전달하는 방식입니다(§5.1).
 
 **O-11 응답** · `201 Created`
 
 ```json
 {
   "child": { "id": "9", "name": "김하늘", "birthDate": "2017-03-14",
-             "externalId": "2026-0031", "status": "pending_consent" }
+             "externalId": "2026-0031", "status": "pending_consent" },
+  "invitation": { "id": "31", "code": "K7P3QX9M", "expiresAt": "2026-10-12T10:10:00+09:00" }
 }
 ```
+
+- `invitation`: 등록과 함께 발급한 보호자 초대 코드입니다. 아이 등록과 한 트랜잭션이라 코드를 못 만들면 아이도 등록되지 않습니다(503).
+- `code`: 하이픈 없는 8자(대문자·숫자, `0 O 1 I L` 제외)입니다. 화면에는 `K7P3-QX9M`처럼 4-4로 나눠 보여 주세요.
+- `expiresAt`: 발급 후 **10분**. 시간대 오프셋이 붙어 있으니 브라우저 시계와 비교해 카운트다운하면 됩니다.
 
 | 상태 | `code` | 상황 |
 | --- | --- | --- |
@@ -394,13 +403,56 @@ POST /api/v1/auth/signup   → 201 Created
 | 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 소속이 아닌 사용자(보호자) |
 | 403 | `FORBIDDEN` | CSRF 토큰 누락·불일치 |
 | 409 | `DUPLICATE_EXTERNAL_ID` | 같은 기관에서 이미 쓰고 있는 관리번호 |
+| 503 | `INVITE_CODE_ISSUE_FAILED` | 동시에 발급된 코드와 겹침(거의 일어나지 않음). 아이도 등록되지 않았으니 다시 요청 |
 
-등록 직후 아이는 `pending_consent` 상태입니다. 보호자가 카카오 로그인 후 이 기관과
-연결하고 공유 범위에 동의해야 `active`가 되며, 그 전에는 기록을 올릴 수 없고 AI 매칭 명단에도 들어가지 않습니다.
+등록 직후 아이는 `pending_consent` 상태입니다. 보호자가 초대 코드로 연결(G-04)하고 **이 기관에** 공유 동의(G-41)를
+해야 이 기관의 AI 매칭 명단에 들어갑니다. **연결만으로는 `active`가 되지 않습니다** — 동의는 별도 단계입니다.
 
-> **임시 계약입니다.** 보호자 연결은 **초대 코드 방식**(DB `invitation`)으로 후속 작업에서 구현합니다.
-> 그때 응답의 `child` 옆에 `inviteCode`가 추가되고, 아래 §5.1(연결 요청 방식)도 그 작업에서 정리합니다.
-> 지금은 등록해도 보호자 연결 수단이 만들어지지 않습니다.
+> **동의는 기관별입니다 (#184).** `status`는 "어느 기관이든 동의가 있으면 `active`, 모두 철회됐으면 `suspended`"인
+> 요약입니다. 아이가 학교에만 동의했으면 우리 기관 명부에도 `active`로 보이지만, 우리 기관 매칭 명단에는 들어가지 않습니다.
+
+**O-15 응답** · `201 Created` · 우리 기관 명부의 아이에게 코드를 하나 더 발급합니다. 한 아이에 쓸 수 있는 코드가
+여러 개 있어도 됩니다(엄마·아빠에게 따로 보내기). 응답은 O-11의 `invitation`과 같습니다.
+
+```json
+{ "id": "32", "code": "M4RZ8WTB", "expiresAt": "2026-10-12T10:25:00+09:00" }
+```
+
+**O-16 응답** · 아직 쓸 수 있는 코드만(수락·취소·만료 제외), 최근 발급 순입니다. 없으면 빈 배열입니다.
+
+```json
+[
+  { "id": "32", "code": "M4RZ8WTB", "issuedAt": "2026-10-12T10:15:00+09:00", "expiresAt": "2026-10-12T10:25:00+09:00" }
+]
+```
+
+**O-17** · `204 No Content` · 아직 쓸 수 있는 코드를 거둬들입니다. 이미 수락·취소·만료된 코드는 `404 INVITATION_NOT_FOUND`입니다.
+
+**O-18 응답** · 이 아이와 연결된 보호자 전원입니다. 다른 기관을 통해 연결된 보호자도 나오지만,
+`linkedByThisOrganization`이 `true`인 보호자만 O-19로 해제할 수 있습니다. `name`은 카카오 닉네임이라 없으면 `null`입니다.
+
+```json
+[
+  { "userId": "41", "name": "김보호", "linkedAt": "2026-10-12T10:03:00+09:00", "linkedByThisOrganization": true }
+]
+```
+
+**O-19** · `204 No Content` · 우리 기관이 발급한 코드로 생긴 연결을 끊습니다. 연결은 기관 구분 없는 전역 연결이라
+**끊으면 모든 기관에서 끊깁니다.** 잘못된 사람이 코드로 들어왔을 때 쓰는 기능입니다.
+
+O-15 ~ O-19 공통 오류:
+
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입(역할 선택)을 끝내지 않음 |
+| 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 소속이 아닌 사용자(보호자) |
+| 403 | `FORBIDDEN` | CSRF 토큰 누락·불일치 (POST·DELETE) |
+| 403 | `GUARDIAN_LINKED_BY_OTHER_ORGANIZATION` | (O-19) 다른 기관 코드로 연결된 보호자 |
+| 404 | `CHILD_NOT_FOUND` | 없거나 삭제됐거나 **우리 기관 명부에 없는** 아이. 다른 기관 아이도 같은 404입니다 |
+| 404 | `INVITATION_NOT_FOUND` | (O-17) 없거나 이미 쓸 수 없는 코드 |
+| 404 | `GUARDIAN_NOT_FOUND` | (O-19) 이 아이와 연결되지 않은 보호자 |
+| 503 | `INVITE_CODE_ISSUE_FAILED` | (O-15) 동시에 발급된 코드와 겹침. 다시 요청 |
 
 **O-14 응답** · 날짜 오름차순. **기록이 없는 날도 항목으로 포함하고 `entry`를 `null`로**
 주세요. 프론트는 빈 날을 "기록 없음"으로 표시하며, 추정치로 채우지 않습니다.
@@ -526,7 +578,8 @@ POST /api/v1/auth/signup   → 201 Created
 아래 경우는 `400 MATCHING_RESULT_INVALID_REQUEST`로 거절합니다.
 
 - `assign`인데 `childId`가 없거나, 없는 아동이거나, 이 기관 소속이 아님
-- `assign`으로 고른 아동이 **동의 완료(`active`) 상태가 아님** — AI 매칭 명단과 같은 기준
+- `assign`으로 고른 아동이 **이 기관에 동의하지 않음** — AI 매칭 명단과 같은 기준. 다른 기관에만 동의해 `status`가
+  `active`인 아이도 거절합니다. 보호자가 동의를 철회한 뒤에는 새 확정이 성공하지 않습니다(이미 확정된 기록은 그대로 둡니다)
 - 이미 처리된 기록 (다른 선생님이 먼저 처리한 경우 등. 두 명이 거의 동시에 누르는 경우까지 막지는 않습니다)
 
 `childId`는 O-22의 `candidates[].childId`·O-10의 `id` 문자열을 그대로 보내면 됩니다(`"1"`, 숫자 `1`도 받습니다).
@@ -598,7 +651,7 @@ POST /api/v1/auth/signup   → 201 Created
 > | `record.type` | **내려가지 않습니다.** `RecordResponse`에 `type` 필드가 없습니다 — 기록 유형 값 목록이 아직 팀에서 안 정해졌습니다 |
 > | `capturedAt` | 기록 날짜(`YYYY-MM-DD`)입니다. 초안의 타임스탬프와 다릅니다 |
 >
-> 🙏 **FE 쪽에 두 가지 부탁드립니다.**
+> ✅ **FE 반영됨 (2026-10-17, `feat/fe/blocked-queue-real`)** — 아래 두 가지 모두 반영했습니다.
 >
 > 1. `BlockedItem.record` 가 `RawRecord` 타입이라 `type` 이 필수인데 BE 가 그 값을 주지 않습니다.
 >    `MatchingItem.record` 가 이미 `type?: RawRecord["type"] | null` 로 인라인 정의해 피해 간 것과
@@ -640,9 +693,12 @@ POST /api/v1/auth/signup   → 201 Created
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| O-30 | GET | `/summaries?gate1Status=pending` | 검토 대기 요약 목록 | I-03, I-08 |
-| O-31 | POST | `/summaries/{summaryId}/gate1` | 승인 / 수정 후 승인 / 반려 | I-08 |
+| O-30 | GET | `/summaries?gate1Status=pending\|hold` | 검토 대기 목록 · 보류함 · **초안 구현** | I-03, I-08 |
+| O-31 | POST | `/summaries/{summaryId}/gate1` | 승인 / 수정 후 승인 / 보류 / 제거 · **구현됨** | I-08 |
 | O-32 | POST | `/summaries/run` | 지금 요약 · **구현됨** | I-08 |
+| O-33 | POST | `/summaries/{summaryId}/reopen` | 보류 해제 · **구현됨** | I-08 |
+
+> O-30 · O-31 · O-33 의 응답 모양은 와이어프레임 합의 전 초안입니다(#178). 화면이 정해지면 #183 에서 확정합니다.
 
 **O-32 요청**
 
@@ -663,45 +719,94 @@ POST /api/v1/auth/signup   → 201 Created
 | 그 아이·날짜에 요약할 기록도, 매칭·검증 중인 기록도 없음 | 400 | `SUMMARY_INVALID_REQUEST` |
 | 없는 아이이거나 다른 기관 소속 | 404 | `SUMMARY_CHILD_NOT_FOUND` |
 
-**O-30 응답**
+**O-30 응답** · 초안
+
+우리 기관의 요약을 오래된 날짜부터 줍니다. `gate1Status` 는 `pending`(기본값, 검토 대기)과 `hold`(보류함)만
+받고 다른 값은 `400 SUMMARY_INVALID_REQUEST` 입니다.
 
 ```json
 [
-  { "id": "1", "childId": "1", "childName": "김하늘",
-    "institutionName": "햇살아동발달센터", "date": "2026-08-21",
-    "recordType": "관찰일지", "validation": "REVIEW",
-    "content": "오전 활동에서 또래와 …",
-    "flaggedSpan": "또래와 다툼이 있었던 것으로 보입니다",
-    "flagReason": "관찰되지 않은 추정 표현",
-    "gate1Status": "pending", "sourceCount": 2 }
+  { "id": 50, "childId": 8, "childName": "김하늘", "entryDate": "2026-10-08", "revision": 1,
+    "status": "GATE1_PENDING", "version": "2026-10-09T03:05:12.345678/1041,1042", "processing": false,
+    "content": "오전 활동에서 블록을 다섯 층까지 쌓았다 …",
+    "needsReview": true, "reviewReasons": ["다른아동이름"],
+    "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
+    "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"] } ] }
 ]
 ```
 
-- `flaggedSpan`은 `content` **안에 그대로 포함된 부분 문자열**이어야 합니다. 프론트가
-  본문에서 그 문장을 찾아 하이라이트합니다.
-- 프론트는 `gate1Status`가 `pending`과 `rejected`인 항목을 모두 화면에 씁니다
-  (반려 이력 표시). 필터는 프론트에서 합니다.
+| 필드 | 뜻 |
+| --- | --- |
+| `version` | 결정(O-31)할 때 그대로 돌려보내는 값(요약 수정 시각 + 요약에 든 일지 id). 해석하지 말고 문자열 그대로 보내주세요 |
+| `processing` | 같은 날 이 아이 기록 중 아직 요약에 반영되지 않은 것이 있어 곧 이 요약이 바뀜(검증·요약 중). 매칭 전이라 누구 기록인지 모르는 것이 있어도 켜집니다. 열기·승인 버튼을 막아주세요. 보류함 항목과 옛 판은 항상 `false` |
+| `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
+| `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
+| `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유(`issue_types` 원본) |
+
+`reviewFlags` 는 검증이 짚은 구간이 **요약 문장의 근거 구간과 같은 일지에서 겹칠 때만** 나옵니다. 요약에 안 실린
+부분의 문제까지 띄우지 않기 위해서입니다. 검증 사유와 구간이 짝지어져 있지 않아 일지 단위로 판단하고, 겹치면 그 일지의
+사유를 모두 줍니다. 검증 구간이 비어 있으면(어디가 문제인지 모름) 줍니다. 하이라이트(`flaggedSpan`)는 하지 않습니다.
+사유 단위로 거르는 것은 검증 `issues` 필드가 생긴 뒤입니다(#179).
 
 **O-31 요청**
 
 ```json
-{ "decision": "approve", "editedContent": "선생님이 수정한 본문" }
+{ "decision": "approve", "version": "2026-10-09T03:05:12.345678/1041,1042" }
 ```
 
 ```json
-{ "decision": "reject", "reason": "관찰하지 않은 내용이 포함됨" }
+{ "decision": "approve", "editedContent": "선생님이 고친 본문", "version": "2026-10-09T03:05:12.345678/1041,1042" }
+```
+
+```json
+{ "decision": "hold", "version": "2026-10-09T03:05:12.345678/1041,1042" }
 ```
 
 | 필드 | 조건 |
 | --- | --- |
-| `decision` | `approve` \| `reject` |
-| `editedContent` | `approve` + 수정했을 때만 |
-| `reason` | `reject`일 때 필수 |
+| `decision` | `approve` \| `hold` \| `remove` (반려는 없습니다 — 고쳐서 승인하거나 보류·제거합니다) |
+| `editedContent` | `approve` 일 때만. 빈 문자열 불가. 보류·제거에 보내면 400 |
+| `version` | 필수. O-30 에서 받은 값 그대로 |
 
-**응답** · `{ "gate1Status": "approved" }`
+| 결정 | 요약 | 그 요약의 일지 | 기록(`decision`) |
+| --- | --- | --- | --- |
+| 승인 (`editedContent` 없음 또는 AI 원문과 같음) | 승인 | 요약에 안 들어간 일지까지 모두 완료 | `APPROVED` |
+| 고쳐서 승인 (AI 원문과 한 글자라도 다름. 줄바꿈 방식·앞뒤 공백 차이는 무시) | 승인. 고친 본문이 아동 타임라인에 올라감 | 위와 같음 | `CORRECTED` |
+| 보류 | 보류함으로 | 함께 보류 (같은 날 새 기록이 와도 묶이지 않음) | `HOLD` |
+| 제거 | 제거 | 모두 삭제. **되돌릴 수 없음** | `REMOVED` |
 
-승인 시 Child Context에 적재하고, 반려 시 저장하지 않고 원본으로부터 요약을 재생성해
-다시 `pending`으로 만들어주세요.
+승인과 제거는 되돌릴 수 없으니 확인 팝업을 띄워주세요. 고친 본문은 MVP 에서 다시 검증하지 않습니다.
+
+**보류함**은 보류 해제(O-33)와 제거만 둡니다. 보류된 요약을 승인하려면 보류를 해제한 뒤 검토 목록에서 합니다.
+
+`409 SUMMARY_CHANGED` 를 받으면 "요약이 새 기록으로 바뀌었어요" 안내를 띄우고 목록으로 돌아가 다시 불러와 주세요 —
+교사가 화면을 연 사이 같은 날 기록이 들어와 요약이 다시 만들어진 경우입니다.
+
+**응답** · 초안
+
+```json
+{ "summaryId": 50, "status": "APPROVED", "decision": "CORRECTED" }
+```
+
+| 실패 | 상태 | 코드 |
+| --- | --- | --- |
+| `decision`·`version` 누락, 허용되지 않은 값, 빈 `editedContent`, 승인이 아닌데 `editedContent` | 400 | `INVALID_REQUEST` |
+| 없는 요약이거나 다른 기관 요약 | 404 | `SUMMARY_NOT_FOUND` |
+| 이미 처리된 요약 | 409 | `SUMMARY_ALREADY_REVIEWED` |
+| 보류된 요약을 승인·보류 (보류 해제 먼저) | 409 | `SUMMARY_HELD` |
+| 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
+| 목록에서 본 뒤 요약이 새 기록으로 바뀜 — 목록을 다시 불러오기 | 409 | `SUMMARY_CHANGED` |
+
+**O-33 보류 해제** · 본문 없음
+
+보류함의 요약과 그 일지를 다시 검토 대기로 돌립니다. 응답은 O-31 과 같은 모양입니다
+(`{ "summaryId": 50, "status": "GATE1_PENDING", "decision": "REOPENED" }`).
+
+| 실패 | 상태 | 코드 |
+| --- | --- | --- |
+| 없는 요약이거나 다른 기관 요약 | 404 | `SUMMARY_NOT_FOUND` |
+| 보류된 요약이 아님 | 409 | `SUMMARY_NOT_HELD` |
+| 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
 
 ### 4.5 Insight · Gate 2
 
@@ -804,81 +909,106 @@ POST /api/v1/auth/signup   → 201 Created
 
 ### 5.1 온보딩 — 보호자와 아이 연결 (카카오 로그인 이후)
 
-초대코드 방식은 제외했습니다. 최초 연결은 **연결 요청(pending link)** 방식 하나로
-갑니다.
+**초대 코드** 방식입니다(10.12 확정). SMS·전화번호 대조는 비용과 매칭 키 문제로 쓰지 않습니다.
+코드는 **본인 확인이 아니라 연결 권한**입니다 — 코드를 가진 사람이 누구인지는 확인하지 않고,
+잘못 연결된 사람은 기관(O-19)이나 본인(G-05)이 해제합니다.
 
-> **백엔드 확인 필요.** 이 문서는 초대코드 방식을 제외한다고 적혀 있지만, DB 설계에는
-> 기관이 보호자에게 보내는 `invitation`(초대 코드)이 있습니다. 어느 쪽으로 갈지 정해서 이 절을
-> 정리해야 합니다. 어느 쪽이든 **역할 결정과는 무관합니다** — 보호자는 먼저 회원가입(§2.6)에서
-> `PARENT`로 가입하고, 그다음 이 절의 방식으로 아이와 연결됩니다. 로그인 주소의 `?invite=`로
-> 역할을 정하던 방식은 폐기했습니다.
+보호자는 먼저 회원가입(§2.6)에서 `PARENT`로 가입하고, 그다음 코드로 아이와 연결됩니다.
+**역할 결정과는 무관합니다** — 로그인 주소의 `?invite=`로 역할을 정하던 방식은 폐기했습니다.
 
 ```
-기관: 아이 등록 (O-11)  →  서버가 보호자 연결 요청 생성
+기관: 아이 등록 (O-11) → 코드 발급(10분·일회용) → 카톡 등으로 코드나 링크를 직접 보냄
                                     ↓
-보호자: 카카오 로그인 → 회원가입(§2.6) → 약관 동의 → 대기 중 연결 요청 확인 (G-01)
-                                    ↓
-        아이 정보 확인 → 기관 확인 → 공유 범위 동의 (G-02 → G-41)
+보호자: 링크 열기(코드를 sessionStorage에 보관) → 카카오 로그인 → 회원가입(§2.6) → 약관 동의
+        → 코드 수락 (G-04) → 공유 범위 동의 (G-02 → G-41)
 ```
+
+> **연결 완료 ≠ 동의 완료.** 수락(G-04)은 아동 상태를 바꾸지 않습니다. 응답의 `childStatus`는 아동의
+> **실제 현재 상태**입니다 — 처음 연결이면 보통 `pending_consent`, 이미 다른 보호자가 동의해 둔 아이면 `active`입니다.
 
 보호자가 **나중에 다른 기관을 추가로 연결**할 때는 기관 코드 입력(G-43 · G-44, §5.5)을
 씁니다. 최초 온보딩 경로는 아니고, 설정 화면(P-13)에서만 쓰입니다.
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| G-01 | GET | `/guardians/me/pending-links` | 연결 대기 중인 아이 · 기관 목록 | P-02, P-11 |
-| G-02 | GET | `/children/{childId}/consent-preview?institutionId=` | 아이 · 기관 · 공유 범위 미리보기 | P-02 |
-| G-03 | POST | `/children/{childId}/links/{institutionId}/reject` | 아이 정보 불일치 반려 | P-02 |
+| G-02 | GET | `/children/{childId}/consent-preview?institutionId=` | 아이 · 기관 · 공유 범위 미리보기 · **구현됨** | P-02 |
+| G-04 | POST | `/guardians/me/invitations/accept` | 초대 코드 수락 · **구현됨** | P-01 |
+| G-05 | DELETE | `/guardians/me/children/{childId}` | 아이 연결 해제(본인) · **구현됨** | P-11 |
 
-**G-01 응답** · 이 보호자 계정에 연결 대기 중인 건입니다.
+> `G-01 pending-links`(대기 중 연결 목록)와 `G-03 reject`(아이 정보 불일치 반려)는 초대 코드 방식으로 바꾸며
+> 결번으로 둡니다. 잘못 연결됐으면 G-05로 끊습니다.
+
+**G-04 요청**
 
 ```json
-[
-  { "child": { "id": "9", "name": "김하늘", "birthDate": "2017-03-14" },
-    "institution": { "id": "1", "name": "○○초등학교",
-                     "type": "school", "verified": true },
-    "requestedAt": "2026-08-20T10:00:00+09:00" }
-]
+{ "code": "k7p3-qx9m" }
 ```
 
-대기 건이 없으면 빈 배열을 주세요. 프론트는 "연결된 기관이 없습니다" 안내와 함께 기관
-코드 입력(P-13)으로 안내합니다.
+공백·하이픈·대소문자는 서버가 맞춥니다. 화면에 보인 `K7P3-QX9M`을 그대로 보내도 됩니다.
 
-#### 매칭 키 — 확정 필요
+**G-04 응답** · `200 OK`
 
-이 방식은 **기관이 등록한 아이**와 **카카오 로그인한 보호자**를 서버가 이어줘야
-동작합니다. 무엇을 기준으로 할지 정해주세요.
+```json
+{ "childId": "9", "childName": "김하늘", "organizationId": "1", "organizationName": "○○초등학교",
+  "childStatus": "pending_consent" }
+```
 
-| 후보 | 내용 | 비고 |
+- `organizationId`: 코드를 발급한 기관 ID(문자열)입니다. 수락 뒤 이 기관에 대한 동의 미리보기(G-02)를 부를 때
+  `institutionId`로 그대로 넘기면 됩니다.
+- 수락은 연결일 뿐 동의가 아니라 `childStatus`는 바뀌지 않습니다. 이어서 동의 미리보기(G-02) → 동의 저장(G-41)을 부릅니다.
+
+| 상태 | `code` | 상황 |
 | --- | --- | --- |
-| 전화번호 대조 | 카카오 계정 전화번호 ↔ O-11의 `guardianPhoneLast4` | 뒤 4자리만으로는 충돌 가능. 아이 이름·생년월일과 조합해 후보를 좁힌 뒤 보호자가 화면에서 최종 확인하는 방식을 제안합니다 |
-| 기관이 전체 번호 입력 | 확실하지만 **제품 규칙 위반** | 기관이 보호자 정보를 대신 입력하지 않기로 했습니다 |
-| 기관 코드 병행 | 연결 요청이 안 잡히면 보호자가 기관 코드로 직접 연결 | 이미 구현된 P-13을 폴백으로 쓰면 됩니다 |
+| 400 | `INVALID_REQUEST` | `code` 누락·빈 문자열 |
+| 400 | `INVALID_INVITE_CODE` | 형식이 틀렸거나, 없거나, 만료·사용·취소된 코드. 아이가 삭제됐거나 발급 기관 명부에서 빠진 경우도 같습니다. 이유를 나누지 않습니다 |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입을 끝내지 않음 → 가입부터 |
+| 403 | `PARENT_REQUIRED` | 보호자가 아닌 사용자(기관 담당자) |
+| 403 | `FORBIDDEN` | CSRF 토큰 누락·불일치 |
+| 409 | `LINK_ALREADY_EXISTS` | 이미 연결된 아이. 코드는 쓰이지 않은 채 남습니다 |
 
-프론트는 **전화번호 대조 + 보호자 최종 확인 + 기관 코드 폴백** 조합을 권합니다.
-카카오 동의 항목에 전화번호를 포함할지(§1-1)와 함께 결정해야 합니다.
+**G-05** · `204 No Content` · 보호자 본인이 연결을 끊습니다. 연결되지 않은 아이면 `403 FORBIDDEN`,
+기관 담당자가 부르면 `403 PARENT_REQUIRED`입니다. 같은 아이에 다시 연결하려면 기관에서 새 코드를 받습니다.
 
-**G-02 응답** · P-02 화면이 한 번에 그리는 정보입니다.
+**G-02 응답** · `200 OK` · P-02 화면이 한 번에 그리는 정보입니다. 아무것도 저장하지 않습니다.
 
 ```json
 {
-  "child": { "name": "김하늘", "birthDate": "2017-03-14" },
+  "child": { "id": "9", "name": "김하늘", "birthDate": "2017-03-14" },
   "institution": { "id": "1", "name": "○○초등학교",
-                   "type": "school", "verified": true },
-  "documentUrl": "https://…",
+                   "type": "school", "verified": false },
+  "documentUrl": null,
   "sharedFields": ["출결 시간", "활동 요약", "알레르기 정보"],
-  "notSharedFields": ["사진과 영상", "의료 기록"]
+  "notSharedFields": ["사진과 영상", "의료 기록"],
+  "allowedFields": ["daily_summary", "weekly_insight"]
 }
 ```
 
-`sharedFields` / `notSharedFields`는 현재 프론트가 기관 **유형별 상수**로 들고
-있습니다. 서버가 실제 동의 범위를 내려주면 상수를 제거하겠습니다.
+| 필드 | 설명 |
+| --- | --- |
+| `child.id` | 동의(G-41)·연결 해제(G-05) 호출에 씁니다 |
+| `institution.type` | `school` · `center` · `assistant` (DB의 `ACTIVITY_SUPPORT`가 `assistant`) |
+| `institution.verified` | 언제나 `false`입니다. 사업자등록번호는 형식만 보고 진위는 확인하지 않습니다 |
+| `documentUrl` | 증빙서류 저장 기능이 없어 언제나 `null`입니다. 프론트는 버튼을 숨깁니다 |
+| `sharedFields` · `notSharedFields` | 화면 설명 문구입니다(아래 표). **저장되지 않습니다** |
+| `allowedFields` | **동의할 때 G-41에 그대로 돌려보낼 항목 코드**입니다. 실제로 저장·적용되는 것은 이 값입니다 |
+
+유형별 설명 문구는 프론트가 들고 있던 상수를 서버로 옮긴 것입니다. 프론트는 상수를 지우고 이 값을 쓰면 됩니다.
 
 | 유형 | 공유됨 | 공유 안 됨 |
 | --- | --- | --- |
 | `school` | 출결 시간, 활동 요약, 알레르기 정보 | 사진과 영상, 의료 기록 |
 | `center` | 관찰 요약, 변화 추이, 집에서 해본 방법 | 복지카드 정보 |
 | `assistant` | 하원 시간, 이동 경로, 필요한 지원 방법 | 학습 기록 |
+
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | `institutionId` 누락·형식 오류 |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입을 끝내지 않음 |
+| 403 | `PARENT_REQUIRED` | 보호자가 아닌 사용자(기관 담당자) |
+| 403 | `FORBIDDEN` | 이 보호자와 연결되지 않은 아이 |
+| 404 | `CONSENT_TARGET_NOT_FOUND` | 삭제된 아이, 아이가 명부에 없는 기관, **이미 이 기관에 동의가 있음**(다른 보호자의 동의 포함). 이유를 나누지 않습니다. 프론트는 이미 404를 "동의할 것 없음"으로 처리합니다. 철회된 뒤에는 다시 200입니다 |
 
 ### 5.2 아이 · 홈
 
@@ -975,7 +1105,7 @@ POST /api/v1/auth/signup   → 201 Created
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
 | G-40 | GET | `/children/{childId}/institution-requests/pending` | 대기 중 권한 요청 | P-03, P-04, P-07, P-09, P-11 |
-| G-41 | PUT | `/children/{childId}/consent-scopes/{institutionId}` | 동의 부여 / 회수 | P-02, P-04, P-11 |
+| G-41 | PUT | `/children/{childId}/consent-scopes/{institutionId}` | 동의 부여 / 회수 · **구현됨** | P-02, P-04, P-11 |
 | G-42 | POST | `/children/{childId}/institution-requests/{institutionId}/decline` | 요청 거절 | P-11 |
 | G-43 | GET | `/institutions/lookup?code=` | 기관 코드 조회 | P-13 |
 | G-44 | POST | `/children/{childId}/institutions` | 기관 코드로 연결 | P-13 |
@@ -999,11 +1129,50 @@ POST /api/v1/auth/signup   → 201 Created
 
 | 필드 | 설명 |
 | --- | --- |
-| `action` | `grant` \| `revoke` |
-| `allowedFields` | 동의 항목. `revoke`에서는 무시됩니다 |
+| `action` | `grant` \| `revoke`. 필수 |
+| `allowedFields` | 동의 항목 코드 `daily_summary` · `weekly_insight`. **`grant`에서 필수(1개 이상)**, `revoke`에서는 생략해도 되고 보내도 무시합니다. 같은 코드가 두 번 오면 하나로 합칩니다 |
 
-**규칙** · `revoke`는 **앞으로의 전달만** 차단합니다. 이미 보낸 정보는 회수되지
-않습니다. 프론트는 이 사실을 회수 확인 시트에 반드시 표시합니다.
+> **프론트 수정 필요 (#184).** 지금 `api.ts`는 `allowed_fields`(snake_case)에 **한국어 문구**(`sharedFields`)를 담아 보냅니다.
+> 서버는 명세대로 camelCase `allowedFields`에 **코드**만 받습니다 — 그대로면 `400 INVALID_REQUEST`입니다.
+> G-02 응답의 `allowedFields`를 그대로 보내 주세요.
+
+**G-41 응답** · `200 OK` · 바뀐 뒤의 상태를 돌려줍니다. 아이 목록을 다시 부르지 않고 화면을 고칠 수 있습니다.
+
+```json
+{ "childStatus": "active", "consent": "granted", "allowedFields": ["daily_summary", "weekly_insight"] }
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `childStatus` | 아이 전체 요약 상태(§4.2 O-11 참고). 어느 기관이든 동의가 있으면 `active`, 모두 철회됐으면 `suspended` |
+| `consent` | **이 기관**에 대한 동의 상태 `granted` · `revoked` · `not_granted` |
+| `allowedFields` | 이 기관에 지금 공유되는 항목. `granted`가 아니면 빈 배열 |
+
+**규칙**
+
+- **보호자 한 명만 동의해도** 그 기관 공유가 켜집니다.
+- **공유 항목은 기관 단위로 하나입니다.** 마지막으로 동의한 보호자의 `allowedFields`가 그 기관 전체에 적용됩니다
+  (엄마가 두 항목에 동의한 뒤 아빠가 한 항목으로 동의하면 그 기관은 한 항목만 공유됩니다).
+- **보호자 한 명이 `revoke`하면 그 기관에 대한 모든 보호자의 동의가 꺼집니다.** 끄는 쪽을 우선합니다.
+  다른 보호자가 다시 `grant`하면 다시 켜집니다.
+- 같은 요청을 여러 번 보내도 결과가 같습니다. 끌 동의가 없는 `revoke`는 아무것도 바꾸지 않고 `200`과 현재 상태를 돌려줍니다.
+- `revoke`는 **앞으로의 전달만** 차단합니다. 이미 보낸 정보는 회수되지 않습니다. 프론트는 이 사실을 회수 확인 시트에 반드시 표시합니다.
+- 보호자 연결이 끊기면(G-05·O-19) 그 보호자의 동의는 모든 기관에서 자동으로 꺼집니다. 다른 보호자의 동의는 그대로입니다.
+
+> **화면 안내 필요.** 위 규칙 중 "한 보호자의 철회가 다른 보호자의 동의까지 끈다", "마지막 동의의 항목이 기관 전체에
+> 적용된다"는 사용자가 예상하기 어렵습니다. 동의 화면(P-02)과 회수 확인 시트(P-04·P-11)에 안내해 주세요.
+
+> **이번 범위의 한계 (#184).** 철회하면 그 기관 매칭 명단에서 바로 빠지고 새 매칭 확정도 막히지만,
+> **철회 전에 이미 매칭돼 AI 처리 중인 기록**은 검증·요약까지 계속 진행됩니다. 이 차단은 후속 작업입니다.
+
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | `action` 누락·모르는 값. `grant`의 `allowedFields` 누락·빈 배열·모르는 코드·`null` 항목(`["daily_summary", null]`) |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입을 끝내지 않음 |
+| 403 | `PARENT_REQUIRED` | 보호자가 아닌 사용자(기관 담당자) |
+| 403 | `FORBIDDEN` | 이 보호자와 연결되지 않은 아이, CSRF 토큰 누락·불일치 |
+| 404 | `CONSENT_TARGET_NOT_FOUND` | 삭제된 아이, 아이가 명부에 없는 기관. 동의할 수 있는 기관은 아이가 지금 명부에 올라 있는 기관뿐입니다 |
 
 **G-42** — 거절은 `consent`를 바꾸지 않습니다(`not_granted` 유지). 기관이 다시 요청할
 수 있어야 하므로, **알림 목록에서만 제외**되도록 "이 보호자가 이 기관 요청을 거절함"을
@@ -1058,8 +1227,14 @@ POST /api/v1/auth/signup   → 201 Created
 | `DUPLICATE_BUSINESS_NUMBER` | 409 | "이미 등록된 사업자등록번호입니다" (§2.6) |
 | `TERMS_NOT_AGREED` | 403 | 약관 동의 화면으로 이동 |
 | `INSTITUTION_CODE_NOT_FOUND` | 404 | "일치하는 기관을 찾지 못했어요. 코드를 다시 확인해주세요." (**G-44 연결 시도에만** 사용. 조회 G-43은 `data: null`로 응답) |
-| `LINK_REQUEST_NOT_FOUND` | 404 | "연결 요청을 찾지 못했어요" |
-| `LINK_ALREADY_EXISTS` | 409 | "이미 연결된 기관입니다" |
+| `PARENT_REQUIRED` | 403 | 보호자가 아닌 회원(기관 담당자)이 보호자 전용 API 호출 → "보호자만 이용할 수 있어요" |
+| `INVALID_INVITE_CODE` | 400 | "초대 코드가 올바르지 않거나 만료되었어요." 기관에 새 코드를 요청하도록 안내 (G-04) |
+| `LINK_ALREADY_EXISTS` | 409 | "이미 연결된 아이입니다" (G-04) |
+| `INVITATION_NOT_FOUND` | 404 | 없거나 이미 쓸 수 없는 초대 코드 (O-17) |
+| `GUARDIAN_NOT_FOUND` | 404 | 이 아이와 연결되지 않은 보호자 (O-19) |
+| `GUARDIAN_LINKED_BY_OTHER_ORGANIZATION` | 403 | "다른 기관을 통해 연결된 보호자는 해제할 수 없습니다" (O-19) |
+| `INVITE_CODE_ISSUE_FAILED` | 503 | "초대 코드를 만들지 못했어요. 잠시 후 다시 시도해주세요." (O-11·O-15) |
+| `CONSENT_TARGET_NOT_FOUND` | 404 | 동의할 기관이 없음 — 삭제된 아이, 명부에 없는 기관, (G-02) 이미 동의한 기관. G-02는 프론트가 "동의할 것 없음"으로 처리 (G-02·G-41) |
 | `CONSENT_NOT_GRANTED` | 403 | Gate 2에서 미동의 기관 선택 시 |
 | `CHILD_CONSENT_PENDING` | 409 | "보호자 동의가 완료되기 전에는 기록을 올릴 수 없습니다" |
 
@@ -1073,9 +1248,14 @@ POST /api/v1/auth/signup   → 201 Created
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |
 | `MATCHING_RESULT_INVALID_REQUEST` | 400 | 확인 필요 큐 처리 요청 거절 (O-23) |
 | `MATCHING_RESULT_NOT_FOUND` | 404 | 없거나 다른 기관의 확인 필요 큐 항목 (O-23) |
-| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 지금 요약 거절 (O-32) |
+| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 지금 요약 거절 (O-32), 지원하지 않는 `gate1Status` (O-30) |
 | `SUMMARY_CHILD_NOT_FOUND` | 404 | 없거나 다른 기관의 아이로 지금 요약 요청 (O-32) |
-| `SUMMARY_ALREADY_DECIDED` | 409 | 이미 승인/반려된 요약 재결정 |
+| `SUMMARY_NOT_FOUND` | 404 | 없거나 다른 기관의 요약 (O-31 · O-33) |
+| `SUMMARY_ALREADY_REVIEWED` | 409 | 이미 처리된 요약 재결정 (O-31) |
+| `SUMMARY_REGENERATING` | 409 | 새 기록을 반영해 요약을 다시 만드는 중 (O-31 · O-33) |
+| `SUMMARY_CHANGED` | 409 | 목록에서 본 뒤 요약이 새 기록으로 바뀜 (O-31) |
+| `SUMMARY_HELD` | 409 | 보류된 요약을 승인·보류 — 보류 해제 먼저 (O-31) |
+| `SUMMARY_NOT_HELD` | 409 | 보류되지 않은 요약 보류 해제 (O-33) |
 | `INSIGHT_ALREADY_SENT` | 409 | 이미 발송된 Insight 재발송 |
 | `NOT_PRIMARY_SOURCE` | 403 | 근거 제공 기관이 아닌 곳의 Gate 2 승인 시도 |
 
@@ -1090,8 +1270,8 @@ POST /api/v1/auth/signup   → 201 Created
 | 1 | 인증 · 세션 | `/oauth2/authorization/kakao`(완료), `/auth/logout`(완료), `/auth/me`(완료), `/auth/signup`(완료), `/auth/terms` | I-01, P-01, 전 화면 가드 |
 | 2 | 아동 조회 | O-10, O-13, O-14 | I-09, I-09-1 |
 | 3 | 기록 등록 · 큐 | O-20 ~ O-25 | I-05, I-06, I-07 |
-| 4 | Gate 1 | O-30, O-31 | I-08, I-03 |
-| 5 | 보호자 연결 · 동의 | G-01 ~ G-03, G-41 | P-01, P-02 |
+| 4 | Gate 1 | O-30, O-31, O-33 | I-08, I-03 |
+| 5 | 보호자 연결 · 동의 | O-15 ~ O-19, G-04 · G-05, G-02, G-41 (모두 완료) | I-04, I-09-1, P-01, P-02 |
 | 6 | 보호자 열람 | G-10 ~ G-22 | P-03, P-07, P-08 |
 | 7 | Insight · Gate 2 | O-40 ~ O-42 | I-10, I-11 |
 | 8 | 동의 관리 · 알림 | G-40, G-42 ~ G-51 | P-04, P-11, P-12, P-13 |

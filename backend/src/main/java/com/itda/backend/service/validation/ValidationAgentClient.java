@@ -2,8 +2,8 @@ package com.itda.backend.service.validation;
 
 import org.springframework.stereotype.Component;
 
-import com.itda.backend.dto.request.ValidationAgentRequest;
-import com.itda.backend.dto.response.ValidationAgentResponse;
+import com.itda.backend.dto.request.validation.ValidationAgentRequest;
+import com.itda.backend.dto.response.validation.ValidationAgentResponse;
 import com.itda.backend.service.agent.AiAgentClient;
 
 import lombok.RequiredArgsConstructor;

@@ -75,35 +75,90 @@ export interface Child {
   /** 학교/학년 등 — 보호자 온보딩 화면에 짧게 표시 */
   school?: string;
   status: ChildStatus;
+  /** 기관이 아이마다 붙여 쓰는 관리번호 (예: 2026-0031). 없으면 null */
+  externalId?: string | null;
   institutions: { institution: Institution; consent: ConsentState }[];
   care?: ChildCareInfo;
 }
 
 /**
- * 대기 중인 보호자–아이 연결 요청 (api-spec G-01).
+ * 기관 아동 명부 한 줄 (GET /institutions/me/children).
  *
- * 기관이 아이를 등록하면 서버가 만들고, 보호자가 카카오 로그인 뒤 이 목록에서
- * 확인·동의하면 사라진다. 초대코드를 대신하는 최초 연결 경로다.
+ * 서버는 id·name·birthDate·externalId·status 만 준다. 연결된 기관 목록은 다른 기관
+ * 정보를 보호자 동의 범위 안에서만 보여줘야 해서, 동의 기능이 생긴 뒤에 온다.
  */
-export interface PendingLink {
-  child: { id: string; name: string; birthDate: string };
-  institution: Institution;
-  /** ISO 8601. 화면은 앞 10자리만 잘라 날짜로 보여준다. */
-  requestedAt: string;
+export type ChildListItem = Omit<Child, "institutions"> & Partial<Pick<Child, "institutions">>;
+
+/** 아이 등록 응답 (POST /institutions/me/children). 등록 직후라 status 는 항상 pending_consent 다 */
+export type RegisteredChild = Pick<Child, "id" | "name" | "birthDate" | "status"> & {
+  externalId: string | null;
+};
+
+/**
+ * 보호자 초대 코드 (api-spec O-11 의 invitation · O-15 응답).
+ *
+ * 10분짜리 일회용이다. code 는 하이픈 없는 8자라 화면에서 4-4 로 나눠 보여준다.
+ */
+export interface IssuedInvitation {
+  id: string;
+  code: string;
+  /** ISO 8601 (오프셋 포함). 화면은 브라우저 시계와 비교해 카운트다운한다 */
+  expiresAt: string;
+}
+
+/** 아직 쓸 수 있는 초대 코드 (api-spec O-16) */
+export interface LiveInvitation extends IssuedInvitation {
+  issuedAt: string;
+}
+
+/** 아이와 연결된 보호자 (api-spec O-18) */
+export interface ChildGuardian {
+  userId: string;
+  /** 카카오 닉네임. 동의하지 않았으면 null */
+  name: string | null;
+  linkedAt: string;
+  /** true 인 보호자만 우리 기관이 연결을 끊을 수 있다 (O-19) */
+  linkedByThisOrganization: boolean;
+}
+
+/**
+ * 초대 코드 수락 결과 (api-spec G-04).
+ *
+ * 수락은 아동 상태를 바꾸지 않는다. childStatus 는 아이의 실제 현재 상태다.
+ */
+export interface AcceptedInvitation {
+  childId: string;
+  childName: string;
+  organizationName: string;
+  /** 코드를 발급한 기관. 수락 뒤 이 기관에 대한 동의 미리보기(G-02)를 부를 때 쓴다 */
+  organizationId: string;
+  childStatus: ChildStatus;
 }
 
 /**
  * P-02 확인 · 동의 화면이 한 번에 그리는 정보 (api-spec G-02).
  *
- * 스펙 예시에는 child.id 가 없지만 동의(G-41)와 반려(G-03) 호출에 필요해서 받는다.
+ * 스펙 예시에는 child.id 가 없지만 동의(G-41)와 연결 해제(G-05) 호출에 필요해서 받는다.
  */
 export interface ConsentPreview {
   child: { id: string; name: string; birthDate: string };
   institution: Institution;
   /** 증빙서류. 없으면 null — 화면에서 버튼을 숨긴다 */
   documentUrl: string | null;
+  /** 화면에 보여 줄 설명 문구. 저장하지 않는다 */
   sharedFields: string[];
   notSharedFields: string[];
+  /** 동의할 때 G-41 에 그대로 돌려보낼 항목 코드. 저장되는 것은 이 값이다 */
+  allowedFields: ConsentField[];
+}
+
+/** 동의 부여 · 철회 결과 (api-spec G-41). 바뀐 뒤의 상태다 */
+export interface ConsentResult {
+  childStatus: ChildStatus;
+  /** 이 기관에 대한 동의 상태 */
+  consent: ConsentState;
+  /** 이 기관에 지금 공유되는 항목. granted 가 아니면 빈 배열 */
+  allowedFields: ConsentField[];
 }
 
 export interface RawRecord {
@@ -224,12 +279,32 @@ export interface EntryProgress {
   state: "running" | "waiting" | "failed" | "done";
 }
 
-/** 재입력 요청 큐 한 건 */
+/**
+ * 수정 요청(BLOCK) 큐 한 건 (api-spec O-24).
+ *
+ * `record` 는 확인 필요 큐와 같은 모양이다(BE RecordResponse). 유형(`type`)은 BE 가 아직
+ * 보내지 않고, 날짜는 `YYYY-MM-DD` 로 온다. 비어 있으면 화면이 그 칸을 숨긴다.
+ */
 export interface BlockedItem {
   id: string;
-  record: RawRecord;
+  /** 검증 결과가 붙은 일지 id. 화면에서는 쓰지 않는다 */
+  journalEntryId?: number;
+  record: {
+    id: string;
+    fileName: string;
+    type?: RawRecord["type"] | null;
+    capturedAt: string | null;
+    /** 앞 60자만 자른 목록용 미리보기 */
+    preview: string | null;
+    /** 자르지 않은 전체 본문. 막힌 문장이 60자 뒤에 있을 수 있어 이걸 보여준다 */
+    fullContent: string | null;
+  };
+  /** 매칭 전에 막혔으면 아이를 모른다 */
   childName: string | null;
+  /** 화면에 그대로 띄우는 한국어 문장. 사유가 여럿이면 " / " 로 이어져 온다 */
   violationReason: string;
+  /** AI 가 보낸 위반 유형 원본(`진단명` · `개인정보표현` 등). 화면에서는 쓰지 않는다 */
+  violationCode?: string[];
 }
 
 /** Gate 1 검토 대기 한 건 */

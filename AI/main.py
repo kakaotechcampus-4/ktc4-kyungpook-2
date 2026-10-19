@@ -9,7 +9,10 @@ import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from common import metrics
 from common.errors import LlmUnavailable
+from insight.graph import run_insight
+from insight.schemas import InsightInput, InsightOutput
 from matching.graph import run_matching
 from matching.schemas import MatchingInput, MatchingOutput
 from summary.graph import run_summary
@@ -29,7 +32,7 @@ LUNA_API_KEY = os.environ.get("LUNA_API_KEY")
 @app.exception_handler(LlmUnavailable)
 def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
     """
-    LLM 을 못 써서 결과를 내지 못했을 때. 검증·요약이 같이 쓴다.
+    LLM 을 못 써서 결과를 내지 못했을 때. 검증·요약·인사이트가 같이 쓴다.
 
     BE 는 5xx 면 재시도하고, 그래도 실패하면 FAILED 로 둔다.
     실패 원인에는 Luna 엔드포인트 주소가 들어 있어서 응답에는 넣지 않고
@@ -60,21 +63,46 @@ def health() -> JSONResponse:
     )
 
 
+@app.get("/metrics")
+def read_metrics() -> dict:
+    """
+    실제로 몇 번 불렸는지. `repeats` 가 재시도가 몇 번 왔는지를 보여준다.
+
+    BE 설정(`app.ai.retry-backoffs`)이 2개면 한 묶음의 `calls` 가 3 을 넘으면 안 된다.
+    2026-10-10 E2E 에서 6 이 나왔다 (`#153`). 서버를 다시 띄우면 0 부터 센다.
+    """
+    return metrics.snapshot()
+
+
 @app.post("/matching", response_model=MatchingOutput)
 def matching(payload: MatchingInput) -> MatchingOutput:
     """일지 항목 한 건이 어느 아이의 것인지 판정한다."""
-    return run_matching(payload)
+    with metrics.track("/matching", metrics.key_of(payload.journal_entry_id)):
+        return run_matching(payload)
+
 
 @app.post("/validation", response_model=ValidationOutput)
 def validation(payload: ValidationInput) -> ValidationOutput:
     """일지 항목 한 건이 저장해도 안전한지 판정한다."""
-    return run_validation(payload)
+    with metrics.track("/validation", metrics.key_of(payload.journal_entry_id)):
+        return run_validation(payload)
 
 
 @app.post("/summary", response_model=SummaryOutput)
 def summary(payload: SummaryInput) -> SummaryOutput:
     """같은 아이의 같은 날 일지 여러 건을 한 편의 요약으로 묶는다."""
-    return run_summary(payload)
+    # 요약은 일지 한 건이 아니라 묶음이라, 묶음 키로 센다 (아동 × 날짜 × 기관).
+    key = metrics.key_of(payload.child_id, payload.entry_date, payload.institution_id)
+    with metrics.track("/summary", key):
+        return run_summary(payload)
+
+
+@app.post("/insight", response_model=InsightOutput)
+def insight(payload: InsightInput) -> InsightOutput:
+    """한 아이의 승인된 요약들을 겹쳐 기관을 가로지르는 돌봄 패턴을 찾는다."""
+    key = metrics.key_of(payload.child_id, payload.period_from, payload.period_to)
+    with metrics.track("/insight", key):
+        return run_insight(payload)
 
 
 @app.get("/llm-test")

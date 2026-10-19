@@ -1,11 +1,10 @@
 package com.itda.backend.service.summary;
 
-import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
-import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
 
+import com.itda.backend.service.agent.AiAgentClientConfig;
 import com.itda.backend.service.agent.AiAgentProperties;
 
 /**
@@ -20,11 +19,10 @@ public class SummaryAgentClientConfig {
     @Bean
     public RestClient summaryAgentRestClient(RestClient.Builder builder, AiAgentProperties properties,
             SummaryProperties summaryProperties) {
-        ClientHttpRequestFactorySettings settings = ClientHttpRequestFactorySettings.defaults()
-                .withTimeouts(properties.connectTimeout(), summaryProperties.readTimeout());
         return builder
                 .baseUrl(properties.baseUrl())
-                .requestFactory(ClientHttpRequestFactoryBuilder.detect().build(settings))
+                .requestFactory(AiAgentClientConfig.requestFactory(
+                        properties.connectTimeout(), summaryProperties.readTimeout()))
                 .build();
     }
 }

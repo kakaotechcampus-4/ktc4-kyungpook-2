@@ -1,14 +1,14 @@
 package com.itda.backend.global.config;
 
-import com.itda.backend.global.security.oauth.OAuth2LoginFailureHandler;
-import com.itda.backend.global.security.oauth.OAuth2LoginSuccessHandler;
 import com.itda.backend.global.jwt.JwtAuthenticationFilter;
 import com.itda.backend.global.security.CsrfCookieFilter;
 import com.itda.backend.global.security.JsonAccessDeniedHandler;
 import com.itda.backend.global.security.JsonAuthenticationEntryPoint;
 import com.itda.backend.global.security.JsonErrorResponseWriter;
 import com.itda.backend.global.security.SignupCompletionFilter;
-import com.itda.backend.service.UserService;
+import com.itda.backend.global.security.oauth.OAuth2LoginFailureHandler;
+import com.itda.backend.global.security.oauth.OAuth2LoginSuccessHandler;
+import com.itda.backend.service.user.UserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

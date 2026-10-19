@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
 import { RosterPicker } from "@/components/org/RosterPicker";
+import { NotReadyPage } from "@/components/org/NotReady";
 import {
   Card,
   EmptyState,
@@ -10,8 +11,8 @@ import {
   PageHeader,
   ValidationBadge,
 } from "@/components/ui";
-import { decideGate1, getChildren, getGate1Queue, reassignSummaryChild } from "@/lib/api";
-import type { Child, MatchBasis, SummaryItem } from "@/lib/types";
+import { decideGate1, getChildren, getGate1Queue, isReady, reassignSummaryChild } from "@/lib/api";
+import type { ChildListItem, MatchBasis, SummaryItem } from "@/lib/types";
 
 export async function clientLoader() {
   const [items, roster] = await Promise.all([getGate1Queue(), getChildren()]);
@@ -34,7 +35,7 @@ function MatchBasisRow({
   onChanged,
 }: {
   item: SummaryItem;
-  roster: Child[];
+  roster: ChildListItem[];
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -103,7 +104,20 @@ function MatchBasisRow({
   );
 }
 
-export default function Gate1Page() {
+/** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function Gate1Route() {
+  if (!isReady("gate1")) {
+    return (
+      <NotReadyPage
+        title="1차 검토 · 요약 확인"
+        description="등록한 선생님이 요약의 사실 정확성을 승인합니다"
+      />
+    );
+  }
+  return <Gate1Page />;
+}
+
+function Gate1Page() {
   const { items: queue, roster } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
   const [editing, setEditing] = useState<string | null>(null);

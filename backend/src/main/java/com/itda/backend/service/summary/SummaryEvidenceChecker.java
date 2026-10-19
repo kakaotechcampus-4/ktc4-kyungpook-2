@@ -7,7 +7,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.itda.backend.dto.response.SummaryAgentResponse;
+import com.itda.backend.dto.response.summary.SummaryAgentResponse;
 
 /**
  * 요약을 저장하기 직전에 AI 가 단 근거를 BE 가 다시 대조한다 (멘토 리뷰 A4, #129).

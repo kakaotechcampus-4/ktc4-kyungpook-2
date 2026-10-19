@@ -13,14 +13,24 @@
  * ⚠️ **아래 목록에 없는 경로는 아직 백엔드에 구현돼 있지 않다.** 경로는 위 규약을
  *    따른 추정이므로, 백엔드가 만들 때 실제 경로를 확인하고 맞춰야 한다.
  *
- *    구현된 것 (2026-10-04 기준, BE_READY 에서 true 인 기능)
+ *    구현된 것 (2026-10-12 기준, BE_READY 에서 true 인 기능)
  *      POST /api/v1/raw-records       multipart: file → 201
  *      GET  /api/v1/raw-records/{id}
  *      GET  /api/v1/raw-records
  *      GET  /api/v1/institutions/me/children
+ *      POST /api/v1/institutions/me/children   → 201 (초대 코드 포함)
+ *      POST   /api/v1/institutions/me/children/{childId}/invitations        → 201
+ *      GET    /api/v1/institutions/me/children/{childId}/invitations
+ *      DELETE /api/v1/institutions/me/children/{childId}/invitations/{id}   → 204
+ *      GET    /api/v1/institutions/me/children/{childId}/guardians
+ *      DELETE /api/v1/institutions/me/children/{childId}/guardians/{userId} → 204
+ *      POST   /api/v1/guardians/me/invitations/accept
+ *      DELETE /api/v1/guardians/me/children/{childId}   → 204 (아래 guardianUnlink 참고)
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
- *      GET  /api/v1/auth/me           (lib/auth.ts 에서 호출)
+ *      GET  /api/v1/validation-results?status=BLOCK
+ *      POST /api/v1/validation-results/{id}/resolve
+ *      GET  /api/v1/auth/me          (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/signup       (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/logout       (lib/auth.ts 에서 호출)
  *
@@ -41,23 +51,30 @@ import { clearSession, csrfHeader } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
+  AcceptedInvitation,
   ActivityLog,
   BlockedItem,
   CareReport,
   ChatTurn,
   Child,
   ChildCareInfo,
+  ChildGuardian,
+  ChildListItem,
+  ConsentField,
   ConsentPreview,
+  ConsentResult,
   FileProgress,
   InboxItem,
   Insight,
   Institution,
   InstitutionRequestItem,
+  IssuedInvitation,
   JournalEntry,
+  LiveInvitation,
   MatchingItem,
   MatchResolution,
   ParentActivity,
-  PendingLink,
+  RegisteredChild,
   SummaryItem,
   TimelineEntry,
   UploadFailReason,
@@ -87,16 +104,20 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 const BE_READY = {
   /** 아이 명부 조회 (GET /institutions/me/children) */
   children: true,
-  /** 아이 등록 + 초대코드 */
-  childRegister: false,
+  /** 아이 등록 + 첫 초대 코드 (POST /institutions/me/children) */
+  childRegister: true,
+  /** 초대 코드 추가 발급 · 목록 · 취소 (O-15 ~ O-17) */
+  invitations: true,
+  /** 아이와 연결된 보호자 목록 · 기관이 연결 해제 (O-18, O-19) */
+  childGuardians: true,
   /** 아이 상세 · 타임라인 */
   childProfile: false,
   /** 아이 기록 기반 질의응답 */
   chat: false,
   /** 확인 필요 큐 조회 · 처리 (O-22, O-23) */
   matchingQueue: true,
-  /** 수정 요청(BLOCK) 큐 조회 · 처리 */
-  blockedQueue: false,
+  /** 수정 요청(BLOCK) 큐 조회 · 처리 (O-24, O-25) */
+  blockedQueue: true,
   /** 1차 검토 조회 · 승인 · 아이 변경 */
   gate1: false,
   /** 인사이트 조회 · 2차 공유 */
@@ -109,8 +130,24 @@ const BE_READY = {
   inbox: false,
   /** 활동 기록 */
   activity: false,
-  /** 보호자: 연결 대기 · 동의 미리보기 · 반려 · 동의 범위 */
+  /** 기관 정보 · 증빙서류 (기관 설정 화면). 지금은 API 없이 mock 값만 띄운다 */
+  institutionSettings: false,
+  /** 보호자: 초대 코드 수락 뒤 동의 화면(P-02)의 미리보기 · 동의 (G-02, G-41) */
+  guardianConsent: true,
+  /**
+   * 보호자: 설정 · 알림 화면의 동의 부여 · 철회 (G-41). 서버에는 있지만 끈다 — 이 화면들의
+   * 아이 목록(guardianHome)이 아직 mock 이라 서버에 없는 아이 id 로 요청하게 된다.
+   * guardianHome 을 켤 때 같이 켠다.
+   */
   guardianLinks: false,
+  /** 보호자: 초대 코드 수락 (G-04) */
+  guardianInvite: true,
+  /**
+   * 보호자: 아이 연결 해제 (G-05). 서버에는 있지만 끈다 — 해제할 아이를 고르는 목록
+   * (G-10, guardianHome)이 아직 mock 이라 서버에 없는 아이 id 로 요청하게 된다.
+   * guardianHome 을 켤 때 같이 켠다.
+   */
+  guardianUnlink: false,
   /** 보호자: 아이 목록 · 홈 · 일지 · 리포트 · 오늘 요약 */
   guardianHome: false,
   /** 보호자: 기관 요청 알림 · 확인 · 거절 */
@@ -136,7 +173,15 @@ function mockFor(feature: Feature): boolean {
  * 화면은 null 을 "준비 중"으로 그린다. 전체 mock 모드에서는 평소대로 mock 을 돌려준다.
  */
 export function loadIfReady<T>(feature: Feature, load: () => Promise<T>): Promise<T | null> {
-  return USE_MOCK || BE_READY[feature] ? load() : Promise.resolve(null);
+  return isReady(feature) ? load() : Promise.resolve(null);
+}
+
+/**
+ * 이 기능의 화면을 그대로 보여도 되는지. 전체 mock 이거나 백엔드에 있으면 true.
+ * false 면 화면은 mock 데이터 대신 "준비 중"을 보인다(components/org/NotReady).
+ */
+export function isReady(feature: Feature): boolean {
+  return USE_MOCK || BE_READY[feature];
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -186,14 +231,19 @@ export { ApiError };
 /* ── 기관 ───────────────────────────────────────────── */
 
 /** GET /api/v1/institutions/me/children */
-export async function getChildren(): Promise<Child[]> {
+export async function getChildren(): Promise<ChildListItem[]> {
   if (mockFor("children")) return mock.CHILDREN;
   return request("/api/v1/institutions/me/children");
 }
 
-export async function getChild(id: string): Promise<Child | undefined> {
-  if (mockFor("childProfile")) return mock.CHILDREN.find((c) => c.id === id);
-  return request(`/api/v1/children/${id}`);
+/**
+ * 아이 한 명. 상세 API 가 아직 없어서, 명부가 실서버면 명부에서 찾는다 — 그래야 실제로
+ * 등록한 아이의 상세 화면(초대 코드 · 보호자)이 열린다. 명부에는 연결된 기관이 없다.
+ */
+export async function getChild(id: string): Promise<ChildListItem | undefined> {
+  if (!mockFor("childProfile")) return request(`/api/v1/children/${id}`);
+  if (!mockFor("children")) return (await getChildren()).find((c) => c.id === id);
+  return mock.CHILDREN.find((c) => c.id === id);
 }
 
 /** GET /api/v1/children/{childId}/context */
@@ -220,10 +270,20 @@ export async function getMatchingQueue(): Promise<MatchingItem[]> {
   }));
 }
 
-/** GET /api/v1/validation-results?status=BLOCK */
+/** GET /api/v1/validation-results?status=BLOCK (api-spec O-24) */
 export async function getBlockedQueue(): Promise<BlockedItem[]> {
   if (mockFor("blockedQueue")) return mock.BLOCKED_QUEUE;
-  return request("/api/v1/validation-results?status=BLOCK");
+  const items = await request<BlockedItem[]>("/api/v1/validation-results?status=BLOCK");
+  return items.map((item) => ({
+    ...item,
+    record: {
+      ...item.record,
+      capturedAt: item.record.capturedAt ?? null,
+      preview: item.record.preview ?? null,
+      fullContent: item.record.fullContent ?? null,
+    },
+    childName: item.childName ?? null,
+  }));
 }
 
 /** GET /api/v1/summaries?gate1_status=pending */
@@ -363,11 +423,16 @@ export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
     mock.FILE_PROGRESS.unshift(...created);
     return results;
   }
-  const settled = await Promise.allSettled(files.map(uploadOne));
-  return settled.map((s, i) =>
-    s.status === "fulfilled"
-      ? { ok: true, file: files[i], progress: s.value }
-      : { ok: false, file: files[i], reason: uploadFailReasonOf(s.reason) },
+  return Promise.all(
+    files.map(async (file): Promise<UploadResult> => {
+      // BE 는 pdf 도 받지만 아직 기록으로 나누지 못해 아무것도 생기지 않는다 — 보내기 전에 거절한다
+      if (!hasUploadExtension(file)) return { ok: false, file, reason: "invalid" };
+      try {
+        return { ok: true, file, progress: await uploadOne(file) };
+      } catch (err) {
+        return { ok: false, file, reason: uploadFailReasonOf(err) };
+      }
+    }),
   );
 }
 
@@ -396,13 +461,21 @@ function uploadFailReasonOf(err: unknown): UploadFailReason {
   return "temporary";
 }
 
-/** mock 도 BE 와 같은 규칙으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
-const UPLOAD_EXTENSIONS = ["csv", "txt", "pdf"];
+/**
+ * 올릴 수 있는 형식. BE 는 pdf 도 받지만 기록으로 나누는 단계가 pdf 를 건너뛰어,
+ * 올려도 처리 현황에 아무것도 나오지 않는다. pdf 를 지원하면 여기에 다시 넣는다.
+ */
+export const UPLOAD_EXTENSIONS = ["csv", "txt"];
+/** mock 도 BE 와 같은 용량 제한으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
 const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
-function mockRejectReason(file: File): UploadFailReason | null {
+function hasUploadExtension(file: File): boolean {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (!UPLOAD_EXTENSIONS.includes(ext)) return "invalid";
+  return UPLOAD_EXTENSIONS.includes(ext);
+}
+
+function mockRejectReason(file: File): UploadFailReason | null {
+  if (!hasUploadExtension(file)) return "invalid";
   if (file.size > UPLOAD_MAX_BYTES) return "too_large";
   return null;
 }
@@ -482,7 +555,13 @@ function tickSimulation() {
   }
 }
 
-/** 재입력 요청 큐 항목을 처리(재업로드 또는 보류)하면 큐에서 빠진다. */
+/**
+ * POST /api/v1/validation-results/{id}/resolve (api-spec O-25)
+ *
+ * 둘 다 그 일지의 처리를 여기서 끝내고 큐에서 뺀다. 원본은 고치지도 지우지도 않는다 —
+ * reupload 는 "고친 내용을 새 파일로 올리겠다"는 표시일 뿐, 업로드는 따로 해야 한다.
+ * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
+ */
 export async function resolveBlockedItem(
   id: string,
   action: "reupload" | "hold",
@@ -498,22 +577,37 @@ export async function resolveBlockedItem(
   });
 }
 
-/** POST /api/v1/institutions/me/children — 등록 + 초대코드 발급 */
+/**
+ * POST /api/v1/institutions/me/children — 아이 등록 (api-spec O-11).
+ *
+ * 등록과 함께 서버가 첫 초대 코드를 발급해 invitation 으로 준다. 한 트랜잭션이라
+ * 503 INVITE_CODE_ISSUE_FAILED 면 아이도 등록되지 않았다 — 그대로 다시 요청하면 된다.
+ */
 export async function registerChild(input: {
   name: string;
   birthDate: string;
-}): Promise<{ child: Child; inviteCode: string }> {
-  const inviteCode = generateInviteCode();
+  /** 기관 관리번호. 필수다 */
+  externalId: string;
+}): Promise<{ child: RegisteredChild; invitation: IssuedInvitation }> {
   if (mockFor("childRegister")) {
+    const externalId = input.externalId.trim();
+    if (mock.CHILDREN.some((c) => c.externalId === externalId)) {
+      throw new ApiError(409, "DUPLICATE_EXTERNAL_ID");
+    }
     const child: Child = {
       id: `child_${Math.random().toString(36).slice(2, 8)}`,
-      name: input.name,
+      name: input.name.trim(),
       birthDate: input.birthDate,
+      externalId,
       status: "pending_consent",
       institutions: [{ institution: mock.MY_INSTITUTION, consent: "not_granted" }],
     };
     mock.CHILDREN.push(child);
-    return { child, inviteCode };
+    const { id, name, birthDate, status } = child;
+    return {
+      child: { id, name, birthDate, externalId, status },
+      invitation: issueMockInvitation(id),
+    };
   }
   return request("/api/v1/institutions/me/children", {
     method: "POST",
@@ -521,9 +615,88 @@ export async function registerChild(input: {
   });
 }
 
-export function generateInviteCode(): string {
-  const s = () => Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `ITDA-${s()}-${s()}`;
+/** 초대 코드 유효 시간. 서버(Invitation)와 같은 10분 — mock 에서만 쓴다 */
+const INVITE_TTL_MS = 10 * 60 * 1000;
+/** 서버(InviteCodeGenerator)와 같은 글자. 헷갈리는 0 O 1 I L 은 뺐다 */
+const INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+function issueMockInvitation(childId: string): IssuedInvitation {
+  const code = Array.from(
+    { length: 8 },
+    () => INVITE_ALPHABET[Math.floor(Math.random() * INVITE_ALPHABET.length)],
+  ).join("");
+  const now = Date.now();
+  const invitation: LiveInvitation = {
+    id: `inv_${Math.random().toString(36).slice(2, 8)}`,
+    code,
+    issuedAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + INVITE_TTL_MS).toISOString(),
+  };
+  (mock.INVITATIONS[childId] ??= []).unshift(invitation);
+  const { id, expiresAt } = invitation;
+  return { id, code, expiresAt };
+}
+
+const childPath = (childId: string) =>
+  `/api/v1/institutions/me/children/${encodeURIComponent(childId)}`;
+
+/**
+ * POST …/children/{childId}/invitations — 초대 코드 추가 발급 (O-15).
+ * 이전 코드는 그대로 살아 있다. 엄마·아빠에게 따로 보낼 수 있게 여러 개를 허용한다.
+ */
+export async function issueInvitation(childId: string): Promise<IssuedInvitation> {
+  if (mockFor("invitations")) return issueMockInvitation(childId);
+  return request(`${childPath(childId)}/invitations`, { method: "POST" });
+}
+
+/** GET …/children/{childId}/invitations — 아직 쓸 수 있는 코드만, 최근 발급 순 (O-16) */
+export async function getLiveInvitations(childId: string): Promise<LiveInvitation[]> {
+  if (mockFor("invitations")) {
+    const now = Date.now();
+    return (mock.INVITATIONS[childId] ?? []).filter((i) => Date.parse(i.expiresAt) > now);
+  }
+  return request(`${childPath(childId)}/invitations`);
+}
+
+/** DELETE …/children/{childId}/invitations/{invitationId} — 코드 취소 (O-17) */
+export async function cancelInvitation(childId: string, invitationId: string): Promise<void> {
+  if (mockFor("invitations")) {
+    const list = mock.INVITATIONS[childId] ?? [];
+    const idx = list.findIndex((i) => i.id === invitationId);
+    if (idx === -1) throw new ApiError(404, "INVITATION_NOT_FOUND");
+    list.splice(idx, 1);
+    return;
+  }
+  return request(`${childPath(childId)}/invitations/${encodeURIComponent(invitationId)}`, {
+    method: "DELETE",
+  });
+}
+
+/** GET …/children/{childId}/guardians — 다른 기관을 통해 연결된 보호자도 나온다 (O-18) */
+export async function getChildGuardians(childId: string): Promise<ChildGuardian[]> {
+  if (mockFor("childGuardians")) return mock.CHILD_GUARDIANS[childId] ?? [];
+  return request(`${childPath(childId)}/guardians`);
+}
+
+/**
+ * DELETE …/children/{childId}/guardians/{userId} — 기관이 보호자 연결을 끊는다 (O-19).
+ * 연결은 기관 구분 없는 전역 연결이라 **모든 기관에서 끊긴다.** 우리 기관 코드로 연결된
+ * 보호자(linkedByThisOrganization)만 끊을 수 있다.
+ */
+export async function unlinkGuardian(childId: string, guardianUserId: string): Promise<void> {
+  if (mockFor("childGuardians")) {
+    const list = mock.CHILD_GUARDIANS[childId] ?? [];
+    const target = list.find((g) => g.userId === guardianUserId);
+    if (!target) throw new ApiError(404, "GUARDIAN_NOT_FOUND");
+    if (!target.linkedByThisOrganization) {
+      throw new ApiError(403, "GUARDIAN_LINKED_BY_OTHER_ORGANIZATION");
+    }
+    list.splice(list.indexOf(target), 1);
+    return;
+  }
+  return request(`${childPath(childId)}/guardians/${encodeURIComponent(guardianUserId)}`, {
+    method: "DELETE",
+  });
 }
 
 /** GET /api/v1/institutions/me/inbox */
@@ -553,45 +726,66 @@ export async function getActivity(): Promise<ActivityLog[]> {
 /* ── 학부모 ─────────────────────────────────────────── */
 
 /**
- * GET /api/v1/guardians/me/pending-links (api-spec G-01)
+ * POST /api/v1/guardians/me/invitations/accept — 초대 코드 수락 (api-spec G-04).
  *
- * 기관이 아이를 등록하면 서버가 만들어 두는 "연결 대기" 목록이다. 초대코드를 대신하는
- * 최초 연결 경로라, 보호자 온보딩의 마지막 단계가 이 목록을 그린다. 나중에 아이를 하나
- * 더 추가할 때도 같은 목록을 본다.
- *
- * 거절한 요청은 빼고 준다 — 알림 배지(getPendingInstitutionRequests)와 기준을 맞춘다.
+ * 공백 · 하이픈 · 대소문자는 서버가 맞춘다. 화면에 보인 그대로 보내도 된다.
+ * 실패는 ApiError 로 던진다 — 400 INVALID_INVITE_CODE · 409 LINK_ALREADY_EXISTS ·
+ * 403 PARENT_REQUIRED 를 화면이 나눠 안내한다.
  */
-export async function getPendingLinks(): Promise<PendingLink[]> {
-  if (mockFor("guardianLinks")) {
-    return mock.PARENT_CHILDREN.flatMap((child) =>
-      child.institutions
-        .filter(
-          (i) =>
-            i.consent === "not_granted" &&
-            !mock.DECLINED_INSTITUTION_REQUESTS.has(`${child.id}:${i.institution.id}`),
-        )
-        .map((i) => ({
-          child: { id: child.id, name: child.name, birthDate: child.birthDate },
-          institution: i.institution,
-          requestedAt: mock.PENDING_LINK_REQUESTED_AT[`${child.id}:${i.institution.id}`] ?? "",
-        })),
-    );
+export async function acceptInvitation(code: string): Promise<AcceptedInvitation> {
+  if (mockFor("guardianInvite")) {
+    const normalized = code.replace(/[\s-]/g, "").toUpperCase();
+    const valid =
+      normalized.length === 8 && [...normalized].every((c) => INVITE_ALPHABET.includes(c));
+    if (!valid) throw new ApiError(400, "INVALID_INVITE_CODE");
+    // mock 은 형식만 맞으면 데모 아이 하나에 연결한다
+    const child = mock.CHILDREN.find((c) => c.id === mock.INVITED_CHILD_ID);
+    if (!child) throw new ApiError(400, "INVALID_INVITE_CODE");
+    if (mock.PARENT_CHILDREN.includes(child)) throw new ApiError(409, "LINK_ALREADY_EXISTS");
+    mock.PARENT_CHILDREN.push(child);
+    const institution = child.institutions[0].institution;
+    return {
+      childId: child.id,
+      childName: child.name,
+      organizationName: institution.name,
+      organizationId: institution.id,
+      childStatus: child.status,
+    };
   }
-  return request("/api/v1/guardians/me/pending-links");
+  return request("/api/v1/guardians/me/invitations/accept", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+/**
+ * DELETE /api/v1/guardians/me/children/{childId} — 보호자 본인이 연결을 끊는다 (api-spec G-05).
+ * 다시 연결하려면 기관에서 새 코드를 받아야 한다.
+ */
+export async function unlinkChild(childId: string): Promise<void> {
+  if (mockFor("guardianUnlink")) {
+    const idx = mock.PARENT_CHILDREN.findIndex((c) => c.id === childId);
+    if (idx === -1) throw new ApiError(403, "FORBIDDEN");
+    mock.PARENT_CHILDREN.splice(idx, 1);
+    return;
+  }
+  return request(`/api/v1/guardians/me/children/${encodeURIComponent(childId)}`, {
+    method: "DELETE",
+  });
 }
 
 /**
  * GET /api/v1/children/{childId}/consent-preview?institutionId= (api-spec G-02)
  *
- * P-02 가 그릴 아이 · 기관 · 공유 범위. 해당 연결 요청이 없으면 null 이다 — 다른 아이나
+ * P-02 가 그릴 아이 · 기관 · 공유 범위. 동의할 것이 없으면 null 이다 — 다른 아이나
  * 기관으로 대신 채우지 않는다. 동의 화면에 엉뚱한 아이가 뜨면 잘못 동의하게 된다.
- * 이미 동의했거나 반려한 요청도 "없는 요청" 으로 본다 (getPendingLinks 와 기준을 맞춘다).
+ * 이미 동의했거나 알림에서 거절한 요청도 "없는 요청" 으로 본다.
  */
 export async function getConsentPreview(
   childId: string,
   institutionId: string,
 ): Promise<ConsentPreview | null> {
-  if (mockFor("guardianLinks")) {
+  if (mockFor("guardianConsent")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
     const rec = child?.institutions.find(
       (i) => i.institution.id === institutionId && i.consent === "not_granted",
@@ -605,6 +799,8 @@ export async function getConsentPreview(
       documentUrl: null,
       sharedFields: shared,
       notSharedFields: notShared,
+      // 서버도 기관 유형과 관계없이 이 두 항목을 내려준다 (ConsentFieldCatalog)
+      allowedFields: ["daily_summary", "weekly_insight"],
     };
   }
   try {
@@ -617,23 +813,6 @@ export async function getConsentPreview(
     throw e;
   }
 }
-
-/**
- * POST /api/v1/children/{childId}/links/{institutionId}/reject (api-spec G-03)
- *
- * P-02 에서 "우리 아이가 아니에요" 로 반려한다. 반려한 요청은 getPendingLinks 에서 빠진다.
- */
-export async function rejectLink(childId: string, institutionId: string) {
-  if (mockFor("guardianLinks")) {
-    mock.DECLINED_INSTITUTION_REQUESTS.add(`${childId}:${institutionId}`);
-    return { ok: true };
-  }
-  return request(
-    `/api/v1/children/${encodeURIComponent(childId)}/links/${encodeURIComponent(institutionId)}/reject`,
-    { method: "POST" },
-  );
-}
-
 
 /** GET /api/v1/guardians/me/children — 이 보호자에게 연결된 아이 전체 */
 export async function getParentChildren(): Promise<Child[]> {
@@ -688,7 +867,41 @@ export async function declineInstitutionRequest(childId: string, institutionId: 
   });
 }
 
-/** PUT /api/v1/children/{childId}/consent-scopes/{institutionId} */
+/**
+ * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — P-02 의 동의 (api-spec G-41).
+ *
+ * allowedFields 는 미리보기(G-02)가 준 코드를 그대로 보낸다. 화면 문구(sharedFields)를
+ * 보내면 서버가 모르는 항목이라 400 으로 거절한다.
+ * 실패는 ApiError 로 던진다 — 404 CONSENT_TARGET_NOT_FOUND 는 그 사이 아이가 삭제됐거나
+ * 기관 명부에서 빠진 경우다.
+ */
+export async function grantConsent(
+  childId: string,
+  institutionId: string,
+  allowedFields: ConsentField[],
+): Promise<ConsentResult> {
+  if (mockFor("guardianConsent")) {
+    const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
+    const rec = child?.institutions.find((i) => i.institution.id === institutionId);
+    if (!child || !rec) throw new ApiError(404, "CONSENT_TARGET_NOT_FOUND");
+    rec.consent = "granted";
+    child.status = "active";
+    return { childStatus: "active", consent: "granted", allowedFields };
+  }
+  return request(
+    `/api/v1/children/${encodeURIComponent(childId)}/consent-scopes/${encodeURIComponent(institutionId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ action: "grant", allowedFields }),
+    },
+  );
+}
+
+/**
+ * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — 설정 · 알림 화면용.
+ * 아직 mock 만 쓴다(guardianLinks). 본문 모양이 서버(allowedFields, 코드값)와 달라
+ * 켜기 전에 grantConsent 처럼 맞춰야 한다.
+ */
 export async function updateConsent(
   childId: string,
   institutionId: string,

@@ -83,9 +83,58 @@ def _numbers(text: str) -> set[int]:
     return {int(n) for n in re.findall(r"\d+", text or "")}
 
 
-def _date_numbers(text: str) -> set[int]:
-    """날짜 표현에 쓰인 숫자만. 연·월·일 단위가 붙은 것이다."""
-    return {int(n) for n in DATE_UNIT.findall(text or "")}
+#: 횟수를 나타내는 말. 날짜 단위(년·월·일)는 여기 들어가지 않는다.
+#:
+#: 고유어 수사만 본다 — 한자어(일·이·삼·사)는 조사나 일반 낱말과 겹쳐
+#: "사 번" 과 "사번(社番)" 을 가릴 수 없다. 오탐이 나는 쪽이 더 나쁘다.
+COUNT = re.compile(r"(\d+|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|여러|몇)\s*(번|회|차례)")
+
+#: 고유어 수사 → 숫자. "세 번" 과 "3번" 이 다르게 세어지면 안 된다.
+_NUM_WORD = {"한": "1", "두": "2", "세": "3", "네": "4", "다섯": "5",
+             "여섯": "6", "일곱": "7", "여덟": "8", "아홉": "9", "열": "10"}
+
+#: 같은 뜻의 단위는 묶는다. "세 번" 과 "세 차례" 가 갈리면 안 된다.
+_UNIT_GROUP = {"번": "회", "회": "회", "차례": "회"}
+
+
+def _counts(text: str) -> set[tuple[str, str]]:
+    r"""
+    문장에 쓰인 횟수를 (값, 단위) 쌍으로 모은다.
+
+    숫자만 비교하면 세 가지를 놓친다.
+      ① "세 번" — 한글 수사는 \d+ 에 안 걸린다
+      ② "여러 번" — 수량 표현인데 숫자가 아니다
+      ③ "7번" 인데 인용에 "7층" 이 있으면 통과한다 — 값은 같고 단위가 다르다
+    (2026-10-14 멘토 리뷰 P2)
+
+    "여러"·"몇" 은 숫자로 바꾸지 않고 그대로 둔다. 원문에 "여러 번" 이 있으면
+    요약도 "여러 번" 이어야 하고, 구체적인 횟수로 바꾸면 그게 환각이다.
+    """
+    pairs = set()
+    for num, unit in COUNT.findall(text or ""):
+        pairs.add((_NUM_WORD.get(num, num), _UNIT_GROUP[unit]))
+    return pairs
+
+
+def _numbers_outside_dates(text: str, entry_date: str) -> set[int]:
+    """
+    날짜로 쓰인 **자리**를 지우고 남은 숫자를 센다.
+
+    값이 아니라 자리를 지우는 것이 핵심이다. 값으로 빼면 같은 수가 한 문장에서
+    날짜로도 횟수로도 쓰일 때 둘 다 빠진다.
+
+        2026-10-07 · "10월 7일, 공을 7번 주고받았다"
+          값으로 뺄 때   {10, 7} - {10, 7} = {}       → "7번" 이 근거 없이 통과
+          자리로 뺄 때   "  , 공을 7번 …" → {7}       → 근거를 확인한다
+
+    단위(년·월·일)가 붙고 **묶음 날짜와 값이 같은** 자리만 지운다. 다른 날짜가
+    적혀 있으면(관찰일이 묶음 날짜와 다를 때) 그 숫자도 원문에 있어야 한다.
+    """
+    allowed = _numbers(entry_date)
+    blanked = DATE_UNIT.sub(
+        lambda m: " " if int(m.group(1)) in allowed else m.group(0), text or ""
+    )
+    return _numbers(blanked)
 
 
 def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> bool:
@@ -104,17 +153,23 @@ def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> boo
     """
     quotes = " ".join(e["quote"] for e in evidence)
 
-    # 날짜를 가리키는 숫자는 입력으로 받은 값이라 지어낸 것이 아니다. 다만
-    # **그 문장에서 날짜로 쓰였을 때만** 면제한다 — 단위(년·월·일)가 붙어 있고
-    # 묶음 날짜와 값이 같아야 한다.
+    # 날짜를 가리키는 숫자는 입력으로 받은 값이라 지어낸 것이 아니다. 그 **자리만**
+    # 지우고, 남은 숫자는 전부 근거 인용에 그대로 있어야 한다 — 횟수·시간·층수는
+    # 관찰한 내용이다.
     #
-    # 예전에는 entry_date 의 숫자를 통째로 면제했다. 2026-10-07 에 쓴 요약이면
-    # "공을 7번 주고받았다", "10번", "2026번" 이 전부 통과했다 — 날짜 숫자가
-    # 관찰 횟수의 근거가 돼 버린 것이다 (2026-10-08 멘토 리뷰).
-    date_ok = _date_numbers(text) & _numbers(state.get("entry_date", ""))
+    # 두 번 고친 자리다.
+    #   ① entry_date 의 숫자를 통째로 면제했다. 2026-10-07 요약이면 "공을 7번",
+    #     "10번", "2026번" 이 전부 통과했다 (2026-10-08 멘토 리뷰).
+    #   ② 단위가 붙은 것만 면제하되 여전히 **값**으로 뺐다. "10월 7일, 공을 7번"
+    #     처럼 같은 수가 날짜로도 횟수로도 쓰이면 "7번" 까지 빠졌다
+    #     (2026-10-11 멘토 리뷰 P2).
+    left = _numbers_outside_dates(text, state.get("entry_date", ""))
+    if left - _numbers(quotes):
+        return False
 
-    # 나머지 숫자 — 횟수·시간·층수 같은 관찰 내용은 근거 인용에 그대로 있어야 한다.
-    return not (_numbers(text) - _numbers(quotes) - date_ok)
+    # 횟수는 (값, 단위) 로 따로 본다. 위 검사는 값만 보기 때문에 한글 수사와
+    # "여러 번" 을 놓치고, 단위가 달라도 같은 값이면 통과시킨다.
+    return not (_counts(text) - _counts(quotes))
 
 
 def ground(state: SummaryState) -> dict:
