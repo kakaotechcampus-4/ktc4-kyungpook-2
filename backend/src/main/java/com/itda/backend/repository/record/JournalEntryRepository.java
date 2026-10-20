@@ -15,6 +15,13 @@ import com.itda.backend.domain.record.JournalEntryStatus;
 
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long> {
 
+    /**
+     * 그 파일들에서 나온 일지. 처리 현황(O-26)이 파일마다 따로 묻지 않고 한 번에 읽는 데 쓴다 —
+     * 파일 수만큼 쿼리가 늘면 목록이 길어질수록 느려진다.
+     */
+    List<JournalEntry> findByRawRecordIdInAndDeletedAtIsNullOrderByIdAsc(Collection<Long> rawRecordIds);
+
+
     Optional<JournalEntry> findByIdAndDeletedAtIsNull(Long id);
 
     /**
