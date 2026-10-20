@@ -171,7 +171,11 @@ def reflect(state: dict) -> dict:
             **texts,
             supports=_clean_supports(raw.get("supports"), index, known_types),
             claim_ids=ids,
-            source_entry_ids=sorted({e["journal_entry_id"] for c in claims for e in c["evidence"]}),
+            source_entry_ids=sorted({
+                e["journal_entry_id"]
+                for c in claims for e in c["evidence"]
+                if e["journal_entry_id"] is not None  # 교사 작성 문장은 일지가 없다
+            }),
             source_institution_ids=inst_ids,
             institution_types=sorted(cited_types),
             cross_institution=len(inst_ids) >= 2,

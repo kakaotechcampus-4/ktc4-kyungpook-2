@@ -152,6 +152,45 @@ def test_claim이_최소_근거_수보다_적으면_모델을_부르지_않는�
     assert plan(make_state(claims=CLAIMS[:1]))["skip_llm"] is True
     assert plan(make_state())["skip_llm"] is False
 
+# ── 교사 작성 문장 (#199) ───────────────────────────────────────
+
+from pydantic import ValidationError  # noqa: E402
+
+from insight.schemas import InsightClaim  # noqa: E402
+
+
+def teacher_claim(cid: str, inst: int) -> dict:
+    text = f"{cid} 교사 문장"
+    return {
+        "claim_id": cid, "text": text, "entry_date": "2026-01-09",
+        "institution_id": inst, "institution_type": TYPES[inst], "source": "TEACHER",
+        "evidence": [{"journal_entry_id": None, "quote": text}],
+    }
+
+
+def test_source_를_안_보내면_AI_다():
+    assert InsightClaim(**claim("10-0", 1, 101)).source == "AI"
+
+
+def test_교사_문장은_일지_번호_없이_통과한다():
+    assert InsightClaim(**teacher_claim("13-0", 2)).evidence[0].journal_entry_id is None
+
+
+def test_AI_문장인데_일지_번호가_없으면_막는다():
+    broken = {**claim("10-0", 1, 101), "evidence": [{"journal_entry_id": None, "quote": "인용"}]}
+    try:
+        InsightClaim(**broken)
+    except ValidationError:
+        return
+    raise AssertionError("AI 문장의 끊긴 근거가 통과했다")
+
+
+def test_교사_문장이_섞여도_출처_일지에서는_빠진다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    out = run(make_state(claims=claims), [insight(["10-0", "13-0"])])
+    assert len(out) == 1
+    assert out[0].source_entry_ids == [101]          # 교사 문장은 일지가 없다
+    assert out[0].source_institution_ids == [1, 2]   # 기관에는 잡힌다
 
 if __name__ == "__main__":
     tests = [v for k, v in globals().items() if k.startswith("test_")]
