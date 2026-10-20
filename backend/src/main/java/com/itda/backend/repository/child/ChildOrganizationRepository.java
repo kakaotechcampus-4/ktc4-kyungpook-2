@@ -1,5 +1,6 @@
 package com.itda.backend.repository.child;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,4 +41,10 @@ public interface ChildOrganizationRepository extends JpaRepository<ChildOrganiza
      * 연결이 끊긴 행을 빼지 않으면 더 이상 다니지 않는 기관의 기록까지 재료로 들어간다.
      */
     List<ChildOrganization> findByChildIdAndDeletedAtIsNull(Long childId);
+
+    /**
+     * 여러 아이의 명부를 한 번에. Gate 2 목록이 인사이트마다 "이 아이가 다니는 다른 기관" 을 채우는 데 쓴다 —
+     * 아이마다 따로 물으면 목록 길이만큼 쿼리가 늘어난다.
+     */
+    List<ChildOrganization> findByChildIdInAndDeletedAtIsNull(Collection<Long> childIds);
 }

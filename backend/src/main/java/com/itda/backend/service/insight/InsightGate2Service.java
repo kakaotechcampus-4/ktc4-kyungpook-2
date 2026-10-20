@@ -1,0 +1,150 @@
+package com.itda.backend.service.insight;
+
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.itda.backend.domain.approval.Approval;
+import com.itda.backend.domain.approval.ApprovalDecision;
+import com.itda.backend.domain.approval.Gate2Action;
+import com.itda.backend.domain.insight.InsightResult;
+import com.itda.backend.domain.insight.InsightStatus;
+import com.itda.backend.domain.invitation.ChildGuardian;
+import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.sharing.ReceiverType;
+import com.itda.backend.domain.sharing.SharingHistory;
+import com.itda.backend.dto.response.insight.Gate2DecisionResponse;
+import com.itda.backend.exception.insight.InsightErrorCode;
+import com.itda.backend.exception.insight.InsightException;
+import com.itda.backend.repository.approval.ApprovalRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.insight.InsightResultRepository;
+import com.itda.backend.repository.invitation.ChildGuardianRepository;
+import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.sharing.SharingHistoryRepository;
+import com.itda.backend.service.user.UserService;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Gate 2 — 교사가 인사이트를 발송 전에 승인·보류한다 (DB 스키마 §9.1, §9.3, §9.4).
+ *
+ * <p><b>기관 경계를 넘는 마지막 관문이다.</b> 여기를 지나면 글이 다른 사람에게 보인다. 그래서
+ * 되돌리는 경로를 두지 않고(승인 취소 없음), 결정마다 {@code human_review} 에 한 줄 남긴다.
+ *
+ * <p><b>승인하면 보호자에게 열람 권한이 생긴다.</b> 10/17 회의 결론이
+ * {@code 담당자 승인 → 보호자 → 보호자가 기관별 승인} 이라, 여기서 만드는 권한은 {@code GUARDIAN} 뿐이다.
+ * 기관 권한은 그 뒤 보호자가 기관을 고를 때 생긴다 (미구현). 보내는 행위가 없으므로 전송 실패도 없다.
+ *
+ * <p>동시에 두 결정이 와도 한쪽만 반영되도록 인사이트 행을 잠그고 상태를 본다. 열람 권한은
+ * {@code (insight_result_id, receiver_type, receiver_id)} UNIQUE 가 마지막으로 한 번 더 막는다.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class InsightGate2Service {
+
+    private final UserService userService;
+    private final ChildRepository childRepository;
+    private final ChildOrganizationRepository childOrganizationRepository;
+    private final InsightResultRepository insightResultRepository;
+    private final OrganizationRepository organizationRepository;
+    private final ChildGuardianRepository childGuardianRepository;
+    private final SharingHistoryRepository sharingHistoryRepository;
+    private final ApprovalRepository approvalRepository;
+
+    @Transactional
+    public Gate2DecisionResponse decide(String userId, Long insightId, Gate2Action action) {
+        Long organizationId = userService.getOrganizationIdOf(userId);
+        InsightResult insight = insightResultRepository.findByIdForUpdate(insightId)
+                .orElseThrow(() -> new InsightException(InsightErrorCode.NOT_FOUND, insightId));
+
+        requireStillOurs(insight, organizationId);
+        Organization primary = PrimarySource.requireApprover(insight, organizationId, organizationsOf(insight));
+        requireDecidable(insight);
+        requireLatestRevision(insight);
+
+        ApprovalDecision decision = switch (action) {
+            case APPROVE -> approve(insight, primary);
+            case HOLD -> hold(insight);
+        };
+        approvalRepository.save(Approval.gate2(insightId, Long.valueOf(userId), decision));
+        return new Gate2DecisionResponse(String.valueOf(insightId),
+                insight.getStatus().name().toLowerCase(Locale.ROOT), decision.name());
+    }
+
+    /**
+     * 지금도 우리가 돌보는 아이인지. {@code source_institution_ids} 는 인사이트를 만들 때 굳은 값이라
+     * 그 뒤에 아이가 우리 기관을 떠나도 그대로 남는다 — 그것만 보면 <b>연결이 끊긴 기관이 계속 승인해서
+     * 보호자에게 글을 열어 준다.</b> 조회와 같은 기준으로 먼저 막는다 (CLAUDE.md: 동의가 사라지면 막는다).
+     */
+    private void requireStillOurs(InsightResult insight, Long organizationId) {
+        if (childRepository.findByIdAndDeletedAtIsNull(insight.getChildId()).isEmpty()
+                || !childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(
+                        insight.getChildId(), organizationId)) {
+            throw new InsightException(InsightErrorCode.NOT_FOUND, insight.getId());
+        }
+    }
+
+    private Map<Long, Organization> organizationsOf(InsightResult insight) {
+        return organizationRepository.findAllById(PrimarySource.sourceIdsOf(insight)).stream()
+                .collect(Collectors.toMap(Organization::getId, org -> org));
+    }
+
+    /**
+     * 승인한다. 그 아이에 연결된 보호자마다 열람 권한 한 줄을 만든다.
+     *
+     * <p><b>보호자가 한 명도 없으면 아무도 못 본다.</b> 오류가 아니라 정상이다 — 초대가 아직 수락되지 않은
+     * 아이가 있다. 다만 교사는 "보냈다" 고 믿으므로 로그를 남긴다 (CLAUDE.md Auditability).
+     */
+    private ApprovalDecision approve(InsightResult insight, Organization primary) {
+        insight.approveGate2();
+        List<ChildGuardian> guardians =
+                childGuardianRepository.findByChildIdAndDeletedAtIsNullOrderByLinkedAtAsc(insight.getChildId());
+        if (guardians.isEmpty()) {
+            log.warn("gate2 approved but no guardian linked, nobody can read it insightId={} childId={}",
+                    insight.getId(), insight.getChildId());
+        }
+        sharingHistoryRepository.saveAll(guardians.stream()
+                .map(guardian -> SharingHistory.grant(insight.getChildId(), insight.getId(), primary.getId(),
+                        ReceiverType.GUARDIAN, guardian.getUserId()))
+                .toList());
+        return ApprovalDecision.APPROVED;
+    }
+
+    private ApprovalDecision hold(InsightResult insight) {
+        insight.holdGate2();
+        return ApprovalDecision.HOLD;
+    }
+
+    /** 승인도 보류도 한 번뿐이다. 되돌리는 경로가 없어 두 번째 결정은 받을 수 없다. */
+    private static void requireDecidable(InsightResult insight) {
+        if (insight.getStatus() != InsightStatus.GATE2_PENDING) {
+            throw new InsightException(InsightErrorCode.ALREADY_REVIEWED, insight.getId());
+        }
+    }
+
+    /**
+     * 같은 아동·기간의 마지막 회차만 승인한다. 재료가 늘면 워커가 {@code revision + 1} 로 다시 만들고 옛
+     * 회차를 그대로 두는데(§9.3), 그걸 승인하면 <b>철 지난 글이 다른 기관으로 나간다.</b> 목록에는 최신
+     * 회차만 보이지만 id 를 직접 보내면 닿으므로 여기서도 본다.
+     *
+     * <p>ponytail: <b>이 검사와 워커 사이에는 좁은 틈이 있다.</b> 우리가 잠근 것은 옛 회차의 <i>행</i>인데
+     * 워커는 새 <i>행</i>을 넣으므로 그 잠금이 막지 못한다 — 여기를 통과한 직후 워커가 다음 회차를 커밋하면
+     * 옛 회차가 승인된 채로 남는다. 교사가 화면을 보고 누르는 속도(초)와 워커 주기(분)의 차이라 MVP 에서는
+     * 받아들인다. 닫아야 하면 두 쪽이 함께 잠그는 자리({@code insight_run} 의 그 아동·기간 행)가 필요하다.
+     */
+    private void requireLatestRevision(InsightResult insight) {
+        Integer latest = insightResultRepository.findMaxRevision(
+                insight.getChildId(), insight.getPeriodFrom(), insight.getPeriodTo());
+        if (latest != null && latest > insight.getRevision()) {
+            throw new InsightException(InsightErrorCode.SUPERSEDED, insight.getId());
+        }
+    }
+}
