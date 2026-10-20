@@ -816,50 +816,100 @@ O-15 ~ O-19 공통 오류:
 | O-41 | GET | `/insights/{id}` | Insight 단건 | I-10 |
 | O-42 | POST | `/insights/{insightId}/gate2` | 발송 승인 / 보류 | I-11 |
 
-**O-40 응답**
+> **2026-10-20 수정 (#206)** — 10/17 회의에서 **열람 방식**과 **보호자가 수신 기관을 고르는 흐름**으로
+> 정해져, `primarySource` 규칙과 O-42 요청 바디가 바뀌었습니다. 아래가 구현된 모양입니다.
+
+**O-40 요청** · `?gate2Status=pending|approved|hold` (기본 `pending`)
+
+**O-40 응답** · 우리 기관이 **승인 주체인** 인사이트만 내려갑니다. 최신 회차만 보입니다.
 
 ```json
 [
   { "id": "1", "childId": "1", "childName": "김하늘",
     "period": "2026년 8월 3주차",
     "content": "오후 시간대 …",
+    "needsReview": true,
     "primarySource": { "id": "2", "name": "햇살아동발달센터",
-                       "type": "center", "verified": true },
+                       "type": "center", "verified": false },
     "evidence": [
       { "childContextId": "10", "date": "2026-08-19", "label": "관찰일지 요약",
         "institution": { "id": "2", "name": "햇살아동발달센터",
-                         "type": "center", "verified": true } }
+                         "type": "center", "verified": false } }
     ],
     "targets": [
       { "institution": { "id": "1", "name": "○○초등학교",
-                         "type": "school", "verified": true }, "consent": "granted" },
+                         "type": "school", "verified": false }, "consent": "granted" },
       { "institution": { "id": "3", "name": "△△활동지원",
-                         "type": "assistant", "verified": true }, "consent": "not_granted" }
+                         "type": "assistant", "verified": false }, "consent": "not_granted" }
     ],
     "gate2Status": "pending" }
 ]
 ```
 
-- `primarySource` = 근거 요약을 최다 제공한 기관. **이 기관만 Gate 2를 승인할 수
-  있습니다.** 서버에서도 같은 조건으로 인가해주세요 (`403 NOT_PRIMARY_SOURCE`).
-- `targets`에는 **미동의 기관도 `consent`와 함께 포함**해주세요. 프론트는 미동의
-  기관을 목록에서 숨기지 않고 **잠금 + 사유 표시**로 보여줍니다.
+**`primarySource` = 기관 종류 우선순위로 뽑은 한 기관입니다.**
+
+```
+학교 > 센터 > 활동지원사        같은 종류가 둘이면 organization.id 가 작은 쪽
+```
+
+근거를 낸 기관(`source_institution_ids`) 중에서 고릅니다. **이 기관만 Gate 2 를 승인할 수 있고**,
+목록에도 이 기관에만 보입니다. 서버가 같은 조건으로 인가합니다.
+
+| 요청 기관 | 결과 |
+| --- | --- |
+| `primarySource` | 조회·승인 가능 |
+| 근거는 냈지만 `primarySource` 가 아님 | `403 INSIGHT_NOT_PRIMARY_SOURCE` |
+| 근거를 내지 않은 기관 | `404 INSIGHT_NOT_FOUND` — 존재 여부를 알려주지 않습니다 |
+
+> 이전 명세는 "근거 요약을 **최다** 제공한 기관" 이었습니다. 최다를 구하려면
+> `claim_ids → summary_result → institution_id` 로 거슬러 세야 하는데, 종류 우선순위는
+> `source_institution_ids` + `organization.type` 으로 바로 나옵니다 (#206 에서 변경).
+
+**`needsReview` 는 꼭 표시해주세요.** 인사이트 본문에 **다른 아이 이름이 없다는 보장이 없고**,
+Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문장**이 근거로 섞일 수 있습니다
+(`AI/insight/CRITERIA.md` §5, #199). 기관 경계를 넘는 마지막 관문이라 승인자가 알아야 합니다.
+
+**`targets` 는 읽기 전용 참고입니다.** 미동의 기관도 `consent`와 함께 포함되며, 프론트는 숨기지 않고
+**잠금 + 사유 표시**로 보여줍니다. 다만 **기관이 수신처를 고르지 않습니다** — 승인 뒤 보호자가 정합니다.
 
 **O-42 요청**
 
 ```json
-{ "decision": "approve", "targetInstitutionIds": ["1"] }
+{ "decision": "approve" }
 ```
+
+`decision` 은 `approve` 또는 `hold` 입니다. `targetInstitutionIds` 는 **없어졌습니다** — 수신 기관은
+보호자가 고릅니다.
 
 | 규칙 | 내용 |
 | --- | --- |
-| 기본값 | 프론트는 아무 기관도 선택하지 않은 상태로 시작합니다 |
-| 빈 배열 | `approve` + 빈 배열이면 프론트가 호출 자체를 하지 않습니다. 서버에서도 `400 INVALID_REQUEST`로 막아주세요 |
-| 미동의 기관 | `granted`가 아닌 기관 id가 오면 `403 CONSENT_NOT_GRANTED` |
-| 되돌리기 | **발송은 취소할 수 없습니다.** 발송 취소 API는 만들지 않습니다 |
+| 승인하면 | 인사이트가 `approved` 가 되고 **보호자에게 열람 권한이 생깁니다.** 기관 열람 권한은 그 뒤 보호자가 기관을 고를 때 생깁니다 |
+| 보호자가 없으면 | 승인은 되지만 아무에게도 보이지 않습니다. 오류가 아닙니다 |
+| 되돌리기 | **승인은 취소할 수 없습니다.** 취소 API 는 만들지 않습니다 |
+| 보류 | `hold` 는 나가지 않습니다. 보류 해제 API 는 Gate 2 에 없습니다 (Gate 1 과 다른 점) |
 
-**응답** · `{ "gate2Status": "approved" }`
-발송 대상 기관별로 **동의 범위에 맞게 변환된 최소 정보**만 저장·전달해주세요.
+**응답** · `{ "insightId": "1", "gate2Status": "approved", "decision": "APPROVED" }`
+
+**실패**
+
+| 실패 | 상태 | 코드 |
+| --- | --- | --- |
+| `decision` 누락·허용되지 않은 값 | 400 | `INVALID_REQUEST` |
+| 지원하지 않는 `gate2Status` | 400 | `INSIGHT_INVALID_REQUEST` |
+| 없는 인사이트, 근거를 내지 않은 기관, 지금 우리 명부에 없는 아이 | 404 | `INSIGHT_NOT_FOUND` |
+| 근거는 냈지만 승인 주체가 아님 | 403 | `INSIGHT_NOT_PRIMARY_SOURCE` |
+| 이미 승인·보류된 인사이트 | 409 | `INSIGHT_ALREADY_REVIEWED` |
+| 같은 기간의 새 회차가 만들어짐 | 409 | `INSIGHT_SUPERSEDED` |
+
+**O-41** · 단건. 응답은 O-40 의 원소 하나와 같습니다. 인가도 같습니다 — 근거를 냈고, 승인 주체이고,
+**그 아이가 지금도 우리 기관 명부에 있어야** 합니다. 셋 중 하나라도 아니면 404/403 입니다.
+
+**다른 점은 회차 하나뿐입니다.** O-40 은 최신 회차만 보여주지만, O-41 은 ID 로 직접 물으면 옛 회차도
+보여줍니다. 승인은 막힙니다(`409 INSIGHT_SUPERSEDED`).
+
+> ⚠️ **연결이 끊기면 그 뒤로 안 보입니다.** `source_institution_ids` 는 인사이트를 만들 때 굳은 값이라
+> 아이가 기관을 떠나도 그대로 남습니다. 그것만 보면 연결이 끊긴 기관이 계속 읽으므로, 조회·승인 모두
+> **그때그때 명부를 다시 봅니다.**
 
 ### 4.6 수신함 · 상담 지원 · 감사 로그
 
@@ -1256,8 +1306,10 @@ O-15 ~ O-19 공통 오류:
 | `SUMMARY_CHANGED` | 409 | 목록에서 본 뒤 요약이 새 기록으로 바뀜 (O-31) |
 | `SUMMARY_HELD` | 409 | 보류된 요약을 승인·보류 — 보류 해제 먼저 (O-31) |
 | `SUMMARY_NOT_HELD` | 409 | 보류되지 않은 요약 보류 해제 (O-33) |
-| `INSIGHT_ALREADY_SENT` | 409 | 이미 발송된 Insight 재발송 |
-| `NOT_PRIMARY_SOURCE` | 403 | 근거 제공 기관이 아닌 곳의 Gate 2 승인 시도 |
+| `INSIGHT_INVALID_REQUEST` | 400 | 지원하지 않는 `gate2Status` (O-40) |
+| `INSIGHT_NOT_FOUND` | 404 | 없는 인사이트이거나 근거를 내지 않은 기관 (O-41 · O-42) |
+| `INSIGHT_NOT_PRIMARY_SOURCE` | 403 | 근거는 냈지만 승인 주체가 아닌 기관의 Gate 2 시도 (O-42) |
+| `INSIGHT_ALREADY_REVIEWED` | 409 | 이미 승인·보류된 Insight 재결정 (O-42) |
 
 ---
 

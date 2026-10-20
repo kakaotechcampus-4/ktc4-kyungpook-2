@@ -45,15 +45,15 @@
 | 13 | `human_review` | ✅ 확정 | ✅ `Approval` | 삭제 없음 (이력) |
 | 14 | `child_context` | ✅ 확정 | ✅ `ChildContext` | 삭제 없음 (이력) |
 | 15 | `insight_result` | ✅ 확정 | ✅ `InsightResult` | 삭제 없음 (이력) |
-| 16 | `sharing_history` | ✅ 확정 | ⬜ 미구현 | 삭제 없음 (이력) |
+| 16 | `sharing_history` | ✅ 확정 | ✅ `SharingHistory` | 삭제 없음 (이력) |
 | 17 | `insight_run` | ✅ 확정 | ✅ `InsightRun` | 삭제 없음 (이력) |
 
 **17개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
 `insight_result`·`sharing_history` 는 Insight 에이전트 계약(`AI/insight/schemas.py`)과 Gate 2 공유 정책이
 정해져서 확정으로 올렸다. `human_review` 는 Gate 1 결정값이 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 정해지며 확정됐다.
 
-**설계 확정과 구현은 별개다.** `sharing_history` 는 아직 엔티티가 없다.
-`human_review` 는 Gate 1 결정 API(#178)가 쓰고, Gate 2 는 아직 없다.
+**17개 모두 엔티티가 있다** (#206 에서 `sharing_history` 가 마지막으로 들어왔다).
+`human_review` 는 Gate 1 결정 API(#178)와 Gate 2 결정 API(#206)가 함께 쓴다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
 
@@ -149,7 +149,7 @@ erDiagram
 
 ### 1.2 파이프라인
 
-파이프라인 테이블은 모두 ✅ 확정이다. `insight_result`·`sharing_history`는 설계만 확정이고 아직 미구현이다.
+파이프라인 테이블은 모두 ✅ 확정이고 모두 구현됐다.
 
 ```mermaid
 erDiagram
@@ -270,8 +270,8 @@ erDiagram
         bigint sender_organization_id FK
         varchar receiver_type
         bigint receiver_id
-        varchar status
-        text reason
+        datetime granted_at
+        datetime read_at
     }
 ```
 
@@ -464,7 +464,7 @@ child_organization(organization_id, external_id) UNIQUE
 child_guardian(child_id, user_id)             UNIQUE
 summary_result(child_id, entry_date, institution_id, revision) UNIQUE
 child_context.summary_result_id               UNIQUE
-sharing_history(insight_result_id, receiver_type, receiver_id, status) UNIQUE
+sharing_history(insight_result_id, receiver_type, receiver_id)         UNIQUE
 insight_run(child_id, period_from, period_to, revision) UNIQUE
 ```
 
@@ -1321,9 +1321,8 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 
 # 파이프라인 결과 테이블
 
-> 이 절의 6개는 **설계가 모두 확정됐다** (2026-10-13). 구현 상태만 다르다 —
-> `validation_result`·`summary_result`·`child_context`·`human_review`는 구현됐고
-> (`human_review` 는 Gate 1 만, #178), `insight_result`·`sharing_history`는 아직 엔티티가 없다.
+> 이 절의 6개는 **설계가 모두 확정됐고 모두 구현됐다** (`sharing_history` 는 #206 에서 마지막으로
+> 들어왔다). `human_review` 는 Gate 1(#178)과 Gate 2(#206) 결정을 함께 받는다.
 >
 > 아래 6개는 모두 실행·검토 이력이라 `deleted_at`을 두지 않는다.
 
@@ -1888,72 +1887,87 @@ HOLD            교사가 보류했다. 나가지 않는다
 인사이트는 기관 경계를 넘는 마지막 산출물이라 노출 비용이 요약보다 크다 — `summary_result` 가
 `needs_review`·`review_reasons` 로 교사에게 알리듯, **Gate 2 화면도 그 사실을 표시해야 한다.**
 
-### 9.4 `sharing_history` ✅ — ⬜ 미구현
+### 9.4 `sharing_history` ✅ — ✅ 구현됨 (`SharingHistory`)
 
 > **근거** — 프론트 `InboxItem` (수신함 화면) · 보호자 홈
+> **2026-10-18 전면 수정** — 처음엔 **발송** 이력이었으나(`SHARED`/`BLOCKED`/`FAILED` + `shared_at`),
+> 10/17 회의에서 **열람 방식**으로 정해져 뜻이 바뀌었다 (#206).
 
-실제 공유 결과와 이력. **공유를 시도한 건 전부 남긴다** — 막힌 것도 남겨야
-"왜 안 갔나"를 사람이 확인할 수 있다.
+**한 행이 "이 인사이트를 이 수신자가 볼 수 있다"는 권한 하나다.** 보내는 행위가 없다 —
+Gate 2 를 승인하면 수신자에게 **보이게 된다.**
 
-**인사이트 발송 전용이다.** 보호자가 `GET /children/{id}/today-summary` 로 승인된 요약을
-**열람**하는 것은 공유 시도가 아니라 조회라서 여기 남기지 않는다 — 그쪽은 `audit_logs`(O-53)가 받는다.
-그래서 `insight_result_id` 가 NOT NULL 이다.
+| | 발송 방식 (폐기) | 열람 방식 (지금) |
+| --- | --- | --- |
+| 승인하면 | 수신자에게 보낸다 | 수신자가 볼 수 있게 된다 |
+| 남기는 것 | 보낸 시각 | 권한이 생긴 시각 + **실제로 열어 본 시각** |
+| 되돌릴 수 있나 | 이미 보낸 건 회수 못 한다 | 권한을 거두면 그 뒤로 안 보인다 (⬜ 아래) |
+
+> ⬜ **되돌리는 길은 아직 없다.** 열람 방식이 발송보다 안전한 이유가 "철회하면 그 뒤로 안 보인다" 인데,
+> 지금은 그 길이 구현돼 있지 않다 — `revoked_at` 컬럼도 없고, 보호자 연결을 끊어도
+> (`child_guardian.deleted_at`) 이 테이블의 행은 그대로 남는다. **읽는 쪽(O-50·보호자 홈)을 만들 때
+> `child_guardian` 을 같이 봐야** 연결이 끊긴 보호자가 계속 읽지 않는다. 권한 철회 자체는 보호자의
+> 기관별 승인 API 와 함께 정한다.
+
+**인사이트 전용이다.** 보호자가 승인된 요약을 **열람**하는 것(O-14)은 권한이 아니라 조회라서 여기
+남기지 않는다 — 그쪽은 `audit_logs`(O-53)가 받는다. 그래서 `insight_result_id` 가 NOT NULL 이다.
 
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
 | `child_id` | BIGINT | N | 대상 아동 |
-| `insight_result_id` | BIGINT | N | 공유 대상 Insight |
-| `sender_organization_id` | BIGINT | N | 발신 기관 |
+| `insight_result_id` | BIGINT | N | 열람 대상 Insight |
+| `sender_organization_id` | BIGINT | N | Gate 2 를 승인한 기관 (`primarySource`) |
 | `receiver_type` | VARCHAR(20) | N | 수신자 종류 |
 | `receiver_id` | BIGINT | N | 수신자 ID |
-| `status` | VARCHAR(30) | N | 처리 결과 |
-| `reason` | TEXT | Y | 막히거나 실패한 이유 |
-| `shared_at` | DATETIME | Y | 공유 완료 시각. `SHARED` 일 때만 채운다 |
+| `granted_at` | DATETIME | N | 볼 수 있게 된 시각 |
+| `read_at` | DATETIME | Y | 처음 열어 본 시각. NULL 이면 아직 안 봤다 |
 | `created_at` | DATETIME | N |  |
 
 ```
 receiver_type   ORGANIZATION | GUARDIAN
-status          SHARED | BLOCKED | FAILED
 ```
 
-**수신자가 기관만이 아니다.** 보호자에게도 나가므로 `receiver_organization_id` 하나로는 담지 못한다.
-`human_review` 와 같은 **다형 참조**로 둔다.
+**수신자가 기관만이 아니다.** 보호자에게도 열린다. `human_review` 와 같은 **다형 참조**로 둔다.
 
 ```
 receiver_type = ORGANIZATION → receiver_id = organization.id
 receiver_type = GUARDIAN     → receiver_id = users.id
 ```
 
-**`status` 가 세 개인 이유**
-
-| | 언제 |
-| --- | --- |
-| `SHARED` | 실제로 나갔다 |
-| `BLOCKED` | **동의가 없거나 철회돼서 막았다.** 정상 동작이지 오류가 아니다 |
-| `FAILED` | 보내려다 시스템 오류로 실패했다 |
-
-`BLOCKED` 를 행으로 남기는 것이 중요하다. 공유 거부도 감사 대상이고(CLAUDE.md), 남기지 않으면
-교사는 승인했으니 전달됐다고 믿는다. `reason` 에 "동의 철회됨" 같은 사유를 적는다.
-
-**발송 직전에 동의를 다시 확인한다.** Gate 2 승인 시점에 동의가 있었어도 그 사이 철회됐을 수 있다.
-`sharing_consent` 의 최신 행을 보고, 없으면 `BLOCKED` 로 남긴다 — deny-by-default 다.
+**`status` 를 두지 않는다.** 발송 방식에는 "보내려다 막혔다"(`BLOCKED`)가 사건이었지만, 열람 방식에는
+그런 순간이 없다 — 권한이 없으면 **행이 없을 뿐**이다. 쓰지 않을 값을 남겨 두면 누군가 저장하게 되고
+나중에 빼려면 §11.4 수동 조치 대상이 된다 (`insight_result.status` 에서 `GENERATED` 를 뺀 것과 같은 이유).
+막힌 조회 시도는 `audit_logs`(O-53)가 받는다.
 
 ```
-UNIQUE (insight_result_id, receiver_type, receiver_id, status)
+UNIQUE (insight_result_id, receiver_type, receiver_id)
 ```
 
-**같은 인사이트를 같은 대상에게 두 번 보내지 않는다.** 워커·API 재시도로 중복 발송이 일어나면
-받는 쪽은 같은 글을 두 번 받는다. 되돌릴 수 없는 작업이라 DB 에서 막는다.
+**한 수신자당 한 행이다.** Gate 2 승인 API 를 두 번 호출해도 권한이 두 번 생기지 않는다. 발송 방식에서
+키에 `status` 를 넣었던 이유(막혔던 이력 보존)는 `status` 가 없어지면서 사라졌다.
 
-**키에 `status` 가 들어가는 이유.** `BLOCKED` 로 한 번 막힌 뒤 동의가 다시 켜지면 그 대상에게
-보낼 수 있어야 한다. 그렇다고 막혔던 행을 `SHARED` 로 덮으면 **"언제 왜 막혔나"가 사라진다** —
-공유 거부도 감사 대상이고(CLAUDE.md), 이 테이블은 사건 이력이라 고치지 않고 쌓는 자리다(§3.2).
-`status` 를 키에 넣으면 한 수신자당 `SHARED` 는 여전히 최대 하나이고(중복 발송 차단),
-`BLOCKED` 행은 그대로 남는다. 그래서 `updated_at` 도 필요 없다.
+**누가 먼저 보게 되나 — 보호자다.** 10/17 회의 결론은 `담당자 승인 → 보호자 → 보호자가 기관별 승인`
+이다. Gate 2 승인 시점에 만드는 행은 **`GUARDIAN` 뿐**이고, `ORGANIZATION` 행은 그 뒤 보호자가
+기관을 고를 때 생긴다. 그래서 `sharing_consent` 는 **공유 단계에 쓰지 않는다** — 인사이트 재료를
+고를 때만 쓴다 (§9.5). 어느 기관이 볼지는 보호자의 인사이트별 선택이 정한다.
+
+> ⬜ **보호자의 기관별 승인 API 는 아직 없다.** 그래서 지금은 `ORGANIZATION` 행이 만들어지지 않고,
+> 수신함(O-50)도 비어 있다. 권한 철회(`revoked_at`)도 그 API 와 함께 정한다 — 지금 쓰지 않을 컬럼을
+> 미리 만들면 §11.4 대상이 된다.
+
+**`read_at` 은 감사 추적이다.** "언제 봤나" 를 남기지 않으면 열람 방식에는 아무 흔적이 없다
+(CLAUDE.md Auditability). O-51 읽음 처리가 이 칸을 채운다.
+
+**권한을 만드는 쪽은 지금 한 곳뿐이다** — Gate 2 승인(O-42)이고, 같은 트랜잭션에서 인사이트 행을 잠근
+뒤에 넣는다. 그래서 UNIQUE 가 터질 일이 없어 따로 받지 않는다. ⚠️ **보호자의 기관별 승인 API 는 그
+잠금 밖에서 넣게 되므로**, 그때는 중복 클릭이 500 이 되지 않도록 제약 위반을 받아 넘겨야 한다.
+
+**권한이 생겨도 보호자가 없을 수 있다.** 아이에 연결된 보호자가 한 명도 없으면 승인은 되지만 행이
+하나도 생기지 않는다 — 아무도 못 본다. 오류가 아니라 정상이고, 서비스가 경고 로그만 남긴다.
 
 > 연결 상태 테이블(`child_organization`·`child_guardian`)은 기존 행을 되살리는 방식이지만(§3.3),
-> 그건 **상태** 테이블의 규칙이다. 여기는 **사건** 이력이라 반대로 쌓는다.
+> 그건 **상태** 테이블의 규칙이다. 여기는 한 번 생기면 고치지 않는 **권한** 행이라 `updated_at` 이 없다
+> (§3.2) — `read_at` 한 칸만 나중에 채워진다.
 
 ### 9.5 `insight_run` ✅ — ✅ 구현됨 (`InsightRun`)
 
@@ -2245,3 +2259,5 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-13 | Gate 1 구현. `summary_result.status` 에 `REMOVED`, `journal_entry.status` 에 `GATE1_HELD` 추가, `human_review.decision` 을 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 (`REJECTED` 삭제). 승인·수정 후 승인·보류·제거·보류 해제 때 요약·일지 상태와 `child_context`·`human_review` 기록 규칙(§6.2, §8.2, §9.1, §9.2). 요약 워커가 최신 판의 일지만 다시 묶도록 변경(§6.2). claim 정리·고친 문장 재검증은 MVP 이후로 표시(§8.2). §0.3 의 `human_review` 불일치와 §10.2-12 해소. **enum 값 추가라 §11.4 수동 조치 필요** — `human_review`·`summary_result`·`journal_entry` CHECK 제약 확인 | #178 |
 | 2026-10-14 | `journal_entry.agent_retry_count` 추가 — AI 다운이면 매칭·검증 일지를 `FAILED` 로 남기지 않고 되돌리며 횟수를 센다. 2번 넘으면 `FAILED` (§6.2). 기존 행이 있어 NULL 허용으로 추가하고 NULL 은 0 으로 읽어 §11.4 수동 조치 불필요 | #153 |
 | 2026-10-16 | `insight_run` 에 `last_context_id` 추가 (§9.5) — 인사이트를 만든 뒤 같은 기간에 요약이 더 승인되면 다시 집는다. Gate 1 승인은 교사가 틈틈이 하므로 한 주치가 한 번에 올라오지 않는데, "처리했다" 만 기억하면 뒤에 승인된 기록이 영영 빠졌다(멘토 리뷰 #191). `child_context` 가 지우지 않고 쌓여 id 가 단조 증가하는 것을 눈금으로 쓴다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #197 |
+| 2026-10-20 | `sharing_history`(§9.4) 구현 (`SharingHistory`) — 10/17 회의에서 **발송 → 열람 방식**으로 바뀌어 뜻을 다시 썼다 (#206). `status`(`SHARED`/`BLOCKED`/`FAILED`)·`reason`·`shared_at` 을 빼고 `granted_at`·`read_at` 을 넣었다. 열람 방식에는 "보내려다 막혔다" 는 순간이 없고 권한이 없으면 행이 없을 뿐이라 `status` 가 쓸 자리가 없다. UNIQUE 도 `(insight_result_id, receiver_type, receiver_id)` 로 줄였다(§3.3) — 키에 `status` 를 넣던 이유가 함께 사라졌다. Gate 2 승인은 `GUARDIAN` 행만 만들고 `ORGANIZATION` 행은 보호자의 기관별 승인이 만든다. 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #206 |
+| 2026-10-20 | Gate 2 구현. `insight_result.status` 가 `GATE2_PENDING` → `APPROVED`/`HOLD` 로 바뀌고, 결정 한 줄이 `human_review` 에 `target_type = INSIGHT`·`review_type = GATE2` 로 쌓인다 (§9.1, §9.3). 승인 주체는 `source_institution_ids` 에서 **기관 종류 우선순위(학교 > 센터 > 활동지원사, 동점이면 작은 `organization_id`)** 로 뽑은 한 기관이다 — 저장하지 않고 계산한다. **enum·컬럼 추가가 없어 §11.4 수동 조치 불필요** (`human_review` 의 `target_type`·`review_type`·`decision` 은 이미 쓰는 값만 쓴다) | #206 |
