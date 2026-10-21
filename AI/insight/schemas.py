@@ -115,6 +115,9 @@ class Insight(BaseModel):
     source_institution_ids: list[int] = Field(default_factory=list)
     institution_types: list[str] = Field(default_factory=list)
     cross_institution: bool = False
+    #: 근거(대처 근거 포함) 중 교사가 Gate 1 에서 고치거나 새로 쓴 claim (source=EDITED·TEACHER).
+    #: 검증을 거치지 않은 문장이라, 비어 있지 않으면 Gate 2 에서 "교사 작성 포함" 으로 표시한다 (#199).
+    teacher_claim_ids: list[str] = Field(default_factory=list)
 
 
 class InsightOutput(BaseModel):

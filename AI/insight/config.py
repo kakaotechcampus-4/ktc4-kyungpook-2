@@ -18,6 +18,11 @@ REQUIRE_VALID_CLAIM_IDS = True
 #: 인사이트 하나에 필요한 최소 근거 claim 수. 관찰 하나는 패턴이 아니다.
 MIN_EVIDENCE_CLAIMS = 2
 
+#: 근거 claim 중 AI 원문(source=AI)이 최소 하나 있어야 한다 
+#: 교사가 Gate 1 에서 고치거나 쓴 문장은 검증을 거치지 않으므로, 그것만으로는 인사이트를 만들지 않는다.
+#: EDITED 는 근거 일지가 있어도 내용이 바뀌었을 수 있어 원문으로 세지 않는다.
+REQUIRE_SOURCE_CLAIM = True
+
 #: 근거 수를 "서로 다른 날" 로 셀지. False 면 서로 다른 claim 이면 된다.
 #: 정하지 않았다 (CRITERIA §10). 같은 날 두 기관 기록도 비교 근거가 되므로 일단 False.
 #: test_reflect.py 가 이 결정을 고정한다. 바꾸면 테스트도 같이 바꾼다.

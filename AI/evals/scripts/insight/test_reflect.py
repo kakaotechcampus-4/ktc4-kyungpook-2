@@ -192,6 +192,41 @@ def test_교사_문장이_섞여도_출처_일지에서는_빠진다():
     assert out[0].source_entry_ids == [101]          # 교사 문장은 일지가 없다
     assert out[0].source_institution_ids == [1, 2]   # 기관에는 잡힌다
 
+def edited_claim(cid: str, inst: int, jid: int) -> dict:
+    return {**claim(cid, inst, jid), "source": "EDITED"}
+
+
+def test_AI_문장만이면_교사_표시가_없다():
+    out = run(make_state(), [insight(["10-0", "11-0"])])
+    assert out[0].teacher_claim_ids == []
+
+
+def test_교사_문장이_섞이면_번호를_표시한다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    out = run(make_state(claims=claims), [insight(["10-0", "13-0"])])
+    assert out[0].teacher_claim_ids == ["13-0"]
+
+
+def test_교사_문장만으로는_인사이트를_만들지_않는다():
+    claims = CLAIMS + [teacher_claim("13-0", 2), teacher_claim("14-0", 1)]
+    assert run(make_state(claims=claims), [insight(["13-0", "14-0"])]) == []
+
+
+def test_고친_문장은_원문으로_세지_않지만_섞이면_표시한다():
+    claims = CLAIMS + [edited_claim("15-0", 1, 104), edited_claim("16-0", 2, 105)]
+    state = make_state(claims=claims)
+    assert run(state, [insight(["15-0", "16-0"])]) == []
+    out = run(state, [insight(["10-0", "15-0"])])
+    assert out[0].teacher_claim_ids == ["15-0"]
+
+
+def test_대처_근거의_교사_문장도_표시한다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["13-0"]}
+    out = run(make_state(claims=claims), [insight(["10-0", "11-0"], supports=[support])])
+    assert len(out[0].supports) == 1
+    assert out[0].teacher_claim_ids == ["13-0"]
+    
 if __name__ == "__main__":
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     failed = 0
