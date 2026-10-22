@@ -222,11 +222,29 @@ def test_고친_문장은_원문으로_세지_않지만_섞이면_표시한다()
 
 def test_대처_근거의_교사_문장도_표시한다():
     claims = CLAIMS + [teacher_claim("13-0", 2)]
-    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["13-0"]}
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["12-0", "13-0"]}
     out = run(make_state(claims=claims), [insight(["10-0", "11-0"], supports=[support])])
     assert len(out[0].supports) == 1
     assert out[0].teacher_claim_ids == ["13-0"]
     
+
+def test_교사_문장만으로_된_대처는_버리고_인사이트는_남긴다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["13-0"]}
+    out = run(make_state(claims=claims), [insight(["10-0", "11-0"], supports=[support])])
+    assert len(out) == 1
+    assert out[0].supports == []
+    assert out[0].teacher_claim_ids == []
+
+
+def test_대처에만_쓰인_기관도_출처에_들어간다():
+    claims = CLAIMS + [claim("17-0", 3, 106)]   # 활동지원사 claim 은 대처 근거로만
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["17-0"]}
+    out = run(make_state(claims=claims), [insight(["10-0", "12-0"], supports=[support])])
+    assert out[0].source_institution_ids == [1, 3]
+    assert out[0].source_entry_ids == [101, 103, 106]
+    assert out[0].cross_institution is False      # 기관 간 차이 여부는 본문 근거(학교 둘)로만
+
 if __name__ == "__main__":
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     failed = 0
