@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +24,9 @@ import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.approval.Gate2Action;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.invitation.ChildGuardian;
@@ -78,6 +82,9 @@ class InsightGate2ServiceTest {
         em.persistAndFlush(ChildOrganization.of(childId, centerId));
         guardianId = 7L;
         em.persistAndFlush(ChildGuardian.link(childId, guardianId, 1L));
+        // 재료 기관의 공유 동의. 인사이트를 만들 때 있었던 것이고, 승인 시점에 다시 본다 (#213).
+        consent(schoolId);
+        consent(centerId);
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(schoolId);
         given(userService.getOrganizationIdOf(OTHER_TEACHER)).willReturn(centerId);
         em.clear();
@@ -180,6 +187,7 @@ class InsightGate2ServiceTest {
     void 보호자가_없으면_승인은_되지만_열람_권한이_생기지_않는다() {
         Long orphan = em.persistAndFlush(Child.of("박소망", LocalDate.of(2019, 5, 1))).getId();
         em.persistAndFlush(ChildOrganization.of(orphan, schoolId));
+        em.persistAndFlush(SharingConsent.grant(orphan, guardianId, schoolId, List.of(ConsentField.WEEKLY_INSIGHT)));
         InsightResult insight = em.persistAndFlush(insightOf(orphan, 1, schoolId));
         em.clear();
 
@@ -217,6 +225,34 @@ class InsightGate2ServiceTest {
         assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.GATE2_PENDING);
     }
 
+    /**
+     * 인사이트를 만들 때는 동의가 있었지만 교사가 승인을 누르기 전에 보호자가 철회했다.
+     * 여기서 막지 않으면 철회된 기관의 기록이 섞인 글이 그대로 나간다 (#213).
+     */
+    @Test
+    void 재료_기관의_동의가_철회되면_승인할_수_없다() {
+        InsightResult insight = insight(1, schoolId, centerId);
+        revokeConsent(centerId);
+
+        assertThatThrownBy(() -> service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE))
+                .isInstanceOf(InsightException.class)
+                .extracting(e -> ((InsightException) e).getErrorCode())
+                .isEqualTo(InsightErrorCode.MATERIAL_CONSENT_REVOKED);
+        assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.GATE2_PENDING);
+        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId())).isEmpty();
+    }
+
+    /** 보류는 아무 데도 안 나간다. 막으면 교사가 철회된 인사이트를 치울 길이 없어진다. */
+    @Test
+    void 동의가_철회돼도_보류는_할_수_있다() {
+        InsightResult insight = insight(1, schoolId, centerId);
+        revokeConsent(centerId);
+
+        service.decide(TEACHER, insight.getId(), Gate2Action.HOLD);
+
+        assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.HOLD);
+    }
+
     /** 목록에서 뺀 아이의 글은 더 나가지 않는다. */
     @Test
     void 삭제된_아이는_승인할_수_없다() {
@@ -229,6 +265,23 @@ class InsightGate2ServiceTest {
                 .isInstanceOf(InsightException.class)
                 .extracting(e -> ((InsightException) e).getErrorCode())
                 .isEqualTo(InsightErrorCode.NOT_FOUND);
+    }
+
+    private void revokeConsent(Long organizationId) {
+        em.getEntityManager()
+                .createQuery("select c from SharingConsent c where c.childId = :childId "
+                        + "and c.organizationId = :organizationId", SharingConsent.class)
+                .setParameter("childId", childId)
+                .setParameter("organizationId", organizationId)
+                .getResultList()
+                .forEach(c -> c.revoke(guardianId, ConsentRevokeReason.GUARDIAN_REVOKED, LocalDateTime.now()));
+        em.flush();
+        em.clear();
+    }
+
+    private void consent(Long organizationId) {
+        em.persistAndFlush(SharingConsent.grant(childId, guardianId, organizationId,
+                List.of(ConsentField.WEEKLY_INSIGHT)));
     }
 
     private InsightResult insight(int revision, Long... sourceInstitutionIds) {
