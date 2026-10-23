@@ -138,6 +138,17 @@ dbsql -v stage=VALIDATION -v reason=AGENT_UNAVAILABLE -v apply=true < ../../back
 - 아이가 정해지지 않은 일지는 검증 워커가 집지 않아 되돌리지 않고 `skipped_journal_entry_id_without_child`로 id만 보여줍니다.
 - 버그를 고치기 전에 되돌리면 같은 원인으로 다시 멈춥니다. 서버 시작 시 자동 실행되지 않습니다.
 
+**요약 실패(`SUMMARY_FAILED`)는 #182 전까지 관리자가 되돌립니다.** 근거가 남은 문장이 없어 멈춘 일지라 다시 요약하면
+될 수 있고, 원래는 교사가 묶음 카드의 [다시 요약]으로 돌립니다(#182). 그 화면이 생기기 전까지는 아래처럼 요약 대기로
+돌립니다. 같은 아이·날짜 묶음의 일지는 함께 돌려야 한 요약으로 묶입니다.
+
+```bash
+dbsql -c "SELECT id, child_id, entry_date FROM journal_entry
+          WHERE status = 'SUMMARY_FAILED' AND deleted_at IS NULL ORDER BY child_id, entry_date, id;"   # 대상 확인
+dbsql -c "UPDATE journal_entry SET status = 'VALIDATED', updated_at = localtimestamp
+          WHERE status = 'SUMMARY_FAILED' AND deleted_at IS NULL AND id IN (101, 102);"                # 고른 id 만
+```
+
 ## 기술 스택
 
 | 항목 | 사용 기술 |

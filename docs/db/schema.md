@@ -1191,7 +1191,7 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 | 상태 | 언제 | 누가 · 어떻게 |
 | --- | --- | --- |
 | `FAILED` | 매칭 호출 실패 | 교사가 확인 필요 큐(O-23)에서 아이를 고른다 |
-| `SUMMARY_FAILED` | 요약에 근거가 남은 문장이 없음. 주로 모델이 인용을 원문과 다르게 옮긴 경우 | 교사가 묶음 카드에서 다시 요약하거나 제외한다 (#182) |
+| `SUMMARY_FAILED` | 요약에 근거가 남은 문장이 없음. 주로 모델이 인용을 원문과 다르게 옮긴 경우 | 교사가 묶음 카드에서 다시 요약하거나 제외한다 (#182). 그 전까지는 관리자가 `VALIDATED` 로 돌린다 (`backend/README.md`) |
 | `SYSTEM_ERROR` | 코드 버그·AI 계약 위반. 다시 돌려도 같다 | 관리자가 고친 뒤 원인별로 골라 되돌린다 |
 
 `SYSTEM_ERROR` 일 때만 `failure_stage`·`failure_reason` 을 채운다. 세부(어느 문장·근거인지, 일지 id)는 로그에 남기고,
@@ -1205,8 +1205,10 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 | `AGENT_UNAVAILABLE` | 검증 | AI 다운으로 되돌린 횟수가 상한을 넘음 (#153) | 없음 — AI 가 살아나면 되돌린다 |
 | `INTERNAL_ERROR` | 검증 · 요약 | 위에 없는 BE 오류 (매칭된 아이 없음, DB 오류 등) | BE |
 
-"요약할 내용 없음"(멘토 A3, AI #196 후속)은 아직 계약이 없어 여기 없다. 정상 결과로 오게 되면 빈 본문 중 그 표시가 붙은
-응답만 `RESPONSE_UNREADABLE` 에서 빼서 정상으로 처리한다 (`SummaryResultRecorder.isEmptyContent`).
+"요약할 내용 없음"(멘토 A3, AI #196 후속)은 아직 계약이 없어 여기 없다. AI 가 정상 결과(`no_content: true` 안)로 보내게
+되면 빈 본문 중 그 표시가 붙은 응답만 `RESPONSE_UNREADABLE` 에서 빼고(`SummaryResultRecorder.isEmptyContent`), Gate 1 에
+"요약할 내용 없음"으로 올려 교사가 확인하면 닫는 쪽으로 논의 중이다 (후속 이슈). 그 응답을 BE 보다 먼저 보내면 이 시스템
+오류로 쌓이므로 BE 쪽이 먼저 배포돼야 한다.
 
 **되돌리기** — 고친 뒤 [`backend/scripts/recover-system-errors.sql`](../../backend/scripts/recover-system-errors.sql)로 단계와
 원인을 골라 되돌린다. 검증은 `MATCHED`(`agent_retry_count = 0`), 요약은 `VALIDATED` 로 돌리고 두 실패 컬럼을 비운다.
