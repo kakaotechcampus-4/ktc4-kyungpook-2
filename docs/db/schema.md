@@ -572,7 +572,7 @@ NULL끼리 겹치는 것을 허용하므로, 해제된 행은 번호를 놓아 �
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
-| `kakao_id` | VARCHAR(50) | N | 카카오 회원번호. UNIQUE |
+| `kakao_id` | VARCHAR(50) | N | 카카오 회원번호. UNIQUE. 개발용 로그인(`DEV_LOGIN_ENABLED`)으로 만든 테스트 회원은 `dev:{이름}` (실제 카카오 회원번호는 숫자뿐이라 겹치지 않음) |
 | `name` | VARCHAR(100) | Y | 카카오 닉네임. 사용자가 동의를 거부할 수 있어 NULL 허용 |
 | `role` | VARCHAR(20) | **Y** | 역할. **NULL이면 "가입 미완료" 상태** (9.23 변경 — 이전엔 NOT NULL) |
 | `organization_id` | BIGINT | Y | 소속 기관. `role = ORGANIZATION`일 때만 |
@@ -2323,3 +2323,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-20 | `sharing_history`(§9.4) 구현 (`SharingHistory`) — 10/17 회의에서 **발송 → 열람 방식**으로 바뀌어 뜻을 다시 썼다 (#206). `status`(`SHARED`/`BLOCKED`/`FAILED`)·`reason`·`shared_at` 을 빼고 `granted_at`·`read_at` 을 넣었다. 열람 방식에는 "보내려다 막혔다" 는 순간이 없고 권한이 없으면 행이 없을 뿐이라 `status` 가 쓸 자리가 없다. UNIQUE 도 `(insight_result_id, receiver_type, receiver_id)` 로 줄였다(§3.3) — 키에 `status` 를 넣던 이유가 함께 사라졌다. Gate 2 승인은 `GUARDIAN` 행만 만들고 `ORGANIZATION` 행은 보호자의 기관별 승인이 만든다. 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #206 |
 | 2026-10-20 | Gate 2 구현. `insight_result.status` 가 `GATE2_PENDING` → `APPROVED`/`HOLD` 로 바뀌고, 결정 한 줄이 `human_review` 에 `target_type = INSIGHT`·`review_type = GATE2` 로 쌓인다 (§9.1, §9.3). 승인 주체는 `source_institution_ids` 에서 **기관 종류 우선순위(학교 > 센터 > 활동지원사, 동점이면 작은 `organization_id`)** 로 뽑은 한 기관이다 — 저장하지 않고 계산한다. **enum·컬럼 추가가 없어 §11.4 수동 조치 불필요** (`human_review` 의 `target_type`·`review_type`·`decision` 은 이미 쓰는 값만 쓴다) | #206 |
 | 2026-10-23 | 실패 상태 분리. `journal_entry.status` 에 `SUMMARY_FAILED`(근거 0개, 다시 요약 가능)·`SYSTEM_ERROR`(관리자 확인) 추가, `failure_stage`·`failure_reason` 컬럼 추가. 검증·요약 실패를 `FAILED` 에서 옮기고 `FAILED` 는 매칭 실패만 (§6.2 "실패 상태와 원인 코드"). 원인별 되돌리기 스크립트 추가. 옛 `FAILED` 는 그대로 두고 찾는 SQL 만 둠. **enum 값 추가라 §11.4 확인 필요** — `journal_entry.status` CHECK (9/30 에 지웠으면 없음). 컬럼은 NULL 허용이라 `ddl-auto: update` 가 더한다 | 미생성 |
+| 2026-10-23 | `users.kakao_id`(§4.1)에 개발용 로그인(`GET /api/v1/dev/login`, `DEV_LOGIN_ENABLED`) 테스트 회원의 `dev:{이름}` 값이 들어올 수 있음을 명시. 컬럼·제약 변경 없음 | #219 |

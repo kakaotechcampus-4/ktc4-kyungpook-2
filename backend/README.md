@@ -25,11 +25,43 @@ JWT 쿠키 인증과 CSRF 보호, 회원가입이 구현되어 있습니다. 로
    사업자등록번호를 함께 보내고, 이때 `organization` 행이 새로 만들어집니다(기관 1곳당 계정 1개).
 
 사업자등록번호는 숫자 10자리 형식만 검사하고 진위·체크섬은 검증하지 않습니다. 역할은 한 번 정해지면
-바뀌지 않습니다. 가입 미완료 회원은 `/auth/me` · `/auth/signup` · `/auth/logout` 외의 API에서
+바뀌지 않습니다. 가입 미완료 회원은 `/auth/me` · `/auth/signup` · `/auth/logout` · `/dev/login` 외의 API에서
 `403 SIGNUP_NOT_COMPLETED`로 막힙니다. 요청·응답 형식은
 [API 명세 §2.2 · §2.6](../docs/api/api-spec.md)을 참고하세요.
 
 시연용 기관 시드는 없습니다. 기관은 회원가입으로만 만들어집니다.
+
+#### 카카오 계정 없이 테스트하기 (개발용 로그인)
+
+카카오 계정 하나는 회원 하나이고 역할도 바꿀 수 없어서, 기관과 보호자를 오가는 흐름(아이 등록 → 초대 →
+보호자 동의)을 카카오 계정 하나로는 테스트할 수 없습니다. 로컬에서는 개발용 로그인을 켜서 씁니다.
+
+1. 백엔드를 개발용 로그인을 켠 채 실행합니다. **`application-secret.yml`에는 넣지 마세요.** Docker 이미지가
+   `src`를 통째로 복사하므로, 거기 넣으면 배포 이미지에도 켜진 채로 들어갑니다.
+
+   ```bash
+   DEV_LOGIN_ENABLED=true ./gradlew bootRun --args='--spring.profiles.active=local'
+   ```
+
+2. 프론트 개발 서버를 mock 없이 실제 API로 실행합니다(기본값은 mock입니다). `frontend/.env`에 아래처럼 두고
+   `npm run dev`를 다시 시작합니다.
+
+   ```dotenv
+   VITE_AUTH_MOCK=false
+   VITE_USE_MOCK=false
+   VITE_API_BASE_URL=
+   ```
+
+3. 브라우저 주소창에서 `http://localhost:3000/api/v1/dev/login?as=org1`을 엽니다. `dev:org1` 회원으로
+   로그인되고, 처음이면 회원가입 화면으로 갑니다. 기관으로 가입하고 아이를 등록해 초대 코드를 받습니다.
+4. 같은 창에서 `?as=parent1`로 열면 보호자 테스트 회원으로 바뀝니다. 보호자로 가입하고 초대 코드를 수락한 뒤
+   동의합니다. 다시 `?as=org1`로 열면 기관 화면으로 돌아옵니다.
+
+`as`는 영문 소문자·숫자·하이픈 1~20자입니다. 새 이름을 쓰면 새 회원이 만들어지고, 쓴 적 있는 이름이면 그 회원으로
+들어갑니다. 두 계정을 동시에 띄워 두려면 시크릿 창을 함께 쓰세요. 설정을 켜지 않으면 이 주소는 `404`입니다.
+배포 서버는 Compose가 켜 두므로 `https://iitda.duckdns.org/api/v1/dev/login?as=parent1`처럼 바로 쓸 수 있습니다.
+누구든 테스트 회원으로 들어올 수 있으니 정식 오픈 전에는 서버 `infra/docker/.env`에 `DEV_LOGIN_ENABLED=false`를 넣어 끕니다.
+형식은 [API 명세 §2.4.1](../docs/api/api-spec.md)을 참고하세요.
 
 없는 회원·탈퇴 회원을 가리키는 JWT는 보호 API 필터에서 `401 SESSION_USER_NOT_FOUND`로 차단합니다.
 가입 상태 조회 중 DB 장애 등 서버 오류는 필터에서 `500 INTERNAL_SERVER_ERROR` JSON으로 응답하며
@@ -310,6 +342,7 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `AUTH_SUCCESS_REDIRECT` | `http://localhost:3000/oauth/success` | 로그인 성공 후 보낼 프론트 주소 (`docker` 프로필은 배포 주소) |
 | `AUTH_FAILURE_REDIRECT` | `http://localhost:3000/login` | 로그인 실패 후 보낼 프론트 주소. `?error=login_failed`가 붙음 |
 | `AUTH_COOKIE_SECURE` | `false` | `access_token` 쿠키의 `Secure` 속성. HTTPS 적용 후 `true` |
+| `DEV_LOGIN_ENABLED` | `false` (Compose는 `true`) | 개발용 로그인 `GET /api/v1/dev/login`. 배포 서버는 테스트용으로 켜 두고, 정식 오픈 전에 서버 `.env`에서 `false`로 끔 |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | 허용 오리진(쉼표 구분). Compose는 미지정 시 `PUBLIC_ORIGIN`을 전달하고, `docker` 프로필에서는 필수 |
 | `PUBLIC_ORIGIN` | `http://localhost` (Compose) | Caddy 사이트 주소 및 CORS·로그인 완료 주소의 기준. 운영은 `https://iitda.duckdns.org` |
 | `RAW_STORAGE_DIR` | `./data/raw-storage` | 기본 프로필의 원본 파일 저장 경로 |
