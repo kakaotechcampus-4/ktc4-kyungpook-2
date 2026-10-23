@@ -62,6 +62,7 @@ public class SummaryService {
      *
      * <p>준비 조건은 둘이다. 교사가 그 묶음에 [요약]을 눌렀고({@link SummaryRunRequests}), 같은 기관·같은 날짜에
      * 매칭·검증 중인 일지가 없어야 한다. 누르지 않은 묶음은 요약하지 않는다 — 자동 요약은 없다 (#181).
+     * 요약할 일지가 없게 된 요청은 이때 거둔다.
      *
      * <p>새로 검증을 통과한 일지(VALIDATED)가 있는 묶음만 집는다. 그 묶음의 최신 판이 아직 Gate 1 대기면, 그 판에 든
      * 일지(GATE1_PENDING)도 새 일지와 함께 다시 요약하도록 같이 담는다. 보류된 일지(GATE1_HELD)와 보류 해제된 옛 판의
@@ -74,6 +75,7 @@ public class SummaryService {
         // 계속 쌓이므로 매번 전부 읽지 않고, 집기로 한 묶음의 것만 가져온다.
         Map<SummaryGroup, List<SummaryCandidate>> groups = groupCandidates(
                 journalEntryRepository.findSummaryCandidates(List.of(JournalEntryStatus.VALIDATED)));
+        cancelStaleRequests(groups.keySet(), busy);
 
         LocalDateTime claimedAt = LocalDateTime.now(clock);
         List<ClaimedSummaryGroup> claimed = new ArrayList<>();
@@ -94,6 +96,20 @@ public class SummaryService {
             claimed.add(new ClaimedSummaryGroup(group, ids, claimedAt));
         }
         return claimed;
+    }
+
+    /**
+     * 요약할 일지가 없게 된 [요약] 요청을 거둔다. 매칭·검증 중이라 받아 둔 요청인데, 끝나고 보니 이 묶음에 새 일지가
+     * 없는 경우다 (다른 아이로 매칭됐거나 BLOCK). 남겨 두면 한참 뒤 그 날짜로 올라온 일지가 누르지 않았는데 요약된다.
+     */
+    private void cancelStaleRequests(Set<SummaryGroup> candidates, Set<InProgressKey> busy) {
+        for (SummaryGroup group : runRequests.requestedGroups()) {
+            boolean stillProcessing = busy.contains(
+                    new InProgressKey(String.valueOf(group.institutionId()), group.entryDate()));
+            if (!stillProcessing && !candidates.contains(group)) {
+                runRequests.cancel(group);
+            }
+        }
     }
 
     /**

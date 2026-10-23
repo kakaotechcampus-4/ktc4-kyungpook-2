@@ -170,6 +170,27 @@ class SummaryServiceClaimTest {
     }
 
     @Test
+    void 처리가_끝나고_보니_요약할_일지가_없으면_요청을_거둔다() {
+        // 업로드 직후 눌러 받아 둔 요청인데, 매칭해 보니 다른 아이 일지였다.
+        JournalEntry otherChild = validated(school, 9L);
+        requestRun(GROUP);
+
+        assertThat(claim()).isEmpty();
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
+        assertThat(statusOf(otherChild)).isEqualTo(JournalEntryStatus.VALIDATED);
+    }
+
+    @Test
+    void 거둔_요청은_나중에_올라온_일지를_누르지_않았는데_요약하게_하지_않는다() {
+        requestRun(GROUP);
+        claim();
+        JournalEntry later = validated(school, 8L);
+
+        assertThat(claim()).isEmpty();
+        assertThat(statusOf(later)).isEqualTo(JournalEntryStatus.VALIDATED);
+    }
+
+    @Test
     void 다른_기관의_처리_중인_일지는_기다리지_않는다() {
         validated(school, 8L);
         pending(center);
