@@ -58,6 +58,12 @@ app:
     # 로그인이 끝난 뒤 사용자를 돌려보낼 프론트 주소.
     success-redirect: ${AUTH_SUCCESS_REDIRECT:http://localhost:3000/oauth/success}
     failure-redirect: ${AUTH_FAILURE_REDIRECT:http://localhost:3000/login}
+    dev-login:
+      # 개발·테스트 전용 로그인(GET /api/v1/dev/login). 기본은 꺼짐이다.
+      # 로컬에서는 DEV_LOGIN_ENABLED=true 로 실행해 켜고, 배포 서버는 compose 가 켜 둔다(정식 오픈 전에 끈다).
+      # application-secret.yml 에 넣지 않는다 — Docker 이미지가 src 를 통째로 복사해서, 거기 넣으면
+      # compose 의 환경변수와 상관없이 이미지에 박힌다.
+      enabled: ${DEV_LOGIN_ENABLED:false}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   ai:

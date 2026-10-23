@@ -26,7 +26,8 @@ import lombok.extern.slf4j.Slf4j;
  * 대가로 로그인한 사용자의 /api 요청마다 회원 조회가 한 번 더 일어난다(PK 조회).
  *
  * <p>가입 화면에 필요한 세 경로 — 상태 조회(/auth/me), 가입(/auth/signup), 로그아웃 — 와
- * 헬스 체크만 통과시킨다.
+ * 헬스 체크, 개발용 로그인만 통과시킨다. 개발용 로그인은 가입 미완료 회원의 출입증을 든 채로
+ * 다른 테스트 회원으로 바꿔 들어갈 수 있어야 한다.
  *
  * <p>{@code @Component} 로 두지 않는다. 그러면 Spring Boot 가 서블릿 필터로도 등록해 보안 체인 밖에서
  * 한 번 더 돈다. SecurityConfig 가 직접 만들어 JWT 필터 바로 뒤에 넣는다.
@@ -40,6 +41,7 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
             "/api/v1/auth/me",
             "/api/v1/auth/signup",
             "/api/v1/auth/logout",
+            "/api/v1/dev/login",
             "/api/health");
 
     private final UserService userService;
