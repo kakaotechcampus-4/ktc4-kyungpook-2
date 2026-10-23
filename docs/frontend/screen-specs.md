@@ -265,12 +265,14 @@
 - 그 밖의 오류(500 · 네트워크): "실패한 파일만 다시 올리기"로 그 파일만 다시 올림
 - 성공한 파일은 다시 올리지 않습니다 — 원본 기록 중복을 막기 위해서입니다
 
-**호출 API** · `getChildren` · `uploadRawRecords` · `getFileProgress` · `retryFailedEntries`
+**호출 API** · `getChildren` · `uploadRawRecords` · `getFileProgress`
 ([api-spec.md](../api/api-spec.md) §4.3)
 
 - `uploadRawRecords` → `POST /api/v1/raw-records` · 구현됨
-- `getFileProgress` → `GET /api/v1/raw-records/progress` · 계약 확정, 구현 예정
-- `retryFailedEntries` → `POST /api/v1/raw-records/{id}/retry` · 계약 확정, 구현 예정
+- `getFileProgress` → `GET /api/v1/raw-records/progress` · 구현됨
+
+실패한 기록에는 [다시 시도] 버튼을 두지 않고 실패 건수만 보여줍니다. AI 가 잠깐 다운된 건 서버가
+스스로 다시 돌리고(#153), 그래도 남은 실패는 다시 돌려도 또 실패할 가능성이 커서 재처리(O-27)는 쓰지 않습니다.
 
 > ⚠️ 진행 표시는 mock 모드에서 시뮬레이션입니다. 실제 모드는 `/progress` 를 폴링하는데,
 > 기록 단위 분할이 끝나기 전까지 `entries: []` 만 와서 "기록 등록 중"에 머무는 게 정상입니다.
@@ -575,9 +577,7 @@
 | 403 `SIGNUP_NOT_COMPLETED` | `/signup?role=parent` |
 | 401 | `intro` 로 — 코드는 보관돼 있어 다시 로그인하면 이어서 수락 |
 
-> 동의 미리보기(G-02)는 기관 id 가 필요한데 G-04 응답에는 아직 `organizationName`만 있습니다.
-> BE 에 `organizationId` 추가를 요청해 두었고, 그 전까지 실서버에서는 "공유 동의 화면은 준비
-> 중이에요"를 보여 줍니다. 동의 API(G-41)도 아직 없어 P-02 는 mock 입니다.
+> 수락에 성공하면 G-04 응답의 `childId`·`organizationId` 로 P-02(`/parent/consent?childId=&institutionId=`)로 보냅니다.
 
 **약관 항목**
 
@@ -647,9 +647,25 @@
   (둘 다 `not_granted` 상태인 기관을 찾아 표시).
 - 대상은 `?childId=&institutionId=` 로 받습니다 — P-01 이 초대 코드를 수락한 뒤 지정해
   보냅니다. 쿼리가 없으면 P-01 로 돌려보내고, 동의할 내용을 찾지 못하면 다른 아이로 채우지
-  않고 "동의할 내용을 찾을 수 없어요"를 보여 줍니다.
+  않고 "동의할 내용을 찾을 수 없어요"를 보여 줍니다. G-02 는 이미 이 기관에 동의한 경우도
+  404 로 주므로 같은 안내가 나갑니다.
+- 동의할 때는 G-02 가 준 `allowedFields`(항목 코드)를 G-41 에 그대로 보냅니다.
+  `sharedFields`·`notSharedFields` 는 화면 문구일 뿐이라 보내지 않습니다.
 
-**호출 API** · `updateConsent`, `getSession`, `signIn`
+**오류 처리**
+
+| 상황 | 화면 |
+| --- | --- |
+| G-02 404 | "동의할 내용을 찾을 수 없어요" + 코드 입력 화면으로 |
+| G-02 401 · 403 · 그 밖의 오류 | "동의 화면을 불러오지 못했어요" + 코드 입력 화면으로 |
+| G-41 404 `CONSENT_TARGET_NOT_FOUND` | "기관 명부에서 아이 정보를 찾을 수 없어요. 기관에 확인해 주세요." |
+| G-41 403 `PARENT_REQUIRED` | "기관 계정으로 로그인돼 있어요. …" |
+| G-41 403 `SIGNUP_NOT_COMPLETED` | `/signup?role=parent` |
+| G-41 403 (그 밖) | "보안 확인에 실패했습니다. 새로고침한 뒤 다시 시도해 주세요." |
+| G-41 401 | "로그인이 풀렸어요. 다시 로그인한 뒤 시도해 주세요." |
+| G-41 그 밖의 오류 | "일시적인 오류로 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요." |
+
+**호출 API** · `getConsentPreview`(G-02), `grantConsent`(G-41), `unlinkChild`(G-05)
 
 ---
 

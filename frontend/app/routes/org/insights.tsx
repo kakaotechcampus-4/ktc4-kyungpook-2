@@ -1,6 +1,7 @@
 import { Link, useLoaderData } from "react-router";
+import { NotReadyPage } from "@/components/org/NotReady";
 import { Card, EmptyState, EvidenceChip, InstitutionChip, PageHeader } from "@/components/ui";
-import { getInsights } from "@/lib/api";
+import { getInsights, isReady } from "@/lib/api";
 import { MY_INSTITUTION } from "@/lib/mock/data";
 import type { Gate2Status } from "@/lib/types";
 
@@ -15,7 +16,20 @@ export async function clientLoader() {
   return { insights: await getInsights() };
 }
 
-export default function InsightsPage() {
+/** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function InsightsRoute() {
+  if (!isReady("insights")) {
+    return (
+      <NotReadyPage
+        title="관찰·분석 결과"
+        description="아이의 승인된 기록에서 도출된 패턴입니다"
+      />
+    );
+  }
+  return <InsightsPage />;
+}
+
+function InsightsPage() {
   const { insights } = useLoaderData<typeof clientLoader>();
 
   return (

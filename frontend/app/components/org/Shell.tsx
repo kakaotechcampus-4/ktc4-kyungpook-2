@@ -10,10 +10,17 @@ import {
   Send,
   Settings,
   Sparkles,
+  User,
   Users,
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
-import { ME, MY_INSTITUTION } from "@/lib/mock/data";
+
+/** 사이드바 하단의 내 정보. null 은 서버가 주지 않은 값 — 그 칸을 비운다 */
+export interface OrgShellMe {
+  /** 카카오 닉네임. 동의를 거부하면 없다 */
+  name: string | null;
+  institutionName: string | null;
+}
 
 /**
  * org/layout.tsx 의 clientLoader 가 계산해서 내려주는 원본 카운트.
@@ -100,9 +107,11 @@ function nav(counts: OrgShellCounts): NavSection[] {
 
 export function OrgShell({
   children,
+  me,
   counts,
 }: {
   children: React.ReactNode;
+  me: OrgShellMe;
   counts: OrgShellCounts;
 }) {
   const { pathname } = useLocation();
@@ -172,15 +181,15 @@ export function OrgShell({
             aria-hidden
             className="flex size-9 items-center justify-center rounded-full bg-surface2 text-[14px] font-semibold text-ink2"
           >
-            {ME.name.slice(0, 1)}
+            {me.name ? me.name.slice(0, 1) : <User size={17} strokeWidth={1.75} />}
           </span>
           <span className="min-w-0">
             <span className="block truncate text-[15px] font-semibold">
-              {ME.name} {ME.role}
+              {me.name ? `${me.name} 선생님` : "이름 없음"}
             </span>
-            <span className="block truncate text-[13px] text-muted">
-              {MY_INSTITUTION.name}
-            </span>
+            {me.institutionName ? (
+              <span className="block truncate text-[13px] text-muted">{me.institutionName}</span>
+            ) : null}
           </span>
         </div>
       </nav>

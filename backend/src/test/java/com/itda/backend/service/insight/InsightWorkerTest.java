@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -56,6 +57,8 @@ class InsightWorkerTest {
     @BeforeEach
     void setUp() {
         worker = new InsightWorker(insightService, client, recorder, summaryResultRepository, PROPERTIES);
+        // 기본은 "아직 안 다룬 기간". 다룬 기간을 보는 테스트가 따로 덮어쓴다.
+        lenient().when(recorder.needsRun(anyLong(), any(), any())).thenReturn(true);
     }
 
     private static LocalDate periodTo() {
@@ -66,8 +69,8 @@ class InsightWorkerTest {
         return InsightRun.claim(childId, periodTo().minusDays(6), periodTo(), 1);
     }
 
-    private InsightAgentRequest request(Long childId) {
-        return new InsightAgentRequest(childId, "김준호", "2026-10-01", "2026-10-07", List.of(), List.of());
+    private PreparedInsight request(Long childId) {
+        return new PreparedInsight(new InsightAgentRequest(childId, "김준호", "2026-10-01", "2026-10-07", List.of(), List.of()), 41L);
     }
 
     private InsightAgentReply reply() {
@@ -130,7 +133,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(client).analyze(any());
-        verify(recorder).record(any(), any(), eq("{}"));
+        verify(recorder).record(any(), any(), eq("{}"), eq(41L));
     }
 
     /** 이미 끝난 기간이다. 재료를 모으는 일이 쿼리 몇 번이라 그 전에 걸러야 한다. */
@@ -138,7 +141,7 @@ class InsightWorkerTest {
     void 이미_다룬_기간은_재료도_모으지_않는다() {
         agentUp();
         candidates(8L);
-        given(recorder.alreadyHandled(eq(8L), any(), any())).willReturn(true);
+        given(recorder.needsRun(eq(8L), any(), any())).willReturn(false);
 
         worker.run();
 
@@ -161,7 +164,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(recorder, never()).claim(anyLong(), any(), any());
-        verify(recorder, never()).record(any(), any(), any());
+        verify(recorder, never()).record(any(), any(), any(), any());
         verify(client, never()).analyze(any());
     }
 
@@ -179,7 +182,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(recorder).recordFailure(any());
-        verify(recorder).record(any(), any(), any());
+        verify(recorder).record(any(), any(), any(), any());
         verify(client, times(2)).analyze(any());
     }
 
@@ -220,7 +223,7 @@ class InsightWorkerTest {
 
         // 진 쪽은 건너뛰고 다음 아이로 이어간다
         verify(client, times(1)).analyze(any());
-        verify(recorder).record(any(), any(), any());
+        verify(recorder).record(any(), any(), any(), any());
     }
 
     @Test

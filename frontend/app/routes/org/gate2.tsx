@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
+import { NotReadyPage } from "@/components/org/NotReady";
 import {
   Card,
   ConsentStatus,
@@ -10,7 +11,7 @@ import {
   Note,
   PageHeader,
 } from "@/components/ui";
-import { decideGate2, getInsights } from "@/lib/api";
+import { decideGate2, getInsights, isReady } from "@/lib/api";
 import { MY_INSTITUTION } from "@/lib/mock/data";
 import type { Insight } from "@/lib/types";
 
@@ -205,7 +206,20 @@ function Gate2Item({
   );
 }
 
-export default function Gate2Page() {
+/** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function Gate2Route() {
+  if (!isReady("insights")) {
+    return (
+      <NotReadyPage
+        title="공유 전 검토"
+        description="근거 기록을 제공한 선생님이 발송 적절성을 판단합니다"
+      />
+    );
+  }
+  return <Gate2Page />;
+}
+
+function Gate2Page() {
   const { mine } = useLoaderData<typeof clientLoader>();
   /**
    * 승인/보류하면 revalidate 로 사이드바 배지가 갱신되면서 이 항목은 `mine`(pending

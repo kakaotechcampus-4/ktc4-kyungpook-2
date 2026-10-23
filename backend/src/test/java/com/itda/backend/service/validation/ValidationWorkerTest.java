@@ -13,6 +13,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -23,15 +26,21 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.dto.request.validation.ValidationAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentRejectedException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
+import com.itda.backend.exception.agent.AiAgentUnreadableResponseException;
 import com.itda.backend.exception.validation.ValidationTargetException;
+import com.itda.backend.fixture.MutableClock;
+import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.agent.WorkerProperties;
 
 @ExtendWith(MockitoExtension.class)
 class ValidationWorkerTest {
 
+    private static final AgentDownProperties AGENT_DOWN = new AgentDownProperties(2, Duration.ofSeconds(30));
     private static final ValidationProperties PROPERTIES = new ValidationProperties(new WorkerProperties(true, 5000, 10));
 
     @Mock
@@ -42,10 +51,11 @@ class ValidationWorkerTest {
     private ValidationResultRecorder recorder;
 
     private ValidationWorker worker;
+    private final MutableClock clock = new MutableClock(LocalDateTime.of(2026, 10, 14, 10, 0));
 
     @BeforeEach
     void setUp() {
-        worker = new ValidationWorker(validationService, client, recorder, PROPERTIES);
+        worker = new ValidationWorker(validationService, client, recorder, PROPERTIES, AGENT_DOWN, clock);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -73,45 +83,57 @@ class ValidationWorkerTest {
     }
 
     @Test
-    void AI_상태와_무관한_실패는_그_건만_실패로_남기고_다음_건을_계속_처리한다() {
-        // 4xx, 응답 해석 실패가 여기에 해당한다.
+    void AI가_요청을_거절하면_그_건만_REQUEST_REJECTED로_남기고_다음_건을_계속_처리한다() {
         ValidationAgentReply reply2 = new ValidationAgentReply(null, "{}");
         given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
         given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
         given(validationService.prepareRequest(2L)).willReturn(targetFor(2L));
-        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentException("422 from agent"));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentRejectedException("422 from agent", null));
         given(client.validate(targetFor(2L).request())).willReturn(reply2);
 
         worker.run();
 
-        verify(recorder).recordFailure(1L);
+        verify(recorder).recordFailure(1L, FailureReason.REQUEST_REJECTED);
         verify(recorder, never()).record(eq(targetFor(1L)), any());
         verify(recorder).record(targetFor(2L), reply2);
-        verify(recorder, never()).recordFailure(2L);
+        verify(recorder, never()).recordFailure(eq(2L), any());
     }
 
     @Test
-    void 결과_저장이_실패해도_실패로_남긴다() {
+    void AI_응답을_못_읽으면_RESPONSE_UNREADABLE로_남긴다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L));
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request()))
+                .willThrow(new AiAgentUnreadableResponseException("agent returned unreadable body"));
+
+        worker.run();
+
+        verify(recorder).recordFailure(1L, FailureReason.RESPONSE_UNREADABLE);
+    }
+
+    @Test
+    void 결과_저장이_실패하면_INTERNAL_ERROR로_남긴다() {
         ValidationAgentReply reply = new ValidationAgentReply(null, "{}");
         given(validationService.claimMatched(10)).willReturn(List.of(1L));
         given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
         given(client.validate(targetFor(1L).request())).willReturn(reply);
-        willThrow(new IllegalArgumentException("verdict missing")).given(recorder).record(targetFor(1L), reply);
+        willThrow(new IllegalStateException("db hiccup")).given(recorder).record(targetFor(1L), reply);
 
         worker.run();
 
-        verify(recorder).recordFailure(1L);
+        verify(recorder).recordFailure(1L, FailureReason.INTERNAL_ERROR);
     }
 
     @Test
-    void 요청을_만들_수_없는_일지도_그_건만_실패로_남긴다() {
+    void 매칭된_아이가_없어_요청을_만들_수_없는_일지는_그_건만_INTERNAL_ERROR로_남긴다() {
         given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
-        given(validationService.prepareRequest(1L)).willThrow(new ValidationTargetException("journal entry not found"));
+        given(validationService.prepareRequest(1L))
+                .willThrow(new ValidationTargetException("journal entry has no matched child"));
         given(validationService.prepareRequest(2L)).willReturn(targetFor(2L));
 
         worker.run();
 
-        verify(recorder).recordFailure(1L);
+        verify(recorder).recordFailure(1L, FailureReason.INTERNAL_ERROR);
         verify(client).validate(targetFor(2L).request());
     }
 
@@ -139,17 +161,35 @@ class ValidationWorkerTest {
     }
 
     @Test
-    void 재시도까지_실패하면_그_건만_실패로_남기고_나머지는_검증_대기로_돌려놓고_멈춘다() {
+    void AI_다운이면_처리_중이던_일지도_실패로_남기지_않고_나머지와_함께_검증_대기로_돌려놓고_멈춘다() {
+        // LLM 만 죽어 있으면 /health 는 통과하고 AI 가 503 을 준다. 지금까지는 차례마다 1건씩 FAILED 로 빠졌다.
         given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L, 3L));
         given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
         given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(true);
 
         worker.run();
 
-        verify(recorder).recordFailure(1L);
+        verify(recorder, never()).recordFailure(any(), any());
         verify(validationService).release(List.of(2L, 3L));
         verify(validationService, never()).prepareRequest(2L);
         verify(validationService, never()).prepareRequest(3L);
+    }
+
+    @Test
+    void AI_다운으로_되돌린_횟수가_상한을_넘으면_그_건은_AGENT_UNAVAILABLE로_남긴다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(false);
+        given(validationService.prepareRequest(2L)).willReturn(targetFor(2L));
+
+        worker.run();
+
+        // 그 일지는 빠졌으니 대기열을 멈추지 않는다 — AI 가 이 일지만 거절하는 경우 나머지는 정상으로 처리된다.
+        verify(recorder).recordFailure(1L, FailureReason.AGENT_UNAVAILABLE);
+        verify(validationService).prepareRequest(2L);
+        verify(validationService, never()).release(any());
     }
 
     @Test
@@ -168,7 +208,7 @@ class ValidationWorkerTest {
         }
 
         // 두 건 모두 VALIDATING 으로 남기고, 다음에 켜질 때 releaseStuck 이 되돌린다.
-        verify(recorder, never()).recordFailure(any());
+        verify(recorder, never()).recordFailure(any(), any());
         verify(validationService, never()).prepareRequest(2L);
         verify(validationService, never()).release(any());
     }
@@ -180,11 +220,78 @@ class ValidationWorkerTest {
                 .withBean(ValidationAgentClient.class, () -> mock(ValidationAgentClient.class))
                 .withBean(ValidationResultRecorder.class, () -> mock(ValidationResultRecorder.class))
                 .withBean(ValidationProperties.class, () -> PROPERTIES)
+                .withBean(AgentDownProperties.class, () -> AGENT_DOWN)
+                .withBean(Clock.class, () -> clock)
                 .withUserConfiguration(ValidationWorker.class);
 
         runner.withPropertyValues("app.validation.worker.enabled=false")
                 .run(context -> assertThat(context).doesNotHaveBean(ValidationWorker.class));
         runner.withPropertyValues("app.validation.worker.enabled=true")
                 .run(context -> assertThat(context).hasSingleBean(ValidationWorker.class));
+    }
+
+    @Test
+    void AI_다운_뒤_쉬는_동안은_AI_상태도_안_보고_일지를_안_집는다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L));
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+        worker.run();
+
+        clock.advance(Duration.ofSeconds(29));
+        worker.run();
+
+        verify(validationService, times(1)).claimMatched(anyInt());
+        verify(client, times(1)).isAvailable();
+    }
+
+    @Test
+    void AI_다운_뒤_쉬는_시간이_지나면_다시_집는다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L), List.of());
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+        worker.run();
+
+        clock.advance(Duration.ofSeconds(30));
+        worker.run();
+
+        verify(validationService, times(2)).claimMatched(10);
+    }
+
+    @Test
+    void 나머지_일지를_되돌리다_실패해도_AI_다운_뒤에는_쉰다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        given(validationService.releaseAfterAgentDown(1L, 2)).willReturn(true);
+        willThrow(new IllegalStateException("db hiccup")).given(validationService).release(List.of(2L));
+        try {
+            worker.run();
+        } catch (IllegalStateException ignored) {
+            // 예외는 스케줄러가 로그로 남긴다. 여기서는 쉬기가 걸렸는지만 본다.
+        }
+
+        clock.advance(Duration.ofSeconds(29));
+        worker.run();
+
+        verify(validationService, times(1)).claimMatched(anyInt());
+    }
+
+    @Test
+    void AI_다운_뒤_되돌리기가_실패해도_실패로_남기지_않고_멈춰서_쉰다() {
+        given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L));
+        given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
+        given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
+        willThrow(new IllegalStateException("db hiccup")).given(validationService).releaseAfterAgentDown(1L, 2);
+
+        worker.run();
+        clock.advance(Duration.ofSeconds(29));
+        worker.run();
+
+        verify(recorder, never()).recordFailure(any(), any());
+        verify(validationService).release(List.of(2L));
+        verify(validationService, never()).prepareRequest(2L);
+        verify(validationService, times(1)).claimMatched(anyInt());
     }
 }

@@ -70,4 +70,16 @@ public class Approval {
         this.reviewedAt = now;
         this.createdAt = now;
     }
+
+    /** 요약 Gate 1 결정 한 줄. MVP 는 보류·제거 사유를 받지 않아 comment 는 비운다. */
+    public static Approval gate1(Long summaryId, Long reviewerId, ApprovalDecision decision) {
+        return new Approval(ApprovalTargetType.SUMMARY, summaryId, ApprovalReviewType.GATE1, reviewerId, decision,
+                null);
+    }
+
+    /** 인사이트 Gate 2 결정 한 줄. MVP 는 보류 사유를 받지 않아 comment 는 비운다. */
+    public static Approval gate2(Long insightId, Long reviewerId, ApprovalDecision decision) {
+        return new Approval(ApprovalTargetType.INSIGHT, insightId, ApprovalReviewType.GATE2, reviewerId, decision,
+                null);
+    }
 }

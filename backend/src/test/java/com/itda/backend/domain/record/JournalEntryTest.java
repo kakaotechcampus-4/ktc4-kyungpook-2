@@ -56,7 +56,10 @@ class JournalEntryTest {
 
         entry.failMatching();
 
+        // 매칭 실패는 확인 필요 큐에서 사람이 아이를 고른다. 시스템 오류가 아니라 실패 원인을 남기지 않는다.
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertThat(entry.getFailureStage()).isNull();
+        assertThat(entry.getFailureReason()).isNull();
     }
 
     @Test
@@ -69,11 +72,56 @@ class JournalEntryTest {
     }
 
     @Test
+    void 처음_만든_일지는_AI_다운으로_되돌린_횟수가_0이다() {
+        assertThat(pending().getAgentRetryCount()).isZero();
+    }
+
+    @Test
+    void AI_다운으로_매칭을_되돌리면_대기로_가고_되돌린_횟수가_는다() {
+        JournalEntry entry = matching();
+
+        entry.releaseMatchingAfterAgentDown();
+        entry.startMatching();
+        entry.releaseMatchingAfterAgentDown();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.PENDING);
+        assertThat(entry.getAgentRetryCount()).isEqualTo(2);
+    }
+
+    @Test
+    void 앱이_꺼져서_되돌린_것은_AI_다운_횟수에_세지_않는다() {
+        JournalEntry entry = matching();
+
+        entry.releaseMatching();
+
+        assertThat(entry.getAgentRetryCount()).isZero();
+    }
+
+    @Test
+    void 매칭이_끝나_검증_대기가_되면_되돌린_횟수를_0으로_돌린다() {
+        // 매칭에서 쓴 횟수가 검증 단계로 넘어가면 검증은 시작하자마자 상한에 걸린다.
+        JournalEntry byAgent = matching();
+        byAgent.releaseMatchingAfterAgentDown();
+        byAgent.startMatching();
+        byAgent.confirmMatch(8L);
+
+        JournalEntry byReviewer = matching();
+        byReviewer.releaseMatchingAfterAgentDown();
+        byReviewer.startMatching();
+        byReviewer.failMatching();
+        byReviewer.confirmMatchByReviewer(8L);
+
+        assertThat(byAgent.getAgentRetryCount()).isZero();
+        assertThat(byReviewer.getAgentRetryCount()).isZero();
+    }
+
+    @Test
     void 매칭_중이_아니면_결과를_반영할_수_없다() {
         assertThatThrownBy(() -> pending().confirmMatch(8L)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> pending().requestMatchReview()).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> pending().failMatching()).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> pending().releaseMatching()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> pending().releaseMatchingAfterAgentDown()).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -175,12 +223,33 @@ class JournalEntryTest {
     }
 
     @Test
-    void 검증_호출이_실패하면_실패_상태가_된다() {
+    void 검증_호출이_실패하면_시스템_오류로_멈추고_단계와_원인을_남긴다() {
         JournalEntry entry = validating();
 
-        entry.failValidation();
+        entry.failValidation(FailureReason.REQUEST_REJECTED);
 
-        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
+        assertThat(entry.getFailureStage()).isEqualTo(FailureStage.VALIDATION);
+        assertThat(entry.getFailureReason()).isEqualTo(FailureReason.REQUEST_REJECTED);
+    }
+
+    @Test
+    void 시스템_오류로_멈출_때는_원인이_필수다() {
+        assertThatThrownBy(() -> validating().failValidation(null))
+                .isInstanceOf(IllegalArgumentException.class);
+        JournalEntry summarizing = validated();
+        summarizing.startSummarizing();
+        assertThatThrownBy(() -> summarizing.failSummaryBySystemError(null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 시스템_오류로_멈춘_일지는_확인_필요_큐에서_처리하지_않는다() {
+        JournalEntry entry = validating();
+
+        entry.failValidation(FailureReason.INTERNAL_ERROR);
+
+        assertThat(entry.isAwaitingReview()).isFalse();
     }
 
     @Test
@@ -194,10 +263,24 @@ class JournalEntryTest {
     }
 
     @Test
+    void AI_다운으로_검증을_되돌리면_검증_대기로_가고_되돌린_횟수가_는다() {
+        JournalEntry entry = validating();
+
+        entry.releaseValidatingAfterAgentDown();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
+        assertThat(entry.getChildId()).isEqualTo(8L);
+        assertThat(entry.getAgentRetryCount()).isEqualTo(1);
+        assertThatThrownBy(() -> matched().releaseValidatingAfterAgentDown())
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void 검증_중이_아니면_검증_결과를_반영할_수_없다() {
         assertThatThrownBy(() -> matched().passValidation()).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> matched().blockValidation()).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> matched().failValidation()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> matched().failValidation(FailureReason.INTERNAL_ERROR))
+                .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> matched().releaseValidating()).isInstanceOf(IllegalStateException.class);
     }
 
@@ -247,25 +330,47 @@ class JournalEntryTest {
     }
 
     @Test
-    void 요약_호출이_실패하면_처음_요약하던_일지는_실패_상태가_된다() {
+    void 근거가_남지_않아_요약하지_못하면_처음_요약하던_일지는_요약_실패가_된다() {
         JournalEntry entry = validated();
         entry.startSummarizing();
 
         entry.failSummary();
 
-        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        // 다시 요약하면 될 수 있는 실패다. 상태만으로 뜻이 분명해 단계·원인은 남기지 않는다.
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
+        assertThat(entry.getFailureStage()).isNull();
+        assertThat(entry.getFailureReason()).isNull();
+    }
+
+    @Test
+    void 요약하다_시스템_오류가_나면_처음_요약하던_일지는_단계와_원인을_남긴다() {
+        JournalEntry entry = validated();
+        entry.startSummarizing();
+
+        entry.failSummaryBySystemError(FailureReason.EVIDENCE_MISMATCH);
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
+        assertThat(entry.getFailureStage()).isEqualTo(FailureStage.SUMMARY);
+        assertThat(entry.getFailureReason()).isEqualTo(FailureReason.EVIDENCE_MISMATCH);
     }
 
     @Test
     void 다시_요약하다_실패해도_이미_요약에_들어간_일지는_Gate1_대기로_남는다() {
-        JournalEntry entry = gate1Pending();
-        entry.startSummarizing();
+        JournalEntry failed = gate1Pending();
+        failed.startSummarizing();
+        JournalEntry systemError = gate1Pending();
+        systemError.startSummarizing();
 
-        entry.failSummary();
+        failed.failSummary();
+        systemError.failSummaryBySystemError(FailureReason.RESPONSE_UNREADABLE);
 
         // 기존 요약은 그대로 유효하다. 재요약 실패로 그 요약까지 무너뜨리지 않는다.
-        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
-        assertThat(entry.getSummaryId()).isEqualTo(50L);
+        assertThat(failed.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(failed.getSummaryId()).isEqualTo(50L);
+        assertThat(systemError.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(systemError.getSummaryId()).isEqualTo(50L);
+        assertThat(systemError.getFailureStage()).isNull();
+        assertThat(systemError.getFailureReason()).isNull();
     }
 
     @Test
@@ -286,6 +391,8 @@ class JournalEntryTest {
     void 요약_중이_아니면_요약_결과를_반영할_수_없다() {
         assertThatThrownBy(() -> validated().completeSummary(50L)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> validated().failSummary()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> validated().failSummaryBySystemError(FailureReason.INTERNAL_ERROR))
+                .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> validated().releaseSummarizing()).isInstanceOf(IllegalStateException.class);
     }
 
@@ -295,5 +402,36 @@ class JournalEntryTest {
         entry.startSummarizing();
 
         assertThatThrownBy(() -> entry.completeSummary(null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 요약이_승인되면_Gate1_대기_일지는_완료된다() {
+        JournalEntry entry = gate1Pending();
+
+        entry.completeGate1();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.COMPLETED);
+        assertThat(entry.getSummaryId()).isEqualTo(50L);
+    }
+
+    @Test
+    void 요약이_보류되면_일지도_보류되고_보류_해제하면_Gate1_대기로_돌아온다() {
+        JournalEntry entry = gate1Pending();
+
+        entry.holdGate1();
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.GATE1_HELD);
+        // 보류된 일지는 워커가 다시 집어 가지 않는다.
+        assertThatThrownBy(entry::startSummarizing).isInstanceOf(IllegalStateException.class);
+
+        entry.reopenGate1();
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(entry.getSummaryId()).isEqualTo(50L);
+    }
+
+    @Test
+    void Gate1_대기가_아니면_승인_보류를_반영할_수_없고_보류된_일지만_보류_해제할_수_있다() {
+        assertThatThrownBy(() -> validated().completeGate1()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> validated().holdGate1()).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> gate1Pending().reopenGate1()).isInstanceOf(IllegalStateException.class);
     }
 }

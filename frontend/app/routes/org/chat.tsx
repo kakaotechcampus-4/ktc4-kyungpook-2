@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useLoaderData } from "react-router";
+import { NotReadyPage } from "@/components/org/NotReady";
 import { Card, EvidenceChip, Note, PageHeader } from "@/components/ui";
 import { CHAT_EXAMPLES } from "@/lib/mock/data";
-import { getChildren } from "@/lib/api";
+import { getChildren, isReady } from "@/lib/api";
 import type { ChatTurn } from "@/lib/types";
 
 export async function clientLoader() {
@@ -10,7 +11,20 @@ export async function clientLoader() {
   return { childList: children.filter((c) => c.status === "active") };
 }
 
-export default function ChatPage() {
+/** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function ChatRoute() {
+  if (!isReady("chat")) {
+    return (
+      <NotReadyPage
+        title="상담 지원"
+        description="승인된 기록에 근거해서만 답합니다"
+      />
+    );
+  }
+  return <ChatPage />;
+}
+
+function ChatPage() {
   const { childList } = useLoaderData<typeof clientLoader>();
   const [childId, setChildId] = useState(childList[0]?.id ?? "");
   const [question, setQuestion] = useState("");

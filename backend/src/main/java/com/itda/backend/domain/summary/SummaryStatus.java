@@ -11,6 +11,8 @@ public enum SummaryStatus {
     GATE1_PENDING,
     /** 승인됨. child_context 로 넘어간다. */
     APPROVED,
-    /** 교사가 보류했다. child_context 로 올라가지 않는다. */
-    HOLD
+    /** 교사가 보류했다. child_context 로 올라가지 않는다. 보류함에서 해제하면 Gate 1 대기로 돌아온다. */
+    HOLD,
+    /** 교사가 제거했다. 그 요약의 일지도 모두 삭제 표시된다. 되돌릴 수 없다. */
+    REMOVED
 }

@@ -12,6 +12,7 @@ import {
   unlinkChild,
   updateConsent,
 } from "@/lib/api";
+import { getSession, isAuthMock } from "@/lib/auth";
 import { ME } from "@/lib/mock/data";
 import { readSelectedChildId } from "@/lib/selectedChild";
 import type { ConsentState } from "@/lib/types";
@@ -19,16 +20,20 @@ import type { ConsentState } from "@/lib/types";
 export async function clientLoader() {
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  const [{ child }, requests, pendingRequests] = await Promise.all([
+  const [{ child }, requests, pendingRequests, session] = await Promise.all([
     getParentHome(childId),
     getInstitutionRequests(childId),
     getPendingInstitutionRequests(childId),
+    getSession(),
   ]);
-  return { child, requests, pendingRequests };
+  // 실연동에서는 /auth/me 의 카카오 닉네임. 동의를 거부해 없으면 이름을 빼고 "보호자"만 쓴다
+  const myName = isAuthMock() ? ME.name : (session.name ?? null);
+  return { child, requests, pendingRequests, myName };
 }
 
 export default function ParentSettingsPage() {
-  const { child, requests, pendingRequests } = useLoaderData<typeof clientLoader>();
+  const { child, requests, pendingRequests, myName } = useLoaderData<typeof clientLoader>();
+  const guardianLabel = myName ? `보호자 ${myName}` : "보호자";
   const [institutions, setInstitutions] = useState(child.institutions);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -79,7 +84,7 @@ export default function ParentSettingsPage() {
     <div className="flex flex-col gap-5">
       <ParentPageHeader
         title="설정"
-        subtitle={`보호자 ${ME.name}`}
+        subtitle={guardianLabel}
         showChildSwitch
         alert={pendingRequests.length > 0}
       />
@@ -94,7 +99,7 @@ export default function ParentSettingsPage() {
         <span className="min-w-0 flex-1">
           <span className="block truncate font-bold">{child.name}</span>
           <span className="block truncate text-[13px] text-muted">
-            보호자 {ME.name}, 기관 {institutions.length}곳 연결
+            {guardianLabel}, 기관 {institutions.length}곳 연결
           </span>
         </span>
         <button className="tap shrink-0 rounded-2xl border border-line2 px-3 text-[13px] font-semibold text-ink2">

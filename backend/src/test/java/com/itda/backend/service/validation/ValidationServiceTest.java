@@ -141,4 +141,42 @@ class ValidationServiceTest {
         assertThat(reload(claimed).getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
         assertThat(reload(done).getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
     }
+
+    @Test
+    void AI_다운이면_상한까지는_검증_대기로_되돌리고_횟수를_센다() {
+        JournalEntry entry = validating(yujin.getId());
+
+        boolean released = validationService.releaseAfterAgentDown(entry.getId(), 2);
+
+        assertThat(released).isTrue();
+        assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
+        assertThat(reload(entry).getAgentRetryCount()).isEqualTo(1);
+    }
+
+    @Test
+    void AI_다운으로_이미_상한만큼_되돌렸으면_되돌리지_않는다() {
+        JournalEntry entry = validating(yujin.getId());
+        for (int i = 0; i < 2; i++) {
+            validationService.releaseAfterAgentDown(entry.getId(), 2);
+            validationService.claimMatched(10);
+        }
+
+        boolean released = validationService.releaseAfterAgentDown(entry.getId(), 2);
+
+        // 실패로 남기는 건 워커가 recorder 로 한다. 여기서는 검증 중 그대로 둔다.
+        assertThat(released).isFalse();
+        assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.VALIDATING);
+        assertThat(reload(entry).getAgentRetryCount()).isEqualTo(2);
+    }
+
+    @Test
+    void 검증_중이_아닌_일지는_AI_다운이어도_건드리지_않는다() {
+        JournalEntry done = validating(yujin.getId());
+        done.passValidation();
+        em.persistAndFlush(done);
+
+        assertThat(validationService.releaseAfterAgentDown(done.getId(), 2)).isTrue();
+        assertThat(reload(done).getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+        assertThat(reload(done).getAgentRetryCount()).isZero();
+    }
 }

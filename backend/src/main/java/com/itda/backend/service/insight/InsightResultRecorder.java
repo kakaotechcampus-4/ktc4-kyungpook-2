@@ -16,6 +16,7 @@ import com.itda.backend.domain.insight.InsightRunStatus;
 import com.itda.backend.dto.response.insight.InsightAgentResponse;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.insight.InsightRunRepository;
+import com.itda.backend.repository.summary.ChildContextRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,19 +34,55 @@ public class InsightResultRecorder {
 
     private final InsightResultRepository insightResultRepository;
     private final InsightRunRepository insightRunRepository;
+    private final ChildContextRepository childContextRepository;
 
     /**
-     * 그 아이·그 기간을 이미 다뤘는지. {@code DONE} 이면 끝난 것이고, {@code RUNNING} 이면 돌고 있다.
+     * 그 아이·그 기간을 (다시) 집어야 하는지.
      *
-     * <p>집기 전에 먼저 본다 — 재료를 모으는 일이 쿼리 몇 번이라, 이미 끝난 아이에게 그걸 돌릴 이유가 없다.
-     * <b>{@code insightCount} 가 0 이어도 끝난 것이다</b> — 낼 것이 없었다는 뜻이지 못 낸 게 아니다 (§9.5).
+     * <p>집기 전에 먼저 본다 — 재료를 모으는 일이 쿼리 몇 번이라, 볼 필요 없는 아이에게 그걸 돌릴 이유가 없다.
+     *
+     * <table>
+     * <tr><td>실행 기록 없음 · {@code FAILED}</td><td>집는다</td></tr>
+     * <tr><td>{@code RUNNING}</td><td>다른 워커가 돌고 있거나 앱이 죽어 남은 것이다. 건너뛴다</td></tr>
+     * <tr><td>{@code DONE} 인데 재료가 늘었다</td><td><b>다시 집는다</b> (멘토 리뷰 #191)</td></tr>
+     * <tr><td>{@code DONE} 이고 그대로</td><td>건너뛴다</td></tr>
+     * </table>
+     *
+     * <p><b>{@code insightCount} 가 0 이어도 끝난 것이다</b> — 낼 것이 없었다는 뜻이지 못 낸 게 아니다 (§9.5).
+     * 그래서 0 건이라는 이유로 다시 집지는 않는다. 다시 집는 기준은 <b>재료가 늘었는가</b> 하나다.
      */
     @Transactional(readOnly = true)
-    public boolean alreadyHandled(Long childId, LocalDate periodFrom, LocalDate periodTo) {
+    public boolean needsRun(Long childId, LocalDate periodFrom, LocalDate periodTo) {
+        return shouldRun(latestRun(childId, periodFrom, periodTo), childId, periodFrom, periodTo);
+    }
+
+    private InsightRun latestRun(Long childId, LocalDate periodFrom, LocalDate periodTo) {
         return insightRunRepository
                 .findFirstByChildIdAndPeriodFromAndPeriodToOrderByRevisionDesc(childId, periodFrom, periodTo)
-                .filter(run -> run.getStatus() != InsightRunStatus.FAILED)
-                .isPresent();
+                .orElse(null);
+    }
+
+    /**
+     * 집어야 하는지 판정한다. {@link #needsRun} 과 {@link #claim} 이 같은 규칙을 쓴다 —
+     * 둘이 갈리면 워커가 통과시킨 아이를 집기가 거부해서 조용히 아무 일도 일어나지 않는다.
+     */
+    private boolean shouldRun(InsightRun latest, Long childId, LocalDate periodFrom, LocalDate periodTo) {
+        if (latest == null || latest.getStatus() == InsightRunStatus.FAILED) {
+            return true;
+        }
+        if (latest.getStatus() == InsightRunStatus.RUNNING) {
+            return false;
+        }
+        if (latest.getLastContextId() == null) {
+            // 눈금을 모르는 행이다 (이 컬럼이 생기기 전). 한 번 더 도는 쪽이 빠뜨리는 쪽보다 낫다.
+            return true;
+        }
+        // ponytail: 눈금은 승인 전부를 세고 재료는 CORRECTED 를 빼므로, 그 기간에 고쳐 승인한 요약만
+        // 더해지면 같은 재료로 한 번 더 부른다 (LLM 호출 한 번 + Gate 2 에 비슷한 글 한 줄).
+        // 멘토 A4 로 CORRECTED 도 재료에 넣기로 해서(다음 이슈) 그때 사라진다. 그 전까지는 감수한다 —
+        // 안 부르게 막으려면 "무엇이 늘었나" 까지 눈금에 담아야 하고, 곧 지울 코드다.
+        Long current = childContextRepository.findMaxIdInPeriod(childId, periodFrom, periodTo);
+        return current != null && current > latest.getLastContextId();
     }
 
     /**
@@ -61,10 +98,8 @@ public class InsightResultRecorder {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<InsightRun> claim(Long childId, LocalDate periodFrom, LocalDate periodTo) {
-        InsightRun previous = insightRunRepository
-                .findFirstByChildIdAndPeriodFromAndPeriodToOrderByRevisionDesc(childId, periodFrom, periodTo)
-                .orElse(null);
-        if (previous != null && previous.getStatus() != InsightRunStatus.FAILED) {
+        InsightRun previous = latestRun(childId, periodFrom, periodTo);
+        if (!shouldRun(previous, childId, periodFrom, periodTo)) {
             return Optional.empty();
         }
 
@@ -97,10 +132,12 @@ public class InsightResultRecorder {
      * 정답인 경우가 있다 ({@code AI/insight/CRITERIA.md} §3). 그래도 실행 기록은 남겨야 다음 차례에
      * 같은 아이를 다시 부르지 않는다 (§9.5).
      *
-     * @param rawJson AI 응답 원문. {@code insight_result.raw_response} 에 그대로 남긴다
+     * @param rawJson       AI 응답 원문. {@code insight_result.raw_response} 에 그대로 남긴다
+     * @param lastContextId 재료를 모을 때 본 {@code child_context} 중 가장 큰 id. 다음 차례가 이 값과
+     *                      견줘 재료가 늘었는지 본다 (§9.5)
      */
     @Transactional
-    public void record(InsightRun run, InsightAgentResponse response, String rawJson) {
+    public void record(InsightRun run, InsightAgentResponse response, String rawJson, Long lastContextId) {
         List<InsightAgentResponse.Insight> insights =
                 response.insights() == null ? List.of() : response.insights();
 
@@ -116,7 +153,7 @@ public class InsightResultRecorder {
         }
         insightResultRepository.saveAll(saved);
 
-        run.finish(saved.size());
+        run.finish(saved.size(), lastContextId);
         insightRunRepository.save(run);
     }
 

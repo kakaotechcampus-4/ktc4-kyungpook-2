@@ -17,14 +17,17 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.agent.WorkerProperties;
 
 /** 요약할 묶음을 고르는 조건 — 마감(다음 날 03:00), 디바운스(30분), 같은 기관·날짜에 처리 중인 일지 없음. */
@@ -53,6 +56,9 @@ class SummaryServiceClaimTest {
     @Autowired
     private OrganizationRepository organizationRepository;
 
+    @Autowired
+    private SummaryResultRepository summaryResultRepository;
+
     private SummaryRunRequests runRequests;
     private Long school;
     private Long center;
@@ -71,7 +77,7 @@ class SummaryServiceClaimTest {
         SummaryProperties properties = new SummaryProperties(new WorkerProperties(true, 5000, 10),
                 LocalTime.of(3, 0), Duration.ofMinutes(30), KST, Duration.ofSeconds(120));
         return new SummaryService(journalEntryRepository, matchingResultRepository, childRepository,
-                organizationRepository, runRequests, properties, clock);
+                organizationRepository, summaryResultRepository, runRequests, properties, clock);
     }
 
     private JournalEntry pending(Long rawRecordId) {
@@ -179,6 +185,26 @@ class SummaryServiceClaimTest {
         assertThat(serviceAt(AFTER_CUTOFF).claimReadyGroups(10)).hasSize(1);
     }
 
+    @Test
+    void 요약_실패와_시스템_오류로_멈춘_일지는_묶음을_막지도_다시_집히지도_않는다() {
+        JournalEntry ok = uploadedAt(validated(school, 8L), DATE.atTime(16, 0));
+        JournalEntry summaryFailed = validated(school, 8L);
+        summaryFailed.startSummarizing();
+        summaryFailed.failSummary();
+        uploadedAt(em.persistAndFlush(summaryFailed), DATE.atTime(16, 1));
+        JournalEntry systemError = validated(school, 8L);
+        systemError.startSummarizing();
+        systemError.failSummaryBySystemError(FailureReason.EVIDENCE_MISMATCH);
+        uploadedAt(em.persistAndFlush(systemError), DATE.atTime(16, 2));
+
+        // 요약 실패는 교사가 [다시 요약]으로(#182), 시스템 오류는 관리자가 고친 뒤 되돌려서 다시 요약한다.
+        assertThat(serviceAt(AFTER_CUTOFF).claimReadyGroups(10))
+                .singleElement()
+                .satisfies(claimed -> assertThat(claimed.journalEntryIds()).containsExactly(ok.getId()));
+        assertThat(statusOf(summaryFailed)).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
+        assertThat(statusOf(systemError)).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
+    }
+
     private static final SummaryGroup GROUP = new SummaryGroup(8L, DATE, 3L);
 
     private void requestRunUntil(LocalDateTime expiresAt) {
@@ -224,19 +250,82 @@ class SummaryServiceClaimTest {
         assertThat(serviceAt(later.plusMinutes(30)).claimReadyGroups(10)).hasSize(1);
     }
 
+    private SummaryResult summaryOf(int revision) {
+        return em.persistAndFlush(SummaryResult.of(8L, DATE, 3L, revision, "블록 놀이를 했다.", "[]", "[]", "[]", "{}"));
+    }
+
+    private JournalEntry inSummary(SummaryResult summary) {
+        JournalEntry entry = validated(school, 8L);
+        entry.startSummarizing();
+        entry.completeSummary(summary.getId());
+        return uploadedAt(em.persistAndFlush(entry), DATE.atTime(16, 0));
+    }
+
+    private JournalEntry lateEntry() {
+        return uploadedAt(validated(school, 8L), LocalDateTime.of(2026, 10, 10, 13, 0));
+    }
+
+    private List<ClaimedSummaryGroup> claimNextDay() {
+        return serviceAt(LocalDateTime.of(2026, 10, 10, 14, 0)).claimReadyGroups(10);
+    }
+
     @Test
     void 승인_전_요약에_들어간_일지는_새_일지가_오면_함께_다시_요약한다() {
-        JournalEntry summarized = validated(school, 8L);
-        summarized.startSummarizing();
-        summarized.completeSummary(50L);
-        uploadedAt(em.persistAndFlush(summarized), DATE.atTime(16, 0));
-        JournalEntry late = uploadedAt(validated(school, 8L), LocalDateTime.of(2026, 10, 10, 13, 0));
+        JournalEntry summarized = inSummary(summaryOf(1));
+        JournalEntry late = lateEntry();
 
-        List<ClaimedSummaryGroup> claimed = serviceAt(LocalDateTime.of(2026, 10, 10, 14, 0)).claimReadyGroups(10);
+        List<ClaimedSummaryGroup> claimed = claimNextDay();
 
         assertThat(claimed).containsExactly(new ClaimedSummaryGroup(
                 new SummaryGroup(8L, DATE, 3L), List.of(summarized.getId(), late.getId())));
         assertThat(statusOf(summarized)).isEqualTo(JournalEntryStatus.SUMMARIZING);
+    }
+
+    @Test
+    void 보류된_요약의_일지는_새_일지와_묶지_않는다() {
+        SummaryResult held = summaryOf(1);
+        JournalEntry heldEntry = inSummary(held);
+        held.hold();
+        heldEntry.holdGate1();
+        em.flush();
+        JournalEntry late = lateEntry();
+
+        List<ClaimedSummaryGroup> claimed = claimNextDay();
+
+        // 새 일지만 새 판으로 요약한다. 보류한 판과 그 일지는 교사가 보류함에서 처리할 때까지 그대로 둔다.
+        assertThat(claimed).containsExactly(new ClaimedSummaryGroup(
+                new SummaryGroup(8L, DATE, 3L), List.of(late.getId())));
+        assertThat(statusOf(heldEntry)).isEqualTo(JournalEntryStatus.GATE1_HELD);
+    }
+
+    @Test
+    void 새_일지는_최신_판의_Gate1_대기_일지와만_묶는다() {
+        // 1판을 보류한 사이 2판이 만들어졌고, 그 뒤 1판을 보류 해제했다. 두 판이 모두 Gate 1 대기다.
+        SummaryResult reopened = summaryOf(1);
+        JournalEntry reopenedEntry = inSummary(reopened);
+        JournalEntry latestEntry = inSummary(summaryOf(2));
+        JournalEntry late = lateEntry();
+
+        List<ClaimedSummaryGroup> claimed = claimNextDay();
+
+        // 1판 일지까지 묶으면 2판에 1판 내용이 섞이고, 1판을 승인하면 같은 일지가 두 번 올라간다.
+        assertThat(claimed).containsExactly(new ClaimedSummaryGroup(
+                new SummaryGroup(8L, DATE, 3L), List.of(latestEntry.getId(), late.getId())));
+        assertThat(statusOf(reopenedEntry)).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+    }
+
+    @Test
+    void 최신_판이_승인됐으면_새_일지만_묶는다() {
+        SummaryResult approved = summaryOf(1);
+        JournalEntry approvedEntry = inSummary(approved);
+        approved.approve();
+        approvedEntry.completeGate1();
+        em.flush();
+        JournalEntry late = lateEntry();
+
+        assertThat(claimNextDay()).containsExactly(new ClaimedSummaryGroup(
+                new SummaryGroup(8L, DATE, 3L), List.of(late.getId())));
+        assertThat(statusOf(approvedEntry)).isEqualTo(JournalEntryStatus.COMPLETED);
     }
 
     @Test

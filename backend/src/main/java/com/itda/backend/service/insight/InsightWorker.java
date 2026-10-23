@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.UnexpectedRollbackException;
 
 import com.itda.backend.domain.insight.InsightRun;
-import com.itda.backend.dto.request.insight.InsightAgentRequest;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 
@@ -81,13 +80,13 @@ public class InsightWorker {
             if (processed >= batchSize) {
                 return;
             }
-            if (recorder.alreadyHandled(childId, periodFrom, periodTo)) {
+            if (!recorder.needsRun(childId, periodFrom, periodTo)) {
                 continue;
             }
 
             // 재료를 먼저 본다. 없으면 집지 않는다 — 집어서 DONE 으로 남기면, 그 뒤에 교사가 승인하거나
             // 동의가 들어와도 그 기간을 다시 보지 않는다. "낼 것이 없었다" 와 "아직 안 물어봤다" 는 다르다.
-            Optional<InsightAgentRequest> prepared = insightService.prepare(childId, periodFrom, periodTo);
+            Optional<PreparedInsight> prepared = insightService.prepare(childId, periodFrom, periodTo);
             if (prepared.isEmpty()) {
                 continue;
             }
@@ -132,10 +131,10 @@ public class InsightWorker {
     }
 
     /** @return 계속 진행해도 되면 {@code true}, AI 가 응답하지 않아 이번 차례를 멈춰야 하면 {@code false} */
-    private boolean process(InsightRun run, InsightAgentRequest request) {
+    private boolean process(InsightRun run, PreparedInsight prepared) {
         try {
-            InsightAgentReply reply = client.analyze(request);
-            recorder.record(run, reply.response(), reply.rawJson());
+            InsightAgentReply reply = client.analyze(prepared.request());
+            recorder.record(run, reply.response(), reply.rawJson(), prepared.lastContextId());
             return true;
         } catch (AiAgentUnavailableException e) {
             // 재시도까지 응답이 없었다. 이 아이는 FAILED 로 두고(다음 차례에 revision + 1 로 다시 집는다)

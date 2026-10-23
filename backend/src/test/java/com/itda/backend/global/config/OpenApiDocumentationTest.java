@@ -87,7 +87,34 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.401").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.404").exists())
-				.andExpect(jsonPath("$.components.schemas.RunSummaryRequest.properties.entryDateValid").doesNotExist());
+				.andExpect(jsonPath("$.components.schemas.RunSummaryRequest.properties.entryDateValid").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.requestBody").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.404.description",
+						containsString("SUMMARY_NOT_FOUND")))
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.409.description",
+						containsString("SUMMARY_ALREADY_REVIEWED")))
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.responses.409.description",
+						containsString("SUMMARY_NOT_HELD")))
+				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.parameters[0].name").value("gate1Status"))
+				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.responses.403").exists())
+				// 요청 스키마는 decision · editedContent · version 셋뿐이다. 검증용 메서드가 필드로 새면 안 된다.
+				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.length()").value(3))
+				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.required", hasItems("decision", "version")))
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.409.description",
+						containsString("SUMMARY_CHANGED")))
+				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.editedContentValid").doesNotExist());
 	}
 
 	/** 아동 등록·명부 스키마에 실제 필드만 있어야 한다. 검증용 메서드나 범위 밖 필드가 새면 안 된다. */

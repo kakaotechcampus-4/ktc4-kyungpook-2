@@ -83,6 +83,128 @@ def _numbers(text: str) -> set[int]:
     return {int(n) for n in re.findall(r"\d+", text or "")}
 
 
+#: 수량을 나타내는 말. 값을 아는 것과 모르는 것을 나눠 둔다.
+#:
+#: **모르는 표현은 통과시키지 않는다.** 목록에 없는 수사를 만나면 검사를 건너뛰는
+#: 것이 아니라, 토큰 그대로 인용과 대조한다 — "마흔 번" 은 인용에도 "마흔 번" 이
+#: 있어야 한다. 넓히다 빠뜨리면 환각이 그냥 나간다 (2026-10-08 · 10-11 · 10-14 ·
+#: 10-17 멘토 리뷰에서 네 번 연속 같은 자리를 고쳤다).
+_ONES = {"한": 1, "첫": 1, "두": 2, "세": 3, "네": 4,
+         "다섯": 5, "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9}
+#: "스무" 는 "스물" 의 관형형이다 — "스무 번" 이 바른 말이라 둘 다 둔다.
+_TENS = {"열": 10, "스물": 20, "스무": 20, "서른": 30, "마흔": 40, "쉰": 50,
+         "예순": 60, "일흔": 70, "여든": 80, "아흔": 90}
+_BIG = {"백": 100, "천": 1000}
+
+#: 값을 정할 수 없는 수량. 숫자로 바꾸지 않고 토큰 그대로 비교한다.
+#: 원문이 "한두 번" 인데 요약이 "두 번" 이면 그게 환각이다.
+_VAGUE = ("한두", "두어", "두어세", "두세", "서너", "서넛", "네댓", "네다섯",
+          "너덧", "대여섯", "예닐곱", "일여덟", "여남은", "열댓",
+          "여러", "몇몇", "몇", "수십", "수백", "수천", "수")
+
+#: "백여 번" · "십여 번" 처럼 **"여" 가 붙는 근사 표현.** 계열이라 한 번에 잡는다.
+#:
+#: 한자어 수사(십·백·천)를 여기서만 본다 — "여" 가 붙으면 지시사 "이" 와 헷갈릴
+#: 일이 없어 안전하다. "참여"·"급여" 는 앞 글자가 이 목록에 없어 안 걸린다.
+_APPROX = r"(?:수)?(?:[일이삼사오육칠팔구])?(?:십|백|천)여"
+
+#: 수량 뒤에 오는 단위. 날짜 단위(년·월·일)는 넣지 않는다 — 그쪽은
+#: _numbers_outside_dates 가 묶음 날짜와 대조한다.
+#: 같은 뜻은 묶는다. "세 번" 과 "세 차례" 가 갈리면 안 된다.
+_UNIT_GROUP = {
+    "번": "회", "회": "회", "차례": "회",
+    "바퀴": "바퀴", "걸음": "걸음", "칸": "칸",
+    "개": "개", "장": "장", "명": "명", "층": "층", "쪽": "쪽",
+    "분": "분", "시간": "시간", "초": "초",
+}
+
+#: 수량이 아닌 수식어. 아는 수사와 겹치는 말을 뺀다 ("이 장" 의 "이").
+NOT_QUANTITY = {"이", "그", "저", "요", "매", "지난", "이번", "저번", "요번"}
+
+#: 아는 수사. 복합(열두)을 한자리보다 먼저 본다.
+#:
+#: **단위 앞의 한글을 전부 수량으로 보는 방식은 접었다.** 오탐이 더 크다 —
+#: "교사 회의" 가 (교사, 회), "자전거 바퀴" 가 (자전거, 바퀴), "점심 시간" 이
+#: (점심, 시간) 으로 읽혀 정상 문장을 버린다 (2026-10-18 측정).
+#: 대신 목록을 한 번에 크게 넓히고, **여기 없는 표현은 못 잡는다**고 적어 둔다.
+_KNOWN = "|".join([
+    _APPROX,                                        # "백여" 를 "백" 보다 먼저
+    rf"(?:{'|'.join(_TENS)})(?:{'|'.join(_ONES)})",
+    "|".join(sorted(_TENS, key=len, reverse=True)),
+    "|".join(sorted(_VAGUE, key=len, reverse=True)),
+    "|".join(sorted(_ONES, key=len, reverse=True)),
+    "|".join(_BIG),
+])
+
+#: 긴 것부터 본다 — "차례" 를 "차"+"례" 로 읽지 않기 위해서다.
+_UNIT_RE = "|".join(sorted(_UNIT_GROUP, key=len, reverse=True))
+
+#: 단위 뒤에는 조사·어미·문장부호만 올 수 있다 — "장난감" 의 "장" 을 집지 않는다.
+_TAIL = r"(?=[을를이가은는에의와과도만씩째쯤적까부보마처밖\s,.)\]]|$)"
+
+#: 앞에 글자가 붙어 있으면 세지 않는다 — "총열두" 처럼 다른 낱말의 꼬리를 집지 않게.
+COUNT = re.compile(rf"(?<![0-9가-힣])(\d+|{_KNOWN})\s*({_UNIT_RE})" + _TAIL)
+
+#: 부정 표현. "한 번도 울지 않았다" 는 횟수 주장이 아니다.
+#: "안" 은 넣지 않는다 — "안았다" · "책상 안에" 와 겹쳐 오탐이 난다.
+NEGATION = re.compile(r"않|못하|못 |없")
+
+
+def _count_value(token: str) -> str | None:
+    """
+    수사를 숫자로 바꾼다. "열두" 는 10 + 2 다.
+
+    **못 읽는 말은 토큰 그대로 돌려준다.** "한두"·"대여섯" 처럼 값을 정할 수 없는
+    것을 숫자로 바꾸면, 원문의 "한두 번" 과 요약의 "두 번" 이 같아져 환각이
+    통과한다. 수량이 아닌 수식어면 None 이다.
+    """
+    if token.isdigit():
+        return token
+    if token in NOT_QUANTITY:
+        return None
+    if token.endswith("여"):
+        return token          # "백여" 는 값을 정할 수 없다 — 토큰 그대로
+    for tens, value in _TENS.items():
+        if token.startswith(tens):
+            rest = token[len(tens):]
+            if not rest:
+                return str(value)
+            if rest in _ONES:
+                return str(value + _ONES[rest])
+            return token          # "열몇" 처럼 못 읽는 조합은 그대로
+    if token in _ONES:
+        return str(_ONES[token])
+    if token in _BIG:
+        return str(_BIG[token])
+    return token                   # 모르는 수량 표현 — 그대로 대조한다
+
+
+def _counts(text: str) -> set[tuple[str, str]]:
+    """
+    문장에 쓰인 수량을 (값, 단위) 쌍으로 모은다.
+
+    숫자만 비교하면 네 가지를 놓친다.
+      ① "세 번" — 한글 수사는 숫자 검사에 안 걸린다
+      ② "여러 번" — 수량 표현인데 숫자가 아니다
+      ③ "7번" 인데 인용에 "7층" 이 있으면 통과한다 — 값은 같고 단위가 다르다
+      ④ "열두 번" — 한자리를 먼저 보면 "두" 만 걸려 2회가 된다
+    """
+    text = text or ""
+    pairs = set()
+    for m in COUNT.finditer(text):
+        # 단위 뒤에 "도" 가 붙고 문장이 부정이면 횟수 주장이 아니다.
+        # "한 번도 울지 않았다" 는 빼고, "세 번도 넘게 시도했다" 는 센다 —
+        # 뒤쪽은 횟수를 주장하므로 근거가 있어야 한다.
+        if text[m.end():m.end() + 1] == "도" and NEGATION.search(text):
+            continue
+        value = _count_value(m.group(1))
+        unit = m.group(2)
+        if value is None:
+            continue              # 수량이 아닌 수식어 ("이 장면", "매번")
+        pairs.add((value, _UNIT_GROUP[unit]))
+    return pairs
+
+
 def _numbers_outside_dates(text: str, entry_date: str) -> set[int]:
     """
     날짜로 쓰인 **자리**를 지우고 남은 숫자를 센다.
@@ -131,7 +253,12 @@ def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> boo
     #     처럼 같은 수가 날짜로도 횟수로도 쓰이면 "7번" 까지 빠졌다
     #     (2026-10-11 멘토 리뷰 P2).
     left = _numbers_outside_dates(text, state.get("entry_date", ""))
-    return not (left - _numbers(quotes))
+    if left - _numbers(quotes):
+        return False
+
+    # 횟수는 (값, 단위) 로 따로 본다. 위 검사는 값만 보기 때문에 한글 수사와
+    # "여러 번" 을 놓치고, 단위가 달라도 같은 값이면 통과시킨다.
+    return not (_counts(text) - _counts(quotes))
 
 
 def ground(state: SummaryState) -> dict:

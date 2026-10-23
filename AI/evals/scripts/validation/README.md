@@ -73,6 +73,7 @@ python3 evals/scripts/validation/run_suite.py                                # �
 | `score.py` | dev 결과 채점 | `run_dev.py` 다음 |
 | `run_holdout.py` | holdout 실행 + 채점 (재작성 16건 교체 포함) | **최종 검증 때 한 번만** |
 | `test_no_subject.py` | 판정 대상을 모를 때 REVIEW 로 보내는 규칙 확인 | 노드 로직을 고칠 때마다 |
+| `test_issues.py` | `issues` 사유·구간 짝이 `issue_types`·`evidence` 와 맞는지 확인 (LLM 호출 없음) | 노드 로직을 고칠 때마다 |
 | `gen_metamorphic.py` | dev 문장을 변형해 정답이 정해진 케이스 자동 생성 (LLM 호출 없음) | 처음 한 번, 판정 기준이 바뀔 때 |
 | `run_suite.py` | 실행 → 채점 → 틀린 원인 분류 → 지난번 대비 회귀 체크 | 코드를 고칠 때마다 |
 | `test_prompt_sync.py` | README 유형 정의 표와 프롬프트·config 가 같은지 검사 (LLM 호출 없음) | 판정 기준이나 프롬프트를 고칠 때마다 |

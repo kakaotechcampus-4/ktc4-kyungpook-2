@@ -71,6 +71,18 @@ public class InsightRun {
     @Column(name = "insight_count")
     private Integer insightCount;
 
+    /**
+     * 그 실행이 본 {@code child_context} 중 가장 큰 id — <b>어디까지 봤나</b>.
+     *
+     * <p>Gate 1 승인은 교사가 틈틈이 해서 한 주치가 한 번에 올라오지 않는다. "이 기간을 처리했다" 만
+     * 기억하면 뒤에 승인된 기록이 영영 빠진다. {@code child_context} 는 지우지 않고 쌓이기만 해(§9.2)
+     * id 가 단조 증가하므로, 이 값 하나로 재료가 늘었는지 알 수 있다.
+     *
+     * <p>{@code null} 은 "눈금을 모른다" 다 — 이 컬럼이 생기기 전 행이 그렇다. 그때는 다시 집는다.
+     */
+    @Column(name = "last_context_id")
+    private Long lastContextId;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -99,13 +111,19 @@ public class InsightRun {
         return new InsightRun(childId, periodFrom, periodTo, revision);
     }
 
-    /** 끝났다. {@code count} 가 0 이어도 성공이다 — 낼 것이 없었다는 뜻이다. */
-    public void finish(int count) {
+    /**
+     * 끝났다. {@code count} 가 0 이어도 성공이다 — 낼 것이 없었다는 뜻이다.
+     *
+     * @param lastContextId 이번에 본 {@code child_context} 중 가장 큰 id. 다음 차례가 이 값과 견줘
+     *                      재료가 늘었는지 본다. 재료가 아예 없었으면 {@code null}
+     */
+    public void finish(int count, Long lastContextId) {
         if (count < 0) {
             throw new IllegalArgumentException("인사이트 수는 음수가 될 수 없습니다: " + count);
         }
         this.status = InsightRunStatus.DONE;
         this.insightCount = count;
+        this.lastContextId = lastContextId;
     }
 
     /** 실패했다. 건수는 채우지 않는다 — 0 건으로 끝난 것과 구별돼야 한다. */

@@ -25,7 +25,7 @@ class InsightRunTest {
     void 인사이트가_0건이어도_끝난_것이다() {
         InsightRun run = InsightRun.claim(8L, FROM, TO, 1);
 
-        run.finish(0);
+        run.finish(0, 41L);
 
         assertThat(run.getStatus()).isEqualTo(InsightRunStatus.DONE);
         assertThat(run.getInsightCount()).isZero();

@@ -28,7 +28,9 @@
  *      DELETE /api/v1/guardians/me/children/{childId}   → 204 (아래 guardianUnlink 참고)
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
- *      GET  /api/v1/auth/me           (lib/auth.ts 에서 호출)
+ *      GET  /api/v1/validation-results?status=BLOCK
+ *      POST /api/v1/validation-results/{id}/resolve
+ *      GET  /api/v1/auth/me          (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/signup       (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/logout       (lib/auth.ts 에서 호출)
  *
@@ -58,7 +60,9 @@ import type {
   ChildCareInfo,
   ChildGuardian,
   ChildListItem,
+  ConsentField,
   ConsentPreview,
+  ConsentResult,
   FileProgress,
   InboxItem,
   Insight,
@@ -112,21 +116,29 @@ const BE_READY = {
   chat: false,
   /** 확인 필요 큐 조회 · 처리 (O-22, O-23) */
   matchingQueue: true,
-  /** 수정 요청(BLOCK) 큐 조회 · 처리 */
-  blockedQueue: false,
+  /** 수정 요청(BLOCK) 큐 조회 · 처리 (O-24, O-25) */
+  blockedQueue: true,
   /** 1차 검토 조회 · 승인 · 아이 변경 */
   gate1: false,
   /** 인사이트 조회 · 2차 공유 */
   insights: false,
   /** 원본 업로드 (POST /raw-records) */
   upload: true,
-  /** 파일별 처리 현황 · 재시도 (O-26, O-27) */
-  fileProgress: false,
+  /** 파일별 처리 현황 (O-26) */
+  fileProgress: true,
   /** 기관 받은편지함 */
   inbox: false,
   /** 활동 기록 */
   activity: false,
-  /** 보호자: 동의 미리보기 · 동의 범위 (G-02, G-41) */
+  /** 기관 정보 · 증빙서류 (기관 설정 화면). 지금은 API 없이 mock 값만 띄운다 */
+  institutionSettings: false,
+  /** 보호자: 초대 코드 수락 뒤 동의 화면(P-02)의 미리보기 · 동의 (G-02, G-41) */
+  guardianConsent: true,
+  /**
+   * 보호자: 설정 · 알림 화면의 동의 부여 · 철회 (G-41). 서버에는 있지만 끈다 — 이 화면들의
+   * 아이 목록(guardianHome)이 아직 mock 이라 서버에 없는 아이 id 로 요청하게 된다.
+   * guardianHome 을 켤 때 같이 켠다.
+   */
   guardianLinks: false,
   /** 보호자: 초대 코드 수락 (G-04) */
   guardianInvite: true,
@@ -161,7 +173,15 @@ function mockFor(feature: Feature): boolean {
  * 화면은 null 을 "준비 중"으로 그린다. 전체 mock 모드에서는 평소대로 mock 을 돌려준다.
  */
 export function loadIfReady<T>(feature: Feature, load: () => Promise<T>): Promise<T | null> {
-  return USE_MOCK || BE_READY[feature] ? load() : Promise.resolve(null);
+  return isReady(feature) ? load() : Promise.resolve(null);
+}
+
+/**
+ * 이 기능의 화면을 그대로 보여도 되는지. 전체 mock 이거나 백엔드에 있으면 true.
+ * false 면 화면은 mock 데이터 대신 "준비 중"을 보인다(components/org/NotReady).
+ */
+export function isReady(feature: Feature): boolean {
+  return USE_MOCK || BE_READY[feature];
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -250,10 +270,20 @@ export async function getMatchingQueue(): Promise<MatchingItem[]> {
   }));
 }
 
-/** GET /api/v1/validation-results?status=BLOCK */
+/** GET /api/v1/validation-results?status=BLOCK (api-spec O-24) */
 export async function getBlockedQueue(): Promise<BlockedItem[]> {
   if (mockFor("blockedQueue")) return mock.BLOCKED_QUEUE;
-  return request("/api/v1/validation-results?status=BLOCK");
+  const items = await request<BlockedItem[]>("/api/v1/validation-results?status=BLOCK");
+  return items.map((item) => ({
+    ...item,
+    record: {
+      ...item.record,
+      capturedAt: item.record.capturedAt ?? null,
+      preview: item.record.preview ?? null,
+      fullContent: item.record.fullContent ?? null,
+    },
+    childName: item.childName ?? null,
+  }));
 }
 
 /** GET /api/v1/summaries?gate1_status=pending */
@@ -393,11 +423,16 @@ export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
     mock.FILE_PROGRESS.unshift(...created);
     return results;
   }
-  const settled = await Promise.allSettled(files.map(uploadOne));
-  return settled.map((s, i) =>
-    s.status === "fulfilled"
-      ? { ok: true, file: files[i], progress: s.value }
-      : { ok: false, file: files[i], reason: uploadFailReasonOf(s.reason) },
+  return Promise.all(
+    files.map(async (file): Promise<UploadResult> => {
+      // BE 는 pdf 도 받지만 아직 기록으로 나누지 못해 아무것도 생기지 않는다 — 보내기 전에 거절한다
+      if (!hasUploadExtension(file)) return { ok: false, file, reason: "invalid" };
+      try {
+        return { ok: true, file, progress: await uploadOne(file) };
+      } catch (err) {
+        return { ok: false, file, reason: uploadFailReasonOf(err) };
+      }
+    }),
   );
 }
 
@@ -426,13 +461,21 @@ function uploadFailReasonOf(err: unknown): UploadFailReason {
   return "temporary";
 }
 
-/** mock 도 BE 와 같은 규칙으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
-const UPLOAD_EXTENSIONS = ["csv", "txt", "pdf"];
+/**
+ * 올릴 수 있는 형식. BE 는 pdf 도 받지만 기록으로 나누는 단계가 pdf 를 건너뛰어,
+ * 올려도 처리 현황에 아무것도 나오지 않는다. pdf 를 지원하면 여기에 다시 넣는다.
+ */
+export const UPLOAD_EXTENSIONS = ["csv", "txt"];
+/** mock 도 BE 와 같은 용량 제한으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
 const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
-function mockRejectReason(file: File): UploadFailReason | null {
+function hasUploadExtension(file: File): boolean {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (!UPLOAD_EXTENSIONS.includes(ext)) return "invalid";
+  return UPLOAD_EXTENSIONS.includes(ext);
+}
+
+function mockRejectReason(file: File): UploadFailReason | null {
+  if (!hasUploadExtension(file)) return "invalid";
   if (file.size > UPLOAD_MAX_BYTES) return "too_large";
   return null;
 }
@@ -440,7 +483,7 @@ function mockRejectReason(file: File): UploadFailReason | null {
 /**
  * 파일별 처리 현황. 최근 업로드가 먼저 온다.
  *
- * GET /api/v1/raw-records/progress — **계약 확정, 구현 예정** (api-spec.md O-26)
+ * GET /api/v1/raw-records/progress — 구현됨 (api-spec.md O-26)
  *    파일을 기록 단위로 나누기 전까지는 entries: [] 만 와서 "기록 등록 중"에 머문다. 정상이다.
  */
 export async function getFileProgress(): Promise<FileProgress[]> {
@@ -449,22 +492,6 @@ export async function getFileProgress(): Promise<FileProgress[]> {
     return mock.FILE_PROGRESS;
   }
   return request("/api/v1/raw-records/progress");
-}
-
-/**
- * 실패한 기록을 다시 처리한다. 실패는 사람이 고를 게 아니라 시스템 오류라 재시도로 충분하다.
- * POST /api/v1/raw-records/{id}/retry — **계약 확정, 구현 예정** (api-spec.md O-27)
- */
-export async function retryFailedEntries(rawRecordId: string): Promise<{ ok: true }> {
-  if (mockFor("fileProgress")) {
-    const file = mock.FILE_PROGRESS.find((f) => f.rawRecordId === rawRecordId);
-    for (const e of file?.entries ?? []) {
-      if (e.state === "failed") e.state = "running";
-    }
-    simulated.set(rawRecordId, Date.now());
-    return { ok: true };
-  }
-  return request(`/api/v1/raw-records/${rawRecordId}/retry`, { method: "POST" });
 }
 
 /**
@@ -512,7 +539,13 @@ function tickSimulation() {
   }
 }
 
-/** 재입력 요청 큐 항목을 처리(재업로드 또는 보류)하면 큐에서 빠진다. */
+/**
+ * POST /api/v1/validation-results/{id}/resolve (api-spec O-25)
+ *
+ * 둘 다 그 일지의 처리를 여기서 끝내고 큐에서 뺀다. 원본은 고치지도 지우지도 않는다 —
+ * reupload 는 "고친 내용을 새 파일로 올리겠다"는 표시일 뿐, 업로드는 따로 해야 한다.
+ * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
+ */
 export async function resolveBlockedItem(
   id: string,
   action: "reupload" | "hold",
@@ -736,7 +769,7 @@ export async function getConsentPreview(
   childId: string,
   institutionId: string,
 ): Promise<ConsentPreview | null> {
-  if (mockFor("guardianLinks")) {
+  if (mockFor("guardianConsent")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
     const rec = child?.institutions.find(
       (i) => i.institution.id === institutionId && i.consent === "not_granted",
@@ -750,6 +783,8 @@ export async function getConsentPreview(
       documentUrl: null,
       sharedFields: shared,
       notSharedFields: notShared,
+      // 서버도 기관 유형과 관계없이 이 두 항목을 내려준다 (ConsentFieldCatalog)
+      allowedFields: ["daily_summary", "weekly_insight"],
     };
   }
   try {
@@ -816,7 +851,41 @@ export async function declineInstitutionRequest(childId: string, institutionId: 
   });
 }
 
-/** PUT /api/v1/children/{childId}/consent-scopes/{institutionId} */
+/**
+ * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — P-02 의 동의 (api-spec G-41).
+ *
+ * allowedFields 는 미리보기(G-02)가 준 코드를 그대로 보낸다. 화면 문구(sharedFields)를
+ * 보내면 서버가 모르는 항목이라 400 으로 거절한다.
+ * 실패는 ApiError 로 던진다 — 404 CONSENT_TARGET_NOT_FOUND 는 그 사이 아이가 삭제됐거나
+ * 기관 명부에서 빠진 경우다.
+ */
+export async function grantConsent(
+  childId: string,
+  institutionId: string,
+  allowedFields: ConsentField[],
+): Promise<ConsentResult> {
+  if (mockFor("guardianConsent")) {
+    const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
+    const rec = child?.institutions.find((i) => i.institution.id === institutionId);
+    if (!child || !rec) throw new ApiError(404, "CONSENT_TARGET_NOT_FOUND");
+    rec.consent = "granted";
+    child.status = "active";
+    return { childStatus: "active", consent: "granted", allowedFields };
+  }
+  return request(
+    `/api/v1/children/${encodeURIComponent(childId)}/consent-scopes/${encodeURIComponent(institutionId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ action: "grant", allowedFields }),
+    },
+  );
+}
+
+/**
+ * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — 설정 · 알림 화면용.
+ * 아직 mock 만 쓴다(guardianLinks). 본문 모양이 서버(allowedFields, 코드값)와 달라
+ * 켜기 전에 grantConsent 처럼 맞춰야 한다.
+ */
 export async function updateConsent(
   childId: string,
   institutionId: string,

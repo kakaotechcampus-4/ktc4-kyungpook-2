@@ -66,12 +66,29 @@ public class JournalEntry {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    // AI 다운으로 지금 단계(매칭 또는 검증)를 되돌린 횟수 (#153). 배포 DB 에 행이 있어 NOT NULL 로 추가할 수 없어서
+    // NULL 을 허용하고 0 으로 읽는다 (DB 스키마 §11.4). 매칭 대기(PENDING)는 0 으로 만들어지고, 검증 대기(MATCHED)로
+    // 들어올 때 0 으로 돌린다. 매칭·검증 중이 아닌 상태에 남은 값은 뜻이 없다 — 실패 사유는 #180 이 따로 남긴다.
+    @Column(name = "agent_retry_count")
+    private Integer agentRetryCount;
+
+    // 시스템 오류(SYSTEM_ERROR)로 멈춘 단계와 원인 (#180). 그 상태일 때만 채우고 다른 상태에서는 비어 있다.
+    // 고친 뒤 되돌리는 SQL 이 두 값으로 고르고 함께 비운다 (backend/scripts/recover-system-errors.sql).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "failure_stage", length = 30)
+    private FailureStage failureStage;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "failure_reason", length = 30)
+    private FailureReason failureReason;
+
     private JournalEntry(Long rawRecordId, LocalDate entryDate, String content, Integer sequenceNo) {
         this.rawRecordId = rawRecordId;
         this.entryDate = entryDate;
         this.content = content;
         this.sequenceNo = sequenceNo;
         this.status = JournalEntryStatus.PENDING;
+        this.agentRetryCount = 0;
     }
 
     public static JournalEntry of(Long rawRecordId, LocalDate entryDate, String content, Integer sequenceNo) {
@@ -98,8 +115,7 @@ public class JournalEntry {
     /** AI가 자동 확정(auto)했다. 아동의 존재·소속 검증은 호출하는 Service 책임이다. */
     public void confirmMatch(Long childId) {
         requireStatus(JournalEntryStatus.MATCHING);
-        assignChild(childId);
-        this.status = JournalEntryStatus.MATCHED;
+        enterValidationQueue(childId);
     }
 
     /** AI가 확정하지 못했다(review·multi·unmatched). 어떤 경우인지는 matching_result.status 가 가진다. */
@@ -120,6 +136,12 @@ public class JournalEntry {
         this.status = JournalEntryStatus.PENDING;
     }
 
+    /** AI 가 다운이라 매칭하지 못했다. 일지 잘못이 아니므로 실패로 남기지 않고 대기로 되돌리고 횟수를 센다. */
+    public void releaseMatchingAfterAgentDown() {
+        releaseMatching();
+        countAgentRetry();
+    }
+
     /** 사람이 확인해야 하는 상태인지 — AI가 확정하지 못했거나(MATCH_REVIEW) 호출이 실패했다(FAILED). */
     public boolean isAwaitingReview() {
         return this.status == JournalEntryStatus.MATCH_REVIEW || this.status == JournalEntryStatus.FAILED;
@@ -128,8 +150,7 @@ public class JournalEntry {
     /** 선생님이 확인 필요 큐에서 아동을 골랐다. AI 자동 확정과 같은 상태로 보내 검증 단계가 이어 가져가게 한다. */
     public void confirmMatchByReviewer(Long childId) {
         requireAwaitingReview();
-        assignChild(childId);
-        this.status = JournalEntryStatus.MATCHED;
+        enterValidationQueue(childId);
     }
 
     /** 선생님이 확인 필요 큐에서 제외했다. 아동 기록으로 쓰지 않고 여기서 끝낸다. */
@@ -156,10 +177,10 @@ public class JournalEntry {
         this.status = JournalEntryStatus.VALIDATION_BLOCKED;
     }
 
-    /** 검증 호출 자체가 실패했다. */
-    public void failValidation() {
+    /** 검증 호출이 실패했거나 결과를 남길 수 없다. 다시 돌려도 같으므로 시스템 오류로 멈추고 원인을 남긴다. */
+    public void failValidation(FailureReason reason) {
         requireStatus(JournalEntryStatus.VALIDATING);
-        this.status = JournalEntryStatus.FAILED;
+        stopBySystemError(FailureStage.VALIDATION, reason);
     }
 
     /** 검증에서 막힌(BLOCK) 기록을 선생님이 수정 요청 큐에서 처리할 수 있는 상태인지. */
@@ -194,6 +215,31 @@ public class JournalEntry {
         this.status = JournalEntryStatus.MATCHED;
     }
 
+    /** AI 가 다운이라 검증하지 못했다. 일지 잘못이 아니므로 실패로 남기지 않고 검증 대기로 되돌리고 횟수를 센다. */
+    public void releaseValidatingAfterAgentDown() {
+        releaseValidating();
+        countAgentRetry();
+    }
+
+    /** AI 다운으로 지금 단계를 되돌린 횟수. 컬럼이 비어 있는(추가 전부터 있던) 행은 0 이다. */
+    public int getAgentRetryCount() {
+        return this.agentRetryCount == null ? 0 : this.agentRetryCount;
+    }
+
+    private void countAgentRetry() {
+        this.agentRetryCount = getAgentRetryCount() + 1;
+    }
+
+    /**
+     * 매칭이 확정돼 검증 대기로 들어간다. AI 다운으로 되돌린 횟수를 0 으로 돌린다 — 매칭에서 쓴 횟수가 넘어가면 검증은
+     * 시작하자마자 상한에 걸린다. 검증 대기로 들어오는 새 경로는 이 메서드를 쓴다 (검증 중 되돌리기는 제외).
+     */
+    private void enterValidationQueue(Long childId) {
+        assignChild(childId);
+        this.status = JournalEntryStatus.MATCHED;
+        this.agentRetryCount = 0;
+    }
+
     /**
      * 워커가 요약 대상으로 집어 간다. 검증을 통과한 일지와, 승인 전 요약에 이미 들어간 일지(같은 묶음에 새 일지가
      * 와서 다시 요약한다)에서 허용한다. 승인 전 요약은 같은 판을 덮어쓴다 (DB 스키마 §8.2).
@@ -216,18 +262,63 @@ public class JournalEntry {
     }
 
     /**
-     * 요약 호출이 실패했다. 이미 승인 전 요약에 들어가 있던 일지는 그 요약이 그대로 유효하므로 Gate 1 대기로 돌리고,
-     * 처음 요약하던 일지만 실패로 남긴다.
+     * 근거가 남은 문장이 없어 요약하지 못했다. 다시 요약하면 될 수 있다. 이미 승인 전 요약에 들어가 있던 일지는 그 요약이
+     * 그대로 유효하므로 Gate 1 대기로 돌리고, 처음 요약하던 일지만 요약 실패로 남긴다.
      */
     public void failSummary() {
         requireStatus(JournalEntryStatus.SUMMARIZING);
-        this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.FAILED;
+        this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.SUMMARY_FAILED;
+    }
+
+    /**
+     * 요약 호출이 실패했거나 결과를 남길 수 없다. 다시 돌려도 같으므로 처음 요약하던 일지는 시스템 오류로 멈추고 원인을
+     * 남긴다. 이미 승인 전 요약에 들어가 있던 일지는 {@link #failSummary()} 와 같이 Gate 1 대기로 돌린다.
+     */
+    public void failSummaryBySystemError(FailureReason reason) {
+        requireStatus(JournalEntryStatus.SUMMARIZING);
+        requireFailureReason(reason);
+        if (this.summaryId != null) {
+            this.status = JournalEntryStatus.GATE1_PENDING;
+            return;
+        }
+        stopBySystemError(FailureStage.SUMMARY, reason);
     }
 
     /** 처리하던 앱이 꺼져서 요약 중에 멈춘 일지를 요약하기 전 상태로 돌린다. */
     public void releaseSummarizing() {
         requireStatus(JournalEntryStatus.SUMMARIZING);
         this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.VALIDATED;
+    }
+
+    /** 이 일지가 든 요약이 승인됐다. 다시 요약 대상이 되지 않는다. */
+    public void completeGate1() {
+        requireStatus(JournalEntryStatus.GATE1_PENDING);
+        this.status = JournalEntryStatus.COMPLETED;
+    }
+
+    /** 이 일지가 든 요약이 보류됐다. 같은 묶음에 새 일지가 와도 함께 묶이지 않는다. */
+    public void holdGate1() {
+        requireStatus(JournalEntryStatus.GATE1_PENDING);
+        this.status = JournalEntryStatus.GATE1_HELD;
+    }
+
+    /** 이 일지가 든 요약의 보류가 해제됐다. 같은 요약을 가리킨 채 Gate 1 대기로 돌아온다. */
+    public void reopenGate1() {
+        requireStatus(JournalEntryStatus.GATE1_HELD);
+        this.status = JournalEntryStatus.GATE1_PENDING;
+    }
+
+    private void stopBySystemError(FailureStage stage, FailureReason reason) {
+        requireFailureReason(reason);
+        this.status = JournalEntryStatus.SYSTEM_ERROR;
+        this.failureStage = stage;
+        this.failureReason = reason;
+    }
+
+    private static void requireFailureReason(FailureReason reason) {
+        if (reason == null) {
+            throw new IllegalArgumentException("시스템 오류 원인은 필수입니다.");
+        }
     }
 
     private void requireAwaitingReview() {
