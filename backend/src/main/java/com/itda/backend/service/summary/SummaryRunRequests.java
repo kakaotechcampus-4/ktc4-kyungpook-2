@@ -1,43 +1,84 @@
 package com.itda.backend.service.summary;
 
-import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.itda.backend.domain.summary.SummaryRunRequest;
+import com.itda.backend.repository.summary.SummaryRunRequestRepository;
+
+import lombok.RequiredArgsConstructor;
 
 /**
- * 교사가 누른 "지금 요약" 요청. 워커가 그 묶음을 마감·디바운스 없이 집어 가면 지운다.
+ * 교사가 누른 [요약] 요청({@link SummaryRunRequest}). 요약은 아직 처리하지 않은 요청이 있는 묶음만 한다.
  *
- * <p>요청마다 만료 시각이 있다. 그 시각이 지나면 어차피 정해진 규칙(마감·디바운스)대로 요약되므로 요청이 더는
- * 필요 없다. 만료가 없으면 요약할 게 없어 남은 요청 때문에, 한참 뒤 그 날짜로 올라온 일지가 디바운스 없이 요약된다.
- *
- * <p>메모리에만 둔다 — 앱이 재시작되면 사라지고, 그때는 교사가 다시 누르거나 마감에 요약된다.
- * 서버가 한 대라 이걸로 충분하다.
+ * <p>워커는 집을 때가 아니라 결과를 남길 때 처리 표시를 한다. 집을 때 하면 AI 장애로 묶음이 되돌아갔을 때 요청까지
+ * 사라진다. 처리한 요청도 지우지 않는다 (DB 스키마 §3.2).
  */
 @Component
+@RequiredArgsConstructor
 public class SummaryRunRequests {
 
-    private final Map<SummaryGroup, Instant> requested = new ConcurrentHashMap<>();
+    private final SummaryRunRequestRepository repository;
 
-    public void request(SummaryGroup group, Instant expiresAt) {
-        requested.put(group, expiresAt);
+    /**
+     * 요청을 남긴다. 이미 있으면 누른 시각만 바꾼다.
+     *
+     * <p>같은 묶음을 동시에 처음 눌러 둘 다 "없음" 을 보면 늦게 넣는 쪽이 UNIQUE({@link SummaryRunRequest#UK_GROUP})에
+     * 걸린다. 그 처리는 부르는 쪽이 한다 ({@link SummaryRunService#requestRun}).
+     */
+    @Transactional
+    public void request(SummaryGroup group, LocalDateTime requestedAt) {
+        findForUpdate(group).ifPresentOrElse(
+                existing -> existing.requestAgain(requestedAt),
+                () -> repository.saveAndFlush(SummaryRunRequest.of(
+                        group.childId(), group.entryDate(), group.institutionId(), requestedAt)));
     }
 
-    /** 아직 유효한 요청이 있는지. 만료된 요청은 이때 지운다. */
-    public boolean isRequested(SummaryGroup group, Instant now) {
-        Instant expiresAt = requested.get(group);
-        if (expiresAt == null) {
-            return false;
-        }
-        if (!now.isBefore(expiresAt)) {
-            requested.remove(group, expiresAt);
-            return false;
-        }
-        return true;
+    @Transactional(readOnly = true)
+    public boolean isRequested(SummaryGroup group) {
+        return repository.existsPending(group.childId(), group.entryDate(), group.institutionId());
     }
 
-    public void remove(SummaryGroup group) {
-        requested.remove(group);
+    /** 아직 처리하지 않은 요청과 그 묶음을 마지막으로 누른 시각. */
+    @Transactional(readOnly = true)
+    public Map<SummaryGroup, LocalDateTime> pendingRequests() {
+        return repository.findPending().stream()
+                .collect(Collectors.toMap(SummaryRunRequests::groupOf, SummaryRunRequest::getRequestedAt));
+    }
+
+    /** 그 기관의 그 날짜들 중 아직 처리하지 않은 요청이 있는 묶음. */
+    @Transactional(readOnly = true)
+    public Set<SummaryGroup> pendingGroupsOf(Long institutionId, Collection<LocalDate> dates) {
+        if (dates.isEmpty()) {
+            return Set.of();
+        }
+        return repository.findPendingIn(institutionId, dates).stream()
+                .map(SummaryRunRequests::groupOf)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * {@code until} 까지 누른 요청을 처리한 것으로 표시한다. 그 뒤에 누른 요청은 처리하지 않은 채로 남는다.
+     * 요약 결과를 남길 때는 집은 시각을, 요약할 일지가 없어 거둘 때는 읽어 둔 누른 시각을 넘긴다.
+     */
+    @Transactional
+    public void markHandled(SummaryGroup group, LocalDateTime until) {
+        findForUpdate(group).ifPresent(request -> request.markHandled(until));
+    }
+
+    private static SummaryGroup groupOf(SummaryRunRequest request) {
+        return new SummaryGroup(request.getChildId(), request.getEntryDate(), request.getInstitutionId());
+    }
+
+    private Optional<SummaryRunRequest> findForUpdate(SummaryGroup group) {
+        return repository.findGroupForUpdate(group.childId(), group.entryDate(), group.institutionId());
     }
 }

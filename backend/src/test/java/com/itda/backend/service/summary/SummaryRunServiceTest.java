@@ -5,11 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
 import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.ZoneId;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -24,14 +21,15 @@ import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.domain.summary.SummaryRunRequest;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
-import com.itda.backend.service.agent.WorkerProperties;
+import com.itda.backend.repository.summary.SummaryRunRequestRepository;
 import com.itda.backend.service.user.UserService;
 
-/** "지금 요약" — 교사가 자기 기관 아이의 그 날짜 묶음을 마감 전에 요약하도록 요청한다. */
+/** [요약] — 교사가 자기 기관 아이의 그 날짜 묶음을 요약하도록 요청한다. 요약은 이 요청이 있는 묶음만 한다 (#181). */
 @DataJpaTest
 @ActiveProfiles("test")
 class SummaryRunServiceTest {
@@ -41,8 +39,6 @@ class SummaryRunServiceTest {
     private static final Long ORG = 3L;
     private static final Long CHILD = 8L;
     private static final SummaryGroup GROUP = new SummaryGroup(CHILD, DATE, ORG);
-    private static final SummaryProperties PROPERTIES = new SummaryProperties(new WorkerProperties(true, 5000, 10),
-            LocalTime.of(3, 0), Duration.ofMinutes(30), KST, Duration.ofSeconds(120));
 
     @Autowired
     private TestEntityManager em;
@@ -53,6 +49,9 @@ class SummaryRunServiceTest {
     @Autowired
     private ChildOrganizationRepository childOrganizationRepository;
 
+    @Autowired
+    private SummaryRunRequestRepository summaryRunRequestRepository;
+
     @MockitoBean
     private UserService userService;
 
@@ -61,7 +60,7 @@ class SummaryRunServiceTest {
 
     @BeforeEach
     void setUp() {
-        runRequests = new SummaryRunRequests();
+        runRequests = new SummaryRunRequests(summaryRunRequestRepository);
         given(userService.getOrganizationIdOf("teacher")).willReturn(ORG);
         em.persist(ChildOrganization.of(CHILD, ORG));
         rawRecordId = em.persist(new RawRecord(String.valueOf(ORG), "school.pdf", "kept/school.pdf",
@@ -70,11 +69,7 @@ class SummaryRunServiceTest {
 
     private SummaryRunService serviceAt(LocalDateTime now) {
         return new SummaryRunService(userService, childOrganizationRepository, journalEntryRepository,
-                runRequests, PROPERTIES, Clock.fixed(now.atZone(KST).toInstant(), KST));
-    }
-
-    private static Instant kst(LocalDateTime at) {
-        return at.atZone(KST).toInstant();
+                runRequests, Clock.fixed(now.atZone(KST).toInstant(), KST));
     }
 
     private void validated(Long childId, LocalDate date) {
@@ -96,7 +91,8 @@ class SummaryRunServiceTest {
 
         serviceAt(DATE.atTime(17, 0)).requestRun("teacher", CHILD, DATE);
 
-        assertThat(runRequests.isRequested(GROUP, kst(DATE.atTime(17, 1)))).isTrue();
+        assertThat(summaryRunRequestRepository.findAll()).singleElement()
+                .extracting(SummaryRunRequest::getRequestedAt).isEqualTo(DATE.atTime(17, 0));
     }
 
     @Test
@@ -105,29 +101,20 @@ class SummaryRunServiceTest {
 
         serviceAt(DATE.atTime(17, 1)).requestRun("teacher", CHILD, DATE);
 
-        assertThat(runRequests.isRequested(GROUP, kst(DATE.atTime(17, 2)))).isTrue();
+        assertThat(runRequests.isRequested(GROUP)).isTrue();
     }
 
     @Test
-    void 요청은_그_날짜의_마감까지만_유효하다() {
-        // 마감이 지나면 어차피 자동으로 요약된다. 요청이 계속 남으면 한참 뒤 올라온 일지가 디바운스 없이 요약된다.
+    void 다시_누르면_요청은_하나이고_누른_시각만_바뀐다() {
         validated(CHILD, DATE);
 
         serviceAt(DATE.atTime(17, 0)).requestRun("teacher", CHILD, DATE);
+        serviceAt(DATE.atTime(17, 5)).requestRun("teacher", CHILD, DATE);
 
-        assertThat(runRequests.isRequested(GROUP, kst(LocalDateTime.of(2026, 10, 9, 2, 59)))).isTrue();
-        assertThat(runRequests.isRequested(GROUP, kst(LocalDateTime.of(2026, 10, 9, 3, 0)))).isFalse();
-    }
-
-    @Test
-    void 마감이_지난_날짜는_디바운스만큼만_유효하다() {
-        validated(CHILD, DATE);
-        LocalDateTime now = LocalDateTime.of(2026, 10, 10, 14, 0);
-
-        serviceAt(now).requestRun("teacher", CHILD, DATE);
-
-        assertThat(runRequests.isRequested(GROUP, kst(now.plusMinutes(29)))).isTrue();
-        assertThat(runRequests.isRequested(GROUP, kst(now.plusMinutes(30)))).isFalse();
+        em.flush();
+        em.clear();
+        assertThat(summaryRunRequestRepository.findAll()).singleElement()
+                .extracting(SummaryRunRequest::getRequestedAt).isEqualTo(DATE.atTime(17, 5));
     }
 
     @Test
@@ -142,6 +129,6 @@ class SummaryRunServiceTest {
 
         assertThatThrownBy(() -> serviceAt(DATE.atTime(17, 0)).requestRun("teacher", CHILD, DATE))
                 .isInstanceOf(SummaryRunValidationException.class);
-        assertThat(runRequests.isRequested(GROUP, kst(DATE.atTime(17, 0)))).isFalse();
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
     }
 }

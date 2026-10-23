@@ -134,13 +134,15 @@ dbsql -v stage=VALIDATION -v reason=AGENT_UNAVAILABLE -v apply=true < ../../back
 
 - `stage`는 `VALIDATION`·`SUMMARY`, `reason`은 `REQUEST_REJECTED`·`RESPONSE_UNREADABLE`·`EVIDENCE_MISMATCH`·
   `AGENT_UNAVAILABLE`·`INTERNAL_ERROR` 중 하나입니다. 빠지거나 틀리면 아무것도 바꾸지 않고 멈춥니다.
-- 검증은 검증 대기(`MATCHED`), 요약은 요약 대기(`VALIDATED`)로 돌아가고 두 실패 컬럼이 비워집니다. 워커가 다시 집습니다.
+- 검증은 검증 대기(`MATCHED`), 요약은 요약 대기(`VALIDATED`)로 돌아가고 두 실패 컬럼이 비워집니다. 검증은 워커가 다시 집습니다.
+  요약은 자동으로 다시 돌지 않습니다 — 그 묶음에서 [요약](O-32)을 다시 눌러야 워커가 집습니다 (#181).
 - 아이가 정해지지 않은 일지는 검증 워커가 집지 않아 되돌리지 않고 `skipped_journal_entry_id_without_child`로 id만 보여줍니다.
 - 버그를 고치기 전에 되돌리면 같은 원인으로 다시 멈춥니다. 서버 시작 시 자동 실행되지 않습니다.
 
 **요약 실패(`SUMMARY_FAILED`)는 #182 전까지 관리자가 되돌립니다.** 근거가 남은 문장이 없어 멈춘 일지라 다시 요약하면
 될 수 있고, 원래는 교사가 묶음 카드의 [다시 요약]으로 돌립니다(#182). 그 화면이 생기기 전까지는 아래처럼 요약 대기로
-돌립니다. 같은 아이·날짜 묶음의 일지는 함께 돌려야 한 요약으로 묶입니다.
+돌립니다. 같은 아이·날짜 묶음의 일지는 함께 돌려야 한 요약으로 묶입니다. 돌린 뒤 그 묶음에서 [요약](O-32)을 다시
+눌러야 요약됩니다 (#181).
 
 ```bash
 dbsql -c "SELECT id, child_id, entry_date FROM journal_entry
@@ -319,7 +321,7 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `AI_BASE_URL` | `http://localhost:8000` | AI 서버 주소 (매칭·검증·요약 에이전트 공통). Compose는 서비스 이름으로 `http://ai:8000`을 전달 |
 | `MATCHING_WORKER_ENABLED` | `true` | 매칭 워커 사용 여부. 켜 두면 5초마다 대기(`PENDING`) 일지를 AI `POST /matching`에 보내 결과를 `matching_result`에 저장. 테스트 프로필은 끔 |
 | `VALIDATION_WORKER_ENABLED` | `true` | 검증 워커 사용 여부. 켜 두면 5초마다 매칭 확정(`MATCHED`) 일지를 AI `POST /validation`에 보내 결과를 `validation_result`에 저장하고 `VALIDATED`/`VALIDATION_BLOCKED`로 바꿈. 테스트 프로필은 끔 |
-| `SUMMARY_WORKER_ENABLED` | `true` | 요약 워커 사용 여부. 켜 두면 5초마다 검증 통과(`VALIDATED`) 일지를 아동 × 날짜 × 기관 묶음으로 AI `POST /summary`에 보내 `summary_result`에 저장하고 `GATE1_PENDING`으로 바꿈. 묶음은 `entry_date` 다음 날 03:00 이후에 요약한다(`app.summary.cutoff-time`·`debounce`, 지금 요약 API로 앞당김). 테스트 프로필은 끔 ⚠️ 디바운스는 `journal_entry.created_at`(서버 기본 시간대)으로 재므로, 같은 DB 를 쓰는 서버들의 시간대를 하나로 맞춘다 |
+| `SUMMARY_WORKER_ENABLED` | `true` | 요약 워커 사용 여부. 켜 두면 5초마다 검증 통과(`VALIDATED`) 일지를 아동 × 날짜 × 기관 묶음으로 AI `POST /summary`에 보내 `summary_result`에 저장하고 `GATE1_PENDING`으로 바꿈. 교사가 [요약](O-32)을 누른 묶음만 요약한다(`summary_run_request`). 자동 요약은 없다. 테스트 프로필은 끔 |
 
 ## 설정 프로필
 

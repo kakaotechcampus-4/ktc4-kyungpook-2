@@ -3,8 +3,6 @@ package com.itda.backend.service.agent;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
-import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -66,12 +64,9 @@ class AgentPropertiesBindingTest {
     }
 
     @Test
-    void 요약_마감과_디바운스를_읽는다() {
+    void 요약_응답_대기_시간을_읽는다() {
         runner.run(context -> {
             SummaryProperties summary = context.getBean(SummaryProperties.class);
-            assertThat(summary.cutoffTime()).isEqualTo(LocalTime.of(3, 0));
-            assertThat(summary.debounce()).isEqualTo(Duration.ofMinutes(30));
-            assertThat(summary.zone()).isEqualTo(ZoneId.of("Asia/Seoul"));
             assertThat(summary.readTimeout()).isEqualTo(Duration.ofSeconds(120));
         });
     }
