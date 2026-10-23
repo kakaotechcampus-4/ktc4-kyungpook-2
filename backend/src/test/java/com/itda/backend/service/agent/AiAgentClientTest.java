@@ -23,6 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -153,6 +154,20 @@ class AiAgentClientTest {
     }
 
     @Test
+    void 요청을_보내지도_못했으면_AI_탓이_아니라_BE_오류다() {
+        server.expect(requestTo(AI + "/validation")).andRespond(request -> {
+            throw new RestClientException("No HttpMessageConverter for request body");
+        });
+
+        // AI 응답을 받기 전에 BE 쪽에서 났다 — AI 탓(응답 못 읽음)도 요청 거절도 아니라 INTERNAL_ERROR 로 간다.
+        assertThatThrownBy(() -> client.post("/validation", Map.of(), 1041L))
+                .isInstanceOf(AiAgentException.class)
+                .isNotInstanceOf(AiAgentUnreadableResponseException.class)
+                .isNotInstanceOf(AiAgentRejectedException.class)
+                .isNotInstanceOf(AiAgentUnavailableException.class);
+    }
+
+    @Test
     void 응답을_원하는_타입으로_읽는다() {
         Reply reply = client.parse(BODY, Reply.class);
 
@@ -166,6 +181,8 @@ class AiAgentClientTest {
         assertThatThrownBy(() -> client.parse(null, Reply.class))
                 .isInstanceOf(AiAgentUnreadableResponseException.class);
         assertThatThrownBy(() -> client.parse("<html>", Reply.class))
+                .isInstanceOf(AiAgentUnreadableResponseException.class);
+        assertThatThrownBy(() -> client.parse("null", Reply.class))
                 .isInstanceOf(AiAgentUnreadableResponseException.class);
     }
 

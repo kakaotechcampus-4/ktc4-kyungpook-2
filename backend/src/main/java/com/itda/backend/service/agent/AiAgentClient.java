@@ -93,25 +93,30 @@ public class AiAgentClient {
                         || clientError.getStatusCode().value() == HttpStatus.TOO_MANY_REQUESTS.value());
     }
 
-    // 그 밖의 4xx 는 BE 가 계약과 다른 요청을 보낸 것이다. 4xx 가 아닌데 실패했으면(모르는 상태 코드, 본문 읽기 실패)
-    // 응답을 못 읽은 것이다.
+    // 그 밖의 4xx 는 BE 가 계약과 다른 요청을 보낸 것이다. 4xx 도 아닌데 실패했으면 요청 본문을 못 만드는 등 BE 쪽에서
+    // 난 것이라 원인을 고르지 않고 그대로 올린다(INTERNAL_ERROR).
     private static AiAgentException notRetried(RestClientException e, String path, Object context) {
         if (e instanceof HttpClientErrorException) {
             return new AiAgentRejectedException("agent rejected request path=" + path + " " + context, e);
         }
-        return new AiAgentUnreadableResponseException(
-                "agent response could not be read path=" + path + " " + context, e);
+        return new AiAgentException("agent call failed path=" + path + " " + context, e);
     }
 
     public <T> T parse(String body, Class<T> type) {
         if (body == null || body.isBlank()) {
             throw new AiAgentUnreadableResponseException("agent returned empty body");
         }
+        T parsed;
         try {
-            return objectMapper.readValue(body, type);
+            parsed = objectMapper.readValue(body, type);
         } catch (JsonProcessingException e) {
             throw new AiAgentUnreadableResponseException("agent returned unreadable body", e);
         }
+        // 본문이 JSON null 이면 예외 없이 null 이 나온다. 넘기면 받는 쪽에서 NPE 가 나 BE 오류로 잘못 분류된다.
+        if (parsed == null) {
+            throw new AiAgentUnreadableResponseException("agent returned null body");
+        }
+        return parsed;
     }
 
     /** 일지를 집기 전에 AI 가 떠 있는지 본다. 꺼져 있을 때 일지를 집으면 전부 실패로 남기 때문이다. */
