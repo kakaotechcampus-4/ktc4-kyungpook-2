@@ -1,9 +1,13 @@
 package com.itda.backend;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -121,6 +125,9 @@ class SystemErrorRecoveryIntegrationTest {
         assertThat(recovered.getFailureReason()).isNull();
         assertThat(recovered.getAgentRetryCount()).isZero();
         assertThat(recovered.getChildId()).isEqualTo(8L);
+        // DB 는 UTC 로 돌 수 있다(배포 DB 가 그렇다). 앱처럼 한국 시간으로 남겨야 다른 행과 비교된다.
+        assertThat(recovered.getUpdatedAt())
+                .isCloseTo(LocalDateTime.now(ZoneId.of("Asia/Seoul")), within(1, ChronoUnit.MINUTES));
         // 다른 원인·다른 단계는 그대로 둔다.
         assertStillSystemError(agentDownInValidation, FailureReason.AGENT_UNAVAILABLE);
         assertStillSystemError(mismatchInSummary, FailureReason.EVIDENCE_MISMATCH);

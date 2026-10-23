@@ -145,7 +145,7 @@ dbsql -v stage=VALIDATION -v reason=AGENT_UNAVAILABLE -v apply=true < ../../back
 ```bash
 dbsql -c "SELECT id, child_id, entry_date FROM journal_entry
           WHERE status = 'SUMMARY_FAILED' AND deleted_at IS NULL ORDER BY child_id, entry_date, id;"   # 대상 확인
-dbsql -c "UPDATE journal_entry SET status = 'VALIDATED', updated_at = localtimestamp
+dbsql -c "UPDATE journal_entry SET status = 'VALIDATED', updated_at = now() AT TIME ZONE 'Asia/Seoul'
           WHERE status = 'SUMMARY_FAILED' AND deleted_at IS NULL AND id IN (101, 102);"                # 고른 id 만
 ```
 

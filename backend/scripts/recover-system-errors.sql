@@ -62,7 +62,8 @@ SET status = CASE p.stage WHEN 'VALIDATION' THEN 'MATCHED' ELSE 'VALIDATED' END,
     agent_retry_count = CASE p.stage WHEN 'VALIDATION' THEN 0 ELSE e.agent_retry_count END,
     failure_stage = NULL,
     failure_reason = NULL,
-    updated_at = localtimestamp
+    -- 앱은 한국 시간으로 남긴다. 배포 DB 는 UTC 로 돌아서 localtimestamp 를 쓰면 9시간 어긋난다.
+    updated_at = now() AT TIME ZONE 'Asia/Seoul'
 FROM recover_targets t, recover_params p
 -- 대상을 고른 뒤 다른 실행이 되돌려 워커가 다시 실패로 남겼을 수 있다. 아직 고른 단계·원인 그대로인 행만 바꾼다.
 WHERE e.id = t.id AND t.child_id IS NOT NULL AND e.status = 'SYSTEM_ERROR'
