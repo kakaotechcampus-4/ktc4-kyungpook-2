@@ -1,12 +1,26 @@
 import { useLoaderData } from "react-router";
+import { NotReadyPage } from "@/components/org/NotReady";
 import { Card, EmptyState, InstitutionChip, Note, PageHeader } from "@/components/ui";
-import { getInbox } from "@/lib/api";
+import { getInbox, isReady } from "@/lib/api";
 
 export async function clientLoader() {
   return { items: await getInbox() };
 }
 
-export default function InboxPage() {
+/** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function InboxRoute() {
+  if (!isReady("inbox")) {
+    return (
+      <NotReadyPage
+        title="메시지"
+        description="다른 기관이 보낸 검증된 지원 방법입니다 (원본이 아닌 변환된 최소 정보)"
+      />
+    );
+  }
+  return <InboxPage />;
+}
+
+function InboxPage() {
   const { items } = useLoaderData<typeof clientLoader>();
   const unread = items.filter((i) => !i.read);
 

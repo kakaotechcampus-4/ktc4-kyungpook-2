@@ -1,5 +1,6 @@
 package com.itda.backend.repository.consent;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,6 +19,12 @@ public interface SharingConsentRepository extends JpaRepository<SharingConsent, 
     List<SharingConsent> findByChildIdAndGuardianIdAndStatus(Long childId, Long guardianId, SharingConsentStatus status);
 
     List<SharingConsent> findByChildIdAndStatus(Long childId, SharingConsentStatus status);
+
+    /**
+     * 여러 아이의 동의 행 전부. Gate 2 목록이 기관마다 GRANTED·REVOKED·NOT_GRANTED 를 가르는 데 쓴다 —
+     * ACTIVE 만 받으면 "철회됨" 과 "동의한 적 없음" 을 구분하지 못한다.
+     */
+    List<SharingConsent> findByChildIdIn(Collection<Long> childIds);
 
     boolean existsByChildIdAndOrganizationIdAndStatus(Long childId, Long organizationId, SharingConsentStatus status);
 

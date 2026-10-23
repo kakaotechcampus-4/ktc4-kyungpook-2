@@ -1,12 +1,26 @@
 import { useLoaderData } from "react-router";
+import { NotReadyPage } from "@/components/org/NotReady";
 import { PageHeader } from "@/components/ui";
-import { getActivity } from "@/lib/api";
+import { getActivity, isReady } from "@/lib/api";
 
 export async function clientLoader() {
   return { logs: await getActivity() };
 }
 
-export default function HistoryPage() {
+/** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function HistoryRoute() {
+  if (!isReady("activity")) {
+    return (
+      <NotReadyPage
+        title="업무 기록"
+        description="승인 · 발송 · 조회 행위가 모두 기록됩니다"
+      />
+    );
+  }
+  return <HistoryPage />;
+}
+
+function HistoryPage() {
   const { logs } = useLoaderData<typeof clientLoader>();
 
   return (
