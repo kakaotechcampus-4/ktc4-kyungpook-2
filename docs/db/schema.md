@@ -572,7 +572,7 @@ NULL끼리 겹치는 것을 허용하므로, 해제된 행은 번호를 놓아 �
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
-| `kakao_id` | VARCHAR(50) | N | 카카오 회원번호. UNIQUE |
+| `kakao_id` | VARCHAR(50) | N | 카카오 회원번호. UNIQUE. 개발용 로그인(`DEV_LOGIN_ENABLED`)으로 만든 테스트 회원은 `dev:{이름}` (실제 카카오 회원번호는 숫자뿐이라 겹치지 않음) |
 | `name` | VARCHAR(100) | Y | 카카오 닉네임. 사용자가 동의를 거부할 수 있어 NULL 허용 |
 | `role` | VARCHAR(20) | **Y** | 역할. **NULL이면 "가입 미완료" 상태** (9.23 변경 — 이전엔 NOT NULL) |
 | `organization_id` | BIGINT | Y | 소속 기관. `role = ORGANIZATION`일 때만 |
@@ -2146,3 +2146,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-13 | `insight_run`(§9.5) 추가 — 인사이트 워커의 실행 기록. 인사이트 0건이 정상이라 결과 행만으로는 "처리했다"를 남길 수 없고, 입력인 `child_context` 는 고치지 않는 테이블이라 거기에도 못 남긴다. `(child_id, period_from, period_to, revision)` UNIQUE 로 집기를 INSERT 로 만들어 동시 실행 중복도 함께 막는다(§9.3 이 적어 둔 `revision` 경합 해소). §10.2-13 종료. 팀 합의 후 진행. 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #173 |
 | 2026-10-13 | `sharing_history` UNIQUE 요약 목록(§3.3)에 빠져 있던 `status` 보충 — §9.4 본문과 달랐다 | #173 |
 | 2026-10-13 | `sharing_consent` 구현 (`SharingConsent`). `scope` 를 JSON → TEXT(JSON 배열 문자열)로, `revoked_by`·`revoked_at`·`revoke_reason`(`GUARDIAN_REVOKED`·`GUARDIAN_UNLINKED`·`ROSTER_REMOVED`) 추가, 인덱스 `(child_id, organization_id)` (§5.5). 매칭 대상을 기관별 동의로 판정하고 `child.status` 는 화면용 요약으로 계산 (§5.1, §10.1 #8·#9, §10.2 #1·#3·#4·#14). 잠금 순서에 `sharing_consent` 추가, 동의 부여·철회·연결 해제·매칭 확정은 `child` 부터 잠금 (§3.3). 연결 해제 시 그 보호자의 동의 철회 (§5.4). 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #187 |
+| 2026-10-23 | `users.kakao_id`(§4.1)에 개발용 로그인(`GET /api/v1/dev/login`, `DEV_LOGIN_ENABLED`) 테스트 회원의 `dev:{이름}` 값이 들어올 수 있음을 명시. 컬럼·제약 변경 없음 | 미생성 |
