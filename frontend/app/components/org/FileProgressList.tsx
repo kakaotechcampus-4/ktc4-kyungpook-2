@@ -44,31 +44,22 @@ export function useProgressPolling(files: FileProgress[]) {
  * 어디까지 갔나" 라서 기록 건이 아니라 파일을 한 줄로 묶는다.
  *
  *   관찰일지_9월3주.docx          기록 12건
- *   ● ● ● ✕ ◉   ◉ 교사 확인 8건 · 1차 검토 8   ✕ 실패 1건 [다시 시도]
+ *   ● ● ● ✕ ◉   ◉ 교사 확인 8건 · 1차 검토 8   ✕ 실패 1건
+ *
+ * 실패에는 버튼을 두지 않는다. AI 가 잠깐 다운된 건 서버가 스스로 다시 돌리고(#153),
+ * 그래도 남은 실패는 다시 돌려도 또 실패할 가능성이 커서 재처리 API(O-27)를 만들지 않기로 했다.
  */
-export function FileProgressList({
-  files,
-  onRetry,
-}: {
-  files: FileProgress[];
-  onRetry?: (rawRecordId: string) => void;
-}) {
+export function FileProgressList({ files }: { files: FileProgress[] }) {
   return (
     <ul className="flex flex-col divide-y divide-line border-y border-line">
       {files.map((f) => (
-        <FileRow key={f.rawRecordId} file={f} onRetry={onRetry} />
+        <FileRow key={f.rawRecordId} file={f} />
       ))}
     </ul>
   );
 }
 
-function FileRow({
-  file,
-  onRetry,
-}: {
-  file: FileProgress;
-  onRetry?: (rawRecordId: string) => void;
-}) {
+function FileRow({ file }: { file: FileProgress }) {
   const { entries } = file;
   const states = stageStatesOf(entries);
   const waiting = entries.filter((e) => e.state === "waiting");
@@ -114,15 +105,6 @@ function FileRow({
           <span className="inline-flex items-center gap-1.5 text-block">
             <span aria-hidden>✕</span>
             <b className="font-semibold">실패 {failed}건</b>
-            {onRetry ? (
-              <button
-                type="button"
-                onClick={() => onRetry(file.rawRecordId)}
-                className="rounded border border-block/40 px-2 py-0.5 text-[13px] font-semibold hover:bg-blocksoft"
-              >
-                다시 시도
-              </button>
-            ) : null}
           </span>
         ) : null}
 
