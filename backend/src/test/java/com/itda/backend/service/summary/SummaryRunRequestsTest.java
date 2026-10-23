@@ -78,7 +78,7 @@ class SummaryRunRequestsTest {
 
     @Test
     void 집은_뒤에_다시_누른_요청은_결과를_남겨도_요청으로_남는다() {
-        // 요약하는 사이 새 일지가 들어와 교사가 다시 눌렀다. 그 일지는 지금 요약에 들어 있지 않다.
+        // 요약하는 사이 새 일지가 들어와 교사가 다시 눌렀다. 그 일지는 방금 요약에 들어 있지 않다.
         LocalDateTime claimedAt = PRESSED.plusMinutes(1);
         runRequests.request(GROUP, PRESSED);
         runRequests.request(GROUP, claimedAt.plusMinutes(1));
