@@ -48,8 +48,8 @@ public class SummaryResultRecorder {
     @Transactional
     public void record(ClaimedSummaryGroup claimed, SummaryAgentRequest request, SummaryAgentReply reply) {
         SummaryAgentResponse response = reply.response();
-        // [요약] 요청은 결과를 남길 때 지운다. 집을 때 지우면 AI 장애로 묶음이 되돌아갔을 때 요청까지 사라진다.
-        runRequests.remove(claimed.group(), claimed.claimedAt());
+        // [요약] 요청은 결과를 남길 때 처리 표시를 한다. 집을 때 하면 AI 장애로 묶음이 되돌아갔을 때 요청까지 사라진다.
+        runRequests.markHandled(claimed.group(), claimed.claimedAt());
         if (isEmptyContent(response)) {
             log.warn("summary returned empty content, recorded as system error group={}", claimed.group());
             recordSystemError(claimed, FailureReason.RESPONSE_UNREADABLE);
@@ -113,7 +113,7 @@ public class SummaryResultRecorder {
      */
     @Transactional
     public void recordFailure(ClaimedSummaryGroup claimed) {
-        runRequests.remove(claimed.group(), claimed.claimedAt());
+        runRequests.markHandled(claimed.group(), claimed.claimedAt());
         summarizingEntries(claimed).forEach(JournalEntry::failSummary);
     }
 
@@ -123,7 +123,7 @@ public class SummaryResultRecorder {
      */
     @Transactional
     public void recordSystemError(ClaimedSummaryGroup claimed, FailureReason reason) {
-        runRequests.remove(claimed.group(), claimed.claimedAt());
+        runRequests.markHandled(claimed.group(), claimed.claimedAt());
         summarizingEntries(claimed).forEach(entry -> entry.failSummaryBySystemError(reason));
     }
 

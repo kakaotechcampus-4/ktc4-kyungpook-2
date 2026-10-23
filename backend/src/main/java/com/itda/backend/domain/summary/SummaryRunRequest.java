@@ -18,13 +18,17 @@ import lombok.NoArgsConstructor;
 /**
  * 교사가 묶음(아동 × 날짜 × 기관)에 누른 [요약] 요청 (DB 스키마 §8.3, #181).
  *
- * <p>요약은 이 요청이 있는 묶음만 한다 — 자동 요약이 없어서 요청이 사라지면 그 묶음은 요약되지 않는다. 그래서
- * 메모리가 아니라 DB 에 둔다. 워커가 결과를 남길 때 지운다.
+ * <p>요약은 아직 처리하지 않은 요청이 있는 묶음만 한다 — 자동 요약이 없어서 요청이 사라지면 그 묶음은 요약되지
+ * 않는다. 그래서 메모리가 아니라 DB 에 둔다.
+ *
+ * <p>처리해도 지우지 않는다 (§3.2). 어디까지 처리했는지({@code handled_until})만 남기고, 그 뒤에 누른 것
+ * ({@code requested_at > handled_until})이 아직 처리하지 않은 요청이다.
  *
  * <p>일지에 표시하지 않고 행을 따로 두는 이유 — 업로드 직후 누르면 일지가 아직 매칭 전이라 {@code child_id} 가
  * 비어 있어 어느 아이의 요청인지 일지에 적을 수 없다. {@code summary_result} 는 요약이 끝나야 생긴다.
  *
- * <p>묶음마다 한 행이다. 다시 누르면 {@code requested_at} 만 바뀐다.
+ * <p>묶음마다 한 행이다. 다시 누르면 {@code requested_at} 만 바뀐다. 요청을 바꾸는 쪽은 행을 잠그고 바꾼다 —
+ * 교사가 다시 누르는 것과 워커가 처리 표시를 하는 것이 겹쳐도 서로의 칸을 옛 값으로 덮지 않는다.
  */
 @Entity
 @Table(
@@ -59,6 +63,12 @@ public class SummaryRunRequest {
     @Column(name = "requested_at", nullable = false)
     private LocalDateTime requestedAt;
 
+    /**
+     * 이 시각까지 누른 요청은 처리했다. 워커가 요약을 집은 시각이다. 아직 한 번도 처리하지 않았으면 {@code null}.
+     */
+    @Column(name = "handled_until")
+    private LocalDateTime handledUntil;
+
     private SummaryRunRequest(Long childId, LocalDate entryDate, Long institutionId, LocalDateTime requestedAt) {
         this.childId = childId;
         this.entryDate = entryDate;
@@ -83,5 +93,28 @@ public class SummaryRunRequest {
             throw new IllegalArgumentException("요청 시각은 필수입니다.");
         }
         this.requestedAt = requestedAt;
+    }
+
+    /** 아직 처리하지 않은 요청이 있는지. */
+    public boolean isPending() {
+        return handledUntil == null || requestedAt.isAfter(handledUntil);
+    }
+
+    /**
+     * {@code claimedAt} 에 집은 요약의 결과를 남겼다. 그때까지 누른 요청은 처리됐다. 옛 요약이 늦게 끝나도 처리
+     * 시각을 뒤로 돌리지 않는다.
+     */
+    public void markHandled(LocalDateTime claimedAt) {
+        if (claimedAt == null) {
+            throw new IllegalArgumentException("처리 시각은 필수입니다.");
+        }
+        if (handledUntil == null || claimedAt.isAfter(handledUntil)) {
+            this.handledUntil = claimedAt;
+        }
+    }
+
+    /** 요약할 일지가 없어 지금까지 누른 요청을 거둔다. */
+    public void cancel() {
+        markHandled(requestedAt);
     }
 }

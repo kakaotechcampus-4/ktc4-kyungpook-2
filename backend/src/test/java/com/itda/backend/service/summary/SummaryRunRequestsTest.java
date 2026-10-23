@@ -60,24 +60,54 @@ class SummaryRunRequestsTest {
     }
 
     @Test
-    void 집기_전에_누른_요청은_결과를_남길_때_지운다() {
+    void 집기_전에_누른_요청은_결과를_남길_때_처리됨으로_남긴다() {
+        LocalDateTime claimedAt = PRESSED.plusMinutes(1);
         runRequests.request(GROUP, PRESSED);
 
-        runRequests.remove(GROUP, PRESSED.plusMinutes(1));
+        runRequests.markHandled(GROUP, claimedAt);
 
         assertThat(runRequests.isRequested(GROUP)).isFalse();
+        // 행은 지우지 않는다 (DB 스키마 §3.2). 어디까지 처리했는지만 남긴다.
+        em.flush();
+        em.clear();
+        assertThat(repository.findAll()).singleElement().satisfies(saved -> {
+            assertThat(saved.getRequestedAt()).isEqualTo(PRESSED);
+            assertThat(saved.getHandledUntil()).isEqualTo(claimedAt);
+        });
     }
 
     @Test
-    void 집은_뒤에_다시_누른_요청은_결과를_남길_때_지우지_않는다() {
+    void 집은_뒤에_다시_누른_요청은_결과를_남겨도_요청으로_남는다() {
         // 요약하는 사이 새 일지가 들어와 교사가 다시 눌렀다. 그 일지는 지금 요약에 들어 있지 않다.
         LocalDateTime claimedAt = PRESSED.plusMinutes(1);
         runRequests.request(GROUP, PRESSED);
         runRequests.request(GROUP, claimedAt.plusMinutes(1));
 
-        runRequests.remove(GROUP, claimedAt);
+        runRequests.markHandled(GROUP, claimedAt);
 
         assertThat(runRequests.isRequested(GROUP)).isTrue();
+    }
+
+    @Test
+    void 처리한_뒤_다시_누르면_다시_요청된다() {
+        runRequests.request(GROUP, PRESSED);
+        runRequests.markHandled(GROUP, PRESSED.plusMinutes(1));
+
+        runRequests.request(GROUP, PRESSED.plusMinutes(10));
+
+        assertThat(runRequests.isRequested(GROUP)).isTrue();
+        assertThat(repository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void 늦게_끝난_옛_요약이_처리_시각을_되돌리지_않는다() {
+        runRequests.request(GROUP, PRESSED);
+        runRequests.markHandled(GROUP, PRESSED.plusMinutes(5));
+        runRequests.request(GROUP, PRESSED.plusMinutes(3));
+
+        runRequests.markHandled(GROUP, PRESSED.plusMinutes(2));
+
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
     }
 
     @Test
@@ -88,13 +118,17 @@ class SummaryRunRequestsTest {
 
         assertThat(runRequests.isRequested(GROUP)).isFalse();
         assertThat(runRequests.requestedGroups()).isEmpty();
+        assertThat(repository.count()).isEqualTo(1);
     }
 
     @Test
-    void 요청된_묶음을_모두_알려준다() {
+    void 아직_처리하지_않은_요청의_묶음만_알려준다() {
         SummaryGroup other = new SummaryGroup(9L, GROUP.entryDate(), 3L);
+        SummaryGroup handled = new SummaryGroup(10L, GROUP.entryDate(), 3L);
         runRequests.request(GROUP, PRESSED);
         runRequests.request(other, PRESSED);
+        runRequests.request(handled, PRESSED);
+        runRequests.markHandled(handled, PRESSED.plusMinutes(1));
 
         assertThat(runRequests.requestedGroups()).containsExactlyInAnyOrder(GROUP, other);
     }

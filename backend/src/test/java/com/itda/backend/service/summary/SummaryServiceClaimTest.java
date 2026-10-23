@@ -146,12 +146,12 @@ class SummaryServiceClaimTest {
     }
 
     @Test
-    void 집을_때는_요청을_지우지_않는다() {
+    void 집을_때는_요청을_처리됨으로_바꾸지_않는다() {
         validated(school, 8L);
         requestRun(GROUP);
 
         assertThat(claim()).hasSize(1);
-        // AI 가 죽어 묶음이 되돌아가도 다음 차례에 다시 요약하도록, 결과를 남길 때 지운다.
+        // AI 가 죽어 묶음이 되돌아가도 다음 차례에 다시 요약하도록, 결과를 남길 때 처리 표시를 한다.
         assertThat(runRequests.isRequested(GROUP)).isTrue();
     }
 

@@ -314,7 +314,7 @@ class SummaryResultRecorderTest {
     }
 
     @Test
-    void 결과를_남기면_요약_요청을_지운다() throws Exception {
+    void 결과를_남기면_요약_요청을_처리됨으로_남긴다() throws Exception {
         JournalEntry ok = summarizing("블록 놀이를 했다.");
         runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
 
@@ -324,7 +324,7 @@ class SummaryResultRecorderTest {
     }
 
     @Test
-    void 실패로_남겨도_요약_요청을_지운다() {
+    void 실패로_남겨도_요약_요청을_처리됨으로_남긴다() {
         JournalEntry failed = summarizing("블록 놀이를 했다.");
         runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
         recorder.recordFailure(claimed(failed));
@@ -339,7 +339,7 @@ class SummaryResultRecorderTest {
     }
 
     @Test
-    void 요약하는_사이_다시_누른_요청은_결과를_남겨도_지우지_않는다() throws Exception {
+    void 요약하는_사이_다시_누른_요청은_결과를_남겨도_요청으로_남는다() throws Exception {
         // 요약하는 사이 새 일지가 들어와 교사가 다시 눌렀다. 그 일지는 방금 요약에 들어 있지 않다.
         JournalEntry ok = summarizing("블록 놀이를 했다.");
         runRequests.request(GROUP, CLAIMED_AT.plusMinutes(1));
