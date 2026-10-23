@@ -2,8 +2,8 @@ package com.itda.backend.service.summary;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 
@@ -32,6 +32,7 @@ class SummaryResultRecorderTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
     private static final SummaryGroup GROUP = new SummaryGroup(8L, DATE, 3L);
+    private static final LocalDateTime CLAIMED_AT = LocalDateTime.of(2026, 10, 8, 17, 0);
 
     @Autowired
     private SummaryResultRecorder recorder;
@@ -69,7 +70,7 @@ class SummaryResultRecorderTest {
     }
 
     private ClaimedSummaryGroup claimed(JournalEntry... entries) {
-        return new ClaimedSummaryGroup(GROUP, Arrays.stream(entries).map(JournalEntry::getId).toList());
+        return new ClaimedSummaryGroup(GROUP, Arrays.stream(entries).map(JournalEntry::getId).toList(), CLAIMED_AT);
     }
 
     /** 워커가 AI 에 보낸 요청 — 묶음의 일지 원문. */
@@ -313,28 +314,39 @@ class SummaryResultRecorderTest {
     }
 
     @Test
-    void 결과를_남기면_지금_요약_요청을_지운다() throws Exception {
+    void 결과를_남기면_요약_요청을_지운다() throws Exception {
         JournalEntry ok = summarizing("블록 놀이를 했다.");
-        runRequests.request(GROUP, Instant.MAX);
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
 
         recorder.record(claimed(ok), sent(ok), reply("블록 놀이를 했다.", ok, "[" + ok.getId() + "]", "[]"));
 
-        assertThat(runRequests.isRequested(GROUP, Instant.now())).isFalse();
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
     }
 
     @Test
-    void 실패로_남겨도_지금_요약_요청을_지운다() {
+    void 실패로_남겨도_요약_요청을_지운다() {
         JournalEntry failed = summarizing("블록 놀이를 했다.");
-        runRequests.request(GROUP, Instant.MAX);
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
         recorder.recordFailure(claimed(failed));
-        boolean afterFailure = runRequests.isRequested(GROUP, Instant.now());
+        boolean afterFailure = runRequests.isRequested(GROUP);
 
         JournalEntry systemError = summarizing("점심을 먹었다.");
-        runRequests.request(GROUP, Instant.MAX);
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
         recorder.recordSystemError(claimed(systemError), FailureReason.INTERNAL_ERROR);
 
         assertThat(afterFailure).isFalse();
-        assertThat(runRequests.isRequested(GROUP, Instant.now())).isFalse();
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
+    }
+
+    @Test
+    void 요약하는_사이_다시_누른_요청은_결과를_남겨도_지우지_않는다() throws Exception {
+        // 요약하는 사이 새 일지가 들어와 교사가 다시 눌렀다. 그 일지는 방금 요약에 들어 있지 않다.
+        JournalEntry ok = summarizing("블록 놀이를 했다.");
+        runRequests.request(GROUP, CLAIMED_AT.plusMinutes(1));
+
+        recorder.record(claimed(ok), sent(ok), reply("블록 놀이를 했다.", ok, "[" + ok.getId() + "]", "[]"));
+
+        assertThat(runRequests.isRequested(GROUP)).isTrue();
     }
 
     private static void assertSystemError(JournalEntry entry, FailureReason reason) {

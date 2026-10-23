@@ -1,9 +1,7 @@
 package com.itda.backend.service.summary;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -57,14 +55,13 @@ public class SummaryService {
     private final OrganizationRepository organizationRepository;
     private final SummaryResultRepository summaryResultRepository;
     private final SummaryRunRequests runRequests;
-    private final SummaryProperties properties;
     private final Clock clock;
 
     /**
      * 요약할 준비가 된 묶음을 집어 가며 그 안의 일지를 SUMMARIZING 으로 바꾼다 (AI/summary/CRITERIA.md §5).
      *
-     * <p>준비 조건은 셋이다. 마감(entry_date 다음 날 03:00)이 지났고, 묶음의 마지막 일지가 들어온 뒤 디바운스(30분)가
-     * 지났고, 같은 기관·같은 날짜에 매칭·검증 중인 일지가 없어야 한다. "지금 요약" 을 누른 묶음은 앞의 둘을 건너뛴다.
+     * <p>준비 조건은 둘이다. 교사가 그 묶음에 [요약]을 눌렀고({@link SummaryRunRequests}), 같은 기관·같은 날짜에
+     * 매칭·검증 중인 일지가 없어야 한다. 누르지 않은 묶음은 요약하지 않는다 — 자동 요약은 없다 (#181).
      *
      * <p>새로 검증을 통과한 일지(VALIDATED)가 있는 묶음만 집는다. 그 묶음의 최신 판이 아직 Gate 1 대기면, 그 판에 든
      * 일지(GATE1_PENDING)도 새 일지와 함께 다시 요약하도록 같이 담는다. 보류된 일지(GATE1_HELD)와 보류 해제된 옛 판의
@@ -78,6 +75,7 @@ public class SummaryService {
         Map<SummaryGroup, List<SummaryCandidate>> groups = groupCandidates(
                 journalEntryRepository.findSummaryCandidates(List.of(JournalEntryStatus.VALIDATED)));
 
+        LocalDateTime claimedAt = LocalDateTime.now(clock);
         List<ClaimedSummaryGroup> claimed = new ArrayList<>();
         for (Map.Entry<SummaryGroup, List<SummaryCandidate>> e : groups.entrySet()) {
             if (claimed.size() >= limit) {
@@ -93,7 +91,7 @@ public class SummaryService {
                     .sorted()
                     .toList();
             journalEntryRepository.findAllById(ids).forEach(JournalEntry::startSummarizing);
-            claimed.add(new ClaimedSummaryGroup(group, ids));
+            claimed.add(new ClaimedSummaryGroup(group, ids, claimedAt));
         }
         return claimed;
     }
@@ -131,16 +129,7 @@ public class SummaryService {
         if (busy.contains(new InProgressKey(institutionId, group.entryDate()))) {
             return false;
         }
-        Instant now = clock.instant();
-        if (runRequests.isRequested(group, now)) {
-            return true;
-        }
-        Instant cutoff = properties.cutoffOf(group.entryDate());
-        // createdAt 은 서버 기본 시간대의 LocalDateTime.now() 로 채워진다.
-        LocalDateTime lastUploaded = members.stream().map(SummaryCandidate::createdAt)
-                .max(LocalDateTime::compareTo).orElseThrow();
-        Instant settled = lastUploaded.atZone(ZoneId.systemDefault()).toInstant().plus(properties.debounce());
-        return !now.isBefore(cutoff) && !now.isBefore(settled);
+        return runRequests.isRequested(group);
     }
 
     /**

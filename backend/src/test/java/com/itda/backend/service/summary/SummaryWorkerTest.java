@@ -15,8 +15,7 @@ import static org.mockito.Mockito.verify;
 
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -39,8 +38,7 @@ import com.itda.backend.service.agent.WorkerProperties;
 @ExtendWith(MockitoExtension.class)
 class SummaryWorkerTest {
 
-    private static final SummaryProperties PROPERTIES = new SummaryProperties(new WorkerProperties(true, 5000, 10),
-            LocalTime.of(3, 0), Duration.ofMinutes(30), ZoneId.of("Asia/Seoul"), Duration.ofSeconds(120));
+    private static final SummaryProperties PROPERTIES = new SummaryProperties(new WorkerProperties(true, 5000, 10), Duration.ofSeconds(120));
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
 
@@ -60,7 +58,8 @@ class SummaryWorkerTest {
     }
 
     private ClaimedSummaryGroup group(long childId, Long... entryIds) {
-        return new ClaimedSummaryGroup(new SummaryGroup(childId, DATE, 3L), List.of(entryIds));
+        return new ClaimedSummaryGroup(new SummaryGroup(childId, DATE, 3L), List.of(entryIds),
+                LocalDateTime.of(2026, 10, 8, 17, 0));
     }
 
     private SummaryAgentRequest requestFor(ClaimedSummaryGroup claimed) {
