@@ -27,8 +27,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentRejectedException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.summary.SummaryNoGroundedClaimsException;
 import com.itda.backend.exception.summary.SummaryTargetException;
@@ -90,26 +92,27 @@ class SummaryWorkerTest {
     }
 
     @Test
-    void AI_상태와_무관한_실패는_그_묶음만_실패로_남기고_다음_묶음을_계속_처리한다() {
+    void AI가_요청을_거절하면_그_묶음만_REQUEST_REJECTED로_남기고_다음_묶음을_계속_처리한다() {
         ClaimedSummaryGroup first = group(8L, 1L);
         ClaimedSummaryGroup second = group(9L, 2L);
         SummaryAgentReply reply2 = new SummaryAgentReply(null, "{}");
         given(summaryService.claimReadyGroups(10)).willReturn(List.of(first, second));
         given(summaryService.prepareRequest(first)).willReturn(requestFor(first));
         given(summaryService.prepareRequest(second)).willReturn(requestFor(second));
-        given(client.summarize(requestFor(first))).willThrow(new AiAgentException("422 from agent"));
+        given(client.summarize(requestFor(first))).willThrow(new AiAgentRejectedException("422 from agent", null));
         given(client.summarize(requestFor(second))).willReturn(reply2);
 
         worker.run();
 
-        verify(recorder).recordFailure(first);
+        verify(recorder).recordSystemError(first, FailureReason.REQUEST_REJECTED);
         verify(recorder, never()).record(eq(first), any(), any());
         verify(recorder).record(second, requestFor(second), reply2);
-        verify(recorder, never()).recordFailure(second);
+        verify(recorder, never()).recordSystemError(eq(second), any());
+        verify(recorder, never()).recordFailure(any());
     }
 
     @Test
-    void 근거가_남지_않은_묶음은_그_묶음만_실패로_남기고_나머지를_되돌리지_않는다() {
+    void 근거가_남지_않은_묶음은_그_묶음만_요약_실패로_남기고_나머지를_되돌리지_않는다() {
         ClaimedSummaryGroup first = group(8L, 1L);
         ClaimedSummaryGroup second = group(9L, 2L);
         SummaryAgentReply reply2 = new SummaryAgentReply(null, "{}");
@@ -122,27 +125,29 @@ class SummaryWorkerTest {
 
         worker.run();
 
+        // 다시 요약하면 될 수 있는 실패라 시스템 오류가 아니다 — 교사가 묶음 카드에서 다시 요약한다 (#182).
         verify(recorder).recordFailure(first);
+        verify(recorder, never()).recordSystemError(any(), any());
         verify(recorder).record(second, requestFor(second), reply2);
         verify(summaryService, never()).release(any());
     }
 
     @Test
-    void 결과_저장이_실패해도_실패로_남긴다() {
+    void 결과_저장이_실패하면_INTERNAL_ERROR로_남긴다() {
         ClaimedSummaryGroup claimed = group(8L, 1L);
         SummaryAgentReply reply = new SummaryAgentReply(null, "{}");
         given(summaryService.claimReadyGroups(10)).willReturn(List.of(claimed));
         given(summaryService.prepareRequest(claimed)).willReturn(requestFor(claimed));
         given(client.summarize(requestFor(claimed))).willReturn(reply);
-        willThrow(new IllegalArgumentException("content missing")).given(recorder).record(claimed, requestFor(claimed), reply);
+        willThrow(new IllegalStateException("db hiccup")).given(recorder).record(claimed, requestFor(claimed), reply);
 
         worker.run();
 
-        verify(recorder).recordFailure(claimed);
+        verify(recorder).recordSystemError(claimed, FailureReason.INTERNAL_ERROR);
     }
 
     @Test
-    void 요청을_만들_수_없는_묶음도_그_묶음만_실패로_남긴다() {
+    void 요청을_만들_수_없는_묶음도_그_묶음만_INTERNAL_ERROR로_남긴다() {
         ClaimedSummaryGroup first = group(8L, 1L);
         ClaimedSummaryGroup second = group(9L, 2L);
         given(summaryService.claimReadyGroups(10)).willReturn(List.of(first, second));
@@ -151,7 +156,7 @@ class SummaryWorkerTest {
 
         worker.run();
 
-        verify(recorder).recordFailure(first);
+        verify(recorder).recordSystemError(first, FailureReason.INTERNAL_ERROR);
         verify(client).summarize(requestFor(second));
     }
 
@@ -191,6 +196,7 @@ class SummaryWorkerTest {
         worker.run();
 
         verify(recorder, never()).recordFailure(any());
+        verify(recorder, never()).recordSystemError(any(), any());
         verify(summaryService).release(List.of(first, second, third));
         verify(summaryService, never()).prepareRequest(second);
         verify(summaryService, never()).prepareRequest(third);
@@ -215,6 +221,7 @@ class SummaryWorkerTest {
 
         // 두 묶음 모두 SUMMARIZING 으로 남기고, 다음에 켜질 때 releaseStuck 이 되돌린다.
         verify(recorder, never()).recordFailure(any());
+        verify(recorder, never()).recordSystemError(any(), any());
         verify(summaryService, never()).prepareRequest(second);
         verify(summaryService, never()).release(any());
     }

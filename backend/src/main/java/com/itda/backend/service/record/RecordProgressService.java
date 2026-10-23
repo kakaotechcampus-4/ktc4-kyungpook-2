@@ -9,6 +9,7 @@ import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.itda.backend.domain.record.FailureStage;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
@@ -118,10 +119,11 @@ public class RecordProgressService {
     /**
      * 어느 단계에 있는지.
      *
-     * <p>{@code FAILED} 는 <b>어디서 실패했는지 적힌 칸이 없다.</b> 그대로 0 으로 내려보내면 요약까지 갔다가
-     * 죽은 기록이 "등록 단계 실패" 로 보인다. 일지가 남긴 흔적으로 되짚는다.
+     * <p>시스템 오류는 멈춘 단계가 {@code failure_stage} 에 적혀 있다(#180). 요약 실패는 요약 단계다.
      *
-     * <p>더 정확한 사유는 #180(실패 상태 분리 · 원인 코드)이 들어오면 그때 얹는다.
+     * <p>{@code FAILED} 는 <b>어디서 실패했는지 적힌 칸이 없다.</b> 그대로 0 으로 내려보내면 요약까지 갔다가
+     * 죽은 기록이 "등록 단계 실패" 로 보인다. 일지가 남긴 흔적으로 되짚는다. #180 부터는 매칭 실패만 FAILED 가
+     * 되지만, 그 전에 검증·요약에서 FAILED 로 남은 일지가 있을 수 있어 되짚기를 둔다.
      */
     private static int stageOf(JournalEntry entry, Set<Long> validatedIds) {
         return switch (entry.getStatus()) {
@@ -130,6 +132,8 @@ public class RecordProgressService {
             case MATCHED, VALIDATING, VALIDATION_BLOCKED, REUPLOAD_REQUESTED, VALIDATION_HELD -> STAGE_VALIDATING;
             case VALIDATED, SUMMARIZING -> STAGE_SUMMARIZING;
             case GATE1_PENDING, GATE1_HELD, COMPLETED -> STAGE_GATE1;
+            case SUMMARY_FAILED -> STAGE_SUMMARIZING;
+            case SYSTEM_ERROR -> entry.getFailureStage() == FailureStage.SUMMARY ? STAGE_SUMMARIZING : STAGE_VALIDATING;
             case FAILED -> failedStageOf(entry, validatedIds);
         };
     }
@@ -169,7 +173,7 @@ public class RecordProgressService {
             case PENDING, MATCHING, MATCHED, VALIDATING, VALIDATED, SUMMARIZING -> RUNNING;
             case MATCH_REVIEW, CONSENT_BLOCKED, VALIDATION_BLOCKED, GATE1_PENDING, GATE1_HELD -> WAITING;
             case EXCLUDED, REUPLOAD_REQUESTED, VALIDATION_HELD, COMPLETED -> DONE;
-            case FAILED -> FAILED;
+            case FAILED, SUMMARY_FAILED, SYSTEM_ERROR -> FAILED;
         };
     }
 }

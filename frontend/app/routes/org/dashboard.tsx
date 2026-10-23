@@ -10,6 +10,7 @@ import {
   loadIfReady,
   retryFailedEntries,
 } from "@/lib/api";
+import { isAuthMock } from "@/lib/auth";
 import { MY_INSTITUTION } from "@/lib/mock/data";
 
 /** 백엔드에 아직 없는 기능은 null 로 와서 "준비 중"으로 그린다 (loadIfReady 참고) */
@@ -43,7 +44,8 @@ export default function DashboardPage() {
       <PageHeader
         title="오늘의 업무"
         description="오늘 처리해야 할 일과 등록된 기록의 진행 상황입니다"
-        right={<InstitutionChip institution={MY_INSTITUTION} withName />}
+        // 실연동에서는 숨긴다. 내 기관명을 받을 API 가 아직 없어, mock 기관명을 띄우면 다른 기관이 보인다
+        right={isAuthMock() ? <InstitutionChip institution={MY_INSTITUTION} withName /> : null}
       />
 
       {isEmpty ? (

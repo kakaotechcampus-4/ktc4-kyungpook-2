@@ -17,6 +17,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
@@ -182,6 +183,26 @@ class SummaryServiceClaimTest {
         uploadedAt(em.persistAndFlush(inReview), DATE.atTime(16, 1));
 
         assertThat(serviceAt(AFTER_CUTOFF).claimReadyGroups(10)).hasSize(1);
+    }
+
+    @Test
+    void 요약_실패와_시스템_오류로_멈춘_일지는_묶음을_막지도_다시_집히지도_않는다() {
+        JournalEntry ok = uploadedAt(validated(school, 8L), DATE.atTime(16, 0));
+        JournalEntry summaryFailed = validated(school, 8L);
+        summaryFailed.startSummarizing();
+        summaryFailed.failSummary();
+        uploadedAt(em.persistAndFlush(summaryFailed), DATE.atTime(16, 1));
+        JournalEntry systemError = validated(school, 8L);
+        systemError.startSummarizing();
+        systemError.failSummaryBySystemError(FailureReason.EVIDENCE_MISMATCH);
+        uploadedAt(em.persistAndFlush(systemError), DATE.atTime(16, 2));
+
+        // 요약 실패는 교사가 [다시 요약]으로(#182), 시스템 오류는 관리자가 고친 뒤 되돌려서 다시 요약한다.
+        assertThat(serviceAt(AFTER_CUTOFF).claimReadyGroups(10))
+                .singleElement()
+                .satisfies(claimed -> assertThat(claimed.journalEntryIds()).containsExactly(ok.getId()));
+        assertThat(statusOf(summaryFailed)).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
+        assertThat(statusOf(systemError)).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
     }
 
     private static final SummaryGroup GROUP = new SummaryGroup(8L, DATE, 3L);

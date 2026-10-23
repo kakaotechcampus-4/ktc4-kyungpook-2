@@ -25,7 +25,7 @@ import com.itda.backend.service.agent.AiAgentProperties;
  * <ul>
  * <li>{@code llm_unavailable}: LLM 을 못 쓴다. 재시도까지 실패하면 워커가 이번 차례를 멈춘다
  * <li>{@code no_grounded_claims}: 모델이 쓴 문장이 근거를 못 찾아 모두 버려졌다. 모델이 부를 때마다 다른 문장을 쓰므로
- * 재시도하면 될 수 있다. 재시도까지 같으면 {@link SummaryNoGroundedClaimsException} 으로 그 묶음만 실패로 남긴다
+ * 재시도하면 될 수 있다. 재시도까지 같으면 {@link SummaryNoGroundedClaimsException} 으로 그 묶음만 요약 실패로 남긴다
  * </ul>
  * 마지막 응답을 기준으로 한다. 사유를 읽을 수 없으면 LLM 장애로 본다.
  */
