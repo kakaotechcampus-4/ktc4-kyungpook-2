@@ -124,8 +124,8 @@ const BE_READY = {
   insights: false,
   /** 원본 업로드 (POST /raw-records) */
   upload: true,
-  /** 파일별 처리 현황 · 재시도 (O-26, O-27) */
-  fileProgress: false,
+  /** 파일별 처리 현황 (O-26) */
+  fileProgress: true,
   /** 기관 받은편지함 */
   inbox: false,
   /** 활동 기록 */
@@ -483,7 +483,7 @@ function mockRejectReason(file: File): UploadFailReason | null {
 /**
  * 파일별 처리 현황. 최근 업로드가 먼저 온다.
  *
- * GET /api/v1/raw-records/progress — **계약 확정, 구현 예정** (api-spec.md O-26)
+ * GET /api/v1/raw-records/progress — 구현됨 (api-spec.md O-26)
  *    파일을 기록 단위로 나누기 전까지는 entries: [] 만 와서 "기록 등록 중"에 머문다. 정상이다.
  */
 export async function getFileProgress(): Promise<FileProgress[]> {
@@ -492,22 +492,6 @@ export async function getFileProgress(): Promise<FileProgress[]> {
     return mock.FILE_PROGRESS;
   }
   return request("/api/v1/raw-records/progress");
-}
-
-/**
- * 실패한 기록을 다시 처리한다. 실패는 사람이 고를 게 아니라 시스템 오류라 재시도로 충분하다.
- * POST /api/v1/raw-records/{id}/retry — **계약 확정, 구현 예정** (api-spec.md O-27)
- */
-export async function retryFailedEntries(rawRecordId: string): Promise<{ ok: true }> {
-  if (mockFor("fileProgress")) {
-    const file = mock.FILE_PROGRESS.find((f) => f.rawRecordId === rawRecordId);
-    for (const e of file?.entries ?? []) {
-      if (e.state === "failed") e.state = "running";
-    }
-    simulated.set(rawRecordId, Date.now());
-    return { ok: true };
-  }
-  return request(`/api/v1/raw-records/${rawRecordId}/retry`, { method: "POST" });
 }
 
 /**

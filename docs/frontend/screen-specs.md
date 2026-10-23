@@ -265,12 +265,14 @@
 - 그 밖의 오류(500 · 네트워크): "실패한 파일만 다시 올리기"로 그 파일만 다시 올림
 - 성공한 파일은 다시 올리지 않습니다 — 원본 기록 중복을 막기 위해서입니다
 
-**호출 API** · `getChildren` · `uploadRawRecords` · `getFileProgress` · `retryFailedEntries`
+**호출 API** · `getChildren` · `uploadRawRecords` · `getFileProgress`
 ([api-spec.md](../api/api-spec.md) §4.3)
 
 - `uploadRawRecords` → `POST /api/v1/raw-records` · 구현됨
-- `getFileProgress` → `GET /api/v1/raw-records/progress` · 계약 확정, 구현 예정
-- `retryFailedEntries` → `POST /api/v1/raw-records/{id}/retry` · 계약 확정, 구현 예정
+- `getFileProgress` → `GET /api/v1/raw-records/progress` · 구현됨
+
+실패한 기록에는 [다시 시도] 버튼을 두지 않고 실패 건수만 보여줍니다. AI 가 잠깐 다운된 건 서버가
+스스로 다시 돌리고(#153), 그래도 남은 실패는 다시 돌려도 또 실패할 가능성이 커서 재처리(O-27)는 쓰지 않습니다.
 
 > ⚠️ 진행 표시는 mock 모드에서 시뮬레이션입니다. 실제 모드는 `/progress` 를 폴링하는데,
 > 기록 단위 분할이 끝나기 전까지 `entries: []` 만 와서 "기록 등록 중"에 머무는 게 정상입니다.
