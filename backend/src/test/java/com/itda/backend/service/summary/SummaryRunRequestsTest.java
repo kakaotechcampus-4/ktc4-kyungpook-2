@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -111,25 +112,26 @@ class SummaryRunRequestsTest {
     }
 
     @Test
-    void 요약할_게_없게_된_요청은_시각과_상관없이_거둔다() {
-        runRequests.request(GROUP, PRESSED);
+    void 늦게_도착한_옛_누름이_더_늦게_누른_시각을_되돌리지_않는다() {
+        // 잠금을 기다리던 옛 요청(T1)이 그새 들어온 요청(T3)을 덮으면, T2 에 처리 표시된 뒤 T3 요청이 사라진다.
+        runRequests.request(GROUP, PRESSED.plusMinutes(3));
+        runRequests.markHandled(GROUP, PRESSED.plusMinutes(2));
 
-        runRequests.cancel(GROUP);
+        runRequests.request(GROUP, PRESSED.plusMinutes(1));
 
-        assertThat(runRequests.isRequested(GROUP)).isFalse();
-        assertThat(runRequests.requestedGroups()).isEmpty();
-        assertThat(repository.count()).isEqualTo(1);
+        assertThat(runRequests.isRequested(GROUP)).isTrue();
     }
 
     @Test
-    void 아직_처리하지_않은_요청의_묶음만_알려준다() {
+    void 아직_처리하지_않은_요청을_누른_시각과_함께_알려준다() {
         SummaryGroup other = new SummaryGroup(9L, GROUP.entryDate(), 3L);
         SummaryGroup handled = new SummaryGroup(10L, GROUP.entryDate(), 3L);
         runRequests.request(GROUP, PRESSED);
-        runRequests.request(other, PRESSED);
+        runRequests.request(other, PRESSED.plusMinutes(1));
         runRequests.request(handled, PRESSED);
         runRequests.markHandled(handled, PRESSED.plusMinutes(1));
 
-        assertThat(runRequests.requestedGroups()).containsExactlyInAnyOrder(GROUP, other);
+        assertThat(runRequests.pendingRequests()).containsExactlyInAnyOrderEntriesOf(
+                Map.of(GROUP, PRESSED, other, PRESSED.plusMinutes(1)));
     }
 }

@@ -1,8 +1,12 @@
 package com.itda.backend.service.summary;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,23 +47,35 @@ public class SummaryRunRequests {
         return repository.existsPending(group.childId(), group.entryDate(), group.institutionId());
     }
 
+    /** 아직 처리하지 않은 요청과 그 묶음을 마지막으로 누른 시각. */
     @Transactional(readOnly = true)
-    public List<SummaryGroup> requestedGroups() {
+    public Map<SummaryGroup, LocalDateTime> pendingRequests() {
         return repository.findPending().stream()
-                .map(r -> new SummaryGroup(r.getChildId(), r.getEntryDate(), r.getInstitutionId()))
-                .toList();
+                .collect(Collectors.toMap(SummaryRunRequests::groupOf, SummaryRunRequest::getRequestedAt));
     }
 
-    /** 요약 결과를 남길 때 부른다. 집은 뒤에 다시 누른 요청({@code claimedAt} 이후)은 처리하지 않은 채로 남는다. */
-    @Transactional
-    public void markHandled(SummaryGroup group, LocalDateTime claimedAt) {
-        findForUpdate(group).ifPresent(request -> request.markHandled(claimedAt));
+    /** 그 기관의 그 날짜들 중 아직 처리하지 않은 요청이 있는 묶음. */
+    @Transactional(readOnly = true)
+    public Set<SummaryGroup> pendingGroupsOf(Long institutionId, Collection<LocalDate> dates) {
+        if (dates.isEmpty()) {
+            return Set.of();
+        }
+        return repository.findPendingIn(institutionId, dates).stream()
+                .map(SummaryRunRequests::groupOf)
+                .collect(Collectors.toSet());
     }
 
-    /** 요약할 일지가 없게 된 요청을 거둔다. */
+    /**
+     * {@code until} 까지 누른 요청을 처리한 것으로 표시한다. 그 뒤에 누른 요청은 처리하지 않은 채로 남는다.
+     * 요약 결과를 남길 때는 집은 시각을, 요약할 일지가 없어 거둘 때는 읽어 둔 누른 시각을 넘긴다.
+     */
     @Transactional
-    public void cancel(SummaryGroup group) {
-        findForUpdate(group).ifPresent(SummaryRunRequest::cancel);
+    public void markHandled(SummaryGroup group, LocalDateTime until) {
+        findForUpdate(group).ifPresent(request -> request.markHandled(until));
+    }
+
+    private static SummaryGroup groupOf(SummaryRunRequest request) {
+        return new SummaryGroup(request.getChildId(), request.getEntryDate(), request.getInstitutionId());
     }
 
     private Optional<SummaryRunRequest> findForUpdate(SummaryGroup group) {

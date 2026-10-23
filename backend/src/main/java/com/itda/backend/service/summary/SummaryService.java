@@ -70,14 +70,17 @@ public class SummaryService {
      */
     @Transactional
     public List<ClaimedSummaryGroup> claimReadyGroups(int limit) {
+        // 집은 시각과 요청을 일지보다 먼저 읽는다. 아래에서 일지를 읽는 사이 새로 올리고 다시 누른 요청은 이 시각보다
+        // 늦어 이번에 처리하지도 거두지도 않는다 — 그 일지는 이번 요약에 들어 있지 않을 수 있다.
+        LocalDateTime claimedAt = LocalDateTime.now(clock);
+        Map<SummaryGroup, LocalDateTime> requests = runRequests.pendingRequests();
         Set<InProgressKey> busy = Set.copyOf(journalEntryRepository.findInProgressKeys(IN_PROGRESS));
         // 새 일지(VALIDATED)로 묶음을 먼저 정한다. 승인 대기(GATE1_PENDING) 일지는 Gate 1 이 처리하기 전까지
         // 계속 쌓이므로 매번 전부 읽지 않고, 집기로 한 묶음의 것만 가져온다.
         Map<SummaryGroup, List<SummaryCandidate>> groups = groupCandidates(
                 journalEntryRepository.findSummaryCandidates(List.of(JournalEntryStatus.VALIDATED)));
-        cancelStaleRequests(groups.keySet(), busy);
+        cancelStaleRequests(requests, groups.keySet(), busy);
 
-        LocalDateTime claimedAt = LocalDateTime.now(clock);
         List<ClaimedSummaryGroup> claimed = new ArrayList<>();
         for (Map.Entry<SummaryGroup, List<SummaryCandidate>> e : groups.entrySet()) {
             if (claimed.size() >= limit) {
@@ -85,7 +88,7 @@ public class SummaryService {
             }
             SummaryGroup group = e.getKey();
             List<SummaryCandidate> members = e.getValue();
-            if (!isReady(group, members, busy)) {
+            if (!isReady(group, members, busy, requests.keySet())) {
                 continue;
             }
             List<Long> pending = findLatestPendingEntryIds(group);
@@ -101,15 +104,25 @@ public class SummaryService {
     /**
      * 요약할 일지가 없게 된 [요약] 요청을 거둔다. 매칭·검증 중이라 받아 둔 요청인데, 끝나고 보니 이 묶음에 새 일지가
      * 없는 경우다 (다른 아이로 매칭됐거나 BLOCK). 남겨 두면 한참 뒤 그 날짜로 올라온 일지가 누르지 않았는데 요약된다.
+     *
+     * <p>요약 중(SUMMARIZING)에 멈춘 묶음은 거두지 않는다. 결과 저장이 실패한 것이라, 재시작해 요약 대기로 돌아가면
+     * 다시 요약해야 한다. 읽어 둔 누른 시각까지만 거둬서, 그 뒤에 다시 누른 요청은 남는다.
      */
-    private void cancelStaleRequests(Set<SummaryGroup> candidates, Set<InProgressKey> busy) {
-        for (SummaryGroup group : runRequests.requestedGroups()) {
-            boolean stillProcessing = busy.contains(
-                    new InProgressKey(String.valueOf(group.institutionId()), group.entryDate()));
-            if (!stillProcessing && !candidates.contains(group)) {
-                runRequests.cancel(group);
-            }
+    private void cancelStaleRequests(Map<SummaryGroup, LocalDateTime> requests, Set<SummaryGroup> candidates,
+            Set<InProgressKey> busy) {
+        List<SummaryGroup> stale = requests.keySet().stream()
+                .filter(group -> !candidates.contains(group))
+                .filter(group -> !busy.contains(
+                        new InProgressKey(String.valueOf(group.institutionId()), group.entryDate())))
+                .toList();
+        if (stale.isEmpty()) {
+            return;
         }
+        Set<SummaryGroup> summarizing = groupCandidates(
+                journalEntryRepository.findSummaryCandidates(List.of(JournalEntryStatus.SUMMARIZING))).keySet();
+        stale.stream()
+                .filter(group -> !summarizing.contains(group))
+                .forEach(group -> runRequests.markHandled(group, requests.get(group)));
     }
 
     /**
@@ -139,13 +152,14 @@ public class SummaryService {
         return groups;
     }
 
-    private boolean isReady(SummaryGroup group, List<SummaryCandidate> members, Set<InProgressKey> busy) {
+    private boolean isReady(SummaryGroup group, List<SummaryCandidate> members, Set<InProgressKey> busy,
+            Set<SummaryGroup> requested) {
         // 기관·날짜만 같아도 기다린다 — 매칭 전 일지는 아동이 비어 있어 이 아이 일지인지 아직 모른다.
         String institutionId = members.get(0).institutionId();
         if (busy.contains(new InProgressKey(institutionId, group.entryDate()))) {
             return false;
         }
-        return runRequests.isRequested(group);
+        return requested.contains(group);
     }
 
     /**

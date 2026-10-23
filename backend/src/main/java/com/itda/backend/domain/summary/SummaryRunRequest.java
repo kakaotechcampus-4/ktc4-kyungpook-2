@@ -87,12 +87,17 @@ public class SummaryRunRequest {
         return new SummaryRunRequest(childId, entryDate, institutionId, requestedAt);
     }
 
-    /** 같은 묶음을 다시 눌렀다. */
+    /**
+     * 같은 묶음을 다시 눌렀다. 시각은 앞으로만 간다 — 잠금을 기다리던 옛 누름이 늦게 들어와 더 늦게 누른 시각을
+     * 덮으면, 그 사이 처리 표시({@code handled_until})보다 앞서게 돼 늦게 누른 요청이 처리된 것처럼 보인다.
+     */
     public void requestAgain(LocalDateTime requestedAt) {
         if (requestedAt == null) {
             throw new IllegalArgumentException("요청 시각은 필수입니다.");
         }
-        this.requestedAt = requestedAt;
+        if (requestedAt.isAfter(this.requestedAt)) {
+            this.requestedAt = requestedAt;
+        }
     }
 
     /** 아직 처리하지 않은 요청이 있는지. */
@@ -101,20 +106,14 @@ public class SummaryRunRequest {
     }
 
     /**
-     * {@code claimedAt} 에 집은 요약의 결과를 남겼다. 그때까지 누른 요청은 처리됐다. 옛 요약이 늦게 끝나도 처리
-     * 시각을 뒤로 돌리지 않는다.
+     * {@code until} 까지 누른 요청은 처리됐다. 옛 요약이 늦게 끝나도 처리 시각을 뒤로 돌리지 않는다.
      */
-    public void markHandled(LocalDateTime claimedAt) {
-        if (claimedAt == null) {
+    public void markHandled(LocalDateTime until) {
+        if (until == null) {
             throw new IllegalArgumentException("처리 시각은 필수입니다.");
         }
-        if (handledUntil == null || claimedAt.isAfter(handledUntil)) {
-            this.handledUntil = claimedAt;
+        if (handledUntil == null || until.isAfter(handledUntil)) {
+            this.handledUntil = until;
         }
-    }
-
-    /** 요약할 일지가 없어 지금까지 누른 요청을 거둔다. */
-    public void cancel() {
-        markHandled(requestedAt);
     }
 }

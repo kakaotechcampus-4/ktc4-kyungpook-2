@@ -181,6 +181,18 @@ class SummaryServiceClaimTest {
     }
 
     @Test
+    void 결과를_남기지_못해_요약_중에_멈춘_묶음의_요청은_거두지_않는다() {
+        // 결과 저장이 실패해 일지가 요약 중으로 남았다. 재시작하면 요약 대기로 돌아가니 그때 다시 요약해야 한다.
+        JournalEntry stuck = validated(school, 8L);
+        stuck.startSummarizing();
+        em.persistAndFlush(stuck);
+        requestRun(GROUP);
+
+        assertThat(claim()).isEmpty();
+        assertThat(runRequests.isRequested(GROUP)).isTrue();
+    }
+
+    @Test
     void 거둔_요청은_나중에_올라온_일지를_누르지_않았는데_요약하게_하지_않는다() {
         requestRun(GROUP);
         claim();

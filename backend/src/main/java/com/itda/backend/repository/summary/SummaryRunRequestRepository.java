@@ -1,6 +1,7 @@
 package com.itda.backend.repository.summary;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,4 +34,10 @@ public interface SummaryRunRequestRepository extends JpaRepository<SummaryRunReq
 
     @Query("select r from SummaryRunRequest r where r.handledUntil is null or r.requestedAt > r.handledUntil")
     List<SummaryRunRequest> findPending();
+
+    @Query("select r from SummaryRunRequest r "
+            + "where r.institutionId = :institutionId and r.entryDate in :dates "
+            + "and (r.handledUntil is null or r.requestedAt > r.handledUntil)")
+    List<SummaryRunRequest> findPendingIn(@Param("institutionId") Long institutionId,
+            @Param("dates") Collection<LocalDate> dates);
 }
