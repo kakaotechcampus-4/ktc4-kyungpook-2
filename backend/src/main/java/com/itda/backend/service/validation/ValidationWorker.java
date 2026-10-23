@@ -9,20 +9,22 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.service.agent.AgentDownProperties;
+import com.itda.backend.service.agent.AgentFailureReasons;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * 매칭이 확정된(MATCHED) 일지를 모아 검증 에이전트에 보내고 결과를 남긴다. 판정에 따라 PASS·REVIEW 는
- * VALIDATED(요약 대기), BLOCK 은 VALIDATION_BLOCKED(수정 요청 큐), 호출 실패는 FAILED 가 된다.
+ * VALIDATED(요약 대기), BLOCK 은 VALIDATION_BLOCKED(수정 요청 큐), 호출 실패는 SYSTEM_ERROR(관리자 확인)가 된다.
  *
  * <p>구조는 {@link com.itda.backend.service.matching.MatchingWorker} 와 같다. 한 건씩 순서대로 처리하고,
- * 실패는 그 일지 한 건만 FAILED 로 남긴다. 집기 전에 AI 상태를 보고, 재시도까지 응답이 없으면(AI 다운) 처리 중이던
- * 일지까지 검증 대기로 돌려놓고 멈춘다. LLM 만 죽어 있으면 {@code /health} 는 통과하고 AI 가 503 을 주는데, 예전에는
- * 이때 차례마다 일지가 한 건씩 FAILED 로 빠졌다. 같은 일지가 상한({@code app.ai.agent-down.max-releases})을 넘겨
- * 다운을 만나면 그 일지만 FAILED 로 남긴다 (#153).
+ * 실패는 그 일지 한 건만 시스템 오류로 멈추고 원인을 남긴다(#180). 집기 전에 AI 상태를 보고, 재시도까지 응답이 없으면
+ * (AI 다운) 처리 중이던 일지까지 검증 대기로 돌려놓고 멈춘다. LLM 만 죽어 있으면 {@code /health} 는 통과하고 AI 가
+ * 503 을 주는데, 예전에는 이때 차례마다 일지가 한 건씩 실패로 빠졌다. 같은 일지가 상한
+ * ({@code app.ai.agent-down.max-releases})을 넘겨 다운을 만나면 그 일지만 AGENT_UNAVAILABLE 로 멈춘다 (#153).
  *
  * <p>AI 다운을 만나면 {@code app.ai.agent-down.pause} 동안 AI 상태도 보지 않고 쉰다. 쉬지 않으면 다음 차례에 바로
  * 다시 불러 짧은 장애에도 상한을 채운다.
@@ -123,8 +125,9 @@ public class ValidationWorker {
                 log.warn("validation agent unavailable journalEntryId={}", journalEntryId, e);
                 return releaseOrFail(journalEntryId);
             }
-            log.warn("validation failed journalEntryId={}", journalEntryId, e);
-            recordFailure(journalEntryId);
+            FailureReason reason = AgentFailureReasons.of(e);
+            log.warn("validation failed journalEntryId={} reason={}", journalEntryId, reason, e);
+            recordFailure(journalEntryId, reason);
             return Outcome.DONE;
         }
     }
@@ -148,13 +151,13 @@ public class ValidationWorker {
         }
         log.warn("validation agent down {} times in a row, recording as failure journalEntryId={}",
                 maxReleases + 1, journalEntryId);
-        recordFailure(journalEntryId);
+        recordFailure(journalEntryId, FailureReason.AGENT_UNAVAILABLE);
         return Outcome.DONE;
     }
 
-    private void recordFailure(Long journalEntryId) {
+    private void recordFailure(Long journalEntryId, FailureReason reason) {
         try {
-            recorder.recordFailure(journalEntryId);
+            recorder.recordFailure(journalEntryId, reason);
         } catch (RuntimeException recordError) {
             log.error("could not record validation failure journalEntryId={}", journalEntryId, recordError);
         }

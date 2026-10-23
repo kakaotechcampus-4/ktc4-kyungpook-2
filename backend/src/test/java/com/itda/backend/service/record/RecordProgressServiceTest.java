@@ -16,7 +16,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.validation.ValidationResult;
@@ -122,27 +124,55 @@ class RecordProgressServiceTest {
     }
 
     /**
-     * 실패한 자리를 적어 두는 칸이 없다. 그대로 0 으로 보내면 요약까지 갔다가 죽은 기록이
-     * "등록 단계 실패" 로 보인다 — 일지가 남긴 흔적으로 되짚는다.
+     * 시스템 오류는 멈춘 단계가 {@code failure_stage} 에 적혀 있다(#180). 요약 실패는 요약 단계다.
+     */
+    @Test
+    void 요약_실패와_시스템_오류는_적힌_단계로_보여준다() {
+        Long recordId = record(ORG, "0821_관찰일지.txt");
+        entry(recordId, e -> {
+            e.startMatching();
+            e.confirmMatch(CHILD);
+            e.startValidating();
+            e.failValidation(FailureReason.REQUEST_REJECTED);
+        });
+        entry(recordId, e -> {
+            validated(e);
+            e.startSummarizing();
+            e.failSummaryBySystemError(FailureReason.EVIDENCE_MISMATCH);
+        });
+        entry(recordId, e -> { validated(e); e.startSummarizing(); e.failSummary(); });
+
+        assertThat(service.getProgress(TEACHER).get(0).entries())
+                .extracting(EntryProgress::stageIndex, EntryProgress::state)
+                .containsExactly(
+                        tuple(2, "failed"),
+                        tuple(3, "failed"),
+                        tuple(3, "failed"));
+    }
+
+    /**
+     * {@code FAILED} 는 실패한 자리를 적어 두는 칸이 없다. 그대로 0 으로 보내면 요약까지 갔다가 죽은 기록이
+     * "등록 단계 실패" 로 보인다 — 일지가 남긴 흔적으로 되짚는다. #180 부터 검증·요약 실패는 FAILED 가 아니지만
+     * 그 전에 남은 일지가 있을 수 있다. 지금 코드로는 만들 수 없어 상태를 직접 넣는다.
      *
      * <p>⚠️ <b>검증 실패에도 행이 남는다</b> ({@code verdict = FAILED}, #122). 실제 순서 그대로
      * 재현한다 — 행이 있는지만 보면 검증 실패가 전부 "요약 실패" 로 나온다 (코드리뷰로 확인).
      */
     @Test
-    void 실패한_단계를_일지가_남긴_흔적으로_되짚는다() {
+    void 옛_FAILED_는_실패한_단계를_일지가_남긴_흔적으로_되짚는다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");
 
         entry(recordId, e -> { e.startMatching(); e.failMatching(); });
 
         Long failedInValidation = entry(recordId,
                 e -> { e.startMatching(); e.confirmMatch(CHILD); e.startValidating(); });
-        validationRow(failedInValidation, ValidationVerdict.FAILED);  // ValidationResultRecorder.recordFailure 순서
-        transition(failedInValidation, JournalEntry::failValidation);
+        validationRow(failedInValidation, ValidationVerdict.FAILED);  // #180 전 ValidationResultRecorder.recordFailure 순서
+        markLegacyFailed(failedInValidation);
 
         // 요약 중에 죽으면 요약 번호가 아직 안 붙는다. 검증을 지났다는 흔적은 PASS 판정뿐이다.
         Long failedInSummary = entry(recordId, e -> { validated(e); e.startSummarizing(); });
         validationRow(failedInSummary, ValidationVerdict.PASS);
-        transition(failedInSummary, JournalEntry::failSummary);
+        markLegacyFailed(failedInSummary);
 
         assertThat(service.getProgress(TEACHER).get(0).entries())
                 .extracting(EntryProgress::stageIndex, EntryProgress::state)
@@ -178,9 +208,11 @@ class RecordProgressServiceTest {
         em.clear();
     }
 
-    private void transition(Long journalEntryId, Consumer<JournalEntry> change) {
-        change.accept(em.find(JournalEntry.class, journalEntryId));
-        em.flush();
+    private void markLegacyFailed(Long journalEntryId) {
+        em.getEntityManager().createQuery("update JournalEntry e set e.status = :failed where e.id = :id")
+                .setParameter("failed", JournalEntryStatus.FAILED)
+                .setParameter("id", journalEntryId)
+                .executeUpdate();
         em.clear();
     }
 
