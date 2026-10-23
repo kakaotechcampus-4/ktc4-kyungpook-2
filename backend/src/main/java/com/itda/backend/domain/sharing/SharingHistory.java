@@ -13,6 +13,8 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -25,9 +27,13 @@ import lombok.NoArgsConstructor;
  * {@code FAILED})를 두지 않는다 — 열람 방식에는 "보내려다 막혔다" 는 순간이 없고 권한이 없으면 행이
  * 없을 뿐이다. 막힌 조회 시도는 {@code audit_logs}(O-53)가 받는다.
  *
- * <p>한 번 생기면 고치지 않는 권한 행이라 {@code updated_at} 이 없다 (§3.2). {@code readAt} 한 칸만
- * 나중에 채워진다 — 열람 방식에서 "언제 봤나" 를 남기지 않으면 아무 흔적이 없다 (CLAUDE.md Auditability).
- * 채우는 쪽은 읽음 처리 API(O-51, 미구현)다.
+ * <p><b>사건 이력이 아니라 상태 행이다.</b> 발송 방식이었을 때는 "언제 보냈나" 를 쌓는 이력이었지만,
+ * 열람 방식에서는 한 수신자당 한 줄이 켜졌다 꺼졌다 한다. 그래서 {@code child_organization}·
+ * {@code child_guardian} 과 같은 규칙을 따른다 — <b>지웠다 다시 만들지 않고 같은 행을 되살린다</b> (§3.3).
+ * UNIQUE 가 {@code revoked_at} 을 포함하지 않으므로 새로 넣으면 제약에 걸린다.
+ *
+ * <p>{@code readAt} 은 나중에 채워진다 — 열람 방식에서 "언제 봤나" 를 남기지 않으면 아무 흔적이 없다
+ * (CLAUDE.md Auditability). 채우는 쪽은 읽음 처리 API(O-51, 미구현)다.
  */
 @Entity
 @Table(
@@ -71,6 +77,18 @@ public class SharingHistory {
     @Column(name = "read_at")
     private LocalDateTime readAt;
 
+    /** 권한을 거둔 시각. NULL 이면 살아 있다. 읽는 쪽은 반드시 이 칸을 본다 (§9.4). */
+    @Column(name = "revoked_at")
+    private LocalDateTime revokedAt;
+
+    /**
+     * 왜 거뒀나. {@code sharing_consent} 의 철회 사유를 그대로 쓴다 — 권한이 꺼지는 이유가 결국 동의가
+     * 꺼지는 이유라, 새 enum 을 만들면 같은 뜻의 값이 두 벌이 된다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "revoke_reason", length = 30)
+    private ConsentRevokeReason revokeReason;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -92,6 +110,50 @@ public class SharingHistory {
             throw new IllegalArgumentException("열람 권한의 아동·인사이트·발신 기관·수신자는 필수입니다.");
         }
         return new SharingHistory(childId, insightResultId, senderOrganizationId, receiverType, receiverId);
+    }
+
+    /**
+     * 권한을 거둔다. 행은 지우지 않고 시각과 사유만 남긴다 — 공유 거부도 감사 대상이다 (CLAUDE.md).
+     *
+     * <p>이미 거둔 권한을 다시 거두지 않는다. 두 경로(기관 동의 철회 · 보호자 연결 해제)가 같은 행을
+     * 가리킬 수 있는데, 덮어쓰면 <b>처음 거둔 시각과 사유가 사라진다.</b>
+     */
+    public void revoke(ConsentRevokeReason reason, LocalDateTime at) {
+        if (reason == null || at == null) {
+            throw new IllegalArgumentException("권한 철회 사유와 시각은 필수입니다.");
+        }
+        if (this.revokedAt != null) {
+            return;
+        }
+        this.revokedAt = at;
+        this.revokeReason = reason;
+    }
+
+    /**
+     * 거뒀던 권한을 다시 켠다. 동의가 다시 켜지거나 보호자가 다시 연결되면 <b>같은 행을 되살린다</b> —
+     * 새로 넣으면 {@code (insight_result_id, receiver_type, receiver_id)} UNIQUE 에 걸린다 (§3.3).
+     *
+     * <p>⚠️ <b>되살리면 앞서 거둔 시각과 사유가 사라진다.</b> 한 수신자당 한 줄이라 켜고 끈 이력을 여기
+     * 쌓을 자리가 없다 — 그 이력이 필요하면 {@code audit_logs}(O-53)가 받아야 한다.
+     *
+     * <p>살아 있는 권한에 다시 부르면 아무것도 하지 않는다. 같은 대상에게 두 번 열어 줘도 "언제부터
+     * 볼 수 있었나" 가 뒤로 밀리지 않게 한다.
+     */
+    public void regrant(LocalDateTime at) {
+        if (at == null) {
+            throw new IllegalArgumentException("권한을 다시 여는 시각은 필수입니다.");
+        }
+        if (this.revokedAt == null) {
+            return;
+        }
+        this.revokedAt = null;
+        this.revokeReason = null;
+        this.grantedAt = at;
+    }
+
+    /** 지금 볼 수 있는 권한인지. */
+    public boolean isActive() {
+        return this.revokedAt == null;
     }
 
     @PrePersist
