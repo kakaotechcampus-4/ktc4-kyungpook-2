@@ -182,7 +182,7 @@ def reflect(state: dict) -> dict:
         supports = _clean_supports(raw.get("supports"), index, known_types)
         support_ids = [i for s in supports for i in s.claim_ids]
         # 출처는 대처 근거까지 — 철회 시 그 기관을 찾고, Gate 2 가 "근거를 낸 기관" 으로 보여준다
-        all_claims = [index[i] for i in dict.fromkeys(ids + support_ids)]
+        all_claims = [index[i] for i in dict.fromkeys(ids + support_ids) if i in index]
         main_inst_ids = {c["institution_id"] for c in claims}
 
         insights.append(Insight(
