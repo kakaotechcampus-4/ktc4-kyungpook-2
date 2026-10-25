@@ -4,7 +4,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -36,10 +35,13 @@ public class SummaryRunRequests {
      */
     @Transactional
     public void request(SummaryGroup group, LocalDateTime requestedAt) {
-        findForUpdate(group).ifPresentOrElse(
-                existing -> existing.requestAgain(requestedAt),
-                () -> repository.saveAndFlush(SummaryRunRequest.of(
-                        group.childId(), group.entryDate(), group.institutionId(), requestedAt)));
+        if (repository.existsByChildIdAndEntryDateAndInstitutionId(
+                group.childId(), group.entryDate(), group.institutionId())) {
+            repository.advanceRequestedAt(group.childId(), group.entryDate(), group.institutionId(), requestedAt);
+            return;
+        }
+        repository.saveAndFlush(SummaryRunRequest.of(
+                group.childId(), group.entryDate(), group.institutionId(), requestedAt));
     }
 
     @Transactional(readOnly = true)
@@ -71,14 +73,10 @@ public class SummaryRunRequests {
      */
     @Transactional
     public void markHandled(SummaryGroup group, LocalDateTime until) {
-        findForUpdate(group).ifPresent(request -> request.markHandled(until));
+        repository.advanceHandledUntil(group.childId(), group.entryDate(), group.institutionId(), until);
     }
 
     private static SummaryGroup groupOf(SummaryRunRequest request) {
         return new SummaryGroup(request.getChildId(), request.getEntryDate(), request.getInstitutionId());
-    }
-
-    private Optional<SummaryRunRequest> findForUpdate(SummaryGroup group) {
-        return repository.findGroupForUpdate(group.childId(), group.entryDate(), group.institutionId());
     }
 }

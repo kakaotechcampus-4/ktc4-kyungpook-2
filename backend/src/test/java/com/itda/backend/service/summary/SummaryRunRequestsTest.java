@@ -123,6 +123,27 @@ class SummaryRunRequestsTest {
     }
 
     @Test
+    void 읽어_둔_요청을_거둘_때_그새_다시_누른_시각을_옛_값으로_덮지_않는다() {
+        // 워커가 요청 목록을 읽은 뒤(같은 트랜잭션에 엔티티가 남음) 교사가 다시 눌러 커밋했다.
+        runRequests.request(GROUP, PRESSED);
+        em.flush();
+        em.clear();
+        runRequests.pendingRequests();
+        em.getEntityManager().createNativeQuery("update summary_run_request set requested_at = :t")
+                .setParameter("t", PRESSED.plusMinutes(5))
+                .executeUpdate();
+
+        runRequests.markHandled(GROUP, PRESSED);
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findAll()).singleElement().satisfies(saved -> {
+            assertThat(saved.getRequestedAt()).isEqualTo(PRESSED.plusMinutes(5));
+            assertThat(saved.isPending()).isTrue();
+        });
+    }
+
+    @Test
     void 아직_처리하지_않은_요청을_누른_시각과_함께_알려준다() {
         SummaryGroup other = new SummaryGroup(9L, GROUP.entryDate(), 3L);
         SummaryGroup handled = new SummaryGroup(10L, GROUP.entryDate(), 3L);

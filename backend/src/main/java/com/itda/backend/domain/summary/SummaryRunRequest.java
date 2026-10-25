@@ -27,8 +27,9 @@ import lombok.NoArgsConstructor;
  * <p>일지에 표시하지 않고 행을 따로 두는 이유 — 업로드 직후 누르면 일지가 아직 매칭 전이라 {@code child_id} 가
  * 비어 있어 어느 아이의 요청인지 일지에 적을 수 없다. {@code summary_result} 는 요약이 끝나야 생긴다.
  *
- * <p>묶음마다 한 행이다. 다시 누르면 {@code requested_at} 만 바뀐다. 요청을 바꾸는 쪽은 행을 잠그고 바꾼다 —
- * 교사가 다시 누르는 것과 워커가 처리 표시를 하는 것이 겹쳐도 서로의 칸을 옛 값으로 덮지 않는다.
+ * <p>묶음마다 한 행이다. 다시 누르면 {@code requested_at} 만 바뀐다. 두 시각은 엔티티를 고쳐 저장하지 않고 칸 하나씩
+ * 조건부 UPDATE 로 바꾼다 ({@link com.itda.backend.repository.summary.SummaryRunRequestRepository}) — 교사가 다시
+ * 누르는 것과 워커가 처리 표시를 하는 것이 겹쳐도 서로의 칸을 옛 값으로 덮지 않고, 시각은 앞으로만 간다.
  */
 @Entity
 @Table(
@@ -87,33 +88,8 @@ public class SummaryRunRequest {
         return new SummaryRunRequest(childId, entryDate, institutionId, requestedAt);
     }
 
-    /**
-     * 같은 묶음을 다시 눌렀다. 시각은 앞으로만 간다 — 잠금을 기다리던 옛 누름이 늦게 들어와 더 늦게 누른 시각을
-     * 덮으면, 그 사이 처리 표시({@code handled_until})보다 앞서게 돼 늦게 누른 요청이 처리된 것처럼 보인다.
-     */
-    public void requestAgain(LocalDateTime requestedAt) {
-        if (requestedAt == null) {
-            throw new IllegalArgumentException("요청 시각은 필수입니다.");
-        }
-        if (requestedAt.isAfter(this.requestedAt)) {
-            this.requestedAt = requestedAt;
-        }
-    }
-
     /** 아직 처리하지 않은 요청이 있는지. */
     public boolean isPending() {
         return handledUntil == null || requestedAt.isAfter(handledUntil);
-    }
-
-    /**
-     * {@code until} 까지 누른 요청은 처리됐다. 옛 요약이 늦게 끝나도 처리 시각을 뒤로 돌리지 않는다.
-     */
-    public void markHandled(LocalDateTime until) {
-        if (until == null) {
-            throw new IllegalArgumentException("처리 시각은 필수입니다.");
-        }
-        if (handledUntil == null || until.isAfter(handledUntil)) {
-            this.handledUntil = until;
-        }
     }
 }

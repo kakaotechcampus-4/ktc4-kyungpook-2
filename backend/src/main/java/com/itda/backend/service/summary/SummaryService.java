@@ -104,24 +104,20 @@ public class SummaryService {
     /**
      * 요약할 일지가 없게 된 [요약] 요청을 거둔다. 매칭·검증 중이라 받아 둔 요청인데, 끝나고 보니 이 묶음에 새 일지가
      * 없는 경우다 (다른 아이로 매칭됐거나 BLOCK). 남겨 두면 한참 뒤 그 날짜로 올라온 일지가 누르지 않았는데 요약된다.
+     * 확인 필요 큐처럼 사람을 기다리는 일지만 남았어도 거둔다 — 요약은 사람 손을 기다리지 않으므로, 교사가 처리한 뒤
+     * 다시 누른다.
      *
      * <p>요약 중(SUMMARIZING)에 멈춘 묶음은 거두지 않는다. 결과 저장이 실패한 것이라, 재시작해 요약 대기로 돌아가면
      * 다시 요약해야 한다. 읽어 둔 누른 시각까지만 거둬서, 그 뒤에 다시 누른 요청은 남는다.
      */
     private void cancelStaleRequests(Map<SummaryGroup, LocalDateTime> requests, Set<SummaryGroup> candidates,
             Set<InProgressKey> busy) {
-        List<SummaryGroup> stale = requests.keySet().stream()
+        requests.keySet().stream()
                 .filter(group -> !candidates.contains(group))
                 .filter(group -> !busy.contains(
                         new InProgressKey(String.valueOf(group.institutionId()), group.entryDate())))
-                .toList();
-        if (stale.isEmpty()) {
-            return;
-        }
-        Set<SummaryGroup> summarizing = groupCandidates(
-                journalEntryRepository.findSummaryCandidates(List.of(JournalEntryStatus.SUMMARIZING))).keySet();
-        stale.stream()
-                .filter(group -> !summarizing.contains(group))
+                .filter(group -> journalEntryRepository.findGroupEntryIds(JournalEntryStatus.SUMMARIZING,
+                        group.childId(), group.entryDate(), String.valueOf(group.institutionId())).isEmpty())
                 .forEach(group -> runRequests.markHandled(group, requests.get(group)));
     }
 
