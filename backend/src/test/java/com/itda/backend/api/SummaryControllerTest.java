@@ -149,6 +149,10 @@ class SummaryControllerTest {
                 "{\"decision\": \"reject\", \"version\": \"v1\"}",
                 "{\"decision\": \"APPROVE\", \"version\": \"v1\"}",
                 "{\"decision\": \"approve\", \"version\": \"v1\", \"cards\": []}",
+                // 옛 계약의 고친 본문. 조용히 버리면 AI 원문이 그대로 승인된다 — 승인은 되돌릴 수 없다.
+                "{\"decision\": \"approve\", \"editedContent\": \"고친 본문\", \"version\": \"v1\"}",
+                "{\"decision\": \"hold\", \"editedContent\": \"고친 본문\", \"version\": \"v1\"}",
+                approveWithCard("{\"action\": \"ADD\", \"text\": \"" + "가".repeat(1001) + "\"}"),
                 // 보류·제거에 카드를 보내면 버려진다. 조용히 무시하지 않고 막는다.
                 "{\"decision\": \"hold\", \"version\": \"v1\", \"cards\": [{\"index\": 0, \"action\": \"KEEP\"}]}",
                 approveWithCard("{\"index\": 0, \"action\": \"keep\"}"),

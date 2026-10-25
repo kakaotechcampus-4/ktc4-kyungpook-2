@@ -49,7 +49,7 @@ final class Gate1Cards {
 
     /** 원래 문장을 모두 한 번씩 담지 않았거나 남는 문장이 없으면 400 INVALID_REQUEST 다. */
     static Applied apply(SummaryResult summary, List<Card> cards) {
-        ArrayNode original = readClaims(summary);
+        ArrayNode original = readClaims(summary.getClaims());
         requireEachOriginalOnce(summary, original, cards);
 
         ArrayNode result = MAPPER.createArrayNode();
@@ -71,7 +71,10 @@ final class Gate1Cards {
             };
             if (claim != null) {
                 result.add(claim);
-                texts.add(claim.path("text").asText());
+                String text = claim.path("text").asText("");
+                if (!text.isBlank()) {
+                    texts.add(text.strip());
+                }
             }
         }
         if (result.isEmpty()) {
@@ -134,11 +137,11 @@ final class Gate1Cards {
     }
 
     /**
-     * 승인 전 claims 는 AI 가 보낸 배열이다. 못 읽으면 문장이 없는 것으로 보고, 카드를 보낸 승인은 번호가 맞지 않아
-     * 400 이 된다 — 그런 요약은 카드 없이 승인하거나 제거한다.
+     * 승인 전 claims 는 AI 가 보낸 문장 객체 배열이다. 못 읽거나 문장이 아닌 값이 섞였으면 문장이 없는 것으로 본다 —
+     * 카드를 보낸 승인은 번호가 맞지 않아 400 이 되고, 그런 요약은 카드 없이 승인하거나 제거한다. Gate 1 목록의 카드도
+     * 이것으로 읽어, 목록에 보인 카드와 결정 때 검사하는 문장이 같게 한다.
      */
-    private static ArrayNode readClaims(SummaryResult summary) {
-        String raw = summary.getClaims();
+    static ArrayNode readClaims(String raw) {
         if (raw == null || raw.isBlank()) {
             return MAPPER.createArrayNode();
         }

@@ -129,10 +129,10 @@ public class InsightService {
     /**
      * 승인된 요약 중 기간 안의 것만. {@code child_context} 에 행이 있다는 것이 곧 Gate 1 통과다.
      *
-     * <p>⚠️ <b>교사가 고쳐서 승인한 요약({@code CORRECTED})은 통째로 뺀다</b> (§10.1 #7). 고친 본문은
-     * {@code child_context.content} 에만 있고 {@code summary_result.claims} 는 AI 원문 그대로라, 교사가
-     * 지운 문장이 근거를 달고 그대로 다른 기관에 나간다. MVP 는 그 요약을 쓰지 않는 쪽으로 정했다 —
-     * 최종 본문에 남은 claim 만 살리는 방식은 그다음이다 ({@code AI/insight/CRITERIA.md} §10).
+     * <p>⚠️ <b>교사가 고쳐서 승인한 요약({@code CORRECTED})은 통째로 뺀다</b> (§10.1 #7). #221 전에는
+     * {@code summary_result.claims} 가 AI 원문 그대로라 교사가 지운 문장이 근거를 달고 다른 기관에 나갔다.
+     * #221 부터는 Gate 1 승인 때 claims 를 문장 카드 결과로 다시 써서 지운 문장이 남지 않는다 — 이 제외를
+     * 없애는 것은 #199 Step 3 이다 ({@code AI/insight/CRITERIA.md} §10).
      */
     /**
      * 재료가 된 요약과, 그것을 고를 때 본 {@code child_context} 중 가장 큰 id.

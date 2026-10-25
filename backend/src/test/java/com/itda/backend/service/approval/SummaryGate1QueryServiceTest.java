@@ -172,6 +172,14 @@ class SummaryGate1QueryServiceTest {
     }
 
     @Test
+    void 문장이_아닌_값이_섞인_claims_는_카드로_보여주지_않는다() {
+        // 결정(O-31)도 같은 기준으로 문장이 없다고 본다. 카드를 보여주면 그대로 보내도 400 이 난다.
+        summary(ORG, DATE, "[{\"text\":\"블록을 쌓았다.\"}, \"문장\"]", List.of(), List.of());
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).claims()).isEmpty();
+    }
+
+    @Test
     void 요약_근거와_겹치는_REVIEW_구간이_있는_일지는_그_일지의_사유를_모두_보여준다() {
         JournalEntry overlapped = entry("블록 놀이 중 친구를 밀었다.");
         validated(overlapped, ValidationVerdict.REVIEW, "[\"위험행동표현\",\"추측성표현\"]", "[{\"start\":5,\"end\":12}]");

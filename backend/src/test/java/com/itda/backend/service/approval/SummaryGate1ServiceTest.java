@@ -297,6 +297,19 @@ class SummaryGate1ServiceTest {
     }
 
     @Test
+    void 글이_빈_문장은_본문에_이어_붙이지_않는다() throws Exception {
+        SummaryResult blank = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(1), ORG, 1, FIRST,
+                "[{\"text\":\"" + FIRST + "\",\"evidence\":[]},{\"text\":\" \",\"evidence\":[]}]",
+                "[]", "[]", "{}"));
+
+        service.decide(TEACHER, blank.getId(), Gate1Action.APPROVE,
+                List.of(edit(0, "양보했다."), keep(1), add("차분했다.")), versionOf(blank.getId()));
+
+        assertThat(childContextRepository.findBySummaryResultIdIn(List.of(blank.getId()))).singleElement()
+                .satisfies(c -> assertThat(c.getContent()).isEqualTo("양보했다. 차분했다."));
+    }
+
+    @Test
     void 원래_문장을_모두_한_번씩_보내지_않으면_받지_않는다() {
         List<List<Card>> invalid = List.of(
                 List.of(keep(0)),                     // 빠짐

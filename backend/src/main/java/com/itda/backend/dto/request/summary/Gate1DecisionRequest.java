@@ -13,6 +13,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 /**
  * POST /api/v1/summaries/{summaryId}/gate1 의 요청. 교사의 Gate 1 결정이다.
@@ -29,12 +30,29 @@ public record Gate1DecisionRequest(
 
         @Schema(description = "문장 카드. 승인할 때만 보내고, 원래 문장(index)은 모두 한 번씩 담는다. 배열 순서가 최종 순서다. "
                 + "없으면 그대로 승인", nullable = true)
+        @Size(max = MAX_CARDS)
         List<@Valid @NotNull Card> cards,
 
         @Schema(description = "목록에서 받은 version 그대로. 그 사이 요약이 바뀌었으면 409 SUMMARY_CHANGED")
         @NotBlank
-        String version
+        String version,
+
+        // 옛 계약(#221 전)의 고친 본문. 모르는 필드는 조용히 버려지는데, 버리면 고친 글 대신 AI 원문이 승인된다.
+        // 승인은 되돌릴 수 없어 400 으로 막는다. 명세에는 싣지 않는다.
+        @Schema(hidden = true)
+        String editedContent
 ) {
+
+    /** 옛 계약의 고친 본문은 받지 않는다 — 문장 카드로 보낸다. */
+    @JsonIgnore
+    @AssertTrue
+    public boolean isEditedContentAbsent() {
+        return editedContent == null;
+    }
+
+    /** 요약 한 편의 문장 수와 문장 길이 상한. AI 요약은 하루치 일지라 이보다 훨씬 작다 — 잘못된 요청만 막는다. */
+    public static final int MAX_CARDS = 100;
+    public static final int MAX_TEXT_LENGTH = 1000;
 
     /** 카드는 승인에만, 비어 있지 않게. */
     @JsonIgnore
@@ -66,6 +84,7 @@ public record Gate1DecisionRequest(
             String action,
 
             @Schema(description = "EDIT 은 고친 글, ADD 는 새 글. KEEP·DELETE 는 비운다", nullable = true)
+            @Size(max = MAX_TEXT_LENGTH)
             String text
     ) {
 

@@ -181,9 +181,12 @@ public class SummaryGate1QueryService {
         };
     }
 
-    /** 문장 카드. 번호가 결정 요청의 index 라, 글을 못 읽은 문장도 빼지 않고 빈 글로 자리를 지킨다. */
+    /**
+     * 문장 카드. 번호가 결정 요청의 index 라, 글이 없는 문장도 빼지 않고 빈 글로 자리를 지킨다. 결정과 같은 기준으로
+     * 읽는다 ({@link Gate1Cards#readClaims}) — 목록에 보인 카드를 그대로 보냈는데 400 이 나면 안 된다.
+     */
     private static List<ClaimCard> claimCards(SummaryResult summary) {
-        JsonNode claims = readArray(summary.getClaims(), "summary_result.claims", summary.getId());
+        JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
         List<ClaimCard> cards = new ArrayList<>();
         for (int index = 0; index < claims.size(); index++) {
             cards.add(new ClaimCard(index, claims.get(index).path("text").asText("")));
