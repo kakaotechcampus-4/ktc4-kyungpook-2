@@ -40,6 +40,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.jayway.jsonpath.JsonPath;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -203,18 +204,32 @@ class Gate1PipelineIntegrationTest {
         Long id = ((Number) JsonPath.read(listed, "$.data[0].id")).longValue();
         String version = JsonPath.read(listed, "$.data[0].version");
 
-        // 고쳐서 승인
-        String edited = BLOCKS + " 친구와 부딪혔다.";
+        // 문장 카드로 고쳐서 승인 — 첫 문장은 그대로, 둘째는 고치고, 교사가 한 문장을 더한다.
+        String edited = BLOCKS + " 친구와 부딪혔다. 낮잠 뒤 차분했다.";
+        List<Map<String, Object>> cards = List.of(
+                Map.of("index", 0, "action", "KEEP"),
+                Map.of("index", 1, "action", "EDIT", "text", "친구와 부딪혔다."),
+                Map.of("action", "ADD", "text", "낮잠 뒤 차분했다."));
         mockMvc.perform(withAuth(post("/api/v1/summaries/" + id + "/gate1"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("decision", "approve", "editedContent", edited, "version", version))))
+                                Map.of("decision", "approve", "cards", cards, "version", version))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("APPROVED"))
                 .andExpect(jsonPath("$.data.decision").value("CORRECTED"));
 
         assertThat(childContextRepository.findByChildIdOrderByIdDesc(junho.getId())).singleElement()
                 .satisfies(c -> assertThat(c.getContent()).isEqualTo(edited));
+        // 인사이트가 읽는 claims 도 카드 결과로 바뀐다. 요약 본문은 AI 원문 그대로다.
+        SummaryResult approved = summaryResultRepository.findById(id).orElseThrow();
+        assertThat(approved.getContent()).isEqualTo(BLOCKS + " " + PUSHED);
+        JsonNode claims = objectMapper.readTree(approved.getClaims());
+        assertThat(claims).hasSize(3);
+        assertThat(claims.get(0).path("source").asText()).isEqualTo("AI");
+        assertThat(claims.get(1).path("source").asText()).isEqualTo("EDITED");
+        assertThat(claims.get(1).path("evidence").get(0).path("journal_entry_id").asLong()).isEqualTo(pushed);
+        assertThat(claims.get(2).path("source").asText()).isEqualTo("TEACHER");
+        assertThat(claims.get(2).path("evidence").get(0).path("journal_entry_id").isNull()).isTrue();
         assertThat(statusOf(blocks)).isEqualTo(JournalEntryStatus.COMPLETED);
         assertThat(statusOf(pushed)).isEqualTo(JournalEntryStatus.COMPLETED);
         assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, id))

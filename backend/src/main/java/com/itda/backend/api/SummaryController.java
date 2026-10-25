@@ -112,8 +112,10 @@ public class SummaryController {
     @PostMapping("/{summaryId}/gate1")
     @Operation(
             summary = "Gate 1 결정",
-            description = "요약을 승인·수정 후 승인·보류·제거합니다. 승인할 때 editedContent 를 보내 AI 원문과 한 글자라도 "
-                    + "다르면 수정 후 승인(CORRECTED)이고, 고친 본문이 아동 맥락에 올라갑니다. 승인하면 그 요약의 일지가 "
+            description = "요약을 승인·수정 후 승인·보류·제거합니다. 승인할 때 문장 카드(cards)로 문장마다 유지(KEEP)·수정(EDIT)·"
+                    + "삭제(DELETE)하고 새 문장을 추가(ADD)할 수 있습니다. 원래 문장(index)은 모두 한 번씩 보내고, 배열 순서가 "
+                    + "최종 순서입니다. 하나라도 바꾸거나 순서를 바꾸면 수정 후 승인(CORRECTED)이고, 남은 문장을 이은 글이 아동 "
+                    + "맥락에 올라갑니다. cards 가 없으면 그대로 승인입니다. 승인하면 그 요약의 일지가 "
                     + "요약에 안 들어간 것까지 모두 완료되고, 보류하면 함께 보류되며(보류함에서 해제 가능), 제거하면 "
                     + "모두 삭제 표시됩니다. 승인과 제거는 되돌릴 수 없습니다. 보류된 요약은 제거만 받고, 승인은 보류 해제 뒤에 "
                     + "합니다. version 은 목록에서 받은 값을 그대로 보내고, 그 사이 요약이 새 기록으로 바뀌었으면 409 입니다. "
@@ -124,8 +126,9 @@ public class SummaryController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "결정 반영"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "decision 누락·허용되지 않은 값, 빈 editedContent, 승인이 아닌데 editedContent "
-                            + "(INVALID_REQUEST)",
+                    description = "decision 누락·허용되지 않은 값, 승인이 아닌데 cards, 빈 cards, 동작에 맞지 않는 "
+                            + "index·text (INVALID_REQUEST), 원래 문장 번호가 빠지거나 겹치거나 범위 밖, 남는 문장이 없음 "
+                            + "(SUMMARY_INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -157,7 +160,7 @@ public class SummaryController {
             @Valid @RequestBody Gate1DecisionRequest request,
             @AuthenticationPrincipal String userId) {
         return ApiResponse.success(
-                summaryGate1Service.decide(userId, summaryId, request.action(), request.editedContent(),
+                summaryGate1Service.decide(userId, summaryId, request.action(), request.cards(),
                         request.version()));
     }
 

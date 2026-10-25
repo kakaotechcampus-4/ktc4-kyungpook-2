@@ -22,6 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.itda.backend.dto.request.summary.Gate1DecisionRequest.Card;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
@@ -114,11 +115,16 @@ class SummaryControllerTest {
     }
 
     @Test
-    void gate1_passesDecisionAndEditedContentToService() throws Exception {
-        given(summaryGate1Service.decide(any(), eq(50L), eq(Gate1Action.APPROVE), eq("고친 본문"), eq("v1")))
+    void gate1_passesDecisionAndCardsToService() throws Exception {
+        List<Card> cards = List.of(new Card(0, "KEEP", null), new Card(1, "DELETE", null),
+                new Card(2, "EDIT", "고친 문장"), new Card(null, "ADD", "새 문장"));
+        given(summaryGate1Service.decide(any(), eq(50L), eq(Gate1Action.APPROVE), eq(cards), eq("v1")))
                 .willReturn(new Gate1DecisionResponse(50L, "APPROVED", "CORRECTED"));
 
-        decide("{\"decision\": \"approve\", \"editedContent\": \"고친 본문\", \"version\": \"v1\"}")
+        decide("{\"decision\": \"approve\", \"version\": \"v1\", \"cards\": ["
+                + "{\"index\": 0, \"action\": \"KEEP\"}, {\"index\": 1, \"action\": \"DELETE\"}, "
+                + "{\"index\": 2, \"action\": \"EDIT\", \"text\": \"고친 문장\"}, "
+                + "{\"action\": \"ADD\", \"text\": \"새 문장\"}]}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summaryId").value(50))
                 .andExpect(jsonPath("$.data.status").value("APPROVED"))
@@ -126,7 +132,7 @@ class SummaryControllerTest {
     }
 
     @Test
-    void gate1_acceptsHoldAndRemoveWithoutEditedContent() throws Exception {
+    void gate1_acceptsHoldAndRemoveWithoutCards() throws Exception {
         decide("{\"decision\": \"hold\", \"version\": \"v1\"}").andExpect(status().isOk());
         decide("{\"decision\": \"remove\", \"version\": \"v1\"}").andExpect(status().isOk());
 
@@ -142,13 +148,30 @@ class SummaryControllerTest {
                 "{\"decision\": \"approve\"}",
                 "{\"decision\": \"reject\", \"version\": \"v1\"}",
                 "{\"decision\": \"APPROVE\", \"version\": \"v1\"}",
-                "{\"decision\": \"approve\", \"editedContent\": \"  \", \"version\": \"v1\"}",
-                // 보류·제거에 고친 본문을 보내면 버려진다. 조용히 무시하지 않고 막는다.
-                "{\"decision\": \"hold\", \"editedContent\": \"고친 본문\", \"version\": \"v1\"}"}) {
+                "{\"decision\": \"approve\", \"version\": \"v1\", \"cards\": []}",
+                // 보류·제거에 카드를 보내면 버려진다. 조용히 무시하지 않고 막는다.
+                "{\"decision\": \"hold\", \"version\": \"v1\", \"cards\": [{\"index\": 0, \"action\": \"KEEP\"}]}",
+                approveWithCard("{\"index\": 0, \"action\": \"keep\"}"),
+                approveWithCard("{\"index\": 0, \"action\": \"MOVE\"}"),
+                approveWithCard("{\"index\": 0}"),
+                approveWithCard("null"),
+                approveWithCard("{\"action\": \"KEEP\"}"),
+                approveWithCard("{\"index\": -1, \"action\": \"KEEP\"}"),
+                approveWithCard("{\"index\": 0, \"action\": \"KEEP\", \"text\": \"글\"}"),
+                approveWithCard("{\"index\": 0, \"action\": \"DELETE\", \"text\": \"글\"}"),
+                approveWithCard("{\"index\": 0, \"action\": \"EDIT\"}"),
+                approveWithCard("{\"index\": 0, \"action\": \"EDIT\", \"text\": \"  \"}"),
+                approveWithCard("{\"action\": \"ADD\"}"),
+                // ADD 는 원래 문장이 없다. 번호가 붙으면 어느 문장을 바꾸려는지 모른다.
+                approveWithCard("{\"index\": 0, \"action\": \"ADD\", \"text\": \"새 문장\"}")}) {
             decide(body).andExpect(status().isBadRequest());
         }
 
         verify(summaryGate1Service, never()).decide(any(), any(), any(), any(), any());
+    }
+
+    private static String approveWithCard(String card) {
+        return "{\"decision\": \"approve\", \"version\": \"v1\", \"cards\": [" + card + "]}";
     }
 
     @Test
