@@ -1499,7 +1499,7 @@ FAILED   AI 호출 자체가 실패 — AI 계약에 없는 BE 전용 값 (#122)
 | `institution_id` | BIGINT | N | **묶음 키의 일부.** 이 요약을 쓴 기관 |
 | `revision` | INT | N | 같은 날짜·같은 기관의 몇 번째 요약인지. 1 부터 |
 | `content` | TEXT | N | AI 가 쓴 요약 원문 |
-| `claims` | TEXT | Y | 문장별 근거 JSON 문자열 |
+| `claims` | TEXT | Y | 문장별 근거 JSON 문자열. 교사가 Gate 1 문장 카드를 고쳐 승인하면 카드 결과로 **다시 쓴다** — 아래 "승인 때 claims 재저장" |
 | `covered_entry_ids` | TEXT | Y | 반영된 일지 JSON 문자열 `[1041, 1042]` |
 | `uncovered_entry_ids` | TEXT | Y | 반영되지 않은 일지 JSON 문자열 |
 | `status` | VARCHAR(30) | N | 처리 상태 |
@@ -1586,13 +1586,29 @@ REMOVED           교사 제거 — 그 요약의 일지도 모두 삭제 표시
 | 교사 행동 | `status` | `human_review.decision` | 결과 |
 | --- | --- | --- | --- |
 | 승인 | `APPROVED` | `APPROVED` | AI 원문이 `child_context.content` 로 |
-| **수정 후 승인** | `APPROVED` | `CORRECTED` | 고친 본문이 `child_context.content` 로. 본문이 AI 원문과 **한 글자라도 다르면** 이 값이다(줄바꿈 방식 CRLF·앞뒤 공백 차이는 무시). 기본 경로다 |
+| **수정 후 승인** | `APPROVED` | `CORRECTED` | 문장 카드 중 하나라도 유지(`KEEP`)가 아니거나 순서가 바뀌면 이 값이다(고친 글이 원문과 줄바꿈 방식 CRLF·앞뒤 공백만 다르면 유지로 본다). `claims` 를 카드 결과로 다시 쓰고, 남은 문장을 순서대로 이은 글이 `child_context.content` 로 (#221). 기본 경로다 |
 | 보류 | `HOLD` | `HOLD` | 올라가지 않는다. 보류함에서 해제할 수 있다 |
 | 제거 | `REMOVED` | `REMOVED` | 그 요약의 일지를 모두 삭제 표시한다. 되돌릴 수 없다. 보류함에서도 바로 할 수 있다 |
 | 보류 해제 | `HOLD` → `GATE1_PENDING` | `REOPENED` | 다시 검토 대기 |
 
 보류·제거 사유는 받지 않는다(`comment` 비움). 한 기관에 담당자가 한 명이라 권한은 요약의 기관이 요청
 교사의 기관인지만 본다 — 다른 기관 요약은 404 `SUMMARY_NOT_FOUND`.
+
+**승인 때 `claims` 재저장** (2026-10-25, #221) — 10/17 회의 C안. 교사는 본문 전체가 아니라 `claims` 문장마다
+유지·수정·삭제하고 새 문장을 추가한다(O-31 `cards`). 인사이트는 본문이 아니라 `claims` 를 읽으므로(§9.2),
+고쳐 승인하면 `claims` 를 카드 결과로 다시 써서 교사가 지운 문장이 남지 않게 한다. 최종 순서는 카드 순서다.
+
+| 카드 | 새 `claims` 에 |
+| --- | --- |
+| `KEEP` | 원래 claim 그대로 + `"source": "AI"` (비워 두지 않는다) |
+| `DELETE` | 넣지 않는다 |
+| `EDIT` | `text` 만 바꾸고 `evidence` 는 원래 것 그대로 + `"source": "EDITED"` |
+| `ADD` | `{"text", "evidence": [{"journal_entry_id": null, "quote": text}], "source": "TEACHER"}` |
+
+- 원래 문장은 모두 한 번씩 와야 하고, 남는 문장이 하나는 있어야 한다 — 아니면 400 `SUMMARY_INVALID_REQUEST`
+- 그대로 승인(`APPROVED`)이면 `claims` 를 건드리지 않는다. `source` 가 없는 문장은 `AI` 로 읽는다
+- `content`·`raw_response` 는 AI 원문 그대로 남는다. 재저장해도 AI 가 쓴 claims 는 `raw_response` 에 있다
+- 컬럼은 그대로 TEXT 라 DB 변경은 없다. JSON 안에 `source` 키가 생기고 `TEACHER` 근거의 `journal_entry_id` 가 null 일 수 있다
 
 재생성은 **입력이 바뀐 경우만** 한다 — 새 일지가 도착했고 아직 승인 전일 때다.
 
@@ -1795,7 +1811,7 @@ decision      APPROVED | CORRECTED | HOLD | REMOVED | REOPENED
 | `decision` | 뜻 |
 | --- | --- |
 | `APPROVED` | AI 원문 그대로 승인 |
-| `CORRECTED` | 본문을 고쳐서 승인. 인사이트가 이 값으로 고친 요약을 거른다 (§9.2) |
+| `CORRECTED` | 문장 카드를 고쳐서 승인(유지가 아닌 카드가 있거나 순서가 바뀜, #221). 인사이트가 이 값으로 고친 요약을 거른다 (§9.2) |
 | `HOLD` | 보류 |
 | `REMOVED` | 제거 (Gate 1 은 요약과 그 일지 삭제 표시) |
 | `REOPENED` | 보류함에서 보류 해제 |
@@ -1847,6 +1863,8 @@ Insight는 원본 일지가 아니라 이 테이블이 가리키는 요약을 �
 
 **교사가 고쳐서 승인한 요약(`CORRECTED`)은 인사이트 재료에서 통째로 뺀다** (§10.1 #7).
 고친 본문과 `claims` 가 어긋나 있어서, 교사가 지운 문장이 `claims` 에 근거째 남아 나가기 때문이다.
+2026-10-25(#221)부터는 승인 때 `claims` 를 카드 결과로 다시 써서(§8.2) 어긋나지 않는다. 이 제외를 없애는 것은
+#199 Step 3 이다.
 어느 요약이 `CORRECTED` 인지는 `human_review` 에 `target_type = SUMMARY` · `decision = CORRECTED`
 행이 있는지로 본다 — 타임라인의 `edited` 배지가 쓰는 값과 같은 자리다.
 
@@ -2201,7 +2219,7 @@ Gate 1 승인은 교사가 틈틈이 한다. 한 주치가 한 번에 올라오�
 | 4 | 삭제 방식 | **물리 삭제를 하지 않는다. `deleted_at`을 쓴다** | FK 제약이 없어 DB가 참조 무결성을 지켜주지 않기 때문이다. 대상 테이블 6개는 §3.2 |
 | 5 | `users.role` 결정 시점 | **(9.23 변경) 로그인 진입 경로가 아니라 회원가입 API에서 결정한다** | `role`은 NULL 허용으로 바뀌었다. 로그인 직후엔 NULL(가입 미완료), `POST /api/v1/auth/signup` 호출 시 확정되며 이후 바뀌지 않는다. `?invite=` 로그인 힌트 방식은 폐기 |
 | 6 | 초대코드 만료 · 1회성 | **(10.12 확정) 10분 만료, 일회용, 한 아이에 여러 개 허용** | SMS 없이 기관이 직접 전달한다. 8자리, 입력 시도 제한 없음, 만료는 `expires_at` 으로만 판단 (§5.3) |
-| 7 | 교사가 고쳐 승인한 요약(`CORRECTED`)의 인사이트 처리 | **(10.9 확정) MVP 는 그 요약의 `claims` 를 통째로 뺀다** | 출처 `AI/insight/CRITERIA.md` §10. 고친 본문과 `claims` 가 어긋나 교사가 지운 문장이 근거째 남기 때문이다. 이후엔 "최종 본문에 그대로 남은 claim 만 살리는" 방식으로 간다(요약 CRITERIA §4). **BE 구현이 남았다** — 재료 조회에서 `human_review.decision = CORRECTED` 인 요약을 거른다 (§9.2) |
+| 7 | 교사가 고쳐 승인한 요약(`CORRECTED`)의 인사이트 처리 | **(10.9 확정) MVP 는 그 요약의 `claims` 를 통째로 뺀다** | 출처 `AI/insight/CRITERIA.md` §10. 고친 본문과 `claims` 가 어긋나 교사가 지운 문장이 근거째 남기 때문이다. **2026-10-25 #221** — 10/17 회의 C안으로 승인 때 `claims` 를 카드 결과로 다시 써서 어긋나지 않게 됐다(§8.2). 남은 일은 인사이트 재료 조회에서 `CORRECTED` 제외를 없애는 것(#199 Step 3) |
 | 8 | 보호자 여럿의 동의 · 철회 | **(10.13 확정, #184) 한 명만 동의해도 그 기관 공유가 켜지고, 한 명이 철회하면 그 기관의 모든 보호자 동의가 꺼진다.** 공유 항목은 기관 단위로 하나이고 마지막 동의가 기관 전체에 적용된다 | 끄는 쪽을 우선한다(Consent First). 사용자가 예상하기 어려운 규칙이라 동의 화면·회수 확인 시트에 안내가 필요하다 (FE). §5.5 |
 | 9 | 매칭 대상 판정 단위 | **(10.13 확정, #184) 기관별 동의로 판정한다.** 매칭 명부·사람의 매칭 확정은 그 기관에 `sharing_consent` ACTIVE 가 있는 아이만. `child.status` 는 화면용 요약 | 아이 전체 상태로 판정하면 학교에만 동의한 아이가 센터 명부에도 들어간다. 상태 규칙은 §5.1 |
 
@@ -2396,3 +2414,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-22 | `sharing_history` 에 `revoked_at`·`revoke_reason` 추가 (§9.4) — 동의가 꺼지면 이미 내준 열람 권한도 거둔다 (#213). 열람 방식이 발송보다 안전한 이유가 "철회하면 그 뒤로 안 보인다" 인데 거두는 길이 없어 발송 방식과 다를 게 없었다. 재료 기관 철회는 `ORGANIZATION` 권한만, 보호자 연결 해제는 그 사람의 `GUARDIAN` 권한을 거둔다. 찾는 열쇠는 `source_institution_ids` 다 — `source_entry_ids` 는 교사가 새로 쓴 문장을 못 찾는다(#212). 아직 승인 전인 인사이트는 상태를 바꾸지 않고 승인 시점에 막는다(`409 INSIGHT_MATERIAL_CONSENT_REVOKED`) — 상태값을 더하면 §11.4 수동 조치 대상이 되고, 동의가 다시 켜질 때 되돌릴 경로도 또 필요해진다. `revoke_reason` 은 `ConsentRevokeReason` 을 그대로 써서 새 enum 을 만들지 않는다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #213 |
 | 2026-10-23 | 실패 상태 분리. `journal_entry.status` 에 `SUMMARY_FAILED`(근거 0개, 다시 요약 가능)·`SYSTEM_ERROR`(관리자 확인) 추가, `failure_stage`·`failure_reason` 컬럼 추가. 검증·요약 실패를 `FAILED` 에서 옮기고 `FAILED` 는 매칭 실패만 (§6.2 "실패 상태와 원인 코드"). 원인별 되돌리기 스크립트 추가. 옛 `FAILED` 는 그대로 두고 찾는 SQL 만 둠. **enum 값 추가라 §11.4 확인 필요** — `journal_entry.status` CHECK (9/30 에 지웠으면 없음). 컬럼은 NULL 허용이라 `ddl-auto: update` 가 더한다 | 미생성 |
 | 2026-10-23 | `users.kakao_id`(§4.1)에 개발용 로그인(`GET /api/v1/dev/login`, `DEV_LOGIN_ENABLED`) 테스트 회원의 `dev:{이름}` 값이 들어올 수 있음을 명시. 컬럼·제약 변경 없음 | #219 |
+| 2026-10-25 | Gate 1 문장 카드(10/17 회의 C안). 고쳐 승인하면 `summary_result.claims` 를 카드 결과로 다시 쓴다 — 지운 문장은 빠지고, 문장마다 `source`(`AI`·`EDITED`·`TEACHER`)가 붙고, `TEACHER` 근거는 `journal_entry_id` 가 null (§8.2). `CORRECTED` 는 "카드 중 유지가 아닌 것이 있거나 순서가 바뀜" 으로 바뀐다(§8.2, §9.2, §10.1 #7). 컬럼은 TEXT 그대로라 **DB 변경 없음, §11.4 수동 조치 불필요** | #221 |
