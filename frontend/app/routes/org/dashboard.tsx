@@ -1,4 +1,4 @@
-import { useLoaderData, useRevalidator } from "react-router";
+import { useLoaderData } from "react-router";
 import { FileProgressList, useProgressPolling } from "@/components/org/FileProgressList";
 import { Card, EmptyState, InstitutionChip, PageHeader, QueueCard } from "@/components/ui";
 import {
@@ -8,7 +8,6 @@ import {
   getInsights,
   getMatchingQueue,
   loadIfReady,
-  retryFailedEntries,
 } from "@/lib/api";
 import { isAuthMock } from "@/lib/auth";
 import { MY_INSTITUTION } from "@/lib/mock/data";
@@ -27,7 +26,6 @@ export async function clientLoader() {
 
 export default function DashboardPage() {
   const { matching, blocked, gate1, insights, files } = useLoaderData<typeof clientLoader>();
-  const revalidator = useRevalidator();
   useProgressPolling(files ?? []);
   const counts = [
     matching?.length ?? null,
@@ -97,13 +95,7 @@ export default function DashboardPage() {
         ) : files.length === 0 ? (
           <p className="text-[14px] text-muted">아직 올린 파일이 없습니다.</p>
         ) : (
-          <FileProgressList
-            files={files}
-            onRetry={async (id) => {
-              await retryFailedEntries(id);
-              revalidator.revalidate();
-            }}
-          />
+          <FileProgressList files={files} />
         )}
       </Card>
     </>

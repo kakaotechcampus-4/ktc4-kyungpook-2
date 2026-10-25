@@ -152,6 +152,98 @@ def test_claim이_최소_근거_수보다_적으면_모델을_부르지_않는�
     assert plan(make_state(claims=CLAIMS[:1]))["skip_llm"] is True
     assert plan(make_state())["skip_llm"] is False
 
+# ── 교사 작성 문장 (#199) ───────────────────────────────────────
+
+from pydantic import ValidationError  # noqa: E402
+
+from insight.schemas import InsightClaim  # noqa: E402
+
+
+def teacher_claim(cid: str, inst: int) -> dict:
+    text = f"{cid} 교사 문장"
+    return {
+        "claim_id": cid, "text": text, "entry_date": "2026-01-09",
+        "institution_id": inst, "institution_type": TYPES[inst], "source": "TEACHER",
+        "evidence": [{"journal_entry_id": None, "quote": text}],
+    }
+
+
+def test_source_를_안_보내면_AI_다():
+    assert InsightClaim(**claim("10-0", 1, 101)).source == "AI"
+
+
+def test_교사_문장은_일지_번호_없이_통과한다():
+    assert InsightClaim(**teacher_claim("13-0", 2)).evidence[0].journal_entry_id is None
+
+
+def test_AI_문장인데_일지_번호가_없으면_막는다():
+    broken = {**claim("10-0", 1, 101), "evidence": [{"journal_entry_id": None, "quote": "인용"}]}
+    try:
+        InsightClaim(**broken)
+    except ValidationError:
+        return
+    raise AssertionError("AI 문장의 끊긴 근거가 통과했다")
+
+
+def test_교사_문장이_섞여도_출처_일지에서는_빠진다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    out = run(make_state(claims=claims), [insight(["10-0", "13-0"])])
+    assert len(out) == 1
+    assert out[0].source_entry_ids == [101]          # 교사 문장은 일지가 없다
+    assert out[0].source_institution_ids == [1, 2]   # 기관에는 잡힌다
+
+def edited_claim(cid: str, inst: int, jid: int) -> dict:
+    return {**claim(cid, inst, jid), "source": "EDITED"}
+
+
+def test_AI_문장만이면_교사_표시가_없다():
+    out = run(make_state(), [insight(["10-0", "11-0"])])
+    assert out[0].teacher_claim_ids == []
+
+
+def test_교사_문장이_섞이면_번호를_표시한다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    out = run(make_state(claims=claims), [insight(["10-0", "13-0"])])
+    assert out[0].teacher_claim_ids == ["13-0"]
+
+
+def test_교사_문장만으로는_인사이트를_만들지_않는다():
+    claims = CLAIMS + [teacher_claim("13-0", 2), teacher_claim("14-0", 1)]
+    assert run(make_state(claims=claims), [insight(["13-0", "14-0"])]) == []
+
+
+def test_고친_문장은_원문으로_세지_않지만_섞이면_표시한다():
+    claims = CLAIMS + [edited_claim("15-0", 1, 104), edited_claim("16-0", 2, 105)]
+    state = make_state(claims=claims)
+    assert run(state, [insight(["15-0", "16-0"])]) == []
+    out = run(state, [insight(["10-0", "15-0"])])
+    assert out[0].teacher_claim_ids == ["15-0"]
+
+
+def test_대처_근거의_교사_문장도_표시한다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["12-0", "13-0"]}
+    out = run(make_state(claims=claims), [insight(["10-0", "11-0"], supports=[support])])
+    assert len(out[0].supports) == 1
+    assert out[0].teacher_claim_ids == ["13-0"]
+    
+
+def test_교사_문장만으로_된_대처는_버리고_인사이트는_남긴다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["13-0"]}
+    out = run(make_state(claims=claims), [insight(["10-0", "11-0"], supports=[support])])
+    assert len(out) == 1
+    assert out[0].supports == []
+    assert out[0].teacher_claim_ids == []
+
+
+def test_대처에만_쓰인_기관도_출처에_들어간다():
+    claims = CLAIMS + [claim("17-0", 3, 106)]   # 활동지원사 claim 은 대처 근거로만
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["17-0"]}
+    out = run(make_state(claims=claims), [insight(["10-0", "12-0"], supports=[support])])
+    assert out[0].source_institution_ids == [1, 3]
+    assert out[0].source_entry_ids == [101, 103, 106]
+    assert out[0].cross_institution is False      # 기관 간 차이 여부는 본문 근거(학교 둘)로만
 
 if __name__ == "__main__":
     tests = [v for k, v in globals().items() if k.startswith("test_")]

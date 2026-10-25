@@ -5,7 +5,6 @@ import { Card, Note, PageHeader, PipelineStepper } from "@/components/ui";
 import {
   getChildren,
   getFileProgress,
-  retryFailedEntries,
   UPLOAD_EXTENSIONS,
   uploadRawRecords,
 } from "@/lib/api";
@@ -180,13 +179,7 @@ export default function UploadPage() {
             states={stageStatesOf(latest.entries)}
             className="mb-5 rounded border border-line bg-surface2 p-4"
           />
-          <FileProgressList
-            files={mine}
-            onRetry={async (id) => {
-              await retryFailedEntries(id);
-              revalidator.revalidate();
-            }}
-          />
+          <FileProgressList files={mine} />
         </Card>
       ) : null}
 
