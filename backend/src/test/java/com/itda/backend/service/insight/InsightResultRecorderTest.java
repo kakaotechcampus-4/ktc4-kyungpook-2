@@ -108,7 +108,7 @@ class InsightResultRecorderTest {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
         recorder.record(run, response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", 41L);
+                """), "{}", 41L, 1);
 
         assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
         assertThat(insightRunRepository.findAll()).singleElement()
@@ -121,7 +121,7 @@ class InsightResultRecorderTest {
     @Test
     void 결과가_있는_기간도_다시_집지_않는다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
-        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L);
+        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L, 1);
 
         assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
     }
@@ -156,7 +156,7 @@ class InsightResultRecorderTest {
     void 응답을_인사이트_행으로_남긴다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L);
+        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L, 1);
 
         List<InsightResult> saved = insightResultRepository.findByStatusOrderByIdDesc(InsightStatus.GATE2_PENDING);
         assertThat(saved).singleElement().satisfies(result -> {
@@ -184,7 +184,7 @@ class InsightResultRecorderTest {
                    {"situation": "상황", "behavior": "반응", "content": "  "},
                    {"situation": "상황2", "behavior": "반응2", "content": "제대로 된 본문"}],
                  "llm_called": true}
-                """), "{}", 41L);
+                """), "{}", 41L, 1);
 
         assertThat(insightResultRepository.findAll()).singleElement()
                 .satisfies(result -> assertThat(result.getContent()).isEqualTo("제대로 된 본문"));
@@ -196,7 +196,7 @@ class InsightResultRecorderTest {
     void 저장한_인사이트는_Gate2_대기로_들어간다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, oneInsight(), "{}", 41L);
+        recorder.record(run, oneInsight(), "{}", 41L, 1);
 
         assertThat(insightResultRepository.findAll()).singleElement()
                 .satisfies(result -> assertThat(result.getStatus()).isEqualTo(InsightStatus.GATE2_PENDING));
@@ -219,7 +219,7 @@ class InsightResultRecorderTest {
     void 응답의_insights가_null이어도_끝낸_것으로_남긴다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, new InsightAgentResponse(CHILD, null, null, null, false), null, 41L);
+        recorder.record(run, new InsightAgentResponse(CHILD, null, null, null, false), null, 41L, 1);
 
         assertThat(insightRunRepository.findAll()).singleElement().satisfies(saved -> {
             assertThat(saved.getStatus()).isEqualTo(InsightRunStatus.DONE);
@@ -232,7 +232,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark);
+                """), "{}", mark, 1);
 
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
     }
@@ -246,7 +246,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark);
+                """), "{}", mark, 1);
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
 
         approve(FROM.plusDays(3));
@@ -262,7 +262,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark);
+                """), "{}", mark, 1);
 
         approve(TO.plusDays(1));
 
@@ -300,7 +300,7 @@ class InsightResultRecorderTest {
 
     @Test
     void 끝난_실행은_되돌리지_않는다() throws Exception {
-        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), oneInsight(), "{}", 41L);
+        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), oneInsight(), "{}", 41L, 1);
 
         assertThat(recorder.releaseStuck()).isZero();
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();

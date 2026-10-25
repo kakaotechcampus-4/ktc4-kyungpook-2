@@ -261,6 +261,113 @@ class InsightServiceTest {
                 .containsExactly("근거가 붙은 문장");
     }
 
+    /** source 가 없는 요약은 C안(#183) 전에 저장된 것이라 전부 AI 원문이다. */
+    @Test
+    void source_가_없으면_AI_로_보낸다() {
+        approved(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "옛 요약 문장", "evidence": [{"journal_entry_id": 1041, "quote": "원문 인용"}]}]
+                """);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::source)
+                .containsExactly(InsightAgentRequest.ClaimSource.AI);
+    }
+
+    /**
+     * Gate 1 이 카드 결과를 담을 때 Jackson 기본 설정은 빈 칸을 <b>키 없음이 아니라 {@code null} 로</b> 쓴다.
+     * 고치지 않은 카드(KEEP)가 {@code "source": null} 로 저장되는데, 이걸 모르는 값으로 보면
+     * <b>안 고친 문장이 전부 인사이트에서 사라진다.</b>
+     */
+    @Test
+    void source_가_null_이어도_AI_로_보낸다() {
+        approved(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "고치지 않은 문장", "source": null,
+                  "evidence": [{"journal_entry_id": 1041, "quote": "원문 인용"}]}]
+                """);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::source)
+                .containsExactly(InsightAgentRequest.ClaimSource.AI);
+    }
+
+    /**
+     * 계약의 {@code quote} 는 필수다. 비워서 보내면 422 고, 422 는 재시도 없이 바로 실패한다 —
+     * 그 아이의 그 주 인사이트가 통째로 날아간다.
+     */
+    @Test
+    void 인용이_비면_그_근거를_버린다() {
+        approved(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "인용이 빈 근거만 달린 문장",
+                  "evidence": [{"journal_entry_id": 1041, "quote": ""},
+                               {"journal_entry_id": 1042}]},
+                 {"text": "멀쩡한 문장",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "원문 인용"}]}]
+                """);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::text)
+                .containsExactly("멀쩡한 문장");
+    }
+
+    /**
+     * 교사가 Gate 1 에서 새로 쓴 문장은 원본 일지가 없다. 계약이 TEACHER 에만 빈 번호를 허용하므로
+     * 그대로 실어 보낸다 — 거르면 교사 문장이 인사이트에 영영 못 들어간다 (#199, 멘토 리뷰 A4).
+     */
+    @Test
+    void 교사가_새로_쓴_문장은_일지_번호_없이_보낸다() {
+        approved(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "약 먹은 날 차분했다.", "source": "TEACHER",
+                  "evidence": [{"journal_entry_id": null, "quote": "약 먹은 날 차분했다."}]}]
+                """);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).singleElement().satisfies(claim -> {
+            assertThat(claim.source()).isEqualTo(InsightAgentRequest.ClaimSource.TEACHER);
+            assertThat(claim.evidence()).singleElement().satisfies(evidence -> {
+                assertThat(evidence.journalEntryId()).isNull();
+                assertThat(evidence.quote()).isEqualTo("약 먹은 날 차분했다.");
+            });
+        });
+    }
+
+    /** 교사가 고친 문장은 근거가 원래 일지 그대로다. 번호가 빠지면 근거가 끊긴 것이라 보내면 422 다. */
+    @Test
+    void 교사가_고친_문장은_일지_번호가_있어야_간다() {
+        approved(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "고쳤는데 번호가 빠진 문장", "source": "EDITED",
+                  "evidence": [{"journal_entry_id": null, "quote": "원문 인용"}]},
+                 {"text": "고치고 번호도 있는 문장", "source": "EDITED",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "원문 인용"}]}]
+                """);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::text)
+                .containsExactly("고치고 번호도 있는 문장");
+    }
+
+    /**
+     * 모르는 값을 AI 로 봐 두면 검증을 거치지 않은 교사 문장이 "AI 원문" 으로 나가고 Gate 2 경고도 사라진다.
+     * 한 문장을 잃는 쪽이 낫다.
+     */
+    @Test
+    void 모르는_source_는_그_문장을_빼고_보낸다() {
+        approved(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "모르는 출처", "source": "ROBOT",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "원문 인용"}]},
+                 {"text": "멀쩡한 문장", "evidence": [{"journal_entry_id": 1042, "quote": "원문 인용"}]}]
+                """);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::text)
+                .containsExactly("멀쩡한 문장");
+    }
+
     @Test
     void 기간_밖_요약은_재료에서_뺀다() {
         approved(school, LocalDate.of(2026, 9, 30), CLAIMS);
