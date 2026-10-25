@@ -1953,11 +1953,29 @@ Gate 2 를 승인하면 수신자에게 **보이게 된다.**
 | 남기는 것 | 보낸 시각 | 권한이 생긴 시각 + **실제로 열어 본 시각** |
 | 되돌릴 수 있나 | 이미 보낸 건 회수 못 한다 | 권한을 거두면 그 뒤로 안 보인다 (⬜ 아래) |
 
-> ⬜ **되돌리는 길은 아직 없다.** 열람 방식이 발송보다 안전한 이유가 "철회하면 그 뒤로 안 보인다" 인데,
-> 지금은 그 길이 구현돼 있지 않다 — `revoked_at` 컬럼도 없고, 보호자 연결을 끊어도
-> (`child_guardian.deleted_at`) 이 테이블의 행은 그대로 남는다. **읽는 쪽(O-50·보호자 홈)을 만들 때
-> `child_guardian` 을 같이 봐야** 연결이 끊긴 보호자가 계속 읽지 않는다. 권한 철회 자체는 보호자의
-> 기관별 승인 API 와 함께 정한다.
+**되돌리는 길** — 동의가 꺼지면 권한도 거둔다 (#213). 행은 지우지 않고 `revoked_at` 과 사유만 남긴다.
+
+| 무슨 일이 | 무엇을 거두나 |
+| --- | --- |
+| 재료 기관의 동의가 꺼졌다 | 그 기관 기록이 섞인 인사이트의 **`ORGANIZATION` 권한** |
+| 보호자 연결이 끊겼다 | 그 사람의 **`GUARDIAN` 권한** 전부 |
+
+**재료 기관 철회가 보호자 권한까지 거두지는 않는다.** 철회의 목적은 "내 아이 기록이 *다른 기관*에
+가는 것" 을 막는 것이지 보호자가 자기 아이 이야기를 못 보게 하는 게 아니다. 보호자는 철회한 당사자다.
+
+**인사이트 하나에 재료 기관이 여럿이면 하나만 꺼져도 통째로 막는다.** 여러 기관 claim 을 엮은 결과라
+문장 일부만 뺄 수 없다 (`AI/insight/CRITERIA.md` §7).
+
+**찾는 열쇠는 `source_institution_ids` 다.** `source_entry_ids` 로는 교사가 Gate 1 에서 새로 쓴 문장을
+못 찾는다 — 일지가 없어서 거기 안 잡힌다 (#212). `institution_id` 는 claim 의 `source` 와 무관하게 붙는다.
+
+**아직 Gate 2 를 안 거친 인사이트는 건드리지 않는다.** 동의가 다시 켜지면 그대로 승인할 수 있어야 해서다.
+대신 **승인 시점에 다시 본다** — 재료 기관 중 하나라도 동의가 꺼져 있으면 `409
+INSIGHT_MATERIAL_CONSENT_REVOKED` 다 (O-42).
+
+> ⬜ **아직 `ORGANIZATION` 권한을 만드는 쪽이 없다.** 기관 권한은 보호자의 인사이트별 승인이 만드는데
+> 그 API 가 아직이다. 그래서 오늘 실제로 막는 것은 승인 시점 검사 쪽이고, 거두는 길은 미리 내 둔 것이다.
+> 보호자가 기관별 승인을 **철회**하는 경로도 그 API 와 함께 정한다.
 
 **인사이트 전용이다.** 보호자가 승인된 요약을 **열람**하는 것(O-14)은 권한이 아니라 조회라서 여기
 남기지 않는다 — 그쪽은 `audit_logs`(O-53)가 받는다. 그래서 `insight_result_id` 가 NOT NULL 이다.
@@ -1972,6 +1990,8 @@ Gate 2 를 승인하면 수신자에게 **보이게 된다.**
 | `receiver_id` | BIGINT | N | 수신자 ID |
 | `granted_at` | DATETIME | N | 볼 수 있게 된 시각 |
 | `read_at` | DATETIME | Y | 처음 열어 본 시각. NULL 이면 아직 안 봤다 |
+| `revoked_at` | DATETIME | Y | 권한을 거둔 시각. NULL 이면 살아 있다 |
+| `revoke_reason` | VARCHAR(30) | Y | 왜 거뒀나. `sharing_consent` 의 철회 사유를 그대로 쓴다 |
 | `created_at` | DATETIME | N |  |
 
 ```
@@ -1994,8 +2014,15 @@ receiver_type = GUARDIAN     → receiver_id = users.id
 UNIQUE (insight_result_id, receiver_type, receiver_id)
 ```
 
-**한 수신자당 한 행이다.** Gate 2 승인 API 를 두 번 호출해도 권한이 두 번 생기지 않는다. 발송 방식에서
-키에 `status` 를 넣었던 이유(막혔던 이력 보존)는 `status` 가 없어지면서 사라졌다.
+**한 수신자당 한 행이다.** Gate 2 승인 API 를 두 번 호출해도 권한이 두 번 생기지 않는다.
+
+⚠️ **그래서 다시 열 때는 새로 넣지 말고 그 행을 되살려야 한다.** 키에 `revoked_at` 이 없어서 새 행은
+제약에 걸린다. 발송 방식에서 키에 `status` 를 넣었던 이유(막혔다가 다시 보낼 수 있어야 한다)는
+**사라진 게 아니라 `revoked_at` 으로 옮겨왔다** — 열람 방식에서 이 테이블은 사건 이력이 아니라
+**상태 행**이고, `child_organization`·`child_guardian` 과 같은 되살리기 규칙을 따른다 (§3.3).
+
+> 되살리면 앞서 거둔 시각과 사유가 지워진다. 한 수신자당 한 줄이라 켜고 끈 이력을 여기 쌓을 자리가
+> 없다 — 그 이력이 필요해지면 `audit_logs`(O-53)가 받아야 한다.
 
 **누가 먼저 보게 되나 — 보호자다.** 10/17 회의 결론은 `담당자 승인 → 보호자 → 보호자가 기관별 승인`
 이다. Gate 2 승인 시점에 만드는 행은 **`GUARDIAN` 뿐**이고, `ORGANIZATION` 행은 그 뒤 보호자가
@@ -2016,9 +2043,8 @@ UNIQUE (insight_result_id, receiver_type, receiver_id)
 **권한이 생겨도 보호자가 없을 수 있다.** 아이에 연결된 보호자가 한 명도 없으면 승인은 되지만 행이
 하나도 생기지 않는다 — 아무도 못 본다. 오류가 아니라 정상이고, 서비스가 경고 로그만 남긴다.
 
-> 연결 상태 테이블(`child_organization`·`child_guardian`)은 기존 행을 되살리는 방식이지만(§3.3),
-> 그건 **상태** 테이블의 규칙이다. 여기는 한 번 생기면 고치지 않는 **권한** 행이라 `updated_at` 이 없다
-> (§3.2) — `read_at` 한 칸만 나중에 채워진다.
+> `updated_at` 은 두지 않는다. 바뀌는 칸이 `read_at`·`revoked_at` 뿐이고 각자가 "언제" 를 담고 있어
+> 따로 한 칸을 더 둘 이유가 없다 (§3.2).
 
 ### 9.5 `insight_run` ✅ — ✅ 구현됨 (`InsightRun`)
 
@@ -2322,5 +2348,6 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-16 | `insight_run` 에 `last_context_id` 추가 (§9.5) — 인사이트를 만든 뒤 같은 기간에 요약이 더 승인되면 다시 집는다. Gate 1 승인은 교사가 틈틈이 하므로 한 주치가 한 번에 올라오지 않는데, "처리했다" 만 기억하면 뒤에 승인된 기록이 영영 빠졌다(멘토 리뷰 #191). `child_context` 가 지우지 않고 쌓여 id 가 단조 증가하는 것을 눈금으로 쓴다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #197 |
 | 2026-10-20 | `sharing_history`(§9.4) 구현 (`SharingHistory`) — 10/17 회의에서 **발송 → 열람 방식**으로 바뀌어 뜻을 다시 썼다 (#206). `status`(`SHARED`/`BLOCKED`/`FAILED`)·`reason`·`shared_at` 을 빼고 `granted_at`·`read_at` 을 넣었다. 열람 방식에는 "보내려다 막혔다" 는 순간이 없고 권한이 없으면 행이 없을 뿐이라 `status` 가 쓸 자리가 없다. UNIQUE 도 `(insight_result_id, receiver_type, receiver_id)` 로 줄였다(§3.3) — 키에 `status` 를 넣던 이유가 함께 사라졌다. Gate 2 승인은 `GUARDIAN` 행만 만들고 `ORGANIZATION` 행은 보호자의 기관별 승인이 만든다. 새 테이블이라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #206 |
 | 2026-10-20 | Gate 2 구현. `insight_result.status` 가 `GATE2_PENDING` → `APPROVED`/`HOLD` 로 바뀌고, 결정 한 줄이 `human_review` 에 `target_type = INSIGHT`·`review_type = GATE2` 로 쌓인다 (§9.1, §9.3). 승인 주체는 `source_institution_ids` 에서 **기관 종류 우선순위(학교 > 센터 > 활동지원사, 동점이면 작은 `organization_id`)** 로 뽑은 한 기관이다 — 저장하지 않고 계산한다. **enum·컬럼 추가가 없어 §11.4 수동 조치 불필요** (`human_review` 의 `target_type`·`review_type`·`decision` 은 이미 쓰는 값만 쓴다) | #206 |
+| 2026-10-22 | `sharing_history` 에 `revoked_at`·`revoke_reason` 추가 (§9.4) — 동의가 꺼지면 이미 내준 열람 권한도 거둔다 (#213). 열람 방식이 발송보다 안전한 이유가 "철회하면 그 뒤로 안 보인다" 인데 거두는 길이 없어 발송 방식과 다를 게 없었다. 재료 기관 철회는 `ORGANIZATION` 권한만, 보호자 연결 해제는 그 사람의 `GUARDIAN` 권한을 거둔다. 찾는 열쇠는 `source_institution_ids` 다 — `source_entry_ids` 는 교사가 새로 쓴 문장을 못 찾는다(#212). 아직 승인 전인 인사이트는 상태를 바꾸지 않고 승인 시점에 막는다(`409 INSIGHT_MATERIAL_CONSENT_REVOKED`) — 상태값을 더하면 §11.4 수동 조치 대상이 되고, 동의가 다시 켜질 때 되돌릴 경로도 또 필요해진다. `revoke_reason` 은 `ConsentRevokeReason` 을 그대로 써서 새 enum 을 만들지 않는다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #213 |
 | 2026-10-23 | 실패 상태 분리. `journal_entry.status` 에 `SUMMARY_FAILED`(근거 0개, 다시 요약 가능)·`SYSTEM_ERROR`(관리자 확인) 추가, `failure_stage`·`failure_reason` 컬럼 추가. 검증·요약 실패를 `FAILED` 에서 옮기고 `FAILED` 는 매칭 실패만 (§6.2 "실패 상태와 원인 코드"). 원인별 되돌리기 스크립트 추가. 옛 `FAILED` 는 그대로 두고 찾는 SQL 만 둠. **enum 값 추가라 §11.4 확인 필요** — `journal_entry.status` CHECK (9/30 에 지웠으면 없음). 컬럼은 NULL 허용이라 `ddl-auto: update` 가 더한다 | 미생성 |
 | 2026-10-23 | `users.kakao_id`(§4.1)에 개발용 로그인(`GET /api/v1/dev/login`, `DEV_LOGIN_ENABLED`) 테스트 회원의 `dev:{이름}` 값이 들어올 수 있음을 명시. 컬럼·제약 변경 없음 | #219 |

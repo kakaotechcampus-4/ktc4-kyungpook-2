@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.Gate2Action;
+import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.invitation.ChildGuardian;
@@ -23,6 +24,7 @@ import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
@@ -57,6 +59,7 @@ public class InsightGate2Service {
     private final OrganizationRepository organizationRepository;
     private final ChildGuardianRepository childGuardianRepository;
     private final SharingHistoryRepository sharingHistoryRepository;
+    private final SharingConsentRepository sharingConsentRepository;
     private final ApprovalRepository approvalRepository;
 
     @Transactional
@@ -71,7 +74,10 @@ public class InsightGate2Service {
         requireLatestRevision(insight);
 
         ApprovalDecision decision = switch (action) {
-            case APPROVE -> approve(insight, primary);
+            case APPROVE -> {
+                requireMaterialStillConsented(insight);
+                yield approve(insight, primary);
+            }
             case HOLD -> hold(insight);
         };
         approvalRepository.save(Approval.gate2(insightId, Long.valueOf(userId), decision));
@@ -111,6 +117,9 @@ public class InsightGate2Service {
             log.warn("gate2 approved but no guardian linked, nobody can read it insightId={} childId={}",
                     insight.getId(), insight.getChildId());
         }
+        // 승인은 한 번뿐이라(requireDecidable) 같은 수신자에게 두 번 열리지 않는다. 그래서 여기서는
+        // 되살리기를 보지 않는다 — 닿지 않는 가지를 두면 되살리기가 되는 줄 착각하게 된다.
+        // 거뒀던 권한을 다시 여는 쪽은 SharingHistory.regrant 를 쓴다 (보호자 기관별 승인 API, §3.3).
         sharingHistoryRepository.saveAll(guardians.stream()
                 .map(guardian -> SharingHistory.grant(insight.getChildId(), insight.getId(), primary.getId(),
                         ReceiverType.GUARDIAN, guardian.getUserId()))
@@ -121,6 +130,27 @@ public class InsightGate2Service {
     private ApprovalDecision hold(InsightResult insight) {
         insight.holdGate2();
         return ApprovalDecision.HOLD;
+    }
+
+    /**
+     * 재료가 된 기관의 공유 동의가 지금도 살아 있는지. <b>승인에만 본다</b> — 보류는 아무 데도 안 나가므로
+     * 막을 이유가 없고, 막으면 교사가 철회된 인사이트를 치울 길이 사라진다.
+     *
+     * <p>인사이트를 만들 때는 동의가 있었다 ({@code InsightService.consentedInstitutionsOf}). 그 뒤 교사가
+     * 승인을 누르기까지 며칠이 걸리고, 그사이 보호자가 철회할 수 있다. 여기서 다시 보지 않으면
+     * <b>철회된 기관의 기록이 섞인 글이 그대로 나간다</b> (CLAUDE.md: 동의가 사라지면 막는다).
+     *
+     * <p>인사이트는 여러 기관 claim 을 엮은 결과라 문장 일부만 뺄 수 없다. 하나라도 꺼져 있으면 통째로
+     * 막는다 ({@code AI/insight/CRITERIA.md} §7).
+     */
+    private void requireMaterialStillConsented(InsightResult insight) {
+        for (Long organizationId : PrimarySource.sourceIdsOf(insight)) {
+            if (!sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(
+                    insight.getChildId(), organizationId, SharingConsentStatus.ACTIVE)) {
+                throw new InsightException(InsightErrorCode.MATERIAL_CONSENT_REVOKED,
+                        "insightId=" + insight.getId() + " organizationId=" + organizationId);
+            }
+        }
     }
 
     /** 승인도 보류도 한 번뿐이다. 되돌리는 경로가 없어 두 번째 결정은 받을 수 없다. */
