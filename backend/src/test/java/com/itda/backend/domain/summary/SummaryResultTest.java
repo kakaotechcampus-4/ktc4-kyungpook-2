@@ -119,6 +119,30 @@ class SummaryResultTest {
     }
 
     @Test
+    void 문장_카드로_고쳐_승인하면_claims_만_바뀌고_AI_원문은_그대로다() {
+        SummaryResult result = summary();
+        String originalContent = result.getContent();
+        String originalRaw = result.getRawResponse();
+
+        result.approveWithClaims("[{\"text\":\"고친 문장\",\"source\":\"EDITED\"}]");
+
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.APPROVED);
+        assertThat(result.getClaims()).isEqualTo("[{\"text\":\"고친 문장\",\"source\":\"EDITED\"}]");
+        assertThat(result.getContent()).isEqualTo(originalContent);
+        assertThat(result.getRawResponse()).isEqualTo(originalRaw);
+    }
+
+    @Test
+    void 문장_카드로_승인하려면_Gate1_대기여야_하고_claims_가_있어야_한다() {
+        SummaryResult held = summary();
+        held.hold();
+
+        assertThatThrownBy(() -> held.approveWithClaims("[]")).isInstanceOf(IllegalStateException.class);
+        assertThat(held.getStatus()).isEqualTo(SummaryStatus.HOLD);
+        assertThatThrownBy(() -> summary().approveWithClaims(" ")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void 보류하면_보류_상태가_되고_보류_해제하면_Gate1_대기로_돌아온다() {
         SummaryResult result = summary();
 
