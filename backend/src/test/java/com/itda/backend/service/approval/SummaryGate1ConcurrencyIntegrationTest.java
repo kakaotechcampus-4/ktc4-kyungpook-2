@@ -9,8 +9,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -123,6 +123,7 @@ class SummaryGate1ConcurrencyIntegrationTest {
             statement.executeUpdate("DELETE FROM child_context");
             statement.executeUpdate("DELETE FROM journal_entry");
             statement.executeUpdate("DELETE FROM summary_result");
+            statement.executeUpdate("DELETE FROM summary_run_request");
             statement.executeUpdate("DELETE FROM raw_record");
         }
     }
@@ -139,8 +140,7 @@ class SummaryGate1ConcurrencyIntegrationTest {
     @Test
     void 승인이_먼저_잡고_있으면_워커는_기다렸다가_승인된_일지를_다시_묶지_않는다() throws Exception {
         JournalEntry late = journalEntryRepository.save(validated());
-        // 마감·디바운스를 건너뛰게 해 지금 바로 집도록 한다.
-        runRequests.request(new SummaryGroup(CHILD, DATE, ORG), Instant.now().plusSeconds(600));
+        runRequests.request(new SummaryGroup(CHILD, DATE, ORG), LocalDateTime.now());
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         List<ClaimedSummaryGroup> claimed;
@@ -163,8 +163,10 @@ class SummaryGate1ConcurrencyIntegrationTest {
         }
 
         // 승인된 판의 일지는 끝났다. 새 일지만 새 판으로 요약한다.
-        assertThat(claimed).containsExactly(
-                new ClaimedSummaryGroup(new SummaryGroup(CHILD, DATE, ORG), List.of(late.getId())));
+        assertThat(claimed).singleElement().satisfies(group -> {
+            assertThat(group.group()).isEqualTo(new SummaryGroup(CHILD, DATE, ORG));
+            assertThat(group.journalEntryIds()).containsExactly(late.getId());
+        });
         assertThat(journalEntryRepository.findById(entry.getId()).orElseThrow().getStatus())
                 .isEqualTo(JournalEntryStatus.COMPLETED);
     }

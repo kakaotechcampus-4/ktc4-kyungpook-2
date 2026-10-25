@@ -1,13 +1,15 @@
 package com.itda.backend.service.summary;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.summary.SummaryRunRequest;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
@@ -17,7 +19,7 @@ import com.itda.backend.service.user.UserService;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 교사의 "지금 요약". 마감(다음 날 03:00)과 디바운스를 기다리지 않고 그 묶음을 요약하도록 요청해 둔다.
+ * 교사의 [요약]. 그 묶음을 요약하도록 요청을 DB 에 남긴다 — 요약은 이 요청이 있는 묶음만 한다 (#181).
  * 실제 요약은 워커가 다음 차례에 한다 — 같은 기관·날짜에 매칭·검증 중인 일지가 있으면 그것이 끝난 뒤다.
  * 그래서 업로드 직후(아직 매칭·검증 중)에 눌러도 받는다.
  *
@@ -31,10 +33,13 @@ public class SummaryRunService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final SummaryRunRequests runRequests;
-    private final SummaryProperties properties;
     private final Clock clock;
 
-    @Transactional(readOnly = true)
+    /**
+     * 트랜잭션을 걸지 않는다. 같은 묶음을 동시에 눌러 늦게 넣은 쪽이 요청 행 UNIQUE 에 걸리면 그 저장은 롤백되는데,
+     * 바깥 트랜잭션이 있으면 그것까지 롤백으로 표시돼 다시 시도할 수 없다. 다시 시도하면 먼저 들어간 행을 찾아
+     * 누른 시각만 바꾼다.
+     */
     public void requestRun(String userId, Long childId, LocalDate entryDate) {
         Long organizationId = userService.getOrganizationIdOf(userId);
         if (!childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)) {
@@ -50,10 +55,25 @@ public class SummaryRunService {
             throw new SummaryRunValidationException(
                     "no journal entry to summarize childId=" + childId + " entryDate=" + entryDate);
         }
-        // 마감이 지나면 어차피 자동으로 요약되므로 그때까지만 유효하다. 이미 지난 날짜면 디바운스만큼만 둔다.
-        Instant now = clock.instant();
-        Instant cutoff = properties.cutoffOf(entryDate);
-        Instant expiresAt = now.isBefore(cutoff) ? cutoff : now.plus(properties.debounce());
-        runRequests.request(new SummaryGroup(childId, entryDate, organizationId), expiresAt);
+        SummaryGroup group = new SummaryGroup(childId, entryDate, organizationId);
+        LocalDateTime now = LocalDateTime.now(clock);
+        try {
+            runRequests.request(group, now);
+        } catch (DataIntegrityViolationException e) {
+            if (!isViolationOf(e, SummaryRunRequest.UK_GROUP)) {
+                throw e;
+            }
+            runRequests.request(group, now);
+        }
+    }
+
+    private static boolean isViolationOf(DataIntegrityViolationException exception, String constraintName) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation
+                    && constraintName.equalsIgnoreCase(violation.getConstraintName())) {
+                return true;
+            }
+        }
+        return false;
     }
 }

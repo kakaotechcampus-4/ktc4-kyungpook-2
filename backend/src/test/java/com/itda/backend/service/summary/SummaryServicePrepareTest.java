@@ -4,12 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
+import java.time.LocalDateTime;
 import java.util.Arrays;
-import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,7 +30,7 @@ import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
-import com.itda.backend.service.agent.WorkerProperties;
+import com.itda.backend.repository.summary.SummaryRunRequestRepository;
 
 /** 요약 요청 조립 — 묶음의 일지들, 아동·기관 이름, 본문에 이름이 나온 다른 아이들. */
 @DataJpaTest
@@ -60,6 +57,9 @@ class SummaryServicePrepareTest {
     @Autowired
     private SummaryResultRepository summaryResultRepository;
 
+    @Autowired
+    private SummaryRunRequestRepository summaryRunRequestRepository;
+
     private SummaryService summaryService;
     private Organization school;
     private Long rawRecordId;
@@ -70,9 +70,7 @@ class SummaryServicePrepareTest {
     @BeforeEach
     void setUp() {
         summaryService = new SummaryService(journalEntryRepository, matchingResultRepository, childRepository,
-                organizationRepository, summaryResultRepository, new SummaryRunRequests(),
-                new SummaryProperties(new WorkerProperties(true, 5000, 10), LocalTime.of(3, 0),
-                        Duration.ofMinutes(30), ZoneId.of("Asia/Seoul"), Duration.ofSeconds(120)),
+                organizationRepository, summaryResultRepository, new SummaryRunRequests(summaryRunRequestRepository),
                 Clock.systemDefaultZone());
         school = em.persist(Organization.of("햇살초등학교", OrganizationType.SCHOOL, "1234567890"));
         rawRecordId = em.persist(new RawRecord(String.valueOf(school.getId()), "school.pdf", "kept/school.pdf",
@@ -102,7 +100,7 @@ class SummaryServicePrepareTest {
 
     private ClaimedSummaryGroup group(JournalEntry... entries) {
         return new ClaimedSummaryGroup(new SummaryGroup(junho.getId(), DATE, school.getId()),
-                Arrays.stream(entries).map(JournalEntry::getId).toList());
+                Arrays.stream(entries).map(JournalEntry::getId).toList(), LocalDateTime.of(2026, 10, 8, 17, 0));
     }
 
     @Test
