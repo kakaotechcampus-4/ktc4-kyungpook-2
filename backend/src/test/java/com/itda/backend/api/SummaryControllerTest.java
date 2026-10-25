@@ -224,7 +224,8 @@ class SummaryControllerTest {
     void list_returnsPendingSummariesByDefault() throws Exception {
         given(summaryGate1QueryService.getSummaries(any(), eq("pending"))).willReturn(List.of(
                 new Gate1SummaryResponse(50L, 8L, "김준호", LocalDate.of(2026, 10, 8), 1, "GATE1_PENDING",
-                        "v1", false, "요약 본문", true, List.of("다른아동이름"),
+                        "v1", false, "요약 본문", List.of(new Gate1SummaryResponse.ClaimCard(0, "요약 본문")),
+                        true, List.of("다른아동이름"),
                         List.of(new Gate1SummaryResponse.UncoveredEntry(1042L, "낮잠을 잤다.")),
                         List.of(new Gate1SummaryResponse.ReviewFlag(1041L, List.of("추측성표현"))))));
 
@@ -234,6 +235,8 @@ class SummaryControllerTest {
                 .andExpect(jsonPath("$.data[0].entryDate").value("2026-10-08"))
                 .andExpect(jsonPath("$.data[0].version").value("v1"))
                 .andExpect(jsonPath("$.data[0].processing").value(false))
+                .andExpect(jsonPath("$.data[0].claims[0].index").value(0))
+                .andExpect(jsonPath("$.data[0].claims[0].text").value("요약 본문"))
                 .andExpect(jsonPath("$.data[0].reviewReasons[0]").value("다른아동이름"))
                 .andExpect(jsonPath("$.data[0].uncoveredEntries[0].journalEntryId").value(1042))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].issueTypes[0]").value("추측성표현"));

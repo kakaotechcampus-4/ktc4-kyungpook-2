@@ -46,7 +46,8 @@ public class SummaryController {
     @Operation(
             summary = "Gate 1 검토 목록 · 보류함",
             description = "우리 기관의 요약을 오래된 날짜부터 반환합니다. gate1Status=pending 이면 검토 대기, hold 면 보류함입니다. "
-                    + "요약 본문, 다른 아이 이름 경고(needsReview·reviewReasons), 요약에 안 들어간 일지와 원문, "
+                    + "요약 본문과 문장 카드(claims — 결정할 때 쓰는 index·글), 다른 아이 이름 경고(needsReview·reviewReasons), "
+                    + "요약에 안 들어간 일지와 원문, "
                     + "요약에 들어간 원본의 검증 REVIEW 사유를 함께 줍니다. processing 이 true 면 같은 묶음에 아직 요약에 "
                     + "반영되지 않은 기록이 있어 곧 요약이 바뀝니다. 응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
     )
