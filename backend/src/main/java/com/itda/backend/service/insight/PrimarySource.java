@@ -33,7 +33,7 @@ import lombok.extern.slf4j.Slf4j;
  * 주체가 조회할 때마다 달라진다.
  */
 @Slf4j
-final class PrimarySource {
+public final class PrimarySource {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -47,8 +47,13 @@ final class PrimarySource {
     private PrimarySource() {
     }
 
-    /** 근거를 낸 기관 id. AI 가 쓴 JSON 이 깨져 있으면 빈 목록이다 — 그 인사이트는 아무에게도 보이지 않는다. */
-    static List<Long> sourceIdsOf(InsightResult insight) {
+    /**
+     * 근거를 낸 기관 id. AI 가 쓴 JSON 이 깨져 있으면 빈 목록이다 — 그 인사이트는 아무에게도 보이지 않는다.
+     *
+     * <p>공유 쪽(#223)도 같은 값으로 "재료를 낸 기관" 을 가린다. 두 군데가 다르게 읽으면 자기가 낸
+     * 기록으로 만든 글이 자기에게 다시 열린다.
+     */
+    public static List<Long> sourceIdsOf(InsightResult insight) {
         List<Long> ids = new ArrayList<>();
         for (JsonNode node : readArray(insight)) {
             if (node.canConvertToLong()) {
