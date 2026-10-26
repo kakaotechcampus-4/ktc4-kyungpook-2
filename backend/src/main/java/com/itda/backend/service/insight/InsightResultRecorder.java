@@ -137,7 +137,8 @@ public class InsightResultRecorder {
      *                      견줘 재료가 늘었는지 본다 (§9.5)
      */
     @Transactional
-    public void record(InsightRun run, InsightAgentResponse response, String rawJson, Long lastContextId) {
+    public void record(InsightRun run, InsightAgentResponse response, String rawJson, Long lastContextId,
+            int claimCount) {
         List<InsightAgentResponse.Insight> insights =
                 response.insights() == null ? List.of() : response.insights();
 
@@ -152,6 +153,14 @@ public class InsightResultRecorder {
             saved.add(toEntity(run, insight, rawJson));
         }
         insightResultRepository.saveAll(saved);
+        if (saved.isEmpty()) {
+            // 0 건은 정상이다 — 억지로 만든 패턴이 과잉해석이다 (§9.5). 다만 <b>왜</b> 0 건인지는 남지 않는다.
+            // AI 가 원문 근거(source=AI) claim 이 없는 인사이트를 통째로 버리기 때문에(REQUIRE_SOURCE_CLAIM,
+            // #212), 교사가 카드를 많이 고친 주에는 조용히 빈 주가 된다. 교사는 "이번 주엔 패턴이 없었나" 로
+            // 읽지 자기가 고쳐서라고는 생각하지 못한다. 데모에서 "왜 안 나오지" 가 나오면 여기부터 본다.
+            log.info("insight run produced nothing childId={} period={}..{} claims={}",
+                    run.getChildId(), run.getPeriodFrom(), run.getPeriodTo(), claimCount);
+        }
 
         run.finish(saved.size(), lastContextId);
         insightRunRepository.save(run);
