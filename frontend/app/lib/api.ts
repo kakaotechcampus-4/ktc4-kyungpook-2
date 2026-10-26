@@ -73,6 +73,7 @@ import type {
   ConsentResult,
   FileProgress,
   Gate1Status,
+  Gate2Status,
   InboxItem,
   Insight,
   Institution,
@@ -129,8 +130,8 @@ const BE_READY = {
   blockedQueue: true,
   /** 1차 검토 조회 · 승인 · 아이 변경 */
   gate1: false,
-  /** 인사이트 조회 · 2차 공유 */
-  insights: false,
+  /** 인사이트 조회 · 2차 공유 (O-40 ~ O-42) */
+  insights: true,
   /** 원본 업로드 (POST /raw-records) */
   upload: true,
   /** 파일별 처리 현황 (O-26) */
@@ -335,10 +336,19 @@ export async function decideGate1(
   });
 }
 
-/** GET /api/v1/insights */
-export async function getInsights(): Promise<Insight[]> {
-  if (mockFor("insights")) return mock.INSIGHTS;
-  return request("/api/v1/insights");
+/**
+ * GET /api/v1/insights?gate2Status= (O-40)
+ *
+ * BE 는 우리 기관이 승인 주체인 것만 준다 — 화면에서 기관으로 다시 거르지 않는다.
+ * 상태를 안 보내면 BE 기본값이 pending 이라 승인·보류된 것은 따로 물어야 한다.
+ */
+export async function getInsights(gate2Status: Gate2Status = "pending"): Promise<Insight[]> {
+  if (mockFor("insights")) {
+    return mock.INSIGHTS.filter(
+      (i) => i.primarySource.id === mock.MY_INSTITUTION.id && i.gate2Status === gate2Status,
+    );
+  }
+  return request(`/api/v1/insights?gate2Status=${gate2Status}`);
 }
 
 export async function getInsight(id: string): Promise<Insight | undefined> {
