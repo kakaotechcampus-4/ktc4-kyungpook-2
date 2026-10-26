@@ -2,6 +2,7 @@ package com.itda.backend.dto.response.user;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.domain.user.UserRole;
 
@@ -11,28 +12,28 @@ import com.itda.backend.domain.user.UserRole;
  * <p>PK 는 Long 이지만 문자열로 내린다(팀 합의). role 은 프론트 타입에 맞춰 소문자다.
  *
  * <p>{@code signupCompleted} 는 원시 boolean 이라 NON_NULL 설정과 무관하게 항상 나간다.
- * 프론트는 이 값만 보고 가입 화면으로 보낼지 정한다. 가입 미완료면 role·institutionId 가 없다.
+ * 프론트는 이 값만 보고 가입 화면으로 보낼지 정한다. 가입 미완료면 role·institutionId·institutionName 이 없다.
  *
  * <p>{@code institutionName} 은 사이드바에 기관명을 띄우려고 둔다(#236). {@code institutionId} 와 같이 기관 회원만 있다.
  *
  * <p>{@code @JsonInclude} 를 여기에 직접 붙여야 한다 — ApiResponse 에 붙은 설정은
  * 중첩된 타입까지 내려가지 않는다. 이게 없으면 보호자 응답에 {@code "institutionId": null} 이
- * 그대로 나가서 "role 이 org 일 때만 포함한다" 는 계약이 깨진다.
+ * 그대로 나가서 "role 이 org 일 때만 포함한다" 는 계약이 깨진다. {@code institutionName} 도 같다.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CurrentUserResponse(
         String role, String userId, String name, String institutionId, String institutionName,
         boolean signupCompleted) {
 
-    /** @param institutionName 기관 회원의 기관명. 기관 회원이 아니면 null 이고 응답에서 빠진다 */
-    public static CurrentUserResponse from(User user, String institutionName) {
+    /** @param organization 회원이 속한 기관. 기관 회원이 아니거나 찾지 못했으면 null 이고, 기관명이 응답에서 빠진다 */
+    public static CurrentUserResponse from(User user, Organization organization) {
         String institutionId = toApiInstitutionId(user);
         return new CurrentUserResponse(
                 toApiRole(user.getRole()),
                 String.valueOf(user.getId()),
                 user.getName(),
                 institutionId,
-                institutionId == null ? null : institutionName,
+                institutionId == null || organization == null ? null : organization.getName(),
                 user.isSignupCompleted());
     }
 

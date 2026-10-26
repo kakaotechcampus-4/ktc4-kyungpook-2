@@ -143,6 +143,19 @@ class UserServiceTest {
         assertThat(response.signupCompleted()).isTrue();
     }
 
+    /** 기관 행을 못 찾아도 라우트 가드가 막히지 않게 기관명만 빼고 응답한다. */
+    @Test
+    void currentUserOfOrganizationWithoutOrganizationRowOmitsOnlyTheName() {
+        given(userRepository.findByIdAndDeletedAtIsNull(1L))
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+        given(organizationRepository.findById(7L)).willReturn(Optional.empty());
+
+        CurrentUserResponse response = userService.getCurrentUser("1");
+
+        assertThat(response.institutionId()).isEqualTo("7");
+        assertThat(response.institutionName()).isNull();
+    }
+
     /** 가입 미완료는 정상 상태다. 역할 없이 signupCompleted=false 로 내려 프론트가 가입 화면으로 보낸다. */
     @Test
     void currentUserBeforeSignupHasNoRole() {
