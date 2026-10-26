@@ -2,7 +2,6 @@ package com.itda.backend.service.insight;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -20,7 +19,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.consent.ConsentState;
-import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.organization.Organization;
@@ -34,11 +32,11 @@ import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
-import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -82,7 +80,7 @@ public class InsightGate2QueryService {
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
-    private final SharingConsentRepository sharingConsentRepository;
+    private final ConsentStateReader consentStateReader;
     private final SummaryResultRepository summaryResultRepository;
     private final ChildContextRepository childContextRepository;
 
@@ -159,7 +157,7 @@ public class InsightGate2QueryService {
         Map<Long, List<Long>> enrolled = childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(childIds)
                 .stream().collect(Collectors.groupingBy(ChildOrganization::getChildId,
                         Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
-        Map<Long, Map<Long, ConsentState>> consents = consentStates(childIds);
+        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
         Map<Long, Evidence> evidences = evidenceOf(insights);
 
         Set<Long> organizationIds = new HashSet<>();
@@ -250,22 +248,6 @@ public class InsightGate2QueryService {
     private static String periodLabel(LocalDate periodFrom) {
         int weekOfMonth = (periodFrom.getDayOfMonth() - 1) / 7 + 1;
         return "%d년 %d월 %d주차".formatted(periodFrom.getYear(), periodFrom.getMonthValue(), weekOfMonth);
-    }
-
-    /** 아이별·기관별 동의 상태. ACTIVE 가 하나라도 있으면 GRANTED, 행은 있는데 다 철회면 REVOKED. */
-    private Map<Long, Map<Long, ConsentState>> consentStates(Collection<Long> childIds) {
-        Map<Long, Map<Long, ConsentState>> states = new HashMap<>();
-        for (SharingConsent consent : sharingConsentRepository.findByChildIdIn(childIds)) {
-            Map<Long, ConsentState> byOrganization =
-                    states.computeIfAbsent(consent.getChildId(), k -> new HashMap<>());
-            ConsentState current = byOrganization.get(consent.getOrganizationId());
-            if (current == ConsentState.GRANTED) {
-                continue;
-            }
-            byOrganization.put(consent.getOrganizationId(),
-                    consent.isActive() ? ConsentState.GRANTED : ConsentState.REVOKED);
-        }
-        return states;
     }
 
     /**

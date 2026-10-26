@@ -25,6 +25,9 @@ public interface ChildGuardianRepository extends JpaRepository<ChildGuardian, Lo
 
     List<ChildGuardian> findByChildIdAndDeletedAtIsNullOrderByLinkedAtAsc(Long childId);
 
+    /** 보호자의 아이 목록(G-10)용. 연결된 순서다 — 같은 시각이면 먼저 만든 행. */
+    List<ChildGuardian> findByUserIdAndDeletedAtIsNullOrderByLinkedAtAscIdAsc(Long userId);
+
     /** 보호자 권한 확인용. 해제된 연결은 권한이 아니다. */
     boolean existsByChildIdAndUserIdAndDeletedAtIsNull(Long childId, Long userId);
 }

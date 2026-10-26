@@ -58,6 +58,7 @@ public class ConsentService {
     private final ChildGuardianRepository childGuardianRepository;
     private final OrganizationRepository organizationRepository;
     private final SharingConsentRepository sharingConsentRepository;
+    private final ConsentStateReader consentStateReader;
     private final InsightAccessRevoker insightAccessRevoker;
     private final Clock clock;
 
@@ -136,7 +137,7 @@ public class ConsentService {
         }
         refreshStatus(child);
 
-        ConsentState state = stateOf(childId, institutionId);
+        ConsentState state = consentStateReader.stateOf(childId, institutionId);
         List<ConsentField> shared = state == ConsentState.GRANTED
                 ? SharingConsent.normalize(allowedFields)
                 : List.of();
@@ -167,7 +168,8 @@ public class ConsentService {
         revoked.stream()
                 .map(SharingConsent::getOrganizationId)
                 .distinct()
-                .filter(organizationId -> stateOf(lockedChild.getId(), organizationId) != ConsentState.GRANTED)
+                .filter(organizationId ->
+                        consentStateReader.stateOf(lockedChild.getId(), organizationId) != ConsentState.GRANTED)
                 .forEach(organizationId -> insightAccessRevoker.revokeForInstitution(
                         lockedChild.getId(), organizationId, ConsentRevokeReason.GUARDIAN_UNLINKED, now));
 
@@ -186,16 +188,6 @@ public class ConsentService {
         } else if (sharingConsentRepository.existsByChildId(child.getId())) {
             child.suspend();
         }
-    }
-
-    private ConsentState stateOf(Long childId, Long organizationId) {
-        if (sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(
-                childId, organizationId, SharingConsentStatus.ACTIVE)) {
-            return ConsentState.GRANTED;
-        }
-        return sharingConsentRepository.existsByChildIdAndOrganizationId(childId, organizationId)
-                ? ConsentState.REVOKED
-                : ConsentState.NOT_GRANTED;
     }
 
     private LocalDateTime now() {
