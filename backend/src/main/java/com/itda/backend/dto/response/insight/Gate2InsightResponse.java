@@ -14,8 +14,8 @@ import com.itda.backend.dto.response.organization.InstitutionResponse;
  *                      ({@code AI/insight/CRITERIA.md} §5). 기관 경계를 넘는 마지막 관문이라 표시한다
  * @param primarySource 기관 종류 우선순위(학교 &gt; 센터 &gt; 활동지원사)로 뽑은 승인 주체. 이 기관만 승인한다
  * @param evidence      근거가 된 승인 요약들
- * @param targets       이 아이가 다니는 다른 기관과 동의 상태. <b>읽기 전용 참고다</b> — 수신 기관은
- *                      기관이 고르지 않고 승인 뒤 보호자가 정한다 (#206)
+ * @param targets       승인하면 이 글을 받을 후보 기관과 동의 상태. <b>동의가 granted 인 기관만 실제로 받는다</b>
+ *                      (#233). 그 아이 명부에 있는 기관 중 승인 기관 자신만 뺀 것이다
  * @param gate2Status   pending · approved · hold
  */
 public record Gate2InsightResponse(
