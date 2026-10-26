@@ -27,7 +27,7 @@ function basisText(basis: MatchBasis): string {
 
 /**
  * 왜 이 아이로 봤는지 한 줄 + 아동 변경.
- * Gate 1 은 되돌릴 수 있는 단계라 매칭이 틀렸으면 반려하지 않고 여기서 바로 고친다.
+ * Gate 1 은 되돌릴 수 있는 단계라 매칭이 틀렸으면 보류하지 않고 여기서 바로 고친다.
  */
 function MatchBasisRow({
   item,
@@ -122,21 +122,20 @@ function Gate1Page() {
   const revalidator = useRevalidator();
   const [editing, setEditing] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [rejecting, setRejecting] = useState<string | null>(null);
-  const [reasonDrafts, setReasonDrafts] = useState<Record<string, string>>({});
+  const [holding, setHolding] = useState<string | null>(null);
 
   const pending = queue.filter((s) => s.gate1Status === "pending");
-  const rejected = queue.filter((s) => s.gate1Status === "rejected");
+  const held = queue.filter((s) => s.gate1Status === "hold");
 
-  async function approve(id: string, editedContent?: string) {
-    await decideGate1(id, { decision: "approve", edited_content: editedContent });
+  async function approve(s: SummaryItem, editedContent?: string) {
+    await decideGate1(s.id, { decision: "approve", editedContent, version: s.version });
     setEditing(null);
     revalidator.revalidate();
   }
 
-  async function reject(id: string, reason: string) {
-    await decideGate1(id, { decision: "reject", reason });
-    setRejecting(null);
+  async function hold(s: SummaryItem) {
+    await decideGate1(s.id, { decision: "hold", version: s.version });
+    setHolding(null);
     revalidator.revalidate();
   }
 
@@ -148,7 +147,7 @@ function Gate1Page() {
       />
 
       <div className="flex flex-col gap-5">
-        {pending.length === 0 && rejected.length === 0 ? (
+        {pending.length === 0 && held.length === 0 ? (
           <EmptyState
             icon="✓"
             title="승인 대기 중인 요약이 없습니다"
@@ -210,28 +209,18 @@ function Gate1Page() {
                 </p>
               ) : null}
 
-              {rejecting === s.id ? (
+              {holding === s.id ? (
                 <div className="mb-4 flex flex-col gap-2">
-                  <label className="text-[15px] font-semibold">반려 사유</label>
-                  <textarea
-                    autoFocus
-                    rows={2}
-                    value={reasonDrafts[s.id] ?? ""}
-                    onChange={(e) =>
-                      setReasonDrafts((d) => ({ ...d, [s.id]: e.target.value }))
-                    }
-                    placeholder="예) 이름이 잘못 매칭된 것 같습니다. 다시 확인해주세요."
-                    className="w-full rounded border border-line2 p-3 text-[15px] outline-none focus:border-accent"
-                  />
+                  <p className="text-[15px] font-semibold">이 요약을 보류할까요?</p>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => reject(s.id, reasonDrafts[s.id] || "선생님이 반려함")}
+                      onClick={() => hold(s)}
                       className="tap rounded bg-block px-4 text-[15px] font-semibold text-white"
                     >
-                      반려하기
+                      보류하기
                     </button>
                     <button
-                      onClick={() => setRejecting(null)}
+                      onClick={() => setHolding(null)}
                       className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2"
                     >
                       취소
@@ -241,36 +230,36 @@ function Gate1Page() {
               ) : (
                 <div className="mb-3 flex flex-wrap gap-2">
                   <button
-                    onClick={() => approve(s.id)}
+                    onClick={() => approve(s)}
                     className="tap rounded bg-human px-5 text-[16px] font-semibold text-white hover:brightness-95"
                   >
                     승인
                   </button>
                   <button
                     onClick={() =>
-                      editing === s.id ? approve(s.id, drafts[s.id]) : setEditing(s.id)
+                      editing === s.id ? approve(s, drafts[s.id]) : setEditing(s.id)
                     }
                     className="tap rounded border border-human/50 bg-humansoft px-4 text-[16px] font-semibold text-human"
                   >
                     {editing === s.id ? "수정 내용으로 승인" : "수정 후 승인"}
                   </button>
                   <button
-                    onClick={() => setRejecting(s.id)}
+                    onClick={() => setHolding(s.id)}
                     className="tap rounded border border-line2 px-4 text-[16px] font-semibold text-ink2 hover:bg-surface2"
                   >
-                    반려
+                    보류
                   </button>
                 </div>
               )}
 
               <Note>
-                반려하면 이 요약은 저장되지 않습니다. 등록한 기록으로 다시 작성됩니다.
+                보류하면 보류함으로 옮겨집니다. 보류한 요약은 다시 승인할 수 없고 제거만 할 수 있습니다.
               </Note>
             </Card>
           );
         })}
 
-        {rejected.map((s) => (
+        {held.map((s) => (
           <Card key={s.id} className="border-block/30 bg-blocksoft/40">
             <div className="mb-3 flex flex-wrap items-center gap-2.5">
               <span className="text-[16px] font-bold">{s.childName}</span>
@@ -278,16 +267,11 @@ function Gate1Page() {
                 {s.date.slice(5).replace("-", ".")} {s.recordType}
               </span>
               <span className="ml-auto rounded bg-blocksoft px-2 py-0.5 text-[13px] font-semibold text-block">
-                반려됨 · 재작성 대기 중
+                보류됨
               </span>
             </div>
-            {s.rejectReason ? (
-              <p className="mb-3 text-[15px] text-ink2">
-                <b className="font-semibold">사유</b> · “{s.rejectReason}”
-              </p>
-            ) : null}
             <p className="text-[14px] text-muted">
-              원본 기록으로부터 요약을 다시 생성하고 있습니다. 완료되면 다시 승인 요청됩니다.
+              보류한 요약은 보호자에게 공유되지 않습니다. 필요 없으면 제거할 수 있습니다.
             </p>
           </Card>
         ))}

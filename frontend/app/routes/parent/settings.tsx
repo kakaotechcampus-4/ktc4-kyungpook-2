@@ -5,6 +5,7 @@ import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { Toggle } from "@/components/parent/Toggle";
 import {
+  ALL_CONSENT_FIELDS,
   getInstitutionRequests,
   getParentChildren,
   getParentHome,
@@ -47,14 +48,14 @@ export default function ParentSettingsPage() {
     );
 
   async function grant(instId: string) {
-    await updateConsent(child.id, instId, { allowed_fields: [], action: "grant" });
+    await updateConsent(child.id, instId, { action: "grant", allowedFields: ALL_CONSENT_FIELDS });
     setLocal(instId, "granted");
   }
 
   async function revoke(instId: string) {
     setPending(true);
     try {
-      await updateConsent(child.id, instId, { allowed_fields: [], action: "revoke" });
+      await updateConsent(child.id, instId, { action: "revoke" });
       setLocal(instId, "revoked");
       setConfirming(null);
     } finally {
