@@ -78,7 +78,7 @@ GET /api/v1/auth/me
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "signupCompleted": true }
+  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true }
 }
 ```
 
@@ -98,6 +98,7 @@ GET /api/v1/auth/me
 | `name` | string | 아니오 | 카카오 닉네임. 동의를 거부하면 **이 필드가 빠집니다** |
 | `role` | `"org"` \| `"parent"` | 아니오 | `signupCompleted: true`일 때만. `admin`은 아직 없습니다 |
 | `institutionId` | string | 아니오 | `role === "org"`일 때만 |
+| `institutionName` | string | 아니오 | `role === "org"`일 때만. 가입 때 입력한 기관명입니다 (#236) |
 
 **프론트는 `signupCompleted`만 보고 분기합니다.** `role`이 없다고 로그인 화면으로 보내면
 안 됩니다 — 가입 미완료는 정상 상태입니다.
@@ -225,7 +226,7 @@ POST /api/v1/auth/signup   → 201 Created
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "signupCompleted": true }
+  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true }
 }
 ```
 
