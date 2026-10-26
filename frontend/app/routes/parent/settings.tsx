@@ -5,7 +5,6 @@ import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { Toggle } from "@/components/parent/Toggle";
 import {
-  ALL_CONSENT_FIELDS,
   getInstitutionRequests,
   getParentChildren,
   getParentHome,
@@ -43,6 +42,7 @@ export default function ParentSettingsPage() {
   const [pending, setPending] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const setLocal = (instId: string, consent: ConsentState) =>
@@ -50,17 +50,25 @@ export default function ParentSettingsPage() {
       list.map((i) => (i.institution.id === instId ? { ...i, consent } : i)),
     );
 
-  async function grant(instId: string) {
-    await updateConsent(child.id, instId, { action: "grant", allowedFields: ALL_CONSENT_FIELDS });
-    setLocal(instId, "granted");
+  /**
+   * 다시 켤 때는 동의 화면(P-02)을 거친다 — 무엇이 공유되는지 보고 동의해야 한다(Consent First).
+   * 공유 항목도 그 화면의 미리보기가 정한다. 동의를 마치면 이 화면으로 돌아온다.
+   */
+  function grant(instId: string) {
+    const query = new URLSearchParams({ childId: child.id, institutionId: instId, from: "settings" });
+    navigate(`/parent/consent?${query}`);
   }
 
+  /** G-41 revoke. 이 기관에 대한 다른 보호자의 동의도 함께 꺼진다 — 상태는 서버 응답으로 고친다 */
   async function revoke(instId: string) {
     setPending(true);
+    setRevokeError(null);
     try {
-      await updateConsent(child.id, instId, { action: "revoke" });
-      setLocal(instId, "revoked");
+      const result = await updateConsent(child.id, instId, { action: "revoke" });
+      setLocal(instId, result.consent);
       setConfirming(null);
+    } catch {
+      setRevokeError("권한을 끄지 못했어요. 새로고침한 뒤 다시 시도해 주세요.");
     } finally {
       setPending(false);
     }
@@ -149,7 +157,11 @@ export default function ParentSettingsPage() {
                 <Toggle
                   on={on}
                   label={`${institution.name} 권한`}
-                  onChange={() => (on ? setConfirming(institution.id) : grant(institution.id))}
+                  onChange={() => {
+                    if (!on) return grant(institution.id);
+                    setRevokeError(null);
+                    setConfirming(institution.id);
+                  }}
                 />
               </div>
             );
@@ -246,8 +258,14 @@ export default function ParentSettingsPage() {
             </p>
             <p className="mb-5 text-[15px] leading-7 text-ink2">
               끄면 앞으로 이 기관에 새로운 정보가 전달되지 않아요.{" "}
-              <b className="font-semibold">이미 보낸 정보는 회수되지 않아요.</b>
+              <b className="font-semibold">이미 보낸 정보는 회수되지 않아요.</b> 다른 보호자가 켠
+              권한도 함께 꺼져요.
             </p>
+            {revokeError ? (
+              <p role="alert" className="mb-3 rounded-2xl bg-blocksoft px-4 py-3 text-[14px] text-block">
+                {revokeError}
+              </p>
+            ) : null}
             <div className="flex gap-2">
               <button
                 onClick={() => setConfirming(null)}

@@ -146,11 +146,10 @@ const BE_READY = {
   /** 보호자: 초대 코드 수락 뒤 동의 화면(P-02)의 미리보기 · 동의 (G-02, G-41) */
   guardianConsent: true,
   /**
-   * 보호자: 설정 · 알림 화면의 동의 부여 · 철회 (G-41). 서버에는 있지만 끈다 — 이 화면들의
-   * 아이 목록(guardianHome)이 아직 mock 이라 서버에 없는 아이 id 로 요청하게 된다.
-   * guardianHome 을 켤 때 같이 켠다.
+   * 보호자: 설정 화면의 동의 끄기 (G-41 revoke). 다시 켤 때는 동의 화면(P-02, guardianConsent)을
+   * 거친다. 알림 화면의 "허락"도 이 함수를 쓰지만 알림 화면은 institutionRequests 로 아직 준비 중이다.
    */
-  guardianLinks: false,
+  guardianLinks: true,
   /** 보호자: 초대 코드 수락 (G-04) */
   guardianInvite: true,
   /**
@@ -914,18 +913,26 @@ export const ALL_CONSENT_FIELDS: ConsentField[] = ["daily_summary", "weekly_insi
 
 /**
  * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — 설정 · 알림 화면용 (G-41).
- * 아직 mock 만 쓴다(guardianLinks). allowedFields 는 grant 에서 1개 이상 필수이고 revoke 에서는 무시된다.
+ * allowedFields 는 grant 에서 1개 이상 필수이고 revoke 에서는 무시된다.
+ *
+ * revoke 는 이 기관에 대한 **모든 보호자**의 동의를 끈다. 화면은 응답의 consent 로 상태를 고친다.
  */
 export async function updateConsent(
   childId: string,
   institutionId: string,
   body: { action: "grant" | "revoke"; allowedFields?: ConsentField[] },
-) {
+): Promise<ConsentResult> {
   if (mockFor("guardianLinks")) {
     const child = mock.CHILDREN.find((c) => c.id === childId);
     const rec = child?.institutions.find((i) => i.institution.id === institutionId);
-    if (rec) rec.consent = body.action === "grant" ? "granted" : "revoked";
-    return { ok: true };
+    if (!child || !rec) throw new ApiError(404, "CONSENT_TARGET_NOT_FOUND");
+    rec.consent = body.action === "grant" ? "granted" : "revoked";
+    child.status = child.institutions.some((i) => i.consent === "granted") ? "active" : "suspended";
+    return {
+      childStatus: child.status,
+      consent: rec.consent,
+      allowedFields: rec.consent === "granted" ? (body.allowedFields ?? []) : [],
+    };
   }
   return request(`/api/v1/children/${childId}/consent-scopes/${institutionId}`, {
     method: "PUT",
