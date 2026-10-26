@@ -2,26 +2,36 @@ import { useState } from "react";
 import { Hand } from "lucide-react";
 import { useLoaderData, useRevalidator } from "react-router";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import {
   ALL_CONSENT_FIELDS,
   declineInstitutionRequest,
   getParentChildren,
   getPendingInstitutionRequests,
+  isReady,
   updateConsent,
 } from "@/lib/api";
 import { INSTITUTION_SHARE_FIELDS } from "@/lib/mock/data";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader() {
+  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
+  if (!isReady("institutionRequests")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
   const pending = await getPendingInstitutionRequests(childId);
   return { childId, pending };
 }
 
-export default function NotificationsPage() {
-  const { childId, pending } = useLoaderData<typeof clientLoader>();
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function NotificationsPageRoute() {
+  if (!isReady("institutionRequests")) return <ParentNotReadyPage title="알림" back />;
+  return <NotificationsPage />;
+}
+
+function NotificationsPage() {
+  const { childId, pending } = useLoaderData<typeof clientLoader>()!;
   const [busy, setBusy] = useState<string | null>(null);
   const revalidator = useRevalidator();
 

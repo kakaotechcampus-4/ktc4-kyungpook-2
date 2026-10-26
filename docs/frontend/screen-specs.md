@@ -790,21 +790,24 @@
 
 1. 보호자 · 아이 요약 (연결된 기관 수)
    - "연결 해제" → 확인 시트("다시 연결하려면 기관에서 새 초대 코드를 받아야 해요") →
-     G-05 후 `/parent`. 해제할 아이 목록(G-10)이 mock 이라 `BE_READY.guardianUnlink` 는 꺼 둡니다
+     G-05 후 `/parent`. 남은 아이가 없으면 입구(guard)가 P-01 로 보냅니다
 2. "+ 아이 추가" → P-01 (`code` 단계)
 3. **기관 권한** — 기관별 토글
    - 끄기를 누르면 확인 시트: "끄면 앞으로 이 기관에 새로운 정보가 전달되지 않아요.
-     **이미 보낸 정보는 회수되지 않아요.**"
-   - 켜기는 즉시 `granted`
+     **이미 보낸 정보는 회수되지 않아요.** 다른 보호자가 켠 권한도 함께 꺼져요." → G-41 revoke,
+     응답의 `consent` 로 표시를 고칩니다
+   - 켜기는 P-02(`/parent/consent?childId=&institutionId=&from=settings`)로 이동 — 공유 항목을 보고
+     동의하면 이 화면으로 돌아옵니다
 4. "+ 기관 직접 추가" → P-13
 5. **아이 정보** — 알레르기와 복용약(N개) · 주간 스케줄(N건) → P-06,
-   기관 요청사항(N건 남음 / 완료) → P-12
+   기관 요청사항(N건 남음 / 완료) → P-12. 실연동에서 서버에 없는 돌봄 정보·기관 요청은 개수 대신
+   "준비 중"으로 표시합니다
 
 **규칙** · 동의 회수 화면에는 **"이미 보낸 정보는 회수되지 않는다"** 문구가 반드시
 있어야 합니다.
 
 **호출 API** · `getParentHome`, `getInstitutionRequests`,
-`getPendingInstitutionRequests`, `updateConsent`, `unlinkChild`
+`getPendingInstitutionRequests`, `updateConsent`(끄기만), `unlinkChild`
 
 ---
 
