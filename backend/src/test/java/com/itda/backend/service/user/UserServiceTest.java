@@ -132,12 +132,28 @@ class UserServiceTest {
     void currentUserOfOrganizationCarriesLowercaseRoleAndStringIds() {
         given(userRepository.findByIdAndDeletedAtIsNull(1L))
                 .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+        given(organizationRepository.findById(7L)).willReturn(Optional.of(
+                Organization.of("햇살아동발달센터", OrganizationType.CENTER, "1234567890")));
 
         CurrentUserResponse response = userService.getCurrentUser("1");
 
         assertThat(response.role()).isEqualTo("org");
         assertThat(response.institutionId()).isEqualTo("7");
+        assertThat(response.institutionName()).isEqualTo("햇살아동발달센터");
         assertThat(response.signupCompleted()).isTrue();
+    }
+
+    /** 기관 행을 못 찾아도 라우트 가드가 막히지 않게 기관명만 빼고 응답한다. */
+    @Test
+    void currentUserOfOrganizationWithoutOrganizationRowOmitsOnlyTheName() {
+        given(userRepository.findByIdAndDeletedAtIsNull(1L))
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+        given(organizationRepository.findById(7L)).willReturn(Optional.empty());
+
+        CurrentUserResponse response = userService.getCurrentUser("1");
+
+        assertThat(response.institutionId()).isEqualTo("7");
+        assertThat(response.institutionName()).isNull();
     }
 
     /** 가입 미완료는 정상 상태다. 역할 없이 signupCompleted=false 로 내려 프론트가 가입 화면으로 보낸다. */
@@ -163,6 +179,8 @@ class UserServiceTest {
 
         assertThat(response.role()).isEqualTo("parent");
         assertThat(response.institutionId()).isNull();
+        assertThat(response.institutionName()).isNull();
+        verify(organizationRepository, never()).findById(any());
     }
 
     @Test
@@ -256,6 +274,7 @@ class UserServiceTest {
         assertThat(user.getRole()).isEqualTo(UserRole.ORGANIZATION);
         assertThat(user.getOrganizationId()).isEqualTo(3L);
         assertThat(response.institutionId()).isEqualTo("3");
+        assertThat(response.institutionName()).isEqualTo("햇살아동발달센터");
     }
 
     /** 역할은 한 번 정해지면 바뀌지 않는다. 두 번째 가입 요청은 409 이고 아무것도 만들지 않는다. */

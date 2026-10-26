@@ -86,10 +86,10 @@ public class UserService {
         if (request.isOrganizationSignup()) {
             Organization organization = createOrganization(request);
             user.completeSignup(UserRole.ORGANIZATION, organization.getId());
-        } else {
-            user.completeSignup(UserRole.PARENT, null);
+            return CurrentUserResponse.from(user, organization);
         }
-        return CurrentUserResponse.from(user);
+        user.completeSignup(UserRole.PARENT, null);
+        return CurrentUserResponse.from(user, null);
     }
 
     /**
@@ -104,7 +104,21 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public CurrentUserResponse getCurrentUser(String principal) {
-        return CurrentUserResponse.from(getByPrincipal(principal));
+        User user = getByPrincipal(principal);
+        return CurrentUserResponse.from(user, organizationOf(user));
+    }
+
+    /**
+     * 기관 회원만 기관을 찾는다. 보호자 · 가입 미완료는 조회하지 않는다.
+     *
+     * <p>기관 행이 없어도 예외로 막지 않고 기관명만 뺀다. 라우트 가드가 화면마다 부르는 응답이라, 여기서 실패하면
+     * 화면 표시용 이름 하나 때문에 그 계정이 앱을 전혀 쓰지 못한다.
+     */
+    private Organization organizationOf(User user) {
+        if (!user.isOrganization() || user.getOrganizationId() == null) {
+            return null;
+        }
+        return organizationRepository.findById(user.getOrganizationId()).orElse(null);
     }
 
     /**

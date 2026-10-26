@@ -51,7 +51,7 @@ public class AuthController {
             description = "로그인한 사용자의 역할과 소속 기관을 반환합니다. 프론트 라우트 가드가 "
                     + "화면에 들어갈 때마다 호출합니다. signupCompleted 는 항상 포함되며 false 면 "
                     + "가입 미완료입니다(role 없음). role 은 org 또는 parent 이며, "
-                    + "institutionId 는 role 이 org 일 때만 포함됩니다."
+                    + "institutionId · institutionName(기관명) 은 role 이 org 일 때만 포함됩니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @ApiResponses({

@@ -59,7 +59,7 @@ class AuthControllerTest {
     void meReturnsRoleUserIdNameAndInstitutionIdForOrganization() throws Exception {
         authenticateAs("1");
         given(userService.getCurrentUser("1"))
-                .willReturn(new CurrentUserResponse("org", "1", "박지현", "1", true));
+                .willReturn(new CurrentUserResponse("org", "1", "박지현", "1", "햇살아동발달센터", true));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
@@ -68,6 +68,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.userId").value("1"))
                 .andExpect(jsonPath("$.data.name").value("박지현"))
                 .andExpect(jsonPath("$.data.institutionId").value("1"))
+                .andExpect(jsonPath("$.data.institutionName").value("햇살아동발달센터"))
                 .andExpect(jsonPath("$.data.signupCompleted").value(true));
     }
 
@@ -76,7 +77,7 @@ class AuthControllerTest {
     void meReportsSignupNotCompletedWithoutRole() throws Exception {
         authenticateAs("3");
         given(userService.getCurrentUser("3"))
-                .willReturn(new CurrentUserResponse(null, "3", "박지현", null, false));
+                .willReturn(new CurrentUserResponse(null, "3", "박지현", null, null, false));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
@@ -85,17 +86,18 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.institutionId").doesNotExist());
     }
 
-    /** institutionId 는 role 이 org 일 때만 내려간다 — null 로도 실어 보내지 않는다. */
+    /** institutionId · institutionName 은 role 이 org 일 때만 내려간다 — null 로도 실어 보내지 않는다. */
     @Test
     void meOmitsInstitutionIdForParent() throws Exception {
         authenticateAs("2");
         given(userService.getCurrentUser("2"))
-                .willReturn(new CurrentUserResponse("parent", "2", "김보호", null, true));
+                .willReturn(new CurrentUserResponse("parent", "2", "김보호", null, null, true));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.role").value("parent"))
-                .andExpect(jsonPath("$.data.institutionId").doesNotExist());
+                .andExpect(jsonPath("$.data.institutionId").doesNotExist())
+                .andExpect(jsonPath("$.data.institutionName").doesNotExist());
     }
 
     /** 204 에는 ApiResponse 래퍼를 쓰지 않는다 (AGENTS.md, api-conventions.md). */
