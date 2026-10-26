@@ -253,6 +253,22 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.journalId").exists());
 	}
 
+	/** 대기 중 기관 권한 요청(G-40). 명세 모양 [{ institution }] 그대로다. */
+	@Test
+	void pendingConsentRequestApiIsDocumented() throws Exception {
+		String pending = "$.paths['/api/v1/children/{childId}/institution-requests/pending']";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(pending + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(pending + ".get.responses.200").exists())
+				.andExpect(jsonPath(pending + ".get.responses.401").exists())
+				.andExpect(jsonPath(pending + ".get.responses.403.description").value(containsString("PARENT_REQUIRED")))
+				.andExpect(jsonPath(pending + ".get.responses.403.description").value(containsString("FORBIDDEN")))
+				.andExpect(jsonPath("$.components.schemas.PendingConsentRequestResponse.properties.length()").value(1))
+				.andExpect(jsonPath("$.components.schemas.PendingConsentRequestResponse.properties.institution").exists());
+	}
+
 	@Test
 	void swaggerUiIsAvailable() throws Exception {
 		mockMvc.perform(get("/swagger-ui/index.html"))

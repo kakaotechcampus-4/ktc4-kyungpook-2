@@ -32,7 +32,7 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
- * 보호자 아이 목록(G-10)·홈(G-11) — 보안 필터·요청 검증·응답 모양까지 실제로 거친다.
+ * 보호자 아이 목록(G-10)·홈(G-11)·대기 중 기관 권한 요청(G-40) — 보안 필터·요청 검증·응답 모양까지 실제로 거친다.
  * 아이는 기관이 O-11 로 등록하고, 보호자가 그때 받은 코드로 G-04 연결을 마친 상태에서 시작한다(동의 전).
  */
 @SpringBootTest
@@ -81,6 +81,10 @@ class GuardianChildApiTest {
 
     private String homePath() {
         return HOME + "?childId=" + childId;
+    }
+
+    private String pendingPath() {
+        return "/api/v1/children/" + childId + "/institution-requests/pending";
     }
 
     @BeforeEach
@@ -159,6 +163,45 @@ class GuardianChildApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray())
                 .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    // --- 대기 중 기관 권한 요청 (G-40) ---
+
+    /** 연결만 하고 동의 전이면 그 기관이 대기 중 요청이다. 동의하면 목록에서 빠진다. */
+    @Test
+    void 동의_전_기관은_대기_중_요청이고_동의하면_빠진다() throws Exception {
+        mockMvc.perform(get(pendingPath()).cookie(auth(parent)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].institution.id").value(organizationId))
+                .andExpect(jsonPath("$.data[0].institution.type").value("center"))
+                .andExpect(jsonPath("$.data[0].institution.verified").value(false));
+
+        mockMvc.perform(withCsrf(put("/api/v1/children/" + childId + "/consent-scopes/" + organizationId),
+                                auth(parent))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"action\": \"grant\", \"allowedFields\": [\"daily_summary\"]}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get(pendingPath()).cookie(auth(parent)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    void 대기_중_요청은_보호자만_자기_아이만_본다() throws Exception {
+        mockMvc.perform(get(pendingPath()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+        mockMvc.perform(get(pendingPath()).cookie(auth(staff)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PARENT_REQUIRED"));
+
+        User stranger = userRepository.save(UserFixture.parent(uniqueKakaoId(), "남"));
+        mockMvc.perform(get(pendingPath()).cookie(auth(stranger)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     // --- 요청 검증 ---
