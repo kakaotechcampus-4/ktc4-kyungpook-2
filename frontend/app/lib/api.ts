@@ -34,6 +34,8 @@
  *      DELETE /api/v1/institutions/me/children/{childId}/guardians/{userId} → 204
  *      POST   /api/v1/guardians/me/invitations/accept
  *      DELETE /api/v1/guardians/me/children/{childId}   → 204 (아래 guardianUnlink 참고)
+ *      GET    /api/v1/guardians/me/children
+ *      GET    /api/v1/guardians/me/home?childId=
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
@@ -157,8 +159,13 @@ const BE_READY = {
    * guardianHome 을 켤 때 같이 켠다.
    */
   guardianUnlink: false,
-  /** 보호자: 아이 목록 · 홈 · 일지 · 리포트 · 오늘 요약 */
-  guardianHome: false,
+  /**
+   * 보호자: 연결된 아이 목록 · 홈 데이터 (G-10, G-11). 보호자 화면 입구(parent/guard.tsx)도
+   * 이 키를 본다 — 꺼져 있으면 mock 아이 대신 "준비 중"을 띄운다.
+   */
+  guardianChildren: true,
+  /** 보호자: 일지 · 리포트 · 오늘 요약 (G-12, G-20 ~ G-22). 아이 목록·홈과는 따로 켠다 */
+  guardianJournal: false,
   /** 보호자: 기관 요청 알림 · 확인 · 거절 */
   institutionRequests: false,
   /** 보호자: 기관 코드로 연결 */
@@ -820,23 +827,24 @@ export async function getConsentPreview(
 
 /** GET /api/v1/guardians/me/children — 이 보호자에게 연결된 아이 전체 */
 export async function getParentChildren(): Promise<Child[]> {
-  if (mockFor("guardianHome")) return mock.PARENT_CHILDREN;
+  if (mockFor("guardianChildren")) return mock.PARENT_CHILDREN;
   return request("/api/v1/guardians/me/children");
 }
 
 /**
  * GET /api/v1/guardians/me/home?childId=
- * childId 를 생략하면 첫 번째 아이(mock: PARENT_CHILDREN[0]) 기준.
+ * childId 는 필수다 — 어느 아이를 볼지는 화면이 아이 목록에서 고른다(readSelectedChildId).
+ * 서버 응답의 activity 는 일지 기능이 생길 때까지 언제나 빈 배열이다.
  */
-export async function getParentHome(childId?: string): Promise<{
+export async function getParentHome(childId: string): Promise<{
   child: Child;
   activity: ParentActivity[];
 }> {
-  if (mockFor("guardianHome")) {
+  if (mockFor("guardianChildren")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId) ?? mock.PARENT_CHILD;
     return { child, activity: mock.PARENT_ACTIVITY[child.id] ?? [] };
   }
-  return request(`/api/v1/guardians/me/home${childId ? `?childId=${childId}` : ""}`);
+  return request(`/api/v1/guardians/me/home?childId=${encodeURIComponent(childId)}`);
 }
 
 /**
@@ -968,7 +976,7 @@ export async function updateChildCare(childId: string, care: ChildCareInfo) {
 
 /** GET /api/v1/children/{childId}/journal — 타임라인/홈에 쓰는 일지 목록 (최신순) */
 export async function getJournal(childId: string): Promise<JournalEntry[]> {
-  if (mockFor("guardianHome")) {
+  if (mockFor("guardianJournal")) {
     return mock.JOURNAL.filter((j) => j.childId === childId).sort((a, b) =>
       `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`),
     );
@@ -977,13 +985,13 @@ export async function getJournal(childId: string): Promise<JournalEntry[]> {
 }
 
 export async function getJournalEntry(id: string): Promise<JournalEntry | undefined> {
-  if (mockFor("guardianHome")) return mock.JOURNAL.find((j) => j.id === id);
+  if (mockFor("guardianJournal")) return mock.JOURNAL.find((j) => j.id === id);
   return request(`/api/v1/journal/${id}`);
 }
 
 /** POST /api/v1/journal/{id}/flag — "이 내용이 이상해요": 기관에 재확인 요청 */
 export async function flagJournalEntry(id: string) {
-  if (mockFor("guardianHome")) {
+  if (mockFor("guardianJournal")) {
     const entry = mock.JOURNAL.find((j) => j.id === id);
     if (entry) entry.flagged = true;
     return { ok: true };
@@ -996,7 +1004,7 @@ export async function getCareReport(
   childId: string,
   period: "weekly" | "monthly",
 ): Promise<CareReport | null> {
-  if (mockFor("guardianHome")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
+  if (mockFor("guardianJournal")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
   return request(`/api/v1/children/${childId}/care-report?period=${period}`);
 }
 
@@ -1008,7 +1016,7 @@ export async function getInstitutionRequests(childId: string): Promise<Instituti
 
 /** 타임라인/홈 상단 TODAY 카드 — 아이별. 없으면 null (화면에서 숨김) */
 export async function getTodaySummary(childId: string): Promise<string | null> {
-  if (mockFor("guardianHome")) return mock.PARENT_TODAY_SUMMARY[childId] ?? null;
+  if (mockFor("guardianJournal")) return mock.PARENT_TODAY_SUMMARY[childId] ?? null;
   return request(`/api/v1/children/${childId}/today-summary`);
 }
 
