@@ -232,6 +232,10 @@ class GuardianShareServiceTest {
     void 처음_열어_본_시각을_남기고_다시_열어도_덮지_않는다() {
         assertThat(service.getInsights(MOTHER).get(0).readAt()).isNull();
 
+        service.getInsight(MOTHER, insightId);
+        em.flush();
+        em.clear();
+        // 비교 기준도 DB 에서 읽는다. 메모리 값은 리눅스에서 나노초까지 있어 DB(마이크로초)와 어긋난다.
         var first = service.getInsight(MOTHER, insightId).readAt();
         em.flush();
         em.clear();
