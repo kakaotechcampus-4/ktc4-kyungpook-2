@@ -60,6 +60,7 @@ function nav(counts: OrgShellCounts): NavSection[] {
       group: "홈",
       items: [
         { href: "/dashboard", label: "오늘의 업무", icon: LayoutDashboard }, // 처리 현황
+        { href: "/children", label: "아동 목록", icon: Users }, // 아동 관리
       ],
     },
     {
@@ -83,7 +84,6 @@ function nav(counts: OrgShellCounts): NavSection[] {
     {
       group: "아동",
       items: [
-        { href: "/children", label: "아동 목록", icon: Users }, // 아동 관리
         { href: "/insights", label: "관찰·분석 결과", icon: Sparkles }, // Insight 목록
       ],
     },
