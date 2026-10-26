@@ -339,6 +339,24 @@ class SummaryGate1ServiceTest {
     }
 
     @Test
+    void 문장을_못_읽는_요약은_카드로_승인할_수_없다_AI_원문이_통째로_사라진다() {
+        String[] unreadable = {null, "", "{}", "[\"문장\"]"};
+        for (int day = 0; day < unreadable.length; day++) {
+            String claims = unreadable[day];
+            summary = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(day + 1), ORG, 1, AI_TEXT, claims,
+                    "[]", "[]", "{}"));
+            entryIn(summary);
+            em.clear();
+
+            assertThatThrownBy(() -> approveWith(add("교사가 쓴 문장.")))
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
+                    .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+            assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+        }
+    }
+
+    @Test
     void 모두_지우고_새로_쓴_문장만_남겨도_승인한다() throws Exception {
         approveWith(delete(0), delete(1), add("교사가 쓴 문장."));
 

@@ -94,9 +94,7 @@ public class SummaryGate1Service {
      * ({@link Gate1Cards}). 요약 행의 본문과 AI 응답 원문은 그대로 둔다.
      */
     private ApprovalDecision approve(SummaryResult summary, List<JournalEntry> entries, List<Card> cards) {
-        Gate1Cards.Applied applied = cards == null
-                ? new Gate1Cards.Applied(summary.getClaims(), summary.getContent(), false)
-                : Gate1Cards.apply(summary, cards);
+        Gate1Cards.Applied applied = Gate1Cards.apply(summary, cards);
         if (applied.corrected()) {
             summary.approveWithClaims(applied.claims());
         } else {

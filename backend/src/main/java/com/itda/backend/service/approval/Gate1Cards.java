@@ -47,9 +47,19 @@ final class Gate1Cards {
     private Gate1Cards() {
     }
 
-    /** 원래 문장을 모두 한 번씩 담지 않았거나 남는 문장이 없으면 400 INVALID_REQUEST 다. */
+    /**
+     * 카드가 없으면 그대로 승인이다. 원래 문장을 모두 한 번씩 담지 않았거나 남는 문장이 없으면 400 INVALID_REQUEST 다.
+     */
     static Applied apply(SummaryResult summary, List<Card> cards) {
+        if (cards == null) {
+            return unchanged(summary);
+        }
         ArrayNode original = readClaims(summary.getClaims());
+        // 문장을 못 읽으면 카드가 원래 문장을 가리킬 수 없다. ADD 만으로 통과시키면 교사가 읽은 AI 원문이 통째로 사라진다.
+        if (original.isEmpty()) {
+            throw new SummaryException(SummaryErrorCode.INVALID_REQUEST,
+                    "summaryId=" + summary.getId() + " unreadable claims");
+        }
         requireEachOriginalOnce(summary, original, cards);
 
         ArrayNode result = MAPPER.createArrayNode();
@@ -82,10 +92,14 @@ final class Gate1Cards {
                     "summaryId=" + summary.getId() + " no card left");
         }
         if (!corrected) {
-            return new Applied(summary.getClaims(), summary.getContent(), false);
+            return unchanged(summary);
         }
         // AI 도 claims 의 text 를 " " 로 이어 본문을 만든다 (AI/summary/nodes.py assemble).
         return new Applied(result.toString(), String.join(" ", texts), true);
+    }
+
+    private static Applied unchanged(SummaryResult summary) {
+        return new Applied(summary.getClaims(), summary.getContent(), false);
     }
 
     /**
@@ -138,7 +152,7 @@ final class Gate1Cards {
 
     /**
      * 승인 전 claims 는 AI 가 보낸 문장 객체 배열이다. 못 읽거나 문장이 아닌 값이 섞였으면 문장이 없는 것으로 본다 —
-     * 카드를 보낸 승인은 번호가 맞지 않아 400 이 되고, 그런 요약은 카드 없이 승인하거나 제거한다. Gate 1 목록의 카드도
+     * 카드를 보낸 승인은 400 이 되고, 그런 요약은 카드 없이 승인하거나 제거한다. Gate 1 목록의 카드도
      * 이것으로 읽어, 목록에 보인 카드와 결정 때 검사하는 문장이 같게 한다.
      */
     static ArrayNode readClaims(String raw) {
