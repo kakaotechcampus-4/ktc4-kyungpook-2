@@ -86,10 +86,10 @@ public class UserService {
         if (request.isOrganizationSignup()) {
             Organization organization = createOrganization(request);
             user.completeSignup(UserRole.ORGANIZATION, organization.getId());
-        } else {
-            user.completeSignup(UserRole.PARENT, null);
+            return CurrentUserResponse.from(user, organization.getName());
         }
-        return CurrentUserResponse.from(user);
+        user.completeSignup(UserRole.PARENT, null);
+        return CurrentUserResponse.from(user, null);
     }
 
     /**
@@ -104,7 +104,18 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public CurrentUserResponse getCurrentUser(String principal) {
-        return CurrentUserResponse.from(getByPrincipal(principal));
+        User user = getByPrincipal(principal);
+        return CurrentUserResponse.from(user, institutionNameOf(user));
+    }
+
+    /** 기관 회원만 기관명을 찾는다. 보호자 · 가입 미완료는 조회하지 않는다. */
+    private String institutionNameOf(User user) {
+        if (!user.isOrganization() || user.getOrganizationId() == null) {
+            return null;
+        }
+        return organizationRepository.findById(user.getOrganizationId())
+                .map(Organization::getName)
+                .orElse(null);
     }
 
     /**
