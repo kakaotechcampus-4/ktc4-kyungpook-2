@@ -32,12 +32,13 @@ import com.itda.backend.dto.response.insight.Gate2InsightResponse;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse.Target;
 import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 /** Gate 2 검토 목록·단건. 승인 주체인 기관에만, 최신 회차만 보인다. */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(InsightGate2QueryService.class)
+@Import({InsightGate2QueryService.class, ConsentStateReader.class})
 class InsightGate2QueryServiceTest {
 
     private static final LocalDate FROM = LocalDate.of(2026, 8, 17);

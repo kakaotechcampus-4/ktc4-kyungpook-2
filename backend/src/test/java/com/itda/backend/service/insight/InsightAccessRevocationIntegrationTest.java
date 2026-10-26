@@ -32,6 +32,7 @@ import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.service.consent.ConsentService;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 /**
@@ -42,7 +43,7 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({ConsentService.class, InsightAccessRevoker.class,
+@Import({ConsentService.class, ConsentStateReader.class, InsightAccessRevoker.class,
         InsightAccessRevocationIntegrationTest.ClockConfig.class})
 class InsightAccessRevocationIntegrationTest {
 
