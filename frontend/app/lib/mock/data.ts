@@ -436,6 +436,7 @@ export const GATE1_QUEUE: SummaryItem[] = [
     flaggedSpan: "소리를 지름",
     flagReason: "진단처럼 읽히는 표현이 포함되어 확인이 필요합니다",
     gate1Status: "pending",
+    version: "mock_v_9012",
     sourceCount: 1,
   },
   {
@@ -450,6 +451,7 @@ export const GATE1_QUEUE: SummaryItem[] = [
     content:
       "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
     gate1Status: "pending",
+    version: "mock_v_9013",
     sourceCount: 1,
   },
   {
@@ -464,8 +466,8 @@ export const GATE1_QUEUE: SummaryItem[] = [
     content: "식사 시간에 새로운 반찬을 두 번 거부한 뒤 세 번째 권유에 소량 섭취함.",
     flaggedSpan: "거부",
     flagReason: "확정적으로 읽힐 수 있는 표현입니다",
-    gate1Status: "rejected",
-    rejectReason: "이름이 잘못 매칭된 것 같습니다. 다시 확인해주세요.",
+    gate1Status: "hold",
+    version: "mock_v_9014",
     sourceCount: 2,
   },
 ];
@@ -537,6 +539,7 @@ export const INSIGHTS: Insight[] = [
     childName: "김OO",
     period: "최근 3주",
     content: "소음 상황에서 반응하는 패턴이 3회 반복됨.",
+    needsReview: true,
     primarySource: CENTER,
     evidence: [
       {
@@ -571,6 +574,7 @@ export const INSIGHTS: Insight[] = [
     childName: "이OO",
     period: "최근 4주",
     content: "이동·전환 상황에서 미리 안내한 날에는 불안 반응이 줄었음.",
+    needsReview: true,
     primarySource: CENTER,
     evidence: [
       {
@@ -587,7 +591,7 @@ export const INSIGHTS: Insight[] = [
       },
     ],
     targets: [{ institution: SCHOOL, consent: "revoked" }],
-    gate2Status: "held",
+    gate2Status: "hold",
   },
   {
     id: "ins_5503",
@@ -595,6 +599,7 @@ export const INSIGHTS: Insight[] = [
     childName: "김OO",
     period: "최근 6주",
     content: "식사 거부 횟수가 4주간 감소 추세를 보임.",
+    needsReview: true,
     primarySource: CENTER,
     evidence: [
       {
@@ -605,7 +610,7 @@ export const INSIGHTS: Insight[] = [
       },
     ],
     targets: [{ institution: SCHOOL, consent: "granted" }],
-    gate2Status: "sent",
+    gate2Status: "approved",
   },
 ];
 

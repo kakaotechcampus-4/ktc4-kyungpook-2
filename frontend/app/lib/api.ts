@@ -13,10 +13,18 @@
  * ⚠️ **아래 목록에 없는 경로는 아직 백엔드에 구현돼 있지 않다.** 경로는 위 규약을
  *    따른 추정이므로, 백엔드가 만들 때 실제 경로를 확인하고 맞춰야 한다.
  *
- *    구현된 것 (2026-10-12 기준, BE_READY 에서 true 인 기능)
+ *    구현된 것 (2026-10-26 기준. BE_READY 가 false 인 기능도 있다 — 각 키의 설명 참고)
  *      POST /api/v1/raw-records       multipart: file → 201
  *      GET  /api/v1/raw-records/{id}
  *      GET  /api/v1/raw-records
+ *      GET  /api/v1/raw-records/progress
+ *      GET  /api/v1/summaries?gate1Status=pending|hold
+ *      POST /api/v1/summaries/{summaryId}/gate1
+ *      GET  /api/v1/insights?gate2Status=pending|approved|hold
+ *      GET  /api/v1/insights/{insightId}
+ *      POST /api/v1/insights/{insightId}/gate2
+ *      GET  /api/v1/children/{childId}/consent-preview?institutionId=
+ *      PUT  /api/v1/children/{childId}/consent-scopes/{institutionId}
  *      GET  /api/v1/institutions/me/children
  *      POST /api/v1/institutions/me/children   → 201 (초대 코드 포함)
  *      POST   /api/v1/institutions/me/children/{childId}/invitations        → 201
@@ -64,6 +72,7 @@ import type {
   ConsentPreview,
   ConsentResult,
   FileProgress,
+  Gate1Status,
   InboxItem,
   Insight,
   Institution,
@@ -286,25 +295,39 @@ export async function getBlockedQueue(): Promise<BlockedItem[]> {
   }));
 }
 
-/** GET /api/v1/summaries?gate1_status=pending */
+/**
+ * GET /api/v1/summaries?gate1Status=pending (O-30)
+ * 보류함은 같은 경로에 gate1Status=hold 로 따로 받는다. 응답 모양은 #183 확정 전이다 (SummaryItem 참고).
+ */
 export async function getGate1Queue(): Promise<SummaryItem[]> {
   if (mockFor("gate1")) return mock.GATE1_QUEUE;
-  return request("/api/v1/summaries?gate1_status=pending");
+  return request("/api/v1/summaries?gate1Status=pending");
 }
 
-/** POST /api/v1/summaries/{summaryId}/gate1 */
+const GATE1_STATUS_AFTER = {
+  approve: "approved",
+  hold: "hold",
+  remove: "removed",
+} as const satisfies Record<string, Gate1Status>;
+
+/**
+ * POST /api/v1/summaries/{summaryId}/gate1 (O-31)
+ *
+ * editedContent 는 승인할 때만 보낸다(보류 · 제거에 보내면 400). version 은 목록에서 받은 값
+ * 그대로다 — 그 사이 요약이 새 기록으로 바뀌었으면 409 SUMMARY_CHANGED 다.
+ * 보류한 요약은 제거만 받는다(승인 · 보류는 409 SUMMARY_HELD).
+ */
 export async function decideGate1(
   summaryId: string,
-  body: { decision: "approve" | "reject"; edited_content?: string; reason?: string },
+  body: { decision: "approve" | "hold" | "remove"; editedContent?: string; version: string },
 ) {
   if (mockFor("gate1")) {
     const item = mock.GATE1_QUEUE.find((s) => s.id === summaryId);
     if (item) {
-      item.gate1Status = body.decision === "approve" ? "approved" : "rejected";
-      if (body.edited_content) item.content = body.edited_content;
-      if (body.reason) item.rejectReason = body.reason;
+      item.gate1Status = GATE1_STATUS_AFTER[body.decision];
+      if (body.editedContent) item.content = body.editedContent;
     }
-    return { gate1_status: item?.gate1Status ?? "pending" };
+    return { summaryId, status: item?.gate1Status ?? "pending" };
   }
   return request(`/api/v1/summaries/${summaryId}/gate1`, {
     method: "POST",
@@ -324,18 +347,16 @@ export async function getInsight(id: string): Promise<Insight | undefined> {
 }
 
 /**
- * POST /api/v1/insights/{insightId}/gate2
- * 수신 기관을 개별로 골라 보낸다. 기본값은 전체 미선택이며,
- * 빈 배열이면 호출 자체를 하지 않는다.
+ * POST /api/v1/insights/{insightId}/gate2 (O-42)
+ *
+ * 수신 기관은 보내지 않는다 — 승인하면 보호자에게 열람 권한이 생기고, 어느 기관에 보일지는
+ * 그 뒤 보호자가 고른다 (#206). 승인 · 보류 모두 되돌릴 수 없다.
  */
-export async function decideGate2(
-  insightId: string,
-  body: { decision: "approve" | "hold"; target_institution_ids: string[] },
-) {
+export async function decideGate2(insightId: string, body: { decision: "approve" | "hold" }) {
   if (mockFor("insights")) {
     const item = mock.INSIGHTS.find((i) => i.id === insightId);
-    if (item) item.gate2Status = body.decision === "approve" ? "approved" : "held";
-    return { gate2_status: item?.gate2Status ?? "pending" };
+    if (item) item.gate2Status = body.decision === "approve" ? "approved" : "hold";
+    return { insightId, gate2Status: item?.gate2Status ?? "pending" };
   }
   return request(`/api/v1/insights/${insightId}/gate2`, {
     method: "POST",
@@ -783,8 +804,7 @@ export async function getConsentPreview(
       documentUrl: null,
       sharedFields: shared,
       notSharedFields: notShared,
-      // 서버도 기관 유형과 관계없이 이 두 항목을 내려준다 (ConsentFieldCatalog)
-      allowedFields: ["daily_summary", "weekly_insight"],
+      allowedFields: ALL_CONSENT_FIELDS,
     };
   }
   try {
@@ -881,15 +901,17 @@ export async function grantConsent(
   );
 }
 
+/** 서버가 기관 유형과 관계없이 내려주는 공유 항목 전부 (ConsentFieldCatalog) */
+export const ALL_CONSENT_FIELDS: ConsentField[] = ["daily_summary", "weekly_insight"];
+
 /**
- * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — 설정 · 알림 화면용.
- * 아직 mock 만 쓴다(guardianLinks). 본문 모양이 서버(allowedFields, 코드값)와 달라
- * 켜기 전에 grantConsent 처럼 맞춰야 한다.
+ * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — 설정 · 알림 화면용 (G-41).
+ * 아직 mock 만 쓴다(guardianLinks). allowedFields 는 grant 에서 1개 이상 필수이고 revoke 에서는 무시된다.
  */
 export async function updateConsent(
   childId: string,
   institutionId: string,
-  body: { allowed_fields: string[]; action: "grant" | "revoke" },
+  body: { action: "grant" | "revoke"; allowedFields?: ConsentField[] },
 ) {
   if (mockFor("guardianLinks")) {
     const child = mock.CHILDREN.find((c) => c.id === childId);

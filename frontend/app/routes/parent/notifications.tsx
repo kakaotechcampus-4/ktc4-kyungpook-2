@@ -4,6 +4,7 @@ import { useLoaderData, useRevalidator } from "react-router";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import {
+  ALL_CONSENT_FIELDS,
   declineInstitutionRequest,
   getParentChildren,
   getPendingInstitutionRequests,
@@ -27,7 +28,7 @@ export default function NotificationsPage() {
   async function approve(instId: string) {
     setBusy(instId);
     try {
-      await updateConsent(childId, instId, { allowed_fields: [], action: "grant" });
+      await updateConsent(childId, instId, { action: "grant", allowedFields: ALL_CONSENT_FIELDS });
       revalidator.revalidate();
     } finally {
       setBusy(null);
