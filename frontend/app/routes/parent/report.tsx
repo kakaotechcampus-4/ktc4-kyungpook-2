@@ -21,7 +21,7 @@ export async function clientLoader() {
   const [weekly, monthly, pending] = await Promise.all([
     getCareReport(childId, "weekly"),
     getCareReport(childId, "monthly"),
-    loadIfReady("institutionRequests", () => getPendingInstitutionRequests(childId)),
+    loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
   ]);
   return { weekly, monthly, pending };
 }

@@ -316,7 +316,6 @@ interface ParentActivity {
 | `flagJournalEntry` | `(id: string) => Promise<{ ok: true }>` | P-08 |
 | `getCareReport` | `(childId: string, period: "weekly" \| "monthly") => Promise<CareReport \| null>` | P-09 |
 | `getPendingInstitutionRequests` | `(childId: string) => Promise<{ institution: Institution }[]>` | P-03, P-04, P-07, P-09, P-11 |
-| `declineInstitutionRequest` | `(childId: string, institutionId: string) => Promise<{ ok: true }>` | P-11 |
 | `updateConsent` | `(childId: string, institutionId: string, body: { action: "grant" \| "revoke"; allowedFields?: ConsentField[] }) => Promise<ConsentResult>` | P-04(끄기), P-11 |
 | `lookupInstitutionByCode` | `(code: string) => Promise<Institution \| null>` | P-13 |
 | `addInstitutionByCode` | `(childId: string, code: string) => Promise<{ institution: Institution } \| null>` | P-13 |

@@ -254,6 +254,72 @@ class GuardianChildQueryServiceJpaTest {
                 .isEqualTo(ChildErrorCode.CHILD_NOT_LINKED);
     }
 
+    // --- 대기 중 기관 권한 요청 (G-40) ---
+
+    @Test
+    void 아무도_동의하지_않은_기관이_대기_목록에_나온다() {
+        assertThat(pendingOf(MOM_PRINCIPAL, sky)).containsExactly(String.valueOf(centerId), String.valueOf(schoolId));
+    }
+
+    /** 대기 목록도 아이 기준이다. 아빠가 학교에 동의했으면 엄마에게도 학교 요청은 없다. */
+    @Test
+    void 다른_보호자가_동의한_기관은_대기_목록에서_빠진다() {
+        grant(sky, DAD, schoolId);
+        em.clear();
+
+        assertThat(pendingOf(MOM_PRINCIPAL, sky)).containsExactly(String.valueOf(centerId));
+    }
+
+    /** 동의했다가 끈 기관은 보호자가 직접 끈 것이라 다시 알리지 않는다. 설정에서 켤 수 있다. */
+    @Test
+    void 동의했다가_꺼진_기관은_대기_목록에서_빠진다() {
+        revoke(grant(sky, MOM, centerId));
+        em.clear();
+
+        assertThat(pendingOf(MOM_PRINCIPAL, sky)).containsExactly(String.valueOf(schoolId));
+    }
+
+    @Test
+    void 명부에서_빠진_기관은_대기_목록에서_빠진다() {
+        em.getEntityManager()
+                .createQuery("select co from ChildOrganization co "
+                        + "where co.childId = :childId and co.organizationId = :organizationId", ChildOrganization.class)
+                .setParameter("childId", sky)
+                .setParameter("organizationId", schoolId)
+                .getSingleResult()
+                .delete();
+        em.flush();
+        em.clear();
+
+        assertThat(pendingOf(MOM_PRINCIPAL, sky)).containsExactly(String.valueOf(centerId));
+    }
+
+    @Test
+    void 연결되지_않은_아이의_대기_목록은_403() {
+        assertThatThrownBy(() -> service.pendingRequests(DAD_PRINCIPAL, sea))
+                .isInstanceOf(ChildException.class)
+                .extracting(e -> ((ChildException) e).getErrorCode())
+                .isEqualTo(ChildErrorCode.CHILD_NOT_LINKED);
+    }
+
+    @Test
+    void 삭제된_아이의_대기_목록은_403() {
+        em.find(Child.class, sea).delete();
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.pendingRequests(MOM_PRINCIPAL, sea))
+                .isInstanceOf(ChildException.class)
+                .extracting(e -> ((ChildException) e).getErrorCode())
+                .isEqualTo(ChildErrorCode.CHILD_NOT_LINKED);
+    }
+
+    private List<String> pendingOf(String principal, Long childId) {
+        return service.pendingRequests(principal, childId).stream()
+                .map(request -> request.institution().id())
+                .toList();
+    }
+
     private SharingConsent grant(Long childId, Long guardianId, Long organizationId) {
         return em.persistAndFlush(
                 SharingConsent.grant(childId, guardianId, organizationId, List.of(ConsentField.DAILY_SUMMARY)));

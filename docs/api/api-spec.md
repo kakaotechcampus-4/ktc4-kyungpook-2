@@ -1251,9 +1251,9 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| G-40 | GET | `/children/{childId}/institution-requests/pending` | 대기 중 권한 요청 | P-03, P-04, P-07, P-09, P-11 |
+| G-40 | GET | `/children/{childId}/institution-requests/pending` | 대기 중 권한 요청 · **구현됨** | P-03, P-04, P-07, P-09, P-11 |
 | G-41 | PUT | `/children/{childId}/consent-scopes/{institutionId}` | 동의 부여 / 회수 · **구현됨** | P-02, P-04, P-11 |
-| G-42 | POST | `/children/{childId}/institution-requests/{institutionId}/decline` | 요청 거절 | P-11 |
+| G-42 | POST | `/children/{childId}/institution-requests/{institutionId}/decline` | 요청 거절 · **MVP 제외** | P-11 |
 | G-43 | GET | `/institutions/lookup?code=` | 기관 코드 조회 | P-13 |
 | G-44 | POST | `/children/{childId}/institutions` | 기관 코드로 연결 | P-13 |
 
@@ -1265,8 +1265,21 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 
 ```json
 [ { "institution": { "id": "4", "name": "○○미술학원",
-                     "type": "center", "verified": true } } ]
+                     "type": "center", "verified": false } } ]
 ```
+
+> **현재 구현** (#232)
+> - 아이가 **지금 명부에 올라 있고 아직 아무도 동의하지 않은**(`not_granted`) 기관입니다. 기관 id 순입니다.
+> - `consent`는 아이 목록(G-10)과 같은 **아이 기준**입니다. 다른 보호자가 동의한 기관은 빠집니다.
+> - 동의했다가 꺼진(`revoked`) 기관도 빠집니다. 보호자가 직접 끈 것이라 다시 알리지 않습니다. 설정에서 켤 수 있습니다.
+> - 거절(G-42)이 없어 "거절하지 않은" 조건은 아직 없습니다.
+>
+> | 상태 | `code` | 상황 |
+> | --- | --- | --- |
+> | 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+> | 403 | `SIGNUP_NOT_COMPLETED` | 회원가입을 끝내지 않음 |
+> | 403 | `PARENT_REQUIRED` | 보호자가 아닌 사용자(기관 담당자) |
+> | 403 | `FORBIDDEN` | 이 보호자와 연결되지 않았거나 삭제된 아이 |
 
 **G-41 요청**
 
@@ -1323,7 +1336,12 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 
 **G-42** — 거절은 `consent`를 바꾸지 않습니다(`not_granted` 유지). 기관이 다시 요청할
 수 있어야 하므로, **알림 목록에서만 제외**되도록 "이 보호자가 이 기관 요청을 거절함"을
-따로 기록해주세요. 프론트는 현재 이 상태를 메모리에만 들고 있어 새로고침하면 사라집니다.
+따로 기록해주세요.
+
+> **MVP 제외** (#232) · 거절 기록 테이블이 필요해 이번에는 만들지 않았습니다. 프론트 알림 화면에도 거절 버튼이
+> 없습니다. 동의하지 않을 기관의 알림 점은 남지만, 보호자는 설정에서 언제든 동의를 켤 수 있습니다.
+> 붙일 때는 G-40 조건에 "이 보호자가 거절하지 않은"을 더하고, 보호자별 거절·연결 해제 때 정리·기관의 다시 요청
+> 방법을 함께 정합니다.
 
 **G-43 응답** · 일치하는 기관이 없으면 `data`를 `null`로 주세요(404 아님).
 **조회만 하고 연결하지 않습니다.** 보호자가 공유 범위를 확인한 뒤 G-44로 연결합니다.

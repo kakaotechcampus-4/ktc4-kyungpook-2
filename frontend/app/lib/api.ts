@@ -36,6 +36,7 @@
  *      DELETE /api/v1/guardians/me/children/{childId}   → 204 (아래 guardianUnlink 참고)
  *      GET    /api/v1/guardians/me/children
  *      GET    /api/v1/guardians/me/home?childId=
+ *      GET    /api/v1/children/{childId}/institution-requests/pending
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
@@ -165,7 +166,12 @@ const BE_READY = {
   guardianChildren: true,
   /** 보호자: 일지 · 리포트 · 오늘 요약 (G-12, G-20 ~ G-22). 아이 목록·홈과는 따로 켠다 */
   guardianJournal: false,
-  /** 보호자: 기관 요청 알림 · 확인 · 거절 */
+  /**
+   * 보호자: 대기 중 기관 권한 요청 (G-40). 알림 화면 · 홈 요청 배너 · 헤더 알림 점이 이 목록 하나를 본다.
+   * 요청 거절(G-42)은 MVP 에서 뺐다 — 알림 화면은 동의 화면으로 보내는 버튼 하나만 둔다.
+   */
+  consentRequests: true,
+  /** 보호자: 기관 요청사항 — 준비물 · 확인사항 (G-50, G-51) */
   institutionRequests: false,
   /** 보호자: 기관 코드로 연결 */
   institutionCode: false,
@@ -799,7 +805,7 @@ export async function unlinkChild(childId: string): Promise<void> {
  *
  * P-02 가 그릴 아이 · 기관 · 공유 범위. 동의할 것이 없으면 null 이다 — 다른 아이나
  * 기관으로 대신 채우지 않는다. 동의 화면에 엉뚱한 아이가 뜨면 잘못 동의하게 된다.
- * 이미 동의했거나 알림에서 거절한 요청도 "없는 요청" 으로 본다.
+ * 이미 동의한 기관도 "없는 요청" 으로 본다. 동의했다가 꺼진 기관은 다시 동의할 수 있다(서버와 같음).
  */
 export async function getConsentPreview(
   childId: string,
@@ -808,10 +814,9 @@ export async function getConsentPreview(
   if (mockFor("guardianConsent")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
     const rec = child?.institutions.find(
-      (i) => i.institution.id === institutionId && i.consent === "not_granted",
+      (i) => i.institution.id === institutionId && i.consent !== "granted",
     );
     if (!child || !rec) return null;
-    if (mock.DECLINED_INSTITUTION_REQUESTS.has(`${childId}:${institutionId}`)) return null;
     const { shared, notShared } = mock.INSTITUTION_SHARE_FIELDS[rec.institution.type];
     return {
       child: { id: child.id, name: child.name, birthDate: child.birthDate },
@@ -856,35 +861,20 @@ export async function getParentHome(childId: string): Promise<{
 }
 
 /**
- * GET /api/v1/children/{childId}/institution-requests/pending
- * "안읽음" 배지·알림 목록이 공통으로 쓰는 기준: not_granted 이면서 거절되지
- * 않은 기관 요청. home/report/timeline 헤더의 빨간 점도 전부 이 함수 하나로
+ * GET /api/v1/children/{childId}/institution-requests/pending (api-spec G-40)
+ * "안읽음" 배지·알림 목록이 공통으로 쓰는 기준: 아이가 명부에 올라 있는데 아직 아무도 동의하지 않은
+ * (not_granted) 기관. home/report/timeline/settings 헤더의 빨간 점도 전부 이 함수 하나로
  * 통일해서, 조건이 여러 곳에 따로따로 있다가 어긋나는 일이 없게 한다.
  */
 export async function getPendingInstitutionRequests(
   childId: string,
 ): Promise<{ institution: Institution }[]> {
-  if (mockFor("institutionRequests")) {
+  if (mockFor("consentRequests")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId);
     if (!child) return [];
-    return child.institutions.filter(
-      (i) =>
-        i.consent === "not_granted" &&
-        !mock.DECLINED_INSTITUTION_REQUESTS.has(`${childId}:${i.institution.id}`),
-    );
+    return child.institutions.filter((i) => i.consent === "not_granted");
   }
-  return request(`/api/v1/children/${childId}/institution-requests/pending`);
-}
-
-/** 알림에서 "거절" — consent 는 그대로 두고(다시 요청할 수 있으니) 배지에서만 뺀다 */
-export async function declineInstitutionRequest(childId: string, institutionId: string) {
-  if (mockFor("institutionRequests")) {
-    mock.DECLINED_INSTITUTION_REQUESTS.add(`${childId}:${institutionId}`);
-    return { ok: true };
-  }
-  return request(`/api/v1/children/${childId}/institution-requests/${institutionId}/decline`, {
-    method: "POST",
-  });
+  return request(`/api/v1/children/${encodeURIComponent(childId)}/institution-requests/pending`);
 }
 
 /**

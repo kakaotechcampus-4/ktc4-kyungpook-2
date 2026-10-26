@@ -23,7 +23,7 @@ export async function clientLoader() {
     getParentHome(childId),
     getJournal(childId),
     getTodaySummary(childId),
-    loadIfReady("institutionRequests", () => getPendingInstitutionRequests(childId)),
+    loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
   ]);
   return { child, journal, today, pending };
 }
