@@ -1,5 +1,7 @@
 package com.itda.backend.api;
 
+import java.util.List;
+
 import jakarta.validation.Valid;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -14,9 +16,11 @@ import org.springframework.web.bind.annotation.RestController;
 import com.itda.backend.dto.request.consent.UpdateConsentRequest;
 import com.itda.backend.dto.response.consent.ConsentPreviewResponse;
 import com.itda.backend.dto.response.consent.ConsentResponse;
+import com.itda.backend.dto.response.consent.PendingConsentRequestResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
+import com.itda.backend.service.child.GuardianChildQueryService;
 import com.itda.backend.service.consent.ConsentService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -26,14 +30,15 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md G-02(동의 미리보기)·G-41(동의 부여·철회).
+// docs/api/api-spec.md G-02(동의 미리보기)·G-41(동의 부여·철회)·G-40(대기 중 권한 요청).
 @RestController
 @RequestMapping("/api/v1/children/{childId}")
 @RequiredArgsConstructor
-@Tag(name = "보호자 동의", description = "보호자의 기관별 정보 공유 동의")
+@Tag(name = "보호자 동의", description = "보호자의 기관별 정보 공유 동의와 대기 중 권한 요청")
 public class ConsentController {
 
     private final ConsentService consentService;
+    private final GuardianChildQueryService guardianChildQueryService;
 
     @GetMapping("/consent-preview")
     @Operation(summary = "동의 미리보기",
@@ -109,5 +114,31 @@ public class ConsentController {
             @Valid @RequestBody UpdateConsentRequest request) {
         return ApiResponse.success(
                 consentService.update(userId, childId, institutionId, request.action(), request.allowedFields()));
+    }
+
+    @GetMapping("/institution-requests/pending")
+    @Operation(summary = "대기 중 기관 권한 요청",
+            description = "아이가 명부에 올라 있는데 아직 아무도 동의하지 않은 기관입니다. 기관 id 순입니다. "
+                    + "보호자 화면의 알림 점·홈 배너·알림 화면이 이 목록을 봅니다. "
+                    + "동의 상태는 아이 기준이라 다른 보호자가 동의한 기관은 빠집니다. "
+                    + "동의했다가 꺼진 기관도 빠집니다 — 보호자가 직접 끈 것이라 다시 알리지 않습니다.")
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공. 대기 중인 요청이 없으면 빈 배열"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아닌 사용자 (PARENT_REQUIRED), "
+                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<List<PendingConsentRequestResponse>> pendingRequests(
+            @AuthenticationPrincipal String userId, @PathVariable Long childId) {
+        return ApiResponse.success(guardianChildQueryService.pendingRequests(userId, childId));
     }
 }

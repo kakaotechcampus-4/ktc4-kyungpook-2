@@ -19,6 +19,7 @@ import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse.ChildInstitution;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
+import com.itda.backend.dto.response.consent.PendingConsentRequestResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
@@ -37,6 +38,10 @@ import lombok.RequiredArgsConstructor;
  * <p>동의 전·동의를 모두 끈 아이도 넣는다. 설정 화면에서 기관을 다시 켜거나 연결을 끊으려면 목록에 보여야 한다.
  *
  * <p>아이가 몇 명이든 조회 횟수가 같다. 연결 → 아이 → 명부 → 기관 → 동의 순서로 한 번씩 {@code IN} 조회한다.
+ *
+ * <p>대기 중 기관 권한 요청(G-40)도 여기서 만든다. 홈의 기관 목록에서 아직 아무도 동의하지 않은
+ * ({@code not_granted}) 기관만 고른 것과 같아서다. 동의했다가 꺼진({@code revoked}) 기관은 보호자가 직접 끈 것이라
+ * 다시 알리지 않는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -67,14 +72,30 @@ public class GuardianChildQueryService {
      */
     @Transactional(readOnly = true)
     public GuardianHomeResponse home(String userId, Long childId) {
+        return new GuardianHomeResponse(linkedChild(userId, childId), List.of());
+    }
+
+    /**
+     * G-40. 이 아이가 명부에 올라 있는데 아직 아무도 동의하지 않은 기관. 기관 id 순이다.
+     * 연결되지 않았거나 삭제된 아이면 홈과 같은 403 이다.
+     */
+    @Transactional(readOnly = true)
+    public List<PendingConsentRequestResponse> pendingRequests(String userId, Long childId) {
+        return linkedChild(userId, childId).institutions().stream()
+                .filter(institution -> institution.consent() == ConsentState.NOT_GRANTED)
+                .map(institution -> new PendingConsentRequestResponse(institution.institution()))
+                .toList();
+    }
+
+    /** 이 보호자와 연결된 살아 있는 아이 하나. 아니면 이유를 나누지 않고 403 이다. */
+    private GuardianChildResponse linkedChild(String userId, Long childId) {
         Long parentId = userService.getParentIdOf(userId);
         if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
             throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
         }
-        GuardianChildResponse child = assemble(List.of(childId)).stream()
+        return assemble(List.of(childId)).stream()
                 .findFirst()
                 .orElseThrow(() -> new ChildException(ChildErrorCode.CHILD_NOT_LINKED));
-        return new GuardianHomeResponse(child, List.of());
     }
 
     /** {@code childIds} 순서대로. 삭제된 아이는 빠진다. */
