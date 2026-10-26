@@ -9,6 +9,9 @@ import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
@@ -338,22 +341,39 @@ class SummaryGate1ServiceTest {
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
     }
 
-    @Test
-    void 문장을_못_읽는_요약은_카드로_승인할_수_없다_AI_원문이_통째로_사라진다() {
-        String[] unreadable = {null, "", "{}", "[\"문장\"]"};
-        for (int day = 0; day < unreadable.length; day++) {
-            String claims = unreadable[day];
-            summary = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(day + 1), ORG, 1, AI_TEXT, claims,
-                    "[]", "[]", "{}"));
-            entryIn(summary);
-            em.clear();
+    /** 문장 목록(claims)을 못 읽는 요약. 목록에는 카드 0장으로 보인다. */
+    private SummaryResult unreadableSummary(String claims) {
+        SummaryResult unreadable = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(1), ORG, 1, AI_TEXT,
+                claims, "[]", "[]", "{}"));
+        entryIn(unreadable);
+        em.clear();
+        return unreadable;
+    }
 
-            assertThatThrownBy(() -> approveWith(add("교사가 쓴 문장.")))
-                    .isInstanceOf(SummaryException.class)
-                    .extracting(e -> ((SummaryException) e).getErrorCode())
-                    .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
-            assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
-        }
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"[]", "{}", "[\"문장\"]"})
+    void 문장을_못_읽는_요약은_카드로_승인할_수_없다_AI_원문이_통째로_사라진다(String claims) {
+        SummaryResult unreadable = unreadableSummary(claims);
+
+        assertThatThrownBy(() -> service.decide(TEACHER, unreadable.getId(), Gate1Action.APPROVE,
+                List.of(add("교사가 쓴 문장.")), versionOf(unreadable.getId())))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+        assertThat(em.find(SummaryResult.class, unreadable.getId()).getStatus())
+                .isEqualTo(SummaryStatus.GATE1_PENDING);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"[]", "{}", "[\"문장\"]"})
+    void 문장을_못_읽는_요약도_카드_없이는_그대로_승인한다(String claims) {
+        SummaryResult unreadable = unreadableSummary(claims);
+
+        service.decide(TEACHER, unreadable.getId(), Gate1Action.APPROVE, null, versionOf(unreadable.getId()));
+
+        assertThat(approvedContent()).isEqualTo(AI_TEXT);
     }
 
     @Test

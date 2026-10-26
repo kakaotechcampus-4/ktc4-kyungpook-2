@@ -48,7 +48,8 @@ final class Gate1Cards {
     }
 
     /**
-     * 카드가 없으면 그대로 승인이다. 원래 문장을 모두 한 번씩 담지 않았거나 남는 문장이 없으면 400 INVALID_REQUEST 다.
+     * 카드가 없으면 그대로 승인이다. 문장(claims)을 못 읽거나, 원래 문장을 모두 한 번씩 담지 않았거나, 남는 문장이 없으면
+     * 400 SUMMARY_INVALID_REQUEST 다.
      */
     static Applied apply(SummaryResult summary, List<Card> cards) {
         if (cards == null) {
@@ -58,7 +59,7 @@ final class Gate1Cards {
         // 문장을 못 읽으면 카드가 원래 문장을 가리킬 수 없다. ADD 만으로 통과시키면 교사가 읽은 AI 원문이 통째로 사라진다.
         if (original.isEmpty()) {
             throw new SummaryException(SummaryErrorCode.INVALID_REQUEST,
-                    "summaryId=" + summary.getId() + " unreadable claims");
+                    "summaryId=" + summary.getId() + " no readable claims");
         }
         requireEachOriginalOnce(summary, original, cards);
 
