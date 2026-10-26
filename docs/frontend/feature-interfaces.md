@@ -78,7 +78,7 @@ mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하�
 | `ValidationStatus` | `PASS` · `REVIEW` · `BLOCK` | Validation Agent 판정 |
 | `MatchStatus` | `auto` · `review` · `multi` · `unmatched` | Matching Agent 결과. AI 쪽 이름과 맞춥니다 |
 | `Gate1Status` | `pending` · `approved` · `rejected` | 1차 검토(요약 승인) 상태 |
-| `Gate2Status` | `pending` · `approved` · `held` · `sent` | 공유 전 검토(발송) 상태 |
+| `Gate2Status` | `pending` · `approved` · `hold` | 공유 전 검토 상태. 승인이 곧 보호자 열람이라 `sent` 가 따로 없다 |
 | `ConsentState` | `granted` · `not_granted` · `revoked` | 기관별 보호자 동의 상태 |
 | `ChildStatus` | `pending_consent` · `active` · `suspended` | 아이 활성 상태 |
 | `ConsentField` | `daily_summary` · `weekly_insight` | 동의 범위 필드 |
@@ -186,9 +186,10 @@ interface Insight {
   childName: string;
   period: string;             // 예: "2026년 8월 3주차"
   content: string;
-  primarySource: Institution; // 근거 최다 제공 기관 = Gate 2 승인 주체
+  needsReview: boolean;       // 공유 전에 꼭 읽어야 하는 글인지. BE 는 지금 항상 true
+  primarySource: Institution; // Gate 2 승인 주체 (근거를 낸 기관 중 학교 > 센터 > 활동지원사)
   evidence: EvidenceRef[];
-  targets: { institution: Institution; consent: ConsentState }[];
+  targets: { institution: Institution; consent: ConsentState }[]; // 읽기 전용 참고. 받을 기관은 보호자가 고른다
   gate2Status: Gate2Status;
 }
 
@@ -288,9 +289,9 @@ interface ParentActivity {
 | `resolveBlockedItem` | `(id: string, action: "reupload" \| "hold") => Promise<{ ok: true }>` | I-07 |
 | `getGate1Queue` | `() => Promise<SummaryItem[]>` | I-03, I-08 |
 | `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "reject"; edited_content?: string; reason?: string }) => Promise<{ gate1_status: Gate1Status }>` | I-08 |
-| `getInsights` | `() => Promise<Insight[]>` | I-03, I-10, I-11 |
+| `getInsights` | `(gate2Status?: Gate2Status) => Promise<Insight[]>` — 기본 `pending`. 우리 기관이 승인 주체인 것만 온다 | I-03, I-10, I-11 |
 | `getInsight` | `(id: string) => Promise<Insight \| undefined>` | I-10 |
-| `decideGate2` | `(insightId: string, body: { decision: "approve" \| "hold"; target_institution_ids: string[] }) => Promise<{ gate2_status: Gate2Status }>` | I-11 |
+| `decideGate2` | `(insightId: string, body: { decision: "approve" \| "hold" }) => Promise<{ insightId: string; gate2Status: Gate2Status; decision: string }>` — 받을 기관은 보내지 않는다. 409 `INSIGHT_ALREADY_REVIEWED` · `INSIGHT_SUPERSEDED` | I-11 |
 | `registerChild` | `({ name, birthDate, externalId }) => Promise<{ child: RegisteredChild; invitation: IssuedInvitation }>` — O-11. 등록과 함께 서버가 첫 초대 코드를 발급. 503 `INVITE_CODE_ISSUE_FAILED`면 아이도 등록되지 않음 | I-04 |
 | `issueInvitation` | `(childId: string) => Promise<IssuedInvitation>` — O-15. 이전 코드는 그대로 살아 있음 | I-04, I-09-1 |
 | `getLiveInvitations` | `(childId: string) => Promise<LiveInvitation[]>` — O-16. 만료 · 사용 · 취소된 코드는 빠짐 | I-09-1 |

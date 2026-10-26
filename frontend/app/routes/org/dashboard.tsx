@@ -31,7 +31,7 @@ export default function DashboardPage() {
     matching?.length ?? null,
     blocked?.length ?? null,
     gate1?.filter((s) => s.gate1Status === "pending").length ?? null,
-    insights?.filter((i) => i.gate2Status === "pending").length ?? null,
+    insights?.length ?? null,
   ] as const;
   const [matchingCount, blockedCount, gate1Count, gate2Count] = counts;
   // 준비 중인 칸은 0건으로 치지 않는다 — 모르는 걸 "할 일 없음"이라고 말하면 안 된다
