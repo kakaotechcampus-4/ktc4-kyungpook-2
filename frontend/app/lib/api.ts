@@ -153,11 +153,10 @@ const BE_READY = {
   /** 보호자: 초대 코드 수락 (G-04) */
   guardianInvite: true,
   /**
-   * 보호자: 아이 연결 해제 (G-05). 서버에는 있지만 끈다 — 해제할 아이를 고르는 목록
-   * (G-10, guardianHome)이 아직 mock 이라 서버에 없는 아이 id 로 요청하게 된다.
-   * guardianHome 을 켤 때 같이 켠다.
+   * 보호자: 아이 연결 해제 (G-05). 해제할 아이는 아이 목록(guardianChildren)에서 고른다 — 목록이
+   * mock 이면 서버에 없는 아이 id 로 요청하게 되니 두 키는 함께 켜고 끈다.
    */
-  guardianUnlink: false,
+  guardianUnlink: true,
   /**
    * 보호자: 연결된 아이 목록 · 홈 데이터 (G-10, G-11). 보호자 화면 입구(parent/guard.tsx)도
    * 이 키를 본다 — 꺼져 있으면 mock 아이 대신 "준비 중"을 띄운다.

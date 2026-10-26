@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLoaderData, useNavigate } from "react-router";
+import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
@@ -44,6 +44,7 @@ export default function ParentSettingsPage() {
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
 
   const setLocal = (instId: string, consent: ConsentState) =>
     setInstitutions((list) =>
@@ -74,13 +75,25 @@ export default function ParentSettingsPage() {
     }
   }
 
-  /** G-05. 끊으면 이 아이는 목록에서 빠지니 홈으로 돌아가 남은 아이를 다시 고른다 */
+  /**
+   * G-05. 끊으면 이 아이는 목록에서 빠지니 홈으로 돌아가 남은 아이를 다시 고른다.
+   *
+   * 아이 목록은 입구(guard.tsx)가 들고 있는데, 같은 레이아웃 안의 이동이라 입구의 loader 는 다시 돌지 않는다.
+   * 그대로 두면 아이 전환 목록에 끊은 아이가 남으니 이동 뒤 한 번 더 불러온다. 남은 아이가 없으면 홈 대신
+   * 초대 코드 화면으로 바로 간다 — 홈 loader 는 고를 아이가 없어 빈 childId 로 요청하게 된다.
+   */
   async function unlink() {
     setPending(true);
     setUnlinkError(null);
     try {
       await unlinkChild(child.id);
-      navigate("/parent", { replace: true });
+      const remaining = await getParentChildren();
+      if (remaining.length === 0) {
+        navigate("/parent/invite", { replace: true });
+        return;
+      }
+      await navigate("/parent", { replace: true });
+      await revalidator.revalidate();
     } catch {
       setUnlinkError("연결을 끊지 못했어요. 새로고침한 뒤 다시 시도해 주세요.");
     } finally {
