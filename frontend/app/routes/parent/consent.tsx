@@ -7,21 +7,27 @@ import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
 
 const INVITE = "/parent/invite";
-const SETTINGS = "/parent/settings";
+/** 온보딩 밖에서 이 화면으로 온 곳. 동의 뒤 그곳으로 돌아간다 */
+const RETURN_TO = {
+  settings: { path: "/parent/settings", label: "설정으로 돌아가기" },
+  notifications: { path: "/parent/notifications", label: "알림으로 돌아가기" },
+} as const;
+type ReturnFrom = keyof typeof RETURN_TO;
 
 /**
  * 대상은 쿼리로 받는다 — P-01 이 초대 코드를 수락한 뒤 "어느 아이 · 어느 기관"인지 지정해
  * 보낸다. 쿼리가 빠졌으면 무엇에 동의하는지 알 수 없으므로 코드 입력 화면으로 되돌린다.
  *
- * 설정(P-11)에서 꺼 둔 기관을 다시 켤 때도 이 화면을 거친다(`from=settings`). 공유 항목을 보고
- * 동의해야 해서다. 그때는 동의 뒤 설정으로 돌아간다.
+ * 설정(P-11)에서 꺼 둔 기관을 다시 켤 때(`from=settings`)와 알림에서 새 기관 요청에 권한을 줄 때
+ * (`from=notifications`)도 이 화면을 거친다. 공유 항목을 보고 동의해야 해서다. 그때는 동의 뒤 온 곳으로 돌아간다.
  */
 export async function clientLoader({ request }: { request: Request }) {
   const url = new URL(request.url);
   const childId = url.searchParams.get("childId");
   const institutionId = url.searchParams.get("institutionId");
   if (!childId || !institutionId) return redirect(INVITE);
-  const from = url.searchParams.get("from") === "settings" ? "settings" : null;
+  const fromParam = url.searchParams.get("from");
+  const from: ReturnFrom | null = fromParam === "settings" || fromParam === "notifications" ? fromParam : null;
   return { preview: await getConsentPreview(childId, institutionId), from };
 }
 
@@ -34,9 +40,9 @@ export async function clientLoader({ request }: { request: Request }) {
  */
 export default function ParentConsentPage() {
   const { preview, from } = useLoaderData<typeof clientLoader>();
-  // 설정에서 왔거나 온보딩을 마친 보호자에게는 온보딩 단계 표시가 맞지 않는다
-  const fromSettings = from === "settings";
-  const showSteps = !fromSettings && !isOnboarded();
+  // 설정·알림에서 왔거나 온보딩을 마친 보호자에게는 온보딩 단계 표시가 맞지 않는다
+  const returnTo = from ? RETURN_TO[from] : null;
+  const showSteps = !returnTo && !isOnboarded();
   const [consented, setConsented] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -54,10 +60,10 @@ export default function ParentConsentPage() {
           </p>
         </div>
         <button
-          onClick={() => navigate(fromSettings ? SETTINGS : INVITE)}
+          onClick={() => navigate(returnTo ? returnTo.path : INVITE)}
           className="tap h-14 w-full rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2"
         >
-          {fromSettings ? "설정으로 돌아가기" : "코드 입력 화면으로"}
+          {returnTo ? returnTo.label : "코드 입력 화면으로"}
         </button>
       </div>
     );
@@ -79,10 +85,10 @@ export default function ParentConsentPage() {
         setSaveError(saveErrorMessage(err));
         return;
       }
-      // 설정에서 다시 켠 것이면 설정으로 돌아간다. 온보딩 중이면 돌봄 정보 입력(4단계)까지
+      // 설정·알림에서 온 것이면 그곳으로 돌아간다. 온보딩 중이면 돌봄 정보 입력(4단계)까지
       // 이어가고, 이미 쓰던 보호자가 새 기관 요청을 승인한 것이면 홈으로 돌아간다.
-      if (fromSettings) {
-        navigate(SETTINGS);
+      if (returnTo) {
+        navigate(returnTo.path);
       } else if (isOnboarded()) {
         navigate("/parent");
       } else {

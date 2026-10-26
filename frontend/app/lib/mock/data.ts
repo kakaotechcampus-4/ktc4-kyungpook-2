@@ -722,13 +722,6 @@ export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
 };
 
 /**
- * 알림에서 "거절"한 기관 요청 — "childId:institutionId" 형태로 저장한다.
- * consent 는 여전히 not_granted 로 남지만(다시 권한을 줄 수도 있으니), 거절한
- * 요청은 목록/배지에서 다시 "안읽음"으로 뜨지 않도록 이 목록으로 따로 걸러낸다.
- */
-export const DECLINED_INSTITUTION_REQUESTS = new Set<string>();
-
-/**
  * 아이별 초대 코드 (O-15~O-17 mock). 만료 여부는 조회할 때 expiresAt 으로 거른다.
  * 10분짜리라 미리 넣어 두면 화면을 열 때쯤 이미 만료돼 있어 비워 둔다.
  */

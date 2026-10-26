@@ -24,9 +24,9 @@ export async function clientLoader() {
   const childId = readSelectedChildId(kids);
   const [{ child }, requests, pendingRequests, session] = await Promise.all([
     getParentHome(childId),
-    // 기관 요청은 서버에 생기기 전까지 null — mock 개수를 진짜 아이 설정에 띄우지 않는다
+    // 기관 요청사항(준비물)은 서버에 생기기 전까지 null — mock 개수를 진짜 아이 설정에 띄우지 않는다
     loadIfReady("institutionRequests", () => getInstitutionRequests(childId)),
-    loadIfReady("institutionRequests", () => getPendingInstitutionRequests(childId)),
+    loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
     getSession(),
   ]);
   // 실연동에서는 /auth/me 의 카카오 닉네임. 동의를 거부해 없으면 이름을 빼고 "보호자"만 쓴다
