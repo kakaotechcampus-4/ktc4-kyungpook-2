@@ -2,8 +2,10 @@ package com.itda.backend.service.insight;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,7 +29,8 @@ import lombok.extern.slf4j.Slf4j;
  * <p><b>거두는 기준이 두 가지라 섞지 않는다.</b>
  *
  * <table>
- * <tr><td>재료 기관의 동의가 꺼졌다</td><td>그 기관 기록이 섞인 인사이트의 <b>기관 권한</b>을 거둔다</td></tr>
+ * <tr><td>기관의 동의가 꺼졌다</td><td>그 기관이 <b>받은</b> 권한과, 그 기관이 <b>재료를 낸</b> 인사이트의
+ * 기관 권한을 함께 거둔다</td></tr>
  * <tr><td>보호자 연결이 끊겼다</td><td>그 사람의 <b>보호자 권한</b>을 전부 거둔다</td></tr>
  * </table>
  *
@@ -44,29 +47,42 @@ public class InsightAccessRevoker {
     private final SharingHistoryRepository sharingHistoryRepository;
 
     /**
-     * 그 기관 기록이 재료로 들어간 인사이트의 기관 열람 권한을 거둔다.
+     * 그 기관의 동의가 꺼졌을 때 기관 열람 권한을 거둔다. <b>두 방향을 모두 본다.</b>
      *
-     * <p>부르는 쪽이 {@code child} 행을 잠근 상태여야 한다 (§3.3) — 잠그지 않으면 Gate 2 승인이 먼저
-     * 커밋되고 이 철회가 그 권한을 못 본다.
+     * <table>
+     * <tr><td>받는 쪽</td><td>그 기관이 이 아이에 대해 받은 권한. 보호자가 {@code #223} 에서 켠 것이다</td></tr>
+     * <tr><td>내는 쪽</td><td>그 기관 기록이 재료로 들어간 인사이트의 기관 권한. 다른 기관이 받고 있다</td></tr>
+     * </table>
      *
-     * <p>⬜ 지금은 거둘 기관 권한이 없다. 기관 권한은 보호자의 인사이트별 승인이 만드는데 그 API 가 아직
-     * 없어서다 (§9.4). <b>그래도 지금 넣는 이유</b>는, 그 API 가 생길 때 거두는 쪽을 같이 만들 거라고
-     * 믿기보다 지금 길을 내 두는 쪽이 안전해서다. 오늘 실제로 막는 것은 아직 승인되지 않은 인사이트 쪽이고,
-     * 그건 {@link InsightGate2Service} 가 승인 시점에 본다.
+     * <p><b>받는 쪽을 빠뜨리면 철회가 아무것도 안 한다.</b> 보호자가 켜는 권한은 재료를 내지 않은 기관에만
+     * 생기므로 (§9.4, {@code GuardianShareService.shareableInstitutionIds}), 내는 쪽만 보면 정작 그 기관이
+     * 들고 있는 권한은 한 건도 안 걸린다. #223 이전에는 {@code ORGANIZATION} 행 자체가 없어 드러나지 않던
+     * 구멍이다.
+     *
+     * <p>부르는 쪽이 {@code child} 행을 잠근 상태여야 한다 (§3.3) — 잠그지 않으면 Gate 2 승인이나 보호자의
+     * 기관 선택이 먼저 커밋되고 이 철회가 그 권한을 못 본다.
      */
     @Transactional
     public void revokeForInstitution(Long childId, Long organizationId, ConsentRevokeReason reason,
             LocalDateTime at) {
-        List<Long> affected = insightsFedBy(childId, organizationId);
-        if (affected.isEmpty()) {
-            return;
-        }
-        List<SharingHistory> revoked = sharingHistoryRepository
-                .findByInsightResultIdInAndReceiverTypeAndRevokedAtIsNull(affected, ReceiverType.ORGANIZATION);
-        revoked.forEach(history -> history.revoke(reason, at));
+        List<Long> fedByThem = insightsFedBy(childId, organizationId);
+        Stream<SharingHistory> onTheirMaterial = fedByThem.isEmpty() ? Stream.of()
+                : sharingHistoryRepository
+                        .findByInsightResultIdInAndReceiverTypeAndRevokedAtIsNull(
+                                fedByThem, ReceiverType.ORGANIZATION)
+                        .stream();
+        Stream<SharingHistory> theirs = sharingHistoryRepository
+                .findByChildIdAndReceiverTypeAndReceiverIdAndRevokedAtIsNull(
+                        childId, ReceiverType.ORGANIZATION, organizationId)
+                .stream();
+
+        // 두 방향이 같은 행을 집을 일은 없지만 (재료 기관은 후보에서 빠진다) 겹쳐도 한 번만 센다.
+        Map<Long, SharingHistory> revoked = Stream.concat(theirs, onTheirMaterial)
+                .collect(Collectors.toMap(SharingHistory::getId, history -> history, (a, b) -> a));
+        revoked.values().forEach(history -> history.revoke(reason, at));
         if (!revoked.isEmpty()) {
-            log.info("insight access revoked by consent childId={} organizationId={} insights={} grants={}",
-                    childId, organizationId, affected.size(), revoked.size());
+            log.info("insight access revoked by consent childId={} organizationId={} material={} grants={}",
+                    childId, organizationId, fedByThem.size(), revoked.size());
         }
     }
 
