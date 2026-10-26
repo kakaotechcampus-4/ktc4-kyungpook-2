@@ -13,6 +13,7 @@ import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryStatus;
+import com.itda.backend.dto.request.summary.Gate1DecisionRequest.Card;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -45,11 +46,11 @@ public class SummaryGate1Service {
      * Gate 1 결정을 반영한다. 승인하면 그 요약의 일지가 요약에 안 들어간 것까지 모두 끝나고, 보류하면 함께 보류되고,
      * 제거하면 모두 삭제 표시된다.
      *
-     * @param editedContent 승인할 때 고친 본문. 없거나 AI 원문과 같으면 그대로 승인이다.
-     * @param version       교사가 목록에서 받은 판 표시 ({@link Gate1Version})
+     * @param cards   승인할 때 문장 카드. 없거나 모두 원래 순서대로 유지면 그대로 승인이다 ({@link Gate1Cards})
+     * @param version 교사가 목록에서 받은 판 표시 ({@link Gate1Version})
      */
     @Transactional
-    public Gate1DecisionResponse decide(String userId, Long summaryId, Gate1Action action, String editedContent,
+    public Gate1DecisionResponse decide(String userId, Long summaryId, Gate1Action action, List<Card> cards,
             String version) {
         SummaryResult summary = lockOwnedSummary(userId, summaryId);
         requireDecidable(summary, action);
@@ -64,7 +65,7 @@ public class SummaryGate1Service {
             throw new SummaryException(SummaryErrorCode.CHANGED, summaryId);
         }
         ApprovalDecision decision = switch (action) {
-            case APPROVE -> approve(summary, entries, editedContent);
+            case APPROVE -> approve(summary, entries, cards);
             case HOLD -> hold(summary, entries);
             case REMOVE -> remove(summary, entries);
         };
@@ -88,15 +89,21 @@ public class SummaryGate1Service {
         return new Gate1DecisionResponse(summaryId, summary.getStatus().name(), ApprovalDecision.REOPENED.name());
     }
 
-    private ApprovalDecision approve(SummaryResult summary, List<JournalEntry> entries, String editedContent) {
-        boolean corrected = editedContent != null
-                && !normalize(editedContent).equals(normalize(summary.getContent()));
-        String finalContent = corrected ? normalize(editedContent) : summary.getContent();
-        summary.approve();
-        childContextRepository.save(ChildContext.of(summary.getChildId(), summary.getId(), finalContent));
+    /**
+     * 카드가 없으면 그대로 승인이다. 카드로 하나라도 바꿨으면 claims 를 카드 결과로 다시 쓰고 남은 문장을 이은 글을 올린다
+     * ({@link Gate1Cards}). 요약 행의 본문과 AI 응답 원문은 그대로 둔다.
+     */
+    private ApprovalDecision approve(SummaryResult summary, List<JournalEntry> entries, List<Card> cards) {
+        Gate1Cards.Applied applied = Gate1Cards.apply(summary, cards);
+        if (applied.corrected()) {
+            summary.approveWithClaims(applied.claims());
+        } else {
+            summary.approve();
+        }
+        childContextRepository.save(ChildContext.of(summary.getChildId(), summary.getId(), applied.content()));
         // 요약에 안 들어간 일지도 같은 요약을 가리킨다. 함께 끝내지 않으면 다음 요약에 다시 묶인다.
         pendingOf(entries).forEach(JournalEntry::completeGate1);
-        return corrected ? ApprovalDecision.CORRECTED : ApprovalDecision.APPROVED;
+        return applied.corrected() ? ApprovalDecision.CORRECTED : ApprovalDecision.APPROVED;
     }
 
     private ApprovalDecision hold(SummaryResult summary, List<JournalEntry> entries) {
@@ -142,14 +149,6 @@ public class SummaryGate1Service {
                 summary.getEntryDate(), String.valueOf(summary.getInstitutionId())).isEmpty()) {
             throw new SummaryException(SummaryErrorCode.REGENERATING, summary.getId());
         }
-    }
-
-    /**
-     * 입력창을 거치며 생기는 차이(CRLF, 앞뒤 공백·줄바꿈)는 고친 것으로 보지 않는다. 고친 것으로 보면 인사이트가 그 요약을
-     * 통째로 뺀다 (§10.1 #7). 본문 안의 글자는 한 글자라도 다르면 고친 것이다.
-     */
-    private static String normalize(String content) {
-        return content.replace("\r\n", "\n").replace('\r', '\n').strip();
     }
 
     private static List<JournalEntry> pendingOf(List<JournalEntry> entries) {

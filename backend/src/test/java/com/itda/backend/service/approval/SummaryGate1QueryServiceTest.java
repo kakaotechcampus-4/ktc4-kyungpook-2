@@ -28,6 +28,7 @@ import com.itda.backend.domain.summary.SummaryRunRequest;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -160,6 +161,25 @@ class SummaryGate1QueryServiceTest {
     }
 
     @Test
+    void 요약_문장을_카드로_고칠_수_있게_순서와_글을_보여준다() {
+        summary(ORG, DATE, "[{\"text\":\"블록을 쌓았다.\",\"evidence\":[]},"
+                + "{\"text\":\"낮잠을 잤다.\",\"evidence\":[]}]", List.of(), List.of());
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        // index 는 결정(O-31) 카드에 그대로 돌려보내는 번호다 — claims 배열 순서다.
+        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다."), new ClaimCard(1, "낮잠을 잤다."));
+    }
+
+    @Test
+    void 문장이_아닌_값이_섞인_claims_는_카드로_보여주지_않는다() {
+        // 결정(O-31)도 같은 기준으로 문장이 없다고 본다. 카드를 보여주면 그대로 보내도 400 이 난다.
+        summary(ORG, DATE, "[{\"text\":\"블록을 쌓았다.\"}, \"문장\"]", List.of(), List.of());
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).claims()).isEmpty();
+    }
+
+    @Test
     void 요약_근거와_겹치는_REVIEW_구간이_있는_일지는_그_일지의_사유를_모두_보여준다() {
         JournalEntry overlapped = entry("블록 놀이 중 친구를 밀었다.");
         validated(overlapped, ValidationVerdict.REVIEW, "[\"위험행동표현\",\"추측성표현\"]", "[{\"start\":5,\"end\":12}]");
@@ -214,6 +234,7 @@ class SummaryGate1QueryServiceTest {
         // 구간을 못 읽으면 비어 있는 것과 같다 — 숨기기보다 보여주는 쪽이 안전하다.
         assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of()));
         assertThat(item.reviewReasons()).isEmpty();
+        assertThat(item.claims()).isEmpty();
     }
 
     @Test

@@ -59,7 +59,8 @@ public class SummaryResult {
     private String content;
 
     // AI 가 보낸 JSON 조각을 그대로 담는다. claims 는 [{text, evidence: [{journal_entry_id, quote, span}]}],
-    // span 은 각 일지 원문 기준 Python 코드포인트 인덱스다.
+    // span 은 각 일지 원문 기준 Python 코드포인트 인덱스다. 교사가 Gate 1 카드를 고쳐 승인하면 카드 결과로 바뀌고
+    // 문장마다 source(AI·EDITED·TEACHER)가 붙는다 (#221). 그때 TEACHER 문장의 근거는 journal_entry_id 가 null 이다.
     @Column(columnDefinition = "TEXT")
     private String claims;
 
@@ -158,9 +159,23 @@ public class SummaryResult {
         this.reviewReasons = reviewReasons;
     }
 
-    /** 교사가 Gate 1 에서 승인했다. 고친 본문은 여기가 아니라 child_context 에 남는다 — 이 행은 AI 원문을 그대로 둔다. */
+    /** 교사가 Gate 1 에서 고치지 않고 승인했다. */
     public void approve() {
         requireStatus(SummaryStatus.GATE1_PENDING);
+        this.status = SummaryStatus.APPROVED;
+    }
+
+    /**
+     * 교사가 Gate 1 문장 카드를 고쳐 승인했다. {@code claims} 를 카드 결과로 바꾼다 — 인사이트가 읽는 것이 claims 라,
+     * 교사가 지운 문장이 남으면 다른 기관으로 나간다. 고친 본문은 child_context 에 남고, {@code content}·
+     * {@code raw_response} 는 AI 원문을 그대로 둔다.
+     */
+    public void approveWithClaims(String claims) {
+        requireStatus(SummaryStatus.GATE1_PENDING);
+        if (claims == null || claims.isBlank()) {
+            throw new IllegalArgumentException("고쳐 승인한 요약의 claims 는 필수입니다.");
+        }
+        this.claims = claims;
         this.status = SummaryStatus.APPROVED;
     }
 

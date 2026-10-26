@@ -782,6 +782,7 @@ O-15 ~ O-19 공통 오류:
   { "id": 50, "childId": 8, "childName": "김하늘", "entryDate": "2026-10-08", "revision": 1,
     "status": "GATE1_PENDING", "version": "2026-10-09T03:05:12.345678/1041,1042", "processing": false,
     "content": "오전 활동에서 블록을 다섯 층까지 쌓았다 …",
+    "claims": [ { "index": 0, "text": "오전 활동에서 블록을 다섯 층까지 쌓았다." }, { "index": 1, "text": "…" } ],
     "needsReview": true, "reviewReasons": ["다른아동이름"],
     "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
     "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"] } ] }
@@ -792,6 +793,7 @@ O-15 ~ O-19 공통 오류:
 | --- | --- |
 | `version` | 결정(O-31)할 때 그대로 돌려보내는 값(요약 수정 시각 + 요약에 든 일지 id). 해석하지 말고 문자열 그대로 보내주세요 |
 | `processing` | 곧 이 요약이 바뀜. 지금 다시 요약 중이거나, [요약](O-32)을 눌러 뒀고 같은 날 이 아이 기록 중 아직 요약에 반영되지 않은 것이 있을 때(검증 중 포함) 켜집니다. 눌러 둔 상태에서는 매칭 전이라 누구 기록인지 모르는 것이 있어도 켜집니다. 누르지 않았으면 새 기록이 있어도 `false` 입니다 — 자동 요약이 없어 누르기 전까지 바뀌지 않습니다 (#181). 열기·승인 버튼을 막아주세요. 보류함 항목과 옛 판은 항상 `false` |
+| `claims` | 요약 문장 카드. 카드마다 [유지]·[수정]·[삭제]를 두고, 결정(O-31) 때 `index` 를 그대로 돌려보냅니다 (#221). **빈 배열이면** 문장을 읽지 못한 요약이라 카드 편집([추가] 포함)을 막아 주세요 — 카드를 보내면 400 입니다. 그대로 승인하거나 제거만 됩니다 |
 | `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
 | `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
 | `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유(`issue_types` 원본) |
@@ -808,7 +810,12 @@ O-15 ~ O-19 공통 오류:
 ```
 
 ```json
-{ "decision": "approve", "editedContent": "선생님이 고친 본문", "version": "2026-10-09T03:05:12.345678/1041,1042" }
+{ "decision": "approve", "version": "2026-10-09T03:05:12.345678/1041,1042",
+  "cards": [
+    { "index": 0, "action": "KEEP" },
+    { "index": 1, "action": "DELETE" },
+    { "index": 2, "action": "EDIT", "text": "블록을 두 번 쌓았다." },
+    { "action": "ADD", "text": "약 먹은 날 차분했다." } ] }
 ```
 
 ```json
@@ -818,17 +825,28 @@ O-15 ~ O-19 공통 오류:
 | 필드 | 조건 |
 | --- | --- |
 | `decision` | `approve` \| `hold` \| `remove` (반려는 없습니다 — 고쳐서 승인하거나 보류·제거합니다) |
-| `editedContent` | `approve` 일 때만. 빈 문자열 불가. 보류·제거에 보내면 400 |
+| `cards` | `approve` 일 때만, 빈 배열 불가. 없으면 그대로 승인. 보류·제거에 보내면 400. **배열 순서가 최종 문장 순서입니다** |
+| `cards[].action` | `KEEP`(유지) \| `EDIT`(수정) \| `DELETE`(삭제) \| `ADD`(추가). 대문자 |
+| `cards[].index` | O-30 `claims` 의 `index`. `KEEP`·`EDIT`·`DELETE` 는 필수, `ADD` 는 보내지 않음. **원래 문장은 모두 한 번씩** 보내야 합니다 |
+| `cards[].text` | `EDIT` 은 고친 글, `ADD` 는 새 글 (빈 글 불가, 1000자까지). `KEEP`·`DELETE` 는 보내지 않음 |
 | `version` | 필수. O-30 에서 받은 값 그대로 |
+
+`editedContent`(고친 본문 전체)는 없어졌습니다 (#221). 보내면 버리지 않고 400 으로 막습니다 — 버리면 고친 글 대신
+AI 원문이 승인됩니다.
 
 | 결정 | 요약 | 그 요약의 일지 | 기록(`decision`) |
 | --- | --- | --- | --- |
-| 승인 (`editedContent` 없음 또는 AI 원문과 같음) | 승인 | 요약에 안 들어간 일지까지 모두 완료 | `APPROVED` |
-| 고쳐서 승인 (AI 원문과 한 글자라도 다름. 줄바꿈 방식·앞뒤 공백 차이는 무시) | 승인. 고친 본문이 아동 타임라인에 올라감 | 위와 같음 | `CORRECTED` |
+| 승인 (`cards` 없음, 또는 모두 원래 순서대로 `KEEP`) | 승인. AI 원문이 아동 타임라인에 올라감 | 요약에 안 들어간 일지까지 모두 완료 | `APPROVED` |
+| 고쳐서 승인 (`KEEP` 이 아닌 카드가 있거나 순서가 바뀜) | 승인. 남은 문장을 순서대로 이은 글이 아동 타임라인에 올라감 | 위와 같음 | `CORRECTED` |
 | 보류 | 보류함으로 | 함께 보류 (같은 날 새 기록이 와도 묶이지 않음) | `HOLD` |
 | 제거 | 제거 | 모두 삭제. **되돌릴 수 없음** | `REMOVED` |
 
-승인과 제거는 되돌릴 수 없으니 확인 팝업을 띄워주세요. 고친 본문은 MVP 에서 다시 검증하지 않습니다.
+승인과 제거는 되돌릴 수 없으니 확인 팝업을 띄워주세요. 고친 글과 새 글은 MVP 에서 다시 검증하지 않습니다.
+`EDIT` 글이 원문과 줄바꿈 방식·앞뒤 공백만 다르면 고치지 않은 것(`KEEP`)으로 봅니다. 문장을 모두 지우려면
+승인 대신 제거를 써주세요 — 남는 문장이 없으면 400 입니다.
+
+고쳐서 승인하면 인사이트가 읽는 문장 목록(`summary_result.claims`)도 카드 결과로 바뀝니다. 지운 문장은 빠지고, 고친
+문장과 새 문장에는 누가 썼는지(`EDITED`·`TEACHER`) 표시가 붙습니다 (DB 스키마 §8.2).
 
 **보류함**은 보류 해제(O-33)와 제거만 둡니다. 보류된 요약을 승인하려면 보류를 해제한 뒤 검토 목록에서 합니다.
 
@@ -843,7 +861,8 @@ O-15 ~ O-19 공통 오류:
 
 | 실패 | 상태 | 코드 |
 | --- | --- | --- |
-| `decision`·`version` 누락, 허용되지 않은 값, 빈 `editedContent`, 승인이 아닌데 `editedContent` | 400 | `INVALID_REQUEST` |
+| `decision`·`version` 누락, 허용되지 않은 값, 승인이 아닌데 `cards`, 빈 `cards`, 카드 `action` 에 맞지 않는 `index`·`text`, 카드 100장·글 1000자 초과, 옛 `editedContent` 를 보냄 | 400 | `INVALID_REQUEST` |
+| 원래 문장 `index` 가 빠지거나 겹치거나 범위 밖, 남는 문장이 없음, 문장(`claims`)을 못 읽는 요약에 `cards` 를 보냄 | 400 | `SUMMARY_INVALID_REQUEST` |
 | 없는 요약이거나 다른 기관 요약 | 404 | `SUMMARY_NOT_FOUND` |
 | 이미 처리된 요약 | 409 | `SUMMARY_ALREADY_REVIEWED` |
 | 보류된 요약을 승인·보류 (보류 해제 먼저) | 409 | `SUMMARY_HELD` |
@@ -1413,7 +1432,7 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |
 | `MATCHING_RESULT_INVALID_REQUEST` | 400 | 확인 필요 큐 처리 요청 거절 (O-23) |
 | `MATCHING_RESULT_NOT_FOUND` | 404 | 없거나 다른 기관의 확인 필요 큐 항목 (O-23) |
-| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 요약 요청 거절 (O-32), 지원하지 않는 `gate1Status` (O-30) |
+| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 요약 요청 거절 (O-32), 지원하지 않는 `gate1Status` (O-30), 문장 카드가 원래 문장과 맞지 않음 (O-31) |
 | `SUMMARY_CHILD_NOT_FOUND` | 404 | 없거나 다른 기관의 아이로 요약 요청 (O-32) |
 | `SUMMARY_NOT_FOUND` | 404 | 없거나 다른 기관의 요약 (O-31 · O-33) |
 | `SUMMARY_ALREADY_REVIEWED` | 409 | 이미 처리된 요약 재결정 (O-31) |
