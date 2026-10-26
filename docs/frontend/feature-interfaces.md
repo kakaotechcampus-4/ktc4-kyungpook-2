@@ -306,9 +306,9 @@ interface ParentActivity {
 | 함수 | 시그니처 | 사용 화면 |
 | --- | --- | --- |
 | `acceptInvitation` | `(code: string) => Promise<AcceptedInvitation>` — G-04. 400 `INVALID_INVITE_CODE` · 409 `LINK_ALREADY_EXISTS` · 403 `PARENT_REQUIRED` 는 `ApiError` 로 | P-01 |
-| `unlinkChild` | `(childId: string) => Promise<void>` — G-05. `BE_READY.guardianUnlink` 가 꺼져 있어 지금은 mock | P-02, P-04 |
+| `unlinkChild` | `(childId: string) => Promise<void>` — G-05 | P-02, P-04 |
 | `getParentChildren` | `() => Promise<Child[]>` | 전 화면 (아이 전환) |
-| `getParentHome` | `(childId?: string) => Promise<{ child: Child; activity: ParentActivity[] }>` | P-03, P-04, P-06, P-07 |
+| `getParentHome` | `(childId: string) => Promise<{ child: Child; activity: ParentActivity[] }>` — `childId` 필수 | P-03, P-04, P-06, P-07 |
 | `getTodaySummary` | `(childId: string) => Promise<string \| null>` | P-03, P-07 |
 | `getJournal` | `(childId: string) => Promise<JournalEntry[]>` (최신순) | P-03, P-07, P-10 |
 | `getJournalEntry` | `(id: string) => Promise<JournalEntry \| undefined>` | P-08 |
@@ -316,7 +316,7 @@ interface ParentActivity {
 | `getCareReport` | `(childId: string, period: "weekly" \| "monthly") => Promise<CareReport \| null>` | P-09 |
 | `getPendingInstitutionRequests` | `(childId: string) => Promise<{ institution: Institution }[]>` | P-03, P-04, P-07, P-09, P-11 |
 | `declineInstitutionRequest` | `(childId: string, institutionId: string) => Promise<{ ok: true }>` | P-11 |
-| `updateConsent` | `(childId: string, institutionId: string, body: { allowed_fields: string[]; action: "grant" \| "revoke" }) => Promise<{ ok: true }>` | P-02, P-04, P-11 |
+| `updateConsent` | `(childId: string, institutionId: string, body: { action: "grant" \| "revoke"; allowedFields?: ConsentField[] }) => Promise<ConsentResult>` | P-04(끄기), P-11 |
 | `lookupInstitutionByCode` | `(code: string) => Promise<Institution \| null>` | P-13 |
 | `addInstitutionByCode` | `(childId: string, code: string) => Promise<{ institution: Institution } \| null>` | P-13 |
 | `updateChildCare` | `(childId: string, care: ChildCareInfo) => Promise<{ ok: true }>` | P-06 |
