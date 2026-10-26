@@ -32,6 +32,7 @@ class InsightAccessRevokerTest {
     private static final Long OTHER_CHILD = 2L;
     private static final Long SCHOOL = 10L;
     private static final Long CENTER = 20L;
+    private static final Long ACADEMY = 30L;
     private static final Long GUARDIAN = 7L;
     private static final Long OTHER_GUARDIAN = 8L;
 
@@ -67,14 +68,28 @@ class InsightAccessRevokerTest {
         assertThat(reload(toGuardian).isActive()).isTrue();
     }
 
-    /** 그 기관 기록이 안 섞인 인사이트는 건드리지 않는다. */
+    /** 그 기관 기록이 안 섞였고 그 기관이 받지도 않은 권한은 건드리지 않는다. */
     @Test
-    void 재료로_쓰이지_않은_인사이트의_권한은_그대로다() {
-        Long untouched = grant(fromSchoolOnly, ReceiverType.ORGANIZATION, CENTER);
+    void 재료도_수신자도_아닌_권한은_그대로다() {
+        Long untouched = grant(fromSchoolOnly, ReceiverType.ORGANIZATION, ACADEMY);
 
         revoker.revokeForInstitution(CHILD, CENTER, ConsentRevokeReason.GUARDIAN_REVOKED, AT);
 
         assertThat(reload(untouched).isActive()).isTrue();
+    }
+
+    /**
+     * 보호자가 켜 주는 권한은 <b>그 기관이 재료를 내지 않은</b> 글에만 생긴다 (§9.4, #223). 재료 쪽만 보고
+     * 거두면 정작 그 기관이 들고 있는 권한이 한 건도 안 걸려 철회가 아무것도 안 한다.
+     */
+    @Test
+    void 동의를_철회하면_그_기관이_받은_권한도_거둔다() {
+        Long received = grant(fromSchoolOnly, ReceiverType.ORGANIZATION, CENTER);
+
+        revoker.revokeForInstitution(CHILD, CENTER, ConsentRevokeReason.GUARDIAN_REVOKED, AT);
+
+        assertThat(reload(received).isActive()).isFalse();
+        assertThat(reload(received).getRevokeReason()).isEqualTo(ConsentRevokeReason.GUARDIAN_REVOKED);
     }
 
     @Test
@@ -133,7 +148,8 @@ class InsightAccessRevokerTest {
     void 근거_기관을_읽을_수_없는_인사이트는_건너뛴다() {
         Long broken = em.persistAndFlush(InsightResult.of(CHILD, FROM, TO, 3, "상황", "반응", "본문",
                 null, "[]", "[]", "{깨진 JSON", false, null)).getId();
-        Long grant = grant(broken, ReceiverType.ORGANIZATION, CENTER);
+        // 받는 쪽은 다른 기관이어야 재료 경로만 남는다 — CENTER 가 받고 있으면 JSON 과 무관하게 거둬진다.
+        Long grant = grant(broken, ReceiverType.ORGANIZATION, ACADEMY);
 
         revoker.revokeForInstitution(CHILD, CENTER, ConsentRevokeReason.GUARDIAN_REVOKED, AT);
 
