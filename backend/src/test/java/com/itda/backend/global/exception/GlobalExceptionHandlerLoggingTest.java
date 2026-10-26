@@ -26,6 +26,7 @@ import com.itda.backend.exception.invitation.InvitationException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.child.ChildService;
+import com.itda.backend.service.child.GuardianChildQueryService;
 import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
 
@@ -56,6 +57,9 @@ class GlobalExceptionHandlerLoggingTest {
 
     @MockitoBean
     private ChildGuardianService childGuardianService;
+
+    @MockitoBean
+    private GuardianChildQueryService guardianChildQueryService;
 
     @MockitoBean
     private JwtProvider jwtProvider;

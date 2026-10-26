@@ -134,7 +134,8 @@ public class InsightWorker {
     private boolean process(InsightRun run, PreparedInsight prepared) {
         try {
             InsightAgentReply reply = client.analyze(prepared.request());
-            recorder.record(run, reply.response(), reply.rawJson(), prepared.lastContextId());
+            recorder.record(run, reply.response(), reply.rawJson(), prepared.lastContextId(),
+                    prepared.request().claims().size());
             return true;
         } catch (AiAgentUnavailableException e) {
             // 재시도까지 응답이 없었다. 이 아이는 FAILED 로 두고(다음 차례에 revision + 1 로 다시 집는다)

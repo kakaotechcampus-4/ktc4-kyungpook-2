@@ -1,5 +1,6 @@
 package com.itda.backend.repository.child;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,6 +16,8 @@ import com.itda.backend.domain.child.Child;
 public interface ChildRepository extends JpaRepository<Child, Long> {
 
     Optional<Child> findByIdAndDeletedAtIsNull(Long id);
+
+    List<Child> findByIdInAndDeletedAtIsNull(Collection<Long> ids);
 
     /**
      * 보호자 연결 수락·해제, 동의 부여·철회, 사람의 매칭 확정용. 삭제된 아동도 잠근다 — 삭제 여부는 잠근 뒤 판단해야

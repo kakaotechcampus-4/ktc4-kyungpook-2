@@ -42,8 +42,13 @@ export interface MatchBasis {
   name: string;
 }
 
-export type Gate1Status = "pending" | "approved" | "rejected";
-export type Gate2Status = "pending" | "approved" | "held" | "sent";
+/**
+ * 반려(reject)는 없다 — BE 는 보류(hold)와 제거(remove)만 받는다 (#178).
+ * 보류한 요약은 승인할 수 없고 제거만 된다. 보류 해제(reopen)는 쓰지 않기로 했다.
+ */
+export type Gate1Status = "pending" | "approved" | "hold" | "removed";
+/** BE Gate2InsightResponse.gate2Status. 승인이 곧 보호자 열람이라 "발송 완료"가 따로 없다 */
+export type Gate2Status = "pending" | "approved" | "hold";
 
 /** ConsentScope 로부터 파생된 화면용 상태 */
 export type ConsentState = "granted" | "not_granted" | "revoked";
@@ -307,7 +312,12 @@ export interface BlockedItem {
   violationCode?: string[];
 }
 
-/** Gate 1 검토 대기 한 건 */
+/**
+ * Gate 1 검토 대기 한 건.
+ *
+ * ⚠️ 응답 모양은 BE(Gate1SummaryResponse)와 아직 다르다. BE 가 "화면 확정 전 초안" 이라
+ * #183 에서 확정되면 맞춘다. 지금 맞춰 둔 것은 결정(POST …/gate1)에 필요한 gate1Status · version 뿐이다.
+ */
 export interface SummaryItem {
   id: string;
   childId: string;
@@ -323,7 +333,8 @@ export interface SummaryItem {
   flaggedSpan?: string;
   flagReason?: string;
   gate1Status: Gate1Status;
-  rejectReason?: string;
+  /** 결정할 때 그대로 돌려보내는 판 표시. 그 사이 요약이 바뀌었으면 409 SUMMARY_CHANGED */
+  version: string;
   sourceCount: number;
 }
 
@@ -355,9 +366,15 @@ export interface Insight {
   childName: string;
   period: string;
   content: string;
-  /** 근거 요약을 최다 제공한 기관 = Gate 2 승인 주체 */
+  /**
+   * 공유 전에 꼭 봐야 하는 글인지. BE 는 지금 항상 true 를 준다 — 본문에 다른 아이 이름이
+   * 없다는 보장이 없고, Gate 1 에서 교사가 고친 문장이 검증 없이 근거로 섞일 수 있다.
+   */
+  needsReview: boolean;
+  /** 승인 주체. 근거를 낸 기관 중 기관 종류 우선순위(학교 > 센터 > 활동지원사)로 정한다 */
   primarySource: Institution;
   evidence: EvidenceRef[];
+  /** 읽기 전용 참고. 수신 기관은 기관이 고르지 않고 승인 뒤 보호자가 정한다 (#206) */
   targets: { institution: Institution; consent: ConsentState }[];
   gate2Status: Gate2Status;
 }

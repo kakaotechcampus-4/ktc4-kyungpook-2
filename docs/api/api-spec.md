@@ -284,6 +284,11 @@ POST /api/v1/auth/signup   → 201 Created
 `status`: `pending_consent` · `active` · `suspended`
 `consent`: `granted` · `not_granted` · `revoked`
 
+> **현재 구현** (보호자 아이 목록 G-10 · 홈 G-11) · `school`·`care`는 **키째 내려가지 않습니다.** 저장하는 곳이
+> 없어서입니다. 프론트 타입에서도 둘 다 선택 필드라(`school?`·`care?`) 화면은 그 부분을 생략합니다. 학교 이름은
+> `institutions`에 있습니다. `care`는 돌봄 정보 저장(G-13)이 생기면 채웁니다.
+> `institution.verified`는 언제나 `false`입니다(G-02와 같음).
+
 ### RawRecord
 
 ```json
@@ -1134,12 +1139,43 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| G-10 | GET | `/guardians/me/children` | 연결된 아이 전체 (다자녀) | 전 화면 |
-| G-11 | GET | `/guardians/me/home?childId=` | 홈 데이터 | P-03, P-04 |
+| G-10 | GET | `/guardians/me/children` | 연결된 아이 전체 (다자녀) · **구현됨** | 전 화면 |
+| G-11 | GET | `/guardians/me/home?childId=` | 홈 데이터 · **구현됨** | P-03, P-04 |
 | G-12 | GET | `/children/{childId}/today-summary` | TODAY 카드 | P-03, P-07 |
 | G-13 | PUT | `/children/{childId}/care-info` | 아이 상세정보 저장 | P-06 |
 
+**G-10 응답** · `Child[]` (§3, `school`·`care` 없음)
+
+```json
+[
+  { "id": "1", "name": "김하늘", "birthDate": "2017-03-14", "status": "active",
+    "institutions": [
+      { "institution": { "id": "2", "name": "햇살아동발달센터", "type": "center", "verified": false },
+        "consent": "granted" },
+      { "institution": { "id": "3", "name": "○○초등학교", "type": "school", "verified": false },
+        "consent": "not_granted" }
+    ] }
+]
+```
+
+- **넣는 아이**: 이 보호자와 연결이 살아 있고 삭제되지 않은 아이 **전부**입니다. 동의 전(`pending_consent`)·동의를
+  모두 끈(`suspended`) 아이도 들어갑니다. 설정 화면에서 기관을 다시 켜거나 연결을 끊으려면 보여야 해서입니다.
+  연결된 아이가 없으면 `[]`입니다.
+- **순서**: 연결된 순서입니다. 프론트가 "첫 번째 아이"를 고를 때 늘 같은 아이가 나옵니다.
+- **`institutions`**: 아이가 지금 명부에 올라 있는 기관입니다. 기관 id 순입니다. 명부에서 빠진 기관은 없습니다.
+- **`consent`는 아이 기준입니다.** 어느 보호자의 동의든 하나라도 살아 있으면 `granted`, 동의 기록은 있지만 모두
+  꺼졌으면 `revoked`, 기록이 없으면 `not_granted`입니다. 엄마가 켠 동의는 아빠 화면에도 `granted`로 보입니다.
+  동의 미리보기(G-02)·Gate 2 공유 대상(O-40)과 같은 계산입니다.
+
+**G-11 요청** · `childId` **필수**
+
+명세 초안의 "생략하면 첫 번째 아이"는 없앴습니다. 프론트는 G-10을 먼저 받아 지금 보고 있는 아이를 직접 고른 뒤
+언제나 `childId`를 붙여 부릅니다. 서버는 그 아이를 볼 수 있는지만 확인합니다.
+
 **G-11 응답** · `{ "child": Child, "activity": ParentActivity[] }`
+
+`child`는 G-10의 한 항목과 같은 모양입니다. **`activity`는 지금 언제나 `[]`입니다.** "기관이 무엇을 보냈다"는
+기록은 일지(G-20·G-21)와 함께 채웁니다. 채워지면 한 항목은 아래 모양입니다.
 
 ```json
 { "child": { "…": "Child 모델" },
@@ -1150,6 +1186,16 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 ```
 
 `journalId`가 있으면 프론트가 일지 상세로 연결합니다. 없으면 텍스트만 표시합니다.
+
+**G-10 · G-11 오류**
+
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | (G-11) `childId` 누락·형식 오류 |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입을 끝내지 않음 |
+| 403 | `PARENT_REQUIRED` | 보호자가 아닌 사용자(기관 담당자) |
+| 403 | `FORBIDDEN` | (G-11) 이 보호자와 연결되지 않았거나 삭제된 아이. 이유를 나누지 않습니다 |
 
 **G-12 응답** · 문자열 하나 또는 없으면 `null` (프론트는 카드를 숨깁니다)
 

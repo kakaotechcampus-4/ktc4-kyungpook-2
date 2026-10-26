@@ -2,23 +2,38 @@ import { useState } from "react";
 import { Link, useLoaderData } from "react-router";
 import { WifiOff } from "lucide-react";
 import { EmptyState } from "@/components/ui";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
-import { getCareReport, getParentChildren, getPendingInstitutionRequests } from "@/lib/api";
+import {
+  getCareReport,
+  getParentChildren,
+  getPendingInstitutionRequests,
+  isReady,
+  loadIfReady,
+} from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader() {
+  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
+  if (!isReady("guardianJournal")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
   const [weekly, monthly, pending] = await Promise.all([
     getCareReport(childId, "weekly"),
     getCareReport(childId, "monthly"),
-    getPendingInstitutionRequests(childId),
+    loadIfReady("institutionRequests", () => getPendingInstitutionRequests(childId)),
   ]);
   return { weekly, monthly, pending };
 }
 
-export default function ReportPage() {
-  const { weekly, monthly, pending } = useLoaderData<typeof clientLoader>();
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function ReportPageRoute() {
+  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="케어 리포트" showChildSwitch />;
+  return <ReportPage />;
+}
+
+function ReportPage() {
+  const { weekly, monthly, pending } = useLoaderData<typeof clientLoader>()!;
   const [period, setPeriod] = useState<"weekly" | "monthly">("weekly");
   const [broken, setBroken] = useState(false);
   const report = period === "weekly" ? weekly : monthly;
@@ -30,7 +45,7 @@ export default function ReportPage() {
         title="케어 리포트"
         subtitle={period === "weekly" ? "주간 리포트" : "월간 리포트"}
         showChildSwitch
-        alert={pending.length > 0}
+        alert={(pending ?? []).length > 0}
       />
 
       <div className="flex rounded-2xl bg-surface2 p-1">

@@ -245,7 +245,11 @@ public class InsightService {
         for (int order = 0; order < claims.size(); order++) {
             JsonNode claim = claims.get(order);
             String text = claim.path("text").asText(null);
-            List<InsightAgentRequest.Evidence> evidence = evidenceOf(claim.path("evidence"));
+            InsightAgentRequest.ClaimSource source = sourceOf(claim, summary);
+            if (source == null) {
+                continue;
+            }
+            List<InsightAgentRequest.Evidence> evidence = evidenceOf(claim.path("evidence"), source);
             if (text == null || text.isBlank() || evidence.isEmpty()) {
                 // 근거가 끊긴 문장은 보내지 않는다. 원문으로 추적되지 않는 내용이 다른 기관으로 나가면
                 // 안 되고(CRITERIA §2), 계약도 evidence 를 최소 1건으로 막아 뒀다 — 보내면 422 다.
@@ -253,23 +257,56 @@ public class InsightService {
             }
             prepared.add(new InsightAgentRequest.Claim(
                     summary.getId() + "-" + order, text, entryDate,
-                    institution.getId(), institutionType, evidence));
+                    institution.getId(), institutionType, source, evidence));
         }
         return prepared;
     }
 
-    private List<InsightAgentRequest.Evidence> evidenceOf(JsonNode evidence) {
+    /**
+     * 문장을 누가 썼는지. {@code source} 가 없으면 {@code AI} 다 — C안(#183) 전에 저장된 요약은 전부 AI 원문이다.
+     *
+     * <p>모르는 값이면 <b>그 문장을 보내지 않는다</b> ({@code null} 반환). {@code AI} 로 봐 두면 검증을 거치지
+     * 않은 교사 문장이 "AI 원문" 으로 나가고, Gate 2 가 띄울 경고도 사라진다. 한 문장을 잃는 쪽이 낫다.
+     */
+    private InsightAgentRequest.ClaimSource sourceOf(JsonNode claim, SummaryResult summary) {
+        JsonNode source = claim.path("source");
+        if (source.isMissingNode() || source.isNull()) {
+            return InsightAgentRequest.ClaimSource.AI;
+        }
+        try {
+            return InsightAgentRequest.ClaimSource.valueOf(source.asText());
+        } catch (IllegalArgumentException e) {
+            // asText() 는 객체·배열이면 빈 문자열이라 무엇이 왔는지 안 남는다. 원본 노드를 그대로 찍는다.
+            log.warn("unknown claim source, claim dropped summaryId={} source={}", summary.getId(), source);
+            return null;
+        }
+    }
+
+    /**
+     * claim 하나의 근거. <b>{@code TEACHER} 문장만 일지 번호를 비울 수 있다</b> — 교사가 Gate 1 에서 새로 쓴
+     * 문장은 원본 일지가 없고 {@code quote} 가 그 문장 자체다 (#199, AI 계약 {@code InsightEvidence}).
+     *
+     * <p>{@code AI}·{@code EDITED} 에서 번호가 빠지면 근거가 끊긴 것이라 그 근거를 버린다. 보내면 계약이
+     * 422 로 돌려보내고, 그러면 그 아이의 그 주 인사이트가 통째로 실패한다.
+     */
+    private List<InsightAgentRequest.Evidence> evidenceOf(JsonNode evidence,
+            InsightAgentRequest.ClaimSource source) {
         if (!evidence.isArray()) {
             return List.of();
         }
+        boolean entryOptional = source == InsightAgentRequest.ClaimSource.TEACHER;
         List<InsightAgentRequest.Evidence> prepared = new ArrayList<>();
         for (JsonNode one : evidence) {
             JsonNode journalEntryId = one.path("journal_entry_id");
             String quote = one.path("quote").asText(null);
-            if (!journalEntryId.isNumber() || quote == null || quote.isBlank()) {
+            if (quote == null || quote.isBlank()) {
                 continue;
             }
-            prepared.add(new InsightAgentRequest.Evidence(journalEntryId.asLong(), quote));
+            boolean hasEntry = journalEntryId.isNumber();
+            if (!hasEntry && !entryOptional) {
+                continue;
+            }
+            prepared.add(new InsightAgentRequest.Evidence(hasEntry ? journalEntryId.asLong() : null, quote));
         }
         return prepared;
     }

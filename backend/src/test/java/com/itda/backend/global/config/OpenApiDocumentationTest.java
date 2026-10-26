@@ -226,6 +226,37 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.InstitutionResponse.properties.verified").exists());
 	}
 
+	/** 보호자 아이 목록·홈(G-10·G-11). school·care 는 저장하는 곳이 없어 스키마에도 없어야 한다. */
+	@Test
+	void guardianChildApisAreDocumented() throws Exception {
+		String children = "$.paths['/api/v1/guardians/me/children']";
+		String home = "$.paths['/api/v1/guardians/me/home']";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(children + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(children + ".get.responses.200").exists())
+				.andExpect(jsonPath(children + ".get.responses.401").exists())
+				.andExpect(jsonPath(children + ".get.responses.403.description").value(containsString("PARENT_REQUIRED")))
+				.andExpect(jsonPath(home + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(home + ".get.parameters[?(@.name == 'childId')].required", hasItems(true)))
+				.andExpect(jsonPath(home + ".get.responses.200").exists())
+				.andExpect(jsonPath(home + ".get.responses.400.description").value(containsString("INVALID_REQUEST")))
+				.andExpect(jsonPath(home + ".get.responses.401").exists())
+				.andExpect(jsonPath(home + ".get.responses.403.description").value(containsString("FORBIDDEN")))
+				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.institutions").exists())
+				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.school").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.care").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.components.schemas.ChildInstitution.properties.consent").exists())
+				.andExpect(jsonPath("$.components.schemas.GuardianHomeResponse.properties.activity.items['$ref']")
+						.value(containsString("ParentActivityResponse")))
+				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.length()").value(4))
+				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.id").exists())
+				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.at").exists())
+				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.text").exists())
+				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.journalId").exists());
+	}
+
 	@Test
 	void swaggerUiIsAvailable() throws Exception {
 		mockMvc.perform(get("/swagger-ui/index.html"))

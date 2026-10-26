@@ -1,9 +1,12 @@
 import { useLoaderData } from "react-router";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
-import { getJournal, getParentChildren } from "@/lib/api";
+import { getJournal, getParentChildren, isReady } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader({ request }: { request: Request }) {
+  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
+  if (!isReady("guardianJournal")) return null;
   const url = new URL(request.url);
   const ids = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean);
   const kids = await getParentChildren();
@@ -14,8 +17,14 @@ export async function clientLoader({ request }: { request: Request }) {
   return { entries };
 }
 
-export default function ReportEvidencePage() {
-  const { entries } = useLoaderData<typeof clientLoader>();
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function ReportEvidencePageRoute() {
+  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="관련 일지" back />;
+  return <ReportEvidencePage />;
+}
+
+function ReportEvidencePage() {
+  const { entries } = useLoaderData<typeof clientLoader>()!;
 
   return (
     <div className="flex flex-col gap-5">

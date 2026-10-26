@@ -1,6 +1,7 @@
 import { Link, useLoaderData, useSearchParams } from "react-router";
 import { EmptyState } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import {
   getJournal,
@@ -8,25 +9,35 @@ import {
   getParentHome,
   getPendingInstitutionRequests,
   getTodaySummary,
+  isReady,
+  loadIfReady,
 } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader() {
+  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
+  if (!isReady("guardianJournal")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
   const [{ child }, journal, today, pending] = await Promise.all([
     getParentHome(childId),
     getJournal(childId),
     getTodaySummary(childId),
-    getPendingInstitutionRequests(childId),
+    loadIfReady("institutionRequests", () => getPendingInstitutionRequests(childId)),
   ]);
   return { child, journal, today, pending };
 }
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-export default function TimelinePage() {
-  const { child, journal, today, pending } = useLoaderData<typeof clientLoader>();
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function TimelinePageRoute() {
+  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="오늘의 일지" showChildSwitch />;
+  return <TimelinePage />;
+}
+
+function TimelinePage() {
+  const { child, journal, today, pending } = useLoaderData<typeof clientLoader>()!;
   const [searchParams, setSearchParams] = useSearchParams();
   // 기관 유형이 아니라 "이 아이에 연결된 기관 하나하나"를 기준으로 거른다 —
   // 같은 유형(예: 센터) 기관이 여러 곳이어도 섞이지 않도록.
@@ -59,7 +70,7 @@ export default function TimelinePage() {
         title="오늘의 일지"
         subtitle={`${child.name} · ${dateLabel}`}
         showChildSwitch
-        alert={pending.length > 0}
+        alert={(pending ?? []).length > 0}
       />
 
       {today ? (

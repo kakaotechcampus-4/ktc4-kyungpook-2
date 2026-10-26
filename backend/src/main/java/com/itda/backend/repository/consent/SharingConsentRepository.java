@@ -21,7 +21,7 @@ public interface SharingConsentRepository extends JpaRepository<SharingConsent, 
     List<SharingConsent> findByChildIdAndStatus(Long childId, SharingConsentStatus status);
 
     /**
-     * 여러 아이의 동의 행 전부. Gate 2 목록이 기관마다 GRANTED·REVOKED·NOT_GRANTED 를 가르는 데 쓴다 —
+     * 여러 아이의 동의 행 전부. {@code ConsentStateReader} 가 기관마다 GRANTED·REVOKED·NOT_GRANTED 를 가르는 데 쓴다 —
      * ACTIVE 만 받으면 "철회됨" 과 "동의한 적 없음" 을 구분하지 못한다.
      */
     List<SharingConsent> findByChildIdIn(Collection<Long> childIds);

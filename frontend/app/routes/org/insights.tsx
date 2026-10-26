@@ -8,8 +8,7 @@ import type { Gate2Status } from "@/lib/types";
 const GATE2_LABEL: Record<Gate2Status, { text: string; cls: string }> = {
   pending: { text: "발송 검토 대기", cls: "text-human bg-humansoft" },
   approved: { text: "발송 승인됨", cls: "text-pass bg-passsoft" },
-  sent: { text: "발송 완료", cls: "text-pass bg-passsoft" },
-  held: { text: "보류", cls: "text-ink2 bg-surface2" },
+  hold: { text: "보류", cls: "text-ink2 bg-surface2" },
 };
 
 export async function clientLoader() {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
+import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { signOut } from "@/lib/auth";
 
 /**
@@ -50,5 +51,42 @@ export function ParentNotReady() {
         {signingOut ? "로그아웃 중…" : "로그아웃"}
       </button>
     </div>
+  );
+}
+
+/**
+ * 실연동 빌드에서 서버에 아직 없는 보호자 화면 하나(타임라인·리포트·알림 등). 아이 목록·홈은 실서버라
+ * 입구는 열려 있지만, 이 화면에 mock 을 띄우면 진짜 아이 옆에 가짜 일지가 보인다.
+ * 전체 mock 모드에서는 원래 화면이 그대로 보인다 — 각 라우트가 isReady() 로 가른다.
+ * (기관 쪽 components/org/NotReady 와 같은 규칙)
+ */
+export function ParentNotReadyPage({
+  title,
+  back = false,
+  showChildSwitch = false,
+}: {
+  title: string;
+  back?: boolean;
+  showChildSwitch?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-5">
+      <ParentPageHeader title={title} back={back} showChildSwitch={showChildSwitch} />
+      <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line2 px-5 py-10 text-center">
+        <p className="text-[17px] font-bold">준비 중인 기능이에요</p>
+        <p className="max-w-xs text-[15px] leading-6 text-muted">
+          서버 연결을 준비하고 있어요. 연결되면 이 화면에서 바로 볼 수 있어요.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** 화면 일부만 서버에 없을 때 그 자리에 둔다 (홈의 새 소식 등) */
+export function ParentNotReadySection() {
+  return (
+    <p className="rounded-2xl border border-dashed border-line2 px-4 py-6 text-center text-[14px] text-muted">
+      준비 중인 기능이에요. 서버 연결을 준비하고 있어요.
+    </p>
   );
 }

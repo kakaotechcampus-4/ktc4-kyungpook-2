@@ -41,14 +41,14 @@ function Gate2Item({
   const revalidator = useRevalidator();
 
   async function send() {
-    await decideGate2(insight.id, { decision: "approve", target_institution_ids: selected });
+    await decideGate2(insight.id, { decision: "approve" });
     setView("sent");
     onResolved("sent");
     revalidator.revalidate();
   }
 
   async function hold() {
-    await decideGate2(insight.id, { decision: "hold", target_institution_ids: selected });
+    await decideGate2(insight.id, { decision: "hold" });
     setView("held");
     onResolved("held");
     revalidator.revalidate();

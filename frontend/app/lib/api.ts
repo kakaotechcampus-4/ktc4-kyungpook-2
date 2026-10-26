@@ -13,10 +13,18 @@
  * ⚠️ **아래 목록에 없는 경로는 아직 백엔드에 구현돼 있지 않다.** 경로는 위 규약을
  *    따른 추정이므로, 백엔드가 만들 때 실제 경로를 확인하고 맞춰야 한다.
  *
- *    구현된 것 (2026-10-12 기준, BE_READY 에서 true 인 기능)
+ *    구현된 것 (2026-10-26 기준. BE_READY 가 false 인 기능도 있다 — 각 키의 설명 참고)
  *      POST /api/v1/raw-records       multipart: file → 201
  *      GET  /api/v1/raw-records/{id}
  *      GET  /api/v1/raw-records
+ *      GET  /api/v1/raw-records/progress
+ *      GET  /api/v1/summaries?gate1Status=pending|hold
+ *      POST /api/v1/summaries/{summaryId}/gate1
+ *      GET  /api/v1/insights?gate2Status=pending|approved|hold
+ *      GET  /api/v1/insights/{insightId}
+ *      POST /api/v1/insights/{insightId}/gate2
+ *      GET  /api/v1/children/{childId}/consent-preview?institutionId=
+ *      PUT  /api/v1/children/{childId}/consent-scopes/{institutionId}
  *      GET  /api/v1/institutions/me/children
  *      POST /api/v1/institutions/me/children   → 201 (초대 코드 포함)
  *      POST   /api/v1/institutions/me/children/{childId}/invitations        → 201
@@ -26,6 +34,8 @@
  *      DELETE /api/v1/institutions/me/children/{childId}/guardians/{userId} → 204
  *      POST   /api/v1/guardians/me/invitations/accept
  *      DELETE /api/v1/guardians/me/children/{childId}   → 204 (아래 guardianUnlink 참고)
+ *      GET    /api/v1/guardians/me/children
+ *      GET    /api/v1/guardians/me/home?childId=
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
@@ -64,6 +74,7 @@ import type {
   ConsentPreview,
   ConsentResult,
   FileProgress,
+  Gate1Status,
   InboxItem,
   Insight,
   Institution,
@@ -135,21 +146,24 @@ const BE_READY = {
   /** 보호자: 초대 코드 수락 뒤 동의 화면(P-02)의 미리보기 · 동의 (G-02, G-41) */
   guardianConsent: true,
   /**
-   * 보호자: 설정 · 알림 화면의 동의 부여 · 철회 (G-41). 서버에는 있지만 끈다 — 이 화면들의
-   * 아이 목록(guardianHome)이 아직 mock 이라 서버에 없는 아이 id 로 요청하게 된다.
-   * guardianHome 을 켤 때 같이 켠다.
+   * 보호자: 설정 화면의 동의 끄기 (G-41 revoke). 다시 켤 때는 동의 화면(P-02, guardianConsent)을
+   * 거친다. 알림 화면의 "허락"도 이 함수를 쓰지만 알림 화면은 institutionRequests 로 아직 준비 중이다.
    */
-  guardianLinks: false,
+  guardianLinks: true,
   /** 보호자: 초대 코드 수락 (G-04) */
   guardianInvite: true,
   /**
-   * 보호자: 아이 연결 해제 (G-05). 서버에는 있지만 끈다 — 해제할 아이를 고르는 목록
-   * (G-10, guardianHome)이 아직 mock 이라 서버에 없는 아이 id 로 요청하게 된다.
-   * guardianHome 을 켤 때 같이 켠다.
+   * 보호자: 아이 연결 해제 (G-05). 해제할 아이는 아이 목록(guardianChildren)에서 고른다 — 목록이
+   * mock 이면 서버에 없는 아이 id 로 요청하게 되니 두 키는 함께 켜고 끈다.
    */
-  guardianUnlink: false,
-  /** 보호자: 아이 목록 · 홈 · 일지 · 리포트 · 오늘 요약 */
-  guardianHome: false,
+  guardianUnlink: true,
+  /**
+   * 보호자: 연결된 아이 목록 · 홈 데이터 (G-10, G-11). 보호자 화면 입구(parent/guard.tsx)도
+   * 이 키를 본다 — 꺼져 있으면 mock 아이 대신 "준비 중"을 띄운다.
+   */
+  guardianChildren: true,
+  /** 보호자: 일지 · 리포트 · 오늘 요약 (G-12, G-20 ~ G-22). 아이 목록·홈과는 따로 켠다 */
+  guardianJournal: false,
   /** 보호자: 기관 요청 알림 · 확인 · 거절 */
   institutionRequests: false,
   /** 보호자: 기관 코드로 연결 */
@@ -286,25 +300,39 @@ export async function getBlockedQueue(): Promise<BlockedItem[]> {
   }));
 }
 
-/** GET /api/v1/summaries?gate1_status=pending */
+/**
+ * GET /api/v1/summaries?gate1Status=pending (O-30)
+ * 보류함은 같은 경로에 gate1Status=hold 로 따로 받는다. 응답 모양은 #183 확정 전이다 (SummaryItem 참고).
+ */
 export async function getGate1Queue(): Promise<SummaryItem[]> {
   if (mockFor("gate1")) return mock.GATE1_QUEUE;
-  return request("/api/v1/summaries?gate1_status=pending");
+  return request("/api/v1/summaries?gate1Status=pending");
 }
 
-/** POST /api/v1/summaries/{summaryId}/gate1 */
+const GATE1_STATUS_AFTER = {
+  approve: "approved",
+  hold: "hold",
+  remove: "removed",
+} as const satisfies Record<string, Gate1Status>;
+
+/**
+ * POST /api/v1/summaries/{summaryId}/gate1 (O-31)
+ *
+ * editedContent 는 승인할 때만 보낸다(보류 · 제거에 보내면 400). version 은 목록에서 받은 값
+ * 그대로다 — 그 사이 요약이 새 기록으로 바뀌었으면 409 SUMMARY_CHANGED 다.
+ * 보류한 요약은 제거만 받는다(승인 · 보류는 409 SUMMARY_HELD).
+ */
 export async function decideGate1(
   summaryId: string,
-  body: { decision: "approve" | "reject"; edited_content?: string; reason?: string },
+  body: { decision: "approve" | "hold" | "remove"; editedContent?: string; version: string },
 ) {
   if (mockFor("gate1")) {
     const item = mock.GATE1_QUEUE.find((s) => s.id === summaryId);
     if (item) {
-      item.gate1Status = body.decision === "approve" ? "approved" : "rejected";
-      if (body.edited_content) item.content = body.edited_content;
-      if (body.reason) item.rejectReason = body.reason;
+      item.gate1Status = GATE1_STATUS_AFTER[body.decision];
+      if (body.editedContent) item.content = body.editedContent;
     }
-    return { gate1_status: item?.gate1Status ?? "pending" };
+    return { summaryId, status: item?.gate1Status ?? "pending" };
   }
   return request(`/api/v1/summaries/${summaryId}/gate1`, {
     method: "POST",
@@ -324,18 +352,16 @@ export async function getInsight(id: string): Promise<Insight | undefined> {
 }
 
 /**
- * POST /api/v1/insights/{insightId}/gate2
- * 수신 기관을 개별로 골라 보낸다. 기본값은 전체 미선택이며,
- * 빈 배열이면 호출 자체를 하지 않는다.
+ * POST /api/v1/insights/{insightId}/gate2 (O-42)
+ *
+ * 수신 기관은 보내지 않는다 — 승인하면 보호자에게 열람 권한이 생기고, 어느 기관에 보일지는
+ * 그 뒤 보호자가 고른다 (#206). 승인 · 보류 모두 되돌릴 수 없다.
  */
-export async function decideGate2(
-  insightId: string,
-  body: { decision: "approve" | "hold"; target_institution_ids: string[] },
-) {
+export async function decideGate2(insightId: string, body: { decision: "approve" | "hold" }) {
   if (mockFor("insights")) {
     const item = mock.INSIGHTS.find((i) => i.id === insightId);
-    if (item) item.gate2Status = body.decision === "approve" ? "approved" : "held";
-    return { gate2_status: item?.gate2Status ?? "pending" };
+    if (item) item.gate2Status = body.decision === "approve" ? "approved" : "hold";
+    return { insightId, gate2Status: item?.gate2Status ?? "pending" };
   }
   return request(`/api/v1/insights/${insightId}/gate2`, {
     method: "POST",
@@ -783,8 +809,7 @@ export async function getConsentPreview(
       documentUrl: null,
       sharedFields: shared,
       notSharedFields: notShared,
-      // 서버도 기관 유형과 관계없이 이 두 항목을 내려준다 (ConsentFieldCatalog)
-      allowedFields: ["daily_summary", "weekly_insight"],
+      allowedFields: ALL_CONSENT_FIELDS,
     };
   }
   try {
@@ -800,23 +825,24 @@ export async function getConsentPreview(
 
 /** GET /api/v1/guardians/me/children — 이 보호자에게 연결된 아이 전체 */
 export async function getParentChildren(): Promise<Child[]> {
-  if (mockFor("guardianHome")) return mock.PARENT_CHILDREN;
+  if (mockFor("guardianChildren")) return mock.PARENT_CHILDREN;
   return request("/api/v1/guardians/me/children");
 }
 
 /**
  * GET /api/v1/guardians/me/home?childId=
- * childId 를 생략하면 첫 번째 아이(mock: PARENT_CHILDREN[0]) 기준.
+ * childId 는 필수다 — 어느 아이를 볼지는 화면이 아이 목록에서 고른다(readSelectedChildId).
+ * 서버 응답의 activity 는 일지 기능이 생길 때까지 언제나 빈 배열이다.
  */
-export async function getParentHome(childId?: string): Promise<{
+export async function getParentHome(childId: string): Promise<{
   child: Child;
   activity: ParentActivity[];
 }> {
-  if (mockFor("guardianHome")) {
+  if (mockFor("guardianChildren")) {
     const child = mock.PARENT_CHILDREN.find((c) => c.id === childId) ?? mock.PARENT_CHILD;
     return { child, activity: mock.PARENT_ACTIVITY[child.id] ?? [] };
   }
-  return request(`/api/v1/guardians/me/home${childId ? `?childId=${childId}` : ""}`);
+  return request(`/api/v1/guardians/me/home?childId=${encodeURIComponent(childId)}`);
 }
 
 /**
@@ -881,21 +907,31 @@ export async function grantConsent(
   );
 }
 
+/** 서버가 기관 유형과 관계없이 내려주는 공유 항목 전부 (ConsentFieldCatalog) */
+export const ALL_CONSENT_FIELDS: ConsentField[] = ["daily_summary", "weekly_insight"];
+
 /**
- * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — 설정 · 알림 화면용.
- * 아직 mock 만 쓴다(guardianLinks). 본문 모양이 서버(allowedFields, 코드값)와 달라
- * 켜기 전에 grantConsent 처럼 맞춰야 한다.
+ * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — 설정 · 알림 화면용 (G-41).
+ * allowedFields 는 grant 에서 1개 이상 필수이고 revoke 에서는 무시된다.
+ *
+ * revoke 는 이 기관에 대한 **모든 보호자**의 동의를 끈다. 화면은 응답의 consent 로 상태를 고친다.
  */
 export async function updateConsent(
   childId: string,
   institutionId: string,
-  body: { allowed_fields: string[]; action: "grant" | "revoke" },
-) {
+  body: { action: "grant" | "revoke"; allowedFields?: ConsentField[] },
+): Promise<ConsentResult> {
   if (mockFor("guardianLinks")) {
     const child = mock.CHILDREN.find((c) => c.id === childId);
     const rec = child?.institutions.find((i) => i.institution.id === institutionId);
-    if (rec) rec.consent = body.action === "grant" ? "granted" : "revoked";
-    return { ok: true };
+    if (!child || !rec) throw new ApiError(404, "CONSENT_TARGET_NOT_FOUND");
+    rec.consent = body.action === "grant" ? "granted" : "revoked";
+    child.status = child.institutions.some((i) => i.consent === "granted") ? "active" : "suspended";
+    return {
+      childStatus: child.status,
+      consent: rec.consent,
+      allowedFields: rec.consent === "granted" ? (body.allowedFields ?? []) : [],
+    };
   }
   return request(`/api/v1/children/${childId}/consent-scopes/${institutionId}`, {
     method: "PUT",
@@ -946,7 +982,7 @@ export async function updateChildCare(childId: string, care: ChildCareInfo) {
 
 /** GET /api/v1/children/{childId}/journal — 타임라인/홈에 쓰는 일지 목록 (최신순) */
 export async function getJournal(childId: string): Promise<JournalEntry[]> {
-  if (mockFor("guardianHome")) {
+  if (mockFor("guardianJournal")) {
     return mock.JOURNAL.filter((j) => j.childId === childId).sort((a, b) =>
       `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`),
     );
@@ -955,13 +991,13 @@ export async function getJournal(childId: string): Promise<JournalEntry[]> {
 }
 
 export async function getJournalEntry(id: string): Promise<JournalEntry | undefined> {
-  if (mockFor("guardianHome")) return mock.JOURNAL.find((j) => j.id === id);
+  if (mockFor("guardianJournal")) return mock.JOURNAL.find((j) => j.id === id);
   return request(`/api/v1/journal/${id}`);
 }
 
 /** POST /api/v1/journal/{id}/flag — "이 내용이 이상해요": 기관에 재확인 요청 */
 export async function flagJournalEntry(id: string) {
-  if (mockFor("guardianHome")) {
+  if (mockFor("guardianJournal")) {
     const entry = mock.JOURNAL.find((j) => j.id === id);
     if (entry) entry.flagged = true;
     return { ok: true };
@@ -974,7 +1010,7 @@ export async function getCareReport(
   childId: string,
   period: "weekly" | "monthly",
 ): Promise<CareReport | null> {
-  if (mockFor("guardianHome")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
+  if (mockFor("guardianJournal")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
   return request(`/api/v1/children/${childId}/care-report?period=${period}`);
 }
 
@@ -986,7 +1022,7 @@ export async function getInstitutionRequests(childId: string): Promise<Instituti
 
 /** 타임라인/홈 상단 TODAY 카드 — 아이별. 없으면 null (화면에서 숨김) */
 export async function getTodaySummary(childId: string): Promise<string | null> {
-  if (mockFor("guardianHome")) return mock.PARENT_TODAY_SUMMARY[childId] ?? null;
+  if (mockFor("guardianJournal")) return mock.PARENT_TODAY_SUMMARY[childId] ?? null;
   return request(`/api/v1/children/${childId}/today-summary`);
 }
 
