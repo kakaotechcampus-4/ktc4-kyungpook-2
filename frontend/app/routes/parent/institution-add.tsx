@@ -1,15 +1,22 @@
 import { useState, useTransition } from "react";
 import { useNavigate } from "react-router";
-import { addInstitutionByCode, lookupInstitutionByCode } from "@/lib/api";
+import { addInstitutionByCode, isReady, lookupInstitutionByCode } from "@/lib/api";
 import { INSTITUTION_SHARE_FIELDS } from "@/lib/mock/data";
 import { InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { useChildContext } from "@/components/parent/ChildContext";
 import type { Institution } from "@/lib/types";
 
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function InstitutionAddPageRoute() {
+  if (!isReady("institutionCode")) return <ParentNotReadyPage title="기관 직접 추가" back />;
+  return <InstitutionAddPage />;
+}
+
 /** "기관 직접 추가" — 초대코드 없이 보호자가 기관 코드를 입력해 연결한다. */
-export default function InstitutionAddPage() {
+function InstitutionAddPage() {
   const { selected } = useChildContext();
   const [code, setCode] = useState("");
   const [found, setFound] = useState<Institution | null>(null);

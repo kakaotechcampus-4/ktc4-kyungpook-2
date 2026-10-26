@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLoaderData, useNavigate } from "react-router";
-import { getParentChildren, getParentHome, updateChildCare } from "@/lib/api";
+import { getParentChildren, getParentHome, isReady, updateChildCare } from "@/lib/api";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { StepProgress } from "@/components/parent/StepProgress";
 import { readSelectedChildId } from "@/lib/selectedChild";
@@ -28,18 +29,26 @@ function Pill({ required }: { required: boolean }) {
 }
 
 export async function clientLoader({ request }: { request: Request }) {
+  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
+  if (!isReady("careInfo")) return null;
   const onboarding = new URL(request.url).searchParams.get("onboarding") === "1";
   const kids = await getParentChildren();
   const { child } = await getParentHome(readSelectedChildId(kids));
   return { childId: child.id, childName: child.name, care: child.care ?? EMPTY_CARE, onboarding };
 }
 
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function CareInfoPageRoute() {
+  if (!isReady("careInfo")) return <ParentNotReadyPage title="아이 상세정보" back />;
+  return <CareInfoPage />;
+}
+
 /**
  * 온보딩 마지막 단계 — 동의 직후, 기관에 전달할 돌봄 정보를 보호자가 직접 채운다.
  * 여기서 입력한 항목은 기관별 공유 범위(INSTITUTION_SHARE_FIELDS)에 맞춰 변환되어 전달된다.
  */
-export default function CareInfoPage() {
-  const { childId, childName, care: initial, onboarding } = useLoaderData<typeof clientLoader>();
+function CareInfoPage() {
+  const { childId, childName, care: initial, onboarding } = useLoaderData<typeof clientLoader>()!;
   const [care, setCare] = useState<ChildCareInfo>(initial);
   const [allergyDraft, setAllergyDraft] = useState("");
   const [medName, setMedName] = useState("");

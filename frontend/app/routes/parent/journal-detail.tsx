@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { ImageIcon } from "lucide-react";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { Link, useLoaderData, useRevalidator } from "react-router";
-import { flagJournalEntry, getJournal, getJournalEntry } from "@/lib/api";
+import { flagJournalEntry, getJournal, getJournalEntry, isReady } from "@/lib/api";
 
 export async function clientLoader({ params }: { params: { id: string } }) {
+  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
+  if (!isReady("guardianJournal")) return null;
   const entry = await getJournalEntry(params.id);
   if (!entry) throw new Response("Not Found", { status: 404 });
 
@@ -21,8 +24,14 @@ export async function clientLoader({ params }: { params: { id: string } }) {
   return { entry, prevId, nextId };
 }
 
-export default function JournalDetailPage() {
-  const { entry, prevId, nextId } = useLoaderData<typeof clientLoader>();
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function JournalDetailPageRoute() {
+  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="일지 상세" back />;
+  return <JournalDetailPage />;
+}
+
+function JournalDetailPage() {
+  const { entry, prevId, nextId } = useLoaderData<typeof clientLoader>()!;
   const revalidator = useRevalidator();
   const [flagging, setFlagging] = useState(false);
   const [toast, setToast] = useState(false);

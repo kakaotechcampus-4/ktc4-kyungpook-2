@@ -1,7 +1,15 @@
 import { useChildContext } from "@/components/parent/ChildContext";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { PARENT_ACTIVITY } from "@/lib/mock/data";
+import { isReady } from "@/lib/api";
 
-export default function ParentHistoryPage() {
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function ParentHistoryPageRoute() {
+  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="활동 이력" />;
+  return <ParentHistoryPage />;
+}
+
+function ParentHistoryPage() {
   const { selected } = useChildContext();
   const activity = PARENT_ACTIVITY[selected.id] ?? [];
 

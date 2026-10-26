@@ -10,6 +10,8 @@ import {
   getParentChildren,
   getParentHome,
   getPendingInstitutionRequests,
+  isReady,
+  loadIfReady,
   unlinkChild,
   updateConsent,
 } from "@/lib/api";
@@ -23,8 +25,9 @@ export async function clientLoader() {
   const childId = readSelectedChildId(kids);
   const [{ child }, requests, pendingRequests, session] = await Promise.all([
     getParentHome(childId),
-    getInstitutionRequests(childId),
-    getPendingInstitutionRequests(childId),
+    // 기관 요청은 서버에 생기기 전까지 null — mock 개수를 진짜 아이 설정에 띄우지 않는다
+    loadIfReady("institutionRequests", () => getInstitutionRequests(childId)),
+    loadIfReady("institutionRequests", () => getPendingInstitutionRequests(childId)),
     getSession(),
   ]);
   // 실연동에서는 /auth/me 의 카카오 닉네임. 동의를 거부해 없으면 이름을 빼고 "보호자"만 쓴다
@@ -78,8 +81,10 @@ export default function ParentSettingsPage() {
   }
 
   const target = institutions.find((i) => i.institution.id === confirming);
-  const needsCheck = requests.filter((r) => r.status === "needs_check").length;
+  const needsCheck = requests?.filter((r) => r.status === "needs_check").length ?? null;
   const careCount = (child.care?.allergies.length ?? 0) + (child.care?.medications.length ?? 0);
+  // 돌봄 정보는 서버에 저장할 곳이 없다. "0개"는 "알레르기 없음"으로 읽히니 개수 대신 준비 중이라고 쓴다
+  const careReady = isReady("careInfo");
 
   return (
     <div className="flex flex-col gap-5">
@@ -87,7 +92,7 @@ export default function ParentSettingsPage() {
         title="설정"
         subtitle={guardianLabel}
         showChildSwitch
-        alert={pendingRequests.length > 0}
+        alert={(pendingRequests ?? []).length > 0}
       />
 
       <div className="flex items-center gap-3 rounded-2xl border border-line px-4 py-4">
@@ -166,7 +171,7 @@ export default function ParentSettingsPage() {
             className="tap flex items-center justify-between border-b border-line px-4 py-3.5"
           >
             <span className="text-[15px]">알레르기와 복용약</span>
-            <span className="text-[14px] text-muted">{careCount}개 ›</span>
+            <span className="text-[14px] text-muted">{careReady ? `${careCount}개` : "준비 중"} ›</span>
           </Link>
           <Link
             to="/parent/care-info"
@@ -174,7 +179,7 @@ export default function ParentSettingsPage() {
           >
             <span className="text-[15px]">주간 스케줄</span>
             <span className="text-[14px] text-muted">
-              {child.care?.weeklySchedule.length ?? 0}건 ›
+              {careReady ? `${child.care?.weeklySchedule.length ?? 0}건` : "준비 중"} ›
             </span>
           </Link>
           <Link
@@ -183,7 +188,7 @@ export default function ParentSettingsPage() {
           >
             <span className="text-[15px]">기관 요청사항</span>
             <span className="text-[14px] text-muted">
-              {needsCheck > 0 ? `${needsCheck}건 남음` : "완료"} ›
+              {needsCheck === null ? "준비 중" : needsCheck > 0 ? `${needsCheck}건 남음` : "완료"} ›
             </span>
           </Link>
         </div>

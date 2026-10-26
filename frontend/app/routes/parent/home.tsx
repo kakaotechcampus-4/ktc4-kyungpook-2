@@ -1,6 +1,7 @@
 import { Link, useLoaderData } from "react-router";
 import { ConsentStatus, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
+import { ParentNotReadySection } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import {
   getJournal,
@@ -8,19 +9,22 @@ import {
   getParentHome,
   getPendingInstitutionRequests,
   getTodaySummary,
+  loadIfReady,
 } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader() {
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
+  // 아이·기관·최근 공유 활동만 실서버다. 일지·오늘 요약·기관 요청은 서버에 생기기 전까지 null 로 받아
+  // mock 을 진짜 아이 옆에 띄우지 않는다 (loadIfReady).
   const [{ child, activity }, journal, today, pending] = await Promise.all([
     getParentHome(childId),
-    getJournal(childId),
-    getTodaySummary(childId),
-    getPendingInstitutionRequests(childId),
+    loadIfReady("guardianJournal", () => getJournal(childId)),
+    loadIfReady("guardianJournal", () => getTodaySummary(childId)),
+    loadIfReady("institutionRequests", () => getPendingInstitutionRequests(childId)),
   ]);
-  return { child, activity, recent: journal.slice(0, 2), today, pending };
+  return { child, activity, recent: journal?.slice(0, 2) ?? null, today, pending: pending ?? [] };
 }
 
 export default function ParentHomePage() {
@@ -81,7 +85,9 @@ export default function ParentHomePage() {
             타임라인 전체보기 ›
           </Link>
         </div>
-        {recent.length === 0 ? (
+        {recent === null ? (
+          <ParentNotReadySection />
+        ) : recent.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-line2 px-4 py-6 text-center text-[14px] text-muted">
             아직 새로운 소식이 없습니다.
           </p>
