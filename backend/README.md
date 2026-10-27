@@ -354,6 +354,7 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `AI_BASE_URL` | `http://localhost:8000` | AI 서버 주소 (매칭·검증·요약 에이전트 공통). Compose는 서비스 이름으로 `http://ai:8000`을 전달 |
 | `MATCHING_WORKER_ENABLED` | `true` | 매칭 워커 사용 여부. 켜 두면 5초마다 대기(`PENDING`) 일지를 AI `POST /matching`에 보내 결과를 `matching_result`에 저장. 테스트 프로필은 끔 |
 | `VALIDATION_WORKER_ENABLED` | `true` | 검증 워커 사용 여부. 켜 두면 5초마다 매칭 확정(`MATCHED`) 일지를 AI `POST /validation`에 보내 결과를 `validation_result`에 저장하고 `VALIDATED`/`VALIDATION_BLOCKED`로 바꿈. 테스트 프로필은 끔 |
+| `INSIGHT_INCLUDE_CURRENT_WEEK` | `false` | **시연용.** 켜면 인사이트 워커가 끝나지 않은 이번 주 기록도 재료로 본다. 끄면 월~일이 끝난 주만 본다. 켜 두면 이번 주는 승인이 들어올 때마다 새 회차가 생겨 Gate 2 에 비슷한 글이 쌓이므로 운영에서는 끈다 (#239) |
 | `SUMMARY_WORKER_ENABLED` | `true` | 요약 워커 사용 여부. 켜 두면 5초마다 검증 통과(`VALIDATED`) 일지를 아동 × 날짜 × 기관 묶음으로 AI `POST /summary`에 보내 `summary_result`에 저장하고 `GATE1_PENDING`으로 바꿈. 교사가 [요약](O-32)을 누른 묶음만 요약한다(`summary_run_request`). 자동 요약은 없다. 테스트 프로필은 끔 |
 
 ## 설정 프로필
