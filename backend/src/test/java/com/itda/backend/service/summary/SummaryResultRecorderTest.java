@@ -272,6 +272,18 @@ class SummaryResultRecorderTest {
     }
 
     @Test
+    void 요약할_내용_없음에는_AI_가_빠뜨려도_실제로_묶은_일지를_모두_남긴다() throws Exception {
+        // 되돌린 판에서는 이 값이 어떤 일지가 들어 있었는지 남는 유일한 흔적이다 — AI 값을 그대로 믿지 않는다.
+        JournalEntry first = summarizing("특이사항 없음");
+        JournalEntry second = summarizing("특이사항 없음.");
+
+        recorder.record(claimed(first, second), sent(first, second), noContentReply("[]", first));
+
+        assertThat(summaryResultRepository.findAll().get(0).getUncoveredEntryIds())
+                .isEqualTo("[" + first.getId() + "," + second.getId() + "]");
+    }
+
+    @Test
     void 요약할_내용이_없다면서_문장이_있으면_저장하지_않고_EVIDENCE_MISMATCH로_남긴다() throws Exception {
         JournalEntry entry = summarizing("블록 놀이를 했다.");
         String claims = """

@@ -87,7 +87,7 @@ public class SummaryResult {
     private String reviewReasons;
 
     // 그날 일지에 쓸 내용이 없다는 AI 의 정상 결과다 (#244). 본문은 빈 문자열, claims 는 빈 배열이다. 교사는 승인 대신
-    // 확인만 하고, 빈 글이라 child_context 로 올라가지 않는다. needsReview 와 같은 이유로 기본값을 둔다.
+    // 확인하거나 요약 전으로 되돌리기만 하고, 빈 글이라 child_context 로 올라가지 않는다. needsReview 와 같은 이유로 기본값을 둔다.
     @ColumnDefault("false")
     @Column(nullable = false)
     private boolean noContent;
@@ -220,10 +220,7 @@ public class SummaryResult {
 
     /** 교사가 Gate 1 에서 요약할 내용이 없다는 결과를 확인했다. 승인이 아니다 — 올릴 글이 없다. */
     public void confirmNoContent() {
-        requireStatus(SummaryStatus.GATE1_PENDING);
-        if (!this.noContent) {
-            throw new IllegalStateException("요약할 내용이 없는 요약만 확인으로 닫을 수 있습니다: " + this.id);
-        }
+        requireNoContentPending();
         this.status = SummaryStatus.CONFIRMED;
     }
 
@@ -232,10 +229,7 @@ public class SummaryResult {
      * 쌓인다 — 일지를 요약 전으로 돌리는 것은 서비스가 한다.
      */
     public void revertNoContent() {
-        requireStatus(SummaryStatus.GATE1_PENDING);
-        if (!this.noContent) {
-            throw new IllegalStateException("요약할 내용이 없는 요약만 되돌릴 수 있습니다: " + this.id);
-        }
+        requireNoContentPending();
         this.status = SummaryStatus.REVERTED;
     }
 
@@ -260,10 +254,18 @@ public class SummaryResult {
         }
     }
 
-    // 요약할 내용이 없는 요약은 확인만 받는다. 승인하면 빈 글이 child_context 로 올라가고, 보류·제거는 MVP 화면에 없다.
+    // 요약할 내용이 없는 요약은 확인·되돌리기만 받는다. 승인하면 빈 글이 child_context 로 올라가고, 보류·제거는 MVP 화면에 없다.
     private void requireContentful() {
         if (this.noContent) {
-            throw new IllegalStateException("요약할 내용이 없는 요약은 확인만 할 수 있습니다: " + this.id);
+            throw new IllegalStateException("요약할 내용이 없는 요약은 확인하거나 되돌리기만 할 수 있습니다: " + this.id);
+        }
+    }
+
+    // 확인·되돌리기는 검토 대기 중인 요약할 내용 없음 요약만 받는다.
+    private void requireNoContentPending() {
+        requireStatus(SummaryStatus.GATE1_PENDING);
+        if (!this.noContent) {
+            throw new IllegalStateException("요약할 내용이 없는 요약만 확인하거나 되돌릴 수 있습니다: " + this.id);
         }
     }
 

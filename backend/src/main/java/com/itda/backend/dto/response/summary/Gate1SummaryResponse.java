@@ -10,8 +10,8 @@ import java.util.List;
  * @param version          결정할 때 그대로 돌려보낼 판 표시. 그 사이 요약이 바뀌었으면 결정이 409 다
  * @param processing       같은 묶음에 아직 요약에 반영되지 않은 일지가 있다(매칭·검증·요약 중). 곧 요약이 바뀐다
  * @param claims           요약 문장 카드. 결정(O-31)할 때 카드마다 유지·수정·삭제를 이 {@code index} 로 보낸다
- * @param noContent        그날 일지에 쓸 내용이 없다는 요약(#244). 본문·claims 가 비고 {@code uncoveredEntries} 가 그날
- *                         일지 원본 전체다. 확인(confirm)만 받는다
+ * @param noContent        일지에 쓸 내용이 없다는 요약(#244). 본문·claims 가 비고 {@code uncoveredEntries} 가 이 요약에
+ *                         묶인 일지 원본 전체다. 확인(confirm)과 요약 되돌리기(revert)만 받는다
  * @param needsReview      요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지
  * @param reviewReasons    왜 봐야 하는지 — ["다른아동이름"]
  * @param uncoveredEntries 요약에 안 들어간 일지와 원문. 승인하면 이 일지도 함께 끝난다.

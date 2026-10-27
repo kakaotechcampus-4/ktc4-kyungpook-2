@@ -89,7 +89,7 @@ public class SummaryResultRecorder {
                         group.childId(), group.entryDate(), group.institutionId())
                 .orElse(null);
         SummaryResult summary = response.isNoContent()
-                ? saveNoContent(group, latest, reply)
+                ? saveNoContent(group, latest, entries, reply)
                 : saveSummary(group, latest, reply);
         entries.forEach(entry -> entry.completeSummary(summary.getId()));
     }
@@ -135,9 +135,14 @@ public class SummaryResultRecorder {
 
     /**
      * 요약할 내용이 없다는 결과를 저장한다. 다른 아이 이름이 남을 본문이 없어 사람이 볼 표시는 두지 않는다.
+     *
+     * <p>반영되지 않은 일지는 AI 값이 아니라 이번에 실제로 묶은 일지로 남긴다. 되돌린 판(REVERTED)은 일지와의 연결을 끊으므로
+     * 이 값이 어떤 일지가 들어 있었는지 남는 유일한 흔적이다.
      */
-    private SummaryResult saveNoContent(SummaryGroup group, SummaryResult latest, SummaryAgentReply reply) {
-        String uncovered = toJson(reply.response().uncoveredEntryIds());
+    private SummaryResult saveNoContent(SummaryGroup group, SummaryResult latest, List<JournalEntry> entries,
+            SummaryAgentReply reply) {
+        String uncovered = entries.stream().map(JournalEntry::getId).sorted().map(String::valueOf)
+                .collect(Collectors.joining(",", "[", "]"));
         return saveRevision(latest,
                 pending -> pending.overwriteNoContent(uncovered, reply.rawJson()),
                 revision -> SummaryResult.noContent(group.childId(), group.entryDate(), group.institutionId(),
