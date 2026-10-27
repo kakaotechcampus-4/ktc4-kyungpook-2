@@ -77,7 +77,7 @@ mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하�
 | `InstitutionType` | `school` · `center` · `assistant` | 학교 · 센터 · 활동지원사 |
 | `ValidationStatus` | `PASS` · `REVIEW` · `BLOCK` | Validation Agent 판정 |
 | `MatchStatus` | `auto` · `review` · `multi` · `unmatched` | Matching Agent 결과. AI 쪽 이름과 맞춥니다 |
-| `Gate1Status` | `pending` · `approved` · `rejected` | 1차 검토(요약 승인) 상태 |
+| `Gate1Status` | `pending` · `approved` · `hold` · `removed` | 1차 검토(요약 승인) 상태. 반려는 없다. 목록(O-30)은 `pending` · `hold` 만 준다 |
 | `Gate2Status` | `pending` · `approved` · `hold` | 공유 전 검토 상태. 승인이 곧 보호자 열람이라 `sent` 가 따로 없다 |
 | `ConsentState` | `granted` · `not_granted` · `revoked` | 기관별 보호자 동의 상태 |
 | `ChildStatus` | `pending_consent` · `active` · `suspended` | 아이 활성 상태 |
@@ -152,21 +152,27 @@ interface BlockedItem {       // 재입력 요청 큐 한 건 (BLOCK 판정)
   violationReason: string;    // 화면에 그대로 노출되는 한국어 문장
 }
 
-interface SummaryItem {       // Gate 1 검토 대기 한 건
-  id: string;
+interface SummaryItem {       // Gate 1 검토 대기 · 보류함 한 건 (BE Gate1SummaryResponse)
+  id: string;                 // BE 는 숫자. lib/api.ts 가 문자열로 바꾼다
   childId: string;
   childName: string;
-  institutionName: string;
-  date: string;               // YYYY-MM-DD
-  recordType: RawRecord["type"];
-  validation: ValidationStatus;
-  content: string;            // AI 요약 본문 (선생님이 편집 가능)
-  flaggedSpan?: string;       // REVIEW 사유가 된 문장 — 본문 안에서 하이라이트
-  flagReason?: string;
-  gate1Status: Gate1Status;
-  rejectReason?: string;
-  sourceCount: number;        // 근거가 된 원본 기록 수
+  entryDate: string;          // YYYY-MM-DD
+  revision: number;           // N회차 요약
+  gate1Status: Gate1Status;   // BE status GATE1_PENDING → pending, HOLD → hold
+  version: string;            // 결정할 때 그대로 돌려보낸다. 바뀌었으면 409 SUMMARY_CHANGED
+  processing: boolean;        // 곧 요약이 바뀜 — 고치기 · 승인을 막는다
+  content: string;
+  claims: { index: number; text: string }[];   // 빈 배열 = 문장을 못 나눈 요약. 편집 불가
+  needsReview: boolean;       // 다른 아이 이름이 남았을 수 있음. 경고만
+  reviewReasons: string[];    // ["다른아동이름"]
+  uncoveredEntries: { journalEntryId: string; content: string }[];   // 승인하면 함께 끝남
+  reviewFlags: { journalEntryId: string; issueTypes: string[] }[];
 }
+
+type Gate1Card =              // 승인 때 보내는 문장 카드. 원래 문장은 모두 한 번씩, 배열 순서 = 최종 순서
+  | { index: number; action: "KEEP" | "DELETE" }
+  | { index: number; action: "EDIT"; text: string }
+  | { action: "ADD"; text: string };
 
 interface TimelineEntry {     // Child Context 타임라인 한 칸 (= 하루)
   date: string;
@@ -287,8 +293,9 @@ interface ParentActivity {
 | `resolveMatchingItem` | `(id: string, resolution: { action: "assign"; childId: string } \| { action: "not_ours" }) => Promise<{ ok: true }>` | I-06 |
 | `getBlockedQueue` | `() => Promise<BlockedItem[]>` | I-03, I-07, 사이드바 배지 |
 | `resolveBlockedItem` | `(id: string, action: "reupload" \| "hold") => Promise<{ ok: true }>` | I-07 |
-| `getGate1Queue` | `() => Promise<SummaryItem[]>` | I-03, I-08 |
-| `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "reject"; edited_content?: string; reason?: string }) => Promise<{ gate1_status: Gate1Status }>` | I-08 |
+| `getGate1Queue` | `(gate1Status?: "pending" \| "hold") => Promise<SummaryItem[]>` | I-03, I-08 |
+| `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "hold" \| "remove"; cards?: Gate1Card[]; version: string }) => Promise<{ summaryId: string }>` | I-08 |
+| `reopenGate1` | `(summaryId: string) => Promise<{ summaryId: string }>` | I-08 |
 | `getInsights` | `(gate2Status?: Gate2Status) => Promise<Insight[]>` — 기본 `pending`. 우리 기관이 승인 주체인 것만 온다 | I-03, I-10, I-11 |
 | `getInsight` | `(id: string) => Promise<Insight \| undefined>` | I-10 |
 | `decideGate2` | `(insightId: string, body: { decision: "approve" \| "hold" }) => Promise<{ insightId: string; gate2Status: Gate2Status; decision: string }>` — 받을 기관은 보내지 않는다. 409 `INSIGHT_ALREADY_REVIEWED` · `INSIGHT_SUPERSEDED` | I-11 |
@@ -339,7 +346,8 @@ interface ParentActivity {
 
 ```ts
 type Role = "org" | "parent" | null;
-type Session = { loggedIn: boolean; signupCompleted: boolean; role: Role; name?: string };
+type Session = { loggedIn: boolean; signupCompleted: boolean; role: Role; name?: string;
+                 institutionName?: string };   // 기관 계정만 (#236). 기관 사이드바 하단에 표시
 
 getSession(): Promise<Session>               // GET /api/v1/auth/me — 401 이면 loggedIn: false
 signup(input: SignupInput): Promise<Session> // POST /api/v1/auth/signup — 실패는 ApiError(code)
@@ -451,6 +459,7 @@ class ApiError extends Error {
 | `FlaggedText` | 본문 안 REVIEW 사유 문장 하이라이트 |
 | `EvidenceChip` | 근거 기록 칩 (날짜 · 라벨 · 기관 · 링크) |
 | `IrreversibleWarning` | "되돌릴 수 없습니다" 경고 (Gate 2 전용) |
+| `ConfirmDialog` | 되돌릴 수 없는 결정 앞의 확인 창 (Gate 1 · Gate 2). Esc · 취소로 닫힘 |
 | `PipelineStepper` | 기록 등록 → 매칭 → 검증 → 요약 → 1차 검토 대기 |
 | `QueueCard` · `PageHeader` · `Card` · `EmptyState` · `Note` | 기관 화면 레이아웃 공통 |
 | `InstitutionChip` · `InstitutionIcon` | 기관 표시 |
