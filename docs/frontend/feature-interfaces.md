@@ -346,7 +346,8 @@ interface ParentActivity {
 
 ```ts
 type Role = "org" | "parent" | null;
-type Session = { loggedIn: boolean; signupCompleted: boolean; role: Role; name?: string };
+type Session = { loggedIn: boolean; signupCompleted: boolean; role: Role; name?: string;
+                 institutionName?: string };   // 기관 계정만 (#236). 기관 사이드바 하단에 표시
 
 getSession(): Promise<Session>               // GET /api/v1/auth/me — 401 이면 loggedIn: false
 signup(input: SignupInput): Promise<Session> // POST /api/v1/auth/signup — 실패는 ApiError(code)
