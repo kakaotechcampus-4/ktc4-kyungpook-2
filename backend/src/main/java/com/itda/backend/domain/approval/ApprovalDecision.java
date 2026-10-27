@@ -14,5 +14,7 @@ public enum ApprovalDecision {
     /** 제거했다. */
     REMOVED,
     /** 보류함에서 보류를 해제했다. */
-    REOPENED
+    REOPENED,
+    /** 요약할 내용이 없다는 결과를 확인했다. 승인이 아니다 — 올린 글이 없다 (#244). */
+    CONFIRMED
 }

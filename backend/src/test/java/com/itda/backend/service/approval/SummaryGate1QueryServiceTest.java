@@ -2,6 +2,7 @@ package com.itda.backend.service.approval;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
@@ -134,6 +135,36 @@ class SummaryGate1QueryServiceTest {
 
         assertThat(service.getSummaries(TEACHER, "hold"))
                 .extracting(Gate1SummaryResponse::id).containsExactly(held.getId());
+    }
+
+    @Test
+    void 요약할_내용_없음은_표시와_함께_그날_일지_원본을_모두_보여준다() {
+        // 교사가 "왜 없지?" 할 때 바로 원본을 볼 수 있어야 한다 (#244). covered 가 비어 일지가 모두 uncovered 로 간다.
+        JournalEntry first = entry("특이사항 없음");
+        JournalEntry second = entry("특이사항 없음.");
+        SummaryResult empty = em.persistAndFlush(SummaryResult.noContent(junho, DATE, ORG, 1, "[]",
+                ids(List.of(first, second)), "{}"));
+        link(first, empty);
+        link(second, empty);
+        em.flush();
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.noContent()).isTrue();
+        assertThat(item.content()).isEmpty();
+        assertThat(item.claims()).isEmpty();
+        assertThat(item.uncoveredEntries())
+                .extracting(Gate1SummaryResponse.UncoveredEntry::journalEntryId,
+                        Gate1SummaryResponse.UncoveredEntry::content)
+                .containsExactlyInAnyOrder(tuple(first.getId(), "특이사항 없음"), tuple(second.getId(), "특이사항 없음."));
+        assertThat(item.reviewFlags()).isEmpty();
+    }
+
+    @Test
+    void 일반_요약은_요약할_내용_없음이_아니다() {
+        summary(ORG, DATE, "[]", List.of(), List.of());
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).noContent()).isFalse();
     }
 
     @Test
