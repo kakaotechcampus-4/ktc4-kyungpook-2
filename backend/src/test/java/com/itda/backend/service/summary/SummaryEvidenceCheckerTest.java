@@ -40,6 +40,43 @@ class SummaryEvidenceCheckerTest {
         }
     }
 
+    /** 요약할 내용이 없다는 응답 (#244). 계약은 본문 "", claims [], 묶음 일지 전부 uncovered 다. */
+    private SummaryAgentResponse noContent(long childId, String content, String claims, String uncovered) {
+        String json = """
+                {"child_id": %d, "entry_date": "2026-10-08", "institution_id": 3, "content": "%s",
+                 "claims": %s, "covered_entry_ids": [], "uncovered_entry_ids": %s, "no_content": true,
+                 "llm_called": true}
+                """.formatted(childId, content, claims, uncovered);
+        try {
+            return new ObjectMapper().readValue(json, SummaryAgentResponse.class);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Test
+    void 요약할_내용이_없다는_응답은_claims_가_비어도_통과한다() {
+        assertThat(checker.findProblem(GROUP, SENT, SOURCES, noContent(8, "", "[]", "[1041, 1042, 1043]")))
+                .isEmpty();
+    }
+
+    @Test
+    void 요약할_내용이_없다면서_문장이나_본문이_있으면_걸린다() {
+        // 빈 요약으로 저장하면 AI 가 쓴 글이 Gate 1 에 안 보인 채 사라진다.
+        assertThat(checker.findProblem(GROUP, SENT, SOURCES,
+                noContent(8, "", "[" + claim(evidence(1041, "친구에게 양보함", 8, 16)) + "]", "[]")))
+                .get().asString().contains("no_content");
+        assertThat(checker.findProblem(GROUP, SENT, SOURCES, noContent(8, "평소와 같음", "[]", "[]")))
+                .get().asString().contains("no_content");
+    }
+
+    @Test
+    void 요약할_내용이_없다는_응답도_다른_묶음이거나_보내지_않은_일지를_들면_걸린다() {
+        assertThat(checker.findProblem(GROUP, SENT, SOURCES, noContent(9, "", "[]", "[]"))).isPresent();
+        assertThat(checker.findProblem(GROUP, SENT, SOURCES, noContent(8, "", "[]", "[9999]")))
+                .get().asString().contains("9999");
+    }
+
     private static String evidence(long id, String quote, int start, int end) {
         return """
                 {"journal_entry_id": %d, "quote": "%s", "span": {"start": %d, "end": %d}}

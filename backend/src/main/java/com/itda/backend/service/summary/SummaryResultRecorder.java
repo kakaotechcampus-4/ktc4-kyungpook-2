@@ -39,8 +39,11 @@ public class SummaryResultRecorder {
      *
      * <p>그 묶음에 승인 전 요약이 있으면 같은 판을 덮어쓰고, 승인된 판만 있으면 다음 판으로 쌓는다 (DB 스키마 §8.2).
      *
-     * <p>근거가 남은 문장이 없으면 AI 는 200 대신 503 을 준다(#148). 그래도 본문이 비어 오면 계약 위반이라 저장하지 않고
-     * 시스템 오류(RESPONSE_UNREADABLE)로 남긴다. 근거 재검사({@link SummaryEvidenceChecker})에 걸리면
+     * <p>그날 일지에 쓸 내용이 없으면 AI 는 {@code no_content} 를 붙여 빈 본문으로 준다. 이것은 정상 결과라 빈 요약으로
+     * 저장해 Gate 1 에서 교사가 확인하게 한다 (#244).
+     *
+     * <p>근거가 남은 문장이 없으면 AI 는 200 대신 503 을 준다(#148). 그래도 표시 없이 본문이 비어 오면 계약 위반이라
+     * 저장하지 않고 시스템 오류(RESPONSE_UNREADABLE)로 남긴다. 근거 재검사({@link SummaryEvidenceChecker})에 걸리면
      * EVIDENCE_MISMATCH 다 (#180).
      *
      * @param request AI 에 실제로 보낸 요청. 근거는 DB 를 다시 읽은 원문이 아니라 보낸 원문과 대조한다
@@ -50,7 +53,7 @@ public class SummaryResultRecorder {
         SummaryAgentResponse response = reply.response();
         // [요약] 요청은 결과를 남길 때 처리 표시를 한다. 집을 때 하면 AI 장애로 묶음이 되돌아갔을 때 요청까지 사라진다.
         runRequests.markHandled(claimed.group(), claimed.claimedAt());
-        if (isEmptyContent(response)) {
+        if (!response.isNoContent() && isEmptyContent(response)) {
             log.warn("summary returned empty content, recorded as system error group={}", claimed.group());
             recordSystemError(claimed, FailureReason.RESPONSE_UNREADABLE);
             return;
@@ -79,14 +82,21 @@ public class SummaryResultRecorder {
         }
 
         SummaryGroup group = claimed.group();
-        String claims = toJson(response.claims());
-        String covered = toJson(response.coveredEntryIds());
-        String uncovered = toJson(response.uncoveredEntryIds());
         SummaryResult latest = summaryResultRepository
                 .findFirstByChildIdAndEntryDateAndInstitutionIdOrderByRevisionDesc(
                         group.childId(), group.entryDate(), group.institutionId())
                 .orElse(null);
+        SummaryResult summary = response.isNoContent()
+                ? saveNoContent(group, latest, reply)
+                : saveSummary(group, latest, reply);
+        entries.forEach(entry -> entry.completeSummary(summary.getId()));
+    }
 
+    private SummaryResult saveSummary(SummaryGroup group, SummaryResult latest, SummaryAgentReply reply) {
+        SummaryAgentResponse response = reply.response();
+        String claims = toJson(response.claims());
+        String covered = toJson(response.coveredEntryIds());
+        String uncovered = toJson(response.uncoveredEntryIds());
         SummaryResult summary;
         if (latest != null && latest.isBeforeApproval()) {
             latest.overwrite(response.content(), claims, covered, uncovered, reply.rawJson());
@@ -103,7 +113,7 @@ public class SummaryResultRecorder {
         boolean needsReview = Boolean.TRUE.equals(response.needsReview())
                 || (reasons != null && reasons.isArray() && !reasons.isEmpty());
         summary.markReview(needsReview, toJson(reasons));
-        entries.forEach(entry -> entry.completeSummary(summary.getId()));
+        return summary;
     }
 
     /**
@@ -127,8 +137,23 @@ public class SummaryResultRecorder {
         summarizingEntries(claimed).forEach(entry -> entry.failSummaryBySystemError(reason));
     }
 
-    // 본문이 빈 200 은 AI 계약에 없는 응답이다. "요약할 내용 없음"을 정상 결과로 받기로 하면(멘토 A3, AI #196 후속)
-    // 그 표시가 붙은 빈 본문만 여기서 빼고 정상으로 처리한다.
+    /**
+     * 요약할 내용이 없다는 결과를 저장한다. 판을 고르는 규칙은 일반 요약과 같다. 다른 아이 이름이 남을 본문이 없어 사람이
+     * 볼 표시는 두지 않는다.
+     */
+    private SummaryResult saveNoContent(SummaryGroup group, SummaryResult latest, SummaryAgentReply reply) {
+        String covered = toJson(reply.response().coveredEntryIds());
+        String uncovered = toJson(reply.response().uncoveredEntryIds());
+        if (latest != null && latest.isBeforeApproval()) {
+            latest.overwriteNoContent(covered, uncovered, reply.rawJson());
+            return latest;
+        }
+        int revision = latest == null ? 1 : latest.getRevision() + 1;
+        return summaryResultRepository.save(SummaryResult.noContent(group.childId(), group.entryDate(),
+                group.institutionId(), revision, covered, uncovered, reply.rawJson()));
+    }
+
+    // 표시 없이 본문이 빈 200 은 AI 계약에 없는 응답이다. 요약할 내용이 없으면 no_content 를 붙여 온다 (#244).
     private static boolean isEmptyContent(SummaryAgentResponse response) {
         return response.content() == null || response.content().isBlank();
     }

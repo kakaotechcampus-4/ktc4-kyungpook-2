@@ -187,6 +187,97 @@ class SummaryResultTest {
         assertThat(held.getStatus()).isEqualTo(SummaryStatus.REMOVED);
     }
 
+    private SummaryResult noContentSummary() {
+        return SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "[1041,1042]", "{\"no_content\":true}");
+    }
+
+    @Test
+    void 요약할_내용이_없으면_빈_본문과_빈_claims_로_Gate1_대기에_만든다() {
+        SummaryResult result = noContentSummary();
+
+        assertThat(result.isNoContent()).isTrue();
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getClaims()).isEqualTo("[]");
+        assertThat(result.getCoveredEntryIds()).isEqualTo("[]");
+        assertThat(result.getUncoveredEntryIds()).isEqualTo("[1041,1042]");
+        assertThat(result.getRawResponse()).isEqualTo("{\"no_content\":true}");
+    }
+
+    @Test
+    void 일반_요약은_요약할_내용_없음이_아니다() {
+        assertThat(summary().isNoContent()).isFalse();
+    }
+
+    @Test
+    void 요약할_내용_없음도_묶음_키와_판_번호는_필수다() {
+        assertThatThrownBy(() -> SummaryResult.noContent(null, DATE, 3L, 1, "[]", "[]", "{}"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> SummaryResult.noContent(8L, DATE, 3L, 0, "[]", "[]", "{}"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 승인_전_판은_요약할_내용_없음과_일반_요약으로_서로_덮어쓴다() {
+        SummaryResult result = summary();
+        result.markReview(true, "[\"다른아동이름\"]");
+
+        // 같은 날 "특이사항 없음" 일지만 남기고 나머지를 지운 뒤 다시 요약한 경우
+        result.overwriteNoContent("[]", "[1042]", "{\"no_content\":true}");
+
+        assertThat(result.isNoContent()).isTrue();
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getClaims()).isEqualTo("[]");
+        assertThat(result.getUncoveredEntryIds()).isEqualTo("[1042]");
+        assertThat(result.isNeedsReview()).isFalse();
+
+        // 그 뒤 내용 있는 일지가 와서 다시 요약하면 일반 요약으로 돌아온다
+        result.overwrite("블록 놀이에서 양보했다.", "[{\"text\":\"블록 놀이에서 양보했다.\"}]", "[1043]", "[1042]", "{}");
+
+        assertThat(result.isNoContent()).isFalse();
+        assertThat(result.getContent()).isEqualTo("블록 놀이에서 양보했다.");
+    }
+
+    @Test
+    void 승인_뒤에는_요약할_내용_없음으로_덮어쓸_수_없다() {
+        SummaryResult approved = summary();
+        approved.approve();
+
+        assertThatThrownBy(() -> approved.overwriteNoContent("[]", "[]", "{}"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 요약할_내용_없음을_확인하면_확인_상태가_되고_더는_덮어쓸_수_없다() {
+        SummaryResult result = noContentSummary();
+
+        result.confirmNoContent();
+
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.CONFIRMED);
+        assertThat(result.isBeforeApproval()).isFalse();
+        assertThatThrownBy(result::confirmNoContent).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 일반_요약은_확인으로_닫을_수_없다() {
+        SummaryResult result = summary();
+
+        assertThatThrownBy(result::confirmNoContent).isInstanceOf(IllegalStateException.class);
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+    }
+
+    @Test
+    void 요약할_내용_없음은_승인하거나_보류할_수_없다() {
+        // 승인하면 빈 글이 child_context 로 올라가 인사이트 재료가 된다.
+        SummaryResult result = noContentSummary();
+
+        assertThatThrownBy(result::approve).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> result.approveWithClaims("[{\"text\":\"새 문장\"}]"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(result::hold).isInstanceOf(IllegalStateException.class);
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+    }
+
     @Test
     void 보류된_요약만_보류_해제할_수_있다() {
         SummaryResult pending = summary();
