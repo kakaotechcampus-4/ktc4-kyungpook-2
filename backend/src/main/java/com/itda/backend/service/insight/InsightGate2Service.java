@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.Gate2Action;
+import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
@@ -29,6 +31,7 @@ import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -40,9 +43,9 @@ import lombok.extern.slf4j.Slf4j;
  * <p><b>기관 경계를 넘는 마지막 관문이다.</b> 여기를 지나면 글이 다른 사람에게 보인다. 그래서
  * 되돌리는 경로를 두지 않고(승인 취소 없음), 결정마다 {@code human_review} 에 한 줄 남긴다.
  *
- * <p><b>승인하면 보호자에게 열람 권한이 생긴다.</b> 10/17 회의 결론이
- * {@code 담당자 승인 → 보호자 → 보호자가 기관별 승인} 이라, 여기서 만드는 권한은 {@code GUARDIAN} 뿐이다.
- * 기관 권한은 그 뒤 보호자가 기관을 고를 때 생긴다 (미구현). 보내는 행위가 없으므로 전송 실패도 없다.
+ * <p><b>승인하면 보호자와 동의한 기관에 함께 열람 권한이 생긴다</b> (#233). 보호자가 미리 해 둔 기관별
+ * 공유 동의를 그대로 쓴다 — 글마다 기관을 고르는 단계는 10/26 기획 변경으로 없앴다. 받는 기관 규칙은
+ * {@link Gate2Recipients} 와 {@code consentedRecipients} 에 있다. 보내는 행위가 없으므로 전송 실패도 없다.
  *
  * <p>동시에 두 결정이 와도 한쪽만 반영되도록 인사이트 행을 잠그고 상태를 본다. 열람 권한은
  * {@code (insight_result_id, receiver_type, receiver_id)} UNIQUE 가 마지막으로 한 번 더 막는다.
@@ -61,6 +64,7 @@ public class InsightGate2Service {
     private final SharingHistoryRepository sharingHistoryRepository;
     private final SharingConsentRepository sharingConsentRepository;
     private final ApprovalRepository approvalRepository;
+    private final ConsentStateReader consentStateReader;
 
     @Transactional
     public Gate2DecisionResponse decide(String userId, Long insightId, Gate2Action action) {
@@ -75,6 +79,9 @@ public class InsightGate2Service {
 
         ApprovalDecision decision = switch (action) {
             case APPROVE -> {
+                // 동의를 읽기 전에 아이 행을 잠근다 — ConsentService 와 같은 순서다 (§3.3). 안 잠그면 철회와
+                // 겹칠 때 "동의 확인 → (철회 커밋) → 권한 생성" 이 되어, 꺼진 동의에 권한이 남는다.
+                childRepository.findByIdForUpdate(insight.getChildId());
                 requireMaterialStillConsented(insight);
                 yield approve(insight, primary);
             }
@@ -119,12 +126,31 @@ public class InsightGate2Service {
         }
         // 승인은 한 번뿐이라(requireDecidable) 같은 수신자에게 두 번 열리지 않는다. 그래서 여기서는
         // 되살리기를 보지 않는다 — 닿지 않는 가지를 두면 되살리기가 되는 줄 착각하게 된다.
-        // 거뒀던 권한을 다시 여는 쪽은 SharingHistory.regrant 를 쓴다 (보호자 기관별 승인 API, §3.3).
         sharingHistoryRepository.saveAll(guardians.stream()
                 .map(guardian -> SharingHistory.grant(insight.getChildId(), insight.getId(), primary.getId(),
                         ReceiverType.GUARDIAN, guardian.getUserId()))
                 .toList());
+        sharingHistoryRepository.saveAll(consentedRecipients(insight, primary).stream()
+                .map(organizationId -> SharingHistory.grant(insight.getChildId(), insight.getId(),
+                        primary.getId(), ReceiverType.ORGANIZATION, organizationId))
+                .toList());
         return ApprovalDecision.APPROVED;
+    }
+
+    /**
+     * 승인하는 순간 동의가 켜져 있는 받을 기관 (#233). 보호자가 미리 해 둔 기관별 동의를 그대로 쓴다 —
+     * 글마다 고르는 단계는 10/26 기획 변경으로 없앴다.
+     *
+     * <p><b>승인 뒤에 동의한 기관은 이 글을 받지 않는다.</b> 소급하지 않는다 — 동의는 그 뒤에 나온 글부터다.
+     */
+    private List<Long> consentedRecipients(InsightResult insight, Organization primary) {
+        Long childId = insight.getChildId();
+        List<Long> enrolled = childOrganizationRepository.findByChildIdAndDeletedAtIsNull(childId).stream()
+                .map(ChildOrganization::getOrganizationId)
+                .toList();
+        return Gate2Recipients.candidatesOf(enrolled, primary.getId()).stream()
+                .filter(id -> consentStateReader.stateOf(childId, id) == ConsentState.GRANTED)
+                .toList();
     }
 
     private ApprovalDecision hold(InsightResult insight) {

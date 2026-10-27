@@ -9,10 +9,8 @@ package com.itda.backend.domain.sharing;
  * GUARDIAN     → users.id
  * </pre>
  *
- * <p>⬜ <b>{@code ORGANIZATION} 행은 아직 만들어지지 않는다.</b> 10/17 회의 결론이
- * {@code 담당자 승인 → 보호자 → 보호자가 기관별 승인} 이라, Gate 2 승인은 {@code GUARDIAN} 만 만들고
- * 기관 권한은 보호자의 기관별 승인 API(미구현)가 만든다. 그래도 값은 지금 둔다 — 나중에 넣으면
- * {@code ddl-auto: update} 가 CHECK 제약을 고쳐주지 않아 §11.4 수동 조치 대상이 된다.
+ * <p>Gate 2 승인이 두 값을 함께 만든다 — 보호자는 {@code GUARDIAN}, 공유 동의가 켜진 기관은
+ * {@code ORGANIZATION} (#233).
  */
 public enum ReceiverType {
     ORGANIZATION,

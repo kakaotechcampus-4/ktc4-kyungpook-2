@@ -39,12 +39,13 @@ import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 /** Gate 2 — 교사가 인사이트를 발송 전에 승인·보류한다. 기관 경계를 넘는 마지막 관문이다. */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(InsightGate2Service.class)
+@Import({InsightGate2Service.class, ConsentStateReader.class})
 class InsightGate2ServiceTest {
 
     private static final LocalDate FROM = LocalDate.of(2026, 8, 17);
@@ -101,8 +102,8 @@ class InsightGate2ServiceTest {
         assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.APPROVED);
 
         List<SharingHistory> granted = sharingHistoryRepository.findByInsightResultId(insight.getId());
-        assertThat(granted).singleElement().satisfies(history -> {
-            assertThat(history.getReceiverType()).isEqualTo(ReceiverType.GUARDIAN);
+        assertThat(granted).filteredOn(history -> history.getReceiverType() == ReceiverType.GUARDIAN)
+                .singleElement().satisfies(history -> {
             assertThat(history.getReceiverId()).isEqualTo(guardianId);
             // 승인한 기관이 발신이다 — 수신함이 "어디서 왔나" 로 보여준다.
             assertThat(history.getSenderOrganizationId()).isEqualTo(schoolId);
@@ -118,9 +119,50 @@ class InsightGate2ServiceTest {
         });
     }
 
+    /**
+     * 보호자가 미리 해 둔 기관별 동의를 그대로 쓴다 (#233). 글마다 고르는 단계는 없다. 받는 기관은 명부에 있고,
+     * 동의가 켜져 있는 곳이다. 승인한 기관 자신만 뺀다.
+     */
+    @Test
+    void 승인하면_동의한_기관도_바로_볼_수_있다() {
+        Long academyId = em.persistAndFlush(
+                Organization.of("△△활동지원", OrganizationType.ACTIVITY_SUPPORT, "1000000003")).getId();
+        Long formerId = em.persistAndFlush(
+                Organization.of("예전센터", OrganizationType.CENTER, "1000000004")).getId();
+        em.persistAndFlush(ChildOrganization.of(childId, academyId)); // 명부에는 있지만 동의가 없다
+        consent(formerId);                                               // 동의는 있지만 명부에 없다
+        InsightResult insight = insight(1, schoolId);                   // 재료는 학교만
+
+        service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE);
+
+        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId()))
+                .filteredOn(history -> history.getReceiverType() == ReceiverType.ORGANIZATION)
+                .singleElement().satisfies(history -> {
+                    assertThat(history.getReceiverId()).isEqualTo(centerId);
+                    assertThat(history.getSenderOrganizationId()).isEqualTo(schoolId);
+                    assertThat(history.isActive()).isTrue();
+                });
+    }
+
+    /**
+     * 재료를 낸 다른 기관도 받는다. Gate 2 목록은 승인 기관에게만 보여서, 여기서 빼면 센터는 자기 기록이 섞인
+     * 기관 간 인사이트를 영영 못 본다. 승인 기관 자신만 뺀다.
+     */
+    @Test
+    void 재료를_낸_다른_기관도_받고_승인_기관_자신은_받지_않는다() {
+        InsightResult insight = insight(1, schoolId, centerId);
+
+        service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE);
+
+        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId()))
+                .filteredOn(history -> history.getReceiverType() == ReceiverType.ORGANIZATION)
+                .extracting(SharingHistory::getReceiverId)
+                .containsExactly(centerId);
+    }
+
     @Test
     void 보류하면_아무도_볼_수_없다() {
-        InsightResult insight = insight(1, schoolId, centerId);
+        InsightResult insight = insight(1, schoolId); // 승인했다면 센터가 받았을 글이다
 
         Gate2DecisionResponse response = service.decide(TEACHER, insight.getId(), Gate2Action.HOLD);
 
