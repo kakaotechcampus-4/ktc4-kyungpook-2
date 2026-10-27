@@ -327,6 +327,26 @@ class SummaryResultRecorderTest {
     }
 
     @Test
+    void 최신_판을_되돌렸으면_다시_요약한_결과는_새_판으로_쌓는다() throws Exception {
+        SummaryResult reverted = SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}");
+        reverted.revertNoContent();
+        summaryResultRepository.saveAndFlush(reverted);
+        JournalEntry entry = summarizing("블록 놀이에서 친구에게 양보함");
+
+        recorder.record(claimed(entry), sent(entry),
+                reply("블록 놀이에서 친구에게 양보했다.", entry, "[" + entry.getId() + "]", "[]"));
+
+        em.flush();
+        em.clear();
+        SummaryResult newer = summaryResultRepository.findAll().stream()
+                .filter(s -> !s.getId().equals(reverted.getId())).findFirst().orElseThrow();
+        assertThat(newer.getRevision()).isEqualTo(2);
+        assertThat(summaryResultRepository.findById(reverted.getId()).orElseThrow().getStatus())
+                .isEqualTo(SummaryStatus.REVERTED);
+        assertThat(reload(entry).getSummaryId()).isEqualTo(newer.getId());
+    }
+
+    @Test
     void 요약할_내용_없음을_일반_요약으로_덮어쓰면_표시가_사라진다() throws Exception {
         SummaryResult existing = summaryResultRepository.saveAndFlush(
                 SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}"));

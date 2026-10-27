@@ -261,6 +261,27 @@ class SummaryResultTest {
     }
 
     @Test
+    void 요약할_내용_없음을_되돌리면_되돌림_상태가_되고_더는_덮어쓸_수_없다() {
+        // 다음 [요약] 결과는 이 판을 덮어쓰지 않고 새 판으로 쌓인다 — 되돌렸다는 기록이 남는다.
+        SummaryResult result = noContentSummary();
+
+        result.revertNoContent();
+
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.REVERTED);
+        assertThat(result.isBeforeApproval()).isFalse();
+        assertThatThrownBy(result::revertNoContent).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(result::confirmNoContent).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 일반_요약은_되돌릴_수_없다() {
+        SummaryResult result = summary();
+
+        assertThatThrownBy(result::revertNoContent).isInstanceOf(IllegalStateException.class);
+        assertThat(result.getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+    }
+
+    @Test
     void 일반_요약은_확인으로_닫을_수_없다() {
         SummaryResult result = summary();
 

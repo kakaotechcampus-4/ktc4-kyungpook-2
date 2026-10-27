@@ -487,6 +487,43 @@ class SummaryGate1ServiceTest {
     }
 
     @Test
+    void 요약할_내용_없음을_되돌리면_일지는_요약_전으로_돌아가고_요약은_되돌림으로_남는다() {
+        SummaryResult empty = noContentSummaryWithEntries();
+
+        Gate1DecisionResponse response = service.decide(TEACHER, empty.getId(), Gate1Action.REVERT, null,
+                versionOf(empty.getId()));
+
+        assertThat(response.status()).isEqualTo("REVERTED");
+        assertThat(response.decision()).isEqualTo("REVERTED");
+        em.flush();
+        em.clear();
+        assertThat(em.find(SummaryResult.class, empty.getId()).getStatus()).isEqualTo(SummaryStatus.REVERTED);
+        // 연결을 끊었으니 이 요약을 가리키는 일지는 없다. 일지는 [요약]을 다시 누르면 요약된다.
+        assertThat(journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(empty.getId())).isEmpty();
+        assertThat(journalEntryRepository.findAll()).filteredOn(e -> e.getEntryDate().equals(EMPTY_DATE))
+                .hasSize(2)
+                .allSatisfy(e -> {
+                    assertThat(e.getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+                    assertThat(e.getSummaryId()).isNull();
+                });
+        assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).isEmpty();
+        assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, empty.getId()))
+                .singleElement()
+                .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.REVERTED));
+    }
+
+    @Test
+    void 일반_요약은_되돌릴_수_없다() {
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.REVERT, null,
+                versionOf(summary.getId())))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+        assertThat(reload(covered).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(history()).isEmpty();
+    }
+
+    @Test
     void 일반_요약은_확인으로_닫을_수_없다() {
         assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.CONFIRM, null,
                 versionOf(summary.getId())))
@@ -513,7 +550,7 @@ class SummaryGate1ServiceTest {
     }
 
     @Test
-    void 요약할_내용_없음도_같은_묶음을_다시_요약하는_중이면_확인할_수_없다() {
+    void 요약할_내용_없음도_같은_묶음을_다시_요약하는_중이면_확인하거나_되돌릴_수_없다() {
         SummaryResult empty = noContentSummaryWithEntries();
         JournalEntry fresh = JournalEntry.of(rawRecordId, EMPTY_DATE, "늦게 올라온 일지", 3);
         fresh.startMatching();
@@ -524,11 +561,12 @@ class SummaryGate1ServiceTest {
         em.persistAndFlush(fresh);
         em.clear();
 
-        assertThatThrownBy(() -> service.decide(TEACHER, empty.getId(), Gate1Action.CONFIRM, null,
-                versionOf(empty.getId())))
-                .isInstanceOf(SummaryException.class)
-                .extracting(e -> ((SummaryException) e).getErrorCode())
-                .isEqualTo(SummaryErrorCode.REGENERATING);
+        for (Gate1Action action : List.of(Gate1Action.CONFIRM, Gate1Action.REVERT)) {
+            assertThatThrownBy(() -> service.decide(TEACHER, empty.getId(), action, null, versionOf(empty.getId())))
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
+                    .isEqualTo(SummaryErrorCode.REGENERATING);
+        }
     }
 
     // ── 권한·중복 ──

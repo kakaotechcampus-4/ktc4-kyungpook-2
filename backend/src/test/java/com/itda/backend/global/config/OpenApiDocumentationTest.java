@@ -118,7 +118,7 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.required", hasItems("decision", "version")))
 				// 요약할 내용 없음은 확인(confirm)으로만 닫는다 (#244).
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.decision.enum",
-						hasItems("approve", "hold", "remove", "confirm")))
+						hasItems("approve", "hold", "remove", "confirm", "revert")))
 				.andExpect(jsonPath("$.components.schemas.Gate1SummaryResponse.properties.noContent").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.409.description",
 						containsString("SUMMARY_CHANGED")))

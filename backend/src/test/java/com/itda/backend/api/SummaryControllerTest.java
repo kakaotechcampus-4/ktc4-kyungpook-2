@@ -152,9 +152,22 @@ class SummaryControllerTest {
     }
 
     @Test
+    void gate1_acceptsRevertWithoutCards() throws Exception {
+        given(summaryGate1Service.decide(any(), eq(50L), eq(Gate1Action.REVERT), eq(null), eq("v1")))
+                .willReturn(new Gate1DecisionResponse(50L, "REVERTED", "REVERTED"));
+
+        decide("{\"decision\": \"revert\", \"version\": \"v1\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REVERTED"))
+                .andExpect(jsonPath("$.data.decision").value("REVERTED"));
+    }
+
+    @Test
     void gate1_rejectsCardsOnConfirm() throws Exception {
         // 요약할 내용 없음에는 고칠 문장이 없다.
         decide("{\"decision\": \"confirm\", \"version\": \"v1\", \"cards\": [{\"action\": \"ADD\", \"text\": \"새 문장\"}]}")
+                .andExpect(status().isBadRequest());
+        decide("{\"decision\": \"revert\", \"version\": \"v1\", \"cards\": [{\"action\": \"ADD\", \"text\": \"새 문장\"}]}")
                 .andExpect(status().isBadRequest());
 
         verify(summaryGate1Service, never()).decide(any(), any(), any(), any(), any());

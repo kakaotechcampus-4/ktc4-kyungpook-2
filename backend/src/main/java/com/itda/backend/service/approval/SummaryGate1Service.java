@@ -71,6 +71,7 @@ public class SummaryGate1Service {
             case HOLD -> hold(summary, entries);
             case REMOVE -> remove(summary, entries);
             case CONFIRM -> confirm(summary, entries);
+            case REVERT -> revert(summary, entries);
         };
         approvalRepository.save(Approval.gate1(summaryId, Long.valueOf(userId), decision));
         return new Gate1DecisionResponse(summaryId, summary.getStatus().name(), decision.name());
@@ -131,9 +132,20 @@ public class SummaryGate1Service {
         return ApprovalDecision.CONFIRMED;
     }
 
-    /** 요약할 내용 없음은 확인만, 그 밖의 요약은 확인을 뺀 결정만 받는다. */
+    /**
+     * 요약할 내용이 없다는 결과를 교사가 되돌렸다. 일지는 요약 전으로 돌아가 [요약]을 다시 누르면 같은 묶음의 새 일지와 함께
+     * 요약된다 — [다시 요약]을 따로 두지 않는다. 요약은 기록으로 남고 Gate 1 에서 빠진다 (#244).
+     */
+    private ApprovalDecision revert(SummaryResult summary, List<JournalEntry> entries) {
+        summary.revertNoContent();
+        pendingOf(entries).forEach(JournalEntry::revertToSummaryWait);
+        return ApprovalDecision.REVERTED;
+    }
+
+    /** 요약할 내용 없음은 확인·되돌리기만, 그 밖의 요약은 그 둘을 뺀 결정만 받는다. */
     private static void requireDecisionFits(SummaryResult summary, Gate1Action action) {
-        if (summary.isNoContent() != (action == Gate1Action.CONFIRM)) {
+        boolean noContentAction = action == Gate1Action.CONFIRM || action == Gate1Action.REVERT;
+        if (summary.isNoContent() != noContentAction) {
             throw new SummaryException(SummaryErrorCode.INVALID_REQUEST,
                     "summaryId=" + summary.getId() + " decision=" + action + " noContent=" + summary.isNoContent());
         }

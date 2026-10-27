@@ -19,15 +19,15 @@ import jakarta.validation.constraints.Size;
  * POST /api/v1/summaries/{summaryId}/gate1 의 요청. 교사의 Gate 1 결정이다.
  *
  * <p>{@code cards} 는 승인할 때만 보낸다 — 요약 문장(claims)마다 유지·수정·삭제와 새 문장 추가다 (#221). 없으면 그대로
- * 승인이다. 보류·제거·확인에 보내면 버려지므로 400 으로 막는다. 원래 문장을 모두 한 번씩 보냈는지는 요약을 봐야 알아서 서비스가
+ * 승인이다. 보류·제거·확인·되돌리기에 보내면 버려지므로 400 으로 막는다. 원래 문장을 모두 한 번씩 보냈는지는 요약을 봐야 알아서 서비스가
  * 본다. {@code version} 은 목록에서 받은 값 그대로다. 여기서 막는 형식 오류는 400 INVALID_REQUEST, 서비스가 보는 번호
  * 오류는 400 SUMMARY_INVALID_REQUEST 다.
  */
 public record Gate1DecisionRequest(
-        @Schema(description = "confirm 은 요약할 내용 없음(noContent) 요약에만, 나머지는 그 밖의 요약에만 받는다",
-                allowableValues = {"approve", "hold", "remove", "confirm"}, example = "approve")
+        @Schema(description = "confirm·revert 는 요약할 내용 없음(noContent) 요약에만, 나머지는 그 밖의 요약에만 받는다",
+                allowableValues = {"approve", "hold", "remove", "confirm", "revert"}, example = "approve")
         @NotNull
-        @Pattern(regexp = "^(approve|hold|remove|confirm)$")
+        @Pattern(regexp = "^(approve|hold|remove|confirm|revert)$")
         String decision,
 
         @Schema(description = "문장 카드. 승인할 때만 보내고, 원래 문장(index)은 모두 한 번씩 담는다. 배열 순서가 최종 순서다. "

@@ -227,6 +227,18 @@ public class SummaryResult {
         this.status = SummaryStatus.CONFIRMED;
     }
 
+    /**
+     * 교사가 Gate 1 에서 요약할 내용이 없다는 결과를 되돌렸다. 이 판은 기록으로 남고, 다음 요약은 덮어쓰지 않고 새 판으로
+     * 쌓인다 — 일지를 요약 전으로 돌리는 것은 서비스가 한다.
+     */
+    public void revertNoContent() {
+        requireStatus(SummaryStatus.GATE1_PENDING);
+        if (!this.noContent) {
+            throw new IllegalStateException("요약할 내용이 없는 요약만 되돌릴 수 있습니다: " + this.id);
+        }
+        this.status = SummaryStatus.REVERTED;
+    }
+
     /** 교사가 Gate 1 에서, 또는 보류함에서 제거했다. 되돌릴 수 없다. */
     public void remove() {
         if (this.status != SummaryStatus.GATE1_PENDING && this.status != SummaryStatus.HOLD) {

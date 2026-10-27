@@ -13,6 +13,11 @@ public enum SummaryStatus {
     APPROVED,
     /** 요약할 내용이 없다는 결과(no_content)를 교사가 확인했다. 빈 글이라 child_context 로 올라가지 않는다 (#244). */
     CONFIRMED,
+    /**
+     * 요약할 내용이 없다는 결과를 교사가 되돌렸다. 일지는 요약 전(VALIDATED)으로 돌아가 [요약]을 다시 누르면 새 판으로
+     * 요약된다. 기록으로만 남고 Gate 1 에는 보이지 않는다 (#244).
+     */
+    REVERTED,
     /** 교사가 보류했다. child_context 로 올라가지 않는다. 보류함에서 해제하면 Gate 1 대기로 돌아온다. */
     HOLD,
     /** 교사가 제거했다. 그 요약의 일지도 모두 삭제 표시된다. 되돌릴 수 없다. */
