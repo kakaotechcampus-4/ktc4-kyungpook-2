@@ -3,6 +3,7 @@ import { useLoaderData, useRevalidator } from "react-router";
 import { NotReadyPage } from "@/components/org/NotReady";
 import {
   Card,
+  ConfirmDialog,
   ConsentStatus,
   EmptyState,
   EvidenceChip,
@@ -199,73 +200,23 @@ function Gate2Item({
         </p>
       ) : null}
 
+      {/* 승인·보류 모두 되돌릴 수 없어 한 번 더 묻는다 */}
       {confirming ? (
         <ConfirmDialog
-          decision={confirming}
-          insight={insight}
+          title={`${insight.childName} 분석 결과를 ${confirming === "approve" ? "승인할까요?" : "보류할까요?"}`}
+          warning="되돌릴 수 없습니다."
+          confirmLabel={confirming === "approve" ? "승인하기" : "보류하기"}
+          tone={confirming === "approve" ? "human" : "neutral"}
           busy={busy}
           onCancel={() => setConfirming(null)}
           onConfirm={() => decide(confirming)}
-        />
+        >
+          {confirming === "approve"
+            ? "승인하면 보호자에게 바로 보입니다."
+            : "보류하면 이 결과는 보호자에게 보이지 않습니다."}
+        </ConfirmDialog>
       ) : null}
     </Card>
-  );
-}
-
-/** 승인·보류 모두 되돌릴 수 없어 한 번 더 묻는다 */
-function ConfirmDialog({
-  decision,
-  insight,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  decision: Decision;
-  insight: Insight;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const approve = decision === "approve";
-  return (
-    <div
-      role="dialog"
-      aria-modal
-      aria-labelledby="gate2-confirm-title"
-      className="fixed inset-0 z-20 flex items-center justify-center bg-ink/40 px-4"
-    >
-      <div className="w-full max-w-[440px] rounded bg-surface p-5">
-        <p id="gate2-confirm-title" className="mb-2 text-[18px] font-bold">
-          {insight.childName} 분석 결과를 {approve ? "승인할까요?" : "보류할까요?"}
-        </p>
-        <p className="mb-5 text-[15px] leading-7 text-ink2">
-          {approve
-            ? "승인하면 보호자에게 바로 보입니다. "
-            : "보류하면 이 결과는 보호자에게 보이지 않습니다. "}
-          <b className="font-semibold">되돌릴 수 없습니다.</b>
-        </p>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            disabled={busy}
-            className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2 disabled:opacity-60"
-          >
-            취소
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={busy}
-            className={`tap rounded px-5 text-[15px] font-semibold disabled:opacity-60 ${
-              approve
-                ? "bg-human text-white hover:brightness-95"
-                : "border border-line2 bg-surface2 text-ink2 hover:brightness-95"
-            }`}
-          >
-            {busy ? "처리 중…" : approve ? "승인하기" : "보류하기"}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
