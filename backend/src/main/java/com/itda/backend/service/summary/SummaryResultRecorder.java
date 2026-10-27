@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -97,16 +99,10 @@ public class SummaryResultRecorder {
         String claims = toJson(response.claims());
         String covered = toJson(response.coveredEntryIds());
         String uncovered = toJson(response.uncoveredEntryIds());
-        SummaryResult summary;
-        if (latest != null && latest.isBeforeApproval()) {
-            latest.overwrite(response.content(), claims, covered, uncovered, reply.rawJson());
-            summary = latest;
-        } else {
-            int revision = latest == null ? 1 : latest.getRevision() + 1;
-            summary = summaryResultRepository.save(SummaryResult.of(group.childId(), group.entryDate(),
-                    group.institutionId(), revision, response.content(), claims, covered, uncovered,
-                    reply.rawJson()));
-        }
+        SummaryResult summary = saveRevision(latest,
+                pending -> pending.overwrite(response.content(), claims, covered, uncovered, reply.rawJson()),
+                revision -> SummaryResult.of(group.childId(), group.entryDate(), group.institutionId(), revision,
+                        response.content(), claims, covered, uncovered, reply.rawJson()));
         // 필드가 없는 응답(#148 이전 AI)은 표시 없음으로 본다. 사유가 있는데 표시가 빠졌으면 경고 쪽으로 본다 —
         // 이름이 샜는데 경고가 안 뜨는 쪽이 더 나쁘다.
         JsonNode reasons = response.reviewReasons();
@@ -138,18 +134,31 @@ public class SummaryResultRecorder {
     }
 
     /**
-     * 요약할 내용이 없다는 결과를 저장한다. 판을 고르는 규칙은 일반 요약과 같다. 다른 아이 이름이 남을 본문이 없어 사람이
-     * 볼 표시는 두지 않는다.
+     * 요약할 내용이 없다는 결과를 저장한다. 다른 아이 이름이 남을 본문이 없어 사람이 볼 표시는 두지 않는다.
      */
     private SummaryResult saveNoContent(SummaryGroup group, SummaryResult latest, SummaryAgentReply reply) {
         String uncovered = toJson(reply.response().uncoveredEntryIds());
+        return saveRevision(latest,
+                pending -> pending.overwriteNoContent(uncovered, reply.rawJson()),
+                revision -> SummaryResult.noContent(group.childId(), group.entryDate(), group.institutionId(),
+                        revision, uncovered, reply.rawJson()));
+    }
+
+    /**
+     * 그 묶음의 판을 고른다 (DB 스키마 §8.2). 최신 판이 승인 전이면 그 판을 덮어쓰고, 없으면 1번, 승인·확인·보류·제거된
+     * 판만 있으면 다음 번호로 새로 만든다. 일반 요약과 요약할 내용 없음이 같은 규칙을 따라야 해서 여기 하나에 둔다.
+     *
+     * @param overwrite 승인 전 판을 이번 결과로 덮어쓰는 일
+     * @param create    판 번호를 받아 새 판을 만드는 일
+     */
+    private SummaryResult saveRevision(SummaryResult latest, Consumer<SummaryResult> overwrite,
+            IntFunction<SummaryResult> create) {
         if (latest != null && latest.isBeforeApproval()) {
-            latest.overwriteNoContent(uncovered, reply.rawJson());
+            overwrite.accept(latest);
             return latest;
         }
         int revision = latest == null ? 1 : latest.getRevision() + 1;
-        return summaryResultRepository.save(SummaryResult.noContent(group.childId(), group.entryDate(),
-                group.institutionId(), revision, uncovered, reply.rawJson()));
+        return summaryResultRepository.save(create.apply(revision));
     }
 
     // 표시 없이 본문이 빈 200 은 AI 계약에 없는 응답이다. 요약할 내용이 없으면 no_content 를 붙여 온다 (#244).
