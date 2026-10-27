@@ -747,12 +747,12 @@ O-15 ~ O-19 공통 오류:
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| O-30 | GET | `/summaries?gate1Status=pending\|hold` | 검토 대기 목록 · 보류함 · **초안 구현** | I-03, I-08 |
+| O-30 | GET | `/summaries?gate1Status=pending\|hold` | 검토 대기 목록 · 보류함 · **구현됨** | I-03, I-08 |
 | O-31 | POST | `/summaries/{summaryId}/gate1` | 승인 / 수정 후 승인 / 보류 / 제거 · **구현됨** | I-08 |
 | O-32 | POST | `/summaries/run` | 요약 · **구현됨** | I-08 |
 | O-33 | POST | `/summaries/{summaryId}/reopen` | 보류 해제 · **구현됨** | I-08 |
 
-> O-30 · O-31 · O-33 의 응답 모양은 와이어프레임 합의 전 초안입니다(#178). 화면이 정해지면 #183 에서 확정합니다.
+> O-30 · O-31 · O-33 의 요청·응답은 Gate 1 문장 카드 화면(FE #240)에 맞춰 확정했습니다 (#183).
 
 **O-32 요청**
 
@@ -773,7 +773,7 @@ O-15 ~ O-19 공통 오류:
 | 그 아이·날짜에 요약할 기록도, 매칭·검증 중인 기록도 없음 | 400 | `SUMMARY_INVALID_REQUEST` |
 | 없는 아이이거나 다른 기관 소속 | 404 | `SUMMARY_CHILD_NOT_FOUND` |
 
-**O-30 응답** · 초안
+**O-30 응답**
 
 우리 기관의 요약을 오래된 날짜부터 줍니다. `gate1Status` 는 `pending`(기본값, 검토 대기)과 `hold`(보류함)만
 받고 다른 값은 `400 SUMMARY_INVALID_REQUEST` 입니다.
@@ -854,7 +854,7 @@ AI 원문이 승인됩니다.
 `409 SUMMARY_CHANGED` 를 받으면 "요약이 새 기록으로 바뀌었어요" 안내를 띄우고 목록으로 돌아가 다시 불러와 주세요 —
 교사가 화면을 연 사이 같은 날 기록이 들어와 요약이 다시 만들어진 경우입니다.
 
-**응답** · 초안
+**응답**
 
 ```json
 { "summaryId": 50, "status": "APPROVED", "decision": "CORRECTED" }
