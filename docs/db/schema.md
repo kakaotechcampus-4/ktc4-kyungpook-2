@@ -1175,6 +1175,7 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 | --- | --- | --- |
 | 승인 · 수정 후 승인 | `GATE1_PENDING` → `COMPLETED` | 끝. 다시 요약 대상이 되지 않는다 |
 | 확인 (요약할 내용 없음, #244) | `GATE1_PENDING` → `COMPLETED` | 승인과 같다. 요약은 `child_context` 로 올라가지 않는다 |
+| 요약 되돌리기 (요약할 내용 없음, #244) | `GATE1_PENDING` → `VALIDATED`, `summary_id` 를 비움 | 요약 전으로 돌아간다. [요약]을 다시 누르면 같은 묶음의 새 일지와 함께 새 판으로 요약된다. 연결을 남기면 다시 요약하다 실패할 때 끝난 요약을 가리키는 `GATE1_PENDING` 으로 가므로 끊는다 |
 | 보류 | `GATE1_PENDING` → `GATE1_HELD` | 같은 묶음에 새 일지가 와도 함께 묶이지 않는다 |
 | 보류 해제 | `GATE1_HELD` → `GATE1_PENDING` | 같은 요약을 가리킨 채 다시 Gate 1 대기 |
 | 제거 (검토 대기 또는 보류함에서) | 상태는 그대로, `deleted_at` 표시 | 되돌릴 수 없다 |
@@ -1553,7 +1554,7 @@ span 이 있고 0 <= start < end <= 원문 코드포인트 길이인가
 - 근거 재검사는 묶음·일지 id 만 보고, 문장·본문·`covered_entry_ids` 가 비어 있는지 본다. 반영된 일지가 남으면 Gate 1
   원본 목록(`uncoveredEntries`)에서 빠져 교사가 보지 못한 채 확인과 함께 끝나기 때문이다. 저장할 때도 `covered` 는 `[]` 로 둔다
 - 다른 아이 이름이 남을 본문이 없어 `needs_review` 는 `false` 다
-- Gate 1 에서는 확인(`CONFIRMED`)만 받는다 — 아래 `status` 표
+- Gate 1 에서는 확인(`CONFIRMED`)과 요약 되돌리기(`REVERTED`)만 받는다 — 아래 `status` 표
 
 **`journal_entry` 가 요약을 가리킨다 — 방향이 뒤집혔다**
 
@@ -1592,6 +1593,7 @@ GENERATED         생성됨
 GATE1_PENDING     1차 검토 대기
 APPROVED          승인 — child_context 로 넘어감
 CONFIRMED         요약할 내용 없음을 교사가 확인 — 빈 글이라 child_context 로 올라가지 않는다 (#244)
+REVERTED          요약할 내용 없음을 교사가 되돌림 — 일지는 요약 전으로. 기록으로만 남고 Gate 1 에 보이지 않는다 (#244)
 HOLD              교사 보류 — child_context 로 올라가지 않는다. 보류함에서 해제하면 GATE1_PENDING
 REMOVED           교사 제거 — 그 요약의 일지도 모두 삭제 표시. 되돌릴 수 없다 (#178)
 ```
@@ -1610,10 +1612,12 @@ REMOVED           교사 제거 — 그 요약의 일지도 모두 삭제 표시
 | 제거 | `REMOVED` | `REMOVED` | 그 요약의 일지를 모두 삭제 표시한다. 되돌릴 수 없다. 보류함에서도 바로 할 수 있다 |
 | 보류 해제 | `HOLD` → `GATE1_PENDING` | `REOPENED` | 다시 검토 대기 |
 | 확인 (요약할 내용 없음만) | `CONFIRMED` | `CONFIRMED` | 그 요약의 일지를 모두 완료한다. `child_context` 에 올리지 않는다 — 올리면 빈 글이 인사이트 재료가 된다 (#244) |
+| 요약 되돌리기 (요약할 내용 없음만) | `REVERTED` | `REVERTED` | 그 요약의 일지를 요약 전(`VALIDATED`)으로 돌리고 연결을 끊는다. [요약]을 다시 누르면 [다시 요약]과 같다. 되돌린 요약은 보여주는 화면이 없다 (#244) |
 
-요약할 내용 없음(`no_content = true`)은 확인만, 그 밖의 요약은 확인을 뺀 결정만 받는다. 어긋나면 400
+요약할 내용 없음(`no_content = true`)은 확인·되돌리기만, 그 밖의 요약은 그 둘을 뺀 결정만 받는다. 어긋나면 400
 `SUMMARY_INVALID_REQUEST` 다. 판 표시(O-31 `version`)를 먼저 보므로, 교사가 본 뒤 요약이 바뀌었으면 409 `SUMMARY_CHANGED` 가
-먼저 나간다. 요약할 내용 없음에는 보류·제거가 없어 보류함에 들어가지 않는다. [다시 요약]은 MVP 에서 뺐다.
+먼저 나간다. 요약할 내용 없음에는 보류·제거가 없어 보류함에 들어가지 않는다. [다시 요약]은 따로 두지 않는다 — 되돌린 뒤
+[요약]을 누르면 같고, 그 사이 들어온 같은 묶음의 일지도 함께 묶인다.
 
 보류·제거 사유는 받지 않는다(`comment` 비움). 한 기관에 담당자가 한 명이라 권한은 요약의 기관이 요청
 교사의 기관인지만 본다 — 다른 기관 요약은 404 `SUMMARY_NOT_FOUND`.
@@ -1643,7 +1647,7 @@ REMOVED           교사 제거 — 그 요약의 일지도 모두 삭제 표시
 | 상황 | 처리 |
 | --- | --- |
 | 아직 승인 전 (`GENERATED` · `GATE1_PENDING`) | 같은 `revision` 을 **다시 생성해 덮어쓴다** |
-| 이미 승인됨 (`APPROVED` · `CONFIRMED`) | `revision + 1` 로 **새 일지만 묶어 새 요약을 만든다** |
+| 이미 승인됨 (`APPROVED` · `CONFIRMED` · `REVERTED`) | `revision + 1` 로 **새 일지만 묶어 새 요약을 만든다** |
 | 보류·제거됨 (`HOLD` · `REMOVED`) | 승인됨과 같다. 보류한 판과 그 일지는 건드리지 않는다 (#178) |
 
 승인된 글을 뒤에서 바꾸면 교사가 승인한 내용과 다른 기관이 읽는 내용이 달라진다.
@@ -1855,7 +1859,7 @@ Gate 1 목록의 `processing`(O-30)도 이 테이블을 본다 — 누르지 않
 ```
 target_type   SUMMARY | INSIGHT
 review_type   GATE1 | GATE2
-decision      APPROVED | CORRECTED | HOLD | REMOVED | REOPENED | CONFIRMED
+decision      APPROVED | CORRECTED | HOLD | REMOVED | REOPENED | CONFIRMED | REVERTED
 ```
 
 | `decision` | 뜻 |
@@ -1866,6 +1870,7 @@ decision      APPROVED | CORRECTED | HOLD | REMOVED | REOPENED | CONFIRMED
 | `REMOVED` | 제거 (Gate 1 은 요약과 그 일지 삭제 표시) |
 | `REOPENED` | 보류함에서 보류 해제 |
 | `CONFIRMED` | 요약할 내용 없음을 확인 (Gate 1 만, #244). 승인이 아니다 — 올린 글이 없다 |
+| `REVERTED` | 요약할 내용 없음을 되돌림 (Gate 1 만, #244). 일지는 요약 전으로 돌아갔다 |
 
 Gate 1 은 결정마다 한 줄 남긴다 (#178). `comment` 는 MVP 에서 비운다.
 
@@ -2421,12 +2426,12 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 \d journal_entry     status CHECK 가 있으면 DROP     (9/30 에 지웠으면 없다)
 ```
 
-**요약할 내용 없음 (#244) 배포 전 확인** — 둘 다 `CONFIRMED` 가 늘었다. `summary_result.no_content` 는 기본값이 있어
+**요약할 내용 없음 (#244) 배포 전 확인** — 둘 다 `CONFIRMED`·`REVERTED` 가 늘었다. 10/27 배포 DB 에는 두 CHECK 가 없음을 확인했다. `summary_result.no_content` 는 기본값이 있어
 `ddl-auto: update` 가 더한다.
 
 ```
-\d summary_result    status CHECK 가 있으면 DROP     (CONFIRMED 추가)
-\d human_review      decision CHECK 가 있으면 DROP   (CONFIRMED 추가)
+\d summary_result    status CHECK 가 있으면 DROP     (CONFIRMED · REVERTED 추가)
+\d human_review      decision CHECK 가 있으면 DROP   (CONFIRMED · REVERTED 추가)
 ```
 
 새 컬럼 `failure_stage`·`failure_reason` 은 NULL 허용이라 `update` 가 기존 행이 있어도 더한다. **`update` 가 컬럼을
@@ -2475,4 +2480,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-23 | `users.kakao_id`(§4.1)에 개발용 로그인(`GET /api/v1/dev/login`, `DEV_LOGIN_ENABLED`) 테스트 회원의 `dev:{이름}` 값이 들어올 수 있음을 명시. 컬럼·제약 변경 없음 | #219 |
 | 2026-10-24 | ⬜ **아직 동작하지 않는다 — 준비만 했다.** 교사가 고치거나 새로 쓴 문장을 인사이트로 보낼 **계약 쪽만** 맞췄다 (#199 Step 4, 멘토 리뷰 #191 A4). 실제로 전달되려면 Gate 1 `claims` 재저장(#183 Step 2)과 `CORRECTED` 제외 제거(Step 3)가 더 필요하다 — 지금은 교사가 고친 요약이 `correctedAmong` 에서 통째로 빠져 `source` 가 `AI` 말고 나올 일이 없다. `summary_result.claims` 의 각 문장에 `source`(`AI`·`EDITED`·`TEACHER`, 없으면 `AI`)를 싣고, `TEACHER` 만 `journal_entry_id` 를 비울 수 있다 — `AI`·`EDITED` 에서 빠지면 근거가 끊긴 것이라 계약이 422 다. 모르는 `source` 는 그 문장을 보내지 않는다 (AI 로 봐 두면 검증 안 거친 문장이 "AI 원문" 으로 나가고 Gate 2 경고도 사라진다). §9.2 의 "교사가 직접 쓴 문장은 인사이트에 반영되지 않는다" 를 정정. ⬜ `CORRECTED` 제외 제거(Step 3)는 Gate 1 `claims` 재저장(#183 Step 2) 뒤에 한다 — 먼저 지우면 교사가 지운 문장이 그대로 나간다. DB 변경 없음 | #199 |
 | 2026-10-25 | Gate 1 문장 카드(10/17 회의 C안). 고쳐 승인하면 `summary_result.claims` 를 카드 결과로 다시 쓴다 — 지운 문장은 빠지고, 문장마다 `source`(`AI`·`EDITED`·`TEACHER`)가 붙고, `TEACHER` 근거는 `journal_entry_id` 가 null (§8.2). `CORRECTED` 는 "카드 중 유지가 아닌 것이 있거나 순서가 바뀜" 으로 바뀐다(§8.2, §9.2, §10.1 #7). 컬럼은 TEXT 그대로라 **DB 변경 없음, §11.4 수동 조치 불필요** | #221 |
-| 2026-10-27 | 요약할 내용 없음(멘토 A3). AI 가 `no_content: true` 로 보낸 빈 결과를 시스템 오류가 아닌 요약으로 저장한다 — `summary_result.no_content` 추가(기본 `false`), `content = ''`·`claims = []` (§8.2). 표시 없는 빈 본문은 그대로 `RESPONSE_UNREADABLE`, `no_content` 인데 문장·본문이 있으면 `EVIDENCE_MISMATCH` (§6.2). Gate 1 은 확인만 받는다 — `summary_result.status`·`human_review.decision` 에 `CONFIRMED` 추가, 일지는 `COMPLETED`, `child_context` 에 올리지 않음 (§6.2, §8.2, §9.1). [다시 요약]은 MVP 에서 뺌. **enum 값 추가라 §11.4 확인 필요** — `summary_result.status`·`human_review.decision` CHECK | #244 |
+| 2026-10-27 | 요약할 내용 없음(멘토 A3). AI 가 `no_content: true` 로 보낸 빈 결과를 시스템 오류가 아닌 요약으로 저장한다 — `summary_result.no_content` 추가(기본 `false`), `content = ''`·`claims = []` (§8.2). 표시 없는 빈 본문은 그대로 `RESPONSE_UNREADABLE`, `no_content` 인데 문장·본문이 있으면 `EVIDENCE_MISMATCH` (§6.2). Gate 1 은 확인만 받는다 — `summary_result.status`·`human_review.decision` 에 `CONFIRMED` 추가, 일지는 `COMPLETED`, `child_context` 에 올리지 않음 (§6.2, §8.2, §9.1). 요약 되돌리기 — 같은 두 컬럼에 `REVERTED` 추가, 일지는 `VALIDATED` 로 돌리고 `summary_id` 를 비움. [다시 요약]은 두지 않음(되돌린 뒤 [요약]과 같음). **enum 값 추가라 §11.4 확인 필요** — `summary_result.status`·`human_review.decision` CHECK (배포 DB 에 없음 확인) | #244 |
