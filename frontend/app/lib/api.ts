@@ -20,6 +20,7 @@
  *      GET  /api/v1/raw-records/progress
  *      GET  /api/v1/summaries?gate1Status=pending|hold
  *      POST /api/v1/summaries/{summaryId}/gate1
+ *      POST /api/v1/summaries/{summaryId}/reopen
  *      GET  /api/v1/insights?gate2Status=pending|approved|hold
  *      GET  /api/v1/insights/{insightId}
  *      POST /api/v1/insights/{insightId}/gate2
@@ -75,6 +76,7 @@ import type {
   ConsentPreview,
   ConsentResult,
   FileProgress,
+  Gate1Card,
   Gate1Status,
   Gate2Status,
   InboxItem,
@@ -131,7 +133,10 @@ const BE_READY = {
   matchingQueue: true,
   /** 수정 요청(BLOCK) 큐 조회 · 처리 (O-24, O-25) */
   blockedQueue: true,
-  /** 1차 검토 조회 · 승인 · 아이 변경 */
+  /**
+   * 1차 검토 조회 · 문장 카드 승인 · 보류 · 제거 · 보류 해제 (O-30, O-31, O-33).
+   * 실서버로 확인한 뒤 켠다. 문장 카드(#231) 전 서버는 cards 를 조용히 버리고 AI 원문을 승인한다.
+   */
   gate1: false,
   /** 인사이트 조회 · 2차 공유 (O-40 ~ O-42) */
   insights: true,
@@ -307,13 +312,59 @@ export async function getBlockedQueue(): Promise<BlockedItem[]> {
   }));
 }
 
+/** BE Gate1SummaryResponse 그대로. id 가 숫자이고 상태 이름이 다르다 */
+interface Gate1SummaryRaw {
+  id: number;
+  childId: number;
+  childName: string;
+  entryDate: string;
+  revision: number;
+  status: "GATE1_PENDING" | "HOLD";
+  version: string;
+  processing: boolean;
+  content: string;
+  claims: SummaryItem["claims"] | null;
+  needsReview: boolean;
+  reviewReasons: string[] | null;
+  uncoveredEntries: { journalEntryId: number; content: string }[] | null;
+  reviewFlags: { journalEntryId: number; issueTypes: string[] }[] | null;
+}
+
+function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
+  return {
+    id: String(raw.id),
+    childId: String(raw.childId),
+    childName: raw.childName,
+    entryDate: raw.entryDate,
+    revision: raw.revision,
+    gate1Status: raw.status === "HOLD" ? "hold" : "pending",
+    version: raw.version,
+    processing: raw.processing,
+    content: raw.content,
+    claims: raw.claims ?? [],
+    needsReview: raw.needsReview,
+    reviewReasons: raw.reviewReasons ?? [],
+    uncoveredEntries: (raw.uncoveredEntries ?? []).map((e) => ({
+      journalEntryId: String(e.journalEntryId),
+      content: e.content,
+    })),
+    reviewFlags: (raw.reviewFlags ?? []).map((f) => ({
+      journalEntryId: String(f.journalEntryId),
+      issueTypes: f.issueTypes ?? [],
+    })),
+  };
+}
+
 /**
- * GET /api/v1/summaries?gate1Status=pending (O-30)
- * 보류함은 같은 경로에 gate1Status=hold 로 따로 받는다. 응답 모양은 #183 확정 전이다 (SummaryItem 참고).
+ * GET /api/v1/summaries?gate1Status=pending|hold (O-30)
+ * 검토 대기와 보류함은 따로 묻는다. 오래된 날짜부터 온다.
  */
-export async function getGate1Queue(): Promise<SummaryItem[]> {
-  if (mockFor("gate1")) return mock.GATE1_QUEUE;
-  return request("/api/v1/summaries?gate1Status=pending");
+export async function getGate1Queue(
+  gate1Status: "pending" | "hold" = "pending",
+): Promise<SummaryItem[]> {
+  if (mockFor("gate1")) return mock.GATE1_QUEUE.filter((s) => s.gate1Status === gate1Status);
+  const items = await request<Gate1SummaryRaw[]>(`/api/v1/summaries?gate1Status=${gate1Status}`);
+  return items.map(toSummaryItem);
 }
 
 const GATE1_STATUS_AFTER = {
@@ -322,29 +373,65 @@ const GATE1_STATUS_AFTER = {
   remove: "removed",
 } as const satisfies Record<string, Gate1Status>;
 
+/** mock 에서 BE 와 같은 409 를 흉내 낸다 — 화면의 오류 안내를 mock 으로도 볼 수 있게 */
+function mockGate1Guard(item: SummaryItem | undefined, decision: string): SummaryItem {
+  if (!item) throw new ApiError(404, "SUMMARY_NOT_FOUND", "요약을 찾을 수 없습니다.");
+  if (item.gate1Status === "approved" || item.gate1Status === "removed") {
+    throw new ApiError(409, "SUMMARY_ALREADY_REVIEWED", "이미 처리된 요약입니다.");
+  }
+  if (item.processing) {
+    throw new ApiError(409, "SUMMARY_REGENERATING", "요약을 다시 만드는 중입니다.");
+  }
+  if (item.gate1Status === "hold" && decision !== "remove" && decision !== "reopen") {
+    throw new ApiError(409, "SUMMARY_HELD", "보류된 요약입니다.");
+  }
+  return item;
+}
+
 /**
  * POST /api/v1/summaries/{summaryId}/gate1 (O-31)
  *
- * editedContent 는 승인할 때만 보낸다(보류 · 제거에 보내면 400). version 은 목록에서 받은 값
- * 그대로다 — 그 사이 요약이 새 기록으로 바뀌었으면 409 SUMMARY_CHANGED 다.
- * 보류한 요약은 제거만 받는다(승인 · 보류는 409 SUMMARY_HELD).
+ * cards 는 승인할 때만, 고친 것이 있을 때만 보낸다 — 없으면 AI 요약 그대로 승인이다.
+ * 보류 · 제거에 보내면 400 이다. version 은 목록에서 받은 값 그대로 — 그 사이 요약이 새 기록으로
+ * 바뀌었으면 409 SUMMARY_CHANGED 다. 보류한 요약은 제거만 받는다(승인 · 보류는 409 SUMMARY_HELD).
  */
 export async function decideGate1(
   summaryId: string,
-  body: { decision: "approve" | "hold" | "remove"; editedContent?: string; version: string },
-) {
+  body: { decision: "approve" | "hold" | "remove"; cards?: Gate1Card[]; version: string },
+): Promise<{ summaryId: string }> {
   if (mockFor("gate1")) {
-    const item = mock.GATE1_QUEUE.find((s) => s.id === summaryId);
-    if (item) {
-      item.gate1Status = GATE1_STATUS_AFTER[body.decision];
-      if (body.editedContent) item.content = body.editedContent;
-    }
-    return { summaryId, status: item?.gate1Status ?? "pending" };
+    const item = mockGate1Guard(
+      mock.GATE1_QUEUE.find((s) => s.id === summaryId),
+      body.decision,
+    );
+    item.gate1Status = GATE1_STATUS_AFTER[body.decision];
+    return { summaryId };
   }
-  return request(`/api/v1/summaries/${summaryId}/gate1`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  const res = await request<{ summaryId: number }>(
+    `/api/v1/summaries/${encodeURIComponent(summaryId)}/gate1`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+  return { summaryId: String(res.summaryId) };
+}
+
+/**
+ * POST /api/v1/summaries/{summaryId}/reopen (O-33) · 보류 해제
+ * 보류함의 요약을 AI 요약 그대로 검토 대기로 돌린다. 본문은 없다.
+ */
+export async function reopenGate1(summaryId: string): Promise<{ summaryId: string }> {
+  if (mockFor("gate1")) {
+    const item = mockGate1Guard(mock.GATE1_QUEUE.find((s) => s.id === summaryId), "reopen");
+    if (item.gate1Status !== "hold") {
+      throw new ApiError(409, "SUMMARY_NOT_HELD", "보류된 요약이 아닙니다.");
+    }
+    item.gate1Status = "pending";
+    return { summaryId };
+  }
+  const res = await request<{ summaryId: number }>(
+    `/api/v1/summaries/${encodeURIComponent(summaryId)}/reopen`,
+    { method: "POST" },
+  );
+  return { summaryId: String(res.summaryId) };
 }
 
 /**
@@ -403,32 +490,6 @@ export async function resolveMatchingItem(
   return request(`/api/v1/matching-queue/${id}/resolve`, {
     method: "POST",
     body: JSON.stringify(resolution),
-  });
-}
-
-/**
- * Gate 1 에서 아이를 바꾼다. Gate 1 은 되돌릴 수 있는 단계라 여기서 고칠 수 있어야 한다.
- *
- * ⚠️ **이 엔드포인트는 백엔드에 없다.** 경로·본문은 FE 제안이다.
- *    아이가 바뀌면 검증(다른 아이 이름 포함 여부 등)을 다시 돌려야 할 수 있다 — 서버 쪽 판단이다.
- */
-export async function reassignSummaryChild(
-  summaryId: string,
-  childId: string,
-): Promise<{ ok: true }> {
-  if (mockFor("gate1")) {
-    const item = mock.GATE1_QUEUE.find((s) => s.id === summaryId);
-    const child = mock.CHILDREN.find((c) => c.id === childId);
-    if (item && child) {
-      item.childId = child.id;
-      item.childName = child.name;
-      item.matchBasis = { source: "teacher", name: child.name };
-    }
-    return { ok: true };
-  }
-  return request(`/api/v1/summaries/${summaryId}/child`, {
-    method: "PUT",
-    body: JSON.stringify({ child_id: childId }),
   });
 }
 
