@@ -433,7 +433,7 @@ class SummaryGate1ServiceTest {
     /** 그날 일지에 쓸 내용이 없다는 요약과 그 일지 두 건. 일반 요약과 다른 날짜 묶음이다. */
     private SummaryResult noContentSummaryWithEntries() {
         SummaryResult empty = em.persistAndFlush(
-                SummaryResult.noContent(CHILD, EMPTY_DATE, ORG, 1, "[]", "[]", "{\"no_content\":true}"));
+                SummaryResult.noContent(CHILD, EMPTY_DATE, ORG, 1, "[]", "{\"no_content\":true}"));
         for (int i = 0; i < 2; i++) {
             JournalEntry entry = JournalEntry.of(rawRecordId, EMPTY_DATE, "특이사항 없음", i + 1);
             entry.startMatching();
@@ -502,7 +502,7 @@ class SummaryGate1ServiceTest {
         // 교사가 일반 요약을 본 사이 다시 요약돼 요약할 내용 없음이 됐다. 400 이 아니라 409 로 다시 보게 해야 한다.
         String seen = versionOf(summary.getId());
         SummaryResult changed = em.find(SummaryResult.class, summary.getId());
-        changed.overwriteNoContent("[]", "[]", "{}");
+        changed.overwriteNoContent("[]", "{}");
         em.flush();
         em.clear();
 

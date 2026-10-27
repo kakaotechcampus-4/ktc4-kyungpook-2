@@ -188,7 +188,7 @@ class SummaryResultTest {
     }
 
     private SummaryResult noContentSummary() {
-        return SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "[1041,1042]", "{\"no_content\":true}");
+        return SummaryResult.noContent(8L, DATE, 3L, 1, "[1041,1042]", "{\"no_content\":true}");
     }
 
     @Test
@@ -211,9 +211,9 @@ class SummaryResultTest {
 
     @Test
     void 요약할_내용_없음도_묶음_키와_판_번호는_필수다() {
-        assertThatThrownBy(() -> SummaryResult.noContent(null, DATE, 3L, 1, "[]", "[]", "{}"))
+        assertThatThrownBy(() -> SummaryResult.noContent(null, DATE, 3L, 1, "[]", "{}"))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> SummaryResult.noContent(8L, DATE, 3L, 0, "[]", "[]", "{}"))
+        assertThatThrownBy(() -> SummaryResult.noContent(8L, DATE, 3L, 0, "[]", "{}"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -223,11 +223,13 @@ class SummaryResultTest {
         result.markReview(true, "[\"다른아동이름\"]");
 
         // 같은 날 "특이사항 없음" 일지만 남기고 나머지를 지운 뒤 다시 요약한 경우
-        result.overwriteNoContent("[]", "[1042]", "{\"no_content\":true}");
+        result.overwriteNoContent("[1042]", "{\"no_content\":true}");
 
         assertThat(result.isNoContent()).isTrue();
         assertThat(result.getContent()).isEmpty();
         assertThat(result.getClaims()).isEqualTo("[]");
+        // 반영된 일지가 남아 있으면 Gate 1 원본 목록에서 빠진다 — 요약할 내용 없음은 언제나 비운다.
+        assertThat(result.getCoveredEntryIds()).isEqualTo("[]");
         assertThat(result.getUncoveredEntryIds()).isEqualTo("[1042]");
         assertThat(result.isNeedsReview()).isFalse();
 
@@ -243,7 +245,7 @@ class SummaryResultTest {
         SummaryResult approved = summary();
         approved.approve();
 
-        assertThatThrownBy(() -> approved.overwriteNoContent("[]", "[]", "{}"))
+        assertThatThrownBy(() -> approved.overwriteNoContent("[]", "{}"))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -267,7 +269,7 @@ class SummaryResultTest {
     }
 
     @Test
-    void 요약할_내용_없음은_승인하거나_보류할_수_없다() {
+    void 요약할_내용_없음은_승인_보류_제거할_수_없다() {
         // 승인하면 빈 글이 child_context 로 올라가 인사이트 재료가 된다.
         SummaryResult result = noContentSummary();
 
@@ -275,6 +277,7 @@ class SummaryResultTest {
         assertThatThrownBy(() -> result.approveWithClaims("[{\"text\":\"새 문장\"}]"))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(result::hold).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(result::remove).isInstanceOf(IllegalStateException.class);
         assertThat(result.getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
     }
 

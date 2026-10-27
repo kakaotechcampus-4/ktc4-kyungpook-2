@@ -38,7 +38,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SummaryResult {
 
-    private static final String EMPTY_CLAIMS = "[]";
+    private static final String EMPTY_ARRAY = "[]";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -130,12 +130,15 @@ public class SummaryResult {
                 uncoveredEntryIds, rawResponse);
     }
 
-    /** 요약할 내용이 없다는 결과로 그 묶음의 새 판을 만든다. 본문과 claims 는 비운다 (#244). */
+    /**
+     * 요약할 내용이 없다는 결과로 그 묶음의 새 판을 만든다 (#244). 본문·claims·반영된 일지는 비운다 — 반영된 일지가 남으면
+     * Gate 1 원본 목록에서 빠져, 교사가 보지 못한 채 확인과 함께 끝난다.
+     */
     public static SummaryResult noContent(Long childId, LocalDate entryDate, Long institutionId, int revision,
-            String coveredEntryIds, String uncoveredEntryIds, String rawResponse) {
+            String uncoveredEntryIds, String rawResponse) {
         requireGroup(childId, entryDate, institutionId, revision);
-        SummaryResult summary = new SummaryResult(childId, entryDate, institutionId, revision, "", EMPTY_CLAIMS,
-                coveredEntryIds, uncoveredEntryIds, rawResponse);
+        SummaryResult summary = new SummaryResult(childId, entryDate, institutionId, revision, "", EMPTY_ARRAY,
+                EMPTY_ARRAY, uncoveredEntryIds, rawResponse);
         summary.noContent = true;
         return summary;
     }
@@ -159,11 +162,11 @@ public class SummaryResult {
     }
 
     /** 승인 전 요약을 요약할 내용이 없다는 결과로 덮어쓴다. 일지가 지워지거나 바뀌어 다시 요약한 경우다. */
-    public void overwriteNoContent(String coveredEntryIds, String uncoveredEntryIds, String rawResponse) {
+    public void overwriteNoContent(String uncoveredEntryIds, String rawResponse) {
         if (!isBeforeApproval()) {
             throw new IllegalStateException("승인 전 요약만 덮어쓸 수 있습니다: " + this.status);
         }
-        replace("", EMPTY_CLAIMS, coveredEntryIds, uncoveredEntryIds, rawResponse, true);
+        replace("", EMPTY_ARRAY, EMPTY_ARRAY, uncoveredEntryIds, rawResponse, true);
     }
 
     private void replace(String content, String claims, String coveredEntryIds, String uncoveredEntryIds,
@@ -229,6 +232,7 @@ public class SummaryResult {
         if (this.status != SummaryStatus.GATE1_PENDING && this.status != SummaryStatus.HOLD) {
             throw new IllegalStateException("검토 대기나 보류된 요약만 제거할 수 있습니다: " + this.status);
         }
+        requireContentful();
         this.status = SummaryStatus.REMOVED;
     }
 
@@ -244,7 +248,7 @@ public class SummaryResult {
         }
     }
 
-    // 요약할 내용이 없는 요약은 확인만 받는다. 승인하면 빈 글이 child_context 로 올라간다.
+    // 요약할 내용이 없는 요약은 확인만 받는다. 승인하면 빈 글이 child_context 로 올라가고, 보류·제거는 MVP 화면에 없다.
     private void requireContentful() {
         if (this.noContent) {
             throw new IllegalStateException("요약할 내용이 없는 요약은 확인만 할 수 있습니다: " + this.id);

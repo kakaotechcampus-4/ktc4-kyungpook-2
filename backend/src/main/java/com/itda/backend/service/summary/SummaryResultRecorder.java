@@ -142,15 +142,14 @@ public class SummaryResultRecorder {
      * 볼 표시는 두지 않는다.
      */
     private SummaryResult saveNoContent(SummaryGroup group, SummaryResult latest, SummaryAgentReply reply) {
-        String covered = toJson(reply.response().coveredEntryIds());
         String uncovered = toJson(reply.response().uncoveredEntryIds());
         if (latest != null && latest.isBeforeApproval()) {
-            latest.overwriteNoContent(covered, uncovered, reply.rawJson());
+            latest.overwriteNoContent(uncovered, reply.rawJson());
             return latest;
         }
         int revision = latest == null ? 1 : latest.getRevision() + 1;
         return summaryResultRepository.save(SummaryResult.noContent(group.childId(), group.entryDate(),
-                group.institutionId(), revision, covered, uncovered, reply.rawJson()));
+                group.institutionId(), revision, uncovered, reply.rawJson()));
     }
 
     // 표시 없이 본문이 빈 200 은 AI 계약에 없는 응답이다. 요약할 내용이 없으면 no_content 를 붙여 온다 (#244).

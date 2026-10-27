@@ -309,7 +309,7 @@ class SummaryResultRecorderTest {
     @Test
     void 요약할_내용_없음을_일반_요약으로_덮어쓰면_표시가_사라진다() throws Exception {
         SummaryResult existing = summaryResultRepository.saveAndFlush(
-                SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "[]", "{}"));
+                SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}"));
         JournalEntry old = resummarizing(existing);
         JournalEntry late = summarizing("블록 놀이에서 친구에게 양보함");
 

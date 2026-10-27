@@ -1210,7 +1210,7 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 | --- | --- | --- | --- |
 | `REQUEST_REJECTED` | 검증 · 요약 | AI 가 요청을 거절함 (4xx, FastAPI 422 포함) | BE 요청 |
 | `RESPONSE_UNREADABLE` | 검증 · 요약 | AI 응답을 못 읽음 (본문 없음, JSON 아님, 필수 값 빠짐, 검증 판정 없음·`FAILED`, `no_content` 표시 없이 요약 본문이 빈 200) | AI 응답 |
-| `EVIDENCE_MISMATCH` | 요약 | BE 근거 재검사에 걸림 (§8.2). 다른 묶음 응답·필수 값 빠짐, `no_content` 인데 문장·본문이 있는 응답도 여기다. 요약하는 사이 교사가 일지를 지웠는데 AI 가 그 일지를 근거로 든 경우도 걸리는데, 이때는 고칠 것 없이 바로 되돌리면 된다 (로그의 `reason` 으로 구분) | AI 근거 계산 |
+| `EVIDENCE_MISMATCH` | 요약 | BE 근거 재검사에 걸림 (§8.2). 다른 묶음 응답·필수 값 빠짐, `no_content` 인데 문장·본문·반영된 일지가 있는 응답도 여기다. 요약하는 사이 교사가 일지를 지웠는데 AI 가 그 일지를 근거로 든 경우도 걸리는데, 이때는 고칠 것 없이 바로 되돌리면 된다 (로그의 `reason` 으로 구분) | AI 근거 계산 |
 | `AGENT_UNAVAILABLE` | 검증 | AI 다운으로 되돌린 횟수가 상한을 넘음 (#153) | 없음 — AI 가 살아나면 되돌린다 |
 | `INTERNAL_ERROR` | 검증 · 요약 | 위에 없는 BE 오류 (매칭된 아이 없음, DB 오류 등) | BE |
 
@@ -1505,7 +1505,7 @@ FAILED   AI 호출 자체가 실패 — AI 계약에 없는 BE 전용 값 (#122)
 | `status` | VARCHAR(30) | N | 처리 상태 |
 | `needs_review` | BOOLEAN | N | 공유 전에 사람이 봐야 하는가. 기본 `false`. 덮어쓸 때 새 응답 값으로 바뀐다 |
 | `review_reasons` | TEXT | Y | 왜 봐야 하는지 JSON 문자열 `["다른아동이름"]`. 응답에 없으면 NULL |
-| `no_content` | BOOLEAN | N | 그날 일지에 쓸 내용이 없다는 결과인가. 기본 `false`. `true` 면 `content = ''`, `claims = []` 다 — 아래 "요약할 내용 없음" (#244) |
+| `no_content` | BOOLEAN | N | 그날 일지에 쓸 내용이 없다는 결과인가. 기본 `false`. `true` 면 `content = ''`, `claims = []`, `covered_entry_ids = []` 다 — 아래 "요약할 내용 없음" (#244) |
 | `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
 | `model_version` | VARCHAR(100) | Y | 응답을 낸 모델 버전 |
 | `created_at` | DATETIME | N |  |
@@ -1544,13 +1544,14 @@ span 이 있고 0 <= start < end <= 원문 코드포인트 길이인가
 
 ```
 200 · no_content 없음/false   요약 저장 → Gate 1 (본문이 비어 있으면 SYSTEM_ERROR · RESPONSE_UNREADABLE)
-200 · no_content = true       no_content 요약 저장(content '', claims []) → Gate 1 "요약할 내용 없음"
-                              문장·본문이 함께 오면 SYSTEM_ERROR · EVIDENCE_MISMATCH
+200 · no_content = true       no_content 요약 저장(content '', claims [], covered []) → Gate 1 "요약할 내용 없음"
+                              문장·본문·반영된 일지(covered)가 함께 오면 SYSTEM_ERROR · EVIDENCE_MISMATCH
 503 · no_grounded_claims      재시도 뒤 SUMMARY_FAILED (§6.2)
 ```
 
 - 판을 고르는 규칙은 일반 요약과 같다. 승인 전 판은 일반 ↔ 요약할 내용 없음 양쪽으로 덮어쓴다
-- 근거 재검사는 묶음·일지 id 만 보고, 문장·본문이 비어 있는지 본다
+- 근거 재검사는 묶음·일지 id 만 보고, 문장·본문·`covered_entry_ids` 가 비어 있는지 본다. 반영된 일지가 남으면 Gate 1
+  원본 목록(`uncoveredEntries`)에서 빠져 교사가 보지 못한 채 확인과 함께 끝나기 때문이다. 저장할 때도 `covered` 는 `[]` 로 둔다
 - 다른 아이 이름이 남을 본문이 없어 `needs_review` 는 `false` 다
 - Gate 1 에서는 확인(`CONFIRMED`)만 받는다 — 아래 `status` 표
 

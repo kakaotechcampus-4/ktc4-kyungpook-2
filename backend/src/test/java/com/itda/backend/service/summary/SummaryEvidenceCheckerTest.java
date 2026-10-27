@@ -71,6 +71,23 @@ class SummaryEvidenceCheckerTest {
     }
 
     @Test
+    void 요약할_내용이_없다면서_반영된_일지가_있으면_걸린다() {
+        // covered 에 든 일지는 Gate 1 원본 목록에서 빠져, 교사가 보지 못한 채 확인과 함께 끝난다.
+        String json = """
+                {"child_id": 8, "entry_date": "2026-10-08", "institution_id": 3, "content": "",
+                 "claims": [], "covered_entry_ids": [1041], "uncovered_entry_ids": [1042], "no_content": true}
+                """;
+        SummaryAgentResponse response;
+        try {
+            response = new ObjectMapper().readValue(json, SummaryAgentResponse.class);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+
+        assertThat(checker.findProblem(GROUP, SENT, SOURCES, response)).get().asString().contains("covered");
+    }
+
+    @Test
     void 요약할_내용이_없다는_응답도_다른_묶음이거나_보내지_않은_일지를_들면_걸린다() {
         assertThat(checker.findProblem(GROUP, SENT, SOURCES, noContent(9, "", "[]", "[]"))).isPresent();
         assertThat(checker.findProblem(GROUP, SENT, SOURCES, noContent(8, "", "[]", "[9999]")))

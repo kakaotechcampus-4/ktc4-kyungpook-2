@@ -142,7 +142,7 @@ class SummaryGate1QueryServiceTest {
         // 교사가 "왜 없지?" 할 때 바로 원본을 볼 수 있어야 한다 (#244). covered 가 비어 일지가 모두 uncovered 로 간다.
         JournalEntry first = entry("특이사항 없음");
         JournalEntry second = entry("특이사항 없음.");
-        SummaryResult empty = em.persistAndFlush(SummaryResult.noContent(junho, DATE, ORG, 1, "[]",
+        SummaryResult empty = em.persistAndFlush(SummaryResult.noContent(junho, DATE, ORG, 1,
                 ids(List.of(first, second)), "{}"));
         link(first, empty);
         link(second, empty);
