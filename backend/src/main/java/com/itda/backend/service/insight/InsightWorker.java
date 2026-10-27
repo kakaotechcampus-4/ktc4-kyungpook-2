@@ -58,7 +58,9 @@ public class InsightWorker {
         this.zone = properties.zone();
     }
 
-    @Scheduled(fixedDelayString = "${app.insight.worker.delay-ms}")
+    /** 첫 실행 지연은 운영에선 0 이다. 워커를 직접 돌리는 테스트가 앱 시작 틱과 겹치지 않게 늦추려고 둔다. */
+    @Scheduled(fixedDelayString = "${app.insight.worker.delay-ms}",
+            initialDelayString = "${app.insight.worker.initial-delay-ms:0}")
     public void run() {
         if (!released) {
             int count = recorder.releaseStuck();

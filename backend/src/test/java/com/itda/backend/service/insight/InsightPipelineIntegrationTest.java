@@ -69,9 +69,9 @@ import com.itda.backend.repository.summary.SummaryResultRepository;
         // 테스트 프로필은 워커를 꺼 두지만, 이 테스트는 워커를 직접 돌리는 것이 목적이다.
         "app.insight.worker.enabled=true",
         // 켜면 @Scheduled 틱도 돈다. 틱이 AI /health 를 부르는 순간이 agentServer.reset() 과 expect() 사이에
-        // 끼면 MockRestServiceServer 가 IllegalStateException 을 던진다 (CI 에서 실제로 났다). 앱이 뜰 때 한 번만
-        // 돌게 간격을 아주 길게 두고, 워커는 테스트가 직접 돌린다.
-        "app.insight.worker.delay-ms=2147483647",
+        // 끼면 MockRestServiceServer 가 IllegalStateException 을 던진다 (CI 에서 실제로 났다). 간격만 늘리면
+        // 앱이 뜰 때의 첫 틱이 남으므로 첫 실행 자체를 늦춰 틱이 아예 돌지 않게 하고, 워커는 테스트가 직접 돌린다.
+        "app.insight.worker.initial-delay-ms=2147483647",
         // 재시도는 AiAgentClientTest 가 본다. 여기서 켜 두면 503 한 건에 7초를 기다린다.
         "app.ai.retry-backoffs="})
 @ActiveProfiles("test")
