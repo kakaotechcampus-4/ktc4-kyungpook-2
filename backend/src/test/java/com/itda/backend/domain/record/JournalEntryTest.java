@@ -434,4 +434,34 @@ class JournalEntryTest {
         assertThatThrownBy(() -> validated().holdGate1()).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> gate1Pending().reopenGate1()).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void 요약을_되돌리면_요약_전_상태로_돌아가고_요약과의_연결을_끊는다() {
+        JournalEntry entry = gate1Pending();
+
+        entry.revertToSummaryWait();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+        assertThat(entry.getSummaryId()).isNull();
+    }
+
+    @Test
+    void 되돌린_일지를_다시_요약하다_실패하면_요약_실패가_된다() {
+        // 연결이 남아 있으면 "이미 Gate 1 에 있던 일지"로 보여 끝난 요약을 가리키는 Gate 1 대기로 간다.
+        JournalEntry entry = gate1Pending();
+        entry.revertToSummaryWait();
+        entry.startSummarizing();
+
+        entry.failSummary();
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
+    }
+
+    @Test
+    void Gate1_대기가_아니면_요약을_되돌릴_수_없다() {
+        assertThatThrownBy(() -> validated().revertToSummaryWait()).isInstanceOf(IllegalStateException.class);
+        JournalEntry held = gate1Pending();
+        held.holdGate1();
+        assertThatThrownBy(held::revertToSummaryWait).isInstanceOf(IllegalStateException.class);
+    }
 }

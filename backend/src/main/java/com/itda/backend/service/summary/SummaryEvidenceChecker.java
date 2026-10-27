@@ -45,6 +45,17 @@ public class SummaryEvidenceChecker {
         }
 
         JsonNode claims = response.claims();
+        // 요약할 내용이 없다는 결과는 근거 댈 문장이 없다. 대신 정말 비어 있는지 본다 — 글이나 반영된 일지가 있는데 빈
+        // 요약으로 저장하면 그 글·일지가 Gate 1 에 보이지 않은 채 사라진다 (#244).
+        if (response.isNoContent()) {
+            boolean hasClaims = isNonEmptyArray(claims);
+            boolean hasContent = response.content() != null && !response.content().isBlank();
+            boolean hasCovered = isNonEmptyArray(response.coveredEntryIds());
+            return hasClaims || hasContent || hasCovered
+                    ? Optional.of("no_content with claims=" + hasClaims + " content=" + hasContent
+                            + " covered=" + hasCovered)
+                    : Optional.empty();
+        }
         if (claims == null || !claims.isArray() || claims.isEmpty()) {
             return Optional.of("no claims");
         }
@@ -61,6 +72,10 @@ public class SummaryEvidenceChecker {
             }
         }
         return Optional.empty();
+    }
+
+    private static boolean isNonEmptyArray(JsonNode node) {
+        return node != null && node.isArray() && !node.isEmpty();
     }
 
     private Optional<String> checkEntryIds(String field, JsonNode ids, Set<Long> sentIds) {

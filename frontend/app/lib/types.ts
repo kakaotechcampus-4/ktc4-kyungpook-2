@@ -44,7 +44,8 @@ export interface MatchBasis {
 
 /**
  * 반려(reject)는 없다 — BE 는 보류(hold)와 제거(remove)만 받는다 (#178).
- * 보류한 요약은 승인할 수 없고 제거만 된다. 보류 해제(reopen)는 쓰지 않기로 했다.
+ * 보류한 요약은 바로 승인할 수 없다. 보류 해제(O-33)로 검토 대기에 돌린 뒤 승인하거나, 제거한다.
+ * 목록(O-30)은 pending · hold 만 준다. approved · removed 는 mock 이 목록에서 빼는 데만 쓴다.
  */
 export type Gate1Status = "pending" | "approved" | "hold" | "removed";
 /** BE Gate2InsightResponse.gate2Status. 승인이 곧 보호자 열람이라 "발송 완료"가 따로 없다 */
@@ -312,31 +313,49 @@ export interface BlockedItem {
   violationCode?: string[];
 }
 
+/** 요약 문장 하나. index 는 결정(O-31) 때 그대로 돌려보낸다 */
+export interface SummaryClaim {
+  index: number;
+  text: string;
+}
+
 /**
- * Gate 1 검토 대기 한 건.
- *
- * ⚠️ 응답 모양은 BE(Gate1SummaryResponse)와 아직 다르다. BE 가 "화면 확정 전 초안" 이라
- * #183 에서 확정되면 맞춘다. 지금 맞춰 둔 것은 결정(POST …/gate1)에 필요한 gate1Status · version 뿐이다.
+ * Gate 1 검토 대기 · 보류함 한 건 (BE Gate1SummaryResponse, api-spec O-30).
+ * id 는 문자열로, status(GATE1_PENDING · HOLD)는 gate1Status 로 바꿔 받는다 (lib/api.ts).
  */
 export interface SummaryItem {
   id: string;
   childId: string;
   childName: string;
-  institutionName: string;
-  date: string;
-  recordType: RawRecord["type"];
-  validation: ValidationStatus;
-  content: string;
-  /** 매칭 근거. 옛 데이터에는 없을 수 있어 선택으로 둔다 */
-  matchBasis?: MatchBasis | null;
-  /** REVIEW 사유가 된 문장 — 본문 안에서 하이라이트한다 */
-  flaggedSpan?: string;
-  flagReason?: string;
+  /** 일지 날짜 YYYY-MM-DD */
+  entryDate: string;
+  /** 같은 묶음을 몇 번째 요약했는지 */
+  revision: number;
   gate1Status: Gate1Status;
   /** 결정할 때 그대로 돌려보내는 판 표시. 그 사이 요약이 바뀌었으면 409 SUMMARY_CHANGED */
   version: string;
-  sourceCount: number;
+  /** 같은 날 새 기록이 반영되는 중이라 곧 요약이 바뀐다 — 고치기·승인을 막는다 */
+  processing: boolean;
+  content: string;
+  /** 빈 배열이면 문장을 못 읽은 요약 — 문장 편집 없이 그대로 승인하거나 제거만 된다 */
+  claims: SummaryClaim[];
+  /** 본문에 다른 아이 이름이 남아 있을 수 있다. 막지 않고 경고만 한다 */
+  needsReview: boolean;
+  reviewReasons: string[];
+  /** 요약에 안 들어간 일지. 승인하면 이 일지도 함께 끝난다 */
+  uncoveredEntries: { journalEntryId: string; content: string }[];
+  /** 요약에 들어간 원본 중 검증에서 REVIEW 를 받은 일지와 사유 원본 */
+  reviewFlags: { journalEntryId: string; issueTypes: string[] }[];
 }
+
+/**
+ * Gate 1 승인 때 보내는 문장 카드 (api-spec O-31). 원래 문장은 모두 한 번씩, 배열 순서가 최종 순서다.
+ * KEEP · DELETE 는 index 만, EDIT 는 index 와 고친 글, ADD 는 새 글만 보낸다.
+ */
+export type Gate1Card =
+  | { index: number; action: "KEEP" | "DELETE" }
+  | { index: number; action: "EDIT"; text: string }
+  | { action: "ADD"; text: string };
 
 /** Child Context 타임라인 한 칸 */
 export interface TimelineEntry {

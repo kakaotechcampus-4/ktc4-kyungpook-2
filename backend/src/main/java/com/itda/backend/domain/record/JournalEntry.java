@@ -296,6 +296,17 @@ public class JournalEntry {
         this.status = JournalEntryStatus.COMPLETED;
     }
 
+    /**
+     * 이 일지가 든 요약할 내용 없음 요약을 교사가 되돌렸다. 요약 전으로 돌아가 [요약]을 다시 누르면 같은 묶음의 새 일지와
+     * 함께 요약된다. 요약과의 연결도 끊는다 — 남아 있으면 다시 요약하다 실패할 때 "이미 Gate 1 에 있던 일지"로 보여
+     * 끝난 요약을 가리키는 Gate 1 대기로 간다 ({@link #failSummary()}).
+     */
+    public void revertToSummaryWait() {
+        requireStatus(JournalEntryStatus.GATE1_PENDING);
+        this.summaryId = null;
+        this.status = JournalEntryStatus.VALIDATED;
+    }
+
     /** 이 일지가 든 요약이 보류됐다. 같은 묶음에 새 일지가 와도 함께 묶이지 않는다. */
     public void holdGate1() {
         requireStatus(JournalEntryStatus.GATE1_PENDING);

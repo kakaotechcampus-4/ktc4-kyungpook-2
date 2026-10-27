@@ -117,6 +117,7 @@ public class SummaryGate1QueryService {
                         processing.contains(s.getId()),
                         s.getContent(),
                         claimCards(s),
+                        s.isNoContent(),
                         s.isNeedsReview(),
                         parseStrings(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
                         uncoveredEntries(entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId())),

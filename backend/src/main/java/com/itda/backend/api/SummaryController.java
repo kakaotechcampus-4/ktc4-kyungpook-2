@@ -119,7 +119,10 @@ public class SummaryController {
                     + "맥락에 올라갑니다. cards 가 없으면 그대로 승인입니다. 승인하면 그 요약의 일지가 "
                     + "요약에 안 들어간 것까지 모두 완료되고, 보류하면 함께 보류되며(보류함에서 해제 가능), 제거하면 "
                     + "모두 삭제 표시됩니다. 승인과 제거는 되돌릴 수 없습니다. 보류된 요약은 제거만 받고, 승인은 보류 해제 뒤에 "
-                    + "합니다. version 은 목록에서 받은 값을 그대로 보내고, 그 사이 요약이 새 기록으로 바뀌었으면 409 입니다. "
+                    + "합니다. 요약할 내용 없음(noContent) 요약은 확인(confirm)과 요약 되돌리기(revert)만 받습니다. 확인하면 "
+                    + "그 요약의 일지가 모두 완료되고, 올릴 글이 없어 아동 맥락에는 올라가지 않습니다. 되돌리면 일지가 요약 전으로 "
+                    + "돌아가 [요약]을 다시 누르면 새로 요약되고, 그 요약은 목록에서 빠집니다. "
+                    + "version 은 목록에서 받은 값을 그대로 보내고, 그 사이 요약이 새 기록으로 바뀌었으면 409 입니다. "
                     + "응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
@@ -128,8 +131,8 @@ public class SummaryController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
                     description = "decision 누락·허용되지 않은 값, 승인이 아닌데 cards, 빈 cards, 동작에 맞지 않는 "
-                            + "index·text (INVALID_REQUEST), 원래 문장 번호가 빠지거나 겹치거나 범위 밖, 남는 문장이 없음 "
-                            + "(SUMMARY_INVALID_REQUEST)",
+                            + "index·text (INVALID_REQUEST), 원래 문장 번호가 빠지거나 겹치거나 범위 밖, 남는 문장이 없음, "
+                            + "요약할 내용 없음에 확인·되돌리기가 아닌 결정 또는 그 밖의 요약에 확인·되돌리기 (SUMMARY_INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
