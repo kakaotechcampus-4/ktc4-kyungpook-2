@@ -64,10 +64,14 @@ public class SummaryGate1Service {
         if (!Gate1Version.of(summary, entries).equals(version)) {
             throw new SummaryException(SummaryErrorCode.CHANGED, summaryId);
         }
+        // 판 표시 뒤에 본다. 교사가 본 뒤 요약할 내용 없음으로(또는 그 반대로) 바뀌었으면 400 이 아니라 409 로 다시 보게 한다.
+        requireDecisionFits(summary, action);
         ApprovalDecision decision = switch (action) {
             case APPROVE -> approve(summary, entries, cards);
             case HOLD -> hold(summary, entries);
             case REMOVE -> remove(summary, entries);
+            case CONFIRM -> confirm(summary, entries);
+            case REVERT -> revert(summary, entries);
         };
         approvalRepository.save(Approval.gate1(summaryId, Long.valueOf(userId), decision));
         return new Gate1DecisionResponse(summaryId, summary.getStatus().name(), decision.name());
@@ -116,6 +120,35 @@ public class SummaryGate1Service {
         summary.remove();
         entries.forEach(JournalEntry::delete);
         return ApprovalDecision.REMOVED;
+    }
+
+    /**
+     * 요약할 내용이 없다는 결과를 교사가 확인했다. 일지는 끝내서 다음 요약에 다시 묶이지 않게 하고, 올릴 글이 없으므로
+     * {@code child_context} 에는 남기지 않는다 — 남기면 빈 글이 인사이트 재료가 된다 (#244).
+     */
+    private ApprovalDecision confirm(SummaryResult summary, List<JournalEntry> entries) {
+        summary.confirmNoContent();
+        pendingOf(entries).forEach(JournalEntry::completeGate1);
+        return ApprovalDecision.CONFIRMED;
+    }
+
+    /**
+     * 요약할 내용이 없다는 결과를 교사가 되돌렸다. 일지는 요약 전으로 돌아가 [요약]을 다시 누르면 같은 묶음의 새 일지와 함께
+     * 요약된다 — [다시 요약]을 따로 두지 않는다. 요약은 기록으로 남고 Gate 1 에서 빠진다 (#244).
+     */
+    private ApprovalDecision revert(SummaryResult summary, List<JournalEntry> entries) {
+        summary.revertNoContent();
+        pendingOf(entries).forEach(JournalEntry::revertToSummaryWait);
+        return ApprovalDecision.REVERTED;
+    }
+
+    /** 요약할 내용 없음은 확인·되돌리기만, 그 밖의 요약은 그 둘을 뺀 결정만 받는다. */
+    private static void requireDecisionFits(SummaryResult summary, Gate1Action action) {
+        boolean noContentAction = action == Gate1Action.CONFIRM || action == Gate1Action.REVERT;
+        if (summary.isNoContent() != noContentAction) {
+            throw new SummaryException(SummaryErrorCode.INVALID_REQUEST,
+                    "summaryId=" + summary.getId() + " decision=" + action + " noContent=" + summary.isNoContent());
+        }
     }
 
     /** 검토 대기는 모든 결정을, 보류함은 제거만 받는다. 보류된 요약의 승인은 보류를 해제한 뒤 검토 목록에서 한다. */

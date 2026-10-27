@@ -141,6 +141,39 @@ class SummaryControllerTest {
     }
 
     @Test
+    void gate1_acceptsConfirmWithoutCards() throws Exception {
+        given(summaryGate1Service.decide(any(), eq(50L), eq(Gate1Action.CONFIRM), eq(null), eq("v1")))
+                .willReturn(new Gate1DecisionResponse(50L, "CONFIRMED", "CONFIRMED"));
+
+        decide("{\"decision\": \"confirm\", \"version\": \"v1\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.data.decision").value("CONFIRMED"));
+    }
+
+    @Test
+    void gate1_acceptsRevertWithoutCards() throws Exception {
+        given(summaryGate1Service.decide(any(), eq(50L), eq(Gate1Action.REVERT), eq(null), eq("v1")))
+                .willReturn(new Gate1DecisionResponse(50L, "REVERTED", "REVERTED"));
+
+        decide("{\"decision\": \"revert\", \"version\": \"v1\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REVERTED"))
+                .andExpect(jsonPath("$.data.decision").value("REVERTED"));
+    }
+
+    @Test
+    void gate1_rejectsCardsOnConfirm() throws Exception {
+        // 요약할 내용 없음에는 고칠 문장이 없다.
+        decide("{\"decision\": \"confirm\", \"version\": \"v1\", \"cards\": [{\"action\": \"ADD\", \"text\": \"새 문장\"}]}")
+                .andExpect(status().isBadRequest());
+        decide("{\"decision\": \"revert\", \"version\": \"v1\", \"cards\": [{\"action\": \"ADD\", \"text\": \"새 문장\"}]}")
+                .andExpect(status().isBadRequest());
+
+        verify(summaryGate1Service, never()).decide(any(), any(), any(), any(), any());
+    }
+
+    @Test
     void gate1_rejectsInvalidRequest() throws Exception {
         for (String body : new String[] {
                 "{}",
@@ -229,7 +262,7 @@ class SummaryControllerTest {
         given(summaryGate1QueryService.getSummaries(any(), eq("pending"))).willReturn(List.of(
                 new Gate1SummaryResponse(50L, 8L, "김준호", LocalDate.of(2026, 10, 8), 1, "GATE1_PENDING",
                         "v1", false, "요약 본문", List.of(new Gate1SummaryResponse.ClaimCard(0, "요약 본문")),
-                        true, List.of("다른아동이름"),
+                        false, true, List.of("다른아동이름"),
                         List.of(new Gate1SummaryResponse.UncoveredEntry(1042L, "낮잠을 잤다.")),
                         List.of(new Gate1SummaryResponse.ReviewFlag(1041L, List.of("추측성표현"))))));
 
@@ -241,6 +274,7 @@ class SummaryControllerTest {
                 .andExpect(jsonPath("$.data[0].processing").value(false))
                 .andExpect(jsonPath("$.data[0].claims[0].index").value(0))
                 .andExpect(jsonPath("$.data[0].claims[0].text").value("요약 본문"))
+                .andExpect(jsonPath("$.data[0].noContent").value(false))
                 .andExpect(jsonPath("$.data[0].reviewReasons[0]").value("다른아동이름"))
                 .andExpect(jsonPath("$.data[0].uncoveredEntries[0].journalEntryId").value(1042))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].issueTypes[0]").value("추측성표현"));
