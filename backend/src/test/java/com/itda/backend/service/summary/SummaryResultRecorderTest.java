@@ -307,6 +307,26 @@ class SummaryResultRecorderTest {
     }
 
     @Test
+    void 최신_판이_확인으로_끝났으면_요약할_내용_없음도_새_판으로_쌓는다() throws Exception {
+        SummaryResult confirmed = SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}");
+        confirmed.confirmNoContent();
+        summaryResultRepository.saveAndFlush(confirmed);
+        JournalEntry late = summarizing("특이사항 없음");
+
+        recorder.record(claimed(late), sent(late), noContentReply("[]", late));
+
+        em.flush();
+        em.clear();
+        SummaryResult newer = summaryResultRepository.findAll().stream()
+                .filter(s -> !s.getId().equals(confirmed.getId())).findFirst().orElseThrow();
+        assertThat(newer.getRevision()).isEqualTo(2);
+        assertThat(newer.isNoContent()).isTrue();
+        assertThat(summaryResultRepository.findById(confirmed.getId()).orElseThrow().getStatus())
+                .isEqualTo(SummaryStatus.CONFIRMED);
+        assertThat(reload(late).getSummaryId()).isEqualTo(newer.getId());
+    }
+
+    @Test
     void 요약할_내용_없음을_일반_요약으로_덮어쓰면_표시가_사라진다() throws Exception {
         SummaryResult existing = summaryResultRepository.saveAndFlush(
                 SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}"));
