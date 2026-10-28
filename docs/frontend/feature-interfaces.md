@@ -77,7 +77,7 @@ mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하�
 | `InstitutionType` | `school` · `center` · `assistant` | 학교 · 센터 · 활동지원사 |
 | `ValidationStatus` | `PASS` · `REVIEW` · `BLOCK` | Validation Agent 판정 |
 | `MatchStatus` | `auto` · `review` · `multi` · `unmatched` | Matching Agent 결과. AI 쪽 이름과 맞춥니다 |
-| `Gate1Status` | `pending` · `approved` · `hold` · `removed` | 1차 검토(요약 승인) 상태. 반려는 없다. 목록(O-30)은 `pending` · `hold` 만 준다 |
+| `Gate1Status` | `pending` · `approved` · `hold` · `removed` · `confirmed` · `reverted` | 1차 검토(요약 승인) 상태. 반려는 없다. `confirmed` · `reverted` 는 요약할 내용 없음 전용. 목록(O-30)은 `pending` · `hold` 만 준다 |
 | `Gate2Status` | `pending` · `approved` · `hold` | 공유 전 검토 상태. 승인이 곧 보호자 열람이라 `sent` 가 따로 없다 |
 | `ConsentState` | `granted` · `not_granted` · `revoked` | 기관별 보호자 동의 상태 |
 | `ChildStatus` | `pending_consent` · `active` · `suspended` | 아이 활성 상태 |
@@ -163,6 +163,7 @@ interface SummaryItem {       // Gate 1 검토 대기 · 보류함 한 건 (BE G
   processing: boolean;        // 곧 요약이 바뀜 — 고치기 · 승인을 막는다
   content: string;
   claims: { index: number; text: string }[];   // 빈 배열 = 문장을 못 나눈 요약. 편집 불가
+  noContent: boolean;         // 요약할 내용 없음(#244). content "" · claims []. 결정은 confirm · revert 만
   needsReview: boolean;       // 다른 아이 이름이 남았을 수 있음. 경고만
   reviewReasons: string[];    // ["다른아동이름"]
   uncoveredEntries: { journalEntryId: string; content: string }[];   // 승인하면 함께 끝남
@@ -294,7 +295,7 @@ interface ParentActivity {
 | `getBlockedQueue` | `() => Promise<BlockedItem[]>` | I-03, I-07, 사이드바 배지 |
 | `resolveBlockedItem` | `(id: string, action: "reupload" \| "hold") => Promise<{ ok: true }>` | I-07 |
 | `getGate1Queue` | `(gate1Status?: "pending" \| "hold") => Promise<SummaryItem[]>` | I-03, I-08 |
-| `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "hold" \| "remove"; cards?: Gate1Card[]; version: string }) => Promise<{ summaryId: string }>` | I-08 |
+| `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "hold" \| "remove" \| "confirm" \| "revert"; cards?: Gate1Card[]; version: string }) => Promise<{ summaryId: string }>` · `confirm` · `revert` 는 `noContent` 요약만 | I-08 |
 | `reopenGate1` | `(summaryId: string) => Promise<{ summaryId: string }>` | I-08 |
 | `getInsights` | `(gate2Status?: Gate2Status) => Promise<Insight[]>` — 기본 `pending`. 우리 기관이 승인 주체인 것만 온다 | I-03, I-10, I-11 |
 | `getInsight` | `(id: string) => Promise<Insight \| undefined>` | I-10 |

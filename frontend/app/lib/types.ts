@@ -45,9 +45,10 @@ export interface MatchBasis {
 /**
  * 반려(reject)는 없다 — BE 는 보류(hold)와 제거(remove)만 받는다 (#178).
  * 보류한 요약은 바로 승인할 수 없다. 보류 해제(O-33)로 검토 대기에 돌린 뒤 승인하거나, 제거한다.
- * 목록(O-30)은 pending · hold 만 준다. approved · removed 는 mock 이 목록에서 빼는 데만 쓴다.
+ * 요약할 내용 없음(noContent) 요약은 확인(confirmed)하거나 요약 전으로 되돌린다(reverted) (#244).
+ * 목록(O-30)은 pending · hold 만 준다. 나머지는 mock 이 목록에서 빼는 데만 쓴다.
  */
-export type Gate1Status = "pending" | "approved" | "hold" | "removed";
+export type Gate1Status = "pending" | "approved" | "hold" | "removed" | "confirmed" | "reverted";
 /** BE Gate2InsightResponse.gate2Status. 승인이 곧 보호자 열람이라 "발송 완료"가 따로 없다 */
 export type Gate2Status = "pending" | "approved" | "hold";
 
@@ -339,6 +340,11 @@ export interface SummaryItem {
   content: string;
   /** 빈 배열이면 문장을 못 읽은 요약 — 문장 편집 없이 그대로 승인하거나 제거만 된다 */
   claims: SummaryClaim[];
+  /**
+   * 그날 기록에 요약할 내용이 없다는 결과 (#244). content 는 "", claims 는 [] 이고
+   * uncoveredEntries 가 이 요약에 묶인 기록 원본 전체다. 결정은 confirm · revert 만 받는다.
+   */
+  noContent: boolean;
   /** 본문에 다른 아이 이름이 남아 있을 수 있다. 막지 않고 경고만 한다 */
   needsReview: boolean;
   reviewReasons: string[];
