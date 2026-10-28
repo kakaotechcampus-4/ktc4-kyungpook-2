@@ -77,10 +77,6 @@ public class InsightResultRecorder {
             // 눈금을 모르는 행이다 (이 컬럼이 생기기 전). 한 번 더 도는 쪽이 빠뜨리는 쪽보다 낫다.
             return true;
         }
-        // ponytail: 눈금은 승인 전부를 세고 재료는 CORRECTED 를 빼므로, 그 기간에 고쳐 승인한 요약만
-        // 더해지면 같은 재료로 한 번 더 부른다 (LLM 호출 한 번 + Gate 2 에 비슷한 글 한 줄).
-        // 멘토 A4 로 CORRECTED 도 재료에 넣기로 해서(다음 이슈) 그때 사라진다. 그 전까지는 감수한다 —
-        // 안 부르게 막으려면 "무엇이 늘었나" 까지 눈금에 담아야 하고, 곧 지울 코드다.
         Long current = childContextRepository.findMaxIdInPeriod(childId, periodFrom, periodTo);
         return current != null && current > latest.getLastContextId();
     }

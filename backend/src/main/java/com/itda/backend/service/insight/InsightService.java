@@ -51,7 +51,7 @@ import lombok.extern.slf4j.Slf4j;
  * child_context(child_id)        승인된 요약 id
  *   → summary_result(id IN ...)  entry_date · institution_id · claims
  *   → 기간으로 거른다
- *   → CORRECTED 요약 제거
+ *   → #221 이전 방식으로 고친 CORRECTED 요약 제거
  *   → organization(id IN ...)    institution_type
  * </pre>
  */
@@ -127,14 +127,6 @@ public class InsightService {
     }
 
     /**
-     * 승인된 요약 중 기간 안의 것만. {@code child_context} 에 행이 있다는 것이 곧 Gate 1 통과다.
-     *
-     * <p>⚠️ <b>교사가 고쳐서 승인한 요약({@code CORRECTED})은 통째로 뺀다</b> (§10.1 #7). #221 전에는
-     * {@code summary_result.claims} 가 AI 원문 그대로라 교사가 지운 문장이 근거를 달고 다른 기관에 나갔다.
-     * #221 부터는 Gate 1 승인 때 claims 를 문장 카드 결과로 다시 써서 지운 문장이 남지 않는다 — 이 제외를
-     * 없애는 것은 #199 Step 3 이다 ({@code AI/insight/CRITERIA.md} §10).
-     */
-    /**
      * 재료가 된 요약과, 그것을 고를 때 본 {@code child_context} 중 가장 큰 id.
      *
      * <p>눈금을 따로 조회하지 않고 <b>같은 조회 결과에서</b> 뽑는 이유 — 기본 격리 수준(READ COMMITTED)에서는
@@ -147,6 +139,15 @@ public class InsightService {
         }
     }
 
+    /**
+     * 승인된 요약 중 기간 안의 것만. {@code child_context} 에 행이 있다는 것이 곧 Gate 1 통과다.
+     *
+     * <p><b>교사가 고쳐서 승인한 요약({@code CORRECTED})도 재료로 쓴다</b> (#249, 멘토 리뷰 A4). #221 부터 Gate 1
+     * 승인 때 claims 를 문장 카드 결과로 다시 써서, 지운 문장은 빠지고 문장마다 {@code source} 가 붙는다.
+     *
+     * <p>⚠️ <b>#221 이전 방식으로 고친 것만 뺀다.</b> 그때는 고친 글이 {@code child_context.content} 에만 있고
+     * claims 는 AI 원문 그대로라, 쓰면 교사가 지운 문장이 근거를 달고 다른 기관에 나간다 ({@link #legacyCorrectedAmong}).
+     */
     private ApprovedMaterial approvedSummariesIn(Long childId, LocalDate periodFrom, LocalDate periodTo) {
         // 기간을 먼저 좁힌다. 승인본부터 집으면 그 아이의 승인 이력 전체를 올려 놓고 한 주치만 남기게 된다.
         List<SummaryResult> inPeriod =
@@ -166,10 +167,12 @@ public class InsightService {
         // 눈금은 방금 읽은 그 행들에서 뽑는다. 다시 조회하면 스냅샷이 달라진다.
         Long lastContextId = contexts.stream().map(ChildContext::getId).max(Long::compareTo).orElseThrow();
 
-        Set<Long> corrected = correctedAmong(summaryIds);
-        List<SummaryResult> summaries = inPeriod.stream()
+        List<SummaryResult> approved = inPeriod.stream()
                 .filter(summary -> approvedIds.contains(summary.getId()))
-                .filter(summary -> !corrected.contains(summary.getId()))
+                .toList();
+        Set<Long> legacyCorrected = legacyCorrectedAmong(approved);
+        List<SummaryResult> summaries = approved.stream()
+                .filter(summary -> !legacyCorrected.contains(summary.getId()))
                 // child_context 는 승인순이라 8월 기록을 10월에 승인하면 맨 앞에 온다.
                 // 인사이트는 기간의 흐름을 보므로 관찰 날짜로 다시 세운다.
                 .sorted(Comparator.comparing(SummaryResult::getEntryDate).thenComparing(SummaryResult::getId))
@@ -177,14 +180,44 @@ public class InsightService {
         return new ApprovedMaterial(summaries, lastContextId);
     }
 
-    /** {@code review_type} 을 보지 않는 것은 일부러다 — {@code target_type = SUMMARY} 가 이미 Gate 1 을 뜻한다 (§9.1). */
-    private Set<Long> correctedAmong(List<Long> summaryIds) {
-        return approvalRepository
-                .findByTargetTypeAndDecisionAndTargetIdIn(
-                        ApprovalTargetType.SUMMARY, ApprovalDecision.CORRECTED, summaryIds)
+    /**
+     * #221 이전 방식({@code editedContent})으로 고쳐 승인한 요약. claims 가 AI 원문 그대로라 교사가 지운 문장이
+     * 남아 있다 — 재료에서 뺀다.
+     *
+     * <p><b>claims 에 {@code source} 가 하나도 없으면 옛 방식이다.</b> #221 이후의 {@code CORRECTED} 는 남은 문장에
+     * 모두 {@code source} 가 붙는다 — 유지한 문장도 {@code "AI"} 로 적힌다 ({@code Gate1Cards}). 다 지워 claims 가
+     * 비었으면 어차피 낼 문장이 없어 같이 빠져도 잃는 것이 없다.
+     *
+     * <p>⚠️ <b>요약 에이전트가 claim 에 {@code source} 를 쓰지 않는다는 전제</b>에 기댄다
+     * ({@code AI/summary/schemas.py} 의 {@code Claim} 은 {@code text}·{@code evidence} 뿐이다). 요약 쪽이
+     * {@code source} 를 쓰기 시작하면 옛 방식을 못 알아보니, 그때는 이 판별을 승인 시각 기준으로 바꾼다.
+     *
+     * <p>{@code review_type} 을 보지 않는 것은 일부러다 — {@code target_type = SUMMARY} 가 이미 Gate 1 을 뜻한다 (§9.1).
+     */
+    private Set<Long> legacyCorrectedAmong(List<SummaryResult> summaries) {
+        Set<Long> corrected = approvalRepository
+                .findByTargetTypeAndDecisionAndTargetIdIn(ApprovalTargetType.SUMMARY, ApprovalDecision.CORRECTED,
+                        summaries.stream().map(SummaryResult::getId).toList())
                 .stream()
                 .map(Approval::getTargetId)
                 .collect(Collectors.toSet());
+        return summaries.stream()
+                .filter(summary -> corrected.contains(summary.getId()))
+                .filter(summary -> !hasSource(readClaims(summary)))
+                .map(SummaryResult::getId)
+                .collect(Collectors.toSet());
+    }
+
+    private static boolean hasSource(JsonNode claims) {
+        if (claims == null || !claims.isArray()) {
+            return false;
+        }
+        for (JsonNode claim : claims) {
+            if (claim.hasNonNull("source")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Map<Long, Organization> institutionsOf(List<SummaryResult> summaries) {
