@@ -115,6 +115,11 @@ class InsightServiceTest {
         return summary;
     }
 
+    private void correct(SummaryResult summary) {
+        em.persistAndFlush(new Approval(ApprovalTargetType.SUMMARY, summary.getId(),
+                ApprovalReviewType.GATE1, 1L, ApprovalDecision.CORRECTED, "카드로 고쳐 승인"));
+    }
+
     private Optional<PreparedInsight> prepare() {
         em.flush();
         em.clear();
@@ -216,16 +221,37 @@ class InsightServiceTest {
     }
 
     /**
-     * 교사가 고쳐서 승인한 요약은 통째로 뺀다 (schema.md §10.1 #7).
-     * 고친 본문은 child_context 에만 있고 claims 는 AI 원문 그대로라, 교사가 지운 문장이
-     * 근거를 달고 그대로 다른 기관에 나간다.
+     * 카드로 고쳐 승인한 요약도 재료로 쓴다 (#249, 멘토 리뷰 A4). #221 부터 claims 가 카드 결과로 다시 저장돼
+     * 지운 문장은 남지 않고, 문장마다 source 가 붙는다.
      */
     @Test
-    void 교사가_고쳐_승인한_요약은_재료에서_뺀다() {
-        SummaryResult corrected = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+    void 카드로_고쳐_승인한_요약도_재료로_쓴다() {
+        SummaryResult corrected = approved(school, LocalDate.of(2026, 10, 2), """
+                [{"text": "점심 줄에서 차례를 기다렸다.", "source": "AI",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "줄에서 차례를 기다림"}]},
+                 {"text": "손을 잡고 세어 주자 진정했다.", "source": "EDITED",
+                  "evidence": [{"journal_entry_id": 1042, "quote": "손 잡고 셈"}]},
+                 {"text": "약 먹은 날 차분했다.", "source": "TEACHER",
+                  "evidence": [{"journal_entry_id": null, "quote": "약 먹은 날 차분했다."}]}]
+                """);
+        correct(corrected);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::source).containsExactly(
+                InsightAgentRequest.ClaimSource.AI, InsightAgentRequest.ClaimSource.EDITED,
+                InsightAgentRequest.ClaimSource.TEACHER);
+    }
+
+    /**
+     * #221 이전 방식(editedContent)으로 고친 요약은 계속 뺀다. 고친 글은 child_context 에만 있고 claims 는
+     * AI 원문 그대로라, 쓰면 교사가 지운 문장이 근거를 달고 다른 기관에 나간다. source 가 하나도 없으면 옛 방식이다.
+     */
+    @Test
+    void 옛_방식으로_고쳐_승인한_요약은_계속_뺀다() {
+        SummaryResult legacy = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
         approved(center, LocalDate.of(2026, 10, 3), CLAIMS);
-        em.persistAndFlush(new Approval(ApprovalTargetType.SUMMARY, corrected.getId(),
-                ApprovalReviewType.GATE1, 1L, ApprovalDecision.CORRECTED, "추정 표현을 뺐습니다"));
+        correct(legacy);
 
         InsightAgentRequest request = prepare().orElseThrow().request();
 

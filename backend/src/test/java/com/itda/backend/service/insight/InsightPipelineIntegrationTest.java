@@ -1,6 +1,9 @@
 package com.itda.backend.service.insight;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -317,9 +320,44 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /** 교사가 고쳐서 승인한 요약은 재료에서 통째로 빠진다 (§10.1 #7). 재료가 없으면 집지도 않는다. */
+    /**
+     * 카드로 고쳐 승인한 요약이 워커를 거쳐 실제 AI 요청까지 간다 (#249, 멘토 리뷰 A4). 교사가 새로 쓴 문장은
+     * 일지 번호가 없어도 빠지지 않고 null 로 실려야 한다 — 빠지면 교사 문장이 인사이트에 영영 못 들어간다.
+     */
     @Test
-    void 고쳐_승인한_요약뿐이면_부르지도_집지도_않는다() {
+    void 카드로_고쳐_승인한_요약은_출처를_달고_AI_요청까지_간다() {
+        SummaryResult corrected = approved(school, periodFrom.plusDays(1), """
+                [{"text": "점심 줄에서 차례를 기다렸다.", "source": "AI",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "줄에서 차례를 기다림"}]},
+                 {"text": "손을 잡고 세어 주자 진정했다.", "source": "EDITED",
+                  "evidence": [{"journal_entry_id": 1042, "quote": "손 잡고 셈"}]},
+                 {"text": "약 먹은 날 차분했다.", "source": "TEACHER",
+                  "evidence": [{"journal_entry_id": null, "quote": "약 먹은 날 차분했다."}]}]
+                """);
+        approvalRepository.saveAndFlush(new Approval(ApprovalTargetType.SUMMARY, corrected.getId(),
+                ApprovalReviewType.GATE1, 1L, ApprovalDecision.CORRECTED, "카드로 고쳐 승인"));
+
+        agentHealthy();
+        agentServer.expect(requestTo(AI + "/insight"))
+                .andExpect(jsonPath("$.claims[*].source").value(contains("AI", "EDITED", "TEACHER")))
+                .andExpect(jsonPath("$.claims[2].evidence[0].journal_entry_id").value(nullValue()))
+                .andRespond(withSuccess("""
+                        {"child_id": 1, "insights": [], "llm_called": true}
+                        """, MediaType.APPLICATION_JSON));
+
+        worker.run();
+
+        assertThat(insightRunRepository.findAll()).singleElement()
+                .satisfies(run -> assertThat(run.getStatus()).isEqualTo(InsightRunStatus.DONE));
+        agentServer.verify();
+    }
+
+    /**
+     * #221 이전 방식으로 고쳐 승인한 요약(claims 에 source 가 없음)은 재료에서 빠진다 (#249). 재료가 없으면
+     * 집지도 않는다 — 나중에 다른 요약이 승인되면 그때 다시 봐야 하기 때문이다.
+     */
+    @Test
+    void 옛_방식으로_고쳐_승인한_요약뿐이면_부르지도_집지도_않는다() {
         SummaryResult corrected =
                 approved(school, periodFrom.plusDays(1), claims("추정이 섞인 문장.", 1041, "원문 인용"));
         approvalRepository.saveAndFlush(new Approval(ApprovalTargetType.SUMMARY, corrected.getId(),
