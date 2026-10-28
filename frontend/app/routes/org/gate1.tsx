@@ -26,7 +26,15 @@ const DESCRIPTION = "AI 요약이 기록과 맞는지 문장마다 확인하고 
 type Tab = "pending" | "hold";
 type Decision = "approve" | "hold" | "remove";
 /** 이번 방문에서 처리한 결과. stale: 그새 다른 곳에서 처리돼 더 결정할 수 없다 */
-type Outcome = "approved" | "corrected" | "held" | "removed" | "reopened" | "stale";
+type Outcome =
+  | "approved"
+  | "corrected"
+  | "held"
+  | "removed"
+  | "reopened"
+  | "confirmed"
+  | "reverted"
+  | "stale";
 
 /** 문장 하나에 고른 처리. text 는 EDIT 일 때 고치는 글 */
 interface Line {
@@ -664,6 +672,155 @@ function SentenceRow({
   );
 }
 
+/* ── 요약할 내용 없음 카드 (#244) ──────────────────────── */
+
+/**
+ * AI 가 그날 기록에서 전할 내용을 찾지 못한 결과. 고칠 문장이 없어 [확인] · [요약 되돌리기] 만 둔다.
+ * 교사가 "왜 없지?" 를 바로 볼 수 있게 묶인 기록 원본을 펼쳐 둔다.
+ */
+function NoContentItem({
+  item,
+  onResolved,
+}: {
+  item: SummaryItem;
+  onResolved: (outcome: Outcome, message?: string) => void;
+}) {
+  const revalidator = useRevalidator();
+  const [confirming, setConfirming] = useState<"confirm" | "revert" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const count = item.uncoveredEntries.length;
+
+  async function decide(decision: "confirm" | "revert") {
+    setBusy(true);
+    setError(null);
+    try {
+      await decideGate1(item.id, { decision, version: item.version });
+      onResolved(decision === "confirm" ? "confirmed" : "reverted");
+      await revalidator.revalidate();
+    } catch (err) {
+      if (isStale(err)) {
+        onResolved("stale", messageOf(err));
+        await revalidator.revalidate();
+      } else {
+        setError(messageOf(err));
+        if (needsReload(err)) await revalidator.revalidate();
+      }
+    } finally {
+      setBusy(false);
+      setConfirming(null);
+    }
+  }
+
+  return (
+    <article
+      aria-label={`${item.childName} ${dateLabel(item.entryDate)} 요약할 내용 없음`}
+      className="flex flex-col gap-4 rounded border border-line bg-surface px-6 pt-5.5 pb-5"
+    >
+      <ItemHeader
+        item={item}
+        badge={
+          item.processing ? (
+            <Pill tone="accent">요약 다시 만드는 중</Pill>
+          ) : (
+            <Pill tone="neutral">요약할 내용 없음</Pill>
+          )
+        }
+      />
+
+      {item.processing ? (
+        <div
+          role="status"
+          className="flex items-center gap-2.5 rounded bg-accentsoft px-3.5 py-3 text-accentink"
+        >
+          <LoaderCircle aria-hidden size={18} strokeWidth={1.8} className="shrink-0" />
+          <p className="text-[14px] leading-6">
+            <b className="font-bold">새 기록을 반영하는 중이에요.</b> 결과가 곧 바뀌어서 지금은
+            확인하거나 되돌릴 수 없어요.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-1 rounded bg-surface2/60 px-4 py-3.5">
+        <p className="text-[16px] font-bold">이날 기록에서 요약할 내용을 찾지 못했어요</p>
+        <p className="text-[14px] leading-6 text-ink2">
+          AI 가 내용을 지어내지 않도록 요약을 비워 두었어요. 아래 기록을 읽고 정말 전할 내용이
+          없으면 확인을, 요약이 필요하면 되돌리기를 눌러 주세요.
+        </p>
+      </div>
+
+      {count > 0 ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-[15px] font-bold text-ink2">이 날 기록 {count}건</h2>
+          <ul className="flex flex-col gap-2">
+            {item.uncoveredEntries.map((e) => (
+              <li
+                key={e.journalEntryId}
+                className="rounded border border-line bg-surface px-3.5 py-3 text-[16px] leading-relaxed text-ink"
+              >
+                {e.content}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <div className="flex flex-col gap-1.5 border-t border-surface2 pt-3.5">
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setConfirming("revert")}
+            disabled={busy || item.processing}
+            className="tap rounded border border-line2 bg-surface px-4.5 text-[16px] font-semibold text-ink2 hover:bg-surface2 disabled:border-line disabled:bg-paper disabled:text-muted"
+          >
+            요약 되돌리기
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming("confirm")}
+            disabled={busy || item.processing}
+            className="tap rounded bg-human px-5.5 text-[16px] font-bold text-white hover:brightness-95 disabled:bg-line disabled:text-muted"
+          >
+            확인
+          </button>
+        </div>
+        {error ? (
+          <p role="alert" className="text-right text-[14px] text-block">
+            {error}
+          </p>
+        ) : null}
+      </div>
+
+      {confirming === "confirm" ? (
+        <ConfirmDialog
+          title={`${item.childName} 기록을 요약 없이 끝낼까요?`}
+          warning="확인하면 되돌릴 수 없어요."
+          confirmLabel="확인하기"
+          tone="human"
+          busy={busy}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => decide("confirm")}
+        >
+          이날 기록{count > 0 ? ` ${count}건` : ""}을 "요약할 내용 없음"으로 끝내요. 아동 타임라인에는
+          올라가지 않아요.
+        </ConfirmDialog>
+      ) : confirming === "revert" ? (
+        <ConfirmDialog
+          title={`${item.childName} 요약을 되돌릴까요?`}
+          confirmLabel="되돌리기"
+          tone="neutral"
+          busy={busy}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => decide("revert")}
+        >
+          이 결과는 목록에서 빠지고 기록은 요약 전으로 돌아가요. 다시 요약을 요청하면 그 사이 들어온
+          같은 날 기록과 함께 새로 요약해요.
+        </ConfirmDialog>
+      ) : null}
+    </article>
+  );
+}
+
 /* ── 보류함 카드 ─────────────────────────────────────── */
 
 function HeldItem({
@@ -771,6 +928,8 @@ const OUTCOME: Record<Exclude<Outcome, "stale">, { title: string; tone: "pass" |
   held: { title: "보류함으로 옮겼어요", tone: "neutral" },
   removed: { title: "요약을 제거했어요", tone: "neutral" },
   reopened: { title: "보류를 해제했어요 · 검토 대기에서 다시 볼 수 있어요", tone: "pass" },
+  confirmed: { title: "요약할 내용 없음으로 확인했어요", tone: "pass" },
+  reverted: { title: "요약 전으로 되돌렸어요", tone: "neutral" },
 };
 
 function ResolvedCard({ item, outcome, message }: { item: SummaryItem; outcome: Outcome; message?: string }) {
@@ -886,7 +1045,13 @@ function Gate1Page() {
         ) : null}
 
         {live.map((s) =>
-          tab === "pending" ? (
+          tab === "pending" && s.noContent ? (
+            <NoContentItem
+              key={s.id}
+              item={s}
+              onResolved={(outcome, message) => resolve("pending", s, outcome, message)}
+            />
+          ) : tab === "pending" ? (
             <PendingItem
               key={s.id}
               item={s}
