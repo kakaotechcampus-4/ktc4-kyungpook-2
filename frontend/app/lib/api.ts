@@ -469,8 +469,9 @@ export async function getInsight(id: string): Promise<Insight | undefined> {
 /**
  * POST /api/v1/insights/{insightId}/gate2 (O-42)
  *
- * 수신 기관은 보내지 않는다 — 승인하면 보호자에게 열람 권한이 생기고, 어느 기관에 보일지는
- * 그 뒤 보호자가 고른다 (#206). 승인 · 보류 모두 되돌릴 수 없다.
+ * 수신 기관은 보내지 않는다 — 승인하면 보호자와, targets 중 동의가 granted 인 기관에 열람 권한이
+ * 생긴다 (#233). 고르는 단계는 없다. 승인 · 보류 모두 되돌릴 수 없다.
+ * 재료 기관의 동의가 그사이 꺼졌으면 승인만 409 INSIGHT_MATERIAL_CONSENT_REVOKED (보류는 된다).
  */
 export async function decideGate2(insightId: string, body: { decision: "approve" | "hold" }) {
   if (mockFor("insights")) {
