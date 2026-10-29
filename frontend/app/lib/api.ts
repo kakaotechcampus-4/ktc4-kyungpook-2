@@ -86,7 +86,9 @@ import type {
   LiveInvitation,
   MatchingItem,
   MatchResolution,
+  MyInstitution,
   ParentActivity,
+  PendingLinkRequest,
   RegisteredChild,
   SummaryItem,
   TimelineEntry,
@@ -145,6 +147,10 @@ const BE_READY = {
   activity: false,
   /** 기관 정보 · 증빙서류 (기관 설정 화면). 지금은 API 없이 mock 값만 띄운다 */
   institutionSettings: false,
+  /** 내 기관 정보 — 아동 명부의 "우리 기관 코드" 카드 (O-01) */
+  institutionInfo: true,
+  /** 보호자가 기관 코드로 보낸 연결 요청 목록 · 수락 · 거절 (O-60 ~ O-62) */
+  linkRequests: true,
   /** 보호자: 초대 코드 수락 뒤 동의 화면(P-02)의 미리보기 · 동의 (G-02, G-41) */
   guardianConsent: true,
   /**
@@ -173,8 +179,11 @@ const BE_READY = {
   consentRequests: true,
   /** 보호자: 기관 요청사항 — 준비물 · 확인사항 (G-50, G-51) */
   institutionRequests: false,
-  /** 보호자: 기관 코드로 연결 */
-  institutionCode: false,
+  /**
+   * 보호자: 기관 코드 조회 · 연결 요청 (G-43, G-44). 바로 연결되지 않고 기관이 수락해야 명부에 오른다.
+   * 수락 대기 중 기관은 아이 목록·홈 응답(guardianChildren)의 linkRequests 로 온다.
+   */
+  institutionCode: true,
   /** 보호자: 돌봄 정보 */
   careInfo: false,
 } satisfies Record<string, boolean>;
@@ -251,9 +260,20 @@ export { ApiError };
 
 /* ── 기관 ───────────────────────────────────────────── */
 
+/**
+ * mock 아이를 우리 기관 명부 한 줄로 만든다. 서버 명부(O-10)처럼 우리 기관에 다니는 아이만,
+ * 우리 기관 기준 동의(consent)를 붙여서. 다른 기관에만 다니는 mock 아이(연결 요청 데모)는 빠진다.
+ */
+function rosterItemOf(child: Child): ChildListItem | null {
+  const mine = child.institutions.find((i) => i.institution.id === mock.MY_INSTITUTION.id);
+  return mine ? { ...child, consent: mine.consent } : null;
+}
+
 /** GET /api/v1/institutions/me/children */
 export async function getChildren(): Promise<ChildListItem[]> {
-  if (mockFor("children")) return mock.CHILDREN;
+  if (mockFor("children")) {
+    return mock.CHILDREN.map(rosterItemOf).filter((c): c is ChildListItem => c !== null);
+  }
   return request("/api/v1/institutions/me/children");
 }
 
@@ -264,7 +284,60 @@ export async function getChildren(): Promise<ChildListItem[]> {
 export async function getChild(id: string): Promise<ChildListItem | undefined> {
   if (!mockFor("childProfile")) return request(`/api/v1/children/${id}`);
   if (!mockFor("children")) return (await getChildren()).find((c) => c.id === id);
-  return mock.CHILDREN.find((c) => c.id === id);
+  const child = mock.CHILDREN.find((c) => c.id === id);
+  return child ? (rosterItemOf(child) ?? undefined) : undefined;
+}
+
+/** GET /api/v1/institutions/me — 내 기관 정보와 보호자에게 알려 줄 기관 코드 (O-01) */
+export async function getMyInstitution(): Promise<MyInstitution> {
+  if (mockFor("institutionInfo")) return { ...mock.MY_INSTITUTION, code: mock.MY_INSTITUTION_CODE };
+  return request("/api/v1/institutions/me");
+}
+
+/** GET /api/v1/institutions/me/link-requests — 보호자가 기관 코드로 보낸, 기다리는 연결 요청 (O-60) */
+export async function getLinkRequests(): Promise<PendingLinkRequest[]> {
+  if (mockFor("linkRequests")) return mock.LINK_REQUESTS;
+  return request("/api/v1/institutions/me/link-requests");
+}
+
+/**
+ * POST /api/v1/institutions/me/link-requests/{childId}/accept — 연결 요청 수락 (O-61).
+ *
+ * 관리번호는 아이 등록과 같은 규칙이다(필수, 같은 기관 안 중복이면 409 DUPLICATE_EXTERNAL_ID).
+ * 수락은 동의가 아니라서 돌아오는 명부 한 줄의 consent 는 not_granted 다. 기다리는 요청이 없으면
+ * 404 LINK_REQUEST_NOT_FOUND — 그사이 보호자가 연결을 끊었거나 다른 화면에서 처리됐다.
+ */
+export async function acceptLinkRequest(childId: string, externalId: string): Promise<ChildListItem> {
+  if (mockFor("linkRequests")) {
+    const at = mock.LINK_REQUESTS.findIndex((r) => r.child.id === childId);
+    const child = mock.CHILDREN.find((c) => c.id === childId);
+    if (at === -1 || !child) throw new ApiError(404, "LINK_REQUEST_NOT_FOUND");
+    const trimmed = externalId.trim();
+    if (mock.CHILDREN.some((c) => c.externalId === trimmed)) {
+      throw new ApiError(409, "DUPLICATE_EXTERNAL_ID");
+    }
+    mock.LINK_REQUESTS.splice(at, 1);
+    child.externalId = trimmed;
+    child.institutions.push({ institution: mock.MY_INSTITUTION, consent: "not_granted" });
+    return rosterItemOf(child)!;
+  }
+  return request(`/api/v1/institutions/me/link-requests/${encodeURIComponent(childId)}/accept`, {
+    method: "POST",
+    body: JSON.stringify({ externalId }),
+  });
+}
+
+/** POST /api/v1/institutions/me/link-requests/{childId}/reject — 연결 요청 거절 (O-62). 보호자에게 알리지 않는다 */
+export async function rejectLinkRequest(childId: string): Promise<void> {
+  if (mockFor("linkRequests")) {
+    const at = mock.LINK_REQUESTS.findIndex((r) => r.child.id === childId);
+    if (at === -1) throw new ApiError(404, "LINK_REQUEST_NOT_FOUND");
+    mock.LINK_REQUESTS.splice(at, 1);
+    return;
+  }
+  return request(`/api/v1/institutions/me/link-requests/${encodeURIComponent(childId)}/reject`, {
+    method: "POST",
+  });
 }
 
 /** GET /api/v1/children/{childId}/context */
@@ -939,29 +1012,48 @@ export async function updateConsent(
   });
 }
 
-/** 기관 코드로 조회만 한다 — 아직 연결하지 않는다. */
+/**
+ * GET /api/v1/institutions/lookup — 기관 코드로 조회만 한다, 아직 연결하지 않는다 (G-43).
+ * 맞는 기관이 없으면 서버는 404 INSTITUTION_CODE_NOT_FOUND 를 주고, 여기서 null 로 바꾼다.
+ */
 export async function lookupInstitutionByCode(code: string): Promise<Institution | null> {
   if (mockFor("institutionCode")) return code.trim() ? mock.ART_ACADEMY : null;
-  return request(`/api/v1/institutions/lookup?code=${encodeURIComponent(code)}`);
+  try {
+    return await request(`/api/v1/institutions/lookup?code=${encodeURIComponent(code)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
 }
 
 /**
- * 초대코드 없이 보호자가 기관 코드를 직접 입력해서 연결한다.
- * mock 에서는 코드 형식과 무관하게 데모 기관(미술학원)을 찾아준다.
+ * POST /api/v1/children/{childId}/institutions — 기관 코드로 연결을 **요청**한다 (G-44).
+ *
+ * 바로 연결되지 않는다. 기관이 관리번호를 넣어 수락하면 아이가 그 기관 명부에 오르고, 그때
+ * "새 기관 권한 요청" 알림(G-40)으로 떠서 보호자가 공유 범위를 정해 동의한다. 같은 보호자가 다시
+ * 요청하면 기다리는 요청을 그대로 돌려준다. 이미 명부에 있으면 409 INSTITUTION_ALREADY_LINKED,
+ * 코드가 맞지 않으면 404 INSTITUTION_CODE_NOT_FOUND 를 던진다.
  */
 export async function addInstitutionByCode(
   childId: string,
   code: string,
-): Promise<{ institution: Institution } | null> {
+): Promise<{ institution: Institution; status: "pending"; requestedAt: string }> {
   if (mockFor("institutionCode")) {
-    if (!code.trim()) return null;
+    if (!code.trim()) throw new ApiError(404, "INSTITUTION_CODE_NOT_FOUND");
     const child = mock.CHILDREN.find((c) => c.id === childId);
-    if (!child) return null;
-    const exists = child.institutions.some((i) => i.institution.id === mock.ART_ACADEMY.id);
-    if (!exists) child.institutions.push({ institution: mock.ART_ACADEMY, consent: "granted" });
-    return { institution: mock.ART_ACADEMY };
+    if (!child) throw new ApiError(403, "FORBIDDEN");
+    if (child.institutions.some((i) => i.institution.id === mock.ART_ACADEMY.id)) {
+      throw new ApiError(409, "INSTITUTION_ALREADY_LINKED");
+    }
+    child.linkRequests ??= [];
+    let pending = child.linkRequests.find((r) => r.institution.id === mock.ART_ACADEMY.id);
+    if (!pending) {
+      pending = { institution: mock.ART_ACADEMY, requestedAt: new Date().toISOString() };
+      child.linkRequests.push(pending);
+    }
+    return { ...pending, status: "pending" };
   }
-  return request(`/api/v1/children/${childId}/institutions`, {
+  return request(`/api/v1/children/${encodeURIComponent(childId)}/institutions`, {
     method: "POST",
     body: JSON.stringify({ code }),
   });

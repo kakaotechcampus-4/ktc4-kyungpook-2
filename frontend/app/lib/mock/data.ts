@@ -17,6 +17,7 @@ import type {
   LiveInvitation,
   MatchingItem,
   ParentActivity,
+  PendingLinkRequest,
   SummaryItem,
   TimelineEntry,
 } from "@/lib/types";
@@ -80,6 +81,8 @@ export const INSTITUTION_SHARE_FIELDS: Record<
 
 /** 로그인한 교사가 소속된 기관 */
 export const MY_INSTITUTION = CENTER;
+/** 우리 기관 코드 — 보호자에게 알려 주면 보호자가 이 코드로 아이 연결을 요청한다 */
+export const MY_INSTITUTION_CODE = "K7P3QX9M";
 export const ME = { name: "박지현", role: "선생님" };
 
 /* 아동 ─────────────────────────────────────────────── */
@@ -143,6 +146,25 @@ export const CHILDREN: Child[] = [
     status: "active",
     institutions: [{ institution: CENTER, consent: "granted" }],
     care: { welfareCard: false, allergies: [], medications: [], weeklySchedule: [] },
+  },
+  {
+    // 기관 연결 요청 데모용 — 학교에만 다니고 우리 기관 명부에는 없다. 보호자가 우리 기관 코드로 요청했다
+    id: "child_3011",
+    name: "정OO",
+    birthDate: "2018-11-26",
+    status: "active",
+    institutions: [{ institution: SCHOOL, consent: "granted" }],
+  },
+];
+
+/* 기관 연결 요청 (I-09) ────────────────────────────── */
+
+/** 보호자가 우리 기관 코드로 보낸, 기다리는 연결 요청 */
+export const LINK_REQUESTS: PendingLinkRequest[] = [
+  {
+    child: { id: "child_3011", name: "정OO", birthDate: "2018-11-26" },
+    requesters: [{ name: "정OO 어머니" }],
+    requestedAt: "2026-10-29T09:20:00+09:00",
   },
 ];
 
