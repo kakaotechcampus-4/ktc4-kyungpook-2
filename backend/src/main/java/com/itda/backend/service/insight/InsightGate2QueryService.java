@@ -206,12 +206,11 @@ public class InsightGate2QueryService {
             Map<Long, Organization> organizations) {
         Long childId = insight.getChildId();
         Map<Long, ConsentState> consentOfChild = consents.getOrDefault(childId, Map.of());
-        List<Target> targets = enrolled.getOrDefault(childId, List.of()).stream()
-                // 승인하는 기관 자신은 수신 후보가 아니다 — 자기 글을 자기에게 공유하지 않는다.
-                .filter(id -> !id.equals(primary.getId()))
+        // 승인하면 실제로 받는 기관과 같은 규칙이다 (Gate2Recipients). 동의가 GRANTED 인 곳만 받는다.
+        List<Target> targets = Gate2Recipients.candidatesOf(enrolled.getOrDefault(childId, List.of()), primary.getId())
+                .stream()
                 .map(organizations::get)
                 .filter(org -> org != null)
-                .sorted(java.util.Comparator.comparing(Organization::getId))
                 .map(org -> new Target(InstitutionResponse.from(org),
                         consentOfChild.getOrDefault(org.getId(), ConsentState.NOT_GRANTED)))
                 .toList();

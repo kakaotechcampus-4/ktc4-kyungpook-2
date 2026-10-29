@@ -24,6 +24,7 @@ import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -115,6 +116,8 @@ public class SummaryGate1QueryService {
                         Gate1Version.of(s, entriesBySummary.getOrDefault(s.getId(), List.of())),
                         processing.contains(s.getId()),
                         s.getContent(),
+                        claimCards(s),
+                        s.isNoContent(),
                         s.isNeedsReview(),
                         parseStrings(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
                         uncoveredEntries(entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId())),
@@ -177,6 +180,19 @@ public class SummaryGate1QueryService {
             default -> throw new SummaryException(SummaryErrorCode.INVALID_REQUEST,
                     "unsupported gate1Status: " + gate1Status);
         };
+    }
+
+    /**
+     * 문장 카드. 번호가 결정 요청의 index 라, 글이 없는 문장도 빼지 않고 빈 글로 자리를 지킨다. 결정과 같은 기준으로
+     * 읽는다 ({@link Gate1Cards#readClaims}) — 목록에 보인 카드를 그대로 보냈는데 400 이 나면 안 된다.
+     */
+    private static List<ClaimCard> claimCards(SummaryResult summary) {
+        JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
+        List<ClaimCard> cards = new ArrayList<>();
+        for (int index = 0; index < claims.size(); index++) {
+            cards.add(new ClaimCard(index, claims.get(index).path("text").asText("")));
+        }
+        return cards;
     }
 
     private static List<UncoveredEntry> uncoveredEntries(List<JournalEntry> entries, Set<Long> coveredIds) {

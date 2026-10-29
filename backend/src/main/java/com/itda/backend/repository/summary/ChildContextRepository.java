@@ -1,6 +1,7 @@
 package com.itda.backend.repository.summary;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -45,4 +46,15 @@ public interface ChildContextRepository extends JpaRepository<ChildContext, Long
             + "where s.childId = :childId and s.entryDate between :from and :to)")
     Long findMaxIdInPeriod(@Param("childId") Long childId,
             @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * 그때 이후 Gate 1 을 통과한 요약들의 (아이, 관찰 날짜). 인사이트 워커가 <b>어느 주를 다시 볼지</b> 고른다 (#239).
+     *
+     * <p>관찰 날짜가 아니라 <b>승인 시각</b>으로 고르는 이유 — 밀린 기록을 늦게 승인해도 그 주를 다시 보려고다.
+     * 관찰 날짜로 "지난주" 만 보면, 2주 지나 승인한 기록은 영영 재료가 안 된다.
+     */
+    @Query("select distinct new com.itda.backend.repository.summary.ApprovedEntryDay(c.childId, s.entryDate) "
+            + "from ChildContext c, SummaryResult s "
+            + "where s.id = c.summaryResultId and c.createdAt >= :since")
+    List<ApprovedEntryDay> findApprovedEntryDaysSince(@Param("since") LocalDateTime since);
 }

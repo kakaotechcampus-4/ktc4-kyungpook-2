@@ -2,7 +2,10 @@ package com.itda.backend.service.insight;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,7 +17,7 @@ import org.springframework.transaction.UnexpectedRollbackException;
 
 import com.itda.backend.domain.insight.InsightRun;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
-import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.repository.summary.ChildContextRepository;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -36,10 +39,12 @@ public class InsightWorker {
     private final InsightService insightService;
     private final InsightAgentClient client;
     private final InsightResultRecorder recorder;
-    private final SummaryResultRepository summaryResultRepository;
+    private final ChildContextRepository childContextRepository;
     private final int batchSize;
     private final int periodDays;
     private final ZoneId zone;
+    private final int lookbackDays;
+    private final boolean includeCurrentWeek;
 
     /** 앱이 켜진 뒤 첫 실행인지. 되돌리기를 여기서 하는 이유는 {@code SummaryWorker} 와 같다 (집기와 겹치지 않게). */
     private boolean released;
@@ -47,18 +52,22 @@ public class InsightWorker {
     private boolean agentDown;
 
     public InsightWorker(InsightService insightService, InsightAgentClient client,
-            InsightResultRecorder recorder, SummaryResultRepository summaryResultRepository,
+            InsightResultRecorder recorder, ChildContextRepository childContextRepository,
             InsightProperties properties) {
         this.insightService = insightService;
         this.client = client;
         this.recorder = recorder;
-        this.summaryResultRepository = summaryResultRepository;
+        this.childContextRepository = childContextRepository;
         this.batchSize = properties.worker().batchSize();
         this.periodDays = properties.periodDays();
         this.zone = properties.zone();
+        this.lookbackDays = properties.lookbackDays();
+        this.includeCurrentWeek = properties.includeCurrentWeek();
     }
 
-    @Scheduled(fixedDelayString = "${app.insight.worker.delay-ms}")
+    /** 첫 실행 지연은 운영에선 0 이다. 워커를 직접 돌리는 테스트가 앱 시작 틱과 겹치지 않게 늦추려고 둔다. */
+    @Scheduled(fixedDelayString = "${app.insight.worker.delay-ms}",
+            initialDelayString = "${app.insight.worker.initial-delay-ms:0}")
     public void run() {
         if (!released) {
             int count = recorder.releaseStuck();
@@ -71,15 +80,14 @@ public class InsightWorker {
             return;
         }
 
-        LocalDate periodTo = periodEnd();
-        LocalDate periodFrom = periodTo.minusDays(periodDays - 1L);
-
-        List<Long> candidates = summaryResultRepository.findChildIdsWithSummaryBetween(periodFrom, periodTo);
         int processed = 0;
-        for (Long childId : candidates) {
+        for (Period period : candidates()) {
             if (processed >= batchSize) {
                 return;
             }
+            Long childId = period.childId();
+            LocalDate periodFrom = period.from();
+            LocalDate periodTo = period.to();
             if (!recorder.needsRun(childId, periodFrom, periodTo)) {
                 continue;
             }
@@ -103,15 +111,37 @@ public class InsightWorker {
     }
 
     /**
-     * 기간의 끝은 <b>지난 주 일요일</b>이다.
+     * 이번 차례에 볼 (아이, 기간) 후보. <b>최근에 Gate 1 을 통과한 요약</b>이 속한 주를 고른다 (#239).
      *
-     * <p>"어제까지 7일" 로 잡으면 자정마다 키가 하루씩 밀려서, 같은 아이가 6일이 겹치는 창으로 <b>매일</b>
-     * 다시 돌고 비슷한 인사이트가 Gate 2 대기 목록에 쌓인다. 집기는 키가 같을 때만 중복을 막으므로,
-     * 창이 실제로 넘어갈 때까지 키가 그대로여야 한다 — 요약이 {@code entry_date} 라는 데이터 쪽 기준에
-     * 묶이는 것과 같은 이유다.
+     * <p>관찰 날짜로 "지난주" 만 보면, 밀린 기록을 2주 뒤에 승인했을 때 그 주를 다시 보지 않아 영영 재료가 안
+     * 된다. 그래서 승인 시각으로 고르고, 기간은 그 요약의 관찰 날짜가 속한 주로 둔다.
+     *
+     * <p>기간의 끝은 <b>일요일</b>로 고정한다. "어제까지 7일" 로 잡으면 자정마다 키가 하루씩 밀려서, 같은 아이가
+     * 겹치는 창으로 <b>매일</b> 다시 돌고 비슷한 인사이트가 Gate 2 대기 목록에 쌓인다. 집기는 키가 같을 때만
+     * 중복을 막으므로 키가 그대로여야 한다.
+     *
+     * <p>끝나지 않은 이번 주는 기본으로 빼고, 시연에서만 넣는다 ({@code include-current-week}).
+     *
+     * <p>ponytail: {@code lookback-days} 보다 오래 AI 가 꺼져 있으면 그사이 승인은 놓친다. 그 일이 생기면
+     * 마지막으로 본 {@code child_context.id} 를 커서로 남겨 이어 보게 바꾼다.
      */
-    private LocalDate periodEnd() {
-        return LocalDate.now(zone).with(DayOfWeek.SUNDAY).minusWeeks(1);
+    private List<Period> candidates() {
+        LocalDate thisSunday = LocalDate.now(zone).with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
+        LocalDate lastEnd = includeCurrentWeek ? thisSunday : thisSunday.minusWeeks(1);
+        return childContextRepository.findApprovedEntryDaysSince(LocalDateTime.now().minusDays(lookbackDays))
+                .stream()
+                .map(day -> {
+                    LocalDate to = day.entryDate().with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
+                    return new Period(day.childId(), to.minusDays(periodDays - 1L), to);
+                })
+                .filter(period -> !period.to().isAfter(lastEnd))
+                .distinct()
+                // 최근 주부터 — 늦은 승인으로 옛 주가 쌓여도 지난주가 밀리지 않게 한다.
+                .sorted(Comparator.comparing(Period::to).reversed().thenComparing(Period::childId))
+                .toList();
+    }
+
+    private record Period(Long childId, LocalDate from, LocalDate to) {
     }
 
     /**

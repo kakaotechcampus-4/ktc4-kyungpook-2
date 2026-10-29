@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
+import { Lock } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
 import {
   Card,
+  ConfirmDialog,
   ConsentStatus,
   EmptyState,
   EvidenceChip,
@@ -39,6 +41,9 @@ function Gate2Item({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialNotice);
   const revalidator = useRevalidator();
+  /** 승인하면 실제로 받는 기관은 동의가 granted 인 곳뿐이다 (#233) */
+  const receivers = insight.targets.filter((t) => t.consent === "granted");
+  const excluded = insight.targets.filter((t) => t.consent !== "granted");
 
   async function decide(decision: Decision) {
     setBusy(true);
@@ -69,8 +74,9 @@ function Gate2Item({
       <Card className="border-pass/40 bg-passsoft/50">
         <p className="mb-2 text-[16px] font-bold text-pass">승인 완료</p>
         <p className="mb-3 text-[15px] leading-7 text-ink2">
-          이제 보호자가 <b className="font-semibold">{insight.childName}</b> 의 분석 결과를 볼 수
-          있습니다. 어느 기관과 나눌지는 보호자가 정합니다.
+          이제 {receivers.length > 0 ? `보호자와 기관 ${receivers.length}곳이` : "보호자가"}{" "}
+          <b className="font-semibold">{insight.childName}</b> 의 분석 결과를 볼 수 있습니다.
+          보호자가 공유를 끄면 그 기관은 더 볼 수 없습니다.
         </p>
         <Note>승인은 되돌릴 수 없습니다.</Note>
       </Card>
@@ -82,7 +88,7 @@ function Gate2Item({
       <Card className="border-line2">
         <p className="mb-2 text-[16px] font-bold text-ink2">보류됨</p>
         <p className="text-[15px] leading-7 text-muted">
-          이 결과는 보호자에게 보이지 않습니다. 보류는 되돌릴 수 없고, 다음 분석 결과가 만들어지면
+          이 결과는 보호자와 다른 기관에 보이지 않습니다. 보류는 되돌릴 수 없고, 다음 분석 결과가 만들어지면
           새로 검토할 수 있습니다.
         </p>
       </Card>
@@ -147,15 +153,23 @@ function Gate2Item({
         ))}
       </ul>
 
-      {/* 읽기 전용 참고. 수신 기관은 기관이 고르지 않고 승인 뒤 보호자가 정한다 (#206) */}
-      {insight.targets.length > 0 ? (
-        <section className="mb-4">
-          <h3 className="mb-1 text-[17px] font-bold">이 아이가 다니는 다른 기관</h3>
-          <p className="mb-3 text-[14px] text-muted">
-            승인하면 보호자가 이 결과를 어느 기관과 나눌지 정합니다. 선생님이 고르지 않습니다.
+      {/*
+        승인하면 받는 기관. 고르는 단계 없이 보호자의 기관별 공유 동의(granted)로 정해진다 (#233).
+        미동의 기관도 숨기지 않고 잠금 + 사유로 보인다 — 왜 안 가는지 알 수 있게.
+      */}
+      <section className="mb-4">
+        <h3 className="mb-1 text-[17px] font-bold">승인하면 함께 받는 기관</h3>
+        <p className="mb-3 text-[14px] text-muted">
+          보호자가 공유에 동의한 기관만 받습니다. 선생님이 고르지 않습니다.
+        </p>
+        {receivers.length === 0 ? (
+          <p className="mb-2 rounded border border-dashed border-line2 px-3 py-2.5 text-[14px] text-ink2">
+            지금 받을 다른 기관이 없습니다. 승인하면 보호자에게만 보입니다.
           </p>
+        ) : null}
+        {insight.targets.length > 0 ? (
           <ul className="flex flex-col gap-2">
-            {insight.targets.map((t) => (
+            {receivers.map((t) => (
               <li
                 key={t.institution.id}
                 className="tap flex items-center gap-3 rounded border border-line px-3"
@@ -166,13 +180,28 @@ function Gate2Item({
                 </span>
               </li>
             ))}
+            {excluded.map((t) => (
+              <li
+                key={t.institution.id}
+                className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 rounded border border-line bg-paper px-3 py-2 text-muted"
+              >
+                <Lock aria-hidden size={15} strokeWidth={1.8} className="shrink-0" />
+                <InstitutionChip institution={t.institution} withName />
+                <span className="ml-auto text-[14px]">
+                  {t.consent === "revoked"
+                    ? "보호자가 공유를 꺼서 받지 않습니다"
+                    : "보호자 동의 전이라 받지 않습니다"}
+                </span>
+              </li>
+            ))}
           </ul>
-        </section>
-      ) : null}
+        ) : null}
+      </section>
 
       <div className="mb-4">
         <IrreversibleWarning>
-          승인하면 보호자에게 바로 보입니다. 승인과 보류 모두 되돌릴 수 없습니다.
+          승인하면 {receivers.length > 0 ? "보호자와 위 기관에" : "보호자에게"} 바로 보입니다. 승인과
+          보류 모두 되돌릴 수 없습니다.
         </IrreversibleWarning>
       </div>
 
@@ -199,73 +228,25 @@ function Gate2Item({
         </p>
       ) : null}
 
+      {/* 승인·보류 모두 되돌릴 수 없어 한 번 더 묻는다 */}
       {confirming ? (
         <ConfirmDialog
-          decision={confirming}
-          insight={insight}
+          title={`${insight.childName} 분석 결과를 ${confirming === "approve" ? "승인할까요?" : "보류할까요?"}`}
+          warning="되돌릴 수 없습니다."
+          confirmLabel={confirming === "approve" ? "승인하기" : "보류하기"}
+          tone={confirming === "approve" ? "human" : "neutral"}
           busy={busy}
           onCancel={() => setConfirming(null)}
           onConfirm={() => decide(confirming)}
-        />
+        >
+          {confirming === "approve"
+            ? receivers.length > 0
+              ? `승인하면 보호자와 ${receivers.map((t) => t.institution.name).join(", ")}에 바로 보입니다.`
+              : "승인하면 보호자에게 바로 보입니다."
+            : "보류하면 이 결과는 보호자와 다른 기관에 보이지 않습니다."}
+        </ConfirmDialog>
       ) : null}
     </Card>
-  );
-}
-
-/** 승인·보류 모두 되돌릴 수 없어 한 번 더 묻는다 */
-function ConfirmDialog({
-  decision,
-  insight,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  decision: Decision;
-  insight: Insight;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const approve = decision === "approve";
-  return (
-    <div
-      role="dialog"
-      aria-modal
-      aria-labelledby="gate2-confirm-title"
-      className="fixed inset-0 z-20 flex items-center justify-center bg-ink/40 px-4"
-    >
-      <div className="w-full max-w-[440px] rounded bg-surface p-5">
-        <p id="gate2-confirm-title" className="mb-2 text-[18px] font-bold">
-          {insight.childName} 분석 결과를 {approve ? "승인할까요?" : "보류할까요?"}
-        </p>
-        <p className="mb-5 text-[15px] leading-7 text-ink2">
-          {approve
-            ? "승인하면 보호자에게 바로 보입니다. "
-            : "보류하면 이 결과는 보호자에게 보이지 않습니다. "}
-          <b className="font-semibold">되돌릴 수 없습니다.</b>
-        </p>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            disabled={busy}
-            className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2 disabled:opacity-60"
-          >
-            취소
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={busy}
-            className={`tap rounded px-5 text-[15px] font-semibold disabled:opacity-60 ${
-              approve
-                ? "bg-human text-white hover:brightness-95"
-                : "border border-line2 bg-surface2 text-ink2 hover:brightness-95"
-            }`}
-          >
-            {busy ? "처리 중…" : approve ? "승인하기" : "보류하기"}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -289,7 +270,11 @@ function messageOf(err: unknown): string {
     return "같은 기간의 더 새 분석 결과가 만들어졌습니다. 목록에서 새 결과를 검토해 주세요.";
   }
   if (err.code === "INSIGHT_NOT_PRIMARY_SOURCE") {
-    return "우리 기관이 승인하는 결과가 아닙니다. 근거를 가장 많이 낸 기관이 검토합니다.";
+    return "우리 기관이 승인하는 결과가 아닙니다. 근거를 낸 기관 중 학교 > 센터 > 활동지원사 순으로 한 곳이 검토합니다.";
+  }
+  // 여러 기관 기록을 엮은 글이라 일부만 뺄 수 없다. 보류는 된다 (아무 데도 안 나가므로)
+  if (err.code === "INSIGHT_MATERIAL_CONSENT_REVOKED") {
+    return "근거를 낸 기관 중 보호자가 공유를 끈 곳이 있어 승인할 수 없습니다. 보류는 할 수 있습니다.";
   }
   if (err.status === 404) return "더 이상 볼 수 없는 결과입니다. 목록을 새로 불러왔습니다.";
   if (err.status === 401) return "로그인이 풀렸습니다. 다시 로그인한 뒤 시도해 주세요.";

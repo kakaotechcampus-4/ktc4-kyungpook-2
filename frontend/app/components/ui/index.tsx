@@ -1,9 +1,10 @@
 /**
- * 공통 컴포넌트 C1~C8 — 와이어프레임 Components.dc.html 대응.
+ * 공통 컴포넌트 C1~C9 — 와이어프레임 Components.dc.html 대응 (C9 확인 창은 그 뒤에 추가).
  *
  * 규칙: 상태는 색 단독으로 전달하지 않는다. 항상 텍스트 라벨을 함께 렌더한다.
  * (교사 사용자 40대 중후반 + 색약 대응)
  */
+import { useEffect, useId } from "react";
 import { Link } from "react-router";
 import type {
   ConsentState,
@@ -299,6 +300,84 @@ export function IrreversibleWarning({
         !
       </span>
       <p className="leading-6 font-medium">{children}</p>
+    </div>
+  );
+}
+
+/* ── C9 확인 창 ─────────────────────────────────────── */
+
+const CONFIRM_TONE = {
+  human: "bg-human text-white",
+  neutral: "bg-ink2 text-white",
+  block: "bg-block text-white",
+  accent: "bg-accent text-white",
+} as const;
+
+/** 되돌릴 수 없는 결정 앞에서 한 번 더 묻는다. Esc · 취소로 닫는다 */
+export function ConfirmDialog({
+  title,
+  children,
+  warning,
+  confirmLabel,
+  tone = "human",
+  busy = false,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  children?: React.ReactNode;
+  /** 굵게 따로 띄우는 한 줄. "되돌릴 수 없어요" 같은 것 */
+  warning?: React.ReactNode;
+  confirmLabel: string;
+  tone?: keyof typeof CONFIRM_TONE;
+  busy?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const titleId = useId();
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !busy) onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onCancel]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-20 flex items-center justify-center bg-ink/40 px-4"
+    >
+      <div className="flex w-full max-w-[440px] flex-col gap-2.5 rounded-md bg-surface p-5 shadow-[0_12px_32px_rgba(22,28,27,0.18)]">
+        <p id={titleId} className="text-[18px] font-bold">
+          {title}
+        </p>
+        {children ? <div className="text-[15px] leading-7 text-ink2">{children}</div> : null}
+        {warning ? <p className="text-[15px] font-bold text-ink2">{warning}</p> : null}
+        <div className="mt-2 flex justify-end gap-2">
+          {/* 엔터 한 번에 되돌릴 수 없는 결정이 나가지 않게 취소에 포커스를 둔다 */}
+          <button
+            type="button"
+            autoFocus
+            onClick={onCancel}
+            disabled={busy}
+            className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2 disabled:opacity-60"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className={`tap rounded px-5 text-[15px] font-bold hover:brightness-95 disabled:opacity-60 ${CONFIRM_TONE[tone]}`}
+          >
+            {busy ? "처리 중…" : confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

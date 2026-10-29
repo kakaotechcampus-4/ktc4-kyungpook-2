@@ -78,7 +78,7 @@ GET /api/v1/auth/me
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "signupCompleted": true }
+  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true }
 }
 ```
 
@@ -98,6 +98,7 @@ GET /api/v1/auth/me
 | `name` | string | 아니오 | 카카오 닉네임. 동의를 거부하면 **이 필드가 빠집니다** |
 | `role` | `"org"` \| `"parent"` | 아니오 | `signupCompleted: true`일 때만. `admin`은 아직 없습니다 |
 | `institutionId` | string | 아니오 | `role === "org"`일 때만 |
+| `institutionName` | string | 아니오 | `role === "org"`일 때만. 가입 때 입력한 기관명입니다 (#236) |
 
 **프론트는 `signupCompleted`만 보고 분기합니다.** `role`이 없다고 로그인 화면으로 보내면
 안 됩니다 — 가입 미완료는 정상 상태입니다.
@@ -225,7 +226,7 @@ POST /api/v1/auth/signup   → 201 Created
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "signupCompleted": true }
+  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true }
 }
 ```
 
@@ -807,12 +808,12 @@ O-15 ~ O-19 공통 오류:
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| O-30 | GET | `/summaries?gate1Status=pending\|hold` | 검토 대기 목록 · 보류함 · **초안 구현** | I-03, I-08 |
-| O-31 | POST | `/summaries/{summaryId}/gate1` | 승인 / 수정 후 승인 / 보류 / 제거 · **구현됨** | I-08 |
+| O-30 | GET | `/summaries?gate1Status=pending\|hold` | 검토 대기 목록 · 보류함 · **구현됨** | I-03, I-08 |
+| O-31 | POST | `/summaries/{summaryId}/gate1` | 승인 / 수정 후 승인 / 보류 / 제거 / 확인·요약 되돌리기(요약할 내용 없음) · **구현됨** | I-08 |
 | O-32 | POST | `/summaries/run` | 요약 · **구현됨** | I-08 |
 | O-33 | POST | `/summaries/{summaryId}/reopen` | 보류 해제 · **구현됨** | I-08 |
 
-> O-30 · O-31 · O-33 의 응답 모양은 와이어프레임 합의 전 초안입니다(#178). 화면이 정해지면 #183 에서 확정합니다.
+> O-30 · O-31 · O-33 의 요청·응답은 Gate 1 문장 카드 화면(FE #240)에 맞춰 확정했습니다 (#183).
 
 **O-32 요청**
 
@@ -833,7 +834,7 @@ O-15 ~ O-19 공통 오류:
 | 그 아이·날짜에 요약할 기록도, 매칭·검증 중인 기록도 없음 | 400 | `SUMMARY_INVALID_REQUEST` |
 | 없는 아이이거나 다른 기관 소속 | 404 | `SUMMARY_CHILD_NOT_FOUND` |
 
-**O-30 응답** · 초안
+**O-30 응답**
 
 우리 기관의 요약을 오래된 날짜부터 줍니다. `gate1Status` 는 `pending`(기본값, 검토 대기)과 `hold`(보류함)만
 받고 다른 값은 `400 SUMMARY_INVALID_REQUEST` 입니다.
@@ -843,7 +844,8 @@ O-15 ~ O-19 공통 오류:
   { "id": 50, "childId": 8, "childName": "김하늘", "entryDate": "2026-10-08", "revision": 1,
     "status": "GATE1_PENDING", "version": "2026-10-09T03:05:12.345678/1041,1042", "processing": false,
     "content": "오전 활동에서 블록을 다섯 층까지 쌓았다 …",
-    "needsReview": true, "reviewReasons": ["다른아동이름"],
+    "claims": [ { "index": 0, "text": "오전 활동에서 블록을 다섯 층까지 쌓았다." }, { "index": 1, "text": "…" } ],
+    "noContent": false, "needsReview": true, "reviewReasons": ["다른아동이름"],
     "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
     "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"] } ] }
 ]
@@ -853,6 +855,8 @@ O-15 ~ O-19 공통 오류:
 | --- | --- |
 | `version` | 결정(O-31)할 때 그대로 돌려보내는 값(요약 수정 시각 + 요약에 든 일지 id). 해석하지 말고 문자열 그대로 보내주세요 |
 | `processing` | 곧 이 요약이 바뀜. 지금 다시 요약 중이거나, [요약](O-32)을 눌러 뒀고 같은 날 이 아이 기록 중 아직 요약에 반영되지 않은 것이 있을 때(검증 중 포함) 켜집니다. 눌러 둔 상태에서는 매칭 전이라 누구 기록인지 모르는 것이 있어도 켜집니다. 누르지 않았으면 새 기록이 있어도 `false` 입니다 — 자동 요약이 없어 누르기 전까지 바뀌지 않습니다 (#181). 열기·승인 버튼을 막아주세요. 보류함 항목과 옛 판은 항상 `false` |
+| `claims` | 요약 문장 카드. 카드마다 [유지]·[수정]·[삭제]를 두고, 결정(O-31) 때 `index` 를 그대로 돌려보냅니다 (#221). **빈 배열이면** 문장을 읽지 못한 요약이라 카드 편집([추가] 포함)을 막아 주세요 — 카드를 보내면 400 입니다. 그대로 승인하거나 제거만 됩니다. `noContent` 요약도 빈 배열이지만 그건 아래 `noContent` 를 따릅니다 |
+| `noContent` | 그날 기록에 요약할 내용이 없다는 결과 (#244). `content` 는 `""`, `claims` 는 `[]` 이고 `uncoveredEntries` 가 **이 요약에 묶인 기록 원본 전체**입니다. "요약할 내용 없음" 카드로 보여주고 원본을 펼쳐 두세요 — 교사가 "왜 없지?" 를 바로 확인할 수 있게. 버튼은 [확인](O-31 `confirm`)과 [요약 되돌리기](O-31 `revert`) 둘만 둡니다 |
 | `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
 | `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
 | `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유(`issue_types` 원본) |
@@ -869,34 +873,60 @@ O-15 ~ O-19 공통 오류:
 ```
 
 ```json
-{ "decision": "approve", "editedContent": "선생님이 고친 본문", "version": "2026-10-09T03:05:12.345678/1041,1042" }
+{ "decision": "approve", "version": "2026-10-09T03:05:12.345678/1041,1042",
+  "cards": [
+    { "index": 0, "action": "KEEP" },
+    { "index": 1, "action": "DELETE" },
+    { "index": 2, "action": "EDIT", "text": "블록을 두 번 쌓았다." },
+    { "action": "ADD", "text": "약 먹은 날 차분했다." } ] }
 ```
 
 ```json
 { "decision": "hold", "version": "2026-10-09T03:05:12.345678/1041,1042" }
 ```
 
+```json
+{ "decision": "confirm", "version": "2026-10-09T03:05:12.345678/1041,1042" }
+```
+
+```json
+{ "decision": "revert", "version": "2026-10-09T03:05:12.345678/1041,1042" }
+```
+
 | 필드 | 조건 |
 | --- | --- |
-| `decision` | `approve` \| `hold` \| `remove` (반려는 없습니다 — 고쳐서 승인하거나 보류·제거합니다) |
-| `editedContent` | `approve` 일 때만. 빈 문자열 불가. 보류·제거에 보내면 400 |
+| `decision` | `approve` \| `hold` \| `remove` \| `confirm` \| `revert` (반려는 없습니다 — 고쳐서 승인하거나 보류·제거합니다). `confirm`·`revert` 는 `noContent` 요약에만, 나머지는 그 밖의 요약에만 받습니다 |
+| `cards` | `approve` 일 때만, 빈 배열 불가. 없으면 그대로 승인. 보류·제거·확인·되돌리기에 보내면 400. **배열 순서가 최종 문장 순서입니다** |
+| `cards[].action` | `KEEP`(유지) \| `EDIT`(수정) \| `DELETE`(삭제) \| `ADD`(추가). 대문자 |
+| `cards[].index` | O-30 `claims` 의 `index`. `KEEP`·`EDIT`·`DELETE` 는 필수, `ADD` 는 보내지 않음. **원래 문장은 모두 한 번씩** 보내야 합니다 |
+| `cards[].text` | `EDIT` 은 고친 글, `ADD` 는 새 글 (빈 글 불가, 1000자까지). `KEEP`·`DELETE` 는 보내지 않음 |
 | `version` | 필수. O-30 에서 받은 값 그대로 |
+
+`editedContent`(고친 본문 전체)는 없어졌습니다 (#221). 보내면 버리지 않고 400 으로 막습니다 — 버리면 고친 글 대신
+AI 원문이 승인됩니다.
 
 | 결정 | 요약 | 그 요약의 일지 | 기록(`decision`) |
 | --- | --- | --- | --- |
-| 승인 (`editedContent` 없음 또는 AI 원문과 같음) | 승인 | 요약에 안 들어간 일지까지 모두 완료 | `APPROVED` |
-| 고쳐서 승인 (AI 원문과 한 글자라도 다름. 줄바꿈 방식·앞뒤 공백 차이는 무시) | 승인. 고친 본문이 아동 타임라인에 올라감 | 위와 같음 | `CORRECTED` |
+| 승인 (`cards` 없음, 또는 모두 원래 순서대로 `KEEP`) | 승인. AI 원문이 아동 타임라인에 올라감 | 요약에 안 들어간 일지까지 모두 완료 | `APPROVED` |
+| 고쳐서 승인 (`KEEP` 이 아닌 카드가 있거나 순서가 바뀜) | 승인. 남은 문장을 순서대로 이은 글이 아동 타임라인에 올라감 | 위와 같음 | `CORRECTED` |
 | 보류 | 보류함으로 | 함께 보류 (같은 날 새 기록이 와도 묶이지 않음) | `HOLD` |
 | 제거 | 제거 | 모두 삭제. **되돌릴 수 없음** | `REMOVED` |
+| 확인 (`noContent` 요약만) | 확인됨(`CONFIRMED`). 올릴 글이 없어 아동 타임라인에 올라가지 않음 | 모두 완료 | `CONFIRMED` |
+| 요약 되돌리기 (`noContent` 요약만) | 되돌림(`REVERTED`). 목록에서 빠짐 | 요약 전으로 돌아감 — [요약](O-32)을 다시 누르면 새로 요약되고, 그 사이 들어온 같은 날 기록도 함께 묶임 | `REVERTED` |
 
-승인과 제거는 되돌릴 수 없으니 확인 팝업을 띄워주세요. 고친 본문은 MVP 에서 다시 검증하지 않습니다.
+승인과 제거는 되돌릴 수 없으니 확인 팝업을 띄워주세요. 고친 글과 새 글은 MVP 에서 다시 검증하지 않습니다.
+`EDIT` 글이 원문과 줄바꿈 방식·앞뒤 공백만 다르면 고치지 않은 것(`KEEP`)으로 봅니다. 문장을 모두 지우려면
+승인 대신 제거를 써주세요 — 남는 문장이 없으면 400 입니다.
+
+고쳐서 승인하면 인사이트가 읽는 문장 목록(`summary_result.claims`)도 카드 결과로 바뀝니다. 지운 문장은 빠지고, 고친
+문장과 새 문장에는 누가 썼는지(`EDITED`·`TEACHER`) 표시가 붙습니다 (DB 스키마 §8.2).
 
 **보류함**은 보류 해제(O-33)와 제거만 둡니다. 보류된 요약을 승인하려면 보류를 해제한 뒤 검토 목록에서 합니다.
 
 `409 SUMMARY_CHANGED` 를 받으면 "요약이 새 기록으로 바뀌었어요" 안내를 띄우고 목록으로 돌아가 다시 불러와 주세요 —
 교사가 화면을 연 사이 같은 날 기록이 들어와 요약이 다시 만들어진 경우입니다.
 
-**응답** · 초안
+**응답**
 
 ```json
 { "summaryId": 50, "status": "APPROVED", "decision": "CORRECTED" }
@@ -904,7 +934,8 @@ O-15 ~ O-19 공통 오류:
 
 | 실패 | 상태 | 코드 |
 | --- | --- | --- |
-| `decision`·`version` 누락, 허용되지 않은 값, 빈 `editedContent`, 승인이 아닌데 `editedContent` | 400 | `INVALID_REQUEST` |
+| `decision`·`version` 누락, 허용되지 않은 값, 승인이 아닌데 `cards`, 빈 `cards`, 카드 `action` 에 맞지 않는 `index`·`text`, 카드 100장·글 1000자 초과, 옛 `editedContent` 를 보냄 | 400 | `INVALID_REQUEST` |
+| 원래 문장 `index` 가 빠지거나 겹치거나 범위 밖, 남는 문장이 없음, 문장(`claims`)을 못 읽는 요약에 `cards` 를 보냄, `noContent` 요약에 `confirm`·`revert` 가 아닌 결정 또는 그 밖의 요약에 `confirm`·`revert` | 400 | `SUMMARY_INVALID_REQUEST` |
 | 없는 요약이거나 다른 기관 요약 | 404 | `SUMMARY_NOT_FOUND` |
 | 이미 처리된 요약 | 409 | `SUMMARY_ALREADY_REVIEWED` |
 | 보류된 요약을 승인·보류 (보류 해제 먼저) | 409 | `SUMMARY_HELD` |
@@ -983,8 +1014,10 @@ O-15 ~ O-19 공통 오류:
 Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문장**이 근거로 섞일 수 있습니다
 (`AI/insight/CRITERIA.md` §5, #199). 기관 경계를 넘는 마지막 관문이라 승인자가 알아야 합니다.
 
-**`targets` 는 읽기 전용 참고입니다.** 미동의 기관도 `consent`와 함께 포함되며, 프론트는 숨기지 않고
-**잠금 + 사유 표시**로 보여줍니다. 다만 **기관이 수신처를 고르지 않습니다** — 승인 뒤 보호자가 정합니다.
+**`targets` 는 승인하면 이 글을 받을 후보 기관입니다** (#233). 그 아이 명부에 있는 기관 중 **승인 기관
+자신만 뺀 것**이며(재료를 낸 다른 기관도 받습니다), 그중 **`consent` 가 `granted` 인 기관만 실제로 받습니다.** 미동의 기관도 함께 오니 프론트는
+숨기지 않고 **잠금 + 사유 표시**로 보여줍니다. 수신처를 고르는 단계는 없습니다 — 기관도 보호자도 고르지
+않고, 보호자가 미리 해 둔 기관별 동의를 그대로 씁니다.
 
 **O-42 요청**
 
@@ -992,12 +1025,13 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 { "decision": "approve" }
 ```
 
-`decision` 은 `approve` 또는 `hold` 입니다. `targetInstitutionIds` 는 **없어졌습니다** — 수신 기관은
-보호자가 고릅니다.
+`decision` 은 `approve` 또는 `hold` 입니다. `targetInstitutionIds` 는 **없습니다** — 받는 기관은 보호자의
+기관별 공유 동의로 정해집니다.
 
 | 규칙 | 내용 |
 | --- | --- |
-| 승인하면 | 인사이트가 `approved` 가 되고 **보호자에게 열람 권한이 생깁니다.** 기관 열람 권한은 그 뒤 보호자가 기관을 고를 때 생깁니다 |
+| 승인하면 | 인사이트가 `approved` 가 되고 **보호자와, `targets` 중 동의가 `granted` 인 기관에 열람 권한이 생깁니다** (#233) |
+| 승인 뒤에 동의한 기관 | 지난 글은 받지 않습니다. 동의 뒤에 승인된 글부터 받습니다 |
 | 보호자가 없으면 | 승인은 되지만 아무에게도 보이지 않습니다. 오류가 아닙니다 |
 | 동의가 그사이 꺼졌으면 | 인사이트를 만들 때는 동의가 있었어도 **승인 시점에 다시 봅니다.** 재료 기관 중 하나라도 꺼져 있으면 `409` 입니다 — 여러 기관 기록을 엮은 글이라 일부만 뺄 수 없습니다. **보류는 됩니다** (아무 데도 안 나가므로) |
 | 되돌리기 | **승인은 취소할 수 없습니다.** 취소 API 는 만들지 않습니다 |
@@ -1316,6 +1350,48 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 `trendEvidenceIds` · `evidenceIds`는 **G-20에서 조회 가능한 `JournalEntry.id`**여야
 합니다. 프론트는 이 id로 근거 일지 화면(P-10)을 그립니다.
 
+### 5.4-1 받은 인사이트
+
+> **2026-10-26 신설 (#233)** — Gate 2 승인이 보호자에게 여는 인사이트를 보호자가 읽는 화면입니다.
+> 보호자가 글마다 기관을 고르는 단계는 **없습니다** (10/26 기획 변경). 받는 기관은 보호자가 미리 해 둔
+> 기관별 공유 동의로 정해집니다 (O-42).
+
+| # | 메서드 | 경로 | 설명 | 화면 |
+| --- | --- | --- | --- | --- |
+| G-35 | GET | `/guardians/me/insights` | 내게 열린 인사이트 목록 | 미정 |
+| G-36 | GET | `/guardians/me/insights/{insightId}` | 단건. 처음 열어 보면 열람 시각 기록 | 미정 |
+
+**G-35 응답** · 최근 열린 순입니다. G-36 은 이 원소 하나와 같은 모양입니다.
+
+```json
+[
+  { "id": "1", "childId": "1", "childName": "김하늘",
+    "period": "2026년 8월 3주차",
+    "content": "이동 전 5분 예고가 효과적이었습니다.",
+    "from": { "id": "2", "name": "○○초등학교", "type": "school", "verified": false },
+    "sharedWith": [
+      { "id": "3", "name": "햇살아동발달센터", "type": "center", "verified": false }
+    ],
+    "readAt": null }
+]
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| `from` | 이 글을 Gate 2 에서 승인한 기관 |
+| `sharedWith` | **지금 이 글을 볼 수 있는 다른 기관.** 승인할 때 동의가 켜져 있던 기관이고, 동의를 끄면 빠집니다. 보호자가 "내 아이 글이 어디까지 갔나" 를 보고 동의를 끌지 판단하는 데 씁니다 |
+| `readAt` | 처음 열어 본 시각. G-36 이 **처음 한 번만** 찍고 다시 열어도 덮지 않습니다. 열람 방식이라 "언제 봤나" 를 안 남기면 아무 흔적이 없습니다 (`docs/db/schema.md` §9.4) |
+
+**실패**
+
+| 실패 | 상태 | 코드 |
+| --- | --- | --- |
+| 보호자 계정이 아님 | 403 | `PARENT_REQUIRED` |
+| 내게 열리지 않았거나 권한이 거둬진 인사이트 | 404 | `SHARING_NOT_FOUND` |
+
+> **404 는 "없다" 가 아니라 "당신에게 안 열렸다" 는 뜻입니다.** 남의 아이 인사이트가 있는지조차
+> 알려주지 않습니다. 연결이 끊긴 보호자도 그 뒤로는 404 입니다 (#214).
+
 ### 5.5 동의 · 기관 권한
 
 | # | 메서드 | 경로 | 설명 | 화면 |
@@ -1512,7 +1588,7 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |
 | `MATCHING_RESULT_INVALID_REQUEST` | 400 | 확인 필요 큐 처리 요청 거절 (O-23) |
 | `MATCHING_RESULT_NOT_FOUND` | 404 | 없거나 다른 기관의 확인 필요 큐 항목 (O-23) |
-| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 요약 요청 거절 (O-32), 지원하지 않는 `gate1Status` (O-30) |
+| `SUMMARY_INVALID_REQUEST` | 400 | 요약할 기록이 없어 요약 요청 거절 (O-32), 지원하지 않는 `gate1Status` (O-30), 문장 카드가 원래 문장과 맞지 않음 (O-31) |
 | `SUMMARY_CHILD_NOT_FOUND` | 404 | 없거나 다른 기관의 아이로 요약 요청 (O-32) |
 | `SUMMARY_NOT_FOUND` | 404 | 없거나 다른 기관의 요약 (O-31 · O-33) |
 | `SUMMARY_ALREADY_REVIEWED` | 409 | 이미 처리된 요약 재결정 (O-31) |
@@ -1525,6 +1601,7 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 | `INSIGHT_NOT_PRIMARY_SOURCE` | 403 | 근거는 냈지만 승인 주체가 아닌 기관의 Gate 2 시도 (O-42) |
 | `INSIGHT_ALREADY_REVIEWED` | 409 | 이미 승인·보류된 Insight 재결정 (O-42) |
 | `INSIGHT_MATERIAL_CONSENT_REVOKED` | 409 | 재료 기관의 공유 동의가 철회된 Insight 승인 (O-42) |
+| `SHARING_NOT_FOUND` | 404 | 보호자에게 열리지 않은 Insight 조회 (G-35, G-36) |
 
 ---
 

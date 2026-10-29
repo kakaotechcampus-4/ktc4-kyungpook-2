@@ -1145,7 +1145,7 @@ VALIDATION_HELD    선생님이 보류함 — 여기서 끝 (BE 추가)
 SUMMARIZING        요약 중
 GATE1_PENDING      1차 검토 대기
 GATE1_HELD         이 일지가 든 요약을 교사가 보류함 — 보류 해제하면 GATE1_PENDING (BE 추가, #178)
-COMPLETED          완료 — 이 일지가 든 요약이 Gate 1 에서 승인됨
+COMPLETED          완료 — 이 일지가 든 요약이 Gate 1 에서 승인됨 (요약할 내용 없음이면 확인됨, #244)
 SUMMARY_FAILED     근거가 남은 문장이 없어 요약하지 못함 — 다시 요약할 수 있음 (BE 추가, #180)
 SYSTEM_ERROR       코드 버그·AI 계약 위반으로 검증·요약이 멈춤 — 관리자가 고친 뒤 되돌림 (BE 추가, #180)
 FAILED             매칭 호출 실패 — 확인 필요 큐 (#180 전에는 검증·요약 실패도 이 값)
@@ -1247,6 +1247,8 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 | Gate 1 결정 | `journal_entry` | 뜻 |
 | --- | --- | --- |
 | 승인 · 수정 후 승인 | `GATE1_PENDING` → `COMPLETED` | 끝. 다시 요약 대상이 되지 않는다 |
+| 확인 (요약할 내용 없음, #244) | `GATE1_PENDING` → `COMPLETED` | 승인과 같다. 요약은 `child_context` 로 올라가지 않는다 |
+| 요약 되돌리기 (요약할 내용 없음, #244) | `GATE1_PENDING` → `VALIDATED`, `summary_id` 를 비움 | 요약 전으로 돌아간다. [요약]을 다시 누르면 같은 묶음의 새 일지와 함께 새 판으로 요약된다. 연결을 남기면 다시 요약하다 실패할 때 끝난 요약을 가리키는 `GATE1_PENDING` 으로 가므로 끊는다 |
 | 보류 | `GATE1_PENDING` → `GATE1_HELD` | 같은 묶음에 새 일지가 와도 함께 묶이지 않는다 |
 | 보류 해제 | `GATE1_HELD` → `GATE1_PENDING` | 같은 요약을 가리킨 채 다시 Gate 1 대기 |
 | 제거 (검토 대기 또는 보류함에서) | 상태는 그대로, `deleted_at` 표시 | 되돌릴 수 없다 |
@@ -1281,15 +1283,14 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 | `failure_reason` | 단계 | 뜻 | 고칠 곳 |
 | --- | --- | --- | --- |
 | `REQUEST_REJECTED` | 검증 · 요약 | AI 가 요청을 거절함 (4xx, FastAPI 422 포함) | BE 요청 |
-| `RESPONSE_UNREADABLE` | 검증 · 요약 | AI 응답을 못 읽음 (본문 없음, JSON 아님, 필수 값 빠짐, 검증 판정 없음·`FAILED`, 요약 본문이 빈 200) | AI 응답 |
-| `EVIDENCE_MISMATCH` | 요약 | BE 근거 재검사에 걸림 (§8.2). 다른 묶음 응답·필수 값 빠짐도 여기다. 요약하는 사이 교사가 일지를 지웠는데 AI 가 그 일지를 근거로 든 경우도 걸리는데, 이때는 고칠 것 없이 바로 되돌리면 된다 (로그의 `reason` 으로 구분) | AI 근거 계산 |
+| `RESPONSE_UNREADABLE` | 검증 · 요약 | AI 응답을 못 읽음 (본문 없음, JSON 아님, 필수 값 빠짐, 검증 판정 없음·`FAILED`, `no_content` 표시 없이 요약 본문이 빈 200) | AI 응답 |
+| `EVIDENCE_MISMATCH` | 요약 | BE 근거 재검사에 걸림 (§8.2). 다른 묶음 응답·필수 값 빠짐, `no_content` 인데 문장·본문·반영된 일지가 있는 응답도 여기다. 요약하는 사이 교사가 일지를 지웠는데 AI 가 그 일지를 근거로 든 경우도 걸리는데, 이때는 고칠 것 없이 바로 되돌리면 된다 (로그의 `reason` 으로 구분) | AI 근거 계산 |
 | `AGENT_UNAVAILABLE` | 검증 | AI 다운으로 되돌린 횟수가 상한을 넘음 (#153) | 없음 — AI 가 살아나면 되돌린다 |
 | `INTERNAL_ERROR` | 검증 · 요약 | 위에 없는 BE 오류 (매칭된 아이 없음, DB 오류 등) | BE |
 
-"요약할 내용 없음"(멘토 A3, AI #196 후속)은 아직 계약이 없어 여기 없다. AI 가 정상 결과(`no_content: true` 안)로 보내게
-되면 빈 본문 중 그 표시가 붙은 응답만 `RESPONSE_UNREADABLE` 에서 빼고(`SummaryResultRecorder.isEmptyContent`), Gate 1 에
-"요약할 내용 없음"으로 올려 교사가 확인하면 닫는 쪽으로 논의 중이다 (후속 이슈). 그 응답을 BE 보다 먼저 보내면 이 시스템
-오류로 쌓이므로 BE 쪽이 먼저 배포돼야 한다.
+"요약할 내용 없음"(멘토 A3, #244)은 실패가 아니라 정상 결과다. AI 가 `no_content: true` 를 붙여 빈 본문으로 보내면
+`RESPONSE_UNREADABLE` 로 보내지 않고 빈 요약으로 저장해 Gate 1 에서 교사가 확인하게 한다 (§8.2 "요약할 내용 없음").
+이 BE 보다 AI 가 먼저 배포되면 그 응답이 시스템 오류로 쌓이므로 BE 쪽이 먼저 배포돼야 한다.
 
 **되돌리기** — 고친 뒤 [`backend/scripts/recover-system-errors.sql`](../../backend/scripts/recover-system-errors.sql)로 단계와
 원인을 골라 되돌린다. 검증은 `MATCHED`(`agent_retry_count = 0`), 요약은 `VALIDATED` 로 돌리고 두 실패 컬럼을 비운다.
@@ -1571,13 +1572,14 @@ FAILED   AI 호출 자체가 실패 — AI 계약에 없는 BE 전용 값 (#122)
 | `entry_date` | DATE | N | 묶음 기준 날짜 |
 | `institution_id` | BIGINT | N | **묶음 키의 일부.** 이 요약을 쓴 기관 |
 | `revision` | INT | N | 같은 날짜·같은 기관의 몇 번째 요약인지. 1 부터 |
-| `content` | TEXT | N | AI 가 쓴 요약 원문 |
-| `claims` | TEXT | Y | 문장별 근거 JSON 문자열 |
+| `content` | TEXT | N | AI 가 쓴 요약 원문. 요약할 내용 없음(`no_content`)이면 빈 문자열 |
+| `claims` | TEXT | Y | 문장별 근거 JSON 문자열. 교사가 Gate 1 문장 카드를 고쳐 승인하면 카드 결과로 **다시 쓴다** — 아래 "승인 때 claims 재저장" |
 | `covered_entry_ids` | TEXT | Y | 반영된 일지 JSON 문자열 `[1041, 1042]` |
 | `uncovered_entry_ids` | TEXT | Y | 반영되지 않은 일지 JSON 문자열 |
 | `status` | VARCHAR(30) | N | 처리 상태 |
 | `needs_review` | BOOLEAN | N | 공유 전에 사람이 봐야 하는가. 기본 `false`. 덮어쓸 때 새 응답 값으로 바뀐다 |
 | `review_reasons` | TEXT | Y | 왜 봐야 하는지 JSON 문자열 `["다른아동이름"]`. 응답에 없으면 NULL |
+| `no_content` | BOOLEAN | N | 그날 일지에 쓸 내용이 없다는 결과인가. 기본 `false`. `true` 면 `content = ''`, `claims = []`, `covered_entry_ids = []` 다 — 아래 "요약할 내용 없음" (#244) |
 | `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
 | `model_version` | VARCHAR(100) | Y | 응답을 낸 모델 버전 |
 | `created_at` | DATETIME | N |  |
@@ -1609,6 +1611,25 @@ span 이 있고 0 <= start < end <= 원문 코드포인트 길이인가
 `needs_review = true`, `review_reasons = ["다른아동이름"]` 을 준다. BE 는 그대로 저장하고 막지 않는다 — 교사가 Gate 1 에서
 보고 고칠지 정한다 (경고 표시는 Gate 1 조회 API 몫). 목록은 매칭이 명부에서 이름 전체로 찾은 아이만 담으므로 `false` 가
 "이름이 안 남았다"는 뜻은 아니다.
+
+**요약할 내용 없음** (멘토 A3, #244) — "특이사항 없음" 같은 기록만 있는 날 AI 가 빈 요약을 지어내지 않고
+`no_content: true` 로 알린다. AI 계약은 `200`, `content = ""`, `claims = []`, 묶음 일지 전부 `uncovered_entry_ids` 다
+(10/16 AI 와 합의). BE 는 이것을 정상 결과로 저장한다.
+
+```
+200 · no_content 없음/false   요약 저장 → Gate 1 (본문이 비어 있으면 SYSTEM_ERROR · RESPONSE_UNREADABLE)
+200 · no_content = true       no_content 요약 저장(content '', claims [], covered []) → Gate 1 "요약할 내용 없음"
+                              문장·본문·반영된 일지(covered)가 함께 오면 SYSTEM_ERROR · EVIDENCE_MISMATCH
+503 · no_grounded_claims      재시도 뒤 SUMMARY_FAILED (§6.2)
+```
+
+- 판을 고르는 규칙은 일반 요약과 같다. 승인 전 판은 일반 ↔ 요약할 내용 없음 양쪽으로 덮어쓴다
+- 근거 재검사는 묶음·일지 id 만 보고, 문장·본문·`covered_entry_ids` 가 비어 있는지 본다. 반영된 일지가 남으면 Gate 1
+  원본 목록(`uncoveredEntries`)에서 빠져 교사가 보지 못한 채 확인과 함께 끝나기 때문이다. 저장할 때도 `covered` 는 `[]` 로 둔다
+- `uncovered_entry_ids` 는 AI 값이 아니라 이번에 실제로 묶은 일지로 저장한다. 되돌린 판(`REVERTED`)은 일지와의 연결을 끊어서
+  이 값이 어떤 일지가 들어 있었는지 남는 유일한 흔적이다
+- 다른 아이 이름이 남을 본문이 없어 `needs_review` 는 `false` 다
+- Gate 1 에서는 확인(`CONFIRMED`)과 요약 되돌리기(`REVERTED`)만 받는다 — 아래 `status` 표
 
 **`journal_entry` 가 요약을 가리킨다 — 방향이 뒤집혔다**
 
@@ -1646,6 +1667,8 @@ journal_entry.summary_id BIGINT NULL    -- 신규. 어느 요약에 들어갔는
 GENERATED         생성됨
 GATE1_PENDING     1차 검토 대기
 APPROVED          승인 — child_context 로 넘어감
+CONFIRMED         요약할 내용 없음을 교사가 확인 — 빈 글이라 child_context 로 올라가지 않는다 (#244)
+REVERTED          요약할 내용 없음을 교사가 되돌림 — 일지는 요약 전으로. 기록으로만 남고 Gate 1 에 보이지 않는다 (#244)
 HOLD              교사 보류 — child_context 로 올라가지 않는다. 보류함에서 해제하면 GATE1_PENDING
 REMOVED           교사 제거 — 그 요약의 일지도 모두 삭제 표시. 되돌릴 수 없다 (#178)
 ```
@@ -1659,13 +1682,36 @@ REMOVED           교사 제거 — 그 요약의 일지도 모두 삭제 표시
 | 교사 행동 | `status` | `human_review.decision` | 결과 |
 | --- | --- | --- | --- |
 | 승인 | `APPROVED` | `APPROVED` | AI 원문이 `child_context.content` 로 |
-| **수정 후 승인** | `APPROVED` | `CORRECTED` | 고친 본문이 `child_context.content` 로. 본문이 AI 원문과 **한 글자라도 다르면** 이 값이다(줄바꿈 방식 CRLF·앞뒤 공백 차이는 무시). 기본 경로다 |
+| **수정 후 승인** | `APPROVED` | `CORRECTED` | 문장 카드 중 하나라도 유지(`KEEP`)가 아니거나 순서가 바뀌면 이 값이다(고친 글이 원문과 줄바꿈 방식 CRLF·앞뒤 공백만 다르면 유지로 본다). `claims` 를 카드 결과로 다시 쓰고, 남은 문장을 순서대로 이은 글이 `child_context.content` 로 (#221). 기본 경로다 |
 | 보류 | `HOLD` | `HOLD` | 올라가지 않는다. 보류함에서 해제할 수 있다 |
 | 제거 | `REMOVED` | `REMOVED` | 그 요약의 일지를 모두 삭제 표시한다. 되돌릴 수 없다. 보류함에서도 바로 할 수 있다 |
 | 보류 해제 | `HOLD` → `GATE1_PENDING` | `REOPENED` | 다시 검토 대기 |
+| 확인 (요약할 내용 없음만) | `CONFIRMED` | `CONFIRMED` | 그 요약의 일지를 모두 완료한다. `child_context` 에 올리지 않는다 — 올리면 빈 글이 인사이트 재료가 된다 (#244) |
+| 요약 되돌리기 (요약할 내용 없음만) | `REVERTED` | `REVERTED` | 그 요약의 일지를 요약 전(`VALIDATED`)으로 돌리고 연결을 끊는다. [요약]을 다시 누르면 [다시 요약]과 같다. 되돌린 요약은 보여주는 화면이 없다 (#244) |
+
+요약할 내용 없음(`no_content = true`)은 확인·되돌리기만, 그 밖의 요약은 그 둘을 뺀 결정만 받는다. 어긋나면 400
+`SUMMARY_INVALID_REQUEST` 다. 판 표시(O-31 `version`)를 먼저 보므로, 교사가 본 뒤 요약이 바뀌었으면 409 `SUMMARY_CHANGED` 가
+먼저 나간다. 요약할 내용 없음에는 보류·제거가 없어 보류함에 들어가지 않는다. [다시 요약]은 따로 두지 않는다 — 되돌린 뒤
+[요약]을 누르면 같고, 그 사이 들어온 같은 묶음의 일지도 함께 묶인다.
 
 보류·제거 사유는 받지 않는다(`comment` 비움). 한 기관에 담당자가 한 명이라 권한은 요약의 기관이 요청
 교사의 기관인지만 본다 — 다른 기관 요약은 404 `SUMMARY_NOT_FOUND`.
+
+**승인 때 `claims` 재저장** (2026-10-25, #221) — 10/17 회의 C안. 교사는 본문 전체가 아니라 `claims` 문장마다
+유지·수정·삭제하고 새 문장을 추가한다(O-31 `cards`). 인사이트는 본문이 아니라 `claims` 를 읽으므로(§9.2),
+고쳐 승인하면 `claims` 를 카드 결과로 다시 써서 교사가 지운 문장이 남지 않게 한다. 최종 순서는 카드 순서다.
+
+| 카드 | 새 `claims` 에 |
+| --- | --- |
+| `KEEP` | 원래 claim 그대로 + `"source": "AI"` (비워 두지 않는다) |
+| `DELETE` | 넣지 않는다 |
+| `EDIT` | `text` 만 바꾸고 `evidence` 는 원래 것 그대로 + `"source": "EDITED"` |
+| `ADD` | `{"text", "evidence": [{"journal_entry_id": null, "quote": text}], "source": "TEACHER"}` |
+
+- 원래 문장은 모두 한 번씩 와야 하고, 남는 문장이 하나는 있어야 한다 — 아니면 400 `SUMMARY_INVALID_REQUEST`
+- 그대로 승인(`APPROVED`)이면 `claims` 를 건드리지 않는다. `source` 가 없는 문장은 `AI` 로 읽는다
+- `content`·`raw_response` 는 AI 원문 그대로 남는다. 재저장해도 AI 가 쓴 claims 는 `raw_response` 에 있다
+- 컬럼은 그대로 TEXT 라 DB 변경은 없다. JSON 안에 `source` 키가 생기고 `TEACHER` 근거의 `journal_entry_id` 가 null 일 수 있다
 
 재생성은 **입력이 바뀐 경우만** 한다 — 새 일지가 도착했고 아직 승인 전일 때다.
 
@@ -1676,7 +1722,7 @@ REMOVED           교사 제거 — 그 요약의 일지도 모두 삭제 표시
 | 상황 | 처리 |
 | --- | --- |
 | 아직 승인 전 (`GENERATED` · `GATE1_PENDING`) | 같은 `revision` 을 **다시 생성해 덮어쓴다** |
-| 이미 승인됨 (`APPROVED`) | `revision + 1` 로 **새 일지만 묶어 새 요약을 만든다** |
+| 이미 승인됨 (`APPROVED` · `CONFIRMED` · `REVERTED`) | `revision + 1` 로 **새 일지만 묶어 새 요약을 만든다** |
 | 보류·제거됨 (`HOLD` · `REMOVED`) | 승인됨과 같다. 보류한 판과 그 일지는 건드리지 않는다 (#178) |
 
 승인된 글을 뒤에서 바꾸면 교사가 승인한 내용과 다른 기관이 읽는 내용이 달라진다.
@@ -1716,12 +1762,11 @@ REMOVED           교사 제거 — 그 요약의 일지도 모두 삭제 표시
 **교사가 고친 문장은 근거가 끊긴다** (2026-10-04 결정)
 
 > **2026-10-24 (#199)** — 10/17 회의에서 **C안(Gate 1 에서 문장 카드마다 유지·수정·삭제·추가)** 으로
-> 정해지면서 이 문제의 전제가 바뀌었다. 교사 결정에 따라 `claims` 를 다시 저장하므로(#183 Step 2)
+> 정해지면서 이 문제의 전제가 바뀌었다. 교사 결정에 따라 `claims` 를 다시 저장하므로(#221)
 > 근거가 끊기지 않는다 — 고친 문장은 원래 근거를 유지하고, 새로 쓴 문장은 자기 자신이 근거다.
 >
-> ⬜ **아직 `claims` 재저장이 들어오지 않았다.** 그때까지 인사이트는 `CORRECTED` 요약을 통째로 뺀다
-> (§10.1 #7). **그 제외를 먼저 지우면 안 된다** — `claims` 가 아직 AI 원문이라 교사가 지운 문장이
-> 그대로 다른 기관으로 나간다 (#199 Step 3).
+> ✅ **`claims` 재저장은 들어왔다** (#221, 2026-10-27). ✅ **인사이트도 고친 요약을 재료로 쓴다** (#249,
+> 2026-10-28). #221 이전 방식으로 고친 요약만 계속 뺀다 (§9.2).
 >
 > 아래는 C안 전에 적어 둔 MVP 이후 방향이다. 고친 문장 재검증은 여전히 하지 않는다.
 
@@ -1765,7 +1810,7 @@ REVIEW                          경고만 보여주고 교사가 판단한다
 > 10/17 회의에서 **MVP 에 넣기로** 바뀌었다 (멘토 리뷰 #191 A4). 대신 그 문장이 **검증을 거치지
 > 않았다는 표시**를 계약에 넣어 Gate 2 가 경고로 띄운다.
 
-**누가 쓴 문장인지를 `claims` 에 적는다.** Gate 1 카드 결과로 BE 가 붙인다 (#183 Step 2).
+**누가 쓴 문장인지를 `claims` 에 적는다.** Gate 1 카드 결과로 BE 가 붙인다 (#221).
 
 | `source` | 뜻 | 근거 |
 | --- | --- | --- |
@@ -1889,16 +1934,18 @@ Gate 1 목록의 `processing`(O-30)도 이 테이블을 본다 — 누르지 않
 ```
 target_type   SUMMARY | INSIGHT
 review_type   GATE1 | GATE2
-decision      APPROVED | CORRECTED | HOLD | REMOVED | REOPENED
+decision      APPROVED | CORRECTED | HOLD | REMOVED | REOPENED | CONFIRMED | REVERTED
 ```
 
 | `decision` | 뜻 |
 | --- | --- |
 | `APPROVED` | AI 원문 그대로 승인 |
-| `CORRECTED` | 본문을 고쳐서 승인. 인사이트가 이 값으로 고친 요약을 거른다 (§9.2) |
+| `CORRECTED` | 문장 카드를 고쳐서 승인(유지가 아닌 카드가 있거나 순서가 바뀜, #221). 인사이트는 이 값과 `claims` 의 `source` 로 #221 이전 방식의 고친 요약만 거른다 (§9.2) |
 | `HOLD` | 보류 |
 | `REMOVED` | 제거 (Gate 1 은 요약과 그 일지 삭제 표시) |
 | `REOPENED` | 보류함에서 보류 해제 |
+| `CONFIRMED` | 요약할 내용 없음을 확인 (Gate 1 만, #244). 승인이 아니다 — 올린 글이 없다 |
+| `REVERTED` | 요약할 내용 없음을 되돌림 (Gate 1 만, #244). 일지는 요약 전으로 돌아갔다 |
 
 Gate 1 은 결정마다 한 줄 남긴다 (#178). `comment` 는 MVP 에서 비운다.
 
@@ -1945,8 +1992,13 @@ Insight는 원본 일지가 아니라 이 테이블이 가리키는 요약을 �
 승인됐나"를 가리키는 자리이고, 실제 재료(문장·근거·날짜·기관)는 `summary_result_id` 로 조인해 꺼낸다 —
 `InsightInput` 에 본문을 받는 필드가 없고 `claims` 만 있기 때문이다 (`AI/insight/schemas.py`).
 
-**교사가 고쳐서 승인한 요약(`CORRECTED`)은 인사이트 재료에서 통째로 뺀다** (§10.1 #7).
-고친 본문과 `claims` 가 어긋나 있어서, 교사가 지운 문장이 `claims` 에 근거째 남아 나가기 때문이다.
+**교사가 고쳐서 승인한 요약(`CORRECTED`)도 인사이트 재료로 쓴다** (#249, 멘토 리뷰 A4). #221 부터 승인 때
+`claims` 를 카드 결과로 다시 써서(§8.2) 지운 문장은 빠지고 문장마다 `source`(`AI`·`EDITED`·`TEACHER`)가 붙는다.
+
+**#221 이전 방식(`editedContent`)으로 고친 요약만 뺀다.** 그때는 고친 글이 이 행의 `content` 에만 있고 `claims`
+는 AI 원문 그대로라, 쓰면 교사가 지운 문장이 근거째 다른 기관에 나간다. **`CORRECTED` 인데 `claims` 에 `source`
+가 하나도 없으면 옛 방식이다** — #221 이후의 `CORRECTED` 는 유지한 문장에도 `source: AI` 가 붙는다. 옛 방식 요청은
+#221 이 막아서 새로 생기지 않는다.
 어느 요약이 `CORRECTED` 인지는 `human_review` 에 `target_type = SUMMARY` · `decision = CORRECTED`
 행이 있는지로 본다 — 타임라인의 `edited` 배지가 쓰는 값과 같은 자리다.
 
@@ -2118,9 +2170,9 @@ Gate 2 를 승인하면 수신자에게 **보이게 된다.**
 대신 **승인 시점에 다시 본다** — 재료 기관 중 하나라도 동의가 꺼져 있으면 `409
 INSIGHT_MATERIAL_CONSENT_REVOKED` 다 (O-42).
 
-> ⬜ **아직 `ORGANIZATION` 권한을 만드는 쪽이 없다.** 기관 권한은 보호자의 인사이트별 승인이 만드는데
-> 그 API 가 아직이다. 그래서 오늘 실제로 막는 것은 승인 시점 검사 쪽이고, 거두는 길은 미리 내 둔 것이다.
-> 보호자가 기관별 승인을 **철회**하는 경로도 그 API 와 함께 정한다.
+**기관 동의가 꺼지면 그 기관이 *받은* 권한도 거둔다** (#233). 기관은 자기가 재료를 내지 않은 글도
+받으므로, "재료를 낸 인사이트" 만 뒤지면 그런 글의 권한은 한 건도 걸리지 않는다. 그래서 철회는 **받는
+쪽과 내는 쪽을 함께** 본다 (`InsightAccessRevoker.revokeForInstitution`).
 
 **인사이트 전용이다.** 보호자가 승인된 요약을 **열람**하는 것(O-14)은 권한이 아니라 조회라서 여기
 남기지 않는다 — 그쪽은 `audit_logs`(O-53)가 받는다. 그래서 `insight_result_id` 가 NOT NULL 이다.
@@ -2169,21 +2221,27 @@ UNIQUE (insight_result_id, receiver_type, receiver_id)
 > 되살리면 앞서 거둔 시각과 사유가 지워진다. 한 수신자당 한 줄이라 켜고 끈 이력을 여기 쌓을 자리가
 > 없다 — 그 이력이 필요해지면 `audit_logs`(O-53)가 받아야 한다.
 
-**누가 먼저 보게 되나 — 보호자다.** 10/17 회의 결론은 `담당자 승인 → 보호자 → 보호자가 기관별 승인`
-이다. Gate 2 승인 시점에 만드는 행은 **`GUARDIAN` 뿐**이고, `ORGANIZATION` 행은 그 뒤 보호자가
-기관을 고를 때 생긴다. 그래서 `sharing_consent` 는 **공유 단계에 쓰지 않는다** — 인사이트 재료를
-고를 때만 쓴다 (§9.5). 어느 기관이 볼지는 보호자의 인사이트별 선택이 정한다.
+**누가 보게 되나 — Gate 2 승인 순간 보호자와 동의한 기관이 함께다** (#233). 10/26 기획 변경으로
+보호자가 글마다 기관을 고르는 단계를 없애고, 보호자가 미리 해 둔 **기관별 공유 동의(`sharing_consent`)
+를 그대로 쓴다.** 승인하면 아래 행을 같은 트랜잭션에서 만든다.
 
-> ⬜ **보호자의 기관별 승인 API 는 아직 없다.** 그래서 지금은 `ORGANIZATION` 행이 만들어지지 않고,
-> 수신함(O-50)도 비어 있다. 권한 철회(`revoked_at`)도 그 API 와 함께 정한다 — 지금 쓰지 않을 컬럼을
-> 미리 만들면 §11.4 대상이 된다.
+| 받는 쪽 | 조건 |
+| --- | --- |
+| `GUARDIAN` | 그 아이에 연결된 보호자 전부 |
+| `ORGANIZATION` | 그 아이 명부에 있고, 동의가 `GRANTED` 인 기관. **승인한 기관 자신만 뺀다** |
+
+- **재료를 낸 다른 기관도 받는다.** Gate 2 목록은 승인 기관에게만 보이므로, 빼면 그 기관은 자기 기록이
+  섞인 기관 간 인사이트를 영영 못 본다. Gate 2 화면의 수신 후보(`targets`)도 같은 규칙(`Gate2Recipients`)
+  이라 화면에 보인 기관과 실제로 받는 기관이 같다
+- **승인 뒤에 동의한 기관은 지난 글을 받지 않는다.** 동의는 그 뒤에 승인된 글부터다
+- **특정 기관을 막으려면 동의를 끈다.** 끄면 이미 받은 권한도 거둔다 (위)
 
 **`read_at` 은 감사 추적이다.** "언제 봤나" 를 남기지 않으면 열람 방식에는 아무 흔적이 없다
-(CLAUDE.md Auditability). O-51 읽음 처리가 이 칸을 채운다.
+(CLAUDE.md Auditability). 기관은 O-51 읽음 처리가, 보호자는 G-36 단건 조회가 이 칸을 채운다 (#233). 처음 한 번만 찍고, 거둔 권한에는 찍지 않는다.
 
-**권한을 만드는 쪽은 지금 한 곳뿐이다** — Gate 2 승인(O-42)이고, 같은 트랜잭션에서 인사이트 행을 잠근
-뒤에 넣는다. 그래서 UNIQUE 가 터질 일이 없어 따로 받지 않는다. ⚠️ **보호자의 기관별 승인 API 는 그
-잠금 밖에서 넣게 되므로**, 그때는 중복 클릭이 500 이 되지 않도록 제약 위반을 받아 넘겨야 한다.
+**권한을 만드는 쪽은 한 곳뿐이다** — Gate 2 승인(O-42)이고, 같은 트랜잭션에서 인사이트 행을 잠근
+뒤에 넣는다. 그래서 UNIQUE 가 터질 일이 없어 따로 받지 않는다. 동의를 읽기 전에 **아이 행도 잠근다** —
+동의 철회(`ConsentService`)와 같은 순서라, 철회와 겹쳐도 꺼진 동의에 권한이 남지 않는다.
 
 **권한이 생겨도 보호자가 없을 수 있다.** 아이에 연결된 보호자가 한 명도 없으면 승인은 되지만 행이
 하나도 생기지 않는다 — 아무도 못 본다. 오류가 아니라 정상이고, 서비스가 경고 로그만 남긴다.
@@ -2275,10 +2333,20 @@ Gate 1 승인은 교사가 틈틈이 한다. 한 주치가 한 번에 올라오�
 첫 차례에 `FAILED` 로 되돌린다** — 집기가 `FAILED` 만 가져가므로 두면 그 아동·기간이 영영 처리되지 않는다
 (`SummaryWorker` 의 `releaseStuck` 과 같은 자리다).
 
-**기간은 지난 주 일요일에서 끊는다.** "어제까지 N일" 로 잡으면 자정마다 키가 하루씩 밀려서, 같은 아이가
+**기간은 월요일~일요일로 끊는다.** "어제까지 N일" 로 잡으면 자정마다 키가 하루씩 밀려서, 같은 아이가
 6일이 겹치는 창으로 **매일** 다시 돌고 비슷한 인사이트가 Gate 2 대기 목록에 쌓인다. UNIQUE 는 키가
 같을 때만 중복을 막으므로 **창이 실제로 넘어갈 때까지 키가 그대로여야 한다** — 요약이 `entry_date` 라는
 데이터 쪽 기준에 묶이는 것(§8.2)과 같은 이유다.
+
+**어느 주를 볼지는 승인 시각으로 고른다** (#239). 최근 `lookback-days`(14일) 안에 `child_context` 가 생긴
+요약의 `entry_date` 가 속한 주를 후보로 삼는다. 예전에는 "지난주" 한 구간만 봐서, 밀린 기록을 2주 뒤에
+승인하면 그 주를 다시 보지 않아 **영영 재료가 안 됐다.** 이미 돈 주는 위의 눈금 규칙이 그대로 거른다.
+
+- **끝나지 않은 이번 주는 뺀다.** 시연에서만 `INSIGHT_INCLUDE_CURRENT_WEEK=true` 로 넣는다 — 켜면 이번 주는
+  승인이 들어올 때마다 새 회차가 생긴다
+- **승인 뒤 14일이 넘도록 워커가 못 돌면 그사이 승인은 놓친다.** 워커는 5초마다 돌아 보통은 승인 직후에
+  처리된다. 그 일이 생기면 마지막으로 본 `child_context.id` 를 커서로 남기는 쪽으로 바꾼다
+- **이미 승인한 주에 늦은 승인이 들어오면 새 회차가 Gate 2 에 다시 뜬다.** 처리 방식은 결정 대기다
 
 **재료가 없으면 집지 않는다.** 승인된 요약이 없거나 동의가 없어서 호출하지 않은 경우까지 `DONE` 으로
 남기면, 그 뒤에 교사가 그 기간의 요약을 승인하거나 동의가 들어와도 **다시 보지 않는다.**
@@ -2301,7 +2369,7 @@ Gate 1 승인은 교사가 틈틈이 한다. 한 주치가 한 번에 올라오�
 | 4 | 삭제 방식 | **물리 삭제를 하지 않는다. `deleted_at`을 쓴다** | FK 제약이 없어 DB가 참조 무결성을 지켜주지 않기 때문이다. 대상 테이블 6개는 §3.2 |
 | 5 | `users.role` 결정 시점 | **(9.23 변경) 로그인 진입 경로가 아니라 회원가입 API에서 결정한다** | `role`은 NULL 허용으로 바뀌었다. 로그인 직후엔 NULL(가입 미완료), `POST /api/v1/auth/signup` 호출 시 확정되며 이후 바뀌지 않는다. `?invite=` 로그인 힌트 방식은 폐기 |
 | 6 | 초대코드 만료 · 1회성 | **(10.12 확정) 10분 만료, 일회용, 한 아이에 여러 개 허용** | SMS 없이 기관이 직접 전달한다. 8자리, 입력 시도 제한 없음, 만료는 `expires_at` 으로만 판단 (§5.3) |
-| 7 | 교사가 고쳐 승인한 요약(`CORRECTED`)의 인사이트 처리 | **(10.9 확정) MVP 는 그 요약의 `claims` 를 통째로 뺀다** | 출처 `AI/insight/CRITERIA.md` §10. 고친 본문과 `claims` 가 어긋나 교사가 지운 문장이 근거째 남기 때문이다. 이후엔 "최종 본문에 그대로 남은 claim 만 살리는" 방식으로 간다(요약 CRITERIA §4). **BE 구현이 남았다** — 재료 조회에서 `human_review.decision = CORRECTED` 인 요약을 거른다 (§9.2) |
+| 7 | 교사가 고쳐 승인한 요약(`CORRECTED`)의 인사이트 처리 | **(10.28 변경, #249) 카드 결과로 다시 쓴 `claims` 를 재료로 쓴다. #221 이전 방식(`source` 없음)만 뺀다.** 처음 확정(10.9)은 "통째로 뺀다" 였다 | 출처 `AI/insight/CRITERIA.md` §10. 고친 본문과 `claims` 가 어긋나 교사가 지운 문장이 근거째 남기 때문이다. **2026-10-25 #221** — 10/17 회의 C안으로 승인 때 `claims` 를 카드 결과로 다시 써서 어긋나지 않게 됐다(§8.2). 인사이트 재료 조회의 `CORRECTED` 제외는 #249 에서 옛 방식만 남기고 없앴다 |
 | 8 | 보호자 여럿의 동의 · 철회 | **(10.13 확정, #184) 한 명만 동의해도 그 기관 공유가 켜지고, 한 명이 철회하면 그 기관의 모든 보호자 동의가 꺼진다.** 공유 항목은 기관 단위로 하나이고 마지막 동의가 기관 전체에 적용된다 | 끄는 쪽을 우선한다(Consent First). 사용자가 예상하기 어려운 규칙이라 동의 화면·회수 확인 시트에 안내가 필요하다 (FE). §5.5 |
 | 9 | 매칭 대상 판정 단위 | **(10.13 확정, #184) 기관별 동의로 판정한다.** 매칭 명부·사람의 매칭 확정은 그 기관에 `sharing_consent` ACTIVE 가 있는 아이만. `child.status` 는 화면용 요약 | 아이 전체 상태로 판정하면 학교에만 동의한 아이가 센터 명부에도 들어간다. 상태 규칙은 §5.1 |
 
@@ -2463,6 +2531,14 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 \d journal_entry     status CHECK 가 있으면 DROP     (9/30 에 지웠으면 없다)
 ```
 
+**요약할 내용 없음 (#244) 배포 전 확인** — 둘 다 `CONFIRMED`·`REVERTED` 가 늘었다. 10/27 배포 DB 에는 두 CHECK 가 없음을 확인했다. `summary_result.no_content` 는 기본값이 있어
+`ddl-auto: update` 가 더한다.
+
+```
+\d summary_result    status CHECK 가 있으면 DROP     (CONFIRMED · REVERTED 추가)
+\d human_review      decision CHECK 가 있으면 DROP   (CONFIRMED · REVERTED 추가)
+```
+
 새 컬럼 `failure_stage`·`failure_reason` 은 NULL 허용이라 `update` 가 기존 행이 있어도 더한다. **`update` 가 컬럼을
 더할 때도 enum 값으로 CHECK 제약(`journal_entry_failure_stage_check`·`journal_entry_failure_reason_check`)을 함께 건다**
 (10/16 PostgreSQL 16 에서 확인). 지금은 문제없지만, 나중에 원인 코드를 더하면 그 CHECK 를 DROP 해야 저장된다.
@@ -2508,4 +2584,9 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-10-23 | 실패 상태 분리. `journal_entry.status` 에 `SUMMARY_FAILED`(근거 0개, 다시 요약 가능)·`SYSTEM_ERROR`(관리자 확인) 추가, `failure_stage`·`failure_reason` 컬럼 추가. 검증·요약 실패를 `FAILED` 에서 옮기고 `FAILED` 는 매칭 실패만 (§6.2 "실패 상태와 원인 코드"). 원인별 되돌리기 스크립트 추가. 옛 `FAILED` 는 그대로 두고 찾는 SQL 만 둠. **enum 값 추가라 §11.4 확인 필요** — `journal_entry.status` CHECK (9/30 에 지웠으면 없음). 컬럼은 NULL 허용이라 `ddl-auto: update` 가 더한다 | 미생성 |
 | 2026-10-23 | `users.kakao_id`(§4.1)에 개발용 로그인(`GET /api/v1/dev/login`, `DEV_LOGIN_ENABLED`) 테스트 회원의 `dev:{이름}` 값이 들어올 수 있음을 명시. 컬럼·제약 변경 없음 | #219 |
 | 2026-10-24 | ⬜ **아직 동작하지 않는다 — 준비만 했다.** 교사가 고치거나 새로 쓴 문장을 인사이트로 보낼 **계약 쪽만** 맞췄다 (#199 Step 4, 멘토 리뷰 #191 A4). 실제로 전달되려면 Gate 1 `claims` 재저장(#183 Step 2)과 `CORRECTED` 제외 제거(Step 3)가 더 필요하다 — 지금은 교사가 고친 요약이 `correctedAmong` 에서 통째로 빠져 `source` 가 `AI` 말고 나올 일이 없다. `summary_result.claims` 의 각 문장에 `source`(`AI`·`EDITED`·`TEACHER`, 없으면 `AI`)를 싣고, `TEACHER` 만 `journal_entry_id` 를 비울 수 있다 — `AI`·`EDITED` 에서 빠지면 근거가 끊긴 것이라 계약이 422 다. 모르는 `source` 는 그 문장을 보내지 않는다 (AI 로 봐 두면 검증 안 거친 문장이 "AI 원문" 으로 나가고 Gate 2 경고도 사라진다). §9.2 의 "교사가 직접 쓴 문장은 인사이트에 반영되지 않는다" 를 정정. ⬜ `CORRECTED` 제외 제거(Step 3)는 Gate 1 `claims` 재저장(#183 Step 2) 뒤에 한다 — 먼저 지우면 교사가 지운 문장이 그대로 나간다. DB 변경 없음 | #199 |
-| 2026-10-29 | 같은 아이에 다른 기관 연결. `organization.code`(기관 코드, NULL 허용 UNIQUE) 추가 — 회원가입 때 받고, 그 전에 가입한 기관은 내 기관 정보를 처음 열 때 받는다(§4.2). 새 테이블 `child_organization_request`(§5.6) — 보호자가 기관 코드로 요청하고 기관이 관리번호를 넣어 수락하면 `child_organization` 이 생기거나 새 관리번호로 되살아난다(§5.2). 보호자마다 자기 행을 갖고, 연결이 끊긴 보호자의 요청만 `CANCELLED` 로 거둔다. 잠금 순서에 `child_organization_request` 추가(§3.3). **UNIQUE 추가라 §11.4 수동 조치 필요** — 배포 전에 컬럼 추가 → UNIQUE 추가 순서로 직접 실행. 새 테이블은 `ddl-auto: update` 가 만든다 | #258 |
+| 2026-10-25 | Gate 1 문장 카드(10/17 회의 C안). 고쳐 승인하면 `summary_result.claims` 를 카드 결과로 다시 쓴다 — 지운 문장은 빠지고, 문장마다 `source`(`AI`·`EDITED`·`TEACHER`)가 붙고, `TEACHER` 근거는 `journal_entry_id` 가 null (§8.2). `CORRECTED` 는 "카드 중 유지가 아닌 것이 있거나 순서가 바뀜" 으로 바뀐다(§8.2, §9.2, §10.1 #7). 컬럼은 TEXT 그대로라 **DB 변경 없음, §11.4 수동 조치 불필요** | #221 |
+| 2026-10-26 | **기획 변경 — 보호자가 글마다 기관을 고르는 단계를 없앴다** (§9.4). Gate 2 승인이 보호자와 함께 **동의한 기관(`ORGANIZATION`)에도 바로 권한을 연다.** 받는 기관은 명부 ∩ 동의 `GRANTED` 에서 승인 기관 자신만 뺀 것이고, Gate 2 화면의 수신 후보(`targets`)와 같은 규칙(`Gate2Recipients`)을 쓴다. 동의 철회가 기관이 **받은** 권한을 못 거두던 구멍(#214)을 고쳤다. 보호자 단건 조회가 `read_at` 을 채운다. 컬럼·제약 변경 없음 | #233 |
+| 2026-10-27 | 요약할 내용 없음(멘토 A3). AI 가 `no_content: true` 로 보낸 빈 결과를 시스템 오류가 아닌 요약으로 저장한다 — `summary_result.no_content` 추가(기본 `false`), `content = ''`·`claims = []` (§8.2). 표시 없는 빈 본문은 그대로 `RESPONSE_UNREADABLE`, `no_content` 인데 문장·본문이 있으면 `EVIDENCE_MISMATCH` (§6.2). Gate 1 은 확인만 받는다 — `summary_result.status`·`human_review.decision` 에 `CONFIRMED` 추가, 일지는 `COMPLETED`, `child_context` 에 올리지 않음 (§6.2, §8.2, §9.1). 요약 되돌리기 — 같은 두 컬럼에 `REVERTED` 추가, 일지는 `VALIDATED` 로 돌리고 `summary_id` 를 비움. [다시 요약]은 두지 않음(되돌린 뒤 [요약]과 같음). **enum 값 추가라 §11.4 확인 필요** — `summary_result.status`·`human_review.decision` CHECK (배포 DB 에 없음 확인) | #244 |
+| 2026-10-27 | `insight_run`(§9.5) 워커가 어느 주를 볼지 **승인 시각**으로 고른다. "지난주" 한 구간만 보던 탓에 늦게 승인된 기록이 영영 재료가 안 되던 구멍을 메웠다. 시연용으로 끝나지 않은 이번 주를 넣는 설정(`INSIGHT_INCLUDE_CURRENT_WEEK`, 기본 끔)을 추가했다. 컬럼·제약 변경 없음 | #239 |
+| 2026-10-28 | 인사이트가 교사가 고쳐 승인한 요약(`CORRECTED`)도 재료로 쓴다 (§9.2, §10.1 #7, 멘토 리뷰 A4). 10/24 의 "준비만 했다" 가 이걸로 실제 동작한다. `claims` 에 `source` 가 없는 #221 이전 방식만 계속 뺀다. 컬럼·제약 변경 없음 | #249 |
+| 2026-10-29 | 같은 아이에 다른 기관 연결. `organization.code`(기관 코드, NULL 허용 UNIQUE) 추가 — 회원가입 때 받고, 그 전에 가입한 기관은 내 기관 정보를 처음 열 때 받는다(§4.2). 새 테이블 `child_organization_request`(§5.6) — 보호자가 기관 코드로 요청하고 기관이 관리번호를 넣어 수락하면 `child_organization` 이 생기거나 새 관리번호로 되살아난다(§5.2). 보호자마다 자기 행을 갖고, 연결이 끊긴 보호자의 요청만 `CANCELLED` 로 거둔다. 잠금 순서에 `child_organization_request` 추가(§3.3). **UNIQUE 추가라 §11.4 수동 조치 필요** — 배포 전에 컬럼 추가 → UNIQUE 추가 순서로 직접 실행. 새 테이블은 `ddl-auto: update` 가 만든다 | #259 |

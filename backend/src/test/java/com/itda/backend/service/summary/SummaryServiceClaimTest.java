@@ -319,6 +319,36 @@ class SummaryServiceClaimTest {
     }
 
     @Test
+    void 최신_판이_요약할_내용_없음으로_확인됐으면_새_일지만_묶는다() {
+        // 확인으로 끝난 일지를 다시 묶으면, 교사가 이미 닫은 기록이 다음 요약에 또 올라온다 (#244).
+        SummaryResult confirmed = em.persistAndFlush(SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}"));
+        JournalEntry confirmedEntry = inSummary(confirmed);
+        confirmed.confirmNoContent();
+        confirmedEntry.completeGate1();
+        em.flush();
+        JournalEntry late = lateEntry();
+
+        assertThat(claimAfterRequest()).containsExactly(claimedOf(GROUP, late));
+        assertThat(statusOf(confirmedEntry)).isEqualTo(JournalEntryStatus.COMPLETED);
+    }
+
+    @Test
+    void 요약할_내용_없음을_되돌린_뒤_요약을_누르면_되돌린_일지와_새_일지를_함께_묶는다() {
+        SummaryResult reverted = em.persistAndFlush(SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}"));
+        JournalEntry revertedEntry = inSummary(reverted);
+        reverted.revertNoContent();
+        revertedEntry.revertToSummaryWait();
+        em.flush();
+        JournalEntry late = lateEntry();
+
+        List<ClaimedSummaryGroup> claimed = claimAfterRequest();
+
+        assertThat(claimed).singleElement().satisfies(c ->
+                assertThat(c.journalEntryIds()).containsExactlyInAnyOrder(revertedEntry.getId(), late.getId()));
+        assertThat(statusOf(revertedEntry)).isEqualTo(JournalEntryStatus.SUMMARIZING);
+    }
+
+    @Test
     void 승인_뒤_같은_묶음에_새_일지가_와도_요약을_누르기_전에는_새_판을_만들지_않는다() {
         SummaryResult approved = summaryOf(1);
         JournalEntry approvedEntry = inSummary(approved);

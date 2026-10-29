@@ -4,6 +4,7 @@ import {
   ClipboardPlus,
   History,
   LayoutDashboard,
+  ListChecks,
   Mail,
   MessagesSquare,
   RotateCcw,
@@ -24,12 +25,8 @@ export interface OrgShellMe {
 
 /**
  * org/layout.tsx 의 clientLoader 가 계산해서 내려주는 원본 카운트.
- * `gate1` 은 이제 사이드바에 노출되는 메뉴가 없어 여기서는 쓰지 않는다 —
- * Gate 1(1차 검토)은 "오늘의 업무" 대시보드 카드에서 그대로 들어갈 수 있고,
- * 데이터/라우트/로직은 손대지 않았다. 필드 자체는 layout.tsx 반환 타입과
- * 맞춰두기 위해 남겨둔다.
+ * null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다
  */
-/** null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다 */
 export interface OrgShellCounts {
   matching: number | null;
   reinput: number | null;
@@ -60,6 +57,7 @@ function nav(counts: OrgShellCounts): NavSection[] {
       group: "홈",
       items: [
         { href: "/dashboard", label: "오늘의 업무", icon: LayoutDashboard }, // 처리 현황
+        { href: "/children", label: "아동 목록", icon: Users }, // 아동 관리
       ],
     },
     {
@@ -78,12 +76,12 @@ function nav(counts: OrgShellCounts): NavSection[] {
           icon: RotateCcw,
           badge: counts.reinput,
         }, // 재입력 요청 큐
+        { href: "/gate1", label: "1차 검토", icon: ListChecks, badge: counts.gate1 }, // Gate 1 요약 확인
       ],
     },
     {
       group: "아동",
       items: [
-        { href: "/children", label: "아동 목록", icon: Users }, // 아동 관리
         { href: "/insights", label: "관찰·분석 결과", icon: Sparkles }, // Insight 목록
       ],
     },

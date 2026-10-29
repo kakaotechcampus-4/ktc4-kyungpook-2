@@ -14,6 +14,9 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
  *
  * <p>근거를 원문에서 못 찾은 문장은 AI 가 버린다. 전부 버려지면 200 이 아니라 503({@code no_grounded_claims})으로 온다
  * ({@link com.itda.backend.service.summary.SummaryAgentClient}).
+ *
+ * <p>그날 일지에 쓸 내용이 없으면 200 에 {@code noContent = true} 로 온다 — 본문 "", claims [], 묶음 일지 전부
+ * uncovered (#244, 10/16 AI 와 합의). 필드가 없는 응답(이전 AI)은 {@code null} 이라 표시 없음으로 본다.
  */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -27,5 +30,11 @@ public record SummaryAgentResponse(
         JsonNode uncoveredEntryIds,
         Boolean needsReview,
         JsonNode reviewReasons,
+        Boolean noContent,
         Boolean llmCalled) {
+
+    /** 요약할 내용이 없다는 결과인지. */
+    public boolean isNoContent() {
+        return Boolean.TRUE.equals(noContent);
+    }
 }

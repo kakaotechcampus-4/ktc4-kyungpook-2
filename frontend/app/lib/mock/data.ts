@@ -422,54 +422,112 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
 
 /* Gate 1 검토 대기 (I-08) ──────────────────────────── */
 
+/** 요약 본문은 문장(claims)을 이은 것이다 — mock 도 그렇게 만든다 */
+function gate1Mock(
+  item: Omit<SummaryItem, "content" | "claims"> & { sentences: string[] },
+): SummaryItem {
+  const { sentences, ...rest } = item;
+  return {
+    ...rest,
+    content: sentences.join(" "),
+    claims: sentences.map((text, index) => ({ index, text })),
+  };
+}
+
 export const GATE1_QUEUE: SummaryItem[] = [
-  {
+  // 다른 아이 이름 경고 + 요약에 안 들어간 일지 + 검증 REVIEW
+  gate1Mock({
     id: "sum_9012",
     childId: "child_1023",
     childName: "김OO",
-    institutionName: CENTER.name,
-    date: "2026-08-21",
-    recordType: "활동일지",
-    validation: "REVIEW",
-    matchBasis: { source: "body", name: "김OO" },
-    content: "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
-    flaggedSpan: "소리를 지름",
-    flagReason: "진단처럼 읽히는 표현이 포함되어 확인이 필요합니다",
+    entryDate: "2026-08-21",
+    revision: 2,
     gate1Status: "pending",
     version: "mock_v_9012",
-    sourceCount: 1,
-  },
-  {
+    processing: false,
+    sentences: [
+      "블록 쌓기 활동에서 블록을 세 번 쌓았다.",
+      "자유놀이 시간에 박OO와 장난감을 두고 다퉜다.",
+      "점심을 남기지 않고 다 먹었다.",
+    ],
+    noContent: false,
+    needsReview: true,
+    reviewReasons: ["다른아동이름"],
+    uncoveredEntries: [{ journalEntryId: "je_5103", content: "내일 하원 시간이 오후 4시로 바뀝니다." }],
+    reviewFlags: [{ journalEntryId: "je_5101", issueTypes: ["추측성표현"] }],
+  }),
+  // 같은 날 새 기록을 반영하는 중 — 고치기·승인이 잠긴다
+  gate1Mock({
     id: "sum_9013",
-    childId: "child_1023",
-    childName: "김OO",
-    institutionName: CENTER.name,
-    date: "2026-08-20",
-    recordType: "관찰일지",
-    validation: "PASS",
-    matchBasis: { source: "cover", name: "김OO" },
-    content:
-      "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
-    gate1Status: "pending",
-    version: "mock_v_9013",
-    sourceCount: 1,
-  },
-  {
-    id: "sum_9014",
     childId: "child_1041",
     childName: "이OO",
-    institutionName: CENTER.name,
-    date: "2026-08-19",
-    recordType: "활동일지",
-    validation: "REVIEW",
-    matchBasis: { source: "cover", name: "이OO" },
-    content: "식사 시간에 새로운 반찬을 두 번 거부한 뒤 세 번째 권유에 소량 섭취함.",
-    flaggedSpan: "거부",
-    flagReason: "확정적으로 읽힐 수 있는 표현입니다",
+    entryDate: "2026-08-20",
+    revision: 1,
+    gate1Status: "pending",
+    version: "mock_v_9013",
+    processing: true,
+    sentences: ["오전 감각 놀이 시간에 모래를 10분 동안 만졌다.", "간식 시간에 스스로 컵을 들고 마셨다."],
+    noContent: false,
+    needsReview: false,
+    reviewReasons: [],
+    uncoveredEntries: [],
+    reviewFlags: [],
+  }),
+  // 문장을 나누지 못한 요약 — 그대로 승인하거나 제거만 된다
+  {
+    id: "sum_9015",
+    childId: "child_1088",
+    childName: "김OO",
+    entryDate: "2026-08-20",
+    revision: 1,
+    gate1Status: "pending",
+    version: "mock_v_9015",
+    processing: false,
+    content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
+    claims: [],
+    noContent: false,
+    needsReview: false,
+    reviewReasons: [],
+    uncoveredEntries: [],
+    reviewFlags: [],
+  },
+  // 요약할 내용 없음 (#244) — 본문·문장이 비고, 묶인 기록 원본이 uncoveredEntries 로 온다
+  {
+    id: "sum_9016",
+    childId: "child_2044",
+    childName: "최OO",
+    entryDate: "2026-08-21",
+    revision: 1,
+    gate1Status: "pending",
+    version: "mock_v_9016",
+    processing: false,
+    content: "",
+    claims: [],
+    noContent: true,
+    needsReview: false,
+    reviewReasons: [],
+    uncoveredEntries: [
+      { journalEntryId: "je_5201", content: "특이사항 없음." },
+      { journalEntryId: "je_5202", content: "오후 일정 평소와 같음." },
+    ],
+    reviewFlags: [],
+  },
+  gate1Mock({
+    id: "sum_9014",
+    childId: "child_1077",
+    childName: "박OO",
+    entryDate: "2026-08-19",
+    revision: 1,
     gate1Status: "hold",
     version: "mock_v_9014",
-    sourceCount: 2,
-  },
+    processing: false,
+    sentences: ["언어 치료 시간에 두 단어 문장을 세 번 말했다.", "하원 전 정리 시간에 울음을 보였다."],
+    noContent: false,
+    needsReview: false,
+    reviewReasons: [],
+    uncoveredEntries: [],
+    reviewFlags: [],
+  }),
 ];
 
 /* Child Context 타임라인 (I-09) ───────────────────── */

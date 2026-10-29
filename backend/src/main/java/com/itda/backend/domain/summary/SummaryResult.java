@@ -38,6 +38,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SummaryResult {
 
+    private static final String EMPTY_ARRAY = "[]";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -59,7 +61,8 @@ public class SummaryResult {
     private String content;
 
     // AI 가 보낸 JSON 조각을 그대로 담는다. claims 는 [{text, evidence: [{journal_entry_id, quote, span}]}],
-    // span 은 각 일지 원문 기준 Python 코드포인트 인덱스다.
+    // span 은 각 일지 원문 기준 Python 코드포인트 인덱스다. 교사가 Gate 1 카드를 고쳐 승인하면 카드 결과로 바뀌고
+    // 문장마다 source(AI·EDITED·TEACHER)가 붙는다 (#221). 그때 TEACHER 문장의 근거는 journal_entry_id 가 null 이다.
     @Column(columnDefinition = "TEXT")
     private String claims;
 
@@ -82,6 +85,12 @@ public class SummaryResult {
     // 왜 봐야 하는지. AI 가 보낸 JSON 배열 그대로다 — ["다른아동이름"].
     @Column(columnDefinition = "TEXT")
     private String reviewReasons;
+
+    // 그날 일지에 쓸 내용이 없다는 AI 의 정상 결과다 (#244). 본문은 빈 문자열, claims 는 빈 배열이다. 교사는 승인 대신
+    // 확인하거나 요약 전으로 되돌리기만 하고, 빈 글이라 child_context 로 올라가지 않는다. needsReview 와 같은 이유로 기본값을 둔다.
+    @ColumnDefault("false")
+    @Column(nullable = false)
+    private boolean noContent;
 
     @Column(columnDefinition = "TEXT")
     private String rawResponse;
@@ -115,15 +124,23 @@ public class SummaryResult {
      */
     public static SummaryResult of(Long childId, LocalDate entryDate, Long institutionId, int revision,
             String content, String claims, String coveredEntryIds, String uncoveredEntryIds, String rawResponse) {
-        if (childId == null || entryDate == null || institutionId == null) {
-            throw new IllegalArgumentException("요약 묶음의 아동·날짜·기관은 필수입니다.");
-        }
-        if (revision < 1) {
-            throw new IllegalArgumentException("요약 판 번호는 1부터입니다: " + revision);
-        }
+        requireGroup(childId, entryDate, institutionId, revision);
         requireContent(content);
         return new SummaryResult(childId, entryDate, institutionId, revision, content, claims, coveredEntryIds,
                 uncoveredEntryIds, rawResponse);
+    }
+
+    /**
+     * 요약할 내용이 없다는 결과로 그 묶음의 새 판을 만든다 (#244). 본문·claims·반영된 일지는 비운다 — 반영된 일지가 남으면
+     * Gate 1 원본 목록에서 빠져, 교사가 보지 못한 채 확인과 함께 끝난다.
+     */
+    public static SummaryResult noContent(Long childId, LocalDate entryDate, Long institutionId, int revision,
+            String uncoveredEntryIds, String rawResponse) {
+        requireGroup(childId, entryDate, institutionId, revision);
+        SummaryResult summary = new SummaryResult(childId, entryDate, institutionId, revision, "", EMPTY_ARRAY,
+                EMPTY_ARRAY, uncoveredEntryIds, rawResponse);
+        summary.noContent = true;
+        return summary;
     }
 
     /** 승인 전이라 같은 묶음에 일지가 더 오면 덮어쓸 수 있는지. */
@@ -141,11 +158,25 @@ public class SummaryResult {
             throw new IllegalStateException("승인 전 요약만 덮어쓸 수 있습니다: " + this.status);
         }
         requireContent(content);
+        replace(content, claims, coveredEntryIds, uncoveredEntryIds, rawResponse, false);
+    }
+
+    /** 승인 전 요약을 요약할 내용이 없다는 결과로 덮어쓴다. 일지가 지워지거나 바뀌어 다시 요약한 경우다. */
+    public void overwriteNoContent(String uncoveredEntryIds, String rawResponse) {
+        if (!isBeforeApproval()) {
+            throw new IllegalStateException("승인 전 요약만 덮어쓸 수 있습니다: " + this.status);
+        }
+        replace("", EMPTY_ARRAY, EMPTY_ARRAY, uncoveredEntryIds, rawResponse, true);
+    }
+
+    private void replace(String content, String claims, String coveredEntryIds, String uncoveredEntryIds,
+            String rawResponse, boolean noContent) {
         this.content = content;
         this.claims = claims;
         this.coveredEntryIds = coveredEntryIds;
         this.uncoveredEntryIds = uncoveredEntryIds;
         this.rawResponse = rawResponse;
+        this.noContent = noContent;
         this.needsReview = false;
         this.reviewReasons = null;
     }
@@ -158,16 +189,48 @@ public class SummaryResult {
         this.reviewReasons = reviewReasons;
     }
 
-    /** 교사가 Gate 1 에서 승인했다. 고친 본문은 여기가 아니라 child_context 에 남는다 — 이 행은 AI 원문을 그대로 둔다. */
+    /** 교사가 Gate 1 에서 고치지 않고 승인했다. */
     public void approve() {
         requireStatus(SummaryStatus.GATE1_PENDING);
+        requireContentful();
+        this.status = SummaryStatus.APPROVED;
+    }
+
+    /**
+     * 교사가 Gate 1 문장 카드를 고쳐 승인했다. {@code claims} 를 카드 결과로 바꾼다 — 인사이트가 읽는 것이 claims 라,
+     * 교사가 지운 문장이 남으면 다른 기관으로 나간다. 고친 본문은 child_context 에 남고, {@code content}·
+     * {@code raw_response} 는 AI 원문을 그대로 둔다.
+     */
+    public void approveWithClaims(String claims) {
+        requireStatus(SummaryStatus.GATE1_PENDING);
+        requireContentful();
+        if (claims == null || claims.isBlank()) {
+            throw new IllegalArgumentException("고쳐 승인한 요약의 claims 는 필수입니다.");
+        }
+        this.claims = claims;
         this.status = SummaryStatus.APPROVED;
     }
 
     /** 교사가 Gate 1 에서 보류했다. 같은 묶음에 새 일지가 와도 이 판은 덮어쓰지 않는다. */
     public void hold() {
         requireStatus(SummaryStatus.GATE1_PENDING);
+        requireContentful();
         this.status = SummaryStatus.HOLD;
+    }
+
+    /** 교사가 Gate 1 에서 요약할 내용이 없다는 결과를 확인했다. 승인이 아니다 — 올릴 글이 없다. */
+    public void confirmNoContent() {
+        requireNoContentPending();
+        this.status = SummaryStatus.CONFIRMED;
+    }
+
+    /**
+     * 교사가 Gate 1 에서 요약할 내용이 없다는 결과를 되돌렸다. 이 판은 기록으로 남고, 다음 요약은 덮어쓰지 않고 새 판으로
+     * 쌓인다 — 일지를 요약 전으로 돌리는 것은 서비스가 한다.
+     */
+    public void revertNoContent() {
+        requireNoContentPending();
+        this.status = SummaryStatus.REVERTED;
     }
 
     /** 교사가 Gate 1 에서, 또는 보류함에서 제거했다. 되돌릴 수 없다. */
@@ -175,6 +238,7 @@ public class SummaryResult {
         if (this.status != SummaryStatus.GATE1_PENDING && this.status != SummaryStatus.HOLD) {
             throw new IllegalStateException("검토 대기나 보류된 요약만 제거할 수 있습니다: " + this.status);
         }
+        requireContentful();
         this.status = SummaryStatus.REMOVED;
     }
 
@@ -187,6 +251,30 @@ public class SummaryResult {
     private void requireStatus(SummaryStatus expected) {
         if (this.status != expected) {
             throw new IllegalStateException("요약 상태가 " + expected + "가 아닙니다: " + this.status);
+        }
+    }
+
+    // 요약할 내용이 없는 요약은 확인·되돌리기만 받는다. 승인하면 빈 글이 child_context 로 올라가고, 보류·제거는 MVP 화면에 없다.
+    private void requireContentful() {
+        if (this.noContent) {
+            throw new IllegalStateException("요약할 내용이 없는 요약은 확인하거나 되돌리기만 할 수 있습니다: " + this.id);
+        }
+    }
+
+    // 확인·되돌리기는 검토 대기 중인 요약할 내용 없음 요약만 받는다.
+    private void requireNoContentPending() {
+        requireStatus(SummaryStatus.GATE1_PENDING);
+        if (!this.noContent) {
+            throw new IllegalStateException("요약할 내용이 없는 요약만 확인하거나 되돌릴 수 있습니다: " + this.id);
+        }
+    }
+
+    private static void requireGroup(Long childId, LocalDate entryDate, Long institutionId, int revision) {
+        if (childId == null || entryDate == null || institutionId == null) {
+            throw new IllegalArgumentException("요약 묶음의 아동·날짜·기관은 필수입니다.");
+        }
+        if (revision < 1) {
+            throw new IllegalArgumentException("요약 판 번호는 1부터입니다: " + revision);
         }
     }
 

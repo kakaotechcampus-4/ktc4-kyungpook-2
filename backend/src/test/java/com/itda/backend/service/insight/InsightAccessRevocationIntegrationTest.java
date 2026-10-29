@@ -180,6 +180,22 @@ class InsightAccessRevocationIntegrationTest {
         assertThat(reload(toCenter).isActive()).isFalse();
     }
 
+    /**
+     * Gate 2 승인이 실제로 만드는 모양 (#233) — 재료는 학교만, 받는 쪽은 동의한 센터. 센터가 재료를 내지 않았으니
+     * "재료 쪽" 만 보던 철회로는 이 권한이 안 걸린다. 받는 쪽도 봐야 꺼진다.
+     */
+    @Test
+    void 재료를_내지_않고_받기만_한_기관도_동의를_끄면_권한이_꺼진다() {
+        Long fromSchoolOnly = em.persistAndFlush(InsightResult.of(childId, FROM, TO, 2, "급식실 입장 직후",
+                "소리를 지름", "이동 전 5분 예고가 효과적이었습니다.", null, "[]", "[]",
+                "[%d]".formatted(schoolId), false, null)).getId();
+        Long toCenter = grant(fromSchoolOnly, ReceiverType.ORGANIZATION, centerId);
+
+        consentService.update(MOTHER, childId, centerId, ConsentAction.REVOKE, List.of());
+
+        assertThat(reload(toCenter).isActive()).isFalse();
+    }
+
     private Long grant(ReceiverType receiverType, Long receiverId) {
         return grant(insightId, receiverType, receiverId);
     }

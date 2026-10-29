@@ -21,7 +21,7 @@ import { ME, MY_INSTITUTION } from "@/lib/mock/data";
  * 배지가 실시간으로 줄어든다.
  */
 export async function clientLoader() {
-  const { loggedIn, signupCompleted, role, name } = await getSession();
+  const { loggedIn, signupCompleted, role, name, institutionName } = await getSession();
   // 카카오 로그인만 하고 역할을 안 고른 사람 — 보호 API 가 403 SIGNUP_NOT_COMPLETED 를 준다.
   if (loggedIn && !signupCompleted) return redirect("/signup?role=org");
   if (role !== "org") return redirect("/login");
@@ -35,12 +35,11 @@ export async function clientLoader() {
     loadIfReady("inbox", getInbox),
   ]);
 
-  // 사이드바 하단의 내 정보. 실연동에서는 /auth/me 의 이름을 쓴다.
-  // 기관명은 /auth/me 에 없고 기관 정보 API(O-01)도 아직 없어 비워 둔다 — mock 기관명을 띄우면
-  // 로그인한 사람과 다른 기관이 보인다.
+  // 사이드바 하단의 내 정보. 실연동에서는 /auth/me 의 이름 · 기관명(#236)을 쓴다.
+  // 서버가 기관명을 안 주면 비워 둔다 — mock 기관명을 띄우면 로그인한 사람과 다른 기관이 보인다.
   const me = isAuthMock()
     ? { name: ME.name, institutionName: MY_INSTITUTION.name }
-    : { name: name ?? null, institutionName: null };
+    : { name: name ?? null, institutionName: institutionName ?? null };
 
   return {
     me,
