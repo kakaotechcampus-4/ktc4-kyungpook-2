@@ -7,7 +7,10 @@ package com.itda.backend.domain.approval;
 public enum ApprovalDecision {
     /** AI 원문 그대로 승인했다. */
     APPROVED,
-    /** 본문을 한 글자라도 고쳐서 승인했다. 인사이트는 이 값으로 고친 요약을 거른다 (§10.1 #7). */
+    /**
+     * 문장 카드를 고쳐서 승인했다 (#221). 인사이트는 고친 요약도 재료로 쓰고, 이 값과 claims 의 {@code source} 로
+     * #221 이전 방식으로 고친 것만 거른다 (§10.1 #7, #249).
+     */
     CORRECTED,
     /** 보류했다. */
     HOLD,
