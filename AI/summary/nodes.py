@@ -149,6 +149,18 @@ COUNT = re.compile(rf"(?<![0-9가-힣])(\d+|{_KNOWN})\s*({_UNIT_RE})" + _TAIL)
 #: "안" 은 넣지 않는다 — "안았다" · "책상 안에" 와 겹쳐 오탐이 난다.
 NEGATION = re.compile(r"않|못하|못 |없")
 
+#: 절의 끝. 부정은 **횟수가 속한 절 안에서만** 찾는다.
+#:
+#: 문장 전체를 보면 "세 번도 넘게 시도했지만 울지는 않았다" 의 "않" 이 앞의 3회까지
+#: 면제한다 — 뒤 절의 부정인데 앞 절의 횟수 주장이 근거 없이 통과했다 (멘토님 리뷰 #256).
+#:
+#: **한 글자 어미("고"·"나")는 넣지 않는다.** "고개" 의 "고" 에서 끊으면
+#: "한 번도 고개를 들지 않았다" 의 범위가 "도 " 로 잘려 부정을 놓친다.
+#: 쉼표도 넣지 않는다 — "한 번도, 정말 한 번도 울지 않았다" 가 끊긴다.
+#: 그래서 **여기 없는 어미로 이어진 절은 못 끊는다** ("~하고" 등). 못 끊으면
+#: 예전처럼 뒤 절까지 보므로, 놓치는 쪽이 아니라 더 세게 거르는 쪽으로 틀린다.
+CLAUSE_END = re.compile(r"지만|으나|는데|은데|면서|거나|더니|[.!?\n]")
+
 
 def _count_value(token: str) -> str | None:
     """
@@ -179,6 +191,17 @@ def _count_value(token: str) -> str | None:
     return token                   # 모르는 수량 표현 — 그대로 대조한다
 
 
+def _clause_from(text: str, start: int) -> str:
+    """
+    {start} 부터 그 절이 끝나는 자리까지. 부정을 찾을 범위다.
+
+    끝은 어미의 **앞**이다 — "울지 않는데" 의 "는데" 에서 끊으면 "않" 이 범위에
+    남아야 한다. 어미를 못 찾으면 문장 끝까지다.
+    """
+    end = CLAUSE_END.search(text, start)
+    return text[start:end.start()] if end else text[start:]
+
+
 def _counts(text: str) -> set[tuple[str, str]]:
     """
     문장에 쓰인 수량을 (값, 단위) 쌍으로 모은다.
@@ -192,10 +215,10 @@ def _counts(text: str) -> set[tuple[str, str]]:
     text = text or ""
     pairs = set()
     for m in COUNT.finditer(text):
-        # 단위 뒤에 "도" 가 붙고 문장이 부정이면 횟수 주장이 아니다.
+        # 단위 뒤에 "도" 가 붙고 **그 횟수가 속한 절이** 부정이면 횟수 주장이 아니다.
         # "한 번도 울지 않았다" 는 빼고, "세 번도 넘게 시도했다" 는 센다 —
         # 뒤쪽은 횟수를 주장하므로 근거가 있어야 한다.
-        if text[m.end():m.end() + 1] == "도" and NEGATION.search(text):
+        if text[m.end():m.end() + 1] == "도" and NEGATION.search(_clause_from(text, m.end())):
             continue
         value = _count_value(m.group(1))
         unit = m.group(2)
