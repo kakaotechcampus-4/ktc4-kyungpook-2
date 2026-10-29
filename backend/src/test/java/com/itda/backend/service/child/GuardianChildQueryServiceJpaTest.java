@@ -33,6 +33,7 @@ import com.itda.backend.dto.response.child.GuardianChildResponse.ChildInstitutio
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
+import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
@@ -42,7 +43,7 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianChildQueryService.class, ConsentStateReader.class})
+@Import({GuardianChildQueryService.class, ConsentStateReader.class, ClockConfig.class})
 class GuardianChildQueryServiceJpaTest {
 
     private static final String MOM_PRINCIPAL = "41";
