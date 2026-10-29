@@ -157,7 +157,8 @@ public class InsightGate2QueryService {
         Map<Long, List<Long>> enrolled = childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(childIds)
                 .stream().collect(Collectors.groupingBy(ChildOrganization::getChildId,
                         Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
-        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
+        // 주간 인사이트 동의 기준이다 (#257). 수신 후보 표시와 재료 확인이 같은 값을 본다.
+        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.insightStatesOf(childIds);
         Map<Long, Evidence> evidences = evidenceOf(insights);
 
         Set<Long> organizationIds = new HashSet<>();
@@ -174,6 +175,7 @@ public class InsightGate2QueryService {
                 // 명부를 먼저 본다. source_institution_ids 는 만들 때 굳은 값이라 그 뒤에 아이가 우리
                 // 기관을 떠났어도 그대로 남는다 — 그것만 보면 연결이 끊긴 기관이 계속 읽는다.
                 requireStillOurs(insight, organizationId, childNames, enrolled);
+                requireMaterialConsented(insight, consents);
                 primary = PrimarySource.requireApprover(insight, organizationId, organizations);
             } catch (InsightException e) {
                 if (strict) {
@@ -184,6 +186,27 @@ public class InsightGate2QueryService {
             responses.add(toResponse(insight, primary, childNames, enrolled, consents, evidences, organizations));
         }
         return responses;
+    }
+
+    /**
+     * 재료를 낸 기관 중 하나라도 주간 인사이트 동의가 꺼졌으면 <b>"없음"</b> 으로 답한다 (#257, 멘토님 리뷰 #256 P1).
+     *
+     * <p>승인 전·후 모두다. 승인 버튼만 409 로 막으면, 승인하는 기관은 목록·상세로 철회된 기관의 내용이 섞인 글을
+     * 계속 읽는다. 여러 기관 기록을 엮은 글이라 일부만 가릴 수 없어 통째로 뺀다. 동의 판단은 재료 고르기 · 승인과 같은
+     * {@code ConsentStateReader.insightStatesOf} 다 — 다만 재료 고르기와 달리 <b>명부 소속은 보지 않는다</b> (이 PR 전과 같다).
+     *
+     * <p>숨긴 대기 글은 상태를 바꾸지 않는다. 아무에게도 나가지 않으니 대기로 남아도 위험이 없고, 보호자가 동의를 다시
+     * 켜면 그대로 다시 보여 승인할 수 있다. 상태를 바꾸려면 값을 더해야 해서 §11.4 수동 조치 대상이 된다 (#213 과 같은
+     * 이유). 그래서 id 로 직접 결정(O-42)을 보내면 승인은 409 {@code INSIGHT_MATERIAL_CONSENT_REVOKED}, 보류는 된다.
+     */
+    private static void requireMaterialConsented(InsightResult insight,
+            Map<Long, Map<Long, ConsentState>> consents) {
+        Map<Long, ConsentState> ofChild = consents.getOrDefault(insight.getChildId(), Map.of());
+        for (Long organizationId : PrimarySource.sourceIdsOf(insight)) {
+            if (ofChild.getOrDefault(organizationId, ConsentState.NOT_GRANTED) != ConsentState.GRANTED) {
+                throw new InsightException(InsightErrorCode.NOT_FOUND, insight.getId());
+            }
+        }
     }
 
     /**
