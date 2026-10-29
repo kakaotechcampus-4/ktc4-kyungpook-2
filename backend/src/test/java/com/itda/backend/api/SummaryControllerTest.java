@@ -25,6 +25,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.itda.backend.dto.request.summary.Gate1DecisionRequest.Card;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
+import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse;
+import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse.Counts;
+import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse.MatchingCounts;
+import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse.SummaryGroupCard;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -34,6 +38,7 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.service.approval.SummaryGate1QueryService;
 import com.itda.backend.service.approval.SummaryGate1Service;
+import com.itda.backend.service.summary.SummaryGroupQueryService;
 import com.itda.backend.service.summary.SummaryRunService;
 
 @WebMvcTest(SummaryController.class)
@@ -55,10 +60,37 @@ class SummaryControllerTest {
     private SummaryGate1QueryService summaryGate1QueryService;
 
     @MockitoBean
+    private SummaryGroupQueryService summaryGroupQueryService;
+
+    @MockitoBean
     private JwtProvider jwtProvider;
 
     @MockitoBean
     private JwtCookie jwtCookie;
+
+    @Test
+    void groups_returnsMatchingCountsAndCards() throws Exception {
+        given(summaryGroupQueryService.getBoard(any())).willReturn(new SummaryGroupBoardResponse(
+                new MatchingCounts(5, 2),
+                List.of(new SummaryGroupCard(12L, "김하늘", LocalDate.of(2019, 3, 2), LocalDate.of(2026, 9, 17),
+                        "ready", new Counts(1, 0, 2, 0, 0), true, false, 0, true))));
+
+        mockMvc.perform(get("/api/v1/summaries/groups"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.matching.inProgress").value(5))
+                .andExpect(jsonPath("$.data.matching.needsReview").value(2))
+                .andExpect(jsonPath("$.data.groups[0].childId").value(12))
+                .andExpect(jsonPath("$.data.groups[0].childName").value("김하늘"))
+                .andExpect(jsonPath("$.data.groups[0].birthdate").value("2019-03-02"))
+                .andExpect(jsonPath("$.data.groups[0].entryDate").value("2026-09-17"))
+                .andExpect(jsonPath("$.data.groups[0].status").value("ready"))
+                .andExpect(jsonPath("$.data.groups[0].counts.ready").value(2))
+                .andExpect(jsonPath("$.data.groups[0].canSummarize").value(true))
+                .andExpect(jsonPath("$.data.groups[0].summaryRequested").value(false))
+                .andExpect(jsonPath("$.data.groups[0].waitingCount").value(0))
+                .andExpect(jsonPath("$.data.groups[0].previousSummaryInReview").value(true));
+    }
 
     @Test
     void run_requestsSummaryForChildAndDate() throws Exception {
