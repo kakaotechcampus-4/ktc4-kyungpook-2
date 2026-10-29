@@ -145,6 +145,37 @@ class InsightAgentClientTest {
         assertThatThrownBy(() -> client.analyze(request())).isInstanceOf(AiAgentUnavailableException.class);
     }
 
+    /** #264 부터 AI 가 503 body 에 실패 종류를 싣는다. AI /metrics 와 같은 모양으로 남긴다 (#266). */
+    @Test
+    void 실패_사유는_503_body의_reason과_failure를_붙여_만든다() {
+        server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"detail\": {\"reason\": \"llm_unavailable\", \"failure\": \"empty_response\"}}"));
+
+        assertThatThrownBy(() -> client.analyze(request())).satisfies(e ->
+                assertThat(client.failureOf((RuntimeException) e)).isEqualTo("llm_unavailable:empty_response"));
+    }
+
+    /** #264 전의 AI 는 failure 를 싣지 않는다. */
+    @Test
+    void 실패_종류가_없으면_reason만_남긴다() {
+        server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"detail\": {\"reason\": \"llm_unavailable\"}}"));
+
+        assertThatThrownBy(() -> client.analyze(request())).satisfies(e ->
+                assertThat(client.failureOf((RuntimeException) e)).isEqualTo("llm_unavailable"));
+    }
+
+    /** body 가 없으면 AI 가 답한 게 아니다 — 연결 실패나 BE 쪽 시간 초과다. */
+    @Test
+    void body가_없으면_AI에_닿지_못한_것으로_남긴다() {
+        server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+
+        assertThatThrownBy(() -> client.analyze(request())).satisfies(e ->
+                assertThat(client.failureOf((RuntimeException) e)).isEqualTo("agent_unreachable"));
+    }
+
     @Test
     void 계약과_다른_요청이라_422면_바로_실패한다() {
         server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY));
