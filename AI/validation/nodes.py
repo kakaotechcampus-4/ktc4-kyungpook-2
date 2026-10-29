@@ -99,6 +99,27 @@ def _narrowest_issues(issues: list[dict]) -> list[dict]:
     return sorted(result, key=lambda i: (i["start"] is None, i["start"] or 0, i["end"] or 0, i["type"]))
 
 
+#: 이름 뒤에 붙는 조사. "하늘이는" 처럼 받침 없는 이름에 붙는 "이" 도 포함한다.
+_NAME_TAILS = ("", "이", "이는", "이가", "이의", "이를", "이도", "이랑", "이와", "이한테", "이에게",
+               "은", "는", "가", "의", "을", "를", "도", "랑", "와", "과", "한테", "에게")
+
+
+def _is_subject_name_only(quote: str, subject_name: str | None) -> bool:
+    """
+    모델이 개인정보라고 가리킨 곳이 판정 대상 아이의 이름(성+이름 또는 이름)과 조사뿐인가.
+
+    그 아이 일지에 그 아이 이름이 나오는 것은 당연하고 개인정보표현(연락처·주소·생년월일)이 아니다.
+    그런데 모델이 가끔 이름을 개인정보로 판정해 평범한 일지를 BLOCK 한다 (같은 문장도 5번 중 2~5번).
+    이 판정만 버린다. 글의 이름은 그대로 둔다. 전화번호·주민번호는 정규식이 따로 잡는다.
+    """
+    if not subject_name:
+        return False
+    q = re.sub(r"\s+", "", quote or "")
+    name = re.sub(r"\s+", "", subject_name)
+    forms = [name] + ([name[1:]] if len(name) >= 3 else [])  # 성을 뗀 이름은 세 글자 이상일 때만
+    return any(q == form + tail for form in forms for tail in _NAME_TAILS)
+
+
 def reflect(state: dict) -> dict:
     """반영: 최종 검사.
 
@@ -155,6 +176,8 @@ def reflect(state: dict) -> dict:
             continue  # ⚠️ 귀속 검증 핵심 지점
 
         quote = candidate.get("evidence_quote", "")
+        if issue_type == "개인정보표현" and _is_subject_name_only(quote, state.get("subject_name")):
+            continue  # 주인공 이름을 개인정보로 본 판정은 버린다. 글은 그대로 둔다
         spans = spans_for_quotes(content, [quote])
         if not spans:
             continue  # 원문에서 못 찾은 근거는 신뢰하지 않음

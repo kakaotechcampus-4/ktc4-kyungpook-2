@@ -325,6 +325,7 @@ interface Gate1SummaryRaw {
   processing: boolean;
   content: string;
   claims: SummaryItem["claims"] | null;
+  noContent: boolean;
   needsReview: boolean;
   reviewReasons: string[] | null;
   uncoveredEntries: { journalEntryId: number; content: string }[] | null;
@@ -343,6 +344,7 @@ function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
     processing: raw.processing,
     content: raw.content,
     claims: raw.claims ?? [],
+    noContent: raw.noContent ?? false,
     needsReview: raw.needsReview,
     reviewReasons: raw.reviewReasons ?? [],
     uncoveredEntries: (raw.uncoveredEntries ?? []).map((e) => ({
@@ -368,17 +370,25 @@ export async function getGate1Queue(
   return items.map(toSummaryItem);
 }
 
+type Gate1Decision = "approve" | "hold" | "remove" | "confirm" | "revert";
+
 const GATE1_STATUS_AFTER = {
   approve: "approved",
   hold: "hold",
   remove: "removed",
-} as const satisfies Record<string, Gate1Status>;
+  confirm: "confirmed",
+  revert: "reverted",
+} as const satisfies Record<Gate1Decision, Gate1Status>;
 
-/** mock 에서 BE 와 같은 409 를 흉내 낸다 — 화면의 오류 안내를 mock 으로도 볼 수 있게 */
+/** mock 에서 BE 와 같은 400 · 409 를 흉내 낸다 — 화면의 오류 안내를 mock 으로도 볼 수 있게 */
 function mockGate1Guard(item: SummaryItem | undefined, decision: string): SummaryItem {
   if (!item) throw new ApiError(404, "SUMMARY_NOT_FOUND", "요약을 찾을 수 없습니다.");
-  if (item.gate1Status === "approved" || item.gate1Status === "removed") {
+  if (item.gate1Status !== "pending" && item.gate1Status !== "hold") {
     throw new ApiError(409, "SUMMARY_ALREADY_REVIEWED", "이미 처리된 요약입니다.");
+  }
+  const forNoContent = decision === "confirm" || decision === "revert";
+  if (item.noContent !== forNoContent && decision !== "reopen") {
+    throw new ApiError(400, "SUMMARY_INVALID_REQUEST", "이 요약에 맞지 않는 결정입니다.");
   }
   if (item.processing) {
     throw new ApiError(409, "SUMMARY_REGENERATING", "요약을 다시 만드는 중입니다.");
@@ -395,10 +405,11 @@ function mockGate1Guard(item: SummaryItem | undefined, decision: string): Summar
  * cards 는 승인할 때만, 고친 것이 있을 때만 보낸다 — 없으면 AI 요약 그대로 승인이다.
  * 보류 · 제거에 보내면 400 이다. version 은 목록에서 받은 값 그대로 — 그 사이 요약이 새 기록으로
  * 바뀌었으면 409 SUMMARY_CHANGED 다. 보류한 요약은 제거만 받는다(승인 · 보류는 409 SUMMARY_HELD).
+ * 요약할 내용 없음(noContent) 요약은 confirm · revert 만, 그 밖의 요약은 그 둘을 빼고 받는다 (어긋나면 400).
  */
 export async function decideGate1(
   summaryId: string,
-  body: { decision: "approve" | "hold" | "remove"; cards?: Gate1Card[]; version: string },
+  body: { decision: Gate1Decision; cards?: Gate1Card[]; version: string },
 ): Promise<{ summaryId: string }> {
   if (mockFor("gate1")) {
     const item = mockGate1Guard(
@@ -458,8 +469,9 @@ export async function getInsight(id: string): Promise<Insight | undefined> {
 /**
  * POST /api/v1/insights/{insightId}/gate2 (O-42)
  *
- * 수신 기관은 보내지 않는다 — 승인하면 보호자에게 열람 권한이 생기고, 어느 기관에 보일지는
- * 그 뒤 보호자가 고른다 (#206). 승인 · 보류 모두 되돌릴 수 없다.
+ * 수신 기관은 보내지 않는다 — 승인하면 보호자와, targets 중 동의가 granted 인 기관에 열람 권한이
+ * 생긴다 (#233). 고르는 단계는 없다. 승인 · 보류 모두 되돌릴 수 없다.
+ * 재료 기관의 동의가 그사이 꺼졌으면 승인만 409 INSIGHT_MATERIAL_CONSENT_REVOKED (보류는 된다).
  */
 export async function decideGate2(insightId: string, body: { decision: "approve" | "hold" }) {
   if (mockFor("insights")) {
