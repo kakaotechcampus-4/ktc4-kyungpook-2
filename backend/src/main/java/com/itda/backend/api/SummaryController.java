@@ -131,6 +131,11 @@ public class SummaryController {
                     responseCode = "404",
                     description = "없는 아동이거나 다른 기관 소속 (SUMMARY_CHILD_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "그 묶음을 요약하는 중 — 끝난 뒤 다시 요청 (SUMMARY_IN_PROGRESS)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
     public ApiResponse<Void> run(

@@ -129,6 +129,18 @@ class SummaryControllerTest {
     }
 
     @Test
+    void run_returns409WhileGroupIsBeingSummarized() throws Exception {
+        willThrow(new SummaryException(SummaryErrorCode.IN_PROGRESS, "summarizing"))
+                .given(summaryRunService).requestRun(any(), any(), any());
+
+        mockMvc.perform(post(RUN_URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"childId\": 8, \"entryDate\": \"2026-10-08\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SUMMARY_IN_PROGRESS"));
+    }
+
+    @Test
     void run_returns400WhenNothingToSummarize() throws Exception {
         willThrow(new SummaryRunValidationException("no validated entry"))
                 .given(summaryRunService).requestRun(any(), any(), any());
