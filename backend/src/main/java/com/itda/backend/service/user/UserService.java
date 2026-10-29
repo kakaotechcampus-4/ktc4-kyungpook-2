@@ -13,8 +13,10 @@ import com.itda.backend.exception.organization.OrganizationErrorCode;
 import com.itda.backend.exception.organization.OrganizationException;
 import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
+import com.itda.backend.global.exception.ConstraintViolations;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.organization.OrganizationCodeIssuer;
 
 import lombok.RequiredArgsConstructor;
 
@@ -30,6 +32,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final OrganizationRepository organizationRepository;
+    private final OrganizationCodeIssuer organizationCodeIssuer;
     private final LoginUserTransactionService loginUserTransactionService;
 
     /**
@@ -172,11 +175,20 @@ public class UserService {
         if (organizationRepository.existsByBusinessNumber(request.businessNumber())) {
             throw new OrganizationException(OrganizationErrorCode.DUPLICATE_BUSINESS_NUMBER);
         }
+        Organization organization = Organization.of(
+                request.organizationName(), request.organizationType(), request.businessNumber());
+        organization.assignCode(organizationCodeIssuer.unusedCode());
         try {
-            return organizationRepository.saveAndFlush(Organization.of(
-                    request.organizationName(), request.organizationType(), request.businessNumber()));
+            return organizationRepository.saveAndFlush(organization);
         } catch (DataIntegrityViolationException e) {
-            throw new OrganizationException(OrganizationErrorCode.DUPLICATE_BUSINESS_NUMBER);
+            // 사업자등록번호와 기관 코드가 둘 다 유니크라 어느 쪽에 걸렸는지 가려야 한다.
+            if (ConstraintViolations.isViolationOf(e, Organization.UK_BUSINESS_NUMBER)) {
+                throw new OrganizationException(OrganizationErrorCode.DUPLICATE_BUSINESS_NUMBER);
+            }
+            if (ConstraintViolations.isViolationOf(e, Organization.UK_CODE)) {
+                throw new OrganizationException(OrganizationErrorCode.INSTITUTION_CODE_ISSUE_FAILED);
+            }
+            throw e;
         }
     }
 }
