@@ -4,6 +4,9 @@ import org.springframework.stereotype.Component;
 
 import com.itda.backend.dto.request.insight.InsightAgentRequest;
 import com.itda.backend.dto.response.insight.InsightAgentResponse;
+import com.itda.backend.exception.agent.AiAgentRejectedException;
+import com.itda.backend.exception.agent.AiAgentUnavailableException;
+import com.itda.backend.exception.agent.AiAgentUnreadableResponseException;
 import com.itda.backend.service.agent.AiAgentClient;
 
 import lombok.RequiredArgsConstructor;
@@ -42,6 +45,31 @@ public class InsightAgentClient {
                 + " period=" + request.periodFrom() + ".." + request.periodTo();
         String body = agentClient.post("/insight", request, context);
         return new InsightAgentReply(agentClient.parse(body, InsightAgentResponse.class), body);
+    }
+
+    /**
+     * 실패 사유 한 줄. {@code insight_run.failure_reason} 에 남긴다 (#266).
+     *
+     * <p>AI 가 503 body 에 실은 {@code detail.reason} 에 실패 종류 {@code detail.failure} 가 있으면
+     * {@code llm_unavailable:empty_response} 처럼 붙인다 (AI {@code /metrics} 와 같은 모양, #264). body 가
+     * 없거나 이 모양이 아니면(연결 실패·BE 쪽 시간 초과·프록시 오류 페이지) {@code agent_unreachable} 이다.
+     */
+    public String failureOf(RuntimeException e) {
+        if (e instanceof AiAgentUnavailableException unavailable) {
+            String reason = agentClient.detailOf(unavailable, "reason");
+            if (reason == null) {
+                return "agent_unreachable";
+            }
+            String failure = agentClient.detailOf(unavailable, "failure");
+            return failure == null ? reason : reason + ":" + failure;
+        }
+        if (e instanceof AiAgentRejectedException) {
+            return "agent_rejected";
+        }
+        if (e instanceof AiAgentUnreadableResponseException) {
+            return "unreadable_response";
+        }
+        return "error";
     }
 
     public boolean isAvailable() {

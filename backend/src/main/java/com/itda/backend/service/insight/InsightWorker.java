@@ -168,11 +168,13 @@ public class InsightWorker {
                     prepared.request().claims().size());
             return true;
         } catch (AiAgentUnavailableException e) {
-            // 재시도까지 응답이 없었다. 이 아이는 FAILED 로 두고(다음 차례에 revision + 1 로 다시 집는다)
-            // 남은 아이는 건드리지 않는다. agentDown 은 건드리지 않는다 — 그건 /health 가 본 상태다.
-            log.warn("insight agent unavailable, stopping this turn childId={} period={}..{}",
-                    run.getChildId(), run.getPeriodFrom(), run.getPeriodTo(), e);
-            recorder.recordFailure(run);
+            // 재시도까지 응답이 없었다. 이 아이는 FAILED 로 두고 남은 아이는 건드리지 않는다. 이 아이는 연속 실패
+            // 횟수만큼 기다린 뒤 revision + 1 로 다시 집는다 — 바로 다시 집으면 다음 차례에도 맨 앞에 와서 뒤의
+            // 아이들을 막는다 (#266). agentDown 은 건드리지 않는다 — 그건 /health 가 본 상태다.
+            String reason = client.failureOf(e);
+            log.warn("insight agent unavailable, stopping this turn childId={} period={}..{} reason={}",
+                    run.getChildId(), run.getPeriodFrom(), run.getPeriodTo(), reason, e);
+            recorder.recordFailure(run, reason);
             return false;
         } catch (RuntimeException e) {
             if (Thread.currentThread().isInterrupted()) {
@@ -182,9 +184,10 @@ public class InsightWorker {
                 return false;
             }
             // 4xx·응답 해석 실패. 다시 보내도 같으므로 이 아이만 실패로 남기고 다음으로 간다.
-            log.warn("insight call failed, recorded as failure childId={} period={}..{}",
-                    run.getChildId(), run.getPeriodFrom(), run.getPeriodTo(), e);
-            recorder.recordFailure(run);
+            String reason = client.failureOf(e);
+            log.warn("insight call failed, recorded as failure childId={} period={}..{} reason={}",
+                    run.getChildId(), run.getPeriodFrom(), run.getPeriodTo(), reason, e);
+            recorder.recordFailure(run, reason);
             return true;
         }
     }
