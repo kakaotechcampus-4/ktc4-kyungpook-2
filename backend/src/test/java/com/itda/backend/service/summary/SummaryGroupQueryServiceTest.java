@@ -17,6 +17,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
@@ -59,6 +60,8 @@ class SummaryGroupQueryServiceTest {
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
         junho = em.persist(Child.of("김준호", LocalDate.of(2020, 3, 1))).getId();
         seoa = em.persist(Child.of("한서아", LocalDate.of(2019, 7, 15))).getId();
+        em.persist(ChildOrganization.of(junho, ORG));
+        em.persist(ChildOrganization.of(seoa, ORG));
         ourFile = file(ORG);
         otherFile = file(OTHER_ORG);
     }
@@ -145,6 +148,16 @@ class SummaryGroupQueryServiceTest {
         assertThat(card.childName()).isEqualTo("김준호");
         assertThat(card.birthdate()).isEqualTo(LocalDate.of(2020, 3, 1));
         assertThat(card.entryDate()).isEqualTo(DATE);
+    }
+
+    @Test
+    void 기관에서_뺀_아이의_묶음은_보여주지_않는다() {
+        Long minjun = em.persist(Child.of("박민준", LocalDate.of(2020, 1, 1))).getId();
+        em.persist(ChildOrganization.of(minjun, ORG)).delete();
+        entry(minjun, DATE, JournalEntryStatus.VALIDATED);
+
+        // [요약](O-32)은 기관에서 뺀 아이를 404 로 거절한다. 누를 수 없는 카드를 띄우지 않는다.
+        assertThat(service.getBoard(TEACHER).groups()).isEmpty();
     }
 
     @Test
@@ -251,6 +264,33 @@ class SummaryGroupQueryServiceTest {
 
         assertThat(card.status()).isEqualTo("summarizing");
         assertThat(card.waitingCount()).isEqualTo(2);
+    }
+
+    @Test
+    void 요약_중에_새로_요약_대기가_되면_다시_누를_수_있다() {
+        // 워커가 집은 뒤 들어온 일지는 이번 요약에 없고, 요약을 남기면 그때까지 누른 요청은 처리된 것으로 닫힌다.
+        entry(junho, DATE, JournalEntryStatus.SUMMARIZING);
+        requested(junho, DATE);
+        entry(junho, DATE, JournalEntryStatus.VALIDATED);
+
+        SummaryGroupCard card = onlyCard();
+
+        assertThat(card.status()).isEqualTo("ready");
+        assertThat(card.canSummarize()).isTrue();
+    }
+
+    @Test
+    void 눌렀어도_요약할_일지가_없게_되면_기다리는_건수를_주지_않는다() {
+        // 검증이 모두 막히면 워커가 요청을 거두므로 "곧 시작" 이 아니다.
+        entry(junho, DATE, JournalEntryStatus.VALIDATION_BLOCKED);
+        requested(junho, DATE);
+        entry(seoa, DATE, JournalEntryStatus.VALIDATING);
+
+        SummaryGroupCard card = service.getBoard(TEACHER).groups().stream()
+                .filter(c -> c.childId().equals(junho)).findFirst().orElseThrow();
+
+        assertThat(card.status()).isEqualTo("needs_fix");
+        assertThat(card.waitingCount()).isZero();
     }
 
     @Test

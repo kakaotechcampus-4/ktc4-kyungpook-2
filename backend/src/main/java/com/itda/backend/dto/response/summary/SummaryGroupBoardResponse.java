@@ -24,7 +24,8 @@ public record SummaryGroupBoardResponse(MatchingCounts matching, List<SummaryGro
     /**
      * @param status                  할 일 우선 라벨: {@code needs_fix} · {@code ready} · {@code summarizing} ·
      *                                {@code validating} · {@code admin_check}
-     * @param canSummarize            [요약]을 누를 수 있는지. 요약 대기 일지가 있고 아직 누르지 않았을 때
+     * @param canSummarize            [요약]을 누를 수 있는지. 요약 대기 일지가 있고, 아직 누르지 않았거나 요약 중에 새로
+     *                                들어왔을 때
      * @param summaryRequested        [요약]을 눌렀고 아직 요약이 끝나지 않았다
      * @param waitingCount            눌렀지만 아직 시작 전일 때, 요약이 끝나길 기다리는 같은 날 매칭·검증 중 일지 수
      * @param previousSummaryInReview 이 묶음의 이전 요약이 1차 검토에 있다. 다시 요약하면 새 일지까지 합친 새 판이 된다
