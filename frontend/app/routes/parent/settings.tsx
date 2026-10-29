@@ -179,6 +179,20 @@ export default function ParentSettingsPage() {
               </div>
             );
           })}
+          {(child.linkRequests ?? []).map(({ institution }) => (
+            <div
+              key={`request-${institution.id}`}
+              className="flex items-center gap-3 rounded-2xl border border-dashed border-line2 px-4 py-3"
+            >
+              <InstitutionIcon type={institution.type} />
+              <span className="min-w-0 flex-1">
+                <InstitutionChip institution={institution} withName />
+                <span className="mt-0.5 block text-[13px] text-muted">
+                  수락 대기 중 · 기관이 수락하면 알림으로 알려 드려요
+                </span>
+              </span>
+            </div>
+          ))}
         </div>
         <Link
           to="/parent/consent/manage/add"
