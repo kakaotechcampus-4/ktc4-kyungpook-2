@@ -267,16 +267,28 @@ class SummaryGroupQueryServiceTest {
     }
 
     @Test
-    void 요약_중에_새로_요약_대기가_되면_다시_누를_수_있다() {
-        // 워커가 집은 뒤 들어온 일지는 이번 요약에 없고, 요약을 남기면 그때까지 누른 요청은 처리된 것으로 닫힌다.
+    void 요약_중에_새로_요약_대기가_되어도_요약이_끝날_때까지_누를_수_없다() {
+        // 워커가 집은 뒤 들어온 일지는 이번 요약에 없다. 요약이 끝나 1차 검토로 간 뒤 이 카드에 요약 대기로 남는다.
         entry(junho, DATE, JournalEntryStatus.SUMMARIZING);
         requested(junho, DATE);
         entry(junho, DATE, JournalEntryStatus.VALIDATED);
 
         SummaryGroupCard card = onlyCard();
 
+        assertThat(card.status()).isEqualTo("summarizing");
+        assertThat(card.canSummarize()).isFalse();
+    }
+
+    @Test
+    void 요약이_끝난_뒤_남은_요약_대기는_이전_요약과_따로_다시_누를_수_있다() {
+        entry(junho, DATE, JournalEntryStatus.GATE1_PENDING);
+        entry(junho, DATE, JournalEntryStatus.VALIDATED);
+
+        SummaryGroupCard card = onlyCard();
+
         assertThat(card.status()).isEqualTo("ready");
         assertThat(card.canSummarize()).isTrue();
+        assertThat(card.previousSummaryInReview()).isTrue();
     }
 
     @Test

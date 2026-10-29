@@ -132,29 +132,30 @@ public class SummaryGroupQueryService {
                 count(byStatus, JournalEntryStatus.VALIDATED),
                 count(byStatus, JournalEntryStatus.SUMMARIZING),
                 count(byStatus, JournalEntryStatus.SYSTEM_ERROR));
-        // 누른 요청은 워커가 집기 전까지 그 뒤에 들어온 요약 대기 일지도 함께 맡는다. 요약 중에 들어온 일지는 이번 요약에
-        // 없고, 요약을 남길 때 그때까지 누른 요청이 닫히므로 다시 눌러야 한다.
-        boolean awaitingStart = requested && counts.summarizing() == 0;
-        boolean willSummarize = awaitingStart && counts.ready() + counts.validating() > 0;
+        // 눌렀거나 요약 중이면 [요약]을 막는다. 시작 전에 들어온 요약 대기 일지는 워커가 함께 집어 가고, 요약 중에 들어온
+        // 일지는 요약이 끝나 1차 검토로 간 뒤 이 카드에 요약 대기로 남아 그때 따로 누른다.
+        boolean summaryUnderway = requested || counts.summarizing() > 0;
+        boolean willSummarize = requested && counts.summarizing() == 0
+                && counts.ready() + counts.validating() > 0;
         return new SummaryGroupCard(
                 group.childId(),
                 child.getName(),
                 child.getBirthdate(),
                 group.entryDate(),
-                label(counts, awaitingStart, willSummarize),
+                label(counts, summaryUnderway, willSummarize),
                 counts,
-                counts.ready() > 0 && !awaitingStart,
+                counts.ready() > 0 && !summaryUnderway,
                 requested,
                 willSummarize ? busy : 0,
                 inReview);
     }
 
-    /** 할 일 우선. 눌러 두고 시작을 기다리는 묶음은 요약 중으로 본다 — 교사가 할 일은 끝났다. */
-    private static String label(Counts c, boolean awaitingStart, boolean willSummarize) {
+    /** 할 일 우선. 눌러 뒀거나 요약 중인 묶음은 요약 중으로 본다 — 교사가 할 일은 끝났다. */
+    private static String label(Counts c, boolean summaryUnderway, boolean willSummarize) {
         if (c.needsFix() > 0) {
             return NEEDS_FIX;
         }
-        if (c.ready() > 0 && !awaitingStart) {
+        if (c.ready() > 0 && !summaryUnderway) {
             return READY;
         }
         if (c.summarizing() > 0 || willSummarize) {
