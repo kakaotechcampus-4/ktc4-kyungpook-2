@@ -248,6 +248,7 @@ erDiagram
         varchar status
         int insight_count
         bigint last_context_id
+        varchar failure_reason
     }
     insight_result {
         bigint id PK
@@ -2280,6 +2281,7 @@ UNIQUE (insight_result_id, receiver_type, receiver_id)
 | `status` | VARCHAR(20) | N | 실행 상태 |
 | `insight_count` | INT | Y | 낸 인사이트 수. `DONE` 일 때만 채운다. **0 도 정상이다** |
 | `last_context_id` | BIGINT | Y | 그 실행이 본 `child_context` 중 가장 큰 id. "어디까지 봤나" |
+| `failure_reason` | VARCHAR(60) | Y | 왜 실패했나. `FAILED` 일 때만 채운다 (#266) |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N | 집은 뒤 결과가 정해지면 바뀐다 |
 
@@ -2315,7 +2317,8 @@ Gate 1 승인은 교사가 틈틈이 한다. 한 주치가 한 번에 올라오�
 
 | 상태 | 판정 |
 | --- | --- |
-| 실행 기록 없음 · `FAILED` | 집는다 |
+| 실행 기록 없음 | 집는다 |
+| `FAILED` | 기다릴 시간이 지났으면 `revision + 1` 로 집는다 (아래) |
 | `DONE` 인데 더 큰 `child_context.id` 가 생겼다 | **`revision + 1` 로 다시 집는다** |
 | `DONE` 이고 그대로 | 건너뛴다 (재호출 방지, §10.2-13) |
 
@@ -2328,8 +2331,34 @@ Gate 1 승인은 교사가 틈틈이 한다. 한 주치가 한 번에 올라오�
 **`NULL` 은 "눈금을 모른다" 로 본다.** 이 컬럼이 생기기 전 행이 그렇다. 그때는 다시 집는다 —
 한 번 더 도는 쪽이 빠뜨리는 쪽보다 낫다.
 
-**`FAILED` 로 끝난 실행은 다음 차례에 `revision + 1` 로 다시 집는다.** 실패한 판을 지우거나
-고치지 않는 것은 다른 이력 테이블과 같다(§3.2). 앱이 죽어 `RUNNING` 으로 남은 행은 **워커가 켜진 뒤
+**`FAILED` 로 끝난 실행은 기다렸다가 `revision + 1` 로 다시 집는다.** 실패한 판을 지우거나
+고치지 않는 것은 다른 이력 테이블과 같다(§3.2).
+
+**연달아 실패하면 오래 기다린다** (#266, 멘토님 리뷰 #256 P1). 워커는 AI 가 응답하지 않으면 그 아이를 실패로 두고
+그 차례를 멈춘다. 다음 차례는 5초 뒤이고 후보 순서는 늘 같아서, 바로 다시 집으면 **같은 아이가 계속 맨 앞에
+온다.** 그 아이만 계속 실패하면(예: LLM 이 그 아이 재료에 빈 응답) 뒤의 아이들은 차례를 받지 못한다.
+
+| 최근 판부터 이어진 `FAILED` 수 | 마지막 실패(`updated_at`)부터 기다리는 시간 |
+| --- | --- |
+| 1 | 1분 |
+| 2 | 5분 |
+| 3 이상 | 30분 |
+
+`app.insight.failure-backoffs` 로 바꾼다. `DONE` 판 앞의 실패는 세지 않는다 — 재료가 늘어 다시 돈 판이
+실패하면 다시 1분부터다. 행을 더 두지 않고 그 기간의 판들을 최근부터 세서 정한다(한 기간에 몇 줄뿐이다).
+
+**`failure_reason` 값** — enum 이 아니라 문자열이다. AI 가 실패 종류를 늘려도 BE 를 고치지 않고 그대로
+남기려는 것이고, enum 이면 값이 늘 때마다 §11.4 수동 조치가 따라온다.
+
+| 값 | 뜻 |
+| --- | --- |
+| `llm_unavailable:<종류>` | AI 가 503 을 주며 `detail.failure` 를 실었다. 종류는 `timeout` · `empty_response` · `bad_json` · `bad_response` · `http_error` · `not_configured` (AI `common/errors.py`). AI `/metrics` 와 같은 모양이다 |
+| `llm_unavailable` | 503 인데 종류가 없다 (#264 이전 AI) |
+| `agent_unreachable` | 503 body 가 없거나 이 모양(`detail.reason`)이 아니다 — 연결 실패·BE 쪽 시간 초과·프록시 오류 페이지 |
+| `agent_rejected` | 4xx. BE 가 계약과 다른 요청을 보냈다 |
+| `unreadable_response` | 200 인데 본문을 읽지 못했다 |
+| `stuck` | 앱이 죽어 `RUNNING` 으로 남았던 것을 되돌렸다 |
+| `error` | 그 밖 | 앱이 죽어 `RUNNING` 으로 남은 행은 **워커가 켜진 뒤
 첫 차례에 `FAILED` 로 되돌린다** — 집기가 `FAILED` 만 가져가므로 두면 그 아동·기간이 영영 처리되지 않는다
 (`SummaryWorker` 의 `releaseStuck` 과 같은 자리다).
 
@@ -2590,3 +2619,4 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-10-27 | `insight_run`(§9.5) 워커가 어느 주를 볼지 **승인 시각**으로 고른다. "지난주" 한 구간만 보던 탓에 늦게 승인된 기록이 영영 재료가 안 되던 구멍을 메웠다. 시연용으로 끝나지 않은 이번 주를 넣는 설정(`INSIGHT_INCLUDE_CURRENT_WEEK`, 기본 끔)을 추가했다. 컬럼·제약 변경 없음 | #239 |
 | 2026-10-28 | 인사이트가 교사가 고쳐 승인한 요약(`CORRECTED`)도 재료로 쓴다 (§9.2, §10.1 #7, 멘토 리뷰 A4). 10/24 의 "준비만 했다" 가 이걸로 실제 동작한다. `claims` 에 `source` 가 없는 #221 이전 방식만 계속 뺀다. 컬럼·제약 변경 없음 | #249 |
 | 2026-10-29 | 같은 아이에 다른 기관 연결. `organization.code`(기관 코드, NULL 허용 UNIQUE) 추가 — 회원가입 때 받고, 그 전에 가입한 기관은 내 기관 정보를 처음 열 때 받는다(§4.2). 새 테이블 `child_organization_request`(§5.6) — 보호자가 기관 코드로 요청하고 기관이 관리번호를 넣어 수락하면 `child_organization` 이 생기거나 새 관리번호로 되살아난다(§5.2). 보호자마다 자기 행을 갖고, 연결이 끊긴 보호자의 요청만 `CANCELLED` 로 거둔다. 잠금 순서에 `child_organization_request` 추가(§3.3). **UNIQUE 추가라 §11.4 수동 조치 필요** — 배포 전에 컬럼 추가 → UNIQUE 추가 순서로 직접 실행. 새 테이블은 `ddl-auto: update` 가 만든다 | #259 |
+| 2026-10-30 | `insight_run`(§9.5) 에 `failure_reason` 추가 — 왜 실패했는지(빈 응답·시간 초과 등) 남긴다 (멘토님 리뷰 #256 P1). 연달아 실패한 아이·기간은 1분·5분·30분 기다렸다가 다시 집는다 — 바로 다시 집으면 계속 실패하는 아이가 5초마다 맨 앞에 와서 뒤의 아이들이 차례를 못 받았다. 문자열 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #266 |
