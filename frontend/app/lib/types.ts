@@ -85,16 +85,49 @@ export interface Child {
   /** 기관이 아이마다 붙여 쓰는 관리번호 (예: 2026-0031). 없으면 null */
   externalId?: string | null;
   institutions: { institution: Institution; consent: ConsentState }[];
+  /**
+   * 보호자가 기관 코드로 연결을 요청했고 기관의 수락을 기다리는 기관 (G-10·G-11). 아직 명부에 없어
+   * 동의할 수 없으므로 institutions 와 섞지 않는다. 기관 화면 mock 에는 없다.
+   */
+  linkRequests?: LinkRequest[];
   care?: ChildCareInfo;
+}
+
+/** 수락 대기 중인 기관 하나. requestedAt 은 가장 먼저 요청한 시각 (ISO 8601) */
+export interface LinkRequest {
+  institution: Institution;
+  requestedAt: string;
 }
 
 /**
  * 기관 아동 명부 한 줄 (GET /institutions/me/children).
  *
- * 서버는 id·name·birthDate·externalId·status 만 준다. 연결된 기관 목록은 다른 기관
+ * 서버는 id·name·birthDate·externalId·status·consent 만 준다. 연결된 기관 목록은 다른 기관
  * 정보를 보호자 동의 범위 안에서만 보여줘야 해서, 동의 기능이 생긴 뒤에 온다.
+ *
+ * **기관 화면은 status 가 아니라 consent 로 판단한다.** status 는 아이 전체 요약이라 어느 기관이든
+ * 동의가 있으면 active 다. 학교에 동의한 아이가 우리 명부에 막 올라오면 status 는 active 인데
+ * 우리 기관에는 아직 동의 전(not_granted)이다.
  */
-export type ChildListItem = Omit<Child, "institutions"> & Partial<Pick<Child, "institutions">>;
+export type ChildListItem = Omit<Child, "institutions" | "linkRequests"> &
+  Partial<Pick<Child, "institutions">> & {
+    /** 우리 기관에 대한 동의 상태 */
+    consent: ConsentState;
+  };
+
+/** 내 기관 정보 (O-01). code 는 보호자에게 알려 주는 기관 코드 8자 — 화면은 4-4 로 나눠 보여준다 */
+export interface MyInstitution extends Institution {
+  code: string;
+}
+
+/** 기관이 보는 연결 요청 하나 (O-60). 같은 아이에 보호자 여럿이 요청했으면 한 항목이다 */
+export interface PendingLinkRequest {
+  child: { id: string; name: string; birthDate: string };
+  /** 요청한 보호자들. 먼저 요청한 순서. 이름은 카카오 닉네임이라 없을 수 있다 */
+  requesters: { name: string | null }[];
+  /** 가장 먼저 요청한 시각 (ISO 8601) */
+  requestedAt: string;
+}
 
 /** 아이 등록 응답 (POST /institutions/me/children). 등록 직후라 status 는 항상 pending_consent 다 */
 export type RegisteredChild = Pick<Child, "id" | "name" | "birthDate" | "status"> & {

@@ -287,7 +287,11 @@ interface ParentActivity {
 
 | 함수 | 시그니처 | 사용 화면 |
 | --- | --- | --- |
-| `getChildren` | `() => Promise<Child[]>` | I-05, I-09, I-13 |
+| `getChildren` | `() => Promise<ChildListItem[]>` — 명부 한 줄의 `consent` 는 우리 기관 기준 동의. 기관 화면은 `status` 대신 이걸로 판단 | I-05, I-06, I-09, I-13 |
+| `getMyInstitution` | `() => Promise<MyInstitution>` — 기관 코드 포함 (O-01) | I-09 |
+| `getLinkRequests` | `() => Promise<PendingLinkRequest[]>` (O-60) | I-09 |
+| `acceptLinkRequest` | `(childId: string, externalId: string) => Promise<ChildListItem>` (O-61) | I-09 |
+| `rejectLinkRequest` | `(childId: string) => Promise<void>` (O-62) | I-09 |
 | `getChild` | `(id: string) => Promise<ChildListItem \| undefined>` — 상세 API 가 없어 명부가 실서버면 명부에서 찾음 | I-09-1 |
 | `getTimeline` | `(childId: string) => Promise<TimelineEntry[]>` | I-09-1 |
 | `getMatchingQueue` | `() => Promise<MatchingItem[]>` | I-03, I-06, 사이드바 배지 |
@@ -326,7 +330,7 @@ interface ParentActivity {
 | `getPendingInstitutionRequests` | `(childId: string) => Promise<{ institution: Institution }[]>` | P-03, P-04, P-07, P-09, P-11 |
 | `updateConsent` | `(childId: string, institutionId: string, body: { action: "grant" \| "revoke"; allowedFields?: ConsentField[] }) => Promise<ConsentResult>` | P-04(끄기), P-11 |
 | `lookupInstitutionByCode` | `(code: string) => Promise<Institution \| null>` | P-13 |
-| `addInstitutionByCode` | `(childId: string, code: string) => Promise<{ institution: Institution } \| null>` | P-13 |
+| `addInstitutionByCode` | `(childId: string, code: string) => Promise<{ institution: Institution; status: "pending"; requestedAt: string }>` — 연결 **요청**. 실패는 `ApiError` | P-13 |
 | `updateChildCare` | `(childId: string, care: ChildCareInfo) => Promise<{ ok: true }>` | P-06 |
 | `getInstitutionRequests` | `(childId: string) => Promise<InstitutionRequestItem[]>` | P-04, P-12 |
 | `confirmInstitutionRequest` | `(id: string) => Promise<{ ok: true }>` | P-12 |

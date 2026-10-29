@@ -240,6 +240,13 @@ export default function ChildRegisterPage() {
             초대 코드로 연결하고 동의하기 전까지는 이 아이의 기록을 올릴 수 없습니다. 관리번호는
             같은 이름의 아이를 구분하는 데 쓰이며, 우리 기관 안에서 겹칠 수 없습니다.
           </Note>
+          <Note>
+            <b className="font-semibold">이미 다른 기관에 다니는 아이</b>는 새로 등록하지 말고 보호자에게{" "}
+            <Link to="/children" className="font-semibold text-accentink underline">
+              우리 기관 코드
+            </Link>
+            를 알려 주세요. 새로 등록하면 같은 아이가 둘이 되어 기관들의 기록이 한 아이에게 모이지 않습니다.
+          </Note>
 
           {formError}
 

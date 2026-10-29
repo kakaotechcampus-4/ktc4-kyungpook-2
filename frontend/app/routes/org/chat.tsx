@@ -8,7 +8,7 @@ import type { ChatTurn } from "@/lib/types";
 
 export async function clientLoader() {
   const children = await getChildren();
-  return { childList: children.filter((c) => c.status === "active") };
+  return { childList: children.filter((c) => c.consent === "granted") };
 }
 
 /** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
