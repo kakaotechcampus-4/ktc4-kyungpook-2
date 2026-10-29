@@ -123,7 +123,7 @@ HTTP/1.1 404 Not Found
 
 - 카카오 로그인은 외부 신원 확인 수단이며, 서비스 회원·역할·권한의 기준은 내부 DB다.
 - 카카오 사용자 ID는 내부 회원(`users.kakao_id`)에 연결된다. 역할은 `PARENT`와 `ORGANIZATION`이 구현돼 있고 `ADMIN`은 아직 없다.
-- **역할은 회원가입(`POST /api/v1/auth/signup`)에서 사용자가 직접 정한다.** 카카오 로그인은 신원 확인만 하고, 처음 로그인한 사람은 역할 없는(`users.role = NULL`) 가입 미완료 회원으로 등록된다. 기관 담당자는 가입할 때 기관명·유형·사업자등록번호를 입력하고, 그 자리에서 기관이 만들어진다(기관 1곳당 계정 1개). 역할은 한 번 정해지면 바뀌지 않으며, 다시 가입을 요청하면 `409 ALREADY_SIGNED_UP`, 이미 등록된 사업자등록번호면 `409 DUPLICATE_BUSINESS_NUMBER`다.
+- **역할은 회원가입(`POST /api/v1/auth/signup`)에서 사용자가 직접 정한다.** 카카오 로그인은 신원 확인만 하고, 처음 로그인한 사람은 역할 없는(`users.role = NULL`) 가입 미완료 회원으로 등록된다. 기관 담당자는 가입할 때 기관명·유형·사업자등록번호를 입력하고, 그 자리에서 기관이 만들어진다(기관 1곳당 계정 1개). 역할은 한 번 정해지면 바뀌지 않으며, 다시 가입을 요청하면 `409 ALREADY_SIGNED_UP`, 이미 등록된 사업자등록번호면 `409 DUPLICATE_BUSINESS_NUMBER`다. 기관이 만들어질 때 보호자에게 알려 줄 기관 코드도 함께 생긴다(코드가 동시에 겹치면 `503 INSTITUTION_CODE_ISSUE_FAILED`, 다시 보내면 된다).
 - 가입 미완료 회원은 `/api/v1/auth/me` · `/api/v1/auth/signup` · `/api/v1/auth/logout` · `/api/v1/dev/login` 외의 API에서 `403 SIGNUP_NOT_COMPLETED`로 막힌다. 보안 필터 한 곳에서 확인하므로 새 API에도 자동으로 적용된다. `/auth/me`는 가입 미완료를 `401`이 아니라 `signupCompleted: false`로 알려준다.
 - 보호 API의 가입 확인 필터는 존재하지 않거나 탈퇴한 회원의 JWT를 `401 SESSION_USER_NOT_FOUND`로 즉시 차단한다. 각 API가 회원 서비스를 호출하는지와 관계없이 적용되며, 활성 가입 미완료 회원의 `403`과 구분한다. 데이터베이스 장애 등 예상하지 못한 조회 오류는 필터에서 `500 INTERNAL_SERVER_ERROR` JSON으로 응답하고 인증 쿠키는 유지한다.
 - **개발용 로그인(`GET /api/v1/dev/login?as=`)은 `app.auth.dev-login.enabled=true`(`DEV_LOGIN_ENABLED`)일 때만 존재한다.** 카카오 대신 `dev:{as}`를 `users.kakao_id`로 써서 같은 회원 찾기·생성과 출입증 쿠키 발급을 거친다. 꺼져 있으면 `404`다. 기본값은 꺼짐이고, 배포 서버는 테스트용으로 Compose가 켜 둔다. 정식 오픈 전에는 끈다. 형식은 [API 명세 §2.4.1](api-spec.md#241-개발용-로그인--개발테스트-전용)을 따른다.
