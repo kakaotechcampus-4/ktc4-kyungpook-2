@@ -51,7 +51,8 @@ def act(state: dict) -> dict:
     try:
         result = ask_json(build_messages(state))
     except LlmError as exc:
-        return {**state, "raw_insights": [], "llm_called": True, "llm_error": str(exc)}
+        return {**state, "raw_insights": [], "llm_called": True, "llm_error": str(exc),
+                "llm_failure": exc.kind}
 
     raw = result.data.get("insights", [])
     return {**state, "raw_insights": raw if isinstance(raw, list) else [],

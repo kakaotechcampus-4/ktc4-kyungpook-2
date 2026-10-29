@@ -32,3 +32,20 @@ class LlmUnavailable(RuntimeError):
     #: 응답 body 의 detail.message. **예외 메시지를 그대로 쓰지 않는다** —
     #: 거기에는 Luna 엔드포인트 주소와 아이 식별자가 들어 있다. 그쪽은 로그로만 간다.
     message = "Luna 호출 실패"
+
+    def __init__(self, *args, failure: str = "unknown"):
+        super().__init__(*args)
+        #: 왜 못 썼는지 (LlmError.kind). reason 은 BE 가 후속 처리를 가르는 값이라
+        #: 그대로 두고, 이건 기록용으로 따로 단다 — 멘토 A1 "빈 응답과 타임아웃을
+        #: 따로 기록" (2026-10-29). 지금은 요약·인사이트만 채운다.
+        self.failure = failure
+
+
+#: Luna 실패 종류. 고치는 방법이 달라서 나눈다.
+#:   timeout         제한시간 안에 답이 없음     → 입력을 줄이거나 제한시간을 늘린다
+#:   empty_response  답은 왔는데 "" 또는 {}      → 다시 부르면 될 수 있다
+#:   bad_json        JSON 이 깨짐
+#:   bad_response    응답 모양이 OpenAI 형식이 아님
+#:   http_error      연결 실패, 4xx·5xx
+#:   not_configured  URL·키 없음
+FAILURE_KINDS = ("timeout", "empty_response", "bad_json", "bad_response", "http_error", "not_configured")

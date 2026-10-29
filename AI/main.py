@@ -46,11 +46,13 @@ def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
     에이전트마다 예외를 따로 두면 안 된다 — main.py 에서 이름이 덮여
     핸들러가 한쪽에만 걸리고 나머지는 500 으로 나간다. common/errors.py 참고.
     """
-    print(f"[{request.url.path.strip('/') or 'unknown'}] LLM 호출 실패: {exc}")
-    return JSONResponse(
-        status_code=503,
-        content={"detail": {"reason": exc.reason, "message": exc.message}},
-    )
+    failure = getattr(exc, "failure", "unknown")
+    print(f"[{request.url.path.strip('/') or 'unknown'}] LLM 호출 실패 ({failure}): {exc}")
+    detail = {"reason": exc.reason, "message": exc.message}
+    # 실패 종류는 덧붙이기만 한다. BE 는 reason 으로 처리를 가르고 모르는 칸은 무시한다.
+    if failure != "unknown":
+        detail["failure"] = failure
+    return JSONResponse(status_code=503, content={"detail": detail})
 
 
 @app.get("/health")

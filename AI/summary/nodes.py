@@ -59,7 +59,7 @@ def write(state: SummaryState) -> dict:
     try:
         result = ask_json(build_messages(state))
     except LlmError as exc:
-        return {"llm_called": True, "llm_error": str(exc), "raw_claims": []}
+        return {"llm_called": True, "llm_error": str(exc), "llm_failure": exc.kind, "raw_claims": []}
 
     raw = result.data.get("claims")
     return {
