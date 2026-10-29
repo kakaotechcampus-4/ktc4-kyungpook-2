@@ -25,7 +25,7 @@ const FAIL_MESSAGE: Record<UploadFailReason, string> = {
 export async function clientLoader() {
   const [children, files] = await Promise.all([getChildren(), getFileProgress()]);
   return {
-    pending: children.filter((c) => c.status === "pending_consent"),
+    pending: children.filter((c) => c.consent === "not_granted"),
     files,
   };
 }

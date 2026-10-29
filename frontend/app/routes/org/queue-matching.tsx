@@ -63,8 +63,9 @@ function resolveChild(
   let blocked: BlockedReason | null = null;
   if (!rosterFailed) {
     if (!r) blocked = "not_in_roster";
-    else if (r.status === "pending_consent") blocked = "pending_consent";
-    else if (r.status !== "active") blocked = "inactive";
+    // 우리 기관에 대한 동의로 본다. 다른 기관에만 동의한 아이는 status 가 active 여도 확정할 수 없다
+    else if (r.consent === "not_granted") blocked = "pending_consent";
+    else if (r.consent !== "granted") blocked = "inactive";
   }
   return { ...resolved, blocked };
 }

@@ -102,7 +102,7 @@ export default function ChildDetailPage() {
           />
           <div className="mt-4">
             <Note>
-              {child.status === "pending_consent"
+              {child.consent === "not_granted"
                 ? "보호자 동의가 완료되기 전에는 기록을 올릴 수 없습니다."
                 : "기록 등록 화면에서 첫 기록을 올려보세요."}
             </Note>
