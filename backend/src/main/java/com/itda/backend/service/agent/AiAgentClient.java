@@ -119,6 +119,23 @@ public class AiAgentClient {
         return parsed;
     }
 
+    /**
+     * 재시도까지 실패한 마지막 응답 body 의 {@code detail.<field>}. 연결 실패·타임아웃이거나 body 를 읽을 수 없으면
+     * {@code null} 이다. AI 는 503 body 에 {@code detail.reason}(BE 가 후속 처리를 가르는 값)과
+     * {@code detail.failure}(실패 종류, 기록용)를 싣는다.
+     */
+    public String detailOf(AiAgentUnavailableException e, String field) {
+        if (!(e.getCause() instanceof HttpServerErrorException serverError)) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(serverError.getResponseBodyAsString())
+                    .path("detail").path(field).asText(null);
+        } catch (JsonProcessingException ignored) {
+            return null;
+        }
+    }
+
     /** 일지를 집기 전에 AI 가 떠 있는지 본다. 꺼져 있을 때 일지를 집으면 전부 실패로 남기 때문이다. */
     public boolean isAvailable() {
         try {

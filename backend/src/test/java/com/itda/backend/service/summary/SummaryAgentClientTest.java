@@ -67,8 +67,7 @@ class SummaryAgentClientTest {
         server = MockRestServiceServer.bindTo(builder).build();
         AiAgentProperties properties = new AiAgentProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(120),
                 retryBackoffs);
-        return new SummaryAgentClient(new AiAgentClient(builder.build(), new ObjectMapper(), properties),
-                new ObjectMapper());
+        return new SummaryAgentClient(new AiAgentClient(builder.build(), new ObjectMapper(), properties));
     }
 
     private static DefaultResponseCreator unavailable(String body) {
