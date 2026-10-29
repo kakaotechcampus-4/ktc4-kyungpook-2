@@ -78,8 +78,8 @@ def _all_known(ids: list[str], index: dict) -> bool:
 
 
 def _evidence_count(ids: list[str], index: dict) -> int:
-    if config.COUNT_DISTINCT_DATES:
-        return len({index[i]["entry_date"] for i in ids})
+    if config.COUNT_DISTINCT_RECORDS:
+        return len({(index[i]["entry_date"], index[i]["institution_id"]) for i in ids})
     return len(ids)
 
 def _source_of(claim: dict) -> str:
