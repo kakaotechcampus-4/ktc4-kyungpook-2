@@ -1,6 +1,7 @@
 package com.itda.backend.domain.child;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -113,14 +114,18 @@ public class ChildOrganizationRequest {
         this.decidedAt = now;
     }
 
+    /**
+     * 같은 보호자가 다시 요청하면 DB 에서 읽은 {@code createdAt} 을 돌려준다. 리눅스 시계는 나노초까지 주는데
+     * DB 는 마이크로초까지만 저장하므로, 처음 응답과 재요청 응답의 {@code requestedAt} 이 같도록 미리 자른다.
+     */
     @PrePersist
     void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         this.updatedAt = this.createdAt;
     }
 
     @PreUpdate
     void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
     }
 }
