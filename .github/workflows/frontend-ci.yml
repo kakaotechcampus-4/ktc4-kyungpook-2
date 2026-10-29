@@ -1,0 +1,61 @@
+name: Frontend CI
+
+# 프론트엔드에는 지금까지 CI 가 없었다. AI·백엔드만 워크플로가 있어서
+# `frontend/**` 만 바뀐 PR 은 **검사가 한 건도 돌지 않은 채** 머지 가능 상태가 됐다.
+#
+# ⭐ 배포는 넣지 않는다. 프론트는 CD 가 없고 서버에서 직접 다시 빌드한다
+#   (infra/README.md). 그 방식을 바꾸는 것은 이 워크플로가 결정할 일이 아니다.
+#
+# ⭐ `paths` 에 **이 파일 자신**을 넣는다. 워크플로를 고치는 PR 에서 그 워크플로가
+#   돌아야 바뀐 내용이 실제로 통과하는지 그 자리에서 확인된다.
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+      - '!frontend/**/*.md'
+  push:
+    branches: [develop]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+      - '!frontend/**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  check:
+    name: Frontend typecheck and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      # Dockerfile 의 `node:22-alpine` 과 같은 메이저로 고정한다.
+      # CI 가 운영보다 새 Node 로 통과하면 여기서 못 잡고 빌드 이미지에서 터진다.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm install` 이 아니라 `npm ci` — 잠금 파일을 그대로 쓰고,
+      # package.json 과 어긋나면 조용히 고치지 않고 실패한다.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
