@@ -1,0 +1,317 @@
+/* 로그인 화면 전용 — 디자인 캔버스의 랜딩을 그대로 옮긴 것.
+   ─────────────────────────────────────────────────────────────
+   **전역 토큰(`app.css` 의 `@theme`)은 건드리지 않는다.**
+   제품의 나머지 화면은 아직 차가운 청록 팔레트를 쓰고 있고, 그쪽을 함께
+   바꾸는 것은 팀이 합의할 일이다. 그래서 색은 `.land` 안에서만 사는 변수로 둔다.
+   나중에 팔레트를 `@theme` 으로 올리면 이 블록은 통째로 지우면 된다.
+
+   폰트는 400 · 700 · 800 세 벌만 받는다(각 160KB). 디자인에는 500 · 600 도
+   쓰였지만 한 벌이 늘 때마다 160KB 라 가까운 굵기로 묶었다. */
+
+@font-face {
+  font-family: "Paperlogy";
+  src: url("/font/paperlogy-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Paperlogy";
+  src: url("/font/paperlogy-700.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Paperlogy";
+  src: url("/font/paperlogy-800.woff2") format("woff2");
+  font-weight: 800;
+  font-display: swap;
+}
+
+.land {
+  --paper: #fffbf3;
+  --card: #ffffff;
+  --ink: #27241f;
+  --muted: #5a554c;
+  --faint: #8a8277;
+  --line: #efe7da;
+  --line2: #d8ccb8;
+  --green: #2baa7e;
+  --green-d: #1a7553;
+  --out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Paperlogy", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+}
+
+/* 바탕에 번지는 색 덩어리 */
+.land .blobs {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.land .blobs i {
+  position: absolute;
+  display: block;
+  border-radius: 999px;
+  filter: blur(70px);
+}
+
+.land .inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px max(16px, env(safe-area-inset-left, 0px)) 48px;
+}
+
+/* ── 고리 ───────────────────────────────────────────
+   클래스 이름을 `ring` 으로 두면 안 된다 — Tailwind 의 `ring` 유틸리티와 겹쳐
+   `box-shadow: 0 0 0 1px` 가 붙고 고리 둘레에 네모 테두리가 생긴다. */
+.land .wheel {
+  position: relative;
+  width: min(480px, 100%);
+  aspect-ratio: 1 / 1;
+}
+.land .wheel > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 고리 **안쪽**에 들어가야 한다. 원이 돌기 때문에 가로폭만 재면 안 된다 —
+   어느 각도에서는 원이 네모의 모서리로 온다. 기준은 **가장 먼 모서리**이고
+   지켜야 할 값은 (반지름 36% − 원 반지름 11%) 이다. */
+.land .center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: 40%;
+}
+.land .center img {
+  display: block;
+  width: 92%;
+  height: auto;
+}
+.land .center .sub {
+  font-size: clamp(13px, 1.6vw, 18px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+}
+.land .center .sub b {
+  color: var(--green-d);
+  font-weight: 800;
+}
+.land .center .tag {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: clamp(10px, 1vw, 11.5px);
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.land .center .tag i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+
+/* ── 도는 원 다섯 ──────────────────────────────────
+   틀을 돌리고 원은 **같은 속도로 되돌려** 얼굴이 뒤집히지 않게 한다.
+   40초 한 바퀴 — 로그인 화면은 오래 보는 곳이 아니라 눈에 걸리지 않을 만큼만. */
+.land .orbit {
+  position: absolute;
+  inset: 0;
+}
+.land .wheel > svg,
+.land .orbit {
+  animation: itda-orbit 40s linear infinite;
+}
+.land .node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 22%;
+  aspect-ratio: 1 / 1;
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: 0 10px 30px rgba(120, 90, 40, 0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  animation: itda-orbit-back 40s linear infinite;
+}
+.land .node em {
+  display: block;
+  transition: transform 200ms var(--out);
+}
+.land .node:hover em {
+  transform: translateY(-3px);
+}
+/* 더 키우면 네모난 그림의 모서리가 원 밖으로 나간다 */
+.land .node img {
+  display: block;
+  width: clamp(41px, 5.55vw, 64px);
+  height: auto;
+  object-fit: contain;
+}
+.land .node span {
+  font-size: clamp(11px, 1.5vw, 15px);
+  font-weight: 700;
+}
+
+@keyframes itda-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes itda-orbit-back {
+  to {
+    transform: translate(-50%, -50%) rotate(-360deg);
+  }
+}
+
+/* ── 아래쪽 ───────────────────────────────────────── */
+.land .kakao {
+  width: min(440px, 100%);
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #fee500;
+  color: rgba(0, 0, 0, 0.88);
+  font: 800 21px/1 inherit;
+  font-family: inherit;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(230, 190, 20, 0.28);
+  transition: transform 120ms var(--out);
+}
+.land .kakao:active {
+  transform: scale(0.98);
+}
+
+.land .lede {
+  max-width: 36ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+  text-align: center;
+}
+
+.land .fine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.land .fine p {
+  font-size: 13px;
+  color: #3c3832;
+}
+.land .fine b {
+  font-weight: 700;
+}
+.land .fine .legal {
+  font-size: 12px;
+  color: var(--faint);
+}
+.land .fine a {
+  color: var(--green-d);
+  font-weight: 700;
+}
+
+/* 데모 진입 — 디자인에는 없지만 백엔드 없이 화면을 보는 유일한 통로라 남긴다.
+   실연동 빌드(VITE_AUTH_MOCK=false)에서는 아예 렌더링되지 않는다. */
+.land .demo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(440px, 100%);
+}
+.land .demo .or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  font-size: 13px;
+  color: var(--faint);
+}
+.land .demo .or::before,
+.land .demo .or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line2);
+}
+.land .demo button {
+  width: 100%;
+  min-height: 48px;
+  border: 1.5px solid var(--line2);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: 700 15px/1 inherit;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 150ms var(--out);
+}
+.land .demo button:hover {
+  background: #fffdf8;
+}
+
+.land :focus-visible {
+  outline: 2px solid var(--green-d);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+@media (max-width: 900px) {
+  .land .wheel {
+    width: min(360px, 100%);
+  }
+  /* 고리가 작아지면 원도 상대적으로 커져 안쪽이 좁아진다 — 가운데를 더 줄인다 */
+  .land .center {
+    width: 36%;
+    gap: 6px;
+  }
+  .land .center .tag {
+    font-size: 9px;
+    gap: 4px;
+  }
+  .land .center .tag i {
+    width: 4px;
+    height: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .land .wheel > svg,
+  .land .orbit,
+  .land .node {
+    animation: none;
+  }
+}
