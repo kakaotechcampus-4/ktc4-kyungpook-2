@@ -92,8 +92,12 @@ public class SummaryGroupQueryService {
             groups.computeIfAbsent(new GroupKey(c.childId(), c.entryDate()),
                     k -> new EnumMap<>(JournalEntryStatus.class)).put(c.status(), c.count());
         }
+        if (groups.isEmpty()) {
+            return new SummaryGroupBoardResponse(matching, List.of());
+        }
         Set<Long> members = childOrganizationRepository
-                .findByChildIdInAndDeletedAtIsNull(groups.keySet().stream().map(GroupKey::childId).toList())
+                .findByChildIdInAndDeletedAtIsNull(groups.keySet().stream().map(GroupKey::childId)
+                        .collect(Collectors.toSet()))
                 .stream()
                 .filter(link -> link.getOrganizationId().equals(organizationId))
                 .map(ChildOrganization::getChildId)
