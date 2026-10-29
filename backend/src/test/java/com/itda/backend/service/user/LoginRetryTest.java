@@ -9,6 +9,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import com.itda.backend.domain.user.User;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.service.organization.OrganizationCodeIssuer;
 import com.itda.backend.repository.user.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,7 +19,8 @@ import static org.mockito.Mockito.*;
 class LoginRetryTest {
     private final LoginUserTransactionService transactions = mock(LoginUserTransactionService.class);
     private final UserService service = new UserService(
-            mock(UserRepository.class), mock(OrganizationRepository.class), transactions);
+            mock(UserRepository.class), mock(OrganizationRepository.class), mock(OrganizationCodeIssuer.class),
+            transactions);
 
     private DataIntegrityViolationException violation(String constraint) {
         return new DataIntegrityViolationException("constraint",

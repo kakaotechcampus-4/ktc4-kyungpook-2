@@ -99,6 +99,18 @@ public class ChildOrganization {
         this.deletedAt = null;
     }
 
+    /**
+     * 기관이 보호자의 연결 요청을 수락해 되살릴 때. 해제하면서 비운 관리번호 대신 새로 받은 번호를 넣는다.
+     * 검증은 {@link #of(Long, Long, String)} 와 같지만 여기서는 번호가 필수다.
+     */
+    public void restore(String externalId) {
+        if (externalId == null || externalId.isBlank() || externalId.length() > EXTERNAL_ID_MAX_LENGTH) {
+            throw new IllegalArgumentException("관리번호는 공백일 수 없고 50자 이하여야 합니다.");
+        }
+        this.deletedAt = null;
+        this.externalId = externalId;
+    }
+
     public boolean isDeleted() {
         return this.deletedAt != null;
     }

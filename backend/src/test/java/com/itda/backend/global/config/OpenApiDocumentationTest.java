@@ -148,8 +148,46 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.name").exists())
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.birthDate").exists())
 				.andExpect(jsonPath("$.components.schemas.RegisteredChild.properties.status").exists())
-				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.length()").value(5))
-				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.externalId").exists());
+				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.length()").value(6))
+				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.externalId").exists())
+				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.consent").exists());
+	}
+
+	/** 같은 아이에 다른 기관 연결(O-01, G-43·G-44, O-60~O-62). 모두 쿠키 인증을 요구하고, 오류 코드가 명세에 드러나야 한다. */
+	@Test
+	void institutionLinkApisAreDocumented() throws Exception {
+		String me = "$.paths['/api/v1/institutions/me']";
+		String lookup = "$.paths['/api/v1/institutions/lookup']";
+		String request = "$.paths['/api/v1/children/{childId}/institutions']";
+		String requests = "$.paths['/api/v1/institutions/me/link-requests']";
+		String accept = "$.paths['/api/v1/institutions/me/link-requests/{childId}/accept']";
+		String reject = "$.paths['/api/v1/institutions/me/link-requests/{childId}/reject']";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(me + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(me + ".get.responses.200").exists())
+				.andExpect(jsonPath(me + ".get.responses.503.description").value(containsString("INSTITUTION_CODE_ISSUE_FAILED")))
+				.andExpect(jsonPath("$.components.schemas.MyInstitutionResponse.properties.code").exists())
+				.andExpect(jsonPath(lookup + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(lookup + ".get.responses.404.description").value(containsString("INSTITUTION_CODE_NOT_FOUND")))
+				.andExpect(jsonPath(lookup + ".get.responses.403.description").value(containsString("PARENT_REQUIRED")))
+				.andExpect(jsonPath(request + ".post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(request + ".post.requestBody").exists())
+				.andExpect(jsonPath(request + ".post.responses.200").exists())
+				.andExpect(jsonPath(request + ".post.responses.404.description").value(containsString("INSTITUTION_CODE_NOT_FOUND")))
+				.andExpect(jsonPath(request + ".post.responses.409.description").value(containsString("INSTITUTION_ALREADY_LINKED")))
+				.andExpect(jsonPath(requests + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(requests + ".get.responses.200").exists())
+				.andExpect(jsonPath(accept + ".post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(accept + ".post.requestBody").exists())
+				.andExpect(jsonPath(accept + ".post.responses.404.description").value(containsString("LINK_REQUEST_NOT_FOUND")))
+				.andExpect(jsonPath(accept + ".post.responses.409.description").value(containsString("DUPLICATE_EXTERNAL_ID")))
+				.andExpect(jsonPath(accept + ".post.responses.409.description").value(containsString("INSTITUTION_ALREADY_LINKED")))
+				.andExpect(jsonPath(reject + ".post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(reject + ".post.responses.204").exists())
+				.andExpect(jsonPath(reject + ".post.responses.404.description").value(containsString("LINK_REQUEST_NOT_FOUND")))
+				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.linkRequests").exists());
 	}
 
 	/** 초대 코드·보호자 연결 API(O-15~O-19, G-04·G-05). 모두 쿠키 인증을 요구하고, 권한·소속 오류가 명세에 드러나야 한다. */

@@ -112,6 +112,8 @@ class SignupApiTest {
         Organization organization = organizationRepository.findById(saved.getOrganizationId()).orElseThrow();
         assertThat(saved.getRole()).isEqualTo(UserRole.ORGANIZATION);
         assertThat(organization.getBusinessNumber()).isEqualTo(businessNumber);
+        // 보호자에게 알려 줄 기관 코드가 가입할 때 함께 생긴다.
+        assertThat(organization.getCode()).hasSize(Organization.CODE_LENGTH);
         assertThat(organization.getName()).isEqualTo("햇살아동발달센터");
     }
 

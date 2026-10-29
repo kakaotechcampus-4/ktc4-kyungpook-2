@@ -26,7 +26,7 @@
 | 🟡 **초안** | 구조는 유지, **컬럼은 바뀔 수 있음** | 프론트 화면에서 역산. AI 계약이 아직 없음 |
 | ⛔ **추정** | **근거 없음.** 예시일 뿐 | 누구도 확정한 적 없는 값 |
 
-### 0.2 테이블 18개 현황
+### 0.2 테이블 19개 현황
 
 | # | 테이블 | 설계 | 구현 (엔티티) | 삭제 방식 |
 | --- | --- | --- | --- | --- |
@@ -48,12 +48,13 @@
 | 16 | `sharing_history` | ✅ 확정 | ✅ `SharingHistory` | 삭제 없음 (이력) |
 | 17 | `insight_run` | ✅ 확정 | ✅ `InsightRun` | 삭제 없음 (이력) |
 | 18 | `summary_run_request` | ✅ 확정 | ✅ `SummaryRunRequest` | 삭제 없음 (처리 시각으로 대체) |
+| 19 | `child_organization_request` | ✅ 확정 | ✅ `ChildOrganizationRequest` | `status` 로 대체 |
 
-**18개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
+**19개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
 `insight_result`·`sharing_history` 는 Insight 에이전트 계약(`AI/insight/schemas.py`)과 Gate 2 공유 정책이
 정해져서 확정으로 올렸다. `human_review` 는 Gate 1 결정값이 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 정해지며 확정됐다.
 
-**18개 모두 엔티티가 있다** (#181 에서 `summary_run_request` 가 마지막으로 들어왔다).
+**19개 모두 엔티티가 있다** (#258 에서 `child_organization_request` 가 마지막으로 들어왔다).
 `human_review` 는 Gate 1 결정 API(#178)와 Gate 2 결정 API(#206)가 함께 쓴다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
@@ -460,6 +461,7 @@ soft delete는 **오삭제 복구와 이력 보존**을 위한 것이지, 영구
 ```
 users.kakao_id                                UNIQUE
 organization.business_number                  UNIQUE
+organization.code                             UNIQUE   (나중에 더해 배포 DB 에는 손으로 건다, §11.4)
 invitation.code                               UNIQUE
 child_organization(child_id, organization_id) UNIQUE
 child_organization(organization_id, external_id) UNIQUE
@@ -508,7 +510,7 @@ insight_run(child_id, period_from, period_to, revision) UNIQUE
 #### 잠금 순서 — 행 두 개 이상을 잠그는 작업은 이 순서를 지킨다
 
 ```
-child → child_organization → invitation → child_guardian → sharing_consent
+child → child_organization → child_organization_request → invitation → child_guardian → sharing_consent
 ```
 
 순서가 하나뿐이라 교착(deadlock)이 생기지 않는다. 초대 코드 수락은 앞의 네 행을 모두 이 순서로 잠근다.
@@ -519,7 +521,10 @@ UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변�
 | 작업 | 잠그는 행 (순서대로) |
 | --- | --- |
 | 동의 부여·철회 (G-41) | `child` → `child_organization` → `child_guardian`. 동의 행은 따로 잠그지 않는다 |
-| 보호자 연결 해제 (G-05·O-19) | `child` → `child_guardian`. O-19 는 `child` 를 잠근 뒤에 삭제·명부 소속을 본다. 끊긴 보호자의 동의를 같은 트랜잭션에서 철회한다 |
+| 보호자 연결 해제 (G-05·O-19) | `child` → `child_organization_request` → `child_guardian`. O-19 는 `child` 를 잠근 뒤에 삭제·명부 소속을 본다. 끊긴 보호자의 대기 중 연결 요청을 거두고(§5.6), 동의를 같은 트랜잭션에서 철회한다 |
+| 기관 연결 요청 (G-44) | `child`. 잠근 뒤 보호자 연결·명부·이 보호자의 대기 요청을 본다 — 같은 보호자의 동시 요청이 대기 행을 둘 만들지 않는다 |
+| 연결 요청 수락 (O-61) | `child` → `child_organization` → `child_organization_request`. 요청 행은 잠그면서 처음 읽는다 — 그사이 연결 해제로 거둬진 요청을 옛 `PENDING` 으로 보지 않는다 |
+| 연결 요청 거절 (O-62) | `child` → `child_organization_request` |
 | 사람의 매칭 확정 (O-23 assign) | `child`. 잠근 뒤 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 새 확정이 성공하지 않는다 |
 
 **잠그기 전에 같은 행을 엔티티로 읽지 않는다.** JPA 는 이미 읽어 둔 엔티티가 있으면 잠금 조회(`findByIdForUpdate`)가
@@ -626,6 +631,7 @@ PARENT
 | `name` | VARCHAR(100) | N | 기관명 |
 | `type` | VARCHAR(30) | N | 기관 유형 |
 | `business_number` | VARCHAR(10) | N | 사업자등록번호. UNIQUE (9.23 추가) |
+| `code` | VARCHAR(8) | Y | 기관 코드. UNIQUE. 보호자가 이 코드로 아이를 이 기관에 연결해 달라고 요청한다 (10.29 추가, §5.6) |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
 
@@ -651,6 +657,17 @@ ACTIVITY_SUPPORT
 미리 넣고, 로그인한 기관 담당자를 첫 번째 기관에 자동 배정했다. 이 방식(`OrganizationSeedService`,
 자동 배정 로직)은 폐기했다. 지금은 기관 담당자가 `POST /api/v1/auth/signup`으로
 기관명·기관유형·사업자등록번호를 직접 입력하면 그 시점에 `organization` 행이 새로 생성된다.
+
+**`code` (기관 코드)** (10.29 추가)
+
+기관마다 고정인 8자리다. 초대 코드와 같은 생성기를 써서 헷갈리는 `0 O 1 I L` 을 뺀 31자에서 뽑고, 입력은 공백·하이픈·대소문자를
+무시한다. 기관 담당자는 내 기관 정보(O-01)에서 보고 보호자에게 알려 준다. 바꾸지 않는다(재발급 없음).
+
+- 새 기관은 회원가입 때 받는다. 사업자번호와 코드가 둘 다 UNIQUE 라 가입 중 제약 위반은 **제약 이름으로 가린다** —
+  사업자번호면 `409 DUPLICATE_BUSINESS_NUMBER`, 코드면 `503 INSTITUTION_CODE_ISSUE_FAILED`(다시 보내면 된다).
+- 이 컬럼보다 먼저 가입한 기관은 NULL 이다가 내 기관 정보를 **처음 열 때** 받는다. 기관 행을 잠근 뒤 비어 있는지 다시 보므로
+  동시에 열어도 코드는 한 번만 붙는다.
+- NULL 을 허용하는 이유는 위의 기존 기관 때문이다. UNIQUE 는 NULL 끼리 겹치는 것을 허용한다.
 
 삭제 기능은 아직 없다. `deleted_at`을 두지 않는다.
 
@@ -720,6 +737,10 @@ deleted_at != NULL   기관이 아이를 목록에서 뺀 상태. 조회 대상�
 > **근거** — 프론트 `Child.institutions[]` (배열) · AI roster 구성
 
 아동과 기관의 연결. **매칭 입력인 기관별 아동 명부(roster)가 이 테이블에서 나온다.**
+
+행이 생기는 길은 둘이다. 기관이 아이를 새로 등록하거나(O-11, 새 `child` 도 함께 생긴다), 보호자가 기관 코드로 낸 연결 요청을
+기관이 수락한다(§5.6, 이미 있는 `child` 에 붙는다). **이미 다른 기관에 다니는 아이는 두 번째 길로 붙여야 아이가 하나로 남는다** —
+기관이 따로 등록하면 같은 아이가 둘이 된다.
 
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
@@ -933,6 +954,58 @@ ROSTER_REMOVED      아이가 기관 명부에서 빠졌다. 지금은 테스트
 
 **보호자 연결(`child_guardian`)이 해제되면 그 보호자의 이 아이 동의를 모두 `REVOKED` 로 바꾼다** (§5.4).
 보호자 연결은 동의가 아니다 — 초대 코드 수락은 이 테이블에 아무것도 쓰지 않고 아동 상태도 바꾸지 않는다.
+
+### 5.6 `child_organization_request` ✅ — ✅ 구현 (`ChildOrganizationRequest`, #258)
+
+> **근거** — 기획: 한 아이의 기록을 학교·센터·활동지원사가 나눠 본다 · 같은 아이에 다른 기관을 붙이는 길이 없었다(#258)
+
+보호자가 기관 코드(§4.2 `code`)로 "이 아이를 이 기관 명부에 올려 달라" 고 낸 요청. 기관이 관리번호를 넣어 수락하면
+`child_organization` 이 생기거나 되살아난다(§5.2). **수락은 동의가 아니다** — 명부에 오른 뒤 보호자가 그 기관에 따로 동의해야
+매칭이 시작된다. 수락 직후 그 기관의 동의 상태는 `not_granted` 라서 보호자의 "새 기관 권한 요청" 알림(G-40)에 뜬다.
+
+| Column | Type | NULL | 설명 |
+| --- | --- | --- | --- |
+| `id` | BIGINT | N | PK |
+| `child_id` | BIGINT | N | 대상 아동 |
+| `organization_id` | BIGINT | N | 연결해 달라는 기관 |
+| `requested_by` | BIGINT | N | 요청한 보호자 `users.id`. **행의 주인** |
+| `status` | VARCHAR(20) | N | 요청 상태 |
+| `decided_by` | BIGINT | Y | 수락·거절한 기관 담당자 `users.id`. 취소면 NULL |
+| `decided_at` | DATETIME | Y | 수락·거절·취소 시각 |
+| `created_at` | DATETIME | N | 요청 시각 |
+| `updated_at` | DATETIME | N |  |
+
+인덱스 `(organization_id, status)` · `(child_id, organization_id)`. **UNIQUE 는 걸지 않는다** — 거절·취소된 뒤 다시 요청하면
+새 행을 만드는 이력 테이블이라 같은 (아동, 기관, 보호자)가 여러 번 나온다. "보호자마다 대기 행 하나" 는 `child` 행 잠금이 지킨다(§3.3).
+
+**`status`**
+
+```
+PENDING     기관의 답을 기다린다
+ACCEPTED    기관이 수락해 아이가 명부에 올랐다
+REJECTED    기관이 거절했다. 보호자에게 따로 알리지 않고, 보호자는 다시 요청할 수 있다
+CANCELLED   요청한 보호자의 아이 연결이 끊겨(G-05·O-19) 요청도 거뒀다
+```
+
+상태가 삭제를 대신하므로 `deleted_at` 은 두지 않는다(§5.3 초대와 같은 이유).
+
+**보호자마다 자기 행을 가진다** (`sharing_consent` 와 같은 구조)
+
+- 엄마와 아빠가 같은 기관에 요청하면 `PENDING` 행이 둘이다. 같은 보호자가 다시 요청하면 새로 만들지 않고 기다리는 행을 돌려준다.
+- 엄마가 아이 연결을 끊으면 **엄마의 행만** `CANCELLED` 가 된다. 아빠의 요청은 남아 기관이 그대로 수락할 수 있다.
+- 기관은 (아동, 기관) 단위로 묶어 본다(O-60). 수락·거절하면 그 묶음의 `PENDING` 행이 모두 함께 바뀐다.
+- 보호자 화면(G-10·G-11 `linkRequests`)에는 누구의 요청이든 아이의 보호자 모두에게 "수락 대기 중" 으로 보인다.
+
+**수락 규칙** (O-61)
+
+- 관리번호는 아이 등록(O-11)과 같이 필수다. 같은 기관 안에서 겹치면 `409 DUPLICATE_EXTERNAL_ID`.
+- 이미 명부에 있으면 `409 INSTITUTION_ALREADY_LINKED`. 해제된 연결 행이 있으면 새로 만들지 않고 **새 관리번호로 되살린다**
+  (`ChildOrganization.restore(externalId)`, §3.3).
+- 기다리는 요청이 없으면(삭제된 아이, 다른 기관에 낸 요청, 이미 처리된 요청, 연결 해제로 거둬진 요청) `404 LINK_REQUEST_NOT_FOUND`.
+
+> ⬜ **알려진 빈틈** — 명부에서 빠지면서 꺼진 동의(`ROSTER_REMOVED`)는 다시 연결돼도 `revoked` 로 남는다. 동의 알림(G-40)은
+> `revoked` 기관을 "보호자가 직접 끈 것" 으로 보고 알리지 않으므로, 이 경우 수락 뒤 알림이 뜨지 않는다. 보호자는 설정에서 켤 수 있다.
+> 지금 명부에서 빼는 길은 테스트 아이 스크립트뿐이라 그대로 둔다.
 
 ---
 
@@ -2433,6 +2506,17 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
   `\d <테이블>`로 제약 이름(보통 `<테이블>_<컬럼>_check`)을 확인하고 `ALTER TABLE ... DROP CONSTRAINT ...`로 지운다.
   테스트(H2·Testcontainers)는 테이블을 새로 만들어서 이 문제가 보이지 않는다
 
+**기관 코드 (#258) 배포 전 조치 — 이 순서로, 새 버전을 배포하기 전에 한다.** `ddl-auto: update` 가 컬럼을 만들기를 기다리면
+UNIQUE 를 먼저 걸 수 없고, 배포 뒤에 걸면 그사이 겹친 코드가 생길 수 있다. 그래서 컬럼도 직접 만든다.
+
+```sql
+ALTER TABLE organization ADD COLUMN code VARCHAR(8);
+ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
+-- 그다음 새 버전 배포. child_organization_request 는 새 테이블이라 ddl-auto 가 만든다
+```
+
+기존 기관의 `code` 는 NULL 로 두면 된다. 기관 담당자가 내 기관 정보를 처음 열 때 채워진다(§4.2).
+
 **Gate 1 (#178) 배포 전 확인** — 셋 다 enum 값이 늘었다.
 
 ```
@@ -2505,3 +2589,4 @@ PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처
 | 2026-10-27 | 요약할 내용 없음(멘토 A3). AI 가 `no_content: true` 로 보낸 빈 결과를 시스템 오류가 아닌 요약으로 저장한다 — `summary_result.no_content` 추가(기본 `false`), `content = ''`·`claims = []` (§8.2). 표시 없는 빈 본문은 그대로 `RESPONSE_UNREADABLE`, `no_content` 인데 문장·본문이 있으면 `EVIDENCE_MISMATCH` (§6.2). Gate 1 은 확인만 받는다 — `summary_result.status`·`human_review.decision` 에 `CONFIRMED` 추가, 일지는 `COMPLETED`, `child_context` 에 올리지 않음 (§6.2, §8.2, §9.1). 요약 되돌리기 — 같은 두 컬럼에 `REVERTED` 추가, 일지는 `VALIDATED` 로 돌리고 `summary_id` 를 비움. [다시 요약]은 두지 않음(되돌린 뒤 [요약]과 같음). **enum 값 추가라 §11.4 확인 필요** — `summary_result.status`·`human_review.decision` CHECK (배포 DB 에 없음 확인) | #244 |
 | 2026-10-27 | `insight_run`(§9.5) 워커가 어느 주를 볼지 **승인 시각**으로 고른다. "지난주" 한 구간만 보던 탓에 늦게 승인된 기록이 영영 재료가 안 되던 구멍을 메웠다. 시연용으로 끝나지 않은 이번 주를 넣는 설정(`INSIGHT_INCLUDE_CURRENT_WEEK`, 기본 끔)을 추가했다. 컬럼·제약 변경 없음 | #239 |
 | 2026-10-28 | 인사이트가 교사가 고쳐 승인한 요약(`CORRECTED`)도 재료로 쓴다 (§9.2, §10.1 #7, 멘토 리뷰 A4). 10/24 의 "준비만 했다" 가 이걸로 실제 동작한다. `claims` 에 `source` 가 없는 #221 이전 방식만 계속 뺀다. 컬럼·제약 변경 없음 | #249 |
+| 2026-10-29 | 같은 아이에 다른 기관 연결. `organization.code`(기관 코드, NULL 허용 UNIQUE) 추가 — 회원가입 때 받고, 그 전에 가입한 기관은 내 기관 정보를 처음 열 때 받는다(§4.2). 새 테이블 `child_organization_request`(§5.6) — 보호자가 기관 코드로 요청하고 기관이 관리번호를 넣어 수락하면 `child_organization` 이 생기거나 새 관리번호로 되살아난다(§5.2). 보호자마다 자기 행을 갖고, 연결이 끊긴 보호자의 요청만 `CANCELLED` 로 거둔다. 잠금 순서에 `child_organization_request` 추가(§3.3). **UNIQUE 추가라 §11.4 수동 조치 필요** — 배포 전에 컬럼 추가 → UNIQUE 추가 순서로 직접 실행. 새 테이블은 `ddl-auto: update` 가 만든다 | #259 |

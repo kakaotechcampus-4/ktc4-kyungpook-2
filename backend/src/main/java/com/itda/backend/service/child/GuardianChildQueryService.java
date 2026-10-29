@@ -1,29 +1,36 @@
 package com.itda.backend.service.child;
 
+import java.time.Clock;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.child.ChildOrganizationRequest;
+import com.itda.backend.domain.child.ChildOrganizationRequestStatus;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse.ChildInstitution;
+import com.itda.backend.dto.response.child.GuardianChildResponse.LinkRequest;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
 import com.itda.backend.dto.response.consent.PendingConsentRequestResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.child.ChildOrganizationRequestRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
@@ -37,7 +44,11 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>동의 전·동의를 모두 끈 아이도 넣는다. 설정 화면에서 기관을 다시 켜거나 연결을 끊으려면 목록에 보여야 한다.
  *
- * <p>아이가 몇 명이든 조회 횟수가 같다. 연결 → 아이 → 명부 → 기관 → 동의 순서로 한 번씩 {@code IN} 조회한다.
+ * <p>아이가 몇 명이든 조회 횟수가 같다. 연결 → 아이 → 명부 → 연결 요청 → 기관 → 동의 순서로 한 번씩
+ * {@code IN} 조회한다.
+ *
+ * <p>기관 코드로 연결을 요청해 기관의 수락을 기다리는 기관은 {@code linkRequests} 로 따로 싣는다. 아직 명부에 없어
+ * 동의할 수 없는 기관이라 {@code institutions} 와 섞지 않는다.
  *
  * <p>대기 중 기관 권한 요청(G-40)도 여기서 만든다. 홈의 기관 목록에서 아직 아무도 동의하지 않은
  * ({@code not_granted}) 기관만 고른 것과 같아서다. 동의했다가 꺼진({@code revoked}) 기관은 보호자가 직접 끈 것이라
@@ -52,7 +63,9 @@ public class GuardianChildQueryService {
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
+    private final ChildOrganizationRequestRepository childOrganizationRequestRepository;
     private final ConsentStateReader consentStateReader;
+    private final Clock clock;
 
     /** 이 보호자와 연결된 아이 전부. 연결된 순서다. */
     @Transactional(readOnly = true)
@@ -109,7 +122,11 @@ public class GuardianChildQueryService {
                 .stream()
                 .collect(Collectors.groupingBy(ChildOrganization::getChildId,
                         Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
-        Map<Long, Organization> organizations = organizationsOf(enrolled);
+        Map<Long, List<ChildOrganizationRequest>> requested = childOrganizationRequestRepository
+                .findByChildIdInAndStatusOrderByCreatedAtAscIdAsc(childIds, ChildOrganizationRequestStatus.PENDING)
+                .stream()
+                .collect(Collectors.groupingBy(ChildOrganizationRequest::getChildId));
+        Map<Long, Organization> organizations = organizationsOf(enrolled, requested);
         Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
 
         return childIds.stream()
@@ -117,13 +134,19 @@ public class GuardianChildQueryService {
                 .filter(Objects::nonNull)
                 .map(child -> toResponse(child,
                         enrolled.getOrDefault(child.getId(), List.of()),
+                        requested.getOrDefault(child.getId(), List.of()),
                         organizations,
                         consents.getOrDefault(child.getId(), Map.of())))
                 .toList();
     }
 
-    private Map<Long, Organization> organizationsOf(Map<Long, List<Long>> enrolled) {
-        List<Long> ids = enrolled.values().stream().flatMap(List::stream).distinct().toList();
+    private Map<Long, Organization> organizationsOf(
+            Map<Long, List<Long>> enrolled, Map<Long, List<ChildOrganizationRequest>> requested) {
+        List<Long> ids = Stream.concat(
+                        enrolled.values().stream().flatMap(List::stream),
+                        requested.values().stream().flatMap(List::stream).map(ChildOrganizationRequest::getOrganizationId))
+                .distinct()
+                .toList();
         Map<Long, Organization> organizations = new HashMap<>();
         if (!ids.isEmpty()) {
             organizationRepository.findAllById(ids).forEach(org -> organizations.put(org.getId(), org));
@@ -131,8 +154,9 @@ public class GuardianChildQueryService {
         return organizations;
     }
 
-    private static GuardianChildResponse toResponse(Child child, List<Long> organizationIds,
-            Map<Long, Organization> organizations, Map<Long, ConsentState> consentOfChild) {
+    private GuardianChildResponse toResponse(Child child, List<Long> organizationIds,
+            List<ChildOrganizationRequest> requests, Map<Long, Organization> organizations,
+            Map<Long, ConsentState> consentOfChild) {
         List<ChildInstitution> institutions = organizationIds.stream()
                 .distinct()
                 // 기관 행이 사라진 명부 항목은 뺀다. 이름을 모르는 기관을 화면에 올리지 않는다 (Gate 2 공유 대상과 같다).
@@ -147,6 +171,20 @@ public class GuardianChildQueryService {
                 child.getName(),
                 child.getBirthdate().toString(),
                 child.getStatus(),
-                institutions);
+                institutions,
+                linkRequestsOf(requests, organizations));
+    }
+
+    /** 기관마다 가장 먼저 요청한 시각 하나. 엄마·아빠가 같은 기관에 요청했어도 한 줄이다. 요청은 먼저 낸 순서로 온다. */
+    private List<LinkRequest> linkRequestsOf(
+            List<ChildOrganizationRequest> requests, Map<Long, Organization> organizations) {
+        Map<Long, ChildOrganizationRequest> earliest = new LinkedHashMap<>();
+        requests.forEach(request -> earliest.putIfAbsent(request.getOrganizationId(), request));
+        return earliest.values().stream()
+                .filter(request -> organizations.containsKey(request.getOrganizationId()))
+                .map(request -> new LinkRequest(
+                        InstitutionResponse.from(organizations.get(request.getOrganizationId())),
+                        request.getCreatedAt().atZone(clock.getZone()).toOffsetDateTime()))
+                .toList();
     }
 }

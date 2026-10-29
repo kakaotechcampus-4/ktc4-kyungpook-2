@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +25,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.child.ChildStatus;
 import com.itda.backend.dto.request.child.RegisterChildRequest;
 import com.itda.backend.dto.response.child.ChildRosterResponse;
@@ -35,6 +37,7 @@ import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.user.UserService;
 
@@ -52,12 +55,15 @@ class ChildServiceTest {
     private UserService userService;
     @Mock
     private InvitationService invitationService;
+    @Mock
+    private ConsentStateReader consentStateReader;
 
     private ChildService childService;
 
     @BeforeEach
     void setUp() {
-        childService = new ChildService(childRepository, childOrganizationRepository, userService, invitationService);
+        childService = new ChildService(childRepository, childOrganizationRepository, userService, invitationService,
+                consentStateReader);
     }
 
     private static Child childWithId(String name, LocalDate birthdate, Long id) {
@@ -97,6 +103,27 @@ class ChildServiceTest {
         assertThat(roster.get(0).externalId()).isEqualTo("2026-0031");
         // 관리번호가 없는 아이도 실패하지 않고 null 로 내려간다.
         assertThat(roster.get(1).externalId()).isNull();
+    }
+
+    /**
+     * 명부의 consent 는 이 기관에 대한 동의다. 다른 기관에만 동의한 아이는 아이 전체 상태가 active 여도
+     * 이 기관 명부에서는 not_granted 다.
+     */
+    @Test
+    void getRoster_reportsConsentOfThisOrganizationOnly() {
+        long otherOrgId = ORG_ID + 1;
+        given(userService.getOrganizationIdOf(USER_ID)).willReturn(ORG_ID);
+        given(childRepository.findByOrganizationId(ORG_ID)).willReturn(List.of(
+                childWithId("김하늘", LocalDate.of(2020, 1, 1), 1L),
+                childWithId("임유진", LocalDate.of(2019, 11, 26), 2L)));
+        given(consentStateReader.statesOf(List.of(1L, 2L))).willReturn(Map.of(
+                1L, Map.of(ORG_ID, ConsentState.GRANTED),
+                2L, Map.of(otherOrgId, ConsentState.GRANTED)));
+
+        List<ChildRosterResponse> roster = childService.getRoster(USER_ID);
+
+        assertThat(roster).extracting(ChildRosterResponse::consent)
+                .containsExactly(ConsentState.GRANTED, ConsentState.NOT_GRANTED);
     }
 
     @Test

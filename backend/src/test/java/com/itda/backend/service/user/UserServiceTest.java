@@ -7,8 +7,10 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import java.sql.SQLException;
 import java.util.Optional;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +33,8 @@ import com.itda.backend.exception.user.UserException;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.invitation.InviteCodeGenerator;
+import com.itda.backend.service.organization.OrganizationCodeIssuer;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
@@ -48,6 +52,7 @@ class UserServiceTest {
     @BeforeEach
     void setUp() {
         userService = new UserService(userRepository, organizationRepository,
+                new OrganizationCodeIssuer(organizationRepository, new InviteCodeGenerator()),
                 new LoginUserTransactionService(userRepository));
     }
 
@@ -314,13 +319,48 @@ class UserServiceTest {
         User user = pendingUserWithId(5L);
         given(organizationRepository.existsByBusinessNumber("1234567890")).willReturn(false);
         given(organizationRepository.saveAndFlush(any(Organization.class)))
-                .willThrow(new DataIntegrityViolationException("uk_organization_business_number"));
+                .willThrow(violationOf(Organization.UK_BUSINESS_NUMBER));
 
         assertThatThrownBy(() -> userService.completeSignup("5", ORGANIZATION_SIGNUP))
                 .isInstanceOf(OrganizationException.class)
                 .extracting(e -> ((OrganizationException) e).getErrorCode())
                 .isEqualTo(OrganizationErrorCode.DUPLICATE_BUSINESS_NUMBER);
         assertThat(user.isSignupCompleted()).isFalse();
+    }
+
+    /** 가입하면 기관 코드가 함께 붙는다. 보호자가 이 코드로 아이를 이 기관에 연결해 달라고 요청한다. */
+    @Test
+    void organizationSignupAssignsInstitutionCode() {
+        pendingUserWithId(5L);
+        given(organizationRepository.saveAndFlush(any(Organization.class))).willAnswer(i -> {
+            Organization saved = i.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 3L);
+            return saved;
+        });
+
+        userService.completeSignup("5", ORGANIZATION_SIGNUP);
+
+        ArgumentCaptor<Organization> captor = ArgumentCaptor.forClass(Organization.class);
+        verify(organizationRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getCode()).hasSize(Organization.CODE_LENGTH);
+    }
+
+    /** 기관 코드가 동시에 겹쳐 유니크에 걸린 것은 사업자번호 중복이 아니다. 다시 보내면 되는 503 이다. */
+    @Test
+    void institutionCodeRaceIsNotReportedAsDuplicateBusinessNumber() {
+        pendingUserWithId(5L);
+        given(organizationRepository.saveAndFlush(any(Organization.class)))
+                .willThrow(violationOf(Organization.UK_CODE));
+
+        assertThatThrownBy(() -> userService.completeSignup("5", ORGANIZATION_SIGNUP))
+                .isInstanceOf(OrganizationException.class)
+                .extracting(e -> ((OrganizationException) e).getErrorCode())
+                .isEqualTo(OrganizationErrorCode.INSTITUTION_CODE_ISSUE_FAILED);
+    }
+
+    private static DataIntegrityViolationException violationOf(String constraint) {
+        return new DataIntegrityViolationException("constraint", new ConstraintViolationException(
+                "constraint", new SQLException("duplicate", "23505"), constraint));
     }
 
     @Test
