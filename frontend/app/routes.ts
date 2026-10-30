@@ -19,9 +19,6 @@ export default [
     route("insights", "routes/org/insights.tsx"),
     route("inbox", "routes/org/inbox.tsx"),
     route("inbox/:id", "routes/org/inbox-detail.tsx"),
-    route("chat", "routes/org/chat.tsx"),
-    route("history", "routes/org/history.tsx"),
-    route("settings/org", "routes/org/settings.tsx"),
   ]),
 
   // 학부모: shell 은 공개(초대·동의 온보딩 포함), guard 는 그 안에서 role==parent 만 통과시킨다.
@@ -33,14 +30,13 @@ export default [
       route("parent/timeline", "routes/parent/timeline.tsx"),
       route("parent/journal/:id", "routes/parent/journal-detail.tsx"),
       route("parent/report", "routes/parent/report.tsx"),
-      route("parent/report/evidence", "routes/parent/report-evidence.tsx"),
+      route("parent/report/:id", "routes/parent/report-detail.tsx"),
       route("parent/notifications", "routes/parent/notifications.tsx"),
       route("parent/institution-requests", "routes/parent/institution-requests.tsx"),
       route("parent/settings", "routes/parent/settings.tsx"),
       route("parent/care-info", "routes/parent/care-info.tsx"),
       route("parent/consent/manage", "routes/parent/consent-manage.tsx"),
       route("parent/consent/manage/add", "routes/parent/institution-add.tsx"),
-      route("parent/history", "routes/parent/history.tsx"),
     ]),
   ]),
 ] satisfies RouteConfig;

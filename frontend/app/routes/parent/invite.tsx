@@ -214,7 +214,7 @@ export default function ParentInvitePage() {
       {step === "terms" ? (
         <>
           <div className="flex flex-col gap-4">
-            <StepProgress step={1} total={4} />
+            <StepProgress step={1} total={3} />
             <div>
               <h1 className="mb-1.5 text-[20px] font-extrabold tracking-tight">
                 서비스 이용에 동의해 주세요
@@ -283,7 +283,7 @@ export default function ParentInvitePage() {
               ‹ 홈으로
             </Link>
           ) : (
-            <StepProgress step={2} total={4} />
+            <StepProgress step={2} total={3} />
           )}
           <div>
             <h1 className="mb-1.5 text-[20px] font-extrabold tracking-tight">
@@ -380,7 +380,7 @@ function AcceptedStep({
 
   return (
     <div className="flex flex-col gap-4">
-      {onboarded ? null : <StepProgress step={2} total={4} />}
+      {onboarded ? null : <StepProgress step={2} total={3} />}
       <div className="rounded-2xl bg-accentsoft px-4 py-4">
         <p className="mb-1 text-[16px] font-bold text-accentink">
           {result.childName} 학생과 연결됐어요

@@ -17,8 +17,13 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import com.itda.backend.domain.approval.Approval;
+import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildCareInfo;
+import com.itda.backend.domain.child.ChildCareInfo.Medication;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.child.ChildStatus;
 import com.itda.backend.domain.consent.ConsentField;
@@ -26,10 +31,14 @@ import com.itda.backend.domain.consent.ConsentRevokeReason;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.invitation.ChildGuardian;
+import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
+import com.itda.backend.domain.sharing.ReceiverType;
+import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
+import com.itda.backend.dto.response.child.ChildCareInfoResponse.MedicationResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse.ChildInstitution;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
@@ -38,6 +47,8 @@ import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.sharing.GuardianInsightService;
+import com.itda.backend.service.sharing.SharingReadRecorder;
 import com.itda.backend.service.user.UserService;
 
 /**
@@ -46,8 +57,8 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianChildQueryService.class, GuardianJournalQueryService.class, ConsentStateReader.class,
-        ClockConfig.class})
+@Import({GuardianChildQueryService.class, GuardianJournalQueryService.class, GuardianInsightService.class,
+        SharingReadRecorder.class, ConsentStateReader.class, ClockConfig.class})
 class GuardianChildQueryServiceJpaTest {
 
     private static final String MOM_PRINCIPAL = "41";
@@ -214,6 +225,32 @@ class GuardianChildQueryServiceJpaTest {
                 .containsExactly(String.valueOf(centerId));
     }
 
+    // --- 돌봄 정보 ---
+
+    @Test
+    void 저장한_돌봄_정보를_아이마다_싣는다() {
+        em.persistAndFlush(ChildCareInfo.of(sky, List.of("땅콩"), List.of(new Medication("○○정", "점심 식후")), DAD));
+        em.clear();
+
+        List<GuardianChildResponse> children = service.children(MOM_PRINCIPAL);
+
+        assertThat(childOf(children, sky).care().allergies()).containsExactly("땅콩");
+        assertThat(childOf(children, sky).care().medications())
+                .extracting(MedicationResponse::name, MedicationResponse::time)
+                .containsExactly(tuple("○○정", "점심 식후"));
+        // 저장한 적이 없는 아이는 빈 배열 둘이다
+        assertThat(childOf(children, sea).care().allergies()).isEmpty();
+        assertThat(childOf(children, sea).care().medications()).isEmpty();
+    }
+
+    @Test
+    void 홈에도_돌봄_정보가_실린다() {
+        em.persistAndFlush(ChildCareInfo.of(sea, List.of("계란"), List.of(), MOM));
+        em.clear();
+
+        assertThat(service.home(MOM_PRINCIPAL, sea).child().care().allergies()).containsExactly("계란");
+    }
+
     // --- 홈 ---
 
     @Test
@@ -237,6 +274,91 @@ class GuardianChildQueryServiceJpaTest {
         assertThat(service.home(MOM_PRINCIPAL, sea).activity())
                 .extracting(ParentActivityResponse::text, ParentActivityResponse::journalId)
                 .containsExactly(tuple("햇살센터에서 8월 21일 일지가 도착했어요", String.valueOf(journalId)));
+    }
+
+    // --- 홈 활동의 인사이트 줄 (#289) ---
+
+    /** 일지는 Gate 1 승인 시각, 인사이트는 Gate 2 승인 시각으로 한 목록에 선다. */
+    @Test
+    void 일지_줄과_인사이트_줄이_승인_시각_순으로_섞인다() {
+        Long older = journal(sky, LocalDate.of(2026, 8, 20), at(20));
+        insightFor(MOM, sky, AUG_17, schoolId, at(21));
+        Long newer = journal(sky, LocalDate.of(2026, 8, 22), at(22));
+
+        assertThat(service.home(MOM_PRINCIPAL, sky).activity())
+                .extracting(ParentActivityResponse::kind, ParentActivityResponse::journalId)
+                .containsExactly(
+                        tuple("journal", String.valueOf(newer)),
+                        tuple("insight", null),
+                        tuple("journal", String.valueOf(older)));
+    }
+
+    @Test
+    void 섞은_뒤_다섯_줄에서_자른다() {
+        for (int day = 1; day <= 4; day++) {
+            journal(sky, LocalDate.of(2026, 8, day), at(day * 2));
+        }
+        insightFor(MOM, sky, LocalDate.of(2026, 8, 3), schoolId, at(3));
+        insightFor(MOM, sky, LocalDate.of(2026, 8, 10), schoolId, at(5));
+        insightFor(MOM, sky, AUG_17, schoolId, at(9));
+
+        assertThat(service.home(MOM_PRINCIPAL, sky).activity())
+                .extracting(ParentActivityResponse::at)
+                .containsExactly("2026-10-09 09:00", "2026-10-08 09:00", "2026-10-06 09:00", "2026-10-05 09:00",
+                        "2026-10-04 09:00");
+    }
+
+    @Test
+    void 한_편이면_그_글로_연결한다() {
+        Long insightId = insightFor(MOM, sky, AUG_17, schoolId, at(21));
+
+        assertThat(service.home(MOM_PRINCIPAL, sky).activity()).singleElement().satisfies(line -> {
+            assertThat(line.id()).isEqualTo("insight-2026-08-17-" + schoolId);
+            assertThat(line.kind()).isEqualTo("insight");
+            assertThat(line.at()).isEqualTo("2026-10-21 09:00");
+            assertThat(line.text()).isEqualTo("○○초등학교에서 8월 3주차 리포트가 도착했어요");
+            assertThat(line.insightId()).isEqualTo(String.valueOf(insightId));
+            assertThat(line.journalId()).isNull();
+        });
+    }
+
+    /** 한 번 분석에 여러 편이 나와 한 편씩 승인된다. 같은 문구가 줄줄이 서면 일지 소식이 밀려난다. */
+    @Test
+    void 같은_기간_같은_기관_여러_편은_한_줄로_묶고_리포트_탭으로_보낸다() {
+        insightFor(MOM, sky, AUG_17, schoolId, at(21));
+        insightFor(MOM, sky, AUG_17, schoolId, at(23));
+
+        assertThat(service.home(MOM_PRINCIPAL, sky).activity()).singleElement().satisfies(line -> {
+            assertThat(line.text()).isEqualTo("○○초등학교에서 8월 3주차 리포트 2편이 도착했어요");
+            assertThat(line.at()).isEqualTo("2026-10-23 09:00");
+            assertThat(line.insightId()).isNull();
+        });
+    }
+
+    @Test
+    void 같은_기간이어도_승인_기관이_다르면_따로_선다() {
+        insightFor(MOM, sky, AUG_17, schoolId, at(21));
+        insightFor(MOM, sky, AUG_17, centerId, at(22));
+
+        assertThat(service.home(MOM_PRINCIPAL, sky).activity()).extracting(ParentActivityResponse::text)
+                .containsExactly("햇살센터에서 8월 3주차 리포트가 도착했어요", "○○초등학교에서 8월 3주차 리포트가 도착했어요");
+    }
+
+    /** 내게 지금 열린 이 아이의 글만. 거둬진 글로 줄을 만들면 눌렀을 때 404 다. */
+    @Test
+    void 거둬진_권한_다른_보호자의_권한_다른_아이의_글은_줄이_없다() {
+        Long revoked = insightFor(MOM, sky, AUG_17, schoolId, at(21));
+        em.getEntityManager().createQuery("select s from SharingHistory s where s.insightResultId = :id",
+                        SharingHistory.class)
+                .setParameter("id", revoked).getSingleResult()
+                .revoke(ConsentRevokeReason.GUARDIAN_UNLINKED, NOW);
+        em.flush();
+        insightFor(DAD, sky, LocalDate.of(2026, 8, 24), schoolId, at(22));
+        insightFor(MOM, sea, LocalDate.of(2026, 8, 24), centerId, at(23));
+        em.clear();
+
+        assertThat(service.home(MOM_PRINCIPAL, sky).activity()).isEmpty();
+        assertThat(service.home(MOM_PRINCIPAL, sea).activity()).hasSize(1);
     }
 
     @Test
@@ -341,6 +463,38 @@ class GuardianChildQueryServiceJpaTest {
     private SharingConsent grant(Long childId, Long guardianId, Long organizationId) {
         return em.persistAndFlush(
                 SharingConsent.grant(childId, guardianId, organizationId, List.of(ConsentField.DAILY_SUMMARY)));
+    }
+
+    private static final LocalDate AUG_17 = LocalDate.of(2026, 8, 17);
+
+    /** 10월 {@code day} 일 오전 9시. */
+    private static LocalDateTime at(int day) {
+        return LocalDateTime.of(2026, 10, day, 9, 0);
+    }
+
+    /** 승인된 일지 하나. 승인 시각({@code child_context.created_at})은 만들 때 정해져 덮어쓴다. */
+    private Long journal(Long childId, LocalDate date, LocalDateTime approvedAt) {
+        SummaryResult summary = em.persistAndFlush(
+                SummaryResult.of(childId, date, centerId, 1, "일지", "[]", "[]", "[]", "{}"));
+        Long id = em.persistAndFlush(ChildContext.of(childId, summary.getId(), "일지")).getId();
+        em.getEntityManager().createQuery("update ChildContext c set c.createdAt = :at where c.id = :id")
+                .setParameter("at", approvedAt).setParameter("id", id).executeUpdate();
+        em.clear();
+        return id;
+    }
+
+    /** {@code sender} 가 Gate 2 에서 {@code approvedAt} 에 승인해 {@code guardian} 에게 연 인사이트 하나. */
+    private Long insightFor(Long guardian, Long childId, LocalDate periodFrom, Long sender, LocalDateTime approvedAt) {
+        InsightResult insight = InsightResult.of(childId, periodFrom, periodFrom.plusDays(6), 1, "상황", "반응", "본문",
+                null, "[]", "[]", "[%d]".formatted(sender), false, null);
+        insight.approveGate2();
+        Long id = em.persistAndFlush(insight).getId();
+        Approval approval = Approval.gate2(id, 1L, ApprovalDecision.APPROVED);
+        ReflectionTestUtils.setField(approval, "reviewedAt", approvedAt);
+        em.persistAndFlush(approval);
+        em.persistAndFlush(SharingHistory.grant(childId, id, sender, ReceiverType.GUARDIAN, guardian));
+        em.clear();
+        return id;
     }
 
     private void revoke(SharingConsent consent) {

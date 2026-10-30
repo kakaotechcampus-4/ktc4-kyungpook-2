@@ -67,12 +67,13 @@ export interface Institution {
   verified: boolean;
 }
 
-/** 보호자가 온보딩 중 직접 입력하는 돌봄 정보 — 기관마다 다르게 공유된다 */
+/**
+ * 보호자가 설정 › 아이 정보에서 적는 돌봄 정보 (G-13). 현재 이 아이와 연결된 모든 보호자가 조회·수정하고,
+ * 기관에는 공유하지 않는다. 복용 시간은 비어 있을 수 있다("").
+ */
 export interface ChildCareInfo {
-  welfareCard: boolean;
   allergies: string[];
   medications: { name: string; time: string }[];
-  weeklySchedule: { day: string; note: string }[];
 }
 
 export interface Child {
@@ -109,11 +110,14 @@ export interface LinkRequest {
  * 동의가 있으면 active 다. 학교에 동의한 아이가 우리 명부에 막 올라오면 status 는 active 인데
  * 우리 기관에는 아직 동의 전(not_granted)이다.
  */
-export type ChildListItem = Omit<Child, "institutions" | "linkRequests"> &
-  Partial<Pick<Child, "institutions">> & {
-    /** 우리 기관에 대한 동의 상태 */
-    consent: ConsentState;
-  };
+/**
+ * 기관 명부 한 줄 (O-10). 명부에 있는 칸만 고른다 — 다른 기관 정보(다니는 기관 · 그 기관 동의)와 보호자용 칸(학교 ·
+ * 돌봄 정보 · 연결 요청)은 없다. 보호자는 기관마다 따로 동의할 뿐, 다른 기관에 다닌다는 사실을 알리는 데 동의하지 않았다.
+ */
+export type ChildListItem = Pick<Child, "id" | "name" | "birthDate" | "externalId" | "status"> & {
+  /** 우리 기관에 대한 동의 상태 */
+  consent: ConsentState;
+};
 
 /** 내 기관 정보 (O-01). code 는 보호자에게 알려 주는 기관 코드 8자 — 화면은 4-4 로 나눠 보여준다 */
 export interface MyInstitution extends Institution {
@@ -441,17 +445,22 @@ export type Gate1Card =
   | { action: "ADD"; text: string };
 
 /** Child Context 타임라인 한 칸 */
+/**
+ * 기관 아동 상세의 기록 타임라인 한 건 (O-14) — 우리 기관이 1차 검토에서 승인한 요약 하나.
+ * 다른 기관 기록은 오지 않는다(기관 사이에는 2차 검토를 지난 인사이트로만 넘어간다). 기록이 없는 날은 항목이 없다 —
+ * 추정치로 채우지 않는다. 같은 날 승인본이 여럿이면 따로 온다.
+ */
 export interface TimelineEntry {
+  /** 승인본 id */
+  id: string;
+  /** 관찰 날짜 YYYY-MM-DD */
   date: string;
-  /** 기록이 없는 날은 그대로 비워 표시한다 — 추정치로 채우지 않는다 */
-  entry: {
-    recordType: RawRecord["type"];
-    validation: ValidationStatus;
-    content: string;
-    sourceCount: number;
-    version: number;
-    edited: boolean;
-  } | null;
+  /** 담당자가 승인한 최종본 */
+  content: string;
+  /** 1차 검토에서 고쳐서 승인했는지 — "선생님 수정" */
+  edited: boolean;
+  /** 그 요약에 묶인 원본 일지 수 */
+  sourceCount: number;
 }
 
 export interface EvidenceRef {
@@ -508,32 +517,43 @@ export interface InboxDetail extends InboxItem {
   content: string;
 }
 
-export interface ChatSource {
-  date: string;
-  label: string;
-}
-
-export interface ChatTurn {
-  question: string;
-  /** 근거가 없으면 answer 는 null 이고 답변을 생성하지 않는다 */
-  answer: string | null;
-  sources: ChatSource[];
-}
-
-export interface ActivityLog {
-  id: string;
-  at: string;
-  actor: string;
-  action: string;
-  target: string;
-}
-
+/**
+ * 보호자 홈 "최근 공유 활동" 한 줄 (G-11). 승인된 일지 하나, 또는 같은 기간·같은 승인 기관의 받은 인사이트 묶음 하나.
+ * id 는 종류를 앞에 붙여(`journal-3` · `insight-…`) 목록 안에서 겹치지 않는다 — 화면은 key 로만 쓴다.
+ */
 export interface ParentActivity {
   id: string;
+  kind: "journal" | "insight";
+  /** 화면에 그대로 쓰는 "2026-08-21 15:20" */
   at: string;
   text: string;
-  /** 이 활동이 특정 일지에서 비롯됐으면 상세로 이동할 수 있게 연결한다 */
-  journalId?: string;
+  /** 일지 줄이면 그 일지 상세로 연결한다 */
+  journalId?: string | null;
+  /** 인사이트 한 편이면 그 상세로, 여러 편을 묶은 줄이면 null 이라 리포트 탭으로 연결한다 */
+  insightId?: string | null;
+}
+
+/**
+ * 보호자가 받은 인사이트 한 편 (G-35 · G-36). 담당자가 Gate 2 에서 승인하면 열린다. 화면 이름은 "주간 리포트".
+ * 서버는 내 모든 아이 것을 승인 시각 최근 순으로 준다 — 화면이 고른 아이로 거른다.
+ */
+export interface GuardianInsight {
+  id: string;
+  childId: string;
+  /** 아이가 삭제됐으면 null */
+  childName: string | null;
+  /** "2026년 8월 3주차" — 어느 주의 이야기인지 */
+  period: string;
+  /** 교사·보호자가 읽을 한두 문장 */
+  content: string;
+  /** Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null — 화면은 "기관 정보 없음" */
+  from: Institution | null;
+  /** 지금 이 글을 볼 수 있는 다른 기관. 기관 동의를 끄면 빠진다 */
+  sharedWith: Institution[];
+  /** 담당자가 승인한 시각 (ISO). 모든 보호자에게 같다 — 언제 받았는지 */
+  approvedAt: string;
+  /** 처음 열어 본 시각 (ISO). 아직 안 봤으면 null — "새 글" 표시 */
+  readAt: string | null;
 }
 
 /**
@@ -550,28 +570,6 @@ export interface JournalEntry {
   isNew: boolean;
   /** 교사가 승인한 글 */
   content: string;
-}
-
-export interface CareReportTrendPoint {
-  label: string;
-  value: number;
-}
-
-export interface CareReportPattern {
-  text: string;
-  evidenceIds: string[];
-}
-
-export interface CareReport {
-  period: "weekly" | "monthly";
-  rangeLabel: string;
-  summary: string;
-  trendTitle: string;
-  trend: CareReportTrendPoint[];
-  trendInsight: string;
-  trendEvidenceIds: string[];
-  patterns: CareReportPattern[];
-  tips: string[];
 }
 
 /** 설정 › 기관 요청사항 한 건 */

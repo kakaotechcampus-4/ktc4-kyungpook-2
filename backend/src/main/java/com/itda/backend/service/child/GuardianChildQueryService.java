@@ -15,26 +15,31 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildCareInfo;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.child.ChildOrganizationRequest;
 import com.itda.backend.domain.child.ChildOrganizationRequestStatus;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.dto.response.child.ChildCareInfoResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse.ChildInstitution;
 import com.itda.backend.dto.response.child.GuardianChildResponse.LinkRequest;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
+import com.itda.backend.dto.response.child.ParentActivityResponse;
 import com.itda.backend.dto.response.consent.PendingConsentRequestResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
+import com.itda.backend.repository.child.ChildCareInfoRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildOrganizationRequestRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.sharing.GuardianInsightService;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -44,8 +49,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>동의 전·동의를 모두 끈 아이도 넣는다. 설정 화면에서 기관을 다시 켜거나 연결을 끊으려면 목록에 보여야 한다.
  *
- * <p>아이가 몇 명이든 조회 횟수가 같다. 연결 → 아이 → 명부 → 연결 요청 → 기관 → 동의 순서로 한 번씩
- * {@code IN} 조회한다.
+ * <p>아이가 몇 명이든 조회 횟수가 같다. 연결 → 아이 → 명부 → 연결 요청 → 기관 → 동의 → 돌봄 정보 순서로 한 번씩
+ * {@code IN} 조회한다. 돌봄 정보는 저장한 적이 없으면 빈 배열로 싣는다.
  *
  * <p>기관 코드로 연결을 요청해 기관의 수락을 기다리는 기관은 {@code linkRequests} 로 따로 싣는다. 아직 명부에 없어
  * 동의할 수 없는 기관이라 {@code institutions} 와 섞지 않는다.
@@ -58,14 +63,18 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class GuardianChildQueryService {
 
+    private static final int ACTIVITY_LIMIT = 5;
+
     private final UserService userService;
     private final ChildGuardianRepository childGuardianRepository;
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
     private final ChildOrganizationRequestRepository childOrganizationRequestRepository;
+    private final ChildCareInfoRepository childCareInfoRepository;
     private final ConsentStateReader consentStateReader;
     private final GuardianJournalQueryService guardianJournalQueryService;
+    private final GuardianInsightService guardianInsightService;
     private final Clock clock;
 
     /** 이 보호자와 연결된 아이 전부. 연결된 순서다. */
@@ -82,12 +91,22 @@ public class GuardianChildQueryService {
 
     /**
      * 아이 하나의 홈. 연결되지 않았거나 삭제된 아이면 403 이다 — 이유를 나누지 않는다.
-     * 최근 공유 활동은 승인된 일지마다 한 줄이다 (최근 5건, {@link GuardianJournalQueryService#recentActivity}).
+     *
+     * <p>최근 공유 활동은 승인된 일지 줄과 받은 인사이트 줄을 시각 최근 순으로 섞은 {@value #ACTIVITY_LIMIT} 줄이다 (#289).
+     * 두 쪽에서 {@value #ACTIVITY_LIMIT} 줄씩만 받아도 합쳐서 고르기에 충분하다. 시각이 같으면 합친 순서 그대로다.
      */
     @Transactional(readOnly = true)
     public GuardianHomeResponse home(String userId, Long childId) {
-        GuardianChildResponse child = linkedChild(userId, childId);
-        return new GuardianHomeResponse(child, guardianJournalQueryService.recentActivity(childId));
+        Long parentId = userService.getParentIdOf(userId);
+        GuardianChildResponse child = linkedChild(parentId, childId);
+        List<ParentActivityResponse> activity = Stream.concat(
+                        guardianJournalQueryService.recentActivity(childId).stream(),
+                        guardianInsightService.recentActivity(parentId, childId, ACTIVITY_LIMIT).stream())
+                .sorted(Comparator.comparing(ActivityLine::at).reversed())
+                .limit(ACTIVITY_LIMIT)
+                .map(ActivityLine::line)
+                .toList();
+        return new GuardianHomeResponse(child, activity);
     }
 
     /**
@@ -104,7 +123,10 @@ public class GuardianChildQueryService {
 
     /** 이 보호자와 연결된 살아 있는 아이 하나. 아니면 이유를 나누지 않고 403 이다. */
     private GuardianChildResponse linkedChild(String userId, Long childId) {
-        Long parentId = userService.getParentIdOf(userId);
+        return linkedChild(userService.getParentIdOf(userId), childId);
+    }
+
+    private GuardianChildResponse linkedChild(Long parentId, Long childId) {
         if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
             throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
         }
@@ -130,6 +152,8 @@ public class GuardianChildQueryService {
                 .collect(Collectors.groupingBy(ChildOrganizationRequest::getChildId));
         Map<Long, Organization> organizations = organizationsOf(enrolled, requested);
         Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
+        Map<Long, ChildCareInfo> careInfos = childCareInfoRepository.findByChildIdIn(childIds).stream()
+                .collect(Collectors.toMap(ChildCareInfo::getChildId, Function.identity()));
 
         return childIds.stream()
                 .map(children::get)
@@ -138,7 +162,8 @@ public class GuardianChildQueryService {
                         enrolled.getOrDefault(child.getId(), List.of()),
                         requested.getOrDefault(child.getId(), List.of()),
                         organizations,
-                        consents.getOrDefault(child.getId(), Map.of())))
+                        consents.getOrDefault(child.getId(), Map.of()),
+                        careInfos.get(child.getId())))
                 .toList();
     }
 
@@ -158,7 +183,7 @@ public class GuardianChildQueryService {
 
     private GuardianChildResponse toResponse(Child child, List<Long> organizationIds,
             List<ChildOrganizationRequest> requests, Map<Long, Organization> organizations,
-            Map<Long, ConsentState> consentOfChild) {
+            Map<Long, ConsentState> consentOfChild, ChildCareInfo careInfo) {
         List<ChildInstitution> institutions = organizationIds.stream()
                 .distinct()
                 // 기관 행이 사라진 명부 항목은 뺀다. 이름을 모르는 기관을 화면에 올리지 않는다 (Gate 2 공유 대상과 같다).
@@ -174,7 +199,8 @@ public class GuardianChildQueryService {
                 child.getBirthdate().toString(),
                 child.getStatus(),
                 institutions,
-                linkRequestsOf(requests, organizations));
+                linkRequestsOf(requests, organizations),
+                careInfo == null ? ChildCareInfoResponse.empty() : ChildCareInfoResponse.from(careInfo));
     }
 
     /** 기관마다 가장 먼저 요청한 시각 하나. 엄마·아빠가 같은 기관에 요청했어도 한 줄이다. 요청은 먼저 낸 순서로 온다. */

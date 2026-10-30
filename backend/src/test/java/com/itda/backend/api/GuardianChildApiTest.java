@@ -1,11 +1,14 @@
 package com.itda.backend.api;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import jakarta.servlet.http.Cookie;
@@ -22,13 +25,21 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import com.jayway.jsonpath.JsonPath;
 
+import com.itda.backend.domain.approval.Approval;
+import com.itda.backend.domain.approval.ApprovalDecision;
+import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.sharing.ReceiverType;
+import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
+import com.itda.backend.repository.approval.ApprovalRepository;
+import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
@@ -56,6 +67,15 @@ class GuardianChildApiTest {
 
     @Autowired
     private OrganizationRepository organizationRepository;
+
+    @Autowired
+    private InsightResultRepository insightResultRepository;
+
+    @Autowired
+    private ApprovalRepository approvalRepository;
+
+    @Autowired
+    private SharingHistoryRepository sharingHistoryRepository;
 
     private User staff;
     private User parent;
@@ -128,7 +148,11 @@ class GuardianChildApiTest {
                 .andExpect(jsonPath("$.data[0].institutions[0].consent").value("not_granted"))
                 // 저장하는 곳이 없어 키째 뺀다. doesNotExist() 는 "school": null 이어도 통과해서 쓰지 않는다.
                 .andExpect(jsonPath("$.data[0].school").doesNotHaveJsonPath())
-                .andExpect(jsonPath("$.data[0].care").doesNotHaveJsonPath());
+                // 돌봄 정보는 늘 싣는다. 저장한 적이 없으면 빈 배열 둘이다 (null 은 프론트 타입이 허용하지 않는다)
+                .andExpect(jsonPath("$.data[0].care.allergies").isArray())
+                .andExpect(jsonPath("$.data[0].care.allergies").isEmpty())
+                .andExpect(jsonPath("$.data[0].care.medications").isArray())
+                .andExpect(jsonPath("$.data[0].care.medications").isEmpty());
     }
 
     @Test
@@ -150,9 +174,33 @@ class GuardianChildApiTest {
                 .andExpect(jsonPath("$.data.child.status").value("active"))
                 .andExpect(jsonPath("$.data.child.institutions[0].consent").value("granted"))
                 .andExpect(jsonPath("$.data.child.school").doesNotHaveJsonPath())
-                .andExpect(jsonPath("$.data.child.care").doesNotHaveJsonPath())
+                .andExpect(jsonPath("$.data.child.care.allergies").isEmpty())
+                .andExpect(jsonPath("$.data.child.care.medications").isEmpty())
                 .andExpect(jsonPath("$.data.activity").isArray())
                 .andExpect(jsonPath("$.data.activity").isEmpty());
+    }
+
+    /** 받은 인사이트가 홈 최근 공유 활동에 한 줄로 실린다 (#289). 묶음·순서 규칙은 서비스 테스트가 본다. */
+    @Test
+    void 홈의_최근_공유_활동에_받은_인사이트가_실린다() throws Exception {
+        Long child = Long.valueOf(childId);
+        Long organization = Long.valueOf(organizationId);
+        InsightResult insight = InsightResult.of(child, LocalDate.of(2026, 8, 17), LocalDate.of(2026, 8, 23), 1,
+                "상황", "반응", "본문", null, "[]", "[]", "[%d]".formatted(organization), false, null);
+        insight.approveGate2();
+        Long insightId = insightResultRepository.save(insight).getId();
+        approvalRepository.save(Approval.gate2(insightId, staff.getId(), ApprovalDecision.APPROVED));
+        sharingHistoryRepository.save(SharingHistory.grant(child, insightId, organization,
+                ReceiverType.GUARDIAN, parent.getId()));
+
+        mockMvc.perform(get(homePath()).cookie(auth(parent)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activity.length()").value(1))
+                .andExpect(jsonPath("$.data.activity[0].kind").value("insight"))
+                .andExpect(jsonPath("$.data.activity[0].id").value("insight-2026-08-17-" + organizationId))
+                .andExpect(jsonPath("$.data.activity[0].insightId").value(String.valueOf(insightId)))
+                .andExpect(jsonPath("$.data.activity[0].journalId").value(nullValue()))
+                .andExpect(jsonPath("$.data.activity[0].text").value(containsString("8월 3주차 리포트가 도착했어요")));
     }
 
     @Test

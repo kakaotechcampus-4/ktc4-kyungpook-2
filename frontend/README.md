@@ -85,7 +85,7 @@ cd infra/docker && docker compose up -d --build
 |---|---|
 | `/parent/invite` | P-01 보호자 진입 (카카오 로그인→약관 동의→연결 요청 확인) |
 | `/parent/consent` | P-02 확인 · 동의 (기관별 실제 공유 항목 표시) |
-| `/parent/care-info` | 아이 상세정보 (온보딩 마지막 단계 겸 설정에서 재수정) |
+| `/parent/care-info` | 아이 상세정보 — 알레르기·복용약 (설정 › 아이 정보에서 들어옴, 기관에는 공유하지 않음) |
 | `/parent` | P-03 홈 — 새 소식, 연결된 기관, 최근 공유 활동 |
 | `/parent/timeline` | 타임라인 — 기관별 필터(`?institution=`), 일지 목록 |
 | `/parent/journal/:id` | 일지 상세 — 교사가 승인한 글, 이전/다음 일지 탐색 |

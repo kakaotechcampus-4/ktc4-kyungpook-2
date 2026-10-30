@@ -1,13 +1,11 @@
 import type {
-  ActivityLog,
   BlockedItem,
-  CareReport,
   Child,
   ChildGuardian,
-  ChatTurn,
   EntryProgress,
   EvidenceSpan,
   FileProgress,
+  GuardianInsight,
   InboxDetail,
   Insight,
   Institution,
@@ -103,14 +101,8 @@ export const CHILDREN: Child[] = [
       { institution: SPEECH, consent: "not_granted" },
     ],
     care: {
-      welfareCard: false,
       allergies: ["갑각류(새우)"],
       medications: [{ name: "알레르기 약", time: "점심 식후" }],
-      weeklySchedule: [
-        { day: "월요일", note: "센터 하원 동행" },
-        { day: "수요일", note: "센터 하원 동행" },
-        { day: "화·목요일", note: "17시 언어치료 수업" },
-      ],
     },
   },
   {
@@ -147,7 +139,7 @@ export const CHILDREN: Child[] = [
     school: "OO어린이집",
     status: "active",
     institutions: [{ institution: CENTER, consent: "granted" }],
-    care: { welfareCard: false, allergies: [], medications: [], weeklySchedule: [] },
+    care: { allergies: [], medications: [] },
   },
   {
     // 기관 연결 요청 데모용 — 학교에만 다니고 우리 기관 명부에는 없다. 보호자가 우리 기관 코드로 요청했다
@@ -676,57 +668,38 @@ export function gate1FromRun(group: SummaryGroup): SummaryItem {
 /* Child Context 타임라인 (I-09) ───────────────────── */
 
 export const TIMELINE: Record<string, TimelineEntry[]> = {
+  // 관찰 날짜 최근 순, 같은 날은 승인 최근 순 — 서버와 같은 순서로 둔다. 기록이 없는 날은 항목이 없다
   child_1023: [
     {
+      id: "ctx_04",
       date: "2026-08-21",
-      entry: {
-        recordType: "활동일지",
-        validation: "PASS",
-        content: "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
-        sourceCount: 1,
-        version: 1,
-        edited: false,
-      },
+      content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
+      edited: false,
+      sourceCount: 1,
     },
-    { date: "2026-08-20", entry: null },
     {
+      id: "ctx_03",
+      date: "2026-08-21",
+      content: "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
+      edited: true,
+      sourceCount: 2,
+    },
+    {
+      id: "ctx_01",
       date: "2026-08-19",
-      entry: {
-        recordType: "특이사항",
-        validation: "PASS",
-        content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
-        sourceCount: 1,
-        version: 2,
-        edited: true,
-      },
-    },
-    { date: "2026-08-18", entry: null },
-    { date: "2026-08-17", entry: null },
-    {
-      date: "2026-08-16",
-      entry: {
-        recordType: "관찰일지",
-        validation: "PASS",
-        content: "식사 시간에 새로운 반찬을 두 번 거부한 뒤 세 번째 권유에 소량 섭취함.",
-        sourceCount: 2,
-        version: 1,
-        edited: false,
-      },
+      content: "체육 활동 전 그림 카드로 순서를 보여 주자 울지 않고 줄을 섬.",
+      edited: false,
+      sourceCount: 1,
     },
   ],
-  // 방금 등록한 아이 — 승인된 요약이 아직 0건 (Cold Start 첫 화면)
   child_1077: [],
   child_1041: [
     {
+      id: "ctx_02",
       date: "2026-08-18",
-      entry: {
-        recordType: "관찰일지",
-        validation: "PASS",
-        content: "이동 전 5분 전에 미리 안내했을 때 전환이 수월했음.",
-        sourceCount: 1,
-        version: 1,
-        edited: false,
-      },
+      content: "등원 직후 엄마와 헤어질 때 10분가량 울었으나 담임이 안아 주자 진정됨.",
+      edited: false,
+      sourceCount: 1,
     },
   ],
 };
@@ -856,59 +829,6 @@ export const INBOX: InboxDetail[] = [
   },
 ];
 
-/* 상담 도우미 (I-13) ───────────────────────────────── */
-
-export const CHAT_EXAMPLES: ChatTurn[] = [
-  {
-    question: "최근에 식사 거부가 줄었나요?",
-    answer:
-      "승인된 기록 기준으로, 최근 4주간 식사 거부 횟수가 줄었습니다. 손을 잡고 함께 세는 방식이 기록된 날에는 진정까지 걸린 시간이 짧았습니다.",
-    sources: [
-      { date: "2026-08-21", label: "급식실 기록" },
-      { date: "2026-08-14", label: "급식실 기록" },
-    ],
-  },
-  {
-    question: "밤에 잠을 잘 못 자나요?",
-    // 근거가 없으면 답변을 생성하지 않는다
-    answer: null,
-    sources: [],
-  },
-];
-
-/* 활동 이력 (I-14) ─────────────────────────────────── */
-
-export const ACTIVITY: ActivityLog[] = [
-  {
-    id: "al_01",
-    at: "2026-08-21 14:02",
-    actor: "박지현 선생님",
-    action: "Gate 1 승인",
-    target: "김OO · 08.21 활동일지 요약",
-  },
-  {
-    id: "al_02",
-    at: "2026-08-21 13:48",
-    actor: "박지현 선생님",
-    action: "확인 필요 큐 아동 지정",
-    target: "0821_관찰일지.docx → 김OO",
-  },
-  {
-    id: "al_03",
-    at: "2026-08-20 17:30",
-    actor: "박지현 선생님",
-    action: "Gate 2 발송 승인",
-    target: "김OO · 최근 6주 Insight → OO초등학교",
-  },
-  {
-    id: "al_04",
-    at: "2026-08-20 09:15",
-    actor: "OO초등학교",
-    action: "수신함 조회",
-    target: "김OO 관련 지원 방법",
-  },
-];
-
 /* 학부모 화면 ──────────────────────────────────────── */
 
 /**
@@ -925,12 +845,77 @@ export const PARENT_CHILD = PARENT_CHILDREN[0];
 
 export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
   child_1023: [
-    { id: "pa_01", at: "오늘 09:12", text: "OO초등학교가 일일 요약을 보냈어요", journalId: "jrn_01" },
-    { id: "pa_02", at: "어제 17:40", text: "OO주간보호센터가 주간 인사이트를 보냈어요" },
-    { id: "pa_03", at: "3일 전", text: "일일 요약 공유 범위에 동의했어요" },
+    { id: "pa_01", kind: "journal", at: "오늘 09:12", text: "OO초등학교가 일일 요약을 보냈어요", journalId: "jrn_01" },
+    {
+      id: "pa_02",
+      kind: "insight",
+      at: "어제 17:40",
+      text: `${SCHOOL.name}에서 10월 4주차 리포트 2편이 도착했어요`,
+      insightId: null,
+    },
+    {
+      id: "pa_03",
+      kind: "insight",
+      at: "3일 전",
+      text: `${SCHOOL.name}에서 10월 3주차 리포트가 도착했어요`,
+      insightId: "gi_03",
+    },
   ],
-  child_2044: [{ id: "pa_04", at: "3일 전", text: "OO주간보호센터 공유에 동의했어요" }],
+  child_2044: [
+    { id: "pa_04", kind: "insight", at: "3일 전", text: "10월 4주차 리포트가 도착했어요", insightId: "gi_04" },
+  ],
 };
+
+/**
+ * 보호자가 받은 인사이트 (G-35 · G-36 mock). 승인 시각 최근 순 — 서버와 같은 순서로 둔다.
+ * 한 기간에 두 편(하나는 읽음), 함께 보는 기관이 있는 글과 없는 글, 승인 기관을 모르는 글(from: null)을 함께 둔다.
+ */
+export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
+  {
+    id: "gi_01",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 4주차",
+    content: "활동이 바뀌기 5분 전에 그림 카드로 예고하면, 학교와 센터 모두에서 울음 없이 다음 활동으로 옮겨 갔습니다.",
+    from: SCHOOL,
+    sharedWith: [CENTER],
+    approvedAt: "2026-10-29T17:40:00",
+    readAt: null,
+  },
+  {
+    id: "gi_02",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 4주차",
+    content: "점심 직후에는 소리에 예민해져, 조용한 자리를 먼저 마련하면 오후 활동 참여가 늘었습니다.",
+    from: SCHOOL,
+    sharedWith: [],
+    approvedAt: "2026-10-29T17:20:00",
+    readAt: "2026-10-29T20:05:00",
+  },
+  {
+    id: "gi_03",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 3주차",
+    content: "학교에서는 차례를 기다렸지만 센터에서는 끼어드는 일이 잦았습니다. 센터에서도 순서 카드를 쓰면 도움이 될 수 있습니다.",
+    from: SCHOOL,
+    sharedWith: [CENTER],
+    approvedAt: "2026-10-27T10:00:00",
+    readAt: "2026-10-27T21:00:00",
+  },
+  {
+    id: "gi_04",
+    childId: "child_2044",
+    childName: "최OO",
+    period: "2026년 10월 4주차",
+    content: "첫 주에는 미술 활동을 거부했지만, 넷째 주에는 스스로 붓을 들었습니다.",
+    from: null,
+    sharedWith: [],
+    approvedAt: "2026-10-28T09:00:00",
+    readAt: null,
+  },
+];
 
 /**
  * 아이별 초대 코드 (O-15~O-17 mock). 만료 여부는 조회할 때 expiresAt 으로 거른다.
@@ -1012,56 +997,6 @@ export const JOURNAL: JournalEntry[] = [
     content: "오후 자유놀이 시간에 비슷한 상황이 있었습니다.",
   },
 ];
-
-/** 케어 리포트 — 아이별로 따로 있다. 아직 데이터가 없는 아이는 key 자체가 없다. */
-export const CARE_REPORTS: Record<string, { weekly: CareReport; monthly: CareReport }> = {
-  child_1023: {
-    weekly: {
-      period: "weekly",
-      rangeLabel: "08.15 부터 08.21 까지",
-      summary: "이번 주에는 놀이를 스스로 마무리하는 모습이 늘었습니다. 기관 세 곳의 기록을 함께 봤습니다.",
-      trendTitle: "변화 추이",
-      trend: [
-        { label: "1주", value: 5 },
-        { label: "2주", value: 4 },
-        { label: "3주", value: 2 },
-        { label: "4주", value: 1 },
-      ],
-      trendInsight: "친구와 부딪히는 일이 4주 동안 조금씩 줄었습니다. 스스로 정리하는 모습이 늘었습니다.",
-      trendEvidenceIds: ["jrn_01", "jrn_05", "jrn_06"],
-      patterns: [
-        { text: "오후 4시 자유놀이 시간에 비슷한 상황이 반복됩니다.", evidenceIds: ["jrn_04", "jrn_06"] },
-      ],
-      tips: [
-        "놀이를 끝내기 5분 전에 미리 알려주세요.",
-        "속상해할 때는 조용한 자리에서 2분 기다려주세요.",
-        "정리를 함께 하며 마무리해주세요.",
-      ],
-    },
-    monthly: {
-      period: "monthly",
-      rangeLabel: "08.01 부터 08.21 까지",
-      summary: "8월 한 달 동안 놀이를 스스로 마무리하는 날이 꾸준히 늘었습니다. 기관 세 곳의 기록을 함께 봤습니다.",
-      trendTitle: "변화 추이",
-      trend: [
-        { label: "1주", value: 5 },
-        { label: "2주", value: 4 },
-        { label: "3주", value: 2 },
-        { label: "4주", value: 1 },
-      ],
-      trendInsight: "친구와 부딪히는 일이 4주 동안 조금씩 줄었습니다. 스스로 정리하는 모습이 늘었습니다.",
-      trendEvidenceIds: ["jrn_01", "jrn_05", "jrn_06"],
-      patterns: [
-        { text: "오후 4시 자유놀이 시간에 비슷한 상황이 반복됩니다.", evidenceIds: ["jrn_04", "jrn_06"] },
-      ],
-      tips: [
-        "놀이를 끝내기 5분 전에 미리 알려주세요.",
-        "속상해할 때는 조용한 자리에서 2분 기다려주세요.",
-        "정리를 함께 하며 마무리해주세요.",
-      ],
-    },
-  },
-};
 
 /** 설정 › 기관 요청사항 — 아이별. 아직 요청이 없는 아이는 빈 배열. */
 export const INSTITUTION_REQUESTS: Record<string, InstitutionRequestItem[]> = {

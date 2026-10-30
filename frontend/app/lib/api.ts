@@ -34,6 +34,7 @@
  *      GET    /api/v1/institutions/me/children/{childId}/invitations
  *      DELETE /api/v1/institutions/me/children/{childId}/invitations/{id}   → 204
  *      GET    /api/v1/institutions/me/children/{childId}/guardians
+ *      GET    /api/v1/institutions/me/children/{childId}/timeline
  *      DELETE /api/v1/institutions/me/children/{childId}/guardians/{userId} → 204
  *      POST   /api/v1/guardians/me/invitations/accept
  *      DELETE /api/v1/guardians/me/children/{childId}   → 204 (아래 guardianUnlink 참고)
@@ -42,6 +43,9 @@
  *      GET    /api/v1/children/{childId}/institution-requests/pending
  *      GET    /api/v1/children/{childId}/journal
  *      GET    /api/v1/journal/{id}
+ *      PUT    /api/v1/children/{childId}/care-info
+ *      GET    /api/v1/guardians/me/insights
+ *      GET    /api/v1/guardians/me/insights/{insightId}
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
@@ -68,10 +72,7 @@ import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
   AcceptedInvitation,
-  ActivityLog,
   BlockedItem,
-  CareReport,
-  ChatTurn,
   Child,
   ChildCareInfo,
   ChildGuardian,
@@ -83,6 +84,7 @@ import type {
   Gate1Card,
   Gate1Status,
   Gate2Status,
+  GuardianInsight,
   InboxDetail,
   InboxItem,
   Insight,
@@ -134,10 +136,8 @@ const BE_READY = {
   invitations: true,
   /** 아이와 연결된 보호자 목록 · 기관이 연결 해제 (O-18, O-19) */
   childGuardians: true,
-  /** 아이 상세 · 타임라인 */
-  childProfile: false,
-  /** 아이 기록 기반 질의응답 */
-  chat: false,
+  /** 아동 상세의 기록 타임라인 — 우리 기관이 승인한 요약 (O-14) */
+  childTimeline: true,
   /** 확인 필요 큐 조회 · 처리 (O-22, O-23) */
   matchingQueue: true,
   /** 수정 요청(BLOCK) 큐 조회 · 처리 (O-24, O-25) */
@@ -158,10 +158,6 @@ const BE_READY = {
   fileProgress: true,
   /** 기관 수신함 목록 · 단건 (O-50 · O-51). 단건을 열면 처음 열람 시각이 남는다 */
   inbox: true,
-  /** 활동 기록 */
-  activity: false,
-  /** 기관 정보 · 증빙서류 (기관 설정 화면). 지금은 API 없이 mock 값만 띄운다 */
-  institutionSettings: false,
   /** 내 기관 정보 — 아동 명부의 "우리 기관 코드" 카드 (O-01) */
   institutionInfo: true,
   /** 보호자가 기관 코드로 보낸 연결 요청 목록 · 수락 · 거절 (O-60 ~ O-62) */
@@ -188,11 +184,6 @@ const BE_READY = {
   /** 보호자: 일지 목록 · 상세 (G-20, G-21). 타임라인 · 일지 상세 · 홈 "새 소식". 아이 목록·홈과는 따로 켠다 */
   guardianJournal: true,
   /**
-   * 보호자: 케어 리포트 · 리포트의 관련 일지 · 활동 이력 (G-30). 서버에 없다 — 일지 스위치와 묶여 있으면
-   * 일지를 켤 때 리포트가 없는 API 를 부르고 활동 이력에 mock 이 진짜 아이 옆에 뜬다.
-   */
-  careReport: false,
-  /**
    * 보호자: 대기 중 기관 권한 요청 (G-40). 알림 화면 · 홈 요청 배너 · 헤더 알림 점이 이 목록 하나를 본다.
    * 요청 거절(G-42)은 MVP 에서 뺐다 — 알림 화면은 동의 화면으로 보내는 버튼 하나만 둔다.
    */
@@ -204,8 +195,13 @@ const BE_READY = {
    * 수락 대기 중 기관은 아이 목록·홈 응답(guardianChildren)의 linkRequests 로 온다.
    */
   institutionCode: true,
-  /** 보호자: 돌봄 정보 */
-  careInfo: false,
+  /**
+   * 보호자: 받은 인사이트 목록 · 단건 (G-35 · G-36). 리포트 탭 · 리포트 상세 · 하단 탭의 "안 본 리포트" 점.
+   * 단건을 열면 처음 열람 시각이 남는다
+   */
+  guardianInsights: true,
+  /** 보호자: 돌봄 정보 저장 (G-13). 알레르기·복용약. 연결된 보호자끼리 함께 보고 고친다. 기관에는 공유하지 않는다 */
+  careInfo: true,
 } satisfies Record<string, boolean>;
 
 export type Feature = keyof typeof BE_READY;
@@ -286,7 +282,11 @@ export { ApiError };
  */
 function rosterItemOf(child: Child): ChildListItem | null {
   const mine = child.institutions.find((i) => i.institution.id === mock.MY_INSTITUTION.id);
-  return mine ? { ...child, consent: mine.consent } : null;
+  if (!mine) return null;
+  // 명부에 있는 칸만 새 객체로. 타입만 좁히면 학교 · 다른 기관 · 돌봄 정보가 런타임에 그대로 실린다.
+  // 원본 mock 은 보호자 화면이 쓰므로 고치지 않는다.
+  const { id, name, birthDate, externalId, status } = child;
+  return { id, name, birthDate, externalId, status, consent: mine.consent };
 }
 
 /** GET /api/v1/institutions/me/children */
@@ -298,14 +298,12 @@ export async function getChildren(): Promise<ChildListItem[]> {
 }
 
 /**
- * 아이 한 명. 상세 API 가 아직 없어서, 명부가 실서버면 명부에서 찾는다 — 그래야 실제로
- * 등록한 아이의 상세 화면(초대 코드 · 보호자)이 열린다. 명부에는 연결된 기관이 없다.
+ * 아이 한 명 — 언제나 명부(O-10)에서 찾는다. 우리 명부에 없으면 undefined(화면은 404).
+ * 아동 상세 API(O-13)는 만들지 않는다: 명부에 이름 · 생년월일 · 관리번호 · 우리 기관 동의가 다 있고, 다른 기관 정보는
+ * 기관 화면에 보이지 않는다 (기관 경계).
  */
 export async function getChild(id: string): Promise<ChildListItem | undefined> {
-  if (!mockFor("childProfile")) return request(`/api/v1/children/${id}`);
-  if (!mockFor("children")) return (await getChildren()).find((c) => c.id === id);
-  const child = mock.CHILDREN.find((c) => c.id === id);
-  return child ? (rosterItemOf(child) ?? undefined) : undefined;
+  return (await getChildren()).find((c) => c.id === id);
 }
 
 /** GET /api/v1/institutions/me — 내 기관 정보와 보호자에게 알려 줄 기관 코드 (O-01) */
@@ -360,10 +358,13 @@ export async function rejectLinkRequest(childId: string): Promise<void> {
   });
 }
 
-/** GET /api/v1/children/{childId}/context */
+/**
+ * GET /api/v1/institutions/me/children/{childId}/timeline — 우리 기관이 1차 검토에서 승인한 요약, 관찰 날짜 최근 순
+ * (같은 날은 승인 최근 순). 우리 명부에 없는 아이는 404 CHILD_NOT_FOUND
+ */
 export async function getTimeline(childId: string): Promise<TimelineEntry[]> {
-  if (mockFor("childProfile")) return mock.TIMELINE[childId] ?? [];
-  return request(`/api/v1/children/${childId}/context`);
+  if (mockFor("childTimeline")) return mock.TIMELINE[childId] ?? [];
+  return request(`/api/v1/institutions/me/children/${encodeURIComponent(childId)}/timeline`);
 }
 
 /**
@@ -504,6 +505,7 @@ export async function decideGate1(
       body.decision,
     );
     item.gate1Status = GATE1_STATUS_AFTER[body.decision];
+    if (body.decision === "revert") revertToSummaryWait(item);
     return { summaryId };
   }
   const res = await request<{ summaryId: number }>(
@@ -511,6 +513,35 @@ export async function decideGate1(
     { method: "POST", body: JSON.stringify(body) },
   );
   return { summaryId: String(res.summaryId) };
+}
+
+/**
+ * mock 전용: 요약할 내용 없음을 되돌리면 그날 기록이 오늘의 업무에 "요약 대기"로 돌아온다.
+ * BE 는 일지를 요약 전(VALIDATED)으로 돌리고, 보드는 그 일지를 아이 × 날짜 카드로 다시 묶는다.
+ */
+function revertToSummaryWait(item: SummaryItem) {
+  const board = mock.SUMMARY_GROUP_BOARD;
+  const entries = Math.max(item.uncoveredEntries.length, 1);
+  let group = board.groups.find((g) => g.childId === item.childId && g.entryDate === item.entryDate);
+  if (!group) {
+    group = {
+      childId: item.childId,
+      childName: item.childName,
+      birthdate: mock.CHILDREN.find((c) => c.id === item.childId)?.birthDate ?? null,
+      entryDate: item.entryDate,
+      status: "ready",
+      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    };
+    board.groups.push(group);
+    board.groups.sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.childId.localeCompare(b.childId));
+  }
+  group.counts.ready += entries;
+  group.canSummarize = !group.summaryRequested;
+  group.status = groupStatusOf(group);
 }
 
 /**
@@ -1004,24 +1035,6 @@ export async function getInboxItem(insightId: string): Promise<InboxDetail> {
   return request(`/api/v1/institutions/me/inbox/${encodeURIComponent(insightId)}`);
 }
 
-/** POST /api/v1/children/{childId}/chat */
-export async function askChat(childId: string, question: string): Promise<ChatTurn> {
-  if (mockFor("chat")) {
-    const hit = mock.CHAT_EXAMPLES.find((t) => t.question === question);
-    return hit ?? { question, answer: null, sources: [] };
-  }
-  return request(`/api/v1/children/${childId}/chat`, {
-    method: "POST",
-    body: JSON.stringify({ question }),
-  });
-}
-
-/** GET /api/v1/audit-logs */
-export async function getActivity(): Promise<ActivityLog[]> {
-  if (mockFor("activity")) return mock.ACTIVITY;
-  return request("/api/v1/audit-logs");
-}
-
 /* ── 학부모 ─────────────────────────────────────────── */
 
 /**
@@ -1120,7 +1133,7 @@ export async function getParentChildren(): Promise<Child[]> {
 /**
  * GET /api/v1/guardians/me/home?childId=
  * childId 는 필수다 — 어느 아이를 볼지는 화면이 아이 목록에서 고른다(readSelectedChildId).
- * 서버 응답의 activity 는 일지 기능이 생길 때까지 언제나 빈 배열이다.
+ * activity 는 승인된 일지 줄과 받은 인사이트 줄을 승인 시각 최근 순으로 섞은 5줄이다 (서버가 섞고 자른다).
  */
 export async function getParentHome(childId: string): Promise<{
   child: Child;
@@ -1259,14 +1272,17 @@ export async function addInstitutionByCode(
   });
 }
 
-/** 보호자가 온보딩·동의 관리 화면에서 입력하는 돌봄 정보 저장 */
-export async function updateChildCare(childId: string, care: ChildCareInfo) {
+/**
+ * PUT /api/v1/children/{childId}/care-info — 돌봄 정보를 통째로 덮어쓴다. 서버가 앞뒤 공백을 떼고 같은 알레르기를
+ * 합친 값을 돌려준다. 조회는 아이 목록·홈의 child.care 로 한다
+ */
+export async function updateChildCare(childId: string, care: ChildCareInfo): Promise<ChildCareInfo> {
   if (mockFor("careInfo")) {
     const child = mock.CHILDREN.find((c) => c.id === childId);
     if (child) child.care = care;
-    return { ok: true };
+    return care;
   }
-  return request(`/api/v1/children/${childId}/care-info`, {
+  return request<ChildCareInfo>(`/api/v1/children/${encodeURIComponent(childId)}/care-info`, {
     method: "PUT",
     body: JSON.stringify(care),
   });
@@ -1297,13 +1313,29 @@ export async function getJournalEntry(id: string): Promise<JournalEntry | undefi
   }
 }
 
-/** GET /api/v1/children/{childId}/care-report?period= — 아직 리포트가 없으면 null */
-export async function getCareReport(
-  childId: string,
-  period: "weekly" | "monthly",
-): Promise<CareReport | null> {
-  if (mockFor("careReport")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
-  return request(`/api/v1/children/${childId}/care-report?period=${period}`);
+/** GET /api/v1/guardians/me/insights — 내 모든 아이의 받은 인사이트, 승인 시각 최근 순 (서버가 정렬한다) */
+export async function getGuardianInsights(): Promise<GuardianInsight[]> {
+  if (mockFor("guardianInsights")) return mock.GUARDIAN_INSIGHTS.map((insight) => ({ ...insight }));
+  return request("/api/v1/guardians/me/insights");
+}
+
+/**
+ * GET /api/v1/guardians/me/insights/{insightId} — 처음 열면 열람 시각이 남는다.
+ * 볼 수 없는 글(없음 · 남의 아이 · 연결 해제로 거둬짐 → SHARING_NOT_FOUND)은 undefined. 일지 상세와 같은 약속이다
+ */
+export async function getGuardianInsight(id: string): Promise<GuardianInsight | undefined> {
+  if (mockFor("guardianInsights")) {
+    const insight = mock.GUARDIAN_INSIGHTS.find((i) => i.id === id);
+    if (!insight) return undefined;
+    insight.readAt ??= new Date().toISOString();
+    return { ...insight };
+  }
+  try {
+    return await request<GuardianInsight>(`/api/v1/guardians/me/insights/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === "SHARING_NOT_FOUND") return undefined;
+    throw err;
+  }
 }
 
 /** GET /api/v1/children/{childId}/institution-requests */
