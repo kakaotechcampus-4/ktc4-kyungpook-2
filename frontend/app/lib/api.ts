@@ -512,6 +512,7 @@ export async function decideGate1(
       body.decision,
     );
     item.gate1Status = GATE1_STATUS_AFTER[body.decision];
+    if (body.decision === "revert") revertToSummaryWait(item);
     return { summaryId };
   }
   const res = await request<{ summaryId: number }>(
@@ -519,6 +520,35 @@ export async function decideGate1(
     { method: "POST", body: JSON.stringify(body) },
   );
   return { summaryId: String(res.summaryId) };
+}
+
+/**
+ * mock 전용: 요약할 내용 없음을 되돌리면 그날 기록이 오늘의 업무에 "요약 대기"로 돌아온다.
+ * BE 는 일지를 요약 전(VALIDATED)으로 돌리고, 보드는 그 일지를 아이 × 날짜 카드로 다시 묶는다.
+ */
+function revertToSummaryWait(item: SummaryItem) {
+  const board = mock.SUMMARY_GROUP_BOARD;
+  const entries = Math.max(item.uncoveredEntries.length, 1);
+  let group = board.groups.find((g) => g.childId === item.childId && g.entryDate === item.entryDate);
+  if (!group) {
+    group = {
+      childId: item.childId,
+      childName: item.childName,
+      birthdate: mock.CHILDREN.find((c) => c.id === item.childId)?.birthDate ?? null,
+      entryDate: item.entryDate,
+      status: "ready",
+      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    };
+    board.groups.push(group);
+    board.groups.sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.childId.localeCompare(b.childId));
+  }
+  group.counts.ready += entries;
+  group.canSummarize = !group.summaryRequested;
+  group.status = groupStatusOf(group);
 }
 
 /**
