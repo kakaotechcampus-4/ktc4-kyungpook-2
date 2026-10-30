@@ -110,11 +110,14 @@ export interface LinkRequest {
  * 동의가 있으면 active 다. 학교에 동의한 아이가 우리 명부에 막 올라오면 status 는 active 인데
  * 우리 기관에는 아직 동의 전(not_granted)이다.
  */
-export type ChildListItem = Omit<Child, "institutions" | "linkRequests"> &
-  Partial<Pick<Child, "institutions">> & {
-    /** 우리 기관에 대한 동의 상태 */
-    consent: ConsentState;
-  };
+/**
+ * 기관 명부 한 줄 (O-10). 명부에 있는 칸만 고른다 — 다른 기관 정보(다니는 기관 · 그 기관 동의)와 보호자용 칸(학교 ·
+ * 돌봄 정보 · 연결 요청)은 없다. 보호자는 기관마다 따로 동의할 뿐, 다른 기관에 다닌다는 사실을 알리는 데 동의하지 않았다.
+ */
+export type ChildListItem = Pick<Child, "id" | "name" | "birthDate" | "externalId" | "status"> & {
+  /** 우리 기관에 대한 동의 상태 */
+  consent: ConsentState;
+};
 
 /** 내 기관 정보 (O-01). code 는 보호자에게 알려 주는 기관 코드 8자 — 화면은 4-4 로 나눠 보여준다 */
 export interface MyInstitution extends Institution {
