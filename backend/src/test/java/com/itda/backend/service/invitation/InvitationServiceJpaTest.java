@@ -24,11 +24,15 @@ import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.child.ChildStatus;
 import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
 import com.itda.backend.domain.consent.SharingConsent;
+import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.invitation.Invitation;
 import com.itda.backend.domain.invitation.InvitationStatus;
 import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.sharing.ReceiverType;
+import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.dto.response.invitation.AcceptedInvitationResponse;
 import com.itda.backend.dto.response.invitation.IssuedInvitationResponse;
@@ -43,13 +47,14 @@ import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.service.child.OrganizationChildGuard;
+import com.itda.backend.service.insight.InsightAccessGranter;
 import com.itda.backend.service.user.UserService;
 
 /** 초대 코드 발급·조회·취소·수락이 실제 DB 행을 어떻게 남기는지 확인한다. 시각은 테스트가 정한다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({InvitationService.class, OrganizationChildGuard.class, InviteCodeGenerator.class,
-        InvitationServiceJpaTest.ClockConfig.class})
+        InsightAccessGranter.class, InvitationServiceJpaTest.ClockConfig.class})
 class InvitationServiceJpaTest {
 
     private static final LocalDateTime ISSUED_AT = LocalDateTime.of(2026, 10, 12, 10, 0);
@@ -118,6 +123,26 @@ class InvitationServiceJpaTest {
         return em.getEntityManager()
                 .createQuery("select g from ChildGuardian g where g.childId = :childId", ChildGuardian.class)
                 .setParameter("childId", childId)
+                .getResultList();
+    }
+
+    private Long approvedInsight(int revision) {
+        InsightResult insight = em.persist(InsightResult.of(child.getId(), LocalDate.of(2026, 8, 17),
+                LocalDate.of(2026, 8, 23), revision, "상황", "반응", "본문", null, "[]", "[]",
+                "[%d]".formatted(ours.getId()), false, null));
+        insight.approveGate2();
+        em.flush();
+        return insight.getId();
+    }
+
+    private List<SharingHistory> guardianGrantsOf(Long guardianId) {
+        em.flush();
+        em.clear();
+        return em.getEntityManager()
+                .createQuery("select s from SharingHistory s where s.receiverType = :type and s.receiverId = :id",
+                        SharingHistory.class)
+                .setParameter("type", ReceiverType.GUARDIAN)
+                .setParameter("id", guardianId)
                 .getResultList();
     }
 
@@ -339,6 +364,46 @@ class InvitationServiceJpaTest {
         assertThat(guardiansOf(child.getId())).singleElement().satisfies(guardian -> {
             assertThat(guardian.isDeleted()).isFalse();
             assertThat(guardian.getInvitationId()).isEqualTo(Long.valueOf(second.id()));
+        });
+    }
+
+    /** 승인 순간 연결돼 있지 않았던 보호자도 지난 글을 본다 (#287). 검토 전 글은 열지 않는다. */
+    @Test
+    void 수락하면_그_아이의_승인된_인사이트가_열린다() {
+        Long approved = approvedInsight(1);
+        em.persist(InsightResult.of(child.getId(), LocalDate.of(2026, 8, 17), LocalDate.of(2026, 8, 23), 2,
+                "상황", "반응", "본문", null, "[]", "[]", "[%d]".formatted(ours.getId()), false, null));
+        IssuedInvitationResponse issued = issue();
+
+        invitationService.accept(PARENT, issued.code());
+
+        assertThat(guardianGrantsOf(parent.getId())).singleElement().satisfies(grant -> {
+            assertThat(grant.getInsightResultId()).isEqualTo(approved);
+            assertThat(grant.getSenderOrganizationId()).isEqualTo(ours.getId());
+            assertThat(grant.isActive()).isTrue();
+        });
+    }
+
+    @Test
+    void 해제됐다_다시_연결되면_거뒀던_인사이트_권한이_되살아난다() {
+        Long approved = approvedInsight(1);
+        invitationService.accept(PARENT, issue().code());
+        em.flush();
+        em.clear();
+        ChildGuardian linked = guardiansOf(child.getId()).get(0);
+        linked.delete();
+        em.merge(linked);
+        guardianGrantsOf(parent.getId()).forEach(grant -> {
+            grant.revoke(ConsentRevokeReason.GUARDIAN_UNLINKED, ISSUED_AT);
+            em.merge(grant);
+        });
+        em.flush();
+
+        invitationService.accept(PARENT, issue().code());
+
+        assertThat(guardianGrantsOf(parent.getId())).singleElement().satisfies(grant -> {
+            assertThat(grant.getInsightResultId()).isEqualTo(approved);
+            assertThat(grant.isActive()).isTrue();
         });
     }
 

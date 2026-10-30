@@ -232,6 +232,20 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(detailSchema + ".properties.readAt.format").value("date-time"));
 	}
 
+	/** 보호자 받은 인사이트(G-35·G-36). 승인 시각 순이라 응답에 승인 시각이 있어야 한다 (#287). */
+	@Test
+	void guardianInsightApisAreDocumented() throws Exception {
+		String list = "$.paths['/api/v1/guardians/me/insights']";
+		String schema = "$.components.schemas.GuardianInsightResponse";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(list + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(list + ".get.description").value(containsString("approvedAt")))
+				.andExpect(jsonPath(schema + ".properties.approvedAt.format").value("date-time"))
+				.andExpect(jsonPath(schema + ".properties.readAt.format").value("date-time"));
+	}
+
 	/** 초대 코드·보호자 연결 API(O-15~O-19, G-04·G-05). 모두 쿠키 인증을 요구하고, 권한·소속 오류가 명세에 드러나야 한다. */
 	@Test
 	void invitationAndGuardianLinkApisAreDocumented() throws Exception {

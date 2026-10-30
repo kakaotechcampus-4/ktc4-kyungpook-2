@@ -1,6 +1,9 @@
 package com.itda.backend.service.sharing;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -9,6 +12,9 @@ import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.itda.backend.domain.approval.Approval;
+import com.itda.backend.domain.approval.ApprovalDecision;
+import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.organization.Organization;
@@ -18,6 +24,7 @@ import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.sharing.SharingErrorCode;
 import com.itda.backend.exception.sharing.SharingException;
+import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
@@ -44,9 +51,12 @@ public class GuardianInsightService {
     private final InsightResultRepository insightResultRepository;
     private final SharingHistoryRepository sharingHistoryRepository;
     private final SharingReadRecorder sharingReadRecorder;
+    private final ApprovalRepository approvalRepository;
 
     /**
-     * 내게 열린 인사이트 전부, 최근 열린 순.
+     * 내게 열린 인사이트 전부, <b>승인 시각</b> 최근 순 (#287). 권한 행 순서가 아니다 — 늦게 연결된 보호자에게는 지난 글이
+     * 한꺼번에 열리는데, 그 순서를 따르면 지난 글이 모두 "오늘 온 글" 로 맨 위에 쌓이고 엄마·아빠 화면이 달라진다.
+     * 승인 기록이 없는 예전 데이터는 열린 시각으로 대신한다. 같으면 id 큰 순.
      *
      * <p>ponytail: {@code toResponse} 가 인사이트마다 받은 기관을 다시 읽어 질의가 건수에 비례한다.
      * 보호자 한 명이 아이 한둘, 주마다 한 편이라 지금은 가볍다. 무거워지면 인사이트 id 로 모아 한 번만 읽는다.
@@ -60,13 +70,17 @@ public class GuardianInsightService {
         if (mine.isEmpty()) {
             return List.of();
         }
-        Map<Long, InsightResult> insights = insightResultRepository
-                .findAllById(mine.stream().map(SharingHistory::getInsightResultId).toList())
+        List<Long> insightIds = mine.stream().map(SharingHistory::getInsightResultId).toList();
+        Map<Long, InsightResult> insights = insightResultRepository.findAllById(insightIds)
                 .stream().collect(Collectors.toMap(InsightResult::getId, insight -> insight));
+        Map<Long, LocalDateTime> approvedAt = approvedAtOf(insightIds);
 
         return mine.stream()
-                .map(grant -> toResponse(grant, insights.get(grant.getInsightResultId())))
+                .map(grant -> toResponse(grant, insights.get(grant.getInsightResultId()),
+                        approvedAt.getOrDefault(grant.getInsightResultId(), grant.getGrantedAt())))
                 .filter(response -> response != null)
+                .sorted(Comparator.comparing(GuardianInsightResponse::approvedAt).reversed()
+                        .thenComparing(response -> Long.valueOf(response.id()), Comparator.reverseOrder()))
                 .toList();
     }
 
@@ -84,10 +98,22 @@ public class GuardianInsightService {
             log.warn("sharing grant points at a missing insight insightId={}", insightId);
             throw new SharingException(SharingErrorCode.NOT_FOUND, insightId);
         }
-        return toResponse(sharingReadRecorder.markRead(grant), insight);
+        SharingHistory read = sharingReadRecorder.markRead(grant);
+        return toResponse(read, insight, approvedAtOf(List.of(insightId)).getOrDefault(insightId, read.getGrantedAt()));
     }
 
-    private GuardianInsightResponse toResponse(SharingHistory grant, InsightResult insight) {
+    /** Gate 2 승인 기록의 시각. 인사이트 수와 무관하게 질의 하나다. 한 글에 승인이 둘일 일은 없지만, 있으면 늦은 쪽. */
+    private Map<Long, LocalDateTime> approvedAtOf(Collection<Long> insightIds) {
+        return approvalRepository
+                .findByTargetTypeAndDecisionAndTargetIdIn(
+                        ApprovalTargetType.INSIGHT, ApprovalDecision.APPROVED, insightIds)
+                .stream()
+                .collect(Collectors.toMap(Approval::getTargetId, Approval::getReviewedAt,
+                        (a, b) -> a.isAfter(b) ? a : b));
+    }
+
+    private GuardianInsightResponse toResponse(SharingHistory grant, InsightResult insight,
+            LocalDateTime approvedAt) {
         if (insight == null) {
             // 인사이트는 지우지 않는 테이블이라 올 일이 없다. 와도 목록 전체를 500 내지는 않는다.
             log.warn("sharing grant points at a missing insight insightId={}", grant.getInsightResultId());
@@ -119,6 +145,7 @@ public class GuardianInsightService {
                 insight.getContent(),
                 sender == null ? null : InstitutionResponse.from(sender),
                 sharedWith,
+                approvedAt,
                 grant.getReadAt());
     }
 

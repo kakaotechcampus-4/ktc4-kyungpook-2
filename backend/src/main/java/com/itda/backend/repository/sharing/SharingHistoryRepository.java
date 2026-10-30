@@ -18,6 +18,12 @@ public interface SharingHistoryRepository extends JpaRepository<SharingHistory, 
     /** 그 인사이트에 한 번이라도 생긴 권한. 거둔 것도 함께 온다 — 감사 이력이라 지우지 않는다. */
     List<SharingHistory> findByInsightResultId(Long insightResultId);
 
+    /**
+     * 그 인사이트들에 한 번이라도 생긴 권한. 거둔 것도 온다. 새로 연결된 보호자에게 글을 열 때 그 사람의 옛 행(되살릴
+     * 대상)과 보낸 기관을 한 번에 얻는다 ({@code InsightAccessGranter}).
+     */
+    List<SharingHistory> findByInsightResultIdIn(Collection<Long> insightResultIds);
+
     /** 아직 살아 있는 기관 권한. 재료 기관의 동의가 꺼질 때 거둘 대상이다 (#213). */
     List<SharingHistory> findByInsightResultIdInAndReceiverTypeAndRevokedAtIsNull(
             Collection<Long> insightResultIds, ReceiverType receiverType);
@@ -27,8 +33,8 @@ public interface SharingHistoryRepository extends JpaRepository<SharingHistory, 
             Long childId, ReceiverType receiverType, Long receiverId);
 
     /**
-     * 그 수신자가 아직 볼 수 있는 것 전부, 최근 열린 순. 보호자 인사이트 목록(#233)이 쓴다 —
-     * 보호자는 자기에게 열린 글만 본다.
+     * 그 수신자가 아직 볼 수 있는 것 전부, 열린 순. 보호자 인사이트 목록(#233)이 쓴다 —
+     * 보호자는 자기에게 열린 글만 본다. 화면 순서는 서비스가 승인 시각으로 다시 정한다 (#287).
      */
     List<SharingHistory> findByReceiverTypeAndReceiverIdAndRevokedAtIsNullOrderByIdDesc(
             ReceiverType receiverType, Long receiverId);
