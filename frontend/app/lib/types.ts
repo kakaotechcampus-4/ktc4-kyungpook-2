@@ -549,8 +549,6 @@ export interface JournalEntry {
   detail: string;
   institutionNote?: string;
   photoCount?: number;
-  /** "이 내용이 이상해요" — 보호자가 기관에 재확인을 요청했는지 */
-  flagged?: boolean;
 }
 
 export interface CareReportTrendPoint {

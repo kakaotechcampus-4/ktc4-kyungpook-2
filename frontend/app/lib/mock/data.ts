@@ -956,11 +956,6 @@ export const INVITED_CHILD_ID = "child_1077";
 /** 학부모를 초대한 기관 (P-02 확인·동의 화면) */
 export const INVITING_INSTITUTION = SCHOOL;
 
-/** 타임라인 상단 오늘 요약 카드 — 아이별. 없으면 화면에서 숨긴다. */
-export const PARENT_TODAY_SUMMARY: Record<string, string> = {
-  child_1023: "오늘 블록 놀이를 가장 오래 했고, 점심을 모두 먹었습니다. 하원은 4시 40분이었습니다.",
-};
-
 /** 오늘의 일지 · 타임라인 */
 export const JOURNAL: JournalEntry[] = [
   {

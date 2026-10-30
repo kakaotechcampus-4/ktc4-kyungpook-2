@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
 import { ImageIcon } from "lucide-react";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
-import { Link, useLoaderData, useRevalidator } from "react-router";
-import { flagJournalEntry, getJournal, getJournalEntry, isReady } from "@/lib/api";
+import { Link, useLoaderData } from "react-router";
+import { getJournal, getJournalEntry, isReady } from "@/lib/api";
 
 export async function clientLoader({ params }: { params: { id: string } }) {
   // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
@@ -32,23 +31,6 @@ export default function JournalDetailPageRoute() {
 
 function JournalDetailPage() {
   const { entry, prevId, nextId } = useLoaderData<typeof clientLoader>()!;
-  const revalidator = useRevalidator();
-  const [flagging, setFlagging] = useState(false);
-  const [toast, setToast] = useState(false);
-
-  useEffect(() => setToast(false), [entry.id]);
-
-  async function flag() {
-    setFlagging(true);
-    try {
-      await flagJournalEntry(entry.id);
-      setToast(true);
-      revalidator.revalidate();
-      setTimeout(() => setToast(false), 3000);
-    } finally {
-      setFlagging(false);
-    }
-  }
 
   const navBtn =
     "tap flex h-12 items-center justify-center rounded-2xl border text-[14px] font-semibold";
@@ -96,20 +78,6 @@ function JournalDetailPage() {
         </section>
       ) : null}
 
-      {entry.flagged ? (
-        <p className="tap flex h-14 w-full items-center justify-center rounded-2xl bg-surface2 text-[15px] font-bold text-ink2">
-          {entry.institution.name}에 확인 요청함
-        </p>
-      ) : (
-        <button
-          onClick={flag}
-          disabled={flagging}
-          className="tap h-14 w-full rounded-2xl border border-line2 text-[15px] font-bold text-ink2 hover:bg-surface2 disabled:opacity-50"
-        >
-          {flagging ? "요청 중…" : "이 내용이 이상해요"}
-        </button>
-      )}
-
       <div className="grid grid-cols-2 gap-2">
         {prevId ? (
           <Link to={`/parent/journal/${prevId}`} className={`${navBtn} border-line2 text-ink2 hover:bg-surface2`}>
@@ -130,15 +98,6 @@ function JournalDetailPage() {
           </span>
         )}
       </div>
-
-      {toast ? (
-        <div
-          role="status"
-          className="fixed bottom-24 left-1/2 z-30 w-[calc(100%-2rem)] max-w-[398px] -translate-x-1/2 rounded-2xl bg-ink px-4 py-3 text-center text-[14px] font-medium text-white shadow-lg md:max-w-[528px] lg:max-w-[608px]"
-        >
-          {entry.institution.name}에 이 일지를 다시 확인해달라고 전했습니다.
-        </div>
-      ) : null}
     </div>
   );
 }

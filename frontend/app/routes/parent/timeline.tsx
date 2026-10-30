@@ -8,7 +8,6 @@ import {
   getParentChildren,
   getParentHome,
   getPendingInstitutionRequests,
-  getTodaySummary,
   isReady,
   loadIfReady,
 } from "@/lib/api";
@@ -19,13 +18,12 @@ export async function clientLoader() {
   if (!isReady("guardianJournal")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  const [{ child }, journal, today, pending] = await Promise.all([
+  const [{ child }, journal, pending] = await Promise.all([
     getParentHome(childId),
     getJournal(childId),
-    getTodaySummary(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
   ]);
-  return { child, journal, today, pending };
+  return { child, journal, pending };
 }
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -37,7 +35,7 @@ export default function TimelinePageRoute() {
 }
 
 function TimelinePage() {
-  const { child, journal, today, pending } = useLoaderData<typeof clientLoader>()!;
+  const { child, journal, pending } = useLoaderData<typeof clientLoader>()!;
   const [searchParams, setSearchParams] = useSearchParams();
   // 기관 유형이 아니라 "이 아이에 연결된 기관 하나하나"를 기준으로 거른다 —
   // 같은 유형(예: 센터) 기관이 여러 곳이어도 섞이지 않도록.
@@ -72,13 +70,6 @@ function TimelinePage() {
         showChildSwitch
         alert={(pending ?? []).length > 0}
       />
-
-      {today ? (
-        <div className="rounded-2xl bg-accentink px-5 py-5 text-white">
-          <p className="mb-2 text-[12px] font-bold tracking-[0.15em] text-white/70">TODAY</p>
-          <p className="text-[17px] leading-7 font-medium">{today}</p>
-        </div>
-      ) : null}
 
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4">
         <button

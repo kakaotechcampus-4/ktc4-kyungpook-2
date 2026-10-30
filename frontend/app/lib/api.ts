@@ -183,7 +183,7 @@ const BE_READY = {
    * 이 키를 본다 — 꺼져 있으면 mock 아이 대신 "준비 중"을 띄운다.
    */
   guardianChildren: true,
-  /** 보호자: 일지 · 리포트 · 오늘 요약 (G-12, G-20 ~ G-22). 아이 목록·홈과는 따로 켠다 */
+  /** 보호자: 일지 · 리포트 (G-20, G-21). 아이 목록·홈과는 따로 켠다 */
   guardianJournal: false,
   /**
    * 보호자: 대기 중 기관 권한 요청 (G-40). 알림 화면 · 홈 요청 배너 · 헤더 알림 점이 이 목록 하나를 본다.
@@ -1280,16 +1280,6 @@ export async function getJournalEntry(id: string): Promise<JournalEntry | undefi
   return request(`/api/v1/journal/${id}`);
 }
 
-/** POST /api/v1/journal/{id}/flag — "이 내용이 이상해요": 기관에 재확인 요청 */
-export async function flagJournalEntry(id: string) {
-  if (mockFor("guardianJournal")) {
-    const entry = mock.JOURNAL.find((j) => j.id === id);
-    if (entry) entry.flagged = true;
-    return { ok: true };
-  }
-  return request(`/api/v1/journal/${id}/flag`, { method: "POST" });
-}
-
 /** GET /api/v1/children/{childId}/care-report?period= — 아직 리포트가 없으면 null */
 export async function getCareReport(
   childId: string,
@@ -1303,12 +1293,6 @@ export async function getCareReport(
 export async function getInstitutionRequests(childId: string): Promise<InstitutionRequestItem[]> {
   if (mockFor("institutionRequests")) return mock.INSTITUTION_REQUESTS[childId] ?? [];
   return request(`/api/v1/children/${childId}/institution-requests`);
-}
-
-/** 타임라인/홈 상단 TODAY 카드 — 아이별. 없으면 null (화면에서 숨김) */
-export async function getTodaySummary(childId: string): Promise<string | null> {
-  if (mockFor("guardianJournal")) return mock.PARENT_TODAY_SUMMARY[childId] ?? null;
-  return request(`/api/v1/children/${childId}/today-summary`);
 }
 
 /** POST /api/v1/institution-requests/{id}/confirm */
