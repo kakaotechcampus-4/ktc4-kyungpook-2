@@ -59,8 +59,7 @@ mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하�
 아직 없는 API 때문에 대시보드 같은 화면이 통째로 에러가 나지 않습니다.
 백엔드가 기능을 열면 그 키만 `true`로 바꾸고 다시 빌드합니다. 목록과 그 처리 버튼은
 같은 키로 묶여 있어 함께 켜집니다. `VITE_USE_MOCK=true`면 표와 상관없이 전부 mock 입니다.
-보호자 일지(`guardianJournal`, 켬), 받은 인사이트(`guardianInsights`, 켬 — 리포트 탭 · 상세 · 탭 점), 활동 이력
-(`activityHistory`, 꺼짐)은 따로 켭니다. 예전의 케어 리포트(`careReport`)는 화면과 함께 지웠습니다(#289).
+보호자 일지(`guardianJournal`, 켬), 받은 인사이트(`guardianInsights`, 켬 — 리포트 탭 · 상세 · 탭 점)은 따로 켭니다. 활동 이력(`activityHistory`)은 화면과 함께 지웠습니다(10/30). 예전의 케어 리포트(`careReport`)는 화면과 함께 지웠습니다(#289).
 오늘 요약(`getTodaySummary`)과 "이 내용이 이상해요"(`flagJournalEntry`)는 뺐습니다(#280).
 
 `VITE_*`는 빌드 시점에 번들에 포함됩니다. 값이 바뀌면 재빌드가 필요합니다.
@@ -235,19 +234,6 @@ interface InboxItem {
   read: boolean;
 }
 
-interface ChatTurn {
-  question: string;
-  answer: string | null;      // null = 근거 없음. 답변을 생성하지 않는다
-  sources: { date: string; label: string }[];
-}
-
-interface ActivityLog {
-  id: string;
-  at: string;
-  actor: string;
-  action: string;
-  target: string;
-}
 ```
 
 ### 2.4 학부모 화면 전용 타입
@@ -332,8 +318,6 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `unlinkGuardian` | `(childId: string, guardianUserId: string) => Promise<void>` — O-19. 모든 기관에서 끊김 | I-09-1 |
 | `getInbox` | `() => Promise<InboxItem[]>` — O-50. 본문 없음, `readAt` 이 null 이면 안 읽음 | I-12, 사이드바 배지 |
 | `getInboxItem` | `(insightId: string) => Promise<InboxDetail>` — O-51. 본문 포함, 처음 열면 열람 시각 기록. 볼 수 없는 글은 404 `SHARING_NOT_FOUND` | I-12 상세 |
-| `askChat` | `(childId: string, question: string) => Promise<ChatTurn>` | I-13 |
-| `getActivity` | `() => Promise<ActivityLog[]>` | I-14 |
 
 ### 3.2 학부모
 

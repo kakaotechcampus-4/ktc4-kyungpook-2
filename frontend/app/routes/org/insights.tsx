@@ -73,15 +73,11 @@ function InsightsPage() {
                   <InstitutionChip institution={i.primarySource} withName />
                 </p>
 
+                {/* 근거 칩은 누르지 않는다 — Gate 2 와 같다. 기관이 근거 기록 내용을 볼 API 가 없다 */}
                 <ul className="mb-4 flex flex-wrap gap-2">
                   {i.evidence.map((e) => (
                     <li key={e.childContextId}>
-                      <EvidenceChip
-                        date={e.date}
-                        label={e.label}
-                        institution={e.institution}
-                        href={`/children/${i.childId}`}
-                      />
+                      <EvidenceChip date={e.date} label={e.label} institution={e.institution} />
                     </li>
                   ))}
                 </ul>

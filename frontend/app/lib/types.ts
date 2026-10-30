@@ -517,26 +517,6 @@ export interface InboxDetail extends InboxItem {
   content: string;
 }
 
-export interface ChatSource {
-  date: string;
-  label: string;
-}
-
-export interface ChatTurn {
-  question: string;
-  /** 근거가 없으면 answer 는 null 이고 답변을 생성하지 않는다 */
-  answer: string | null;
-  sources: ChatSource[];
-}
-
-export interface ActivityLog {
-  id: string;
-  at: string;
-  actor: string;
-  action: string;
-  target: string;
-}
-
 /**
  * 보호자 홈 "최근 공유 활동" 한 줄 (G-11). 승인된 일지 하나, 또는 같은 기간·같은 승인 기관의 받은 인사이트 묶음 하나.
  * id 는 종류를 앞에 붙여(`journal-3` · `insight-…`) 목록 안에서 겹치지 않는다 — 화면은 key 로만 쓴다.

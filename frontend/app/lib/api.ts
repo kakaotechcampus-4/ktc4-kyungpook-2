@@ -72,9 +72,7 @@ import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
   AcceptedInvitation,
-  ActivityLog,
   BlockedItem,
-  ChatTurn,
   Child,
   ChildCareInfo,
   ChildGuardian,
@@ -140,8 +138,6 @@ const BE_READY = {
   childGuardians: true,
   /** 아동 상세의 기록 타임라인 — 우리 기관이 승인한 요약 (O-14) */
   childTimeline: true,
-  /** 아이 기록 기반 질의응답 */
-  chat: false,
   /** 확인 필요 큐 조회 · 처리 (O-22, O-23) */
   matchingQueue: true,
   /** 수정 요청(BLOCK) 큐 조회 · 처리 (O-24, O-25) */
@@ -162,10 +158,6 @@ const BE_READY = {
   fileProgress: true,
   /** 기관 수신함 목록 · 단건 (O-50 · O-51). 단건을 열면 처음 열람 시각이 남는다 */
   inbox: true,
-  /** 활동 기록 */
-  activity: false,
-  /** 기관 정보 · 증빙서류 (기관 설정 화면). 지금은 API 없이 mock 값만 띄운다 */
-  institutionSettings: false,
   /** 내 기관 정보 — 아동 명부의 "우리 기관 코드" 카드 (O-01) */
   institutionInfo: true,
   /** 보호자가 기관 코드로 보낸 연결 요청 목록 · 수락 · 거절 (O-60 ~ O-62) */
@@ -191,11 +183,6 @@ const BE_READY = {
   guardianChildren: true,
   /** 보호자: 일지 목록 · 상세 (G-20, G-21). 타임라인 · 일지 상세 · 홈 "새 소식". 아이 목록·홈과는 따로 켠다 */
   guardianJournal: true,
-  /**
-   * 보호자: 활동 이력 화면(P-05). 서버에 없다 — 화면이 아직 mock 상수를 직접 읽어, 켜면 mock 이 진짜 아이 옆에 뜬다.
-   * 홈 "최근 공유 활동"(guardianChildren)과는 따로다.
-   */
-  activityHistory: false,
   /**
    * 보호자: 대기 중 기관 권한 요청 (G-40). 알림 화면 · 홈 요청 배너 · 헤더 알림 점이 이 목록 하나를 본다.
    * 요청 거절(G-42)은 MVP 에서 뺐다 — 알림 화면은 동의 화면으로 보내는 버튼 하나만 둔다.
@@ -1046,24 +1033,6 @@ export async function getInboxItem(insightId: string): Promise<InboxDetail> {
     return { ...item };
   }
   return request(`/api/v1/institutions/me/inbox/${encodeURIComponent(insightId)}`);
-}
-
-/** POST /api/v1/children/{childId}/chat */
-export async function askChat(childId: string, question: string): Promise<ChatTurn> {
-  if (mockFor("chat")) {
-    const hit = mock.CHAT_EXAMPLES.find((t) => t.question === question);
-    return hit ?? { question, answer: null, sources: [] };
-  }
-  return request(`/api/v1/children/${childId}/chat`, {
-    method: "POST",
-    body: JSON.stringify({ question }),
-  });
-}
-
-/** GET /api/v1/audit-logs */
-export async function getActivity(): Promise<ActivityLog[]> {
-  if (mockFor("activity")) return mock.ACTIVITY;
-  return request("/api/v1/audit-logs");
 }
 
 /* ── 학부모 ─────────────────────────────────────────── */
