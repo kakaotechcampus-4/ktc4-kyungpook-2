@@ -536,21 +536,20 @@ export interface ParentActivity {
   journalId?: string;
 }
 
-/** 학부모 홈/타임라인에 뜨는 일지 한 건 */
+/**
+ * 학부모 홈/타임라인에 뜨는 일지 한 건 (G-20·G-21) — 교사가 1차 검토에서 승인한 요약 하나.
+ * 요약은 하루 단위라 시각이 없다. 목록은 content 를 2줄로 자르고, 상세는 전부 보여 준다.
+ */
 export interface JournalEntry {
   id: string;
   childId: string;
   institution: Institution;
+  /** 관찰 날짜 yyyy-MM-dd */
   date: string;
-  time: string;
+  /** 승인된 지 24시간이 안 됐다. 읽었는지와는 무관하다 */
   isNew: boolean;
-  tag: string;
-  summary: string;
-  detail: string;
-  institutionNote?: string;
-  photoCount?: number;
-  /** "이 내용이 이상해요" — 보호자가 기관에 재확인을 요청했는지 */
-  flagged?: boolean;
+  /** 교사가 승인한 글 */
+  content: string;
 }
 
 export interface CareReportTrendPoint {

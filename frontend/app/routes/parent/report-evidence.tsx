@@ -6,7 +6,7 @@ import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader({ request }: { request: Request }) {
   // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
-  if (!isReady("guardianJournal")) return null;
+  if (!isReady("careReport")) return null;
   const url = new URL(request.url);
   const ids = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean);
   const kids = await getParentChildren();
@@ -19,7 +19,7 @@ export async function clientLoader({ request }: { request: Request }) {
 
 /** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function ReportEvidencePageRoute() {
-  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="관련 일지" back />;
+  if (!isReady("careReport")) return <ParentNotReadyPage title="관련 일지" back />;
   return <ReportEvidencePage />;
 }
 
@@ -40,7 +40,7 @@ function ReportEvidencePage() {
             <p className="mb-1.5 font-mono text-[13px] font-bold tabular-nums text-muted">
               {e.date.slice(5).replace("-", ".")} <span className="text-ink">{e.institution.name}</span>
             </p>
-            <p className="text-[15px] leading-6">{e.summary}</p>
+            <p className="text-[15px] leading-6">{e.content}</p>
           </div>
         ))}
       </div>

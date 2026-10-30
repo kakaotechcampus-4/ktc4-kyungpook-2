@@ -28,9 +28,12 @@ import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
+import com.itda.backend.domain.summary.ChildContext;
+import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse.ChildInstitution;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
+import com.itda.backend.dto.response.child.ParentActivityResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.global.config.ClockConfig;
@@ -43,7 +46,8 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianChildQueryService.class, ConsentStateReader.class, ClockConfig.class})
+@Import({GuardianChildQueryService.class, GuardianJournalQueryService.class, ConsentStateReader.class,
+        ClockConfig.class})
 class GuardianChildQueryServiceJpaTest {
 
     private static final String MOM_PRINCIPAL = "41";
@@ -213,13 +217,26 @@ class GuardianChildQueryServiceJpaTest {
     // --- 홈 ---
 
     @Test
-    void 홈은_고른_아이와_빈_활동을_돌려준다() {
+    void 홈은_고른_아이를_돌려주고_승인된_일지가_없으면_활동은_비어_있다() {
         GuardianHomeResponse home = service.home(MOM_PRINCIPAL, sea);
 
         assertThat(home.child().id()).isEqualTo(String.valueOf(sea));
         assertThat(home.child().institutions()).extracting(institution -> institution.institution().id())
                 .containsExactly(String.valueOf(centerId));
         assertThat(home.activity()).isEmpty();
+    }
+
+    /** 활동의 모양·순서·개수는 GuardianJournalQueryServiceJpaTest 가 본다. 여기서는 홈에 실리는지만 본다. */
+    @Test
+    void 홈의_활동은_승인된_일지다() {
+        SummaryResult summary = em.persistAndFlush(
+                SummaryResult.of(sea, LocalDate.of(2026, 8, 21), centerId, 1, "센터 일지", "[]", "[]", "[]", "{}"));
+        Long journalId = em.persistAndFlush(ChildContext.of(sea, summary.getId(), "센터 일지")).getId();
+        em.clear();
+
+        assertThat(service.home(MOM_PRINCIPAL, sea).activity())
+                .extracting(ParentActivityResponse::text, ParentActivityResponse::journalId)
+                .containsExactly(tuple("햇살센터에서 8월 21일 일지가 도착했어요", String.valueOf(journalId)));
     }
 
     @Test

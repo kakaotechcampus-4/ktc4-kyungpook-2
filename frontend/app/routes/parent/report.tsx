@@ -15,7 +15,7 @@ import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader() {
   // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
-  if (!isReady("guardianJournal")) return null;
+  if (!isReady("careReport")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
   const [weekly, monthly, pending] = await Promise.all([
@@ -28,7 +28,7 @@ export async function clientLoader() {
 
 /** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function ReportPageRoute() {
-  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="케어 리포트" showChildSwitch />;
+  if (!isReady("careReport")) return <ParentNotReadyPage title="케어 리포트" showChildSwitch />;
   return <ReportPage />;
 }
 

@@ -358,6 +358,29 @@ class OpenApiDocumentationTest {
 	}
 
 	@Test
+	void guardianJournalApisAreDocumented() throws Exception {
+		String journal = "$.paths['/api/v1/children/{childId}/journal']";
+		String entry = "$.paths['/api/v1/journal/{id}']";
+		String schema = "$.components.schemas.GuardianJournalResponse.properties";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(journal + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(journal + ".get.responses.200").exists())
+				.andExpect(jsonPath(journal + ".get.responses.401").exists())
+				.andExpect(jsonPath(journal + ".get.responses.403.description").value(containsString("FORBIDDEN")))
+				.andExpect(jsonPath(entry + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(entry + ".get.responses.200").exists())
+				.andExpect(jsonPath(entry + ".get.responses.401").exists())
+				.andExpect(jsonPath(entry + ".get.responses.403.description").value(containsString("PARENT_REQUIRED")))
+				.andExpect(jsonPath(entry + ".get.responses.404.description").value(containsString("JOURNAL_NOT_FOUND")))
+				.andExpect(jsonPath(schema + ".length()").value(6))
+				.andExpect(jsonPath(schema + ".isNew").exists())
+				.andExpect(jsonPath(schema + ".content").exists())
+				.andExpect(jsonPath(schema + ".institution").exists());
+	}
+
+	@Test
 	void swaggerUiIsAvailable() throws Exception {
 		mockMvc.perform(get("/swagger-ui/index.html"))
 				.andExpect(status().isOk());
