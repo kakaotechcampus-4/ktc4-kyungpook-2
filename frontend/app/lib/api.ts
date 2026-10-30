@@ -21,6 +21,8 @@
  *      GET  /api/v1/summaries?gate1Status=pending|hold
  *      POST /api/v1/summaries/{summaryId}/gate1
  *      POST /api/v1/summaries/{summaryId}/reopen
+ *      GET  /api/v1/summaries/groups
+ *      POST /api/v1/summaries/run
  *      GET  /api/v1/insights?gate2Status=pending|approved|hold
  *      GET  /api/v1/insights/{insightId}
  *      POST /api/v1/insights/{insightId}/gate2
@@ -93,6 +95,8 @@ import type {
   ParentActivity,
   PendingLinkRequest,
   RegisteredChild,
+  SummaryGroup,
+  SummaryGroupBoard,
   SummaryItem,
   TimelineEntry,
   UploadFailReason,
@@ -139,9 +143,11 @@ const BE_READY = {
   /**
    * 1차 검토 조회 · 문장 카드 승인 · 보류 · 제거 · 보류 해제 (O-30, O-31, O-33).
    * 문장 카드(#231)가 있는 서버여야 한다 — 그 전 서버는 cards 를 조용히 버리고 AI 원문을 승인한다.
-   * 요약은 [요약](O-32)을 눌러야 생기는데 FE 에 아직 버튼이 없어, 그 전까지 목록이 비어 있을 수 있다.
+   * 요약은 오늘의 업무 묶음 카드의 [요약](summaryGroups)을 눌러야 생긴다.
    */
   gate1: true,
+  /** 오늘의 업무 묶음 카드 조회 · [요약] (O-34, O-32) */
+  summaryGroups: true,
   /** 인사이트 조회 · 2차 공유 (O-40 ~ O-42) */
   insights: true,
   /** 원본 업로드 (POST /raw-records) */
@@ -518,6 +524,102 @@ export async function reopenGate1(summaryId: string): Promise<{ summaryId: strin
     { method: "POST" },
   );
   return { summaryId: String(res.summaryId) };
+}
+
+/* ── 오늘의 업무 묶음 카드 · [요약] ──────────────────── */
+
+/** BE SummaryGroupBoardResponse 그대로. childId 가 숫자다 */
+interface SummaryGroupBoardRaw {
+  matching: SummaryGroupBoard["matching"];
+  groups: (Omit<SummaryGroup, "childId"> & { childId: number })[];
+}
+
+/**
+ * GET /api/v1/summaries/groups (O-34) — 요약 전 묶음(아이 × 날짜) 카드. 오래된 날짜부터 온다.
+ * 기록 등록 화면의 파일별 진행(O-26)과 같은 일지를 아이별로 묶어 본 것이다.
+ */
+export async function getSummaryGroups(): Promise<SummaryGroupBoard> {
+  if (mockFor("summaryGroups")) {
+    tickSummaryRuns();
+    // 화면이 상태로 들고 있다가 비교하므로 매번 새 객체로 준다
+    const board = mock.SUMMARY_GROUP_BOARD;
+    return {
+      matching: { ...board.matching },
+      groups: board.groups.map((g) => ({ ...g, counts: { ...g.counts } })),
+    };
+  }
+  const raw = await request<SummaryGroupBoardRaw>("/api/v1/summaries/groups");
+  return {
+    matching: raw.matching,
+    groups: raw.groups.map((g) => ({ ...g, childId: String(g.childId) })),
+  };
+}
+
+/**
+ * POST /api/v1/summaries/run (O-32) — 그 아이 · 날짜 묶음을 요약해 달라고 요청한다. 응답 data 는 null 이다.
+ * 같은 날 매칭 · 검증 중인 기록이 있으면 그것이 끝난 뒤 요약한다. 요약 중에 누르면 409 SUMMARY_IN_PROGRESS.
+ */
+export async function runSummary(childId: string, entryDate: string): Promise<void> {
+  if (mockFor("summaryGroups")) {
+    const group = mock.SUMMARY_GROUP_BOARD.groups.find(
+      (g) => g.childId === childId && g.entryDate === entryDate,
+    );
+    if (!group) throw new ApiError(404, "SUMMARY_CHILD_NOT_FOUND", "아이를 찾을 수 없습니다.");
+    if (group.summaryRequested || group.counts.summarizing > 0) {
+      throw new ApiError(409, "SUMMARY_IN_PROGRESS", "요약하는 중입니다.");
+    }
+    if (group.counts.ready === 0 && group.counts.validating === 0) {
+      throw new ApiError(400, "SUMMARY_INVALID_REQUEST", "요약할 기록이 없습니다.");
+    }
+    group.summaryRequested = true;
+    group.canSummarize = false;
+    group.waitingCount = group.counts.validating;
+    group.status = groupStatusOf(group);
+    summaryRuns.set(`${childId}:${entryDate}`, Date.now());
+    return;
+  }
+  await request("/api/v1/summaries/run", {
+    method: "POST",
+    body: JSON.stringify({ childId: Number(childId), entryDate }),
+  });
+}
+
+/** mock 전용: BE 라벨 규칙 그대로 (위에서부터 처음 맞는 것) */
+function groupStatusOf(g: SummaryGroup): SummaryGroup["status"] {
+  const c = g.counts;
+  if (c.needsFix > 0) return "needs_fix";
+  if (c.ready > 0 && !g.summaryRequested && c.summarizing === 0) return "ready";
+  if (c.summarizing > 0 || g.summaryRequested) return "summarizing";
+  if (c.validating > 0) return "validating";
+  return "admin_check";
+}
+
+/**
+ * mock 전용: [요약]을 누른 묶음이 잠시 뒤 요약을 마치고 1차 검토로 옮겨 가는 것을 흉내낸다.
+ * 요약 대기 기록만 빠지고, 수정 요청 · 검증 중 기록이 남으면 카드는 남는다 (BE 와 같음).
+ */
+const summaryRuns = new Map<string, number>();
+const SUMMARY_RUN_MS = 3000;
+
+function tickSummaryRuns() {
+  const now = Date.now();
+  for (const [key, at] of summaryRuns) {
+    if (now - at < SUMMARY_RUN_MS) continue;
+    summaryRuns.delete(key);
+    const board = mock.SUMMARY_GROUP_BOARD;
+    const group = board.groups.find((g) => `${g.childId}:${g.entryDate}` === key);
+    if (!group) continue;
+
+    mock.GATE1_QUEUE.push(mock.gate1FromRun(group));
+    group.counts.ready = 0;
+    group.summaryRequested = false;
+    group.waitingCount = 0;
+    group.previousSummaryInReview = true;
+    group.canSummarize = false;
+    group.status = groupStatusOf(group);
+    const left = Object.values(group.counts).reduce((a, b) => a + b, 0);
+    if (left === 0) board.groups.splice(board.groups.indexOf(group), 1);
+  }
 }
 
 /**

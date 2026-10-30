@@ -18,6 +18,8 @@ import type {
   MatchingItem,
   ParentActivity,
   PendingLinkRequest,
+  SummaryGroup,
+  SummaryGroupBoard,
   SummaryItem,
   TimelineEntry,
 } from "@/lib/types";
@@ -551,6 +553,123 @@ export const GATE1_QUEUE: SummaryItem[] = [
     reviewFlags: [],
   }),
 ];
+
+/* 오늘의 업무 묶음 카드 (O-34) ─────────────────────── */
+
+/** 라벨 다섯 가지와 버튼 세 갈래(강조 · 약하게 · 꺼짐)가 모두 보이게 골랐다. 오래된 날짜부터 */
+export const SUMMARY_GROUP_BOARD: SummaryGroupBoard = {
+  matching: { inProgress: 3, needsReview: 2 },
+  groups: [
+    {
+      childId: "child_2044",
+      childName: "최OO",
+      birthdate: "2021-05-30",
+      entryDate: "2026-08-18",
+      status: "admin_check",
+      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 1 },
+      canSummarize: false,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1077",
+      childName: "박OO",
+      birthdate: "2020-01-25",
+      entryDate: "2026-08-19",
+      status: "needs_fix",
+      counts: { validating: 0, needsFix: 1, ready: 0, summarizing: 0, adminCheck: 0 },
+      canSummarize: false,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1023",
+      childName: "김OO",
+      birthdate: "2019-03-12",
+      entryDate: "2026-08-20",
+      status: "needs_fix",
+      counts: { validating: 1, needsFix: 1, ready: 2, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1041",
+      childName: "이OO",
+      birthdate: "2018-07-02",
+      entryDate: "2026-08-20",
+      status: "ready",
+      counts: { validating: 0, needsFix: 0, ready: 3, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    // 같은 이름 — 생년월일로 구분한다
+    {
+      childId: "child_1088",
+      childName: "김OO",
+      birthdate: "2021-09-02",
+      entryDate: "2026-08-21",
+      status: "ready",
+      counts: { validating: 0, needsFix: 0, ready: 2, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: true,
+    },
+    {
+      childId: "child_1041",
+      childName: "이OO",
+      birthdate: "2018-07-02",
+      entryDate: "2026-08-21",
+      status: "summarizing",
+      counts: { validating: 2, needsFix: 0, ready: 1, summarizing: 0, adminCheck: 0 },
+      canSummarize: false,
+      summaryRequested: true,
+      waitingCount: 2,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1023",
+      childName: "김OO",
+      birthdate: "2019-03-12",
+      entryDate: "2026-08-21",
+      status: "validating",
+      counts: { validating: 2, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
+      canSummarize: false,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+  ],
+};
+
+let gate1RunSeq = 0;
+
+/** mock 전용: [요약]을 마친 묶음이 1차 검토에 올리는 요약 한 건 */
+export function gate1FromRun(group: SummaryGroup): SummaryItem {
+  gate1RunSeq += 1;
+  return gate1Mock({
+    id: `sum_run_${gate1RunSeq}`,
+    childId: group.childId,
+    childName: group.childName,
+    entryDate: group.entryDate,
+    revision: group.previousSummaryInReview ? 2 : 1,
+    gate1Status: "pending",
+    version: `mock_v_run_${gate1RunSeq}`,
+    processing: false,
+    sentences: ["오전 활동 시간에 끝까지 자리에 앉아 참여했다.", "점심을 남기지 않고 먹었다."],
+    noContent: false,
+    needsReview: false,
+    reviewReasons: [],
+    uncoveredEntries: [],
+    reviewFlags: [],
+  });
+}
 
 /* Child Context 타임라인 (I-09) ───────────────────── */
 
