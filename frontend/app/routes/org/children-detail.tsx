@@ -2,11 +2,10 @@ import { useState } from "react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
 import { InviteCodeCard } from "@/components/org/InviteCodeCard";
 import { NotReadyState } from "@/components/org/NotReady";
+import { RosterConsentBadge } from "@/components/org/RosterConsentBadge";
 import {
   Card,
-  ConsentStatus,
   EmptyState,
-  InstitutionChip,
   Note,
   PageHeader,
 } from "@/components/ui";
@@ -53,7 +52,7 @@ export default function ChildDetailPage() {
       />
 
       <Card className="mb-6">
-        <div className="mb-3 flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <span
             aria-hidden
             className="flex size-10 items-center justify-center rounded-full bg-surface2 text-[16px] font-semibold text-ink2"
@@ -65,23 +64,9 @@ export default function ChildDetailPage() {
           {child.externalId ? (
             <span className="text-[14px] text-muted tabular-nums">#{child.externalId}</span>
           ) : null}
+          {/* 우리 기관 동의만. 다른 기관 정보(다니는 기관 · 그 기관 동의)는 기관 화면에 없다 */}
+          <RosterConsentBadge consent={child.consent} className="ml-auto" />
         </div>
-        {/* 상세 API 가 없어 명부에서 찾은 아이는 연결된 기관 정보가 없다 (lib/api.ts getChild) */}
-        {child.institutions ? (
-          <>
-            <p className="mb-2 text-[13px] font-semibold tracking-wider text-muted uppercase">
-              연결된 기관
-            </p>
-            <ul className="flex flex-wrap gap-x-5 gap-y-2">
-              {child.institutions.map(({ institution, consent }) => (
-                <li key={institution.id} className="flex items-center gap-2 text-[15px]">
-                  <InstitutionChip institution={institution} withName />
-                  <ConsentStatus state={consent} />
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
       </Card>
 
       <GuardianSection childId={child.id} invitations={invitations} guardians={guardians} />
@@ -221,7 +206,7 @@ function GuardianSection({
                 <span className="block text-[16px] font-semibold">{g.name ?? "이름 없음"}</span>
                 <span className="block text-[13px] text-muted tabular-nums">
                   {g.linkedAt.slice(0, 10).replaceAll("-", ".")} 연결
-                  {g.linkedByThisOrganization ? "" : " · 다른 기관 코드로 연결"}
+                  {g.linkedByThisOrganization ? "" : " · 우리 기관 코드로 연결하지 않아 여기서 해제할 수 없어요"}
                 </span>
               </span>
               {g.linkedByThisOrganization ? (
@@ -296,7 +281,7 @@ function messageOf(err: unknown): string {
     case "GUARDIAN_NOT_FOUND":
       return "이미 연결이 해제된 보호자입니다.";
     case "GUARDIAN_LINKED_BY_OTHER_ORGANIZATION":
-      return "다른 기관 코드로 연결된 보호자는 해제할 수 없습니다.";
+      return "우리 기관 코드로 연결하지 않은 보호자는 해제할 수 없습니다.";
     case "CHILD_NOT_FOUND":
       return "우리 기관 명부에 없는 아이입니다.";
   }

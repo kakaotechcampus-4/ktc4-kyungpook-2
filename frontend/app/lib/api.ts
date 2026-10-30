@@ -138,8 +138,6 @@ const BE_READY = {
   invitations: true,
   /** 아이와 연결된 보호자 목록 · 기관이 연결 해제 (O-18, O-19) */
   childGuardians: true,
-  /** 아동 상세 API — 아이 정보 · 연결된 기관 (O-13). 서버에 없다. 켜면 getChild 가 없는 API 를 부른다 */
-  childProfile: false,
   /** 아동 상세의 기록 타임라인 — 우리 기관이 승인한 요약 (O-14) */
   childTimeline: true,
   /** 아이 기록 기반 질의응답 */
@@ -297,7 +295,11 @@ export { ApiError };
  */
 function rosterItemOf(child: Child): ChildListItem | null {
   const mine = child.institutions.find((i) => i.institution.id === mock.MY_INSTITUTION.id);
-  return mine ? { ...child, consent: mine.consent } : null;
+  if (!mine) return null;
+  // 명부에 있는 칸만 새 객체로. 타입만 좁히면 학교 · 다른 기관 · 돌봄 정보가 런타임에 그대로 실린다.
+  // 원본 mock 은 보호자 화면이 쓰므로 고치지 않는다.
+  const { id, name, birthDate, externalId, status } = child;
+  return { id, name, birthDate, externalId, status, consent: mine.consent };
 }
 
 /** GET /api/v1/institutions/me/children */
@@ -309,14 +311,12 @@ export async function getChildren(): Promise<ChildListItem[]> {
 }
 
 /**
- * 아이 한 명. 상세 API 가 아직 없어서, 명부가 실서버면 명부에서 찾는다 — 그래야 실제로
- * 등록한 아이의 상세 화면(초대 코드 · 보호자)이 열린다. 명부에는 연결된 기관이 없다.
+ * 아이 한 명 — 언제나 명부(O-10)에서 찾는다. 우리 명부에 없으면 undefined(화면은 404).
+ * 아동 상세 API(O-13)는 만들지 않는다: 명부에 이름 · 생년월일 · 관리번호 · 우리 기관 동의가 다 있고, 다른 기관 정보는
+ * 기관 화면에 보이지 않는다 (기관 경계).
  */
 export async function getChild(id: string): Promise<ChildListItem | undefined> {
-  if (!mockFor("childProfile")) return request(`/api/v1/children/${id}`);
-  if (!mockFor("children")) return (await getChildren()).find((c) => c.id === id);
-  const child = mock.CHILDREN.find((c) => c.id === id);
-  return child ? (rosterItemOf(child) ?? undefined) : undefined;
+  return (await getChildren()).find((c) => c.id === id);
 }
 
 /** GET /api/v1/institutions/me — 내 기관 정보와 보호자에게 알려 줄 기관 코드 (O-01) */
