@@ -2,7 +2,9 @@ package com.itda.backend.service.child;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +20,7 @@ import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.response.child.GuardianJournalResponse;
+import com.itda.backend.dto.response.child.ParentActivityResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
@@ -50,6 +53,7 @@ import lombok.RequiredArgsConstructor;
 public class GuardianJournalQueryService {
 
     private static final Duration NEW_FOR = Duration.ofHours(24);
+    private static final DateTimeFormatter ACTIVITY_AT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final UserService userService;
     private final ChildGuardianRepository childGuardianRepository;
@@ -103,6 +107,17 @@ public class GuardianJournalQueryService {
                 .orElseThrow(GuardianJournalQueryService::notFound);
     }
 
+    /**
+     * 보호자 홈의 "최근 공유 활동". 승인된 일지마다 한 줄, 승인 최근 순 5건이다. 시각은 승인 시각 — 기관에서 보호자에게
+     * 도착한 때다. 연결 확인은 부르는 쪽(홈)이 마쳤다.
+     */
+    @Transactional(readOnly = true)
+    public List<ParentActivityResponse> recentActivity(Long childId) {
+        return approved(childContextRepository.findTop5ByChildIdOrderByIdDesc(childId)).stream()
+                .map(GuardianJournalQueryService::toActivity)
+                .toList();
+    }
+
     /** {@code contexts} 순서대로. 요약이나 기관 행이 없는 승인본은 뺀다 — 이름을 모르는 기관을 화면에 올리지 않는다. */
     private List<Approved> approved(List<ChildContext> contexts) {
         if (contexts.isEmpty()) {
@@ -135,6 +150,17 @@ public class GuardianJournalQueryService {
                 approved.summary().getEntryDate().toString(),
                 context.getCreatedAt().isAfter(now.minus(NEW_FOR)),
                 context.getContent());
+    }
+
+    private static ParentActivityResponse toActivity(Approved approved) {
+        String journalId = String.valueOf(approved.context().getId());
+        LocalDate date = approved.summary().getEntryDate();
+        return new ParentActivityResponse(
+                journalId,
+                approved.context().getCreatedAt().format(ACTIVITY_AT),
+                "%s에서 %d월 %d일 일지가 도착했어요".formatted(
+                        approved.institution().getName(), date.getMonthValue(), date.getDayOfMonth()),
+                journalId);
     }
 
     private static ChildException notFound() {

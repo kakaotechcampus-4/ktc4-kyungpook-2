@@ -65,6 +65,7 @@ public class GuardianChildQueryService {
     private final OrganizationRepository organizationRepository;
     private final ChildOrganizationRequestRepository childOrganizationRequestRepository;
     private final ConsentStateReader consentStateReader;
+    private final GuardianJournalQueryService guardianJournalQueryService;
     private final Clock clock;
 
     /** 이 보호자와 연결된 아이 전부. 연결된 순서다. */
@@ -81,11 +82,12 @@ public class GuardianChildQueryService {
 
     /**
      * 아이 하나의 홈. 연결되지 않았거나 삭제된 아이면 403 이다 — 이유를 나누지 않는다.
-     * 최근 공유 활동은 아직 만드는 곳이 없어 언제나 빈 배열이다.
+     * 최근 공유 활동은 승인된 일지마다 한 줄이다 (최근 5건, {@link GuardianJournalQueryService#recentActivity}).
      */
     @Transactional(readOnly = true)
     public GuardianHomeResponse home(String userId, Long childId) {
-        return new GuardianHomeResponse(linkedChild(userId, childId), List.of());
+        GuardianChildResponse child = linkedChild(userId, childId);
+        return new GuardianHomeResponse(child, guardianJournalQueryService.recentActivity(childId));
     }
 
     /**
