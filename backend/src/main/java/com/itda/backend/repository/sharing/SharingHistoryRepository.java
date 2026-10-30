@@ -33,8 +33,8 @@ public interface SharingHistoryRepository extends JpaRepository<SharingHistory, 
             Long childId, ReceiverType receiverType, Long receiverId);
 
     /**
-     * 그 수신자가 아직 볼 수 있는 것 전부, 최근 열린 순. 보호자 인사이트 목록(#233)이 쓴다 —
-     * 보호자는 자기에게 열린 글만 본다.
+     * 그 수신자가 아직 볼 수 있는 것 전부, 열린 순. 보호자 인사이트 목록(#233)이 쓴다 —
+     * 보호자는 자기에게 열린 글만 본다. 화면 순서는 서비스가 승인 시각으로 다시 정한다 (#287).
      */
     List<SharingHistory> findByReceiverTypeAndReceiverIdAndRevokedAtIsNullOrderByIdDesc(
             ReceiverType receiverType, Long receiverId);
