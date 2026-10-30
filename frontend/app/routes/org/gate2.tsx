@@ -140,15 +140,14 @@ function Gate2Item({
       <p className="mb-2 text-[13px] font-semibold tracking-wider text-muted uppercase">
         근거 기록 {insight.evidence.length}건
       </p>
+      {/*
+        근거 칩은 누르지 않는다. 기관이 근거 기록 내용을 볼 API 가 없어서, 아동 상세로 보내면
+        mock 타임라인만 보이고 아동 목록으로 간 것처럼 보였다. 날짜 · 라벨 · 기관만으로 출처를 확인한다.
+      */}
       <ul className="mb-6 flex flex-col items-start gap-2">
         {insight.evidence.map((e) => (
           <li key={e.childContextId}>
-            <EvidenceChip
-              date={e.date}
-              label={e.label}
-              institution={e.institution}
-              href={`/children/${insight.childId}`}
-            />
+            <EvidenceChip date={e.date} label={e.label} institution={e.institution} />
           </li>
         ))}
       </ul>
