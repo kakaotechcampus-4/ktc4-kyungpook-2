@@ -5,7 +5,7 @@ import { isReady } from "@/lib/api";
 
 /** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function ParentHistoryPageRoute() {
-  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="활동 이력" />;
+  if (!isReady("activityHistory")) return <ParentNotReadyPage title="활동 이력" />;
   return <ParentHistoryPage />;
 }
 

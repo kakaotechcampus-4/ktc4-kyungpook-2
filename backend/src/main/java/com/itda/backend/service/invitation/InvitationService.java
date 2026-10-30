@@ -27,6 +27,7 @@ import com.itda.backend.repository.invitation.InvitationRepository;
 import com.itda.backend.repository.invitation.InvitationTarget;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.service.child.OrganizationChildGuard;
+import com.itda.backend.service.insight.InsightAccessGranter;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -50,6 +51,7 @@ public class InvitationService {
     private final ChildGuardianRepository childGuardianRepository;
     private final OrganizationRepository organizationRepository;
     private final OrganizationChildGuard organizationChildGuard;
+    private final InsightAccessGranter insightAccessGranter;
     private final UserService userService;
     private final InviteCodeGenerator inviteCodeGenerator;
     private final Clock clock;
@@ -116,8 +118,12 @@ public class InvitationService {
     /**
      * G-04 보호자가 코드를 써서 아이와 연결된다. 코드 소모와 연결 생성은 한 트랜잭션이라, 어디서 실패해도 둘 다 남지 않는다.
      *
-     * <p>잠금 순서는 child → child_organization → invitation → child_guardian 이다 (DB 스키마 §3.3).
+     * <p>잠금 순서는 child → child_organization → invitation → child_guardian → sharing_history 다 (DB 스키마 §3.3).
      * 아이 삭제·명부 제외가 동시에 진행돼도 그 행을 잠그고 기다린 뒤 커밋된 상태를 보고 판단한다.
+     *
+     * <p>연결되면 그 아이의 승인된 인사이트를 이 보호자에게 연다 (#287). Gate 2 승인은 그 순간 연결된 보호자에게만
+     * 열기 때문에, 여기서 열지 않으면 나중에 연결된 보호자는 지난 글을 못 본다. 승인도 {@code child} 를 잠그므로 겹쳐도
+     * 빠지거나 두 번 열리지 않는다.
      *
      * <p>수락은 아동 상태를 바꾸지 않는다. 연결은 동의가 아니다 — 동의는 별도 기능이 맡는다.
      */
@@ -143,6 +149,7 @@ public class InvitationService {
         }
 
         linkGuardian(child.getId(), parentId, invitation.getId());
+        insightAccessGranter.grantForLinkedGuardian(child.getId(), parentId, now());
 
         // 연결 행 잠금을 기다리는 동안 만료됐을 수 있다. 앞에서 구한 시각을 다시 쓰지 않는다.
         LocalDateTime now = now();

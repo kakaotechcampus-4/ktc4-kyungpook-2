@@ -59,6 +59,9 @@ mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하�
 아직 없는 API 때문에 대시보드 같은 화면이 통째로 에러가 나지 않습니다.
 백엔드가 기능을 열면 그 키만 `true`로 바꾸고 다시 빌드합니다. 목록과 그 처리 버튼은
 같은 키로 묶여 있어 함께 켜집니다. `VITE_USE_MOCK=true`면 표와 상관없이 전부 mock 입니다.
+보호자 일지(`guardianJournal`, 켬), 받은 인사이트(`guardianInsights`, 켬 — 리포트 탭 · 상세 · 탭 점), 활동 이력
+(`activityHistory`, 꺼짐)은 따로 켭니다. 예전의 케어 리포트(`careReport`)는 화면과 함께 지웠습니다(#289).
+오늘 요약(`getTodaySummary`)과 "이 내용이 이상해요"(`flagJournalEntry`)는 뺐습니다(#280).
 
 `VITE_*`는 빌드 시점에 번들에 포함됩니다. 값이 바뀌면 재빌드가 필요합니다.
 
@@ -106,11 +109,11 @@ interface Child {
   care?: ChildCareInfo;
 }
 
-interface ChildCareInfo {     // 보호자가 직접 입력. 기관 유형별로 다르게 공유된다
-  welfareCard: boolean;
-  allergies: string[];
-  medications: { name: string; time: string }[];
-  weeklySchedule: { day: string; note: string }[];
+// 보호자가 적는 돌봄 정보 (G-13). 현재 이 아이와 연결된 모든 보호자가 조회·수정하고 기관에는 공유하지 않는다.
+// 아이 목록·홈은 늘 싣고, 저장 전이면 빈 배열 둘이다. 복지카드·주간 스케줄은 뺐다 (#285).
+interface ChildCareInfo {
+  allergies: string[];                          // 각 30자, 20개까지. 같은 값은 서버가 합친다
+  medications: { name: string; time: string }[]; // time 은 비어 있을 수 있다("")
 }
 
 interface RawRecord {
@@ -252,31 +255,28 @@ interface ActivityLog {
 ### 2.4 학부모 화면 전용 타입
 
 ```ts
+// 교사가 1차 검토에서 승인한 요약 하나 (G-20·G-21). 요약은 하루 단위라 시각이 없다.
+// 예전의 time·tag·summary/detail·institutionNote·photoCount·flagged 는 뺐다 (#280).
 interface JournalEntry {
-  id: string;
+  id: string;                 // 승인본(child_context) id
   childId: string;
   institution: Institution;
-  date: string;               // YYYY-MM-DD
-  time: string;               // HH:mm
-  isNew: boolean;
-  tag: string;                // 예: "활동", "식사"
-  summary: string;            // 목록에 보이는 한 줄
-  detail: string;             // 상세 화면 본문
-  institutionNote?: string;   // "기관에서 남긴 말"
-  photoCount?: number;
-  flagged?: boolean;          // 보호자가 "이 내용이 이상해요"를 눌렀는지
+  date: string;               // YYYY-MM-DD 관찰 날짜
+  isNew: boolean;             // 승인된 지 24시간 미만. 읽었는지와 무관
+  content: string;            // 교사가 승인한 글. 목록은 2줄로 자르고 상세는 전부
 }
 
-interface CareReport {
-  period: "weekly" | "monthly";
-  rangeLabel: string;         // 예: "8월 15일 ~ 8월 21일"
-  summary: string;
-  trendTitle: string;
-  trend: { label: string; value: number }[];
-  trendInsight: string;
-  trendEvidenceIds: string[]; // JournalEntry.id 배열
-  patterns: { text: string; evidenceIds: string[] }[];
-  tips: string[];
+// 보호자가 받은 인사이트 한 편 (G-35 · G-36). 화면 이름은 "주간 리포트" (#289)
+interface GuardianInsight {
+  id: string;
+  childId: string;
+  childName: string | null;
+  period: string;             // "2026년 8월 3주차" — 어느 주의 이야기인지
+  content: string;            // 교사·보호자가 읽을 한두 문장
+  from: Institution | null;   // Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null → "기관 정보 없음"
+  sharedWith: Institution[];  // 지금 이 글을 볼 수 있는 다른 기관
+  approvedAt: string;         // 승인 시각 (ISO). 모든 보호자에게 같다
+  readAt: string | null;      // 처음 열어 본 시각 (ISO). null 이면 "새 글"
 }
 
 interface InstitutionRequestItem {   // 설정 › 기관 요청사항
@@ -286,11 +286,13 @@ interface InstitutionRequestItem {   // 설정 › 기관 요청사항
   items: string[];            // 준비물 · 확인사항
 }
 
-interface ParentActivity {
-  id: string;
+interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
+  id: string;                 // "journal-3" · "insight-2026-08-17-2" — 종류를 앞에 붙여 겹치지 않는다
+  kind: "journal" | "insight";
   at: string;
   text: string;
-  journalId?: string;         // 있으면 일지 상세로 이동 가능
+  journalId?: string | null;  // 일지 줄이면 일지 상세로
+  insightId?: string | null;  // 인사이트 한 편이면 리포트 상세로, 여러 편 묶음이면 null 이라 리포트 탭으로
 }
 ```
 
@@ -343,16 +345,15 @@ interface ParentActivity {
 | `unlinkChild` | `(childId: string) => Promise<void>` — G-05 | P-02, P-04 |
 | `getParentChildren` | `() => Promise<Child[]>` | 전 화면 (아이 전환) |
 | `getParentHome` | `(childId: string) => Promise<{ child: Child; activity: ParentActivity[] }>` — `childId` 필수 | P-03, P-04, P-06, P-07 |
-| `getTodaySummary` | `(childId: string) => Promise<string \| null>` | P-03, P-07 |
-| `getJournal` | `(childId: string) => Promise<JournalEntry[]>` (최신순) | P-03, P-07, P-10 |
-| `getJournalEntry` | `(id: string) => Promise<JournalEntry \| undefined>` | P-08 |
-| `flagJournalEntry` | `(id: string) => Promise<{ ok: true }>` | P-08 |
-| `getCareReport` | `(childId: string, period: "weekly" \| "monthly") => Promise<CareReport \| null>` | P-09 |
+| `getJournal` | `(childId: string) => Promise<JournalEntry[]>` — G-20. 관찰 날짜 최근 순, 같은 날은 승인 최근 순 | P-03, P-07, P-08 |
+| `getJournalEntry` | `(id: string) => Promise<JournalEntry \| undefined>` — G-21. 볼 수 없는 일지(`JOURNAL_NOT_FOUND`)는 `undefined` | P-08 |
+| `getGuardianInsights` | `() => Promise<GuardianInsight[]>` — G-35. 내 모든 아이 것, 승인 시각 최근 순. 화면이 고른 아이로 거른다 | P-09, 셸(리포트 탭 점) |
+| `getGuardianInsight` | `(id: string) => Promise<GuardianInsight \| undefined>` — G-36. 처음 열면 본 시각이 남는다. 볼 수 없는 글(`SHARING_NOT_FOUND`)은 `undefined` | P-14 |
 | `getPendingInstitutionRequests` | `(childId: string) => Promise<{ institution: Institution }[]>` | P-03, P-04, P-07, P-09, P-11 |
 | `updateConsent` | `(childId: string, institutionId: string, body: { action: "grant" \| "revoke"; allowedFields?: ConsentField[] }) => Promise<ConsentResult>` | P-04(끄기), P-11 |
 | `lookupInstitutionByCode` | `(code: string) => Promise<Institution \| null>` | P-13 |
 | `addInstitutionByCode` | `(childId: string, code: string) => Promise<{ institution: Institution; status: "pending"; requestedAt: string }>` — 연결 **요청**. 실패는 `ApiError` | P-13 |
-| `updateChildCare` | `(childId: string, care: ChildCareInfo) => Promise<{ ok: true }>` | P-06 |
+| `updateChildCare` | `(childId: string, care: ChildCareInfo) => Promise<ChildCareInfo>` — G-13. 통째로 덮어쓰고 다듬은 값을 돌려준다. 400 · 403 은 `ApiError` 로 | P-06 |
 | `getInstitutionRequests` | `(childId: string) => Promise<InstitutionRequestItem[]>` | P-04, P-12 |
 | `confirmInstitutionRequest` | `(id: string) => Promise<{ ok: true }>` | P-12 |
 

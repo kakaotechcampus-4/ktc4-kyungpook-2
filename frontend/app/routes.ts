@@ -33,7 +33,7 @@ export default [
       route("parent/timeline", "routes/parent/timeline.tsx"),
       route("parent/journal/:id", "routes/parent/journal-detail.tsx"),
       route("parent/report", "routes/parent/report.tsx"),
-      route("parent/report/evidence", "routes/parent/report-evidence.tsx"),
+      route("parent/report/:id", "routes/parent/report-detail.tsx"),
       route("parent/notifications", "routes/parent/notifications.tsx"),
       route("parent/institution-requests", "routes/parent/institution-requests.tsx"),
       route("parent/settings", "routes/parent/settings.tsx"),

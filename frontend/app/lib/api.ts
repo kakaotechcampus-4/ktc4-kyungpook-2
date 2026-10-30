@@ -40,6 +40,11 @@
  *      GET    /api/v1/guardians/me/children
  *      GET    /api/v1/guardians/me/home?childId=
  *      GET    /api/v1/children/{childId}/institution-requests/pending
+ *      GET    /api/v1/children/{childId}/journal
+ *      GET    /api/v1/journal/{id}
+ *      PUT    /api/v1/children/{childId}/care-info
+ *      GET    /api/v1/guardians/me/insights
+ *      GET    /api/v1/guardians/me/insights/{insightId}
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
@@ -68,7 +73,6 @@ import type {
   AcceptedInvitation,
   ActivityLog,
   BlockedItem,
-  CareReport,
   ChatTurn,
   Child,
   ChildCareInfo,
@@ -81,6 +85,7 @@ import type {
   Gate1Card,
   Gate1Status,
   Gate2Status,
+  GuardianInsight,
   InboxDetail,
   InboxItem,
   Insight,
@@ -183,8 +188,13 @@ const BE_READY = {
    * 이 키를 본다 — 꺼져 있으면 mock 아이 대신 "준비 중"을 띄운다.
    */
   guardianChildren: true,
-  /** 보호자: 일지 · 리포트 · 오늘 요약 (G-12, G-20 ~ G-22). 아이 목록·홈과는 따로 켠다 */
-  guardianJournal: false,
+  /** 보호자: 일지 목록 · 상세 (G-20, G-21). 타임라인 · 일지 상세 · 홈 "새 소식". 아이 목록·홈과는 따로 켠다 */
+  guardianJournal: true,
+  /**
+   * 보호자: 활동 이력 화면(P-05). 서버에 없다 — 화면이 아직 mock 상수를 직접 읽어, 켜면 mock 이 진짜 아이 옆에 뜬다.
+   * 홈 "최근 공유 활동"(guardianChildren)과는 따로다.
+   */
+  activityHistory: false,
   /**
    * 보호자: 대기 중 기관 권한 요청 (G-40). 알림 화면 · 홈 요청 배너 · 헤더 알림 점이 이 목록 하나를 본다.
    * 요청 거절(G-42)은 MVP 에서 뺐다 — 알림 화면은 동의 화면으로 보내는 버튼 하나만 둔다.
@@ -197,8 +207,13 @@ const BE_READY = {
    * 수락 대기 중 기관은 아이 목록·홈 응답(guardianChildren)의 linkRequests 로 온다.
    */
   institutionCode: true,
-  /** 보호자: 돌봄 정보 */
-  careInfo: false,
+  /**
+   * 보호자: 받은 인사이트 목록 · 단건 (G-35 · G-36). 리포트 탭 · 리포트 상세 · 하단 탭의 "안 본 리포트" 점.
+   * 단건을 열면 처음 열람 시각이 남는다
+   */
+  guardianInsights: true,
+  /** 보호자: 돌봄 정보 저장 (G-13). 알레르기·복용약. 연결된 보호자끼리 함께 보고 고친다. 기관에는 공유하지 않는다 */
+  careInfo: true,
 } satisfies Record<string, boolean>;
 
 export type Feature = keyof typeof BE_READY;
@@ -497,6 +512,7 @@ export async function decideGate1(
       body.decision,
     );
     item.gate1Status = GATE1_STATUS_AFTER[body.decision];
+    if (body.decision === "revert") revertToSummaryWait(item);
     return { summaryId };
   }
   const res = await request<{ summaryId: number }>(
@@ -504,6 +520,35 @@ export async function decideGate1(
     { method: "POST", body: JSON.stringify(body) },
   );
   return { summaryId: String(res.summaryId) };
+}
+
+/**
+ * mock 전용: 요약할 내용 없음을 되돌리면 그날 기록이 오늘의 업무에 "요약 대기"로 돌아온다.
+ * BE 는 일지를 요약 전(VALIDATED)으로 돌리고, 보드는 그 일지를 아이 × 날짜 카드로 다시 묶는다.
+ */
+function revertToSummaryWait(item: SummaryItem) {
+  const board = mock.SUMMARY_GROUP_BOARD;
+  const entries = Math.max(item.uncoveredEntries.length, 1);
+  let group = board.groups.find((g) => g.childId === item.childId && g.entryDate === item.entryDate);
+  if (!group) {
+    group = {
+      childId: item.childId,
+      childName: item.childName,
+      birthdate: mock.CHILDREN.find((c) => c.id === item.childId)?.birthDate ?? null,
+      entryDate: item.entryDate,
+      status: "ready",
+      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    };
+    board.groups.push(group);
+    board.groups.sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.childId.localeCompare(b.childId));
+  }
+  group.counts.ready += entries;
+  group.canSummarize = !group.summaryRequested;
+  group.status = groupStatusOf(group);
 }
 
 /**
@@ -1113,7 +1158,7 @@ export async function getParentChildren(): Promise<Child[]> {
 /**
  * GET /api/v1/guardians/me/home?childId=
  * childId 는 필수다 — 어느 아이를 볼지는 화면이 아이 목록에서 고른다(readSelectedChildId).
- * 서버 응답의 activity 는 일지 기능이 생길 때까지 언제나 빈 배열이다.
+ * activity 는 승인된 일지 줄과 받은 인사이트 줄을 승인 시각 최근 순으로 섞은 5줄이다 (서버가 섞고 자른다).
  */
 export async function getParentHome(childId: string): Promise<{
   child: Child;
@@ -1252,63 +1297,76 @@ export async function addInstitutionByCode(
   });
 }
 
-/** 보호자가 온보딩·동의 관리 화면에서 입력하는 돌봄 정보 저장 */
-export async function updateChildCare(childId: string, care: ChildCareInfo) {
+/**
+ * PUT /api/v1/children/{childId}/care-info — 돌봄 정보를 통째로 덮어쓴다. 서버가 앞뒤 공백을 떼고 같은 알레르기를
+ * 합친 값을 돌려준다. 조회는 아이 목록·홈의 child.care 로 한다
+ */
+export async function updateChildCare(childId: string, care: ChildCareInfo): Promise<ChildCareInfo> {
   if (mockFor("careInfo")) {
     const child = mock.CHILDREN.find((c) => c.id === childId);
     if (child) child.care = care;
-    return { ok: true };
+    return care;
   }
-  return request(`/api/v1/children/${childId}/care-info`, {
+  return request<ChildCareInfo>(`/api/v1/children/${encodeURIComponent(childId)}/care-info`, {
     method: "PUT",
     body: JSON.stringify(care),
   });
 }
 
-/** GET /api/v1/children/{childId}/journal — 타임라인/홈에 쓰는 일지 목록 (최신순) */
+/**
+ * GET /api/v1/children/{childId}/journal — 타임라인/홈에 쓰는 일지 목록. 관찰 날짜 최근 순, 같은 날은 승인
+ * 최근 순이다 (서버가 정렬한다)
+ */
 export async function getJournal(childId: string): Promise<JournalEntry[]> {
   if (mockFor("guardianJournal")) {
+    // 같은 날 안에서는 mock 배열 순서가 승인 순서다 (sort 는 안정적이다)
     return mock.JOURNAL.filter((j) => j.childId === childId).sort((a, b) =>
-      `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`),
+      b.date.localeCompare(a.date),
     );
   }
   return request(`/api/v1/children/${childId}/journal`);
 }
 
+/** GET /api/v1/journal/{id} — 볼 수 없는 일지(JOURNAL_NOT_FOUND)는 undefined. mock 과 같은 약속이다 */
 export async function getJournalEntry(id: string): Promise<JournalEntry | undefined> {
   if (mockFor("guardianJournal")) return mock.JOURNAL.find((j) => j.id === id);
-  return request(`/api/v1/journal/${id}`);
-}
-
-/** POST /api/v1/journal/{id}/flag — "이 내용이 이상해요": 기관에 재확인 요청 */
-export async function flagJournalEntry(id: string) {
-  if (mockFor("guardianJournal")) {
-    const entry = mock.JOURNAL.find((j) => j.id === id);
-    if (entry) entry.flagged = true;
-    return { ok: true };
+  try {
+    return await request<JournalEntry>(`/api/v1/journal/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === "JOURNAL_NOT_FOUND") return undefined;
+    throw err;
   }
-  return request(`/api/v1/journal/${id}/flag`, { method: "POST" });
 }
 
-/** GET /api/v1/children/{childId}/care-report?period= — 아직 리포트가 없으면 null */
-export async function getCareReport(
-  childId: string,
-  period: "weekly" | "monthly",
-): Promise<CareReport | null> {
-  if (mockFor("guardianJournal")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
-  return request(`/api/v1/children/${childId}/care-report?period=${period}`);
+/** GET /api/v1/guardians/me/insights — 내 모든 아이의 받은 인사이트, 승인 시각 최근 순 (서버가 정렬한다) */
+export async function getGuardianInsights(): Promise<GuardianInsight[]> {
+  if (mockFor("guardianInsights")) return mock.GUARDIAN_INSIGHTS.map((insight) => ({ ...insight }));
+  return request("/api/v1/guardians/me/insights");
+}
+
+/**
+ * GET /api/v1/guardians/me/insights/{insightId} — 처음 열면 열람 시각이 남는다.
+ * 볼 수 없는 글(없음 · 남의 아이 · 연결 해제로 거둬짐 → SHARING_NOT_FOUND)은 undefined. 일지 상세와 같은 약속이다
+ */
+export async function getGuardianInsight(id: string): Promise<GuardianInsight | undefined> {
+  if (mockFor("guardianInsights")) {
+    const insight = mock.GUARDIAN_INSIGHTS.find((i) => i.id === id);
+    if (!insight) return undefined;
+    insight.readAt ??= new Date().toISOString();
+    return { ...insight };
+  }
+  try {
+    return await request<GuardianInsight>(`/api/v1/guardians/me/insights/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === "SHARING_NOT_FOUND") return undefined;
+    throw err;
+  }
 }
 
 /** GET /api/v1/children/{childId}/institution-requests */
 export async function getInstitutionRequests(childId: string): Promise<InstitutionRequestItem[]> {
   if (mockFor("institutionRequests")) return mock.INSTITUTION_REQUESTS[childId] ?? [];
   return request(`/api/v1/children/${childId}/institution-requests`);
-}
-
-/** 타임라인/홈 상단 TODAY 카드 — 아이별. 없으면 null (화면에서 숨김) */
-export async function getTodaySummary(childId: string): Promise<string | null> {
-  if (mockFor("guardianJournal")) return mock.PARENT_TODAY_SUMMARY[childId] ?? null;
-  return request(`/api/v1/children/${childId}/today-summary`);
 }
 
 /** POST /api/v1/institution-requests/{id}/confirm */

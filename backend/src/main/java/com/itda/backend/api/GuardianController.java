@@ -107,7 +107,8 @@ public class GuardianController {
             description = "이 보호자와 연결된 아이 전부입니다. 동의 전·동의를 모두 끈 아이도 들어 있고, 연결된 순서입니다. "
                     + "institutions 는 아이가 지금 명부에 올라 있는 기관(기관 id 순)과 기관별 동의 상태입니다. "
                     + "동의 상태는 아이 기준이라 어느 보호자의 동의든 살아 있으면 granted 입니다. "
-                    + "school·care 는 저장하는 곳이 없어 내려주지 않습니다.")
+                    + "care 는 보호자가 적어 둔 알레르기·복용약이고 저장 전이면 빈 배열입니다(기관에는 공유하지 않음). "
+                    + "school 은 저장하는 곳이 없어 내려주지 않습니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공. 연결된 아이가 없으면 빈 배열"),
@@ -129,7 +130,9 @@ public class GuardianController {
     @GetMapping("/home")
     @Operation(summary = "보호자 홈",
             description = "아이 하나와 최근 공유 활동입니다. child 는 아이 목록의 한 항목과 같은 모양입니다. "
-                    + "최근 공유 활동(activity)은 아직 만드는 곳이 없어 언제나 빈 배열입니다.")
+                    + "최근 공유 활동(activity)은 승인된 일지 줄(kind=journal)과 받은 인사이트 줄(kind=insight)을 "
+                    + "승인 시각 최근 순으로 섞은 5줄입니다. 인사이트는 같은 기간·같은 승인 기관이면 한 줄로 묶습니다. "
+                    + "journalId 로 일지 상세를, insightId(한 편일 때만)로 인사이트 상세를 열 수 있습니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),

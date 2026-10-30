@@ -22,6 +22,9 @@ public interface ChildContextRepository extends JpaRepository<ChildContext, Long
      */
     List<ChildContext> findByChildIdOrderByIdDesc(Long childId);
 
+    /** 아동별 승인본 중 <b>최근 승인 5건</b>. 보호자 홈의 "최근 공유 활동" 이 쓴다. */
+    List<ChildContext> findTop5ByChildIdOrderByIdDesc(Long childId);
+
     /**
      * 주어진 요약들 중 <b>승인된 것</b>. 행이 있다는 것이 곧 Gate 1 통과다.
      *
