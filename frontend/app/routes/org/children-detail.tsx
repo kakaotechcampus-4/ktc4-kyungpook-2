@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLoaderData, useRevalidator } from "react-router";
+import { useLoaderData, useRevalidator } from "react-router";
 import { InviteCodeCard } from "@/components/org/InviteCodeCard";
 import { NotReadyState } from "@/components/org/NotReady";
 import {
@@ -42,14 +42,6 @@ export default function ChildDetailPage() {
       <PageHeader
         title={`아동 목록 · ${child.name}`}
         description="승인된 요약이 날짜순으로 쌓인 관찰 기록입니다"
-        right={
-          <Link
-            to="/chat"
-            className="tap inline-flex items-center rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2"
-          >
-            상담 도우미로 이동
-          </Link>
-        }
       />
 
       <Card className="mb-6">

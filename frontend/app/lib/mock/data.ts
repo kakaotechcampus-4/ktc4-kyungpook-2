@@ -1,9 +1,7 @@
 import type {
-  ActivityLog,
   BlockedItem,
   Child,
   ChildGuardian,
-  ChatTurn,
   EntryProgress,
   EvidenceSpan,
   FileProgress,
@@ -828,59 +826,6 @@ export const INBOX: InboxDetail[] = [
     readAt: "2026-10-22T13:12:00",
     content:
       "새로운 활동 시작 전 그림 카드로 순서를 보여주면 참여도가 높아집니다.",
-  },
-];
-
-/* 상담 도우미 (I-13) ───────────────────────────────── */
-
-export const CHAT_EXAMPLES: ChatTurn[] = [
-  {
-    question: "최근에 식사 거부가 줄었나요?",
-    answer:
-      "승인된 기록 기준으로, 최근 4주간 식사 거부 횟수가 줄었습니다. 손을 잡고 함께 세는 방식이 기록된 날에는 진정까지 걸린 시간이 짧았습니다.",
-    sources: [
-      { date: "2026-08-21", label: "급식실 기록" },
-      { date: "2026-08-14", label: "급식실 기록" },
-    ],
-  },
-  {
-    question: "밤에 잠을 잘 못 자나요?",
-    // 근거가 없으면 답변을 생성하지 않는다
-    answer: null,
-    sources: [],
-  },
-];
-
-/* 활동 이력 (I-14) ─────────────────────────────────── */
-
-export const ACTIVITY: ActivityLog[] = [
-  {
-    id: "al_01",
-    at: "2026-08-21 14:02",
-    actor: "박지현 선생님",
-    action: "Gate 1 승인",
-    target: "김OO · 08.21 활동일지 요약",
-  },
-  {
-    id: "al_02",
-    at: "2026-08-21 13:48",
-    actor: "박지현 선생님",
-    action: "확인 필요 큐 아동 지정",
-    target: "0821_관찰일지.docx → 김OO",
-  },
-  {
-    id: "al_03",
-    at: "2026-08-20 17:30",
-    actor: "박지현 선생님",
-    action: "Gate 2 발송 승인",
-    target: "김OO · 최근 6주 Insight → OO초등학교",
-  },
-  {
-    id: "al_04",
-    at: "2026-08-20 09:15",
-    actor: "OO초등학교",
-    action: "수신함 조회",
-    target: "김OO 관련 지원 방법",
   },
 ];
 

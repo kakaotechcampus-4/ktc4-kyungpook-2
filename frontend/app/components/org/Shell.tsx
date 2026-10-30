@@ -2,14 +2,11 @@ import type { LucideIcon } from "lucide-react";
 import {
   ClipboardCheck,
   ClipboardPlus,
-  History,
   LayoutDashboard,
   ListChecks,
   Mail,
-  MessagesSquare,
   RotateCcw,
   Send,
-  Settings,
   Sparkles,
   User,
   Users,
@@ -90,14 +87,6 @@ function nav(counts: OrgShellCounts): NavSection[] {
       items: [
         { href: "/gate2", label: "공유할 기록", icon: Send, badge: counts.gate2 }, // Gate 2 발송 검토
         { href: "/inbox", label: "메시지", icon: Mail, badge: counts.inbox }, // 수신함
-        { href: "/chat", label: "상담 지원", icon: MessagesSquare }, // 상담 도우미
-      ],
-    },
-    {
-      group: "관리",
-      items: [
-        { href: "/history", label: "업무 기록", icon: History }, // 활동 이력
-        { href: "/settings/org", label: "기관 설정", icon: Settings },
       ],
     },
   ];
