@@ -4,7 +4,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +52,6 @@ import lombok.RequiredArgsConstructor;
 public class GuardianJournalQueryService {
 
     private static final Duration NEW_FOR = Duration.ofHours(24);
-    private static final DateTimeFormatter ACTIVITY_AT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final UserService userService;
     private final ChildGuardianRepository childGuardianRepository;
@@ -108,11 +106,11 @@ public class GuardianJournalQueryService {
     }
 
     /**
-     * 보호자 홈의 "최근 공유 활동". 승인된 일지마다 한 줄, 승인 최근 순 5건이다. 시각은 승인 시각 — 기관에서 보호자에게
-     * 도착한 때다. 연결 확인은 부르는 쪽(홈)이 마쳤다.
+     * 보호자 홈의 "최근 공유 활동" 중 일지 줄. 승인된 일지마다 한 줄, 승인 최근 순 5건이다. 시각은 승인 시각 — 기관에서
+     * 보호자에게 도착한 때다. 홈이 인사이트 줄과 시각으로 섞는다. 연결 확인은 부르는 쪽(홈)이 마쳤다.
      */
     @Transactional(readOnly = true)
-    public List<ParentActivityResponse> recentActivity(Long childId) {
+    public List<ActivityLine> recentActivity(Long childId) {
         return approved(childContextRepository.findTop5ByChildIdOrderByIdDesc(childId)).stream()
                 .map(GuardianJournalQueryService::toActivity)
                 .toList();
@@ -152,15 +150,14 @@ public class GuardianJournalQueryService {
                 context.getContent());
     }
 
-    private static ParentActivityResponse toActivity(Approved approved) {
-        String journalId = String.valueOf(approved.context().getId());
+    private static ActivityLine toActivity(Approved approved) {
         LocalDate date = approved.summary().getEntryDate();
-        return new ParentActivityResponse(
-                journalId,
-                approved.context().getCreatedAt().format(ACTIVITY_AT),
+        LocalDateTime at = approved.context().getCreatedAt();
+        return new ActivityLine(at, ParentActivityResponse.journal(
+                String.valueOf(approved.context().getId()),
+                at,
                 "%s에서 %d월 %d일 일지가 도착했어요".formatted(
-                        approved.institution().getName(), date.getMonthValue(), date.getDayOfMonth()),
-                journalId);
+                        approved.institution().getName(), date.getMonthValue(), date.getDayOfMonth())));
     }
 
     private static ChildException notFound() {

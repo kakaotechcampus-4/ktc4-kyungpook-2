@@ -315,14 +315,16 @@ class GuardianJournalQueryServiceJpaTest {
         em.clear();
         LocalDateTime approvedAt = childContextRepository.findById(id).orElseThrow().getCreatedAt();
 
-        assertThat(service.recentActivity(sky))
-                .extracting(ParentActivityResponse::id, ParentActivityResponse::at,
-                        ParentActivityResponse::text, ParentActivityResponse::journalId)
-                .containsExactly(tuple(String.valueOf(id),
+        assertThat(service.recentActivity(sky)).extracting(ActivityLine::line)
+                .extracting(ParentActivityResponse::id, ParentActivityResponse::kind, ParentActivityResponse::at,
+                        ParentActivityResponse::text, ParentActivityResponse::journalId,
+                        ParentActivityResponse::insightId)
+                .containsExactly(tuple("journal-" + id, "journal",
                         "%04d-%02d-%02d %02d:%02d".formatted(approvedAt.getYear(), approvedAt.getMonthValue(),
                                 approvedAt.getDayOfMonth(), approvedAt.getHour(), approvedAt.getMinute()),
                         "햇살센터에서 8월 21일 일지가 도착했어요",
-                        String.valueOf(id)));
+                        String.valueOf(id), null));
+        assertThat(service.recentActivity(sky)).extracting(ActivityLine::at).containsExactly(approvedAt);
     }
 
     /** 관찰 날짜가 아니라 승인 순이다 — "도착한" 순서다. 최근 5건만이다. */
@@ -337,7 +339,7 @@ class GuardianJournalQueryServiceJpaTest {
                 approve(sky, LocalDate.of(2026, 8, 20), centerId, 1, "6"));
         em.clear();
 
-        assertThat(service.recentActivity(sky))
+        assertThat(service.recentActivity(sky)).extracting(ActivityLine::line)
                 .extracting(ParentActivityResponse::journalId)
                 .containsExactly(ids.reversed().subList(0, 5).stream().map(String::valueOf).toArray(String[]::new));
     }

@@ -1,5 +1,6 @@
 package com.itda.backend.api;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -165,11 +166,13 @@ class GuardianJournalApiTest {
         mockMvc.perform(get("/api/v1/guardians/me/home?childId=" + childId).cookie(auth(parent)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.activity.length()").value(1))
-                .andExpect(jsonPath("$.data.activity[0].id").value(String.valueOf(journalId)))
+                .andExpect(jsonPath("$.data.activity[0].id").value("journal-" + journalId))
+                .andExpect(jsonPath("$.data.activity[0].kind").value("journal"))
                 .andExpect(jsonPath("$.data.activity[0].text")
                         .value(organization.getName() + "에서 8월 21일 일지가 도착했어요"))
                 .andExpect(jsonPath("$.data.activity[0].at").isString())
-                .andExpect(jsonPath("$.data.activity[0].journalId").value(String.valueOf(journalId)));
+                .andExpect(jsonPath("$.data.activity[0].journalId").value(String.valueOf(journalId)))
+                .andExpect(jsonPath("$.data.activity[0].insightId").value(nullValue()));
     }
 
     // --- 오류 ---

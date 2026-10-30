@@ -27,6 +27,7 @@ import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse.ChildInstitution;
 import com.itda.backend.dto.response.child.GuardianChildResponse.LinkRequest;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
+import com.itda.backend.dto.response.child.ParentActivityResponse;
 import com.itda.backend.dto.response.consent.PendingConsentRequestResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
@@ -38,6 +39,7 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.sharing.GuardianInsightService;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -61,6 +63,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class GuardianChildQueryService {
 
+    private static final int ACTIVITY_LIMIT = 5;
+
     private final UserService userService;
     private final ChildGuardianRepository childGuardianRepository;
     private final ChildRepository childRepository;
@@ -70,6 +74,7 @@ public class GuardianChildQueryService {
     private final ChildCareInfoRepository childCareInfoRepository;
     private final ConsentStateReader consentStateReader;
     private final GuardianJournalQueryService guardianJournalQueryService;
+    private final GuardianInsightService guardianInsightService;
     private final Clock clock;
 
     /** 이 보호자와 연결된 아이 전부. 연결된 순서다. */
@@ -86,12 +91,22 @@ public class GuardianChildQueryService {
 
     /**
      * 아이 하나의 홈. 연결되지 않았거나 삭제된 아이면 403 이다 — 이유를 나누지 않는다.
-     * 최근 공유 활동은 승인된 일지마다 한 줄이다 (최근 5건, {@link GuardianJournalQueryService#recentActivity}).
+     *
+     * <p>최근 공유 활동은 승인된 일지 줄과 받은 인사이트 줄을 시각 최근 순으로 섞은 {@value #ACTIVITY_LIMIT} 줄이다 (#289).
+     * 두 쪽에서 {@value #ACTIVITY_LIMIT} 줄씩만 받아도 합쳐서 고르기에 충분하다. 시각이 같으면 합친 순서 그대로다.
      */
     @Transactional(readOnly = true)
     public GuardianHomeResponse home(String userId, Long childId) {
-        GuardianChildResponse child = linkedChild(userId, childId);
-        return new GuardianHomeResponse(child, guardianJournalQueryService.recentActivity(childId));
+        Long parentId = userService.getParentIdOf(userId);
+        GuardianChildResponse child = linkedChild(parentId, childId);
+        List<ParentActivityResponse> activity = Stream.concat(
+                        guardianJournalQueryService.recentActivity(childId).stream(),
+                        guardianInsightService.recentActivity(parentId, childId, ACTIVITY_LIMIT).stream())
+                .sorted(Comparator.comparing(ActivityLine::at).reversed())
+                .limit(ACTIVITY_LIMIT)
+                .map(ActivityLine::line)
+                .toList();
+        return new GuardianHomeResponse(child, activity);
     }
 
     /**
@@ -108,7 +123,10 @@ public class GuardianChildQueryService {
 
     /** 이 보호자와 연결된 살아 있는 아이 하나. 아니면 이유를 나누지 않고 403 이다. */
     private GuardianChildResponse linkedChild(String userId, Long childId) {
-        Long parentId = userService.getParentIdOf(userId);
+        return linkedChild(userService.getParentIdOf(userId), childId);
+    }
+
+    private GuardianChildResponse linkedChild(Long parentId, Long childId) {
         if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
             throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
         }

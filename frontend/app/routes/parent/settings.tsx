@@ -35,7 +35,18 @@ export async function clientLoader() {
 }
 
 export default function ParentSettingsPage() {
-  const { child, requests, pendingRequests, myName } = useLoaderData<typeof clientLoader>();
+  const data = useLoaderData<typeof clientLoader>();
+  // 아이가 바뀌면 화면 상태(기관 목록·확인 대화·오류)를 새로 시작한다. 기관 목록은 처음 값만 잡는 상태라, 그대로 두면
+  // 헤더에서 아이를 바꿔도 이전 아이의 기관이 남고 동의 끄기는 새 아이로 가서 화면과 요청이 어긋난다.
+  return <ParentSettingsContent key={data.child.id} {...data} />;
+}
+
+function ParentSettingsContent({
+  child,
+  requests,
+  pendingRequests,
+  myName,
+}: Awaited<ReturnType<typeof clientLoader>>) {
   const guardianLabel = myName ? `보호자 ${myName}` : "보호자";
   const [institutions, setInstitutions] = useState(child.institutions);
   const [confirming, setConfirming] = useState<string | null>(null);
