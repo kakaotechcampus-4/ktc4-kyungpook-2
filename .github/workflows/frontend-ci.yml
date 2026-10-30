@@ -1,25 +1,39 @@
-name: Frontend CI
+name: Frontend CI/CD
 
-# 프론트엔드에는 지금까지 CI 가 없었다. AI·백엔드만 워크플로가 있어서
-# `frontend/**` 만 바뀐 PR 은 **검사가 한 건도 돌지 않은 채** 머지 가능 상태가 됐다.
+# 프론트엔드에는 CI 가 없었고(#269 로 추가), CD 도 없어 develop 머지 뒤 사람이 SSM 으로
+# 들어가 직접 다시 빌드해야 했다. #270 에서 **B안(GHCR 이미지 발행)** 으로 정했다.
 #
-# ⭐ 배포는 넣지 않는다. 프론트는 CD 가 없고 서버에서 직접 다시 빌드한다
-#   (infra/README.md). 그 방식을 바꾸는 것은 이 워크플로가 결정할 일이 아니다.
+# ⭐ 왜 서버 빌드가 아니라 이미지 발행인가.
+#   EC2 가용 메모리가 3.7Gi 중 2.5Gi · Swap 0B 다 (10/30 실측). 서버에서 Vite 빌드를 돌리면
+#   자동 배포가 OOM 으로 죽을 때 프론트가 내려간 채 남는다. CI 가 이미지를 만들어 올리면
+#   서버 빌드 부하가 0 이 된다. BE·AI 와도 같은 모양이 된다.
 #
-# ⭐ `paths` 에 **이 파일 자신**을 넣는다. 워크플로를 고치는 PR 에서 그 워크플로가
-#   돌아야 바뀐 내용이 실제로 통과하는지 그 자리에서 확인된다.
+# ⭐ 대신 `VITE_*` 의 진실의 원천이 서버 `infra/docker/.env` 에서 **GitHub repo variables** 로
+#   옮겨간다. 번들에 박히는 값을 빌드하는 쪽이 CI 이기 때문이다. 서버 `.env` 의 같은 이름
+#   값들은 이제 로컬 `compose build frontend` 에만 쓰인다.
+#
+# ⭐ `paths` 에 **이 파일 자신**과 배포 스크립트를 넣는다. 목록은 deploy-frontend.sh 의
+#   service_paths 와 같아야 한다(테스트가 검사).
 
 on:
   pull_request:
     branches: [develop, main]
     paths:
       - 'frontend/**'
+      - 'infra/docker/compose.yaml'
+      - 'infra/scripts/deploy-frontend.sh'
+      - 'infra/scripts/send-deploy.py'
+      - 'infra/scripts/tests/test_frontend_deploy.py'
       - '.github/workflows/frontend-ci.yml'
       - '!frontend/**/*.md'
   push:
     branches: [develop]
     paths:
       - 'frontend/**'
+      - 'infra/docker/compose.yaml'
+      - 'infra/scripts/deploy-frontend.sh'
+      - 'infra/scripts/send-deploy.py'
+      - 'infra/scripts/tests/test_frontend_deploy.py'
       - '.github/workflows/frontend-ci.yml'
       - '!frontend/**/*.md'
   workflow_dispatch:
@@ -27,15 +41,18 @@ on:
 permissions:
   contents: read
 
-defaults:
-  run:
-    working-directory: frontend
+env:
+  IMAGE_NAME: ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-frontend
 
 jobs:
   check:
     name: Frontend typecheck and build
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    # 배포 스크립트 검사는 저장소 루트에서 돌아야 해서 기본 작업 디렉터리를 잡에 둔다.
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -59,3 +76,124 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Verify deployment scripts
+        working-directory: .
+        run: |
+          bash -n infra/scripts/deploy-frontend.sh
+          python3 -m unittest discover -s infra/scripts/tests -p 'test_frontend_deploy.py' -v
+        env:
+          REQUIRE_FLOCK_TESTS: 'true'
+
+  publish:
+    name: Publish frontend image
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.release.outputs.image }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      # 프론트는 "false" 라는 **글자**만 실연동으로 읽는다 (auth.ts·api.ts 의 `!== "false"`).
+      # 변수를 비워 두면 mock 이 켜진 채 운영에 나가고, 로그인 화면에
+      # "mock 데이터로 둘러보기" 버튼이 그대로 보인다. 정확히 true/false 만 받는다.
+      - name: Check build settings
+        env:
+          USE_MOCK: ${{ vars.USE_MOCK }}
+          VITE_AUTH_MOCK: ${{ vars.VITE_AUTH_MOCK }}
+        run: |
+          status=0
+          for name in USE_MOCK VITE_AUTH_MOCK; do
+            value=${!name}
+            case "$value" in
+              true|false) echo "$name=$value" ;;
+              *) echo "Set repository variable $name to exactly true or false (got '$value')" >&2; status=1 ;;
+            esac
+          done
+          exit "$status"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # VITE_* 는 여기서 번들에 박힌다. 서버 .env 가 아니라 이 값들이 운영에 나간다.
+          # PUBLIC_API_BASE_URL 은 비워 두는 것이 정상이다 — Caddy 가 같은 오리진의
+          # /api 를 backend 로 넘긴다. 별도 도메인으로 분리할 때만 채운다.
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.PUBLIC_API_BASE_URL }}
+            VITE_USE_MOCK=${{ vars.USE_MOCK }}
+            VITE_AUTH_MOCK=${{ vars.VITE_AUTH_MOCK }}
+          # 배포 스크립트가 revision으로 실행 중인 것보다 오래된 이미지를 거부한다.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # BE·AI 와 캐시가 섞이지 않게 scope를 나눈다.
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+      - name: Export immutable image reference
+        id: release
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: printf 'image=%s@%s\n' "$IMAGE_NAME" "$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy frontend through SSM
+    needs: publish
+    # CADDY_READY 게이트는 BE 와 같다. 운영 반영을 잠시 멈추려면 이 변수를 내린다 —
+    # CD 가 생기면 develop 머지가 곧 운영 반영이라, 사람이 끼어들 손잡이를 남겨 둔다.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop' && vars.CADDY_READY == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: frontend-develop-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      FRONTEND_IMAGE: ${{ needs.publish.outputs.image }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check deployment configuration
+        run: |
+          : "${AWS_ROLE_ARN:?Set repository variable AWS_ROLE_ARN}"
+          : "${AWS_REGION:?Set repository variable AWS_REGION}"
+          : "${EC2_INSTANCE_ID:?Set repository variable EC2_INSTANCE_ID}"
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: frontend-deploy-${{ github.run_id }}
+      - name: Deploy and wait for remote verification
+        run: |
+          python3 infra/scripts/send-deploy.py \
+            --service frontend \
+            --commit "$GITHUB_SHA" \
+            --image "$FRONTEND_IMAGE" \
+            --instance-id "$EC2_INSTANCE_ID" \
+            --region "$AWS_REGION"
