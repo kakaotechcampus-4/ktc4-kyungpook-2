@@ -15,8 +15,7 @@ import { readSelectedChildId } from "@/lib/selectedChild";
 export async function clientLoader() {
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  // 아이·기관·최근 공유 활동만 실서버다. 일지·기관 요청은 서버에 생기기 전까지 null 로 받아
-  // mock 을 진짜 아이 옆에 띄우지 않는다 (loadIfReady).
+  // 일지·기관 요청은 스위치가 꺼져 있으면 null 로 받아 mock 을 진짜 아이 옆에 띄우지 않는다 (loadIfReady).
   const [{ child, activity }, journal, pending] = await Promise.all([
     getParentHome(childId),
     loadIfReady("guardianJournal", () => getJournal(childId)),
@@ -94,7 +93,7 @@ export default function ParentHomePage() {
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold">{j.institution.name}</span>
                   <span className="line-clamp-2 block text-[14px] leading-6 text-ink2">
-                    {j.summary}
+                    {j.content}
                   </span>
                 </span>
               </Link>

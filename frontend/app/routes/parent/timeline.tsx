@@ -11,7 +11,9 @@ import {
   isReady,
   loadIfReady,
 } from "@/lib/api";
+import { todayDate } from "@/lib/datetime";
 import { readSelectedChildId } from "@/lib/selectedChild";
+import type { Institution } from "@/lib/types";
 
 export async function clientLoader() {
   // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
@@ -41,15 +43,26 @@ function TimelinePage() {
   // 같은 유형(예: 센터) 기관이 여러 곳이어도 섞이지 않도록.
   const filter = searchParams.get("institution") ?? "all";
 
-  const latest = journal[0];
-  const latestDate = latest ? new Date(latest.date) : new Date();
-  const dateLabel = `${latestDate.getMonth() + 1}월 ${latestDate.getDate()}일 ${WEEKDAYS[latestDate.getDay()]}요일`;
+  // 일지에는 시각이 없어 날짜가 유일한 시간 정보다. "오늘"은 진짜 오늘 날짜일 때만 쓴다.
+  const today = todayDate();
+  const now = new Date();
+  const dateLabel = `${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAYS[now.getDay()]}요일`;
+
+  // 명부에서 빠진 기관의 지난 일지도 보이므로, 그 기관으로도 거를 수 있어야 한다.
+  // 지금 기관을 먼저(아이 목록 순서), 일지에만 남은 기관을 그 뒤에 기관 id 순으로 둔다.
+  const current = child.institutions.map(({ institution }) => institution);
+  const past = journal
+    .map((j) => j.institution)
+    .filter((inst, i, all) => all.findIndex((o) => o.id === inst.id) === i)
+    .filter((inst) => !current.some((c) => c.id === inst.id))
+    .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+  const filterInstitutions: Institution[] = [...current, ...past];
 
   const filtered = journal.filter(
     (j) => filter === "all" || j.institution.id === filter,
   );
   const groups = filtered.reduce<Record<string, typeof filtered>>((acc, j) => {
-    const label = j.date === latest?.date ? "오늘" : j.date.slice(5).replace("-", ".");
+    const label = j.date === today ? "오늘" : j.date.slice(5).replace("-", ".");
     (acc[label] ??= []).push(j);
     return acc;
   }, {});
@@ -82,7 +95,7 @@ function TimelinePage() {
         >
           전체
         </button>
-        {child.institutions.map(({ institution }) => (
+        {filterInstitutions.map((institution) => (
           <button
             key={institution.id}
             onClick={() => setFilter(institution.id)}
@@ -115,11 +128,8 @@ function TimelinePage() {
                       </span>
                     ) : null}
                   </div>
-                  <p className="mb-3 text-[15px] leading-6">{j.summary}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="rounded-full bg-surface2 px-2.5 py-1 text-[12px] font-semibold text-ink2">
-                      {j.tag}
-                    </span>
+                  <p className="mb-3 line-clamp-2 text-[15px] leading-6">{j.content}</p>
+                  <div className="flex justify-end">
                     <Link
                       to={`/parent/journal/${j.id}`}
                       className="text-[14px] font-semibold text-accentink"
