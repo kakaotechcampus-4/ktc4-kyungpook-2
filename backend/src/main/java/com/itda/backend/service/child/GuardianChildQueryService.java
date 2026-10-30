@@ -15,12 +15,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildCareInfo;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.child.ChildOrganizationRequest;
 import com.itda.backend.domain.child.ChildOrganizationRequestStatus;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.dto.response.child.ChildCareInfoResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse.ChildInstitution;
 import com.itda.backend.dto.response.child.GuardianChildResponse.LinkRequest;
@@ -29,6 +31,7 @@ import com.itda.backend.dto.response.consent.PendingConsentRequestResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
+import com.itda.backend.repository.child.ChildCareInfoRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildOrganizationRequestRepository;
 import com.itda.backend.repository.child.ChildRepository;
@@ -44,8 +47,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>동의 전·동의를 모두 끈 아이도 넣는다. 설정 화면에서 기관을 다시 켜거나 연결을 끊으려면 목록에 보여야 한다.
  *
- * <p>아이가 몇 명이든 조회 횟수가 같다. 연결 → 아이 → 명부 → 연결 요청 → 기관 → 동의 순서로 한 번씩
- * {@code IN} 조회한다.
+ * <p>아이가 몇 명이든 조회 횟수가 같다. 연결 → 아이 → 명부 → 연결 요청 → 기관 → 동의 → 돌봄 정보 순서로 한 번씩
+ * {@code IN} 조회한다. 돌봄 정보는 저장한 적이 없으면 빈 배열로 싣는다.
  *
  * <p>기관 코드로 연결을 요청해 기관의 수락을 기다리는 기관은 {@code linkRequests} 로 따로 싣는다. 아직 명부에 없어
  * 동의할 수 없는 기관이라 {@code institutions} 와 섞지 않는다.
@@ -64,6 +67,7 @@ public class GuardianChildQueryService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
     private final ChildOrganizationRequestRepository childOrganizationRequestRepository;
+    private final ChildCareInfoRepository childCareInfoRepository;
     private final ConsentStateReader consentStateReader;
     private final GuardianJournalQueryService guardianJournalQueryService;
     private final Clock clock;
@@ -130,6 +134,8 @@ public class GuardianChildQueryService {
                 .collect(Collectors.groupingBy(ChildOrganizationRequest::getChildId));
         Map<Long, Organization> organizations = organizationsOf(enrolled, requested);
         Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
+        Map<Long, ChildCareInfo> careInfos = childCareInfoRepository.findByChildIdIn(childIds).stream()
+                .collect(Collectors.toMap(ChildCareInfo::getChildId, Function.identity()));
 
         return childIds.stream()
                 .map(children::get)
@@ -138,7 +144,8 @@ public class GuardianChildQueryService {
                         enrolled.getOrDefault(child.getId(), List.of()),
                         requested.getOrDefault(child.getId(), List.of()),
                         organizations,
-                        consents.getOrDefault(child.getId(), Map.of())))
+                        consents.getOrDefault(child.getId(), Map.of()),
+                        careInfos.get(child.getId())))
                 .toList();
     }
 
@@ -158,7 +165,7 @@ public class GuardianChildQueryService {
 
     private GuardianChildResponse toResponse(Child child, List<Long> organizationIds,
             List<ChildOrganizationRequest> requests, Map<Long, Organization> organizations,
-            Map<Long, ConsentState> consentOfChild) {
+            Map<Long, ConsentState> consentOfChild, ChildCareInfo careInfo) {
         List<ChildInstitution> institutions = organizationIds.stream()
                 .distinct()
                 // 기관 행이 사라진 명부 항목은 뺀다. 이름을 모르는 기관을 화면에 올리지 않는다 (Gate 2 공유 대상과 같다).
@@ -174,7 +181,8 @@ public class GuardianChildQueryService {
                 child.getBirthdate().toString(),
                 child.getStatus(),
                 institutions,
-                linkRequestsOf(requests, organizations));
+                linkRequestsOf(requests, organizations),
+                careInfo == null ? ChildCareInfoResponse.empty() : ChildCareInfoResponse.from(careInfo));
     }
 
     /** 기관마다 가장 먼저 요청한 시각 하나. 엄마·아빠가 같은 기관에 요청했어도 한 줄이다. 요청은 먼저 낸 순서로 온다. */

@@ -107,7 +107,8 @@ public class GuardianController {
             description = "이 보호자와 연결된 아이 전부입니다. 동의 전·동의를 모두 끈 아이도 들어 있고, 연결된 순서입니다. "
                     + "institutions 는 아이가 지금 명부에 올라 있는 기관(기관 id 순)과 기관별 동의 상태입니다. "
                     + "동의 상태는 아이 기준이라 어느 보호자의 동의든 살아 있으면 granted 입니다. "
-                    + "school·care 는 저장하는 곳이 없어 내려주지 않습니다.")
+                    + "care 는 보호자가 적어 둔 알레르기·복용약이고 저장 전이면 빈 배열입니다(기관에는 공유하지 않음). "
+                    + "school 은 저장하는 곳이 없어 내려주지 않습니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공. 연결된 아이가 없으면 빈 배열"),
