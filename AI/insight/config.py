@@ -63,6 +63,7 @@ DROP_ADVICE_TAIL = True        # 끝에 조언·활용 문장을 붙이지 않�
 RELATE_RECORDS = True          # 기록 하나를 다시 말하지 않는다. 묶거나 비교한다
 NEED_DIFFERENCE = True         # 같은 행동이 겹치기만 해서는 쓰지 않는다 (v0.8)
 PLAIN_TONE = True              # "~했다" 로 끝낸다. 실데이터 v1 에서 "~했습니다" 가 섞임 (v0.9.3)
+DROP_HEALTH_ONLY = True        # 건강 상태만으로 쓰지 않는다. 실데이터 v2 에서 코로나 증상 두 기록을 묶음 (v0.9.4)
 
 #: 동기화 테스트가 CRITERIA §5 표와 대조할 목록.
 WRITING_RULE_FLAGS = (
@@ -81,6 +82,7 @@ WRITING_RULE_FLAGS = (
     "RELATE_RECORDS",
     "NEED_DIFFERENCE",
     "PLAIN_TONE",
+    "DROP_HEALTH_ONLY",
 )
 
 
@@ -107,3 +109,10 @@ LUNA_CHAT_PATH = CHAT_PATH
 
 #: 호출 제한시간만 에이전트마다 다르다.
 LUNA_TIMEOUT = 60.0
+
+#: 생각 한도에 걸렸을 때만 쓰는 생각의 양. Luna 프록시는 출력(생각 + 답)을 2000 토큰까지만
+#: 허용해서 한도를 늘릴 수 없다 (max_completion_tokens 4000 도 400, 스트리밍이 아닌 응답의 상한).
+#: 2026-10-30 실데이터: 긴 입력에서 생각에만 2000 을 다 써서 답이 비었다 (finish_reason=length).
+#: 처음부터 low 로 두면 실패는 0 이 됐지만 4~6월 정답 패턴이 9/10 → 7/10, 기관 간 인사이트가
+#: 9 → 7 로 줄었다 (v3). 그래서 보통은 기본값으로 생각하고, 한도에 걸렸을 때만 낮춘다.
+LUNA_REASONING_EFFORT_ON_OVERFLOW = "low"
