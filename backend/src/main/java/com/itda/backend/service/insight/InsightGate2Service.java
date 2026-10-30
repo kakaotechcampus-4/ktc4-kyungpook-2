@@ -113,8 +113,9 @@ public class InsightGate2Service {
     /**
      * 승인한다. 그 아이에 연결된 보호자마다 열람 권한 한 줄을 만든다.
      *
-     * <p><b>보호자가 한 명도 없으면 아무도 못 본다.</b> 오류가 아니라 정상이다 — 초대가 아직 수락되지 않은
-     * 아이가 있다. 다만 교사는 "보냈다" 고 믿으므로 로그를 남긴다 (CLAUDE.md Auditability).
+     * <p><b>보호자가 한 명도 없으면 지금은 아무도 못 본다.</b> 오류가 아니라 정상이다 — 초대가 아직 수락되지 않은
+     * 아이가 있다. 다만 교사는 "보냈다" 고 믿으므로 로그를 남긴다 (CLAUDE.md Auditability). 나중에 연결되는 보호자는
+     * 초대를 수락할 때 {@link InsightAccessGranter} 가 연다 (#287).
      */
     private ApprovalDecision approve(InsightResult insight, Organization primary) {
         insight.approveGate2();
