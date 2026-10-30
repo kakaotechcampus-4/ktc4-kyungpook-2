@@ -28,6 +28,15 @@ public interface ChildRepository extends JpaRepository<Child, Long> {
     @Query("select c from Child c where c.id = :id")
     Optional<Child> findByIdForUpdate(@Param("id") Long id);
 
+    /**
+     * 인사이트 열람(보호자 단건 · 기관 수신함 단건)용 공유 잠금. 권한을 바꾸는 쪽(동의 철회, 보호자 연결 해제,
+     * Gate 2 승인)이 모두 이 행을 {@link #findByIdForUpdate} 로 먼저 잠그므로 열람과 줄을 선다 — 철회가 먼저
+     * 커밋되면 열람은 거둔 권한을 보고, 열람이 먼저면 철회는 열람이 끝난 뒤 권한을 거둔다. 열람끼리는 서로 막지 않는다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("select c from Child c where c.id = :id")
+    Optional<Child> findByIdForShare(@Param("id") Long id);
+
     // FK/연관관계 없이(§16 원칙) child_organization을 평범한 Long 컬럼으로만 이어서 조회한다.
     // 이름 그대로 동의 필터가 없다 — 화면용 명부(O-10)는 pending_consent도
     // 같이 보여주고 화면에서 걸러야 하기 때문(api-spec.md O-11). AI 매칭 명부처럼 동의 없는
