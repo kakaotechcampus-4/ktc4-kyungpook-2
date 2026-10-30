@@ -8,7 +8,7 @@ import type {
   EntryProgress,
   EvidenceSpan,
   FileProgress,
-  InboxItem,
+  InboxDetail,
   Insight,
   Institution,
   InstitutionRequestItem,
@@ -696,32 +696,42 @@ export const INSIGHTS: Insight[] = [
 
 /* 수신함 (I-12) ────────────────────────────────────── */
 
-export const INBOX: InboxItem[] = [
+// 단건(O-51)이 본문까지 주므로 mock 은 본문을 함께 들고 있다. 목록(getInbox)은 본문을 떼고 준다.
+export const INBOX: InboxDetail[] = [
   {
     id: "in_01",
-    from: SCHOOL,
+    childId: "child_1088",
     childName: "김OO",
-    receivedAt: "방금 전",
+    externalId: "C-1088",
+    from: SCHOOL,
+    period: "2026년 10월 4주차",
+    receivedAt: "2026-10-29T15:20:00",
+    readAt: null,
     content:
       "급식 시간 소음에 반응할 때, 손을 잡고 숫자를 세면 진정에 도움이 됩니다.",
-    read: false,
   },
   {
     id: "in_02",
-    from: ASSISTANT,
+    childId: "child_1088",
     childName: "김OO",
-    receivedAt: "2시간 전",
+    externalId: "C-1088",
+    from: ASSISTANT,
+    period: "2026년 10월 4주차",
+    receivedAt: "2026-10-29T10:05:00",
+    readAt: null,
     content: "이동 전 5분 전에 미리 안내하면 전환 시 불안이 줄어듭니다.",
-    read: false,
   },
   {
     id: "in_03",
+    childId: "child_2044",
+    childName: "최OO",
+    externalId: "C-2044",
     from: SCHOOL,
-    childName: "이OO",
-    receivedAt: "어제",
+    period: "2026년 10월 3주차",
+    receivedAt: "2026-10-22T09:40:00",
+    readAt: "2026-10-22T13:12:00",
     content:
       "새로운 활동 시작 전 그림 카드로 순서를 보여주면 참여도가 높아집니다.",
-    read: true,
   },
 ];
 

@@ -49,7 +49,7 @@ export async function clientLoader() {
       gate1: gate1?.filter((s) => s.gate1Status === "pending").length ?? null,
       // getInsights 기본값이 pending 이고, BE 가 우리 기관이 승인 주체인 것만 준다
       gate2: insights?.length ?? null,
-      inbox: inbox?.filter((i) => !i.read).length ?? null,
+      inbox: inbox?.filter((i) => !i.readAt).length ?? null,
     },
   };
 }

@@ -310,7 +310,8 @@ interface ParentActivity {
 | `cancelInvitation` | `(childId: string, invitationId: string) => Promise<void>` — O-17 | I-09-1 |
 | `getChildGuardians` | `(childId: string) => Promise<ChildGuardian[]>` — O-18 | I-09-1 |
 | `unlinkGuardian` | `(childId: string, guardianUserId: string) => Promise<void>` — O-19. 모든 기관에서 끊김 | I-09-1 |
-| `getInbox` | `() => Promise<InboxItem[]>` | I-12, 사이드바 배지 |
+| `getInbox` | `() => Promise<InboxItem[]>` — O-50. 본문 없음, `readAt` 이 null 이면 안 읽음 | I-12, 사이드바 배지 |
+| `getInboxItem` | `(insightId: string) => Promise<InboxDetail>` — O-51. 본문 포함, 처음 열면 열람 시각 기록. 볼 수 없는 글은 404 `SHARING_NOT_FOUND` | I-12 상세 |
 | `askChat` | `(childId: string, question: string) => Promise<ChatTurn>` | I-13 |
 | `getActivity` | `() => Promise<ActivityLog[]>` | I-14 |
 
