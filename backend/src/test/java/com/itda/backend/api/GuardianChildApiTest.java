@@ -128,7 +128,11 @@ class GuardianChildApiTest {
                 .andExpect(jsonPath("$.data[0].institutions[0].consent").value("not_granted"))
                 // 저장하는 곳이 없어 키째 뺀다. doesNotExist() 는 "school": null 이어도 통과해서 쓰지 않는다.
                 .andExpect(jsonPath("$.data[0].school").doesNotHaveJsonPath())
-                .andExpect(jsonPath("$.data[0].care").doesNotHaveJsonPath());
+                // 돌봄 정보는 늘 싣는다. 저장한 적이 없으면 빈 배열 둘이다 (null 은 프론트 타입이 허용하지 않는다)
+                .andExpect(jsonPath("$.data[0].care.allergies").isArray())
+                .andExpect(jsonPath("$.data[0].care.allergies").isEmpty())
+                .andExpect(jsonPath("$.data[0].care.medications").isArray())
+                .andExpect(jsonPath("$.data[0].care.medications").isEmpty());
     }
 
     @Test
@@ -150,7 +154,8 @@ class GuardianChildApiTest {
                 .andExpect(jsonPath("$.data.child.status").value("active"))
                 .andExpect(jsonPath("$.data.child.institutions[0].consent").value("granted"))
                 .andExpect(jsonPath("$.data.child.school").doesNotHaveJsonPath())
-                .andExpect(jsonPath("$.data.child.care").doesNotHaveJsonPath())
+                .andExpect(jsonPath("$.data.child.care.allergies").isEmpty())
+                .andExpect(jsonPath("$.data.child.care.medications").isEmpty())
                 .andExpect(jsonPath("$.data.activity").isArray())
                 .andExpect(jsonPath("$.data.activity").isEmpty());
     }

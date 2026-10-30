@@ -1,7 +1,7 @@
 import { useState, useTransition } from "react";
 import { Link, redirect, useLoaderData, useNavigate } from "react-router";
 import { grantRole, isOnboarded, markOnboarded } from "@/lib/auth";
-import { ApiError, getConsentPreview, grantConsent, isReady, unlinkChild } from "@/lib/api";
+import { ApiError, getConsentPreview, grantConsent, unlinkChild } from "@/lib/api";
 import { InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
@@ -94,8 +94,8 @@ export default function ParentConsentPage() {
       } else {
         grantRole("parent"); // 쿼리로 바로 들어온 경우를 위한 보정
         markOnboarded();
-        // 돌봄 정보는 서버에 저장할 곳이 생기기 전까지 건너뛴다 — "준비 중" 화면에서 온보딩을 끝내지 않게
-        navigate(isReady("careInfo") ? "/parent/care-info?onboarding=1" : "/parent");
+        // 돌봄 정보는 기관에 공유하지 않아 온보딩에서 받지 않는다 — 설정 › 아이 정보에서 적는다
+        navigate("/parent");
       }
     });
   }
@@ -144,7 +144,7 @@ export default function ParentConsentPage() {
 
   return (
     <div className="flex flex-col gap-5 pb-24">
-      {showSteps ? <StepProgress step={3} total={4} /> : null}
+      {showSteps ? <StepProgress step={3} total={3} /> : null}
 
       <p className="rounded-2xl bg-accentsoft px-4 py-3 text-[15px] leading-6 text-accentink">
         <b className="font-semibold">{institution.name}</b>에서 {child.name} 학생을

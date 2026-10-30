@@ -23,12 +23,13 @@ const TABS = [
       p.startsWith("/parent/settings") ||
       p.startsWith("/parent/consent/manage") ||
       p.startsWith("/parent/notifications") ||
-      p.startsWith("/parent/institution-requests"),
+      p.startsWith("/parent/institution-requests") ||
+      p.startsWith("/parent/care-info"),
   },
 ];
 
-/** 온보딩(초대 진입·확인 동의·돌봄 정보 입력) 중에는 하단 탭을 숨긴다 — 아직 첫 설정이 안 끝났다. */
-const ONBOARDING = ["/parent/invite", "/parent/consent", "/parent/care-info"];
+/** 온보딩(초대 진입·확인 동의) 중에는 하단 탭을 숨긴다 — 아직 첫 설정이 안 끝났다. */
+const ONBOARDING = ["/parent/invite", "/parent/consent"];
 
 /** 학부모 화면은 SMS 링크로 들어오는 모바일 브라우저가 주 환경이다. */
 export function ParentShell({ children }: { children: React.ReactNode }) {

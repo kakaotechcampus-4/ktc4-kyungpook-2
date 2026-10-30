@@ -19,6 +19,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildCareInfo;
+import com.itda.backend.domain.child.ChildCareInfo.Medication;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.child.ChildStatus;
 import com.itda.backend.domain.consent.ConsentField;
@@ -30,6 +32,7 @@ import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
+import com.itda.backend.dto.response.child.ChildCareInfoResponse.MedicationResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianChildResponse.ChildInstitution;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
@@ -212,6 +215,32 @@ class GuardianChildQueryServiceJpaTest {
         assertThat(childOf(service.children(MOM_PRINCIPAL), sea).institutions())
                 .extracting(institution -> institution.institution().id())
                 .containsExactly(String.valueOf(centerId));
+    }
+
+    // --- 돌봄 정보 ---
+
+    @Test
+    void 저장한_돌봄_정보를_아이마다_싣는다() {
+        em.persistAndFlush(ChildCareInfo.of(sky, List.of("땅콩"), List.of(new Medication("○○정", "점심 식후")), DAD));
+        em.clear();
+
+        List<GuardianChildResponse> children = service.children(MOM_PRINCIPAL);
+
+        assertThat(childOf(children, sky).care().allergies()).containsExactly("땅콩");
+        assertThat(childOf(children, sky).care().medications())
+                .extracting(MedicationResponse::name, MedicationResponse::time)
+                .containsExactly(tuple("○○정", "점심 식후"));
+        // 저장한 적이 없는 아이는 빈 배열 둘이다
+        assertThat(childOf(children, sea).care().allergies()).isEmpty();
+        assertThat(childOf(children, sea).care().medications()).isEmpty();
+    }
+
+    @Test
+    void 홈에도_돌봄_정보가_실린다() {
+        em.persistAndFlush(ChildCareInfo.of(sea, List.of("계란"), List.of(), MOM));
+        em.clear();
+
+        assertThat(service.home(MOM_PRINCIPAL, sea).child().care().allergies()).containsExactly("계란");
     }
 
     // --- 홈 ---

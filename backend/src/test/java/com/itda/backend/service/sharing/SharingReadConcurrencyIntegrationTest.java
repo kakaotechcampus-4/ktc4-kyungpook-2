@@ -1,26 +1,16 @@
 package com.itda.backend.service.sharing;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.sql.DataSource;
 
@@ -61,6 +51,8 @@ import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
 import com.itda.backend.dto.response.sharing.InboxDetailResponse;
+import com.itda.backend.fixture.LockContention;
+import com.itda.backend.fixture.LockContention.Held;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
@@ -80,7 +72,7 @@ import com.itda.backend.service.invitation.ChildGuardianService;
  * 인사이트 단건 열람이 다른 열람·철회와 겹칠 때를 PostgreSQL 에서 재현한다 (#273). 기관 수신함과 보호자 단건이
  * 같은 열람 경로({@link SharingReadRecorder})를 쓰므로 둘 다 본다.
  *
- * <p>먼저 가는 쪽은 바깥 트랜잭션 안에서 실제 서비스를 불러 <b>커밋하지 않고 잠금을 쥔 채</b> 멈춘다 — 서비스
+ * <p>방식은 {@link LockContention} 이다. 먼저 가는 쪽은 바깥 트랜잭션 안에서 실제 서비스를 불러 <b>커밋하지 않고 잠금을 쥔 채</b> 멈춘다 — 서비스
  * 트랜잭션이 바깥에 합류한다. 뒤에 오는 쪽은 MockMvc 로 보내 보안 필터부터 거친다. 뒤의 요청이 먼저 쪽 때문에
  * 멈췄는지 {@code pg_blocking_pids} 로 확인한 뒤 먼저 쪽을 커밋하고, HTTP 응답과 DB 상태를 함께 본다.
  *
@@ -132,8 +124,11 @@ class SharingReadConcurrencyIntegrationTest {
     private Long centerGrantId;
     private Long momGrantId;
 
+    private LockContention contention;
+
     @BeforeEach
     void setUp() {
+        contention = new LockContention(transactionTemplate, entityManager, dataSource);
         Organization school = organizationRepository.save(
                 Organization.of("햇살특수학교", OrganizationType.SCHOOL, OrganizationFixture.nextBusinessNumber()));
         center = organizationRepository.save(OrganizationFixture.center());
@@ -180,7 +175,7 @@ class SharingReadConcurrencyIntegrationTest {
     /** 같은 권한 행의 열람 시각 UPDATE 끼리는 행 잠금에서 기다린다. 뒤의 UPDATE 는 조건을 다시 보고 0행이 된다. */
     @Test
     void 수신함_동시_열람은_처음_시각을_남기고_둘_다_그_시각을_돌려준다() throws Exception {
-        Held<InboxDetailResponse> held = firstHoldsThen(
+        Held<InboxDetailResponse> held = contention.firstHoldsThen(
                 () -> institutionInboxService.getInboxItem(principal(centerStaff), insightId),
                 () -> mockMvc.perform(get(inboxItem()).cookie(auth(centerStaff))).andReturn());
 
@@ -192,7 +187,7 @@ class SharingReadConcurrencyIntegrationTest {
 
     @Test
     void 수신함_철회가_먼저면_열람은_404_이고_열람_시각이_없다() throws Exception {
-        Held<Object> held = firstHoldsThen(
+        Held<Object> held = contention.firstHoldsThen(
                 () -> {
                     consentService.update(principal(mom), childId, center.getId(), ConsentAction.REVOKE, null);
                     return null;
@@ -207,7 +202,7 @@ class SharingReadConcurrencyIntegrationTest {
 
     @Test
     void 수신함_열람이_먼저면_200_과_열람_시각을_남긴_뒤_철회된다() throws Exception {
-        Held<InboxDetailResponse> held = firstHoldsThen(
+        Held<InboxDetailResponse> held = contention.firstHoldsThen(
                 () -> institutionInboxService.getInboxItem(principal(centerStaff), insightId),
                 () -> mockMvc.perform(withCsrf(put("/api/v1/children/" + childId + "/consent-scopes/"
                                 + center.getId()), auth(mom))
@@ -227,7 +222,7 @@ class SharingReadConcurrencyIntegrationTest {
 
     @Test
     void 보호자_동시_열람은_처음_시각을_남기고_둘_다_그_시각을_돌려준다() throws Exception {
-        Held<GuardianInsightResponse> held = firstHoldsThen(
+        Held<GuardianInsightResponse> held = contention.firstHoldsThen(
                 () -> guardianInsightService.getInsight(principal(mom), insightId),
                 () -> mockMvc.perform(get(guardianItem()).cookie(auth(mom))).andReturn());
 
@@ -239,7 +234,7 @@ class SharingReadConcurrencyIntegrationTest {
 
     @Test
     void 보호자_연결_해제가_먼저면_열람은_404_이고_열람_시각이_없다() throws Exception {
-        Held<Object> held = firstHoldsThen(
+        Held<Object> held = contention.firstHoldsThen(
                 () -> {
                     childGuardianService.unlinkBySelf(principal(mom), childId);
                     return null;
@@ -254,7 +249,7 @@ class SharingReadConcurrencyIntegrationTest {
 
     @Test
     void 보호자_열람이_먼저면_200_과_열람_시각을_남긴_뒤_연결이_끊긴다() throws Exception {
-        Held<GuardianInsightResponse> held = firstHoldsThen(
+        Held<GuardianInsightResponse> held = contention.firstHoldsThen(
                 () -> guardianInsightService.getInsight(principal(mom), insightId),
                 () -> mockMvc.perform(withCsrf(delete("/api/v1/guardians/me/children/" + childId), auth(mom)))
                         .andReturn());
@@ -267,73 +262,6 @@ class SharingReadConcurrencyIntegrationTest {
     }
 
     // --- 도구 ---
-
-    private record Held<T>(T first, MvcResult second) {
-    }
-
-    /**
-     * {@code first} 를 바깥 트랜잭션 안에서 끝내고 커밋하지 않은 채 잡아 둔다. 그동안 {@code second} 를 넣고, 그것이
-     * {@code first} 의 잠금 때문에 멈췄는지 확인한 뒤 커밋한다.
-     */
-    private <T> Held<T> firstHoldsThen(Callable<T> first, Callable<MvcResult> second) throws Exception {
-        CountDownLatch ran = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        AtomicInteger firstPid = new AtomicInteger();
-        ExecutorService executor = Executors.newFixedThreadPool(2);
-        try {
-            Future<T> firstResult = executor.submit(() -> transactionTemplate.execute(status -> {
-                firstPid.set(((Number) entityManager.createNativeQuery("SELECT pg_backend_pid()")
-                        .getSingleResult()).intValue());
-                try {
-                    T value = first.call();
-                    ran.countDown();
-                    if (!release.await(10, TimeUnit.SECONDS)) {
-                        throw new IllegalStateException("먼저 쪽을 풀어 주지 않았습니다.");
-                    }
-                    return value;
-                } catch (RuntimeException e) {
-                    throw e;
-                } catch (Exception e) {
-                    throw new IllegalStateException(e);
-                }
-            }));
-            if (!ran.await(10, TimeUnit.SECONDS)) {
-                firstResult.get(1, TimeUnit.SECONDS);
-                fail("먼저 쪽이 끝나지 않았습니다.");
-            }
-            Future<MvcResult> secondResult = executor.submit(second);
-            waitUntilBlockedBy(firstPid.get());
-            release.countDown();
-            T value = firstResult.get(10, TimeUnit.SECONDS);
-            return new Held<>(value, secondResult.get(10, TimeUnit.SECONDS));
-        } finally {
-            release.countDown();
-            executor.shutdownNow();
-            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
-                fail("작업 스레드가 끝나지 않았습니다.");
-            }
-        }
-    }
-
-    /** 먼저 쪽 세션 때문에 막힌 세션이 생길 때까지 기다린다. 잠금을 거치지 않고 끝났으면 실패한다. */
-    private void waitUntilBlockedBy(int holderPid) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        try (Connection observer = dataSource.getConnection();
-             PreparedStatement statement = observer.prepareStatement(
-                     "SELECT count(*) FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))")) {
-            statement.setInt(1, holderPid);
-            while (System.nanoTime() < deadline) {
-                try (ResultSet resultSet = statement.executeQuery()) {
-                    resultSet.next();
-                    if (resultSet.getInt(1) > 0) {
-                        return;
-                    }
-                }
-                Thread.sleep(50);
-            }
-        }
-        fail("뒤의 요청이 먼저 쪽 잠금 때문에 멈추지 않았습니다. 잠금을 거치지 않고 끝났을 수 있습니다.");
-    }
 
     private SharingHistory grant(Long grantId) {
         return sharingHistoryRepository.findById(grantId).orElseThrow();

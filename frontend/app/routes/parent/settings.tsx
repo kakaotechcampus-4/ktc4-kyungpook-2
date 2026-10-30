@@ -213,15 +213,6 @@ export default function ParentSettingsPage() {
             <span className="text-[14px] text-muted">{careReady ? `${careCount}개` : "준비 중"} ›</span>
           </Link>
           <Link
-            to="/parent/care-info"
-            className="tap flex items-center justify-between border-b border-line px-4 py-3.5"
-          >
-            <span className="text-[15px]">주간 스케줄</span>
-            <span className="text-[14px] text-muted">
-              {careReady ? `${child.care?.weeklySchedule.length ?? 0}건` : "준비 중"} ›
-            </span>
-          </Link>
-          <Link
             to="/parent/institution-requests"
             className="tap flex items-center justify-between px-4 py-3.5"
           >

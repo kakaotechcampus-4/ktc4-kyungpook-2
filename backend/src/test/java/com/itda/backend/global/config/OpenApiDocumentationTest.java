@@ -310,7 +310,7 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.InstitutionResponse.properties.verified").exists());
 	}
 
-	/** 보호자 아이 목록·홈(G-10·G-11). school·care 는 저장하는 곳이 없어 스키마에도 없어야 한다. */
+	/** 보호자 아이 목록·홈(G-10·G-11). school 은 저장하는 곳이 없어 스키마에도 없어야 한다. care 는 돌봄 정보(G-13)다. */
 	@Test
 	void guardianChildApisAreDocumented() throws Exception {
 		String children = "$.paths['/api/v1/guardians/me/children']";
@@ -330,7 +330,8 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(home + ".get.responses.403.description").value(containsString("FORBIDDEN")))
 				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.institutions").exists())
 				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.school").doesNotHaveJsonPath())
-				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.care").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.care['$ref']")
+						.value(containsString("ChildCareInfoResponse")))
 				.andExpect(jsonPath("$.components.schemas.ChildInstitution.properties.consent").exists())
 				.andExpect(jsonPath("$.components.schemas.GuardianHomeResponse.properties.activity.items['$ref']")
 						.value(containsString("ParentActivityResponse")))
@@ -355,6 +356,25 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(pending + ".get.responses.403.description").value(containsString("FORBIDDEN")))
 				.andExpect(jsonPath("$.components.schemas.PendingConsentRequestResponse.properties.length()").value(1))
 				.andExpect(jsonPath("$.components.schemas.PendingConsentRequestResponse.properties.institution").exists());
+	}
+
+	@Test
+	void careInfoApiIsDocumented() throws Exception {
+		String careInfo = "$.paths['/api/v1/children/{childId}/care-info']";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(careInfo + ".put.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(careInfo + ".put.responses.200").exists())
+				.andExpect(jsonPath(careInfo + ".put.responses.400.description").value(containsString("INVALID_REQUEST")))
+				.andExpect(jsonPath(careInfo + ".put.responses.401").exists())
+				.andExpect(jsonPath(careInfo + ".put.responses.403.description").value(containsString("FORBIDDEN")))
+				.andExpect(jsonPath("$.components.schemas.UpdateCareInfoRequest.required", hasItems("allergies", "medications")))
+				// 복용 시간은 빠지면 빈 문자열로 받는다. 필수로 표시되면 계약과 어긋난다.
+				.andExpect(jsonPath("$.components.schemas.MedicationRequest.required", hasItems("name")))
+				.andExpect(jsonPath("$.components.schemas.MedicationRequest.required.length()").value(1))
+				.andExpect(jsonPath("$.components.schemas.ChildCareInfoResponse.properties.allergies").exists())
+				.andExpect(jsonPath("$.components.schemas.ChildCareInfoResponse.properties.medications").exists());
 	}
 
 	@Test

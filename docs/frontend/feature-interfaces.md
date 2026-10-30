@@ -108,11 +108,11 @@ interface Child {
   care?: ChildCareInfo;
 }
 
-interface ChildCareInfo {     // 보호자가 직접 입력. 기관 유형별로 다르게 공유된다
-  welfareCard: boolean;
-  allergies: string[];
-  medications: { name: string; time: string }[];
-  weeklySchedule: { day: string; note: string }[];
+// 보호자가 적는 돌봄 정보 (G-13). 현재 이 아이와 연결된 모든 보호자가 조회·수정하고 기관에는 공유하지 않는다.
+// 아이 목록·홈은 늘 싣고, 저장 전이면 빈 배열 둘이다. 복지카드·주간 스케줄은 뺐다 (#285).
+interface ChildCareInfo {
+  allergies: string[];                          // 각 30자, 20개까지. 같은 값은 서버가 합친다
+  medications: { name: string; time: string }[]; // time 은 비어 있을 수 있다("")
 }
 
 interface RawRecord {
@@ -348,7 +348,7 @@ interface ParentActivity {
 | `updateConsent` | `(childId: string, institutionId: string, body: { action: "grant" \| "revoke"; allowedFields?: ConsentField[] }) => Promise<ConsentResult>` | P-04(끄기), P-11 |
 | `lookupInstitutionByCode` | `(code: string) => Promise<Institution \| null>` | P-13 |
 | `addInstitutionByCode` | `(childId: string, code: string) => Promise<{ institution: Institution; status: "pending"; requestedAt: string }>` — 연결 **요청**. 실패는 `ApiError` | P-13 |
-| `updateChildCare` | `(childId: string, care: ChildCareInfo) => Promise<{ ok: true }>` | P-06 |
+| `updateChildCare` | `(childId: string, care: ChildCareInfo) => Promise<ChildCareInfo>` — G-13. 통째로 덮어쓰고 다듬은 값을 돌려준다. 400 · 403 은 `ApiError` 로 | P-06 |
 | `getInstitutionRequests` | `(childId: string) => Promise<InstitutionRequestItem[]>` | P-04, P-12 |
 | `confirmInstitutionRequest` | `(id: string) => Promise<{ ok: true }>` | P-12 |
 
