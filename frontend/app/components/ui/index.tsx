@@ -169,17 +169,24 @@ export function EvidenceChip({
   label: string;
   /** 어느 기관 기록인지 — Gate 2 승인자가 반드시 확인해야 한다 */
   institution?: Institution;
+  /** 없으면 눌리지 않는 칩이다 — 눌리는 것처럼 보이지 않게 화살표 · hover 를 뺀다 */
   href?: string;
 }) {
   const body = (
-    <span className="inline-flex items-center gap-2 rounded border border-line bg-surface px-2.5 py-1.5 text-[14px] text-ink2 hover:border-accent hover:text-accentink">
+    <span
+      className={`inline-flex items-center gap-2 rounded border border-line bg-surface px-2.5 py-1.5 text-[14px] text-ink2 ${
+        href ? "hover:border-accent hover:text-accentink" : ""
+      }`}
+    >
       {institution ? <InstitutionChip institution={institution} size="xs" /> : null}
       <span className="tabular-nums">{date}</span>
       <span className="text-muted">·</span>
       <span>{label}</span>
-      <span aria-hidden className="text-muted">
-        ›
-      </span>
+      {href ? (
+        <span aria-hidden className="text-muted">
+          ›
+        </span>
+      ) : null}
     </span>
   );
   return href ? <Link to={href}>{body}</Link> : body;
