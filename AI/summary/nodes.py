@@ -62,11 +62,18 @@ def write(state: SummaryState) -> dict:
         return {"llm_called": True, "llm_error": str(exc), "raw_claims": []}
 
     raw = result.data.get("claims")
+    if not isinstance(raw, list):
+        return {
+            "llm_called": True,
+            "llm_error": "응답에 claims 배열이 없음",
+            "llm_usage": result.usage,
+            "raw_claims": [],
+        }
     return {
         "llm_called": True,
         "llm_error": None,
         "llm_usage": result.usage,
-        "raw_claims": raw if isinstance(raw, list) else [],
+        "raw_claims": raw,
     }
 
 
