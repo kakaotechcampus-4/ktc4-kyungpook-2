@@ -388,6 +388,50 @@ export interface SummaryItem {
 }
 
 /**
+ * 묶음 카드 라벨 (api-spec O-34). 위에서부터 처음 맞는 것이다 — 선생님이 할 일이 먼저다.
+ * needs_fix 수정 요청 있음 · ready 요약 대기 · summarizing 요약 중이거나 [요약] 눌러 둠 ·
+ * validating 검증 중만 · admin_check 시스템 오류만 남음
+ */
+export type SummaryGroupStatus = "needs_fix" | "ready" | "summarizing" | "validating" | "admin_check";
+
+/**
+ * 오늘의 업무 묶음 카드 한 장 = 아이 한 명의 하루치 기록 (BE SummaryGroupCard).
+ * 요약 전 묶음만 온다 — 요약이 만들어지면 1차 검토(O-30)로 옮겨 가고 카드는 빠진다.
+ */
+export interface SummaryGroup {
+  /** BE 는 숫자. lib/api.ts 가 문자열로 바꾼다 */
+  childId: string;
+  childName: string;
+  /** 같은 이름의 아이를 구분하려고 함께 보인다 */
+  birthdate: string | null;
+  /** 일지 날짜 YYYY-MM-DD. [요약](O-32)에 그대로 보낸다 */
+  entryDate: string;
+  status: SummaryGroupStatus;
+  counts: {
+    validating: number;
+    needsFix: number;
+    ready: number;
+    summarizing: number;
+    adminCheck: number;
+  };
+  /** [요약]을 누를 수 있음. 버튼은 늘 두고 false 면 막는다 */
+  canSummarize: boolean;
+  /** [요약]을 눌렀고 아직 요약이 끝나지 않음 */
+  summaryRequested: boolean;
+  /** 눌렀지만 시작 전일 때, 요약이 기다리는 같은 날 매칭·검증 중 기록 수 */
+  waitingCount: number;
+  /** 이전 요약이 1차 검토에 있음 — 다시 요약하면 그 요약이 새 판으로 바뀐다 */
+  previousSummaryInReview: boolean;
+}
+
+export interface SummaryGroupBoard {
+  /** 아이가 아직 정해지지 않아 카드에 넣을 수 없는 기록. 자동 매칭 중 · 확인 필요 큐 */
+  matching: { inProgress: number; needsReview: number };
+  /** 오래된 날짜부터 */
+  groups: SummaryGroup[];
+}
+
+/**
  * Gate 1 승인 때 보내는 문장 카드 (api-spec O-31). 원래 문장은 모두 한 번씩, 배열 순서가 최종 순서다.
  * KEEP · DELETE 는 index 만, EDIT 는 index 와 고친 글, ADD 는 새 글만 보낸다.
  */

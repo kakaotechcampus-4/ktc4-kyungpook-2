@@ -1,32 +1,20 @@
 import { useEffect } from "react";
 import { Link, useRevalidator } from "react-router";
 import { StageDots } from "@/components/ui";
-import {
-  GATE1_INDEX,
-  MATCHING_INDEX,
-  PIPELINE_STAGES,
-  VALIDATION_INDEX,
-  stageStatesOf,
-} from "@/lib/pipeline";
+import { FILE_STAGES, fileStageStatesOf, isBeforeChild } from "@/lib/pipeline";
 import type { FileProgress } from "@/lib/types";
-
-/** 사람이 멈춰 있는 단계마다 교사가 가야 할 곳 */
-const WAITING_AT: Record<number, { label: string; href: string }> = {
-  [MATCHING_INDEX]: { label: "매칭 확인", href: "/queue/matching" },
-  [VALIDATION_INDEX]: { label: "수정 요청", href: "/queue/reinput" },
-  [GATE1_INDEX]: { label: "1차 검토", href: "/gate1" },
-};
 
 const POLL_MS = 1500;
 
 /**
- * 자동으로 진행 중인 파일이 있는 동안만 주기적으로 다시 불러온다.
- * 전부 사람 대기·실패·완료로 멈추면 폴링도 멈춘다 — 더 기다려도 바뀌지 않기 때문이다.
+ * 아이를 찾는 중인 파일이 있는 동안만 주기적으로 다시 불러온다.
+ * 아이가 정해진 뒤의 진행(검증 · 요약)은 이 화면이 보여주지 않으니 기다리지 않는다 —
+ * 서버는 요약 대기도 running 으로 내려서, 그것까지 보면 폴링이 끝나지 않는다.
  */
 export function useProgressPolling(files: FileProgress[]) {
   const revalidator = useRevalidator();
   const moving = files.some(
-    (f) => f.entries.length === 0 || f.entries.some((e) => e.state === "running"),
+    (f) => f.entries.length === 0 || f.entries.some((e) => isBeforeChild(e) && e.state === "running"),
   );
   useEffect(() => {
     if (!moving) return;
@@ -38,16 +26,16 @@ export function useProgressPolling(files: FileProgress[]) {
 }
 
 /**
- * 파일 단위 처리 현황.
+ * 파일 단위 처리 현황 — "올린 파일이 잘 들어갔나, 아이가 정해졌나".
  *
- * 업로드는 즉시 끝나고 처리는 백그라운드에서 돈다. 교사가 궁금한 건 "내가 올린 파일이
- * 어디까지 갔나" 라서 기록 건이 아니라 파일을 한 줄로 묶는다.
+ * 파일 한 개에 여러 아이 기록이 섞여 있어, 아이가 정해진 기록은 오늘의 업무의 아이별 카드(O-34)로
+ * 넘겨준다. 그 뒤 검증 · 요약 · 1차 검토는 거기서 이어진다.
  *
- *   관찰일지_9월3주.docx          기록 12건
- *   ● ● ● ✕ ◉   ◉ 교사 확인 8건 · 1차 검토 8   ✕ 실패 1건
+ *   1030_관찰일지.csv                       기록 4건
+ *   ● ● ◉   아이를 확정하지 못한 기록 1건 · 확인하기 →
+ *           기록 3건이 아이별 카드로 넘어갔어요 · 오늘의 업무에서 보기 →
  *
- * 실패에는 버튼을 두지 않는다. AI 가 잠깐 다운된 건 서버가 스스로 다시 돌리고(#153),
- * 그래도 남은 실패는 다시 돌려도 또 실패할 가능성이 커서 재처리 API(O-27)를 만들지 않기로 했다.
+ * 실패에는 버튼을 두지 않는다. 매칭 실패는 확인 필요 큐로 가고(api-spec O-26), 재처리 API(O-27)는 없다.
  */
 export function FileProgressList({ files }: { files: FileProgress[] }) {
   return (
@@ -61,19 +49,11 @@ export function FileProgressList({ files }: { files: FileProgress[] }) {
 
 function FileRow({ file }: { file: FileProgress }) {
   const { entries } = file;
-  const states = stageStatesOf(entries);
-  const waiting = entries.filter((e) => e.state === "waiting");
-  const failed = entries.filter((e) => e.state === "failed").length;
-  const running = entries.filter((e) => e.state === "running").length;
-  const allDone = entries.length > 0 && entries.every((e) => e.state === "done");
-
-  // 멈춘 단계별 건수 — 어느 화면으로 가야 하는지 함께 보여준다
-  const waitingByStage = Object.entries(
-    waiting.reduce<Record<number, number>>((acc, e) => {
-      acc[e.stageIndex] = (acc[e.stageIndex] ?? 0) + 1;
-      return acc;
-    }, {}),
-  ).map(([stage, count]) => ({ ...WAITING_AT[Number(stage)], count }));
+  const early = entries.filter(isBeforeChild);
+  const finding = early.filter((e) => e.state === "running").length;
+  const waiting = early.filter((e) => e.state === "waiting").length;
+  const failed = early.filter((e) => e.state === "failed").length;
+  const handed = entries.length - early.length;
 
   return (
     <li className="flex flex-col gap-2 py-3">
@@ -85,31 +65,40 @@ function FileRow({ file }: { file: FileProgress }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[14px]">
-        <StageDots stages={[...PIPELINE_STAGES]} states={states} />
+        <StageDots stages={[...FILE_STAGES]} states={fileStageStatesOf(entries)} />
 
-        {waiting.length > 0 ? (
+        {finding > 0 ? <span className="text-muted">아이 찾는 중 {finding}건</span> : null}
+
+        {waiting > 0 ? (
           <span className="inline-flex flex-wrap items-center gap-x-1.5 text-human">
             <span aria-hidden>◉</span>
-            <b className="font-semibold">교사 확인 {waiting.length}건</b>
-            {waitingByStage.map((w) =>
-              w.href ? (
-                <Link key={w.href} to={w.href} className="text-[13px] underline">
-                  {w.label} {w.count}
-                </Link>
-              ) : null,
-            )}
+            <b className="font-semibold">아이를 확정하지 못한 기록 {waiting}건</b>
+            <Link to="/queue/matching" className="text-[13px] underline">
+              확인하기
+            </Link>
           </span>
         ) : null}
 
         {failed > 0 ? (
-          <span className="inline-flex items-center gap-1.5 text-block">
+          <span className="inline-flex flex-wrap items-center gap-x-1.5 text-block">
             <span aria-hidden>✕</span>
-            <b className="font-semibold">실패 {failed}건</b>
+            <b className="font-semibold">아이 찾기 실패 {failed}건</b>
+            <Link to="/queue/matching" className="text-[13px] underline">
+              확인이 필요한 기록에서 고르기
+            </Link>
           </span>
         ) : null}
 
-        {running > 0 ? <span className="text-muted">처리 중 {running}건</span> : null}
-        {allDone ? <span className="font-medium text-pass">✓ 처리 완료</span> : null}
+        {handed > 0 ? (
+          <span className="inline-flex flex-wrap items-center gap-x-1.5 font-medium text-pass">
+            <span aria-hidden>✓</span>
+            {handed === entries.length ? `모든 기록(${handed}건)이` : `기록 ${handed}건이`} 아이별 카드로
+            넘어갔어요
+            <Link to="/dashboard" className="text-[13px] text-accentink underline">
+              오늘의 업무에서 보기
+            </Link>
+          </span>
+        ) : null}
       </div>
     </li>
   );

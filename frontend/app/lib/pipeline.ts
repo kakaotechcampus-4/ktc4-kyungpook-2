@@ -14,21 +14,31 @@ export const VALIDATION_INDEX = 2;
 export const GATE1_INDEX = PIPELINE_STAGES.length - 1;
 
 /**
- * 한 파일에서 나온 기록 여러 건을 단계별 상태 하나로 접는다.
- *
- * 건마다 도달한 단계가 다르다. 어떤 단계에 멈춘 건이 하나라도 있으면 그 단계는
- * 멈춘 상태로 보여야 한다 — 다른 건이 지나갔다고 초록 체크로 덮으면 안 된다.
- * 우선순위: 실패 > 사람 대기 > 진행 중 > 완료(누군가 지나감) > 대기 전.
+ * 기록 등록 화면의 파일별 진행 단계. 파일은 아이가 정해질 때(매칭)까지만 본다 —
+ * 그 뒤 검증 · 요약 · 1차 검토는 아이 × 날짜 단위라 오늘의 업무 묶음 카드(O-34)가 보여준다.
  */
-export function stageStatesOf(entries: EntryProgress[]): StageState[] {
-  return PIPELINE_STAGES.map((_, i) => {
-    const here = entries.filter((e) => e.stageIndex === i);
-    if (here.some((e) => e.state === "failed")) return "failed";
-    if (here.some((e) => e.state === "waiting")) return "waiting";
-    if (here.some((e) => e.state === "running")) return "active";
-    // 기록을 아직 떼어내지 못한 파일은 등록 단계에 머물러 있다
-    if (entries.length === 0) return i === 0 ? "active" : "pending";
-    // 지금 여기 머문 건은 없고 지나간 건이 있다 — 뒤처진 건은 앞 단계에서 이미 표시된다
-    return entries.some((e) => e.stageIndex > i) ? "done" : "pending";
-  });
+export const FILE_STAGES = ["기록 등록", "기록 나누기", "아이 찾기"] as const;
+
+/** 아이 찾기(매칭)까지 온 기록. 이보다 뒤(stageIndex 2 이상)는 아이별 카드로 넘어갔다 */
+export const isBeforeChild = (e: EntryProgress) => e.stageIndex <= MATCHING_INDEX;
+
+/**
+ * 파일 하나를 FILE_STAGES 상태로 접는다.
+ *
+ * 아이 찾기는 아직 아이가 안 정해진 기록만 본다. 그중 멈춘 건이 하나라도 있으면 멈춘 상태로
+ * 보여야 한다 — 다른 건이 넘어갔다고 초록 체크로 덮으면 안 된다.
+ * 우선순위: 실패 > 사람 대기 > 진행 중 > 완료.
+ */
+export function fileStageStatesOf(entries: EntryProgress[]): StageState[] {
+  // 기록을 아직 떼어내지 못했다
+  if (entries.length === 0) return ["done", "active", "pending"];
+  const early = entries.filter(isBeforeChild);
+  const matching: StageState = early.some((e) => e.state === "failed")
+    ? "failed"
+    : early.some((e) => e.state === "waiting")
+      ? "waiting"
+      : early.some((e) => e.state === "running")
+        ? "active"
+        : "done";
+  return ["done", "done", matching];
 }

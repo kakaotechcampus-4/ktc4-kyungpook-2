@@ -175,6 +175,24 @@ type Gate1Card =              // 승인 때 보내는 문장 카드. 원래 문�
   | { index: number; action: "EDIT"; text: string }
   | { action: "ADD"; text: string };
 
+interface SummaryGroupBoard {  // 오늘의 업무 묶음 카드 (BE SummaryGroupBoardResponse, O-34)
+  matching: { inProgress: number; needsReview: number };  // 아이가 아직 안 정해진 기록
+  groups: SummaryGroup[];     // 요약 전 묶음만, 오래된 날짜부터
+}
+
+interface SummaryGroup {      // 카드 한 장 = 아이 한 명의 하루치 기록
+  childId: string;            // BE 는 숫자. lib/api.ts 가 문자열로 바꾼다
+  childName: string;
+  birthdate: string | null;   // 동명이인 구분
+  entryDate: string;          // YYYY-MM-DD. [요약](O-32)에 그대로 보낸다
+  status: "needs_fix" | "ready" | "summarizing" | "validating" | "admin_check";  // 할 일 먼저
+  counts: { validating: number; needsFix: number; ready: number; summarizing: number; adminCheck: number };
+  canSummarize: boolean;      // false 면 [요약]을 막는다 (버튼은 늘 보인다)
+  summaryRequested: boolean;
+  waitingCount: number;       // 눌렀지만 시작 전 — 기다리는 같은 날 매칭·검증 중 기록 수
+  previousSummaryInReview: boolean;  // 다시 요약하면 1차 검토의 요약이 새 판으로 바뀐다
+}
+
 interface TimelineEntry {     // Child Context 타임라인 한 칸 (= 하루)
   date: string;
   entry: {                    // null = 그 날 기록 없음. 절대 추정치로 채우지 않는다
@@ -301,6 +319,8 @@ interface ParentActivity {
 | `getGate1Queue` | `(gate1Status?: "pending" \| "hold") => Promise<SummaryItem[]>` | I-03, I-08 |
 | `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "hold" \| "remove" \| "confirm" \| "revert"; cards?: Gate1Card[]; version: string }) => Promise<{ summaryId: string }>` · `confirm` · `revert` 는 `noContent` 요약만 | I-08 |
 | `reopenGate1` | `(summaryId: string) => Promise<{ summaryId: string }>` | I-08 |
+| `getSummaryGroups` | `() => Promise<SummaryGroupBoard>` — O-34. 요약 전 묶음(아이 × 날짜) 카드, 오래된 날짜부터 | I-03 |
+| `runSummary` | `(childId: string, entryDate: string) => Promise<void>` — O-32. 409 `SUMMARY_IN_PROGRESS` · 400 `SUMMARY_INVALID_REQUEST` · 404 `SUMMARY_CHILD_NOT_FOUND` | I-03 |
 | `getInsights` | `(gate2Status?: Gate2Status) => Promise<Insight[]>` — 기본 `pending`. 우리 기관이 승인 주체인 것만 온다 | I-03, I-10, I-11 |
 | `getInsight` | `(id: string) => Promise<Insight \| undefined>` | I-10 |
 | `decideGate2` | `(insightId: string, body: { decision: "approve" \| "hold" }) => Promise<{ insightId: string; gate2Status: Gate2Status; decision: string }>` — 받을 기관은 보내지 않는다. 409 `INSIGHT_ALREADY_REVIEWED` · `INSIGHT_SUPERSEDED` · `INSIGHT_MATERIAL_CONSENT_REVOKED`(승인만) | I-11 |
