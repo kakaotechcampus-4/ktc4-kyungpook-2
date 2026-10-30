@@ -22,8 +22,7 @@ import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.child.ChildOrganization;
-import com.itda.backend.domain.consent.SharingConsent;
-import com.itda.backend.domain.consent.SharingConsentStatus;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.request.insight.InsightAgentRequest;
@@ -31,9 +30,9 @@ import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
-import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,7 +65,7 @@ public class InsightService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
     private final ChildRepository childRepository;
-    private final SharingConsentRepository sharingConsentRepository;
+    private final ConsentStateReader consentStateReader;
     private final ObjectMapper objectMapper;
 
     /**
@@ -241,9 +240,12 @@ public class InsightService {
         Set<Long> enrolled = childOrganizationRepository.findByChildIdAndDeletedAtIsNull(childId).stream()
                 .map(ChildOrganization::getOrganizationId)
                 .collect(Collectors.toSet());
-        List<Long> organizationIds = sharingConsentRepository
-                .findByChildIdAndStatus(childId, SharingConsentStatus.ACTIVE).stream()
-                .map(SharingConsent::getOrganizationId)
+        // 주간 인사이트를 허락한 기관만 본다 (#257). 하루 요약만 허락한 기관의 기록은 인사이트에 섞이지 않는다 —
+        // 받는 쪽(Gate 2)과 같은 판단을 쓴다 (ConsentStateReader).
+        List<Long> organizationIds = consentStateReader.insightStatesOf(List.of(childId))
+                .getOrDefault(childId, Map.of()).entrySet().stream()
+                .filter(entry -> entry.getValue() == ConsentState.GRANTED)
+                .map(Map.Entry::getKey)
                 .filter(enrolled::contains)
                 .distinct()
                 .toList();

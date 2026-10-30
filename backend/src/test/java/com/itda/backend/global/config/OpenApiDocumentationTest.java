@@ -87,7 +87,13 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.401").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.409.description",
+						containsString("SUMMARY_IN_PROGRESS")))
 				.andExpect(jsonPath("$.components.schemas.RunSummaryRequest.properties.entryDateValid").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.requestBody").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.200").exists())
@@ -190,6 +196,75 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.linkRequests").exists());
 	}
 
+	/**
+	 * 기관 수신함(O-50·O-51). 쿠키 인증을 요구하고, 목록은 본문 없이 · 단건은 본문을 더해 내려야 한다 — 목록이
+	 * 본문을 주면 열지 않고도 다 읽어서 열람 시각이 의미를 잃는다.
+	 */
+	@Test
+	void institutionInboxApisAreDocumented() throws Exception {
+		String list = "$.paths['/api/v1/institutions/me/inbox']";
+		String item = "$.paths['/api/v1/institutions/me/inbox/{insightId}']";
+		String itemSchema = "$.components.schemas.InboxItemResponse";
+		String detailSchema = "$.components.schemas.InboxDetailResponse";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(list + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(list + ".get.responses.200").exists())
+				.andExpect(jsonPath(list + ".get.responses.401").exists())
+				.andExpect(jsonPath(list + ".get.responses.403.description").value(containsString("ORGANIZATION_NOT_ASSIGNED")))
+				.andExpect(jsonPath(list + ".post").doesNotExist())
+				.andExpect(jsonPath(item + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(item + ".get.responses.200").exists())
+				.andExpect(jsonPath(item + ".get.responses.403.description").value(containsString("ORGANIZATION_NOT_ASSIGNED")))
+				.andExpect(jsonPath(item + ".get.responses.404.description").value(containsString("SHARING_NOT_FOUND")))
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/inbox/{id}/read']").doesNotExist())
+				.andExpect(jsonPath(itemSchema + ".properties.length()").value(8))
+				.andExpect(jsonPath(itemSchema + ".properties.content").doesNotExist())
+				.andExpect(jsonPath(itemSchema + ".properties.sharedWith").doesNotExist())
+				.andExpect(jsonPath(itemSchema + ".properties.externalId").exists())
+				.andExpect(jsonPath(itemSchema + ".properties.from").exists())
+				.andExpect(jsonPath(itemSchema + ".properties.period").exists())
+				.andExpect(jsonPath(itemSchema + ".properties.receivedAt.format").value("date-time"))
+				.andExpect(jsonPath(itemSchema + ".properties.readAt.format").value("date-time"))
+				.andExpect(jsonPath(detailSchema + ".properties.length()").value(9))
+				.andExpect(jsonPath(detailSchema + ".properties.content").exists())
+				.andExpect(jsonPath(detailSchema + ".properties.readAt.format").value("date-time"));
+	}
+
+	/** 기관 아동 기록 타임라인(O-14). 우리 기관 명부의 아이만이라 404 가 명세에 드러나야 한다 (#292). */
+	@Test
+	void organizationTimelineIsDocumented() throws Exception {
+		String path = "$.paths['/api/v1/institutions/me/children/{childId}/timeline']";
+		String schema = "$.components.schemas.OrganizationTimelineEntryResponse";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(path + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(path + ".get.responses.200").exists())
+				.andExpect(jsonPath(path + ".get.responses.403.description").value(containsString("ORGANIZATION_NOT_ASSIGNED")))
+				.andExpect(jsonPath(path + ".get.responses.404.description").value(containsString("CHILD_NOT_FOUND")))
+				.andExpect(jsonPath(schema + ".properties.length()").value(5))
+				.andExpect(jsonPath(schema + ".properties.content").exists())
+				.andExpect(jsonPath(schema + ".properties.edited").exists())
+				.andExpect(jsonPath(schema + ".properties.sourceCount").exists())
+				.andExpect(jsonPath(schema + ".properties.date.format").value("date"));
+	}
+
+	/** 보호자 받은 인사이트(G-35·G-36). 승인 시각 순이라 응답에 승인 시각이 있어야 한다 (#287). */
+	@Test
+	void guardianInsightApisAreDocumented() throws Exception {
+		String list = "$.paths['/api/v1/guardians/me/insights']";
+		String schema = "$.components.schemas.GuardianInsightResponse";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(list + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(list + ".get.description").value(containsString("approvedAt")))
+				.andExpect(jsonPath(schema + ".properties.approvedAt.format").value("date-time"))
+				.andExpect(jsonPath(schema + ".properties.readAt.format").value("date-time"));
+	}
+
 	/** 초대 코드·보호자 연결 API(O-15~O-19, G-04·G-05). 모두 쿠키 인증을 요구하고, 권한·소속 오류가 명세에 드러나야 한다. */
 	@Test
 	void invitationAndGuardianLinkApisAreDocumented() throws Exception {
@@ -268,7 +343,7 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.InstitutionResponse.properties.verified").exists());
 	}
 
-	/** 보호자 아이 목록·홈(G-10·G-11). school·care 는 저장하는 곳이 없어 스키마에도 없어야 한다. */
+	/** 보호자 아이 목록·홈(G-10·G-11). school 은 저장하는 곳이 없어 스키마에도 없어야 한다. care 는 돌봄 정보(G-13)다. */
 	@Test
 	void guardianChildApisAreDocumented() throws Exception {
 		String children = "$.paths['/api/v1/guardians/me/children']";
@@ -288,11 +363,14 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(home + ".get.responses.403.description").value(containsString("FORBIDDEN")))
 				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.institutions").exists())
 				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.school").doesNotHaveJsonPath())
-				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.care").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.care['$ref']")
+						.value(containsString("ChildCareInfoResponse")))
 				.andExpect(jsonPath("$.components.schemas.ChildInstitution.properties.consent").exists())
 				.andExpect(jsonPath("$.components.schemas.GuardianHomeResponse.properties.activity.items['$ref']")
 						.value(containsString("ParentActivityResponse")))
-				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.length()").value(4))
+				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.length()").value(6))
+				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.kind").exists())
+				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.insightId").exists())
 				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.id").exists())
 				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.at").exists())
 				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.text").exists())
@@ -313,6 +391,48 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(pending + ".get.responses.403.description").value(containsString("FORBIDDEN")))
 				.andExpect(jsonPath("$.components.schemas.PendingConsentRequestResponse.properties.length()").value(1))
 				.andExpect(jsonPath("$.components.schemas.PendingConsentRequestResponse.properties.institution").exists());
+	}
+
+	@Test
+	void careInfoApiIsDocumented() throws Exception {
+		String careInfo = "$.paths['/api/v1/children/{childId}/care-info']";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(careInfo + ".put.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(careInfo + ".put.responses.200").exists())
+				.andExpect(jsonPath(careInfo + ".put.responses.400.description").value(containsString("INVALID_REQUEST")))
+				.andExpect(jsonPath(careInfo + ".put.responses.401").exists())
+				.andExpect(jsonPath(careInfo + ".put.responses.403.description").value(containsString("FORBIDDEN")))
+				.andExpect(jsonPath("$.components.schemas.UpdateCareInfoRequest.required", hasItems("allergies", "medications")))
+				// 복용 시간은 빠지면 빈 문자열로 받는다. 필수로 표시되면 계약과 어긋난다.
+				.andExpect(jsonPath("$.components.schemas.MedicationRequest.required", hasItems("name")))
+				.andExpect(jsonPath("$.components.schemas.MedicationRequest.required.length()").value(1))
+				.andExpect(jsonPath("$.components.schemas.ChildCareInfoResponse.properties.allergies").exists())
+				.andExpect(jsonPath("$.components.schemas.ChildCareInfoResponse.properties.medications").exists());
+	}
+
+	@Test
+	void guardianJournalApisAreDocumented() throws Exception {
+		String journal = "$.paths['/api/v1/children/{childId}/journal']";
+		String entry = "$.paths['/api/v1/journal/{id}']";
+		String schema = "$.components.schemas.GuardianJournalResponse.properties";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(journal + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(journal + ".get.responses.200").exists())
+				.andExpect(jsonPath(journal + ".get.responses.401").exists())
+				.andExpect(jsonPath(journal + ".get.responses.403.description").value(containsString("FORBIDDEN")))
+				.andExpect(jsonPath(entry + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(entry + ".get.responses.200").exists())
+				.andExpect(jsonPath(entry + ".get.responses.401").exists())
+				.andExpect(jsonPath(entry + ".get.responses.403.description").value(containsString("PARENT_REQUIRED")))
+				.andExpect(jsonPath(entry + ".get.responses.404.description").value(containsString("JOURNAL_NOT_FOUND")))
+				.andExpect(jsonPath(schema + ".length()").value(6))
+				.andExpect(jsonPath(schema + ".isNew").exists())
+				.andExpect(jsonPath(schema + ".content").exists())
+				.andExpect(jsonPath(schema + ".institution").exists());
 	}
 
 	@Test

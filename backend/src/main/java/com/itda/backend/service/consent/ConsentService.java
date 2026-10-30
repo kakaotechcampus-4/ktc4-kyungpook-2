@@ -123,9 +123,18 @@ public class ConsentService {
         List<SharingConsent> active = sharingConsentRepository.findByChildIdAndOrganizationIdAndStatus(
                 childId, institutionId, SharingConsentStatus.ACTIVE);
         if (action == ConsentAction.GRANT) {
+            boolean hadInsight = consentStateReader.insightStateOf(childId, institutionId) == ConsentState.GRANTED;
             active.forEach(consent -> consent.changeScope(allowedFields));
             if (active.stream().noneMatch(consent -> consent.getGuardianId().equals(parentId))) {
                 sharingConsentRepository.save(SharingConsent.grant(childId, parentId, institutionId, allowedFields));
+            }
+            // 범위에서 주간 인사이트를 빼면 이미 내준 인사이트 열람 권한도 거둔다 (#257, 멘토님 리뷰 #256 P1).
+            // 동의 자체는 살아 있어도 인사이트는 더 이상 허락이 아니다. 원래 허락이 없었으면 거둘 것도 없다.
+            // 사유는 GUARDIAN_REVOKED 를 쓴다 — 보호자가 인사이트 공유를 거둔 것이고, 새 값을 더하면 배포 DB 의
+            // CHECK 제약 수동 조치(§11.4)가 필요하다. 동의 행이 살아 있고 scope 에 weekly_insight 가 없으면 범위 축소다.
+            if (hadInsight && consentStateReader.insightStateOf(childId, institutionId) != ConsentState.GRANTED) {
+                insightAccessRevoker.revokeForInstitution(
+                        childId, institutionId, ConsentRevokeReason.GUARDIAN_REVOKED, now());
             }
         } else {
             LocalDateTime now = now();
@@ -168,8 +177,9 @@ public class ConsentService {
         revoked.stream()
                 .map(SharingConsent::getOrganizationId)
                 .distinct()
+                // 남은 동의가 하루 요약만이면 인사이트 권한은 거둔다 (#257).
                 .filter(organizationId ->
-                        consentStateReader.stateOf(lockedChild.getId(), organizationId) != ConsentState.GRANTED)
+                        consentStateReader.insightStateOf(lockedChild.getId(), organizationId) != ConsentState.GRANTED)
                 .forEach(organizationId -> insightAccessRevoker.revokeForInstitution(
                         lockedChild.getId(), organizationId, ConsentRevokeReason.GUARDIAN_UNLINKED, now));
 

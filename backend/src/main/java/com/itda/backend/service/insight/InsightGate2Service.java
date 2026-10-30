@@ -13,7 +13,6 @@ import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.Gate2Action;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.consent.ConsentState;
-import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.invitation.ChildGuardian;
@@ -26,7 +25,6 @@ import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
-import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
@@ -62,7 +60,6 @@ public class InsightGate2Service {
     private final OrganizationRepository organizationRepository;
     private final ChildGuardianRepository childGuardianRepository;
     private final SharingHistoryRepository sharingHistoryRepository;
-    private final SharingConsentRepository sharingConsentRepository;
     private final ApprovalRepository approvalRepository;
     private final ConsentStateReader consentStateReader;
 
@@ -82,8 +79,11 @@ public class InsightGate2Service {
                 // 동의를 읽기 전에 아이 행을 잠근다 — ConsentService 와 같은 순서다 (§3.3). 안 잠그면 철회와
                 // 겹칠 때 "동의 확인 → (철회 커밋) → 권한 생성" 이 되어, 꺼진 동의에 권한이 남는다.
                 childRepository.findByIdForUpdate(insight.getChildId());
-                requireMaterialStillConsented(insight);
-                yield approve(insight, primary);
+                // 잠근 뒤 한 번만 읽는다. 재료 확인과 받는 기관이 같은 스냅샷을 본다.
+                Map<Long, ConsentState> insightConsents = consentStateReader.insightStatesOf(
+                        List.of(insight.getChildId())).getOrDefault(insight.getChildId(), Map.of());
+                requireMaterialStillConsented(insight, insightConsents);
+                yield approve(insight, primary, insightConsents);
             }
             case HOLD -> hold(insight);
         };
@@ -113,10 +113,12 @@ public class InsightGate2Service {
     /**
      * 승인한다. 그 아이에 연결된 보호자마다 열람 권한 한 줄을 만든다.
      *
-     * <p><b>보호자가 한 명도 없으면 아무도 못 본다.</b> 오류가 아니라 정상이다 — 초대가 아직 수락되지 않은
-     * 아이가 있다. 다만 교사는 "보냈다" 고 믿으므로 로그를 남긴다 (CLAUDE.md Auditability).
+     * <p><b>보호자가 한 명도 없으면 지금은 아무도 못 본다.</b> 오류가 아니라 정상이다 — 초대가 아직 수락되지 않은
+     * 아이가 있다. 다만 교사는 "보냈다" 고 믿으므로 로그를 남긴다 (CLAUDE.md Auditability). 나중에 연결되는 보호자는
+     * 초대를 수락할 때 {@link InsightAccessGranter} 가 연다 (#287).
      */
-    private ApprovalDecision approve(InsightResult insight, Organization primary) {
+    private ApprovalDecision approve(InsightResult insight, Organization primary,
+            Map<Long, ConsentState> insightConsents) {
         insight.approveGate2();
         List<ChildGuardian> guardians =
                 childGuardianRepository.findByChildIdAndDeletedAtIsNullOrderByLinkedAtAsc(insight.getChildId());
@@ -130,7 +132,7 @@ public class InsightGate2Service {
                 .map(guardian -> SharingHistory.grant(insight.getChildId(), insight.getId(), primary.getId(),
                         ReceiverType.GUARDIAN, guardian.getUserId()))
                 .toList());
-        sharingHistoryRepository.saveAll(consentedRecipients(insight, primary).stream()
+        sharingHistoryRepository.saveAll(consentedRecipients(insight, primary, insightConsents).stream()
                 .map(organizationId -> SharingHistory.grant(insight.getChildId(), insight.getId(),
                         primary.getId(), ReceiverType.ORGANIZATION, organizationId))
                 .toList());
@@ -143,13 +145,15 @@ public class InsightGate2Service {
      *
      * <p><b>승인 뒤에 동의한 기관은 이 글을 받지 않는다.</b> 소급하지 않는다 — 동의는 그 뒤에 나온 글부터다.
      */
-    private List<Long> consentedRecipients(InsightResult insight, Organization primary) {
+    private List<Long> consentedRecipients(InsightResult insight, Organization primary,
+            Map<Long, ConsentState> insightConsents) {
         Long childId = insight.getChildId();
         List<Long> enrolled = childOrganizationRepository.findByChildIdAndDeletedAtIsNull(childId).stream()
                 .map(ChildOrganization::getOrganizationId)
                 .toList();
         return Gate2Recipients.candidatesOf(enrolled, primary.getId()).stream()
-                .filter(id -> consentStateReader.stateOf(childId, id) == ConsentState.GRANTED)
+                // 하루 요약만 허락한 기관은 받지 않는다 (#257, 멘토님 리뷰 #256 P1).
+                .filter(id -> insightConsents.getOrDefault(id, ConsentState.NOT_GRANTED) == ConsentState.GRANTED)
                 .toList();
     }
 
@@ -169,10 +173,10 @@ public class InsightGate2Service {
      * <p>인사이트는 여러 기관 claim 을 엮은 결과라 문장 일부만 뺄 수 없다. 하나라도 꺼져 있으면 통째로
      * 막는다 ({@code AI/insight/CRITERIA.md} §7).
      */
-    private void requireMaterialStillConsented(InsightResult insight) {
+    private void requireMaterialStillConsented(InsightResult insight, Map<Long, ConsentState> insightConsents) {
         for (Long organizationId : PrimarySource.sourceIdsOf(insight)) {
-            if (!sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(
-                    insight.getChildId(), organizationId, SharingConsentStatus.ACTIVE)) {
+            // 재료를 고를 때와 같은 기준이다 — 주간 인사이트를 범위에서 뺀 것도 철회로 본다 (#257).
+            if (insightConsents.getOrDefault(organizationId, ConsentState.NOT_GRANTED) != ConsentState.GRANTED) {
                 throw new InsightException(InsightErrorCode.MATERIAL_CONSENT_REVOKED,
                         "insightId=" + insight.getId() + " organizationId=" + organizationId);
             }

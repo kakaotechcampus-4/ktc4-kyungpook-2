@@ -112,6 +112,32 @@ class ConsentStateReaderTest {
         assertThat(reader.statesOf(List.of())).isEmpty();
     }
 
+    /** 하루 요약만 허락한 기관에는 주간 인사이트가 가면 안 된다 (#257, 멘토님 리뷰 #256 P1). */
+    @Test
+    void 인사이트_동의는_주간_인사이트를_허락했을_때만_켜진다() {
+        grant(CHILD, MOM, SCHOOL);
+        em.persistAndFlush(SharingConsent.grant(CHILD, MOM, CENTER,
+                List.of(ConsentField.DAILY_SUMMARY, ConsentField.WEEKLY_INSIGHT)));
+
+        assertThat(reader.insightStateOf(CHILD, SCHOOL)).isEqualTo(ConsentState.NOT_GRANTED);
+        assertThat(reader.insightStateOf(CHILD, CENTER)).isEqualTo(ConsentState.GRANTED);
+        assertThat(reader.insightStatesOf(List.of(CHILD)).get(CHILD))
+                .containsEntry(SCHOOL, ConsentState.NOT_GRANTED)
+                .containsEntry(CENTER, ConsentState.GRANTED);
+    }
+
+    /** 꺼진 동의는 범위에 주간 인사이트가 남아 있어도 허락이 아니다. 살아 있는 하루 요약 동의가 그보다 세다. */
+    @Test
+    void 꺼진_인사이트_동의보다_살아_있는_하루_요약_동의가_세다() {
+        SharingConsent dadWeekly = em.persistAndFlush(
+                SharingConsent.grant(CHILD, DAD, CENTER, List.of(ConsentField.WEEKLY_INSIGHT)));
+        revoke(dadWeekly, ConsentRevokeReason.GUARDIAN_REVOKED);
+        assertThat(reader.insightStateOf(CHILD, CENTER)).isEqualTo(ConsentState.REVOKED);
+
+        grant(CHILD, MOM, CENTER);
+        assertThat(reader.insightStateOf(CHILD, CENTER)).isEqualTo(ConsentState.NOT_GRANTED);
+    }
+
     private SharingConsent grant(Long childId, Long guardianId, Long organizationId) {
         return em.persistAndFlush(
                 SharingConsent.grant(childId, guardianId, organizationId, List.of(ConsentField.DAILY_SUMMARY)));

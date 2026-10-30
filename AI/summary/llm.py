@@ -22,7 +22,10 @@ from common.errors import LlmUnavailable  # noqa: F401
 
 from common.luna import model as luna_model
 
-from .config import LUNA_CHAT_PATH, LUNA_TIMEOUT
+from .config import LUNA_CHAT_PATH, LUNA_REASONING_EFFORT_ON_OVERFLOW, LUNA_TIMEOUT
+
+#: 로그에 찍는 이름
+AGENT = "summary"
 
 
 #: 재료가 있는데 근거 있는 문장이 하나도 안 남았을 때. LlmUnavailable 을 물려받아
@@ -107,15 +110,39 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
     temperature 는 보내지 않는다 — 이 모델은 기본값(1)만 허용한다.
     """
     url, key = _endpoint()
+    payload = _post(url, key, messages, timeout)
 
+    # Luna 프록시는 출력(생각 + 답)을 2000 토큰까지만 준다. 입력이 길면 생각에 다 써서
+    # 답이 빈 채로 온다 (finish_reason=length). 그때만 생각을 줄여 한 번 더 부른다.
+    # 처음부터 줄이면 보통 입력의 품질까지 떨어진다 (실데이터 v3, 2026-10-30).
+    choice = (payload.get("choices") or [{}])[0] if isinstance(payload, dict) else {}
+    content = (choice.get("message") or {}).get("content")
+    retried = False
+    if choice.get("finish_reason") == "length" and not (content or "").strip():
+        print(f"[{AGENT}] 생각 한도 초과 → reasoning_effort={LUNA_REASONING_EFFORT_ON_OVERFLOW} 로 다시 부른다")
+        payload = _post(url, key, messages, timeout,
+                        reasoning_effort=LUNA_REASONING_EFFORT_ON_OVERFLOW)
+        retried = True
+
+    usage = dict(payload.get("usage") or {})
+    usage["reasoning_retry"] = retried
+    return LlmResult(data=_parse_json_block(_extract_text(payload)), usage=usage)
+
+
+def _post(url: str, key: str, messages: list[dict], timeout: float,
+          reasoning_effort: str | None = None) -> dict:
+    """Luna 를 한 번 부른다. reasoning_effort 를 주지 않으면 모델 기본값으로 생각한다."""
+    body = {
+        "model": luna_model(),
+        "response_format": {"type": "json_object"},
+        "messages": messages,
+    }
+    if reasoning_effort:
+        body["reasoning_effort"] = reasoning_effort
     try:
         response = requests.post(
             url,
-            json={
-                "model": luna_model(),
-                "response_format": {"type": "json_object"},
-                "messages": messages,
-            },
+            json=body,
             headers={
                 "accept": "application/json",
                 "content-type": "application/json",
@@ -126,12 +153,7 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
         response.raise_for_status()
     except requests.RequestException as exc:
         raise LlmError(f"Luna 호출 실패: {exc}") from exc
-
-    payload = response.json()
-    return LlmResult(
-        data=_parse_json_block(_extract_text(payload)),
-        usage=payload.get("usage") or {},
-    )
+    return response.json()
 
 
 def locate_quote(content: str, quote: str) -> dict | None:

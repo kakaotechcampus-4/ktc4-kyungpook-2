@@ -36,6 +36,7 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 
 /** 인사이트 재료 조립 — 승인된 요약의 claim 을 모아 에이전트 입력으로 편다. */
 @DataJpaTest
@@ -80,8 +81,8 @@ class InsightServiceTest {
     @BeforeEach
     void setUp() {
         insightService = new InsightService(childContextRepository, summaryResultRepository, approvalRepository,
-                childOrganizationRepository, organizationRepository, childRepository, sharingConsentRepository,
-                new ObjectMapper());
+                childOrganizationRepository, organizationRepository, childRepository,
+                new ConsentStateReader(sharingConsentRepository), new ObjectMapper());
         junho = em.persist(Child.of("김준호", LocalDate.of(2019, 3, 1)));
         school = em.persist(Organization.of("햇살초등학교", OrganizationType.SCHOOL, "1234567890"));
         center = em.persist(Organization.of("햇살아동발달센터", OrganizationType.CENTER, "1234567891"));
@@ -92,8 +93,28 @@ class InsightServiceTest {
         consent(center);
     }
 
+    /**
+     * 하루 요약만 허락한 기관의 기록은 인사이트 재료에 섞지 않는다 (#257). 받는 쪽(Gate 2)과 같은 기준이다 —
+     * 섞으면 그 기관 기록이 주간 인사이트에 실려 다른 기관으로 나간다.
+     */
+    @Test
+    void 하루_요약만_허락한_기관은_동의_목록과_재료에서_뺀다() {
+        Organization academy = em.persist(Organization.of("하루요약만센터", OrganizationType.CENTER, "1000000099"));
+        em.persist(ChildOrganization.of(junho.getId(), academy.getId()));
+        em.persist(SharingConsent.grant(junho.getId(), 100L, academy.getId(), List.of(ConsentField.DAILY_SUMMARY)));
+        approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+        approved(academy, LocalDate.of(2026, 10, 3), CLAIMS);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.consentedInstitutions()).extracting(InsightAgentRequest.Institution::institutionId)
+                .doesNotContain(academy.getId());
+        assertThat(request.claims()).extracting(InsightAgentRequest.Claim::institutionId)
+                .doesNotContain(academy.getId());
+    }
+
     private SharingConsent consent(Organization institution) {
-        return em.persist(SharingConsent.grant(junho.getId(), 100L, institution.getId(), List.of(ConsentField.DAILY_SUMMARY)));
+        return em.persist(SharingConsent.grant(junho.getId(), 100L, institution.getId(), List.of(ConsentField.DAILY_SUMMARY, ConsentField.WEEKLY_INSIGHT)));
     }
 
     private void revokeConsentsTo(Organization institution) {

@@ -15,7 +15,10 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import com.itda.backend.domain.approval.Approval;
+import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.consent.ConsentRevokeReason;
 import com.itda.backend.domain.insight.InsightResult;
@@ -27,12 +30,13 @@ import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.sharing.SharingErrorCode;
 import com.itda.backend.exception.sharing.SharingException;
+import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.user.UserService;
 
 /** 보호자가 Gate 2 를 지나 받은 인사이트를 읽는다 (#233). */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(GuardianInsightService.class)
+@Import({GuardianInsightService.class, SharingReadRecorder.class, ClockConfig.class})
 class GuardianInsightServiceTest {
 
     private static final LocalDate FROM = LocalDate.of(2026, 8, 17);
@@ -50,6 +54,7 @@ class GuardianInsightServiceTest {
     private UserService userService;
 
     private Long guardianId;
+    private Long childId;
     private Long schoolId;
     private Long centerId;
     private Long insightId;
@@ -58,7 +63,7 @@ class GuardianInsightServiceTest {
 
     @BeforeEach
     void setUp() {
-        Long childId = em.persistAndFlush(Child.of("김하늘", LocalDate.of(2018, 3, 2))).getId();
+        childId = em.persistAndFlush(Child.of("김하늘", LocalDate.of(2018, 3, 2))).getId();
         schoolId = em.persistAndFlush(Organization.of("○○초등학교", OrganizationType.SCHOOL, "1000000001")).getId();
         centerId = em.persistAndFlush(Organization.of("햇살센터", OrganizationType.CENTER, "1000000002")).getId();
         guardianId = 7L;
@@ -133,6 +138,74 @@ class GuardianInsightServiceTest {
         assertThat(first).isNotNull();
 
         assertThat(service.getInsight(MOTHER, insightId).readAt()).isEqualTo(first);
+    }
+
+    // --- 승인 시각 (#287) ---
+
+    @Test
+    void 승인_시각을_싣는다() {
+        LocalDateTime approvedAt = LocalDateTime.of(2026, 10, 27, 15, 0);
+        approve(insightId, approvedAt);
+
+        assertThat(service.getInsights(MOTHER).get(0).approvedAt()).isEqualTo(approvedAt);
+        assertThat(service.getInsight(MOTHER, insightId).approvedAt()).isEqualTo(approvedAt);
+    }
+
+    /** 순서는 권한 행이 아니라 승인 시각이다. 먼저 만들어졌어도 늦게 승인된 글이 위다. */
+    @Test
+    void 승인_시각이_최근인_글이_위다() {
+        Long later = insight("두 번째 글");
+        grantToMother(later);
+        approve(insightId, LocalDateTime.of(2026, 10, 28, 9, 0));
+        approve(later, LocalDateTime.of(2026, 10, 27, 9, 0));
+
+        assertThat(service.getInsights(MOTHER)).extracting(GuardianInsightResponse::id)
+                .containsExactly(String.valueOf(insightId), String.valueOf(later));
+    }
+
+    /**
+     * 늦게 연결된 보호자에게는 지난 글이 한꺼번에 열려 권한 행이 새 글보다 뒤에 생긴다. 그래도 승인 시각 자리에
+     * 놓여야 엄마·아빠 화면이 같다.
+     */
+    @Test
+    void 나중에_열린_지난_글도_승인_시각_자리에_놓인다() {
+        // 지난주에 승인됐지만 권한 행은 이번 주 글보다 뒤에 생겼다 — 행 순서로는 지난 글이 위다.
+        Long lastWeek = insight("지난주 글");
+        grantToMother(lastWeek);
+        approve(lastWeek, LocalDateTime.of(2026, 10, 20, 9, 0));
+        approve(insightId, LocalDateTime.of(2026, 10, 27, 9, 0));
+
+        assertThat(service.getInsights(MOTHER)).extracting(GuardianInsightResponse::id)
+                .containsExactly(String.valueOf(insightId), String.valueOf(lastWeek));
+    }
+
+    @Test
+    void 승인_기록이_없으면_열린_시각으로_대신한다() {
+        LocalDateTime grantedAt = em.find(SharingHistory.class, mineId).getGrantedAt();
+
+        assertThat(service.getInsights(MOTHER).get(0).approvedAt()).isEqualTo(grantedAt);
+    }
+
+    private Long insight(String content) {
+        Long id = em.persistAndFlush(InsightResult.of(childId, FROM, TO, 2, "상황", "반응", content, null, "[]", "[]",
+                "[%d]".formatted(schoolId), false, null)).getId();
+        em.clear();
+        return id;
+    }
+
+    private void grantToMother(Long id) {
+        em.persistAndFlush(SharingHistory.grant(childId, id, schoolId, ReceiverType.GUARDIAN, guardianId));
+        em.clear();
+    }
+
+    /** 승인 기록의 시각은 만들 때 정해진다. 테스트가 순서를 정하려고 덮어쓴다. */
+    private void approve(Long id, LocalDateTime at) {
+        Approval approval = Approval.gate2(id, 1L, ApprovalDecision.APPROVED);
+        ReflectionTestUtils.setField(approval, "reviewedAt", at);
+        em.persistAndFlush(approval);
+        // 보류 기록은 승인 시각이 아니다 — 섞여 있어도 무시한다.
+        em.persistAndFlush(Approval.gate2(id, 1L, ApprovalDecision.HOLD));
+        em.clear();
     }
 
     private void revoke(Long grantId, ConsentRevokeReason reason) {

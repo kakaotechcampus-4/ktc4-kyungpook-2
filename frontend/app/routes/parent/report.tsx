@@ -1,166 +1,97 @@
-import { useState } from "react";
 import { Link, useLoaderData } from "react-router";
-import { WifiOff } from "lucide-react";
 import { EmptyState } from "@/components/ui";
+import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import {
-  getCareReport,
+  getGuardianInsights,
   getParentChildren,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
 } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
+import type { GuardianInsight } from "@/lib/types";
 
 export async function clientLoader() {
-  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
-  if (!isReady("guardianJournal")) return null;
+  // 서버에 아직 없으면 mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
+  if (!isReady("guardianInsights")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  const [weekly, monthly, pending] = await Promise.all([
-    getCareReport(childId, "weekly"),
-    getCareReport(childId, "monthly"),
+  const [insights, pending] = await Promise.all([
+    getGuardianInsights(),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
   ]);
-  return { weekly, monthly, pending };
+  // 서버는 내 모든 아이 것을 준다. 헤더에서 고른 아이 것만 보인다
+  const child = kids.find((k) => k.id === childId);
+  return { childName: child?.name ?? "", insights: insights.filter((i) => i.childId === childId), pending };
 }
 
 /** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function ReportPageRoute() {
-  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="케어 리포트" showChildSwitch />;
+  if (!isReady("guardianInsights")) return <ParentNotReadyPage title="주간 리포트" showChildSwitch />;
   return <ReportPage />;
 }
 
+/**
+ * 리포트 탭 — 담당자가 Gate 2 에서 승인해 보호자에게 열린 인사이트 (G-35). 기관들이 일주일 기록을 겹쳐 보고 정리한
+ * 글이라 "주간 리포트"라고 부른다. 기간별로 묶고, 묶음 순서는 서버 순서(승인 시각 최근 순) 그대로다.
+ * 아직 열어 보지 않은 글(readAt 없음)에 "새 글"을 붙인다 — 상세를 열어야 본 시각이 남는다.
+ */
 function ReportPage() {
-  const { weekly, monthly, pending } = useLoaderData<typeof clientLoader>()!;
-  const [period, setPeriod] = useState<"weekly" | "monthly">("weekly");
-  const [broken, setBroken] = useState(false);
-  const report = period === "weekly" ? weekly : monthly;
-  const max = report ? Math.max(...report.trend.map((t) => t.value)) : 0;
+  const { childName, insights, pending } = useLoaderData<typeof clientLoader>()!;
+  const groups = insights.reduce<{ period: string; items: GuardianInsight[] }[]>((acc, insight) => {
+    const group = acc.find((g) => g.period === insight.period);
+    if (group) group.items.push(insight);
+    else acc.push({ period: insight.period, items: [insight] });
+    return acc;
+  }, []);
 
   return (
     <div className="flex flex-col gap-5">
       <ParentPageHeader
-        title="케어 리포트"
-        subtitle={period === "weekly" ? "주간 리포트" : "월간 리포트"}
+        title="주간 리포트"
+        subtitle={childName}
         showChildSwitch
         alert={(pending ?? []).length > 0}
       />
 
-      <div className="flex rounded-2xl bg-surface2 p-1">
-        {(["weekly", "monthly"] as const).map((p) => (
-          <button
-            key={p}
-            onClick={() => setPeriod(p)}
-            className={`tap flex-1 rounded-xl text-[15px] font-bold ${
-              period === p ? "bg-surface text-accentink shadow-sm" : "text-muted"
-            }`}
-          >
-            {p === "weekly" ? "주간" : "월간"}
-          </button>
-        ))}
-      </div>
-
-      {!report ? (
+      {groups.length === 0 ? (
         <EmptyState
           icon="◦"
-          title="아직 리포트가 없습니다"
-          description="기록이 쌓이면 변화 추이와 패턴을 정리해서 보여드립니다."
+          title="아직 받은 리포트가 없어요"
+          description="기관들이 일주일 기록을 함께 살펴 정리하면 여기에 도착해요."
         />
-      ) : broken ? (
-        <div className="flex flex-col items-center gap-3 py-16 text-center">
-          <WifiOff size={40} strokeWidth={1.5} className="text-block" />
-          <p className="text-[17px] font-bold">연결이 잠시 끊겼습니다</p>
-          <p className="text-[14px] text-muted">기록은 그대로 있습니다. 잠시 후 다시 시도해주세요.</p>
-          <button
-            onClick={() => setBroken(false)}
-            className="tap h-12 rounded-2xl bg-accent px-6 text-[15px] font-bold text-white"
-          >
-            다시 시도
-          </button>
-        </div>
       ) : (
-        <>
-          <div className="rounded-2xl bg-accentsoft px-4 py-4">
-            <p className="mb-1.5 text-[15px] leading-7 tabular-nums text-accentink">
-              {report.rangeLabel}
-            </p>
-            <p className="text-[15px] leading-7 text-ink">{report.summary}</p>
-          </div>
-
-          <section className="rounded-2xl border border-line px-4 py-4">
-            <h2 className="mb-4 text-[16px] font-bold">{report.trendTitle}</h2>
-            <div className="mb-2 flex items-end gap-3">
-              {report.trend.map((t, i) => (
-                <div key={t.label} className="flex flex-1 flex-col items-center gap-1.5">
-                  <span className="text-[13px] font-bold tabular-nums text-ink2">{t.value}</span>
-                  <div
-                    className={`w-full rounded-t-lg ${
-                      i >= report.trend.length - 2 ? "bg-accent" : "bg-accentsoft"
-                    }`}
-                    style={{ height: `${8 + (t.value / max) * 110}px` }}
-                  />
-                  <span className="text-[12px] text-muted">{t.label}</span>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-[15px] leading-6 text-ink2">{report.trendInsight}</p>
-            <Link
-              to={`/parent/report/evidence?ids=${report.trendEvidenceIds.join(",")}`}
-              className="mt-2 inline-block text-[14px] font-semibold text-accentink"
-            >
-              관련 일지 보기 ›
-            </Link>
-          </section>
-
-          {report.patterns.length > 0 ? (
-            <section className="rounded-2xl border border-line px-4 py-4">
-              <h2 className="mb-3 text-[16px] font-bold">반복되는 패턴</h2>
-              {report.patterns.map((p, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <span
-                    aria-hidden
-                    className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-surface2 text-ink2"
-                  >
-                    ⏱
-                  </span>
-                  <div>
-                    <p className="text-[15px] leading-6">{p.text}</p>
+        groups.map(({ period, items }) => (
+          <section key={period}>
+            <h2 className="mb-2 text-[15px] font-bold text-ink2">{period}</h2>
+            <div className="flex flex-col gap-3">
+              {items.map((insight) => (
+                <div key={insight.id} className="rounded-2xl border border-line px-4 py-4">
+                  <div className="mb-2 flex items-center gap-2.5">
+                    <InstitutionIcon type={insight.from?.type} />
+                    <span className="min-w-0 truncate font-bold">{insight.from?.name ?? "기관 정보 없음"}</span>
+                    {insight.readAt ? null : (
+                      <span className="ml-auto shrink-0 rounded-full bg-accentsoft px-2.5 py-1 text-[12px] font-bold text-accentink">
+                        새 글
+                      </span>
+                    )}
+                  </div>
+                  <p className="mb-3 line-clamp-2 text-[15px] leading-6">{insight.content}</p>
+                  <div className="flex justify-end">
                     <Link
-                      to={`/parent/report/evidence?ids=${p.evidenceIds.join(",")}`}
+                      to={`/parent/report/${insight.id}`}
                       className="text-[14px] font-semibold text-accentink"
                     >
-                      관련 일지 보기 ›
+                      자세히 보기 ›
                     </Link>
                   </div>
                 </div>
               ))}
-            </section>
-          ) : null}
-
-          {report.tips.length > 0 ? (
-            <section className="rounded-2xl border border-line px-4 py-4">
-              <h2 className="mb-3 text-[16px] font-bold">집에서 해보면 좋은 것</h2>
-              <ul className="flex flex-col gap-2">
-                {report.tips.map((tip, i) => (
-                  <li key={i} className="text-[15px] leading-6">
-                    · {tip}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-
-          <p className="text-[13px] text-muted">이 내용은 아래 일지를 바탕으로 정리했습니다.</p>
-
-          <button
-            onClick={() => setBroken(true)}
-            className="text-[13px] text-muted underline"
-          >
-            연결 끊김 상태 보기
-          </button>
-        </>
+            </div>
+          </section>
+        ))
       )}
     </div>
   );

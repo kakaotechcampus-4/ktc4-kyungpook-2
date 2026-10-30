@@ -137,6 +137,11 @@ public class SharingConsent {
         return this.status == SharingConsentStatus.ACTIVE;
     }
 
+    /** 지금 이 항목을 공유하도록 허락돼 있는지. 꺼진 동의는 범위가 남아 있어도 허락이 아니다. */
+    public boolean allows(ConsentField field) {
+        return isActive() && this.scope.contains(field);
+    }
+
     private void requireActive() {
         if (!isActive()) {
             throw new IllegalStateException("이미 철회된 동의입니다.");

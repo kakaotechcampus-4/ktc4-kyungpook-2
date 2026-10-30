@@ -76,11 +76,12 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
     if result.get("llm_error"):
         raise LlmUnavailable(result["llm_error"])
 
-    # 재료를 받았는데 근거가 남은 문장이 하나도 없다. 빈 요약을 200 으로 돌려주면
-    # 교사가 빈 글을 승인하고 일지는 반영된 것처럼 닫힌다. BE 도 빈 claims 를
-    # 저장하지 않고 요약 전체 실패로 본다 (#146) — 그쪽은 되돌릴 수 없는 실패라,
-    # 다시 부르면 될 수 있는 이 경우는 503 으로 올려 재시도하게 한다.
-    if payload.sources and not result["claims"]:
+    # 남은 문장이 0 개인 경우는 둘이다 (CRITERIA.md §2).
+    #   모델이 처음부터 빈 claims 를 냈다  → 쓸 관찰 사실이 없다 → 200 no_content
+    #   문장은 냈는데 ground 에서 다 버려졌다 → 다시 부르면 될 수 있다 → 503
+    # 앞의 경우 content "" · covered [] · uncovered 전부는 assemble 이 이미 그렇게 만든다.
+    no_content = bool(payload.sources) and not result.get("raw_claims")
+    if payload.sources and not result["claims"] and not no_content:
         raise NoGroundedClaims(
             f"child_id={payload.child_id} {payload.entry_date} "
             f"sources={len(payload.sources)} 중 근거가 남은 문장 0"
@@ -97,4 +98,5 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
         needs_review=result.get("needs_review", False),
         review_reasons=result.get("review_reasons", []),
         llm_called=result.get("llm_called", False),
+        no_content=no_content,
     )

@@ -1,14 +1,12 @@
 import type {
-  ActivityLog,
   BlockedItem,
-  CareReport,
   Child,
   ChildGuardian,
-  ChatTurn,
   EntryProgress,
   EvidenceSpan,
   FileProgress,
-  InboxItem,
+  GuardianInsight,
+  InboxDetail,
   Insight,
   Institution,
   InstitutionRequestItem,
@@ -18,6 +16,8 @@ import type {
   MatchingItem,
   ParentActivity,
   PendingLinkRequest,
+  SummaryGroup,
+  SummaryGroupBoard,
   SummaryItem,
   TimelineEntry,
 } from "@/lib/types";
@@ -101,14 +101,8 @@ export const CHILDREN: Child[] = [
       { institution: SPEECH, consent: "not_granted" },
     ],
     care: {
-      welfareCard: false,
       allergies: ["갑각류(새우)"],
       medications: [{ name: "알레르기 약", time: "점심 식후" }],
-      weeklySchedule: [
-        { day: "월요일", note: "센터 하원 동행" },
-        { day: "수요일", note: "센터 하원 동행" },
-        { day: "화·목요일", note: "17시 언어치료 수업" },
-      ],
     },
   },
   {
@@ -145,7 +139,7 @@ export const CHILDREN: Child[] = [
     school: "OO어린이집",
     status: "active",
     institutions: [{ institution: CENTER, consent: "granted" }],
-    care: { welfareCard: false, allergies: [], medications: [], weeklySchedule: [] },
+    care: { allergies: [], medications: [] },
   },
   {
     // 기관 연결 요청 데모용 — 학교에만 다니고 우리 기관 명부에는 없다. 보호자가 우리 기관 코드로 요청했다
@@ -397,6 +391,8 @@ export const FILE_PROGRESS: FileProgress[] = [
       [2, 1, "waiting"],
       [2, 2, "running"],
       [1, 4, "waiting"],
+      // 매칭 확인에서 "우리 기관 아이 아님"으로 뺀 기록 (BE EXCLUDED)
+      [1, 1, "done"],
     ]),
   },
   {
@@ -552,60 +548,158 @@ export const GATE1_QUEUE: SummaryItem[] = [
   }),
 ];
 
+/* 오늘의 업무 묶음 카드 (O-34) ─────────────────────── */
+
+/** 라벨 다섯 가지와 버튼 세 갈래(강조 · 약하게 · 꺼짐)가 모두 보이게 골랐다. 오래된 날짜부터 */
+export const SUMMARY_GROUP_BOARD: SummaryGroupBoard = {
+  matching: { inProgress: 3, needsReview: 2 },
+  groups: [
+    {
+      childId: "child_2044",
+      childName: "최OO",
+      birthdate: "2021-05-30",
+      entryDate: "2026-08-18",
+      status: "admin_check",
+      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 1 },
+      canSummarize: false,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1077",
+      childName: "박OO",
+      birthdate: "2020-01-25",
+      entryDate: "2026-08-19",
+      status: "needs_fix",
+      counts: { validating: 0, needsFix: 1, ready: 0, summarizing: 0, adminCheck: 0 },
+      canSummarize: false,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1023",
+      childName: "김OO",
+      birthdate: "2019-03-12",
+      entryDate: "2026-08-20",
+      status: "needs_fix",
+      counts: { validating: 1, needsFix: 1, ready: 2, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1041",
+      childName: "이OO",
+      birthdate: "2018-07-02",
+      entryDate: "2026-08-20",
+      status: "ready",
+      counts: { validating: 0, needsFix: 0, ready: 3, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    // 같은 이름 — 생년월일로 구분한다
+    {
+      childId: "child_1088",
+      childName: "김OO",
+      birthdate: "2021-09-02",
+      entryDate: "2026-08-21",
+      status: "ready",
+      counts: { validating: 0, needsFix: 0, ready: 2, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: true,
+    },
+    {
+      childId: "child_1041",
+      childName: "이OO",
+      birthdate: "2018-07-02",
+      entryDate: "2026-08-21",
+      status: "summarizing",
+      counts: { validating: 2, needsFix: 0, ready: 1, summarizing: 0, adminCheck: 0 },
+      canSummarize: false,
+      summaryRequested: true,
+      waitingCount: 2,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1023",
+      childName: "김OO",
+      birthdate: "2019-03-12",
+      entryDate: "2026-08-21",
+      status: "validating",
+      counts: { validating: 2, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
+      canSummarize: false,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+  ],
+};
+
+let gate1RunSeq = 0;
+
+/** mock 전용: [요약]을 마친 묶음이 1차 검토에 올리는 요약 한 건 */
+export function gate1FromRun(group: SummaryGroup): SummaryItem {
+  gate1RunSeq += 1;
+  return gate1Mock({
+    id: `sum_run_${gate1RunSeq}`,
+    childId: group.childId,
+    childName: group.childName,
+    entryDate: group.entryDate,
+    revision: group.previousSummaryInReview ? 2 : 1,
+    gate1Status: "pending",
+    version: `mock_v_run_${gate1RunSeq}`,
+    processing: false,
+    sentences: ["오전 활동 시간에 끝까지 자리에 앉아 참여했다.", "점심을 남기지 않고 먹었다."],
+    noContent: false,
+    needsReview: false,
+    reviewReasons: [],
+    uncoveredEntries: [],
+    reviewFlags: [],
+  });
+}
+
 /* Child Context 타임라인 (I-09) ───────────────────── */
 
 export const TIMELINE: Record<string, TimelineEntry[]> = {
+  // 관찰 날짜 최근 순, 같은 날은 승인 최근 순 — 서버와 같은 순서로 둔다. 기록이 없는 날은 항목이 없다
   child_1023: [
     {
+      id: "ctx_04",
       date: "2026-08-21",
-      entry: {
-        recordType: "활동일지",
-        validation: "PASS",
-        content: "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
-        sourceCount: 1,
-        version: 1,
-        edited: false,
-      },
+      content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
+      edited: false,
+      sourceCount: 1,
     },
-    { date: "2026-08-20", entry: null },
     {
+      id: "ctx_03",
+      date: "2026-08-21",
+      content: "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
+      edited: true,
+      sourceCount: 2,
+    },
+    {
+      id: "ctx_01",
       date: "2026-08-19",
-      entry: {
-        recordType: "특이사항",
-        validation: "PASS",
-        content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
-        sourceCount: 1,
-        version: 2,
-        edited: true,
-      },
-    },
-    { date: "2026-08-18", entry: null },
-    { date: "2026-08-17", entry: null },
-    {
-      date: "2026-08-16",
-      entry: {
-        recordType: "관찰일지",
-        validation: "PASS",
-        content: "식사 시간에 새로운 반찬을 두 번 거부한 뒤 세 번째 권유에 소량 섭취함.",
-        sourceCount: 2,
-        version: 1,
-        edited: false,
-      },
+      content: "체육 활동 전 그림 카드로 순서를 보여 주자 울지 않고 줄을 섬.",
+      edited: false,
+      sourceCount: 1,
     },
   ],
-  // 방금 등록한 아이 — 승인된 요약이 아직 0건 (Cold Start 첫 화면)
   child_1077: [],
   child_1041: [
     {
+      id: "ctx_02",
       date: "2026-08-18",
-      entry: {
-        recordType: "관찰일지",
-        validation: "PASS",
-        content: "이동 전 5분 전에 미리 안내했을 때 전환이 수월했음.",
-        sourceCount: 1,
-        version: 1,
-        edited: false,
-      },
+      content: "등원 직후 엄마와 헤어질 때 10분가량 울었으나 담임이 안아 주자 진정됨.",
+      edited: false,
+      sourceCount: 1,
     },
   ],
 };
@@ -696,85 +790,42 @@ export const INSIGHTS: Insight[] = [
 
 /* 수신함 (I-12) ────────────────────────────────────── */
 
-export const INBOX: InboxItem[] = [
+// 단건(O-51)이 본문까지 주므로 mock 은 본문을 함께 들고 있다. 목록(getInbox)은 본문을 떼고 준다.
+export const INBOX: InboxDetail[] = [
   {
     id: "in_01",
-    from: SCHOOL,
+    childId: "child_1088",
     childName: "김OO",
-    receivedAt: "방금 전",
+    externalId: "C-1088",
+    from: SCHOOL,
+    period: "2026년 10월 4주차",
+    receivedAt: "2026-10-29T15:20:00",
+    readAt: null,
     content:
       "급식 시간 소음에 반응할 때, 손을 잡고 숫자를 세면 진정에 도움이 됩니다.",
-    read: false,
   },
   {
     id: "in_02",
-    from: ASSISTANT,
+    childId: "child_1088",
     childName: "김OO",
-    receivedAt: "2시간 전",
+    externalId: "C-1088",
+    from: ASSISTANT,
+    period: "2026년 10월 4주차",
+    receivedAt: "2026-10-29T10:05:00",
+    readAt: null,
     content: "이동 전 5분 전에 미리 안내하면 전환 시 불안이 줄어듭니다.",
-    read: false,
   },
   {
     id: "in_03",
+    childId: "child_2044",
+    childName: "최OO",
+    externalId: "C-2044",
     from: SCHOOL,
-    childName: "이OO",
-    receivedAt: "어제",
+    period: "2026년 10월 3주차",
+    receivedAt: "2026-10-22T09:40:00",
+    readAt: "2026-10-22T13:12:00",
     content:
       "새로운 활동 시작 전 그림 카드로 순서를 보여주면 참여도가 높아집니다.",
-    read: true,
-  },
-];
-
-/* 상담 도우미 (I-13) ───────────────────────────────── */
-
-export const CHAT_EXAMPLES: ChatTurn[] = [
-  {
-    question: "최근에 식사 거부가 줄었나요?",
-    answer:
-      "승인된 기록 기준으로, 최근 4주간 식사 거부 횟수가 줄었습니다. 손을 잡고 함께 세는 방식이 기록된 날에는 진정까지 걸린 시간이 짧았습니다.",
-    sources: [
-      { date: "2026-08-21", label: "급식실 기록" },
-      { date: "2026-08-14", label: "급식실 기록" },
-    ],
-  },
-  {
-    question: "밤에 잠을 잘 못 자나요?",
-    // 근거가 없으면 답변을 생성하지 않는다
-    answer: null,
-    sources: [],
-  },
-];
-
-/* 활동 이력 (I-14) ─────────────────────────────────── */
-
-export const ACTIVITY: ActivityLog[] = [
-  {
-    id: "al_01",
-    at: "2026-08-21 14:02",
-    actor: "박지현 선생님",
-    action: "Gate 1 승인",
-    target: "김OO · 08.21 활동일지 요약",
-  },
-  {
-    id: "al_02",
-    at: "2026-08-21 13:48",
-    actor: "박지현 선생님",
-    action: "확인 필요 큐 아동 지정",
-    target: "0821_관찰일지.docx → 김OO",
-  },
-  {
-    id: "al_03",
-    at: "2026-08-20 17:30",
-    actor: "박지현 선생님",
-    action: "Gate 2 발송 승인",
-    target: "김OO · 최근 6주 Insight → OO초등학교",
-  },
-  {
-    id: "al_04",
-    at: "2026-08-20 09:15",
-    actor: "OO초등학교",
-    action: "수신함 조회",
-    target: "김OO 관련 지원 방법",
   },
 ];
 
@@ -794,12 +845,77 @@ export const PARENT_CHILD = PARENT_CHILDREN[0];
 
 export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
   child_1023: [
-    { id: "pa_01", at: "오늘 09:12", text: "OO초등학교가 일일 요약을 보냈어요", journalId: "jrn_01" },
-    { id: "pa_02", at: "어제 17:40", text: "OO주간보호센터가 주간 인사이트를 보냈어요" },
-    { id: "pa_03", at: "3일 전", text: "일일 요약 공유 범위에 동의했어요" },
+    { id: "pa_01", kind: "journal", at: "오늘 09:12", text: "OO초등학교가 일일 요약을 보냈어요", journalId: "jrn_01" },
+    {
+      id: "pa_02",
+      kind: "insight",
+      at: "어제 17:40",
+      text: `${SCHOOL.name}에서 10월 4주차 리포트 2편이 도착했어요`,
+      insightId: null,
+    },
+    {
+      id: "pa_03",
+      kind: "insight",
+      at: "3일 전",
+      text: `${SCHOOL.name}에서 10월 3주차 리포트가 도착했어요`,
+      insightId: "gi_03",
+    },
   ],
-  child_2044: [{ id: "pa_04", at: "3일 전", text: "OO주간보호센터 공유에 동의했어요" }],
+  child_2044: [
+    { id: "pa_04", kind: "insight", at: "3일 전", text: "10월 4주차 리포트가 도착했어요", insightId: "gi_04" },
+  ],
 };
+
+/**
+ * 보호자가 받은 인사이트 (G-35 · G-36 mock). 승인 시각 최근 순 — 서버와 같은 순서로 둔다.
+ * 한 기간에 두 편(하나는 읽음), 함께 보는 기관이 있는 글과 없는 글, 승인 기관을 모르는 글(from: null)을 함께 둔다.
+ */
+export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
+  {
+    id: "gi_01",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 4주차",
+    content: "활동이 바뀌기 5분 전에 그림 카드로 예고하면, 학교와 센터 모두에서 울음 없이 다음 활동으로 옮겨 갔습니다.",
+    from: SCHOOL,
+    sharedWith: [CENTER],
+    approvedAt: "2026-10-29T17:40:00",
+    readAt: null,
+  },
+  {
+    id: "gi_02",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 4주차",
+    content: "점심 직후에는 소리에 예민해져, 조용한 자리를 먼저 마련하면 오후 활동 참여가 늘었습니다.",
+    from: SCHOOL,
+    sharedWith: [],
+    approvedAt: "2026-10-29T17:20:00",
+    readAt: "2026-10-29T20:05:00",
+  },
+  {
+    id: "gi_03",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 3주차",
+    content: "학교에서는 차례를 기다렸지만 센터에서는 끼어드는 일이 잦았습니다. 센터에서도 순서 카드를 쓰면 도움이 될 수 있습니다.",
+    from: SCHOOL,
+    sharedWith: [CENTER],
+    approvedAt: "2026-10-27T10:00:00",
+    readAt: "2026-10-27T21:00:00",
+  },
+  {
+    id: "gi_04",
+    childId: "child_2044",
+    childName: "최OO",
+    period: "2026년 10월 4주차",
+    content: "첫 주에는 미술 활동을 거부했지만, 넷째 주에는 스스로 붓을 들었습니다.",
+    from: null,
+    sharedWith: [],
+    approvedAt: "2026-10-28T09:00:00",
+    readAt: null,
+  },
+];
 
 /**
  * 아이별 초대 코드 (O-15~O-17 mock). 만료 여부는 조회할 때 expiresAt 으로 거른다.
@@ -827,11 +943,6 @@ export const INVITED_CHILD_ID = "child_1077";
 /** 학부모를 초대한 기관 (P-02 확인·동의 화면) */
 export const INVITING_INSTITUTION = SCHOOL;
 
-/** 타임라인 상단 오늘 요약 카드 — 아이별. 없으면 화면에서 숨긴다. */
-export const PARENT_TODAY_SUMMARY: Record<string, string> = {
-  child_1023: "오늘 블록 놀이를 가장 오래 했고, 점심을 모두 먹었습니다. 하원은 4시 40분이었습니다.",
-};
-
 /** 오늘의 일지 · 타임라인 */
 export const JOURNAL: JournalEntry[] = [
   {
@@ -839,125 +950,53 @@ export const JOURNAL: JournalEntry[] = [
     childId: PARENT_CHILD.id,
     institution: SCHOOL,
     date: "2026-08-21",
-    time: "15:20",
     isNew: true,
-    tag: "활동일지",
-    summary: "오늘 블록 놀이를 가장 오래 했습니다. 친구와 함께 높은 탑을 만들었습니다.",
-    detail:
+    content:
       "오늘 원영이는 블록 영역에서 40분 정도 놀았습니다. 친구와 함께 탑을 쌓다가 두 번 무너졌지만 다시 쌓아 완성했습니다. 점심은 모두 먹었고, 낮잠 없이 오후 활동까지 잘 참여했습니다.",
-    institutionNote: "집에서도 \"다시 해보자\"는 말을 자주 해주시면 좋겠습니다.",
-    photoCount: 3,
   },
   {
     id: "jrn_02",
     childId: PARENT_CHILD.id,
     institution: CENTER,
     date: "2026-08-21",
-    time: "17:00",
     isNew: true,
-    tag: "수업요약",
-    summary: "오늘 수업에서 공 주고받기를 했습니다. 처음보다 오래 이어갔습니다.",
-    detail:
+    content:
       "체육 활동으로 공 주고받기를 했습니다. 처음에는 세 번 정도였는데 마지막에는 아홉 번까지 이어갔습니다. 활동이 끝난 뒤 스스로 정리했습니다.",
-    institutionNote: "주말에 짧게라도 함께 공놀이를 해보시면 좋습니다.",
   },
   {
     id: "jrn_03",
     childId: PARENT_CHILD.id,
     institution: ASSISTANT,
     date: "2026-08-20",
-    time: "18:00",
     isNew: false,
-    tag: "하원기록",
-    summary: "하원 길에 오늘 만든 그림 이야기를 계속 했습니다.",
-    detail:
+    content:
       "18시 40분에 하원했고 집까지 20분 걸었습니다. 오늘 만든 그림을 보여주며 이야기를 계속 했습니다. 간식은 모두 먹었습니다.",
-    institutionNote: "오늘은 기분이 좋아 보였습니다.",
   },
   {
     id: "jrn_04",
     childId: PARENT_CHILD.id,
     institution: SCHOOL,
     date: "2026-08-14",
-    time: "16:10",
     isNew: false,
-    tag: "활동일지",
-    summary: "블록 놀이 중 친구와 부딪히는 일이 두 번 있었고, 함께 정리했습니다.",
-    detail: "블록 놀이 중 친구와 부딪히는 일이 두 번 있었고, 함께 정리했습니다.",
+    content: "블록 놀이 중 친구와 부딪히는 일이 두 번 있었고, 함께 정리했습니다.",
   },
   {
     id: "jrn_05",
     childId: PARENT_CHILD.id,
     institution: CENTER,
     date: "2026-08-14",
-    time: "15:40",
     isNew: false,
-    tag: "수업요약",
-    summary: "놀이 종료 안내를 듣고 스스로 정리했습니다.",
-    detail: "놀이 종료 안내를 듣고 스스로 정리했습니다.",
+    content: "놀이 종료 안내를 듣고 스스로 정리했습니다.",
   },
   {
     id: "jrn_06",
     childId: PARENT_CHILD.id,
     institution: SCHOOL,
     date: "2026-08-07",
-    time: "16:00",
     isNew: false,
-    tag: "활동일지",
-    summary: "오후 자유놀이 시간에 비슷한 상황이 있었습니다.",
-    detail: "오후 자유놀이 시간에 비슷한 상황이 있었습니다.",
+    content: "오후 자유놀이 시간에 비슷한 상황이 있었습니다.",
   },
 ];
-
-/** 케어 리포트 — 아이별로 따로 있다. 아직 데이터가 없는 아이는 key 자체가 없다. */
-export const CARE_REPORTS: Record<string, { weekly: CareReport; monthly: CareReport }> = {
-  child_1023: {
-    weekly: {
-      period: "weekly",
-      rangeLabel: "08.15 부터 08.21 까지",
-      summary: "이번 주에는 놀이를 스스로 마무리하는 모습이 늘었습니다. 기관 세 곳의 기록을 함께 봤습니다.",
-      trendTitle: "변화 추이",
-      trend: [
-        { label: "1주", value: 5 },
-        { label: "2주", value: 4 },
-        { label: "3주", value: 2 },
-        { label: "4주", value: 1 },
-      ],
-      trendInsight: "친구와 부딪히는 일이 4주 동안 조금씩 줄었습니다. 스스로 정리하는 모습이 늘었습니다.",
-      trendEvidenceIds: ["jrn_01", "jrn_05", "jrn_06"],
-      patterns: [
-        { text: "오후 4시 자유놀이 시간에 비슷한 상황이 반복됩니다.", evidenceIds: ["jrn_04", "jrn_06"] },
-      ],
-      tips: [
-        "놀이를 끝내기 5분 전에 미리 알려주세요.",
-        "속상해할 때는 조용한 자리에서 2분 기다려주세요.",
-        "정리를 함께 하며 마무리해주세요.",
-      ],
-    },
-    monthly: {
-      period: "monthly",
-      rangeLabel: "08.01 부터 08.21 까지",
-      summary: "8월 한 달 동안 놀이를 스스로 마무리하는 날이 꾸준히 늘었습니다. 기관 세 곳의 기록을 함께 봤습니다.",
-      trendTitle: "변화 추이",
-      trend: [
-        { label: "1주", value: 5 },
-        { label: "2주", value: 4 },
-        { label: "3주", value: 2 },
-        { label: "4주", value: 1 },
-      ],
-      trendInsight: "친구와 부딪히는 일이 4주 동안 조금씩 줄었습니다. 스스로 정리하는 모습이 늘었습니다.",
-      trendEvidenceIds: ["jrn_01", "jrn_05", "jrn_06"],
-      patterns: [
-        { text: "오후 4시 자유놀이 시간에 비슷한 상황이 반복됩니다.", evidenceIds: ["jrn_04", "jrn_06"] },
-      ],
-      tips: [
-        "놀이를 끝내기 5분 전에 미리 알려주세요.",
-        "속상해할 때는 조용한 자리에서 2분 기다려주세요.",
-        "정리를 함께 하며 마무리해주세요.",
-      ],
-    },
-  },
-};
 
 /** 설정 › 기관 요청사항 — 아이별. 아직 요청이 없는 아이는 빈 배열. */
 export const INSTITUTION_REQUESTS: Record<string, InstitutionRequestItem[]> = {

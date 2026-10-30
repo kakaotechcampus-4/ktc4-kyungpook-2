@@ -67,12 +67,13 @@ export interface Institution {
   verified: boolean;
 }
 
-/** 보호자가 온보딩 중 직접 입력하는 돌봄 정보 — 기관마다 다르게 공유된다 */
+/**
+ * 보호자가 설정 › 아이 정보에서 적는 돌봄 정보 (G-13). 현재 이 아이와 연결된 모든 보호자가 조회·수정하고,
+ * 기관에는 공유하지 않는다. 복용 시간은 비어 있을 수 있다("").
+ */
 export interface ChildCareInfo {
-  welfareCard: boolean;
   allergies: string[];
   medications: { name: string; time: string }[];
-  weeklySchedule: { day: string; note: string }[];
 }
 
 export interface Child {
@@ -109,11 +110,14 @@ export interface LinkRequest {
  * 동의가 있으면 active 다. 학교에 동의한 아이가 우리 명부에 막 올라오면 status 는 active 인데
  * 우리 기관에는 아직 동의 전(not_granted)이다.
  */
-export type ChildListItem = Omit<Child, "institutions" | "linkRequests"> &
-  Partial<Pick<Child, "institutions">> & {
-    /** 우리 기관에 대한 동의 상태 */
-    consent: ConsentState;
-  };
+/**
+ * 기관 명부 한 줄 (O-10). 명부에 있는 칸만 고른다 — 다른 기관 정보(다니는 기관 · 그 기관 동의)와 보호자용 칸(학교 ·
+ * 돌봄 정보 · 연결 요청)은 없다. 보호자는 기관마다 따로 동의할 뿐, 다른 기관에 다닌다는 사실을 알리는 데 동의하지 않았다.
+ */
+export type ChildListItem = Pick<Child, "id" | "name" | "birthDate" | "externalId" | "status"> & {
+  /** 우리 기관에 대한 동의 상태 */
+  consent: ConsentState;
+};
 
 /** 내 기관 정보 (O-01). code 는 보호자에게 알려 주는 기관 코드 8자 — 화면은 4-4 로 나눠 보여준다 */
 export interface MyInstitution extends Institution {
@@ -388,6 +392,50 @@ export interface SummaryItem {
 }
 
 /**
+ * 묶음 카드 라벨 (api-spec O-34). 위에서부터 처음 맞는 것이다 — 선생님이 할 일이 먼저다.
+ * needs_fix 수정 요청 있음 · ready 요약 대기 · summarizing 요약 중이거나 [요약] 눌러 둠 ·
+ * validating 검증 중만 · admin_check 시스템 오류만 남음
+ */
+export type SummaryGroupStatus = "needs_fix" | "ready" | "summarizing" | "validating" | "admin_check";
+
+/**
+ * 오늘의 업무 묶음 카드 한 장 = 아이 한 명의 하루치 기록 (BE SummaryGroupCard).
+ * 요약 전 묶음만 온다 — 요약이 만들어지면 1차 검토(O-30)로 옮겨 가고 카드는 빠진다.
+ */
+export interface SummaryGroup {
+  /** BE 는 숫자. lib/api.ts 가 문자열로 바꾼다 */
+  childId: string;
+  childName: string;
+  /** 같은 이름의 아이를 구분하려고 함께 보인다 */
+  birthdate: string | null;
+  /** 일지 날짜 YYYY-MM-DD. [요약](O-32)에 그대로 보낸다 */
+  entryDate: string;
+  status: SummaryGroupStatus;
+  counts: {
+    validating: number;
+    needsFix: number;
+    ready: number;
+    summarizing: number;
+    adminCheck: number;
+  };
+  /** [요약]을 누를 수 있음. 버튼은 늘 두고 false 면 막는다 */
+  canSummarize: boolean;
+  /** [요약]을 눌렀고 아직 요약이 끝나지 않음 */
+  summaryRequested: boolean;
+  /** 눌렀지만 시작 전일 때, 요약이 기다리는 같은 날 매칭·검증 중 기록 수 */
+  waitingCount: number;
+  /** 이전 요약이 1차 검토에 있음 — 다시 요약하면 그 요약이 새 판으로 바뀐다 */
+  previousSummaryInReview: boolean;
+}
+
+export interface SummaryGroupBoard {
+  /** 아이가 아직 정해지지 않아 카드에 넣을 수 없는 기록. 자동 매칭 중 · 확인 필요 큐 */
+  matching: { inProgress: number; needsReview: number };
+  /** 오래된 날짜부터 */
+  groups: SummaryGroup[];
+}
+
+/**
  * Gate 1 승인 때 보내는 문장 카드 (api-spec O-31). 원래 문장은 모두 한 번씩, 배열 순서가 최종 순서다.
  * KEEP · DELETE 는 index 만, EDIT 는 index 와 고친 글, ADD 는 새 글만 보낸다.
  */
@@ -397,17 +445,22 @@ export type Gate1Card =
   | { action: "ADD"; text: string };
 
 /** Child Context 타임라인 한 칸 */
+/**
+ * 기관 아동 상세의 기록 타임라인 한 건 (O-14) — 우리 기관이 1차 검토에서 승인한 요약 하나.
+ * 다른 기관 기록은 오지 않는다(기관 사이에는 2차 검토를 지난 인사이트로만 넘어간다). 기록이 없는 날은 항목이 없다 —
+ * 추정치로 채우지 않는다. 같은 날 승인본이 여럿이면 따로 온다.
+ */
 export interface TimelineEntry {
+  /** 승인본 id */
+  id: string;
+  /** 관찰 날짜 YYYY-MM-DD */
   date: string;
-  /** 기록이 없는 날은 그대로 비워 표시한다 — 추정치로 채우지 않는다 */
-  entry: {
-    recordType: RawRecord["type"];
-    validation: ValidationStatus;
-    content: string;
-    sourceCount: number;
-    version: number;
-    edited: boolean;
-  } | null;
+  /** 담당자가 승인한 최종본 */
+  content: string;
+  /** 1차 검토에서 고쳐서 승인했는지 — "선생님 수정" */
+  edited: boolean;
+  /** 그 요약에 묶인 원본 일지 수 */
+  sourceCount: number;
 }
 
 export interface EvidenceRef {
@@ -437,81 +490,86 @@ export interface Insight {
   gate2Status: Gate2Status;
 }
 
+/**
+ * 기관 수신함 목록 한 줄 (O-50). 다른 기관이 Gate 2 에서 승인해 우리 기관에 열린 인사이트다.
+ * **본문이 없다** — 단건(O-51)을 열어야 보이고, 그때 우리 기관의 처음 열람 시각이 남는다.
+ * 같이 받은 다른 기관은 오지 않는다(아이가 어디에 또 다니는지는 최소 정보를 넘는다).
+ */
 export interface InboxItem {
+  /** 인사이트 id. 단건 경로에 그대로 쓴다 */
   id: string;
-  from: Institution;
+  childId: string;
   childName: string;
+  /** 우리 기관이 붙인 관리번호. 이름이 같은 아이를 가른다 */
+  externalId: string;
+  /** 이 글을 Gate 2 에서 승인한 기관 */
+  from: Institution;
+  /** "2026년 8월 3주차" 같은 문구 */
+  period: string;
+  /** 우리 기관이 볼 수 있게 된 시각 (ISO) */
   receivedAt: string;
-  /** 원본이 아니라 수신자별로 변환된 최소 정보 */
+  /** 우리 기관에서 처음 열어 본 시각 (ISO). 아직 안 열었으면 null — 키는 항상 온다 */
+  readAt: string | null;
+}
+
+/** 기관 수신함 단건 (O-51). 본문은 보호자에게 열린 글과 같다 — 수신자별 변환은 아직 없다 */
+export interface InboxDetail extends InboxItem {
   content: string;
-  read: boolean;
 }
 
-export interface ChatSource {
-  date: string;
-  label: string;
-}
-
-export interface ChatTurn {
-  question: string;
-  /** 근거가 없으면 answer 는 null 이고 답변을 생성하지 않는다 */
-  answer: string | null;
-  sources: ChatSource[];
-}
-
-export interface ActivityLog {
-  id: string;
-  at: string;
-  actor: string;
-  action: string;
-  target: string;
-}
-
+/**
+ * 보호자 홈 "최근 공유 활동" 한 줄 (G-11). 승인된 일지 하나, 또는 같은 기간·같은 승인 기관의 받은 인사이트 묶음 하나.
+ * id 는 종류를 앞에 붙여(`journal-3` · `insight-…`) 목록 안에서 겹치지 않는다 — 화면은 key 로만 쓴다.
+ */
 export interface ParentActivity {
   id: string;
+  kind: "journal" | "insight";
+  /** 화면에 그대로 쓰는 "2026-08-21 15:20" */
   at: string;
   text: string;
-  /** 이 활동이 특정 일지에서 비롯됐으면 상세로 이동할 수 있게 연결한다 */
-  journalId?: string;
+  /** 일지 줄이면 그 일지 상세로 연결한다 */
+  journalId?: string | null;
+  /** 인사이트 한 편이면 그 상세로, 여러 편을 묶은 줄이면 null 이라 리포트 탭으로 연결한다 */
+  insightId?: string | null;
 }
 
-/** 학부모 홈/타임라인에 뜨는 일지 한 건 */
+/**
+ * 보호자가 받은 인사이트 한 편 (G-35 · G-36). 담당자가 Gate 2 에서 승인하면 열린다. 화면 이름은 "주간 리포트".
+ * 서버는 내 모든 아이 것을 승인 시각 최근 순으로 준다 — 화면이 고른 아이로 거른다.
+ */
+export interface GuardianInsight {
+  id: string;
+  childId: string;
+  /** 아이가 삭제됐으면 null */
+  childName: string | null;
+  /** "2026년 8월 3주차" — 어느 주의 이야기인지 */
+  period: string;
+  /** 교사·보호자가 읽을 한두 문장 */
+  content: string;
+  /** Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null — 화면은 "기관 정보 없음" */
+  from: Institution | null;
+  /** 지금 이 글을 볼 수 있는 다른 기관. 기관 동의를 끄면 빠진다 */
+  sharedWith: Institution[];
+  /** 담당자가 승인한 시각 (ISO). 모든 보호자에게 같다 — 언제 받았는지 */
+  approvedAt: string;
+  /** 처음 열어 본 시각 (ISO). 아직 안 봤으면 null — "새 글" 표시 */
+  readAt: string | null;
+}
+
+/**
+ * 학부모 홈/타임라인에 뜨는 일지 한 건 (G-20·G-21) — 교사가 1차 검토에서 승인한 요약 하나.
+ * 요약은 하루 단위라 시각이 없다. 목록은 content 를 2줄로 자르고, 상세는 전부 보여 준다.
+ */
 export interface JournalEntry {
   id: string;
   childId: string;
   institution: Institution;
+  /** 관찰 날짜 yyyy-MM-dd */
   date: string;
-  time: string;
+  /** 승인된 지 24시간이 안 됐다. 읽었는지와는 무관하다 */
   isNew: boolean;
-  tag: string;
-  summary: string;
-  detail: string;
-  institutionNote?: string;
-  photoCount?: number;
-  /** "이 내용이 이상해요" — 보호자가 기관에 재확인을 요청했는지 */
-  flagged?: boolean;
-}
-
-export interface CareReportTrendPoint {
-  label: string;
-  value: number;
-}
-
-export interface CareReportPattern {
-  text: string;
-  evidenceIds: string[];
-}
-
-export interface CareReport {
-  period: "weekly" | "monthly";
-  rangeLabel: string;
-  summary: string;
-  trendTitle: string;
-  trend: CareReportTrendPoint[];
-  trendInsight: string;
-  trendEvidenceIds: string[];
-  patterns: CareReportPattern[];
-  tips: string[];
+  /** 교사가 승인한 글 */
+  content: string;
 }
 
 /** 설정 › 기관 요청사항 한 건 */
