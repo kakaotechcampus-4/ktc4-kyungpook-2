@@ -130,8 +130,9 @@ public class GuardianController {
     @GetMapping("/home")
     @Operation(summary = "보호자 홈",
             description = "아이 하나와 최근 공유 활동입니다. child 는 아이 목록의 한 항목과 같은 모양입니다. "
-                    + "최근 공유 활동(activity)은 승인된 일지마다 한 줄, 승인 최근 순 5건입니다. "
-                    + "journalId 로 일지 상세를 열 수 있습니다.")
+                    + "최근 공유 활동(activity)은 승인된 일지 줄(kind=journal)과 받은 인사이트 줄(kind=insight)을 "
+                    + "승인 시각 최근 순으로 섞은 5줄입니다. 인사이트는 같은 기간·같은 승인 기관이면 한 줄로 묶습니다. "
+                    + "journalId 로 일지 상세를, insightId(한 편일 때만)로 인사이트 상세를 열 수 있습니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
