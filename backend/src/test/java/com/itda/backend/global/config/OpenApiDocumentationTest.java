@@ -87,7 +87,13 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.401").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.409.description",
+						containsString("SUMMARY_IN_PROGRESS")))
 				.andExpect(jsonPath("$.components.schemas.RunSummaryRequest.properties.entryDateValid").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.requestBody").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.200").exists())
