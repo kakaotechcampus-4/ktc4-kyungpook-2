@@ -103,7 +103,7 @@ class InstitutionInboxApiTest {
 
     private void consent(Organization organization, String action) throws Exception {
         String body = action.equals("grant")
-                ? "{\"action\": \"grant\", \"allowedFields\": [\"daily_summary\"]}"
+                ? "{\"action\": \"grant\", \"allowedFields\": [\"daily_summary\", \"weekly_insight\"]}"
                 : "{\"action\": \"revoke\"}";
         mockMvc.perform(withCsrf(put("/api/v1/children/" + childId + "/consent-scopes/" + organization.getId()),
                         auth(mom))
