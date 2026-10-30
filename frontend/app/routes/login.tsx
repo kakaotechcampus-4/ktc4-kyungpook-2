@@ -91,27 +91,32 @@ function at(deg: number) {
   return { x: 50 + R * Math.cos(t), y: 50 - R * Math.sin(t) };
 }
 
-const NODES = [
-  { deg: 90, label: "학교", src: "/img/school.png" },
-  { deg: 18, label: "센터", src: "/img/center.png" },
-  { deg: -54, label: "활동지원사", src: "/img/adult-05.png" },
-  { deg: -126, label: "부모", src: "/img/adult-01.png" },
-  { deg: 162, label: "아이", src: "/img/kid-04.png" },
+const NODES: [number, string, string][] = [
+  [90, "학교", "#5DA7EA"],
+  [18, "센터", "#5CC08F"],
+  [-54, "활동지원사", "#F7D046"],
+  [-126, "부모", "#EF6B4B"],
+  [162, "아이", "#C2A6F0"],
 ];
 
-/** 이웃한 두 원의 한가운데 — [각도, 점 색, 호 색] */
-const MID: [number, string, string][] = [
-  [54, "#5DA7EA", "#9CC6EF"],
-  [-18, "#5CC08F", "#9FD9BE"],
-  [-90, "#F7D046", "#F6C96A"],
-  [-162, "#EF6B4B", "#F5A98E"],
-  [126, "#C2A6F0", "#CDB8F1"],
+/** 이웃한 두 원의 한가운데 — [각도, 호 색] */
+const MID: [number, string][] = [
+  [54, "#9CC6EF"],
+  [-18, "#9FD9BE"],
+  [-90, "#F6C96A"],
+  [-162, "#F5A98E"],
+  [126, "#CDB8F1"],
 ];
+
+/** 색 호 하나의 길이. 둘레를 다섯으로 나눈 값(72°)이라 호끼리 **정확히 맞물린다**.
+   경계는 중심 ±36° 에 생기고, 그 자리가 원 다섯 개의 자리와 같다.
+   이보다 짧으면 호 사이에 맨 고리선이 드러난다. */
+const SEG = CIRC / 5;
 
 /** 호가 `deg` 를 한가운데 두도록 하는 dashoffset. 경로는 3시 방향에서 시계 방향으로 간다. */
 function arcOffset(deg: number) {
   const cw = (((-deg % 360) + 360) % 360) / 360;
-  return -(cw * CIRC - 10);
+  return -(cw * CIRC - SEG / 2);
 }
 
 function Ring() {
@@ -119,7 +124,7 @@ function Ring() {
     <div className="wheel">
       <svg viewBox="0 0 100 100" aria-hidden>
         <circle cx="50" cy="50" r={R} fill="none" stroke="#E3D7C3" strokeWidth=".35" />
-        {MID.map(([deg, , arc]) => (
+        {MID.map(([deg, arc]) => (
           <circle
             key={`arc${deg}`}
             cx="50"
@@ -128,16 +133,13 @@ function Ring() {
             fill="none"
             stroke={arc}
             strokeWidth=".35"
-            strokeDasharray={`20 ${CIRC - 20}`}
+            strokeDasharray={`${SEG} ${CIRC - SEG}`}
             strokeDashoffset={arcOffset(deg)}
           />
         ))}
-        {MID.map(([deg, dot]) => {
-          const p = at(deg);
-          return <circle key={`dot${deg}`} cx={p.x} cy={p.y} r="1.6" fill={dot} />;
-        })}
       </svg>
 
+      {/* 세 줄을 한 묶음으로 두고 그 묶음의 가운데를 고리 중심에 맞춘다. */}
       <div className="center">
         <img src="/img/logo.png" alt="잇다" width={600} height={220} />
         <p className="sub">
@@ -150,19 +152,22 @@ function Ring() {
         </p>
       </div>
 
-      <div className="orbit">
-        {NODES.map(({ deg, label, src }) => {
+      {/* 자리마다 뜻이 있지만(학교·센터·활동지원사·부모·아이) 화면에는 색만 둔다.
+          읽히지 않는 색에 뜻이 담기므로 고리 전체에 이름을 한 번 붙인다. */}
+      <ul className="orbit" aria-label="학교, 센터, 활동지원사, 부모, 아이를 잇습니다">
+        {NODES.map(([deg, label, color]) => {
           const p = at(deg);
           return (
-            <div key={label} className="node" style={{ left: `${p.x}%`, top: `${p.y}%` }}>
-              <em>
-                <img src={src} alt="" aria-hidden />
-              </em>
-              <span>{label}</span>
-            </div>
+            <li
+              key={label}
+              className="node"
+              style={{ left: `${p.x}%`, top: `${p.y}%`, background: color }}
+            >
+              <span className="sr">{label}</span>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 }

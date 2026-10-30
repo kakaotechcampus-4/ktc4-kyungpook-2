@@ -78,7 +78,8 @@
    `box-shadow: 0 0 0 1px` 가 붙고 고리 둘레에 네모 테두리가 생긴다. */
 .land .wheel {
   position: relative;
-  width: min(480px, 100%);
+  /* 고리 지름은 이 값의 72%(= 반지름 36% 의 두 배)다. 487px 에서 350.6px 이 된다. */
+  width: min(487px, 100%);
   aspect-ratio: 1 / 1;
 }
 .land .wheel > svg {
@@ -88,9 +89,13 @@
   height: 100%;
 }
 
-/* 고리 **안쪽**에 들어가야 한다. 원이 돌기 때문에 가로폭만 재면 안 된다 —
+/* 세 줄(로고 · 아이의 세상을 잇다 · 끊김 없는 돌봄…)을 한 묶음으로 두고 그 가운데를 맞춘다.
+   아래 한 줄을 흐름에서 빼면 그 줄만큼 눈에 보이는 덩어리가 아래로 쏠린다 —
+   고리 위 여백 124px, 아래 99px 로 26px 어긋났다.
+
+   고리 **안쪽**에 들어가야 한다. 원이 돌기 때문에 가로폭만 재면 안 된다 —
    어느 각도에서는 원이 네모의 모서리로 온다. 기준은 **가장 먼 모서리**이고
-   지켜야 할 값은 (반지름 36% − 원 반지름 11%) 이다. */
+   지켜야 할 값은 (반지름 36% − 원 반지름) 이다. */
 .land .center {
   position: absolute;
   left: 50%;
@@ -107,6 +112,7 @@
   width: 92%;
   height: auto;
 }
+
 .land .center .sub {
   font-size: clamp(13px, 1.6vw, 18px);
   font-weight: 700;
@@ -120,6 +126,7 @@
 .land .center .tag {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   font-size: clamp(10px, 1vw, 11.5px);
   font-weight: 700;
@@ -139,53 +146,43 @@
 .land .orbit {
   position: absolute;
   inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .land .wheel > svg,
 .land .orbit {
   animation: itda-orbit 40s linear infinite;
 }
+
+/* 색만 남은 원 다섯. 그림도 글자도 없으니 되돌려 세울 것이 없다 —
+   틀만 돌리고 원은 그대로 둔다(내용이 있을 때는 같은 속도로 되돌렸다).
+   3.63%는 처음 고리선 위에 있던 점(viewBox 반지름 1.6 = 3.2%)보다 2px 큰 크기다.
+   고리가 좁아지면 원도 같이 줄도록 %로 둔다. 그림자는 두지 않는다 — 이 크기에서는
+   원보다 그림자가 더 크게 번져 점이 흐려 보인다. */
 .land .node {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 22%;
+  width: 3.63%;
   aspect-ratio: 1 / 1;
   border-radius: 999px;
-  background: var(--card);
-  box-shadow: 0 10px 30px rgba(120, 90, 40, 0.1);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  animation: itda-orbit-back 40s linear infinite;
 }
-.land .node em {
-  display: block;
-  transition: transform 200ms var(--out);
-}
-.land .node:hover em {
-  transform: translateY(-3px);
-}
-/* 더 키우면 네모난 그림의 모서리가 원 밖으로 나간다 */
-.land .node img {
-  display: block;
-  width: clamp(41px, 5.55vw, 64px);
-  height: auto;
-  object-fit: contain;
-}
-.land .node span {
-  font-size: clamp(11px, 1.5vw, 15px);
-  font-weight: 700;
+
+/* 화면에서는 안 보이지만 읽어 주는 프로그램에는 남는 이름 */
+.land .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 @keyframes itda-orbit {
   to {
     transform: rotate(360deg);
-  }
-}
-@keyframes itda-orbit-back {
-  to {
-    transform: translate(-50%, -50%) rotate(-360deg);
   }
 }
 
@@ -298,6 +295,7 @@
     width: 36%;
     gap: 6px;
   }
+
   .land .center .tag {
     font-size: 9px;
     gap: 4px;
@@ -310,8 +308,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .land .wheel > svg,
-  .land .orbit,
-  .land .node {
+  .land .orbit {
     animation: none;
   }
 }
