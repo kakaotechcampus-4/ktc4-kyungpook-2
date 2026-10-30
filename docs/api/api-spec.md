@@ -384,7 +384,7 @@ POST /api/v1/auth/signup   → 201 Created
 | O-10 | GET | `/institutions/me/children` | 담당 아동 목록 · **구현됨** | I-05, I-09, I-13 |
 | O-11 | POST | `/institutions/me/children` | 아이 등록 + 초대 코드 발급 · **구현됨** | I-04 |
 | O-13 | GET | `/children/{childId}` | 아동 상세 | I-09-1 |
-| O-14 | GET | `/children/{childId}/context` | Child Context 타임라인 | I-09-1 |
+| O-14 | GET | `/institutions/me/children/{childId}/timeline` | 기록 타임라인 — 우리 기관이 승인한 요약 · **구현됨** | I-09-1 |
 | O-15 | POST | `/institutions/me/children/{childId}/invitations` | 초대 코드 추가 발급 · **구현됨** | I-04, I-09-1 |
 | O-16 | GET | `/institutions/me/children/{childId}/invitations` | 쓸 수 있는 초대 코드 목록 · **구현됨** | I-04, I-09-1 |
 | O-17 | DELETE | `/institutions/me/children/{childId}/invitations/{invitationId}` | 초대 코드 취소 · **구현됨** | I-04, I-09-1 |
@@ -510,17 +510,41 @@ O-15 ~ O-19 공통 오류:
 | 404 | `GUARDIAN_NOT_FOUND` | (O-19) 이 아이와 연결되지 않은 보호자 |
 | 503 | `INVITE_CODE_ISSUE_FAILED` | (O-15) 동시에 발급된 코드와 겹침. 다시 요청 |
 
-**O-14 응답** · 날짜 오름차순. **기록이 없는 날도 항목으로 포함하고 `entry`를 `null`로**
-주세요. 프론트는 빈 날을 "기록 없음"으로 표시하며, 추정치로 채우지 않습니다.
+**O-14 응답** · 우리 기관이 1차 검토(Gate 1)에서 승인한 요약입니다(#292). **관찰 날짜 최근 순**, 같은 날은 승인 최근 순입니다.
 
 ```json
 [
-  { "date": "2026-08-19", "entry": null },
-  { "date": "2026-08-20", "entry": {
-      "recordType": "관찰일지", "validation": "PASS",
-      "content": "오전 활동에서 …", "sourceCount": 2, "version": 2, "edited": true } }
+  { "id": "12", "date": "2026-08-21", "content": "오후 자유놀이 종료 안내 후 스스로 정리함.",
+    "edited": false, "sourceCount": 1 },
+  { "id": "9", "date": "2026-08-21", "content": "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
+    "edited": true, "sourceCount": 2 }
 ]
 ```
+
+| 필드 | 뜻 |
+| --- | --- |
+| `id` | 승인본(`child_context`) id |
+| `date` | 관찰 날짜 |
+| `content` | 담당자가 승인한 최종본. AI 원문이 아닙니다 — 고쳐서 승인하면 최종본은 승인본에만 있습니다 |
+| `edited` | 1차 검토에서 고쳐서 승인했는지 ("선생님 수정") |
+| `sourceCount` | 그 요약에 묶인 원본 일지 수. 저장된 목록을 읽을 수 없으면 0 |
+
+- **우리 기관 기록만입니다.** 다른 기관 기록은 나오지 않고, 다른 기관이 이 아이를 기록 중이라는 사실도 알리지 않습니다.
+  기관 사이에는 2차 검토를 지난 인사이트(수신함 O-50 · O-51)로만 넘어갑니다.
+- **기록이 없는 날은 항목이 없습니다.** 추정치로 채우지 않습니다. 예전 초안의 "빈 날도 `entry: null` 로" 와 기록 종류 ·
+  검증 결과 · 버전 칸은 뺐습니다.
+- **같은 날 승인본이 여럿이면 따로 나옵니다.** 승인 뒤 같은 날 일지가 더 오면 새 일지만 묶은 요약이 따로 승인됩니다.
+- **보호자가 우리 기관 동의를 꺼도 지난 기록은 나옵니다.** 동의 철회는 다른 기관으로 넘어가는 것과 새 처리를 막습니다.
+- 한 번에 전부 줍니다.
+
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 회원가입을 끝내지 않음 |
+| 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 소속이 아닌 사용자(보호자) |
+| 404 | `CHILD_NOT_FOUND` | 없거나 삭제됐거나 **우리 기관 명부에 없는** 아이. 다른 기관 아이도 같은 404입니다 |
+
+O-13(아동 상세 — 아이 정보 · 연결된 기관)은 아직 없습니다. 화면은 명부(O-10)에서 아이를 찾습니다.
 
 **O-60 응답** · 보호자가 기관 코드로 보낸, 기다리는 연결 요청입니다. 같은 아이에 보호자 여럿이 요청했으면 한 항목으로 묶습니다.
 가장 먼저 요청한 아이부터입니다. 없으면 `[]`.

@@ -196,16 +196,14 @@ interface SummaryGroup {      // 카드 한 장 = 아이 한 명의 하루치 �
   previousSummaryInReview: boolean;  // 다시 요약하면 1차 검토의 요약이 새 판으로 바뀐다
 }
 
-interface TimelineEntry {     // Child Context 타임라인 한 칸 (= 하루)
-  date: string;
-  entry: {                    // null = 그 날 기록 없음. 절대 추정치로 채우지 않는다
-    recordType: RawRecord["type"];
-    validation: ValidationStatus;
-    content: string;
-    sourceCount: number;
-    version: number;
-    edited: boolean;          // 선생님이 수정했는지
-  } | null;
+// 기관 아동 상세의 기록 타임라인 한 건 (O-14) — 우리 기관이 1차 검토에서 승인한 요약 하나 (#292).
+// 기록이 없는 날은 항목이 없다(추정치로 채우지 않는다). 같은 날 승인본이 여럿이면 따로 온다.
+interface TimelineEntry {
+  id: string;                 // 승인본(child_context) id
+  date: string;               // YYYY-MM-DD 관찰 날짜
+  content: string;            // 담당자가 승인한 최종본
+  edited: boolean;            // 1차 검토에서 고쳐서 승인 — "선생님 수정"
+  sourceCount: number;        // 그 요약에 묶인 원본 일지 수
 }
 
 interface Insight {
@@ -313,7 +311,7 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `acceptLinkRequest` | `(childId: string, externalId: string) => Promise<ChildListItem>` (O-61) | I-09 |
 | `rejectLinkRequest` | `(childId: string) => Promise<void>` (O-62) | I-09 |
 | `getChild` | `(id: string) => Promise<ChildListItem \| undefined>` — 상세 API 가 없어 명부가 실서버면 명부에서 찾음 | I-09-1 |
-| `getTimeline` | `(childId: string) => Promise<TimelineEntry[]>` | I-09-1 |
+| `getTimeline` | `(childId: string) => Promise<TimelineEntry[]>` — O-14. 우리 기관 승인본, 관찰 날짜 최근 순(같은 날은 승인 최근 순). 스위치 `childTimeline` | I-09-1 |
 | `getMatchingQueue` | `() => Promise<MatchingItem[]>` | I-03, I-06, 사이드바 배지 |
 | `resolveMatchingItem` | `(id: string, resolution: { action: "assign"; childId: string } \| { action: "not_ours" }) => Promise<{ ok: true }>` | I-06 |
 | `getBlockedQueue` | `() => Promise<BlockedItem[]>` | I-03, I-07, 사이드바 배지 |
