@@ -46,7 +46,7 @@ PR에는 AWS OIDC 권한과 패키지 업로드 권한을 부여하지 않습니
 | `CADDY_READY` | 최초 운영 전환 전 미설정 또는 `false`, 완료 후 `true` |
 | `USE_MOCK` | 프론트 데이터 mock. 실연동은 `false` (→ [프론트엔드 CI/CD](#프론트엔드-cicd)) |
 | `VITE_AUTH_MOCK` | 프론트 로그인 mock. 실연동은 `false` |
-| `PUBLIC_API_BASE_URL` | 프론트가 부를 API 주소. 같은 오리진이면 빈 값 |
+| `PUBLIC_API_BASE_URL` | **선택.** 프론트가 부를 API 주소. 같은 오리진이면 **등록하지 않습니다** |
 
 이미지는 `ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend:<커밋 SHA>`로 업로드합니다.
 배포에는 태그 대신 digest를 사용합니다. 최초 게시된 패키지는 비공개 상태를 유지하고,
@@ -310,11 +310,12 @@ GitHub Variables(`AWS_ROLE_ARN`·`AWS_REGION`·`EC2_INSTANCE_ID`·`CADDY_READY`)
 |---|---|---|
 | `USE_MOCK` | `false` | 데이터 mock. 프론트의 `VITE_USE_MOCK`으로 전달됩니다 |
 | `VITE_AUTH_MOCK` | `false` | 로그인 mock. `USE_MOCK`과 **별개**입니다. `true`면 `/auth/me`·회원가입을 타지 않고 "mock 데이터로 둘러보기" 버튼이 나옵니다 |
-| `PUBLIC_API_BASE_URL` | 빈 값 | Caddy가 같은 오리진의 `/api`를 backend로 넘기므로 비워 둡니다. 별도 도메인으로 분리할 때만 채웁니다 |
+| `PUBLIC_API_BASE_URL` | 등록하지 않음 | Caddy가 같은 오리진의 `/api`를 backend로 넘깁니다. 변수가 없으면 `${{ vars.PUBLIC_API_BASE_URL }}`가 빈 문자열이 되어 그대로 맞습니다. 별도 도메인으로 분리할 때만 등록합니다 |
 
 > ⚠️ 프론트는 `"false"`라는 **글자**만 실연동으로 읽습니다(`auth.ts`·`api.ts`의 `!== "false"`).
 > 변수를 비워 두면 mock이 켜진 채 운영에 나가고 로그인 화면에 "mock 데이터로 둘러보기" 버튼이 보입니다.
 > `publish` 작업이 두 변수가 정확히 `true`/`false`인지 먼저 확인하고, 아니면 게시 전에 실패합니다.
+> `PUBLIC_API_BASE_URL`은 비어 있는 것이 정상이라 이 검사를 걸지 않습니다.
 
 서버 `.env`의 같은 이름 값들은 이제 **로컬 `compose build frontend`에만** 쓰입니다.
 서버 `.env`를 고쳐도 운영 번들은 바뀌지 않습니다.
