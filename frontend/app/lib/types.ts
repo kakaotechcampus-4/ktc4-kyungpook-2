@@ -529,12 +529,43 @@ export interface ActivityLog {
   target: string;
 }
 
+/**
+ * 보호자 홈 "최근 공유 활동" 한 줄 (G-11). 승인된 일지 하나, 또는 같은 기간·같은 승인 기관의 받은 인사이트 묶음 하나.
+ * id 는 종류를 앞에 붙여(`journal-3` · `insight-…`) 목록 안에서 겹치지 않는다 — 화면은 key 로만 쓴다.
+ */
 export interface ParentActivity {
   id: string;
+  kind: "journal" | "insight";
+  /** 화면에 그대로 쓰는 "2026-08-21 15:20" */
   at: string;
   text: string;
-  /** 이 활동이 특정 일지에서 비롯됐으면 상세로 이동할 수 있게 연결한다 */
-  journalId?: string;
+  /** 일지 줄이면 그 일지 상세로 연결한다 */
+  journalId?: string | null;
+  /** 인사이트 한 편이면 그 상세로, 여러 편을 묶은 줄이면 null 이라 리포트 탭으로 연결한다 */
+  insightId?: string | null;
+}
+
+/**
+ * 보호자가 받은 인사이트 한 편 (G-35 · G-36). 담당자가 Gate 2 에서 승인하면 열린다. 화면 이름은 "주간 리포트".
+ * 서버는 내 모든 아이 것을 승인 시각 최근 순으로 준다 — 화면이 고른 아이로 거른다.
+ */
+export interface GuardianInsight {
+  id: string;
+  childId: string;
+  /** 아이가 삭제됐으면 null */
+  childName: string | null;
+  /** "2026년 8월 3주차" — 어느 주의 이야기인지 */
+  period: string;
+  /** 교사·보호자가 읽을 한두 문장 */
+  content: string;
+  /** Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null — 화면은 "기관 정보 없음" */
+  from: Institution | null;
+  /** 지금 이 글을 볼 수 있는 다른 기관. 기관 동의를 끄면 빠진다 */
+  sharedWith: Institution[];
+  /** 담당자가 승인한 시각 (ISO). 모든 보호자에게 같다 — 언제 받았는지 */
+  approvedAt: string;
+  /** 처음 열어 본 시각 (ISO). 아직 안 봤으면 null — "새 글" 표시 */
+  readAt: string | null;
 }
 
 /**

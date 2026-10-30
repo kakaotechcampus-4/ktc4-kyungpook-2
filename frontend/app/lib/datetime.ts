@@ -14,3 +14,9 @@ export function todayDate(): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+
+/** 서버 시각(ISO)을 "10월 28일" 처럼 월·일만. 받은 리포트의 승인 날짜에 쓴다 */
+export function formatMonthDay(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}월 ${d.getDate()}일`;
+}

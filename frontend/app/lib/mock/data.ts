@@ -7,6 +7,7 @@ import type {
   EntryProgress,
   EvidenceSpan,
   FileProgress,
+  GuardianInsight,
   InboxDetail,
   Insight,
   Institution,
@@ -918,12 +919,77 @@ export const PARENT_CHILD = PARENT_CHILDREN[0];
 
 export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
   child_1023: [
-    { id: "pa_01", at: "오늘 09:12", text: "OO초등학교가 일일 요약을 보냈어요", journalId: "jrn_01" },
-    { id: "pa_02", at: "어제 17:40", text: "OO주간보호센터가 주간 인사이트를 보냈어요" },
-    { id: "pa_03", at: "3일 전", text: "일일 요약 공유 범위에 동의했어요" },
+    { id: "pa_01", kind: "journal", at: "오늘 09:12", text: "OO초등학교가 일일 요약을 보냈어요", journalId: "jrn_01" },
+    {
+      id: "pa_02",
+      kind: "insight",
+      at: "어제 17:40",
+      text: `${SCHOOL.name}에서 10월 4주차 리포트 2편이 도착했어요`,
+      insightId: null,
+    },
+    {
+      id: "pa_03",
+      kind: "insight",
+      at: "3일 전",
+      text: `${SCHOOL.name}에서 10월 3주차 리포트가 도착했어요`,
+      insightId: "gi_03",
+    },
   ],
-  child_2044: [{ id: "pa_04", at: "3일 전", text: "OO주간보호센터 공유에 동의했어요" }],
+  child_2044: [
+    { id: "pa_04", kind: "insight", at: "3일 전", text: "10월 4주차 리포트가 도착했어요", insightId: "gi_04" },
+  ],
 };
+
+/**
+ * 보호자가 받은 인사이트 (G-35 · G-36 mock). 승인 시각 최근 순 — 서버와 같은 순서로 둔다.
+ * 한 기간에 두 편(하나는 읽음), 함께 보는 기관이 있는 글과 없는 글, 승인 기관을 모르는 글(from: null)을 함께 둔다.
+ */
+export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
+  {
+    id: "gi_01",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 4주차",
+    content: "활동이 바뀌기 5분 전에 그림 카드로 예고하면, 학교와 센터 모두에서 울음 없이 다음 활동으로 옮겨 갔습니다.",
+    from: SCHOOL,
+    sharedWith: [CENTER],
+    approvedAt: "2026-10-29T17:40:00",
+    readAt: null,
+  },
+  {
+    id: "gi_02",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 4주차",
+    content: "점심 직후에는 소리에 예민해져, 조용한 자리를 먼저 마련하면 오후 활동 참여가 늘었습니다.",
+    from: SCHOOL,
+    sharedWith: [],
+    approvedAt: "2026-10-29T17:20:00",
+    readAt: "2026-10-29T20:05:00",
+  },
+  {
+    id: "gi_03",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 3주차",
+    content: "학교에서는 차례를 기다렸지만 센터에서는 끼어드는 일이 잦았습니다. 센터에서도 순서 카드를 쓰면 도움이 될 수 있습니다.",
+    from: SCHOOL,
+    sharedWith: [CENTER],
+    approvedAt: "2026-10-27T10:00:00",
+    readAt: "2026-10-27T21:00:00",
+  },
+  {
+    id: "gi_04",
+    childId: "child_2044",
+    childName: "최OO",
+    period: "2026년 10월 4주차",
+    content: "첫 주에는 미술 활동을 거부했지만, 넷째 주에는 스스로 붓을 들었습니다.",
+    from: null,
+    sharedWith: [],
+    approvedAt: "2026-10-28T09:00:00",
+    readAt: null,
+  },
+];
 
 /**
  * 아이별 초대 코드 (O-15~O-17 mock). 만료 여부는 조회할 때 expiresAt 으로 거른다.

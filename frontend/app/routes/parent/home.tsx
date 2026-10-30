@@ -11,6 +11,7 @@ import {
   loadIfReady,
 } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
+import type { ParentActivity } from "@/lib/types";
 
 export async function clientLoader() {
   const kids = await getParentChildren();
@@ -134,10 +135,10 @@ export default function ParentHomePage() {
         ) : (
           <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line">
             {activity.map((a) =>
-              a.journalId ? (
+              activityLink(a) ? (
                 <li key={a.id}>
                   <Link
-                    to={`/parent/journal/${a.journalId}`}
+                    to={activityLink(a)!}
                     className="tap block px-4 py-3 hover:bg-surface2"
                   >
                     <p className="text-[15px] leading-6 text-accentink underline">{a.text}</p>
@@ -164,4 +165,11 @@ export default function ParentHomePage() {
       </p>
     </div>
   );
+}
+
+/** 최근 공유 활동 한 줄이 갈 곳. 일지는 그 상세, 인사이트는 한 편이면 그 상세 · 여러 편 묶음이면 리포트 탭 */
+function activityLink(a: ParentActivity): string | null {
+  if (a.journalId) return `/parent/journal/${a.journalId}`;
+  if (a.kind === "insight") return a.insightId ? `/parent/report/${a.insightId}` : "/parent/report";
+  return null;
 }

@@ -43,6 +43,8 @@
  *      GET    /api/v1/children/{childId}/journal
  *      GET    /api/v1/journal/{id}
  *      PUT    /api/v1/children/{childId}/care-info
+ *      GET    /api/v1/guardians/me/insights
+ *      GET    /api/v1/guardians/me/insights/{insightId}
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
@@ -83,6 +85,7 @@ import type {
   Gate1Card,
   Gate1Status,
   Gate2Status,
+  GuardianInsight,
   InboxDetail,
   InboxItem,
   Insight,
@@ -204,6 +207,11 @@ const BE_READY = {
    * 수락 대기 중 기관은 아이 목록·홈 응답(guardianChildren)의 linkRequests 로 온다.
    */
   institutionCode: true,
+  /**
+   * 보호자: 받은 인사이트 목록 · 단건 (G-35 · G-36). 리포트 탭 · 리포트 상세 · 하단 탭의 "안 본 리포트" 점.
+   * 단건을 열면 처음 열람 시각이 남는다
+   */
+  guardianInsights: true,
   /** 보호자: 돌봄 정보 저장 (G-13). 알레르기·복용약. 연결된 보호자끼리 함께 보고 고친다. 기관에는 공유하지 않는다 */
   careInfo: true,
 } satisfies Record<string, boolean>;
@@ -1120,7 +1128,7 @@ export async function getParentChildren(): Promise<Child[]> {
 /**
  * GET /api/v1/guardians/me/home?childId=
  * childId 는 필수다 — 어느 아이를 볼지는 화면이 아이 목록에서 고른다(readSelectedChildId).
- * 서버 응답의 activity 는 일지 기능이 생길 때까지 언제나 빈 배열이다.
+ * activity 는 승인된 일지 줄과 받은 인사이트 줄을 승인 시각 최근 순으로 섞은 5줄이다 (서버가 섞고 자른다).
  */
 export async function getParentHome(childId: string): Promise<{
   child: Child;
@@ -1296,6 +1304,31 @@ export async function getJournalEntry(id: string): Promise<JournalEntry | undefi
     return await request<JournalEntry>(`/api/v1/journal/${encodeURIComponent(id)}`);
   } catch (err) {
     if (err instanceof ApiError && err.code === "JOURNAL_NOT_FOUND") return undefined;
+    throw err;
+  }
+}
+
+/** GET /api/v1/guardians/me/insights — 내 모든 아이의 받은 인사이트, 승인 시각 최근 순 (서버가 정렬한다) */
+export async function getGuardianInsights(): Promise<GuardianInsight[]> {
+  if (mockFor("guardianInsights")) return mock.GUARDIAN_INSIGHTS.map((insight) => ({ ...insight }));
+  return request("/api/v1/guardians/me/insights");
+}
+
+/**
+ * GET /api/v1/guardians/me/insights/{insightId} — 처음 열면 열람 시각이 남는다.
+ * 볼 수 없는 글(없음 · 남의 아이 · 연결 해제로 거둬짐 → SHARING_NOT_FOUND)은 undefined. 일지 상세와 같은 약속이다
+ */
+export async function getGuardianInsight(id: string): Promise<GuardianInsight | undefined> {
+  if (mockFor("guardianInsights")) {
+    const insight = mock.GUARDIAN_INSIGHTS.find((i) => i.id === id);
+    if (!insight) return undefined;
+    insight.readAt ??= new Date().toISOString();
+    return { ...insight };
+  }
+  try {
+    return await request<GuardianInsight>(`/api/v1/guardians/me/insights/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === "SHARING_NOT_FOUND") return undefined;
     throw err;
   }
 }
