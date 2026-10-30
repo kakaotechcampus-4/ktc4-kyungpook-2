@@ -27,12 +27,13 @@ import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.sharing.SharingErrorCode;
 import com.itda.backend.exception.sharing.SharingException;
+import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.user.UserService;
 
 /** 보호자가 Gate 2 를 지나 받은 인사이트를 읽는다 (#233). */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(GuardianInsightService.class)
+@Import({GuardianInsightService.class, SharingReadRecorder.class, ClockConfig.class})
 class GuardianInsightServiceTest {
 
     private static final LocalDate FROM = LocalDate.of(2026, 8, 17);
