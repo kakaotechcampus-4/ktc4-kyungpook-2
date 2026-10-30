@@ -8,7 +8,7 @@ import type {
   EntryProgress,
   EvidenceSpan,
   FileProgress,
-  InboxItem,
+  InboxDetail,
   Insight,
   Institution,
   InstitutionRequestItem,
@@ -18,6 +18,8 @@ import type {
   MatchingItem,
   ParentActivity,
   PendingLinkRequest,
+  SummaryGroup,
+  SummaryGroupBoard,
   SummaryItem,
   TimelineEntry,
 } from "@/lib/types";
@@ -397,6 +399,8 @@ export const FILE_PROGRESS: FileProgress[] = [
       [2, 1, "waiting"],
       [2, 2, "running"],
       [1, 4, "waiting"],
+      // 매칭 확인에서 "우리 기관 아이 아님"으로 뺀 기록 (BE EXCLUDED)
+      [1, 1, "done"],
     ]),
   },
   {
@@ -552,6 +556,123 @@ export const GATE1_QUEUE: SummaryItem[] = [
   }),
 ];
 
+/* 오늘의 업무 묶음 카드 (O-34) ─────────────────────── */
+
+/** 라벨 다섯 가지와 버튼 세 갈래(강조 · 약하게 · 꺼짐)가 모두 보이게 골랐다. 오래된 날짜부터 */
+export const SUMMARY_GROUP_BOARD: SummaryGroupBoard = {
+  matching: { inProgress: 3, needsReview: 2 },
+  groups: [
+    {
+      childId: "child_2044",
+      childName: "최OO",
+      birthdate: "2021-05-30",
+      entryDate: "2026-08-18",
+      status: "admin_check",
+      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 1 },
+      canSummarize: false,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1077",
+      childName: "박OO",
+      birthdate: "2020-01-25",
+      entryDate: "2026-08-19",
+      status: "needs_fix",
+      counts: { validating: 0, needsFix: 1, ready: 0, summarizing: 0, adminCheck: 0 },
+      canSummarize: false,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1023",
+      childName: "김OO",
+      birthdate: "2019-03-12",
+      entryDate: "2026-08-20",
+      status: "needs_fix",
+      counts: { validating: 1, needsFix: 1, ready: 2, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1041",
+      childName: "이OO",
+      birthdate: "2018-07-02",
+      entryDate: "2026-08-20",
+      status: "ready",
+      counts: { validating: 0, needsFix: 0, ready: 3, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+    // 같은 이름 — 생년월일로 구분한다
+    {
+      childId: "child_1088",
+      childName: "김OO",
+      birthdate: "2021-09-02",
+      entryDate: "2026-08-21",
+      status: "ready",
+      counts: { validating: 0, needsFix: 0, ready: 2, summarizing: 0, adminCheck: 0 },
+      canSummarize: true,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: true,
+    },
+    {
+      childId: "child_1041",
+      childName: "이OO",
+      birthdate: "2018-07-02",
+      entryDate: "2026-08-21",
+      status: "summarizing",
+      counts: { validating: 2, needsFix: 0, ready: 1, summarizing: 0, adminCheck: 0 },
+      canSummarize: false,
+      summaryRequested: true,
+      waitingCount: 2,
+      previousSummaryInReview: false,
+    },
+    {
+      childId: "child_1023",
+      childName: "김OO",
+      birthdate: "2019-03-12",
+      entryDate: "2026-08-21",
+      status: "validating",
+      counts: { validating: 2, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
+      canSummarize: false,
+      summaryRequested: false,
+      waitingCount: 0,
+      previousSummaryInReview: false,
+    },
+  ],
+};
+
+let gate1RunSeq = 0;
+
+/** mock 전용: [요약]을 마친 묶음이 1차 검토에 올리는 요약 한 건 */
+export function gate1FromRun(group: SummaryGroup): SummaryItem {
+  gate1RunSeq += 1;
+  return gate1Mock({
+    id: `sum_run_${gate1RunSeq}`,
+    childId: group.childId,
+    childName: group.childName,
+    entryDate: group.entryDate,
+    revision: group.previousSummaryInReview ? 2 : 1,
+    gate1Status: "pending",
+    version: `mock_v_run_${gate1RunSeq}`,
+    processing: false,
+    sentences: ["오전 활동 시간에 끝까지 자리에 앉아 참여했다.", "점심을 남기지 않고 먹었다."],
+    noContent: false,
+    needsReview: false,
+    reviewReasons: [],
+    uncoveredEntries: [],
+    reviewFlags: [],
+  });
+}
+
 /* Child Context 타임라인 (I-09) ───────────────────── */
 
 export const TIMELINE: Record<string, TimelineEntry[]> = {
@@ -696,32 +817,42 @@ export const INSIGHTS: Insight[] = [
 
 /* 수신함 (I-12) ────────────────────────────────────── */
 
-export const INBOX: InboxItem[] = [
+// 단건(O-51)이 본문까지 주므로 mock 은 본문을 함께 들고 있다. 목록(getInbox)은 본문을 떼고 준다.
+export const INBOX: InboxDetail[] = [
   {
     id: "in_01",
-    from: SCHOOL,
+    childId: "child_1088",
     childName: "김OO",
-    receivedAt: "방금 전",
+    externalId: "C-1088",
+    from: SCHOOL,
+    period: "2026년 10월 4주차",
+    receivedAt: "2026-10-29T15:20:00",
+    readAt: null,
     content:
       "급식 시간 소음에 반응할 때, 손을 잡고 숫자를 세면 진정에 도움이 됩니다.",
-    read: false,
   },
   {
     id: "in_02",
-    from: ASSISTANT,
+    childId: "child_1088",
     childName: "김OO",
-    receivedAt: "2시간 전",
+    externalId: "C-1088",
+    from: ASSISTANT,
+    period: "2026년 10월 4주차",
+    receivedAt: "2026-10-29T10:05:00",
+    readAt: null,
     content: "이동 전 5분 전에 미리 안내하면 전환 시 불안이 줄어듭니다.",
-    read: false,
   },
   {
     id: "in_03",
+    childId: "child_2044",
+    childName: "최OO",
+    externalId: "C-2044",
     from: SCHOOL,
-    childName: "이OO",
-    receivedAt: "어제",
+    period: "2026년 10월 3주차",
+    receivedAt: "2026-10-22T09:40:00",
+    readAt: "2026-10-22T13:12:00",
     content:
       "새로운 활동 시작 전 그림 카드로 순서를 보여주면 참여도가 높아집니다.",
-    read: true,
   },
 ];
 
@@ -827,11 +958,6 @@ export const INVITED_CHILD_ID = "child_1077";
 /** 학부모를 초대한 기관 (P-02 확인·동의 화면) */
 export const INVITING_INSTITUTION = SCHOOL;
 
-/** 타임라인 상단 오늘 요약 카드 — 아이별. 없으면 화면에서 숨긴다. */
-export const PARENT_TODAY_SUMMARY: Record<string, string> = {
-  child_1023: "오늘 블록 놀이를 가장 오래 했고, 점심을 모두 먹었습니다. 하원은 4시 40분이었습니다.",
-};
-
 /** 오늘의 일지 · 타임라인 */
 export const JOURNAL: JournalEntry[] = [
   {
@@ -839,73 +965,51 @@ export const JOURNAL: JournalEntry[] = [
     childId: PARENT_CHILD.id,
     institution: SCHOOL,
     date: "2026-08-21",
-    time: "15:20",
     isNew: true,
-    tag: "활동일지",
-    summary: "오늘 블록 놀이를 가장 오래 했습니다. 친구와 함께 높은 탑을 만들었습니다.",
-    detail:
+    content:
       "오늘 원영이는 블록 영역에서 40분 정도 놀았습니다. 친구와 함께 탑을 쌓다가 두 번 무너졌지만 다시 쌓아 완성했습니다. 점심은 모두 먹었고, 낮잠 없이 오후 활동까지 잘 참여했습니다.",
-    institutionNote: "집에서도 \"다시 해보자\"는 말을 자주 해주시면 좋겠습니다.",
-    photoCount: 3,
   },
   {
     id: "jrn_02",
     childId: PARENT_CHILD.id,
     institution: CENTER,
     date: "2026-08-21",
-    time: "17:00",
     isNew: true,
-    tag: "수업요약",
-    summary: "오늘 수업에서 공 주고받기를 했습니다. 처음보다 오래 이어갔습니다.",
-    detail:
+    content:
       "체육 활동으로 공 주고받기를 했습니다. 처음에는 세 번 정도였는데 마지막에는 아홉 번까지 이어갔습니다. 활동이 끝난 뒤 스스로 정리했습니다.",
-    institutionNote: "주말에 짧게라도 함께 공놀이를 해보시면 좋습니다.",
   },
   {
     id: "jrn_03",
     childId: PARENT_CHILD.id,
     institution: ASSISTANT,
     date: "2026-08-20",
-    time: "18:00",
     isNew: false,
-    tag: "하원기록",
-    summary: "하원 길에 오늘 만든 그림 이야기를 계속 했습니다.",
-    detail:
+    content:
       "18시 40분에 하원했고 집까지 20분 걸었습니다. 오늘 만든 그림을 보여주며 이야기를 계속 했습니다. 간식은 모두 먹었습니다.",
-    institutionNote: "오늘은 기분이 좋아 보였습니다.",
   },
   {
     id: "jrn_04",
     childId: PARENT_CHILD.id,
     institution: SCHOOL,
     date: "2026-08-14",
-    time: "16:10",
     isNew: false,
-    tag: "활동일지",
-    summary: "블록 놀이 중 친구와 부딪히는 일이 두 번 있었고, 함께 정리했습니다.",
-    detail: "블록 놀이 중 친구와 부딪히는 일이 두 번 있었고, 함께 정리했습니다.",
+    content: "블록 놀이 중 친구와 부딪히는 일이 두 번 있었고, 함께 정리했습니다.",
   },
   {
     id: "jrn_05",
     childId: PARENT_CHILD.id,
     institution: CENTER,
     date: "2026-08-14",
-    time: "15:40",
     isNew: false,
-    tag: "수업요약",
-    summary: "놀이 종료 안내를 듣고 스스로 정리했습니다.",
-    detail: "놀이 종료 안내를 듣고 스스로 정리했습니다.",
+    content: "놀이 종료 안내를 듣고 스스로 정리했습니다.",
   },
   {
     id: "jrn_06",
     childId: PARENT_CHILD.id,
     institution: SCHOOL,
     date: "2026-08-07",
-    time: "16:00",
     isNew: false,
-    tag: "활동일지",
-    summary: "오후 자유놀이 시간에 비슷한 상황이 있었습니다.",
-    detail: "오후 자유놀이 시간에 비슷한 상황이 있었습니다.",
+    content: "오후 자유놀이 시간에 비슷한 상황이 있었습니다.",
   },
 ];
 

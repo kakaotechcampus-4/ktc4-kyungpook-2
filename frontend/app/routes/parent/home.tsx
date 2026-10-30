@@ -8,7 +8,6 @@ import {
   getParentChildren,
   getParentHome,
   getPendingInstitutionRequests,
-  getTodaySummary,
   loadIfReady,
 } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
@@ -16,19 +15,17 @@ import { readSelectedChildId } from "@/lib/selectedChild";
 export async function clientLoader() {
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  // 아이·기관·최근 공유 활동만 실서버다. 일지·오늘 요약·기관 요청은 서버에 생기기 전까지 null 로 받아
-  // mock 을 진짜 아이 옆에 띄우지 않는다 (loadIfReady).
-  const [{ child, activity }, journal, today, pending] = await Promise.all([
+  // 일지·기관 요청은 스위치가 꺼져 있으면 null 로 받아 mock 을 진짜 아이 옆에 띄우지 않는다 (loadIfReady).
+  const [{ child, activity }, journal, pending] = await Promise.all([
     getParentHome(childId),
     loadIfReady("guardianJournal", () => getJournal(childId)),
-    loadIfReady("guardianJournal", () => getTodaySummary(childId)),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
   ]);
-  return { child, activity, recent: journal?.slice(0, 2) ?? null, today, pending: pending ?? [] };
+  return { child, activity, recent: journal?.slice(0, 2) ?? null, pending: pending ?? [] };
 }
 
 export default function ParentHomePage() {
-  const { child, activity, recent, today, pending } = useLoaderData<typeof clientLoader>();
+  const { child, activity, recent, pending } = useLoaderData<typeof clientLoader>();
   const pendingRequest = pending[0];
 
   return (
@@ -53,13 +50,6 @@ export default function ParentHomePage() {
             확인하기 ›
           </span>
         </Link>
-      ) : null}
-
-      {today ? (
-        <div className="rounded-2xl bg-accentink px-5 py-5 text-white">
-          <p className="mb-2 text-[12px] font-bold tracking-[0.15em] text-white/70">TODAY</p>
-          <p className="text-[17px] leading-7 font-medium">{today}</p>
-        </div>
       ) : null}
 
       <section className="flex items-center gap-3 rounded-2xl border border-line px-4 py-4">
@@ -103,7 +93,7 @@ export default function ParentHomePage() {
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold">{j.institution.name}</span>
                   <span className="line-clamp-2 block text-[14px] leading-6 text-ink2">
-                    {j.summary}
+                    {j.content}
                   </span>
                 </span>
               </Link>

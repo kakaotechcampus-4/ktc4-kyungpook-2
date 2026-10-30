@@ -388,6 +388,50 @@ export interface SummaryItem {
 }
 
 /**
+ * 묶음 카드 라벨 (api-spec O-34). 위에서부터 처음 맞는 것이다 — 선생님이 할 일이 먼저다.
+ * needs_fix 수정 요청 있음 · ready 요약 대기 · summarizing 요약 중이거나 [요약] 눌러 둠 ·
+ * validating 검증 중만 · admin_check 시스템 오류만 남음
+ */
+export type SummaryGroupStatus = "needs_fix" | "ready" | "summarizing" | "validating" | "admin_check";
+
+/**
+ * 오늘의 업무 묶음 카드 한 장 = 아이 한 명의 하루치 기록 (BE SummaryGroupCard).
+ * 요약 전 묶음만 온다 — 요약이 만들어지면 1차 검토(O-30)로 옮겨 가고 카드는 빠진다.
+ */
+export interface SummaryGroup {
+  /** BE 는 숫자. lib/api.ts 가 문자열로 바꾼다 */
+  childId: string;
+  childName: string;
+  /** 같은 이름의 아이를 구분하려고 함께 보인다 */
+  birthdate: string | null;
+  /** 일지 날짜 YYYY-MM-DD. [요약](O-32)에 그대로 보낸다 */
+  entryDate: string;
+  status: SummaryGroupStatus;
+  counts: {
+    validating: number;
+    needsFix: number;
+    ready: number;
+    summarizing: number;
+    adminCheck: number;
+  };
+  /** [요약]을 누를 수 있음. 버튼은 늘 두고 false 면 막는다 */
+  canSummarize: boolean;
+  /** [요약]을 눌렀고 아직 요약이 끝나지 않음 */
+  summaryRequested: boolean;
+  /** 눌렀지만 시작 전일 때, 요약이 기다리는 같은 날 매칭·검증 중 기록 수 */
+  waitingCount: number;
+  /** 이전 요약이 1차 검토에 있음 — 다시 요약하면 그 요약이 새 판으로 바뀐다 */
+  previousSummaryInReview: boolean;
+}
+
+export interface SummaryGroupBoard {
+  /** 아이가 아직 정해지지 않아 카드에 넣을 수 없는 기록. 자동 매칭 중 · 확인 필요 큐 */
+  matching: { inProgress: number; needsReview: number };
+  /** 오래된 날짜부터 */
+  groups: SummaryGroup[];
+}
+
+/**
  * Gate 1 승인 때 보내는 문장 카드 (api-spec O-31). 원래 문장은 모두 한 번씩, 배열 순서가 최종 순서다.
  * KEEP · DELETE 는 index 만, EDIT 는 index 와 고친 글, ADD 는 새 글만 보낸다.
  */
@@ -437,14 +481,31 @@ export interface Insight {
   gate2Status: Gate2Status;
 }
 
+/**
+ * 기관 수신함 목록 한 줄 (O-50). 다른 기관이 Gate 2 에서 승인해 우리 기관에 열린 인사이트다.
+ * **본문이 없다** — 단건(O-51)을 열어야 보이고, 그때 우리 기관의 처음 열람 시각이 남는다.
+ * 같이 받은 다른 기관은 오지 않는다(아이가 어디에 또 다니는지는 최소 정보를 넘는다).
+ */
 export interface InboxItem {
+  /** 인사이트 id. 단건 경로에 그대로 쓴다 */
   id: string;
-  from: Institution;
+  childId: string;
   childName: string;
+  /** 우리 기관이 붙인 관리번호. 이름이 같은 아이를 가른다 */
+  externalId: string;
+  /** 이 글을 Gate 2 에서 승인한 기관 */
+  from: Institution;
+  /** "2026년 8월 3주차" 같은 문구 */
+  period: string;
+  /** 우리 기관이 볼 수 있게 된 시각 (ISO) */
   receivedAt: string;
-  /** 원본이 아니라 수신자별로 변환된 최소 정보 */
+  /** 우리 기관에서 처음 열어 본 시각 (ISO). 아직 안 열었으면 null — 키는 항상 온다 */
+  readAt: string | null;
+}
+
+/** 기관 수신함 단건 (O-51). 본문은 보호자에게 열린 글과 같다 — 수신자별 변환은 아직 없다 */
+export interface InboxDetail extends InboxItem {
   content: string;
-  read: boolean;
 }
 
 export interface ChatSource {
@@ -475,21 +536,20 @@ export interface ParentActivity {
   journalId?: string;
 }
 
-/** 학부모 홈/타임라인에 뜨는 일지 한 건 */
+/**
+ * 학부모 홈/타임라인에 뜨는 일지 한 건 (G-20·G-21) — 교사가 1차 검토에서 승인한 요약 하나.
+ * 요약은 하루 단위라 시각이 없다. 목록은 content 를 2줄로 자르고, 상세는 전부 보여 준다.
+ */
 export interface JournalEntry {
   id: string;
   childId: string;
   institution: Institution;
+  /** 관찰 날짜 yyyy-MM-dd */
   date: string;
-  time: string;
+  /** 승인된 지 24시간이 안 됐다. 읽었는지와는 무관하다 */
   isNew: boolean;
-  tag: string;
-  summary: string;
-  detail: string;
-  institutionNote?: string;
-  photoCount?: number;
-  /** "이 내용이 이상해요" — 보호자가 기관에 재확인을 요청했는지 */
-  flagged?: boolean;
+  /** 교사가 승인한 글 */
+  content: string;
 }
 
 export interface CareReportTrendPoint {

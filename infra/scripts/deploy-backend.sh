@@ -41,6 +41,8 @@ service_paths=(
   '!infra/scripts/deploy-ai.sh'
   '!infra/scripts/verify-ai.py'
   '!infra/scripts/tests/test_ai_deploy.py'
+  '!infra/scripts/deploy-frontend.sh'
+  '!infra/scripts/tests/test_frontend_deploy.py'
 )
 
 compose() {

@@ -2,7 +2,7 @@ name: Backend CI/CD
 
 on:
   # infra/도 포함한다. 배포가 서버의 compose.yaml·Caddyfile·배포 스크립트를 함께 반영한다.
-  # AI 전용 배포 파일은 뺀다. 목록은 deploy-backend.sh의 service_paths와 같아야 한다(테스트가 검사).
+  # AI·프론트 전용 배포 파일은 뺀다. 목록은 deploy-backend.sh의 service_paths와 같아야 한다(테스트가 검사).
   pull_request:
     branches: [develop, main]
     paths:
@@ -14,6 +14,8 @@ on:
       - '!infra/scripts/deploy-ai.sh'
       - '!infra/scripts/verify-ai.py'
       - '!infra/scripts/tests/test_ai_deploy.py'
+      - '!infra/scripts/deploy-frontend.sh'
+      - '!infra/scripts/tests/test_frontend_deploy.py'
   push:
     branches: [develop]
     paths:
@@ -25,6 +27,8 @@ on:
       - '!infra/scripts/deploy-ai.sh'
       - '!infra/scripts/verify-ai.py'
       - '!infra/scripts/tests/test_ai_deploy.py'
+      - '!infra/scripts/deploy-frontend.sh'
+      - '!infra/scripts/tests/test_frontend_deploy.py'
   workflow_dispatch:
 
 permissions:

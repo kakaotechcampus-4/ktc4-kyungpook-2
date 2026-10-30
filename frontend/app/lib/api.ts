@@ -21,6 +21,8 @@
  *      GET  /api/v1/summaries?gate1Status=pending|hold
  *      POST /api/v1/summaries/{summaryId}/gate1
  *      POST /api/v1/summaries/{summaryId}/reopen
+ *      GET  /api/v1/summaries/groups
+ *      POST /api/v1/summaries/run
  *      GET  /api/v1/insights?gate2Status=pending|approved|hold
  *      GET  /api/v1/insights/{insightId}
  *      POST /api/v1/insights/{insightId}/gate2
@@ -38,6 +40,8 @@
  *      GET    /api/v1/guardians/me/children
  *      GET    /api/v1/guardians/me/home?childId=
  *      GET    /api/v1/children/{childId}/institution-requests/pending
+ *      GET    /api/v1/children/{childId}/journal
+ *      GET    /api/v1/journal/{id}
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
@@ -79,6 +83,7 @@ import type {
   Gate1Card,
   Gate1Status,
   Gate2Status,
+  InboxDetail,
   InboxItem,
   Insight,
   Institution,
@@ -92,6 +97,8 @@ import type {
   ParentActivity,
   PendingLinkRequest,
   RegisteredChild,
+  SummaryGroup,
+  SummaryGroupBoard,
   SummaryItem,
   TimelineEntry,
   UploadFailReason,
@@ -138,17 +145,19 @@ const BE_READY = {
   /**
    * 1차 검토 조회 · 문장 카드 승인 · 보류 · 제거 · 보류 해제 (O-30, O-31, O-33).
    * 문장 카드(#231)가 있는 서버여야 한다 — 그 전 서버는 cards 를 조용히 버리고 AI 원문을 승인한다.
-   * 요약은 [요약](O-32)을 눌러야 생기는데 FE 에 아직 버튼이 없어, 그 전까지 목록이 비어 있을 수 있다.
+   * 요약은 오늘의 업무 묶음 카드의 [요약](summaryGroups)을 눌러야 생긴다.
    */
   gate1: true,
+  /** 오늘의 업무 묶음 카드 조회 · [요약] (O-34, O-32) */
+  summaryGroups: true,
   /** 인사이트 조회 · 2차 공유 (O-40 ~ O-42) */
   insights: true,
   /** 원본 업로드 (POST /raw-records) */
   upload: true,
   /** 파일별 처리 현황 (O-26) */
   fileProgress: true,
-  /** 기관 받은편지함 */
-  inbox: false,
+  /** 기관 수신함 목록 · 단건 (O-50 · O-51). 단건을 열면 처음 열람 시각이 남는다 */
+  inbox: true,
   /** 활동 기록 */
   activity: false,
   /** 기관 정보 · 증빙서류 (기관 설정 화면). 지금은 API 없이 mock 값만 띄운다 */
@@ -176,8 +185,13 @@ const BE_READY = {
    * 이 키를 본다 — 꺼져 있으면 mock 아이 대신 "준비 중"을 띄운다.
    */
   guardianChildren: true,
-  /** 보호자: 일지 · 리포트 · 오늘 요약 (G-12, G-20 ~ G-22). 아이 목록·홈과는 따로 켠다 */
-  guardianJournal: false,
+  /** 보호자: 일지 목록 · 상세 (G-20, G-21). 타임라인 · 일지 상세 · 홈 "새 소식". 아이 목록·홈과는 따로 켠다 */
+  guardianJournal: true,
+  /**
+   * 보호자: 케어 리포트 · 리포트의 관련 일지 · 활동 이력 (G-30). 서버에 없다 — 일지 스위치와 묶여 있으면
+   * 일지를 켤 때 리포트가 없는 API 를 부르고 활동 이력에 mock 이 진짜 아이 옆에 뜬다.
+   */
+  careReport: false,
   /**
    * 보호자: 대기 중 기관 권한 요청 (G-40). 알림 화면 · 홈 요청 배너 · 헤더 알림 점이 이 목록 하나를 본다.
    * 요청 거절(G-42)은 MVP 에서 뺐다 — 알림 화면은 동의 화면으로 보내는 버튼 하나만 둔다.
@@ -517,6 +531,102 @@ export async function reopenGate1(summaryId: string): Promise<{ summaryId: strin
     { method: "POST" },
   );
   return { summaryId: String(res.summaryId) };
+}
+
+/* ── 오늘의 업무 묶음 카드 · [요약] ──────────────────── */
+
+/** BE SummaryGroupBoardResponse 그대로. childId 가 숫자다 */
+interface SummaryGroupBoardRaw {
+  matching: SummaryGroupBoard["matching"];
+  groups: (Omit<SummaryGroup, "childId"> & { childId: number })[];
+}
+
+/**
+ * GET /api/v1/summaries/groups (O-34) — 요약 전 묶음(아이 × 날짜) 카드. 오래된 날짜부터 온다.
+ * 기록 등록 화면의 파일별 진행(O-26)과 같은 일지를 아이별로 묶어 본 것이다.
+ */
+export async function getSummaryGroups(): Promise<SummaryGroupBoard> {
+  if (mockFor("summaryGroups")) {
+    tickSummaryRuns();
+    // 화면이 상태로 들고 있다가 비교하므로 매번 새 객체로 준다
+    const board = mock.SUMMARY_GROUP_BOARD;
+    return {
+      matching: { ...board.matching },
+      groups: board.groups.map((g) => ({ ...g, counts: { ...g.counts } })),
+    };
+  }
+  const raw = await request<SummaryGroupBoardRaw>("/api/v1/summaries/groups");
+  return {
+    matching: raw.matching,
+    groups: raw.groups.map((g) => ({ ...g, childId: String(g.childId) })),
+  };
+}
+
+/**
+ * POST /api/v1/summaries/run (O-32) — 그 아이 · 날짜 묶음을 요약해 달라고 요청한다. 응답 data 는 null 이다.
+ * 같은 날 매칭 · 검증 중인 기록이 있으면 그것이 끝난 뒤 요약한다. 요약 중에 누르면 409 SUMMARY_IN_PROGRESS.
+ */
+export async function runSummary(childId: string, entryDate: string): Promise<void> {
+  if (mockFor("summaryGroups")) {
+    const group = mock.SUMMARY_GROUP_BOARD.groups.find(
+      (g) => g.childId === childId && g.entryDate === entryDate,
+    );
+    if (!group) throw new ApiError(404, "SUMMARY_CHILD_NOT_FOUND", "아이를 찾을 수 없습니다.");
+    if (group.summaryRequested || group.counts.summarizing > 0) {
+      throw new ApiError(409, "SUMMARY_IN_PROGRESS", "요약하는 중입니다.");
+    }
+    if (group.counts.ready === 0 && group.counts.validating === 0) {
+      throw new ApiError(400, "SUMMARY_INVALID_REQUEST", "요약할 기록이 없습니다.");
+    }
+    group.summaryRequested = true;
+    group.canSummarize = false;
+    group.waitingCount = group.counts.validating;
+    group.status = groupStatusOf(group);
+    summaryRuns.set(`${childId}:${entryDate}`, Date.now());
+    return;
+  }
+  await request("/api/v1/summaries/run", {
+    method: "POST",
+    body: JSON.stringify({ childId: Number(childId), entryDate }),
+  });
+}
+
+/** mock 전용: BE 라벨 규칙 그대로 (위에서부터 처음 맞는 것) */
+function groupStatusOf(g: SummaryGroup): SummaryGroup["status"] {
+  const c = g.counts;
+  if (c.needsFix > 0) return "needs_fix";
+  if (c.ready > 0 && !g.summaryRequested && c.summarizing === 0) return "ready";
+  if (c.summarizing > 0 || g.summaryRequested) return "summarizing";
+  if (c.validating > 0) return "validating";
+  return "admin_check";
+}
+
+/**
+ * mock 전용: [요약]을 누른 묶음이 잠시 뒤 요약을 마치고 1차 검토로 옮겨 가는 것을 흉내낸다.
+ * 요약 대기 기록만 빠지고, 수정 요청 · 검증 중 기록이 남으면 카드는 남는다 (BE 와 같음).
+ */
+const summaryRuns = new Map<string, number>();
+const SUMMARY_RUN_MS = 3000;
+
+function tickSummaryRuns() {
+  const now = Date.now();
+  for (const [key, at] of summaryRuns) {
+    if (now - at < SUMMARY_RUN_MS) continue;
+    summaryRuns.delete(key);
+    const board = mock.SUMMARY_GROUP_BOARD;
+    const group = board.groups.find((g) => `${g.childId}:${g.entryDate}` === key);
+    if (!group) continue;
+
+    mock.GATE1_QUEUE.push(mock.gate1FromRun(group));
+    group.counts.ready = 0;
+    group.summaryRequested = false;
+    group.waitingCount = 0;
+    group.previousSummaryInReview = true;
+    group.canSummarize = false;
+    group.status = groupStatusOf(group);
+    const left = Object.values(group.counts).reduce((a, b) => a + b, 0);
+    if (left === 0) board.groups.splice(board.groups.indexOf(group), 1);
+  }
 }
 
 /**
@@ -872,10 +982,26 @@ export async function unlinkGuardian(childId: string, guardianUserId: string): P
   });
 }
 
-/** GET /api/v1/institutions/me/inbox */
+/** GET /api/v1/institutions/me/inbox — 수신함 목록 (O-50). 본문은 없다 */
 export async function getInbox(): Promise<InboxItem[]> {
-  if (mockFor("inbox")) return mock.INBOX;
+  if (mockFor("inbox")) return mock.INBOX.map(({ content: _content, ...item }) => ({ ...item }));
   return request("/api/v1/institutions/me/inbox");
+}
+
+/**
+ * GET /api/v1/institutions/me/inbox/{insightId} — 수신함 단건 (O-51). 처음 열면 열람 시각이 남는다.
+ *
+ * 없는 글 · 다른 기관에 열린 글 · 동의가 꺼졌거나 명부에서 빠진 아이의 글은 모두
+ * 404 SHARING_NOT_FOUND 다. 이유를 나누지 않는다.
+ */
+export async function getInboxItem(insightId: string): Promise<InboxDetail> {
+  if (mockFor("inbox")) {
+    const item = mock.INBOX.find((i) => i.id === insightId);
+    if (!item) throw new ApiError(404, "SHARING_NOT_FOUND", "인사이트를 찾을 수 없습니다.");
+    item.readAt ??= new Date().toISOString();
+    return { ...item };
+  }
+  return request(`/api/v1/institutions/me/inbox/${encodeURIComponent(insightId)}`);
 }
 
 /** POST /api/v1/children/{childId}/chat */
@@ -1146,29 +1272,29 @@ export async function updateChildCare(childId: string, care: ChildCareInfo) {
   });
 }
 
-/** GET /api/v1/children/{childId}/journal — 타임라인/홈에 쓰는 일지 목록 (최신순) */
+/**
+ * GET /api/v1/children/{childId}/journal — 타임라인/홈에 쓰는 일지 목록. 관찰 날짜 최근 순, 같은 날은 승인
+ * 최근 순이다 (서버가 정렬한다)
+ */
 export async function getJournal(childId: string): Promise<JournalEntry[]> {
   if (mockFor("guardianJournal")) {
+    // 같은 날 안에서는 mock 배열 순서가 승인 순서다 (sort 는 안정적이다)
     return mock.JOURNAL.filter((j) => j.childId === childId).sort((a, b) =>
-      `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`),
+      b.date.localeCompare(a.date),
     );
   }
   return request(`/api/v1/children/${childId}/journal`);
 }
 
+/** GET /api/v1/journal/{id} — 볼 수 없는 일지(JOURNAL_NOT_FOUND)는 undefined. mock 과 같은 약속이다 */
 export async function getJournalEntry(id: string): Promise<JournalEntry | undefined> {
   if (mockFor("guardianJournal")) return mock.JOURNAL.find((j) => j.id === id);
-  return request(`/api/v1/journal/${id}`);
-}
-
-/** POST /api/v1/journal/{id}/flag — "이 내용이 이상해요": 기관에 재확인 요청 */
-export async function flagJournalEntry(id: string) {
-  if (mockFor("guardianJournal")) {
-    const entry = mock.JOURNAL.find((j) => j.id === id);
-    if (entry) entry.flagged = true;
-    return { ok: true };
+  try {
+    return await request<JournalEntry>(`/api/v1/journal/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === "JOURNAL_NOT_FOUND") return undefined;
+    throw err;
   }
-  return request(`/api/v1/journal/${id}/flag`, { method: "POST" });
 }
 
 /** GET /api/v1/children/{childId}/care-report?period= — 아직 리포트가 없으면 null */
@@ -1176,7 +1302,7 @@ export async function getCareReport(
   childId: string,
   period: "weekly" | "monthly",
 ): Promise<CareReport | null> {
-  if (mockFor("guardianJournal")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
+  if (mockFor("careReport")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
   return request(`/api/v1/children/${childId}/care-report?period=${period}`);
 }
 
@@ -1184,12 +1310,6 @@ export async function getCareReport(
 export async function getInstitutionRequests(childId: string): Promise<InstitutionRequestItem[]> {
   if (mockFor("institutionRequests")) return mock.INSTITUTION_REQUESTS[childId] ?? [];
   return request(`/api/v1/children/${childId}/institution-requests`);
-}
-
-/** 타임라인/홈 상단 TODAY 카드 — 아이별. 없으면 null (화면에서 숨김) */
-export async function getTodaySummary(childId: string): Promise<string | null> {
-  if (mockFor("guardianJournal")) return mock.PARENT_TODAY_SUMMARY[childId] ?? null;
-  return request(`/api/v1/children/${childId}/today-summary`);
 }
 
 /** POST /api/v1/institution-requests/{id}/confirm */

@@ -19,6 +19,7 @@
 결과는 evals/generated/real/runs/ 에 JSON·HTML 로 남는다. 레포에 커밋하지 않는다.
 """
 import argparse
+import re
 import datetime as dt
 import json
 import sys
@@ -147,7 +148,8 @@ def main():
         calls["summary"] += 1
         if out:
             rec.update(ok=True, content=out.content, n_claims=len(out.claims), needs_review=out.needs_review,
-                       review_reasons=out.review_reasons, uncovered=out.uncovered_entry_ids)
+                       review_reasons=out.review_reasons, uncovered=out.uncovered_entry_ids,
+                       no_content=getattr(out, "no_content", False))
             for k, c in enumerate(out.claims):
                 claims_by_child[child].append({
                     "claim_id": f"{sid}-{k}", "text": c.text, "entry_date": full_date(date),
@@ -198,6 +200,14 @@ def main():
     for i in log["insights"]:
         print(f"  - [{i['child']}] {i['content']}  ← {i['source_diary_ids']}")
 
+    log["compare"] = compare(log, entries)
+    c = log["compare"]
+    print("── v1 비교 ──")
+    print(f"  요약할 내용 없음(no_content)  {c['no_content']}건 {c['no_content_groups']}")
+    print(f"  하루 기록 하나로 만든 인사이트  {c['single_record_insights']}/{len(log['insights'])}  (v1 4/17)")
+    print(f"  검증 사유  건강관리기록 {c['issue_health']} · 진단명 {c['issue_diagnosis']}  (v1 진단명 BLOCK 8, 일상 건강 6)")
+    print(f"  '~니다' 말투  요약 {c['polite_summaries']}/{c['ok_summaries']} · 인사이트 {c['polite_insights']}/{len(log['insights'])}  (v1 요약 6/60)")
+
     answer = load("synthetic_school_answer.json")
     if answer:
         used = {d for i in log["insights"] for d in i["source_diary_ids"]}
@@ -218,6 +228,34 @@ def main():
     html_path = (out_dir / name).with_suffix(".html")
     html_path.write_text(render_html(log, entries), encoding="utf-8")
     print(f"보고서: {html_path}  ← 브라우저로 열어 보세요")
+
+
+#: 문장이 합쇼체로 끝나는가. "했습니다." "입니다." "됩니다." 를 잡는다.
+POLITE_END = re.compile(r"니다[.!]?\s*$")
+
+
+def _polite(text):
+    return any(POLITE_END.search(s) for s in re.split(r"(?<=[.!?])\s+", text or "") if s.strip())
+
+
+def compare(log, entries):
+    """v1 (2026-10-28) 에서 고친 것들이 효과가 있었는지 보는 숫자. 판정에는 쓰지 않는다."""
+    by_id = {e["id"]: e for e in entries}
+    S = [s for s in log["summaries"] if s.get("ok")]
+    nc = [s for s in S if s.get("no_content")]
+    single = sum(1 for i in log["insights"]
+                 if len({(by_id[d]["date"], by_id[d]["institution"]) for d in i["source_diary_ids"]}) <= 1)
+    issues = Counter(t for r in log["entries"] for t in r["issue_types"])
+    return {
+        "no_content": len(nc),
+        "no_content_groups": [f"{s['date']} {s['institution']}" for s in nc],
+        "single_record_insights": single,
+        "issue_health": issues.get("건강관리기록", 0),
+        "issue_diagnosis": issues.get("진단명", 0),
+        "ok_summaries": len(S),
+        "polite_summaries": sum(_polite(s.get("content")) for s in S),
+        "polite_insights": sum(_polite(i.get("content")) for i in log["insights"]),
+    }
 
 
 def render_html(log, entries):
@@ -257,6 +295,11 @@ def render_html(log, entries):
     head = (f"일지 {len(E)}건 · 매칭 정답 {sum(r['matching_ok'] for r in E)}/{len(E)} · "
             f"검증 {dict(Counter(r['verdict'] for r in E))} · 요약 {sum(s_['ok'] for s_ in log['summaries'])}/{len(log['summaries'])} 성공 · "
             f"인사이트 {len(log['insights'])}개")
+    c = log.get("compare")
+    if c:
+        head += (f"<br>v1 비교 — 요약할 내용 없음 {c['no_content']}건 · 하루 기록 인사이트 {c['single_record_insights']}/{len(log['insights'])} · "
+                 f"건강관리기록 {c['issue_health']} · 진단명 {c['issue_diagnosis']} · "
+                 f"'~니다' 말투 요약 {c['polite_summaries']}/{c['ok_summaries']}, 인사이트 {c['polite_insights']}/{len(log['insights'])}")
     return f"""<!doctype html><meta charset="utf-8"><title>실데이터 점검</title>
 <style>body{{font-family:-apple-system,sans-serif;margin:24px;max-width:1100px;color:#222}}table{{border-collapse:collapse;width:100%;margin:8px 0 24px}}
 td,th{{border:1px solid #ddd;padding:6px 8px;font-size:13px;vertical-align:top}}th{{background:#f5f5f5}}.t{{color:#555}}

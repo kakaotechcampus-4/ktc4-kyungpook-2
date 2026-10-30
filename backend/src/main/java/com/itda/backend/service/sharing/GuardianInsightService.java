@@ -1,7 +1,6 @@
 package com.itda.backend.service.sharing;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -44,6 +43,7 @@ public class GuardianInsightService {
     private final OrganizationRepository organizationRepository;
     private final InsightResultRepository insightResultRepository;
     private final SharingHistoryRepository sharingHistoryRepository;
+    private final SharingReadRecorder sharingReadRecorder;
 
     /**
      * 내게 열린 인사이트 전부, 최근 열린 순.
@@ -70,21 +70,21 @@ public class GuardianInsightService {
                 .toList();
     }
 
-    /** 단건. 처음 열어 보면 그 시각을 남긴다 — 열람 방식의 감사 추적이다 (§9.4). */
+    /**
+     * 단건. 처음 열어 보면 그 시각을 남긴다 — 열람 방식의 감사 추적이다 (§9.4). 철회와 겹치면 먼저 반영된 쪽을
+     * 따른다 ({@link SharingReadRecorder}). 남의 아이 인사이트는 있는지조차 알려주지 않는다 (deny-by-default).
+     */
     @Transactional
     public GuardianInsightResponse getInsight(String userId, Long insightId) {
         Long guardianId = userService.getParentIdOf(userId);
-        SharingHistory grant = sharingHistoryRepository
-                .findByInsightResultIdAndReceiverTypeAndReceiverId(insightId, ReceiverType.GUARDIAN, guardianId)
-                .filter(SharingHistory::isActive)
-                // 남의 아이 인사이트가 있는지조차 알려주지 않는다 (deny-by-default, CLAUDE.md).
-                .orElseThrow(() -> new SharingException(SharingErrorCode.NOT_FOUND, insightId));
-        grant.markRead(LocalDateTime.now());
-        GuardianInsightResponse response = toResponse(grant, insightResultRepository.findById(insightId).orElse(null));
-        if (response == null) {
+        SharingHistory grant = sharingReadRecorder.lockActive(insightId, ReceiverType.GUARDIAN, guardianId);
+        InsightResult insight = insightResultRepository.findById(insightId).orElse(null);
+        if (insight == null) {
+            // 열람 시각을 남기기 전에 막는다. 못 연 글을 봤다고 기록하지 않는다.
+            log.warn("sharing grant points at a missing insight insightId={}", insightId);
             throw new SharingException(SharingErrorCode.NOT_FOUND, insightId);
         }
-        return response;
+        return toResponse(sharingReadRecorder.markRead(grant), insight);
     }
 
     private GuardianInsightResponse toResponse(SharingHistory grant, InsightResult insight) {
@@ -122,8 +122,11 @@ public class GuardianInsightService {
                 grant.getReadAt());
     }
 
-    /** Gate 2 목록과 같은 문구 규칙이다 ({@code InsightGate2QueryService.periodLabel}). */
-    private static String periodLabel(LocalDate periodFrom) {
+    /**
+     * Gate 2 목록과 같은 문구 규칙이다 ({@code InsightGate2QueryService.periodLabel}). 기관 수신함
+     * ({@link InstitutionInboxService})도 이것을 쓴다 — 보호자와 기관이 같은 글을 다른 기간 이름으로 부르지 않게.
+     */
+    static String periodLabel(LocalDate periodFrom) {
         int weekOfMonth = (periodFrom.getDayOfMonth() - 1) / 7 + 1;
         return "%d년 %d월 %d주차".formatted(periodFrom.getYear(), periodFrom.getMonthValue(), weekOfMonth);
     }

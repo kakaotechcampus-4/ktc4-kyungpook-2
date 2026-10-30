@@ -23,10 +23,12 @@ MIN_EVIDENCE_CLAIMS = 2
 #: EDITED 는 근거 일지가 있어도 내용이 바뀌었을 수 있어 원문으로 세지 않는다.
 REQUIRE_SOURCE_CLAIM = True
 
-#: 근거 수를 "서로 다른 날" 로 셀지. False 면 서로 다른 claim 이면 된다.
-#: 정하지 않았다 (CRITERIA §10). 같은 날 두 기관 기록도 비교 근거가 되므로 일단 False.
+#: 근거 수를 "서로 다른 기록" 으로 센다. 기록 하나 = (날짜, 기관) — 요약 한 편과 같은 단위다.
+#: 같은 요약에서 나온 문장 두 개는 1개다. 실데이터 v1 (2026-10-28) 에서 일지가 길어
+#: 한 건에서 문장이 여러 개 나왔고, 인사이트 17개 중 4개가 일지 한 건만으로 성립했다.
+#: 같은 날 두 기관은 2개다 — 기관 간 비교 근거는 그대로 남긴다.
 #: test_reflect.py 가 이 결정을 고정한다. 바꾸면 테스트도 같이 바꾼다.
-COUNT_DISTINCT_DATES = False
+COUNT_DISTINCT_RECORDS = True
 
 #: 대처마다 자기 claim_ids 가 있어야 한다. 없으면 그 대처만 버린다.
 REQUIRE_SUPPORT_EVIDENCE = True
@@ -60,6 +62,7 @@ CROSS_WITHOUT_SUPPORT = True   # 대처가 없어도 같은 상황에서 기관�
 DROP_ADVICE_TAIL = True        # 끝에 조언·활용 문장을 붙이지 않는다 (v0.7)
 RELATE_RECORDS = True          # 기록 하나를 다시 말하지 않는다. 묶거나 비교한다
 NEED_DIFFERENCE = True         # 같은 행동이 겹치기만 해서는 쓰지 않는다 (v0.8)
+PLAIN_TONE = True              # "~했다" 로 끝낸다. 실데이터 v1 에서 "~했습니다" 가 섞임 (v0.9.3)
 
 #: 동기화 테스트가 CRITERIA §5 표와 대조할 목록.
 WRITING_RULE_FLAGS = (
@@ -77,6 +80,7 @@ WRITING_RULE_FLAGS = (
     "DROP_ADVICE_TAIL",
     "RELATE_RECORDS",
     "NEED_DIFFERENCE",
+    "PLAIN_TONE",
 )
 
 

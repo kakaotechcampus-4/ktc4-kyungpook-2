@@ -59,6 +59,8 @@ mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하�
 아직 없는 API 때문에 대시보드 같은 화면이 통째로 에러가 나지 않습니다.
 백엔드가 기능을 열면 그 키만 `true`로 바꾸고 다시 빌드합니다. 목록과 그 처리 버튼은
 같은 키로 묶여 있어 함께 켜집니다. `VITE_USE_MOCK=true`면 표와 상관없이 전부 mock 입니다.
+보호자 일지(`guardianJournal`, 켬)와 케어 리포트 · 리포트 근거 · 활동 이력(`careReport`, 꺼짐)은 따로 켭니다.
+오늘 요약(`getTodaySummary`)과 "이 내용이 이상해요"(`flagJournalEntry`)는 뺐습니다(#280).
 
 `VITE_*`는 빌드 시점에 번들에 포함됩니다. 값이 바뀌면 재빌드가 필요합니다.
 
@@ -175,6 +177,24 @@ type Gate1Card =              // 승인 때 보내는 문장 카드. 원래 문�
   | { index: number; action: "EDIT"; text: string }
   | { action: "ADD"; text: string };
 
+interface SummaryGroupBoard {  // 오늘의 업무 묶음 카드 (BE SummaryGroupBoardResponse, O-34)
+  matching: { inProgress: number; needsReview: number };  // 아이가 아직 안 정해진 기록
+  groups: SummaryGroup[];     // 요약 전 묶음만, 오래된 날짜부터
+}
+
+interface SummaryGroup {      // 카드 한 장 = 아이 한 명의 하루치 기록
+  childId: string;            // BE 는 숫자. lib/api.ts 가 문자열로 바꾼다
+  childName: string;
+  birthdate: string | null;   // 동명이인 구분
+  entryDate: string;          // YYYY-MM-DD. [요약](O-32)에 그대로 보낸다
+  status: "needs_fix" | "ready" | "summarizing" | "validating" | "admin_check";  // 할 일 먼저
+  counts: { validating: number; needsFix: number; ready: number; summarizing: number; adminCheck: number };
+  canSummarize: boolean;      // false 면 [요약]을 막는다 (버튼은 늘 보인다)
+  summaryRequested: boolean;
+  waitingCount: number;       // 눌렀지만 시작 전 — 기다리는 같은 날 매칭·검증 중 기록 수
+  previousSummaryInReview: boolean;  // 다시 요약하면 1차 검토의 요약이 새 판으로 바뀐다
+}
+
 interface TimelineEntry {     // Child Context 타임라인 한 칸 (= 하루)
   date: string;
   entry: {                    // null = 그 날 기록 없음. 절대 추정치로 채우지 않는다
@@ -234,19 +254,15 @@ interface ActivityLog {
 ### 2.4 학부모 화면 전용 타입
 
 ```ts
+// 교사가 1차 검토에서 승인한 요약 하나 (G-20·G-21). 요약은 하루 단위라 시각이 없다.
+// 예전의 time·tag·summary/detail·institutionNote·photoCount·flagged 는 뺐다 (#280).
 interface JournalEntry {
-  id: string;
+  id: string;                 // 승인본(child_context) id
   childId: string;
   institution: Institution;
-  date: string;               // YYYY-MM-DD
-  time: string;               // HH:mm
-  isNew: boolean;
-  tag: string;                // 예: "활동", "식사"
-  summary: string;            // 목록에 보이는 한 줄
-  detail: string;             // 상세 화면 본문
-  institutionNote?: string;   // "기관에서 남긴 말"
-  photoCount?: number;
-  flagged?: boolean;          // 보호자가 "이 내용이 이상해요"를 눌렀는지
+  date: string;               // YYYY-MM-DD 관찰 날짜
+  isNew: boolean;             // 승인된 지 24시간 미만. 읽었는지와 무관
+  content: string;            // 교사가 승인한 글. 목록은 2줄로 자르고 상세는 전부
 }
 
 interface CareReport {
@@ -301,6 +317,8 @@ interface ParentActivity {
 | `getGate1Queue` | `(gate1Status?: "pending" \| "hold") => Promise<SummaryItem[]>` | I-03, I-08 |
 | `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "hold" \| "remove" \| "confirm" \| "revert"; cards?: Gate1Card[]; version: string }) => Promise<{ summaryId: string }>` · `confirm` · `revert` 는 `noContent` 요약만 | I-08 |
 | `reopenGate1` | `(summaryId: string) => Promise<{ summaryId: string }>` | I-08 |
+| `getSummaryGroups` | `() => Promise<SummaryGroupBoard>` — O-34. 요약 전 묶음(아이 × 날짜) 카드, 오래된 날짜부터 | I-03 |
+| `runSummary` | `(childId: string, entryDate: string) => Promise<void>` — O-32. 409 `SUMMARY_IN_PROGRESS` · 400 `SUMMARY_INVALID_REQUEST` · 404 `SUMMARY_CHILD_NOT_FOUND` | I-03 |
 | `getInsights` | `(gate2Status?: Gate2Status) => Promise<Insight[]>` — 기본 `pending`. 우리 기관이 승인 주체인 것만 온다 | I-03, I-10, I-11 |
 | `getInsight` | `(id: string) => Promise<Insight \| undefined>` | I-10 |
 | `decideGate2` | `(insightId: string, body: { decision: "approve" \| "hold" }) => Promise<{ insightId: string; gate2Status: Gate2Status; decision: string }>` — 받을 기관은 보내지 않는다. 409 `INSIGHT_ALREADY_REVIEWED` · `INSIGHT_SUPERSEDED` · `INSIGHT_MATERIAL_CONSENT_REVOKED`(승인만) | I-11 |
@@ -310,7 +328,8 @@ interface ParentActivity {
 | `cancelInvitation` | `(childId: string, invitationId: string) => Promise<void>` — O-17 | I-09-1 |
 | `getChildGuardians` | `(childId: string) => Promise<ChildGuardian[]>` — O-18 | I-09-1 |
 | `unlinkGuardian` | `(childId: string, guardianUserId: string) => Promise<void>` — O-19. 모든 기관에서 끊김 | I-09-1 |
-| `getInbox` | `() => Promise<InboxItem[]>` | I-12, 사이드바 배지 |
+| `getInbox` | `() => Promise<InboxItem[]>` — O-50. 본문 없음, `readAt` 이 null 이면 안 읽음 | I-12, 사이드바 배지 |
+| `getInboxItem` | `(insightId: string) => Promise<InboxDetail>` — O-51. 본문 포함, 처음 열면 열람 시각 기록. 볼 수 없는 글은 404 `SHARING_NOT_FOUND` | I-12 상세 |
 | `askChat` | `(childId: string, question: string) => Promise<ChatTurn>` | I-13 |
 | `getActivity` | `() => Promise<ActivityLog[]>` | I-14 |
 
@@ -322,11 +341,9 @@ interface ParentActivity {
 | `unlinkChild` | `(childId: string) => Promise<void>` — G-05 | P-02, P-04 |
 | `getParentChildren` | `() => Promise<Child[]>` | 전 화면 (아이 전환) |
 | `getParentHome` | `(childId: string) => Promise<{ child: Child; activity: ParentActivity[] }>` — `childId` 필수 | P-03, P-04, P-06, P-07 |
-| `getTodaySummary` | `(childId: string) => Promise<string \| null>` | P-03, P-07 |
-| `getJournal` | `(childId: string) => Promise<JournalEntry[]>` (최신순) | P-03, P-07, P-10 |
-| `getJournalEntry` | `(id: string) => Promise<JournalEntry \| undefined>` | P-08 |
-| `flagJournalEntry` | `(id: string) => Promise<{ ok: true }>` | P-08 |
-| `getCareReport` | `(childId: string, period: "weekly" \| "monthly") => Promise<CareReport \| null>` | P-09 |
+| `getJournal` | `(childId: string) => Promise<JournalEntry[]>` — G-20. 관찰 날짜 최근 순, 같은 날은 승인 최근 순 | P-03, P-07, P-10 |
+| `getJournalEntry` | `(id: string) => Promise<JournalEntry \| undefined>` — G-21. 볼 수 없는 일지(`JOURNAL_NOT_FOUND`)는 `undefined` | P-08 |
+| `getCareReport` | `(childId: string, period: "weekly" \| "monthly") => Promise<CareReport \| null>` — 서버 없음(`careReport` 꺼짐) | P-09 |
 | `getPendingInstitutionRequests` | `(childId: string) => Promise<{ institution: Institution }[]>` | P-03, P-04, P-07, P-09, P-11 |
 | `updateConsent` | `(childId: string, institutionId: string, body: { action: "grant" \| "revoke"; allowedFields?: ConsentField[] }) => Promise<ConsentResult>` | P-04(끄기), P-11 |
 | `lookupInstitutionByCode` | `(code: string) => Promise<Institution \| null>` | P-13 |

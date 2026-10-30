@@ -33,7 +33,9 @@ import lombok.NoArgsConstructor;
  * UNIQUE 가 {@code revoked_at} 을 포함하지 않으므로 새로 넣으면 제약에 걸린다.
  *
  * <p>{@code readAt} 은 나중에 채워진다 — 열람 방식에서 "언제 봤나" 를 남기지 않으면 아무 흔적이 없다
- * (CLAUDE.md Auditability). 채우는 쪽은 읽음 처리 API(O-51, 미구현)다.
+ * (CLAUDE.md Auditability). 채우는 쪽은 보호자 인사이트 단건과 기관 수신함 단건이다. 엔티티 메서드가 아니라
+ * 조건부 UPDATE({@code SharingHistoryRepository.markReadIfUnread})로 찍는다 — 동시에 연 두 요청이 각자
+ * 저장하면 나중 것이 처음 시각을 덮는다.
  */
 @Entity
 @Table(
@@ -149,23 +151,6 @@ public class SharingHistory {
         this.revokedAt = null;
         this.revokeReason = null;
         this.grantedAt = at;
-    }
-
-    /**
-     * 처음 열어 본 시각을 남긴다. 열람 방식에서 "언제 봤나" 를 안 남기면 아무 흔적이 없다
-     * (CLAUDE.md Auditability, §9.4).
-     *
-     * <p>처음 한 번만 찍는다 — 다시 열 때마다 덮으면 "처음 본 시각" 이 사라진다. 거둬진 권한에는
-     * 찍지 않는다. 못 보는 글을 봤다고 남기면 감사 기록이 거짓이 된다.
-     */
-    public void markRead(LocalDateTime at) {
-        if (at == null) {
-            throw new IllegalArgumentException("열람 시각은 필수입니다.");
-        }
-        if (this.readAt != null || !isActive()) {
-            return;
-        }
-        this.readAt = at;
     }
 
     /** 지금 볼 수 있는 권한인지. */
