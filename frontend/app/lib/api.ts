@@ -79,6 +79,7 @@ import type {
   Gate1Card,
   Gate1Status,
   Gate2Status,
+  InboxDetail,
   InboxItem,
   Insight,
   Institution,
@@ -147,8 +148,8 @@ const BE_READY = {
   upload: true,
   /** 파일별 처리 현황 (O-26) */
   fileProgress: true,
-  /** 기관 받은편지함 */
-  inbox: false,
+  /** 기관 수신함 목록 · 단건 (O-50 · O-51). 단건을 열면 처음 열람 시각이 남는다 */
+  inbox: true,
   /** 활동 기록 */
   activity: false,
   /** 기관 정보 · 증빙서류 (기관 설정 화면). 지금은 API 없이 mock 값만 띄운다 */
@@ -872,10 +873,26 @@ export async function unlinkGuardian(childId: string, guardianUserId: string): P
   });
 }
 
-/** GET /api/v1/institutions/me/inbox */
+/** GET /api/v1/institutions/me/inbox — 수신함 목록 (O-50). 본문은 없다 */
 export async function getInbox(): Promise<InboxItem[]> {
-  if (mockFor("inbox")) return mock.INBOX;
+  if (mockFor("inbox")) return mock.INBOX.map(({ content: _content, ...item }) => ({ ...item }));
   return request("/api/v1/institutions/me/inbox");
+}
+
+/**
+ * GET /api/v1/institutions/me/inbox/{insightId} — 수신함 단건 (O-51). 처음 열면 열람 시각이 남는다.
+ *
+ * 없는 글 · 다른 기관에 열린 글 · 동의가 꺼졌거나 명부에서 빠진 아이의 글은 모두
+ * 404 SHARING_NOT_FOUND 다. 이유를 나누지 않는다.
+ */
+export async function getInboxItem(insightId: string): Promise<InboxDetail> {
+  if (mockFor("inbox")) {
+    const item = mock.INBOX.find((i) => i.id === insightId);
+    if (!item) throw new ApiError(404, "SHARING_NOT_FOUND", "인사이트를 찾을 수 없습니다.");
+    item.readAt ??= new Date().toISOString();
+    return { ...item };
+  }
+  return request(`/api/v1/institutions/me/inbox/${encodeURIComponent(insightId)}`);
 }
 
 /** POST /api/v1/children/{childId}/chat */

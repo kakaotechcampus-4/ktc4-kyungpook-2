@@ -437,14 +437,31 @@ export interface Insight {
   gate2Status: Gate2Status;
 }
 
+/**
+ * 기관 수신함 목록 한 줄 (O-50). 다른 기관이 Gate 2 에서 승인해 우리 기관에 열린 인사이트다.
+ * **본문이 없다** — 단건(O-51)을 열어야 보이고, 그때 우리 기관의 처음 열람 시각이 남는다.
+ * 같이 받은 다른 기관은 오지 않는다(아이가 어디에 또 다니는지는 최소 정보를 넘는다).
+ */
 export interface InboxItem {
+  /** 인사이트 id. 단건 경로에 그대로 쓴다 */
   id: string;
-  from: Institution;
+  childId: string;
   childName: string;
+  /** 우리 기관이 붙인 관리번호. 이름이 같은 아이를 가른다 */
+  externalId: string;
+  /** 이 글을 Gate 2 에서 승인한 기관 */
+  from: Institution;
+  /** "2026년 8월 3주차" 같은 문구 */
+  period: string;
+  /** 우리 기관이 볼 수 있게 된 시각 (ISO) */
   receivedAt: string;
-  /** 원본이 아니라 수신자별로 변환된 최소 정보 */
+  /** 우리 기관에서 처음 열어 본 시각 (ISO). 아직 안 열었으면 null — 키는 항상 온다 */
+  readAt: string | null;
+}
+
+/** 기관 수신함 단건 (O-51). 본문은 보호자에게 열린 글과 같다 — 수신자별 변환은 아직 없다 */
+export interface InboxDetail extends InboxItem {
   content: string;
-  read: boolean;
 }
 
 export interface ChatSource {
