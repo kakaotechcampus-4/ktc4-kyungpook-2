@@ -43,7 +43,7 @@ class InsightWorkerTest {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final InsightProperties PROPERTIES =
-            new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, false);
+            new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, false, List.of());
 
     @Mock
     private InsightService insightService;
@@ -171,7 +171,7 @@ class InsightWorkerTest {
     @Test
     void 설정을_켜면_이번_주_기록도_본다() {
         worker = new InsightWorker(insightService, client, recorder, childContextRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, true));
+                new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, true, List.of()));
         agentUp();
         approved(new ApprovedEntryDay(8L, LocalDate.now(SEOUL)));
 
@@ -265,7 +265,7 @@ class InsightWorkerTest {
 
         worker.run();
 
-        verify(recorder).recordFailure(any());
+        verify(recorder).recordFailure(any(), any());
         verify(recorder).record(any(), any(), any(), any(), anyInt());
         verify(client, times(2)).analyze(any());
     }
@@ -279,11 +279,14 @@ class InsightWorkerTest {
         agentUp();
         candidates(8L, 9L);
         ready(8L);
-        willThrow(new AiAgentUnavailableException("503", null)).given(client).analyze(any());
+        AiAgentUnavailableException unavailable = new AiAgentUnavailableException("503", null);
+        willThrow(unavailable).given(client).analyze(any());
+        given(client.failureOf(unavailable)).willReturn("llm_unavailable:empty_response");
 
         worker.run();
 
-        verify(recorder).recordFailure(any());
+        // 왜 실패했는지 남긴다 (#266)
+        verify(recorder).recordFailure(any(), eq("llm_unavailable:empty_response"));
         verify(insightService, never()).prepare(eq(9L), any(), any());
         verify(client, times(1)).analyze(any());
     }
@@ -321,7 +324,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(client, never()).analyze(any());
-        verify(recorder, never()).recordFailure(any());
+        verify(recorder, never()).recordFailure(any(), any());
     }
 
     @Test
@@ -337,7 +340,7 @@ class InsightWorkerTest {
     @Test
     void 한_차례에_batch_size_만큼만_집는다() {
         worker = new InsightWorker(insightService, client, recorder, childContextRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 2), 7, SEOUL, 14, false));
+                new InsightProperties(new WorkerProperties(true, 5000, 2), 7, SEOUL, 14, false, List.of()));
         agentUp();
         candidates(8L, 9L, 10L);
         ready(8L);
@@ -354,7 +357,7 @@ class InsightWorkerTest {
     @Test
     void 집지_못한_아이는_처리_수에_넣지_않는다() {
         worker = new InsightWorker(insightService, client, recorder, childContextRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 1), 7, SEOUL, 14, false));
+                new InsightProperties(new WorkerProperties(true, 5000, 1), 7, SEOUL, 14, false, List.of()));
         agentUp();
         candidates(8L, 9L);
         given(insightService.prepare(anyLong(), any(), any()))
