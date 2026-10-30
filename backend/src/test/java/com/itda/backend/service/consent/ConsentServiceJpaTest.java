@@ -45,6 +45,7 @@ import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.insight.InsightAccessRevoker;
 import com.itda.backend.service.user.UserService;
 
 /**
@@ -53,7 +54,10 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({ConsentService.class, ConsentServiceJpaTest.ClockConfig.class})
+// InsightAccessRevoker 는 가짜가 아니라 진짜를 넣는다 — 동의 철회가 열람 권한까지 거두는지(#213)
+// 이 테스트가 같이 지켜준다. 가짜면 배선이 끊겨도 초록이다.
+@Import({ConsentService.class, ConsentStateReader.class, InsightAccessRevoker.class,
+        ConsentServiceJpaTest.ClockConfig.class})
 class ConsentServiceJpaTest {
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 13, 10, 0);

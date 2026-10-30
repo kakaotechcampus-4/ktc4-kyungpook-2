@@ -27,6 +27,7 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.service.insight.InsightAccessRevoker;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -57,6 +58,8 @@ public class ConsentService {
     private final ChildGuardianRepository childGuardianRepository;
     private final OrganizationRepository organizationRepository;
     private final SharingConsentRepository sharingConsentRepository;
+    private final ConsentStateReader consentStateReader;
+    private final InsightAccessRevoker insightAccessRevoker;
     private final Clock clock;
 
     /**
@@ -120,17 +123,30 @@ public class ConsentService {
         List<SharingConsent> active = sharingConsentRepository.findByChildIdAndOrganizationIdAndStatus(
                 childId, institutionId, SharingConsentStatus.ACTIVE);
         if (action == ConsentAction.GRANT) {
+            boolean hadInsight = consentStateReader.insightStateOf(childId, institutionId) == ConsentState.GRANTED;
             active.forEach(consent -> consent.changeScope(allowedFields));
             if (active.stream().noneMatch(consent -> consent.getGuardianId().equals(parentId))) {
                 sharingConsentRepository.save(SharingConsent.grant(childId, parentId, institutionId, allowedFields));
             }
+            // 범위에서 주간 인사이트를 빼면 이미 내준 인사이트 열람 권한도 거둔다 (#257, 멘토님 리뷰 #256 P1).
+            // 동의 자체는 살아 있어도 인사이트는 더 이상 허락이 아니다. 원래 허락이 없었으면 거둘 것도 없다.
+            // 사유는 GUARDIAN_REVOKED 를 쓴다 — 보호자가 인사이트 공유를 거둔 것이고, 새 값을 더하면 배포 DB 의
+            // CHECK 제약 수동 조치(§11.4)가 필요하다. 동의 행이 살아 있고 scope 에 weekly_insight 가 없으면 범위 축소다.
+            if (hadInsight && consentStateReader.insightStateOf(childId, institutionId) != ConsentState.GRANTED) {
+                insightAccessRevoker.revokeForInstitution(
+                        childId, institutionId, ConsentRevokeReason.GUARDIAN_REVOKED, now());
+            }
         } else {
             LocalDateTime now = now();
             active.forEach(consent -> consent.revoke(parentId, ConsentRevokeReason.GUARDIAN_REVOKED, now));
+            // 이 기관의 ACTIVE 동의를 모두 끈 참이라 그 기관 공유는 확실히 꺼졌다. 이미 내준 인사이트
+            // 열람 권한도 함께 거둔다 — 안 거두면 철회가 "앞으로만" 적용되고 이미 나간 글은 그대로 보인다 (#213).
+            insightAccessRevoker.revokeForInstitution(
+                    childId, institutionId, ConsentRevokeReason.GUARDIAN_REVOKED, now);
         }
         refreshStatus(child);
 
-        ConsentState state = stateOf(childId, institutionId);
+        ConsentState state = consentStateReader.stateOf(childId, institutionId);
         List<ConsentField> shared = state == ConsentState.GRANTED
                 ? SharingConsent.normalize(allowedFields)
                 : List.of();
@@ -149,9 +165,24 @@ public class ConsentService {
     @Transactional
     public void revokeForUnlinkedGuardian(Child lockedChild, Long guardianId, Long actorId) {
         LocalDateTime now = now();
-        sharingConsentRepository.findByChildIdAndGuardianIdAndStatus(
-                        lockedChild.getId(), guardianId, SharingConsentStatus.ACTIVE)
-                .forEach(consent -> consent.revoke(actorId, ConsentRevokeReason.GUARDIAN_UNLINKED, now));
+        List<SharingConsent> revoked = sharingConsentRepository.findByChildIdAndGuardianIdAndStatus(
+                lockedChild.getId(), guardianId, SharingConsentStatus.ACTIVE);
+        revoked.forEach(consent -> consent.revoke(actorId, ConsentRevokeReason.GUARDIAN_UNLINKED, now));
+
+        // 더 이상 이 아이의 보호자가 아니다. 이미 내준 인사이트 열람 권한을 거둔다 (#213).
+        insightAccessRevoker.revokeForGuardian(
+                lockedChild.getId(), guardianId, ConsentRevokeReason.GUARDIAN_UNLINKED, now);
+        // 이 사람이 마지막 동의자였던 기관은 공유가 꺼진다. 다른 보호자가 남아 있으면 그대로 켜져 있으므로
+        // 기관마다 다시 본다 — 끈 행만 보고 거두면 남은 동의까지 무시하게 된다.
+        revoked.stream()
+                .map(SharingConsent::getOrganizationId)
+                .distinct()
+                // 남은 동의가 하루 요약만이면 인사이트 권한은 거둔다 (#257).
+                .filter(organizationId ->
+                        consentStateReader.insightStateOf(lockedChild.getId(), organizationId) != ConsentState.GRANTED)
+                .forEach(organizationId -> insightAccessRevoker.revokeForInstitution(
+                        lockedChild.getId(), organizationId, ConsentRevokeReason.GUARDIAN_UNLINKED, now));
+
         refreshStatus(lockedChild);
     }
 
@@ -167,16 +198,6 @@ public class ConsentService {
         } else if (sharingConsentRepository.existsByChildId(child.getId())) {
             child.suspend();
         }
-    }
-
-    private ConsentState stateOf(Long childId, Long organizationId) {
-        if (sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(
-                childId, organizationId, SharingConsentStatus.ACTIVE)) {
-            return ConsentState.GRANTED;
-        }
-        return sharingConsentRepository.existsByChildIdAndOrganizationId(childId, organizationId)
-                ? ConsentState.REVOKED
-                : ConsentState.NOT_GRANTED;
     }
 
     private LocalDateTime now() {

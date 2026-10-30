@@ -1,6 +1,6 @@
 import { Outlet, redirect, useLoaderData } from "react-router";
 import { OrgShell } from "@/components/org/Shell";
-import { getSession } from "@/lib/auth";
+import { getSession, isAuthMock } from "@/lib/auth";
 import {
   getBlockedQueue,
   getGate1Queue,
@@ -9,7 +9,7 @@ import {
   getMatchingQueue,
   loadIfReady,
 } from "@/lib/api";
-import { MY_INSTITUTION } from "@/lib/mock/data";
+import { ME, MY_INSTITUTION } from "@/lib/mock/data";
 
 /**
  * proxy.ts 의 ORG_PREFIXES 게이트를 대체한다.
@@ -21,7 +21,7 @@ import { MY_INSTITUTION } from "@/lib/mock/data";
  * 배지가 실시간으로 줄어든다.
  */
 export async function clientLoader() {
-  const { loggedIn, signupCompleted, role } = await getSession();
+  const { loggedIn, signupCompleted, role, name, institutionName } = await getSession();
   // 카카오 로그인만 하고 역할을 안 고른 사람 — 보호 API 가 403 SIGNUP_NOT_COMPLETED 를 준다.
   if (loggedIn && !signupCompleted) return redirect("/signup?role=org");
   if (role !== "org") return redirect("/login");
@@ -35,24 +35,29 @@ export async function clientLoader() {
     loadIfReady("inbox", getInbox),
   ]);
 
+  // 사이드바 하단의 내 정보. 실연동에서는 /auth/me 의 이름 · 기관명(#236)을 쓴다.
+  // 서버가 기관명을 안 주면 비워 둔다 — mock 기관명을 띄우면 로그인한 사람과 다른 기관이 보인다.
+  const me = isAuthMock()
+    ? { name: ME.name, institutionName: MY_INSTITUTION.name }
+    : { name: name ?? null, institutionName: institutionName ?? null };
+
   return {
+    me,
     counts: {
       matching: matching?.length ?? null,
       reinput: blocked?.length ?? null,
       gate1: gate1?.filter((s) => s.gate1Status === "pending").length ?? null,
-      gate2:
-        insights?.filter(
-          (i) => i.primarySource.id === MY_INSTITUTION.id && i.gate2Status === "pending",
-        ).length ?? null,
-      inbox: inbox?.filter((i) => !i.read).length ?? null,
+      // getInsights 기본값이 pending 이고, BE 가 우리 기관이 승인 주체인 것만 준다
+      gate2: insights?.length ?? null,
+      inbox: inbox?.filter((i) => !i.readAt).length ?? null,
     },
   };
 }
 
 export default function OrgLayoutRoute() {
-  const { counts } = useLoaderData<typeof clientLoader>();
+  const { me, counts } = useLoaderData<typeof clientLoader>();
   return (
-    <OrgShell counts={counts}>
+    <OrgShell me={me} counts={counts}>
       <Outlet />
     </OrgShell>
   );

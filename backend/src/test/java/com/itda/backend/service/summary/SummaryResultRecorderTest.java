@@ -2,8 +2,8 @@ package com.itda.backend.service.summary;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 
@@ -15,6 +15,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.itda.backend.domain.record.FailureReason;
+import com.itda.backend.domain.record.FailureStage;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.SummaryResult;
@@ -30,6 +32,7 @@ class SummaryResultRecorderTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
     private static final SummaryGroup GROUP = new SummaryGroup(8L, DATE, 3L);
+    private static final LocalDateTime CLAIMED_AT = LocalDateTime.of(2026, 10, 8, 17, 0);
 
     @Autowired
     private SummaryResultRecorder recorder;
@@ -67,7 +70,7 @@ class SummaryResultRecorderTest {
     }
 
     private ClaimedSummaryGroup claimed(JournalEntry... entries) {
-        return new ClaimedSummaryGroup(GROUP, Arrays.stream(entries).map(JournalEntry::getId).toList());
+        return new ClaimedSummaryGroup(GROUP, Arrays.stream(entries).map(JournalEntry::getId).toList(), CLAIMED_AT);
     }
 
     /** 워커가 AI 에 보낸 요청 — 묶음의 일지 원문. */
@@ -222,17 +225,156 @@ class SummaryResultRecorderTest {
     }
 
     @Test
-    void 본문이_비어_오면_저장하지_않고_실패로_남긴다() throws Exception {
+    void 본문이_비어_오면_저장하지_않고_RESPONSE_UNREADABLE_시스템_오류로_남긴다() throws Exception {
         JournalEntry entry = summarizing("블록 놀이를 했다.");
 
+        // AI 계약상 근거가 없으면 503 이 와야 한다. 빈 200 은 다시 요약해도 같으니 요약 실패가 아니다.
         recorder.record(claimed(entry), sent(entry), reply("", entry, "[]", "[" + entry.getId() + "]"));
 
         assertThat(summaryResultRepository.findAll()).isEmpty();
-        assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertSystemError(reload(entry), FailureReason.RESPONSE_UNREADABLE);
+    }
+
+    /** 요약할 내용이 없다는 응답 (#244). 계약대로 본문 "", claims [], 묶음 일지 전부 uncovered 다. */
+    private SummaryAgentReply noContentReply(String claims, JournalEntry... entries) throws Exception {
+        String uncovered = Arrays.stream(entries).map(e -> String.valueOf(e.getId()))
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+        String json = """
+                {"child_id": 8, "entry_date": "2026-10-08", "institution_id": 3, "content": "",
+                 "claims": %s, "covered_entry_ids": [], "uncovered_entry_ids": %s, "no_content": true,
+                 "llm_called": true}
+                """.formatted(claims, uncovered);
+        return new SummaryAgentReply(new ObjectMapper().readValue(json, SummaryAgentResponse.class), json);
     }
 
     @Test
-    void 호출이_실패하면_새_일지는_실패로_이미_요약된_일지는_Gate1_대기로_남긴다() {
+    void 요약할_내용이_없다는_응답은_빈_요약으로_저장하고_일지를_Gate1_대기로_보낸다() throws Exception {
+        JournalEntry first = summarizing("특이사항 없음");
+        JournalEntry second = summarizing("특이사항 없음.");
+        SummaryAgentReply reply = noContentReply("[]", first, second);
+
+        recorder.record(claimed(first, second), sent(first, second), reply);
+
+        List<SummaryResult> saved = summaryResultRepository.findAll();
+        assertThat(saved).hasSize(1);
+        SummaryResult summary = saved.get(0);
+        assertThat(summary.isNoContent()).isTrue();
+        assertThat(summary.getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+        assertThat(summary.getContent()).isEmpty();
+        assertThat(summary.getClaims()).isEqualTo("[]");
+        assertThat(summary.getUncoveredEntryIds()).isEqualTo("[" + first.getId() + "," + second.getId() + "]");
+        assertThat(summary.getRawResponse()).isEqualTo(reply.rawJson());
+        for (JournalEntry entry : List.of(first, second)) {
+            JournalEntry found = reload(entry);
+            assertThat(found.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+            assertThat(found.getSummaryId()).isEqualTo(summary.getId());
+        }
+    }
+
+    @Test
+    void 요약할_내용_없음에는_AI_가_빠뜨려도_실제로_묶은_일지를_모두_남긴다() throws Exception {
+        // 되돌린 판에서는 이 값이 어떤 일지가 들어 있었는지 남는 유일한 흔적이다 — AI 값을 그대로 믿지 않는다.
+        JournalEntry first = summarizing("특이사항 없음");
+        JournalEntry second = summarizing("특이사항 없음.");
+
+        recorder.record(claimed(first, second), sent(first, second), noContentReply("[]", first));
+
+        assertThat(summaryResultRepository.findAll().get(0).getUncoveredEntryIds())
+                .isEqualTo("[" + first.getId() + "," + second.getId() + "]");
+    }
+
+    @Test
+    void 요약할_내용이_없다면서_문장이_있으면_저장하지_않고_EVIDENCE_MISMATCH로_남긴다() throws Exception {
+        JournalEntry entry = summarizing("블록 놀이를 했다.");
+        String claims = """
+                [{"text": "블록 놀이를 했다.", "evidence": [
+                  {"journal_entry_id": %d, "quote": "블록 놀이를 했다.", "span": {"start": 0, "end": 10}}]}]
+                """.formatted(entry.getId());
+
+        recorder.record(claimed(entry), sent(entry), noContentReply(claims, entry));
+
+        assertThat(summaryResultRepository.findAll()).isEmpty();
+        assertSystemError(reload(entry), FailureReason.EVIDENCE_MISMATCH);
+    }
+
+    @Test
+    void 승인_전_요약을_요약할_내용_없음으로_덮어쓴다() throws Exception {
+        SummaryResult existing = SummaryResult.of(8L, DATE, 3L, 1, "이전 요약", "[]", "[]", "[]", "{}");
+        existing.markReview(true, "[\"다른아동이름\"]");
+        summaryResultRepository.saveAndFlush(existing);
+        JournalEntry old = resummarizing(existing);
+        JournalEntry late = summarizing("특이사항 없음");
+
+        recorder.record(claimed(old, late), sent(old, late), noContentReply("[]", old, late));
+
+        List<SummaryResult> saved = summaryResultRepository.findAll();
+        assertThat(saved).hasSize(1);
+        SummaryResult summary = saved.get(0);
+        assertThat(summary.getId()).isEqualTo(existing.getId());
+        assertThat(summary.isNoContent()).isTrue();
+        assertThat(summary.getContent()).isEmpty();
+        assertThat(summary.isNeedsReview()).isFalse();
+        assertThat(reload(late).getSummaryId()).isEqualTo(existing.getId());
+        assertThat(reload(late).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+    }
+
+    @Test
+    void 최신_판이_확인으로_끝났으면_요약할_내용_없음도_새_판으로_쌓는다() throws Exception {
+        SummaryResult confirmed = SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}");
+        confirmed.confirmNoContent();
+        summaryResultRepository.saveAndFlush(confirmed);
+        JournalEntry late = summarizing("특이사항 없음");
+
+        recorder.record(claimed(late), sent(late), noContentReply("[]", late));
+
+        em.flush();
+        em.clear();
+        SummaryResult newer = summaryResultRepository.findAll().stream()
+                .filter(s -> !s.getId().equals(confirmed.getId())).findFirst().orElseThrow();
+        assertThat(newer.getRevision()).isEqualTo(2);
+        assertThat(newer.isNoContent()).isTrue();
+        assertThat(summaryResultRepository.findById(confirmed.getId()).orElseThrow().getStatus())
+                .isEqualTo(SummaryStatus.CONFIRMED);
+        assertThat(reload(late).getSummaryId()).isEqualTo(newer.getId());
+    }
+
+    @Test
+    void 최신_판을_되돌렸으면_다시_요약한_결과는_새_판으로_쌓는다() throws Exception {
+        SummaryResult reverted = SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}");
+        reverted.revertNoContent();
+        summaryResultRepository.saveAndFlush(reverted);
+        JournalEntry entry = summarizing("블록 놀이에서 친구에게 양보함");
+
+        recorder.record(claimed(entry), sent(entry),
+                reply("블록 놀이에서 친구에게 양보했다.", entry, "[" + entry.getId() + "]", "[]"));
+
+        em.flush();
+        em.clear();
+        SummaryResult newer = summaryResultRepository.findAll().stream()
+                .filter(s -> !s.getId().equals(reverted.getId())).findFirst().orElseThrow();
+        assertThat(newer.getRevision()).isEqualTo(2);
+        assertThat(summaryResultRepository.findById(reverted.getId()).orElseThrow().getStatus())
+                .isEqualTo(SummaryStatus.REVERTED);
+        assertThat(reload(entry).getSummaryId()).isEqualTo(newer.getId());
+    }
+
+    @Test
+    void 요약할_내용_없음을_일반_요약으로_덮어쓰면_표시가_사라진다() throws Exception {
+        SummaryResult existing = summaryResultRepository.saveAndFlush(
+                SummaryResult.noContent(8L, DATE, 3L, 1, "[]", "{}"));
+        JournalEntry old = resummarizing(existing);
+        JournalEntry late = summarizing("블록 놀이에서 친구에게 양보함");
+
+        recorder.record(claimed(old, late), sent(old, late),
+                reply("블록 놀이에서 친구에게 양보했다.", late, "[" + late.getId() + "]", "[" + old.getId() + "]"));
+
+        SummaryResult summary = summaryResultRepository.findById(existing.getId()).orElseThrow();
+        assertThat(summary.isNoContent()).isFalse();
+        assertThat(summary.getContent()).isEqualTo("블록 놀이에서 친구에게 양보했다.");
+    }
+
+    @Test
+    void 근거가_남지_않아_실패하면_새_일지는_요약_실패로_이미_요약된_일지는_Gate1_대기로_남긴다() {
         SummaryResult existing = summaryResultRepository.saveAndFlush(
                 SummaryResult.of(8L, DATE, 3L, 1, "이전 요약", "[]", "[]", "[]", "{}"));
         JournalEntry old = resummarizing(existing);
@@ -241,9 +383,23 @@ class SummaryResultRecorderTest {
         recorder.recordFailure(claimed(old, late));
 
         assertThat(reload(old).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
-        assertThat(reload(late).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertThat(reload(late).getStatus()).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
         assertThat(summaryResultRepository.findById(existing.getId()).orElseThrow().getContent())
                 .isEqualTo("이전 요약");
+    }
+
+    @Test
+    void 시스템_오류면_새_일지는_원인을_남기고_이미_요약된_일지는_Gate1_대기로_남긴다() {
+        SummaryResult existing = summaryResultRepository.saveAndFlush(
+                SummaryResult.of(8L, DATE, 3L, 1, "이전 요약", "[]", "[]", "[]", "{}"));
+        JournalEntry old = resummarizing(existing);
+        JournalEntry late = summarizing("늦게 올라온 일지");
+
+        recorder.recordSystemError(claimed(old, late), FailureReason.REQUEST_REJECTED);
+
+        assertThat(reload(old).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(reload(old).getFailureReason()).isNull();
+        assertSystemError(reload(late), FailureReason.REQUEST_REJECTED);
     }
 
     @Test
@@ -264,7 +420,7 @@ class SummaryResultRecorderTest {
     }
 
     @Test
-    void 근거가_원문과_맞지_않으면_저장하지_않고_실패로_남긴다() throws Exception {
+    void 근거가_원문과_맞지_않으면_저장하지_않고_EVIDENCE_MISMATCH_시스템_오류로_남긴다() throws Exception {
         JournalEntry entry = summarizing("블록 놀이를 했다.");
         JournalEntry other = summarizing("점심을 먹었다.");
         SummaryAgentReply reply = reply("블록 놀이를 했다.", other, "[]", "[]");
@@ -277,12 +433,12 @@ class SummaryResultRecorderTest {
         recorder.record(claimed(entry, other), sent(entry, other), brokenReply);
 
         assertThat(summaryResultRepository.findAll()).isEmpty();
-        assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
-        assertThat(reload(other).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertSystemError(reload(entry), FailureReason.EVIDENCE_MISMATCH);
+        assertSystemError(reload(other), FailureReason.EVIDENCE_MISMATCH);
     }
 
     @Test
-    void 요약하는_사이_삭제된_일지를_근거로_들면_요약_전체를_실패로_남긴다() throws Exception {
+    void 요약하는_사이_삭제된_일지를_근거로_들면_요약_전체를_EVIDENCE_MISMATCH로_남긴다() throws Exception {
         JournalEntry kept = summarizing("블록 놀이를 했다.");
         JournalEntry removed = summarizing("점심을 먹었다.");
         SummaryAgentRequest request = sent(kept, removed);
@@ -292,26 +448,48 @@ class SummaryResultRecorderTest {
         recorder.record(claimed(kept, removed), request, reply("점심을 먹었다.", removed, "[]", "[]"));
 
         assertThat(summaryResultRepository.findAll()).isEmpty();
-        assertThat(reload(kept).getStatus()).isEqualTo(JournalEntryStatus.FAILED);
+        assertSystemError(reload(kept), FailureReason.EVIDENCE_MISMATCH);
     }
 
     @Test
-    void 결과를_남기면_지금_요약_요청을_지운다() throws Exception {
+    void 결과를_남기면_요약_요청을_처리됨으로_남긴다() throws Exception {
         JournalEntry ok = summarizing("블록 놀이를 했다.");
-        runRequests.request(GROUP, Instant.MAX);
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
 
         recorder.record(claimed(ok), sent(ok), reply("블록 놀이를 했다.", ok, "[" + ok.getId() + "]", "[]"));
 
-        assertThat(runRequests.isRequested(GROUP, Instant.now())).isFalse();
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
     }
 
     @Test
-    void 실패로_남겨도_지금_요약_요청을_지운다() {
-        JournalEntry entry = summarizing("블록 놀이를 했다.");
-        runRequests.request(GROUP, Instant.MAX);
+    void 실패로_남겨도_요약_요청을_처리됨으로_남긴다() {
+        JournalEntry failed = summarizing("블록 놀이를 했다.");
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
+        recorder.recordFailure(claimed(failed));
+        boolean afterFailure = runRequests.isRequested(GROUP);
 
-        recorder.recordFailure(claimed(entry));
+        JournalEntry systemError = summarizing("점심을 먹었다.");
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
+        recorder.recordSystemError(claimed(systemError), FailureReason.INTERNAL_ERROR);
 
-        assertThat(runRequests.isRequested(GROUP, Instant.now())).isFalse();
+        assertThat(afterFailure).isFalse();
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
+    }
+
+    @Test
+    void 요약하는_사이_다시_누른_요청은_결과를_남겨도_요청으로_남는다() throws Exception {
+        // 요약하는 사이 새 일지가 들어와 교사가 다시 눌렀다. 그 일지는 방금 요약에 들어 있지 않다.
+        JournalEntry ok = summarizing("블록 놀이를 했다.");
+        runRequests.request(GROUP, CLAIMED_AT.plusMinutes(1));
+
+        recorder.record(claimed(ok), sent(ok), reply("블록 놀이를 했다.", ok, "[" + ok.getId() + "]", "[]"));
+
+        assertThat(runRequests.isRequested(GROUP)).isTrue();
+    }
+
+    private static void assertSystemError(JournalEntry entry, FailureReason reason) {
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
+        assertThat(entry.getFailureStage()).isEqualTo(FailureStage.SUMMARY);
+        assertThat(entry.getFailureReason()).isEqualTo(reason);
     }
 }

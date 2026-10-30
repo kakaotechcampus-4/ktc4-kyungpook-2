@@ -64,11 +64,12 @@ class InsightAgentClientTest {
     private InsightAgentRequest request() {
         return new InsightAgentRequest(8L, "김준호", "2026-10-01", "2026-10-07",
                 List.of(new InsightAgentRequest.Claim("31-0", "점심 줄에서 차례를 기다렸다.", "2026-10-02",
-                                3L, "학교",
+                                3L, "학교", InsightAgentRequest.ClaimSource.AI,
                                 List.of(new InsightAgentRequest.Evidence(1041L, "줄에서 차례를 기다림"))),
-                        new InsightAgentRequest.Claim("34-1", "점심 줄에서 앞으로 끼어들었다.", "2026-10-05",
-                                5L, "센터",
-                                List.of(new InsightAgentRequest.Evidence(1042L, "앞으로 끼어듦")))),
+                        // 교사가 Gate 1 에서 새로 쓴 문장. 일지가 없어 번호가 비고 quote 가 그 문장이다 (#199).
+                        new InsightAgentRequest.Claim("34-1", "약 먹은 날 차분했다.", "2026-10-05",
+                                5L, "센터", InsightAgentRequest.ClaimSource.TEACHER,
+                                List.of(new InsightAgentRequest.Evidence(null, "약 먹은 날 차분했다.")))),
                 List.of(new InsightAgentRequest.Institution(3L, "학교"),
                         new InsightAgentRequest.Institution(5L, "센터")));
     }
@@ -82,11 +83,11 @@ class InsightAgentClientTest {
                          "period_from": "2026-10-01", "period_to": "2026-10-07",
                          "claims": [
                            {"claim_id": "31-0", "text": "점심 줄에서 차례를 기다렸다.", "entry_date": "2026-10-02",
-                            "institution_id": 3, "institution_type": "학교",
+                            "institution_id": 3, "institution_type": "학교", "source": "AI",
                             "evidence": [{"journal_entry_id": 1041, "quote": "줄에서 차례를 기다림"}]},
-                           {"claim_id": "34-1", "text": "점심 줄에서 앞으로 끼어들었다.", "entry_date": "2026-10-05",
-                            "institution_id": 5, "institution_type": "센터",
-                            "evidence": [{"journal_entry_id": 1042, "quote": "앞으로 끼어듦"}]}],
+                           {"claim_id": "34-1", "text": "약 먹은 날 차분했다.", "entry_date": "2026-10-05",
+                            "institution_id": 5, "institution_type": "센터", "source": "TEACHER",
+                            "evidence": [{"journal_entry_id": null, "quote": "약 먹은 날 차분했다."}]}],
                          "consented_institutions": [
                            {"institution_id": 3, "institution_type": "학교"},
                            {"institution_id": 5, "institution_type": "센터"}]}
@@ -142,6 +143,37 @@ class InsightAgentClientTest {
                 .body("{\"detail\": {\"reason\": \"llm_unavailable\"}}"));
 
         assertThatThrownBy(() -> client.analyze(request())).isInstanceOf(AiAgentUnavailableException.class);
+    }
+
+    /** #264 부터 AI 가 503 body 에 실패 종류를 싣는다. AI /metrics 와 같은 모양으로 남긴다 (#266). */
+    @Test
+    void 실패_사유는_503_body의_reason과_failure를_붙여_만든다() {
+        server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"detail\": {\"reason\": \"llm_unavailable\", \"failure\": \"empty_response\"}}"));
+
+        assertThatThrownBy(() -> client.analyze(request())).satisfies(e ->
+                assertThat(client.failureOf((RuntimeException) e)).isEqualTo("llm_unavailable:empty_response"));
+    }
+
+    /** #264 전의 AI 는 failure 를 싣지 않는다. */
+    @Test
+    void 실패_종류가_없으면_reason만_남긴다() {
+        server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"detail\": {\"reason\": \"llm_unavailable\"}}"));
+
+        assertThatThrownBy(() -> client.analyze(request())).satisfies(e ->
+                assertThat(client.failureOf((RuntimeException) e)).isEqualTo("llm_unavailable"));
+    }
+
+    /** body 가 없으면 AI 가 답한 게 아니다 — 연결 실패나 BE 쪽 시간 초과다. */
+    @Test
+    void body가_없으면_AI에_닿지_못한_것으로_남긴다() {
+        server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+
+        assertThatThrownBy(() -> client.analyze(request())).satisfies(e ->
+                assertThat(client.failureOf((RuntimeException) e)).isEqualTo("agent_unreachable"));
     }
 
     @Test

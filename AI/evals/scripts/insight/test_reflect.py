@@ -19,9 +19,10 @@ from insight.prompts import build_messages  # noqa: E402
 TYPES = {1: "학교", 2: "센터", 3: "활동지원사"}
 
 
-def claim(cid: str, inst: int, jid: int) -> dict:
+def claim(cid: str, inst: int, jid: int, date: str | None = None) -> dict:
+    # 일지마다 다른 날로 둔다. 같은 날을 시험할 때만 date 를 넘긴다.
     return {
-        "claim_id": cid, "text": f"{cid} 문장", "entry_date": "2026-01-08",
+        "claim_id": cid, "text": f"{cid} 문장", "entry_date": date or f"2026-01-{jid % 28 + 1:02d}",
         "institution_id": inst, "institution_type": TYPES[inst],
         "evidence": [{"journal_entry_id": jid, "quote": "인용"}],
     }
@@ -113,23 +114,29 @@ def test_동의_목록이_비면_아무_claim도_쓰지_않는다():
 
 # ── 근거 수 세는 법 (CRITERIA §10 미결) ─────────────────────────
 
-# 같은 날 학교·센터 claim 두 개. claim() 의 날짜는 모두 2026-01-08 이다.
-SAME_DAY = [claim("20-0", 1, 201), claim("20-50", 2, 202)]
+DAY = "2026-01-08"
+# 같은 날 학교·센터 — 기관 간 비교라 2개로 센다
+SAME_DAY_TWO_INST = [claim("20-0", 1, 201, DAY), claim("20-50", 2, 202, DAY)]
+# 같은 날 같은 기관 — 요약 한 편에서 나온 문장 둘이라 1개로 센다
+SAME_RECORD = [claim("21-0", 1, 211, DAY), claim("21-1", 1, 212, DAY)]
 
 
-def test_지금은_같은_날_두_claim도_근거_2개로_센다():
-    # 결정이 바뀌면 이 테스트를 CRITERIA §10 과 같이 바꾼다
-    assert config.COUNT_DISTINCT_DATES is False
-    assert len(run(make_state(claims=SAME_DAY), [insight(["20-0", "20-50"])])) == 1
+def test_같은_날_다른_기관은_근거_2개로_센다():
+    assert config.COUNT_DISTINCT_RECORDS is True
+    assert len(run(make_state(claims=SAME_DAY_TWO_INST), [insight(["20-0", "20-50"])])) == 1
 
 
-def test_COUNT_DISTINCT_DATES를_켜면_같은_날은_1개로_센다():
-    original = config.COUNT_DISTINCT_DATES
+def test_같은_날_같은_기관_문장_둘은_근거_1개라_버린다():
+    assert run(make_state(claims=SAME_RECORD), [insight(["21-0", "21-1"])]) == []
+
+
+def test_COUNT_DISTINCT_RECORDS를_끄면_문장_수로_센다():
+    original = config.COUNT_DISTINCT_RECORDS
     try:
-        config.COUNT_DISTINCT_DATES = True
-        assert run(make_state(claims=SAME_DAY), [insight(["20-0", "20-50"])]) == []
+        config.COUNT_DISTINCT_RECORDS = False
+        assert len(run(make_state(claims=SAME_RECORD), [insight(["21-0", "21-1"])])) == 1
     finally:
-        config.COUNT_DISTINCT_DATES = original  # 다른 테스트에 영향이 없게 되돌린다
+        config.COUNT_DISTINCT_RECORDS = original  # 다른 테스트에 영향이 없게 되돌린다
 
 # ── §2 인용 비노출 ──────────────────────────────────────────────
 
@@ -152,6 +159,98 @@ def test_claim이_최소_근거_수보다_적으면_모델을_부르지_않는�
     assert plan(make_state(claims=CLAIMS[:1]))["skip_llm"] is True
     assert plan(make_state())["skip_llm"] is False
 
+# ── 교사 작성 문장 (#199) ───────────────────────────────────────
+
+from pydantic import ValidationError  # noqa: E402
+
+from insight.schemas import InsightClaim  # noqa: E402
+
+
+def teacher_claim(cid: str, inst: int) -> dict:
+    text = f"{cid} 교사 문장"
+    return {
+        "claim_id": cid, "text": text, "entry_date": "2026-01-09",
+        "institution_id": inst, "institution_type": TYPES[inst], "source": "TEACHER",
+        "evidence": [{"journal_entry_id": None, "quote": text}],
+    }
+
+
+def test_source_를_안_보내면_AI_다():
+    assert InsightClaim(**claim("10-0", 1, 101)).source == "AI"
+
+
+def test_교사_문장은_일지_번호_없이_통과한다():
+    assert InsightClaim(**teacher_claim("13-0", 2)).evidence[0].journal_entry_id is None
+
+
+def test_AI_문장인데_일지_번호가_없으면_막는다():
+    broken = {**claim("10-0", 1, 101), "evidence": [{"journal_entry_id": None, "quote": "인용"}]}
+    try:
+        InsightClaim(**broken)
+    except ValidationError:
+        return
+    raise AssertionError("AI 문장의 끊긴 근거가 통과했다")
+
+
+def test_교사_문장이_섞여도_출처_일지에서는_빠진다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    out = run(make_state(claims=claims), [insight(["10-0", "13-0"])])
+    assert len(out) == 1
+    assert out[0].source_entry_ids == [101]          # 교사 문장은 일지가 없다
+    assert out[0].source_institution_ids == [1, 2]   # 기관에는 잡힌다
+
+def edited_claim(cid: str, inst: int, jid: int) -> dict:
+    return {**claim(cid, inst, jid), "source": "EDITED"}
+
+
+def test_AI_문장만이면_교사_표시가_없다():
+    out = run(make_state(), [insight(["10-0", "11-0"])])
+    assert out[0].teacher_claim_ids == []
+
+
+def test_교사_문장이_섞이면_번호를_표시한다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    out = run(make_state(claims=claims), [insight(["10-0", "13-0"])])
+    assert out[0].teacher_claim_ids == ["13-0"]
+
+
+def test_교사_문장만으로는_인사이트를_만들지_않는다():
+    claims = CLAIMS + [teacher_claim("13-0", 2), teacher_claim("14-0", 1)]
+    assert run(make_state(claims=claims), [insight(["13-0", "14-0"])]) == []
+
+
+def test_고친_문장은_원문으로_세지_않지만_섞이면_표시한다():
+    claims = CLAIMS + [edited_claim("15-0", 1, 104), edited_claim("16-0", 2, 105)]
+    state = make_state(claims=claims)
+    assert run(state, [insight(["15-0", "16-0"])]) == []
+    out = run(state, [insight(["10-0", "15-0"])])
+    assert out[0].teacher_claim_ids == ["15-0"]
+
+
+def test_대처_근거의_교사_문장도_표시한다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["12-0", "13-0"]}
+    out = run(make_state(claims=claims), [insight(["10-0", "11-0"], supports=[support])])
+    assert len(out[0].supports) == 1
+    assert out[0].teacher_claim_ids == ["13-0"]
+    
+
+def test_교사_문장만으로_된_대처는_버리고_인사이트는_남긴다():
+    claims = CLAIMS + [teacher_claim("13-0", 2)]
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["13-0"]}
+    out = run(make_state(claims=claims), [insight(["10-0", "11-0"], supports=[support])])
+    assert len(out) == 1
+    assert out[0].supports == []
+    assert out[0].teacher_claim_ids == []
+
+
+def test_대처에만_쓰인_기관도_출처에_들어간다():
+    claims = CLAIMS + [claim("17-0", 3, 106)]   # 활동지원사 claim 은 대처 근거로만
+    support = {"action": "순서를 미리 알려줌", "result": "차분히 기다림", "claim_ids": ["17-0"]}
+    out = run(make_state(claims=claims), [insight(["10-0", "12-0"], supports=[support])])
+    assert out[0].source_institution_ids == [1, 3]
+    assert out[0].source_entry_ids == [101, 103, 106]
+    assert out[0].cross_institution is False      # 기관 간 차이 여부는 본문 근거(학교 둘)로만
 
 if __name__ == "__main__":
     tests = [v for k, v in globals().items() if k.startswith("test_")]

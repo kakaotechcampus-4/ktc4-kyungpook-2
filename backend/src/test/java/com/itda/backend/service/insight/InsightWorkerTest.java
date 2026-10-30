@@ -2,6 +2,7 @@ package com.itda.backend.service.insight;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -33,7 +34,8 @@ import com.itda.backend.dto.request.insight.InsightAgentRequest;
 import com.itda.backend.dto.response.insight.InsightAgentResponse;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
-import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.repository.summary.ApprovedEntryDay;
+import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.service.agent.WorkerProperties;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,7 +43,7 @@ class InsightWorkerTest {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final InsightProperties PROPERTIES =
-            new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL);
+            new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, false, List.of());
 
     @Mock
     private InsightService insightService;
@@ -50,13 +52,13 @@ class InsightWorkerTest {
     @Mock
     private InsightResultRecorder recorder;
     @Mock
-    private SummaryResultRepository summaryResultRepository;
+    private ChildContextRepository childContextRepository;
 
     private InsightWorker worker;
 
     @BeforeEach
     void setUp() {
-        worker = new InsightWorker(insightService, client, recorder, summaryResultRepository, PROPERTIES);
+        worker = new InsightWorker(insightService, client, recorder, childContextRepository, PROPERTIES);
         // 기본은 "아직 안 다룬 기간". 다룬 기간을 보는 테스트가 따로 덮어쓴다.
         lenient().when(recorder.needsRun(anyLong(), any(), any())).thenReturn(true);
     }
@@ -81,8 +83,27 @@ class InsightWorkerTest {
         given(client.isAvailable()).willReturn(true);
     }
 
+    /** 지난주 수요일 기록이 최근에 승인된 아이들. */
     private void candidates(Long... childIds) {
-        given(summaryResultRepository.findChildIdsWithSummaryBetween(any(), any())).willReturn(List.of(childIds));
+        approved(java.util.Arrays.stream(childIds)
+                .map(id -> new ApprovedEntryDay(id, periodTo().minusDays(4)))
+                .toArray(ApprovedEntryDay[]::new));
+    }
+
+    private void approved(ApprovedEntryDay... days) {
+        given(childContextRepository.findApprovedEntryDaysSince(any())).willReturn(List.of(days));
+    }
+
+    /** needsRun 이 받은 기간들. 워커가 어느 (아이, 기간)을 봤는지 이것으로 확인한다. */
+    private List<LocalDate[]> periodsAsked() {
+        ArgumentCaptor<LocalDate> from = ArgumentCaptor.forClass(LocalDate.class);
+        ArgumentCaptor<LocalDate> to = ArgumentCaptor.forClass(LocalDate.class);
+        verify(recorder, org.mockito.Mockito.atLeast(0)).needsRun(anyLong(), from.capture(), to.capture());
+        List<LocalDate[]> asked = new java.util.ArrayList<>();
+        for (int i = 0; i < from.getAllValues().size(); i++) {
+            asked.add(new LocalDate[] {from.getAllValues().get(i), to.getAllValues().get(i)});
+        }
+        return asked;
     }
 
     /** 재료가 있고 아직 안 다룬 아이. */
@@ -96,26 +117,89 @@ class InsightWorkerTest {
      * 같은 아이가 6일 겹치는 창으로 매일 다시 돌고 Gate 2 대기 목록에 비슷한 글이 쌓인다.
      */
     @Test
-    void 기간은_지난_주_일요일에서_끊는다() {
+    void 기간은_관찰_날짜가_속한_주의_월요일부터_일요일까지다() {
         agentUp();
-        given(summaryResultRepository.findChildIdsWithSummaryBetween(any(), any())).willReturn(List.of());
+        approved(new ApprovedEntryDay(8L, periodTo().minusDays(4)));
 
         worker.run();
 
-        ArgumentCaptor<LocalDate> from = ArgumentCaptor.forClass(LocalDate.class);
-        ArgumentCaptor<LocalDate> to = ArgumentCaptor.forClass(LocalDate.class);
-        verify(summaryResultRepository).findChildIdsWithSummaryBetween(from.capture(), to.capture());
+        assertThat(periodsAsked()).singleElement().satisfies(period -> {
+            assertThat(period[0]).isEqualTo(periodTo().minusDays(6));
+            assertThat(period[0].getDayOfWeek()).isEqualTo(DayOfWeek.MONDAY);
+            assertThat(period[1]).isEqualTo(periodTo());
+        });
+    }
 
-        assertThat(to.getValue().getDayOfWeek()).isEqualTo(DayOfWeek.SUNDAY);
-        assertThat(to.getValue()).isBefore(LocalDate.now(SEOUL));
-        assertThat(from.getValue()).isEqualTo(to.getValue().minusDays(6));
+    /** 밀린 기록을 늦게 승인해도 그 주를 다시 본다 (#239). "지난주" 만 보면 영영 재료가 안 된다. */
+    @Test
+    void 늦게_승인된_옛_주도_본다() {
+        agentUp();
+        LocalDate threeWeeksAgoSunday = periodTo().minusWeeks(2);
+        approved(new ApprovedEntryDay(8L, threeWeeksAgoSunday.minusDays(2)));
+
+        worker.run();
+
+        assertThat(periodsAsked()).singleElement()
+                .satisfies(period -> assertThat(period[1]).isEqualTo(threeWeeksAgoSunday));
+    }
+
+    /** 같은 주에 승인된 요약이 여럿이어도 그 주는 한 번만 본다. */
+    @Test
+    void 같은_주의_요약이_여럿이어도_한_번만_본다() {
+        agentUp();
+        approved(new ApprovedEntryDay(8L, periodTo().minusDays(6)),
+                new ApprovedEntryDay(8L, periodTo().minusDays(1)),
+                new ApprovedEntryDay(8L, periodTo()));
+
+        worker.run();
+
+        assertThat(periodsAsked()).hasSize(1);
+    }
+
+    /** 끝나지 않은 이번 주는 기본으로 뺀다 — 승인이 들어올 때마다 새 회차가 생겨 Gate 2 에 비슷한 글이 쌓인다. */
+    @Test
+    void 이번_주_기록은_기본으로_보지_않는다() {
+        agentUp();
+        approved(new ApprovedEntryDay(8L, LocalDate.now(SEOUL)));
+
+        worker.run();
+
+        assertThat(periodsAsked()).isEmpty();
+    }
+
+    /** 시연에서는 그날 올려 승인한 기록이 바로 인사이트가 돼야 한다 (include-current-week). */
+    @Test
+    void 설정을_켜면_이번_주_기록도_본다() {
+        worker = new InsightWorker(insightService, client, recorder, childContextRepository,
+                new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, true, List.of()));
+        agentUp();
+        approved(new ApprovedEntryDay(8L, LocalDate.now(SEOUL)));
+
+        worker.run();
+
+        assertThat(periodsAsked()).singleElement()
+                .satisfies(period -> assertThat(period[1]).isEqualTo(periodTo().plusWeeks(1)));
+    }
+
+    /** 승인 시각으로 고른다. 몇 일 전 승인까지 볼지는 설정값이다. */
+    @Test
+    void 최근_승인만_조회한다() {
+        agentUp();
+        approved();
+
+        worker.run();
+
+        ArgumentCaptor<java.time.LocalDateTime> since = ArgumentCaptor.forClass(java.time.LocalDateTime.class);
+        verify(childContextRepository).findApprovedEntryDaysSince(since.capture());
+        assertThat(since.getValue()).isBetween(java.time.LocalDateTime.now().minusDays(14).minusMinutes(1),
+                java.time.LocalDateTime.now().minusDays(14).plusMinutes(1));
     }
 
     /** 앱이 죽어 RUNNING 으로 남은 실행은 되돌려야 다시 집힌다. 켜진 뒤 한 번만 한다. */
     @Test
     void 켜진_뒤_첫_차례에만_멈춘_실행을_되돌린다() {
         agentUp();
-        given(summaryResultRepository.findChildIdsWithSummaryBetween(any(), any())).willReturn(List.of());
+        approved();
 
         worker.run();
         worker.run();
@@ -133,7 +217,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(client).analyze(any());
-        verify(recorder).record(any(), any(), eq("{}"), eq(41L));
+        verify(recorder).record(any(), any(), eq("{}"), eq(41L), anyInt());
     }
 
     /** 이미 끝난 기간이다. 재료를 모으는 일이 쿼리 몇 번이라 그 전에 걸러야 한다. */
@@ -164,7 +248,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(recorder, never()).claim(anyLong(), any(), any());
-        verify(recorder, never()).record(any(), any(), any(), any());
+        verify(recorder, never()).record(any(), any(), any(), any(), anyInt());
         verify(client, never()).analyze(any());
     }
 
@@ -181,8 +265,8 @@ class InsightWorkerTest {
 
         worker.run();
 
-        verify(recorder).recordFailure(any());
-        verify(recorder).record(any(), any(), any(), any());
+        verify(recorder).recordFailure(any(), any());
+        verify(recorder).record(any(), any(), any(), any(), anyInt());
         verify(client, times(2)).analyze(any());
     }
 
@@ -195,11 +279,14 @@ class InsightWorkerTest {
         agentUp();
         candidates(8L, 9L);
         ready(8L);
-        willThrow(new AiAgentUnavailableException("503", null)).given(client).analyze(any());
+        AiAgentUnavailableException unavailable = new AiAgentUnavailableException("503", null);
+        willThrow(unavailable).given(client).analyze(any());
+        given(client.failureOf(unavailable)).willReturn("llm_unavailable:empty_response");
 
         worker.run();
 
-        verify(recorder).recordFailure(any());
+        // 왜 실패했는지 남긴다 (#266)
+        verify(recorder).recordFailure(any(), eq("llm_unavailable:empty_response"));
         verify(insightService, never()).prepare(eq(9L), any(), any());
         verify(client, times(1)).analyze(any());
     }
@@ -223,7 +310,7 @@ class InsightWorkerTest {
 
         // 진 쪽은 건너뛰고 다음 아이로 이어간다
         verify(client, times(1)).analyze(any());
-        verify(recorder).record(any(), any(), any(), any());
+        verify(recorder).record(any(), any(), any(), any(), anyInt());
     }
 
     @Test
@@ -237,7 +324,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(client, never()).analyze(any());
-        verify(recorder, never()).recordFailure(any());
+        verify(recorder, never()).recordFailure(any(), any());
     }
 
     @Test
@@ -246,14 +333,14 @@ class InsightWorkerTest {
 
         worker.run();
 
-        verify(summaryResultRepository, never()).findChildIdsWithSummaryBetween(any(), any());
+        verify(childContextRepository, never()).findApprovedEntryDaysSince(any());
         verify(recorder, never()).claim(anyLong(), any(), any());
     }
 
     @Test
     void 한_차례에_batch_size_만큼만_집는다() {
-        worker = new InsightWorker(insightService, client, recorder, summaryResultRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 2), 7, SEOUL));
+        worker = new InsightWorker(insightService, client, recorder, childContextRepository,
+                new InsightProperties(new WorkerProperties(true, 5000, 2), 7, SEOUL, 14, false, List.of()));
         agentUp();
         candidates(8L, 9L, 10L);
         ready(8L);
@@ -269,8 +356,8 @@ class InsightWorkerTest {
     /** 집지 못한 아이는 처리 수에 넣지 않는다 — 안 그러면 경합에 진 만큼 그 차례가 비어 버린다. */
     @Test
     void 집지_못한_아이는_처리_수에_넣지_않는다() {
-        worker = new InsightWorker(insightService, client, recorder, summaryResultRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 1), 7, SEOUL));
+        worker = new InsightWorker(insightService, client, recorder, childContextRepository,
+                new InsightProperties(new WorkerProperties(true, 5000, 1), 7, SEOUL, 14, false, List.of()));
         agentUp();
         candidates(8L, 9L);
         given(insightService.prepare(anyLong(), any(), any()))
@@ -291,7 +378,7 @@ class InsightWorkerTest {
                 .withBean(InsightService.class, () -> mock(InsightService.class))
                 .withBean(InsightAgentClient.class, () -> mock(InsightAgentClient.class))
                 .withBean(InsightResultRecorder.class, () -> mock(InsightResultRecorder.class))
-                .withBean(SummaryResultRepository.class, () -> mock(SummaryResultRepository.class))
+                .withBean(ChildContextRepository.class, () -> mock(ChildContextRepository.class))
                 .withBean(InsightProperties.class, () -> PROPERTIES)
                 .withUserConfiguration(InsightWorker.class)
                 .withPropertyValues("app.insight.worker.enabled=false")

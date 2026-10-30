@@ -9,6 +9,9 @@ import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
@@ -16,6 +19,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.Gate1Action;
@@ -28,6 +33,7 @@ import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryStatus;
+import com.itda.backend.dto.request.summary.Gate1DecisionRequest.Card;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -48,7 +54,16 @@ class SummaryGate1ServiceTest {
     private static final Long OTHER_ORG = 4L;
     private static final Long CHILD = 8L;
     private static final String TEACHER = "99";
-    private static final String AI_TEXT = "블록 놀이에서 친구에게 양보했다.";
+    private static final String FIRST = "블록 놀이에서 친구에게 양보했다.";
+    private static final String SECOND = "낮잠을 잘 잤다.";
+    private static final String AI_TEXT = FIRST + " " + SECOND;
+    /** 문장마다 근거가 있는 AI 원문 claims. AI 는 source 를 보내지 않는다. */
+    private static final String AI_CLAIMS = "["
+            + "{\"text\":\"" + FIRST + "\",\"evidence\":[{\"journal_entry_id\":1041,\"quote\":\"양보\","
+            + "\"span\":{\"start\":7,\"end\":9}}]},"
+            + "{\"text\":\"" + SECOND + "\",\"evidence\":[{\"journal_entry_id\":1042,\"quote\":\"낮잠\","
+            + "\"span\":{\"start\":0,\"end\":2}}]}]";
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Autowired
     private TestEntityManager em;
@@ -89,7 +104,7 @@ class SummaryGate1ServiceTest {
     }
 
     private SummaryResult summaryOf(Long institutionId) {
-        return em.persistAndFlush(SummaryResult.of(CHILD, DATE, institutionId, 1, AI_TEXT, "[]",
+        return em.persistAndFlush(SummaryResult.of(CHILD, DATE, institutionId, 1, AI_TEXT, AI_CLAIMS,
                 "[]", "[]", "{}"));
     }
 
@@ -135,6 +150,35 @@ class SummaryGate1ServiceTest {
                 journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId));
     }
 
+    private Gate1DecisionResponse approveWith(Card... cards) {
+        return service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, List.of(cards),
+                versionOf(summary.getId()));
+    }
+
+    private static Card keep(int index) {
+        return new Card(index, "KEEP", null);
+    }
+
+    private static Card delete(int index) {
+        return new Card(index, "DELETE", null);
+    }
+
+    private static Card edit(int index, String text) {
+        return new Card(index, "EDIT", text);
+    }
+
+    private static Card add(String text) {
+        return new Card(null, "ADD", text);
+    }
+
+    private JsonNode savedClaims() throws Exception {
+        return MAPPER.readTree(reloadSummary().getClaims());
+    }
+
+    private String approvedContent() {
+        return childContextRepository.findByChildIdOrderByIdDesc(CHILD).get(0).getContent();
+    }
+
     private List<Approval> history() {
         return approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, summary.getId());
     }
@@ -162,30 +206,184 @@ class SummaryGate1ServiceTest {
         });
     }
 
-    @Test
-    void 원문과_같은_본문을_보내면_그대로_승인으로_본다() {
-        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, AI_TEXT, versionOf(summary.getId()));
+    // ── 문장 카드 ──
 
-        assertThat(history()).singleElement()
-                .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.APPROVED));
+    @Test
+    void 카드를_모두_유지하면_그대로_승인이고_claims_는_바뀌지_않는다() throws Exception {
+        Gate1DecisionResponse response = approveWith(keep(0), keep(1));
+
+        assertThat(response.decision()).isEqualTo("APPROVED");
+        assertThat(reloadSummary().getClaims()).isEqualTo(AI_CLAIMS);
+        assertThat(approvedContent()).isEqualTo(AI_TEXT);
     }
 
     @Test
-    void 한_글자라도_고쳐_승인하면_수정_후_승인이고_고친_본문이_올라간다() {
-        String edited = AI_TEXT.replace("양보했다.", "양보했다!");
-
-        Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, edited,
-                versionOf(summary.getId()));
+    void 문장을_지우면_수정_후_승인이고_claims_에서_빠진다() throws Exception {
+        Gate1DecisionResponse response = approveWith(keep(0), delete(1));
 
         assertThat(response.decision()).isEqualTo("CORRECTED");
-        SummaryResult reloaded = reloadSummary();
-        assertThat(reloaded.getStatus()).isEqualTo(SummaryStatus.APPROVED);
-        // AI 원문은 그대로 남긴다 — 고친 본문은 child_context 에만 있다.
-        assertThat(reloaded.getContent()).isEqualTo(AI_TEXT);
-        assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).singleElement()
-                .satisfies(c -> assertThat(c.getContent()).isEqualTo(edited));
+        JsonNode claims = savedClaims();
+        assertThat(claims).hasSize(1);
+        assertThat(claims.get(0).path("text").asText()).isEqualTo(FIRST);
+        // 고치지 않은 문장도 source 를 비워 두지 않는다 — 인사이트가 누가 쓴 문장인지 이 값으로 가른다.
+        assertThat(claims.get(0).path("source").asText()).isEqualTo("AI");
+        assertThat(claims.get(0).path("evidence").get(0).path("journal_entry_id").asLong()).isEqualTo(1041L);
+        assertThat(approvedContent()).isEqualTo(FIRST);
+        // AI 원문은 요약 행에 그대로 남는다.
+        assertThat(reloadSummary().getContent()).isEqualTo(AI_TEXT);
         assertThat(history()).singleElement()
                 .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.CORRECTED));
+    }
+
+    @Test
+    void 문장을_고치면_글만_바뀌고_근거는_그대로_남는다() throws Exception {
+        String edited = "낮잠을 한 시간 잤다.";
+
+        Gate1DecisionResponse response = approveWith(keep(0), edit(1, edited));
+
+        assertThat(response.decision()).isEqualTo("CORRECTED");
+        JsonNode claim = savedClaims().get(1);
+        assertThat(claim.path("text").asText()).isEqualTo(edited);
+        assertThat(claim.path("source").asText()).isEqualTo("EDITED");
+        assertThat(claim.path("evidence").get(0).path("journal_entry_id").asLong()).isEqualTo(1042L);
+        assertThat(claim.path("evidence").get(0).path("quote").asText()).isEqualTo("낮잠");
+        assertThat(approvedContent()).isEqualTo(FIRST + " " + edited);
+    }
+
+    @Test
+    void 새로_쓴_문장은_교사_문장으로_일지_번호_없이_그_문장을_근거로_남긴다() throws Exception {
+        String added = "약 먹은 날 차분했다.";
+
+        approveWith(keep(0), keep(1), add(added));
+
+        JsonNode claim = savedClaims().get(2);
+        assertThat(claim.path("text").asText()).isEqualTo(added);
+        assertThat(claim.path("source").asText()).isEqualTo("TEACHER");
+        JsonNode evidence = claim.path("evidence");
+        assertThat(evidence).hasSize(1);
+        // 키를 빼지 않고 null 로 둔다 — 인사이트 계약이 TEACHER 근거의 일지 번호를 null 로 받는다.
+        assertThat(evidence.get(0).has("journal_entry_id")).isTrue();
+        assertThat(evidence.get(0).path("journal_entry_id").isNull()).isTrue();
+        assertThat(evidence.get(0).path("quote").asText()).isEqualTo(added);
+        assertThat(approvedContent()).isEqualTo(AI_TEXT + " " + added);
+    }
+
+    @Test
+    void 순서만_바꿔도_수정_후_승인이고_카드_순서대로_저장한다() throws Exception {
+        Gate1DecisionResponse response = approveWith(keep(1), keep(0));
+
+        assertThat(response.decision()).isEqualTo("CORRECTED");
+        JsonNode claims = savedClaims();
+        assertThat(claims.get(0).path("text").asText()).isEqualTo(SECOND);
+        assertThat(claims.get(1).path("text").asText()).isEqualTo(FIRST);
+        assertThat(approvedContent()).isEqualTo(SECOND + " " + FIRST);
+    }
+
+    @Test
+    void 고친_글이_원문과_줄바꿈이나_앞뒤_공백만_다르면_고친_것으로_보지_않는다() {
+        // 입력창을 거치면 끝에 줄바꿈이 붙거나 CRLF 로 바뀌곤 한다. 고친 것으로 보면 근거 없는 수정이 남는다.
+        Gate1DecisionResponse response = approveWith(edit(0, " " + FIRST + "\r\n"), keep(1));
+
+        assertThat(response.decision()).isEqualTo("APPROVED");
+        assertThat(reloadSummary().getClaims()).isEqualTo(AI_CLAIMS);
+        assertThat(approvedContent()).isEqualTo(AI_TEXT);
+    }
+
+    @Test
+    void 고친_글과_새_글은_앞뒤_공백을_지워_저장한다() throws Exception {
+        approveWith(edit(0, "  양보했다.\r\n"), keep(1), add("\n차분했다. "));
+
+        JsonNode claims = savedClaims();
+        assertThat(claims.get(0).path("text").asText()).isEqualTo("양보했다.");
+        assertThat(claims.get(2).path("text").asText()).isEqualTo("차분했다.");
+        assertThat(claims.get(2).path("evidence").get(0).path("quote").asText()).isEqualTo("차분했다.");
+    }
+
+    @Test
+    void 글이_빈_문장은_본문에_이어_붙이지_않는다() throws Exception {
+        SummaryResult blank = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(1), ORG, 1, FIRST,
+                "[{\"text\":\"" + FIRST + "\",\"evidence\":[]},{\"text\":\" \",\"evidence\":[]}]",
+                "[]", "[]", "{}"));
+
+        service.decide(TEACHER, blank.getId(), Gate1Action.APPROVE,
+                List.of(edit(0, "양보했다."), keep(1), add("차분했다.")), versionOf(blank.getId()));
+
+        assertThat(childContextRepository.findBySummaryResultIdIn(List.of(blank.getId()))).singleElement()
+                .satisfies(c -> assertThat(c.getContent()).isEqualTo("양보했다. 차분했다."));
+    }
+
+    @Test
+    void 원래_문장을_모두_한_번씩_보내지_않으면_받지_않는다() {
+        List<List<Card>> invalid = List.of(
+                List.of(keep(0)),                     // 빠짐
+                List.of(keep(0), keep(1), keep(1)),   // 중복
+                List.of(keep(0), keep(1), keep(2)),   // 범위 밖
+                List.of(keep(0), edit(0, "x"), keep(1)),
+                List.of(keep(-1), keep(0), keep(1)));
+        for (List<Card> cards : invalid) {
+            assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, cards,
+                    versionOf(summary.getId())))
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
+                    .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+        }
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+        assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).isEmpty();
+        assertThat(history()).isEmpty();
+    }
+
+    @Test
+    void 남는_문장이_없으면_받지_않는다_모두_지우려면_제거한다() {
+        assertThatThrownBy(() -> approveWith(delete(0), delete(1)))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+    }
+
+    /** 문장 목록(claims)을 못 읽는 요약. 목록에는 카드 0장으로 보인다. */
+    private SummaryResult unreadableSummary(String claims) {
+        SummaryResult unreadable = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(1), ORG, 1, AI_TEXT,
+                claims, "[]", "[]", "{}"));
+        entryIn(unreadable);
+        em.clear();
+        return unreadable;
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"[]", "{}", "[\"문장\"]"})
+    void 문장을_못_읽는_요약은_카드로_승인할_수_없다_AI_원문이_통째로_사라진다(String claims) {
+        SummaryResult unreadable = unreadableSummary(claims);
+
+        assertThatThrownBy(() -> service.decide(TEACHER, unreadable.getId(), Gate1Action.APPROVE,
+                List.of(add("교사가 쓴 문장.")), versionOf(unreadable.getId())))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+        assertThat(em.find(SummaryResult.class, unreadable.getId()).getStatus())
+                .isEqualTo(SummaryStatus.GATE1_PENDING);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"[]", "{}", "[\"문장\"]"})
+    void 문장을_못_읽는_요약도_카드_없이는_그대로_승인한다(String claims) {
+        SummaryResult unreadable = unreadableSummary(claims);
+
+        service.decide(TEACHER, unreadable.getId(), Gate1Action.APPROVE, null, versionOf(unreadable.getId()));
+
+        assertThat(approvedContent()).isEqualTo(AI_TEXT);
+    }
+
+    @Test
+    void 모두_지우고_새로_쓴_문장만_남겨도_승인한다() throws Exception {
+        approveWith(delete(0), delete(1), add("교사가 쓴 문장."));
+
+        JsonNode claims = savedClaims();
+        assertThat(claims).hasSize(1);
+        assertThat(claims.get(0).path("source").asText()).isEqualTo("TEACHER");
+        assertThat(approvedContent()).isEqualTo("교사가 쓴 문장.");
     }
 
     @Test
@@ -226,6 +424,149 @@ class SummaryGate1ServiceTest {
         assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).isEmpty();
         assertThat(history()).singleElement()
                 .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.REMOVED));
+    }
+
+    // ── 요약할 내용 없음 (#244) ──
+
+    private static final LocalDate EMPTY_DATE = DATE.plusDays(1);
+
+    /** 그날 일지에 쓸 내용이 없다는 요약과 그 일지 두 건. 일반 요약과 다른 날짜 묶음이다. */
+    private SummaryResult noContentSummaryWithEntries() {
+        SummaryResult empty = em.persistAndFlush(
+                SummaryResult.noContent(CHILD, EMPTY_DATE, ORG, 1, "[]", "{\"no_content\":true}"));
+        for (int i = 0; i < 2; i++) {
+            JournalEntry entry = JournalEntry.of(rawRecordId, EMPTY_DATE, "특이사항 없음", i + 1);
+            entry.startMatching();
+            entry.confirmMatch(CHILD);
+            entry.startValidating();
+            entry.passValidation();
+            entry.startSummarizing();
+            entry.completeSummary(empty.getId());
+            em.persistAndFlush(entry);
+        }
+        em.clear();
+        return empty;
+    }
+
+    @Test
+    void 요약할_내용_없음을_확인하면_요약은_확인되고_일지는_완료되며_아동_맥락에_올라가지_않는다() {
+        SummaryResult empty = noContentSummaryWithEntries();
+
+        Gate1DecisionResponse response = service.decide(TEACHER, empty.getId(), Gate1Action.CONFIRM, null,
+                versionOf(empty.getId()));
+
+        assertThat(response.status()).isEqualTo("CONFIRMED");
+        assertThat(response.decision()).isEqualTo("CONFIRMED");
+        em.flush();
+        em.clear();
+        assertThat(em.find(SummaryResult.class, empty.getId()).getStatus()).isEqualTo(SummaryStatus.CONFIRMED);
+        assertThat(journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(empty.getId()))
+                .hasSize(2)
+                .allSatisfy(e -> assertThat(e.getStatus()).isEqualTo(JournalEntryStatus.COMPLETED));
+        // 빈 글이 아동 맥락에 올라가면 인사이트 재료가 된다.
+        assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).isEmpty();
+        assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, empty.getId()))
+                .singleElement()
+                .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.CONFIRMED));
+    }
+
+    @Test
+    void 요약할_내용_없음은_승인_보류_제거할_수_없다() {
+        SummaryResult empty = noContentSummaryWithEntries();
+
+        for (Gate1Action action : List.of(Gate1Action.APPROVE, Gate1Action.HOLD, Gate1Action.REMOVE)) {
+            assertThatThrownBy(() -> service.decide(TEACHER, empty.getId(), action, null, versionOf(empty.getId())))
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
+                    .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+        }
+        em.clear();
+        assertThat(em.find(SummaryResult.class, empty.getId()).getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+        assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, empty.getId()))
+                .isEmpty();
+    }
+
+    @Test
+    void 요약할_내용_없음을_되돌리면_일지는_요약_전으로_돌아가고_요약은_되돌림으로_남는다() {
+        SummaryResult empty = noContentSummaryWithEntries();
+
+        Gate1DecisionResponse response = service.decide(TEACHER, empty.getId(), Gate1Action.REVERT, null,
+                versionOf(empty.getId()));
+
+        assertThat(response.status()).isEqualTo("REVERTED");
+        assertThat(response.decision()).isEqualTo("REVERTED");
+        em.flush();
+        em.clear();
+        assertThat(em.find(SummaryResult.class, empty.getId()).getStatus()).isEqualTo(SummaryStatus.REVERTED);
+        // 연결을 끊었으니 이 요약을 가리키는 일지는 없다. 일지는 [요약]을 다시 누르면 요약된다.
+        assertThat(journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(empty.getId())).isEmpty();
+        assertThat(journalEntryRepository.findAll()).filteredOn(e -> e.getEntryDate().equals(EMPTY_DATE))
+                .hasSize(2)
+                .allSatisfy(e -> {
+                    assertThat(e.getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+                    assertThat(e.getSummaryId()).isNull();
+                });
+        assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).isEmpty();
+        assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, empty.getId()))
+                .singleElement()
+                .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.REVERTED));
+    }
+
+    @Test
+    void 일반_요약은_되돌릴_수_없다() {
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.REVERT, null,
+                versionOf(summary.getId())))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+        assertThat(reload(covered).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(history()).isEmpty();
+    }
+
+    @Test
+    void 일반_요약은_확인으로_닫을_수_없다() {
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.CONFIRM, null,
+                versionOf(summary.getId())))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.INVALID_REQUEST);
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+        assertThat(history()).isEmpty();
+    }
+
+    @Test
+    void 목록을_연_뒤_요약이_바뀌었으면_결정이_맞지_않아도_바뀌었다고_먼저_알린다() {
+        // 교사가 일반 요약을 본 사이 다시 요약돼 요약할 내용 없음이 됐다. 400 이 아니라 409 로 다시 보게 해야 한다.
+        String seen = versionOf(summary.getId());
+        SummaryResult changed = em.find(SummaryResult.class, summary.getId());
+        changed.overwriteNoContent("[]", "{}");
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, seen))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.CHANGED);
+    }
+
+    @Test
+    void 요약할_내용_없음도_같은_묶음을_다시_요약하는_중이면_확인하거나_되돌릴_수_없다() {
+        SummaryResult empty = noContentSummaryWithEntries();
+        JournalEntry fresh = JournalEntry.of(rawRecordId, EMPTY_DATE, "늦게 올라온 일지", 3);
+        fresh.startMatching();
+        fresh.confirmMatch(CHILD);
+        fresh.startValidating();
+        fresh.passValidation();
+        fresh.startSummarizing();
+        em.persistAndFlush(fresh);
+        em.clear();
+
+        for (Gate1Action action : List.of(Gate1Action.CONFIRM, Gate1Action.REVERT)) {
+            assertThatThrownBy(() -> service.decide(TEACHER, empty.getId(), action, null, versionOf(empty.getId())))
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
+                    .isEqualTo(SummaryErrorCode.REGENERATING);
+        }
     }
 
     // ── 권한·중복 ──
@@ -342,29 +683,6 @@ class SummaryGate1ServiceTest {
                 .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.REGENERATING);
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
-    }
-
-    @Test
-    void 줄바꿈_방식이나_앞뒤_공백만_다르면_고친_것으로_보지_않는다() {
-        // 입력창을 거치면 끝에 줄바꿈이 붙거나 CRLF 로 바뀌곤 한다. 고친 것으로 보면 인사이트에서 빠진다.
-        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, AI_TEXT + "\r\n", versionOf(summary.getId()));
-
-        assertThat(history()).singleElement()
-                .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.APPROVED));
-        assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).singleElement()
-                .satisfies(c -> assertThat(c.getContent()).isEqualTo(AI_TEXT));
-    }
-
-    @Test
-    void 여러_줄_본문의_줄바꿈_방식만_다르면_고친_것으로_보지_않는다() {
-        SummaryResult multiLine = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(1), ORG, 1,
-                "첫 문장.\n둘째 문장.", "[]", "[]", "[]", "{}"));
-
-        service.decide(TEACHER, multiLine.getId(), Gate1Action.APPROVE, "첫 문장.\r\n둘째 문장.",
-                versionOf(multiLine.getId()));
-
-        assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, multiLine.getId()))
-                .singleElement().satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.APPROVED));
     }
 
     // ── 교사가 본 판 ──

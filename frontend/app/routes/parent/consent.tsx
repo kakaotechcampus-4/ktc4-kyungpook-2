@@ -7,17 +7,28 @@ import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
 
 const INVITE = "/parent/invite";
+/** 온보딩 밖에서 이 화면으로 온 곳. 동의 뒤 그곳으로 돌아간다 */
+const RETURN_TO = {
+  settings: { path: "/parent/settings", label: "설정으로 돌아가기" },
+  notifications: { path: "/parent/notifications", label: "알림으로 돌아가기" },
+} as const;
+type ReturnFrom = keyof typeof RETURN_TO;
 
 /**
  * 대상은 쿼리로 받는다 — P-01 이 초대 코드를 수락한 뒤 "어느 아이 · 어느 기관"인지 지정해
  * 보낸다. 쿼리가 빠졌으면 무엇에 동의하는지 알 수 없으므로 코드 입력 화면으로 되돌린다.
+ *
+ * 설정(P-11)에서 꺼 둔 기관을 다시 켤 때(`from=settings`)와 알림에서 새 기관 요청에 권한을 줄 때
+ * (`from=notifications`)도 이 화면을 거친다. 공유 항목을 보고 동의해야 해서다. 그때는 동의 뒤 온 곳으로 돌아간다.
  */
 export async function clientLoader({ request }: { request: Request }) {
   const url = new URL(request.url);
   const childId = url.searchParams.get("childId");
   const institutionId = url.searchParams.get("institutionId");
   if (!childId || !institutionId) return redirect(INVITE);
-  return { preview: await getConsentPreview(childId, institutionId) };
+  const fromParam = url.searchParams.get("from");
+  const from: ReturnFrom | null = fromParam === "settings" || fromParam === "notifications" ? fromParam : null;
+  return { preview: await getConsentPreview(childId, institutionId), from };
 }
 
 /**
@@ -28,7 +39,10 @@ export async function clientLoader({ request }: { request: Request }) {
  * 우리 아이가 아니면 연결을 끊는다(G-05). 코드는 본인 확인이 아니라서 잘못 연결될 수 있다.
  */
 export default function ParentConsentPage() {
-  const { preview } = useLoaderData<typeof clientLoader>();
+  const { preview, from } = useLoaderData<typeof clientLoader>();
+  // 설정·알림에서 왔거나 온보딩을 마친 보호자에게는 온보딩 단계 표시가 맞지 않는다
+  const returnTo = from ? RETURN_TO[from] : null;
+  const showSteps = !returnTo && !isOnboarded();
   const [consented, setConsented] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -46,10 +60,10 @@ export default function ParentConsentPage() {
           </p>
         </div>
         <button
-          onClick={() => navigate(INVITE)}
+          onClick={() => navigate(returnTo ? returnTo.path : INVITE)}
           className="tap h-14 w-full rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2"
         >
-          코드 입력 화면으로
+          {returnTo ? returnTo.label : "코드 입력 화면으로"}
         </button>
       </div>
     );
@@ -71,14 +85,17 @@ export default function ParentConsentPage() {
         setSaveError(saveErrorMessage(err));
         return;
       }
-      // 온보딩 중이면 돌봄 정보 입력(4단계)까지 이어가고, 이미 쓰던 보호자가
-      // 새 기관 요청을 승인한 것이면 홈으로 돌아간다.
-      if (isOnboarded()) {
+      // 설정·알림에서 온 것이면 그곳으로 돌아간다. 온보딩 중이면 돌봄 정보 입력(4단계)까지
+      // 이어가고, 이미 쓰던 보호자가 새 기관 요청을 승인한 것이면 홈으로 돌아간다.
+      if (returnTo) {
+        navigate(returnTo.path);
+      } else if (isOnboarded()) {
         navigate("/parent");
       } else {
         grantRole("parent"); // 쿼리로 바로 들어온 경우를 위한 보정
         markOnboarded();
-        navigate("/parent/care-info?onboarding=1");
+        // 돌봄 정보는 기관에 공유하지 않아 온보딩에서 받지 않는다 — 설정 › 아이 정보에서 적는다
+        navigate("/parent");
       }
     });
   }
@@ -127,7 +144,7 @@ export default function ParentConsentPage() {
 
   return (
     <div className="flex flex-col gap-5 pb-24">
-      <StepProgress step={3} total={4} />
+      {showSteps ? <StepProgress step={3} total={3} /> : null}
 
       <p className="rounded-2xl bg-accentsoft px-4 py-3 text-[15px] leading-6 text-accentink">
         <b className="font-semibold">{institution.name}</b>에서 {child.name} 학생을

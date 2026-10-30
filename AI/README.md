@@ -54,7 +54,7 @@ Luna 키가 없으면 배포가 실패합니다. 실패했을 때 다시 배포�
 | `GET` | `/health` | 상태 확인. Luna 키가 설정돼 있으면 200, 없으면 503 (`luna_configured` 로 함께 알려줍니다) |
 | `POST` | `/matching` | 기록 한 줄을 받아 어느 아동의 것인지 판정합니다 |
 | `POST` | `/validation` | 그 기록을 저장해도 안전한지 판정합니다. Luna 호출이 실패하면 503 (정규식으로 개인정보가 잡힌 경우는 200 + `BLOCK`) |
-| `POST` | `/summary` | 같은 아이의 같은 날 일지 여러 건을 한 편으로 묶습니다. Luna 호출이 실패하면 503 — 빈 요약을 200 으로 주지 않습니다 |
+| `POST` | `/summary` | 같은 아이의 같은 날 일지 여러 건을 한 편으로 묶습니다. 쓸 관찰 사실이 없으면 200 `no_content: true`(빈 요약), Luna 호출이 실패하거나 근거가 전부 탈락하면 503 입니다 |
 | `GET` | `/llm-test` | Luna 연결 확인용 |
 
 ---
@@ -137,7 +137,8 @@ Luna 키가 없으면 배포가 실패합니다. 실패했을 때 다시 배포�
   "journal_entry_id": 1041,
   "verdict": "BLOCK",
   "issue_types": ["개인정보표현"],
-  "evidence": [{ "start": 23, "end": 36 }]
+  "evidence": [{ "start": 23, "end": 36 }],
+  "issues": [{ "type": "개인정보표현", "start": 23, "end": 36 }]
 }
 ```
 
@@ -150,13 +151,29 @@ Luna 키가 없으면 배포가 실패합니다. 실패했을 때 다시 배포�
 | 등급 | 이슈 유형 |
 | --- | --- |
 | `BLOCK` | 진단명 · 개인정보표현 |
-| `REVIEW` | 확정적표현 · 다수아동언급 · 추측성표현 · 감정적표현 · 위험행동표현 |
+| `REVIEW` | 확정적표현 · 다수아동언급 · 추측성표현 · 감정적표현 · 위험행동표현 · 건강관리기록 |
 
 전화번호·주민번호 형식은 모델 판단 없이 정규식으로 항상 `BLOCK` 입니다. 모델 호출이
 실패해도 이 판정은 유지됩니다.
 
 `evidence` 는 겹치지 않는 최소 구간만 담습니다. 구조적 히트와 모델 인용이 같은 곳을
 가리키면 좁은 쪽만 남습니다.
+
+`issues` 는 사유와 구간의 짝입니다 (#177). Gate 1 에서 요약에 들어간 구간의 사유만
+고를 때 씁니다.
+
+| 필드 | 용도 |
+| --- | --- |
+| `issues` | **정본.** 하이라이트와 사유 표시에 씁니다 |
+| `issue_types` · `evidence` | 옛 결과와 평가 스크립트 호환용입니다. 새 화면에서는 쓰지 않습니다 |
+
+- 사유 종류는 `issue_types` 와 항상 같습니다
+- 겹침 정리를 **사유별로** 해서, 다른 사유의 구간을 품은 넓은 구간도 남습니다.
+  `evidence` 는 사유를 섞어 정리하므로 이 구간이 빠질 수 있습니다
+- 위치가 없는 사유(`대상불명확`·`모델호출실패`)는 `start`·`end` 가 `null` 입니다.
+  **이 사유는 겹침과 상관없이 항상 표시합니다.** `대상불명확`은 기록 전체를 의심해야 하는 사유입니다
+- 구간은 그 일지 원문 기준 위치입니다. 요약 근거와 겹침을 비교할 때는
+  **같은 `journal_entry_id` 안에서만** 비교합니다. 다른 일지의 구간과 숫자가 같아도 다른 자리입니다
 
 ---
 
@@ -208,7 +225,7 @@ START → extract → shortlist ─┬─(이름 하나가 명확)────�
 | --- | --- | --- |
 | 매칭 | [matching/CRITERIA.md](matching/CRITERIA.md) | `evals/scripts/matching/test_criteria_sync.py`<br>`evals/scripts/matching/test_auto_gate.py` |
 | 검증 | [evals/scripts/validation/README.md](evals/scripts/validation/README.md) | `evals/scripts/validation/test_prompt_sync.py` |
-| 요약 | [summary/CRITERIA.md](summary/CRITERIA.md) | `evals/scripts/summary/test_criteria_sync.py`<br>`evals/scripts/summary/test_grounding.py` |
+| 요약 | [summary/CRITERIA.md](summary/CRITERIA.md) | `evals/scripts/summary/test_criteria_sync.py`<br>`evals/scripts/summary/test_grounding.py`<br>`evals/scripts/summary/test_no_content.py` |
 
 요약을 **얼마나 잘 쓰는지** 재는 법은 [evals/scripts/summary/README.md](evals/scripts/summary/README.md) 에 있습니다. 환각·누락 지표만으로는 일지를 그대로 베낀 것과 구별되지 않아, 규칙 기준선과 나란히 채점합니다.
 

@@ -36,10 +36,20 @@ class InsightRunTest {
     void 실패는_건수를_채우지_않는다() {
         InsightRun run = InsightRun.claim(8L, FROM, TO, 1);
 
-        run.fail();
+        run.fail("llm_unavailable:timeout");
 
         assertThat(run.getStatus()).isEqualTo(InsightRunStatus.FAILED);
         assertThat(run.getInsightCount()).isNull();
+    }
+
+    /** AI 가 낯선 긴 값을 보내도 컬럼 길이(60)에 맞춰 잘라 저장이 터지지 않는다 (#266). */
+    @Test
+    void 실패_사유가_길면_잘라_남긴다() {
+        InsightRun run = InsightRun.claim(8L, FROM, TO, 1);
+
+        run.fail("llm_unavailable:" + "x".repeat(100));
+
+        assertThat(run.getFailureReason()).hasSize(60).startsWith("llm_unavailable:x");
     }
 
     @Test

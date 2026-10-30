@@ -2,27 +2,28 @@ import type { LucideIcon } from "lucide-react";
 import {
   ClipboardCheck,
   ClipboardPlus,
-  History,
   LayoutDashboard,
+  ListChecks,
   Mail,
-  MessagesSquare,
   RotateCcw,
   Send,
-  Settings,
   Sparkles,
+  User,
   Users,
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
-import { ME, MY_INSTITUTION } from "@/lib/mock/data";
+
+/** 사이드바 하단의 내 정보. null 은 서버가 주지 않은 값 — 그 칸을 비운다 */
+export interface OrgShellMe {
+  /** 카카오 닉네임. 동의를 거부하면 없다 */
+  name: string | null;
+  institutionName: string | null;
+}
 
 /**
  * org/layout.tsx 의 clientLoader 가 계산해서 내려주는 원본 카운트.
- * `gate1` 은 이제 사이드바에 노출되는 메뉴가 없어 여기서는 쓰지 않는다 —
- * Gate 1(1차 검토)은 "오늘의 업무" 대시보드 카드에서 그대로 들어갈 수 있고,
- * 데이터/라우트/로직은 손대지 않았다. 필드 자체는 layout.tsx 반환 타입과
- * 맞춰두기 위해 남겨둔다.
+ * null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다
  */
-/** null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다 */
 export interface OrgShellCounts {
   matching: number | null;
   reinput: number | null;
@@ -53,6 +54,7 @@ function nav(counts: OrgShellCounts): NavSection[] {
       group: "홈",
       items: [
         { href: "/dashboard", label: "오늘의 업무", icon: LayoutDashboard }, // 처리 현황
+        { href: "/children", label: "아동 목록", icon: Users }, // 아동 관리
       ],
     },
     {
@@ -71,12 +73,12 @@ function nav(counts: OrgShellCounts): NavSection[] {
           icon: RotateCcw,
           badge: counts.reinput,
         }, // 재입력 요청 큐
+        { href: "/gate1", label: "1차 검토", icon: ListChecks, badge: counts.gate1 }, // Gate 1 요약 확인
       ],
     },
     {
       group: "아동",
       items: [
-        { href: "/children", label: "아동 목록", icon: Users }, // 아동 관리
         { href: "/insights", label: "관찰·분석 결과", icon: Sparkles }, // Insight 목록
       ],
     },
@@ -85,14 +87,6 @@ function nav(counts: OrgShellCounts): NavSection[] {
       items: [
         { href: "/gate2", label: "공유할 기록", icon: Send, badge: counts.gate2 }, // Gate 2 발송 검토
         { href: "/inbox", label: "메시지", icon: Mail, badge: counts.inbox }, // 수신함
-        { href: "/chat", label: "상담 지원", icon: MessagesSquare }, // 상담 도우미
-      ],
-    },
-    {
-      group: "관리",
-      items: [
-        { href: "/history", label: "업무 기록", icon: History }, // 활동 이력
-        { href: "/settings/org", label: "기관 설정", icon: Settings },
       ],
     },
   ];
@@ -100,9 +94,11 @@ function nav(counts: OrgShellCounts): NavSection[] {
 
 export function OrgShell({
   children,
+  me,
   counts,
 }: {
   children: React.ReactNode;
+  me: OrgShellMe;
   counts: OrgShellCounts;
 }) {
   const { pathname } = useLocation();
@@ -172,15 +168,15 @@ export function OrgShell({
             aria-hidden
             className="flex size-9 items-center justify-center rounded-full bg-surface2 text-[14px] font-semibold text-ink2"
           >
-            {ME.name.slice(0, 1)}
+            {me.name ? me.name.slice(0, 1) : <User size={17} strokeWidth={1.75} />}
           </span>
           <span className="min-w-0">
             <span className="block truncate text-[15px] font-semibold">
-              {ME.name} {ME.role}
+              {me.name ? `${me.name} 선생님` : "이름 없음"}
             </span>
-            <span className="block truncate text-[13px] text-muted">
-              {MY_INSTITUTION.name}
-            </span>
+            {me.institutionName ? (
+              <span className="block truncate text-[13px] text-muted">{me.institutionName}</span>
+            ) : null}
           </span>
         </div>
       </nav>

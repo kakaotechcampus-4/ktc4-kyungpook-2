@@ -27,6 +27,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
+import com.itda.backend.domain.record.FailureReason;
+import com.itda.backend.domain.record.FailureStage;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.user.User;
@@ -130,6 +132,22 @@ class PostgreSqlIntegrationTests {
 		assertThat(found.getVerdict()).isEqualTo(ValidationVerdict.BLOCK);
 		assertThat(found.getIssueTypes()).isEqualTo("[\"개인정보표현\"]");
 		assertThat(found.getCreatedAt()).isNotNull();
+	}
+
+	/** 검증 시스템 오류(#180)의 상태·실패 단계·원인 코드가 PostgreSQL 에 문자열로 저장되는지 본다. */
+	@Test
+	void systemErrorStatusAndFailureColumnsAreStored() {
+		JournalEntry entry = JournalEntry.of(null, null, "임유진이 블록을 높이 쌓았다.", 1);
+		entry.startMatching();
+		entry.confirmMatch(8L);
+		entry.startValidating();
+		entry.failValidation(FailureReason.AGENT_UNAVAILABLE);
+		JournalEntry saved = journalEntryRepository.save(entry);
+
+		JournalEntry found = journalEntryRepository.findById(saved.getId()).orElseThrow();
+		assertThat(found.getStatus()).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
+		assertThat(found.getFailureStage()).isEqualTo(FailureStage.VALIDATION);
+		assertThat(found.getFailureReason()).isEqualTo(FailureReason.AGENT_UNAVAILABLE);
 	}
 
 	/** 유니크 제약은 엔티티를 만들 때 넣지 않으면 ddl-auto: update 가 나중에 붙여주지 않는다. */

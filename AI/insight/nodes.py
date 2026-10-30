@@ -78,9 +78,18 @@ def _all_known(ids: list[str], index: dict) -> bool:
 
 
 def _evidence_count(ids: list[str], index: dict) -> int:
-    if config.COUNT_DISTINCT_DATES:
-        return len({index[i]["entry_date"] for i in ids})
+    if config.COUNT_DISTINCT_RECORDS:
+        return len({(index[i]["entry_date"], index[i]["institution_id"]) for i in ids})
     return len(ids)
+
+def _source_of(claim: dict) -> str:
+    # source 가 없으면 AI 다 — 옛 요청과 같은 뜻으로 읽는다 (schemas.InsightClaim 기본값)
+    return claim.get("source") or "AI"
+
+
+def _teacher_ids(ids: list[str], index: dict) -> list[str]:
+    """교사가 고치거나 쓴 claim 번호. 순서는 처음 나온 순, 중복 없이."""
+    return list(dict.fromkeys(i for i in ids if i in index and _source_of(index[i]) != "AI"))
 
 
 def _institutions_grounded(texts: list[str], cited_types: set[str], known_types: set[str]) -> bool:
@@ -117,6 +126,8 @@ def _clean_supports(raw, index: dict, known_types: set[str]) -> list[Support]:
             continue
         if config.REQUIRE_SUPPORT_RESULT and not result:
             continue
+        if config.REQUIRE_SOURCE_CLAIM and not any(_source_of(index[i]) == "AI" for i in ids if i in index):
+            continue  # 교사 문장만으로 된 대처는 쓰지 않는다. 받는 기관이 따라 하는 건 대처다
 
         support_types = {index[i]["institution_type"] for i in ids if i in index}
         if not _institutions_grounded([action, result], support_types, known_types):
@@ -133,6 +144,7 @@ def reflect(state: dict) -> dict:
     순서 (§4)
       목록 밖 claim_id → 인사이트 버림
       근거 claim 이 최소 수 미만 → 인사이트 버림
+      근거에 AI 원문 claim 이 없음 → 인사이트 버림
       상황·반응·본문 중 비어 있는 것 → 인사이트 버림
       본문에 나온 기관 종류가 근거 기관에 없음 → 인사이트 버림
       대처는 하나씩 검사해서 문제 있는 것만 버림
@@ -155,6 +167,8 @@ def reflect(state: dict) -> dict:
         ids = [i for i in ids if i in index]
         if _evidence_count(ids, index) < config.MIN_EVIDENCE_CLAIMS:
             continue
+        if config.REQUIRE_SOURCE_CLAIM and not any(_source_of(index[i]) == "AI" for i in ids):
+            continue  # 교사 문장만으로 된 인사이트는 만들지 않는다
 
         texts = {k: (raw.get(k) or "").strip() for k in ("situation", "behavior", "content")}
         if not all(texts.values()):
@@ -165,16 +179,25 @@ def reflect(state: dict) -> dict:
         if not _institutions_grounded(list(texts.values()), cited_types, known_types):
             continue
 
-        inst_ids = sorted({c["institution_id"] for c in claims})
+        supports = _clean_supports(raw.get("supports"), index, known_types)
+        support_ids = [i for s in supports for i in s.claim_ids]
+        # 출처는 대처 근거까지 — 철회 시 그 기관을 찾고, Gate 2 가 "근거를 낸 기관" 으로 보여준다
+        all_claims = [index[i] for i in dict.fromkeys(ids + support_ids) if i in index]
+        main_inst_ids = {c["institution_id"] for c in claims}
 
         insights.append(Insight(
             **texts,
-            supports=_clean_supports(raw.get("supports"), index, known_types),
+            supports=supports,
             claim_ids=ids,
-            source_entry_ids=sorted({e["journal_entry_id"] for c in claims for e in c["evidence"]}),
-            source_institution_ids=inst_ids,
-            institution_types=sorted(cited_types),
-            cross_institution=len(inst_ids) >= 2,
+            source_entry_ids=sorted({
+                e["journal_entry_id"]
+                for c in all_claims for e in c["evidence"]
+                if e["journal_entry_id"] is not None  # 교사 작성 문장은 일지가 없다
+            }),
+            source_institution_ids=sorted({c["institution_id"] for c in all_claims}),
+            institution_types=sorted({c["institution_type"] for c in all_claims}),
+            cross_institution=len(main_inst_ids) >= 2,  # 기관 간 차이 여부는 본문 근거로만
+            teacher_claim_ids=_teacher_ids(ids + support_ids, index),
         ))
 
     if config.MAX_INSIGHTS is not None:

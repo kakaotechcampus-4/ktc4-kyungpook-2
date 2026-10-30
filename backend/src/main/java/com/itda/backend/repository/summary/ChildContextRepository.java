@@ -1,6 +1,7 @@
 package com.itda.backend.repository.summary;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -16,10 +17,13 @@ public interface ChildContextRepository extends JpaRepository<ChildContext, Long
      * 아동별 승인본을 <b>최근 승인 순</b>으로 가져온다.
      *
      * <p>관찰 날짜 순이 아니다 — 8월 기록을 10월에 승인하면 뒤늦게 맨 앞에 온다. 타임라인 화면은
-     * 날짜로 늘어놓으므로, 조회 API(O-14)가 {@code summary_result.entry_date} 로 다시 정렬해야 한다.
-     * 날짜·기관·판수도 {@code summary_result_id} 로 조인해 채운다.
+     * 날짜로 늘어놓으므로, 조회 API(기관 타임라인 O-14 · 보호자 일지 G-20)가 {@code summary_result.entry_date} 로 다시
+     * 정렬해야 한다. 날짜·기관도 {@code summary_result_id} 로 조인해 채운다 — 기관 타임라인은 그 기관으로 거른다.
      */
     List<ChildContext> findByChildIdOrderByIdDesc(Long childId);
+
+    /** 아동별 승인본 중 <b>최근 승인 5건</b>. 보호자 홈의 "최근 공유 활동" 이 쓴다. */
+    List<ChildContext> findTop5ByChildIdOrderByIdDesc(Long childId);
 
     /**
      * 주어진 요약들 중 <b>승인된 것</b>. 행이 있다는 것이 곧 Gate 1 통과다.
@@ -45,4 +49,15 @@ public interface ChildContextRepository extends JpaRepository<ChildContext, Long
             + "where s.childId = :childId and s.entryDate between :from and :to)")
     Long findMaxIdInPeriod(@Param("childId") Long childId,
             @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * 그때 이후 Gate 1 을 통과한 요약들의 (아이, 관찰 날짜). 인사이트 워커가 <b>어느 주를 다시 볼지</b> 고른다 (#239).
+     *
+     * <p>관찰 날짜가 아니라 <b>승인 시각</b>으로 고르는 이유 — 밀린 기록을 늦게 승인해도 그 주를 다시 보려고다.
+     * 관찰 날짜로 "지난주" 만 보면, 2주 지나 승인한 기록은 영영 재료가 안 된다.
+     */
+    @Query("select distinct new com.itda.backend.repository.summary.ApprovedEntryDay(c.childId, s.entryDate) "
+            + "from ChildContext c, SummaryResult s "
+            + "where s.id = c.summaryResultId and c.createdAt >= :since")
+    List<ApprovedEntryDay> findApprovedEntryDaysSince(@Param("since") LocalDateTime since);
 }

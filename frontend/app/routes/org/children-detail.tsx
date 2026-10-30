@@ -1,15 +1,13 @@
 import { useState } from "react";
-import { Link, useLoaderData, useRevalidator } from "react-router";
+import { useLoaderData, useRevalidator } from "react-router";
 import { InviteCodeCard } from "@/components/org/InviteCodeCard";
 import { NotReadyState } from "@/components/org/NotReady";
+import { RosterConsentBadge } from "@/components/org/RosterConsentBadge";
 import {
   Card,
-  ConsentStatus,
   EmptyState,
-  InstitutionChip,
   Note,
   PageHeader,
-  ValidationBadge,
 } from "@/components/ui";
 import {
   ApiError,
@@ -22,7 +20,7 @@ import {
   issueInvitation,
   unlinkGuardian,
 } from "@/lib/api";
-import type { ChildGuardian, LiveInvitation } from "@/lib/types";
+import type { ChildGuardian, ConsentState, LiveInvitation, TimelineEntry } from "@/lib/types";
 
 export async function clientLoader({ params }: { params: { id: string } }) {
   const child = await getChild(params.id);
@@ -37,25 +35,16 @@ export async function clientLoader({ params }: { params: { id: string } }) {
 
 export default function ChildDetailPage() {
   const { child, timeline, invitations, guardians } = useLoaderData<typeof clientLoader>();
-  const withEntry = timeline.filter((t) => t.entry);
 
   return (
     <>
       <PageHeader
         title={`아동 목록 · ${child.name}`}
         description="승인된 요약이 날짜순으로 쌓인 관찰 기록입니다"
-        right={
-          <Link
-            to="/chat"
-            className="tap inline-flex items-center rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2"
-          >
-            상담 도우미로 이동
-          </Link>
-        }
       />
 
       <Card className="mb-6">
-        <div className="mb-3 flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <span
             aria-hidden
             className="flex size-10 items-center justify-center rounded-full bg-surface2 text-[16px] font-semibold text-ink2"
@@ -67,79 +56,62 @@ export default function ChildDetailPage() {
           {child.externalId ? (
             <span className="text-[14px] text-muted tabular-nums">#{child.externalId}</span>
           ) : null}
+          {/* 우리 기관 동의만. 다른 기관 정보(다니는 기관 · 그 기관 동의)는 기관 화면에 없다 */}
+          <RosterConsentBadge consent={child.consent} className="ml-auto" />
         </div>
-        {/* 상세 API 가 없어 명부에서 찾은 아이는 연결된 기관 정보가 없다 (lib/api.ts getChild) */}
-        {child.institutions ? (
-          <>
-            <p className="mb-2 text-[13px] font-semibold tracking-wider text-muted uppercase">
-              연결된 기관
-            </p>
-            <ul className="flex flex-wrap gap-x-5 gap-y-2">
-              {child.institutions.map(({ institution, consent }) => (
-                <li key={institution.id} className="flex items-center gap-2 text-[15px]">
-                  <InstitutionChip institution={institution} withName />
-                  <ConsentStatus state={consent} />
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
       </Card>
 
       <GuardianSection childId={child.id} invitations={invitations} guardians={guardians} />
 
       <h2 className="mb-3 text-[17px] font-bold">기록 타임라인 (승인된 요약)</h2>
 
-      {/* 타임라인 API 가 아직 없다. 비어 있다고 하면 "승인된 요약이 없다"로 읽혀 준비 중으로 둔다 */}
-      {!isReady("childProfile") ? (
+      {/* 타임라인 API 가 없는 빌드다. 비어 있다고 하면 "승인된 요약이 없다"로 읽혀 준비 중으로 둔다 */}
+      {!isReady("childTimeline") ? (
         <NotReadyState />
-      ) : withEntry.length === 0 ? (
-        <>
-          <EmptyState
-            icon="◦"
-            title="아직 승인된 요약이 없습니다"
-            description="기록을 등록하고 1차 검토에서 승인하면 여기에 날짜순으로 쌓입니다. 승인되지 않은 기록은 표시되지 않습니다."
-          />
-          <div className="mt-4">
-            <Note>
-              {child.status === "pending_consent"
-                ? "보호자 동의가 완료되기 전에는 기록을 올릴 수 없습니다."
-                : "기록 등록 화면에서 첫 기록을 올려보세요."}
-            </Note>
-          </div>
-        </>
       ) : (
-        <ul className="flex flex-col divide-y divide-line border-y border-line">
-          {timeline.map((t) => (
-            <li key={t.date} className="flex gap-5 py-4">
-              <span className="w-14 shrink-0 text-[15px] font-semibold text-ink2 tabular-nums">
-                {t.date.slice(5).replace("-", ".")}
-              </span>
-              {t.entry ? (
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                    <span className="text-[14px] font-semibold text-ink2">
-                      {t.entry.recordType} 요약
-                    </span>
-                    <ValidationBadge status={t.entry.validation} />
-                    {t.entry.edited ? (
-                      <span className="rounded bg-humansoft px-1.5 text-[12px] font-semibold text-human">
-                        선생님 수정
-                      </span>
-                    ) : null}
+        <>
+          {/* 동의 철회는 새 처리를 막는다. 우리 기관이 쓴 지난 기록은 그대로 보인다 */}
+          {child.consent === "revoked" && timeline.length > 0 ? (
+            <div className="mb-4">
+              <Note>보호자 동의가 꺼져 새 기록은 처리되지 않아요.</Note>
+            </div>
+          ) : null}
+          {timeline.length === 0 ? (
+            <>
+              <EmptyState
+                icon="◦"
+                title="아직 승인된 요약이 없습니다"
+                description="기록을 등록하고 1차 검토에서 승인하면 여기에 날짜순으로 쌓입니다. 승인되지 않은 기록은 표시되지 않습니다."
+              />
+              <div className="mt-4">
+                <Note>{emptyNote(child.consent)}</Note>
+              </div>
+            </>
+          ) : (
+            <ul className="flex flex-col divide-y divide-line border-y border-line">
+              {groupByDate(timeline).map(({ date, entries }) => (
+                <li key={date} className="flex gap-5 py-4">
+                  <span className="w-14 shrink-0 text-[15px] font-semibold text-ink2 tabular-nums">
+                    {date.slice(5).replace("-", ".")}
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-4">
+                    {entries.map((entry) => (
+                      <div key={entry.id}>
+                        {entry.edited ? (
+                          <span className="mb-1.5 inline-block rounded bg-humansoft px-1.5 text-[12px] font-semibold text-human">
+                            선생님 수정
+                          </span>
+                        ) : null}
+                        <p className="mb-1.5 text-[16px] leading-7 whitespace-pre-line">{entry.content}</p>
+                        <p className="text-[13px] text-muted tabular-nums">원본 {entry.sourceCount}건</p>
+                      </div>
+                    ))}
                   </div>
-                  <p className="mb-1.5 text-[16px] leading-7">{t.entry.content}</p>
-                  <p className="text-[13px] text-muted tabular-nums">
-                    원본 {t.entry.sourceCount}건 · v{t.entry.version}
-                  </p>
-                </div>
-              ) : (
-                // 기록이 없는 날은 그대로 비워 표시한다 — 추정치로 채우지 않는다
-                <span className="text-[15px] text-muted">기록 없음</span>
-              )}
-            </li>
-          ))}
-        </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </>
   );
@@ -226,7 +198,7 @@ function GuardianSection({
                 <span className="block text-[16px] font-semibold">{g.name ?? "이름 없음"}</span>
                 <span className="block text-[13px] text-muted tabular-nums">
                   {g.linkedAt.slice(0, 10).replaceAll("-", ".")} 연결
-                  {g.linkedByThisOrganization ? "" : " · 다른 기관 코드로 연결"}
+                  {g.linkedByThisOrganization ? "" : " · 우리 기관 코드로 연결하지 않아 여기서 해제할 수 없어요"}
                 </span>
               </span>
               {g.linkedByThisOrganization ? (
@@ -301,10 +273,30 @@ function messageOf(err: unknown): string {
     case "GUARDIAN_NOT_FOUND":
       return "이미 연결이 해제된 보호자입니다.";
     case "GUARDIAN_LINKED_BY_OTHER_ORGANIZATION":
-      return "다른 기관 코드로 연결된 보호자는 해제할 수 없습니다.";
+      return "우리 기관 코드로 연결하지 않은 보호자는 해제할 수 없습니다.";
     case "CHILD_NOT_FOUND":
       return "우리 기관 명부에 없는 아이입니다.";
   }
   if (err.status === 403) return "보안 확인에 실패했습니다. 새로고침한 뒤 다시 시도해 주세요.";
   return "잠시 후 다시 시도해 주세요.";
+}
+
+/**
+ * 기록 타임라인을 날짜로 묶는다. 서버 순서(관찰 날짜 최근 순, 같은 날은 승인 최근 순)를 그대로 둔다.
+ * 같은 날 승인본이 여럿이면 날짜 하나 아래 여러 장이다 — 따로 승인된 별개의 글이라 합치지 않는다.
+ */
+function groupByDate(timeline: TimelineEntry[]): { date: string; entries: TimelineEntry[] }[] {
+  return timeline.reduce<{ date: string; entries: TimelineEntry[] }[]>((acc, entry) => {
+    const last = acc[acc.length - 1];
+    if (last && last.date === entry.date) last.entries.push(entry);
+    else acc.push({ date: entry.date, entries: [entry] });
+    return acc;
+  }, []);
+}
+
+/** 승인된 요약이 없을 때 — 우리 기관 동의 상태에 따라 다음에 할 일이 다르다 */
+function emptyNote(consent: ConsentState): string {
+  if (consent === "not_granted") return "보호자 동의가 완료되기 전에는 기록을 올릴 수 없습니다.";
+  if (consent === "revoked") return "보호자 동의가 꺼져 새 기록을 올릴 수 없습니다.";
+  return "기록 등록 화면에서 첫 기록을 올려보세요.";
 }

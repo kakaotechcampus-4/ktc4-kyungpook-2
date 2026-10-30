@@ -24,7 +24,8 @@ export function RosterPicker({
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim();
-  const candidates = roster.filter((c) => c.status === "active" && c.id !== excludeId);
+  // 우리 기관에 동의한 아이만 고를 수 있다. 다른 기관에만 동의한 아이는 status 가 active 여도 뺀다
+  const candidates = roster.filter((c) => c.consent === "granted" && c.id !== excludeId);
   const results = q ? candidates.filter((c) => c.name.includes(q)) : candidates;
 
   return (
@@ -67,10 +68,8 @@ export function RosterPicker({
               </span>
               <span>
                 <span className="block text-[16px] font-semibold">{c.name}</span>
-                <span className="block text-[13px] text-muted tabular-nums">
-                  {c.school ? `${c.school} · ` : ""}
-                  {c.birthDate}
-                </span>
+                {/* 이름이 같은 아이는 생년월일로 가른다. 명부에는 학교 칸이 없다 */}
+                <span className="block text-[13px] text-muted tabular-nums">{c.birthDate}</span>
               </span>
             </label>
           ))}

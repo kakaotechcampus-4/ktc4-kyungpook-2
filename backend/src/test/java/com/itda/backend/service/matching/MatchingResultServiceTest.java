@@ -18,6 +18,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.consent.SharingConsentStatus;
@@ -270,20 +271,21 @@ class MatchingResultServiceTest {
         assertThat(entry.getChildId()).isEqualTo(5L);
     }
 
-    // 매칭은 AUTO로 끝났는데 검증 AI 호출이 실패해서 FAILED가 된 일지.
+    // 매칭은 AUTO로 끝났는데 검증 AI 호출이 실패해서 FAILED가 된 일지. #180부터 검증 실패는 SYSTEM_ERROR가 되지만
+    // 그 전에 FAILED로 남은 일지가 배포 DB에 있다. 지금 코드로는 만들 수 없어 상태를 직접 넣는다.
     private JournalEntry validationFailedEntry() {
         JournalEntry entry = JournalEntry.of(3L, LocalDate.of(2026, 9, 1), "점심시간에 식사를 잘함", 1);
         entry.startMatching();
         entry.confirmMatch(5L);
         entry.startValidating();
-        entry.failValidation();
+        ReflectionTestUtils.setField(entry, "status", JournalEntryStatus.FAILED);
         return entry;
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"assign", "not_ours"})
     void resolve_alreadyAutoResult_throwsValidationException(String action) {
-        // 일지 FAILED는 매칭 실패뿐 아니라 검증 실패로도 생긴다(#107). 매칭 결과가 이미 AUTO면
+        // 일지 FAILED는 매칭 실패뿐 아니라 #180 이전의 검증 실패로도 생겼다(#107). 매칭 결과가 이미 AUTO면
         // 이미 처리된 결과라 일지 상태가 FAILED여도 다시 처리하지 않는다.
         MatchingResult matchingResult = new MatchingResult(
                 1L, 5L, new BigDecimal("0.95"), MatchingStatus.AUTO, null, null, null, null, null, null, "v1");

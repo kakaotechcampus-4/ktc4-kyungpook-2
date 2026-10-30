@@ -1,9 +1,7 @@
 package com.itda.backend.service.summary;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -57,14 +55,14 @@ public class SummaryService {
     private final OrganizationRepository organizationRepository;
     private final SummaryResultRepository summaryResultRepository;
     private final SummaryRunRequests runRequests;
-    private final SummaryProperties properties;
     private final Clock clock;
 
     /**
      * 요약할 준비가 된 묶음을 집어 가며 그 안의 일지를 SUMMARIZING 으로 바꾼다 (AI/summary/CRITERIA.md §5).
      *
-     * <p>준비 조건은 셋이다. 마감(entry_date 다음 날 03:00)이 지났고, 묶음의 마지막 일지가 들어온 뒤 디바운스(30분)가
-     * 지났고, 같은 기관·같은 날짜에 매칭·검증 중인 일지가 없어야 한다. "지금 요약" 을 누른 묶음은 앞의 둘을 건너뛴다.
+     * <p>준비 조건은 둘이다. 교사가 그 묶음에 [요약]을 눌렀고({@link SummaryRunRequests}), 같은 기관·같은 날짜에
+     * 매칭·검증 중인 일지가 없어야 한다. 누르지 않은 묶음은 요약하지 않는다 — 자동 요약은 없다 (#181).
+     * 요약할 일지가 없게 된 요청은 이때 거둔다.
      *
      * <p>새로 검증을 통과한 일지(VALIDATED)가 있는 묶음만 집는다. 그 묶음의 최신 판이 아직 Gate 1 대기면, 그 판에 든
      * 일지(GATE1_PENDING)도 새 일지와 함께 다시 요약하도록 같이 담는다. 보류된 일지(GATE1_HELD)와 보류 해제된 옛 판의
@@ -72,11 +70,16 @@ public class SummaryService {
      */
     @Transactional
     public List<ClaimedSummaryGroup> claimReadyGroups(int limit) {
+        // 집은 시각과 요청을 일지보다 먼저 읽는다. 아래에서 일지를 읽는 사이 새로 올리고 다시 누른 요청은 이 시각보다
+        // 늦어 이번에 처리하지도 거두지도 않는다 — 그 일지는 이번 요약에 들어 있지 않을 수 있다.
+        LocalDateTime claimedAt = LocalDateTime.now(clock);
+        Map<SummaryGroup, LocalDateTime> requests = runRequests.pendingRequests();
         Set<InProgressKey> busy = Set.copyOf(journalEntryRepository.findInProgressKeys(IN_PROGRESS));
         // 새 일지(VALIDATED)로 묶음을 먼저 정한다. 승인 대기(GATE1_PENDING) 일지는 Gate 1 이 처리하기 전까지
         // 계속 쌓이므로 매번 전부 읽지 않고, 집기로 한 묶음의 것만 가져온다.
         Map<SummaryGroup, List<SummaryCandidate>> groups = groupCandidates(
                 journalEntryRepository.findSummaryCandidates(List.of(JournalEntryStatus.VALIDATED)));
+        cancelStaleRequests(requests, groups.keySet(), busy);
 
         List<ClaimedSummaryGroup> claimed = new ArrayList<>();
         for (Map.Entry<SummaryGroup, List<SummaryCandidate>> e : groups.entrySet()) {
@@ -85,7 +88,7 @@ public class SummaryService {
             }
             SummaryGroup group = e.getKey();
             List<SummaryCandidate> members = e.getValue();
-            if (!isReady(group, members, busy)) {
+            if (!isReady(group, members, busy, requests.keySet())) {
                 continue;
             }
             List<Long> pending = findLatestPendingEntryIds(group);
@@ -93,9 +96,29 @@ public class SummaryService {
                     .sorted()
                     .toList();
             journalEntryRepository.findAllById(ids).forEach(JournalEntry::startSummarizing);
-            claimed.add(new ClaimedSummaryGroup(group, ids));
+            claimed.add(new ClaimedSummaryGroup(group, ids, claimedAt));
         }
         return claimed;
+    }
+
+    /**
+     * 요약할 일지가 없게 된 [요약] 요청을 거둔다. 매칭·검증 중이라 받아 둔 요청인데, 끝나고 보니 이 묶음에 새 일지가
+     * 없는 경우다 (다른 아이로 매칭됐거나 BLOCK). 남겨 두면 한참 뒤 그 날짜로 올라온 일지가 누르지 않았는데 요약된다.
+     * 확인 필요 큐처럼 사람을 기다리는 일지만 남았어도 거둔다 — 요약은 사람 손을 기다리지 않으므로, 교사가 처리한 뒤
+     * 다시 누른다.
+     *
+     * <p>요약 중(SUMMARIZING)에 멈춘 묶음은 거두지 않는다. 결과 저장이 실패한 것이라, 재시작해 요약 대기로 돌아가면
+     * 다시 요약해야 한다. 읽어 둔 누른 시각까지만 거둬서, 그 뒤에 다시 누른 요청은 남는다.
+     */
+    private void cancelStaleRequests(Map<SummaryGroup, LocalDateTime> requests, Set<SummaryGroup> candidates,
+            Set<InProgressKey> busy) {
+        requests.keySet().stream()
+                .filter(group -> !candidates.contains(group))
+                .filter(group -> !busy.contains(
+                        new InProgressKey(String.valueOf(group.institutionId()), group.entryDate())))
+                .filter(group -> journalEntryRepository.findGroupEntryIds(JournalEntryStatus.SUMMARIZING,
+                        group.childId(), group.entryDate(), String.valueOf(group.institutionId())).isEmpty())
+                .forEach(group -> runRequests.markHandled(group, requests.get(group)));
     }
 
     /**
@@ -125,22 +148,14 @@ public class SummaryService {
         return groups;
     }
 
-    private boolean isReady(SummaryGroup group, List<SummaryCandidate> members, Set<InProgressKey> busy) {
+    private boolean isReady(SummaryGroup group, List<SummaryCandidate> members, Set<InProgressKey> busy,
+            Set<SummaryGroup> requested) {
         // 기관·날짜만 같아도 기다린다 — 매칭 전 일지는 아동이 비어 있어 이 아이 일지인지 아직 모른다.
         String institutionId = members.get(0).institutionId();
         if (busy.contains(new InProgressKey(institutionId, group.entryDate()))) {
             return false;
         }
-        Instant now = clock.instant();
-        if (runRequests.isRequested(group, now)) {
-            return true;
-        }
-        Instant cutoff = properties.cutoffOf(group.entryDate());
-        // createdAt 은 서버 기본 시간대의 LocalDateTime.now() 로 채워진다.
-        LocalDateTime lastUploaded = members.stream().map(SummaryCandidate::createdAt)
-                .max(LocalDateTime::compareTo).orElseThrow();
-        Instant settled = lastUploaded.atZone(ZoneId.systemDefault()).toInstant().plus(properties.debounce());
-        return !now.isBefore(cutoff) && !now.isBefore(settled);
+        return requested.contains(group);
     }
 
     /**
