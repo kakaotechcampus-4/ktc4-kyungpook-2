@@ -14,7 +14,8 @@
 `.github/workflows/backend-ci-cd.yml`은 PR에서 백엔드를 검증하고, `develop` 반영 시
 GHCR에 이미지를 게시한 뒤 기존 EC2를 SSM Run Command로 배포합니다.
 GitHub의 Ubuntu 실행 환경에서 빌드하며 서버에서는 이미지를 받아 BE만 교체합니다.
-FE·DB 컨테이너 배포와 Flyway 도입은 포함하지 않습니다. AI는 [AI CI/CD](#ai-cicd)가 따로 배포합니다.
+DB 컨테이너 배포와 Flyway 도입은 포함하지 않습니다.
+AI는 [AI CI/CD](#ai-cicd)가, 프론트는 [프론트엔드 CI/CD](#프론트엔드-cicd)가 따로 배포합니다.
 
 | 작업 | 실행 시점 | 내용 |
 | --- | --- | --- |
@@ -23,7 +24,7 @@ FE·DB 컨테이너 배포와 Flyway 도입은 포함하지 않습니다. AI는 
 | `deploy` | 이미지 업로드 성공 후, `CADDY_READY=true` | SSM 배포·Caddy 설정 변경 시 재로딩·내부 검증·외부 HTTPS API 확인 |
 
 PR과 push는 `backend/`, `infra/`, 이 워크플로 파일이 바뀔 때만 실행합니다.
-두 폴더의 `*.md`와 AI 전용 배포 파일(`deploy-ai.sh`·`verify-ai.py`·`tests/test_ai_deploy.py`)은 제외합니다.
+두 폴더의 `*.md`와, AI·프론트 전용 배포 파일(`deploy-ai.sh`·`verify-ai.py`·`tests/test_ai_deploy.py`·`deploy-frontend.sh`·`tests/test_frontend_deploy.py`)은 제외합니다.
 FE·AI·문서만 바꾼 병합은 BE를 다시 배포하지 않으므로 BE 중단과 로그인 세션 끊김이 생기지 않습니다.
 `infra/`를 포함하는 이유는 배포가 서버의 `compose.yaml`·`Caddyfile`·배포 스크립트를 함께 반영하기 때문입니다.
 건너뛴 커밋은 다음 배포 때 한꺼번에 반영됩니다. 바로 반영하려면 `develop`에서 수동 실행합니다.
@@ -43,6 +44,9 @@ PR에는 AWS OIDC 권한과 패키지 업로드 권한을 부여하지 않습니
 | `EC2_INSTANCE_ID` | `i-0e30a4108bfd4ea9f` |
 | `PUBLIC_ORIGIN` | `https://iitda.duckdns.org` |
 | `CADDY_READY` | 최초 운영 전환 전 미설정 또는 `false`, 완료 후 `true` |
+| `USE_MOCK` | 프론트 데이터 mock. 실연동은 `false` (→ [프론트엔드 CI/CD](#프론트엔드-cicd)) |
+| `VITE_AUTH_MOCK` | 프론트 로그인 mock. 실연동은 `false` |
+| `PUBLIC_API_BASE_URL` | 프론트가 부를 API 주소. 같은 오리진이면 빈 값 |
 
 이미지는 `ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend:<커밋 SHA>`로 업로드합니다.
 배포에는 태그 대신 digest를 사용합니다. 최초 게시된 패키지는 비공개 상태를 유지하고,
@@ -274,24 +278,79 @@ python3 infra/scripts/verify-ai.py --offline
 docker stop ai-local
 ```
 
-## 프론트 빌드 설정
+## 프론트엔드 CI/CD
 
-프론트는 CD가 없어 서버에서 직접 다시 빌드합니다. `VITE_*` 값은 빌드할 때 번들에 박히므로
-서버 `infra/docker/.env`를 바꾼 뒤에는 이미지를 다시 빌드해야 반영됩니다.
+`.github/workflows/frontend-ci.yml`은 BE·AI와 같은 방식으로 프론트를 검증·게시·배포합니다.
+서버에서는 프론트 컨테이너만 교체합니다. DB·BE·AI·Caddy는 건드리지 않습니다.
+
+예전에는 CD가 없어 서버에서 직접 `compose build frontend`를 돌렸습니다.
+EC2 가용 메모리가 3.7Gi 중 2.5Gi·Swap 0B라(10/30 실측) 자동 배포가 OOM으로 죽으면
+프론트가 내려간 채 남습니다. 그래서 #270에서 **CI가 이미지를 만들어 올리고 서버는 pull만 하는**
+방식으로 바꿨습니다. 서버 빌드 부하가 0이 됩니다.
+
+| 작업 | 실행 시점 | 내용 |
+| --- | --- | --- |
+| `check` | 대상 경로를 바꾼 `develop`·`main` 대상 PR·`develop` push, 수동 실행 | `npm ci`·`typecheck`·`build`와 프론트 배포 스크립트 테스트 |
+| `publish` | 대상 경로를 바꾼 `develop` push 또는 `develop` 수동 실행, 검사 성공 후 | `ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-frontend:<커밋 SHA>` 업로드 |
+| `deploy` | 이미지 업로드 성공 후, `CADDY_READY=true` | SSM으로 프론트만 교체·확인·실패 시 복구 |
+
+대상 경로는 `frontend/`, `infra/docker/compose.yaml`, 프론트 배포 파일(`deploy-frontend.sh`·`send-deploy.py`·`tests/test_frontend_deploy.py`), 이 워크플로 파일입니다.
+`frontend/**/*.md`는 제외합니다.
+`compose.yaml`과 `send-deploy.py`는 BE·AI 워크플로의 대상이기도 해서, 바꾸면 셋 다 다시 배포됩니다.
+
+GitHub Variables(`AWS_ROLE_ARN`·`AWS_REGION`·`EC2_INSTANCE_ID`·`CADDY_READY`)와 IAM Role은 BE와 같은 것을 씁니다.
+이미지 캐시는 `scope=frontend`로 BE·AI와 분리합니다.
+
+### `VITE_*`의 진실의 원천이 옮겨갔습니다
+
+`VITE_*` 값은 **빌드할 때 번들에 박힙니다.** 이제 빌드하는 쪽이 CI라서, 운영에 나가는 값은
+서버 `infra/docker/.env`가 아니라 **GitHub repo variables**입니다.
 
 | 변수 | 실연동 값 | 설명 |
 |---|---|---|
 | `USE_MOCK` | `false` | 데이터 mock. 프론트의 `VITE_USE_MOCK`으로 전달됩니다 |
 | `VITE_AUTH_MOCK` | `false` | 로그인 mock. `USE_MOCK`과 **별개**입니다. `true`면 `/auth/me`·회원가입을 타지 않고 "mock 데이터로 둘러보기" 버튼이 나옵니다 |
+| `PUBLIC_API_BASE_URL` | 빈 값 | Caddy가 같은 오리진의 `/api`를 backend로 넘기므로 비워 둡니다. 별도 도메인으로 분리할 때만 채웁니다 |
+
+> ⚠️ 프론트는 `"false"`라는 **글자**만 실연동으로 읽습니다(`auth.ts`·`api.ts`의 `!== "false"`).
+> 변수를 비워 두면 mock이 켜진 채 운영에 나가고 로그인 화면에 "mock 데이터로 둘러보기" 버튼이 보입니다.
+> `publish` 작업이 두 변수가 정확히 `true`/`false`인지 먼저 확인하고, 아니면 게시 전에 실패합니다.
+
+서버 `.env`의 같은 이름 값들은 이제 **로컬 `compose build frontend`에만** 쓰입니다.
+서버 `.env`를 고쳐도 운영 번들은 바뀌지 않습니다.
+
+### 프론트 배포 순서
+
+SSM은 [`scripts/deploy-frontend.sh`](scripts/deploy-frontend.sh)를 `ubuntu` 계정으로 실행합니다.
+BE·AI 배포와 같은 `deploy.lock`을 쓰고, checkout 갱신 규칙도 같습니다.
+
+1. 서버 checkout을 배포 커밋으로 옮깁니다(더 새 프론트 변경을 덮는 커밋은 거부).
+2. 현재 이미지를 `ktc-frontend:rollback-<id>`로 태그합니다.
+3. GHCR에서 digest로 pull한 뒤 프론트 컨테이너만 교체합니다.
+4. `http://127.0.0.1:3000/`이 200을 주고 **index.html 안에 번들 `<script>`가 있는지** 확인합니다.
+   상태 코드만 보면 빌드가 안 들어간 이미지도 통과합니다 — 기본 nginx 안내 페이지도 200입니다.
+5. 성공하면 서버 `.env`의 `FRONTEND_IMAGE`에 digest를 기록합니다.
+   실패하면 checkout과 이전 이미지를 되돌립니다.
+
+### 수동 배포
+
+CD가 멈춰 있거나 특정 커밋을 되돌려야 할 때만 씁니다.
 
 ```bash
 cd /home/ubuntu/ktc4-kyungpook-2
-docker compose -f infra/docker/compose.yaml build frontend
-docker compose -f infra/docker/compose.yaml up -d --no-deps --no-build frontend
+bash infra/scripts/deploy-frontend.sh '<커밋 SHA>' \
+  'ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-frontend@sha256:<이미지 digest>'
 ```
 
 새 브라우저에서 카카오 로그인 후 Network에 `GET /api/v1/auth/me`가 보이고,
 가입 전이면 `/signup`으로 이동해 제출 시 `POST /api/v1/auth/signup`이 발생하면 정상입니다.
+
+### 프론트 로컬 검증
+
+```bash
+bash -n infra/scripts/deploy-frontend.sh
+python3 -m unittest discover -s infra/scripts/tests -p 'test_frontend_deploy.py' -v
+```
 
 ## Caddy와 HTTPS
 
