@@ -67,12 +67,13 @@ export interface Institution {
   verified: boolean;
 }
 
-/** 보호자가 온보딩 중 직접 입력하는 돌봄 정보 — 기관마다 다르게 공유된다 */
+/**
+ * 보호자가 설정 › 아이 정보에서 적는 돌봄 정보 (G-13). 현재 이 아이와 연결된 모든 보호자가 조회·수정하고,
+ * 기관에는 공유하지 않는다. 복용 시간은 비어 있을 수 있다("").
+ */
 export interface ChildCareInfo {
-  welfareCard: boolean;
   allergies: string[];
   medications: { name: string; time: string }[];
-  weeklySchedule: { day: string; note: string }[];
 }
 
 export interface Child {

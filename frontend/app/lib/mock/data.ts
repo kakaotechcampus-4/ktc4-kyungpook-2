@@ -103,14 +103,8 @@ export const CHILDREN: Child[] = [
       { institution: SPEECH, consent: "not_granted" },
     ],
     care: {
-      welfareCard: false,
       allergies: ["갑각류(새우)"],
       medications: [{ name: "알레르기 약", time: "점심 식후" }],
-      weeklySchedule: [
-        { day: "월요일", note: "센터 하원 동행" },
-        { day: "수요일", note: "센터 하원 동행" },
-        { day: "화·목요일", note: "17시 언어치료 수업" },
-      ],
     },
   },
   {
@@ -147,7 +141,7 @@ export const CHILDREN: Child[] = [
     school: "OO어린이집",
     status: "active",
     institutions: [{ institution: CENTER, consent: "granted" }],
-    care: { welfareCard: false, allergies: [], medications: [], weeklySchedule: [] },
+    care: { allergies: [], medications: [] },
   },
   {
     // 기관 연결 요청 데모용 — 학교에만 다니고 우리 기관 명부에는 없다. 보호자가 우리 기관 코드로 요청했다

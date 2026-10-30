@@ -42,6 +42,7 @@
  *      GET    /api/v1/children/{childId}/institution-requests/pending
  *      GET    /api/v1/children/{childId}/journal
  *      GET    /api/v1/journal/{id}
+ *      PUT    /api/v1/children/{childId}/care-info
  *      GET  /api/v1/matching-queue
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
@@ -204,8 +205,8 @@ const BE_READY = {
    * 수락 대기 중 기관은 아이 목록·홈 응답(guardianChildren)의 linkRequests 로 온다.
    */
   institutionCode: true,
-  /** 보호자: 돌봄 정보 */
-  careInfo: false,
+  /** 보호자: 돌봄 정보 저장 (G-13). 알레르기·복용약. 연결된 보호자끼리 함께 보고 고친다. 기관에는 공유하지 않는다 */
+  careInfo: true,
 } satisfies Record<string, boolean>;
 
 export type Feature = keyof typeof BE_READY;
@@ -1259,14 +1260,17 @@ export async function addInstitutionByCode(
   });
 }
 
-/** 보호자가 온보딩·동의 관리 화면에서 입력하는 돌봄 정보 저장 */
-export async function updateChildCare(childId: string, care: ChildCareInfo) {
+/**
+ * PUT /api/v1/children/{childId}/care-info — 돌봄 정보를 통째로 덮어쓴다. 서버가 앞뒤 공백을 떼고 같은 알레르기를
+ * 합친 값을 돌려준다. 조회는 아이 목록·홈의 child.care 로 한다
+ */
+export async function updateChildCare(childId: string, care: ChildCareInfo): Promise<ChildCareInfo> {
   if (mockFor("careInfo")) {
     const child = mock.CHILDREN.find((c) => c.id === childId);
     if (child) child.care = care;
-    return { ok: true };
+    return care;
   }
-  return request(`/api/v1/children/${childId}/care-info`, {
+  return request<ChildCareInfo>(`/api/v1/children/${encodeURIComponent(childId)}/care-info`, {
     method: "PUT",
     body: JSON.stringify(care),
   });
