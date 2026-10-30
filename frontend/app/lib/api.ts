@@ -34,6 +34,7 @@
  *      GET    /api/v1/institutions/me/children/{childId}/invitations
  *      DELETE /api/v1/institutions/me/children/{childId}/invitations/{id}   → 204
  *      GET    /api/v1/institutions/me/children/{childId}/guardians
+ *      GET    /api/v1/institutions/me/children/{childId}/timeline
  *      DELETE /api/v1/institutions/me/children/{childId}/guardians/{userId} → 204
  *      POST   /api/v1/guardians/me/invitations/accept
  *      DELETE /api/v1/guardians/me/children/{childId}   → 204 (아래 guardianUnlink 참고)
@@ -137,8 +138,10 @@ const BE_READY = {
   invitations: true,
   /** 아이와 연결된 보호자 목록 · 기관이 연결 해제 (O-18, O-19) */
   childGuardians: true,
-  /** 아이 상세 · 타임라인 */
+  /** 아동 상세 API — 아이 정보 · 연결된 기관 (O-13). 서버에 없다. 켜면 getChild 가 없는 API 를 부른다 */
   childProfile: false,
+  /** 아동 상세의 기록 타임라인 — 우리 기관이 승인한 요약 (O-14) */
+  childTimeline: true,
   /** 아이 기록 기반 질의응답 */
   chat: false,
   /** 확인 필요 큐 조회 · 처리 (O-22, O-23) */
@@ -368,10 +371,13 @@ export async function rejectLinkRequest(childId: string): Promise<void> {
   });
 }
 
-/** GET /api/v1/children/{childId}/context */
+/**
+ * GET /api/v1/institutions/me/children/{childId}/timeline — 우리 기관이 1차 검토에서 승인한 요약, 관찰 날짜 최근 순
+ * (같은 날은 승인 최근 순). 우리 명부에 없는 아이는 404 CHILD_NOT_FOUND
+ */
 export async function getTimeline(childId: string): Promise<TimelineEntry[]> {
-  if (mockFor("childProfile")) return mock.TIMELINE[childId] ?? [];
-  return request(`/api/v1/children/${childId}/context`);
+  if (mockFor("childTimeline")) return mock.TIMELINE[childId] ?? [];
+  return request(`/api/v1/institutions/me/children/${encodeURIComponent(childId)}/timeline`);
 }
 
 /**

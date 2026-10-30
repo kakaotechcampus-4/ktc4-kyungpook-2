@@ -670,57 +670,38 @@ export function gate1FromRun(group: SummaryGroup): SummaryItem {
 /* Child Context 타임라인 (I-09) ───────────────────── */
 
 export const TIMELINE: Record<string, TimelineEntry[]> = {
+  // 관찰 날짜 최근 순, 같은 날은 승인 최근 순 — 서버와 같은 순서로 둔다. 기록이 없는 날은 항목이 없다
   child_1023: [
     {
+      id: "ctx_04",
       date: "2026-08-21",
-      entry: {
-        recordType: "활동일지",
-        validation: "PASS",
-        content: "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
-        sourceCount: 1,
-        version: 1,
-        edited: false,
-      },
+      content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
+      edited: false,
+      sourceCount: 1,
     },
-    { date: "2026-08-20", entry: null },
     {
+      id: "ctx_03",
+      date: "2026-08-21",
+      content: "11:40 급식실 입장 직후 소리를 지름. 손을 잡고 30까지 세자 진정됨.",
+      edited: true,
+      sourceCount: 2,
+    },
+    {
+      id: "ctx_01",
       date: "2026-08-19",
-      entry: {
-        recordType: "특이사항",
-        validation: "PASS",
-        content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
-        sourceCount: 1,
-        version: 2,
-        edited: true,
-      },
-    },
-    { date: "2026-08-18", entry: null },
-    { date: "2026-08-17", entry: null },
-    {
-      date: "2026-08-16",
-      entry: {
-        recordType: "관찰일지",
-        validation: "PASS",
-        content: "식사 시간에 새로운 반찬을 두 번 거부한 뒤 세 번째 권유에 소량 섭취함.",
-        sourceCount: 2,
-        version: 1,
-        edited: false,
-      },
+      content: "체육 활동 전 그림 카드로 순서를 보여 주자 울지 않고 줄을 섬.",
+      edited: false,
+      sourceCount: 1,
     },
   ],
-  // 방금 등록한 아이 — 승인된 요약이 아직 0건 (Cold Start 첫 화면)
   child_1077: [],
   child_1041: [
     {
+      id: "ctx_02",
       date: "2026-08-18",
-      entry: {
-        recordType: "관찰일지",
-        validation: "PASS",
-        content: "이동 전 5분 전에 미리 안내했을 때 전환이 수월했음.",
-        sourceCount: 1,
-        version: 1,
-        edited: false,
-      },
+      content: "등원 직후 엄마와 헤어질 때 10분가량 울었으나 담임이 안아 주자 진정됨.",
+      edited: false,
+      sourceCount: 1,
     },
   ],
 };

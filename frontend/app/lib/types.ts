@@ -442,17 +442,22 @@ export type Gate1Card =
   | { action: "ADD"; text: string };
 
 /** Child Context 타임라인 한 칸 */
+/**
+ * 기관 아동 상세의 기록 타임라인 한 건 (O-14) — 우리 기관이 1차 검토에서 승인한 요약 하나.
+ * 다른 기관 기록은 오지 않는다(기관 사이에는 2차 검토를 지난 인사이트로만 넘어간다). 기록이 없는 날은 항목이 없다 —
+ * 추정치로 채우지 않는다. 같은 날 승인본이 여럿이면 따로 온다.
+ */
 export interface TimelineEntry {
+  /** 승인본 id */
+  id: string;
+  /** 관찰 날짜 YYYY-MM-DD */
   date: string;
-  /** 기록이 없는 날은 그대로 비워 표시한다 — 추정치로 채우지 않는다 */
-  entry: {
-    recordType: RawRecord["type"];
-    validation: ValidationStatus;
-    content: string;
-    sourceCount: number;
-    version: number;
-    edited: boolean;
-  } | null;
+  /** 담당자가 승인한 최종본 */
+  content: string;
+  /** 1차 검토에서 고쳐서 승인했는지 — "선생님 수정" */
+  edited: boolean;
+  /** 그 요약에 묶인 원본 일지 수 */
+  sourceCount: number;
 }
 
 export interface EvidenceRef {
