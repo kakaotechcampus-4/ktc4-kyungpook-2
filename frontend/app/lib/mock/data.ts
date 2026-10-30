@@ -1,7 +1,6 @@
 import type {
   ActivityLog,
   BlockedItem,
-  CareReport,
   Child,
   ChildGuardian,
   ChatTurn,
@@ -1006,56 +1005,6 @@ export const JOURNAL: JournalEntry[] = [
     content: "오후 자유놀이 시간에 비슷한 상황이 있었습니다.",
   },
 ];
-
-/** 케어 리포트 — 아이별로 따로 있다. 아직 데이터가 없는 아이는 key 자체가 없다. */
-export const CARE_REPORTS: Record<string, { weekly: CareReport; monthly: CareReport }> = {
-  child_1023: {
-    weekly: {
-      period: "weekly",
-      rangeLabel: "08.15 부터 08.21 까지",
-      summary: "이번 주에는 놀이를 스스로 마무리하는 모습이 늘었습니다. 기관 세 곳의 기록을 함께 봤습니다.",
-      trendTitle: "변화 추이",
-      trend: [
-        { label: "1주", value: 5 },
-        { label: "2주", value: 4 },
-        { label: "3주", value: 2 },
-        { label: "4주", value: 1 },
-      ],
-      trendInsight: "친구와 부딪히는 일이 4주 동안 조금씩 줄었습니다. 스스로 정리하는 모습이 늘었습니다.",
-      trendEvidenceIds: ["jrn_01", "jrn_05", "jrn_06"],
-      patterns: [
-        { text: "오후 4시 자유놀이 시간에 비슷한 상황이 반복됩니다.", evidenceIds: ["jrn_04", "jrn_06"] },
-      ],
-      tips: [
-        "놀이를 끝내기 5분 전에 미리 알려주세요.",
-        "속상해할 때는 조용한 자리에서 2분 기다려주세요.",
-        "정리를 함께 하며 마무리해주세요.",
-      ],
-    },
-    monthly: {
-      period: "monthly",
-      rangeLabel: "08.01 부터 08.21 까지",
-      summary: "8월 한 달 동안 놀이를 스스로 마무리하는 날이 꾸준히 늘었습니다. 기관 세 곳의 기록을 함께 봤습니다.",
-      trendTitle: "변화 추이",
-      trend: [
-        { label: "1주", value: 5 },
-        { label: "2주", value: 4 },
-        { label: "3주", value: 2 },
-        { label: "4주", value: 1 },
-      ],
-      trendInsight: "친구와 부딪히는 일이 4주 동안 조금씩 줄었습니다. 스스로 정리하는 모습이 늘었습니다.",
-      trendEvidenceIds: ["jrn_01", "jrn_05", "jrn_06"],
-      patterns: [
-        { text: "오후 4시 자유놀이 시간에 비슷한 상황이 반복됩니다.", evidenceIds: ["jrn_04", "jrn_06"] },
-      ],
-      tips: [
-        "놀이를 끝내기 5분 전에 미리 알려주세요.",
-        "속상해할 때는 조용한 자리에서 2분 기다려주세요.",
-        "정리를 함께 하며 마무리해주세요.",
-      ],
-    },
-  },
-};
 
 /** 설정 › 기관 요청사항 — 아이별. 아직 요청이 없는 아이는 빈 배열. */
 export const INSTITUTION_REQUESTS: Record<string, InstitutionRequestItem[]> = {

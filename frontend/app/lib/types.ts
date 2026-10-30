@@ -553,28 +553,6 @@ export interface JournalEntry {
   content: string;
 }
 
-export interface CareReportTrendPoint {
-  label: string;
-  value: number;
-}
-
-export interface CareReportPattern {
-  text: string;
-  evidenceIds: string[];
-}
-
-export interface CareReport {
-  period: "weekly" | "monthly";
-  rangeLabel: string;
-  summary: string;
-  trendTitle: string;
-  trend: CareReportTrendPoint[];
-  trendInsight: string;
-  trendEvidenceIds: string[];
-  patterns: CareReportPattern[];
-  tips: string[];
-}
-
 /** 설정 › 기관 요청사항 한 건 */
 export interface InstitutionRequestItem {
   id: string;

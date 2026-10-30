@@ -71,7 +71,6 @@ import type {
   AcceptedInvitation,
   ActivityLog,
   BlockedItem,
-  CareReport,
   ChatTurn,
   Child,
   ChildCareInfo,
@@ -189,10 +188,10 @@ const BE_READY = {
   /** 보호자: 일지 목록 · 상세 (G-20, G-21). 타임라인 · 일지 상세 · 홈 "새 소식". 아이 목록·홈과는 따로 켠다 */
   guardianJournal: true,
   /**
-   * 보호자: 케어 리포트 · 리포트의 관련 일지 · 활동 이력 (G-30). 서버에 없다 — 일지 스위치와 묶여 있으면
-   * 일지를 켤 때 리포트가 없는 API 를 부르고 활동 이력에 mock 이 진짜 아이 옆에 뜬다.
+   * 보호자: 활동 이력 화면(P-05). 서버에 없다 — 화면이 아직 mock 상수를 직접 읽어, 켜면 mock 이 진짜 아이 옆에 뜬다.
+   * 홈 "최근 공유 활동"(guardianChildren)과는 따로다.
    */
-  careReport: false,
+  activityHistory: false,
   /**
    * 보호자: 대기 중 기관 권한 요청 (G-40). 알림 화면 · 홈 요청 배너 · 헤더 알림 점이 이 목록 하나를 본다.
    * 요청 거절(G-42)은 MVP 에서 뺐다 — 알림 화면은 동의 화면으로 보내는 버튼 하나만 둔다.
@@ -1299,15 +1298,6 @@ export async function getJournalEntry(id: string): Promise<JournalEntry | undefi
     if (err instanceof ApiError && err.code === "JOURNAL_NOT_FOUND") return undefined;
     throw err;
   }
-}
-
-/** GET /api/v1/children/{childId}/care-report?period= — 아직 리포트가 없으면 null */
-export async function getCareReport(
-  childId: string,
-  period: "weekly" | "monthly",
-): Promise<CareReport | null> {
-  if (mockFor("careReport")) return mock.CARE_REPORTS[childId]?.[period] ?? null;
-  return request(`/api/v1/children/${childId}/care-report?period=${period}`);
 }
 
 /** GET /api/v1/children/{childId}/institution-requests */
