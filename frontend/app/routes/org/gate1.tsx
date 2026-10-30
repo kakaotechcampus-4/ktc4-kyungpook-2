@@ -244,25 +244,31 @@ function PendingItem({
   const [confirming, setConfirming] = useState<Decision | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /*
+   * 목록을 다시 받았는데 요약이 바뀌었으면 고치던 내용을 버린다. 옛 문장 번호로 보내면
+   * 엉뚱한 문장이 고쳐지거나 400 이 난다. (렌더 중 상태 조정 — React 문서의 권장 방식)
+   * 아래 계산보다 먼저 해야 한다 — 옛 lines 와 새 claims 는 길이가 달라 짝을 지으면 화면이 깨진다.
+   * 열려 있던 확인 창도 닫는다. 안 닫으면 새 문장을 읽지 않고 승인하게 된다.
+   */
+  if (seenVersion !== item.version) {
+    const touched = lines.some((l) => l.action !== "KEEP") || added.some((a) => a.text.trim());
+    setSeenVersion(item.version);
+    setLines(freshLines(item.claims));
+    setAdded([]);
+    setConfirming(null);
+    setError(null);
+    setNotice(
+      "요약이 새 기록으로 바뀌었어요. 바뀐 문장을 다시 읽고 결정해 주세요." +
+        (touched ? " 고치던 내용은 지웠어요." : ""),
+    );
+    // 이 렌더 결과는 React 가 버리고 새 상태로 바로 다시 그린다
+    return null;
+  }
+
   const edits = lines.filter((l, i) => isEdited(l, item.claims[i])).length;
   const dels = lines.filter((l) => l.action === "DELETE").length;
   const adds = added.filter((a) => a.text.trim()).length;
   const hasChanges = edits + dels + adds > 0;
-
-  /*
-   * 목록을 다시 받았는데 요약이 바뀌었으면 고치던 내용을 버린다. 옛 문장 번호로 보내면
-   * 엉뚱한 문장이 고쳐지거나 400 이 난다. (렌더 중 상태 조정 — React 문서의 권장 방식)
-   */
-  if (seenVersion !== item.version) {
-    setSeenVersion(item.version);
-    setLines(freshLines(item.claims));
-    setAdded([]);
-    setError(null);
-    setNotice(
-      "요약이 새 기록으로 바뀌었어요. 바뀐 문장을 다시 읽고 결정해 주세요." +
-        (hasChanges ? " 고치던 내용은 지웠어요." : ""),
-    );
-  }
 
   const canEdit = item.claims.length > 0 && !item.processing;
   const blankEdit = lines.some((l) => l.action === "EDIT" && !l.text.trim());
