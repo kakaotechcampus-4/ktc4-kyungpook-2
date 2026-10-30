@@ -30,6 +30,9 @@ public interface SharingConsentRepository extends JpaRepository<SharingConsent, 
 
     boolean existsByChildIdAndOrganizationId(Long childId, Long organizationId);
 
+    /** 그 아이·기관의 동의 행 전부 (꺼진 것 포함). 한 기관의 인사이트 동의 상태를 볼 때 쓴다. */
+    List<SharingConsent> findByChildIdAndOrganizationId(Long childId, Long organizationId);
+
     boolean existsByChildIdAndStatus(Long childId, SharingConsentStatus status);
 
     boolean existsByChildId(Long childId);
