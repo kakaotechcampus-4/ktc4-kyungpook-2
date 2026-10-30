@@ -1695,17 +1695,19 @@ journal_entry.summary_id BIGINT NULL    -- 신규. 어느 요약에 들어갔는
 
 §10.2-5 가 예고한 그 뒤집기다. 결정이 끝나 여기에 반영했다.
 
-**요약을 읽는 사람은 부모가 아니다**
+**요약을 누가 읽나** (#280, #292 에서 바뀜)
 
 ```
-요약  →  [Gate 1 교사 승인]  →  child_context  →  인사이트  →  [Gate 2]  →  부모
+요약  →  [Gate 1 교사 승인]  →  child_context  →  인사이트  →  [Gate 2]  →  보호자 · 동의한 기관
                                     ↑
-                          다른 기관 담당자가 조회하는 곳 (O-14)
+                승인한 기관의 담당자 (기관 아동 타임라인 O-14)
+                보호자 (일지 G-20 · G-21)
 ```
 
-교사가 Gate 1 에서 검토하고, 승인된 뒤에는 **다음 돌봄을 하는 다른 기관 담당자**가
-`child_context` 타임라인에서 읽는다. 부모가 받는 것은 요약이 아니라 그다음 단계인
-인사이트다.
+교사가 Gate 1 에서 검토하고, 승인된 뒤에는 **승인한 기관의 담당자**가 아동 타임라인에서, **보호자**가
+일지에서 읽는다. **다른 기관은 `child_context` 를 읽지 않는다** — 기관 사이에는 Gate 2 를 지난 인사이트(수신함)로만
+넘어간다. 예전 설명("다른 기관 담당자가 타임라인에서 읽는다", "부모는 요약을 받지 않는다")은 보호자 일지(#280)와
+기관 타임라인(#292)으로 지금과 달라졌다.
 
 그래서 말투는 **돌봄 기관의 전문가 기록체**를 따른다. 무슨 일이 있었고 어떤 대응이
 통했는지가 중심이다. 감상이나 애정 표현은 쓰지 않는다 — 검증 에이전트가 `감정적표현`
@@ -2079,16 +2081,19 @@ Insight는 원본 일지가 아니라 이 테이블이 가리키는 요약을 �
 
 | 화면이 요구하는 값 | 어디서 오나 |
 | --- | --- |
+| `id` | `child_context.id` |
 | `date` | `summary_result.entry_date` |
-| `version` | `summary_result.revision` |
-| `sourceCount` | `summary_result.covered_entry_ids` ⚠️ TEXT JSON 문자열이라 SQL 로는 못 센다 — 애플리케이션에서 파싱한다(`MatchingResultService` 가 `candidates` 를 다루는 방식과 같다) |
-| `institution`(`EvidenceRef`) | `summary_result.institution_id` |
+| `content` | **`child_context.content`** (승인본). `summary_result.content` 는 AI 원문이라 쓰지 않는다 |
+| `sourceCount` | `summary_result.covered_entry_ids` 의 숫자 원소 수 — TEXT JSON 문자열이라 SQL 로는 못 센다. 애플리케이션에서 Gate 1 조회와 같은 규칙으로 읽는다(비었거나 배열이 아니면 0, 깨졌으면 0 + 경고 로그) |
 | `edited` | `human_review` 에 `target_type = SUMMARY` · `decision = CORRECTED` 행이 있는지 |
-| `validation` | 재료 일지들의 `validation_result.verdict` ⚠️ 재료가 N 건인데 화면은 한 값을 받는다 — **환원 규칙 미정.** 하나라도 `REVIEW` 면 `REVIEW` 로 보는 안이 유력하다(`BLOCK` 은 요약에 들어가지 않으므로 `PASS`·`REVIEW` 중 하나) |
-| `recordType` | **못 준다.** 기록 유형 값 목록이 아직 확정되지 않아 `raw_record` 에 컬럼 자체가 없다 |
+| 기관 거르기 | `summary_result.institution_id` — 기관 타임라인은 **요청한 기관의 요약만** 남긴다 |
 
-이 조인은 타임라인 조회 API(O-14)를 만들 때 함께 짠다. ⚠️ 표시한 둘은 조인만으로 끝나지
-않으므로 그때 파싱 코드와 환원 규칙을 함께 정한다.
+**기관 아동 타임라인(O-14, #292)이 이 조인을 쓴다.** 초안이 함께 요구하던 세 값은 화면에서 뺐다.
+
+- `recordType` — 기록 유형 값 목록이 정해지지 않아 `raw_record` 에 컬럼 자체가 없다. 정해지면 원본 기록에 칸을 둔다
+- `validation` — 재료 일지가 N 건인데 화면은 한 값이라 합치는 규칙이 필요하다. Gate 1 을 통과한 요약만 보이므로 거의
+  늘 "통과"라 정보도 없다. 규칙이 정해지면 다시 넣는다
+- `version`(`summary_result.revision`) — 내부 회차 번호라 담당자에게 뜻이 없다
 
 **`summary_result_id` 에 UNIQUE 를 건다** — 승인된 요약을 다시 승인하는 경로가 없다(§8.2).
 반려 상태가 없고, 승인 뒤 새 일지가 오면 그 요약을 고치는 게 아니라 `revision + 1` 로 새 요약을
@@ -2097,7 +2102,7 @@ Insight는 원본 일지가 아니라 이 테이블이 가리키는 요약을 �
 
 ```
 summary_result.content       = AI가 쓴 원문
-child_context.content        = 교사가 승인한 최종본 — 다른 기관 담당자가 타임라인에서 읽는 글
+child_context.content        = 교사가 승인한 최종본 — 그 기관 담당자(타임라인)와 보호자(일지)가 읽는 글
 ```
 
 ### 9.3 `insight_result` ✅ — ✅ 구현됨 (`InsightResult`)
@@ -2696,3 +2701,4 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-10-30 | 보호자 일지(G-20 · G-21) — 일지 한 건은 `child_context` 한 행이고 날짜·기관은 `summary_result` 에서 채운다(§9.2). 일지 상세가 `child` 를 **FOR SHARE** 로 잡아 보호자 연결 해제와 줄을 선다(§3.3 잠금 표). 컬럼·제약 변경 없음, §11.4 수동 조치 불필요 | #280 |
 | 2026-10-30 | 새 테이블 `child_care_info`(§5.7) — 보호자가 적는 알레르기·복용약. 아이마다 한 행(`child_id` UNIQUE), 두 목록은 JSON TEXT, 덮어쓰기라 삭제 없음. 현재 이 아이와 연결된 모든 보호자가 조회·수정하고 기관에는 공유하지 않는다. 저장은 `child` 를 먼저 잠근다(§3.3 잠금 표). 초안의 복지카드·주간 스케줄은 컬럼을 두지 않았다. 새 테이블이라 `ddl-auto: update` 가 UNIQUE 까지 만든다 — §11.4 수동 조치 불필요 | #285 |
 | 2026-10-30 | 늦게 연결된 보호자도 지난 인사이트를 본다 (§9.4). 초대 코드 수락(G-04)이 `child` 를 잠근 채 그 아이의 승인된 인사이트 권한(`sharing_history`, `GUARDIAN`)을 열고, 다시 연결이면 거뒀던 행을 되살린다(`read_at` 유지). 권한을 만드는 쪽이 Gate 2 승인과 수락 두 곳이 됐고 둘 다 `child` 를 먼저 잠근다(§3.3 잠금 표). 보호자 목록(G-35)은 승인 기록의 `reviewed_at` 순이다. 이미 늦게 연결돼 글이 빠진 보호자는 메우지 않는다(실사용자 없음). 컬럼·제약 변경 없음, §11.4 수동 조치 불필요 | #287 |
+| 2026-10-30 | 기관 아동 타임라인(O-14, `GET /institutions/me/children/{childId}/timeline`)이 §9.2 조인을 쓴다 — 요청한 기관의 승인본만, 본문은 `child_context.content`. 화면 값 표에서 `recordType` · `validation` · `version` 을 뺐다. "다른 기관 담당자가 `child_context` 타임라인에서 읽는다"는 설명(§8 그림, §9.2)을 "승인한 기관 담당자 · 보호자가 읽고, 다른 기관은 인사이트로만"으로 고쳤다. 컬럼·제약 변경 없음, §11.4 수동 조치 불필요 | #292 |

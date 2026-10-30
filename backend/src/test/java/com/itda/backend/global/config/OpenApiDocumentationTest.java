@@ -232,6 +232,25 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(detailSchema + ".properties.readAt.format").value("date-time"));
 	}
 
+	/** 기관 아동 기록 타임라인(O-14). 우리 기관 명부의 아이만이라 404 가 명세에 드러나야 한다 (#292). */
+	@Test
+	void organizationTimelineIsDocumented() throws Exception {
+		String path = "$.paths['/api/v1/institutions/me/children/{childId}/timeline']";
+		String schema = "$.components.schemas.OrganizationTimelineEntryResponse";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(path + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(path + ".get.responses.200").exists())
+				.andExpect(jsonPath(path + ".get.responses.403.description").value(containsString("ORGANIZATION_NOT_ASSIGNED")))
+				.andExpect(jsonPath(path + ".get.responses.404.description").value(containsString("CHILD_NOT_FOUND")))
+				.andExpect(jsonPath(schema + ".properties.length()").value(5))
+				.andExpect(jsonPath(schema + ".properties.content").exists())
+				.andExpect(jsonPath(schema + ".properties.edited").exists())
+				.andExpect(jsonPath(schema + ".properties.sourceCount").exists())
+				.andExpect(jsonPath(schema + ".properties.date.format").value("date"));
+	}
+
 	/** 보호자 받은 인사이트(G-35·G-36). 승인 시각 순이라 응답에 승인 시각이 있어야 한다 (#287). */
 	@Test
 	void guardianInsightApisAreDocumented() throws Exception {
