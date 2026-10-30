@@ -74,7 +74,7 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
     result = GRAPH.invoke(state)
 
     if result.get("llm_error"):
-        raise LlmUnavailable(result["llm_error"])
+        raise LlmUnavailable(result["llm_error"], failure=result.get("llm_failure", "unknown"))
 
     # 재료를 받았는데 근거가 남은 문장이 하나도 없다. 빈 요약을 200 으로 돌려주면
     # 교사가 빈 글을 승인하고 일지는 반영된 것처럼 닫힌다. BE 도 빈 claims 를

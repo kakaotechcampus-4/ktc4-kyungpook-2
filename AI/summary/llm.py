@@ -42,7 +42,15 @@ class NoGroundedClaims(LlmUnavailable):
 
 
 class LlmError(RuntimeError):
-    """Luna 호출 또는 응답 해석이 실패했을 때."""
+    """Luna 호출 또는 응답 해석이 실패했을 때.
+
+    kind 는 실패 종류다 (common/errors.py FAILURE_KINDS). 503 기록에 실려
+    "빈 응답" 과 "타임아웃" 을 따로 셀 수 있게 한다.
+    """
+
+    def __init__(self, message: str, kind: str = "unknown"):
+        super().__init__(message)
+        self.kind = kind
 
 
 
@@ -59,7 +67,7 @@ def _endpoint() -> tuple[str, str]:
     url = os.environ.get("LUNA_API_URL")
     key = os.environ.get("LUNA_API_KEY")
     if not (url and key):
-        raise LlmError("LUNA_API_URL / LUNA_API_KEY 가 설정되지 않았습니다")
+        raise LlmError("LUNA_API_URL / LUNA_API_KEY 가 설정되지 않았습니다", "not_configured")
     if not url.rstrip("/").endswith(LUNA_CHAT_PATH):
         url = url.rstrip("/") + LUNA_CHAT_PATH
     return url, key
@@ -71,10 +79,12 @@ def _extract_text(payload: dict) -> str:
         content = payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         keys = list(payload)[:10] if isinstance(payload, dict) else type(payload)
-        raise LlmError(f"응답 형태가 예상과 다릅니다. 최상위 키: {keys}") from exc
+        raise LlmError(f"응답 형태가 예상과 다릅니다. 최상위 키: {keys}", "bad_response") from exc
 
     if not isinstance(content, str):
-        raise LlmError(f"content 가 문자열이 아닙니다: {type(content)}")
+        raise LlmError(f"content 가 문자열이 아닙니다: {type(content)}", "bad_response")
+    if not content.strip():
+        raise LlmError("빈 응답 (content 가 비어 있음)", "empty_response")
     return content
 
 
@@ -92,11 +102,11 @@ def _parse_json_block(text: str) -> dict:
 
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
-        raise LlmError(f"응답에서 JSON 을 찾지 못했습니다: {text[:200]}")
+        raise LlmError(f"응답에서 JSON 을 찾지 못했습니다: {text[:200]}", "bad_json")
     try:
         return json.loads(match.group(0))
     except json.JSONDecodeError as exc:
-        raise LlmError(f"JSON 파싱 실패: {text[:200]}") from exc
+        raise LlmError(f"JSON 파싱 실패: {text[:200]}", "bad_json") from exc
 
 
 def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResult:
@@ -124,14 +134,21 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
             timeout=timeout,
         )
         response.raise_for_status()
+    except requests.Timeout as exc:
+        raise LlmError(f"Luna 제한시간 초과 ({timeout}s): {exc}", "timeout") from exc
     except requests.RequestException as exc:
-        raise LlmError(f"Luna 호출 실패: {exc}") from exc
+        raise LlmError(f"Luna 호출 실패: {exc}", "http_error") from exc
 
-    payload = response.json()
-    return LlmResult(
-        data=_parse_json_block(_extract_text(payload)),
-        usage=payload.get("usage") or {},
-    )
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise LlmError(f"응답 본문이 JSON 이 아닙니다: {response.text[:200]}", "bad_json") from exc
+
+    data = _parse_json_block(_extract_text(payload))
+    # Luna 가 가끔 {} 만 돌려준다 (2026-10-28 실데이터 v1). 형식은 맞지만 내용이 없다.
+    if not data:
+        raise LlmError("빈 응답 ({})", "empty_response")
+    return LlmResult(data=data, usage=payload.get("usage") or {})
 
 
 def locate_quote(content: str, quote: str) -> dict | None:

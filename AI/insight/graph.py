@@ -43,7 +43,8 @@ def run_insight(payload: InsightInput) -> InsightOutput:
     result = GRAPH.invoke(payload.model_dump())
 
     if result.get("llm_error"):
-        raise LlmUnavailable(result.get("llm_error") or "Luna 호출 실패")
+        raise LlmUnavailable(result.get("llm_error") or "Luna 호출 실패",
+                             failure=result.get("llm_failure", "unknown"))
 
     return InsightOutput(
         child_id=payload.child_id,
