@@ -399,6 +399,8 @@ export const FILE_PROGRESS: FileProgress[] = [
       [2, 1, "waiting"],
       [2, 2, "running"],
       [1, 4, "waiting"],
+      // 매칭 확인에서 "우리 기관 아이 아님"으로 뺀 기록 (BE EXCLUDED)
+      [1, 1, "done"],
     ]),
   },
   {
