@@ -35,9 +35,13 @@ const ONBOARDING = ["/parent/invite", "/parent/consent"];
 /** 학부모 화면은 SMS 링크로 들어오는 모바일 브라우저가 주 환경이다. */
 export function ParentShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  // 보호자 입구(guard) 안에서만 값이 있다. 온보딩 화면이나 아직 입구를 지나지 않았으면 undefined — 점이 없다
+  // 보호자 입구(guard) 안에서만 값이 있다. 온보딩 화면이나 아직 입구를 지나지 않았으면 undefined, 준비 중 빌드면
+  // 고른 아이가 없다(selectedId null) — 둘 다 점이 없다. 리포트 탭 점은 고른 아이 기준이다
   const guard = useRouteLoaderData<typeof guardLoader>("routes/parent/guard");
-  const unreadReport = guard && "hasUnreadInsight" in guard ? guard.hasUnreadInsight : false;
+  const unreadReport =
+    guard && "unreadInsightChildIds" in guard && guard.selectedId
+      ? guard.unreadInsightChildIds.includes(guard.selectedId)
+      : false;
   const isOnboarding = ONBOARDING.includes(pathname);
 
   return (
