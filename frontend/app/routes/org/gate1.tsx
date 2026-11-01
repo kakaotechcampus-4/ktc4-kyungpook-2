@@ -20,7 +20,7 @@ export async function clientLoader() {
   return { pending, held };
 }
 
-const TITLE = "1차 검토 · 요약 확인";
+const TITLE = "요약 검토";
 const DESCRIPTION = "AI 요약이 기록과 맞는지 문장마다 확인하고 승인해요";
 
 type Tab = "pending" | "hold";

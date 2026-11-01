@@ -58,20 +58,20 @@ export default function DashboardPage() {
       ) : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <QueueCard
-            title="확인이 필요한 기록"
+            title="매칭 확인"
             count={matchingCount}
             href="/queue/matching"
             description="AI가 아이를 확정하지 못함"
           />
           <QueueCard
-            title="수정 요청"
+            title="검증 수정 요청"
             count={blockedCount}
             href="/queue/reinput"
             tone="block"
             description="BLOCK 판정 — 원본 수정 필요"
           />
           <QueueCard
-            title="1차 검토 대기"
+            title="요약 검토 대기"
             count={gate1Count}
             href="/gate1"
             tone="human"

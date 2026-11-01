@@ -63,17 +63,17 @@ function nav(counts: OrgShellCounts): NavSection[] {
         { href: "/upload", label: "기록 등록", icon: ClipboardPlus }, // 기록 업로드
         {
           href: "/queue/matching",
-          label: "확인이 필요한 기록",
+          label: "매칭 확인",
           icon: ClipboardCheck,
           badge: counts.matching,
         }, // 확인 필요 큐
         {
           href: "/queue/reinput",
-          label: "수정 요청",
+          label: "검증 수정 요청",
           icon: RotateCcw,
           badge: counts.reinput,
         }, // 재입력 요청 큐
-        { href: "/gate1", label: "1차 검토", icon: ListChecks, badge: counts.gate1 }, // Gate 1 요약 확인
+        { href: "/gate1", label: "요약 검토", icon: ListChecks, badge: counts.gate1 }, // Gate 1 요약 확인
       ],
     },
     {

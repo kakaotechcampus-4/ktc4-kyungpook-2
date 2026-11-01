@@ -65,7 +65,7 @@ function isMoving(board: SummaryGroupBoard): boolean {
   );
 }
 
-/** 요약이 돌고 있는 묶음 수. 줄면 요약이 끝나 1차 검토로 간 것이다 */
+/** 요약이 돌고 있는 묶음 수. 줄면 요약이 끝나 요약 검토로 간 것이다 */
 function inFlight(board: SummaryGroupBoard): number {
   return board.groups.filter((g) => g.summaryRequested || g.counts.summarizing > 0).length;
 }
@@ -109,7 +109,7 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
         const next = await getSummaryGroups();
         const finished = inFlight(next) < inFlight(boardRef.current);
         setBoard(next);
-        // 요약이 끝나 1차 검토로 갔다 — 위쪽 칸과 사이드바 배지도 새로 받는다
+        // 요약이 끝나 요약 검토로 갔다 — 위쪽 칸과 사이드바 배지도 새로 받는다
         if (finished) revalidator.revalidate();
       } catch {
         // 다음 차례에 다시 묻는다
@@ -222,12 +222,12 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
           <span className="font-bold">아직 아이가 안 정해진 기록</span>
           {inProgress > 0 ? (
             <span>
-              아이 찾는 중 <b className="font-bold">{inProgress}건</b>
+              매칭 중 <b className="font-bold">{inProgress}건</b>
             </span>
           ) : null}
           {needsReview > 0 ? (
             <Link to="/queue/matching" className="font-semibold text-accentink underline">
-              확인 필요 {needsReview}건 →
+              매칭 확인 {needsReview}건 →
             </Link>
           ) : null}
         </p>
@@ -237,7 +237,7 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
         <p className="rounded border border-dashed border-line2 px-4 py-10 text-center text-[15px] text-muted">
           요약을 기다리는 기록이 없어요. 요약이 끝난 기록은{" "}
           <Link to="/gate1" className="text-accentink underline">
-            1차 검토
+            요약 검토
           </Link>
           에 있어요.
         </p>
@@ -358,7 +358,7 @@ function GroupRow({
 
   const chips: { text: string; cls: string; href?: string }[] = [];
   if (c.needsFix) {
-    chips.push({ text: `수정 요청 ${c.needsFix}`, cls: "bg-blocksoft text-block", href: "/queue/reinput" });
+    chips.push({ text: `검증 수정 요청 ${c.needsFix}`, cls: "bg-blocksoft text-block", href: "/queue/reinput" });
   }
   if (c.ready) chips.push({ text: `요약 대기 ${c.ready}`, cls: "bg-humansoft text-human" });
   if (c.validating) chips.push({ text: `검증 중 ${c.validating}`, cls: "bg-surface2 text-ink2" });
@@ -370,13 +370,13 @@ function GroupRow({
     hint =
       g.waitingCount > 0
         ? `요약 요청됨 · 같은 날 기록 ${g.waitingCount}건 처리 뒤 시작`
-        : "요약 중 · 끝나면 1차 검토로 옮겨져요";
+        : "요약 중 · 끝나면 요약 검토로 옮겨져요";
   } else if (mode === "weak") hint = "지금 요약해도 돼요. 고친 기록은 다음 요약에 들어가요";
-  else if (g.status === "needs_fix") hint = "수정 요청을 처리하면 요약할 수 있어요";
+  else if (g.status === "needs_fix") hint = "검증 수정 요청을 처리하면 요약할 수 있어요";
   else if (g.status === "validating") hint = "검증이 끝나면 요약할 수 있어요";
   else if (g.status === "admin_check") hint = "선생님이 할 일은 없어요";
   if (g.previousSummaryInReview) {
-    hint = [hint, "1차 검토에 이전 요약이 있어 다시 요약하면 새 판으로 바뀌어요"]
+    hint = [hint, "요약 검토에 이전 요약이 있어 다시 요약하면 새 판으로 바뀌어요"]
       .filter(Boolean)
       .join(" · ");
   }
