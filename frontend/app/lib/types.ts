@@ -312,12 +312,12 @@ export interface EntryProgress {
   id: string;
   /**
    * PIPELINE_STAGES 의 인덱스.
-   * 1차 검토까지 승인돼 파이프라인을 빠져나간 건은 PIPELINE_STAGES.length 이고 state 는 done 이다.
+   * 요약 검토까지 승인돼 파이프라인을 빠져나간 건은 PIPELINE_STAGES.length 이고 state 는 done 이다.
    */
   stageIndex: number;
   /**
    * running → 자동으로 진행 중
-   * waiting → 사람이 골라야 진행 (매칭 확인 · 수정 요청 · 1차 검토)
+   * waiting → 사람이 골라야 진행 (매칭 확인 · 검증 수정 요청 · 요약 검토)
    * failed  → 시스템 오류. 재시도하면 된다
    */
   state: "running" | "waiting" | "failed" | "done";
@@ -400,7 +400,7 @@ export type SummaryGroupStatus = "needs_fix" | "ready" | "summarizing" | "valida
 
 /**
  * 오늘의 업무 묶음 카드 한 장 = 아이 한 명의 하루치 기록 (BE SummaryGroupCard).
- * 요약 전 묶음만 온다 — 요약이 만들어지면 1차 검토(O-30)로 옮겨 가고 카드는 빠진다.
+ * 요약 전 묶음만 온다 — 요약이 만들어지면 요약 검토(O-30)로 옮겨 가고 카드는 빠진다.
  */
 export interface SummaryGroup {
   /** BE 는 숫자. lib/api.ts 가 문자열로 바꾼다 */
@@ -424,7 +424,7 @@ export interface SummaryGroup {
   summaryRequested: boolean;
   /** 눌렀지만 시작 전일 때, 요약이 기다리는 같은 날 매칭·검증 중 기록 수 */
   waitingCount: number;
-  /** 이전 요약이 1차 검토에 있음 — 다시 요약하면 그 요약이 새 판으로 바뀐다 */
+  /** 이전 요약이 요약 검토에 있음 — 다시 요약하면 그 요약이 새 판으로 바뀐다 */
   previousSummaryInReview: boolean;
 }
 
@@ -446,7 +446,7 @@ export type Gate1Card =
 
 /** Child Context 타임라인 한 칸 */
 /**
- * 기관 아동 상세의 기록 타임라인 한 건 (O-14) — 우리 기관이 1차 검토에서 승인한 요약 하나.
+ * 기관 아동 상세의 기록 타임라인 한 건 (O-14) — 우리 기관이 요약 검토에서 승인한 요약 하나.
  * 다른 기관 기록은 오지 않는다(기관 사이에는 2차 검토를 지난 인사이트로만 넘어간다). 기록이 없는 날은 항목이 없다 —
  * 추정치로 채우지 않는다. 같은 날 승인본이 여럿이면 따로 온다.
  */
@@ -457,7 +457,7 @@ export interface TimelineEntry {
   date: string;
   /** 담당자가 승인한 최종본 */
   content: string;
-  /** 1차 검토에서 고쳐서 승인했는지 — "선생님 수정" */
+  /** 요약 검토에서 고쳐서 승인했는지 — "선생님 수정" */
   edited: boolean;
   /** 그 요약에 묶인 원본 일지 수 */
   sourceCount: number;
@@ -557,7 +557,7 @@ export interface GuardianInsight {
 }
 
 /**
- * 학부모 홈/타임라인에 뜨는 일지 한 건 (G-20·G-21) — 교사가 1차 검토에서 승인한 요약 하나.
+ * 학부모 홈/타임라인에 뜨는 일지 한 건 (G-20·G-21) — 교사가 요약 검토에서 승인한 요약 하나.
  * 요약은 하루 단위라 시각이 없다. 목록은 content 를 2줄로 자르고, 상세는 전부 보여 준다.
  */
 export interface JournalEntry {

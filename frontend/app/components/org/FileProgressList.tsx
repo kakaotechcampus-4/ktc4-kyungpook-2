@@ -29,11 +29,11 @@ export function useProgressPolling(files: FileProgress[]) {
  * 파일 단위 처리 현황 — "올린 파일이 잘 들어갔나, 아이가 정해졌나".
  *
  * 파일 한 개에 여러 아이 기록이 섞여 있어, 아이가 정해진 기록은 오늘의 업무의 아이별 카드(O-34)로
- * 넘겨준다. 그 뒤 검증 · 요약 · 1차 검토는 거기서 이어진다.
+ * 넘겨준다. 그 뒤 검증 · 요약 · 요약 검토는 거기서 이어진다.
  *
  *   1030_관찰일지.csv                                   기록 4건
  *   [■■■■■■][■■■■■■][■■■■■■]
- *    기록 등록  기록 나누기  아이 찾기
+ *    기록 등록  기록 나누기  매칭
  *   ◉ 아이를 확정하지 못한 기록 1건 · 확인하기
  *   ✓ 기록 3건이 아이별 카드로 넘어갔어요 · 오늘의 업무에서 보기
  *
@@ -115,7 +115,7 @@ function FileRow({ file }: { file: FileProgress }) {
       <StageBars states={fileStageStatesOf(entries)} />
 
       <div className="flex flex-col gap-1 text-[14px]">
-        {finding > 0 ? <span className="text-accentink">아이 찾는 중 {finding}건</span> : null}
+        {finding > 0 ? <span className="text-accentink">매칭 중 {finding}건</span> : null}
 
         {waiting > 0 ? (
           <span className="flex flex-wrap items-center gap-x-1.5 text-human">
@@ -130,9 +130,9 @@ function FileRow({ file }: { file: FileProgress }) {
         {failed > 0 ? (
           <span className="flex flex-wrap items-center gap-x-1.5 text-block">
             <span aria-hidden>✕</span>
-            <b className="font-semibold">아이 찾기 실패 {failed}건</b>
+            <b className="font-semibold">매칭 실패 {failed}건</b>
             <Link to="/queue/matching" className="text-[13px] underline">
-              확인이 필요한 기록에서 고르기
+              매칭 확인에서 고르기
             </Link>
           </span>
         ) : null}

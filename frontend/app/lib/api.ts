@@ -143,7 +143,7 @@ const BE_READY = {
   /** 수정 요청(BLOCK) 큐 조회 · 처리 (O-24, O-25) */
   blockedQueue: true,
   /**
-   * 1차 검토 조회 · 문장 카드 승인 · 보류 · 제거 · 보류 해제 (O-30, O-31, O-33).
+   * 요약 검토 조회 · 문장 카드 승인 · 보류 · 제거 · 보류 해제 (O-30, O-31, O-33).
    * 문장 카드(#231)가 있는 서버여야 한다 — 그 전 서버는 cards 를 조용히 버리고 AI 원문을 승인한다.
    * 요약은 오늘의 업무 묶음 카드의 [요약](summaryGroups)을 눌러야 생긴다.
    */
@@ -359,7 +359,7 @@ export async function rejectLinkRequest(childId: string): Promise<void> {
 }
 
 /**
- * GET /api/v1/institutions/me/children/{childId}/timeline — 우리 기관이 1차 검토에서 승인한 요약, 관찰 날짜 최근 순
+ * GET /api/v1/institutions/me/children/{childId}/timeline — 우리 기관이 요약 검토에서 승인한 요약, 관찰 날짜 최근 순
  * (같은 날은 승인 최근 순). 우리 명부에 없는 아이는 404 CHILD_NOT_FOUND
  */
 export async function getTimeline(childId: string): Promise<TimelineEntry[]> {
@@ -633,7 +633,7 @@ function groupStatusOf(g: SummaryGroup): SummaryGroup["status"] {
 }
 
 /**
- * mock 전용: [요약]을 누른 묶음이 잠시 뒤 요약을 마치고 1차 검토로 옮겨 가는 것을 흉내낸다.
+ * mock 전용: [요약]을 누른 묶음이 잠시 뒤 요약을 마치고 요약 검토로 옮겨 가는 것을 흉내낸다.
  * 요약 대기 기록만 빠지고, 수정 요청 · 검증 중 기록이 남으면 카드는 남는다 (BE 와 같음).
  */
 const summaryRuns = new Map<string, number>();

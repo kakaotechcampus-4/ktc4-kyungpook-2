@@ -16,7 +16,7 @@ export default function ReinputQueuePage() {
   return (
     <>
       <PageHeader
-        title="수정 요청"
+        title="검증 수정 요청"
         description="검증에서 멈춘 기록입니다. 원본을 수정한 뒤 다시 올려주세요"
       />
 

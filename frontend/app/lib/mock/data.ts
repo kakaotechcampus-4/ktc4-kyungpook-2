@@ -370,7 +370,7 @@ const entries = (
 
 /**
  * 업로드한 파일별로, 거기서 나온 기록이 지금 어느 단계에 있는지.
- * 단계 인덱스는 lib/pipeline.ts 의 PIPELINE_STAGES 기준 (0 등록 · 1 매칭 · 2 검증 · 3 요약 · 4 1차 검토).
+ * 단계 인덱스는 lib/pipeline.ts 의 PIPELINE_STAGES 기준 (0 등록 · 1 매칭 · 2 검증 · 3 요약 · 4 요약 검토).
  */
 export const FILE_PROGRESS: FileProgress[] = [
   {
@@ -644,7 +644,7 @@ export const SUMMARY_GROUP_BOARD: SummaryGroupBoard = {
 
 let gate1RunSeq = 0;
 
-/** mock 전용: [요약]을 마친 묶음이 1차 검토에 올리는 요약 한 건 */
+/** mock 전용: [요약]을 마친 묶음이 요약 검토에 올리는 요약 한 건 */
 export function gate1FromRun(group: SummaryGroup): SummaryItem {
   gate1RunSeq += 1;
   return gate1Mock({

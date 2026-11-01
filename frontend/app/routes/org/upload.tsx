@@ -35,7 +35,7 @@ export async function clientLoader() {
 
 /**
  * 업로드는 즉시 응답하고 기록 나누기 · 매칭은 백그라운드에서 돈다. 그래서 등록 버튼은 올리기만 하고 끝난다.
- * 이 화면은 파일별로 "잘 들어갔나, 아이가 정해졌나" 까지 보여주고, 그 뒤(검증 · 요약 · 1차 검토)는
+ * 이 화면은 파일별로 "잘 들어갔나, 아이가 정해졌나" 까지 보여주고, 그 뒤(검증 · 요약 · 요약 검토)는
  * 오늘의 업무의 아이별 카드(O-34)로 넘긴다. [요약]도 거기서 누른다.
  */
 export default function UploadPage() {
@@ -81,7 +81,7 @@ export default function UploadPage() {
     <>
       <PageHeader
         title="기록 등록"
-        description="올린 파일을 기록으로 나누고 아이를 찾아요. 요약은 오늘의 업무에서 아이별로 눌러요"
+        description="올린 파일을 기록으로 나누고 아이와 매칭해요. 요약은 오늘의 업무에서 아이별로 눌러요"
       />
 
       <Card>
@@ -90,7 +90,7 @@ export default function UploadPage() {
               아이는 매칭이 판정하고, 시각은 파일 본문에서 뽑는다. */}
           <p className="text-[14px] text-muted">
             여러 아이의 기록이 한 파일에 섞여 있어도 됩니다. 아이는 자동으로 확인하고, 확신이
-            낮으면 확인이 필요한 기록으로 보냅니다.
+            낮으면 매칭 확인으로 보냅니다.
           </p>
 
           {/* 영역 어디를 눌러도 파일 선택 창이 열리고, 끌어다 놓아도 된다 */}
@@ -227,7 +227,7 @@ export default function UploadPage() {
         <h2 className="mb-1 text-[17px] font-bold">파일별 진행 현황</h2>
         <p className="mb-4 text-[14px] text-muted">
           파일이 잘 들어갔는지, 기록마다 아이가 정해졌는지 보여줍니다. 이 화면을 떠나도 처리는
-          이어집니다. 그 뒤(검증 · 요약 · 1차 검토)는{" "}
+          이어집니다. 그 뒤(검증 · 요약 · 요약 검토)는{" "}
           <Link to="/dashboard" className="text-accentink underline">
             오늘의 업무
           </Link>
