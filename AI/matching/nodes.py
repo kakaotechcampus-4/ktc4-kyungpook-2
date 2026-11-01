@@ -9,6 +9,7 @@
 """
 
 from .config import (
+    CO_MENTION_NEEDS_TWO_NAMES,
     ALLOW_AUTO_ON_HINT_ONLY,
     AUTO_GATE,
     GIVEN_NAME_SCORE,
@@ -358,6 +359,10 @@ def llm_judge(state: MatchingState) -> dict:
     mentioned.update(co_ids)
 
     co_mention = bool(answer.get("co_mention", False))
+    # 코드가 본문에서 서로 다른 이름을 2개 이상 찾았을 때만 받는다 (config 참고).
+    # shortlist 의 co_mention 이 바로 그 "의심" 이다 — 모델은 확인만 한다.
+    if CO_MENTION_NEEDS_TWO_NAMES and not state.get("co_mention"):
+        co_mention = False
 
     # 대등 언급이면 후보를 하나로 좁히면 안 된다.
     # "누가 주인공인지 모르겠다" 가 아니라 "둘 다 나온다" 는 상태라,

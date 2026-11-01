@@ -14,6 +14,7 @@ from difflib import SequenceMatcher
 from .config import (
     FUZZY_MIN_RATIO,
     FUZZY_REQUIRE_PARTICLE,
+    FUZZY_REQUIRE_SAME_SURNAME,
     MATCH_GIVEN_NAME,
     NAME_SUFFIX_CHARS,
     REQUIRE_EXACT_NAME_BOUNDARY,
@@ -122,6 +123,9 @@ def find_fuzzy(
             continue
         # 이미 정확 일치로 잡힌 구간은 건너뛴다
         if any(s <= i < e for s, e in skip):
+            continue
+        # 성이 다른 0.667 은 대개 문장 조각이다 ("수행정도" ↔ "조수정"). config 참고.
+        if FUZZY_REQUIRE_SAME_SURNAME and window[0] != name[0]:
             continue
         ratio = SequenceMatcher(None, name, window).ratio()
         if ratio < min_ratio:
