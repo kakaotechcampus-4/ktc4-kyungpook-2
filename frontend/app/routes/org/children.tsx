@@ -74,7 +74,20 @@ export default function ChildrenPage() {
                 <span className="text-[14px] text-muted tabular-nums">{c.birthDate}</span>
                 <RosterConsentBadge consent={c.consent} className="ml-auto" />
               </div>
-
+              {/* 보호자가 아직 동의 전이면 코드를 잊었거나 10분이 지났을 수 있다 — 다시 보낼 곳으로 바로 잇는다 */}
+              {c.consent === "not_granted" ? (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-3">
+                  <p className="text-[14px] leading-6 text-ink2">
+                    초대 코드를 잊었거나 10분이 지났다면 새 코드를 발급해 다시 보내 주세요.
+                  </p>
+                  <Link
+                    to={`/children/${c.id}#guardians`}
+                    className="text-[14px] font-semibold text-accentink hover:underline"
+                  >
+                    초대 코드 보기 · 발급 ›
+                  </Link>
+                </div>
+              ) : null}
             </Card>
           );
         })}

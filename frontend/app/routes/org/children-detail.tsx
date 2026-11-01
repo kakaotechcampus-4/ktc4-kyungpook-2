@@ -154,7 +154,8 @@ function GuardianSection({
   }
 
   return (
-    <Card className="mb-6">
+    // 아동 목록 · 등록 완료 화면의 "초대 코드 보기 · 발급" 링크가 #guardians 로 바로 내려온다
+    <Card id="guardians" className="mb-6 scroll-mt-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-[17px] font-bold">보호자 초대 코드</h2>
         <button

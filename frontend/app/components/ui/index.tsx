@@ -416,12 +416,15 @@ export function PageHeader({
 export function Card({
   children,
   className = "",
+  id,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** 다른 화면에서 `#id` 로 바로 내려오게 할 때 */
+  id?: string;
 }) {
   return (
-    <section className={`rounded border border-line bg-surface p-5 ${className}`}>
+    <section id={id} className={`rounded border border-line bg-surface p-5 ${className}`}>
       {children}
     </section>
   );

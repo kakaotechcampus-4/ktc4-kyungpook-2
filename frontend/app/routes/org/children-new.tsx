@@ -146,7 +146,11 @@ export default function ChildRegisterPage() {
             <Note>
               코드는 발급 후 <b className="font-semibold">10분</b> 동안 <b className="font-semibold">한 번</b>만
               쓸 수 있습니다. 보호자가 늦게 확인했다면 새 코드를 발급해 다시 보내 주세요. 새로
-              발급해도 이전 코드는 그대로 쓸 수 있어, 보호자마다 따로 보낼 수 있습니다.
+              발급해도 이전 코드는 그대로 쓸 수 있어, 보호자마다 따로 보낼 수 있습니다. 이 화면을 나간 뒤에는{" "}
+              <Link to={`/children/${child.id}#guardians`} className="font-semibold text-accentink hover:underline">
+                {child.name} 상세 화면
+              </Link>
+              에서 코드를 다시 보거나 발급할 수 있습니다.
             </Note>
 
             {formError}
