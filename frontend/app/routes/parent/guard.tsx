@@ -1,8 +1,8 @@
 import { Outlet, redirect, useLoaderData, type ShouldRevalidateFunctionArgs } from "react-router";
 import { ChildProvider } from "@/components/parent/ChildContext";
 import { ParentNotReady } from "@/components/parent/NotReady";
-import { getSession, isOnboarded } from "@/lib/auth";
-import { getGuardianInsights, getParentChildren, isReady, loadIfReady } from "@/lib/api";
+import { getSession } from "@/lib/auth";
+import { getGuardianInsights, getParentChildren, isReady, loadIfReady, restoreParentOnboarded } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 /**
@@ -18,7 +18,8 @@ export async function clientLoader() {
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   if (role !== "parent") return redirect("/parent/invite");
   // 카카오 로그인만 하고 약관·첫 기관 동의를 안 끝낸 사람은 아직 본 화면에 들어올 수 없다.
-  if (!isOnboarded()) return redirect("/parent/invite");
+  // 이 브라우저에 표시가 없어도 서버에 연결된 아이가 있으면 마친 사람이다 (다른 브라우저 · 기기)
+  if (!(await restoreParentOnboarded())) return redirect("/parent/invite");
   // 아이 목록(G-10)을 서버에서 못 받는 빌드면 mock 아이를 띄우지 않는다 — 남의 아이가 보인다
   if (!isReady("guardianChildren")) return { kids: null, selectedId: null, hasUnreadInsight: false };
   const kids = await getParentChildren();
