@@ -67,7 +67,7 @@
  */
 
 import { ApiError } from "@/lib/apiError";
-import { clearSession, csrfHeader } from "@/lib/auth";
+import { clearSession, csrfHeader, isOnboarded, markOnboarded } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
@@ -1128,6 +1128,31 @@ export async function getConsentPreview(
 export async function getParentChildren(): Promise<Child[]> {
   if (mockFor("guardianChildren")) return mock.PARENT_CHILDREN;
   return request("/api/v1/guardians/me/children");
+}
+
+/**
+ * 보호자가 온보딩(약관 · 첫 기관 연결)을 마쳤는지 본다. 이 브라우저에 표시가 없으면 서버에 묻는다.
+ *
+ * 표시(`itda_parent_onboarded`)는 브라우저마다 따로라, 다른 브라우저 · 기기로 들어온 보호자는
+ * 아이 연결과 동의를 마쳤어도 약관 · 초대 코드 화면으로 돌아갔다. 연결된 아이가 한 명이라도 있으면
+ * 첫 기관 동의까지 끝낸 것이라(동의해야 연결된다) 표시를 다시 남기고 마친 것으로 본다.
+ *
+ * - mock 아이 목록은 온보딩과 관계없이 늘 있어 근거가 못 된다. mock 이면 표시만 본다
+ * - 서버가 실패하면 마치지 않은 것으로 본다 — 온보딩 화면을 한 번 더 볼 뿐, 로그인 흐름은 막지 않는다
+ *
+ * 약관 동의를 서버에 저장하게 되면 그 값으로 판단을 바꾼다.
+ */
+export async function restoreParentOnboarded(): Promise<boolean> {
+  if (isOnboarded()) return true;
+  if (mockFor("guardianChildren")) return false;
+  try {
+    const kids = await getParentChildren();
+    if (kids.length === 0) return false;
+    markOnboarded();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

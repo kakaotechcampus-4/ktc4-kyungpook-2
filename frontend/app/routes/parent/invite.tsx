@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
 import { StepProgress } from "@/components/parent/StepProgress";
-import { ApiError, acceptInvitation } from "@/lib/api";
+import { ApiError, acceptInvitation, restoreParentOnboarded } from "@/lib/api";
 import {
   clearInviteCode,
   getSession,
@@ -45,7 +45,8 @@ export async function clientLoader({ request }: { request: Request }) {
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   return {
     role: loggedIn ? role : null,
-    onboarded: role === "parent" && isOnboarded(),
+    // 이 주소로 바로 들어온 보호자도 서버에 아이가 있으면 약관을 건너뛰고 코드 입력부터
+    onboarded: role === "parent" && (await restoreParentOnboarded()),
     savedCode: readInviteCode(),
   };
 }
