@@ -34,6 +34,7 @@ export default [
       route("parent/notifications", "routes/parent/notifications.tsx"),
       route("parent/institution-requests", "routes/parent/institution-requests.tsx"),
       route("parent/settings", "routes/parent/settings.tsx"),
+      route("parent/settings/shares/:institutionId", "routes/parent/settings-shares.tsx"),
       route("parent/care-info", "routes/parent/care-info.tsx"),
       route("parent/consent/manage", "routes/parent/consent-manage.tsx"),
       route("parent/consent/manage/add", "routes/parent/institution-add.tsx"),

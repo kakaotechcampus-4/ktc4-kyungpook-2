@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { Busy, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
@@ -6,6 +6,7 @@ import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { Toggle } from "@/components/parent/Toggle";
 import {
   getInstitutionRequests,
+  getInstitutionShares,
   getParentChildren,
   getParentHome,
   getPendingInstitutionRequests,
@@ -17,21 +18,23 @@ import {
 import { getSession, isAuthMock } from "@/lib/auth";
 import { ME } from "@/lib/mock/data";
 import { readSelectedChildId } from "@/lib/selectedChild";
-import type { ConsentState } from "@/lib/types";
+import type { ConsentState, InstitutionShares } from "@/lib/types";
 
 export async function clientLoader() {
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  const [{ child }, requests, pendingRequests, session] = await Promise.all([
+  const [{ child }, requests, pendingRequests, shares, session] = await Promise.all([
     getParentHome(childId),
     // 기관 요청사항(준비물)은 서버에 생기기 전까지 null — mock 개수를 진짜 아이 설정에 띄우지 않는다
     loadIfReady("institutionRequests", () => getInstitutionRequests(childId)),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
+    // 기관 줄의 "받은 리포트 N편". 서버에 없으면 null — 줄에 아무것도 붙이지 않는다
+    loadIfReady("institutionShares", () => getInstitutionShares(childId)),
     getSession(),
   ]);
   // 실연동에서는 /auth/me 의 카카오 닉네임. 동의를 거부해 없으면 이름을 빼고 "보호자"만 쓴다
   const myName = isAuthMock() ? ME.name : (session.name ?? null);
-  return { child, requests, pendingRequests, myName };
+  return { child, requests, pendingRequests, shares, myName };
 }
 
 export default function ParentSettingsPage() {
@@ -45,10 +48,18 @@ function ParentSettingsContent({
   child,
   requests,
   pendingRequests,
+  shares,
   myName,
 }: Awaited<ReturnType<typeof clientLoader>>) {
   const guardianLabel = myName ? `보호자 ${myName}` : "보호자";
   const [institutions, setInstitutions] = useState(child.institutions);
+  // 같은 아이에서 다시 불러오면(권한 끄기 뒤 등) 서버 목록으로 맞춘다. 처음 값만 잡아 두면 명부에서 빠진 기관이
+  // 토글과 함께 남아 아래 "지금은 연결되지 않은 기관" 과 겹친다. 끄기 직후의 즉시 표시(setLocal)는 이 값이 오면 덮인다
+  useEffect(() => setInstitutions(child.institutions), [child.institutions]);
+  const sharesOf = new Map((shares ?? []).map((s) => [s.institution.id, s]));
+  const pastShares = (shares ?? []).filter(
+    (s) => !institutions.some((i) => i.institution.id === s.institution.id),
+  );
   const [confirming, setConfirming] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
@@ -79,6 +90,8 @@ function ParentSettingsContent({
       const result = await updateConsent(child.id, instId, { action: "revoke" });
       setLocal(instId, result.consent);
       setConfirming(null);
+      // 끈 기관(과 그 기관 기록이 들어간 리포트를 받은 다른 기관)의 "가려짐" 개수를 바로 고친다
+      revalidator.revalidate();
     } catch {
       setRevokeError("권한을 끄지 못했어요. 새로고침한 뒤 다시 시도해 주세요.");
     } finally {
@@ -177,6 +190,7 @@ function ParentSettingsContent({
                   <span className="mt-0.5 block text-[13px] text-muted">
                     {on ? "권한 켜짐" : "권한 꺼짐"}
                   </span>
+                  <SharesLink shares={sharesOf.get(institution.id)} />
                 </span>
                 <Toggle
                   on={on}
@@ -205,6 +219,26 @@ function ParentSettingsContent({
             </div>
           ))}
         </div>
+        {pastShares.length > 0 ? (
+          <div className="mt-4">
+            <h3 className="mb-2 text-[14px] font-bold text-ink2">지금은 연결되지 않은 기관</h3>
+            {/* 명부에서 빠져 권한을 켜고 끌 수 없는 기관. 받은 리포트가 가려졌는지는 볼 수 있어야 한다 */}
+            <div className="flex flex-col gap-2.5">
+              {pastShares.map((s) => (
+                <div
+                  key={`past-${s.institution.id}`}
+                  className="flex items-center gap-3 rounded-2xl border border-line px-4 py-3"
+                >
+                  <InstitutionIcon type={s.institution.type} />
+                  <span className="min-w-0 flex-1">
+                    <InstitutionChip institution={s.institution} withName />
+                    <SharesLink shares={s} />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <Link
           to="/parent/consent/manage/add"
           className="tap mt-2.5 flex items-center justify-center gap-2 rounded-2xl border border-dashed border-line2 px-4 text-[15px] font-semibold text-accentink hover:border-accent"
@@ -336,5 +370,19 @@ function ParentSettingsContent({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** 기관 줄의 "받은 리포트 N편 · 가려짐 K ›". 받은 것이 없으면 아무것도 붙이지 않는다 */
+function SharesLink({ shares }: { shares: InstitutionShares | undefined }) {
+  if (!shares || shares.shares.length === 0) return null;
+  const hidden = shares.shares.filter((s) => !s.visible).length;
+  return (
+    <Link
+      to={`/parent/settings/shares/${encodeURIComponent(shares.institution.id)}`}
+      className="mt-1 block w-fit text-[13px] font-semibold text-accentink"
+    >
+      받은 리포트 {shares.shares.length}편{hidden > 0 ? ` · 가려짐 ${hidden}` : ""} ›
+    </Link>
   );
 }

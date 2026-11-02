@@ -29,6 +29,7 @@ import com.itda.backend.service.child.ChildService;
 import com.itda.backend.service.child.GuardianChildQueryService;
 import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
+import com.itda.backend.service.sharing.GuardianInstitutionShareService;
 
 /**
  * 잘못된 요청(4xx) 로그에 사용자가 보낸 값이 남지 않는지 실제 출력으로 확인한다.
@@ -60,6 +61,9 @@ class GlobalExceptionHandlerLoggingTest {
 
     @MockitoBean
     private GuardianChildQueryService guardianChildQueryService;
+
+    @MockitoBean
+    private GuardianInstitutionShareService guardianInstitutionShareService;
 
     @MockitoBean
     private JwtProvider jwtProvider;

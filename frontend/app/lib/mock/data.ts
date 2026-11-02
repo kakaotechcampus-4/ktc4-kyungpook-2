@@ -10,6 +10,7 @@ import type {
   Insight,
   Institution,
   InstitutionRequestItem,
+  InstitutionShares,
   JournalEntry,
   LiveInvitation,
   MatchingItem,
@@ -839,6 +840,35 @@ export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
   ],
   child_2044: [
     { id: "pa_04", kind: "insight", at: "3일 전", text: "10월 4주차 리포트가 도착했어요", insightId: "gi_04" },
+  ],
+};
+
+/**
+ * 보호자 기관 공유 내역 (G-45). 김OO 기준 — 센터는 지금 보는 중, 활동지원사는 끈 뒤 가려짐 하나, 미술학원은 명부에서
+ * 빠진 기관이라 설정의 "지금은 연결되지 않은 기관" 에 보인다. insightId 는 GUARDIAN_INSIGHTS 와 맞춰 상세로 이어진다
+ */
+export const INSTITUTION_SHARES: Record<string, InstitutionShares[]> = {
+  child_1023: [
+    {
+      institution: CENTER,
+      shares: [
+        { insightId: "gi_01", period: "2026년 10월 4주차", from: SCHOOL, grantedAt: "2026-10-29T17:40:00", visible: true, hiddenAt: null },
+        { insightId: "gi_03", period: "2026년 10월 3주차", from: SCHOOL, grantedAt: "2026-10-22T17:10:00", visible: true, hiddenAt: null },
+      ],
+    },
+    {
+      institution: ASSISTANT,
+      shares: [
+        { insightId: "gi_02", period: "2026년 10월 4주차", from: SCHOOL, grantedAt: "2026-10-29T17:20:00", visible: true, hiddenAt: null },
+        { insightId: "gi_03", period: "2026년 10월 3주차", from: SCHOOL, grantedAt: "2026-10-22T17:10:00", visible: false, hiddenAt: "2026-10-30T09:15:00" },
+      ],
+    },
+    {
+      institution: ART_ACADEMY,
+      shares: [
+        { insightId: "gi_03", period: "2026년 10월 3주차", from: SCHOOL, grantedAt: "2026-10-22T17:10:00", visible: false, hiddenAt: null },
+      ],
+    },
   ],
 };
 
