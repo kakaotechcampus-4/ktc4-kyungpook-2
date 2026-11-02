@@ -258,7 +258,7 @@ interface GuardianInsight {
   period: string;             // "2026년 8월 3주차" — 어느 주의 이야기인지
   content: string;            // 교사·보호자가 읽을 한두 문장
   from: Institution | null;   // Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null → "기관 정보 없음"
-  sharedWith: Institution[];  // 지금 이 글을 볼 수 있는 다른 기관
+  sharedWith: Institution[];  // 지금 이 글을 볼 수 있는 다른 기관, 이름순. 기관 수신함 · 공유 내역(G-45)과 같은 판정
   approvedAt: string;         // 승인 시각 (ISO). 모든 보호자에게 같다
   readAt: string | null;      // 처음 열어 본 시각 (ISO). null 이면 "새 글"
 }
