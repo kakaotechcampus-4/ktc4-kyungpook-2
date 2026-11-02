@@ -59,7 +59,7 @@ export function InviteCodeCard({
           <button
             type="button"
             onClick={() => copy("code")}
-            className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white"
+            className="tap rounded bg-ink px-4 text-[15px] font-semibold text-paper"
           >
             {copied === "code" ? "복사됨" : "코드 복사"}
           </button>

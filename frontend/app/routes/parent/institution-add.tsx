@@ -72,7 +72,7 @@ function InstitutionAddPage() {
         </p>
         <button
           onClick={() => navigate("/parent/settings")}
-          className="tap h-14 w-full rounded-2xl bg-accent text-[16px] font-bold text-white hover:bg-accentink"
+          className="tap h-14 w-full rounded-2xl bg-ink text-[16px] font-bold text-paper hover:brightness-110"
         >
           설정으로 돌아가기
         </button>
@@ -112,7 +112,7 @@ function InstitutionAddPage() {
           <button
             disabled={pending}
             onClick={request}
-            className="tap h-14 flex-1 rounded-2xl bg-accent text-[16px] font-bold text-white hover:bg-accentink disabled:opacity-50"
+            className="tap h-14 flex-1 rounded-2xl bg-ink text-[16px] font-bold text-paper hover:brightness-110 disabled:opacity-50"
           >
             {pending ? "요청 중…" : "연결 요청 보내기"}
           </button>
@@ -145,7 +145,7 @@ function InstitutionAddPage() {
         ) : null}
         <button
           disabled={pending}
-          className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:opacity-50"
+          className="tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:opacity-50"
         >
           {pending ? "찾는 중…" : "다음"}
         </button>

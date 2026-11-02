@@ -49,7 +49,7 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
         <header className="flex items-center gap-2 border-b border-line px-4 py-3">
           <span
             aria-hidden
-            className="flex size-7 items-center justify-center rounded bg-accent text-[13px] font-bold text-white"
+            className="flex size-7 items-center justify-center rounded bg-ink text-[13px] font-bold text-paper"
           >
             잇
           </span>
@@ -87,7 +87,7 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
                     <>
                       <span
                         aria-hidden
-                        className="absolute -right-1 -top-0.5 size-2.5 rounded-full bg-human ring-2 ring-surface"
+                        className="absolute -right-1 -top-0.5 size-2.5 rounded-full bg-mark ring-2 ring-surface"
                       />
                       <span className="sr-only">안 본 리포트 있음</span>
                     </>

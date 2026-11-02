@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { HelpTip } from "@/components/ui/HelpTip";
 import { formatInviteCode } from "@/lib/invite";
 import type { MyInstitution } from "@/lib/types";
 
@@ -19,21 +20,21 @@ export function InstitutionCodeCard({ institution }: { institution: MyInstitutio
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-3 rounded border border-accent/40 bg-accentsoft p-4">
-      <div className="min-w-0 flex-1">
-        <p className="mb-1 text-[13px] font-semibold tracking-wider text-muted uppercase">우리 기관 코드</p>
-        <p className="text-[14px] leading-6 text-ink2">
-          이미 다른 기관에 다니는 아이는 새로 등록하지 말고 보호자에게 이 코드를 알려 주세요. 보호자가 연결을
-          요청하면 아래에서 수락합니다.
-        </p>
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-4 rounded-[22px] border border-accent/25 bg-accentsoft p-6">
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        <p className="text-[17px] font-extrabold text-accentink">우리 기관 코드</p>
+        <HelpTip label="우리 기관 코드" align="left">
+          이미 다른 기관에 다니는 아이는 새로 등록하지 말고 보호자에게 이 코드를 알려 주세요.
+          보호자가 연결을 요청하면 아래 "연결 요청"에서 수락합니다. 초대 코드와 달리 만료가 없습니다.
+        </HelpTip>
       </div>
-      <p className="font-mono text-2xl font-bold tracking-[0.2em] text-accentink">
+      <p className="text-[26px] font-extrabold tracking-[0.18em] text-accentink tabular-nums">
         {formatInviteCode(institution.code)}
       </p>
       <button
         type="button"
         onClick={copy}
-        className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink"
+        className="tap rounded-full bg-ink px-5 text-[15px] font-bold text-paper hover:brightness-110"
       >
         {copied ? "복사됨" : "코드 복사"}
       </button>

@@ -81,7 +81,7 @@ function InstitutionRequestsPage() {
               {!confirmed ? (
                 <button
                   onClick={() => confirm(req.id)}
-                  className="tap h-12 w-full rounded-2xl bg-accent text-[15px] font-bold text-white hover:bg-accentink"
+                  className="tap h-12 w-full rounded-2xl bg-ink text-[15px] font-bold text-paper hover:brightness-110"
                 >
                   확인했어요
                 </button>

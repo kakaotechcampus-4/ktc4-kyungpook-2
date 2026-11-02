@@ -89,7 +89,7 @@ function TimelinePage() {
           onClick={() => setFilter("all")}
           className={`tap shrink-0 rounded-2xl px-4 text-[14px] font-semibold ${
             filter === "all"
-              ? "bg-accent text-white"
+              ? "bg-ink text-paper"
               : "border border-line2 text-ink2 hover:bg-surface2"
           }`}
         >
@@ -101,7 +101,7 @@ function TimelinePage() {
             onClick={() => setFilter(institution.id)}
             className={`tap shrink-0 rounded-2xl px-4 text-[14px] font-semibold ${
               filter === institution.id
-                ? "bg-accent text-white"
+                ? "bg-ink text-paper"
                 : "border border-line2 text-ink2 hover:bg-surface2"
             }`}
           >

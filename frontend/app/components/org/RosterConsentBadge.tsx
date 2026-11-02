@@ -10,5 +10,5 @@ const LABEL: Record<ConsentState, { text: string; cls: string }> = {
 /** 아동 목록 · 아동 상세의 우리 기관 동의 배지 — 두 화면이 같은 문구 · 색을 쓴다 */
 export function RosterConsentBadge({ consent, className = "" }: { consent: ConsentState; className?: string }) {
   const { text, cls } = LABEL[consent];
-  return <span className={`rounded px-2 py-0.5 text-[13px] font-semibold ${cls} ${className}`}>{text}</span>;
+  return <span className={`shrink-0 rounded-full px-3 py-1 text-[13px] font-bold ${cls} ${className}`}>{text}</span>;
 }

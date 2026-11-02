@@ -71,7 +71,7 @@ export function ParentPageHeader({
         {alert ? (
           <span
             aria-hidden
-            className="absolute right-1 top-1 size-2.5 rounded-full bg-human ring-2 ring-surface"
+            className="absolute right-1 top-1 size-2.5 rounded-full bg-mark ring-2 ring-surface"
           />
         ) : null}
       </Link>
