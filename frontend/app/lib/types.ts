@@ -500,8 +500,8 @@ export interface InboxItem {
   id: string;
   childId: string;
   childName: string;
-  /** 우리 기관이 붙인 관리번호. 이름이 같은 아이를 가른다 */
-  externalId: string;
+  /** 우리 기관이 붙인 관리번호. 이름이 같은 아이를 가른다. 관리번호 필수 전에 등록된 아이는 없다(null) */
+  externalId: string | null;
   /** 이 글을 Gate 2 에서 승인한 기관 */
   from: Institution;
   /** "2026년 8월 3주차" 같은 문구 */
