@@ -52,9 +52,12 @@ public interface SharingHistoryRepository extends JpaRepository<SharingHistory, 
      */
     List<SharingHistory> findByChildIdAndReceiverType(Long childId, ReceiverType receiverType);
 
-    /** 그 인사이트에 한 번이라도 생긴 기관 권한. 거둔 것도 온다 — 보호자 화면은 {@code isActive} 로 거른다. */
-    List<SharingHistory> findByInsightResultIdAndReceiverType(
-            Long insightResultId, ReceiverType receiverType);
+    /**
+     * 그 인사이트들에 한 번이라도 생긴 그 종류의 권한. 거둔 것도 온다 — 보호자 리포트의 "함께 보는 기관" 은 받는 기관이
+     * 지금 읽을 수 있는지를 부르는 쪽이 판정한다 (#319).
+     */
+    List<SharingHistory> findByInsightResultIdInAndReceiverType(
+            Collection<Long> insightResultIds, ReceiverType receiverType);
 
     /**
      * 그 권한 줄의 아이만. 열람은 {@code child} 행을 먼저 잠그는데, 잠글 아이를 알려고 권한 엔티티를 미리 읽으면
