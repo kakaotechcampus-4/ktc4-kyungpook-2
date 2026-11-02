@@ -3,14 +3,13 @@ import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import {
   Check,
   ChevronRight,
-  LoaderCircle,
   Pencil,
   Plus,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
-import { Card, ConfirmDialog, EmptyState, PageHeader } from "@/components/ui";
+import { Card, ConfirmDialog, EmptyState, PageHeader, Spinner } from "@/components/ui";
 import { ApiError, decideGate1, getGate1Queue, isReady, reopenGate1 } from "@/lib/api";
 import type { Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
 
@@ -362,7 +361,7 @@ function PendingItem({
           role="status"
           className="flex items-center gap-2.5 rounded bg-accentsoft px-3.5 py-3 text-accentink"
         >
-          <LoaderCircle aria-hidden size={18} strokeWidth={1.8} className="shrink-0" />
+          <Spinner size={18} />
           <p className="text-[14px] leading-6">
             <b className="font-bold">새 기록을 반영하는 중이에요.</b> 요약이 곧 바뀌어서 지금은
             고치거나 승인할 수 없어요.
@@ -739,7 +738,7 @@ function NoContentItem({
           role="status"
           className="flex items-center gap-2.5 rounded bg-accentsoft px-3.5 py-3 text-accentink"
         >
-          <LoaderCircle aria-hidden size={18} strokeWidth={1.8} className="shrink-0" />
+          <Spinner size={18} />
           <p className="text-[14px] leading-6">
             <b className="font-bold">새 기록을 반영하는 중이에요.</b> 결과가 곧 바뀌어서 지금은
             확인하거나 되돌릴 수 없어요.

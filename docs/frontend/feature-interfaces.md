@@ -59,7 +59,7 @@ mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하�
 아직 없는 API 때문에 대시보드 같은 화면이 통째로 에러가 나지 않습니다.
 백엔드가 기능을 열면 그 키만 `true`로 바꾸고 다시 빌드합니다. 목록과 그 처리 버튼은
 같은 키로 묶여 있어 함께 켜집니다. `VITE_USE_MOCK=true`면 표와 상관없이 전부 mock 입니다.
-보호자 일지(`guardianJournal`, 켬), 받은 인사이트(`guardianInsights`, 켬 — 리포트 탭 · 상세 · 탭 점)은 따로 켭니다. 활동 이력(`activityHistory`)은 화면과 함께 지웠습니다(10/30). 예전의 케어 리포트(`careReport`)는 화면과 함께 지웠습니다(#289).
+보호자 일지(`guardianJournal`, 켬), 받은 인사이트(`guardianInsights`, 켬 — 리포트 탭 · 상세 · 탭 점)은 따로 켭니다. 활동 이력(`activityHistory`)은 화면과 함께 지웠습니다(10/30) — 그 자리는 기관 공유 내역(`institutionShares`, 켬 — 설정 기관 줄 개수 · P-05)이 맡습니다(#317). 예전의 케어 리포트(`careReport`)는 화면과 함께 지웠습니다(#289).
 오늘 요약(`getTodaySummary`)과 "이 내용이 이상해요"(`flagJournalEntry`)는 뺐습니다(#280).
 
 `VITE_*`는 빌드 시점에 번들에 포함됩니다. 값이 바뀌면 재빌드가 필요합니다.
@@ -258,7 +258,7 @@ interface GuardianInsight {
   period: string;             // "2026년 8월 3주차" — 어느 주의 이야기인지
   content: string;            // 교사·보호자가 읽을 한두 문장
   from: Institution | null;   // Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null → "기관 정보 없음"
-  sharedWith: Institution[];  // 지금 이 글을 볼 수 있는 다른 기관
+  sharedWith: Institution[];  // 지금 이 글을 볼 수 있는 다른 기관, 이름순. 기관 수신함 · 공유 내역(G-45)과 같은 판정
   approvedAt: string;         // 승인 시각 (ISO). 모든 보호자에게 같다
   readAt: string | null;      // 처음 열어 본 시각 (ISO). null 이면 "새 글"
 }
@@ -330,6 +330,7 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `getJournal` | `(childId: string) => Promise<JournalEntry[]>` — G-20. 관찰 날짜 최근 순, 같은 날은 승인 최근 순 | P-03, P-07, P-08 |
 | `getJournalEntry` | `(id: string) => Promise<JournalEntry \| undefined>` — G-21. 볼 수 없는 일지(`JOURNAL_NOT_FOUND`)는 `undefined` | P-08 |
 | `getGuardianInsights` | `() => Promise<GuardianInsight[]>` — G-35. 내 모든 아이 것, 승인 시각 최근 순. 화면이 고른 아이로 거른다 | P-09, 셸(리포트 탭 점) |
+| `getInstitutionShares` | `(childId: string) => Promise<InstitutionShares[]>` — G-45. 이 아이 리포트가 열린 기관별 묶음. 거둔(가려진) 공유 포함, `visible` 은 기관 수신함과 같은 판정 | P-04, P-05 |
 | `getGuardianInsight` | `(id: string) => Promise<GuardianInsight \| undefined>` — G-36. 처음 열면 본 시각이 남는다. 볼 수 없는 글(`SHARING_NOT_FOUND`)은 `undefined` | P-14 |
 | `getPendingInstitutionRequests` | `(childId: string) => Promise<{ institution: Institution }[]>` | P-03, P-04, P-07, P-09, P-11 |
 | `updateConsent` | `(childId: string, institutionId: string, body: { action: "grant" \| "revoke"; allowedFields?: ConsentField[] }) => Promise<ConsentResult>` | P-04(끄기), P-11 |

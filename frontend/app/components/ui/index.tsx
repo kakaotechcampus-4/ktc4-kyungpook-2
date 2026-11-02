@@ -13,8 +13,9 @@ import type {
   ValidationStatus,
 } from "@/lib/types";
 
+import { Busy } from "./Loading";
 export { PipelineStepper, StageDots } from "./PipelineStepper";
-export { FullPageLoading, NavigationProgress, Spinner, useNavigating } from "./Loading";
+export { Busy, FullPageLoading, NavigationProgress, Spinner, useNavigating } from "./Loading";
 export type { StageState, PipelineStepperProps } from "./PipelineStepper";
 
 /* ── C1 판정 배지 ───────────────────────────────────── */
@@ -382,7 +383,7 @@ export function ConfirmDialog({
             disabled={busy}
             className={`tap rounded px-5 text-[15px] font-bold hover:brightness-95 disabled:opacity-60 ${CONFIRM_TONE[tone]}`}
           >
-            {busy ? "처리 중…" : confirmLabel}
+            {busy ? <Busy>처리 중…</Busy> : confirmLabel}
           </button>
         </div>
       </div>

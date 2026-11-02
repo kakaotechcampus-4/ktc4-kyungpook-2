@@ -183,15 +183,15 @@ export interface AcceptedInvitation {
  * P-02 확인 · 동의 화면이 한 번에 그리는 정보 (api-spec G-02).
  *
  * 스펙 예시에는 child.id 가 없지만 동의(G-41)와 연결 해제(G-05) 호출에 필요해서 받는다.
+ *
+ * 서버가 함께 보내는 sharedFields · notSharedFields 는 사용 중단이라 받지 않는다 — 기관 유형별 항목 목록이
+ * 실제 공유와 맞지 않아 화면은 고정 문구를 쓴다(P-02).
  */
 export interface ConsentPreview {
   child: { id: string; name: string; birthDate: string };
   institution: Institution;
   /** 증빙서류. 없으면 null — 화면에서 버튼을 숨긴다 */
   documentUrl: string | null;
-  /** 화면에 보여 줄 설명 문구. 저장하지 않는다 */
-  sharedFields: string[];
-  notSharedFields: string[];
   /** 동의할 때 G-41 에 그대로 돌려보낼 항목 코드. 저장되는 것은 이 값이다 */
   allowedFields: ConsentField[];
 }
@@ -500,8 +500,8 @@ export interface InboxItem {
   id: string;
   childId: string;
   childName: string;
-  /** 우리 기관이 붙인 관리번호. 이름이 같은 아이를 가른다 */
-  externalId: string;
+  /** 우리 기관이 붙인 관리번호. 이름이 같은 아이를 가른다. 관리번호 필수 전에 등록된 아이는 없다(null) */
+  externalId: string | null;
   /** 이 글을 Gate 2 에서 승인한 기관 */
   from: Institution;
   /** "2026년 8월 3주차" 같은 문구 */
@@ -531,6 +531,31 @@ export interface ParentActivity {
   journalId?: string | null;
   /** 인사이트 한 편이면 그 상세로, 여러 편을 묶은 줄이면 null 이라 리포트 탭으로 연결한다 */
   insightId?: string | null;
+}
+
+/** 기관 공유 내역의 한 줄 — 그 기관에 열린 이 아이 주간 리포트 한 편 (api-spec G-45) */
+export interface InstitutionShare {
+  insightId: string;
+  /** "2026년 10월 4주차" 같은 문구. 리포트 탭과 같다 */
+  period: string;
+  /** 이 리포트를 Gate 2 에서 승인한 기관. 없어진 기관이면 null */
+  from: Institution | null;
+  /** 그 기관에 열린 시각 (ISO) */
+  grantedAt: string;
+  /** 그 기관이 지금 볼 수 있는지. 기관 수신함과 같은 판정이다 */
+  visible: boolean;
+  /** 가려진 시각. 볼 수 있거나, 거둔 기록 없이 명부 · 동의로 가려졌으면 null */
+  hiddenAt: string | null;
+}
+
+/**
+ * 보호자의 기관 공유 내역 중 한 기관 (G-45). 지금 명부에서 빠진 기관도 받은 이력이 있으면 온다.
+ * 가려진 이유와 기관이 열어 봤는지는 오지 않는다.
+ */
+export interface InstitutionShares {
+  institution: Institution;
+  /** 열린 순서 최신부터 */
+  shares: InstitutionShare[];
 }
 
 /**

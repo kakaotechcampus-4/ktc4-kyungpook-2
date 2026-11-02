@@ -1,9 +1,10 @@
 import { useEffect } from "react";
-import { Link, useLoaderData, useRevalidator } from "react-router";
+import { Link, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { NotReadyPage } from "@/components/org/NotReady";
 import { Card, EmptyState, InstitutionChip, Note, PageHeader } from "@/components/ui";
 import { ApiError, getInboxItem, isReady } from "@/lib/api";
 import { formatDateTime } from "@/lib/datetime";
+import { INBOX_CHILD_PARAM } from "@/lib/inbox";
 
 /**
  * 단건을 여는 순간 서버가 우리 기관의 처음 열람 시각을 남긴다.
@@ -29,6 +30,8 @@ export default function InboxDetailRoute() {
 function InboxDetailPage() {
   const { item } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
+  // 목록에서 아이를 골라 들어왔으면 같은 아이로 걸러진 목록으로 돌아간다
+  const childId = useSearchParams()[0].get(INBOX_CHILD_PARAM);
 
   // 레이아웃 로더는 하위 화면 이동에 다시 돌지 않는다. 방금 읽음이 찍혔으니 사이드바 "메시지" 배지를 다시 센다.
   useEffect(() => {
@@ -39,7 +42,7 @@ function InboxDetailPage() {
 
   const back = (
     <Link
-      to="/inbox"
+      to={childId ? `/inbox?${new URLSearchParams({ [INBOX_CHILD_PARAM]: childId })}` : "/inbox"}
       className="tap inline-flex items-center rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2"
     >
       메시지 목록
@@ -67,7 +70,7 @@ function InboxDetailPage() {
           <InstitutionChip institution={item.from} withName />
           <span className="text-[14px] text-muted">
             {item.childName}
-            <span className="ml-1 tabular-nums">#{item.externalId}</span>
+            {item.externalId ? <span className="ml-1 tabular-nums">#{item.externalId}</span> : null}
           </span>
           <span className="ml-auto text-[13px] text-muted tabular-nums">
             {formatDateTime(item.receivedAt)} 도착

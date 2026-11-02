@@ -2,7 +2,7 @@ import { useState, useTransition } from "react";
 import { Link, redirect, useLoaderData, useNavigate } from "react-router";
 import { grantRole, isOnboarded, markOnboarded } from "@/lib/auth";
 import { ApiError, getConsentPreview, grantConsent, unlinkChild } from "@/lib/api";
-import { InstitutionChip } from "@/components/ui";
+import { Busy, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
 
@@ -19,7 +19,7 @@ type ReturnFrom = keyof typeof RETURN_TO;
  * 보낸다. 쿼리가 빠졌으면 무엇에 동의하는지 알 수 없으므로 코드 입력 화면으로 되돌린다.
  *
  * 설정(P-11)에서 꺼 둔 기관을 다시 켤 때(`from=settings`)와 알림에서 새 기관 요청에 권한을 줄 때
- * (`from=notifications`)도 이 화면을 거친다. 공유 항목을 보고 동의해야 해서다. 그때는 동의 뒤 온 곳으로 돌아간다.
+ * (`from=notifications`)도 이 화면을 거친다. 무엇이 공유되는지 보고 동의해야 해서다. 그때는 동의 뒤 온 곳으로 돌아간다.
  */
 export async function clientLoader({ request }: { request: Request }) {
   const url = new URL(request.url);
@@ -32,7 +32,7 @@ export async function clientLoader({ request }: { request: Request }) {
 }
 
 /**
- * P-02 확인 · 동의 — 한 화면에서 아이 확인 + 기관 확인 + 공유 범위 동의를 끝낸다.
+ * P-02 확인 · 동의 — 한 화면에서 아이 확인 + 기관 확인 + 공유 동의를 끝낸다.
  *
  * P-01 에서 초대 코드로 연결한 아이와 그 코드를 준 기관을 보여준다. 찾지 못하면 다른 아이나
  * 기관으로 채우지 않고 "찾을 수 없음" 을 보여준다 — 엉뚱한 아이에 동의하게 만들면 안 된다.
@@ -69,8 +69,7 @@ export default function ParentConsentPage() {
     );
   }
 
-  const { child, institution, documentUrl, sharedFields, notSharedFields, allowedFields } =
-    preview;
+  const { child, institution, documentUrl, allowedFields } = preview;
 
   function save() {
     setSaveError(null);
@@ -130,7 +129,7 @@ export default function ParentConsentPage() {
           disabled={rejecting}
           className="tap h-14 w-full rounded-2xl bg-block px-4 text-[16px] font-bold text-white disabled:opacity-60"
         >
-          {rejecting ? "처리 중…" : "정보가 달라요 · 연결 끊기"}
+          {rejecting ? <Busy>처리 중…</Busy> : "정보가 달라요 · 연결 끊기"}
         </button>
         <button
           onClick={() => setMismatch(false)}
@@ -190,18 +189,24 @@ export default function ParentConsentPage() {
         </div>
       </section>
 
+      {/* 지금 동작으로 지킬 수 있는 것만 적는다. 항목별 공유는 거르는 코드가 없고, 진단명 · 개인정보
+          검사는 AI 판단이라 놓칠 수 있어 약속하지 않는다. 미리보기의 설명 목록(sharedFields)은 쓰지 않는다 */}
       <section className="rounded-2xl bg-surface2 px-4 py-4">
-        <p className="mb-2 text-[13px] font-bold text-accentink">공유되는 정보</p>
-        <ul className="flex flex-col gap-2">
-          {sharedFields.map((label) => (
-            <li key={label} className="text-[15px]">
-              {label}
-            </li>
-          ))}
+        <p className="mb-2 text-[13px] font-bold text-accentink">동의하면 이렇게 돼요</p>
+        <ul className="flex list-disc flex-col gap-2 pl-5 text-[15px] leading-6">
+          <li>
+            {institution.name} 선생님이 쓴 {child.name} 기록을 AI가 정리하고, 선생님이 확인한 글을
+            보호자에게 보여줘요.
+          </li>
+          <li>
+            확인된 기록으로 만든 주간 리포트를, 아이가 다니는 다른 기관 중 동의한 곳과 서로 볼 수
+            있어요.
+          </li>
+          <li>
+            언제든 설정 &gt; 기관 권한에서 끌 수 있어요. 끄면 이 기관은 받은 리포트를 더 볼 수 없고, 이
+            기관 기록이 들어간 리포트도 다른 기관에서 가려져요.
+          </li>
         </ul>
-        <p className="mt-3 text-[14px] leading-6 text-muted">
-          {notSharedFields.join(", ")}는 공유되지 않습니다.
-        </p>
       </section>
 
       <label className="tap flex cursor-pointer items-start gap-3 rounded-2xl border border-line px-4 py-3 has-checked:border-accent has-checked:bg-accentsoft">
@@ -212,8 +217,9 @@ export default function ParentConsentPage() {
           className="mt-1 size-5 shrink-0 accent-accent"
         />
         <span className="text-[15px] leading-6">
-          위 정보가 <b className="font-semibold">{institution.name}</b>에 공유되는 것에
-          동의합니다. 언제든 [동의 관리]에서 회수할 수 있어요.
+          {/* "과/와" 는 기관 이름 받침에 따라 달라 조사 없이 쓴다 */}
+          위 내용대로 <b className="font-semibold">{institution.name}</b> 공유에 동의합니다.
+          언제든 설정 &gt; 기관 권한에서 끌 수 있어요.
         </span>
       </label>
 
@@ -229,7 +235,7 @@ export default function ParentConsentPage() {
           disabled={!consented || pending}
           className="tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted"
         >
-          {pending ? "확인 중…" : "동의하고 시작하기"}
+          {pending ? <Busy>확인 중…</Busy> : "동의하고 시작하기"}
         </button>
         {!consented ? (
           <p className="mt-1.5 text-center text-[14px] text-muted">

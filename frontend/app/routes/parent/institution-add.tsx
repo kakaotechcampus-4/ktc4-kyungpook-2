@@ -1,7 +1,7 @@
 import { useState, useTransition } from "react";
 import { useNavigate, useRevalidator } from "react-router";
 import { ApiError, addInstitutionByCode, isReady, lookupInstitutionByCode } from "@/lib/api";
-import { InstitutionChip } from "@/components/ui";
+import { Busy, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
@@ -18,7 +18,7 @@ export default function InstitutionAddPageRoute() {
  * "기관 직접 추가" — 보호자가 기관 코드로 아이를 다른 기관에 연결해 달라고 요청한다.
  *
  * 바로 연결되지 않는다. 기관이 수락하면 아이가 그 기관 명부에 오르고, 그때 "새 기관 권한 요청"
- * 알림으로 떠서 공유 범위를 정해 동의한다. 그래서 여기서는 공유 범위를 묻지 않는다.
+ * 알림으로 떠서 동의 화면에서 공유에 동의한다. 그래서 여기서는 공유를 묻지 않는다.
  */
 function InstitutionAddPage() {
   const { selected } = useChildContext();
@@ -67,8 +67,8 @@ function InstitutionAddPage() {
           <InstitutionChip institution={found} withName />
         </div>
         <p className="text-[15px] leading-7 text-ink2">
-          {found.name}이(가) 수락하면 알림으로 알려 드려요. 그때 어떤 정보를 공유할지 정하면 됩니다.
-          수락 전에는 아무 정보도 공유되지 않습니다.
+          {found.name}이(가) 수락하면 알림으로 알려 드려요. 기록과 리포트 공유는 그때 동의 화면에서
+          정하면 돼요.
         </p>
         <button
           onClick={() => navigate("/parent/settings")}
@@ -92,9 +92,10 @@ function InstitutionAddPage() {
           <p>
             {selected.name}을(를) 이 기관에 연결해 달라고 요청합니다. 기관이 수락하면 알림으로 알려 드려요.
           </p>
+          {/* 요청은 수락 전부터 기관의 연결 요청 목록에 보인다 — "아무 정보도 공유되지 않는다"고 하지 않는다 */}
           <p className="mt-2">
-            <b className="font-semibold text-ink">공유 범위는 그때 정해요.</b> 동의하기 전에는 아무 정보도
-            공유되지 않습니다.
+            연결 요청을 위해 아이 이름·생년월일과 보호자 이름이 기관에 전달돼요.{" "}
+            <b className="font-semibold text-ink">기록과 리포트 공유는 기관 수락 후 동의 화면에서 정해요.</b>
           </p>
         </section>
         {error ? (
@@ -114,7 +115,7 @@ function InstitutionAddPage() {
             onClick={request}
             className="tap h-14 flex-1 rounded-2xl bg-ink text-[16px] font-bold text-paper hover:brightness-110 disabled:opacity-50"
           >
-            {pending ? "요청 중…" : "연결 요청 보내기"}
+            {pending ? <Busy>요청 중…</Busy> : "연결 요청 보내기"}
           </button>
         </div>
       </div>
@@ -147,7 +148,7 @@ function InstitutionAddPage() {
           disabled={pending}
           className="tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:opacity-50"
         >
-          {pending ? "찾는 중…" : "다음"}
+          {pending ? <Busy>찾는 중…</Busy> : "다음"}
         </button>
       </form>
     </div>

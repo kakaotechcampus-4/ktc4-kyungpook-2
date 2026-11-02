@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Busy } from "@/components/ui";
 import { Link, useNavigate } from "react-router";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { signOut } from "@/lib/auth";
@@ -48,7 +49,7 @@ export function ParentNotReady() {
         disabled={signingOut}
         className="tap rounded-2xl px-4 text-[14px] font-semibold text-muted underline disabled:opacity-60"
       >
-        {signingOut ? "로그아웃 중…" : "로그아웃"}
+        {signingOut ? <Busy>로그아웃 중…</Busy> : "로그아웃"}
       </button>
     </div>
   );

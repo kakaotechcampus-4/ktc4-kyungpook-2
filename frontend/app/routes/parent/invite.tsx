@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Busy } from "@/components/ui";
 import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
 import { StepProgress } from "@/components/parent/StepProgress";
@@ -323,7 +324,7 @@ export default function ParentInvitePage() {
               </p>
             ) : null}
             <button disabled={!code.trim() || pending} className={primary}>
-              {pending ? "확인 중…" : "아이와 연결하기"}
+              {pending ? <Busy>확인 중…</Busy> : "아이와 연결하기"}
             </button>
           </form>
           <p className="text-[13px] leading-6 text-muted">
@@ -391,14 +392,14 @@ function AcceptedStep({
           {needsConsent ? (
             <>
               {" "}
-              아직 <b className="font-semibold">공유 동의</b>가 남았어요. 동의해야 기관이 아이
-              기록을 올릴 수 있어요.
+              아직 <b className="font-semibold">공유 동의</b>가 남았어요. 동의해야 기관 기록이{" "}
+              {result.childName}에게 이어져요.
             </>
           ) : null}
         </p>
       </div>
       <Link to={consentPath} className={primary}>
-        {needsConsent ? "공유 동의하러 가기" : "공유 범위 확인하기"}
+        {needsConsent ? "공유 동의하러 가기" : "공유 내용 확인하기"}
       </Link>
       {home}
     </div>

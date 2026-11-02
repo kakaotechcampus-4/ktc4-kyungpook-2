@@ -38,8 +38,9 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p><b>읽을 때마다 지금 읽어도 되는지 다시 본다.</b> 열람 방식을 택한 이유가 "철회하면 그 뒤로 안 보인다" 였다.
  * 지금은 권한이 꺼지는 경로(동의 철회, 보호자 연결 해제)가 모두 권한 줄을 거두지만, 나중에 명부에서 내리는 길이
- * 생기면서 거두기를 빠뜨려도 새지 않게 명부·동의·아이를 함께 본다 ({@link #readable}). 목록과 단건이 같은 판정을
- * 쓴다 — 갈리면 목록에서는 숨는데 단건으로는 열리는 구멍이 생긴다.
+ * 생기면서 거두기를 빠뜨려도 새지 않게 명부·동의·아이를 함께 본다 ({@link OrganizationGrantVisibility#readable}).
+ * 목록과 단건이 같은 판정을 쓴다 — 갈리면 목록에서는 숨는데 단건으로는 열리는 구멍이 생긴다. 보호자의 기관 공유
+ * 내역(G-45)도 같은 판정으로 "지금 볼 수 있음" 을 보인다.
  *
  * <p>판정에 걸려도 권한 줄을 거두지 않는다. 조회는 권한을 바꾸지 않고 보이지만 않게 한다.
  */
@@ -80,7 +81,7 @@ public class InstitutionInboxService {
         Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
 
         List<SharingHistory> readable = received.stream()
-                .filter(grant -> readable(grant, children.get(grant.getChildId()),
+                .filter(grant -> OrganizationGrantVisibility.readable(grant, children.get(grant.getChildId()),
                         enrollments.get(grant.getChildId()),
                         consents.getOrDefault(grant.getChildId(), Map.of())
                                 .getOrDefault(organizationId, ConsentState.NOT_GRANTED)))
@@ -127,7 +128,7 @@ public class InstitutionInboxService {
         ChildOrganization enrollment = childOrganizationRepository
                 .findByChildIdAndOrganizationId(childId, organizationId).orElse(null);
         ConsentState consent = consentStateReader.stateOf(childId, organizationId);
-        if (!readable(grant, child, enrollment, consent)) {
+        if (!OrganizationGrantVisibility.readable(grant, child, enrollment, consent)) {
             throw notFound(insightId);
         }
         InsightResult insight = insightResultRepository.findById(insightId).orElse(null);
@@ -141,24 +142,6 @@ public class InstitutionInboxService {
         InboxItemResponse item = toItem(read, insight, child, enrollment, sender);
         return new InboxDetailResponse(item.id(), item.childId(), item.childName(), item.externalId(),
                 item.from(), item.period(), item.receivedAt(), item.readAt(), insight.getContent());
-    }
-
-    /**
-     * 우리 기관이 지금 이 글을 읽어도 되는지. 넷 다 참이어야 한다.
-     *
-     * <ol>
-     * <li>권한 줄이 거둬지지 않았다</li>
-     * <li>우리 기관 명부에 그 아이가 지금 있다 — 권한은 만들 때 굳지만 명부는 바뀐다</li>
-     * <li>우리 기관 기준 동의가 켜져 있다 — 다른 기관 동의로 켜진 아이 전체 상태가 아니다</li>
-     * <li>아이가 삭제되지 않았다</li>
-     * </ol>
-     */
-    private static boolean readable(SharingHistory grant, Child child, ChildOrganization enrollment,
-            ConsentState consent) {
-        return grant.isActive()
-                && child != null && !child.isDeleted()
-                && enrollment != null && !enrollment.isDeleted()
-                && consent == ConsentState.GRANTED;
     }
 
     private static InboxItemResponse toItem(SharingHistory grant, InsightResult insight, Child child,

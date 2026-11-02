@@ -13,6 +13,8 @@ interface ChildContextValue {
   kids: Child[];
   selected: Child;
   selectChild: (id: string) => void;
+  /** 그 아이에게 아직 열어 보지 않은 리포트가 있는지 — 헤더의 아이 전환 점 */
+  hasUnreadReport: (childId: string) => boolean;
 }
 
 const ChildContext = createContext<ChildContextValue | null>(null);
@@ -20,10 +22,13 @@ const ChildContext = createContext<ChildContextValue | null>(null);
 export function ChildProvider({
   kids,
   selectedId,
+  unreadInsightChildIds = [],
   children,
 }: {
   kids: Child[];
   selectedId: string;
+  /** 안 본 리포트가 있는 아이 id (보호자 화면 입구가 센다) */
+  unreadInsightChildIds?: string[];
   children: React.ReactNode;
 }) {
   const revalidator = useRevalidator();
@@ -37,8 +42,10 @@ export function ChildProvider({
 
   if (!selected) return <>{children}</>;
 
+  const hasUnreadReport = (childId: string) => unreadInsightChildIds.includes(childId);
+
   return (
-    <ChildContext.Provider value={{ kids, selected, selectChild }}>
+    <ChildContext.Provider value={{ kids, selected, selectChild, hasUnreadReport }}>
       {children}
     </ChildContext.Provider>
   );

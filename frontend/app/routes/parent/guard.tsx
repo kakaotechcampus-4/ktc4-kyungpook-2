@@ -21,15 +21,16 @@ export async function clientLoader() {
   // 이 브라우저에 표시가 없어도 서버에 연결된 아이가 있으면 마친 사람이다 (다른 브라우저 · 기기)
   if (!(await restoreParentOnboarded())) return redirect("/parent/invite");
   // 아이 목록(G-10)을 서버에서 못 받는 빌드면 mock 아이를 띄우지 않는다 — 남의 아이가 보인다
-  if (!isReady("guardianChildren")) return { kids: null, selectedId: null, hasUnreadInsight: false };
+  if (!isReady("guardianChildren")) return { kids: null, selectedId: null, unreadInsightChildIds: [] as string[] };
   const kids = await getParentChildren();
   // 동의를 마쳐야만 role이 parent가 되므로 이론상 항상 1명 이상이지만, 방어적으로 처리한다.
   if (kids.length === 0) return redirect("/parent/invite");
   const selectedId = readSelectedChildId(kids);
-  // 하단 탭 "리포트"의 점 — 고른 아이에게 아직 열어 보지 않은 리포트가 있는지. 탭은 아이 Context 밖(셸)이라 여기서 센다
+  // 아직 열어 보지 않은 리포트가 있는 아이. 두 점이 이 값 하나에서 나온다 — 하단 리포트 탭(고른 아이, 셸이 아이
+  // Context 밖이라 이 loader 를 직접 읽는다)과 헤더의 아이 전환(다른 아이, Context 로 받는다)
   const insights = await loadIfReady("guardianInsights", getGuardianInsights);
-  const hasUnreadInsight = (insights ?? []).some((i) => i.childId === selectedId && !i.readAt);
-  return { kids, selectedId, hasUnreadInsight };
+  const unreadInsightChildIds = [...new Set((insights ?? []).filter((i) => !i.readAt).map((i) => i.childId))];
+  return { kids, selectedId, unreadInsightChildIds };
 }
 
 /**
@@ -50,10 +51,10 @@ export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate 
 }
 
 export default function ParentGuard() {
-  const { kids, selectedId } = useLoaderData<typeof clientLoader>();
+  const { kids, selectedId, unreadInsightChildIds } = useLoaderData<typeof clientLoader>();
   if (!kids) return <ParentNotReady />;
   return (
-    <ChildProvider kids={kids} selectedId={selectedId}>
+    <ChildProvider kids={kids} selectedId={selectedId} unreadInsightChildIds={unreadInsightChildIds}>
       <Outlet />
     </ChildProvider>
   );
