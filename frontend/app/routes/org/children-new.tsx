@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { InviteCodeCard } from "@/components/org/InviteCodeCard";
-import { Card, Note, PageHeader } from "@/components/ui";
+import { Busy, Card, Note, PageHeader } from "@/components/ui";
 import { ApiError, issueInvitation, registerChild } from "@/lib/api";
 import type { IssuedInvitation, RegisteredChild } from "@/lib/types";
 
@@ -162,7 +162,7 @@ export default function ChildRegisterPage() {
                 disabled={pending}
                 className="tap rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
               >
-                {pending ? "발급 중…" : "새 코드 발급"}
+                {pending ? <Busy>발급 중…</Busy> : "새 코드 발급"}
               </button>
               <Link
                 to={`/children/${encodeURIComponent(child.id)}`}
@@ -259,7 +259,7 @@ export default function ChildRegisterPage() {
             disabled={pending}
             className="tap self-start rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
           >
-            {pending ? "등록 중…" : "등록하고 초대 코드 발급"}
+            {pending ? <Busy>등록 중…</Busy> : "등록하고 초대 코드 발급"}
           </button>
         </form>
       </Card>

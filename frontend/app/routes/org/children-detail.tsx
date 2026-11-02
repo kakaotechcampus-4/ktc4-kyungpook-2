@@ -4,6 +4,7 @@ import { InviteCodeCard } from "@/components/org/InviteCodeCard";
 import { NotReadyState } from "@/components/org/NotReady";
 import { RosterConsentBadge } from "@/components/org/RosterConsentBadge";
 import {
+  Busy,
   Card,
   EmptyState,
   Note,
@@ -164,7 +165,7 @@ function GuardianSection({
           disabled={busy !== null}
           className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
         >
-          {busy === "issue" ? "발급 중…" : "새 코드 발급"}
+          {busy === "issue" ? <Busy>발급 중…</Busy> : "새 코드 발급"}
         </button>
       </div>
 
@@ -249,7 +250,7 @@ function GuardianSection({
               }}
               className="tap rounded bg-block px-4 text-[15px] font-semibold text-white disabled:opacity-50"
             >
-              {busy === `unlink:${confirming.userId}` ? "해제 중…" : "연결 해제"}
+              {busy === `unlink:${confirming.userId}` ? <Busy>해제 중…</Busy> : "연결 해제"}
             </button>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { useState, useTransition } from "react";
 import { useNavigate, useRevalidator } from "react-router";
 import { ApiError, addInstitutionByCode, isReady, lookupInstitutionByCode } from "@/lib/api";
-import { InstitutionChip } from "@/components/ui";
+import { Busy, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
@@ -114,7 +114,7 @@ function InstitutionAddPage() {
             onClick={request}
             className="tap h-14 flex-1 rounded-2xl bg-accent text-[16px] font-bold text-white hover:bg-accentink disabled:opacity-50"
           >
-            {pending ? "요청 중…" : "연결 요청 보내기"}
+            {pending ? <Busy>요청 중…</Busy> : "연결 요청 보내기"}
           </button>
         </div>
       </div>
@@ -147,7 +147,7 @@ function InstitutionAddPage() {
           disabled={pending}
           className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:opacity-50"
         >
-          {pending ? "찾는 중…" : "다음"}
+          {pending ? <Busy>찾는 중…</Busy> : "다음"}
         </button>
       </form>
     </div>

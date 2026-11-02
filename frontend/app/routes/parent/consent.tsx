@@ -2,7 +2,7 @@ import { useState, useTransition } from "react";
 import { Link, redirect, useLoaderData, useNavigate } from "react-router";
 import { grantRole, isOnboarded, markOnboarded } from "@/lib/auth";
 import { ApiError, getConsentPreview, grantConsent, unlinkChild } from "@/lib/api";
-import { InstitutionChip } from "@/components/ui";
+import { Busy, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
 
@@ -130,7 +130,7 @@ export default function ParentConsentPage() {
           disabled={rejecting}
           className="tap h-14 w-full rounded-2xl bg-block px-4 text-[16px] font-bold text-white disabled:opacity-60"
         >
-          {rejecting ? "처리 중…" : "정보가 달라요 · 연결 끊기"}
+          {rejecting ? <Busy>처리 중…</Busy> : "정보가 달라요 · 연결 끊기"}
         </button>
         <button
           onClick={() => setMismatch(false)}
@@ -229,7 +229,7 @@ export default function ParentConsentPage() {
           disabled={!consented || pending}
           className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted"
         >
-          {pending ? "확인 중…" : "동의하고 시작하기"}
+          {pending ? <Busy>확인 중…</Busy> : "동의하고 시작하기"}
         </button>
         {!consented ? (
           <p className="mt-1.5 text-center text-[14px] text-muted">

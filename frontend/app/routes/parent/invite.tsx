@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Busy } from "@/components/ui";
 import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
 import { StepProgress } from "@/components/parent/StepProgress";
@@ -323,7 +324,7 @@ export default function ParentInvitePage() {
               </p>
             ) : null}
             <button disabled={!code.trim() || pending} className={primary}>
-              {pending ? "확인 중…" : "아이와 연결하기"}
+              {pending ? <Busy>확인 중…</Busy> : "아이와 연결하기"}
             </button>
           </form>
           <p className="text-[13px] leading-6 text-muted">

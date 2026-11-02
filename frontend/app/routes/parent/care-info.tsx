@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Busy } from "@/components/ui";
 import { useLoaderData, useNavigate } from "react-router";
 import { getParentChildren, getParentHome, isReady, updateChildCare } from "@/lib/api";
 import { ApiError } from "@/lib/apiError";
@@ -240,7 +241,7 @@ function CareInfoPage() {
           disabled={saving}
           className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:opacity-50"
         >
-          {saving ? "저장 중…" : "저장"}
+          {saving ? <Busy>저장 중…</Busy> : "저장"}
         </button>
       </div>
     </div>
