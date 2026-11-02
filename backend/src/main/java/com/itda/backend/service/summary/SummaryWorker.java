@@ -6,18 +6,21 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
+import com.itda.backend.exception.summary.SummaryNoGroundedClaimsException;
+import com.itda.backend.service.agent.AgentFailureReasons;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * 검증을 통과한(VALIDATED) 일지를 아동 × 날짜 × 기관 묶음으로 요약 에이전트에 보내고 결과를 남긴다. 성공하면
- * 묶음의 일지가 GATE1_PENDING(교사 1차 검토 대기)이 되고, 호출 실패는 FAILED 가 된다.
+ * 묶음의 일지가 GATE1_PENDING(교사 1차 검토 대기)이 되고, 재시도까지 근거가 남은 문장이 없으면 SUMMARY_FAILED(다시
+ * 요약할 수 있음), 그 밖의 실패(4xx, 응답 해석 실패, 빈 본문, 근거 재검사)는 SYSTEM_ERROR(관리자 확인)가 된다 (#180).
  *
  * <p>구조는 {@link com.itda.backend.service.validation.ValidationWorker} 와 같고 처리 단위만 일지가 아니라 묶음이다.
- * 한 묶음씩 순서대로 처리하고, 실패(4xx, 응답 해석 실패, 빈 본문, 재시도까지 근거가 남은 문장이 없음)는 그 묶음만 실패로
- * 남긴다. 집기 전에 AI 상태를 보고, 재시도까지 응답이 없으면 지금 묶음을 포함해 나머지를 되돌려놓고 멈춘다 — 검증 워커와 다른 점이다.
+ * 한 묶음씩 순서대로 처리하고, 실패는 그 묶음만 남긴다. 집기 전에 AI 상태를 보고, 재시도까지 응답이 없으면 지금 묶음을 포함해 나머지를 되돌려놓고 멈춘다 — 검증 워커와 다른 점이다.
  * AI {@code /health} 는 LLM 이 살아 있는지까지는 보지 않아서, LLM 장애가 이어지면 묶음마다 실패로 끝나기 때문이다.
  * 언제 묶음이 준비되는지는 {@link SummaryService#claimReadyGroups} 가 정한다.
  */
@@ -65,8 +68,8 @@ public class SummaryWorker {
         for (int i = 0; i < claimed.size(); i++) {
             Outcome outcome = process(claimed.get(i));
             if (outcome == Outcome.AGENT_DOWN) {
-                // 지금 묶음도 되돌린다. 검증과 달리 요약 단계의 FAILED 는 다시 처리할 길이 없어서,
-                // AI·LLM 이 잠깐 죽은 것으로 묶음을 끝내 버리면 그 일지들은 Gate 1 에 영영 오지 못한다.
+                // 지금 묶음도 되돌린다. AI·LLM 이 잠깐 죽은 것으로 묶음을 실패로 끝내 버리면 교사나 관리자가
+                // 다시 돌릴 때까지 그 일지들이 Gate 1 에 오지 못한다.
                 summaryService.release(claimed.subList(i, claimed.size()));
                 return;
             }
@@ -106,8 +109,16 @@ public class SummaryWorker {
                         claimed.group(), claimed.journalEntryIds(), e);
                 return Outcome.AGENT_DOWN;
             }
-            log.warn("summary failed group={} journalEntryIds={}", claimed.group(), claimed.journalEntryIds(), e);
-            recordFailure(claimed);
+            if (e instanceof SummaryNoGroundedClaimsException) {
+                log.warn("summary has no grounded claims group={} journalEntryIds={}",
+                        claimed.group(), claimed.journalEntryIds(), e);
+                recordFailure(claimed);
+                return Outcome.DONE;
+            }
+            FailureReason reason = AgentFailureReasons.of(e);
+            log.warn("summary failed group={} journalEntryIds={} reason={}",
+                    claimed.group(), claimed.journalEntryIds(), reason, e);
+            recordSystemError(claimed, reason);
             return Outcome.DONE;
         }
     }
@@ -117,6 +128,14 @@ public class SummaryWorker {
             recorder.recordFailure(claimed);
         } catch (RuntimeException recordError) {
             log.error("could not record summary failure group={}", claimed.group(), recordError);
+        }
+    }
+
+    private void recordSystemError(ClaimedSummaryGroup claimed, FailureReason reason) {
+        try {
+            recorder.recordSystemError(claimed, reason);
+        } catch (RuntimeException recordError) {
+            log.error("could not record summary system error group={}", claimed.group(), recordError);
         }
     }
 

@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.net.ConnectException;
@@ -18,14 +19,18 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.exception.agent.AiAgentException;
+import com.itda.backend.exception.agent.AiAgentRejectedException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
+import com.itda.backend.exception.agent.AiAgentUnreadableResponseException;
 
 class AiAgentClientTest {
 
@@ -96,12 +101,33 @@ class AiAgentClientTest {
     }
 
     @Test
-    void 요청이_잘못됐다는_응답은_다시_시도하지_않는다() {
+    void 요청이_잘못됐다는_응답은_다시_시도하지_않고_거절로_본다() {
         server.expect(requestTo(AI + "/validation")).andRespond(withBadRequest());
 
+        // BE 가 계약과 다른 요청을 보냈다는 뜻 — 다시 보내도 같으므로 시스템 오류(REQUEST_REJECTED)가 된다.
         assertThatThrownBy(() -> client.post("/validation", Map.of(), 1041L))
-                .isInstanceOf(AiAgentException.class)
-                .isNotInstanceOf(AiAgentUnavailableException.class);
+                .isInstanceOf(AiAgentRejectedException.class);
+        server.verify();
+    }
+
+    @Test
+    void 잠시_뒤에_다시_하라는_408_429는_거절로_보지_않고_다시_시도한다() {
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.REQUEST_TIMEOUT));
+        server.expect(requestTo(AI + "/validation")).andRespond(withSuccess(BODY, MediaType.APPLICATION_JSON));
+
+        assertThat(client.post("/validation", Map.of(), 1041L)).isEqualTo(BODY);
+        server.verify();
+    }
+
+    @Test
+    void 잠시_뒤에_다시_하라는_응답이_끝까지_계속되면_AI를_쓸_수_없다고_본다() {
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        assertThatThrownBy(() -> client.post("/validation", Map.of(), 1041L))
+                .isInstanceOf(AiAgentUnavailableException.class);
         server.verify();
     }
 
@@ -118,12 +144,27 @@ class AiAgentClientTest {
         try {
             assertThatThrownBy(() -> slowClient.post("/validation", Map.of(), 1041L))
                     .isInstanceOf(AiAgentException.class)
-                    .isNotInstanceOf(AiAgentUnavailableException.class);
+                    .isNotInstanceOf(AiAgentUnavailableException.class)
+                    .isNotInstanceOf(AiAgentRejectedException.class);
             // 워커는 이 표시를 보고 종료 중이라 판단해 실패로 남기지 않는다.
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
         } finally {
             Thread.interrupted(); // 다른 테스트에 영향이 없도록 인터럽트 표시를 지운다
         }
+    }
+
+    @Test
+    void 요청을_보내지도_못했으면_AI_탓이_아니라_BE_오류다() {
+        server.expect(requestTo(AI + "/validation")).andRespond(request -> {
+            throw new RestClientException("No HttpMessageConverter for request body");
+        });
+
+        // AI 응답을 받기 전에 BE 쪽에서 났다 — AI 탓(응답 못 읽음)도 요청 거절도 아니라 INTERNAL_ERROR 로 간다.
+        assertThatThrownBy(() -> client.post("/validation", Map.of(), 1041L))
+                .isInstanceOf(AiAgentException.class)
+                .isNotInstanceOf(AiAgentUnreadableResponseException.class)
+                .isNotInstanceOf(AiAgentRejectedException.class)
+                .isNotInstanceOf(AiAgentUnavailableException.class);
     }
 
     @Test
@@ -134,10 +175,15 @@ class AiAgentClientTest {
     }
 
     @Test
-    void 응답_본문이_비었거나_JSON이_아니면_예외를_던진다() {
-        assertThatThrownBy(() -> client.parse("", Reply.class)).isInstanceOf(AiAgentException.class);
-        assertThatThrownBy(() -> client.parse(null, Reply.class)).isInstanceOf(AiAgentException.class);
-        assertThatThrownBy(() -> client.parse("<html>", Reply.class)).isInstanceOf(AiAgentException.class);
+    void 응답_본문이_비었거나_JSON이_아니면_응답을_못_읽었다는_예외를_던진다() {
+        assertThatThrownBy(() -> client.parse("", Reply.class))
+                .isInstanceOf(AiAgentUnreadableResponseException.class);
+        assertThatThrownBy(() -> client.parse(null, Reply.class))
+                .isInstanceOf(AiAgentUnreadableResponseException.class);
+        assertThatThrownBy(() -> client.parse("<html>", Reply.class))
+                .isInstanceOf(AiAgentUnreadableResponseException.class);
+        assertThatThrownBy(() -> client.parse("null", Reply.class))
+                .isInstanceOf(AiAgentUnreadableResponseException.class);
     }
 
     @Test

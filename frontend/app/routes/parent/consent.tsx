@@ -2,33 +2,47 @@ import { useState, useTransition } from "react";
 import { Link, redirect, useLoaderData, useNavigate } from "react-router";
 import { grantRole, isOnboarded, markOnboarded } from "@/lib/auth";
 import { ApiError, getConsentPreview, grantConsent, unlinkChild } from "@/lib/api";
-import { InstitutionChip } from "@/components/ui";
+import { Busy, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { StepProgress } from "@/components/parent/StepProgress";
 
 const INVITE = "/parent/invite";
+/** 온보딩 밖에서 이 화면으로 온 곳. 동의 뒤 그곳으로 돌아간다 */
+const RETURN_TO = {
+  settings: { path: "/parent/settings", label: "설정으로 돌아가기" },
+  notifications: { path: "/parent/notifications", label: "알림으로 돌아가기" },
+} as const;
+type ReturnFrom = keyof typeof RETURN_TO;
 
 /**
  * 대상은 쿼리로 받는다 — P-01 이 초대 코드를 수락한 뒤 "어느 아이 · 어느 기관"인지 지정해
  * 보낸다. 쿼리가 빠졌으면 무엇에 동의하는지 알 수 없으므로 코드 입력 화면으로 되돌린다.
+ *
+ * 설정(P-11)에서 꺼 둔 기관을 다시 켤 때(`from=settings`)와 알림에서 새 기관 요청에 권한을 줄 때
+ * (`from=notifications`)도 이 화면을 거친다. 무엇이 공유되는지 보고 동의해야 해서다. 그때는 동의 뒤 온 곳으로 돌아간다.
  */
 export async function clientLoader({ request }: { request: Request }) {
   const url = new URL(request.url);
   const childId = url.searchParams.get("childId");
   const institutionId = url.searchParams.get("institutionId");
   if (!childId || !institutionId) return redirect(INVITE);
-  return { preview: await getConsentPreview(childId, institutionId) };
+  const fromParam = url.searchParams.get("from");
+  const from: ReturnFrom | null = fromParam === "settings" || fromParam === "notifications" ? fromParam : null;
+  return { preview: await getConsentPreview(childId, institutionId), from };
 }
 
 /**
- * P-02 확인 · 동의 — 한 화면에서 아이 확인 + 기관 확인 + 공유 범위 동의를 끝낸다.
+ * P-02 확인 · 동의 — 한 화면에서 아이 확인 + 기관 확인 + 공유 동의를 끝낸다.
  *
  * P-01 에서 초대 코드로 연결한 아이와 그 코드를 준 기관을 보여준다. 찾지 못하면 다른 아이나
  * 기관으로 채우지 않고 "찾을 수 없음" 을 보여준다 — 엉뚱한 아이에 동의하게 만들면 안 된다.
  * 우리 아이가 아니면 연결을 끊는다(G-05). 코드는 본인 확인이 아니라서 잘못 연결될 수 있다.
  */
 export default function ParentConsentPage() {
-  const { preview } = useLoaderData<typeof clientLoader>();
+  const { preview, from } = useLoaderData<typeof clientLoader>();
+  // 설정·알림에서 왔거나 온보딩을 마친 보호자에게는 온보딩 단계 표시가 맞지 않는다
+  const returnTo = from ? RETURN_TO[from] : null;
+  const showSteps = !returnTo && !isOnboarded();
   const [consented, setConsented] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -46,17 +60,16 @@ export default function ParentConsentPage() {
           </p>
         </div>
         <button
-          onClick={() => navigate(INVITE)}
+          onClick={() => navigate(returnTo ? returnTo.path : INVITE)}
           className="tap h-14 w-full rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2"
         >
-          코드 입력 화면으로
+          {returnTo ? returnTo.label : "코드 입력 화면으로"}
         </button>
       </div>
     );
   }
 
-  const { child, institution, documentUrl, sharedFields, notSharedFields, allowedFields } =
-    preview;
+  const { child, institution, documentUrl, allowedFields } = preview;
 
   function save() {
     setSaveError(null);
@@ -71,14 +84,17 @@ export default function ParentConsentPage() {
         setSaveError(saveErrorMessage(err));
         return;
       }
-      // 온보딩 중이면 돌봄 정보 입력(4단계)까지 이어가고, 이미 쓰던 보호자가
-      // 새 기관 요청을 승인한 것이면 홈으로 돌아간다.
-      if (isOnboarded()) {
+      // 설정·알림에서 온 것이면 그곳으로 돌아간다. 온보딩 중이면 돌봄 정보 입력(4단계)까지
+      // 이어가고, 이미 쓰던 보호자가 새 기관 요청을 승인한 것이면 홈으로 돌아간다.
+      if (returnTo) {
+        navigate(returnTo.path);
+      } else if (isOnboarded()) {
         navigate("/parent");
       } else {
         grantRole("parent"); // 쿼리로 바로 들어온 경우를 위한 보정
         markOnboarded();
-        navigate("/parent/care-info?onboarding=1");
+        // 돌봄 정보는 기관에 공유하지 않아 온보딩에서 받지 않는다 — 설정 › 아이 정보에서 적는다
+        navigate("/parent");
       }
     });
   }
@@ -113,7 +129,7 @@ export default function ParentConsentPage() {
           disabled={rejecting}
           className="tap h-14 w-full rounded-2xl bg-block px-4 text-[16px] font-bold text-white disabled:opacity-60"
         >
-          {rejecting ? "처리 중…" : "정보가 달라요 · 연결 끊기"}
+          {rejecting ? <Busy>처리 중…</Busy> : "정보가 달라요 · 연결 끊기"}
         </button>
         <button
           onClick={() => setMismatch(false)}
@@ -127,7 +143,7 @@ export default function ParentConsentPage() {
 
   return (
     <div className="flex flex-col gap-5 pb-24">
-      <StepProgress step={3} total={4} />
+      {showSteps ? <StepProgress step={3} total={3} /> : null}
 
       <p className="rounded-2xl bg-accentsoft px-4 py-3 text-[15px] leading-6 text-accentink">
         <b className="font-semibold">{institution.name}</b>에서 {child.name} 학생을
@@ -173,18 +189,24 @@ export default function ParentConsentPage() {
         </div>
       </section>
 
+      {/* 지금 동작으로 지킬 수 있는 것만 적는다. 항목별 공유는 거르는 코드가 없고, 진단명 · 개인정보
+          검사는 AI 판단이라 놓칠 수 있어 약속하지 않는다. 미리보기의 설명 목록(sharedFields)은 쓰지 않는다 */}
       <section className="rounded-2xl bg-surface2 px-4 py-4">
-        <p className="mb-2 text-[13px] font-bold text-accentink">공유되는 정보</p>
-        <ul className="flex flex-col gap-2">
-          {sharedFields.map((label) => (
-            <li key={label} className="text-[15px]">
-              {label}
-            </li>
-          ))}
+        <p className="mb-2 text-[13px] font-bold text-accentink">동의하면 이렇게 돼요</p>
+        <ul className="flex list-disc flex-col gap-2 pl-5 text-[15px] leading-6">
+          <li>
+            {institution.name} 선생님이 쓴 {child.name} 기록을 AI가 정리하고, 선생님이 확인한 글을
+            보호자에게 보여줘요.
+          </li>
+          <li>
+            확인된 기록으로 만든 주간 리포트를, 아이가 다니는 다른 기관 중 동의한 곳과 서로 볼 수
+            있어요.
+          </li>
+          <li>
+            언제든 설정 &gt; 기관 권한에서 끌 수 있어요. 끄면 이 기관은 받은 리포트를 더 볼 수 없고, 이
+            기관 기록이 들어간 리포트도 다른 기관에서 가려져요.
+          </li>
         </ul>
-        <p className="mt-3 text-[14px] leading-6 text-muted">
-          {notSharedFields.join(", ")}는 공유되지 않습니다.
-        </p>
       </section>
 
       <label className="tap flex cursor-pointer items-start gap-3 rounded-2xl border border-line px-4 py-3 has-checked:border-accent has-checked:bg-accentsoft">
@@ -195,8 +217,9 @@ export default function ParentConsentPage() {
           className="mt-1 size-5 shrink-0 accent-accent"
         />
         <span className="text-[15px] leading-6">
-          위 정보가 <b className="font-semibold">{institution.name}</b>에 공유되는 것에
-          동의합니다. 언제든 [동의 관리]에서 회수할 수 있어요.
+          {/* "과/와" 는 기관 이름 받침에 따라 달라 조사 없이 쓴다 */}
+          위 내용대로 <b className="font-semibold">{institution.name}</b> 공유에 동의합니다.
+          언제든 설정 &gt; 기관 권한에서 끌 수 있어요.
         </span>
       </label>
 
@@ -212,7 +235,7 @@ export default function ParentConsentPage() {
           disabled={!consented || pending}
           className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted"
         >
-          {pending ? "확인 중…" : "동의하고 시작하기"}
+          {pending ? <Busy>확인 중…</Busy> : "동의하고 시작하기"}
         </button>
         {!consented ? (
           <p className="mt-1.5 text-center text-[14px] text-muted">

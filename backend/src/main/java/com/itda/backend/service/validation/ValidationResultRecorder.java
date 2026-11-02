@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
@@ -32,6 +33,16 @@ public class ValidationResultRecorder {
             return;
         }
         ValidationAgentResponse response = reply.response();
+        // FAILED 는 BE 가 호출 실패를 남기려고 둔 값이라 AI 가 보낼 수 없다. 판정이 없는 응답과 함께 계약 위반으로 보고,
+        // 무엇을 보냈는지 봐야 고칠 수 있으니 응답 원문을 FAILED 행에 남긴다.
+        if (response.verdict() == null || response.verdict() == ValidationVerdict.FAILED) {
+            log.warn("validation verdict missing or not in contract, recorded as system error journalEntryId={}",
+                    journalEntryId);
+            validationResultRepository.save(ValidationResult.of(journalEntryId, target.matchingResultId(),
+                    target.request().subjectChildId(), ValidationVerdict.FAILED, null, null, reply.rawJson()));
+            entry.failValidation(FailureReason.RESPONSE_UNREADABLE);
+            return;
+        }
 
         validationResultRepository.save(ValidationResult.of(
                 journalEntryId,
@@ -45,21 +56,19 @@ public class ValidationResultRecorder {
         switch (response.verdict()) {
             case PASS, REVIEW -> entry.passValidation();
             case BLOCK -> entry.blockValidation();
+            case FAILED -> throw new IllegalStateException("FAILED verdict is handled above");
         }
     }
 
     /**
-     * 호출이 실패했다. 판정 대신 {@code verdict = FAILED} 로 행을 남긴다(#122).
+     * 호출이 실패했다. 판정 대신 {@code verdict = FAILED} 로 행을 남기고(#122), 일지는 시스템 오류로 멈추며 원인을
+     * 남긴다(#180).
      *
-     * <p>예전에는 "판정이 없다"는 이유로 행을 남기지 않았는데, 그러면 실패 사실이 로그에만 남고
-     * 매칭 실패인지 검증 실패인지도 일지 상태만으로는 구분할 수 없었다. 매칭이 이미
-     * {@code MatchingStatus.FAILED} 로 행을 남기고 있어 그쪽과 대칭을 맞춘다.
-     *
-     * <p>실패 사유·재시도 횟수를 담을 컬럼은 아직 없다 — 재시도·타임아웃 규약이 정해진 뒤에
-     * 그 계약에 맞춰 추가한다. 지금은 "언제 어느 일지가 검증에서 실패했는지"까지만 남긴다.
+     * <p>행을 남기는 이유: 예전에는 "판정이 없다"는 이유로 행을 남기지 않았는데, 그러면 실패 사실이 로그에만 남았다.
+     * 매칭이 이미 {@code MatchingStatus.FAILED} 로 행을 남기고 있어 그쪽과 대칭을 맞춘다. 원인은 일지 한 곳에만 둔다.
      */
     @Transactional
-    public void recordFailure(Long journalEntryId) {
+    public void recordFailure(Long journalEntryId, FailureReason reason) {
         JournalEntry entry = journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId).orElse(null);
         if (entry == null) {
             log.warn("journal entry deleted during validation, failure not recorded journalEntryId={}", journalEntryId);
@@ -67,7 +76,7 @@ public class ValidationResultRecorder {
         }
         validationResultRepository.save(ValidationResult.of(
                 journalEntryId, null, entry.getChildId(), ValidationVerdict.FAILED, null, null, null));
-        entry.failValidation();
+        entry.failValidation(reason);
     }
 
     // AI 가 보낸 JSON 조각을 그대로 문자열로 남긴다 — 화면이 "start"/"end" 같은 원래 키로 읽는다.

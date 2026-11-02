@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLoaderData, useNavigate, useRevalidator } from "react-router";
-import { Card, EmptyState, Note, PageHeader, ValidationBadge } from "@/components/ui";
+import { Busy, Card, EmptyState, Note, PageHeader, ValidationBadge } from "@/components/ui";
 import { ApiError, getBlockedQueue, resolveBlockedItem } from "@/lib/api";
 import type { BlockedItem } from "@/lib/types";
 
@@ -16,7 +16,7 @@ export default function ReinputQueuePage() {
   return (
     <>
       <PageHeader
-        title="수정 요청"
+        title="검증 수정 요청"
         description="검증에서 멈춘 기록입니다. 원본을 수정한 뒤 다시 올려주세요"
       />
 
@@ -111,14 +111,14 @@ function BlockedCard({ item }: { item: BlockedItem }) {
           disabled={busy !== null}
           className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:opacity-60"
         >
-          {busy === "reupload" ? "처리 중…" : "수정한 원본 다시 올리기"}
+          {busy === "reupload" ? <Busy>처리 중…</Busy> : "수정한 원본 다시 올리기"}
         </button>
         <button
           onClick={() => resolve("hold")}
           disabled={busy !== null}
           className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2 disabled:opacity-60"
         >
-          {busy === "hold" ? "처리 중…" : "이 기록 보류"}
+          {busy === "hold" ? <Busy>처리 중…</Busy> : "이 기록 보류"}
         </button>
       </div>
       <p className="mt-2 text-[13px] text-muted">

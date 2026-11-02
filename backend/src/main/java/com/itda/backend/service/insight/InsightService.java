@@ -22,8 +22,7 @@ import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.child.ChildOrganization;
-import com.itda.backend.domain.consent.SharingConsent;
-import com.itda.backend.domain.consent.SharingConsentStatus;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.request.insight.InsightAgentRequest;
@@ -31,9 +30,9 @@ import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
-import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,7 +50,7 @@ import lombok.extern.slf4j.Slf4j;
  * child_context(child_id)        승인된 요약 id
  *   → summary_result(id IN ...)  entry_date · institution_id · claims
  *   → 기간으로 거른다
- *   → CORRECTED 요약 제거
+ *   → #221 이전 방식으로 고친 CORRECTED 요약 제거
  *   → organization(id IN ...)    institution_type
  * </pre>
  */
@@ -66,7 +65,7 @@ public class InsightService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
     private final ChildRepository childRepository;
-    private final SharingConsentRepository sharingConsentRepository;
+    private final ConsentStateReader consentStateReader;
     private final ObjectMapper objectMapper;
 
     /**
@@ -127,14 +126,6 @@ public class InsightService {
     }
 
     /**
-     * 승인된 요약 중 기간 안의 것만. {@code child_context} 에 행이 있다는 것이 곧 Gate 1 통과다.
-     *
-     * <p>⚠️ <b>교사가 고쳐서 승인한 요약({@code CORRECTED})은 통째로 뺀다</b> (§10.1 #7). 고친 본문은
-     * {@code child_context.content} 에만 있고 {@code summary_result.claims} 는 AI 원문 그대로라, 교사가
-     * 지운 문장이 근거를 달고 그대로 다른 기관에 나간다. MVP 는 그 요약을 쓰지 않는 쪽으로 정했다 —
-     * 최종 본문에 남은 claim 만 살리는 방식은 그다음이다 ({@code AI/insight/CRITERIA.md} §10).
-     */
-    /**
      * 재료가 된 요약과, 그것을 고를 때 본 {@code child_context} 중 가장 큰 id.
      *
      * <p>눈금을 따로 조회하지 않고 <b>같은 조회 결과에서</b> 뽑는 이유 — 기본 격리 수준(READ COMMITTED)에서는
@@ -147,6 +138,15 @@ public class InsightService {
         }
     }
 
+    /**
+     * 승인된 요약 중 기간 안의 것만. {@code child_context} 에 행이 있다는 것이 곧 Gate 1 통과다.
+     *
+     * <p><b>교사가 고쳐서 승인한 요약({@code CORRECTED})도 재료로 쓴다</b> (#249, 멘토 리뷰 A4). #221 부터 Gate 1
+     * 승인 때 claims 를 문장 카드 결과로 다시 써서, 지운 문장은 빠지고 문장마다 {@code source} 가 붙는다.
+     *
+     * <p>⚠️ <b>#221 이전 방식으로 고친 것만 뺀다.</b> 그때는 고친 글이 {@code child_context.content} 에만 있고
+     * claims 는 AI 원문 그대로라, 쓰면 교사가 지운 문장이 근거를 달고 다른 기관에 나간다 ({@link #legacyCorrectedAmong}).
+     */
     private ApprovedMaterial approvedSummariesIn(Long childId, LocalDate periodFrom, LocalDate periodTo) {
         // 기간을 먼저 좁힌다. 승인본부터 집으면 그 아이의 승인 이력 전체를 올려 놓고 한 주치만 남기게 된다.
         List<SummaryResult> inPeriod =
@@ -166,10 +166,12 @@ public class InsightService {
         // 눈금은 방금 읽은 그 행들에서 뽑는다. 다시 조회하면 스냅샷이 달라진다.
         Long lastContextId = contexts.stream().map(ChildContext::getId).max(Long::compareTo).orElseThrow();
 
-        Set<Long> corrected = correctedAmong(summaryIds);
-        List<SummaryResult> summaries = inPeriod.stream()
+        List<SummaryResult> approved = inPeriod.stream()
                 .filter(summary -> approvedIds.contains(summary.getId()))
-                .filter(summary -> !corrected.contains(summary.getId()))
+                .toList();
+        Set<Long> legacyCorrected = legacyCorrectedAmong(approved);
+        List<SummaryResult> summaries = approved.stream()
+                .filter(summary -> !legacyCorrected.contains(summary.getId()))
                 // child_context 는 승인순이라 8월 기록을 10월에 승인하면 맨 앞에 온다.
                 // 인사이트는 기간의 흐름을 보므로 관찰 날짜로 다시 세운다.
                 .sorted(Comparator.comparing(SummaryResult::getEntryDate).thenComparing(SummaryResult::getId))
@@ -177,14 +179,44 @@ public class InsightService {
         return new ApprovedMaterial(summaries, lastContextId);
     }
 
-    /** {@code review_type} 을 보지 않는 것은 일부러다 — {@code target_type = SUMMARY} 가 이미 Gate 1 을 뜻한다 (§9.1). */
-    private Set<Long> correctedAmong(List<Long> summaryIds) {
-        return approvalRepository
-                .findByTargetTypeAndDecisionAndTargetIdIn(
-                        ApprovalTargetType.SUMMARY, ApprovalDecision.CORRECTED, summaryIds)
+    /**
+     * #221 이전 방식({@code editedContent})으로 고쳐 승인한 요약. claims 가 AI 원문 그대로라 교사가 지운 문장이
+     * 남아 있다 — 재료에서 뺀다.
+     *
+     * <p><b>claims 에 {@code source} 가 하나도 없으면 옛 방식이다.</b> #221 이후의 {@code CORRECTED} 는 남은 문장에
+     * 모두 {@code source} 가 붙는다 — 유지한 문장도 {@code "AI"} 로 적힌다 ({@code Gate1Cards}). 다 지워 claims 가
+     * 비었으면 어차피 낼 문장이 없어 같이 빠져도 잃는 것이 없다.
+     *
+     * <p>⚠️ <b>요약 에이전트가 claim 에 {@code source} 를 쓰지 않는다는 전제</b>에 기댄다
+     * ({@code AI/summary/schemas.py} 의 {@code Claim} 은 {@code text}·{@code evidence} 뿐이다). 요약 쪽이
+     * {@code source} 를 쓰기 시작하면 옛 방식을 못 알아보니, 그때는 이 판별을 승인 시각 기준으로 바꾼다.
+     *
+     * <p>{@code review_type} 을 보지 않는 것은 일부러다 — {@code target_type = SUMMARY} 가 이미 Gate 1 을 뜻한다 (§9.1).
+     */
+    private Set<Long> legacyCorrectedAmong(List<SummaryResult> summaries) {
+        Set<Long> corrected = approvalRepository
+                .findByTargetTypeAndDecisionAndTargetIdIn(ApprovalTargetType.SUMMARY, ApprovalDecision.CORRECTED,
+                        summaries.stream().map(SummaryResult::getId).toList())
                 .stream()
                 .map(Approval::getTargetId)
                 .collect(Collectors.toSet());
+        return summaries.stream()
+                .filter(summary -> corrected.contains(summary.getId()))
+                .filter(summary -> !hasSource(readClaims(summary)))
+                .map(SummaryResult::getId)
+                .collect(Collectors.toSet());
+    }
+
+    private static boolean hasSource(JsonNode claims) {
+        if (claims == null || !claims.isArray()) {
+            return false;
+        }
+        for (JsonNode claim : claims) {
+            if (claim.hasNonNull("source")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Map<Long, Organization> institutionsOf(List<SummaryResult> summaries) {
@@ -208,9 +240,12 @@ public class InsightService {
         Set<Long> enrolled = childOrganizationRepository.findByChildIdAndDeletedAtIsNull(childId).stream()
                 .map(ChildOrganization::getOrganizationId)
                 .collect(Collectors.toSet());
-        List<Long> organizationIds = sharingConsentRepository
-                .findByChildIdAndStatus(childId, SharingConsentStatus.ACTIVE).stream()
-                .map(SharingConsent::getOrganizationId)
+        // 주간 인사이트를 허락한 기관만 본다 (#257). 하루 요약만 허락한 기관의 기록은 인사이트에 섞이지 않는다 —
+        // 받는 쪽(Gate 2)과 같은 판단을 쓴다 (ConsentStateReader).
+        List<Long> organizationIds = consentStateReader.insightStatesOf(List.of(childId))
+                .getOrDefault(childId, Map.of()).entrySet().stream()
+                .filter(entry -> entry.getValue() == ConsentState.GRANTED)
+                .map(Map.Entry::getKey)
                 .filter(enrolled::contains)
                 .distinct()
                 .toList();
@@ -245,7 +280,11 @@ public class InsightService {
         for (int order = 0; order < claims.size(); order++) {
             JsonNode claim = claims.get(order);
             String text = claim.path("text").asText(null);
-            List<InsightAgentRequest.Evidence> evidence = evidenceOf(claim.path("evidence"));
+            InsightAgentRequest.ClaimSource source = sourceOf(claim, summary);
+            if (source == null) {
+                continue;
+            }
+            List<InsightAgentRequest.Evidence> evidence = evidenceOf(claim.path("evidence"), source);
             if (text == null || text.isBlank() || evidence.isEmpty()) {
                 // 근거가 끊긴 문장은 보내지 않는다. 원문으로 추적되지 않는 내용이 다른 기관으로 나가면
                 // 안 되고(CRITERIA §2), 계약도 evidence 를 최소 1건으로 막아 뒀다 — 보내면 422 다.
@@ -253,23 +292,56 @@ public class InsightService {
             }
             prepared.add(new InsightAgentRequest.Claim(
                     summary.getId() + "-" + order, text, entryDate,
-                    institution.getId(), institutionType, evidence));
+                    institution.getId(), institutionType, source, evidence));
         }
         return prepared;
     }
 
-    private List<InsightAgentRequest.Evidence> evidenceOf(JsonNode evidence) {
+    /**
+     * 문장을 누가 썼는지. {@code source} 가 없으면 {@code AI} 다 — C안(#183) 전에 저장된 요약은 전부 AI 원문이다.
+     *
+     * <p>모르는 값이면 <b>그 문장을 보내지 않는다</b> ({@code null} 반환). {@code AI} 로 봐 두면 검증을 거치지
+     * 않은 교사 문장이 "AI 원문" 으로 나가고, Gate 2 가 띄울 경고도 사라진다. 한 문장을 잃는 쪽이 낫다.
+     */
+    private InsightAgentRequest.ClaimSource sourceOf(JsonNode claim, SummaryResult summary) {
+        JsonNode source = claim.path("source");
+        if (source.isMissingNode() || source.isNull()) {
+            return InsightAgentRequest.ClaimSource.AI;
+        }
+        try {
+            return InsightAgentRequest.ClaimSource.valueOf(source.asText());
+        } catch (IllegalArgumentException e) {
+            // asText() 는 객체·배열이면 빈 문자열이라 무엇이 왔는지 안 남는다. 원본 노드를 그대로 찍는다.
+            log.warn("unknown claim source, claim dropped summaryId={} source={}", summary.getId(), source);
+            return null;
+        }
+    }
+
+    /**
+     * claim 하나의 근거. <b>{@code TEACHER} 문장만 일지 번호를 비울 수 있다</b> — 교사가 Gate 1 에서 새로 쓴
+     * 문장은 원본 일지가 없고 {@code quote} 가 그 문장 자체다 (#199, AI 계약 {@code InsightEvidence}).
+     *
+     * <p>{@code AI}·{@code EDITED} 에서 번호가 빠지면 근거가 끊긴 것이라 그 근거를 버린다. 보내면 계약이
+     * 422 로 돌려보내고, 그러면 그 아이의 그 주 인사이트가 통째로 실패한다.
+     */
+    private List<InsightAgentRequest.Evidence> evidenceOf(JsonNode evidence,
+            InsightAgentRequest.ClaimSource source) {
         if (!evidence.isArray()) {
             return List.of();
         }
+        boolean entryOptional = source == InsightAgentRequest.ClaimSource.TEACHER;
         List<InsightAgentRequest.Evidence> prepared = new ArrayList<>();
         for (JsonNode one : evidence) {
             JsonNode journalEntryId = one.path("journal_entry_id");
             String quote = one.path("quote").asText(null);
-            if (!journalEntryId.isNumber() || quote == null || quote.isBlank()) {
+            if (quote == null || quote.isBlank()) {
                 continue;
             }
-            prepared.add(new InsightAgentRequest.Evidence(journalEntryId.asLong(), quote));
+            boolean hasEntry = journalEntryId.isNumber();
+            if (!hasEntry && !entryOptional) {
+                continue;
+            }
+            prepared.add(new InsightAgentRequest.Evidence(hasEntry ? journalEntryId.asLong() : null, quote));
         }
         return prepared;
     }

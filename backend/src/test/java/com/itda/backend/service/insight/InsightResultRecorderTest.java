@@ -2,6 +2,7 @@ package com.itda.backend.service.insight;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +54,8 @@ class InsightResultRecorderTest {
     private SummaryResultRepository summaryResultRepository;
     @Autowired
     private ChildContextRepository childContextRepository;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void setUp() {
@@ -72,6 +76,21 @@ class InsightResultRecorderTest {
                 CHILD, entryDate, 3L, 1, "요약 본문", "[]", "[]", "[]", "{}"));
         return childContextRepository
                 .saveAndFlush(ChildContext.of(CHILD, summary.getId(), "승인된 본문")).getId();
+    }
+
+    /**
+     * 실행 기록의 시각을 {@code elapsed} 만큼 앞으로 당긴다 — 그만큼 시간이 흐른 것과 같다. 실패한 아이는
+     * 기다렸다가 다시 집으므로(#266, 기본 1m,5m,30m) 바로 다시 집는 테스트는 이걸 먼저 부른다.
+     */
+    private void elapse(Duration elapsed) {
+        for (InsightRun run : insightRunRepository.findAll()) {
+            jdbcTemplate.update("UPDATE insight_run SET updated_at = ? WHERE id = ?",
+                    run.getUpdatedAt().minus(elapsed), run.getId());
+        }
+    }
+
+    private void waitOut() {
+        elapse(Duration.ofDays(1));
     }
 
     private InsightAgentResponse response(String json) throws Exception {
@@ -108,7 +127,7 @@ class InsightResultRecorderTest {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
         recorder.record(run, response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", 41L);
+                """), "{}", 41L, 1);
 
         assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
         assertThat(insightRunRepository.findAll()).singleElement()
@@ -121,7 +140,7 @@ class InsightResultRecorderTest {
     @Test
     void 결과가_있는_기간도_다시_집지_않는다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
-        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L);
+        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L, 1);
 
         assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
     }
@@ -130,7 +149,8 @@ class InsightResultRecorderTest {
     @Test
     void 실패한_기간은_다음_판으로_다시_집는다() {
         InsightRun first = recorder.claim(CHILD, FROM, TO).orElseThrow();
-        recorder.recordFailure(first);
+        recorder.recordFailure(first, "llm_unavailable");
+        waitOut();
 
         InsightRun second = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
@@ -156,7 +176,7 @@ class InsightResultRecorderTest {
     void 응답을_인사이트_행으로_남긴다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L);
+        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L, 1);
 
         List<InsightResult> saved = insightResultRepository.findByStatusOrderByIdDesc(InsightStatus.GATE2_PENDING);
         assertThat(saved).singleElement().satisfies(result -> {
@@ -184,7 +204,7 @@ class InsightResultRecorderTest {
                    {"situation": "상황", "behavior": "반응", "content": "  "},
                    {"situation": "상황2", "behavior": "반응2", "content": "제대로 된 본문"}],
                  "llm_called": true}
-                """), "{}", 41L);
+                """), "{}", 41L, 1);
 
         assertThat(insightResultRepository.findAll()).singleElement()
                 .satisfies(result -> assertThat(result.getContent()).isEqualTo("제대로 된 본문"));
@@ -196,7 +216,7 @@ class InsightResultRecorderTest {
     void 저장한_인사이트는_Gate2_대기로_들어간다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, oneInsight(), "{}", 41L);
+        recorder.record(run, oneInsight(), "{}", 41L, 1);
 
         assertThat(insightResultRepository.findAll()).singleElement()
                 .satisfies(result -> assertThat(result.getStatus()).isEqualTo(InsightStatus.GATE2_PENDING));
@@ -206,11 +226,12 @@ class InsightResultRecorderTest {
     void 실패하면_건수_없이_FAILED로_남는다() {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.recordFailure(run);
+        recorder.recordFailure(run, "llm_unavailable");
 
         assertThat(insightRunRepository.findAll()).singleElement().satisfies(saved -> {
             assertThat(saved.getStatus()).isEqualTo(InsightRunStatus.FAILED);
             assertThat(saved.getInsightCount()).isNull();
+            assertThat(saved.getFailureReason()).isEqualTo("llm_unavailable");
         });
         assertThat(insightResultRepository.findAll()).isEmpty();
     }
@@ -219,7 +240,7 @@ class InsightResultRecorderTest {
     void 응답의_insights가_null이어도_끝낸_것으로_남긴다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, new InsightAgentResponse(CHILD, null, null, null, false), null, 41L);
+        recorder.record(run, new InsightAgentResponse(CHILD, null, null, null, false), null, 41L, 1);
 
         assertThat(insightRunRepository.findAll()).singleElement().satisfies(saved -> {
             assertThat(saved.getStatus()).isEqualTo(InsightRunStatus.DONE);
@@ -232,7 +253,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark);
+                """), "{}", mark, 1);
 
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
     }
@@ -246,7 +267,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark);
+                """), "{}", mark, 1);
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
 
         approve(FROM.plusDays(3));
@@ -262,7 +283,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark);
+                """), "{}", mark, 1);
 
         approve(TO.plusDays(1));
 
@@ -277,7 +298,8 @@ class InsightResultRecorderTest {
     /** 실패한 판은 다시 집어야 하므로 "다뤘다" 가 아니다. */
     @Test
     void 실패한_기간은_다시_집는다() {
-        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow());
+        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable");
+        waitOut();
 
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isTrue();
     }
@@ -292,6 +314,8 @@ class InsightResultRecorderTest {
         assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
 
         assertThat(recorder.releaseStuck()).isEqualTo(1);
+        assertThat(latest()).get().satisfies(run -> assertThat(run.getFailureReason()).isEqualTo("stuck"));
+        waitOut();
 
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isTrue();
         assertThat(recorder.claim(CHILD, FROM, TO)).get()
@@ -300,7 +324,7 @@ class InsightResultRecorderTest {
 
     @Test
     void 끝난_실행은_되돌리지_않는다() throws Exception {
-        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), oneInsight(), "{}", 41L);
+        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), oneInsight(), "{}", 41L, 1);
 
         assertThat(recorder.releaseStuck()).isZero();
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
@@ -313,9 +337,55 @@ class InsightResultRecorderTest {
 
     @Test
     void 가장_최근_판을_찾는다() {
-        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow());
-        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow());
+        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable");
+        waitOut();
+        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable");
 
         assertThat(latest()).get().satisfies(run -> assertThat(run.getRevision()).isEqualTo(2));
+    }
+
+    /**
+     * #266 — 바로 다시 집으면 다음 차례에도 이 아이가 맨 앞에 온다. 계속 실패하면 뒤의 아이들이 차례를 못 받는다.
+     */
+    @Test
+    void 실패한_직후에는_다시_집지_않는다() {
+        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable:empty_response");
+
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
+        assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
+    }
+
+    /** 1m → 5m → 30m. 연달아 실패할수록 오래 기다린다. */
+    @Test
+    void 연달아_실패할수록_오래_기다린다() {
+        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable");
+        elapse(Duration.ofMinutes(2));
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isTrue();
+
+        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable");
+        elapse(Duration.ofMinutes(2));
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
+
+        elapse(Duration.ofMinutes(4));
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isTrue();
+    }
+
+    /** 성공한 판 앞의 실패는 세지 않는다. 재료가 늘어 다시 돈 판이 실패하면 처음 실패처럼 1m 만 기다린다. */
+    @Test
+    void 성공한_뒤의_실패는_처음부터_센다() throws Exception {
+        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable");
+        waitOut();
+        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable");
+        waitOut();
+        Long mark = approve(FROM.plusDays(1));
+        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
+                {"child_id": 8, "insights": [], "llm_called": true}
+                """), "{}", mark, 1);
+        approve(FROM.plusDays(2));
+
+        recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable");
+        elapse(Duration.ofMinutes(2));
+
+        assertThat(recorder.needsRun(CHILD, FROM, TO)).isTrue();
     }
 }

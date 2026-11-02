@@ -4,12 +4,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.SummaryResult;
@@ -38,19 +41,23 @@ public class SummaryResultRecorder {
      *
      * <p>그 묶음에 승인 전 요약이 있으면 같은 판을 덮어쓰고, 승인된 판만 있으면 다음 판으로 쌓는다 (DB 스키마 §8.2).
      *
-     * <p>근거가 남은 문장이 없으면 AI 는 200 대신 503 을 준다(#148). 그래도 본문이 비어 오면 교사가 검토할 글이 없으므로
-     * 저장하지 않고 호출 실패와 같이 처리한다. 근거 재검사({@link SummaryEvidenceChecker})에 걸려도 같다.
+     * <p>그날 일지에 쓸 내용이 없으면 AI 는 {@code no_content} 를 붙여 빈 본문으로 준다. 이것은 정상 결과라 빈 요약으로
+     * 저장해 Gate 1 에서 교사가 확인하게 한다 (#244).
+     *
+     * <p>근거가 남은 문장이 없으면 AI 는 200 대신 503 을 준다(#148). 그래도 표시 없이 본문이 비어 오면 계약 위반이라
+     * 저장하지 않고 시스템 오류(RESPONSE_UNREADABLE)로 남긴다. 근거 재검사({@link SummaryEvidenceChecker})에 걸리면
+     * EVIDENCE_MISMATCH 다 (#180).
      *
      * @param request AI 에 실제로 보낸 요청. 근거는 DB 를 다시 읽은 원문이 아니라 보낸 원문과 대조한다
      */
     @Transactional
     public void record(ClaimedSummaryGroup claimed, SummaryAgentRequest request, SummaryAgentReply reply) {
         SummaryAgentResponse response = reply.response();
-        // "지금 요약" 요청은 결과를 남길 때 지운다. 집을 때 지우면 AI 장애로 묶음이 되돌아갔을 때 요청까지 사라진다.
-        runRequests.remove(claimed.group());
-        if (response.content() == null || response.content().isBlank()) {
-            log.warn("summary returned empty content, recorded as failure group={}", claimed.group());
-            recordFailure(claimed);
+        // [요약] 요청은 결과를 남길 때 처리 표시를 한다. 집을 때 하면 AI 장애로 묶음이 되돌아갔을 때 요청까지 사라진다.
+        runRequests.markHandled(claimed.group(), claimed.claimedAt());
+        if (!response.isNoContent() && isEmptyContent(response)) {
+            log.warn("summary returned empty content, recorded as system error group={}", claimed.group());
+            recordSystemError(claimed, FailureReason.RESPONSE_UNREADABLE);
             return;
         }
         List<JournalEntry> entries = summarizingEntries(claimed);
@@ -70,49 +77,98 @@ public class SummaryResultRecorder {
         Optional<String> problem = evidenceChecker.findProblem(claimed.group(), sentIds, sources, response);
         if (problem.isPresent()) {
             // 사유에는 위치와 이유만 있다. 본문·인용 원문은 아이 기록이라 로그에 남기지 않는다.
-            log.warn("summary evidence check failed, recorded as failure group={} journalEntryIds={} reason={}",
+            log.warn("summary evidence check failed, recorded as system error group={} journalEntryIds={} reason={}",
                     claimed.group(), claimed.journalEntryIds(), problem.get());
-            recordFailure(claimed);
+            recordSystemError(claimed, FailureReason.EVIDENCE_MISMATCH);
             return;
         }
 
         SummaryGroup group = claimed.group();
-        String claims = toJson(response.claims());
-        String covered = toJson(response.coveredEntryIds());
-        String uncovered = toJson(response.uncoveredEntryIds());
         SummaryResult latest = summaryResultRepository
                 .findFirstByChildIdAndEntryDateAndInstitutionIdOrderByRevisionDesc(
                         group.childId(), group.entryDate(), group.institutionId())
                 .orElse(null);
+        SummaryResult summary = response.isNoContent()
+                ? saveNoContent(group, latest, entries, reply)
+                : saveSummary(group, latest, reply);
+        entries.forEach(entry -> entry.completeSummary(summary.getId()));
+    }
 
-        SummaryResult summary;
-        if (latest != null && latest.isBeforeApproval()) {
-            latest.overwrite(response.content(), claims, covered, uncovered, reply.rawJson());
-            summary = latest;
-        } else {
-            int revision = latest == null ? 1 : latest.getRevision() + 1;
-            summary = summaryResultRepository.save(SummaryResult.of(group.childId(), group.entryDate(),
-                    group.institutionId(), revision, response.content(), claims, covered, uncovered,
-                    reply.rawJson()));
-        }
+    private SummaryResult saveSummary(SummaryGroup group, SummaryResult latest, SummaryAgentReply reply) {
+        SummaryAgentResponse response = reply.response();
+        String claims = toJson(response.claims());
+        String covered = toJson(response.coveredEntryIds());
+        String uncovered = toJson(response.uncoveredEntryIds());
+        SummaryResult summary = saveRevision(latest,
+                pending -> pending.overwrite(response.content(), claims, covered, uncovered, reply.rawJson()),
+                revision -> SummaryResult.of(group.childId(), group.entryDate(), group.institutionId(), revision,
+                        response.content(), claims, covered, uncovered, reply.rawJson()));
         // 필드가 없는 응답(#148 이전 AI)은 표시 없음으로 본다. 사유가 있는데 표시가 빠졌으면 경고 쪽으로 본다 —
         // 이름이 샜는데 경고가 안 뜨는 쪽이 더 나쁘다.
         JsonNode reasons = response.reviewReasons();
         boolean needsReview = Boolean.TRUE.equals(response.needsReview())
                 || (reasons != null && reasons.isArray() && !reasons.isEmpty());
         summary.markReview(needsReview, toJson(reasons));
-        entries.forEach(entry -> entry.completeSummary(summary.getId()));
+        return summary;
     }
 
     /**
-     * 호출이 실패했다. 처음 요약하던 일지는 FAILED 로, 이미 승인 전 요약에 들어가 있던 일지는 그 요약이 그대로
-     * 유효하므로 Gate 1 대기로 돌린다. 요약에는 실패 상태가 없어 행을 남기지 않는다 — FAILED 일지의 검증 결과가
-     * PASS·REVIEW 면 요약 단계에서 실패한 것이다.
+     * 재시도 뒤에도 근거가 남은 문장이 없다(AI 503 {@code no_grounded_claims}). 다시 요약하면 될 수 있으므로 처음 요약하던
+     * 일지는 요약 실패(SUMMARY_FAILED)로 남긴다. 이미 승인 전 요약에 들어가 있던 일지는 그 요약이 그대로 유효하므로
+     * Gate 1 대기로 돌린다. 요약에는 실패 상태가 없어 행을 남기지 않는다.
      */
     @Transactional
     public void recordFailure(ClaimedSummaryGroup claimed) {
-        runRequests.remove(claimed.group());
+        runRequests.markHandled(claimed.group(), claimed.claimedAt());
         summarizingEntries(claimed).forEach(JournalEntry::failSummary);
+    }
+
+    /**
+     * 다시 요약해도 같은 실패다(계약 위반·근거 재검사 실패·BE 오류). 처음 요약하던 일지는 시스템 오류로 멈추고 원인을
+     * 남긴다. 이미 승인 전 요약에 들어가 있던 일지는 {@link #recordFailure} 와 같이 Gate 1 대기로 돌린다.
+     */
+    @Transactional
+    public void recordSystemError(ClaimedSummaryGroup claimed, FailureReason reason) {
+        runRequests.markHandled(claimed.group(), claimed.claimedAt());
+        summarizingEntries(claimed).forEach(entry -> entry.failSummaryBySystemError(reason));
+    }
+
+    /**
+     * 요약할 내용이 없다는 결과를 저장한다. 다른 아이 이름이 남을 본문이 없어 사람이 볼 표시는 두지 않는다.
+     *
+     * <p>반영되지 않은 일지는 AI 값이 아니라 이번에 실제로 묶은 일지로 남긴다. 되돌린 판(REVERTED)은 일지와의 연결을 끊으므로
+     * 이 값이 어떤 일지가 들어 있었는지 남는 유일한 흔적이다.
+     */
+    private SummaryResult saveNoContent(SummaryGroup group, SummaryResult latest, List<JournalEntry> entries,
+            SummaryAgentReply reply) {
+        String uncovered = entries.stream().map(JournalEntry::getId).sorted().map(String::valueOf)
+                .collect(Collectors.joining(",", "[", "]"));
+        return saveRevision(latest,
+                pending -> pending.overwriteNoContent(uncovered, reply.rawJson()),
+                revision -> SummaryResult.noContent(group.childId(), group.entryDate(), group.institutionId(),
+                        revision, uncovered, reply.rawJson()));
+    }
+
+    /**
+     * 그 묶음의 판을 고른다 (DB 스키마 §8.2). 최신 판이 승인 전이면 그 판을 덮어쓰고, 없으면 1번, 승인·확인·보류·제거된
+     * 판만 있으면 다음 번호로 새로 만든다. 일반 요약과 요약할 내용 없음이 같은 규칙을 따라야 해서 여기 하나에 둔다.
+     *
+     * @param overwrite 승인 전 판을 이번 결과로 덮어쓰는 일
+     * @param create    판 번호를 받아 새 판을 만드는 일
+     */
+    private SummaryResult saveRevision(SummaryResult latest, Consumer<SummaryResult> overwrite,
+            IntFunction<SummaryResult> create) {
+        if (latest != null && latest.isBeforeApproval()) {
+            overwrite.accept(latest);
+            return latest;
+        }
+        int revision = latest == null ? 1 : latest.getRevision() + 1;
+        return summaryResultRepository.save(create.apply(revision));
+    }
+
+    // 표시 없이 본문이 빈 200 은 AI 계약에 없는 응답이다. 요약할 내용이 없으면 no_content 를 붙여 온다 (#244).
+    private static boolean isEmptyContent(SummaryAgentResponse response) {
+        return response.content() == null || response.content().isBlank();
     }
 
     // 요약하는 사이 삭제됐거나 다른 경로로 상태가 바뀐 일지는 건드리지 않는다.

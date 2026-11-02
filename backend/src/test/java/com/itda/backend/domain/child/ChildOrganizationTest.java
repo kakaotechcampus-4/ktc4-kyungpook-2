@@ -50,4 +50,17 @@ class ChildOrganizationTest {
         assertThat(link.isDeleted()).isFalse();
         assertThat(link.getExternalId()).isNull();
     }
+
+    /** 연결 요청을 수락해 되살릴 때는 새로 받은 관리번호를 넣는다. 번호 없이 되살릴 수는 없다. */
+    @Test
+    void restoreWithExternalIdSetsTheNewNumber() {
+        ChildOrganization link = ChildOrganization.of(1L, 10L, "2026-0031");
+        link.delete();
+
+        assertThatThrownBy(() -> link.restore(" ")).isInstanceOf(IllegalArgumentException.class);
+        link.restore("C-9");
+
+        assertThat(link.isDeleted()).isFalse();
+        assertThat(link.getExternalId()).isEqualTo("C-9");
+    }
 }

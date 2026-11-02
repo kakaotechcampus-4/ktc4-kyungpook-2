@@ -5,7 +5,7 @@ Validation Agent 그래프 조립.
 from langgraph.graph import StateGraph, END
 from validation.nodes import perceive, plan, act, reflect
 from .llm import LlmUnavailable
-from .schemas import ValidationInput, ValidationOutput, Evidence
+from .schemas import ValidationInput, ValidationOutput, Evidence, Issue
 
 
 def build_graph():
@@ -57,4 +57,5 @@ def run_validation(payload: ValidationInput) -> ValidationOutput:
         verdict=result["verdict"],
         issue_types=result["issue_types"],
         evidence=[Evidence(**e) for e in result["evidence"]],
+        issues=[Issue(**i) for i in result["issues"]],
     )

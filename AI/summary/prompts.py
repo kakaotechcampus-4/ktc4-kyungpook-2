@@ -12,6 +12,7 @@ evals/scripts/summary/test_criteria_sync.py 가 셋이 같은지 검사한다.
     좌표(span)           받지 않는다. 인용문만 받고 locate_quote 가 찾는다
     covered_entry_ids    받지 않는다. 살아남은 근거에서 코드가 센다
 
+쓸 말이 없으면 빈 claims 를 낸다. no_content 플래그는 받지 않고 코드가 정한다.
 모델이 내는 것은 claims 하나뿐이다. 나머지를 받으면 검사를 안 거친 값이
 결과에 섞인다 — 그게 자기채점이다.
 """
@@ -97,6 +98,21 @@ ANONYMIZE_RULE = (
     "교사·치료사 등 어른의 이름도 쓰지 말고 \"교사\" 로 적으세요."
 )
 
+#: 요약할 내용 없음 (no_content). "특이사항 없음" 처럼 관찰 사실이 없는 날이 있다.
+#: 억지로 문장을 만들면 근거 없는 문장이 생기고, 그걸 버리면 503 이 되어
+#: "쓸 말이 없었다" 와 "모델이 죽었다" 가 구별되지 않는다. 빈 claims 는
+#: 코드가 no_content 로 바꿔 200 으로 보낸다 (CRITERIA.md §2).
+NO_CONTENT_RULE = (
+    "일지에 아이에 대해 기록할 관찰 사실이 없으면(예: \"특이사항 없음\", \"결석\" 한 줄뿐) "
+    "문장을 지어내지 말고 {\"claims\": []} 로 답하세요."
+)
+
+#: 말투. 2026-10-28 실데이터 v1 에서 요약 60건 중 6건이 "~했습니다" 였다.
+#: child_context 에 쌓여 인사이트 재료가 되므로 한 가지로 맞춘다.
+TONE_RULE = (
+    "문장은 \"~했다\", \"~이다\" 로 끝내세요. \"~했습니다\", \"~함\" 은 쓰지 마세요."
+)
+
 OUTPUT_FORMAT = (
     "JSON 형식으로만 답하세요. claims 배열의 순서가 그대로 글의 순서가 됩니다:\n"
     '{"claims": [{"text": "요약 문장 하나.", '
@@ -106,7 +122,7 @@ OUTPUT_FORMAT = (
 
 def _rules() -> list[str]:
     """켜진 플래그에 해당하는 규칙만 내보낸다."""
-    rules = [MERGE_RULE, EVIDENCE_RULE, QUOTE_SPAN_RULE]
+    rules = [MERGE_RULE, EVIDENCE_RULE, QUOTE_SPAN_RULE, TONE_RULE, NO_CONTENT_RULE]
     if ANONYMIZE_OTHER_NAMES:
         rules.append(ANONYMIZE_RULE)
     if KEEP_HEDGES:

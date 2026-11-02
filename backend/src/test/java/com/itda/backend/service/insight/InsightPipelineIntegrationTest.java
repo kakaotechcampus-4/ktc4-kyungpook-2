@@ -1,6 +1,9 @@
 package com.itda.backend.service.insight;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -21,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -68,6 +72,10 @@ import com.itda.backend.repository.summary.SummaryResultRepository;
         "spring.main.allow-bean-definition-overriding=true",
         // 테스트 프로필은 워커를 꺼 두지만, 이 테스트는 워커를 직접 돌리는 것이 목적이다.
         "app.insight.worker.enabled=true",
+        // 켜면 @Scheduled 틱도 돈다. 틱이 AI /health 를 부르는 순간이 agentServer.reset() 과 expect() 사이에
+        // 끼면 MockRestServiceServer 가 IllegalStateException 을 던진다 (CI 에서 실제로 났다). 간격만 늘리면
+        // 앱이 뜰 때의 첫 틱이 남으므로 첫 실행 자체를 늦춰 틱이 아예 돌지 않게 하고, 워커는 테스트가 직접 돌린다.
+        "app.insight.worker.initial-delay-ms=2147483647",
         // 재시도는 AiAgentClientTest 가 본다. 여기서 켜 두면 503 한 건에 7초를 기다린다.
         "app.ai.retry-backoffs="})
 @ActiveProfiles("test")
@@ -124,6 +132,7 @@ class InsightPipelineIntegrationTest {
     @Autowired private InsightResultRepository insightResultRepository;
     @Autowired private InsightRunRepository insightRunRepository;
     @Autowired private SharingConsentRepository sharingConsentRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     private Child junho;
     private Organization school;
@@ -313,9 +322,44 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /** 교사가 고쳐서 승인한 요약은 재료에서 통째로 빠진다 (§10.1 #7). 재료가 없으면 집지도 않는다. */
+    /**
+     * 카드로 고쳐 승인한 요약이 워커를 거쳐 실제 AI 요청까지 간다 (#249, 멘토 리뷰 A4). 교사가 새로 쓴 문장은
+     * 일지 번호가 없어도 빠지지 않고 null 로 실려야 한다 — 빠지면 교사 문장이 인사이트에 영영 못 들어간다.
+     */
     @Test
-    void 고쳐_승인한_요약뿐이면_부르지도_집지도_않는다() {
+    void 카드로_고쳐_승인한_요약은_출처를_달고_AI_요청까지_간다() {
+        SummaryResult corrected = approved(school, periodFrom.plusDays(1), """
+                [{"text": "점심 줄에서 차례를 기다렸다.", "source": "AI",
+                  "evidence": [{"journal_entry_id": 1041, "quote": "줄에서 차례를 기다림"}]},
+                 {"text": "손을 잡고 세어 주자 진정했다.", "source": "EDITED",
+                  "evidence": [{"journal_entry_id": 1042, "quote": "손 잡고 셈"}]},
+                 {"text": "약 먹은 날 차분했다.", "source": "TEACHER",
+                  "evidence": [{"journal_entry_id": null, "quote": "약 먹은 날 차분했다."}]}]
+                """);
+        approvalRepository.saveAndFlush(new Approval(ApprovalTargetType.SUMMARY, corrected.getId(),
+                ApprovalReviewType.GATE1, 1L, ApprovalDecision.CORRECTED, "카드로 고쳐 승인"));
+
+        agentHealthy();
+        agentServer.expect(requestTo(AI + "/insight"))
+                .andExpect(jsonPath("$.claims[*].source").value(contains("AI", "EDITED", "TEACHER")))
+                .andExpect(jsonPath("$.claims[2].evidence[0].journal_entry_id").value(nullValue()))
+                .andRespond(withSuccess("""
+                        {"child_id": 1, "insights": [], "llm_called": true}
+                        """, MediaType.APPLICATION_JSON));
+
+        worker.run();
+
+        assertThat(insightRunRepository.findAll()).singleElement()
+                .satisfies(run -> assertThat(run.getStatus()).isEqualTo(InsightRunStatus.DONE));
+        agentServer.verify();
+    }
+
+    /**
+     * #221 이전 방식으로 고쳐 승인한 요약(claims 에 source 가 없음)은 재료에서 빠진다 (#249). 재료가 없으면
+     * 집지도 않는다 — 나중에 다른 요약이 승인되면 그때 다시 봐야 하기 때문이다.
+     */
+    @Test
+    void 옛_방식으로_고쳐_승인한_요약뿐이면_부르지도_집지도_않는다() {
         SummaryResult corrected =
                 approved(school, periodFrom.plusDays(1), claims("추정이 섞인 문장.", 1041, "원문 인용"));
         approvalRepository.saveAndFlush(new Approval(ApprovalTargetType.SUMMARY, corrected.getId(),
@@ -331,24 +375,36 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /** 503 은 LLM 장애다. 실패로 남기고, 다음 차례에 다음 판으로 다시 집는다. */
+    /**
+     * 503 은 LLM 장애다. 실패 사유와 함께 실패로 남기고, 기다릴 시간이 지나면 다음 판으로 다시 집는다.
+     * 바로 다시 집지 않는다 — 계속 실패하는 아이가 5초마다 맨 앞에 와서 뒤의 아이들을 막는다 (#266).
+     */
     @Test
-    void AI가_503이면_실패로_남고_다음_판으로_다시_집는다() {
+    void AI가_503이면_실패로_남고_기다렸다가_다음_판으로_다시_집는다() {
         approved(school, periodFrom.plusDays(1), claims("혼자 신발을 신었다.", 1041, "혼자 신음"));
 
         agentHealthy();
         agentServer.expect(requestTo(AI + "/insight"))
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"detail\": {\"reason\": \"llm_unavailable\"}}"));
+                        .body("{\"detail\": {\"reason\": \"llm_unavailable\", \"failure\": \"empty_response\"}}"));
 
         worker.run();
 
         assertThat(insightRunRepository.findAll()).singleElement().satisfies(run -> {
             assertThat(run.getStatus()).isEqualTo(InsightRunStatus.FAILED);
             assertThat(run.getInsightCount()).isNull();
+            assertThat(run.getFailureReason()).isEqualTo("llm_unavailable:empty_response");
         });
 
+        // 바로 다음 차례에는 /insight 를 부르지 않는다 (기대하지 않은 호출이면 MockRestServiceServer 가 던진다)
+        agentServer.reset();
+        agentHealthy();
+        worker.run();
+        assertThat(insightRunRepository.findAll()).hasSize(1);
+
+        insightRunRepository.findAll().forEach(run -> jdbcTemplate.update(
+                "UPDATE insight_run SET updated_at = ? WHERE id = ?", run.getUpdatedAt().minusHours(1), run.getId()));
         agentServer.reset();
         agentHealthy();
         agentServer.expect(requestTo(AI + "/insight")).andRespond(withSuccess("""

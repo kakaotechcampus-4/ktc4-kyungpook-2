@@ -16,7 +16,19 @@ public enum ChildErrorCode implements ErrorCode {
      * 없거나 삭제됐거나 우리 기관 명부에 없는 아이. 다른 기관 아이도 같은 404 다 —
      * 403 으로 나누면 그 id 의 아이가 어딘가에 있다는 사실이 새어 나간다.
      */
-    CHILD_NOT_FOUND(HttpStatus.NOT_FOUND, "CHILD_NOT_FOUND", "아동을 찾을 수 없습니다.");
+    CHILD_NOT_FOUND(HttpStatus.NOT_FOUND, "CHILD_NOT_FOUND", "아동을 찾을 수 없습니다."),
+
+    /**
+     * 이 보호자와 연결되지 않았거나 삭제된 아이(G-11). 이유를 나누지 않는다. 동의·초대 쪽의 같은 이름 코드와
+     * 응답이 같다.
+     */
+    CHILD_NOT_LINKED(HttpStatus.FORBIDDEN, "FORBIDDEN", "권한이 없습니다."),
+
+    /**
+     * 보호자가 볼 수 없는 일지(G-21). 없는 일지, 남의 아이 일지, 연결을 끊은 아이·삭제된 아이의 일지를 나누지 않는다 —
+     * 나누면 그 id 의 일지가 어딘가에 있다는 사실이 새어 나간다.
+     */
+    JOURNAL_NOT_FOUND(HttpStatus.NOT_FOUND, "JOURNAL_NOT_FOUND", "일지를 찾을 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;

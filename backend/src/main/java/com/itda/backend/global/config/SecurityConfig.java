@@ -127,6 +127,8 @@ public class SecurityConfig {
                                 // DispatcherServlet 에 닿기 전에 401 로 끝나서, 405 로 응답해야 할
                                 // 잘못된 메서드 호출이 인증 오류로 둔갑한다.
                                 "/api/v1/auth/logout",
+                                // 개발용 로그인. app.auth.dev-login.enabled 가 꺼져 있으면 컨트롤러가 없어 404 다.
+                                "/api/v1/dev/login",
                                 "/api/health",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",

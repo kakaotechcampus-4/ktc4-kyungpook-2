@@ -16,10 +16,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.dto.response.record.RawRecordResponse;
+import com.itda.backend.dto.response.record.RecordProgressResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.record.RawRecordService;
+import com.itda.backend.service.record.RecordProgressService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -40,6 +42,7 @@ import lombok.RequiredArgsConstructor;
 public class RawRecordController {
 
     private final RawRecordService rawRecordService;
+    private final RecordProgressService recordProgressService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(
@@ -82,6 +85,33 @@ public class RawRecordController {
         RawRecord saved = rawRecordService.ingest(userId, file);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(RawRecordResponse.from(saved)));
+    }
+
+    @GetMapping("/progress")
+    @Operation(
+            summary = "업로드한 파일의 처리 현황",
+            description = "우리 기관이 올린 파일을 최근 업로드부터 반환합니다. 파일마다 그 파일에서 나온 일지가 "
+                    + "지금 어느 단계에 있는지 함께 줍니다 — stageIndex 는 0 등록 · 1 매칭 · 2 검증 · 3 요약 · "
+                    + "4 1차 검토이고, state 는 running(자동 진행 중) · waiting(사람 확인 대기) · "
+                    + "failed(시스템 오류) · done(완료)입니다. 파일을 기록 단위로 나누기 전이면 entries 가 "
+                    + "비어 있습니다(PDF 는 아직 쪼개지지 않습니다)."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<List<RecordProgressResponse>> progress(@AuthenticationPrincipal String userId) {
+        return ApiResponse.success(recordProgressService.getProgress(userId));
     }
 
     @GetMapping("/{id}")

@@ -25,6 +25,7 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.invitation.InvitationRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.child.InstitutionLinkService;
 import com.itda.backend.service.child.OrganizationChildGuard;
 import com.itda.backend.service.consent.ConsentService;
 import com.itda.backend.service.user.UserService;
@@ -53,6 +54,7 @@ public class ChildGuardianService {
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final ConsentService consentService;
+    private final InstitutionLinkService institutionLinkService;
     private final Clock clock;
 
     /** O-18 아이와 연결된 보호자 목록. 다른 기관을 통해 연결된 보호자도 보여 주되 해제할 수 있는지 표시한다. */
@@ -81,7 +83,8 @@ public class ChildGuardianService {
     }
 
     /**
-     * O-19 기관이 보호자 연결을 끊는다. 자기 기관 코드로 생긴 연결이 아니면 403 이다. 끊긴 보호자의 동의도 끈다.
+     * O-19 기관이 보호자 연결을 끊는다. 자기 기관 코드로 생긴 연결이 아니면 403 이다. 끊긴 보호자의 동의와
+     * 그 보호자가 낸 기관 연결 요청도 거둔다.
      *
      * <p>아동을 먼저 잠그고 그 뒤에 삭제·명부 소속을 본다. {@link OrganizationChildGuard} 를 쓰지 않는 이유다 —
      * 가드가 잠금 없이 아동을 읽어 두면 잠금 조회가 그 낡은 엔티티를 그대로 돌려주고, 동의 철회로 상태가 바뀔 때
@@ -96,6 +99,8 @@ public class ChildGuardianService {
         if (!childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)) {
             throw new ChildException(ChildErrorCode.CHILD_NOT_FOUND);
         }
+        // 잠금 순서상 연결 요청이 보호자 연결보다 앞이다 (DB 스키마 §3.3). 아래에서 실패하면 함께 롤백된다.
+        institutionLinkService.cancelForUnlinkedGuardian(childId, guardianUserId);
         ChildGuardian guardian = childGuardianRepository.findByChildIdAndUserIdForUpdate(childId, guardianUserId)
                 .filter(found -> !found.isDeleted())
                 .orElseThrow(() -> new InvitationException(InvitationErrorCode.GUARDIAN_NOT_FOUND));
@@ -110,12 +115,14 @@ public class ChildGuardianService {
     }
 
     /**
-     * G-05 보호자가 자기 연결을 끊는다. 연결되지 않은 아이면 api-spec §5 규칙대로 403 FORBIDDEN 이다. 본인의 동의도 끈다.
+     * G-05 보호자가 자기 연결을 끊는다. 연결되지 않은 아이면 api-spec §5 규칙대로 403 FORBIDDEN 이다. 본인의 동의와
+     * 본인이 낸 기관 연결 요청도 거둔다.
      */
     @Transactional
     public void unlinkBySelf(String userId, Long childId) {
         Long parentId = userService.getParentIdOf(userId);
         Optional<Child> child = childRepository.findByIdForUpdate(childId);
+        institutionLinkService.cancelForUnlinkedGuardian(childId, parentId);
         ChildGuardian guardian = childGuardianRepository.findByChildIdAndUserIdForUpdate(childId, parentId)
                 .filter(found -> !found.isDeleted())
                 .orElseThrow(() -> new InvitationException(InvitationErrorCode.CHILD_NOT_LINKED));

@@ -18,10 +18,17 @@ REQUIRE_VALID_CLAIM_IDS = True
 #: 인사이트 하나에 필요한 최소 근거 claim 수. 관찰 하나는 패턴이 아니다.
 MIN_EVIDENCE_CLAIMS = 2
 
-#: 근거 수를 "서로 다른 날" 로 셀지. False 면 서로 다른 claim 이면 된다.
-#: 정하지 않았다 (CRITERIA §10). 같은 날 두 기관 기록도 비교 근거가 되므로 일단 False.
+#: 근거 claim 중 AI 원문(source=AI)이 최소 하나 있어야 한다 
+#: 교사가 Gate 1 에서 고치거나 쓴 문장은 검증을 거치지 않으므로, 그것만으로는 인사이트를 만들지 않는다.
+#: EDITED 는 근거 일지가 있어도 내용이 바뀌었을 수 있어 원문으로 세지 않는다.
+REQUIRE_SOURCE_CLAIM = True
+
+#: 근거 수를 "서로 다른 기록" 으로 센다. 기록 하나 = (날짜, 기관) — 요약 한 편과 같은 단위다.
+#: 같은 요약에서 나온 문장 두 개는 1개다. 실데이터 v1 (2026-10-28) 에서 일지가 길어
+#: 한 건에서 문장이 여러 개 나왔고, 인사이트 17개 중 4개가 일지 한 건만으로 성립했다.
+#: 같은 날 두 기관은 2개다 — 기관 간 비교 근거는 그대로 남긴다.
 #: test_reflect.py 가 이 결정을 고정한다. 바꾸면 테스트도 같이 바꾼다.
-COUNT_DISTINCT_DATES = False
+COUNT_DISTINCT_RECORDS = True
 
 #: 대처마다 자기 claim_ids 가 있어야 한다. 없으면 그 대처만 버린다.
 REQUIRE_SUPPORT_EVIDENCE = True
@@ -55,6 +62,8 @@ CROSS_WITHOUT_SUPPORT = True   # 대처가 없어도 같은 상황에서 기관�
 DROP_ADVICE_TAIL = True        # 끝에 조언·활용 문장을 붙이지 않는다 (v0.7)
 RELATE_RECORDS = True          # 기록 하나를 다시 말하지 않는다. 묶거나 비교한다
 NEED_DIFFERENCE = True         # 같은 행동이 겹치기만 해서는 쓰지 않는다 (v0.8)
+PLAIN_TONE = True              # "~했다" 로 끝낸다. 실데이터 v1 에서 "~했습니다" 가 섞임 (v0.9.3)
+DROP_HEALTH_ONLY = True        # 건강 상태만으로 쓰지 않는다. 실데이터 v2 에서 코로나 증상 두 기록을 묶음 (v0.9.4)
 
 #: 동기화 테스트가 CRITERIA §5 표와 대조할 목록.
 WRITING_RULE_FLAGS = (
@@ -72,6 +81,8 @@ WRITING_RULE_FLAGS = (
     "DROP_ADVICE_TAIL",
     "RELATE_RECORDS",
     "NEED_DIFFERENCE",
+    "PLAIN_TONE",
+    "DROP_HEALTH_ONLY",
 )
 
 
@@ -98,3 +109,10 @@ LUNA_CHAT_PATH = CHAT_PATH
 
 #: 호출 제한시간만 에이전트마다 다르다.
 LUNA_TIMEOUT = 60.0
+
+#: 생각 한도에 걸렸을 때만 쓰는 생각의 양. Luna 프록시는 출력(생각 + 답)을 2000 토큰까지만
+#: 허용해서 한도를 늘릴 수 없다 (max_completion_tokens 4000 도 400, 스트리밍이 아닌 응답의 상한).
+#: 2026-10-30 실데이터: 긴 입력에서 생각에만 2000 을 다 써서 답이 비었다 (finish_reason=length).
+#: 처음부터 low 로 두면 실패는 0 이 됐지만 4~6월 정답 패턴이 9/10 → 7/10, 기관 간 인사이트가
+#: 9 → 7 로 줄었다 (v3). 그래서 보통은 기본값으로 생각하고, 한도에 걸렸을 때만 낮춘다.
+LUNA_REASONING_EFFORT_ON_OVERFLOW = "low"

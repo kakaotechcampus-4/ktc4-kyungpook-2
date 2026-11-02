@@ -72,6 +72,16 @@ public class JournalEntry {
     @Column(name = "agent_retry_count")
     private Integer agentRetryCount;
 
+    // 시스템 오류(SYSTEM_ERROR)로 멈춘 단계와 원인 (#180). 그 상태일 때만 채우고 다른 상태에서는 비어 있다.
+    // 고친 뒤 되돌리는 SQL 이 두 값으로 고르고 함께 비운다 (backend/scripts/recover-system-errors.sql).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "failure_stage", length = 30)
+    private FailureStage failureStage;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "failure_reason", length = 30)
+    private FailureReason failureReason;
+
     private JournalEntry(Long rawRecordId, LocalDate entryDate, String content, Integer sequenceNo) {
         this.rawRecordId = rawRecordId;
         this.entryDate = entryDate;
@@ -167,10 +177,10 @@ public class JournalEntry {
         this.status = JournalEntryStatus.VALIDATION_BLOCKED;
     }
 
-    /** 검증 호출 자체가 실패했다. */
-    public void failValidation() {
+    /** 검증 호출이 실패했거나 결과를 남길 수 없다. 다시 돌려도 같으므로 시스템 오류로 멈추고 원인을 남긴다. */
+    public void failValidation(FailureReason reason) {
         requireStatus(JournalEntryStatus.VALIDATING);
-        this.status = JournalEntryStatus.FAILED;
+        stopBySystemError(FailureStage.VALIDATION, reason);
     }
 
     /** 검증에서 막힌(BLOCK) 기록을 선생님이 수정 요청 큐에서 처리할 수 있는 상태인지. */
@@ -252,12 +262,26 @@ public class JournalEntry {
     }
 
     /**
-     * 요약 호출이 실패했다. 이미 승인 전 요약에 들어가 있던 일지는 그 요약이 그대로 유효하므로 Gate 1 대기로 돌리고,
-     * 처음 요약하던 일지만 실패로 남긴다.
+     * 근거가 남은 문장이 없어 요약하지 못했다. 다시 요약하면 될 수 있다. 이미 승인 전 요약에 들어가 있던 일지는 그 요약이
+     * 그대로 유효하므로 Gate 1 대기로 돌리고, 처음 요약하던 일지만 요약 실패로 남긴다.
      */
     public void failSummary() {
         requireStatus(JournalEntryStatus.SUMMARIZING);
-        this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.FAILED;
+        this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.SUMMARY_FAILED;
+    }
+
+    /**
+     * 요약 호출이 실패했거나 결과를 남길 수 없다. 다시 돌려도 같으므로 처음 요약하던 일지는 시스템 오류로 멈추고 원인을
+     * 남긴다. 이미 승인 전 요약에 들어가 있던 일지는 {@link #failSummary()} 와 같이 Gate 1 대기로 돌린다.
+     */
+    public void failSummaryBySystemError(FailureReason reason) {
+        requireStatus(JournalEntryStatus.SUMMARIZING);
+        requireFailureReason(reason);
+        if (this.summaryId != null) {
+            this.status = JournalEntryStatus.GATE1_PENDING;
+            return;
+        }
+        stopBySystemError(FailureStage.SUMMARY, reason);
     }
 
     /** 처리하던 앱이 꺼져서 요약 중에 멈춘 일지를 요약하기 전 상태로 돌린다. */
@@ -272,6 +296,17 @@ public class JournalEntry {
         this.status = JournalEntryStatus.COMPLETED;
     }
 
+    /**
+     * 이 일지가 든 요약할 내용 없음 요약을 교사가 되돌렸다. 요약 전으로 돌아가 [요약]을 다시 누르면 같은 묶음의 새 일지와
+     * 함께 요약된다. 요약과의 연결도 끊는다 — 남아 있으면 다시 요약하다 실패할 때 "이미 Gate 1 에 있던 일지"로 보여
+     * 끝난 요약을 가리키는 Gate 1 대기로 간다 ({@link #failSummary()}).
+     */
+    public void revertToSummaryWait() {
+        requireStatus(JournalEntryStatus.GATE1_PENDING);
+        this.summaryId = null;
+        this.status = JournalEntryStatus.VALIDATED;
+    }
+
     /** 이 일지가 든 요약이 보류됐다. 같은 묶음에 새 일지가 와도 함께 묶이지 않는다. */
     public void holdGate1() {
         requireStatus(JournalEntryStatus.GATE1_PENDING);
@@ -282,6 +317,19 @@ public class JournalEntry {
     public void reopenGate1() {
         requireStatus(JournalEntryStatus.GATE1_HELD);
         this.status = JournalEntryStatus.GATE1_PENDING;
+    }
+
+    private void stopBySystemError(FailureStage stage, FailureReason reason) {
+        requireFailureReason(reason);
+        this.status = JournalEntryStatus.SYSTEM_ERROR;
+        this.failureStage = stage;
+        this.failureReason = reason;
+    }
+
+    private static void requireFailureReason(FailureReason reason) {
+        if (reason == null) {
+            throw new IllegalArgumentException("시스템 오류 원인은 필수입니다.");
+        }
     }
 
     private void requireAwaitingReview() {

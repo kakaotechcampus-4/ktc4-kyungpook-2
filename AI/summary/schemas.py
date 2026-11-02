@@ -19,7 +19,7 @@ matching/schemas.py · validation/schemas.py 와 같은 원칙이다 — 스펙�
 무엇을 쓰고 무엇을 버리는지는 CRITERIA.md 에 있다.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class EvidenceSpan(BaseModel):
@@ -156,3 +156,15 @@ class SummaryOutput(BaseModel):
 
     #: LLM 을 실제로 호출했는지. 호출률 측정용.
     llm_called: bool = False
+
+    #: 요약할 내용이 없었는가. 모델이 "이 일지들에서 쓸 사실이 없다" 고 판단한 경우다
+    #: (예: "특이사항 없음" 만 있는 날). 모델이 죽은 것과 구별하려고 200 으로 보낸다.
+    #: True 면 content "" · claims [] · covered [] 이고, 받은 일지는 전부
+    #: uncovered_entry_ids 로 간다. BE 가 같은 조건으로 재검사한다 (#244, #245).
+    no_content: bool = False
+
+    @model_validator(mode="after")
+    def _no_content_is_empty(self):
+        if self.no_content and (self.content or self.claims or self.covered_entry_ids):
+            raise ValueError("no_content=True 면 content·claims·covered_entry_ids 가 비어야 한다")
+        return self

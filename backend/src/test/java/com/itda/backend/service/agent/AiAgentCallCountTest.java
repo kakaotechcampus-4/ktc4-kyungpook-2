@@ -8,8 +8,6 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -77,7 +75,7 @@ class AiAgentCallCountTest {
     @Test
     void 요약용_클라이언트도_설정된_재시도_횟수만큼만_부른다() {
         SummaryProperties summaryProperties = new SummaryProperties(new WorkerProperties(true, 5000, 10),
-                LocalTime.of(3, 0), Duration.ofMinutes(30), ZoneId.of("Asia/Seoul"), Duration.ofSeconds(10));
+                Duration.ofSeconds(10));
         RestClient restClient = new SummaryAgentClientConfig()
                 .summaryAgentRestClient(RestClient.builder(), properties, summaryProperties);
         AiAgentClient client = new AiAgentClient(restClient, new ObjectMapper(), properties);

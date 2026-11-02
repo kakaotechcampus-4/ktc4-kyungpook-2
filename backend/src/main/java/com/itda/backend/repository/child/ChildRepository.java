@@ -1,5 +1,6 @@
 package com.itda.backend.repository.child;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,6 +17,8 @@ public interface ChildRepository extends JpaRepository<Child, Long> {
 
     Optional<Child> findByIdAndDeletedAtIsNull(Long id);
 
+    List<Child> findByIdInAndDeletedAtIsNull(Collection<Long> ids);
+
     /**
      * 보호자 연결 수락·해제, 동의 부여·철회, 사람의 매칭 확정용. 삭제된 아동도 잠근다 — 삭제 여부는 잠근 뒤 판단해야
      * 동시에 진행되는 삭제를 놓치지 않는다. 여러 행을 잠그는 작업은
@@ -24,6 +27,15 @@ public interface ChildRepository extends JpaRepository<Child, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from Child c where c.id = :id")
     Optional<Child> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * 인사이트 열람(보호자 단건 · 기관 수신함 단건)용 공유 잠금. 권한을 바꾸는 쪽(동의 철회, 보호자 연결 해제,
+     * Gate 2 승인)이 모두 이 행을 {@link #findByIdForUpdate} 로 먼저 잠그므로 열람과 줄을 선다 — 철회가 먼저
+     * 커밋되면 열람은 거둔 권한을 보고, 열람이 먼저면 철회는 열람이 끝난 뒤 권한을 거둔다. 열람끼리는 서로 막지 않는다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("select c from Child c where c.id = :id")
+    Optional<Child> findByIdForShare(@Param("id") Long id);
 
     // FK/연관관계 없이(§16 원칙) child_organization을 평범한 Long 컬럼으로만 이어서 조회한다.
     // 이름 그대로 동의 필터가 없다 — 화면용 명부(O-10)는 pending_consent도

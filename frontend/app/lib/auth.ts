@@ -76,6 +76,8 @@ export type Session = {
   role: Role;
   /** 카카오 닉네임. 동의를 거부하면 없다. */
   name?: string;
+  /** 가입 때 입력한 기관명. 기관 계정만 있고, 서버가 기관을 못 찾으면 없다. */
+  institutionName?: string;
 };
 
 const ANONYMOUS: Session = { loggedIn: false, signupCompleted: false, role: null };
@@ -90,6 +92,8 @@ type MeResponse = {
   name?: string;
   role?: "org" | "parent";
   institutionId?: string;
+  /** role === "org" 일 때만 (#236) */
+  institutionName?: string;
 };
 
 function toSession(me: MeResponse): Session {
@@ -99,6 +103,7 @@ function toSession(me: MeResponse): Session {
     // signupCompleted 만 보고 분기한다. role 은 가입을 마쳤을 때만 믿는다.
     role: me.signupCompleted ? (me.role ?? null) : null,
     name: me.name,
+    institutionName: me.institutionName,
   };
 }
 

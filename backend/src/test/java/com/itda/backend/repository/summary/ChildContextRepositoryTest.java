@@ -3,6 +3,9 @@ package com.itda.backend.repository.summary;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -11,6 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.itda.backend.domain.summary.ChildContext;
+import com.itda.backend.domain.summary.SummaryResult;
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -72,5 +76,32 @@ class ChildContextRepositoryTest {
         entityManager.clear();
 
         assertThat(childContextRepository.findByChildIdOrderByIdDesc(8L)).hasSize(2);
+    }
+
+    /**
+     * 인사이트 워커는 <b>승인 시각</b>으로 다시 볼 주를 고른다 (#239). 관찰 날짜가 오래돼도 최근에 승인됐으면
+     * 나와야 하고, 승인이 오래됐으면 빠져야 한다.
+     */
+    @Test
+    void 그때_이후_승인된_요약의_아이와_관찰_날짜를_가져온다() {
+        LocalDate oldEntry = LocalDate.of(2026, 8, 19);
+        Long recentId = summary(8L, oldEntry);
+        Long staleId = summary(9L, LocalDate.of(2026, 8, 20));
+        childContextRepository.saveAndFlush(ChildContext.of(8L, recentId, "8월 기록을 이제 승인"));
+        ChildContext stale = childContextRepository.saveAndFlush(ChildContext.of(9L, staleId, "오래전 승인"));
+        entityManager.getEntityManager()
+                .createNativeQuery("update child_context set created_at = :at where id = :id")
+                .setParameter("at", LocalDateTime.now().minusDays(30))
+                .setParameter("id", stale.getId())
+                .executeUpdate();
+        entityManager.clear();
+
+        assertThat(childContextRepository.findApprovedEntryDaysSince(LocalDateTime.now().minusDays(14)))
+                .containsExactly(new ApprovedEntryDay(8L, oldEntry));
+    }
+
+    private Long summary(Long childId, LocalDate entryDate) {
+        return entityManager.persistAndFlush(SummaryResult.of(childId, entryDate, 3L, 1, "요약 본문",
+                "[{\"text\":\"요약 본문\"}]", "[1041]", "[]", "{}")).getId();
     }
 }

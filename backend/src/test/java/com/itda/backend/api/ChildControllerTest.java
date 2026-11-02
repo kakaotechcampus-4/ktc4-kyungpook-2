@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import com.itda.backend.domain.child.ChildStatus;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.dto.request.child.RegisterChildRequest;
 import com.itda.backend.dto.response.child.ChildRosterResponse;
 import com.itda.backend.dto.response.child.RegisteredChildResponse;
@@ -61,7 +62,8 @@ class ChildControllerTest {
     @Test
     void getRoster_returnsChildren() throws Exception {
         given(childService.getRoster(any()))
-                .willReturn(List.of(new ChildRosterResponse("1", "김하늘", "2020-01-01", "2026-0031", ChildStatus.ACTIVE)));
+                .willReturn(List.of(new ChildRosterResponse("1", "김하늘", "2020-01-01", "2026-0031", ChildStatus.ACTIVE,
+                        ConsentState.GRANTED)));
 
         mockMvc.perform(get(BASE_URL))
                 .andExpect(status().isOk())

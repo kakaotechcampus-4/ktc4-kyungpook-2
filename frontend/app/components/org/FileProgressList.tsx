@@ -1,32 +1,21 @@
 import { useEffect } from "react";
 import { Link, useRevalidator } from "react-router";
-import { StageDots } from "@/components/ui";
-import {
-  GATE1_INDEX,
-  MATCHING_INDEX,
-  PIPELINE_STAGES,
-  VALIDATION_INDEX,
-  stageStatesOf,
-} from "@/lib/pipeline";
+import type { StageState } from "@/components/ui";
+import { Spinner } from "@/components/ui";
+import { FILE_STAGES, type FileTone, fileProgressOf, fileStageStatesOf, isBeforeChild } from "@/lib/pipeline";
 import type { FileProgress } from "@/lib/types";
-
-/** 사람이 멈춰 있는 단계마다 교사가 가야 할 곳 */
-const WAITING_AT: Record<number, { label: string; href: string }> = {
-  [MATCHING_INDEX]: { label: "매칭 확인", href: "/queue/matching" },
-  [VALIDATION_INDEX]: { label: "수정 요청", href: "/queue/reinput" },
-  [GATE1_INDEX]: { label: "1차 검토", href: "/gate1" },
-};
 
 const POLL_MS = 1500;
 
 /**
- * 자동으로 진행 중인 파일이 있는 동안만 주기적으로 다시 불러온다.
- * 전부 사람 대기·실패·완료로 멈추면 폴링도 멈춘다 — 더 기다려도 바뀌지 않기 때문이다.
+ * 아이를 찾는 중인 파일이 있는 동안만 주기적으로 다시 불러온다.
+ * 아이가 정해진 뒤의 진행(검증 · 요약)은 이 화면이 보여주지 않으니 기다리지 않는다 —
+ * 서버는 요약 대기도 running 으로 내려서, 그것까지 보면 폴링이 끝나지 않는다.
  */
 export function useProgressPolling(files: FileProgress[]) {
   const revalidator = useRevalidator();
   const moving = files.some(
-    (f) => f.entries.length === 0 || f.entries.some((e) => e.state === "running"),
+    (f) => f.entries.length === 0 || f.entries.some((e) => isBeforeChild(e) && e.state === "running"),
   );
   useEffect(() => {
     if (!moving) return;
@@ -38,96 +27,189 @@ export function useProgressPolling(files: FileProgress[]) {
 }
 
 /**
- * 파일 단위 처리 현황.
+ * 파일 단위 처리 현황 — "올린 파일이 잘 들어갔나, 아이가 정해졌나".
  *
- * 업로드는 즉시 끝나고 처리는 백그라운드에서 돈다. 교사가 궁금한 건 "내가 올린 파일이
- * 어디까지 갔나" 라서 기록 건이 아니라 파일을 한 줄로 묶는다.
+ * 파일 한 개에 여러 아이 기록이 섞여 있어, 아이가 정해진 기록은 오늘의 업무의 아이별 카드(O-34)로
+ * 넘겨준다. 그 뒤 검증 · 요약 · 요약 검토는 거기서 이어진다.
  *
- *   관찰일지_9월3주.docx          기록 12건
- *   ● ● ● ✕ ◉   ◉ 교사 확인 8건 · 1차 검토 8   ✕ 실패 1건 [다시 시도]
+ *   1030_특이사항.txt  기록 2건                              83%
+ *   [■■■■■■■■■■■|■■■■■■■■■■■|■■■■■▒▒▒░░░░░░]
+ *    ✓ 기록 등록     ✓ 기록 나누기     매칭
+ *   ◌ 매칭 중 · 2건 중 1건의 아이를 정했어요
+ *
+ * 막대 하나가 세 단계를 ⅓씩 나눠 가진다 (lib/pipeline.ts fileProgressOf). 시안:
+ * https://claude.ai/artifact/DcJUa9y14gKNddcYTi5YC2
+ *
+ * 실패에는 버튼을 두지 않는다. 매칭 실패는 확인 필요 큐로 가고(api-spec O-26), 재처리 API(O-27)는 없다.
  */
-export function FileProgressList({
-  files,
-  onRetry,
-}: {
-  files: FileProgress[];
-  onRetry?: (rawRecordId: string) => void;
-}) {
+export function FileProgressList({ files }: { files: FileProgress[] }) {
   return (
     <ul className="flex flex-col divide-y divide-line border-y border-line">
       {files.map((f) => (
-        <FileRow key={f.rawRecordId} file={f} onRetry={onRetry} />
+        <FileRow key={f.rawRecordId} file={f} />
       ))}
     </ul>
   );
 }
 
-function FileRow({
-  file,
-  onRetry,
-}: {
-  file: FileProgress;
-  onRetry?: (rawRecordId: string) => void;
-}) {
-  const { entries } = file;
-  const states = stageStatesOf(entries);
-  const waiting = entries.filter((e) => e.state === "waiting");
-  const failed = entries.filter((e) => e.state === "failed").length;
-  const running = entries.filter((e) => e.state === "running").length;
-  const allDone = entries.length > 0 && entries.every((e) => e.state === "done");
+/** 막대 · 퍼센트 색. 진행 중은 빗금이 흐른다 */
+const FILL_CLASS: Record<FileTone, string> = {
+  splitting: "bg-accent progress-stripes",
+  running: "bg-accent progress-stripes",
+  waiting: "bg-human",
+  failed: "bg-block",
+  done: "bg-pass",
+};
 
-  // 멈춘 단계별 건수 — 어느 화면으로 가야 하는지 함께 보여준다
-  const waitingByStage = Object.entries(
-    waiting.reduce<Record<number, number>>((acc, e) => {
-      acc[e.stageIndex] = (acc[e.stageIndex] ?? 0) + 1;
-      return acc;
-    }, {}),
-  ).map(([stage, count]) => ({ ...WAITING_AT[Number(stage)], count }));
+const TONE_TEXT: Record<FileTone, string> = {
+  splitting: "text-accentink",
+  running: "text-accentink",
+  waiting: "text-human",
+  failed: "text-block",
+  done: "text-pass",
+};
+
+/** 막대 아래 단계 이름. 지난 단계는 ✓, 지금 단계는 굵게 색을 입힌다 */
+const LABEL_CLASS: Record<StageState, string> = {
+  done: "text-ink2",
+  active: "font-bold text-accentink",
+  waiting: "font-bold text-human",
+  failed: "font-bold text-block",
+  pending: "text-muted",
+};
+
+/** 색만으로 상태를 전하지 않는다 — 읽기 프로그램에는 상태 낱말을 준다 */
+const STATE_WORD: Record<StageState, string> = {
+  done: "완료",
+  active: "진행 중",
+  waiting: "사람 확인 대기",
+  failed: "실패",
+  pending: "대기 전",
+};
+
+function ProgressBar({ file }: { file: FileProgress }) {
+  const { percent, tone } = fileProgressOf(file.entries);
+  const states = fileStageStatesOf(file.entries);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div
+        role="progressbar"
+        aria-label={`${file.fileName} 진행률`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={`${percent}% · ${FILE_STAGES.map((s, i) => `${s} ${STATE_WORD[states[i]]}`).join(", ")}`}
+        className="relative h-3 overflow-hidden rounded-full bg-surface2"
+      >
+        <div
+          className={`h-full rounded-full transition-[width] duration-500 ease-out ${FILL_CLASS[tone]}`}
+          style={{ width: `${percent}%` }}
+        />
+        {/* 단계 경계 눈금 */}
+        <span aria-hidden className="absolute inset-y-0 left-1/3 w-0.5 bg-surface" />
+        <span aria-hidden className="absolute inset-y-0 left-2/3 w-0.5 bg-surface" />
+      </div>
+      <ol aria-hidden className="grid grid-cols-3 gap-1 text-[13px]">
+        {FILE_STAGES.map((stage, i) => (
+          <li key={stage} className={LABEL_CLASS[states[i]]}>
+            {states[i] === "done" ? "✓ " : ""}
+            {stage}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function FileRow({ file }: { file: FileProgress }) {
+  const { entries } = file;
+  const p = fileProgressOf(entries);
+  const early = entries.filter(isBeforeChild);
+  // 매칭 단계에서 끝난 기록은 "우리 기관 아이 아님"으로 뺀 것뿐이다 (BE EXCLUDED → done)
+  const excluded = early.filter((e) => e.state === "done").length;
+  // 아이가 정해진 뒤 검증 · 요약에서 멈춘 기록은 넘어간 것으로 치지 않는다 — 카드에서는 "관리자 확인 중"이다
+  const later = entries.filter((e) => !isBeforeChild(e));
+  const stuck = later.filter((e) => e.state === "failed").length;
+  const handed = later.length - stuck;
 
   return (
-    <li className="flex flex-col gap-2 py-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-[15px] font-medium break-all">{file.fileName}</span>
-        <span className="text-[14px] text-muted tabular-nums">
-          {entries.length === 0 ? "기록을 나누는 중" : `기록 ${entries.length}건`}
+    <li className="flex flex-col gap-2.5 py-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2.5">
+          <span className="text-[16px] font-semibold break-all">{file.fileName}</span>
+          <span className="text-[14px] text-muted tabular-nums">
+            {p.tone === "splitting" ? "기록을 나누는 중" : `기록 ${p.total}건`}
+          </span>
         </span>
+        <span className={`text-[15px] font-bold tabular-nums ${TONE_TEXT[p.tone]}`}>{p.percent}%</span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[14px]">
-        <StageDots stages={[...PIPELINE_STAGES]} states={states} />
+      <ProgressBar file={file} />
 
-        {waiting.length > 0 ? (
-          <span className="inline-flex flex-wrap items-center gap-x-1.5 text-human">
-            <span aria-hidden>◉</span>
-            <b className="font-semibold">교사 확인 {waiting.length}건</b>
-            {waitingByStage.map((w) =>
-              w.href ? (
-                <Link key={w.href} to={w.href} className="text-[13px] underline">
-                  {w.label} {w.count}
-                </Link>
-              ) : null,
-            )}
+      <div className="flex flex-col gap-1 text-[15px]">
+        {p.tone === "splitting" ? (
+          <span className="flex items-center gap-1.5 text-accentink">
+            <Spinner size={15} />
+            <b className="font-semibold">기록을 나누는 중</b>
           </span>
         ) : null}
 
-        {failed > 0 ? (
-          <span className="inline-flex items-center gap-1.5 text-block">
+        {p.failed > 0 ? (
+          <span className="flex flex-wrap items-center gap-x-1.5 text-block">
             <span aria-hidden>✕</span>
-            <b className="font-semibold">실패 {failed}건</b>
-            {onRetry ? (
-              <button
-                type="button"
-                onClick={() => onRetry(file.rawRecordId)}
-                className="rounded border border-block/40 px-2 py-0.5 text-[13px] font-semibold hover:bg-blocksoft"
-              >
-                다시 시도
-              </button>
-            ) : null}
+            <b className="font-semibold">매칭 실패</b>· {p.failed}건은 AI 판정을 받지 못했어요 ·
+            <Link to="/queue/matching" className="font-semibold underline">
+              매칭 확인에서 고르기
+            </Link>
           </span>
         ) : null}
 
-        {running > 0 ? <span className="text-muted">처리 중 {running}건</span> : null}
-        {allDone ? <span className="font-medium text-pass">✓ 처리 완료</span> : null}
+        {p.waiting > 0 ? (
+          <span className="flex flex-wrap items-center gap-x-1.5 text-human">
+            <span aria-hidden>◉</span>
+            <b className="font-semibold">확인 필요</b>· {p.total}건 중 {p.waiting}건은 아이를 정하지 못했어요 ·
+            <Link to="/queue/matching" className="font-semibold underline">
+              매칭 확인하기
+            </Link>
+          </span>
+        ) : null}
+
+        {p.running > 0 ? (
+          <span className="flex flex-wrap items-center gap-x-1.5 text-accentink">
+            <Spinner size={15} />
+            <b className="font-semibold">매칭 중</b>· {p.total}건 중 {p.resolved}건의 아이를 정했어요
+          </span>
+        ) : null}
+
+        {handed > 0 ? (
+          <span className={`flex flex-wrap items-center gap-x-1.5 ${p.tone === "done" ? "text-pass" : "text-[14px] text-ink2"}`}>
+            <span aria-hidden>✓</span>
+            {p.tone === "done" ? <b className="font-semibold">완료</b> : null}
+            {p.tone === "done" ? "· " : null}
+            {handed === p.total ? `모든 기록(${handed}건)이` : `기록 ${handed}건이`} 아이별 카드로 넘어갔어요 ·
+            <Link to="/dashboard" className="text-accentink underline">
+              오늘의 업무에서 보기
+            </Link>
+          </span>
+        ) : null}
+
+        {p.tone === "done" && handed === 0 ? (
+          <span className="flex items-center gap-x-1.5 text-pass">
+            <span aria-hidden>✓</span>
+            <b className="font-semibold">완료</b>
+          </span>
+        ) : null}
+
+        {stuck > 0 ? (
+          <span className="flex flex-wrap items-center gap-x-1.5 text-[14px] text-ink2">
+            <span aria-hidden>!</span>
+            처리하다 멈춘 기록 {stuck}건 · 관리자가 확인해요
+          </span>
+        ) : null}
+
+        {excluded > 0 ? (
+          <span className="text-[14px] text-muted">우리 기관 아이가 아니라서 뺀 기록 {excluded}건</span>
+        ) : null}
       </div>
     </li>
   );

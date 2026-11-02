@@ -88,7 +88,8 @@ class SignupApiTest {
                 .andExpect(jsonPath("$.data.role").value("parent"))
                 .andExpect(jsonPath("$.data.userId").value(String.valueOf(user.getId())))
                 .andExpect(jsonPath("$.data.signupCompleted").value(true))
-                .andExpect(jsonPath("$.data.institutionId").doesNotExist());
+                .andExpect(jsonPath("$.data.institutionId").doesNotExist())
+                .andExpect(jsonPath("$.data.institutionName").doesNotExist());
 
         User saved = userRepository.findById(user.getId()).orElseThrow();
         assertThat(saved.getRole()).isEqualTo(UserRole.PARENT);
@@ -104,12 +105,15 @@ class SignupApiTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.role").value("org"))
                 .andExpect(jsonPath("$.data.signupCompleted").value(true))
-                .andExpect(jsonPath("$.data.institutionId").isString());
+                .andExpect(jsonPath("$.data.institutionId").isString())
+                .andExpect(jsonPath("$.data.institutionName").value("햇살아동발달센터"));
 
         User saved = userRepository.findById(user.getId()).orElseThrow();
         Organization organization = organizationRepository.findById(saved.getOrganizationId()).orElseThrow();
         assertThat(saved.getRole()).isEqualTo(UserRole.ORGANIZATION);
         assertThat(organization.getBusinessNumber()).isEqualTo(businessNumber);
+        // 보호자에게 알려 줄 기관 코드가 가입할 때 함께 생긴다.
+        assertThat(organization.getCode()).hasSize(Organization.CODE_LENGTH);
         assertThat(organization.getName()).isEqualTo("햇살아동발달센터");
     }
 

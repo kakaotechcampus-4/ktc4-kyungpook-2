@@ -40,6 +40,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.jayway.jsonpath.JsonPath;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -99,7 +100,7 @@ import com.itda.backend.service.validation.ValidationWorker;
 import jakarta.servlet.http.Cookie;
 
 /**
- * 파일 업로드부터 Gate 1 까지 한 번에 돌린다 — 업로드 → 매칭 → 검증 → 지금 요약 → 요약 → Gate 1 목록·결정.
+ * 파일 업로드부터 Gate 1 까지 한 번에 돌린다 — 업로드 → 매칭 → 검증 → [요약] 요청 → 요약 → Gate 1 목록·결정.
  *
  * <p>AI 호출만 가짜로 바꾸고 나머지(API, 워커, 서비스, 레코더, PostgreSQL)는 실제 것을 쓴다. 워커는 테스트 프로필에서
  * 꺼져 있어 스케줄러가 돌지 않으므로 직접 만들어 한 차례씩 돌린다.
@@ -195,6 +196,9 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(jsonPath("$.data", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].childName").value("김준호"))
                 .andExpect(jsonPath("$.data[0].content").value(BLOCKS + " " + PUSHED))
+                .andExpect(jsonPath("$.data[0].claims", hasSize(2)))
+                .andExpect(jsonPath("$.data[0].claims[1].index").value(1))
+                .andExpect(jsonPath("$.data[0].claims[1].text").value(PUSHED))
                 .andExpect(jsonPath("$.data[0].uncoveredEntries", hasSize(0)))
                 .andExpect(jsonPath("$.data[0].reviewFlags", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].journalEntryId").value(pushed))
@@ -203,18 +207,32 @@ class Gate1PipelineIntegrationTest {
         Long id = ((Number) JsonPath.read(listed, "$.data[0].id")).longValue();
         String version = JsonPath.read(listed, "$.data[0].version");
 
-        // 고쳐서 승인
-        String edited = BLOCKS + " 친구와 부딪혔다.";
+        // 문장 카드로 고쳐서 승인 — 첫 문장은 그대로, 둘째는 고치고, 교사가 한 문장을 더한다.
+        String edited = BLOCKS + " 친구와 부딪혔다. 낮잠 뒤 차분했다.";
+        List<Map<String, Object>> cards = List.of(
+                Map.of("index", 0, "action", "KEEP"),
+                Map.of("index", 1, "action", "EDIT", "text", "친구와 부딪혔다."),
+                Map.of("action", "ADD", "text", "낮잠 뒤 차분했다."));
         mockMvc.perform(withAuth(post("/api/v1/summaries/" + id + "/gate1"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("decision", "approve", "editedContent", edited, "version", version))))
+                                Map.of("decision", "approve", "cards", cards, "version", version))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("APPROVED"))
                 .andExpect(jsonPath("$.data.decision").value("CORRECTED"));
 
         assertThat(childContextRepository.findByChildIdOrderByIdDesc(junho.getId())).singleElement()
                 .satisfies(c -> assertThat(c.getContent()).isEqualTo(edited));
+        // 인사이트가 읽는 claims 도 카드 결과로 바뀐다. 요약 본문은 AI 원문 그대로다.
+        SummaryResult approved = summaryResultRepository.findById(id).orElseThrow();
+        assertThat(approved.getContent()).isEqualTo(BLOCKS + " " + PUSHED);
+        JsonNode claims = objectMapper.readTree(approved.getClaims());
+        assertThat(claims).hasSize(3);
+        assertThat(claims.get(0).path("source").asText()).isEqualTo("AI");
+        assertThat(claims.get(1).path("source").asText()).isEqualTo("EDITED");
+        assertThat(claims.get(1).path("evidence").get(0).path("journal_entry_id").asLong()).isEqualTo(pushed);
+        assertThat(claims.get(2).path("source").asText()).isEqualTo("TEACHER");
+        assertThat(claims.get(2).path("evidence").get(0).path("journal_entry_id").isNull()).isTrue();
         assertThat(statusOf(blocks)).isEqualTo(JournalEntryStatus.COMPLETED);
         assertThat(statusOf(pushed)).isEqualTo(JournalEntryStatus.COMPLETED);
         assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, id))
@@ -283,7 +301,7 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(status().isCreated());
     }
 
-    /** 매칭 → 검증 → 지금 요약 → 요약. 마감(다음 날 03:00)·디바운스(30분)는 지금 요약으로 건너뛴다. */
+    /** 매칭 → 검증 → [요약] 요청 → 요약. 요약은 교사가 누른 묶음만 한다. */
     private void runPipeline() throws Exception {
         matchingWorker.run();
         validationWorker.run();

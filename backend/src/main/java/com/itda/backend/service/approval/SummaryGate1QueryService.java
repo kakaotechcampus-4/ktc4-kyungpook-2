@@ -24,6 +24,7 @@ import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -34,6 +35,7 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.LatestRevision;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
+import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -60,15 +62,16 @@ public class SummaryGate1QueryService {
     private static final Set<JournalEntryStatus> CHILD_UNKNOWN =
             Set.of(JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING);
 
-    /** 아동이 정해졌지만 아직 요약에 반영되지 않은 일지. 그 아이 묶음만 본다. */
+    /** 아동이 정해졌지만 아직 요약에 반영되지 않은 일지. 그 아이 묶음만 본다. [요약]을 눌러야 요약된다. */
     private static final Set<JournalEntryStatus> NOT_YET_SUMMARIZED = Set.of(JournalEntryStatus.MATCHED,
-            JournalEntryStatus.VALIDATING, JournalEntryStatus.VALIDATED, JournalEntryStatus.SUMMARIZING);
+            JournalEntryStatus.VALIDATING, JournalEntryStatus.VALIDATED);
 
     private final UserService userService;
     private final SummaryResultRepository summaryResultRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final ChildRepository childRepository;
     private final ValidationResultRepository validationResultRepository;
+    private final SummaryRunRequests runRequests;
 
     /** 요청 교사 기관의 검토 대기(pending) 또는 보류함(hold) 요약을 오래된 날짜부터. */
     @Transactional(readOnly = true)
@@ -113,6 +116,8 @@ public class SummaryGate1QueryService {
                         Gate1Version.of(s, entriesBySummary.getOrDefault(s.getId(), List.of())),
                         processing.contains(s.getId()),
                         s.getContent(),
+                        claimCards(s),
+                        s.isNoContent(),
                         s.isNeedsReview(),
                         parseStrings(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
                         uncoveredEntries(entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId())),
@@ -122,12 +127,13 @@ public class SummaryGate1QueryService {
     }
 
     /**
-     * 같은 묶음에 아직 요약에 반영되지 않은 일지가 있어 곧 바뀌는 요약들. 아동이 정해진 일지(매칭 확정 뒤 검증·요약
-     * 대기·요약 중)는 그 아이 묶음만 본다. 매칭 전·매칭 중 일지는 누구 것인지 몰라 기관·날짜로 본다 — 다른 아이 일지
-     * 때문에 그날 모든 요약을 막지 않으려는 것이다. 워커는 최신 판이 대기일 때만 덮어쓰므로, 보류된 판이나 옛 판은
-     * 바뀌지 않는다.
+     * 곧 바뀌는 요약들. 그 묶음을 지금 요약 중이거나, 교사가 [요약]을 눌러 뒀고 아직 요약에 반영되지 않은 일지가
+     * 있는 경우다. 누르지 않았으면 일지가 기다려도 요약은 바뀌지 않는다 — 자동 요약이 없다 (#181). 아동이 정해진
+     * 일지(매칭 확정 뒤 검증·요약 대기)는 그 아이 묶음만 본다. 매칭 전·매칭 중 일지는 누구 것인지 몰라 기관·날짜로
+     * 본다 — 다른 아이 일지 때문에 그날 모든 요약을 막지 않으려는 것이다. 워커는 최신 판이 대기일 때만 덮어쓰므로,
+     * 보류된 판이나 옛 판은 바뀌지 않는다.
      *
-     * <p>요약마다 따로 묻지 않고 목록의 아동·날짜로 세 번만 물어 코드에서 맞춘다 — 요약 수와 상관없이 SQL 수가 같다.
+     * <p>요약마다 따로 묻지 않고 목록의 아동·날짜로 몇 번만 물어 코드에서 맞춘다 — 요약 수와 상관없이 SQL 수가 같다.
      */
     private Set<Long> processingSummaryIds(Long organizationId, List<SummaryResult> summaries) {
         List<SummaryResult> pending = summaries.stream()
@@ -147,12 +153,19 @@ public class SummaryGate1QueryService {
                 journalEntryRepository.findInProgressDates(CHILD_UNKNOWN, institutionId, dates));
         Set<GroupKey> waitingGroups = new HashSet<>(
                 journalEntryRepository.findGroupKeys(NOT_YET_SUMMARIZED, institutionId, dates));
+        Set<GroupKey> summarizingGroups = new HashSet<>(
+                journalEntryRepository.findGroupKeys(Set.of(JournalEntryStatus.SUMMARIZING), institutionId, dates));
+        Set<GroupKey> requestedGroups = runRequests.pendingGroupsOf(organizationId, dates).stream()
+                .map(g -> new GroupKey(g.childId(), g.entryDate()))
+                .collect(Collectors.toSet());
 
         Set<Long> processing = new HashSet<>();
         for (SummaryResult s : pending) {
             GroupKey group = new GroupKey(s.getChildId(), s.getEntryDate());
             boolean latest = s.getRevision().equals(latestRevision.get(group));
-            if (latest && (busyDates.contains(s.getEntryDate()) || waitingGroups.contains(group))) {
+            boolean willSummarize = requestedGroups.contains(group)
+                    && (busyDates.contains(s.getEntryDate()) || waitingGroups.contains(group));
+            if (latest && (summarizingGroups.contains(group) || willSummarize)) {
                 processing.add(s.getId());
             }
         }
@@ -167,6 +180,19 @@ public class SummaryGate1QueryService {
             default -> throw new SummaryException(SummaryErrorCode.INVALID_REQUEST,
                     "unsupported gate1Status: " + gate1Status);
         };
+    }
+
+    /**
+     * 문장 카드. 번호가 결정 요청의 index 라, 글이 없는 문장도 빼지 않고 빈 글로 자리를 지킨다. 결정과 같은 기준으로
+     * 읽는다 ({@link Gate1Cards#readClaims}) — 목록에 보인 카드를 그대로 보냈는데 400 이 나면 안 된다.
+     */
+    private static List<ClaimCard> claimCards(SummaryResult summary) {
+        JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
+        List<ClaimCard> cards = new ArrayList<>();
+        for (int index = 0; index < claims.size(); index++) {
+            cards.add(new ClaimCard(index, claims.get(index).path("text").asText("")));
+        }
+        return cards;
     }
 
     private static List<UncoveredEntry> uncoveredEntries(List<JournalEntry> entries, Set<Long> coveredIds) {

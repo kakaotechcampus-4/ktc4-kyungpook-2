@@ -1,7 +1,8 @@
-import { Outlet, redirect, useLoaderData } from "react-router";
+import { Outlet, redirect, useLoaderData, type ShouldRevalidateFunctionArgs } from "react-router";
 import { ChildProvider } from "@/components/parent/ChildContext";
-import { getSession, isOnboarded } from "@/lib/auth";
-import { getParentChildren } from "@/lib/api";
+import { ParentNotReady } from "@/components/parent/NotReady";
+import { getSession } from "@/lib/auth";
+import { getGuardianInsights, getParentChildren, isReady, loadIfReady, restoreParentOnboarded } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 /**
@@ -17,18 +18,43 @@ export async function clientLoader() {
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   if (role !== "parent") return redirect("/parent/invite");
   // 카카오 로그인만 하고 약관·첫 기관 동의를 안 끝낸 사람은 아직 본 화면에 들어올 수 없다.
-  if (!isOnboarded()) return redirect("/parent/invite");
+  // 이 브라우저에 표시가 없어도 서버에 연결된 아이가 있으면 마친 사람이다 (다른 브라우저 · 기기)
+  if (!(await restoreParentOnboarded())) return redirect("/parent/invite");
+  // 아이 목록(G-10)을 서버에서 못 받는 빌드면 mock 아이를 띄우지 않는다 — 남의 아이가 보인다
+  if (!isReady("guardianChildren")) return { kids: null, selectedId: null, unreadInsightChildIds: [] as string[] };
   const kids = await getParentChildren();
   // 동의를 마쳐야만 role이 parent가 되므로 이론상 항상 1명 이상이지만, 방어적으로 처리한다.
   if (kids.length === 0) return redirect("/parent/invite");
   const selectedId = readSelectedChildId(kids);
-  return { kids, selectedId };
+  // 아직 열어 보지 않은 리포트가 있는 아이. 두 점이 이 값 하나에서 나온다 — 하단 리포트 탭(고른 아이, 셸이 아이
+  // Context 밖이라 이 loader 를 직접 읽는다)과 헤더의 아이 전환(다른 아이, Context 로 받는다)
+  const insights = await loadIfReady("guardianInsights", getGuardianInsights);
+  const unreadInsightChildIds = [...new Set((insights ?? []).filter((i) => !i.readAt).map((i) => i.childId))];
+  return { kids, selectedId, unreadInsightChildIds };
+}
+
+/**
+ * 같은 레이아웃 안에서 옮겨 다닐 때 React Router 는 이 loader 를 다시 부르지 않는다. 리포트 점이 어긋나지 않게
+ * 아래일 때는 다시 읽는다.
+ * - 홈·리포트로 들어갈 때 — 머무는 동안 새 글이 승인됐으면 목록의 "새 글"과 점이 함께 보여야 한다
+ * - 리포트 상세에서 나갈 때 — 방금 열어 본 시각이 남아 점이 꺼져야 한다. 설정 링크로 고른 아이도 이때 반영된다
+ * 다른 탭으로 옮길 때는 읽지 않는다 — 화면마다 요청을 하나씩 더 하지 않으려는 선택이다.
+ */
+export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  const isReport = (path: string) => path === "/parent/report" || path.startsWith("/parent/report/");
+  return (
+    defaultShouldRevalidate ||
+    nextUrl.pathname === "/parent" ||
+    isReport(nextUrl.pathname) ||
+    currentUrl.pathname.startsWith("/parent/report/")
+  );
 }
 
 export default function ParentGuard() {
-  const { kids, selectedId } = useLoaderData<typeof clientLoader>();
+  const { kids, selectedId, unreadInsightChildIds } = useLoaderData<typeof clientLoader>();
+  if (!kids) return <ParentNotReady />;
   return (
-    <ChildProvider kids={kids} selectedId={selectedId}>
+    <ChildProvider kids={kids} selectedId={selectedId} unreadInsightChildIds={unreadInsightChildIds}>
       <Outlet />
     </ChildProvider>
   );

@@ -46,8 +46,13 @@ public record InsightAgentRequest(
      * @param institutionType <b>한국어다.</b> {@code "학교"}·{@code "센터"}·{@code "활동지원사"}
      *                        (AI/insight/config.py INSTITUTION_TYPES). 이 문자열이 프롬프트에 그대로 들어가고
      *                        기관 간 대조도 이 값으로 한다. 기관 <b>이름</b>은 보내지 않는다
+     * @param source          문장을 누가 썼는지 — {@code AI} 원문 그대로 · {@code EDITED} 교사가 고침 ·
+     *                        {@code TEACHER} 교사가 새로 씀. Gate 1 카드 결과로 BE 가 붙인다 (#199).
+     *                        <b>교사 문장은 검증을 거치지 않는다</b> — AI 가 이 값으로 출력에 표시를 달고,
+     *                        Gate 2 화면이 그 표시로 경고를 띄운다
      * @param evidence        <b>최소 1 건.</b> 근거가 끊긴 문장은 보내지 않는다 — 원문으로 추적되지 않는 내용이
-     *                        다른 기관으로 나가면 안 된다 (CRITERIA §2)
+     *                        다른 기관으로 나가면 안 된다 (CRITERIA §2). 단 {@code TEACHER} 문장은 일지가 없어
+     *                        {@code journalEntryId} 가 비고, 그때 {@code quote} 가 그 문장 자체다
      */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Claim(
@@ -56,7 +61,23 @@ public record InsightAgentRequest(
             String entryDate,
             Long institutionId,
             String institutionType,
+            ClaimSource source,
             List<Evidence> evidence) {
+    }
+
+    /**
+     * 문장을 누가 썼는지 (AI/insight/schemas.py 의 {@code ClaimSource}).
+     *
+     * <p>⚠️ <b>{@code TEACHER} 만 {@code journal_entry_id} 를 비울 수 있다.</b> {@code AI}·{@code EDITED} 에서
+     * 빠지면 계약이 422 로 돌려보낸다 — 근거가 끊긴 것이기 때문이다.
+     */
+    public enum ClaimSource {
+        /** 요약 AI 원문 그대로. {@code source} 가 없는 옛 요약도 이 값으로 읽는다. */
+        AI,
+        /** 교사가 고친 문장. 근거는 원래 일지 그대로다. */
+        EDITED,
+        /** 교사가 새로 쓴 문장. 근거가 자기 자신이라 일지 번호가 없다. */
+        TEACHER
     }
 
     /**

@@ -20,6 +20,10 @@ public interface InsightRunRepository extends JpaRepository<InsightRun, Long> {
     Optional<InsightRun> findFirstByChildIdAndPeriodFromAndPeriodToOrderByRevisionDesc(
             Long childId, LocalDate periodFrom, LocalDate periodTo);
 
+    /** 그 아이·그 기간의 실행 전부, 최근 판부터. 연속 실패 횟수를 센다 (#266). 한 기간에 몇 줄뿐이다. */
+    List<InsightRun> findByChildIdAndPeriodFromAndPeriodToOrderByRevisionDesc(
+            Long childId, LocalDate periodFrom, LocalDate periodTo);
+
     /**
      * 앱이 죽어 {@code RUNNING} 으로 남은 실행을 찾는다. 집기는 {@code FAILED} 만 다시 가져가므로,
      * 되돌리지 않으면 그 아동·기간은 <b>영영 처리되지 않는다</b>.

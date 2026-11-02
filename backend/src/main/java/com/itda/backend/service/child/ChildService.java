@@ -4,21 +4,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.dto.request.child.RegisterChildRequest;
 import com.itda.backend.dto.response.child.ChildRosterResponse;
 import com.itda.backend.dto.response.child.RegisteredChildResponse;
 import com.itda.backend.dto.response.child.RegisteredChildResponse.RegisteredChild;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
+import com.itda.backend.global.exception.ConstraintViolations;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.user.UserService;
 
@@ -32,6 +34,7 @@ public class ChildService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final UserService userService;
     private final InvitationService invitationService;
+    private final ConsentStateReader consentStateReader;
 
     @Transactional(readOnly = true)
     public List<ChildRosterResponse> getRoster(String userId) {
@@ -39,13 +42,13 @@ public class ChildService {
         // AI 매칭 명부처럼 이 기관에 동의한 아동만 필요하면 findConsentedByOrganizationId를 쓴다.
         Long organizationId = userService.getOrganizationIdOf(userId);
         Map<Long, String> externalIds = externalIdsByChildId(organizationId);
-        return childRepository.findByOrganizationId(organizationId).stream()
-                .map(child -> new ChildRosterResponse(
-                        String.valueOf(child.getId()),
-                        child.getName(),
-                        child.getBirthdate().toString(),
-                        externalIds.get(child.getId()),
-                        child.getStatus()))
+        List<Child> children = childRepository.findByOrganizationId(organizationId);
+        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(
+                children.stream().map(Child::getId).toList());
+        return children.stream()
+                .map(child -> toRosterResponse(child, externalIds.get(child.getId()),
+                        consents.getOrDefault(child.getId(), Map.of())
+                                .getOrDefault(organizationId, ConsentState.NOT_GRANTED)))
                 .toList();
     }
 
@@ -99,13 +102,19 @@ public class ChildService {
                 invitationService.issue(organizationId, child.getId()));
     }
 
-    private boolean isDuplicateExternalId(DataIntegrityViolationException exception) {
-        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
-            if (cause instanceof ConstraintViolationException violation
-                    && ChildOrganization.UK_ORGANIZATION_EXTERNAL_ID.equalsIgnoreCase(violation.getConstraintName())) {
-                return true;
-            }
-        }
-        return false;
+    /** 명부 한 줄. {@code consent} 는 이 기관에 대한 동의라 아이 전체 요약인 {@code status} 와 다를 수 있다. */
+    public static ChildRosterResponse toRosterResponse(Child child, String externalId, ConsentState consent) {
+        return new ChildRosterResponse(
+                String.valueOf(child.getId()),
+                child.getName(),
+                child.getBirthdate().toString(),
+                externalId,
+                child.getStatus(),
+                consent);
+    }
+
+    /** 관리번호 유니크 제약에 걸렸는지. 아이 등록과 연결 요청 수락이 같은 409 로 바꾼다. */
+    public static boolean isDuplicateExternalId(DataIntegrityViolationException exception) {
+        return ConstraintViolations.isViolationOf(exception, ChildOrganization.UK_ORGANIZATION_EXTERNAL_ID);
     }
 }

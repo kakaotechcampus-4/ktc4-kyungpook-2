@@ -1,17 +1,31 @@
 import { CheckCircle2, TriangleAlert } from "lucide-react";
 import { useLoaderData, useRevalidator } from "react-router";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
-import { confirmInstitutionRequest, getInstitutionRequests, getParentChildren } from "@/lib/api";
+import {
+  confirmInstitutionRequest,
+  getInstitutionRequests,
+  getParentChildren,
+  isReady,
+} from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader() {
+  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
+  if (!isReady("institutionRequests")) return null;
   const kids = await getParentChildren();
   return { requests: await getInstitutionRequests(readSelectedChildId(kids)) };
 }
 
-export default function InstitutionRequestsPage() {
-  const { requests } = useLoaderData<typeof clientLoader>();
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function InstitutionRequestsPageRoute() {
+  if (!isReady("institutionRequests")) return <ParentNotReadyPage title="기관 요청사항" back />;
+  return <InstitutionRequestsPage />;
+}
+
+function InstitutionRequestsPage() {
+  const { requests } = useLoaderData<typeof clientLoader>()!;
   const revalidator = useRevalidator();
 
   async function confirm(id: string) {

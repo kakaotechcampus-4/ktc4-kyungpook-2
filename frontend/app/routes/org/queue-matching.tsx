@@ -63,8 +63,9 @@ function resolveChild(
   let blocked: BlockedReason | null = null;
   if (!rosterFailed) {
     if (!r) blocked = "not_in_roster";
-    else if (r.status === "pending_consent") blocked = "pending_consent";
-    else if (r.status !== "active") blocked = "inactive";
+    // 우리 기관에 대한 동의로 본다. 다른 기관에만 동의한 아이는 status 가 active 여도 확정할 수 없다
+    else if (r.consent === "not_granted") blocked = "pending_consent";
+    else if (r.consent !== "granted") blocked = "inactive";
   }
   return { ...resolved, blocked };
 }
@@ -147,14 +148,14 @@ export default function MatchingQueuePage() {
   return (
     <>
       <PageHeader
-        title="확인이 필요한 기록 · 아이별 정리"
+        title="매칭 확인 · 아이별 정리"
         description="AI가 아이를 확정하지 못한 기록을 사람이 지정합니다"
       />
 
       {!item ? (
         <EmptyState
           icon="✓"
-          title="확인이 필요한 기록이 없습니다"
+          title="매칭을 확인할 기록이 없습니다"
           description="AI가 확신하지 못한 기록이 생기면 여기로 옵니다."
         />
       ) : (

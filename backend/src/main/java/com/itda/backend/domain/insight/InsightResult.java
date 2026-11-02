@@ -140,6 +140,28 @@ public class InsightResult {
                 supports, claimIds, sourceEntryIds, sourceInstitutionIds, crossInstitution, rawResponse);
     }
 
+    /** Gate 2 승인. 허용된 수신자가 볼 수 있게 된다 — 되돌리는 경로는 없다. */
+    public void approveGate2() {
+        requireGate2Pending();
+        this.status = InsightStatus.APPROVED;
+    }
+
+    /** Gate 2 보류. 나가지 않는다. 보류 해제는 Gate 1 과 달리 두지 않는다. */
+    public void holdGate2() {
+        requireGate2Pending();
+        this.status = InsightStatus.HOLD;
+    }
+
+    /**
+     * 서비스가 행을 잠그고 상태를 먼저 보지만, 여기서 한 번 더 막는다 — 승인을 두 번 받으면 열람 권한이
+     * 두 번 생기고, 보류된 글이 조용히 승인되면 교사가 막은 글이 다른 기관으로 나간다.
+     */
+    private void requireGate2Pending() {
+        if (this.status != InsightStatus.GATE2_PENDING) {
+            throw new IllegalStateException("이미 처리된 인사이트입니다: id=" + id + " status=" + status);
+        }
+    }
+
     private static void requireText(String value, String name) {
         if (value == null || value.isBlank()) {
             // 빈 글이 Gate 2 에 올라가면 교사가 판단할 수 없고, 승인되면 빈 글이 다른 기관으로 나간다.

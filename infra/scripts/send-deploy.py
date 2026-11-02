@@ -15,6 +15,8 @@ import time
 SERVICES = {
     "backend": ("deploy-backend.sh", r"ghcr\.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:[0-9a-f]{64}"),
     "ai": ("deploy-ai.sh", r"ghcr\.io/kakaotechcampus-4/ktc4-kyungpook-2-ai@sha256:[0-9a-f]{64}"),
+    "frontend": ("deploy-frontend.sh",
+                 r"ghcr\.io/kakaotechcampus-4/ktc4-kyungpook-2-frontend@sha256:[0-9a-f]{64}"),
 }
 
 

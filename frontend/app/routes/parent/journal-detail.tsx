@@ -1,45 +1,34 @@
-import { useEffect, useState } from "react";
-import { ImageIcon } from "lucide-react";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
+import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
-import { Link, useLoaderData, useRevalidator } from "react-router";
-import { flagJournalEntry, getJournal, getJournalEntry } from "@/lib/api";
+import { Link, useLoaderData } from "react-router";
+import { getJournal, getJournalEntry, isReady } from "@/lib/api";
 
 export async function clientLoader({ params }: { params: { id: string } }) {
+  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
+  if (!isReady("guardianJournal")) return null;
+  // 볼 수 없는 일지(없음·남의 아이·끊긴 연결)는 undefined 로 온다 → "페이지를 찾을 수 없습니다"
   const entry = await getJournalEntry(params.id);
   if (!entry) throw new Response("Not Found", { status: 404 });
 
-  // "이전 일지"/"다음 일지" — 날짜·시간 오름차순으로 봤을 때 앞뒤 항목
+  // "이전 일지"/"다음 일지" — 서버 목록 순서(최근 순) 그대로. 일지에는 시각이 없어 화면이 다시 정렬하지 않는다.
+  // 앞 칸이 더 최근(다음), 뒤 칸이 더 예전(이전)이다.
   const journal = await getJournal(entry.childId);
-  const ascending = [...journal].sort((a, b) =>
-    `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`),
-  );
-  const idx = ascending.findIndex((j) => j.id === entry.id);
-  const prevId = idx > 0 ? ascending[idx - 1].id : null;
-  const nextId = idx !== -1 && idx < ascending.length - 1 ? ascending[idx + 1].id : null;
+  const idx = journal.findIndex((j) => j.id === entry.id);
+  const nextId = idx > 0 ? journal[idx - 1].id : null;
+  const prevId = idx !== -1 && idx < journal.length - 1 ? journal[idx + 1].id : null;
 
   return { entry, prevId, nextId };
 }
 
-export default function JournalDetailPage() {
-  const { entry, prevId, nextId } = useLoaderData<typeof clientLoader>();
-  const revalidator = useRevalidator();
-  const [flagging, setFlagging] = useState(false);
-  const [toast, setToast] = useState(false);
+/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
+export default function JournalDetailPageRoute() {
+  if (!isReady("guardianJournal")) return <ParentNotReadyPage title="일지 상세" back />;
+  return <JournalDetailPage />;
+}
 
-  useEffect(() => setToast(false), [entry.id]);
-
-  async function flag() {
-    setFlagging(true);
-    try {
-      await flagJournalEntry(entry.id);
-      setToast(true);
-      revalidator.revalidate();
-      setTimeout(() => setToast(false), 3000);
-    } finally {
-      setFlagging(false);
-    }
-  }
+function JournalDetailPage() {
+  const { entry, prevId, nextId } = useLoaderData<typeof clientLoader>()!;
 
   const navBtn =
     "tap flex h-12 items-center justify-center rounded-2xl border text-[14px] font-semibold";
@@ -52,54 +41,16 @@ export default function JournalDetailPage() {
         <InstitutionIcon type={entry.institution.type} />
         <span>
           <span className="block font-bold">{entry.institution.name}</span>
-          <span className="block text-[13px] text-muted">
-            <span className="tabular-nums">{entry.date.slice(5).replace("-", ".")}</span>{" "}
-            <span className="tabular-nums">{entry.time}</span>
+          <span className="block text-[13px] text-muted tabular-nums">
+            {entry.date.slice(5).replace("-", ".")}
           </span>
         </span>
       </div>
 
       <section>
-        <p className="mb-2 text-[13px] font-bold text-accentink">오늘 있었던 일</p>
-        <p className="text-[16px] leading-7">{entry.detail}</p>
+        <p className="mb-2 text-[13px] font-bold text-accentink">있었던 일</p>
+        <p className="text-[16px] leading-7 whitespace-pre-line">{entry.content}</p>
       </section>
-
-      {entry.photoCount ? (
-        <section>
-          <h2 className="mb-2 text-[15px] font-bold">사진</h2>
-          <div className="grid grid-cols-3 gap-2">
-            {Array.from({ length: entry.photoCount }, (_, i) => (
-              <div
-                key={i}
-                className="flex aspect-square items-center justify-center rounded-2xl bg-surface2 text-muted"
-              >
-                <ImageIcon size={22} strokeWidth={1.5} />
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {entry.institutionNote ? (
-        <section className="rounded-2xl bg-surface2 px-4 py-4">
-          <p className="mb-1.5 text-[13px] font-bold text-accentink">기관에서 남긴 말</p>
-          <p className="text-[15px] leading-6">{entry.institutionNote}</p>
-        </section>
-      ) : null}
-
-      {entry.flagged ? (
-        <p className="tap flex h-14 w-full items-center justify-center rounded-2xl bg-surface2 text-[15px] font-bold text-ink2">
-          {entry.institution.name}에 확인 요청함
-        </p>
-      ) : (
-        <button
-          onClick={flag}
-          disabled={flagging}
-          className="tap h-14 w-full rounded-2xl border border-line2 text-[15px] font-bold text-ink2 hover:bg-surface2 disabled:opacity-50"
-        >
-          {flagging ? "요청 중…" : "이 내용이 이상해요"}
-        </button>
-      )}
 
       <div className="grid grid-cols-2 gap-2">
         {prevId ? (
@@ -121,15 +72,6 @@ export default function JournalDetailPage() {
           </span>
         )}
       </div>
-
-      {toast ? (
-        <div
-          role="status"
-          className="fixed bottom-24 left-1/2 z-30 w-[calc(100%-2rem)] max-w-[398px] -translate-x-1/2 rounded-2xl bg-ink px-4 py-3 text-center text-[14px] font-medium text-white shadow-lg md:max-w-[528px] lg:max-w-[608px]"
-        >
-          {entry.institution.name}에 이 일지를 다시 확인해달라고 전했습니다.
-        </div>
-      ) : null}
     </div>
   );
 }

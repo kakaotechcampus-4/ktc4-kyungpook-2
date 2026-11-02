@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { InviteCodeCard } from "@/components/org/InviteCodeCard";
-import { Card, Note, PageHeader } from "@/components/ui";
+import { Busy, Card, Note, PageHeader } from "@/components/ui";
 import { ApiError, issueInvitation, registerChild } from "@/lib/api";
 import type { IssuedInvitation, RegisteredChild } from "@/lib/types";
 
@@ -146,7 +146,11 @@ export default function ChildRegisterPage() {
             <Note>
               코드는 발급 후 <b className="font-semibold">10분</b> 동안 <b className="font-semibold">한 번</b>만
               쓸 수 있습니다. 보호자가 늦게 확인했다면 새 코드를 발급해 다시 보내 주세요. 새로
-              발급해도 이전 코드는 그대로 쓸 수 있어, 보호자마다 따로 보낼 수 있습니다.
+              발급해도 이전 코드는 그대로 쓸 수 있어, 보호자마다 따로 보낼 수 있습니다. 이 화면을 나간 뒤에는{" "}
+              <Link to={`/children/${child.id}#guardians`} className="font-semibold text-accentink hover:underline">
+                {child.name} 상세 화면
+              </Link>
+              에서 코드를 다시 보거나 발급할 수 있습니다.
             </Note>
 
             {formError}
@@ -158,7 +162,7 @@ export default function ChildRegisterPage() {
                 disabled={pending}
                 className="tap rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
               >
-                {pending ? "발급 중…" : "새 코드 발급"}
+                {pending ? <Busy>발급 중…</Busy> : "새 코드 발급"}
               </button>
               <Link
                 to={`/children/${encodeURIComponent(child.id)}`}
@@ -240,6 +244,13 @@ export default function ChildRegisterPage() {
             초대 코드로 연결하고 동의하기 전까지는 이 아이의 기록을 올릴 수 없습니다. 관리번호는
             같은 이름의 아이를 구분하는 데 쓰이며, 우리 기관 안에서 겹칠 수 없습니다.
           </Note>
+          <Note>
+            <b className="font-semibold">이미 다른 기관에 다니는 아이</b>는 새로 등록하지 말고 보호자에게{" "}
+            <Link to="/children" className="font-semibold text-accentink underline">
+              우리 기관 코드
+            </Link>
+            를 알려 주세요. 새로 등록하면 같은 아이가 둘이 되어 기관들의 기록이 한 아이에게 모이지 않습니다.
+          </Note>
 
           {formError}
 
@@ -248,7 +259,7 @@ export default function ChildRegisterPage() {
             disabled={pending}
             className="tap self-start rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
           >
-            {pending ? "등록 중…" : "등록하고 초대 코드 발급"}
+            {pending ? <Busy>등록 중…</Busy> : "등록하고 초대 코드 발급"}
           </button>
         </form>
       </Card>

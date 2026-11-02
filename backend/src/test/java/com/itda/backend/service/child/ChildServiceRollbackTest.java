@@ -22,6 +22,7 @@ import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.dto.request.child.RegisterChildRequest;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.user.UserService;
 
@@ -36,7 +37,7 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(ChildService.class)
+@Import({ChildService.class, ConsentStateReader.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ChildServiceRollbackTest {
 
