@@ -1,5 +1,6 @@
 import { Home, LineChart, ListChecks, Settings } from "lucide-react";
 import { Link, useLocation, useRouteLoaderData } from "react-router";
+import { useNavigating } from "@/components/ui/Loading";
 import type { clientLoader as guardLoader } from "@/routes/parent/guard";
 
 const TABS = [
@@ -39,6 +40,8 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
   const guard = useRouteLoaderData<typeof guardLoader>("routes/parent/guard");
   const unreadReport = guard && "hasUnreadInsight" in guard ? guard.hasUnreadInsight : false;
   const isOnboarding = ONBOARDING.includes(pathname);
+  // 다음 화면을 기다리는 동안 지금 화면을 살짝 흐린다 — 기관 화면과 같다
+  const navigating = useNavigating();
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] flex-col bg-surface">
@@ -54,7 +57,10 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
         </header>
       ) : null}
 
-      <main className={`flex-1 px-4 py-5 md:px-6 md:py-6 ${isOnboarding ? "" : "pb-24"}`}>
+      <main
+        aria-busy={navigating}
+        className={`flex-1 px-4 py-5 transition-opacity duration-200 md:px-6 md:py-6 ${isOnboarding ? "" : "pb-24"} ${navigating ? "opacity-60" : ""}`}
+      >
         {children}
       </main>
 

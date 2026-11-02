@@ -7,6 +7,7 @@ import {
   ScrollRestoration,
 } from "react-router";
 import type { Route } from "./+types/root";
+import { FullPageLoading, NavigationProgress } from "@/components/ui/Loading";
 import "./app.css";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -33,7 +34,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  // 화면을 옮기는 동안 맨 위 막대 — 기관 · 보호자 · 로그인 화면이 함께 쓴다
+  return (
+    <>
+      <NavigationProgress />
+      <Outlet />
+    </>
+  );
 }
 
 /**
@@ -43,11 +50,7 @@ export default function App() {
  * 보이는 일은 없다.
  */
 export function HydrateFallback() {
-  return (
-    <div className="flex min-h-screen items-center justify-center text-[15px] text-muted">
-      불러오는 중…
-    </div>
-  );
+  return <FullPageLoading />;
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

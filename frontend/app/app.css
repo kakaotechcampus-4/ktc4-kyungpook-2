@@ -40,6 +40,17 @@
   --color-instcentersoft: #dceae7;
   --color-instassistant: #7a4b96;
   --color-instassistantsoft: #ece1f3;
+
+  /* 화면을 옮기는 동안 맨 위 막대(components/ui/Loading.tsx NavigationProgress) — 왼쪽에서 오른쪽으로 흐른다 */
+  --animate-nav-bar: nav-bar 1.1s ease-in-out infinite;
+  @keyframes nav-bar {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(260%);
+    }
+  }
 }
 
 html {
