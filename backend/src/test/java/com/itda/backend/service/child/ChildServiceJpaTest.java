@@ -93,15 +93,17 @@ class ChildServiceJpaTest {
         assertThat(childRepository.findByOrganizationId(other.getId())).isEmpty();
     }
 
-    /** 이름·생일은 중복 확인을 하지 않는다 — 관리번호만 다르면 같은 이름·생일이라도 새 아동으로 등록된다. */
+    /** 관리번호만 다르게 넣어도 같은 기관에 이름·생일이 같은 아이가 있으면 409 다 (멘토님 리뷰 #256). */
     @Test
-    void 같은_이름과_생일로_두_번_등록하면_두_명이_된다() {
+    void 같은_기관에_같은_이름과_생일로_다시_등록하면_409다() {
         childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-1"));
-        childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-2"));
         em.flush();
-        em.clear();
 
-        assertThat(childRepository.findByOrganizationId(ours.getId())).hasSize(2);
+        assertThatThrownBy(() -> childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-2")))
+                .isInstanceOfSatisfying(ChildException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ChildErrorCode.DUPLICATE_CHILD));
+        em.clear();
+        assertThat(childRepository.findByOrganizationId(ours.getId())).hasSize(1);
     }
 
     /** 다른 기관이 같은 아이를 등록해도 기존 아동을 찾지 않고 새 아동을 만든다. */

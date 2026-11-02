@@ -13,6 +13,12 @@ public enum ChildErrorCode implements ErrorCode {
     DUPLICATE_EXTERNAL_ID(HttpStatus.CONFLICT, "DUPLICATE_EXTERNAL_ID", "이미 사용 중인 관리번호입니다."),
 
     /**
+     * 같은 기관 명부에 이름 · 생년월일이 같은 아이가 이미 있다. 관리번호만 다르게 넣어 같은 아이가 두 번 들어가는 것을
+     * 막는다 (멘토님 리뷰 #256). 다른 기관의 아이는 보지 않는다.
+     */
+    DUPLICATE_CHILD(HttpStatus.CONFLICT, "DUPLICATE_CHILD", "같은 이름·생년월일의 아이가 이미 등록되어 있습니다."),
+
+    /**
      * 없거나 삭제됐거나 우리 기관 명부에 없는 아이. 다른 기관 아이도 같은 404 다 —
      * 403 으로 나누면 그 id 의 아이가 어딘가에 있다는 사실이 새어 나간다.
      */
