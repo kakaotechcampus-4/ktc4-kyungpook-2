@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
 import { Check, ChevronRight, Upload, X } from "lucide-react";
 import { FileProgressList, useProgressPolling } from "@/components/org/FileProgressList";
+import { HelpTip } from "@/components/ui/HelpTip";
 import { Card, Note, PageHeader, Spinner } from "@/components/ui";
 import {
   getChildren,
@@ -35,40 +36,28 @@ const fileKey = (f: File) => `${f.name}:${f.size}:${f.lastModified}`;
  */
 function StageHelp() {
   return (
-    <details className="group mb-4 rounded border border-line bg-paper/60">
-      <summary className="tap flex cursor-pointer list-none items-center gap-2 px-3.5 text-[14px] text-ink2 [&::-webkit-details-marker]:hidden">
-        <ChevronRight
-          aria-hidden
-          size={15}
-          strokeWidth={2}
-          className="transition-transform group-open:rotate-90"
-        />
-        <b className="font-bold">기록 등록 · 기록 나누기 · 매칭은 무슨 과정인가요?</b>
-      </summary>
-      <ol className="flex flex-col gap-3 px-3.5 pb-3.5 pl-9 text-[14px] leading-6 text-ink2">
+    <HelpTip label="기록 등록 · 기록 나누기 · 매칭">
+      <ol className="flex flex-col gap-2.5">
         <li>
-          <b className="font-semibold text-ink">1. 기록 등록</b> — 올린 파일을 그대로 받아 둬요. 원본은 바뀌지
-          않아요.
+          <b className="font-bold text-ink">1. 기록 등록</b> — 올린 파일을 그대로 받아 둬요. 원본은
+          바뀌지 않아요.
         </li>
         <li>
-          <b className="font-semibold text-ink">2. 기록 나누기</b> — 파일 한 개를 날짜별 기록으로 나눠요. 줄 맨
-          앞에 <code className="rounded bg-surface2 px-1">9/15</code>나{" "}
-          <code className="rounded bg-surface2 px-1">2026-09-15</code>처럼 날짜가 나오면 거기서 새 기록이
-          시작돼요. 날짜가 없는 파일은 통째로 기록 하나가 돼요.
+          <b className="font-bold text-ink">2. 기록 나누기</b> — 파일 한 개를 날짜별 기록으로 나눠요.
+          줄 맨 앞에 <code className="rounded bg-surface2 px-1">9/15</code> 나{" "}
+          <code className="rounded bg-surface2 px-1">2026-09-15</code> 처럼 날짜가 나오면 거기서 새
+          기록이 시작돼요. 날짜가 없는 파일은 통째로 기록 하나가 돼요.
         </li>
         <li>
-          <b className="font-semibold text-ink">3. 매칭</b> — 나눈 기록마다 AI가 내용 속 이름을 아동 명부와
-          맞춰 어느 아이의 기록인지 정해요. 여러 아이가 함께 나오거나, 명부에 없는 이름이거나, 단서가 없으면{" "}
-          <Link to="/queue/matching" className="text-accentink underline">
-            매칭 확인
-          </Link>
-          으로 보내 선생님이 직접 골라요.
+          <b className="font-bold text-ink">3. 매칭</b> — 기록마다 AI 가 내용 속 이름을 명부와 맞춰
+          어느 아이의 기록인지 정해요. 여러 아이가 함께 나오거나 명부에 없는 이름이면 매칭 확인으로
+          보내 선생님이 직접 골라요.
         </li>
         <li className="text-muted">
-          아이가 정해진 기록은 오늘의 업무의 아이별 카드로 넘어가 검증 · 요약이 이어져요.
+          아이가 정해진 기록은 대시보드의 아이별 카드로 넘어가 검증 · 요약이 이어져요.
         </li>
       </ol>
-    </details>
+    </HelpTip>
   );
 }
 
@@ -113,7 +102,7 @@ function FailureNotice({
             onClick={onRetry}
             disabled={uploading}
             aria-busy={uploading}
-            className="tap inline-flex items-center gap-2 rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-accent/75"
+            className="tap inline-flex items-center gap-2 rounded bg-ink px-4 text-[15px] font-semibold text-paper hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {uploading ? <Spinner size={16} /> : null}
             {uploading ? "올리는 중…" : `실패한 파일만 다시 올리기 (${retryable.length}개)`}
@@ -155,7 +144,7 @@ function UploadDone({ count, files, onMore }: { count: number; files: FileProgre
   return (
     <section aria-labelledby="upload-done-title" className="overflow-hidden rounded border border-line bg-surface">
       <div className="flex items-center gap-3 px-6 pt-5 pb-4">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-white">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-ink text-paper">
           <Check aria-hidden size={16} strokeWidth={2.6} />
         </span>
         <div className="flex flex-col gap-0.5">
@@ -175,7 +164,7 @@ function UploadDone({ count, files, onMore }: { count: number; files: FileProgre
           </div>
           <Link
             to="/queue/matching"
-            className="tap inline-flex items-center rounded bg-human px-4 text-[15px] font-bold text-white hover:opacity-90"
+            className="tap inline-flex items-center rounded bg-ink px-4 text-[15px] font-bold text-paper hover:opacity-90"
           >
             매칭 확인하기
           </Link>
@@ -203,7 +192,7 @@ function UploadDone({ count, files, onMore }: { count: number; files: FileProgre
         <div className="flex flex-wrap gap-2 pt-1.5">
           <Link
             to="/dashboard"
-            className="tap inline-flex items-center rounded bg-accent px-5 text-[15px] font-semibold text-white hover:bg-accentink"
+            className="tap inline-flex items-center rounded bg-ink px-5 text-[15px] font-semibold text-paper hover:brightness-110"
           >
             오늘의 업무로 가기 →
           </Link>
@@ -320,10 +309,7 @@ export default function UploadPage() {
 
   return (
     <>
-      <PageHeader
-        title="기록 등록"
-        description="올린 파일을 기록으로 나누고 아이와 매칭해요. 요약은 오늘의 업무에서 아이별로 눌러요"
-      />
+      <PageHeader title="기록 등록" />
 
       {uploaded ? (
         <div className="flex flex-col gap-4">
@@ -342,11 +328,6 @@ export default function UploadPage() {
         <div className="flex flex-col gap-5">
           {/* 아이 · 기록 유형 · 기록 시각은 받지 않는다. 파일 하나에 여러 아이의 기록이 섞여 있어
               아이는 매칭이 판정하고, 시각은 파일 본문에서 뽑는다. */}
-          <p className="text-[14px] text-muted">
-            여러 아이의 기록이 한 파일에 섞여 있어도 됩니다. 아이는 자동으로 확인하고, 확신이
-            낮으면 매칭 확인으로 보냅니다.
-          </p>
-
           {uploading ? (
             <div
               role="status"
@@ -446,8 +427,8 @@ export default function UploadPage() {
               aria-busy={uploading}
               className={`tap inline-flex items-center gap-2 rounded px-5 text-[16px] font-semibold disabled:cursor-not-allowed ${
                 uploading
-                  ? "bg-accent/75 text-white"
-                  : "bg-accent text-white hover:bg-accentink disabled:bg-line2 disabled:text-muted"
+                  ? "bg-ink/75 text-paper"
+                  : "bg-ink text-paper hover:brightness-110 disabled:bg-line2 disabled:text-muted"
               }`}
             >
               {uploading ? (
@@ -468,16 +449,10 @@ export default function UploadPage() {
       )}
 
       <Card className="mt-5">
-        <h2 className="mb-1 text-[17px] font-bold">파일별 진행 현황</h2>
-        <p className="mb-4 text-[14px] text-muted">
-          파일이 잘 들어갔는지, 기록마다 아이가 정해졌는지 보여줍니다. 이 화면을 떠나도 처리는
-          이어집니다. 그 뒤(검증 · 요약 · 요약 검토)는{" "}
-          <Link to="/dashboard" className="text-accentink underline">
-            오늘의 업무
-          </Link>
-          에서 아이별로 이어집니다.
-        </p>
-        <StageHelp />
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <h2 className="text-[19px] font-extrabold tracking-[-0.02em]">파일별 진행 현황</h2>
+          <StageHelp />
+        </div>
         {files.length === 0 ? (
           <p className="text-[14px] text-muted">아직 올린 파일이 없습니다.</p>
         ) : (

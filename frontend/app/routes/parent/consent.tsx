@@ -233,7 +233,7 @@ export default function ParentConsentPage() {
         <button
           onClick={save}
           disabled={!consented || pending}
-          className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted"
+          className="tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted"
         >
           {pending ? <Busy>확인 중…</Busy> : "동의하고 시작하기"}
         </button>

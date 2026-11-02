@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Busy, Spinner } from "@/components/ui";
 import { Link, useRevalidator } from "react-router";
 import { Search } from "lucide-react";
+import { HelpTip } from "@/components/ui/HelpTip";
 import { ApiError, getSummaryGroups, runSummary } from "@/lib/api";
 import type { SummaryGroup, SummaryGroupBoard, SummaryGroupStatus } from "@/lib/types";
 
@@ -23,7 +24,7 @@ const ORDER: SummaryGroupStatus[] = ["needs_fix", "ready", "summarizing", "valid
 
 const STATUS: Record<SummaryGroupStatus, { label: string; pill: string; bar: string }> = {
   needs_fix: { label: "수정 필요", pill: "bg-blocksoft text-block", bar: "bg-block" },
-  ready: { label: "요약 대기", pill: "bg-humansoft text-human", bar: "bg-human" },
+  ready: { label: "요약 대기", pill: "bg-humansoft text-human", bar: "bg-mark" },
   summarizing: { label: "요약 중", pill: "bg-accentsoft text-accentink", bar: "bg-accent/50" },
   validating: { label: "검증 중", pill: "bg-surface2 text-ink2", bar: "bg-line2" },
   admin_check: { label: "관리자 확인 중", pill: "bg-surface2 text-muted", bar: "bg-line" },
@@ -180,7 +181,6 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
 
   const ready = board.groups.filter((g) => g.status === "ready" && g.canSummarize);
   const todo = counted("needs_fix") + counted("ready");
-  const { inProgress, needsReview } = board.matching;
 
   const filters: { key: Filter; label: string; count: number; dot: string }[] = [
     { key: "all" as Filter, label: "전체", count: board.groups.length, dot: "bg-ink" },
@@ -196,46 +196,33 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
     <section aria-labelledby="groups-title" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h2 id="groups-title" className="text-[19px] font-bold">
+          <h2 id="groups-title" className="text-[19px] font-extrabold tracking-[-0.02em]">
             아이별 진행 현황
           </h2>
-          <p className="mt-1 text-[14px] text-muted">
-            {todo > 0
-              ? `지금 선생님이 할 일이 ${todo}명 있어요. 급한 것부터 보여드려요.`
-              : "지금 선생님이 할 일은 없어요."}{" "}
-            파일별 진행은{" "}
-            <Link to="/upload" className="text-accentink underline">
-              기록 등록
-            </Link>
-            에서 볼 수 있어요.
+          <p className="mt-1 text-[14px] leading-6 text-muted">
+            {todo > 0 ? `급한 것부터 ${todo}명` : "지금 할 일 없음"}
           </p>
         </div>
-        {moving ? (
-          <p className="flex items-center gap-1.5 text-[13px] text-accentink">
-            <span aria-hidden className="size-2 rounded-full bg-accent" />
-            자동으로 새로 고치는 중
-          </p>
-        ) : null}
-      </div>
-
-      {inProgress > 0 || needsReview > 0 ? (
-        <p className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded bg-paper px-3.5 py-2.5 text-[14px] text-ink2">
-          <span className="font-bold">아직 아이가 안 정해진 기록</span>
-          {inProgress > 0 ? (
-            <span>
-              매칭 중 <b className="font-bold">{inProgress}건</b>
+        <span className="flex items-center gap-2">
+          {moving ? (
+            <span className="flex items-center gap-1.5 text-[13px] text-accentink">
+              <span aria-hidden className="size-2 rounded-full bg-accent" />
+              새로 고치는 중
             </span>
           ) : null}
-          {needsReview > 0 ? (
-            <Link to="/queue/matching" className="font-semibold text-accentink underline">
-              매칭 확인 {needsReview}건 →
+          <HelpTip label="아이별 진행 현황">
+            카드 한 장이 아이 한 명의 하루치 기록이에요. 매칭이 끝나 아이가 정해진 기록만 여기 와요.
+            그 앞(파일 · 매칭)은{" "}
+            <Link to="/upload" className="font-bold text-accentink underline">
+              기록 등록
             </Link>
-          ) : null}
-        </p>
-      ) : null}
+            에서 봐요. 요약은 아이 × 날짜 단위라 이 목록에만 있어요.
+          </HelpTip>
+        </span>
+      </div>
 
       {board.groups.length === 0 ? (
-        <p className="rounded border border-dashed border-line2 px-4 py-10 text-center text-[15px] text-muted">
+        <p className="rounded-[18px] border border-dashed border-line2 px-4 py-12 text-center text-[15px] text-muted">
           요약을 기다리는 기록이 없어요. 요약이 끝난 기록은{" "}
           <Link to="/gate1" className="text-accentink underline">
             요약 검토
@@ -253,7 +240,7 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
                   type="button"
                   aria-pressed={on}
                   onClick={() => setFilter(f.key)}
-                  className={`flex min-h-10 items-center gap-1.5 rounded-full border px-3.5 text-[14px] font-semibold ${
+                  className={`flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-[15px] font-semibold ${
                     on
                       ? "border-ink bg-ink text-white"
                       : "border-line2 bg-surface text-ink2 hover:bg-surface2"
@@ -273,14 +260,14 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
                 <Search
                   aria-hidden
                   size={16}
-                  className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted"
+                  className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted"
                 />
                 <input
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="예: 김하늘"
-                  className="min-h-10 w-full rounded border border-line2 bg-surface pr-3 pl-9 text-[15px] text-ink outline-none focus:border-accent"
+                  className="min-h-11 w-full rounded-full border border-line2 bg-surface pr-4 pl-10 text-[15px] text-ink outline-none focus:border-accent"
                 />
               </span>
             </label>
@@ -289,7 +276,7 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as Sort)}
-                className="min-h-10 rounded border border-line2 bg-surface px-2.5 text-[15px] text-ink"
+                className="min-h-11 rounded-full border border-line2 bg-surface px-4 text-[15px] text-ink"
               >
                 <option value="urgent">급한 순 (할 일 먼저)</option>
                 <option value="old">오래된 날짜순</option>
@@ -301,7 +288,7 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
                 type="button"
                 onClick={() => run(ready)}
                 disabled={ready.some((g) => busy.has(keyOf(g)))}
-                className="min-h-10 rounded border border-human bg-surface px-4 text-[14px] font-bold text-human hover:bg-humansoft/50 disabled:opacity-60"
+                className="min-h-11 rounded-full border border-human bg-surface px-5 text-[14px] font-bold text-human hover:bg-humansoft/50 disabled:opacity-60"
               >
                 요약 대기 {ready.length}건 모두 요약
               </button>
@@ -309,19 +296,19 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
           </div>
 
           {sections.length === 0 ? (
-            <p className="rounded border border-dashed border-line2 px-4 py-9 text-center text-[15px] text-muted">
+            <p className="rounded-[18px] border border-dashed border-line2 px-4 py-12 text-center text-[15px] text-muted">
               조건에 맞는 아이가 없어요. 거르기나 검색어를 바꿔 보세요.
             </p>
           ) : (
             sections.map((s) => (
               <div key={s.title} className="flex flex-col gap-1.5">
-                <div className="flex items-baseline gap-2 px-0.5 pt-1.5 pb-1">
-                  <h3 className={`text-[15px] font-bold ${s.tone}`}>{s.title}</h3>
+                <div className="flex items-baseline gap-2 px-1 pt-2 pb-1.5">
+                  <h3 className={`text-[16px] font-extrabold ${s.tone}`}>{s.title}</h3>
                   <span className="text-[14px] text-muted">
                     {s.groups.length}명 · {s.desc}
                   </span>
                 </div>
-                <ul className="overflow-hidden rounded border border-line">
+                <ul className="flex flex-col gap-2">
                   {s.groups.map((g) => (
                     <GroupRow
                       key={keyOf(g)}
@@ -384,36 +371,45 @@ function GroupRow({
 
   const date = dateLabel(g.entryDate);
   return (
+    // 캔버스의 줄: 흰 카드 한 장 = 아이 하루치. 왼쪽 색 막대 대신 이름 앞 점 하나로 단계를 표시한다
     <li
-      className={`flex flex-wrap items-center gap-x-3.5 gap-y-2 border-t border-surface2 px-3.5 py-3 first:border-t-0 ${
-        g.status === "ready" ? "bg-humansoft/25" : "bg-surface hover:bg-paper/50"
+      className={`flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-[18px] border px-5 py-4 ${
+        g.status === "ready"
+          ? "border-human/35 bg-humansoft/35"
+          : "border-line bg-surface hover:border-line2"
       }`}
     >
-      <span aria-hidden className={`w-1 self-stretch rounded-full ${st.bar}`} />
-      <div className="flex min-w-0 flex-[1_1_140px] flex-col">
-        <span className="text-[16px] font-bold">{g.childName}</span>
-        {g.birthdate ? <span className="text-[12px] text-muted">{g.birthdate}</span> : null}
+      <div className="flex min-w-0 flex-[1_1_150px] items-center gap-2.5">
+        <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${st.bar}`} />
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className="truncate text-[17px] font-extrabold">{g.childName}</span>
+          {g.birthdate ? (
+            <span className="text-[13px] text-muted tabular-nums">{g.birthdate}</span>
+          ) : null}
+        </span>
       </div>
-      <span className="w-[108px] shrink-0 text-[14px] font-semibold text-ink2">{date}</span>
-      <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[13px] font-bold ${st.pill}`}>
+      <span className="w-[112px] shrink-0 text-[15px] font-semibold text-ink2">{date}</span>
+      <span className={`shrink-0 rounded-full px-3 py-1 text-[13px] font-bold ${st.pill}`}>
         {st.label}
       </span>
-      <div className="flex min-w-0 flex-[3_1_260px] flex-col gap-1">
-        <ul className="flex flex-wrap gap-1">
-          {chips.map((chip) => (
-            <li key={chip.text} className={`rounded px-2 py-0.5 text-[13px] ${chip.cls}`}>
-              {chip.href ? (
-                <Link to={chip.href} className="font-semibold underline">
-                  {chip.text} →
-                </Link>
-              ) : (
-                chip.text
-              )}
-            </li>
-          ))}
-        </ul>
+      <div className="flex min-w-0 flex-[3_1_250px] flex-col gap-1.5">
+        {chips.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5">
+            {chips.map((chip) => (
+              <li key={chip.text} className={`rounded-full px-2.5 py-0.5 text-[13px] ${chip.cls}`}>
+                {chip.href ? (
+                  <Link to={chip.href} className="font-semibold underline">
+                    {chip.text} →
+                  </Link>
+                ) : (
+                  chip.text
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {hint ? (
-          <p className="flex items-center gap-1.5 text-[13px] text-muted">
+          <p className="flex items-center gap-1.5 text-[13px] leading-5 text-muted">
             {g.summaryRequested ? (
               <Spinner size={13} className="text-accent" />
             ) : null}
@@ -431,9 +427,9 @@ function GroupRow({
         aria-label={`${g.childName} ${date} 요약`}
         onClick={onRun}
         disabled={mode === "off" || busy}
-        className={`tap shrink-0 rounded px-4.5 text-[15px] font-bold ${
+        className={`tap shrink-0 rounded-full px-6 text-[15px] font-bold ${
           mode === "strong"
-            ? "bg-human text-white hover:brightness-95"
+            ? "bg-ink text-paper hover:brightness-95"
             : mode === "weak"
               ? "border border-human/60 bg-surface text-human hover:bg-humansoft/40"
               : "bg-surface2 text-muted"

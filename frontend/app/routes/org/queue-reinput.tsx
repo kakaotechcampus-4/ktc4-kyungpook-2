@@ -17,7 +17,6 @@ export default function ReinputQueuePage() {
     <>
       <PageHeader
         title="검증 수정 요청"
-        description="검증에서 멈춘 기록입니다. 원본을 수정한 뒤 다시 올려주세요"
       />
 
       {items.length === 0 ? (
@@ -109,7 +108,7 @@ function BlockedCard({ item }: { item: BlockedItem }) {
         <button
           onClick={() => resolve("reupload")}
           disabled={busy !== null}
-          className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:opacity-60"
+          className="tap rounded bg-ink px-4 text-[15px] font-semibold text-paper hover:brightness-110 disabled:opacity-60"
         >
           {busy === "reupload" ? <Busy>처리 중…</Busy> : "수정한 원본 다시 올리기"}
         </button>

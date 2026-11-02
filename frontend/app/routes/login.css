@@ -61,6 +61,23 @@
   filter: blur(70px);
 }
 
+/* 왼쪽 위 로고. 번짐(blobs) 위에 올라오도록 z-index 를 준다 */
+.land .brandbar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 16px max(24px, env(safe-area-inset-right, 0px)) 0
+    max(24px, env(safe-area-inset-left, 0px));
+}
+.land .brandbar img {
+  display: block;
+  height: 44px;
+  width: auto;
+}
+
 .land .inner {
   position: relative;
   z-index: 1;
@@ -70,7 +87,7 @@
   gap: 16px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px max(16px, env(safe-area-inset-left, 0px)) 48px;
+  padding: 8px max(16px, env(safe-area-inset-left, 0px)) 48px;
 }
 
 /* ── 고리 ───────────────────────────────────────────

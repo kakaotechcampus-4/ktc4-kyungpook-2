@@ -221,7 +221,7 @@ export function QueueCard({
   return (
     <Link
       to={href}
-      className={`tap flex flex-col justify-between gap-2 rounded border p-4 transition-colors hover:border-accent ${toneClass}`}
+      className={`tap flex flex-col justify-between gap-2 rounded-[20px] border p-5 transition-colors hover:border-accent ${toneClass}`}
     >
       <span className="text-[15px] font-semibold text-ink">{title}</span>
       {count === null ? (
@@ -316,10 +316,10 @@ export function IrreversibleWarning({
 /* ── C9 확인 창 ─────────────────────────────────────── */
 
 const CONFIRM_TONE = {
-  human: "bg-human text-white",
+  human: "bg-ink text-paper",
   neutral: "bg-ink2 text-white",
   block: "bg-block text-white",
-  accent: "bg-accent text-white",
+  accent: "bg-ink text-paper",
 } as const;
 
 /** 되돌릴 수 없는 결정 앞에서 한 번 더 묻는다. Esc · 취소로 닫는다 */
@@ -394,24 +394,91 @@ export function ConfirmDialog({
 /* ── 공통 레이아웃 조각 ─────────────────────────────── */
 
 export function PageHeader({
+  eyebrow,
   title,
   description,
   right,
 }: {
+  /** 제목 **위**에 올리는 짧은 맥락 한 줄 — 캔버스의 "10월 30일 (금)", "1 / 3", "3명 · 햇살초등학교" 자리 */
+  eyebrow?: React.ReactNode;
   title: string;
   description?: string;
   right?: React.ReactNode;
 }) {
   return (
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-3 border-b border-line pb-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-ink">{title}</h1>
+    // 캔버스는 제목 아래에 선을 긋지 않는다 — 큰 글씨 자체가 구분선 노릇을 한다
+    <header className="mb-7 flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0">
+        {eyebrow ? (
+          <p className="mb-1 text-[15px] text-muted">{eyebrow}</p>
+        ) : null}
+        <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em] text-balance text-ink">
+          {title}
+        </h1>
         {description ? (
-          <p className="mt-1 text-[15px] text-muted">{description}</p>
+          <p className="mt-1.5 text-[15px] text-ink2">{description}</p>
         ) : null}
       </div>
       {right}
     </header>
+  );
+}
+
+/* ── 캔버스 조각 ─────────────────────────────────────
+   카드 안의 제목 줄. 캔버스는 카드마다 19px/800 제목 하나와 오른쪽 조작 하나를 둔다. */
+
+export function PanelHead({
+  title,
+  note,
+  right,
+  id,
+}: {
+  title: string;
+  note?: React.ReactNode;
+  right?: React.ReactNode;
+  id?: string;
+}) {
+  return (
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <div className="min-w-0">
+        <h2 id={id} className="text-[19px] font-extrabold tracking-[-0.02em] text-ink">
+          {title}
+        </h2>
+        {note ? <p className="mt-1 text-[14px] leading-6 text-muted">{note}</p> : null}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/**
+ * 캔버스가 "셀 수 있는 것"에 쓰는 큰 숫자. 0 은 흐리게 두되 **숨기지 않는다**
+ * (캔버스 10-kids 의 "0 은 0 으로" 규칙).
+ */
+export function BigNum({
+  value,
+  label,
+  tone = "ink",
+}: {
+  value: number | null;
+  label: string;
+  tone?: "ink" | "accent" | "review";
+}) {
+  const color =
+    value === null || value === 0
+      ? "text-line2"
+      : tone === "accent"
+        ? "text-accentink"
+        : tone === "review"
+          ? "text-review"
+          : "text-ink";
+  return (
+    <span className="flex shrink-0 flex-col items-end leading-none">
+      <span className={`text-[26px] font-extrabold tabular-nums ${color}`}>
+        {value === null ? "—" : value}
+      </span>
+      <span className="mt-1.5 text-[13px] font-normal text-muted">{label}</span>
+    </span>
   );
 }
 
@@ -426,7 +493,10 @@ export function Card({
   id?: string;
 }) {
   return (
-    <section id={id} className={`rounded border border-line bg-surface p-5 ${className}`}>
+    <section
+      id={id}
+      className={`rounded-[22px] border border-line/70 bg-surface p-6 shadow-[0_4px_18px_rgba(120,90,40,0.1)] ${className}`}
+    >
       {children}
     </section>
   );

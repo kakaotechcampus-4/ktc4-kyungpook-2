@@ -160,7 +160,7 @@ export default function ChildRegisterPage() {
                 type="button"
                 onClick={handleReissue}
                 disabled={pending}
-                className="tap rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
+                className="tap rounded bg-ink px-5 text-[16px] font-semibold text-paper hover:brightness-110 disabled:opacity-50"
               >
                 {pending ? <Busy>발급 중…</Busy> : "새 코드 발급"}
               </button>
@@ -257,7 +257,7 @@ export default function ChildRegisterPage() {
           <button
             type="submit"
             disabled={pending}
-            className="tap self-start rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
+            className="tap self-start rounded bg-ink px-5 text-[16px] font-semibold text-paper hover:brightness-110 disabled:opacity-50"
           >
             {pending ? <Busy>등록 중…</Busy> : "등록하고 초대 코드 발급"}
           </button>

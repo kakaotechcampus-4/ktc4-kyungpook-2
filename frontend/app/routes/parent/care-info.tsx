@@ -115,7 +115,7 @@ function CareInfoPage() {
                 onClick={() => toggleCommonAllergy(label)}
                 disabled={!on && allergiesFull}
                 className={`tap rounded-2xl px-4 text-[14px] font-semibold transition-colors disabled:opacity-50 ${
-                  on ? "bg-accent text-white" : "border border-line2 text-ink2 hover:bg-surface2"
+                  on ? "bg-ink text-paper" : "border border-line2 text-ink2 hover:bg-surface2"
                 }`}
               >
                 {label}
@@ -239,7 +239,7 @@ function CareInfoPage() {
         <button
           onClick={save}
           disabled={saving}
-          className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:opacity-50"
+          className="tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:opacity-50"
         >
           {saving ? <Busy>저장 중…</Busy> : "저장"}
         </button>

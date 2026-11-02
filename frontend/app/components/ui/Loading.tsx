@@ -77,7 +77,7 @@ export function FullPageLoading() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-3.5">
       <span className="relative flex size-14 items-center justify-center">
-        <span className="flex size-10 items-center justify-center rounded-md bg-accent text-[18px] font-bold text-white">
+        <span className="flex size-10 items-center justify-center rounded-md bg-ink text-[18px] font-bold text-paper">
           잇
         </span>
         <svg

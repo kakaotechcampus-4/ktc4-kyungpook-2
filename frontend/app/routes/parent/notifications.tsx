@@ -61,7 +61,7 @@ function NotificationsPage() {
               </div>
               <button
                 onClick={() => review(institution.id)}
-                className="tap h-14 w-full rounded-2xl bg-accent text-[16px] font-bold text-white"
+                className="tap h-14 w-full rounded-2xl bg-ink text-[16px] font-bold text-paper"
               >
                 공유 내용 확인하고 권한 주기
               </button>

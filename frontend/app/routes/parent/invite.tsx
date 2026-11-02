@@ -136,7 +136,7 @@ export default function ParentInvitePage() {
   }, [step, savedCode]);
 
   const primary =
-    "tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted";
+    "tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted";
   const secondary =
     "tap flex h-14 w-full items-center justify-center rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2 hover:bg-surface2";
   const requiredMissing = TERMS.some((t) => t.required && !agreed.includes(t.key));
@@ -353,7 +353,7 @@ function AcceptedStep({
   onboarded: boolean;
 }) {
   const primary =
-    "tap flex h-14 w-full items-center justify-center rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink";
+    "tap flex h-14 w-full items-center justify-center rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110";
   const home = onboarded ? (
     <Link
       to="/parent"

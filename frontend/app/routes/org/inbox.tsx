@@ -21,7 +21,6 @@ export default function InboxRoute() {
     return (
       <NotReadyPage
         title="메시지"
-        description="다른 기관이 승인해 우리 기관에 열린 지원 방법입니다"
       />
     );
   }
@@ -53,7 +52,6 @@ function InboxPage() {
     <>
       <PageHeader
         title="메시지"
-        description="다른 기관이 승인해 우리 기관에 열린 지원 방법입니다"
       />
 
       {items.length === 0 ? (
@@ -116,7 +114,7 @@ function InboxPage() {
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       {item.readAt ? null : (
-                        <span className="rounded bg-accent px-1.5 py-0.5 text-[12px] font-bold text-white">
+                        <span className="rounded bg-ink px-1.5 py-0.5 text-[12px] font-bold text-paper">
                           새 글
                         </span>
                       )}

@@ -208,7 +208,7 @@ function Gate2Item({
         <button
           onClick={() => setConfirming("approve")}
           disabled={busy}
-          className="tap rounded bg-human px-5 text-[16px] font-semibold text-white hover:brightness-95 disabled:opacity-60"
+          className="tap rounded bg-ink px-5 text-[16px] font-semibold text-paper hover:brightness-95 disabled:opacity-60"
         >
           승인
         </button>
@@ -286,7 +286,7 @@ export default function Gate2Route() {
   if (!isReady("insights")) {
     return (
       <NotReadyPage
-        title="공유 전 검토"
+        title="인사이트 승인"
         description="근거 기록을 제공한 선생님이 보호자에게 보여도 되는지 판단합니다"
       />
     );
@@ -310,8 +310,12 @@ function Gate2Page() {
   return (
     <>
       <PageHeader
-        title="공유 전 검토"
-        description="근거 기록을 제공한 선생님이 보호자에게 보여도 되는지 판단합니다"
+        title="인사이트 승인"
+        right={
+          <span className="shrink-0 rounded-full bg-surface2 px-4 py-1.5 text-[14px] font-bold text-ink2">
+            Gate 2
+          </span>
+        }
       />
       {visible.length === 0 ? (
         <EmptyState

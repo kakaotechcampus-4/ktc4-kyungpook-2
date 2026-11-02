@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLoaderData, useRevalidator } from "react-router";
+import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import {
   Check,
   ChevronRight,
@@ -522,7 +522,7 @@ function PendingItem({
               type="button"
               onClick={() => setConfirming("approve")}
               disabled={busy || approveBlocked}
-              className="tap rounded bg-human px-5.5 text-[16px] font-bold text-white hover:brightness-95 disabled:bg-line disabled:text-muted"
+              className="tap rounded bg-ink px-5.5 text-[16px] font-bold text-paper hover:brightness-95 disabled:bg-line disabled:text-muted"
             >
               {hasChanges ? "변경 내용으로 승인" : "승인"}
             </button>
@@ -577,7 +577,7 @@ function PendingItem({
 
 const SEGMENT = [
   { action: "KEEP", label: "유지", Icon: Check, on: "bg-ink2 text-white" },
-  { action: "EDIT", label: "수정", Icon: Pencil, on: "bg-accent text-white" },
+  { action: "EDIT", label: "수정", Icon: Pencil, on: "bg-ink text-paper" },
   { action: "DELETE", label: "삭제", Icon: Trash2, on: "bg-block text-white" },
 ] as const;
 
@@ -602,7 +602,7 @@ function SentenceRow({
       ? "border-accent/35 bg-accentsoft/35"
       : "border-line bg-surface";
   const dot = isEdit
-    ? "bg-accent text-white"
+    ? "bg-ink text-paper"
     : isDelete
       ? "bg-blocksoft text-block"
       : "bg-surface2 text-ink2";
@@ -793,7 +793,7 @@ function NoContentItem({
             type="button"
             onClick={() => setConfirming("confirm")}
             disabled={busy || item.processing}
-            className="tap rounded bg-human px-5.5 text-[16px] font-bold text-white hover:brightness-95 disabled:bg-line disabled:text-muted"
+            className="tap rounded bg-ink px-5.5 text-[16px] font-bold text-paper hover:brightness-95 disabled:bg-line disabled:text-muted"
           >
             확인
           </button>
@@ -989,7 +989,11 @@ export default function Gate1Route() {
 
 function Gate1Page() {
   const { pending, held } = useLoaderData<typeof clientLoader>();
-  const [tab, setTab] = useState<Tab>("pending");
+  // 세로 메뉴의 "보류함"이 /gate1?tab=hold 로 바로 들어온다
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = params.get("tab") === "hold" ? "hold" : "pending";
+  const setTab = (next: Tab) =>
+    setParams(next === "hold" ? { tab: "hold" } : {}, { replace: true, preventScrollReset: true });
   /**
    * 처리하면 revalidate 로 그 요약이 목록에서 빠진다 — 결과 카드가 바로 사라지지 않도록
    * 이번 방문 동안만 탭별로 기억한다. 키는 "탭:id" (보류 → 해제처럼 탭을 오가는 요약이 있다).
@@ -1021,10 +1025,14 @@ function Gate1Page() {
   return (
     <>
       <PageHeader
-        title={TITLE}
-        description={DESCRIPTION}
+        eyebrow={
+          tab === "hold"
+            ? `${held.length}건 · 넘기지 않고 세워 둔 요약`
+            : `${pending.length}건 · 오래된 것부터`
+        }
+        title={tab === "hold" ? "보류함" : TITLE}
         right={
-          <div role="tablist" aria-label="검토 상태" className="flex gap-1 rounded-md bg-surface2 p-1">
+          <div role="tablist" aria-label="검토 상태" className="flex gap-1.5">
             {tabs.map((t) => (
               <button
                 key={t.key}
@@ -1032,13 +1040,13 @@ function Gate1Page() {
                 role="tab"
                 aria-selected={tab === t.key}
                 onClick={() => setTab(t.key)}
-                className={`min-h-10 rounded px-4 text-[15px] font-semibold ${
+                className={`tap rounded-full px-5 text-[15px] font-bold ${
                   tab === t.key
-                    ? "bg-surface text-ink shadow-[0_1px_2px_rgba(22,28,27,0.12)]"
-                    : "text-ink2 hover:text-ink"
+                    ? "bg-ink text-paper"
+                    : "border border-line2 bg-surface text-ink2 hover:bg-surface2"
                 }`}
               >
-                {t.label} <span className="ml-1 font-bold tabular-nums">{t.count}</span>
+                {t.label} <span className="ml-1 tabular-nums">{t.count}</span>
               </button>
             ))}
           </div>

@@ -1,5 +1,8 @@
 import { useState } from "react";
+import { Lock } from "lucide-react";
+import { HelpTip } from "@/components/ui/HelpTip";
 import { Link, useLoaderData, useRevalidator } from "react-router";
+import { ChildFace } from "@/components/org/ChildFace";
 import { RosterPicker } from "@/components/org/RosterPicker";
 import {
   Card,
@@ -8,6 +11,7 @@ import {
   EvidenceText,
   Note,
   PageHeader,
+  PanelHead,
 } from "@/components/ui";
 import { getChildren, getMatchingQueue, resolveMatchingItem } from "@/lib/api";
 import type { ChildListItem, MatchResolution, MatchingItem } from "@/lib/types";
@@ -148,8 +152,15 @@ export default function MatchingQueuePage() {
   return (
     <>
       <PageHeader
-        title="매칭 확인 · 아이별 정리"
-        description="AI가 아이를 확정하지 못한 기록을 사람이 지정합니다"
+        title="아이 확인"
+        right={
+          item ? (
+            <HelpTip label="아이 확인">
+              AI 가 아이를 확정하지 못한 기록만 여기로 옵니다. 선생님이 고르기 전에는 요약하지
+              않습니다. 이름이 같은 아이는 생년월일로만 가립니다.
+            </HelpTip>
+          ) : null
+        }
       />
 
       {!item ? (
@@ -159,50 +170,82 @@ export default function MatchingQueuePage() {
           description="AI가 확신하지 못한 기록이 생기면 여기로 옵니다."
         />
       ) : (
-        <>
-          <div className="mb-4 flex items-center justify-between">
-            <p className="text-[15px] text-muted tabular-nums">
-              남은 기록 <b className="font-semibold text-ink">{items.length}</b>건
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setIndex((i) => Math.max(0, i - 1))}
-                disabled={index === 0}
-                className="tap rounded border border-line2 px-3 text-[15px] disabled:opacity-40"
-              >
-                이전
-              </button>
-              <button
-                onClick={() => setIndex((i) => Math.min(items.length - 1, i + 1))}
-                disabled={index >= items.length - 1}
-                className="tap rounded border border-line2 px-3 text-[15px] disabled:opacity-40"
-              >
-                다음
-              </button>
-            </div>
-          </div>
-
-          {rosterFailed ? (
-            <div className="mb-4">
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
+          <div className="flex flex-col gap-5">
+            {rosterFailed ? (
               <ConfidenceWarning
                 tone="block"
                 title="명부 불러오기 실패"
                 message="아이 명부를 불러오지 못해 추천 아이를 확인하거나 직접 고를 수 없습니다. 새로고침해 주세요."
               />
-            </div>
-          ) : null}
+            ) : null}
 
-          {/* key 로 건이 바뀔 때마다 선택 상태를 초기화한다 */}
-          <MatchingCard
-            key={item.id}
-            item={item}
-            roster={roster}
-            rosterFailed={rosterFailed}
-            onResolve={resolve}
-          />
-        </>
+            {/* key 로 건이 바뀔 때마다 선택 상태를 초기화한다 */}
+            <MatchingCard
+              key={item.id}
+              item={item}
+              roster={roster}
+              rosterFailed={rosterFailed}
+              onResolve={resolve}
+              queue={items}
+              at={Math.min(index, items.length - 1)}
+              onJump={setIndex}
+            />
+          </div>
+
+          <RecordSideCard item={item} />
+        </div>
       )}
     </>
+  );
+}
+
+function QueueStrip({
+  queue,
+  at,
+  onJump,
+}: {
+  queue: MatchingItem[];
+  at: number;
+  onJump: (i: number) => void;
+}) {
+  if (queue.length < 2) return null;
+  return (
+    <ul className="mb-5 flex flex-col">
+      {queue.slice(0, 5).map((q, i) => {
+        const here = i === at;
+        return (
+          <li key={q.id}>
+            <button
+              type="button"
+              onClick={() => onJump(i)}
+              aria-current={here ? "true" : undefined}
+              className={`flex w-full items-center gap-3 rounded-[14px] px-3.5 py-3 text-left transition-colors ${
+                here ? "bg-reviewsoft" : "hover:bg-surface2"
+              }`}
+            >
+              <ChildFace size={34} />
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block truncate text-[15px] font-bold text-ink">
+                  {q.record.fileName}
+                </span>
+                <span className="block truncate text-[13px] text-muted">{heading(q)}</span>
+              </span>
+              {here ? (
+                <span className="shrink-0 rounded-full bg-mark px-2.5 py-0.5 text-[12px] font-bold text-markink">
+                  지금
+                </span>
+              ) : null}
+            </button>
+          </li>
+        );
+      })}
+      {queue.length > 5 ? (
+        <li className="px-3.5 pt-2 text-[13px] text-muted">
+          그 밖에 {queue.length - 5}건
+        </li>
+      ) : null}
+    </ul>
   );
 }
 
@@ -211,11 +254,17 @@ function MatchingCard({
   roster,
   rosterFailed,
   onResolve,
+  queue,
+  at,
+  onJump,
 }: {
   item: MatchingItem;
   roster: ChildListItem[];
   rosterFailed: boolean;
   onResolve: (resolution: MatchResolution) => Promise<void>;
+  queue: MatchingItem[];
+  at: number;
+  onJump: (i: number) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   /** review 의 "다른 아이", multi 의 "후보에 없는 아이" 를 누르면 명부 검색으로 바뀐다 */
@@ -280,11 +329,10 @@ function MatchingCard({
 
   return (
     <Card>
-      <div className="mb-5 rounded bg-surface2 p-4">
-        <p className="mb-1.5 text-[13px] font-semibold tracking-wider text-muted uppercase">
-          기록 본문
-        </p>
-        <p className="mb-2 text-[15px] font-semibold">{item.record.fileName}</p>
+      <QueueStrip queue={queue} at={at} onJump={onJump} />
+
+      <div className="mb-5 rounded-[18px] bg-surface2/70 p-5">
+        <p className="mb-2.5 text-[13px] font-bold text-muted">기록 본문</p>
         {/* 스크롤 영역이라 키보드로도 내릴 수 있게 포커스를 받는다 */}
         <div
           tabIndex={0}
@@ -314,7 +362,8 @@ function MatchingCard({
         <RecordMeta item={item} />
       </div>
 
-      <h2 className="mb-3 text-[17px] font-bold">
+      <h2 className="mb-3 flex items-center gap-2.5 text-[18px] font-extrabold">
+        <ChildFace size={40} />
         {heading(item)}
         {item.status === "multi" ? (
           <span className="ml-2 text-[15px] font-medium text-muted">
@@ -395,23 +444,25 @@ function MatchingCard({
 
       {suggested && !pickingOther ? (
         <div className="mb-4 flex flex-col gap-3">
-          <div className="flex items-center gap-3 rounded border border-accent bg-accentsoft/50 px-3 py-2.5">
+          <div className="flex items-center gap-3 rounded-[18px] border border-accent/40 bg-accentsoft/60 px-4 py-3">
             <ChildBadge name={suggested.name} meta={childMeta(suggested)} />
-            <span className="ml-auto text-[13px] font-medium text-accentink">AI 판정</span>
+            <span className="ml-auto shrink-0 rounded-full bg-accentsoft px-3 py-1 text-[13px] font-bold text-accentink">
+              AI 판정
+            </span>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => submit({ action: "assign", childId: suggested.childId })}
               disabled={pending}
-              className="tap rounded bg-accent px-5 text-[15px] font-semibold text-white hover:bg-accentink disabled:opacity-60"
+              className="tap rounded-full bg-ink px-6 text-[15px] font-bold text-paper hover:brightness-110 disabled:opacity-60"
             >
-              맞아요
+              {suggested.name ? `${suggested.name} 맞아요` : "맞아요"}
             </button>
             <button
               onClick={() => setPickingOther(true)}
-              className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2"
+              className="tap rounded-full border border-line2 bg-surface px-5 text-[15px] font-bold text-ink2 hover:bg-surface2"
             >
-              다른 아이
+              다른 아이예요
             </button>
           </div>
         </div>
@@ -464,7 +515,7 @@ function MatchingCard({
           <button
             onClick={() => selected && submit({ action: "assign", childId: selected })}
             disabled={!selected || pending}
-            className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-line2 disabled:text-muted"
+            className="tap rounded-full bg-ink px-6 text-[15px] font-bold text-paper hover:brightness-110 disabled:cursor-not-allowed disabled:bg-surface2 disabled:text-muted"
           >
             선택한 아이로 확정
           </button>
@@ -472,11 +523,50 @@ function MatchingCard({
         <button
           onClick={() => submit({ action: "not_ours" })}
           disabled={pending}
-          className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2 disabled:opacity-60"
+          className="tap rounded-full border border-line2 bg-surface px-5 text-[15px] font-bold text-ink2 hover:bg-surface2 disabled:opacity-60"
         >
           이 기관 아동 아님
         </button>
       </div>
+    </Card>
+  );
+}
+
+/**
+ * 캔버스 05-match 의 오른쪽 칸 — 이 기록이 어디서 왔는지.
+ * 캔버스에는 "기다린 날"도 있지만 큐 항목에 들어온 시각이 오지 않아 그 줄은 넣지 않았다.
+ */
+function RecordSideCard({ item }: { item: MatchingItem }) {
+  const rows: { k: string; v: string }[] = [{ k: "파일", v: item.record.fileName }];
+  if (item.record.type) rows.push({ k: "유형", v: item.record.type });
+  if (item.record.capturedAt) {
+    rows.push({
+      k: "기록 시각",
+      v: new Date(item.record.capturedAt).toLocaleString("ko-KR", {
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    });
+  }
+  if (item.hintName) rows.push({ k: "파일 표지", v: item.hintName });
+
+  return (
+    <Card className="lg:sticky lg:top-5">
+      <PanelHead title="어디서 온 기록" />
+      <dl className="flex flex-col gap-3.5">
+        {rows.map((r) => (
+          <div key={r.k}>
+            <dt className="text-[13px] text-muted">{r.k}</dt>
+            <dd className="text-[16px] font-bold break-all text-ink">{r.v}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-5 flex items-center gap-2 rounded-full bg-instassistantsoft px-3.5 py-2 text-[13px] font-semibold text-instassistant">
+        <Lock aria-hidden size={13} strokeWidth={2.4} className="shrink-0" />
+        아이를 고르기 전에는 요약하지 않습니다
+      </p>
     </Card>
   );
 }
@@ -529,14 +619,9 @@ function ChildBadge({ name, meta }: { name: string | null; meta: string }) {
   const label = name ?? "이름 없음";
   return (
     <>
-      <span
-        aria-hidden
-        className="flex size-8 items-center justify-center rounded-full bg-surface2 text-[14px] font-semibold text-ink2"
-      >
-        {name ? name.slice(0, 1) : "?"}
-      </span>
+      <ChildFace size={38} />
       <span>
-        <span className="block text-[16px] font-semibold">{label}</span>
+        <span className="block text-[17px] font-extrabold">{label}</span>
         {/* 동명이인이면 이름도 반도 같다. 생년월일이 유일한 구분 근거다. */}
         {meta ? <span className="block text-[13px] text-muted tabular-nums">{meta}</span> : null}
       </span>

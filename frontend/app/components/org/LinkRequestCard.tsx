@@ -99,7 +99,7 @@ export function LinkRequestCard({ request }: { request: PendingLinkRequest }) {
         <button
           type="submit"
           disabled={busy}
-          className="tap rounded bg-accent px-5 text-[15px] font-semibold text-white hover:bg-accentink disabled:opacity-60"
+          className="tap rounded bg-ink px-5 text-[15px] font-semibold text-paper hover:brightness-110 disabled:opacity-60"
         >
           {busy && !confirmingReject ? <Busy>처리 중…</Busy> : "수락"}
         </button>
