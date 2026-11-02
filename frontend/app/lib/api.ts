@@ -89,6 +89,7 @@ import type {
   InboxItem,
   Insight,
   Institution,
+  InstitutionShares,
   InstitutionRequestItem,
   IssuedInvitation,
   JournalEntry,
@@ -200,6 +201,10 @@ const BE_READY = {
    * 단건을 열면 처음 열람 시각이 남는다
    */
   guardianInsights: true,
+  /**
+   * 보호자: 기관 공유 내역 (G-45). 설정 기관 줄의 "받은 리포트 N편" 과 기관 공유 내역 화면. 거둔(가려진) 공유도 온다
+   */
+  institutionShares: true,
   /** 보호자: 돌봄 정보 저장 (G-13). 알레르기·복용약. 연결된 보호자끼리 함께 보고 고친다. 기관에는 공유하지 않는다 */
   careInfo: true,
 } satisfies Record<string, boolean>;
@@ -1341,6 +1346,15 @@ export async function getJournalEntry(id: string): Promise<JournalEntry | undefi
 export async function getGuardianInsights(): Promise<GuardianInsight[]> {
   if (mockFor("guardianInsights")) return mock.GUARDIAN_INSIGHTS.map((insight) => ({ ...insight }));
   return request("/api/v1/guardians/me/insights");
+}
+
+/**
+ * GET /api/v1/guardians/me/children/{childId}/institution-shares — 이 아이 주간 리포트가 어느 기관에 언제 열렸고
+ * 지금도 보이는지, 기관별로 (G-45). 연결되지 않은 아이면 403 을 그대로 던진다
+ */
+export async function getInstitutionShares(childId: string): Promise<InstitutionShares[]> {
+  if (mockFor("institutionShares")) return mock.INSTITUTION_SHARES[childId] ?? [];
+  return request(`/api/v1/guardians/me/children/${encodeURIComponent(childId)}/institution-shares`);
 }
 
 /**

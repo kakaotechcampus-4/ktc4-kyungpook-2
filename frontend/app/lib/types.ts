@@ -533,6 +533,31 @@ export interface ParentActivity {
   insightId?: string | null;
 }
 
+/** 기관 공유 내역의 한 줄 — 그 기관에 열린 이 아이 주간 리포트 한 편 (api-spec G-45) */
+export interface InstitutionShare {
+  insightId: string;
+  /** "2026년 10월 4주차" 같은 문구. 리포트 탭과 같다 */
+  period: string;
+  /** 이 리포트를 Gate 2 에서 승인한 기관. 없어진 기관이면 null */
+  from: Institution | null;
+  /** 그 기관에 열린 시각 (ISO) */
+  grantedAt: string;
+  /** 그 기관이 지금 볼 수 있는지. 기관 수신함과 같은 판정이다 */
+  visible: boolean;
+  /** 가려진 시각. 볼 수 있거나, 거둔 기록 없이 명부 · 동의로 가려졌으면 null */
+  hiddenAt: string | null;
+}
+
+/**
+ * 보호자의 기관 공유 내역 중 한 기관 (G-45). 지금 명부에서 빠진 기관도 받은 이력이 있으면 온다.
+ * 가려진 이유와 기관이 열어 봤는지는 오지 않는다.
+ */
+export interface InstitutionShares {
+  institution: Institution;
+  /** 열린 순서 최신부터 */
+  shares: InstitutionShare[];
+}
+
 /**
  * 보호자가 받은 인사이트 한 편 (G-35 · G-36). 담당자가 Gate 2 에서 승인하면 열린다. 화면 이름은 "주간 리포트".
  * 서버는 내 모든 아이 것을 승인 시각 최근 순으로 준다 — 화면이 고른 아이로 거른다.
