@@ -162,7 +162,7 @@ function GuardianSection({
           type="button"
           onClick={() => run("issue", () => issueInvitation(childId))}
           disabled={busy !== null}
-          className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:opacity-50"
+          className="tap rounded bg-ink px-4 text-[15px] font-semibold text-paper hover:brightness-110 disabled:opacity-50"
         >
           {busy === "issue" ? "발급 중…" : "새 코드 발급"}
         </button>

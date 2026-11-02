@@ -26,7 +26,6 @@ export default function InsightsRoute() {
     return (
       <NotReadyPage
         title="관찰·분석 결과"
-        description="아이의 승인된 기록에서 도출된 패턴입니다"
       />
     );
   }
@@ -40,7 +39,6 @@ function InsightsPage() {
     <>
       <PageHeader
         title="관찰·분석 결과"
-        description="아이의 승인된 기록에서 도출된 패턴입니다"
       />
 
       {insights.length === 0 ? (
@@ -86,7 +84,7 @@ function InsightsPage() {
                 {i.gate2Status === "pending" ? (
                   <Link
                     to="/gate2"
-                    className="tap inline-flex items-center rounded bg-human px-4 text-[15px] font-semibold text-white hover:brightness-95"
+                    className="tap inline-flex items-center rounded bg-ink px-4 text-[15px] font-semibold text-paper hover:brightness-95"
                   >
                     공유 검토하기
                   </Link>
