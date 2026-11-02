@@ -1091,7 +1091,7 @@ export async function unlinkChild(childId: string): Promise<void> {
 /**
  * GET /api/v1/children/{childId}/consent-preview?institutionId= (api-spec G-02)
  *
- * P-02 가 그릴 아이 · 기관 · 공유 범위. 동의할 것이 없으면 null 이다 — 다른 아이나
+ * P-02 가 그릴 아이 · 기관 · 공유 항목 코드. 동의할 것이 없으면 null 이다 — 다른 아이나
  * 기관으로 대신 채우지 않는다. 동의 화면에 엉뚱한 아이가 뜨면 잘못 동의하게 된다.
  * 이미 동의한 기관도 "없는 요청" 으로 본다. 동의했다가 꺼진 기관은 다시 동의할 수 있다(서버와 같음).
  */
@@ -1105,13 +1105,10 @@ export async function getConsentPreview(
       (i) => i.institution.id === institutionId && i.consent !== "granted",
     );
     if (!child || !rec) return null;
-    const { shared, notShared } = mock.INSTITUTION_SHARE_FIELDS[rec.institution.type];
     return {
       child: { id: child.id, name: child.name, birthDate: child.birthDate },
       institution: rec.institution,
       documentUrl: null,
-      sharedFields: shared,
-      notSharedFields: notShared,
       allowedFields: ALL_CONSENT_FIELDS,
     };
   }
@@ -1193,8 +1190,8 @@ export async function getPendingInstitutionRequests(
 /**
  * PUT /api/v1/children/{childId}/consent-scopes/{institutionId} — P-02 의 동의 (api-spec G-41).
  *
- * allowedFields 는 미리보기(G-02)가 준 코드를 그대로 보낸다. 화면 문구(sharedFields)를
- * 보내면 서버가 모르는 항목이라 400 으로 거절한다.
+ * allowedFields 는 미리보기(G-02)가 준 코드를 그대로 보낸다. 서버가 모르는 항목(예: 화면 문구)을
+ * 보내면 400 으로 거절한다.
  * 실패는 ApiError 로 던진다 — 404 CONSENT_TARGET_NOT_FOUND 는 그 사이 아이가 삭제됐거나
  * 기관 명부에서 빠진 경우다.
  */
@@ -1270,7 +1267,7 @@ export async function lookupInstitutionByCode(code: string): Promise<Institution
  * POST /api/v1/children/{childId}/institutions — 기관 코드로 연결을 **요청**한다 (G-44).
  *
  * 바로 연결되지 않는다. 기관이 관리번호를 넣어 수락하면 아이가 그 기관 명부에 오르고, 그때
- * "새 기관 권한 요청" 알림(G-40)으로 떠서 보호자가 공유 범위를 정해 동의한다. 같은 보호자가 다시
+ * "새 기관 권한 요청" 알림(G-40)으로 떠서 보호자가 공유에 동의한다. 같은 보호자가 다시
  * 요청하면 기다리는 요청을 그대로 돌려준다. 이미 명부에 있으면 409 INSTITUTION_ALREADY_LINKED,
  * 코드가 맞지 않으면 404 INSTITUTION_CODE_NOT_FOUND 를 던진다.
  */

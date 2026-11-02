@@ -392,14 +392,14 @@ function AcceptedStep({
           {needsConsent ? (
             <>
               {" "}
-              아직 <b className="font-semibold">공유 동의</b>가 남았어요. 동의해야 기관이 아이
-              기록을 올릴 수 있어요.
+              아직 <b className="font-semibold">공유 동의</b>가 남았어요. 동의해야 기관 기록이{" "}
+              {result.childName}에게 이어져요.
             </>
           ) : null}
         </p>
       </div>
       <Link to={consentPath} className={primary}>
-        {needsConsent ? "공유 동의하러 가기" : "공유 범위 확인하기"}
+        {needsConsent ? "공유 동의하러 가기" : "공유 내용 확인하기"}
       </Link>
       {home}
     </div>
