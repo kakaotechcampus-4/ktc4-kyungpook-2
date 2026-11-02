@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Busy } from "@/components/ui";
 import { redirect, useLoaderData, useNavigate } from "react-router";
 import { ApiError } from "@/lib/apiError";
 import {
@@ -249,7 +250,7 @@ export default function SignupPage() {
             disabled={!role || pending}
             className="tap w-full rounded bg-accent px-4 text-[16px] font-semibold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted"
           >
-            {pending ? "가입하는 중…" : "가입하기"}
+            {pending ? <Busy>가입하는 중…</Busy> : "가입하기"}
           </button>
         </form>
       </div>

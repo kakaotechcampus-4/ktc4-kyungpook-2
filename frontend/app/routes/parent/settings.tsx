@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
-import { InstitutionChip } from "@/components/ui";
+import { Busy, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { Toggle } from "@/components/parent/Toggle";
@@ -268,7 +268,7 @@ function ParentSettingsContent({
                 onClick={unlink}
                 className="tap h-14 flex-1 rounded-2xl bg-block text-[16px] font-bold text-white disabled:opacity-50"
               >
-                {pending ? "처리 중…" : "연결 끊기"}
+                {pending ? <Busy>처리 중…</Busy> : "연결 끊기"}
               </button>
             </div>
           </div>
@@ -307,7 +307,7 @@ function ParentSettingsContent({
                 onClick={() => revoke(target.institution.id)}
                 className="tap h-14 flex-1 rounded-2xl bg-block text-[16px] font-bold text-white disabled:opacity-50"
               >
-                {pending ? "처리 중…" : "권한 끄기"}
+                {pending ? <Busy>처리 중…</Busy> : "권한 끄기"}
               </button>
             </div>
           </div>

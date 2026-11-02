@@ -3,6 +3,7 @@
  * 시안: https://claude.ai/artifact/DcJUa9y14gKNddcYTi5YC2 (서비스 공통 로딩 부품)
  *
  * - Spinner        버튼 · 글 안의 "…중" 표시. 글자 앞에 붙인다
+ * - Busy           버튼 글자 "…중" = 스피너 + 글자
  * - NavigationProgress  화면을 옮기는 동안 맨 위에 흐르는 막대 (root 에 하나)
  * - useNavigating  화면을 옮기는 중인지. 셸이 본문을 살짝 흐리게 하는 데 쓴다
  * - FullPageLoading  처음 열 때(HydrateFallback) 화면 가운데
@@ -15,6 +16,20 @@ import { useNavigation } from "react-router";
 export function Spinner({ size = 16, className = "" }: { size?: number; className?: string }) {
   return (
     <LoaderCircle aria-hidden size={size} strokeWidth={2.2} className={`shrink-0 animate-spin ${className}`} />
+  );
+}
+
+/**
+ * 누른 버튼의 "…중" 글자 — 앞에 스피너를 붙인다. 버튼 클래스는 그대로 두고 글자 자리만 바꾼다.
+ *
+ *   {pending ? <Busy>발급 중…</Busy> : "새 코드 발급"}
+ */
+export function Busy({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Spinner size={16} />
+      {children}
+    </span>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { Busy, Spinner } from "@/components/ui";
 import { Link, useRevalidator } from "react-router";
-import { LoaderCircle, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { ApiError, getSummaryGroups, runSummary } from "@/lib/api";
 import type { SummaryGroup, SummaryGroupBoard, SummaryGroupStatus } from "@/lib/types";
 
@@ -414,7 +415,7 @@ function GroupRow({
         {hint ? (
           <p className="flex items-center gap-1.5 text-[13px] text-muted">
             {g.summaryRequested ? (
-              <LoaderCircle aria-hidden size={13} className="shrink-0 animate-spin text-accent" />
+              <Spinner size={13} className="text-accent" />
             ) : null}
             {hint}
           </p>
@@ -438,7 +439,7 @@ function GroupRow({
               : "bg-surface2 text-muted"
         } disabled:cursor-not-allowed`}
       >
-        {busy ? "요청 중…" : "요약"}
+        {busy ? <Busy>요청 중…</Busy> : "요약"}
       </button>
     </li>
   );
