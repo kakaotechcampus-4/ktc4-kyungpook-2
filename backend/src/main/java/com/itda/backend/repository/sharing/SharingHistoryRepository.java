@@ -46,6 +46,12 @@ public interface SharingHistoryRepository extends JpaRepository<SharingHistory, 
     Optional<SharingHistory> findByInsightResultIdAndReceiverTypeAndReceiverId(
             Long insightResultId, ReceiverType receiverType, Long receiverId);
 
+    /**
+     * 이 아이에 대해 한 번이라도 생긴 그 종류의 권한. <b>거둔 행도 온다</b> — 보호자의 기관 공유 내역(G-45)이 가려진
+     * 공유까지 보여 준다.
+     */
+    List<SharingHistory> findByChildIdAndReceiverType(Long childId, ReceiverType receiverType);
+
     /** 그 인사이트에 한 번이라도 생긴 기관 권한. 거둔 것도 온다 — 보호자 화면은 {@code isActive} 로 거른다. */
     List<SharingHistory> findByInsightResultIdAndReceiverType(
             Long insightResultId, ReceiverType receiverType);
