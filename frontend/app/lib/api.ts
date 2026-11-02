@@ -733,6 +733,8 @@ export async function resolveMatchingItem(
  */
 export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
   if (mockFor("upload")) {
+    // 실제 업로드처럼 잠깐 걸리게 한다 — 바로 끝나면 "올리고 있어요" 화면을 mock 에서 볼 수 없다
+    await new Promise((resolve) => setTimeout(resolve, 1500));
     const now = new Date().toISOString();
     const results = files.map((file, i): UploadResult => {
       const reason = mockRejectReason(file);

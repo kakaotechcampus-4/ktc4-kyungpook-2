@@ -1,15 +1,16 @@
 import { useRef, useState } from "react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
-import { ChevronRight, Upload, X } from "lucide-react";
+import { Check, ChevronRight, Upload, X } from "lucide-react";
 import { FileProgressList, useProgressPolling } from "@/components/org/FileProgressList";
-import { Card, Note, PageHeader } from "@/components/ui";
+import { Card, Note, PageHeader, Spinner } from "@/components/ui";
 import {
   getChildren,
   getFileProgress,
   UPLOAD_EXTENSIONS,
   uploadRawRecords,
 } from "@/lib/api";
-import type { UploadFailReason, UploadResult } from "@/lib/types";
+import { fileProgressOf } from "@/lib/pipeline";
+import type { FileProgress, UploadFailReason, UploadResult } from "@/lib/types";
 
 type UploadFailure = Extract<UploadResult, { ok: false }>;
 
@@ -71,6 +72,180 @@ function StageHelp() {
   );
 }
 
+/** 올리지 못한 파일 — 업로드 칸 안에도, "다음에 할 일" 카드 위에도 같은 모양으로 쓴다 */
+function FailureNotice({
+  outcome,
+  retryable,
+  uploading,
+  onRetry,
+  onClose,
+}: {
+  outcome: { total: number; failed: UploadFailure[] };
+  retryable: UploadFailure[];
+  uploading: boolean;
+  onRetry: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded border border-block/40 bg-blocksoft px-4 py-3">
+      <p className="text-[15px] font-semibold">
+        {outcome.failed.length === outcome.total
+          ? `${outcome.total}개 모두 올리지 못했습니다`
+          : `${outcome.total}개 중 ${outcome.total - outcome.failed.length}개를 올렸습니다. ${outcome.failed.length}개는 올리지 못했습니다`}
+      </p>
+      <ul className="flex flex-col gap-2">
+        {outcome.failed.map((f, i) => (
+          <li key={`${f.file.name}-${i}`} className="flex flex-col gap-0.5">
+            <span className="text-[15px] font-medium break-all">
+              <span aria-hidden className="text-block">
+                ✕
+              </span>{" "}
+              {f.file.name}
+            </span>
+            <span className="text-[14px] text-muted">{FAIL_MESSAGE[f.reason]}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-3">
+        {retryable.length > 0 ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={uploading}
+            aria-busy={uploading}
+            className="tap inline-flex items-center gap-2 rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-accent/75"
+          >
+            {uploading ? <Spinner size={16} /> : null}
+            {uploading ? "올리는 중…" : `실패한 파일만 다시 올리기 (${retryable.length}개)`}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={onClose}
+          className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2"
+        >
+          닫기
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 다 올린 뒤 "다음에 할 일" — 멘토 리뷰(10/31) "기록 등록 후 무엇을 해야 할지 이어 주는 넥스트 스텝".
+ * 시안: https://claude.ai/artifact/DcJUa9y14gKNddcYTi5YC2
+ *
+ * 방금 올린 파일의 진행(폴링으로 계속 바뀐다)에서 센다. 사람이 고를 기록이 있으면 그게 "지금 할 일"이다.
+ * 아래 "다음 순서"의 단계 이름은 사이드바 · 진행 막대와 같다.
+ */
+function UploadDone({ count, files, onMore }: { count: number; files: FileProgress[]; onMore: () => void }) {
+  const summaries = files.map((f) => fileProgressOf(f.entries));
+  // 서버 목록에 아직 안 들어온 파일은 나누는 중으로 본다
+  const splitting = files.length < count || summaries.some((s) => s.tone === "splitting");
+  const total = summaries.reduce((n, s) => n + s.total, 0);
+  const toPick = summaries.reduce((n, s) => n + s.waiting + s.failed, 0);
+  const running = splitting || summaries.some((s) => s.running > 0);
+
+  const lede = splitting
+    ? "파일을 날짜별 기록으로 나누고 있어요."
+    : running
+      ? `기록 ${total}건으로 나눴고, 지금 아이별로 정리하고 있어요.`
+      : `기록 ${total}건으로 나눠 아이별 정리를 마쳤어요.`;
+
+  return (
+    <section aria-labelledby="upload-done-title" className="overflow-hidden rounded border border-line bg-surface">
+      <div className="flex items-center gap-3 px-6 pt-5 pb-4">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-white">
+          <Check aria-hidden size={16} strokeWidth={2.6} />
+        </span>
+        <div className="flex flex-col gap-0.5">
+          <h2 id="upload-done-title" className="text-[17px] font-bold">
+            파일 {count}개를 올렸어요
+          </h2>
+          <p className="text-[14px] text-ink2">{lede}</p>
+        </div>
+      </div>
+
+      {toPick > 0 ? (
+        <div className="mx-6 mb-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2.5 rounded-md bg-humansoft px-4 py-3">
+          <div className="flex flex-col">
+            <span className="text-[12px] font-bold tracking-wide text-human">지금 할 일</span>
+            <span className="text-[15px] font-bold">어느 아이의 기록인지 골라 주세요 · {toPick}건</span>
+            <span className="text-[14px] text-ink2">AI가 확신하지 못한 기록이에요.</span>
+          </div>
+          <Link
+            to="/queue/matching"
+            className="tap inline-flex items-center rounded bg-human px-4 text-[15px] font-bold text-white hover:opacity-90"
+          >
+            매칭 확인하기
+          </Link>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-3.5 border-t border-surface2 bg-paper/60 px-6 pt-4 pb-5">
+        <span className="text-[14px] font-bold text-ink2">다음 순서</span>
+        <ol className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
+          <NextStep
+            n={1}
+            title="나누기 · 매칭"
+            caption={running ? "자동으로 진행 중" : "끝났어요"}
+            tone={running ? "active" : "done"}
+          />
+          <NextStep
+            n={2}
+            title="매칭 확인"
+            caption={toPick > 0 ? `지금 ${toPick}건 · 위에서 골라 주세요` : running ? "헷갈린 기록이 생길 때만" : "확인할 기록이 없어요"}
+            tone={toPick > 0 ? "human" : running ? "pending" : "done"}
+          />
+          <NextStep n={3} title="요약" caption="오늘의 업무에서 [요약]" tone="pending" />
+          <NextStep n={4} title="요약 검토" caption="문장마다 읽고 승인" tone="pending" />
+        </ol>
+        <div className="flex flex-wrap gap-2 pt-1.5">
+          <Link
+            to="/dashboard"
+            className="tap inline-flex items-center rounded bg-accent px-5 text-[15px] font-semibold text-white hover:bg-accentink"
+          >
+            오늘의 업무로 가기 →
+          </Link>
+          <button
+            type="button"
+            onClick={onMore}
+            className="tap rounded border border-line2 bg-surface px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2"
+          >
+            파일 더 올리기
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const STEP_BAR = { active: "border-accent", human: "border-human", done: "border-pass", pending: "border-line" };
+const STEP_TITLE = { active: "text-accentink", human: "text-human", done: "text-pass", pending: "text-ink2" };
+
+function NextStep({
+  n,
+  title,
+  caption,
+  tone,
+}: {
+  n: number;
+  title: string;
+  caption: string;
+  tone: keyof typeof STEP_BAR;
+}) {
+  return (
+    <li className={`flex flex-col gap-1 border-t-4 pt-2.5 ${STEP_BAR[tone]}`}>
+      <span className={`flex items-center gap-1.5 text-[15px] font-bold ${STEP_TITLE[tone]}`}>
+        {tone === "active" ? <Spinner size={15} /> : null}
+        {tone === "done" ? <Check aria-hidden size={15} strokeWidth={2.6} /> : null}
+        {n} · {title}
+      </span>
+      <span className="text-[14px] text-ink2">{caption}</span>
+    </li>
+  );
+}
+
 export async function clientLoader() {
   const [children, files] = await Promise.all([getChildren(), getFileProgress()]);
   return {
@@ -91,8 +266,15 @@ export default function UploadPage() {
   const [chosen, setChosen] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  /** 지금 올리고 있는 파일 수 — 올리는 동안 놓는 곳에 보여 준다 */
+  const [uploadingCount, setUploadingCount] = useState(0);
   /** 마지막으로 올린 묶음에서 실패한 파일. 전부 성공했으면 null */
   const [outcome, setOutcome] = useState<{ total: number; failed: UploadFailure[] } | null>(null);
+  /**
+   * 마지막으로 올린 묶음에서 잘 올라간 파일(rawRecordId). 있으면 업로드 칸 대신 "다음에 할 일" 카드를 보여 준다.
+   * [파일 더 올리기]를 누르면 비운다. 실패한 것만 다시 올려 성공하면 같은 묶음에 더한다.
+   */
+  const [uploaded, setUploaded] = useState<string[] | null>(null);
 
   useProgressPolling(files);
 
@@ -112,16 +294,29 @@ export default function UploadPage() {
   async function upload(targets: File[], fromPicker: boolean) {
     if (targets.length === 0) return;
     setUploading(true);
+    setUploadingCount(targets.length);
     try {
       const results = await uploadRawRecords(targets);
       const failed = results.filter((r): r is UploadFailure => !r.ok);
+      const ok = results.flatMap((r) => (r.ok ? [r.progress.rawRecordId] : []));
       setOutcome(failed.length > 0 ? { total: results.length, failed } : null);
+      if (ok.length > 0) setUploaded((prev) => [...(fromPicker ? [] : (prev ?? [])), ...ok]);
       if (fromPicker) setChosen([]);
       revalidator.revalidate();
     } finally {
       setUploading(false);
     }
   }
+
+  const failureNotice = outcome ? (
+    <FailureNotice
+      outcome={outcome}
+      retryable={retryable}
+      uploading={uploading}
+      onRetry={() => upload(retryable.map((f) => f.file), false)}
+      onClose={() => setOutcome(null)}
+    />
+  ) : null;
 
   return (
     <>
@@ -130,6 +325,19 @@ export default function UploadPage() {
         description="올린 파일을 기록으로 나누고 아이와 매칭해요. 요약은 오늘의 업무에서 아이별로 눌러요"
       />
 
+      {uploaded ? (
+        <div className="flex flex-col gap-4">
+          {failureNotice}
+          <UploadDone
+            count={uploaded.length}
+            files={files.filter((f) => uploaded.includes(f.rawRecordId))}
+            onMore={() => {
+              setUploaded(null);
+              setOutcome(null);
+            }}
+          />
+        </div>
+      ) : (
       <Card>
         <div className="flex flex-col gap-5">
           {/* 아이 · 기록 유형 · 기록 시각은 받지 않는다. 파일 하나에 여러 아이의 기록이 섞여 있어
@@ -139,7 +347,24 @@ export default function UploadPage() {
             낮으면 매칭 확인으로 보냅니다.
           </p>
 
-          {/* 영역 어디를 눌러도 파일 선택 창이 열리고, 끌어다 놓아도 된다 */}
+          {uploading ? (
+            <div
+              role="status"
+              className="flex min-h-[180px] flex-col items-center justify-center gap-2.5 rounded-md border-2 border-accent bg-accentsoft px-6 py-8 text-center"
+            >
+              <Spinner size={34} className="text-accent" />
+              <span className="text-[17px] font-bold text-accentink">
+                파일 {uploadingCount}개를 올리고 있어요
+              </span>
+              <span className="text-[14px] text-ink2">
+                보통 몇 초면 끝나요. 다 올라가면 다음에 할 일을 알려 드릴게요.
+              </span>
+              <span aria-hidden className="h-1 w-60 overflow-hidden rounded-full bg-surface">
+                <span className="block h-full w-2/5 animate-nav-bar rounded-full bg-accent" />
+              </span>
+            </div>
+          ) : (
+          // 영역 어디를 눌러도 파일 선택 창이 열리고, 끌어다 놓아도 된다
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
@@ -175,6 +400,7 @@ export default function UploadPage() {
             </span>
             <span className="text-[13px] text-muted">PDF는 곧 지원할 예정입니다</span>
           </button>
+          )}
           <input
             ref={inputRef}
             type="file"
@@ -202,7 +428,8 @@ export default function UploadPage() {
                     type="button"
                     aria-label={`${f.name} 빼기`}
                     onClick={() => setChosen((prev) => prev.filter((x) => x !== f))}
-                    className="flex size-8 items-center justify-center rounded text-muted hover:bg-surface2 hover:text-ink"
+                    disabled={uploading}
+                    className="flex size-8 items-center justify-center rounded text-muted hover:bg-surface2 hover:text-ink disabled:invisible"
                   >
                     <X aria-hidden size={14} strokeWidth={2} />
                   </button>
@@ -216,58 +443,29 @@ export default function UploadPage() {
               type="button"
               onClick={() => upload(chosen, true)}
               disabled={chosen.length === 0 || uploading}
-              className="tap rounded bg-accent px-5 text-[16px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-line2 disabled:text-muted"
+              aria-busy={uploading}
+              className={`tap inline-flex items-center gap-2 rounded px-5 text-[16px] font-semibold disabled:cursor-not-allowed ${
+                uploading
+                  ? "bg-accent/75 text-white"
+                  : "bg-accent text-white hover:bg-accentink disabled:bg-line2 disabled:text-muted"
+              }`}
             >
-              {uploading
-                ? "올리는 중…"
-                : chosen.length > 0
-                  ? `등록하고 처리 시작 (${chosen.length}개)`
-                  : "등록하고 처리 시작"}
+              {uploading ? (
+                <>
+                  <Spinner size={18} />
+                  올리는 중…
+                </>
+              ) : chosen.length > 0 ? (
+                `등록하고 처리 시작 (${chosen.length}개)`
+              ) : (
+                "등록하고 처리 시작"
+              )}
             </button>
           </div>
-          {outcome ? (
-            <div className="flex flex-col gap-3 rounded border border-block/40 bg-blocksoft px-4 py-3">
-              <p className="text-[15px] font-semibold">
-                {outcome.failed.length === outcome.total
-                  ? `${outcome.total}개 모두 올리지 못했습니다`
-                  : `${outcome.total}개 중 ${outcome.total - outcome.failed.length}개를 올렸습니다. ${outcome.failed.length}개는 올리지 못했습니다`}
-              </p>
-              <ul className="flex flex-col gap-2">
-                {outcome.failed.map((f, i) => (
-                  <li key={`${f.file.name}-${i}`} className="flex flex-col gap-0.5">
-                    <span className="text-[15px] font-medium break-all">
-                      <span aria-hidden className="text-block">
-                        ✕
-                      </span>{" "}
-                      {f.file.name}
-                    </span>
-                    <span className="text-[14px] text-muted">{FAIL_MESSAGE[f.reason]}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex flex-wrap items-center gap-3">
-                {retryable.length > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => upload(retryable.map((f) => f.file), false)}
-                    disabled={uploading}
-                    className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white hover:bg-accentink disabled:cursor-not-allowed disabled:bg-line2 disabled:text-muted"
-                  >
-                    실패한 파일만 다시 올리기 ({retryable.length}개)
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => setOutcome(null)}
-                  className="tap rounded border border-line2 px-4 text-[15px] font-semibold text-ink2 hover:bg-surface2"
-                >
-                  닫기
-                </button>
-              </div>
-            </div>
-          ) : null}
+          {failureNotice}
         </div>
       </Card>
+      )}
 
       <Card className="mt-5">
         <h2 className="mb-1 text-[17px] font-bold">파일별 진행 현황</h2>

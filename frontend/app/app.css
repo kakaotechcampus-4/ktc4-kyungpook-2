@@ -77,6 +77,27 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 진행 중인 막대 — 빗금이 오른쪽으로 흐른다 (기록 등록 화면 파일별 진행률) */
+@keyframes progress-stripes {
+  to {
+    background-position: 28px 0;
+  }
+}
+
+@utility progress-stripes {
+  background-image: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0.28) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgb(255 255 255 / 0.28) 50%,
+    rgb(255 255 255 / 0.28) 75%,
+    transparent 75%
+  );
+  background-size: 28px 28px;
+  animation: progress-stripes 0.9s linear infinite;
+}
+
 /* 클릭 타깃 44px 최소 보장용 유틸 */
 @utility tap {
   min-height: 44px;
