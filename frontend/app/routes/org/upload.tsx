@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
-import { Upload, X } from "lucide-react";
+import { ChevronRight, Upload, X } from "lucide-react";
 import { FileProgressList, useProgressPolling } from "@/components/org/FileProgressList";
 import { Card, Note, PageHeader } from "@/components/ui";
 import {
@@ -24,6 +24,52 @@ const FAIL_MESSAGE: Record<UploadFailReason, string> = {
 
 /** 같은 파일을 두 번 고르거나 끌어다 놓아도 한 번만 올린다 */
 const fileKey = (f: File) => `${f.name}:${f.size}:${f.lastModified}`;
+
+/**
+ * 진행 막대 세 칸(FILE_STAGES)이 무슨 일인지 — 멘토 리뷰(10/31) "기록 나누기 / 매칭이 무슨 과정인지 도움말".
+ * 처음 쓰는 사람만 필요해서 접어 둔다. 순서 · 이름은 막대와 같다.
+ *
+ * 기록 나누기는 BE JournalEntrySplitter 의 규칙이다 — 줄 맨 앞의 날짜(`9/15`, `2026-09-15`)마다 새 기록.
+ * 날짜 줄이 없으면 파일 전체가 기록 하나다. 규칙이 바뀌면 여기도 고친다.
+ */
+function StageHelp() {
+  return (
+    <details className="group mb-4 rounded border border-line bg-paper/60">
+      <summary className="tap flex cursor-pointer list-none items-center gap-2 px-3.5 text-[14px] text-ink2 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          aria-hidden
+          size={15}
+          strokeWidth={2}
+          className="transition-transform group-open:rotate-90"
+        />
+        <b className="font-bold">기록 등록 · 기록 나누기 · 매칭은 무슨 과정인가요?</b>
+      </summary>
+      <ol className="flex flex-col gap-3 px-3.5 pb-3.5 pl-9 text-[14px] leading-6 text-ink2">
+        <li>
+          <b className="font-semibold text-ink">1. 기록 등록</b> — 올린 파일을 그대로 받아 둬요. 원본은 바뀌지
+          않아요.
+        </li>
+        <li>
+          <b className="font-semibold text-ink">2. 기록 나누기</b> — 파일 한 개를 날짜별 기록으로 나눠요. 줄 맨
+          앞에 <code className="rounded bg-surface2 px-1">9/15</code>나{" "}
+          <code className="rounded bg-surface2 px-1">2026-09-15</code>처럼 날짜가 나오면 거기서 새 기록이
+          시작돼요. 날짜가 없는 파일은 통째로 기록 하나가 돼요.
+        </li>
+        <li>
+          <b className="font-semibold text-ink">3. 매칭</b> — 나눈 기록마다 AI가 내용 속 이름을 아동 명부와
+          맞춰 어느 아이의 기록인지 정해요. 여러 아이가 함께 나오거나, 명부에 없는 이름이거나, 단서가 없으면{" "}
+          <Link to="/queue/matching" className="text-accentink underline">
+            매칭 확인
+          </Link>
+          으로 보내 선생님이 직접 골라요.
+        </li>
+        <li className="text-muted">
+          아이가 정해진 기록은 오늘의 업무의 아이별 카드로 넘어가 검증 · 요약이 이어져요.
+        </li>
+      </ol>
+    </details>
+  );
+}
 
 export async function clientLoader() {
   const [children, files] = await Promise.all([getChildren(), getFileProgress()]);
@@ -233,6 +279,7 @@ export default function UploadPage() {
           </Link>
           에서 아이별로 이어집니다.
         </p>
+        <StageHelp />
         {files.length === 0 ? (
           <p className="text-[14px] text-muted">아직 올린 파일이 없습니다.</p>
         ) : (
