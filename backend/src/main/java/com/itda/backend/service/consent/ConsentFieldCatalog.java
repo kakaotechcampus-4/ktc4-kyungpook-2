@@ -7,9 +7,11 @@ import com.itda.backend.domain.consent.ConsentField;
 import com.itda.backend.domain.organization.OrganizationType;
 
 /**
- * 동의 화면(P-02)에 보여 줄 공유 범위 설명. FE 가 기관 유형별 상수로 들고 있던 표를 그대로 옮겼다 (api-spec G-02).
+ * 동의할 때 받을 공유 항목 코드와, 동의 미리보기(G-02)가 내려주던 기관 유형별 설명 문구.
  *
- * <p>문구는 설명일 뿐 저장하지 않는다. 실제로 저장·적용되는 것은 {@link #ALLOWED_FIELDS} 의 항목 코드다.
+ * <p>실제로 저장·적용되는 것은 {@link #ALLOWED_FIELDS} 의 항목 코드다. 문구표({@code LABELS})는 <b>사용 중단</b>이다 —
+ * "알레르기 정보 공유" 처럼 거르는 코드가 없는 약속이라 실제 공유와 맞지 않는다. 화면은 고정 문구를 쓰고, 이 표는
+ * 이전 화면 호환으로만 응답에 남긴다. 새 화면 배포 뒤 지운다. 다른 곳에서 쓰지 않는다.
  */
 final class ConsentFieldCatalog {
 

@@ -10,7 +10,6 @@ import type {
   Insight,
   Institution,
   InstitutionRequestItem,
-  InstitutionType,
   JournalEntry,
   LiveInvitation,
   MatchingItem,
@@ -54,29 +53,6 @@ export const ART_ACADEMY: Institution = {
   name: "OO미술학원",
   type: "center",
   verified: true,
-};
-
-/**
- * 기관 유형별로 실제 공유/비공유되는 항목 — 보호자 동의·권한 관리 화면이
- * 이 값을 그대로 렌더링한다. "공유되지 않는 정보"를 항상 함께 보여줘서
- * "동의하면 다 보이는 거 아닌가" 하는 오해를 막는다.
- */
-export const INSTITUTION_SHARE_FIELDS: Record<
-  InstitutionType,
-  { shared: string[]; notShared: string[] }
-> = {
-  school: {
-    shared: ["출결 시간", "활동 요약", "알레르기 정보"],
-    notShared: ["사진과 영상", "의료 기록"],
-  },
-  center: {
-    shared: ["관찰 요약", "변화 추이", "집에서 해본 방법"],
-    notShared: ["복지카드 정보"],
-  },
-  assistant: {
-    shared: ["하원 시간", "이동 경로", "필요한 지원 방법"],
-    notShared: ["학습 기록"],
-  },
 };
 
 /** 로그인한 교사가 소속된 기관 */

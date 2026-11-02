@@ -183,15 +183,15 @@ export interface AcceptedInvitation {
  * P-02 확인 · 동의 화면이 한 번에 그리는 정보 (api-spec G-02).
  *
  * 스펙 예시에는 child.id 가 없지만 동의(G-41)와 연결 해제(G-05) 호출에 필요해서 받는다.
+ *
+ * 서버가 함께 보내는 sharedFields · notSharedFields 는 사용 중단이라 받지 않는다 — 기관 유형별 항목 목록이
+ * 실제 공유와 맞지 않아 화면은 고정 문구를 쓴다(P-02).
  */
 export interface ConsentPreview {
   child: { id: string; name: string; birthDate: string };
   institution: Institution;
   /** 증빙서류. 없으면 null — 화면에서 버튼을 숨긴다 */
   documentUrl: string | null;
-  /** 화면에 보여 줄 설명 문구. 저장하지 않는다 */
-  sharedFields: string[];
-  notSharedFields: string[];
   /** 동의할 때 G-41 에 그대로 돌려보낼 항목 코드. 저장되는 것은 이 값이다 */
   allowedFields: ConsentField[];
 }

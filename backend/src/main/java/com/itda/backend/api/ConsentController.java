@@ -43,7 +43,7 @@ public class ConsentController {
     @GetMapping("/consent-preview")
     @Operation(summary = "동의 미리보기",
             description = "동의 화면에 그릴 아이·기관·공유 범위입니다. 저장하지 않습니다. "
-                    + "동의할 때는 allowedFields 를 G-41 에 그대로 보냅니다. sharedFields·notSharedFields 는 화면 설명 문구입니다. "
+                    + "동의할 때는 allowedFields 를 G-41 에 그대로 보냅니다. sharedFields·notSharedFields 는 사용 중단입니다(실제 공유와 맞지 않는 설명 문구, 이전 화면 호환으로만 남김). "
                     + "이미 이 기관에 동의가 있으면(다른 보호자의 동의 포함) 404 입니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({

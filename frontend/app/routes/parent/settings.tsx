@@ -236,7 +236,8 @@ function ParentSettingsContent({
       </div>
 
       <p className="text-[13px] leading-6 text-muted">
-        권한을 끄면 그 기관은 더 이상 아이 기록을 볼 수 없습니다.
+        권한을 끄면 그 기관은 받은 주간 리포트를 더 볼 수 없고, 그 기관 기록이 들어간 리포트도 다른
+        기관에서 가려져요. 기관이 이미 쓴 기록은 기관에 남아요.
       </p>
 
       {unlinking ? (
@@ -279,23 +280,44 @@ function ParentSettingsContent({
         <div
           role="dialog"
           aria-modal
+          aria-labelledby="revoke-title"
+          aria-describedby="revoke-desc"
           className="fixed inset-0 z-10 flex items-end justify-center bg-ink/40"
         >
-          <div className="w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] rounded-t-3xl bg-surface p-5 pb-7">
-            <p className="mb-2 text-[18px] font-extrabold">
-              {target.institution.name} 권한을 끌까요?
-            </p>
-            <p className="mb-5 text-[15px] leading-7 text-ink2">
-              끄면 앞으로 이 기관에 새로운 정보가 전달되지 않아요.{" "}
-              <b className="font-semibold">이미 보낸 정보는 회수되지 않아요.</b> 다른 보호자가 켠
-              권한도 함께 꺼져요.
-            </p>
-            {revokeError ? (
-              <p role="alert" className="mb-3 rounded-2xl bg-blocksoft px-4 py-3 text-[14px] text-block">
-                {revokeError}
+          {/* 안내가 길어 작은 화면 · 글자 확대에서 잘리지 않게 높이를 묶고 안내만 스크롤한다. 버튼은 늘 보인다 */}
+          <div className="flex max-h-[90dvh] w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] flex-col rounded-t-3xl bg-surface p-5 pb-7">
+            <div className="min-h-0 overflow-y-auto">
+              <p id="revoke-title" className="mb-2 text-[18px] font-extrabold">
+                {target.institution.name} 권한을 끌까요?
               </p>
-            ) : null}
-            <div className="flex gap-2">
+              {/* 지금 동작보다 강하게 말하지 않는다. 받기만 한 기관을 끄면 쓴 기관은 계속 보므로 "양쪽 모두"가
+                  아니고, 이미 시작된 매칭은 동의를 다시 보지 않으며, 다시 켜도 거둔 수신함 권한은 돌아오지 않는다 */}
+              <ul
+                id="revoke-desc"
+                className="mb-5 flex list-disc flex-col gap-1.5 pl-5 text-[15px] leading-7 text-ink2"
+              >
+                <li>
+                  <b className="font-semibold">
+                    이 기관은 받은 주간 리포트를 더 볼 수 없어요. 이 기관 기록이 들어간 리포트도 다른
+                    기관에서 가려져요.
+                  </b>
+                </li>
+                <li>
+                  앞으로 이 기관이 올리는 기록은 {child.name} 기록으로 정리하지 않아요. 이미 처리
+                  중이던 기록은 마저 정리될 수 있어요.
+                </li>
+                <li>이 기관이 이미 쓴 기록은 기관에 남아요.</li>
+                <li>보호자님은 지금처럼 모든 기록과 리포트를 볼 수 있어요.</li>
+                <li>다른 보호자가 이 기관에 한 공유 동의도 함께 꺼져요.</li>
+                <li>다시 켜도, 기관이 이미 받았다가 가려진 리포트는 다시 보이지 않아요.</li>
+              </ul>
+              {revokeError ? (
+                <p role="alert" className="mb-3 rounded-2xl bg-blocksoft px-4 py-3 text-[14px] text-block">
+                  {revokeError}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 gap-2">
               <button
                 onClick={() => setConfirming(null)}
                 className="tap h-14 flex-1 rounded-2xl border border-line2 text-[16px] font-bold text-ink2"
