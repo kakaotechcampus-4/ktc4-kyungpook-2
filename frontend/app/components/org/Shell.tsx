@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
+import { useNavigating } from "@/components/ui/Loading";
 
 /** 사이드바 하단의 내 정보. null 은 서버가 주지 않은 값 — 그 칸을 비운다 */
 export interface OrgShellMe {
@@ -103,6 +104,8 @@ export function OrgShell({
 }) {
   const { pathname } = useLocation();
   const NAV = nav(counts);
+  // 다음 화면을 기다리는 동안 지금 화면을 살짝 흐린다 — 맨 위 막대(NavigationProgress)와 함께
+  const navigating = useNavigating();
 
   return (
     <div className="flex min-h-screen">
@@ -181,7 +184,10 @@ export function OrgShell({
         </div>
       </nav>
 
-      <main className="min-w-0 flex-1 px-8 py-7">
+      <main
+        aria-busy={navigating}
+        className={`min-w-0 flex-1 px-8 py-7 transition-opacity duration-200 ${navigating ? "opacity-60" : ""}`}
+      >
         <div className="mx-auto max-w-5xl">{children}</div>
       </main>
     </div>

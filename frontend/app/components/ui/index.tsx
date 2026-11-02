@@ -14,6 +14,7 @@ import type {
 } from "@/lib/types";
 
 export { PipelineStepper, StageDots } from "./PipelineStepper";
+export { FullPageLoading, NavigationProgress, Spinner, useNavigating } from "./Loading";
 export type { StageState, PipelineStepperProps } from "./PipelineStepper";
 
 /* ── C1 판정 배지 ───────────────────────────────────── */
