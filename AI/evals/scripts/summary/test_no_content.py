@@ -84,6 +84,21 @@ def case_all_dropped_is_503():
     return _raises(NoGroundedClaims, lambda: run_summary(_payload("오전 블록 놀이에서 혼자 끝까지 쌓음.")))
 
 
+def case_trace_keeps_drops_on_503():
+    # 전부 버려져 503 이 나도, 평가용 trace 에는 버린 문장과 이유가 남는다
+    _model_says({"claims": [{
+        "text": "오전에 그림을 그렸다.",
+        "evidence": [{"journal_entry_id": 11, "quote": "원문에 없는 구절"}],
+    }]})
+    trace = {}
+    try:
+        run_summary(_payload("오전 블록 놀이에서 혼자 끝까지 쌓음."), trace=trace)
+    except NoGroundedClaims:
+        pass
+    d = trace.get("dropped_detail") or []
+    return trace.get("raw_claims") == 1 and len(d) == 1 and d[0]["reason"] == "인용_못찾음"
+
+
 def case_normal_summary():
     _model_says({"claims": [{
         "text": "오전 블록 놀이에서 혼자 끝까지 쌓았다.",
@@ -114,6 +129,7 @@ CASES = [
     ("빈 claims → 200 no_content", case_empty_claims_is_no_content),
     ("claims 없는 응답 {} → 503 llm_unavailable", case_missing_claims_is_llm_error),
     ("근거 전부 탈락 → 503 no_grounded_claims", case_all_dropped_is_503),
+    ("503 이어도 trace 에 버린 문장·이유가 남음", case_trace_keeps_drops_on_503),
     ("정상 요약 → no_content False", case_normal_summary),
     ("모델 고장 → 503 llm_unavailable", case_model_down_is_llm_error),
     ("no_content 인데 content 있음 → 스키마가 막음", case_schema_blocks_bad_no_content),

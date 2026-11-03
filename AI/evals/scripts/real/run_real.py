@@ -144,7 +144,10 @@ def main():
             institution_id=inst_id, institution_name=inst,
             sources=[SourceEntry(journal_entry_id=jid[x["id"]], content=body(x), entry_date=full_date(date)) for x in es],
             other_child_names=others)
-        out, err = retry(lambda: run_summary(payload))
+        trace = {}
+        out, err = retry(lambda: run_summary(payload, trace=trace))
+        # 근거 검사에서 버린 문장 (마지막 시도 기준). 요약 수정 루프의 기준선이다.
+        rec.update(raw_claims=trace.get("raw_claims", 0), dropped=trace.get("dropped_detail", []))
         calls["summary"] += 1
         if out:
             rec.update(ok=True, content=out.content, n_claims=len(out.claims), needs_review=out.needs_review,
@@ -202,6 +205,14 @@ def main():
 
     log["compare"] = compare(log, entries)
     c = log["compare"]
+    S_all = log["summaries"]
+    dropped = [d for s in S_all for d in s.get("dropped", [])]
+    raw_total = sum(s.get("raw_claims", 0) for s in S_all)
+    log["summary_drops"] = {"raw_claims": raw_total, "dropped": len(dropped),
+                            "by_reason": dict(Counter(d["reason"] for d in dropped)),
+                            "all_dropped_groups": sum(1 for s in S_all if not s.get("ok") and s.get("raw_claims"))}
+    sd = log["summary_drops"]
+    print(f"  요약 버린 문장  {sd['dropped']}/{sd['raw_claims']}  {sd['by_reason']}  · 전부 버려져 실패한 묶음 {sd['all_dropped_groups']}")
     print("── v1 비교 ──")
     print(f"  요약할 내용 없음(no_content)  {c['no_content']}건 {c['no_content_groups']}")
     print(f"  하루 기록 하나로 만든 인사이트  {c['single_record_insights']}/{len(log['insights'])}  (v1 4/17)")

@@ -315,6 +315,9 @@ def ground(state: SummaryState) -> dict:
     claims: list[dict] = []
     dropped_evidence = 0
     dropped_claims: list[str] = []
+    #: 버린 문장마다 이유와 모델이 낸 인용. 수정 루프가 피드백을 만들 재료이자
+    #: 루프가 몇 개를 살렸는지 재는 기준선이다 (평가 스크립트만 읽는다).
+    dropped_detail: list[dict] = []
 
     for raw in state.get("raw_claims") or []:
         if not isinstance(raw, dict):
@@ -351,11 +354,15 @@ def ground(state: SummaryState) -> dict:
         # ② 근거가 하나도 안 남은 문장은 버린다.
         if DROP_CLAIMS_WITHOUT_EVIDENCE and not kept:
             dropped_claims.append(text)
+            dropped_detail.append({"text": text, "reason": "인용_못찾음",
+                                   "evidence": raw.get("evidence") or []})
             continue
 
         # ③ 숫자가 근거에 없으면 버린다.
         if CHECK_PROPER_NOUNS and kept and not _facts_grounded(text, kept, state):
             dropped_claims.append(text)
+            dropped_detail.append({"text": text, "reason": "숫자_불일치",
+                                   "evidence": raw.get("evidence") or []})
             continue
 
         claims.append({"text": text.strip(), "evidence": kept})
@@ -364,6 +371,7 @@ def ground(state: SummaryState) -> dict:
         "claims": claims,
         "dropped_evidence": dropped_evidence,
         "dropped_claims": dropped_claims,
+        "dropped_detail": dropped_detail,
     }
 
 

@@ -46,6 +46,8 @@ class SummaryState(TypedDict, total=False):
     dropped_evidence: int
     #: 근거가 없거나 숫자·기관명이 안 맞아 버린 문장들.
     dropped_claims: list[str]
+    #: 버린 문장마다 {text, reason(인용_못찾음 · 숫자_불일치), evidence(모델이 낸 인용)}.
+    dropped_detail: list[dict]
 
     # ── assemble 이 채운다 (최종 출력이 되는 값들) ──
     content: str
