@@ -49,7 +49,7 @@ com.itda.backend
 ├── api                 # Controller
 ├── service             # 유스케이스와 트랜잭션
 │   ├── <기능>          # 기능별 유스케이스, 에이전트 호출 워커와 결과 저장
-│   ├── agent           # AI 서버 호출 공통 (재시도·상태 확인·접속 설정)
+│   ├── agent           # AI 서버 호출 공통 (재시도·상태 확인·접속 설정. HTTP 요청 팩토리는 global.config)
 │   └── storage         # 외부 저장소 구현
 ├── repository
 │   └── <기능>          # Entity 영속화와 조회, 조회용 projection
@@ -62,7 +62,7 @@ com.itda.backend
 │   ├── <기능>          # 기능별 예외·오류 코드·예외 처리기
 │   ├── agent           # 여러 기능이 쓰는 AI 호출 예외
 │   └── auth            # 로그인·토큰 인증 예외
-└── global              # 설정, 보안, JWT, 공통 응답·예외 등 횡단 관심사
+└── global              # 설정, 보안, JWT, 공통 응답·예외, 외부 호출 HTTP 요청 팩토리 등 횡단 관심사
     ├── config
     ├── exception
     ├── jwt
