@@ -47,13 +47,14 @@ class MatchingResultServiceJpaTest {
     @MockitoBean
     private UserService userService;
 
+    private Organization ours;
     private Child child;
     private JournalEntry entry;
     private MatchingResult matchingResult;
 
     @BeforeEach
     void setUp() {
-        Organization ours = em.persist(Organization.of("햇살센터", OrganizationType.CENTER, "1234567890"));
+        ours = em.persist(Organization.of("햇살센터", OrganizationType.CENTER, "1234567890"));
         child = em.persist(Child.of("임유진", LocalDate.of(2019, 11, 26)));
         em.persist(ChildOrganization.of(child.getId(), ours.getId()));
         RawRecord rawRecord = em.persist(new RawRecord(
@@ -94,5 +95,47 @@ class MatchingResultServiceJpaTest {
         assertThat(saved.getStatus()).isEqualTo(JournalEntryStatus.EXCLUDED);
         assertThat(saved.getChildId()).isNull();
         assertThat(matchingResultService.getQueue(USER_ID)).isEmpty();
+    }
+
+    /** 후보 child_id 는 AI 가 쓴 값이다. 우리 명부 밖 아이(다른 기관, 연결 해제)는 이름·생년월일이 나가면 안 된다. */
+    @Test
+    void 후보에는_우리_기관_명부의_아이만_나온다() {
+        Organization other = em.persist(Organization.of("○○초등학교", OrganizationType.SCHOOL, "1234567891"));
+        Child theirs = em.persist(Child.of("박다른", LocalDate.of(2018, 5, 5)));
+        em.persist(ChildOrganization.of(theirs.getId(), other.getId()));
+        Child left = em.persist(Child.of("최떠남", LocalDate.of(2019, 1, 1)));
+        ChildOrganization leftLink = em.persist(ChildOrganization.of(left.getId(), ours.getId()));
+        leftLink.delete();
+        MatchingResult multi = em.persist(new MatchingResult(entry.getId(), null, new BigDecimal("0.5"),
+                MatchingStatus.MULTI, null, null,
+                "[{\"child_id\":%d,\"confidence\":0.5},{\"child_id\":%d,\"confidence\":0.4},{\"child_id\":%d,\"confidence\":0.3}]"
+                        .formatted(child.getId(), theirs.getId(), left.getId()),
+                null, null, null, null));
+        em.flush();
+        em.clear();
+
+        var item = matchingResultService.getItem(multi.getId(), USER_ID);
+
+        assertThat(item.candidates()).singleElement().satisfies(c -> {
+            assertThat(c.childId()).isEqualTo(String.valueOf(child.getId()));
+            assertThat(c.name()).isEqualTo("임유진");
+        });
+    }
+
+    /** 후보가 모두 명부 밖이면 빈 목록이다. 명부 조회가 빈 IN 으로 가도 깨지지 않아야 한다. */
+    @Test
+    void 후보가_모두_명부_밖이면_빈_목록이다() {
+        Organization other = em.persist(Organization.of("○○초등학교", OrganizationType.SCHOOL, "1234567891"));
+        Child theirs = em.persist(Child.of("박다른", LocalDate.of(2018, 5, 5)));
+        em.persist(ChildOrganization.of(theirs.getId(), other.getId()));
+        MatchingResult multi = em.persist(new MatchingResult(entry.getId(), null, new BigDecimal("0.5"),
+                MatchingStatus.MULTI, null, null,
+                "[{\"child_id\":%d,\"confidence\":0.5},{\"child_id\":999999,\"confidence\":0.4}]"
+                        .formatted(theirs.getId()),
+                null, null, null, null));
+        em.flush();
+        em.clear();
+
+        assertThat(matchingResultService.getItem(multi.getId(), USER_ID).candidates()).isEmpty();
     }
 }

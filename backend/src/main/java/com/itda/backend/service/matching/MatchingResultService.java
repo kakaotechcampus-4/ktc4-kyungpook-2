@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -13,6 +14,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.matching.MatchingStatus;
@@ -53,16 +55,34 @@ public class MatchingResultService {
 
     @Transactional(readOnly = true)
     public List<MatchingQueueItemResponse> getQueue(String userId) {
-        String institutionId = String.valueOf(userService.getOrganizationIdOf(userId));
+        Long organizationId = userService.getOrganizationIdOf(userId);
+        String institutionId = String.valueOf(organizationId);
         // ponytail: 건별로 JournalEntry/RawRecord 조회 + candidates별 Child 조회 — N+1이지만
         // 지금 큐 규모에선 문제없다. 커지면 join 쿼리로 바꿀 것.
         return matchingResultRepository.findByStatusNot(MatchingStatus.AUTO).stream()
                 .flatMap(mr -> resolveOwnedContext(mr.getJournalEntryId(), institutionId)
                         // 일지가 이미 처리됐으면(옛 결과 행 등) resolve 가 거절하므로 큐에서도 뺀다.
                         .filter(ctx -> ctx.entry().isAwaitingReview())
-                        .map(ctx -> buildResponse(mr, ctx))
+                        .map(ctx -> buildResponse(mr, ctx, organizationId))
                         .stream())
                 .toList();
+    }
+
+    /**
+     * 큐 항목 하나 (O-28, 11주차 기술멘토링 "필요한 정보만, 1건씩"). 목록과 같은 모양이다.
+     * 우리 기관의 처리 대기 항목이 아니면 다른 기관 것이든 이미 처리된 것이든 모두 "없음"이다 —
+     * 나누면 그 id 가 어딘가에 있다는 사실이 새어 나간다.
+     */
+    @Transactional(readOnly = true)
+    public MatchingQueueItemResponse getItem(Long id, String userId) {
+        Long organizationId = userService.getOrganizationIdOf(userId);
+        MatchingResult matchingResult = matchingResultRepository.findById(id)
+                .filter(mr -> mr.getStatus() != MatchingStatus.AUTO)
+                .orElseThrow(() -> new MatchingResultNotFoundException(id));
+        OwnedContext ctx = resolveOwnedContext(matchingResult.getJournalEntryId(), String.valueOf(organizationId))
+                .filter(c -> c.entry().isAwaitingReview())
+                .orElseThrow(() -> new MatchingResultNotFoundException(id));
+        return buildResponse(matchingResult, ctx, organizationId);
     }
 
     @Transactional
@@ -93,11 +113,13 @@ public class MatchingResultService {
                 }
                 // 아동 행을 잠근 뒤 동의를 본다. 동의 부여·철회도 이 행을 먼저 잠그므로, 철회가 커밋된 뒤에는
                 // 새 확정이 성공하지 않는다. 잠그지 않으면 "동의 확인 → 철회 커밋 → 확정" 순서로 끼어들 수 있다.
+                // 없는 아이와 다른 기관 아이는 같은 문구로 거절한다. 메시지가 응답에 그대로 나가므로, 나누면
+                // 아이 번호를 바꿔 가며 다른 기관에 어떤 아이가 있는지 알아낼 수 있다.
                 childRepository.findByIdForUpdate(childId)
                         .filter(child -> !child.isDeleted())
-                        .orElseThrow(() -> new MatchingResultValidationException("child not found: " + childId));
+                        .orElseThrow(() -> new MatchingResultValidationException("child not available: " + childId));
                 if (!childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)) {
-                    throw new MatchingResultValidationException("child not in this institution: " + childId);
+                    throw new MatchingResultValidationException("child not available: " + childId);
                 }
                 // AI 명단(ChildRepository.findConsentedByOrganizationId)과 같은 기준 — 이 기관에 동의하지 않은
                 // 아동으로는 확정하지 않는다. 다른 기관에만 동의해 child.status 가 ACTIVE 인 아이도 막힌다.
@@ -116,7 +138,7 @@ public class MatchingResultService {
         }
 
         MatchingResult saved = matchingResultRepository.save(matchingResult);
-        return buildResponse(saved, ctx);
+        return buildResponse(saved, ctx, organizationId);
     }
 
     private record OwnedContext(JournalEntry entry, RawRecord rawRecord) {
@@ -138,7 +160,7 @@ public class MatchingResultService {
                         .map(record -> new OwnedContext(entry, record)));
     }
 
-    private MatchingQueueItemResponse buildResponse(MatchingResult mr, OwnedContext ctx) {
+    private MatchingQueueItemResponse buildResponse(MatchingResult mr, OwnedContext ctx, Long organizationId) {
         RecordResponse record = RecordResponse.of(
                 String.valueOf(ctx.rawRecord().getId()),
                 ctx.rawRecord().getOriginalFilename(),
@@ -154,11 +176,11 @@ public class MatchingResultService {
                 mr.getMultiReason(),
                 mr.getHintMismatch(),
                 record,
-                buildCandidates(mr.getCandidates(), mr.getId()),
+                buildCandidates(mr.getCandidates(), mr.getId(), organizationId),
                 parseJson(mr.getEvidence(), mr.getId()));
     }
 
-    private List<CandidateResponse> buildCandidates(String candidatesJson, Long matchingResultId) {
+    private List<CandidateResponse> buildCandidates(String candidatesJson, Long matchingResultId, Long organizationId) {
         JsonNode node = parseJson(candidatesJson, matchingResultId);
         if (node == null || !node.isArray() || node.isEmpty()) {
             return List.of();
@@ -174,9 +196,14 @@ public class MatchingResultService {
                 childIds.add(childIdNode.asLong());
             }
         }
-        // 소속 기관이 삭제 처리한 아이는 후보로도 안 보여준다 — 보여줘도 assign이 거부돼서
-        // 화면과 실제 처리 가능 여부가 어긋난다.
-        Map<Long, Child> children = childRepository.findAllById(childIds).stream()
+        // 우리 기관 명부(연결 해제·삭제 제외)에 있는 아이만 후보로 보여준다. child_id 는 AI 가 쓴 값이라
+        // 명부 밖 번호가 오면 다른 기관 아이의 이름·생년월일이 나간다 — 규칙으로 막는다(CLAUDE.md:
+        // 접근 판단을 LLM 동작에 맡기지 않는다). 보여줘도 assign 이 거부돼 화면과 처리 가능 여부가 어긋나기도 한다.
+        Set<Long> roster = childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(childIds).stream()
+                .filter(link -> link.getOrganizationId().equals(organizationId))
+                .map(ChildOrganization::getChildId)
+                .collect(Collectors.toSet());
+        Map<Long, Child> children = childRepository.findAllById(roster).stream()
                 .filter(child -> !child.isDeleted())
                 .collect(Collectors.toMap(Child::getId, child -> child));
 
@@ -188,14 +215,15 @@ public class MatchingResultService {
                 continue;
             }
             long childId = childIdNode.asLong();
+            Child child = children.get(childId);
+            if (child == null) {
+                log.warn("skipping candidate outside our roster matchingResultId={} childId={}", matchingResultId, childId);
+                continue;
+            }
             JsonNode confidenceNode = c.get("confidence");
             Double confidence = confidenceNode != null && confidenceNode.isNumber() ? confidenceNode.asDouble() : null;
-            Child child = children.get(childId);
             result.add(new CandidateResponse(
-                    String.valueOf(childId),
-                    child == null ? null : child.getName(),
-                    child == null ? null : child.getBirthdate().toString(),
-                    confidence));
+                    String.valueOf(childId), child.getName(), child.getBirthdate().toString(), confidence));
         }
         return result;
     }
