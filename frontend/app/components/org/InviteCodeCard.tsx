@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Busy } from "@/components/ui";
 import { formatInviteCode, formatRemaining, inviteLink, useRemainingMs } from "@/lib/invite";
 import type { IssuedInvitation } from "@/lib/types";
 
@@ -59,7 +60,7 @@ export function InviteCodeCard({
           <button
             type="button"
             onClick={() => copy("code")}
-            className="tap rounded bg-accent px-4 text-[15px] font-semibold text-white"
+            className="tap rounded bg-ink px-4 text-[15px] font-semibold text-paper"
           >
             {copied === "code" ? "복사됨" : "코드 복사"}
           </button>
@@ -73,7 +74,7 @@ export function InviteCodeCard({
               disabled={cancelling}
               className="tap rounded border border-line2 bg-surface px-4 text-[15px] font-semibold text-ink2 disabled:opacity-50"
             >
-              {cancelling ? "취소 중…" : "코드 취소"}
+              {cancelling ? <Busy>취소 중…</Busy> : "코드 취소"}
             </button>
           ) : null}
         </div>

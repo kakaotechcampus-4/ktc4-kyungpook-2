@@ -30,6 +30,12 @@ public interface InsightResultRepository extends JpaRepository<InsightResult, Lo
     List<InsightResult> findByChildIdInOrderByIdDesc(Collection<Long> childIds);
 
     /**
+     * 그 아이의 한 상태 인사이트, 오래된 순. 새로 연결된 보호자에게 승인된 글을 열 때 쓴다 ({@code InsightAccessGranter}).
+     * 오래된 글부터 넣어 권한 행 id 도 오래된 순이 되게 한다.
+     */
+    List<InsightResult> findByChildIdAndStatusOrderByIdAsc(Long childId, InsightStatus status);
+
+    /**
      * 그 아이·그 기간의 마지막 회차 번호. 옛 회차를 승인해 철 지난 글이 다른 기관으로 나가는 것을 막는 데 쓴다.
      * 인사이트가 한 건도 없으면 {@code null} 이다.
      */

@@ -1,5 +1,6 @@
 package com.itda.backend.repository.child;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +29,15 @@ public interface ChildRepository extends JpaRepository<Child, Long> {
     @Query("select c from Child c where c.id = :id")
     Optional<Child> findByIdForUpdate(@Param("id") Long id);
 
+    /**
+     * 인사이트 열람(보호자 단건 · 기관 수신함 단건)용 공유 잠금. 권한을 바꾸는 쪽(동의 철회, 보호자 연결 해제,
+     * Gate 2 승인)이 모두 이 행을 {@link #findByIdForUpdate} 로 먼저 잠그므로 열람과 줄을 선다 — 철회가 먼저
+     * 커밋되면 열람은 거둔 권한을 보고, 열람이 먼저면 철회는 열람이 끝난 뒤 권한을 거둔다. 열람끼리는 서로 막지 않는다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("select c from Child c where c.id = :id")
+    Optional<Child> findByIdForShare(@Param("id") Long id);
+
     // FK/연관관계 없이(§16 원칙) child_organization을 평범한 Long 컬럼으로만 이어서 조회한다.
     // 이름 그대로 동의 필터가 없다 — 화면용 명부(O-10)는 pending_consent도
     // 같이 보여주고 화면에서 걸러야 하기 때문(api-spec.md O-11). AI 매칭 명부처럼 동의 없는
@@ -36,6 +46,14 @@ public interface ChildRepository extends JpaRepository<Child, Long> {
             + "where co.childId = c.id and co.organizationId = :organizationId "
             + "and co.deletedAt is null and c.deletedAt is null")
     List<Child> findByOrganizationId(@Param("organizationId") Long organizationId);
+
+    /** 이 기관 명부(연결 해제 · 삭제 제외)에 이름 · 생년월일이 같은 아이가 있는지. 아이 등록(O-11) 중복 확인용. */
+    @Query("select count(c) > 0 from Child c, ChildOrganization co "
+            + "where co.childId = c.id and co.organizationId = :organizationId "
+            + "and co.deletedAt is null and c.deletedAt is null "
+            + "and c.name = :name and c.birthdate = :birthdate")
+    boolean existsInOrganization(@Param("organizationId") Long organizationId,
+            @Param("name") String name, @Param("birthdate") LocalDate birthdate);
 
     /**
      * AI 매칭 명부 전용. <b>이 기관에 대한</b> 살아 있는 동의가 있는 아이만 돌려준다 (DB 스키마 §5.1).

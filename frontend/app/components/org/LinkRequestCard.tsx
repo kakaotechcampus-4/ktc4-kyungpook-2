@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Card } from "@/components/ui";
+import { Busy, Card } from "@/components/ui";
 import { ApiError, acceptLinkRequest, rejectLinkRequest } from "@/lib/api";
 import type { PendingLinkRequest } from "@/lib/types";
 
@@ -99,9 +99,9 @@ export function LinkRequestCard({ request }: { request: PendingLinkRequest }) {
         <button
           type="submit"
           disabled={busy}
-          className="tap rounded bg-accent px-5 text-[15px] font-semibold text-white hover:bg-accentink disabled:opacity-60"
+          className="tap rounded bg-ink px-5 text-[15px] font-semibold text-paper hover:brightness-110 disabled:opacity-60"
         >
-          {busy && !confirmingReject ? "처리 중…" : "수락"}
+          {busy && !confirmingReject ? <Busy>처리 중…</Busy> : "수락"}
         </button>
         {confirmingReject ? (
           <>
@@ -119,7 +119,7 @@ export function LinkRequestCard({ request }: { request: PendingLinkRequest }) {
               disabled={busy}
               className="tap rounded border border-block/50 bg-blocksoft px-4 text-[15px] font-semibold text-block disabled:opacity-60"
             >
-              {busy ? "처리 중…" : "거절하기"}
+              {busy ? <Busy>처리 중…</Busy> : "거절하기"}
             </button>
           </>
         ) : (

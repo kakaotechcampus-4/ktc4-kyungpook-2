@@ -1,16 +1,15 @@
 import { useState } from "react";
-import { useLoaderData, useRevalidator } from "react-router";
+import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import {
   Check,
   ChevronRight,
-  LoaderCircle,
   Pencil,
   Plus,
   Trash2,
   TriangleAlert,
 } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
-import { Card, ConfirmDialog, EmptyState, PageHeader } from "@/components/ui";
+import { Card, ConfirmDialog, EmptyState, PageHeader, Spinner } from "@/components/ui";
 import { ApiError, decideGate1, getGate1Queue, isReady, reopenGate1 } from "@/lib/api";
 import type { Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
 
@@ -20,7 +19,7 @@ export async function clientLoader() {
   return { pending, held };
 }
 
-const TITLE = "1차 검토 · 요약 확인";
+const TITLE = "요약 검토";
 const DESCRIPTION = "AI 요약이 기록과 맞는지 문장마다 확인하고 승인해요";
 
 type Tab = "pending" | "hold";
@@ -244,25 +243,31 @@ function PendingItem({
   const [confirming, setConfirming] = useState<Decision | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /*
+   * 목록을 다시 받았는데 요약이 바뀌었으면 고치던 내용을 버린다. 옛 문장 번호로 보내면
+   * 엉뚱한 문장이 고쳐지거나 400 이 난다. (렌더 중 상태 조정 — React 문서의 권장 방식)
+   * 아래 계산보다 먼저 해야 한다 — 옛 lines 와 새 claims 는 길이가 달라 짝을 지으면 화면이 깨진다.
+   * 열려 있던 확인 창도 닫는다. 안 닫으면 새 문장을 읽지 않고 승인하게 된다.
+   */
+  if (seenVersion !== item.version) {
+    const touched = lines.some((l) => l.action !== "KEEP") || added.some((a) => a.text.trim());
+    setSeenVersion(item.version);
+    setLines(freshLines(item.claims));
+    setAdded([]);
+    setConfirming(null);
+    setError(null);
+    setNotice(
+      "요약이 새 기록으로 바뀌었어요. 바뀐 문장을 다시 읽고 결정해 주세요." +
+        (touched ? " 고치던 내용은 지웠어요." : ""),
+    );
+    // 이 렌더 결과는 React 가 버리고 새 상태로 바로 다시 그린다
+    return null;
+  }
+
   const edits = lines.filter((l, i) => isEdited(l, item.claims[i])).length;
   const dels = lines.filter((l) => l.action === "DELETE").length;
   const adds = added.filter((a) => a.text.trim()).length;
   const hasChanges = edits + dels + adds > 0;
-
-  /*
-   * 목록을 다시 받았는데 요약이 바뀌었으면 고치던 내용을 버린다. 옛 문장 번호로 보내면
-   * 엉뚱한 문장이 고쳐지거나 400 이 난다. (렌더 중 상태 조정 — React 문서의 권장 방식)
-   */
-  if (seenVersion !== item.version) {
-    setSeenVersion(item.version);
-    setLines(freshLines(item.claims));
-    setAdded([]);
-    setError(null);
-    setNotice(
-      "요약이 새 기록으로 바뀌었어요. 바뀐 문장을 다시 읽고 결정해 주세요." +
-        (hasChanges ? " 고치던 내용은 지웠어요." : ""),
-    );
-  }
 
   const canEdit = item.claims.length > 0 && !item.processing;
   const blankEdit = lines.some((l) => l.action === "EDIT" && !l.text.trim());
@@ -356,7 +361,7 @@ function PendingItem({
           role="status"
           className="flex items-center gap-2.5 rounded bg-accentsoft px-3.5 py-3 text-accentink"
         >
-          <LoaderCircle aria-hidden size={18} strokeWidth={1.8} className="shrink-0" />
+          <Spinner size={18} />
           <p className="text-[14px] leading-6">
             <b className="font-bold">새 기록을 반영하는 중이에요.</b> 요약이 곧 바뀌어서 지금은
             고치거나 승인할 수 없어요.
@@ -517,7 +522,7 @@ function PendingItem({
               type="button"
               onClick={() => setConfirming("approve")}
               disabled={busy || approveBlocked}
-              className="tap rounded bg-human px-5.5 text-[16px] font-bold text-white hover:brightness-95 disabled:bg-line disabled:text-muted"
+              className="tap rounded bg-ink px-5.5 text-[16px] font-bold text-paper hover:brightness-95 disabled:bg-line disabled:text-muted"
             >
               {hasChanges ? "변경 내용으로 승인" : "승인"}
             </button>
@@ -572,7 +577,7 @@ function PendingItem({
 
 const SEGMENT = [
   { action: "KEEP", label: "유지", Icon: Check, on: "bg-ink2 text-white" },
-  { action: "EDIT", label: "수정", Icon: Pencil, on: "bg-accent text-white" },
+  { action: "EDIT", label: "수정", Icon: Pencil, on: "bg-ink text-paper" },
   { action: "DELETE", label: "삭제", Icon: Trash2, on: "bg-block text-white" },
 ] as const;
 
@@ -597,7 +602,7 @@ function SentenceRow({
       ? "border-accent/35 bg-accentsoft/35"
       : "border-line bg-surface";
   const dot = isEdit
-    ? "bg-accent text-white"
+    ? "bg-ink text-paper"
     : isDelete
       ? "bg-blocksoft text-block"
       : "bg-surface2 text-ink2";
@@ -733,7 +738,7 @@ function NoContentItem({
           role="status"
           className="flex items-center gap-2.5 rounded bg-accentsoft px-3.5 py-3 text-accentink"
         >
-          <LoaderCircle aria-hidden size={18} strokeWidth={1.8} className="shrink-0" />
+          <Spinner size={18} />
           <p className="text-[14px] leading-6">
             <b className="font-bold">새 기록을 반영하는 중이에요.</b> 결과가 곧 바뀌어서 지금은
             확인하거나 되돌릴 수 없어요.
@@ -744,9 +749,18 @@ function NoContentItem({
       <div className="flex flex-col gap-1 rounded bg-surface2/60 px-4 py-3.5">
         <p className="text-[16px] font-bold">이날 기록에서 요약할 내용을 찾지 못했어요</p>
         <p className="text-[14px] leading-6 text-ink2">
-          AI 가 내용을 지어내지 않도록 요약을 비워 두었어요. 아래 기록을 읽고 정말 전할 내용이
-          없으면 확인을, 요약이 필요하면 되돌리기를 눌러 주세요.
+          AI 가 내용을 지어내지 않도록 요약을 비워 두었어요. 아래 기록을 읽고 골라 주세요.
         </p>
+        <ul className="mt-1 flex flex-col gap-0.5 text-[14px] leading-6 text-ink2">
+          <li>
+            <b className="font-semibold text-ink">확인</b> · 원문을 읽었고 전할 내용이 없어요. 요약
+            없이 마무리해요.
+          </li>
+          <li>
+            <b className="font-semibold text-ink">요약 되돌리기</b> · 이 기록을 다시 요약할 수 있도록
+            오늘의 업무의 "요약 대기"로 돌려요.
+          </li>
+        </ul>
       </div>
 
       {count > 0 ? (
@@ -779,7 +793,7 @@ function NoContentItem({
             type="button"
             onClick={() => setConfirming("confirm")}
             disabled={busy || item.processing}
-            className="tap rounded bg-human px-5.5 text-[16px] font-bold text-white hover:brightness-95 disabled:bg-line disabled:text-muted"
+            className="tap rounded bg-ink px-5.5 text-[16px] font-bold text-paper hover:brightness-95 disabled:bg-line disabled:text-muted"
           >
             확인
           </button>
@@ -801,8 +815,8 @@ function NoContentItem({
           onCancel={() => setConfirming(null)}
           onConfirm={() => decide("confirm")}
         >
-          이날 기록{count > 0 ? ` ${count}건` : ""}을 "요약할 내용 없음"으로 끝내요. 아동 타임라인에는
-          올라가지 않아요.
+          원문을 읽고 요약 없이 마무리해요. 이날 기록{count > 0 ? ` ${count}건` : ""}은 "요약할 내용
+          없음"으로 끝나고, 아동 타임라인에는 올라가지 않아요.
         </ConfirmDialog>
       ) : confirming === "revert" ? (
         <ConfirmDialog
@@ -813,8 +827,8 @@ function NoContentItem({
           onCancel={() => setConfirming(null)}
           onConfirm={() => decide("revert")}
         >
-          이 결과는 목록에서 빠지고 기록은 요약 전으로 돌아가요. 다시 요약을 요청하면 그 사이 들어온
-          같은 날 기록과 함께 새로 요약해요.
+          이 결과는 목록에서 빠지고, 이날 기록은 오늘의 업무에서 다시 "요약 대기"가 돼요. [요약]을
+          누르면 그 사이 들어온 같은 날 기록과 함께 새로 요약해요.
         </ConfirmDialog>
       ) : null}
     </article>
@@ -929,7 +943,7 @@ const OUTCOME: Record<Exclude<Outcome, "stale">, { title: string; tone: "pass" |
   removed: { title: "요약을 제거했어요", tone: "neutral" },
   reopened: { title: "보류를 해제했어요 · 검토 대기에서 다시 볼 수 있어요", tone: "pass" },
   confirmed: { title: "요약할 내용 없음으로 확인했어요", tone: "pass" },
-  reverted: { title: "요약 전으로 되돌렸어요", tone: "neutral" },
+  reverted: { title: "요약 대기로 되돌렸어요", tone: "neutral" },
 };
 
 function ResolvedCard({ item, outcome, message }: { item: SummaryItem; outcome: Outcome; message?: string }) {
@@ -975,7 +989,11 @@ export default function Gate1Route() {
 
 function Gate1Page() {
   const { pending, held } = useLoaderData<typeof clientLoader>();
-  const [tab, setTab] = useState<Tab>("pending");
+  // 세로 메뉴의 "보류함"이 /gate1?tab=hold 로 바로 들어온다
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = params.get("tab") === "hold" ? "hold" : "pending";
+  const setTab = (next: Tab) =>
+    setParams(next === "hold" ? { tab: "hold" } : {}, { replace: true, preventScrollReset: true });
   /**
    * 처리하면 revalidate 로 그 요약이 목록에서 빠진다 — 결과 카드가 바로 사라지지 않도록
    * 이번 방문 동안만 탭별로 기억한다. 키는 "탭:id" (보류 → 해제처럼 탭을 오가는 요약이 있다).
@@ -1007,10 +1025,14 @@ function Gate1Page() {
   return (
     <>
       <PageHeader
-        title={TITLE}
-        description={DESCRIPTION}
+        eyebrow={
+          tab === "hold"
+            ? `${held.length}건 · 넘기지 않고 세워 둔 요약`
+            : `${pending.length}건 · 오래된 것부터`
+        }
+        title={tab === "hold" ? "보류함" : TITLE}
         right={
-          <div role="tablist" aria-label="검토 상태" className="flex gap-1 rounded-md bg-surface2 p-1">
+          <div role="tablist" aria-label="검토 상태" className="flex gap-1.5">
             {tabs.map((t) => (
               <button
                 key={t.key}
@@ -1018,13 +1040,13 @@ function Gate1Page() {
                 role="tab"
                 aria-selected={tab === t.key}
                 onClick={() => setTab(t.key)}
-                className={`min-h-10 rounded px-4 text-[15px] font-semibold ${
+                className={`tap rounded-full px-5 text-[15px] font-bold ${
                   tab === t.key
-                    ? "bg-surface text-ink shadow-[0_1px_2px_rgba(22,28,27,0.12)]"
-                    : "text-ink2 hover:text-ink"
+                    ? "bg-ink text-paper"
+                    : "border border-line2 bg-surface text-ink2 hover:bg-surface2"
                 }`}
               >
-                {t.label} <span className="ml-1 font-bold tabular-nums">{t.count}</span>
+                {t.label} <span className="ml-1 tabular-nums">{t.count}</span>
               </button>
             ))}
           </div>

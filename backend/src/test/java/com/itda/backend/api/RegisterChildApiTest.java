@@ -135,6 +135,28 @@ class RegisterChildApiTest {
     }
 
     @Test
+    void sameNameAndBirthDateInSameOrganizationIsConflict() throws Exception {
+        User user = organizationUser();
+        mockMvc.perform(registerWithCsrf(authCookie(user))).andExpect(status().isCreated());
+
+        mockMvc.perform(registerWithCsrf("""
+                        {"name": "김하늘", "birthDate": "2017-03-14", "externalId": "2026-0099"}
+                        """, authCookie(user)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_CHILD"));
+
+        mockMvc.perform(get(CHILDREN).cookie(authCookie(user)))
+                .andExpect(jsonPath("$.data.length()").value(1));
+    }
+
+    @Test
+    void sameNameAndBirthDateInAnotherOrganizationIsRegistered() throws Exception {
+        mockMvc.perform(registerWithCsrf(authCookie(organizationUser()))).andExpect(status().isCreated());
+
+        mockMvc.perform(registerWithCsrf(authCookie(organizationUser()))).andExpect(status().isCreated());
+    }
+
+    @Test
     void anonymousRequestWithValidCsrfIsUnauthorized() throws Exception {
         mockMvc.perform(registerWithCsrf())
                 .andExpect(status().isUnauthorized())

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Busy } from "@/components/ui";
 import { redirect, useLoaderData, useNavigate } from "react-router";
 import { ApiError } from "@/lib/apiError";
 import {
@@ -131,7 +132,7 @@ export default function SignupPage() {
         <div className="mb-7 flex items-center gap-2.5">
           <span
             aria-hidden
-            className="flex size-10 items-center justify-center rounded bg-accent text-[17px] font-bold text-white"
+            className="flex size-10 items-center justify-center rounded bg-ink text-[17px] font-bold text-paper"
           >
             잇
           </span>
@@ -247,9 +248,9 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={!role || pending}
-            className="tap w-full rounded bg-accent px-4 text-[16px] font-semibold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted"
+            className="tap w-full rounded bg-ink px-4 text-[16px] font-semibold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted"
           >
-            {pending ? "가입하는 중…" : "가입하기"}
+            {pending ? <Busy>가입하는 중…</Busy> : "가입하기"}
           </button>
         </form>
       </div>

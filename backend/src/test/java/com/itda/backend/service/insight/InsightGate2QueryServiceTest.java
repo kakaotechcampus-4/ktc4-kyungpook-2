@@ -75,7 +75,9 @@ class InsightGate2QueryServiceTest {
         em.persistAndFlush(ChildOrganization.of(childId, centerId));
         em.persistAndFlush(ChildOrganization.of(childId, assistantId));
 
-        // 센터에만 동의가 있다. 활동지원사는 동의 행 자체가 없다.
+        // 학교·센터는 주간 인사이트까지 동의했다. 활동지원사는 동의 행 자체가 없다.
+        // 재료를 낸 기관은 동의가 있어야 목록에 보인다 (#257) — 재료를 고를 때도 같은 동의가 필요하다.
+        em.persistAndFlush(SharingConsent.grant(childId, 7L, schoolId, List.of(ConsentField.WEEKLY_INSIGHT)));
         em.persistAndFlush(SharingConsent.grant(childId, 7L, centerId, List.of(ConsentField.WEEKLY_INSIGHT)));
 
         SummaryResult summary = em.persistAndFlush(
@@ -305,6 +307,63 @@ class InsightGate2QueryServiceTest {
                 .isInstanceOf(InsightException.class)
                 .extracting(e -> ((InsightException) e).getErrorCode())
                 .isEqualTo(InsightErrorCode.NOT_FOUND);
+    }
+
+    /**
+     * 재료를 낸 센터가 동의를 철회하면, 승인하는 학교도 그 글을 더 못 읽는다 (#257, 멘토님 리뷰 #256 P1).
+     * 승인 버튼만 막으면 목록·상세로 철회된 기관 내용이 섞인 글을 계속 본다. 이미 승인한 글도 같다.
+     */
+    @Test
+    void 재료_기관이_동의를_철회하면_목록과_상세에서_사라진다() {
+        InsightResult pending = insight(1, schoolId, centerId);
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending")).hasSize(1);
+
+        revokeConsentsTo(centerId);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending")).isEmpty();
+        assertThatThrownBy(() -> service.getInsight(SCHOOL_TEACHER, pending.getId()))
+                .isInstanceOf(InsightException.class)
+                .extracting(e -> ((InsightException) e).getErrorCode())
+                .isEqualTo(InsightErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    void 이미_승인한_글도_재료_기관이_철회하면_사라진다() {
+        InsightResult approved = insight(1, schoolId, centerId);
+        InsightResult loaded = em.find(InsightResult.class, approved.getId());
+        loaded.approveGate2();
+        em.flush();
+        em.clear();
+        assertThat(service.getInsights(SCHOOL_TEACHER, "approved")).hasSize(1);
+
+        revokeConsentsTo(centerId);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "approved")).isEmpty();
+    }
+
+    /** 하루 요약만 허락한 기관은 승인해도 받지 않으므로, 수신 후보에 미동의로 보인다 (#257). */
+    @Test
+    void 하루_요약만_허락한_기관은_수신_후보에서_미동의로_보인다() {
+        em.persistAndFlush(SharingConsent.grant(childId, 7L, assistantId, List.of(ConsentField.DAILY_SUMMARY)));
+        insight(1, schoolId);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).targets())
+                .filteredOn(t -> t.institution().id().equals(String.valueOf(assistantId)))
+                .singleElement()
+                .extracting(Target::consent)
+                .isEqualTo(ConsentState.NOT_GRANTED);
+    }
+
+    private void revokeConsentsTo(Long organizationId) {
+        em.getEntityManager()
+                .createQuery("select c from SharingConsent c where c.childId = :childId "
+                        + "and c.organizationId = :organizationId", SharingConsent.class)
+                .setParameter("childId", childId)
+                .setParameter("organizationId", organizationId)
+                .getResultList()
+                .forEach(c -> c.revoke(7L, ConsentRevokeReason.GUARDIAN_REVOKED, LocalDateTime.now()));
+        em.flush();
+        em.clear();
     }
 
     private InsightResult insight(int revision, Long... sourceInstitutionIds) {

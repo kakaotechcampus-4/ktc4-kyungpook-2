@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Busy } from "@/components/ui";
 import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
 import { StepProgress } from "@/components/parent/StepProgress";
-import { ApiError, acceptInvitation } from "@/lib/api";
+import { ApiError, acceptInvitation, restoreParentOnboarded } from "@/lib/api";
 import {
   clearInviteCode,
   getSession,
@@ -45,7 +46,8 @@ export async function clientLoader({ request }: { request: Request }) {
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   return {
     role: loggedIn ? role : null,
-    onboarded: role === "parent" && isOnboarded(),
+    // 이 주소로 바로 들어온 보호자도 서버에 아이가 있으면 약관을 건너뛰고 코드 입력부터
+    onboarded: role === "parent" && (await restoreParentOnboarded()),
     savedCode: readInviteCode(),
   };
 }
@@ -134,7 +136,7 @@ export default function ParentInvitePage() {
   }, [step, savedCode]);
 
   const primary =
-    "tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted";
+    "tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted";
   const secondary =
     "tap flex h-14 w-full items-center justify-center rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2 hover:bg-surface2";
   const requiredMissing = TERMS.some((t) => t.required && !agreed.includes(t.key));
@@ -214,7 +216,7 @@ export default function ParentInvitePage() {
       {step === "terms" ? (
         <>
           <div className="flex flex-col gap-4">
-            <StepProgress step={1} total={4} />
+            <StepProgress step={1} total={3} />
             <div>
               <h1 className="mb-1.5 text-[20px] font-extrabold tracking-tight">
                 서비스 이용에 동의해 주세요
@@ -283,7 +285,7 @@ export default function ParentInvitePage() {
               ‹ 홈으로
             </Link>
           ) : (
-            <StepProgress step={2} total={4} />
+            <StepProgress step={2} total={3} />
           )}
           <div>
             <h1 className="mb-1.5 text-[20px] font-extrabold tracking-tight">
@@ -322,7 +324,7 @@ export default function ParentInvitePage() {
               </p>
             ) : null}
             <button disabled={!code.trim() || pending} className={primary}>
-              {pending ? "확인 중…" : "아이와 연결하기"}
+              {pending ? <Busy>확인 중…</Busy> : "아이와 연결하기"}
             </button>
           </form>
           <p className="text-[13px] leading-6 text-muted">
@@ -351,7 +353,7 @@ function AcceptedStep({
   onboarded: boolean;
 }) {
   const primary =
-    "tap flex h-14 w-full items-center justify-center rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink";
+    "tap flex h-14 w-full items-center justify-center rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110";
   const home = onboarded ? (
     <Link
       to="/parent"
@@ -380,7 +382,7 @@ function AcceptedStep({
 
   return (
     <div className="flex flex-col gap-4">
-      {onboarded ? null : <StepProgress step={2} total={4} />}
+      {onboarded ? null : <StepProgress step={2} total={3} />}
       <div className="rounded-2xl bg-accentsoft px-4 py-4">
         <p className="mb-1 text-[16px] font-bold text-accentink">
           {result.childName} 학생과 연결됐어요
@@ -390,14 +392,14 @@ function AcceptedStep({
           {needsConsent ? (
             <>
               {" "}
-              아직 <b className="font-semibold">공유 동의</b>가 남았어요. 동의해야 기관이 아이
-              기록을 올릴 수 있어요.
+              아직 <b className="font-semibold">공유 동의</b>가 남았어요. 동의해야 기관 기록이{" "}
+              {result.childName}에게 이어져요.
             </>
           ) : null}
         </p>
       </div>
       <Link to={consentPath} className={primary}>
-        {needsConsent ? "공유 동의하러 가기" : "공유 범위 확인하기"}
+        {needsConsent ? "공유 동의하러 가기" : "공유 내용 확인하기"}
       </Link>
       {home}
     </div>

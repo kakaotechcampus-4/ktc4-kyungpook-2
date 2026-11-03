@@ -105,9 +105,21 @@ class RecordProgressServiceTest {
                         tuple(1, "running"),
                         tuple(1, "waiting"),
                         tuple(2, "running"),
-                        tuple(3, "running"),
+                        tuple(3, "waiting"),
                         tuple(4, "waiting"),
                         tuple(4, "done"));
+    }
+
+    /** 자동 요약이 없어 요약 대기는 교사가 [요약]을 눌러야 넘어간다 (#181). 누른 뒤 요약 중이면 다시 자동이다. */
+    @Test
+    void 요약_대기는_사람_대기이고_요약_중은_진행_중이다() {
+        Long recordId = record(ORG, "0821_관찰일지.txt");
+        entry(recordId, RecordProgressServiceTest::validated);                       // VALIDATED
+        entry(recordId, e -> { validated(e); e.startSummarizing(); });               // SUMMARIZING
+
+        assertThat(service.getProgress(TEACHER).get(0).entries())
+                .extracting(EntryProgress::stageIndex, EntryProgress::state)
+                .containsExactly(tuple(3, "waiting"), tuple(3, "running"));
     }
 
     /** 교사가 끝낸 기록은 아동 맥락에 안 올라가지만 계약의 값이 넷뿐이라 done 으로 간다 (#210). */

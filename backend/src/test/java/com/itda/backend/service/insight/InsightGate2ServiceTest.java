@@ -309,6 +309,43 @@ class InsightGate2ServiceTest {
                 .isEqualTo(InsightErrorCode.NOT_FOUND);
     }
 
+    /** 하루 요약만 허락한 기관은 주간 인사이트를 받지 않는다 (#257, 멘토님 리뷰 #256 P1). */
+    @Test
+    void 하루_요약만_허락한_기관은_인사이트를_받지_않는다() {
+        Long dailyOnlyId = em.persistAndFlush(
+                Organization.of("하루요약만활동지원", OrganizationType.ACTIVITY_SUPPORT, "1000000005")).getId();
+        em.persistAndFlush(ChildOrganization.of(childId, dailyOnlyId));
+        em.persistAndFlush(SharingConsent.grant(childId, guardianId, dailyOnlyId, List.of(ConsentField.DAILY_SUMMARY)));
+        InsightResult insight = insight(1, schoolId);
+
+        service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE);
+
+        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId()))
+                .filteredOn(history -> history.getReceiverType() == ReceiverType.ORGANIZATION)
+                .extracting(SharingHistory::getReceiverId)
+                .containsExactly(centerId);
+    }
+
+    /** 재료를 낸 기관이 범위에서 주간 인사이트를 뺐으면 철회와 같이 본다 — 승인할 수 없다 (#257). */
+    @Test
+    void 재료_기관이_주간_인사이트를_빼면_승인할_수_없다() {
+        InsightResult insight = insight(1, schoolId, centerId);
+        em.getEntityManager()
+                .createQuery("select c from SharingConsent c where c.childId = :childId "
+                        + "and c.organizationId = :organizationId", SharingConsent.class)
+                .setParameter("childId", childId)
+                .setParameter("organizationId", centerId)
+                .getResultList()
+                .forEach(c -> c.changeScope(List.of(ConsentField.DAILY_SUMMARY)));
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE))
+                .isInstanceOf(InsightException.class)
+                .extracting(e -> ((InsightException) e).getErrorCode())
+                .isEqualTo(InsightErrorCode.MATERIAL_CONSENT_REVOKED);
+    }
+
     private void revokeConsent(Long organizationId) {
         em.getEntityManager()
                 .createQuery("select c from SharingConsent c where c.childId = :childId "

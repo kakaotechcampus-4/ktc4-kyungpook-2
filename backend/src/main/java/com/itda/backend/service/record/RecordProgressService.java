@@ -170,8 +170,9 @@ public class RecordProgressService {
      */
     private static String stateOf(JournalEntryStatus status) {
         return switch (status) {
-            case PENDING, MATCHING, MATCHED, VALIDATING, VALIDATED, SUMMARIZING -> RUNNING;
-            case MATCH_REVIEW, CONSENT_BLOCKED, VALIDATION_BLOCKED, GATE1_PENDING, GATE1_HELD -> WAITING;
+            case PENDING, MATCHING, MATCHED, VALIDATING, SUMMARIZING -> RUNNING;
+            // 요약 대기는 자동 요약이 없어 교사가 [요약]을 눌러야 넘어간다 (#181).
+            case MATCH_REVIEW, CONSENT_BLOCKED, VALIDATION_BLOCKED, VALIDATED, GATE1_PENDING, GATE1_HELD -> WAITING;
             case EXCLUDED, REUPLOAD_REQUESTED, VALIDATION_HELD, COMPLETED -> DONE;
             case FAILED, SUMMARY_FAILED, SYSTEM_ERROR -> FAILED;
         };

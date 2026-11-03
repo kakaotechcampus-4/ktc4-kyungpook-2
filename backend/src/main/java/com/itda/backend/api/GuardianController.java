@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.itda.backend.dto.request.invitation.AcceptInvitationRequest;
 import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
+import com.itda.backend.dto.response.guardian.InstitutionSharesResponse;
 import com.itda.backend.dto.response.invitation.AcceptedInvitationResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
@@ -25,6 +26,7 @@ import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.child.GuardianChildQueryService;
 import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
+import com.itda.backend.service.sharing.GuardianInstitutionShareService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -43,6 +45,7 @@ public class GuardianController {
     private final InvitationService invitationService;
     private final ChildGuardianService childGuardianService;
     private final GuardianChildQueryService guardianChildQueryService;
+    private final GuardianInstitutionShareService guardianInstitutionShareService;
 
     @PostMapping("/invitations/accept")
     @Operation(summary = "초대 코드 수락",
@@ -107,7 +110,8 @@ public class GuardianController {
             description = "이 보호자와 연결된 아이 전부입니다. 동의 전·동의를 모두 끈 아이도 들어 있고, 연결된 순서입니다. "
                     + "institutions 는 아이가 지금 명부에 올라 있는 기관(기관 id 순)과 기관별 동의 상태입니다. "
                     + "동의 상태는 아이 기준이라 어느 보호자의 동의든 살아 있으면 granted 입니다. "
-                    + "school·care 는 저장하는 곳이 없어 내려주지 않습니다.")
+                    + "care 는 보호자가 적어 둔 알레르기·복용약이고 저장 전이면 빈 배열입니다(기관에는 공유하지 않음). "
+                    + "school 은 저장하는 곳이 없어 내려주지 않습니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공. 연결된 아이가 없으면 빈 배열"),
@@ -129,7 +133,9 @@ public class GuardianController {
     @GetMapping("/home")
     @Operation(summary = "보호자 홈",
             description = "아이 하나와 최근 공유 활동입니다. child 는 아이 목록의 한 항목과 같은 모양입니다. "
-                    + "최근 공유 활동(activity)은 아직 만드는 곳이 없어 언제나 빈 배열입니다.")
+                    + "최근 공유 활동(activity)은 승인된 일지 줄(kind=journal)과 받은 인사이트 줄(kind=insight)을 "
+                    + "승인 시각 최근 순으로 섞은 5줄입니다. 인사이트는 같은 기간·같은 승인 기관이면 한 줄로 묶습니다. "
+                    + "journalId 로 일지 상세를, insightId(한 편일 때만)로 인사이트 상세를 열 수 있습니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -152,5 +158,37 @@ public class GuardianController {
     })
     public ApiResponse<GuardianHomeResponse> home(@AuthenticationPrincipal String userId, @RequestParam Long childId) {
         return ApiResponse.success(guardianChildQueryService.home(userId, childId));
+    }
+
+    @GetMapping("/children/{childId}/institution-shares")
+    @Operation(summary = "기관 공유 내역",
+            description = "이 아이의 주간 리포트가 어느 기관에 언제 열렸고 지금도 보이는지입니다(G-45). 기관별로 묶고, "
+                    + "기관은 이름순 · 묶음 안은 열린 순서 최신부터입니다. 거둔(가려진) 공유도 옵니다. "
+                    + "visible 은 그 기관이 지금 볼 수 있는지로, 기관 수신함과 같은 판정입니다(권한이 살아 있고 · 명부에 있고 · "
+                    + "그 기관 동의가 켜져 있음). hiddenAt 은 권한을 거둔 시각이고, 거둔 기록 없이 가려졌으면 null 입니다. "
+                    + "가려진 이유와 기관의 열람 여부는 주지 않습니다.")
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "childId 형식 오류 (INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아닌 사용자 (PARENT_REQUIRED), "
+                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<List<InstitutionSharesResponse>> institutionShares(
+            @AuthenticationPrincipal String userId, @PathVariable Long childId) {
+        return ApiResponse.success(guardianInstitutionShareService.getShares(userId, childId));
     }
 }

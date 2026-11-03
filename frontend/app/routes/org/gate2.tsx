@@ -140,15 +140,14 @@ function Gate2Item({
       <p className="mb-2 text-[13px] font-semibold tracking-wider text-muted uppercase">
         근거 기록 {insight.evidence.length}건
       </p>
+      {/*
+        근거 칩은 누르지 않는다. 기관이 근거 기록 내용을 볼 API 가 없어서, 아동 상세로 보내면
+        mock 타임라인만 보이고 아동 목록으로 간 것처럼 보였다. 날짜 · 라벨 · 기관만으로 출처를 확인한다.
+      */}
       <ul className="mb-6 flex flex-col items-start gap-2">
         {insight.evidence.map((e) => (
           <li key={e.childContextId}>
-            <EvidenceChip
-              date={e.date}
-              label={e.label}
-              institution={e.institution}
-              href={`/children/${insight.childId}`}
-            />
+            <EvidenceChip date={e.date} label={e.label} institution={e.institution} />
           </li>
         ))}
       </ul>
@@ -209,7 +208,7 @@ function Gate2Item({
         <button
           onClick={() => setConfirming("approve")}
           disabled={busy}
-          className="tap rounded bg-human px-5 text-[16px] font-semibold text-white hover:brightness-95 disabled:opacity-60"
+          className="tap rounded bg-ink px-5 text-[16px] font-semibold text-paper hover:brightness-95 disabled:opacity-60"
         >
           승인
         </button>
@@ -287,7 +286,7 @@ export default function Gate2Route() {
   if (!isReady("insights")) {
     return (
       <NotReadyPage
-        title="공유 전 검토"
+        title="인사이트 승인"
         description="근거 기록을 제공한 선생님이 보호자에게 보여도 되는지 판단합니다"
       />
     );
@@ -311,8 +310,12 @@ function Gate2Page() {
   return (
     <>
       <PageHeader
-        title="공유 전 검토"
-        description="근거 기록을 제공한 선생님이 보호자에게 보여도 되는지 판단합니다"
+        title="인사이트 승인"
+        right={
+          <span className="shrink-0 rounded-full bg-surface2 px-4 py-1.5 text-[14px] font-bold text-ink2">
+            Gate 2
+          </span>
+        }
       />
       {visible.length === 0 ? (
         <EmptyState

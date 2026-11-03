@@ -1,6 +1,8 @@
 package com.itda.backend.service.insight;
 
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -32,9 +34,13 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class InsightResultRecorder {
 
+    /** 앱이 죽어 {@code RUNNING} 으로 남았던 실행의 실패 사유. */
+    static final String STUCK = "stuck";
+
     private final InsightResultRepository insightResultRepository;
     private final InsightRunRepository insightRunRepository;
     private final ChildContextRepository childContextRepository;
+    private final InsightProperties properties;
 
     /**
      * 그 아이·그 기간을 (다시) 집어야 하는지.
@@ -42,7 +48,8 @@ public class InsightResultRecorder {
      * <p>집기 전에 먼저 본다 — 재료를 모으는 일이 쿼리 몇 번이라, 볼 필요 없는 아이에게 그걸 돌릴 이유가 없다.
      *
      * <table>
-     * <tr><td>실행 기록 없음 · {@code FAILED}</td><td>집는다</td></tr>
+     * <tr><td>실행 기록 없음</td><td>집는다</td></tr>
+     * <tr><td>{@code FAILED}</td><td>기다릴 시간이 지났으면 집는다 (#266, {@link #coolingDown})</td></tr>
      * <tr><td>{@code RUNNING}</td><td>다른 워커가 돌고 있거나 앱이 죽어 남은 것이다. 건너뛴다</td></tr>
      * <tr><td>{@code DONE} 인데 재료가 늘었다</td><td><b>다시 집는다</b> (멘토 리뷰 #191)</td></tr>
      * <tr><td>{@code DONE} 이고 그대로</td><td>건너뛴다</td></tr>
@@ -67,8 +74,11 @@ public class InsightResultRecorder {
      * 둘이 갈리면 워커가 통과시킨 아이를 집기가 거부해서 조용히 아무 일도 일어나지 않는다.
      */
     private boolean shouldRun(InsightRun latest, Long childId, LocalDate periodFrom, LocalDate periodTo) {
-        if (latest == null || latest.getStatus() == InsightRunStatus.FAILED) {
+        if (latest == null) {
             return true;
+        }
+        if (latest.getStatus() == InsightRunStatus.FAILED) {
+            return !coolingDown(latest, childId, periodFrom, periodTo);
         }
         if (latest.getStatus() == InsightRunStatus.RUNNING) {
             return false;
@@ -79,6 +89,29 @@ public class InsightResultRecorder {
         }
         Long current = childContextRepository.findMaxIdInPeriod(childId, periodFrom, periodTo);
         return current != null && current > latest.getLastContextId();
+    }
+
+    /**
+     * 연달아 실패한 아이를 잠시 미룬다 (#266).
+     *
+     * <p>워커는 AI 가 응답하지 않으면 그 아이를 실패로 두고 이번 차례를 멈춘다. 다음 차례는 5초 뒤이고 후보 순서는
+     * 늘 같아서, 기다리지 않으면 <b>같은 아이를 맨 앞에서 다시 집는다.</b> 그 아이만 계속 실패하면(빈 응답 등)
+     * 뒤의 아이들은 차례가 오지 않는다. 연속 실패 횟수만큼 기다리게 해 뒤의 아이들이 먼저 지나가게 한다.
+     *
+     * <p>기다림은 마지막 실패 시각({@code updated_at})부터 잰다. 앱이 죽어 되돌린 실행({@link #releaseStuck})도
+     * 실패로 세므로 다시 켠 뒤 첫 대기만큼 늦게 집힌다.
+     */
+    private boolean coolingDown(InsightRun latest, Long childId, LocalDate periodFrom, LocalDate periodTo) {
+        List<Duration> backoffs = properties.failureBackoffs();
+        if (backoffs == null || backoffs.isEmpty()) {
+            return false;
+        }
+        int failures = (int) insightRunRepository
+                .findByChildIdAndPeriodFromAndPeriodToOrderByRevisionDesc(childId, periodFrom, periodTo).stream()
+                .takeWhile(run -> run.getStatus() == InsightRunStatus.FAILED)
+                .count();
+        Duration wait = backoffs.get(Math.min(failures, backoffs.size()) - 1);
+        return latest.getUpdatedAt().plus(wait).isAfter(LocalDateTime.now());
     }
 
     /**
@@ -116,7 +149,7 @@ public class InsightResultRecorder {
     @Transactional
     public int releaseStuck() {
         List<InsightRun> stuck = insightRunRepository.findByStatus(InsightRunStatus.RUNNING);
-        stuck.forEach(InsightRun::fail);
+        stuck.forEach(run -> run.fail(STUCK));
         insightRunRepository.saveAll(stuck);
         return stuck.size();
     }
@@ -162,10 +195,14 @@ public class InsightResultRecorder {
         insightRunRepository.save(run);
     }
 
-    /** 호출이 실패했다. 다음 차례에 {@code revision + 1} 로 다시 집는다. */
+    /**
+     * 호출이 실패했다. 기다릴 시간이 지나면 {@code revision + 1} 로 다시 집는다.
+     *
+     * @param reason 왜 실패했나 ({@link InsightAgentClient#failureOf}). {@code insight_run.failure_reason} 에 남긴다
+     */
     @Transactional
-    public void recordFailure(InsightRun run) {
-        run.fail();
+    public void recordFailure(InsightRun run, String reason) {
+        run.fail(reason);
         insightRunRepository.save(run);
     }
 

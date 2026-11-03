@@ -10,6 +10,11 @@ import { useChildContext } from "@/components/parent/ChildContext";
  * `showChildSwitch` 를 켜면 왼쪽 아바타가 곧 아이 전환 버튼이 된다 —
  * 아이가 1명뿐이면 화살표 없이 아바타만 보여서 기존 한 자녀 사용자 경험은
  * 그대로 유지된다.
+ *
+ * 아이 전환 점: 아바타의 점은 **고르지 않은 다른 아이**에게 안 본 리포트나 대기 중 권한 요청이 있다는 뜻이다(고른
+ * 아이 소식은 하단 리포트 탭 점과 알림 벨 점이 알린다). 펼친 목록에서는 둘 중 하나라도 있는 아이 줄마다 점을 찍고,
+ * 이유는 화면 읽기 문구로 나눈다 — 그 아이로 바꾸면 탭 점과 벨 점이 이유를 보여 준다. 권한 요청은 입구가 이미 읽은
+ * 아이 목록에서 세서 요청이 늘지 않는다. 일지는 보호자가 읽었는지 남기는 값이 없어 알리지 않는다.
  */
 export function ParentPageHeader({
   title,
@@ -26,7 +31,9 @@ export function ParentPageHeader({
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const { kids, selected, selectChild } = useChildContext();
+  const { kids, selected, selectChild, hasUnreadReport, hasPendingRequest } = useChildContext();
+  const needsAttention = (id: string) => hasUnreadReport(id) || hasPendingRequest(id);
+  const otherChildAttention = kids.length > 1 && kids.some((k) => k.id !== selected.id && needsAttention(k.id));
 
   return (
     <header className="relative mb-5 flex items-center gap-3">
@@ -43,7 +50,8 @@ export function ParentPageHeader({
           onClick={() => setOpen((o) => !o)}
           aria-haspopup="listbox"
           aria-expanded={open}
-          className="tap flex shrink-0 items-center gap-1 rounded-full"
+          aria-label={otherChildAttention ? "아이 전환, 다른 아이에게 확인할 것 있음" : "아이 전환"}
+          className="tap relative flex shrink-0 items-center gap-1 rounded-full"
         >
           <span
             aria-hidden
@@ -51,6 +59,13 @@ export function ParentPageHeader({
           >
             {selected.name.slice(0, 1)}
           </span>
+          {/* 점은 화면 읽기에서 숨긴다 — 안내는 버튼 이름(aria-label)이 한다 */}
+          {otherChildAttention ? (
+            <span
+              aria-hidden
+              className="absolute left-8 top-0 size-2.5 rounded-full bg-human ring-2 ring-surface"
+            />
+          ) : null}
           {kids.length > 1 ? (
             <ChevronDown size={16} strokeWidth={2.5} className="text-muted" />
           ) : null}
@@ -71,7 +86,7 @@ export function ParentPageHeader({
         {alert ? (
           <span
             aria-hidden
-            className="absolute right-1 top-1 size-2.5 rounded-full bg-human ring-2 ring-surface"
+            className="absolute right-1 top-1 size-2.5 rounded-full bg-mark ring-2 ring-surface"
           />
         ) : null}
       </Link>
@@ -90,6 +105,10 @@ export function ParentPageHeader({
           >
             {kids.map((k) => {
               const active = k.id === selected.id;
+              const reasons = [
+                hasUnreadReport(k.id) ? "안 본 리포트 있음" : null,
+                hasPendingRequest(k.id) ? "권한 요청 있음" : null,
+              ].filter((r) => r !== null);
               return (
                 <button
                   key={k.id}
@@ -109,7 +128,13 @@ export function ParentPageHeader({
                   >
                     {k.name.slice(0, 1)}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-left">{k.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {k.name}
+                    {reasons.length > 0 ? <span className="sr-only">, {reasons.join(", ")}</span> : null}
+                  </span>
+                  {reasons.length > 0 ? (
+                    <span aria-hidden className="size-2.5 shrink-0 rounded-full bg-human" />
+                  ) : null}
                   {active ? <Check size={16} strokeWidth={2.5} /> : null}
                 </button>
               );

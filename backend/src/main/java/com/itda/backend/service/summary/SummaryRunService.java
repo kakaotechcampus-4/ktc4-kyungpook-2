@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.SummaryRunRequest;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
+import com.itda.backend.exception.summary.SummaryErrorCode;
+import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
@@ -46,6 +48,13 @@ public class SummaryRunService {
             throw new SummaryChildNotFoundException(childId);
         }
         String institutionId = String.valueOf(organizationId);
+        // 요약 중에 받으면 워커가 집은 시각보다 늦은 요청이 남아, 요약이 끝나자마자 새 판을 또 만든다. 요약 중에 들어온
+        // 일지는 끝난 뒤 묶음 카드에 요약 대기로 남으니 그때 다시 누른다.
+        if (!journalEntryRepository.findGroupEntryIds(
+                JournalEntryStatus.SUMMARIZING, childId, entryDate, institutionId).isEmpty()) {
+            throw new SummaryException(SummaryErrorCode.IN_PROGRESS,
+                    "summarizing childId=" + childId + " entryDate=" + entryDate);
+        }
         boolean hasNewEntry = !journalEntryRepository.findGroupEntryIds(
                 JournalEntryStatus.VALIDATED, childId, entryDate, institutionId).isEmpty();
         // 매칭 전 일지는 아동을 몰라 기관·날짜로 본다. 이 아이 일지일 수 있으니 끝나면 요약하도록 받아 둔다.

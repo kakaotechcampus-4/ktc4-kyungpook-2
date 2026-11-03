@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,9 +16,15 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import com.itda.backend.domain.approval.Approval;
+import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentField;
 import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
@@ -27,12 +34,14 @@ import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.sharing.SharingErrorCode;
 import com.itda.backend.exception.sharing.SharingException;
+import com.itda.backend.global.config.ClockConfig;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 /** 보호자가 Gate 2 를 지나 받은 인사이트를 읽는다 (#233). */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(GuardianInsightService.class)
+@Import({GuardianInsightService.class, SharingReadRecorder.class, ConsentStateReader.class, ClockConfig.class})
 class GuardianInsightServiceTest {
 
     private static final LocalDate FROM = LocalDate.of(2026, 8, 17);
@@ -50,18 +59,25 @@ class GuardianInsightServiceTest {
     private UserService userService;
 
     private Long guardianId;
+    private Long childId;
     private Long schoolId;
     private Long centerId;
     private Long insightId;
     private Long mineId;
     private Long centerGrantId;
+    private Long centerEnrollmentId;
+    private Long centerConsentId;
 
     @BeforeEach
     void setUp() {
-        Long childId = em.persistAndFlush(Child.of("김하늘", LocalDate.of(2018, 3, 2))).getId();
+        childId = em.persistAndFlush(Child.of("김하늘", LocalDate.of(2018, 3, 2))).getId();
         schoolId = em.persistAndFlush(Organization.of("○○초등학교", OrganizationType.SCHOOL, "1000000001")).getId();
         centerId = em.persistAndFlush(Organization.of("햇살센터", OrganizationType.CENTER, "1000000002")).getId();
         guardianId = 7L;
+        // 받는 기관(센터)은 명부에 있고 동의가 켜져 있다 — "함께 보는 기관" 은 기관 수신함과 같은 판정이다 (#319)
+        centerEnrollmentId = em.persistAndFlush(ChildOrganization.of(childId, centerId, "C-1")).getId();
+        centerConsentId = em.persistAndFlush(
+                SharingConsent.grant(childId, guardianId, centerId, List.of(ConsentField.WEEKLY_INSIGHT))).getId();
 
         insightId = em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "급식실 입장 직후",
                 "소리를 지름", "이동 전 5분 예고가 효과적이었습니다.", null, "[]", "[]",
@@ -100,6 +116,78 @@ class GuardianInsightServiceTest {
         assertThat(service.getInsights(MOTHER).get(0).sharedWith()).isEmpty();
     }
 
+    /** 거둔 기록 없이 명부에서만 빠졌다. 그 기관 수신함은 숨기므로 보호자 화면도 "함께 보는 기관" 에서 뺀다 (#319). */
+    @Test
+    void 명부에서_빠진_기관은_권한이_살아_있어도_함께_보는_기관에서_빠진다() {
+        em.find(ChildOrganization.class, centerEnrollmentId).delete();
+        em.flush();
+        em.clear();
+
+        assertThat(service.getInsights(MOTHER).get(0).sharedWith()).isEmpty();
+        assertThat(service.getInsight(MOTHER, insightId).sharedWith()).isEmpty();
+        assertThat(em.find(SharingHistory.class, centerGrantId).isActive()).isTrue();
+    }
+
+    @Test
+    void 그_기관_동의만_꺼져도_함께_보는_기관에서_빠진다() {
+        em.find(SharingConsent.class, centerConsentId)
+                .revoke(guardianId, ConsentRevokeReason.GUARDIAN_REVOKED, LocalDateTime.now());
+        em.flush();
+        em.clear();
+
+        assertThat(service.getInsights(MOTHER).get(0).sharedWith()).isEmpty();
+    }
+
+    @Test
+    void 함께_보는_기관은_이름순이고_목록과_단건이_같다() {
+        // id 는 센터보다 크지만 이름은 앞선다
+        Long academyId = em.persistAndFlush(Organization.of("가나다미술학원", OrganizationType.CENTER, "1000000003")).getId();
+        em.persist(ChildOrganization.of(childId, academyId, "A-1"));
+        em.persist(SharingConsent.grant(childId, guardianId, academyId, List.of(ConsentField.WEEKLY_INSIGHT)));
+        em.persistAndFlush(SharingHistory.grant(childId, insightId, schoolId, ReceiverType.ORGANIZATION, academyId));
+        em.clear();
+
+        List<InstitutionResponse> fromList = service.getInsights(MOTHER).get(0).sharedWith();
+
+        assertThat(fromList).extracting(InstitutionResponse::name).containsExactly("가나다미술학원", "햇살센터");
+        assertThat(service.getInsight(MOTHER, insightId).sharedWith()).isEqualTo(fromList);
+    }
+
+    /** 목록은 글 묶음으로 모아 읽는다. 아이마다 자기 명부 · 동의로만 정해져야 한다. */
+    @Test
+    void 아이가_둘이어도_각_글의_함께_보는_기관은_자기_아이_기준이다() {
+        Long otherChildId = em.persistAndFlush(Child.of("이바다", LocalDate.of(2017, 5, 1))).getId();
+        Long otherInsightId = em.persistAndFlush(InsightResult.of(otherChildId, FROM, TO, 1, "상황", "반응",
+                "다른 아이 글", null, "[]", "[]", "[%d]".formatted(schoolId), false, null)).getId();
+        em.persist(SharingHistory.grant(otherChildId, otherInsightId, schoolId, ReceiverType.GUARDIAN, guardianId));
+        // 다른 아이도 센터에 열렸지만, 그 아이는 센터 명부에 없다
+        em.persistAndFlush(
+                SharingHistory.grant(otherChildId, otherInsightId, schoolId, ReceiverType.ORGANIZATION, centerId));
+        em.clear();
+
+        List<GuardianInsightResponse> insights = service.getInsights(MOTHER);
+
+        assertThat(insights).hasSize(2);
+        assertThat(insights).filteredOn(i -> i.id().equals(String.valueOf(insightId))).singleElement()
+                .satisfies(i -> assertThat(i.sharedWith()).extracting(InstitutionResponse::id)
+                        .containsExactly(String.valueOf(centerId)));
+        assertThat(insights).filteredOn(i -> i.id().equals(String.valueOf(otherInsightId))).singleElement()
+                .satisfies(i -> assertThat(i.sharedWith()).isEmpty());
+    }
+
+    /** 지금 동작을 지키는 계약 — 아이가 삭제됐으면 이름은 비고 기관 판정도 모두 빠진다. */
+    @Test
+    void 삭제된_아이의_글은_이름이_비고_함께_보는_기관도_없다() {
+        em.find(Child.class, childId).delete();
+        em.flush();
+        em.clear();
+
+        assertThat(service.getInsights(MOTHER)).singleElement().satisfies(insight -> {
+            assertThat(insight.childName()).isNull();
+            assertThat(insight.sharedWith()).isEmpty();
+        });
+    }
+
     @Test
     void 내게_열리지_않은_인사이트는_404() {
         assertThatThrownBy(() -> service.getInsight(STRANGER, insightId))
@@ -133,6 +221,74 @@ class GuardianInsightServiceTest {
         assertThat(first).isNotNull();
 
         assertThat(service.getInsight(MOTHER, insightId).readAt()).isEqualTo(first);
+    }
+
+    // --- 승인 시각 (#287) ---
+
+    @Test
+    void 승인_시각을_싣는다() {
+        LocalDateTime approvedAt = LocalDateTime.of(2026, 10, 27, 15, 0);
+        approve(insightId, approvedAt);
+
+        assertThat(service.getInsights(MOTHER).get(0).approvedAt()).isEqualTo(approvedAt);
+        assertThat(service.getInsight(MOTHER, insightId).approvedAt()).isEqualTo(approvedAt);
+    }
+
+    /** 순서는 권한 행이 아니라 승인 시각이다. 먼저 만들어졌어도 늦게 승인된 글이 위다. */
+    @Test
+    void 승인_시각이_최근인_글이_위다() {
+        Long later = insight("두 번째 글");
+        grantToMother(later);
+        approve(insightId, LocalDateTime.of(2026, 10, 28, 9, 0));
+        approve(later, LocalDateTime.of(2026, 10, 27, 9, 0));
+
+        assertThat(service.getInsights(MOTHER)).extracting(GuardianInsightResponse::id)
+                .containsExactly(String.valueOf(insightId), String.valueOf(later));
+    }
+
+    /**
+     * 늦게 연결된 보호자에게는 지난 글이 한꺼번에 열려 권한 행이 새 글보다 뒤에 생긴다. 그래도 승인 시각 자리에
+     * 놓여야 엄마·아빠 화면이 같다.
+     */
+    @Test
+    void 나중에_열린_지난_글도_승인_시각_자리에_놓인다() {
+        // 지난주에 승인됐지만 권한 행은 이번 주 글보다 뒤에 생겼다 — 행 순서로는 지난 글이 위다.
+        Long lastWeek = insight("지난주 글");
+        grantToMother(lastWeek);
+        approve(lastWeek, LocalDateTime.of(2026, 10, 20, 9, 0));
+        approve(insightId, LocalDateTime.of(2026, 10, 27, 9, 0));
+
+        assertThat(service.getInsights(MOTHER)).extracting(GuardianInsightResponse::id)
+                .containsExactly(String.valueOf(insightId), String.valueOf(lastWeek));
+    }
+
+    @Test
+    void 승인_기록이_없으면_열린_시각으로_대신한다() {
+        LocalDateTime grantedAt = em.find(SharingHistory.class, mineId).getGrantedAt();
+
+        assertThat(service.getInsights(MOTHER).get(0).approvedAt()).isEqualTo(grantedAt);
+    }
+
+    private Long insight(String content) {
+        Long id = em.persistAndFlush(InsightResult.of(childId, FROM, TO, 2, "상황", "반응", content, null, "[]", "[]",
+                "[%d]".formatted(schoolId), false, null)).getId();
+        em.clear();
+        return id;
+    }
+
+    private void grantToMother(Long id) {
+        em.persistAndFlush(SharingHistory.grant(childId, id, schoolId, ReceiverType.GUARDIAN, guardianId));
+        em.clear();
+    }
+
+    /** 승인 기록의 시각은 만들 때 정해진다. 테스트가 순서를 정하려고 덮어쓴다. */
+    private void approve(Long id, LocalDateTime at) {
+        Approval approval = Approval.gate2(id, 1L, ApprovalDecision.APPROVED);
+        ReflectionTestUtils.setField(approval, "reviewedAt", at);
+        em.persistAndFlush(approval);
+        // 보류 기록은 승인 시각이 아니다 — 섞여 있어도 무시한다.
+        em.persistAndFlush(Approval.gate2(id, 1L, ApprovalDecision.HOLD));
+        em.clear();
     }
 
     private void revoke(Long grantId, ConsentRevokeReason reason) {

@@ -19,9 +19,10 @@ from insight.prompts import build_messages  # noqa: E402
 TYPES = {1: "학교", 2: "센터", 3: "활동지원사"}
 
 
-def claim(cid: str, inst: int, jid: int) -> dict:
+def claim(cid: str, inst: int, jid: int, date: str | None = None) -> dict:
+    # 일지마다 다른 날로 둔다. 같은 날을 시험할 때만 date 를 넘긴다.
     return {
-        "claim_id": cid, "text": f"{cid} 문장", "entry_date": "2026-01-08",
+        "claim_id": cid, "text": f"{cid} 문장", "entry_date": date or f"2026-01-{jid % 28 + 1:02d}",
         "institution_id": inst, "institution_type": TYPES[inst],
         "evidence": [{"journal_entry_id": jid, "quote": "인용"}],
     }
@@ -113,23 +114,29 @@ def test_동의_목록이_비면_아무_claim도_쓰지_않는다():
 
 # ── 근거 수 세는 법 (CRITERIA §10 미결) ─────────────────────────
 
-# 같은 날 학교·센터 claim 두 개. claim() 의 날짜는 모두 2026-01-08 이다.
-SAME_DAY = [claim("20-0", 1, 201), claim("20-50", 2, 202)]
+DAY = "2026-01-08"
+# 같은 날 학교·센터 — 기관 간 비교라 2개로 센다
+SAME_DAY_TWO_INST = [claim("20-0", 1, 201, DAY), claim("20-50", 2, 202, DAY)]
+# 같은 날 같은 기관 — 요약 한 편에서 나온 문장 둘이라 1개로 센다
+SAME_RECORD = [claim("21-0", 1, 211, DAY), claim("21-1", 1, 212, DAY)]
 
 
-def test_지금은_같은_날_두_claim도_근거_2개로_센다():
-    # 결정이 바뀌면 이 테스트를 CRITERIA §10 과 같이 바꾼다
-    assert config.COUNT_DISTINCT_DATES is False
-    assert len(run(make_state(claims=SAME_DAY), [insight(["20-0", "20-50"])])) == 1
+def test_같은_날_다른_기관은_근거_2개로_센다():
+    assert config.COUNT_DISTINCT_RECORDS is True
+    assert len(run(make_state(claims=SAME_DAY_TWO_INST), [insight(["20-0", "20-50"])])) == 1
 
 
-def test_COUNT_DISTINCT_DATES를_켜면_같은_날은_1개로_센다():
-    original = config.COUNT_DISTINCT_DATES
+def test_같은_날_같은_기관_문장_둘은_근거_1개라_버린다():
+    assert run(make_state(claims=SAME_RECORD), [insight(["21-0", "21-1"])]) == []
+
+
+def test_COUNT_DISTINCT_RECORDS를_끄면_문장_수로_센다():
+    original = config.COUNT_DISTINCT_RECORDS
     try:
-        config.COUNT_DISTINCT_DATES = True
-        assert run(make_state(claims=SAME_DAY), [insight(["20-0", "20-50"])]) == []
+        config.COUNT_DISTINCT_RECORDS = False
+        assert len(run(make_state(claims=SAME_RECORD), [insight(["21-0", "21-1"])])) == 1
     finally:
-        config.COUNT_DISTINCT_DATES = original  # 다른 테스트에 영향이 없게 되돌린다
+        config.COUNT_DISTINCT_RECORDS = original  # 다른 테스트에 영향이 없게 되돌린다
 
 # ── §2 인용 비노출 ──────────────────────────────────────────────
 

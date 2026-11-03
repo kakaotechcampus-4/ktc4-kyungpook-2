@@ -81,11 +81,19 @@ services:
     mem_limit: 512m
 
   frontend:
+    # 로컬은 기존 빌드 이미지를, CD는 GHCR의 고정 digest를 사용한다.
+    # 기본값 ktc-frontend 는 compose 가 지금까지 자동으로 붙이던 이름(<project>-<service>)과
+    # 같다. 그래서 이 줄이 생겨도 기존 컨테이너를 다시 만들지 않는다.
+    image: ${FRONTEND_IMAGE:-ktc-frontend}
     build:
       context: ../../frontend
       dockerfile: Dockerfile
       args:
         # VITE_* 는 빌드 시점에 번들에 박힌다. 바꾸면 이미지를 다시 빌드해야 한다.
+        #
+        # 아래 세 값은 **로컬에서 `compose build frontend` 로 만들 때만** 쓰인다 (#270).
+        # 배포되는 이미지는 CI가 GitHub repo variables 로 빌드하므로, 서버 .env 를 고쳐도
+        # 운영 번들은 바뀌지 않는다 — 운영 값은 repo variables 에서 바꾼다.
         VITE_API_BASE_URL: ${PUBLIC_API_BASE_URL-}
         VITE_USE_MOCK: ${USE_MOCK:-true}
         # 인증 mock 은 데이터(USE_MOCK)와 별개다. 빠지면 Dockerfile 기본값 true 가 박혀

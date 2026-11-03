@@ -46,6 +46,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class InsightRun {
 
+    private static final int FAILURE_REASON_LENGTH = 60;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -82,6 +84,17 @@ public class InsightRun {
      */
     @Column(name = "last_context_id")
     private Long lastContextId;
+
+    /**
+     * 왜 실패했나. {@code FAILED} 일 때만 채운다. AI 가 503 body 에 실은 {@code detail.reason} 과
+     * {@code detail.failure} 를 {@code llm_unavailable:empty_response} 처럼 붙여 남긴다 — AI {@code /metrics}
+     * 와 같은 모양이라 양쪽을 같은 말로 찾을 수 있다. 값 목록은 §9.5.
+     *
+     * <p>enum 이 아니라 문자열이다. AI 가 종류를 늘려도 BE 를 고치지 않고 그대로 남기려는 것이고,
+     * enum 이면 값이 늘 때마다 CHECK 제약 수동 조치(§11.4)가 따라온다.
+     */
+    @Column(name = "failure_reason", length = FAILURE_REASON_LENGTH)
+    private String failureReason;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -127,8 +140,11 @@ public class InsightRun {
     }
 
     /** 실패했다. 건수는 채우지 않는다 — 0 건으로 끝난 것과 구별돼야 한다. */
-    public void fail() {
+    public void fail(String reason) {
         this.status = InsightRunStatus.FAILED;
+        // AI 가 낯선 긴 값을 보내도 저장이 터지지 않게 자른다. 터지면 그 실행이 RUNNING 으로 남아 다시 켤 때까지 안 집힌다.
+        this.failureReason = reason == null || reason.length() <= FAILURE_REASON_LENGTH
+                ? reason : reason.substring(0, FAILURE_REASON_LENGTH);
     }
 
     @PrePersist

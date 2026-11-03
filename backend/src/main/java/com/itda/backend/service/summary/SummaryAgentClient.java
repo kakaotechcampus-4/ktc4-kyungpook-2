@@ -3,10 +3,8 @@ package com.itda.backend.service.summary;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.dto.response.summary.SummaryAgentResponse;
@@ -35,17 +33,15 @@ public class SummaryAgentClient {
     private static final String NO_GROUNDED_CLAIMS = "no_grounded_claims";
 
     private final AiAgentClient agentClient;
-    private final ObjectMapper objectMapper;
 
     @Autowired
     public SummaryAgentClient(@Qualifier("summaryAgentRestClient") RestClient restClient, ObjectMapper objectMapper,
             AiAgentProperties properties) {
-        this(new AiAgentClient(restClient, objectMapper, properties), objectMapper);
+        this(new AiAgentClient(restClient, objectMapper, properties));
     }
 
-    SummaryAgentClient(AiAgentClient agentClient, ObjectMapper objectMapper) {
+    SummaryAgentClient(AiAgentClient agentClient) {
         this.agentClient = agentClient;
-        this.objectMapper = objectMapper;
     }
 
     public SummaryAgentReply summarize(SummaryAgentRequest request) {
@@ -55,7 +51,7 @@ public class SummaryAgentClient {
         try {
             body = agentClient.post("/summary", request, firstEntryId);
         } catch (AiAgentUnavailableException e) {
-            if (NO_GROUNDED_CLAIMS.equals(reasonOf(e))) {
+            if (NO_GROUNDED_CLAIMS.equals(agentClient.detailOf(e, "reason"))) {
                 throw new SummaryNoGroundedClaimsException(
                         "summary has no grounded claims after retries journalEntryId=" + firstEntryId, e);
             }
@@ -66,18 +62,5 @@ public class SummaryAgentClient {
 
     public boolean isAvailable() {
         return agentClient.isAvailable();
-    }
-
-    // 503 body 의 detail.reason. 연결 실패·타임아웃이거나 body 를 읽을 수 없으면 null 이다.
-    private String reasonOf(AiAgentUnavailableException e) {
-        if (!(e.getCause() instanceof HttpServerErrorException serverError)) {
-            return null;
-        }
-        try {
-            return objectMapper.readTree(serverError.getResponseBodyAsString())
-                    .path("detail").path("reason").asText(null);
-        } catch (JsonProcessingException ignored) {
-            return null;
-        }
     }
 }

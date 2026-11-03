@@ -23,6 +23,8 @@ import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.summary.SummaryRunRequest;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
+import com.itda.backend.exception.summary.SummaryErrorCode;
+import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
@@ -129,6 +131,25 @@ class SummaryRunServiceTest {
 
         assertThatThrownBy(() -> serviceAt(DATE.atTime(17, 0)).requestRun("teacher", CHILD, DATE))
                 .isInstanceOf(SummaryRunValidationException.class);
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
+    }
+
+    @Test
+    void 요약_중인_묶음은_끝날_때까지_다시_요청받지_않는다() {
+        // 요약 중에 들어온 일지는 요약이 끝난 뒤 묶음 카드에 따로 남아 그때 누른다. 지금 받으면 요약이 끝나자마자
+        // 새 판을 또 만든다 — 워커는 집은 시각까지 누른 요청만 처리한 것으로 닫는다.
+        validated(CHILD, DATE);
+        JournalEntry summarizing = JournalEntry.of(rawRecordId, DATE, "요약 중인 기록", 2);
+        summarizing.startMatching();
+        summarizing.confirmMatch(CHILD);
+        summarizing.startValidating();
+        summarizing.passValidation();
+        summarizing.startSummarizing();
+        em.persistAndFlush(summarizing);
+
+        assertThatThrownBy(() -> serviceAt(DATE.atTime(17, 0)).requestRun("teacher", CHILD, DATE))
+                .isInstanceOf(SummaryException.class)
+                .extracting("errorCode").isEqualTo(SummaryErrorCode.IN_PROGRESS);
         assertThat(runRequests.isRequested(GROUP)).isFalse();
     }
 }

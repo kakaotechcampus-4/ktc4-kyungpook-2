@@ -196,6 +196,34 @@ class InsightAccessRevocationIntegrationTest {
         assertThat(reload(toCenter).isActive()).isFalse();
     }
 
+    /**
+     * 동의는 살려 둔 채 범위에서 주간 인사이트만 빼도 그 기관의 인사이트 권한은 꺼진다 (#257, 멘토님 리뷰 #256 P1).
+     * 안 거두면 "하루 요약만" 으로 바꾼 뒤에도 이미 열린 주간 인사이트가 계속 보인다.
+     */
+    @Test
+    void 범위에서_주간_인사이트를_빼면_기관_권한이_꺼진다() {
+        Long fromSchoolOnly = em.persistAndFlush(InsightResult.of(childId, FROM, TO, 2, "급식실 입장 직후",
+                "소리를 지름", "이동 전 5분 예고가 효과적이었습니다.", null, "[]", "[]",
+                "[%d]".formatted(schoolId), false, null)).getId();
+        Long toCenter = grant(fromSchoolOnly, ReceiverType.ORGANIZATION, centerId);
+
+        consentService.update(MOTHER, childId, centerId, ConsentAction.GRANT, List.of(ConsentField.DAILY_SUMMARY));
+
+        assertThat(reload(toCenter).isActive()).isFalse();
+        assertThat(reload(toCenter).getRevokeReason()).isEqualTo(ConsentRevokeReason.GUARDIAN_REVOKED);
+    }
+
+    /** 주간 인사이트를 남긴 채 범위를 바꾸면 권한은 그대로다. 범위를 바꿀 때마다 거두면 안 된다. */
+    @Test
+    void 주간_인사이트를_남기고_범위를_바꾸면_권한은_그대로다() {
+        Long toCenter = grant(ReceiverType.ORGANIZATION, centerId);
+
+        consentService.update(MOTHER, childId, centerId, ConsentAction.GRANT,
+                List.of(ConsentField.DAILY_SUMMARY, ConsentField.WEEKLY_INSIGHT));
+
+        assertThat(reload(toCenter).isActive()).isTrue();
+    }
+
     private Long grant(ReceiverType receiverType, Long receiverId) {
         return grant(insightId, receiverType, receiverId);
     }

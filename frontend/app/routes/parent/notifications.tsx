@@ -49,7 +49,7 @@ function NotificationsPage() {
               <div>
                 <p className="font-bold">새 기관이 권한을 요청했습니다</p>
                 <p className="text-[14px] leading-6">
-                  허락하기 전에 어떤 정보가 공유되는지 확인해주세요.
+                  허락하기 전에 무엇이 공유되는지 확인해 주세요.
                 </p>
               </div>
             </div>
@@ -61,9 +61,9 @@ function NotificationsPage() {
               </div>
               <button
                 onClick={() => review(institution.id)}
-                className="tap h-14 w-full rounded-2xl bg-accent text-[16px] font-bold text-white"
+                className="tap h-14 w-full rounded-2xl bg-ink text-[16px] font-bold text-paper"
               >
-                공유 항목 확인하고 권한 주기
+                공유 내용 확인하고 권한 주기
               </button>
             </div>
           </div>

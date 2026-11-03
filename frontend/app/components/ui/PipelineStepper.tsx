@@ -4,7 +4,7 @@
  * 규칙: 상태는 색 단독으로 전달하지 않는다. 원 안 아이콘 + 하단 라벨 + 상단 요약 문장을 함께 렌더한다.
  *
  * 멈춤은 두 가지이고 서로 다르다.
- * - waiting (사람 대기) — 사람이 골라야 진행된다. 매칭 확인 · 1차 검토 등. 실패가 아니다.
+ * - waiting (사람 대기) — 사람이 골라야 진행된다. 매칭 확인 · 요약 검토 등. 실패가 아니다.
  * - failed  (실패)      — 시스템 오류. 재시도하면 된다.
  */
 
@@ -53,7 +53,7 @@ function summaryOf(stages: string[], states: StageState[]): string {
 }
 
 const CIRCLE_CLASS: Record<StageState, string> = {
-  done: "bg-accent text-white",
+  done: "bg-accent text-white", // 체크 아이콘 한 개뿐 — 글자가 아니라 캔버스 초록을 그대로 쓴다
   waiting: "border-2 border-human bg-humansoft text-human",
   failed: "border-2 border-block bg-blocksoft text-block",
   active: "border-2 border-accent bg-accentsoft text-accentink animate-pulse",

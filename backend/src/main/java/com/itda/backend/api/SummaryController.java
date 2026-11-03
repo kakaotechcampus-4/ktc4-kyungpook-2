@@ -15,11 +15,13 @@ import com.itda.backend.dto.request.summary.Gate1DecisionRequest;
 import com.itda.backend.dto.request.summary.RunSummaryRequest;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
+import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.approval.SummaryGate1QueryService;
 import com.itda.backend.service.approval.SummaryGate1Service;
+import com.itda.backend.service.summary.SummaryGroupQueryService;
 import com.itda.backend.service.summary.SummaryRunService;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,6 +43,7 @@ public class SummaryController {
     private final SummaryRunService summaryRunService;
     private final SummaryGate1Service summaryGate1Service;
     private final SummaryGate1QueryService summaryGate1QueryService;
+    private final SummaryGroupQueryService summaryGroupQueryService;
 
     @GetMapping
     @Operation(
@@ -77,6 +80,33 @@ public class SummaryController {
         return ApiResponse.success(summaryGate1QueryService.getSummaries(userId, gate1Status));
     }
 
+    @GetMapping("/groups")
+    @Operation(
+            summary = "묶음 카드 목록 (오늘의 업무)",
+            description = "우리 기관의 요약 전 묶음(아동 × 날짜)을 오래된 날짜부터 반환합니다. 요약이 만들어진 묶음은 Gate 1 "
+                    + "검토 목록으로 옮겨 가 여기에 없습니다. status 는 교사가 할 일을 먼저 보여주는 라벨이고, counts 는 상태별 "
+                    + "일지 건수입니다. canSummarize 가 true 면 [요약](O-32)을 누를 수 있습니다. 이미 눌렀으면 "
+                    + "summaryRequested 가 true 이고, 같은 날 매칭·검증 중인 일지를 기다리는 동안 waitingCount 에 그 건수가 "
+                    + "옵니다. matching 은 아이가 아직 정해지지 않아 카드에 넣을 수 없는 일지 건수입니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<SummaryGroupBoardResponse> groups(@AuthenticationPrincipal String userId) {
+        return ApiResponse.success(summaryGroupQueryService.getBoard(userId));
+    }
+
     @PostMapping("/run")
     @Operation(
             summary = "요약",
@@ -100,6 +130,11 @@ public class SummaryController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
                     description = "없는 아동이거나 다른 기관 소속 (SUMMARY_CHILD_NOT_FOUND)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "그 묶음을 요약하는 중 — 끝난 뒤 다시 요청 (SUMMARY_IN_PROGRESS)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })

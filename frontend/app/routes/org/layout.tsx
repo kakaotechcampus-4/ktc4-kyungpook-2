@@ -1,4 +1,4 @@
-import { Outlet, redirect, useLoaderData } from "react-router";
+import { Outlet, redirect, useLoaderData, type ShouldRevalidateFunctionArgs } from "react-router";
 import { OrgShell } from "@/components/org/Shell";
 import { getSession, isAuthMock } from "@/lib/auth";
 import {
@@ -9,7 +9,9 @@ import {
   getMatchingQueue,
   loadIfReady,
 } from "@/lib/api";
+import { onlyInboxFilterChanged } from "@/lib/inbox";
 import { ME, MY_INSTITUTION } from "@/lib/mock/data";
+import "./org.css";
 
 /**
  * proxy.ts 의 ORG_PREFIXES 게이트를 대체한다.
@@ -27,10 +29,12 @@ export async function clientLoader() {
   if (role !== "org") return redirect("/login");
 
   // 백엔드에 아직 없는 기능은 null → 배지를 띄우지 않는다 (loadIfReady 참고)
-  const [matching, blocked, gate1, insights, inbox] = await Promise.all([
+  const [matching, blocked, gate1, held, insights, inbox] = await Promise.all([
     loadIfReady("matchingQueue", getMatchingQueue),
     loadIfReady("blockedQueue", getBlockedQueue),
-    loadIfReady("gate1", getGate1Queue),
+    loadIfReady("gate1", () => getGate1Queue("pending")),
+    // BE 는 상태 하나씩만 준다 — 보류함은 따로 묻는다
+    loadIfReady("gate1", () => getGate1Queue("hold")),
     loadIfReady("insights", getInsights),
     loadIfReady("inbox", getInbox),
   ]);
@@ -46,12 +50,22 @@ export async function clientLoader() {
     counts: {
       matching: matching?.length ?? null,
       reinput: blocked?.length ?? null,
-      gate1: gate1?.filter((s) => s.gate1Status === "pending").length ?? null,
+      gate1: gate1?.length ?? null,
+      hold: held?.length ?? null,
       // getInsights 기본값이 pending 이고, BE 가 우리 기관이 승인 주체인 것만 준다
       gate2: insights?.length ?? null,
-      inbox: inbox?.filter((i) => !i.read).length ?? null,
+      inbox: inbox?.filter((i) => !i.readAt).length ?? null,
     },
   };
+}
+
+/**
+ * 수신함에서 아이 필터만 바꿀 때는 배지를 다시 세지 않는다 — 다시 돌면 큐 API 를 모두 다시 부른다.
+ * 그 밖의 이동과 화면이 부르는 revalidate() 는 기본값대로 다시 돈다.
+ */
+export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  if (onlyInboxFilterChanged(currentUrl, nextUrl)) return false;
+  return defaultShouldRevalidate;
 }
 
 export default function OrgLayoutRoute() {

@@ -58,7 +58,8 @@ public class ValidationQueueService {
             "확정적표현", "관찰이 아니라 단정하는 표현이 있습니다",
             "추측성표현", "관찰되지 않은 내용을 추측한 표현이 있습니다",
             "감정적표현", "감정이나 평가가 섞인 표현이 있습니다",
-            "위험행동표현", "위험 행동이 그대로 묘사돼 있습니다");
+            "위험행동표현", "위험 행동이 그대로 묘사돼 있습니다",
+            "건강관리기록", "질병·복약·병원 진료 같은 건강 정보가 적혀 있습니다");
 
     private final ValidationResultRepository validationResultRepository;
     private final JournalEntryRepository journalEntryRepository;

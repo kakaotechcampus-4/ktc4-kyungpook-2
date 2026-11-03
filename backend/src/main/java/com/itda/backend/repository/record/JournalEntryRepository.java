@@ -103,6 +103,37 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<LocalDate> findInProgressDates(@Param("statuses") Collection<JournalEntryStatus> statuses,
             @Param("institutionId") String institutionId, @Param("entryDates") Collection<LocalDate> entryDates);
 
+    /**
+     * 묶음 카드용. 한 기관에서 주어진 상태인 일지를 묶음(아동·날짜)·상태별로 센다. 묶음마다 따로 묻지 않고 한 번에
+     * 센다 — 카드 수와 상관없이 SQL 이 하나다.
+     */
+    @Query("select new com.itda.backend.repository.record.GroupStatusCount(e.childId, e.entryDate, e.status, count(e)) "
+            + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where e.status in :statuses and r.institutionId = :institutionId "
+            + "and e.childId is not null and e.entryDate is not null and e.deletedAt is null "
+            + "group by e.childId, e.entryDate, e.status")
+    List<GroupStatusCount> countByGroupAndStatus(@Param("statuses") Collection<JournalEntryStatus> statuses,
+            @Param("institutionId") String institutionId);
+
+    /** 묶음 카드용. 한 기관의 주어진 날짜들에서 주어진 상태(매칭·검증 진행 중)인 일지를 날짜별로 센다. */
+    @Query("select new com.itda.backend.repository.record.DateCount(e.entryDate, count(e)) "
+            + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where e.status in :statuses and r.institutionId = :institutionId and e.entryDate in :entryDates "
+            + "and e.deletedAt is null "
+            + "group by e.entryDate")
+    List<DateCount> countByDate(@Param("statuses") Collection<JournalEntryStatus> statuses,
+            @Param("institutionId") String institutionId, @Param("entryDates") Collection<LocalDate> entryDates);
+
+    /**
+     * 묶음 카드용. 한 기관에서 아동이 아직 정해지지 않은 채 주어진 상태인 일지 수 — 어느 카드에도 넣을 수 없는 일지다.
+     * {@code FAILED} 는 #180 전 검증 실패로 아동이 정해진 채 남은 것이 있어 아동으로 걸러야 매칭 실패만 센다.
+     */
+    @Query("select count(e) from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where e.status in :statuses and r.institutionId = :institutionId "
+            + "and e.childId is null and e.deletedAt is null")
+    long countChildUnknown(@Param("statuses") Collection<JournalEntryStatus> statuses,
+            @Param("institutionId") String institutionId);
+
     /** 주어진 상태(매칭·검증 진행 중)의 일지가 남아 있는 기관·날짜. */
     @Query("select distinct new com.itda.backend.repository.record.InProgressKey(r.institutionId, e.entryDate) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "

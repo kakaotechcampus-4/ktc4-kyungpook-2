@@ -68,10 +68,8 @@ export function RosterPicker({
               </span>
               <span>
                 <span className="block text-[16px] font-semibold">{c.name}</span>
-                <span className="block text-[13px] text-muted tabular-nums">
-                  {c.school ? `${c.school} · ` : ""}
-                  {c.birthDate}
-                </span>
+                {/* 이름이 같은 아이는 생년월일로 가른다. 명부에는 학교 칸이 없다 */}
+                <span className="block text-[13px] text-muted tabular-nums">{c.birthDate}</span>
               </span>
             </label>
           ))}

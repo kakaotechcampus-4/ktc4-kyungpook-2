@@ -24,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -131,6 +132,7 @@ class InsightPipelineIntegrationTest {
     @Autowired private InsightResultRepository insightResultRepository;
     @Autowired private InsightRunRepository insightRunRepository;
     @Autowired private SharingConsentRepository sharingConsentRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     private Child junho;
     private Organization school;
@@ -373,24 +375,36 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /** 503 은 LLM 장애다. 실패로 남기고, 다음 차례에 다음 판으로 다시 집는다. */
+    /**
+     * 503 은 LLM 장애다. 실패 사유와 함께 실패로 남기고, 기다릴 시간이 지나면 다음 판으로 다시 집는다.
+     * 바로 다시 집지 않는다 — 계속 실패하는 아이가 5초마다 맨 앞에 와서 뒤의 아이들을 막는다 (#266).
+     */
     @Test
-    void AI가_503이면_실패로_남고_다음_판으로_다시_집는다() {
+    void AI가_503이면_실패로_남고_기다렸다가_다음_판으로_다시_집는다() {
         approved(school, periodFrom.plusDays(1), claims("혼자 신발을 신었다.", 1041, "혼자 신음"));
 
         agentHealthy();
         agentServer.expect(requestTo(AI + "/insight"))
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"detail\": {\"reason\": \"llm_unavailable\"}}"));
+                        .body("{\"detail\": {\"reason\": \"llm_unavailable\", \"failure\": \"empty_response\"}}"));
 
         worker.run();
 
         assertThat(insightRunRepository.findAll()).singleElement().satisfies(run -> {
             assertThat(run.getStatus()).isEqualTo(InsightRunStatus.FAILED);
             assertThat(run.getInsightCount()).isNull();
+            assertThat(run.getFailureReason()).isEqualTo("llm_unavailable:empty_response");
         });
 
+        // 바로 다음 차례에는 /insight 를 부르지 않는다 (기대하지 않은 호출이면 MockRestServiceServer 가 던진다)
+        agentServer.reset();
+        agentHealthy();
+        worker.run();
+        assertThat(insightRunRepository.findAll()).hasSize(1);
+
+        insightRunRepository.findAll().forEach(run -> jdbcTemplate.update(
+                "UPDATE insight_run SET updated_at = ? WHERE id = ?", run.getUpdatedAt().minusHours(1), run.getId()));
         agentServer.reset();
         agentHealthy();
         agentServer.expect(requestTo(AI + "/insight")).andRespond(withSuccess("""
