@@ -442,16 +442,11 @@ class ApiError extends Error {
 }
 ```
 
-`request()`는 `res.ok`가 false면 `ApiError`를 던집니다.
+`request()`는 [api-conventions.md](../api/api-conventions.md)의 공통 래퍼를 화면에서 감춥니다.
 
-> ⚠️ **현재 코드와 규약의 불일치 — 프론트가 고칠 부분**
->
-> - `request()`가 오류 바디에서 `body.error_code`를 읽고 있지만,
->   [api-conventions.md](../api/api-conventions.md)가 정한 필드명은 `code`입니다.
-> - 성공 응답의 `{ result, data }` 래퍼를 벗기지 않고 본문을 그대로 반환합니다.
->
-> 실제 API 연결 시 `request()` 안에서 `data` 언래핑과 `code` 파싱을 함께 처리합니다.
-> **백엔드는 규약대로 구현하면 되고, 이 수정은 프론트 몫입니다.**
+- 성공이면 `{ result, data, message }` 에서 `data` 만 돌려줍니다. 204 면 `undefined` 입니다.
+- 실패(`res.ok` 가 false)면 바디의 `code`(없으면 `UNKNOWN`) · `message` 로 `ApiError` 를 던집니다.
+- 401 이면 로컬 세션 표시도 지웁니다 — 로그인된 척하면서 요청마다 401 만 맞는 상태를 막습니다.
 
 ---
 
