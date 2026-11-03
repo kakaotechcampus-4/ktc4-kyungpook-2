@@ -12,7 +12,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCodeGrantRequest;
@@ -56,6 +55,8 @@ class OAuth2ClientCallCountTest {
             calls.incrementAndGet();
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
+            // 카카오가 "이만큼 뒤에 다시 와" 라고 할 때. HttpClient 기본 정책은 이 시간만큼 스레드를 재우고 다시 보낸다.
+            exchange.getResponseHeaders().add("Retry-After", "1");
             exchange.sendResponseHeaders(status, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(bytes);
@@ -70,8 +71,10 @@ class OAuth2ClientCallCountTest {
         server.stop(0);
     }
 
-    @Test
-    void 토큰_교환은_503_이어도_한_번만_보낸다() {
+    @ParameterizedTest
+    @ValueSource(ints = {503, 429})
+    void 토큰_교환은_503_429_이어도_한_번만_보낸다(int status) {
+        this.status = status;
         var client = new OAuth2ClientConfig().accessTokenResponseClient();
 
         assertThatThrownBy(() -> client.getTokenResponse(authorizationCodeGrant(AUTHORIZATION_CODE)))
@@ -80,8 +83,10 @@ class OAuth2ClientCallCountTest {
         assertThat(calls.get()).isEqualTo(1);
     }
 
-    @Test
-    void 사용자_정보_조회는_503_이어도_한_번만_보낸다() {
+    @ParameterizedTest
+    @ValueSource(ints = {503, 429})
+    void 사용자_정보_조회는_503_429_이어도_한_번만_보낸다(int status) {
+        this.status = status;
         var service = new OAuth2ClientConfig().oAuth2UserService();
 
         assertThatThrownBy(() -> service.loadUser(userRequest(ACCESS_TOKEN)))
