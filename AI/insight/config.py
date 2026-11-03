@@ -63,7 +63,7 @@ DROP_ADVICE_TAIL = True        # 끝에 조언·활용 문장을 붙이지 않�
 RELATE_RECORDS = True          # 기록 하나를 다시 말하지 않는다. 묶거나 비교한다
 NEED_DIFFERENCE = True         # 같은 행동이 겹치기만 해서는 쓰지 않는다 (v0.8)
 PLAIN_TONE = True              # "~했다" 로 끝낸다. 실데이터 v1 에서 "~했습니다" 가 섞임 (v0.9.3)
-DROP_HEALTH_ONLY = True        # 건강 상태만으로 쓰지 않는다. 실데이터 v2 에서 코로나 증상 두 기록을 묶음 (v0.9.4)
+DROP_HEALTH_ONLY = True        # 건강 상태만으로 쓰지 않는다. 실데이터 v2 에서 코로나 증상 두 기록을 묶음 (v0.9.5)
 
 #: 동기화 테스트가 CRITERIA §5 표와 대조할 목록.
 WRITING_RULE_FLAGS = (
