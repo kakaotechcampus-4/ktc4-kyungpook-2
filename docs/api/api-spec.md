@@ -1324,8 +1324,6 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
   "institution": { "id": "1", "name": "○○초등학교",
                    "type": "school", "verified": false },
   "documentUrl": null,
-  "sharedFields": ["출결 시간", "활동 요약", "알레르기 정보"],
-  "notSharedFields": ["사진과 영상", "의료 기록"],
   "allowedFields": ["daily_summary", "weekly_insight"]
 }
 ```
@@ -1336,17 +1334,7 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 | `institution.type` | `school` · `center` · `assistant` (DB의 `ACTIVITY_SUPPORT`가 `assistant`) |
 | `institution.verified` | 언제나 `false`입니다. 사업자등록번호는 형식만 보고 진위는 확인하지 않습니다 |
 | `documentUrl` | 증빙서류 저장 기능이 없어 언제나 `null`입니다. 프론트는 버튼을 숨깁니다 |
-| `sharedFields` · `notSharedFields` | **사용 중단**(OpenAPI `deprecated`). 기관 유형별 설명 문구(아래 표)인데 실제 공유와 맞지 않아 화면이 쓰지 않습니다. 이전 화면 호환으로 값만 남기고, 새 화면 배포 뒤 지웁니다(#310). 저장되지 않습니다 |
 | `allowedFields` | **동의할 때 G-41에 그대로 돌려보낼 항목 코드**입니다. 실제로 저장·적용되는 것은 이 값입니다 |
-
-유형별 설명 문구는 프론트가 들고 있던 상수를 서버로 옮긴 것입니다. **쓰지 마세요** — "알레르기 정보 공유",
-"의료 기록 공유 안 함" 같은 약속을 거르는 코드가 없습니다. 동의 화면(P-02)은 기관 유형과 상관없는 고정 문구를 씁니다.
-
-| 유형 | 공유됨 | 공유 안 됨 |
-| --- | --- | --- |
-| `school` | 출결 시간, 활동 요약, 알레르기 정보 | 사진과 영상, 의료 기록 |
-| `center` | 관찰 요약, 변화 추이, 집에서 해본 방법 | 복지카드 정보 |
-| `assistant` | 하원 시간, 이동 경로, 필요한 지원 방법 | 학습 기록 |
 
 | 상태 | `code` | 상황 |
 | --- | --- | --- |
@@ -1655,10 +1643,6 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | --- | --- |
 | `action` | `grant` \| `revoke`. 필수 |
 | `allowedFields` | 동의 항목 코드 `daily_summary` · `weekly_insight`. **`grant`에서 필수(1개 이상)**, `revoke`에서는 생략해도 되고 보내도 무시합니다. 같은 코드가 두 번 오면 하나로 합칩니다. **`weekly_insight` 가 없으면 그 기관은 주간 인사이트를 받지 않고, 이미 받은 인사이트 권한도 거둬집니다** (#257) |
-
-> **프론트 수정 필요 (#184).** 지금 `api.ts`는 `allowed_fields`(snake_case)에 **한국어 문구**(`sharedFields`)를 담아 보냅니다.
-> 서버는 명세대로 camelCase `allowedFields`에 **코드**만 받습니다 — 그대로면 `400 INVALID_REQUEST`입니다.
-> G-02 응답의 `allowedFields`를 그대로 보내 주세요.
 
 **G-41 응답** · `200 OK` · 바뀐 뒤의 상태를 돌려줍니다. 아이 목록을 다시 부르지 않고 화면을 고칠 수 있습니다.
 

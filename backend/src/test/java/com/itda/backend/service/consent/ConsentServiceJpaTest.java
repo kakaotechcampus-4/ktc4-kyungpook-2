@@ -339,8 +339,6 @@ class ConsentServiceJpaTest {
         assertThat(preview.institution().type()).isEqualTo("school");
         assertThat(preview.institution().verified()).isFalse();
         assertThat(preview.documentUrl()).isNull();
-        assertThat(preview.sharedFields()).containsExactly("출결 시간", "활동 요약", "알레르기 정보");
-        assertThat(preview.notSharedFields()).containsExactly("사진과 영상", "의료 기록");
         assertThat(preview.allowedFields()).containsExactlyElementsOf(BOTH);
     }
 

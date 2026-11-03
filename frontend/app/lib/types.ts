@@ -184,8 +184,7 @@ export interface AcceptedInvitation {
  *
  * 스펙 예시에는 child.id 가 없지만 동의(G-41)와 연결 해제(G-05) 호출에 필요해서 받는다.
  *
- * 서버가 함께 보내는 sharedFields · notSharedFields 는 사용 중단이라 받지 않는다 — 기관 유형별 항목 목록이
- * 실제 공유와 맞지 않아 화면은 고정 문구를 쓴다(P-02).
+ * 공유 범위 안내는 기관 유형과 상관없는 고정 문구다(P-02) — 기관 유형별 항목 목록은 실제 공유와 맞지 않아 없앴다.
  */
 export interface ConsentPreview {
   child: { id: string; name: string; birthDate: string };
