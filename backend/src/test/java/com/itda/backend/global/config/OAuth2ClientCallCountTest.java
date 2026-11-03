@@ -2,6 +2,7 @@ package com.itda.backend.global.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -12,8 +13,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.client.authentication.OAuth2LoginAuthenticationProvider;
+import org.springframework.security.oauth2.client.authentication.OAuth2LoginAuthenticationToken;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCodeGrantRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
@@ -26,6 +36,7 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationExch
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationResponse;
 
+import com.itda.backend.global.security.oauth.OAuth2LoginFailureHandler;
 import com.sun.net.httpserver.HttpServer;
 
 /**
@@ -35,6 +46,7 @@ import com.sun.net.httpserver.HttpServer;
  * 들어 있어서 두 번째 요청은 {@code invalid_grant} 가 된다. 그래서 진짜 HTTP 서버를 띄우고 운영과 같은 설정 클래스로 부른다
  * ({@code com.itda.backend.service.agent.AiAgentCallCountTest} 와 같은 방식).
  */
+@ExtendWith(OutputCaptureExtension.class)
 class OAuth2ClientCallCountTest {
 
     private static final String CLIENT_SECRET = "test-client-secret";
@@ -96,8 +108,9 @@ class OAuth2ClientCallCountTest {
     }
 
     /*
-     * 로그인 실패 핸들러(OAuth2LoginFailureHandler)는 이 예외 메시지를 서버 로그에 그대로 찍는다.
-     * 우리가 보낸 인가 코드·client secret·액세스 토큰이 메시지에 섞이면 로그로 샌다.
+     * 로그인 실패 핸들러(OAuth2LoginFailureHandler)는 이 예외 메시지를 서버 로그에 남긴다.
+     * 아래 두 테스트는 우리 쪽(요청을 만드는 코드)이 보낸 인가 코드·client secret·액세스 토큰을 메시지에 넣지 않는지 본다.
+     * 카카오가 응답에 인가 코드를 담아 돌려주는 경우(KOE320)는 그다음 테스트가 핸들러 로그까지 이어서 본다.
      */
 
     @ParameterizedTest
@@ -124,6 +137,26 @@ class OAuth2ClientCallCountTest {
         assertThatThrownBy(() -> service.loadUser(userRequest(ACCESS_TOKEN)))
                 .isInstanceOf(OAuth2AuthenticationException.class)
                 .satisfies(e -> assertThat(e.toString()).doesNotContain(ACCESS_TOKEN));
+    }
+
+    @Test
+    void 카카오가_오류_설명에_돌려준_인가_코드는_실패_로그에서_가려진다(CapturedOutput output) throws Exception {
+        // 카카오 KOE320 응답 원문 형식 — 이미 썼거나 만료된 코드를 설명에 그대로 담는다.
+        this.status = 400;
+        this.body = "{\"error\":\"invalid_grant\",\"error_description\":\"authorization code not found for code="
+                + AUTHORIZATION_CODE + "\",\"error_code\":\"KOE320\"}";
+        OAuth2ClientConfig config = new OAuth2ClientConfig();
+        // 운영과 같은 부품으로 로그인 처리 → 실패 핸들러까지 잇는다.
+        var provider = new OAuth2LoginAuthenticationProvider(config.accessTokenResponseClient(), config.oAuth2UserService());
+        OAuth2AuthorizationExchange exchange = authorizationCodeGrant(AUTHORIZATION_CODE).getAuthorizationExchange();
+
+        AuthenticationException failure = catchThrowableOfType(AuthenticationException.class,
+                () -> provider.authenticate(new OAuth2LoginAuthenticationToken(kakao, exchange)));
+        new OAuth2LoginFailureHandler("http://localhost:3000/login")
+                .onAuthenticationFailure(new MockHttpServletRequest(), new MockHttpServletResponse(), failure);
+
+        assertThat(output).doesNotContain(AUTHORIZATION_CODE);
+        assertThat(output).contains("authorization code not found for code=***");
     }
 
     /** application.yml 의 kakao 등록과 같은 값. 주소만 로컬 서버로 바꾼다. */
