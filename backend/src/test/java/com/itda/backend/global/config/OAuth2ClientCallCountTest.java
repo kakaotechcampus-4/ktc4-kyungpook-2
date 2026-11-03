@@ -13,6 +13,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCodeGrantRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
@@ -36,21 +38,27 @@ import com.sun.net.httpserver.HttpServer;
  */
 class OAuth2ClientCallCountTest {
 
+    private static final String CLIENT_SECRET = "test-client-secret";
+    private static final String AUTHORIZATION_CODE = "one-time-code";
+    private static final String ACCESS_TOKEN = "kakao-access-token";
+
     private HttpServer server;
     private final AtomicInteger calls = new AtomicInteger();
     private ClientRegistration kakao;
+    // 기본은 카카오가 잠깐 바쁠 때의 응답
+    private volatile int status = 503;
+    private volatile String body = "{\"error\":\"server_error\"}";
 
     @BeforeEach
     void setUp() throws IOException {
         server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
-        // 카카오가 잠깐 바쁠 때의 응답
         server.createContext("/", exchange -> {
             calls.incrementAndGet();
-            byte[] body = "{\"error\":\"server_error\"}".getBytes(StandardCharsets.UTF_8);
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(503, body.length);
+            exchange.sendResponseHeaders(status, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
-                out.write(body);
+                out.write(bytes);
             }
         });
         server.start();
@@ -66,7 +74,7 @@ class OAuth2ClientCallCountTest {
     void 토큰_교환은_503_이어도_한_번만_보낸다() {
         var client = new OAuth2ClientConfig().accessTokenResponseClient();
 
-        assertThatThrownBy(() -> client.getTokenResponse(authorizationCodeGrant("one-time-code")))
+        assertThatThrownBy(() -> client.getTokenResponse(authorizationCodeGrant(AUTHORIZATION_CODE)))
                 .isInstanceOf(OAuth2AuthorizationException.class);
 
         assertThat(calls.get()).isEqualTo(1);
@@ -76,17 +84,48 @@ class OAuth2ClientCallCountTest {
     void 사용자_정보_조회는_503_이어도_한_번만_보낸다() {
         var service = new OAuth2ClientConfig().oAuth2UserService();
 
-        assertThatThrownBy(() -> service.loadUser(userRequest("kakao-access-token")))
+        assertThatThrownBy(() -> service.loadUser(userRequest(ACCESS_TOKEN)))
                 .isInstanceOf(OAuth2AuthenticationException.class);
 
         assertThat(calls.get()).isEqualTo(1);
+    }
+
+    /*
+     * 로그인 실패 핸들러(OAuth2LoginFailureHandler)는 이 예외 메시지를 서버 로그에 그대로 찍는다.
+     * 우리가 보낸 인가 코드·client secret·액세스 토큰이 메시지에 섞이면 로그로 샌다.
+     */
+
+    @ParameterizedTest
+    @ValueSource(ints = {400, 401, 503})
+    void 토큰_교환_실패_메시지에_인가_코드와_client_secret_이_없다(int status) {
+        this.status = status;
+        this.body = "{\"error\":\"invalid_grant\",\"error_description\":\"bad request\"}";
+        var client = new OAuth2ClientConfig().accessTokenResponseClient();
+
+        assertThatThrownBy(() -> client.getTokenResponse(authorizationCodeGrant(AUTHORIZATION_CODE)))
+                .isInstanceOf(OAuth2AuthorizationException.class)
+                .satisfies(e -> assertThat(e.toString())
+                        .doesNotContain(AUTHORIZATION_CODE)
+                        .doesNotContain(CLIENT_SECRET));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {401, 503})
+    void 사용자_정보_조회_실패_메시지에_액세스_토큰이_없다(int status) {
+        this.status = status;
+        this.body = "{\"msg\":\"this access token does not exist\",\"code\":-401}";
+        var service = new OAuth2ClientConfig().oAuth2UserService();
+
+        assertThatThrownBy(() -> service.loadUser(userRequest(ACCESS_TOKEN)))
+                .isInstanceOf(OAuth2AuthenticationException.class)
+                .satisfies(e -> assertThat(e.toString()).doesNotContain(ACCESS_TOKEN));
     }
 
     /** application.yml 의 kakao 등록과 같은 값. 주소만 로컬 서버로 바꾼다. */
     private static ClientRegistration kakaoRegistration(String baseUrl) {
         return ClientRegistration.withRegistrationId("kakao")
                 .clientId("test-client-id")
-                .clientSecret("test-client-secret")
+                .clientSecret(CLIENT_SECRET)
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .redirectUri("http://localhost/login/oauth2/code/kakao")
