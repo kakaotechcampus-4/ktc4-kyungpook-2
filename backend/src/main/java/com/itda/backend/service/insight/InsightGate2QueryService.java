@@ -347,14 +347,23 @@ public class InsightGate2QueryService {
         return false;
     }
 
-    /** {@code claim_ids} 와 {@code supports[].claim_ids}. 형식이 어긋난 번호는 "확인 못 함" 으로 남긴다. */
+    /**
+     * {@code claim_ids} 와 {@code supports[].claim_ids}. 형식이 어긋난 번호는 "확인 못 함" 으로 남긴다.
+     * 근거 번호가 없는 대처도 마찬가지다 — 그 대처가 무엇을 근거로 했는지 알 수 없다.
+     */
     private static List<ClaimRef> allClaimRefs(InsightResult insight) {
-        List<JsonNode> nodes = new ArrayList<>();
-        readArray(insight.getClaimIds(), "insight_result.claim_ids", insight.getId()).forEach(nodes::add);
+        List<ClaimRef> refs = new ArrayList<>();
+        readArray(insight.getClaimIds(), "insight_result.claim_ids", insight.getId())
+                .forEach(node -> refs.add(ClaimRef.parse(node.asText())));
         for (JsonNode support : readArray(insight.getSupports(), "insight_result.supports", insight.getId())) {
-            support.path("claim_ids").forEach(nodes::add);
+            JsonNode claimIds = support.path("claim_ids");
+            if (!claimIds.isArray() || claimIds.isEmpty()) {
+                refs.add(ClaimRef.UNKNOWN);
+                continue;
+            }
+            claimIds.forEach(node -> refs.add(ClaimRef.parse(node.asText())));
         }
-        return nodes.stream().map(node -> ClaimRef.parse(node.asText())).toList();
+        return refs;
     }
 
     /** {@code ["31-0", "31-2", "34-1"]} → {@code [31, 34]}. 순서를 지키고 중복은 한 번만 센다. */

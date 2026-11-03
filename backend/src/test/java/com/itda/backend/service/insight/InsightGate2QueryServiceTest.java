@@ -390,6 +390,14 @@ class InsightGate2QueryServiceTest {
     }
 
     @Test
+    void 근거_번호가_없는_대처가_있으면_교사_작성으로_본다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}]");
+        insightCiting("[\"%d-0\"]".formatted(summary), "[{\"result\": \"따라옴\"}]");
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    @Test
     void 근거_번호가_없으면_교사_작성으로_본다() {
         insightCiting("[]", null);
 
