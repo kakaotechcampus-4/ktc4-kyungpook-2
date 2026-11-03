@@ -555,6 +555,24 @@ class SummaryResultRecorderTest {
         assertThat(found.getSummaryId()).isNull();
     }
 
+    /** AI 호출 사이에 철회됐고 AI 도 실패했다 (#332). 실패로 남기지 않고 요약하지 않은 것으로 닫는다. */
+    @Test
+    void AI_가_실패해도_그사이_동의가_철회됐으면_실패로_남기지_않고_요청을_닫는다() {
+        JournalEntry failed = summarizing("블록 놀이를 했다.");
+        JournalEntry systemError = summarizing("점심을 먹었다.");
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
+        revokeConsent();
+
+        recorder.recordFailure(claimed(failed));
+        recorder.recordSystemError(claimed(systemError), FailureReason.RESPONSE_UNREADABLE);
+
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
+        assertThat(reload(failed).getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+        JournalEntry found = reload(systemError);
+        assertThat(found.getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+        assertThat(found.getFailureReason()).isNull();
+    }
+
     private static void assertSystemError(JournalEntry entry, FailureReason reason) {
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.SYSTEM_ERROR);
         assertThat(entry.getFailureStage()).isEqualTo(FailureStage.SUMMARY);

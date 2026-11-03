@@ -39,8 +39,9 @@ public class SummaryResultRecorder {
     private final ConsentStateReader consentStateReader;
 
     /**
-     * 집은 묶음의 그 기관 동의가 꺼졌으면 요약하지 않고 닫는다 (#332). 워커가 AI 를 부르기 전에 부르고, {@link #record}
-     * 도 저장 전에 같은 일을 한다 — AI 호출 수십 초 사이에 철회될 수 있어서다.
+     * 집은 묶음의 그 기관 동의가 꺼졌으면 요약하지 않고 닫는다 (#332). 워커가 AI 를 부르기 전에 부르고, 결과를 남기는
+     * {@link #record}·{@link #recordFailure}·{@link #recordSystemError} 도 먼저 부른다 — AI 호출 수십 초 사이에 철회될 수
+     * 있어서다. 철회됐으면 성공한 요약도 저장하지 않고, 실패도 실패로 남기지 않는다.
      *
      * <p>[요약] 요청은 처리한 것으로 남기고, 일지는 요약하기 전 상태로 돌린다 ({@link JournalEntry#releaseSummarizing}).
      * 새 일지는 VALIDATED 로, 승인 전 판에 있던 일지는 그 판의 Gate 1 대기로 돌아간다 — 그 판은 Gate 1 목록·결정에서
@@ -50,7 +51,15 @@ public class SummaryResultRecorder {
      */
     @Transactional
     public boolean closeIfConsentRevoked(ClaimedSummaryGroup claimed) {
-        return closeWhenConsentRevoked(claimed);
+        SummaryGroup group = claimed.group();
+        if (consentStateReader.stateOf(group.childId(), group.institutionId()) == ConsentState.GRANTED) {
+            return false;
+        }
+        log.info("consent revoked, summary group closed without summarizing group={} journalEntryIds={}",
+                group, claimed.journalEntryIds());
+        runRequests.markHandled(group, claimed.claimedAt());
+        summarizingEntries(claimed).forEach(JournalEntry::releaseSummarizing);
+        return true;
     }
 
     /**
@@ -71,7 +80,7 @@ public class SummaryResultRecorder {
     @Transactional
     public void record(ClaimedSummaryGroup claimed, SummaryAgentRequest request, SummaryAgentReply reply) {
         // 아이 행을 잠그지 않는다. 이 확인 뒤에 철회가 커밋돼 요약이 저장돼도 Gate 1 목록·결정이 그 아이를 막는다.
-        if (closeWhenConsentRevoked(claimed)) {
+        if (closeIfConsentRevoked(claimed)) {
             return;
         }
         SummaryAgentResponse response = reply.response();
@@ -141,6 +150,9 @@ public class SummaryResultRecorder {
      */
     @Transactional
     public void recordFailure(ClaimedSummaryGroup claimed) {
+        if (closeIfConsentRevoked(claimed)) {
+            return;
+        }
         runRequests.markHandled(claimed.group(), claimed.claimedAt());
         summarizingEntries(claimed).forEach(JournalEntry::failSummary);
     }
@@ -151,6 +163,9 @@ public class SummaryResultRecorder {
      */
     @Transactional
     public void recordSystemError(ClaimedSummaryGroup claimed, FailureReason reason) {
+        if (closeIfConsentRevoked(claimed)) {
+            return;
+        }
         runRequests.markHandled(claimed.group(), claimed.claimedAt());
         summarizingEntries(claimed).forEach(entry -> entry.failSummaryBySystemError(reason));
     }
@@ -191,18 +206,6 @@ public class SummaryResultRecorder {
     // 표시 없이 본문이 빈 200 은 AI 계약에 없는 응답이다. 요약할 내용이 없으면 no_content 를 붙여 온다 (#244).
     private static boolean isEmptyContent(SummaryAgentResponse response) {
         return response.content() == null || response.content().isBlank();
-    }
-
-    private boolean closeWhenConsentRevoked(ClaimedSummaryGroup claimed) {
-        SummaryGroup group = claimed.group();
-        if (consentStateReader.stateOf(group.childId(), group.institutionId()) == ConsentState.GRANTED) {
-            return false;
-        }
-        log.info("consent revoked, summary group closed without summarizing group={} journalEntryIds={}",
-                group, claimed.journalEntryIds());
-        runRequests.markHandled(group, claimed.claimedAt());
-        summarizingEntries(claimed).forEach(JournalEntry::releaseSummarizing);
-        return true;
     }
 
     // 요약하는 사이 삭제됐거나 다른 경로로 상태가 바뀐 일지는 건드리지 않는다.
