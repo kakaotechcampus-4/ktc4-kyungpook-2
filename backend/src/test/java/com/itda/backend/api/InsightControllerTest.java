@@ -69,6 +69,7 @@ class InsightControllerTest {
                 .andExpect(jsonPath("$.data[0].id").value("1"))
                 .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
                 .andExpect(jsonPath("$.data[0].needsReview").value(true))
+                .andExpect(jsonPath("$.data[0].teacherWritten").value(false))
                 .andExpect(jsonPath("$.data[0].primarySource.type").value("school"))
                 .andExpect(jsonPath("$.data[0].primarySource.verified").value(false))
                 .andExpect(jsonPath("$.data[0].evidence[0].childContextId").value("10"))
@@ -128,7 +129,7 @@ class InsightControllerTest {
     private static Gate2InsightResponse insight() {
         InstitutionResponse school = new InstitutionResponse("1", "○○초등학교", "school", false);
         InstitutionResponse center = new InstitutionResponse("2", "햇살센터", "center", false);
-        return new Gate2InsightResponse("1", "1", "김하늘", "2026년 8월 3주차", "오후 시간대 …", true, school,
+        return new Gate2InsightResponse("1", "1", "김하늘", "2026년 8월 3주차", "오후 시간대 …", true, false, school,
                 List.of(new EvidenceRef("10", "2026-08-19", "관찰일지 요약", center)),
                 List.of(new Target(center, ConsentState.GRANTED)), "pending");
     }

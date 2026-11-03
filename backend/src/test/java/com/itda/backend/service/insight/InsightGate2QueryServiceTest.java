@@ -354,6 +354,69 @@ class InsightGate2QueryServiceTest {
                 .isEqualTo(ConsentState.NOT_GRANTED);
     }
 
+    @Test
+    void AI_원문만_근거면_교사_작성이_아니다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\", \"source\": \"AI\"}, {\"text\": \"웃었다.\"}]");
+        insightCiting("[\"%d-0\", \"%d-1\"]".formatted(summary, summary), null);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isFalse();
+    }
+
+    @Test
+    void 교사가_고친_문장이_근거면_교사_작성이다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}, {\"text\": \"웃었다.\", \"source\": \"EDITED\"}]");
+        insightCiting("[\"%d-0\", \"%d-1\"]".formatted(summary, summary), null);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    /** {@code teacher_claim_ids} 처럼 대처 근거도 본다 — 대처 근거는 {@code claim_ids} 에 없다. */
+    @Test
+    void 교사가_새로_쓴_문장이_대처_근거에만_있어도_교사_작성이다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}, {\"text\": \"5분 전에 알려 주니 따라왔다.\", \"source\": \"TEACHER\"}]");
+        insightCiting("[\"%d-0\"]".formatted(summary),
+                "[{\"result\": \"따라옴\", \"claim_ids\": [\"%d-1\"]}]".formatted(summary));
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    /** 가리키는 문장을 찾지 못하면 AI 원문인지 알 수 없다. 경고를 띄운다. */
+    @Test
+    void 근거_문장을_찾지_못하면_교사_작성으로_본다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}]");
+        insightCiting("[\"%d-0\", \"%d-5\"]".formatted(summary, summary), null);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    @Test
+    void 근거_번호가_없는_대처가_있으면_교사_작성으로_본다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}]");
+        insightCiting("[\"%d-0\"]".formatted(summary), "[{\"result\": \"따라옴\"}]");
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    @Test
+    void 근거_번호가_없으면_교사_작성으로_본다() {
+        insightCiting("[]", null);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    private Long summaryWithClaims(String claims) {
+        Long id = em.persistAndFlush(SummaryResult.of(
+                childId, LocalDate.of(2026, 8, 21), centerId, 1, "요약", claims, "[]", "[]", "{}")).getId();
+        em.persistAndFlush(ChildContext.of(childId, id, "요약"));
+        return id;
+    }
+
+    private void insightCiting(String claimIds, String supports) {
+        em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "상황", "반응", "본문", supports,
+                claimIds, "[]", "[%d,%d]".formatted(schoolId, centerId), true, null));
+        em.clear();
+    }
+
     private void revokeConsentsTo(Long organizationId) {
         em.getEntityManager()
                 .createQuery("select c from SharingConsent c where c.childId = :childId "

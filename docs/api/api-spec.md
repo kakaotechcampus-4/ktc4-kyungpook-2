@@ -1056,6 +1056,7 @@ AI 원문이 승인됩니다.
     "period": "2026년 8월 3주차",
     "content": "오후 시간대 …",
     "needsReview": true,
+    "teacherWritten": false,
     "primarySource": { "id": "2", "name": "햇살아동발달센터",
                        "type": "center", "verified": false },
     "evidence": [
@@ -1095,6 +1096,11 @@ AI 원문이 승인됩니다.
 **`needsReview` 는 꼭 표시해주세요.** 인사이트 본문에 **다른 아이 이름이 없다는 보장이 없고**,
 Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문장**이 근거로 섞일 수 있습니다
 (`AI/insight/CRITERIA.md` §5, #199). 기관 경계를 넘는 마지막 관문이라 승인자가 알아야 합니다.
+
+**`teacherWritten` 이 `true` 면 "⚠️ 검증을 거치지 않은 교사 작성 문장이 포함되어 있습니다" 를 띄워주세요** (#323).
+근거(대처 근거 포함) 중 교사가 Gate 1 에서 고치거나(`EDITED`) 새로 쓴(`TEACHER`) 문장이 하나라도 있으면 `true` 입니다
+(CRITERIA §5 `teacher_claim_ids` 와 같은 판단). 근거 번호가 없거나 서버가 근거 문장을 찾지 못하면 확인할 수 없어 `true` 로 보냅니다.
+`needsReview` 는 그대로 모든 글이 `true` 입니다.
 
 **`targets` 는 승인하면 이 글을 받을 후보 기관입니다** (#233). 그 아이 명부에 있는 기관 중 **승인 기관
 자신만 뺀 것**이며(재료를 낸 다른 기관도 받습니다), 그중 **`consent` 가 `granted` 인 기관만 실제로 받습니다.**
