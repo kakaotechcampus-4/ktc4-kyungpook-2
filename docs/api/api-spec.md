@@ -26,22 +26,13 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 | --- | --- | --- | --- |
 | 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`(로컬 Compose의 Caddy를 거치면 `http://localhost/login/oauth2/code/kakao`), 운영 `https://iitda.duckdns.org/login/oauth2/code/kakao`. 동의 항목은 현재 `profile_nickname`만 요청합니다(§2.4) | 보호자 연결은 초대 코드 방식으로 확정돼(§5.1) 전화번호 동의 항목은 필요 없습니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
 | 2 | **세션 전달 방식** | **확정·구현됨** — `access_token` httpOnly 쿠키(1시간). 쓰기 요청은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보냅니다. refresh token은 없습니다 | - |
-| 3 | **필드 네이밍** | 프론트 타입은 camelCase, 일부 요청 바디는 snake_case | **camelCase 통일 제안** (Jackson 기본값과도 맞음). 이 문서는 전부 camelCase로 적었습니다. 프론트의 snake_case 요청 바디 3곳은 프론트가 수정합니다 |
+| 3 | **필드 네이밍** | **확정·구현됨** — 프론트↔백엔드 JSON API 는 요청·응답 모두 camelCase입니다(Jackson 기본값). 백엔드↔AI 통신은 별도로 snake_case 입니다 | - |
 | 4 | **보호자–아이 연결 방식** | **확정·구현됨 (10.12 변경)** — **초대 코드** 방식입니다. 기관이 아이를 등록하면 10분짜리 일회용 코드가 나오고, 기관이 카톡 등으로 직접 보냅니다. 보호자는 가입한 뒤 코드를 입력해 연결됩니다(§5.1). SMS·전화번호 대조는 쓰지 않습니다. 이전의 "대기 중 연결 요청" 방식은 매칭 키를 정할 수 없어 폐기했습니다. (이것은 **보호자 ↔ 아이** 연결 이야기입니다. 이미 연결된 아이를 **다른 기관**에 붙이는 기관 코드 요청(G-44, O-60~O-62)은 아이와 기관이 이미 정해져 있어 매칭 키 문제가 없습니다) | 링크(`/parent/invite?code=…`)로 보내면 로그인·가입 동안 코드를 sessionStorage에 들고 있다가 가입 뒤 G-04를 부르면 됩니다. 링크가 안 열리는 경우를 위해 코드 입력 칸도 남겨 주세요 |
 | 4-1 | **역할 구분** | **확정·구현됨** — 카카오 로그인 뒤 **회원가입에서 사용자가 직접 선택**합니다(§2.6). 기관은 기관명·유형·사업자등록번호를 함께 입력하며, 사업자등록번호는 형식만 검사합니다 | 로그인 직후 `/auth/me`의 `signupCompleted`가 `false`면 역할 선택 화면으로 보냅니다. sessionStorage로 역할을 정하던 방식은 이 흐름으로 바꿔야 합니다 |
 | 5 | **파이프라인 진행 상태** | 프론트는 `setTimeout` 시뮬레이션 | 폴링 / SSE / WebSocket 중 선택. 폴링이면 권장 주기와 상태 조회 엔드포인트가 필요합니다 |
 | 6 | **페이지네이션** | 미정 | 현재 프론트는 전체 조회를 가정합니다. 큐·타임라인·일지 목록에 커서 또는 오프셋 페이징이 필요하면 형식을 정해주세요 |
 | 7 | **파일 업로드** | 현재 구현: `POST /api/v1/raw-records` multipart, **파일 1개**(`file`), 최대 **20MB**, 허용 확장자 `csv` · `txt` · `pdf` (§4.3) — **결정됨**(2026-09-29): jpg/png/hwp는 이번 학기 범위 밖으로 제외 | 다중 업로드, `docx` 추가 여부는 여전히 논의 필요(다음 이슈에서 진행 예정) |
 | 8 | **RawRecord 응답 형식** | 현재 구현 응답이 프론트 `RawRecord` 타입과 다릅니다 (§3 RawRecord의 "현재 구현" 참고) | 프론트 `RawRecord` 타입(§3.2)과 매핑표 합의 필요 |
-
-### 프론트가 이미 알고 있고 스스로 고칠 부분
-
-- `lib/api.ts`의 `request()`가 `{ result, data }` 래퍼를 벗기지 않고 있습니다 → 프론트 수정.
-- 오류 바디에서 `error_code`를 읽고 있습니다. 규약은 `code`입니다 → 프론트 수정.
-- 요청 바디 3곳(`edited_content`, `allowed_fields`, `target_institution_ids`)이
-  snake_case입니다 → camelCase로 프론트 수정.
-
-**백엔드는 [api-conventions.md](api-conventions.md)대로 구현하면 됩니다.**
 
 ---
 
