@@ -95,6 +95,10 @@ public class SummaryWorker {
 
     private Outcome process(ClaimedSummaryGroup claimed) {
         try {
+            // 집은 뒤 그 기관 동의가 철회됐으면 AI 에 보내지 않는다 (#332). 앞 묶음을 요약하는 동안에도 철회될 수 있다.
+            if (recorder.closeIfConsentRevoked(claimed)) {
+                return Outcome.DONE;
+            }
             SummaryAgentRequest request = summaryService.prepareRequest(claimed);
             SummaryAgentReply reply = client.summarize(request);
             recorder.record(claimed, request, reply);

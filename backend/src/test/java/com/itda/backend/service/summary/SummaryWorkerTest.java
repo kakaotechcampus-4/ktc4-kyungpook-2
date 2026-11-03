@@ -90,6 +90,26 @@ class SummaryWorkerTest {
         order.verify(recorder).record(second, requestFor(second), reply2);
     }
 
+    /** 집은 뒤 그 기관 동의가 철회된 묶음은 AI 에 보내지 않는다 (#332). 닫는 일은 레코더가 한다. */
+    @Test
+    void 동의가_철회된_묶음은_요약하지_않고_다음_묶음을_처리한다() {
+        ClaimedSummaryGroup revoked = group(8L, 1L);
+        ClaimedSummaryGroup second = group(9L, 2L);
+        SummaryAgentReply reply2 = new SummaryAgentReply(null, "{}");
+        given(summaryService.claimReadyGroups(10)).willReturn(List.of(revoked, second));
+        given(recorder.closeIfConsentRevoked(revoked)).willReturn(true);
+        given(summaryService.prepareRequest(second)).willReturn(requestFor(second));
+        given(client.summarize(requestFor(second))).willReturn(reply2);
+
+        worker.run();
+
+        verify(summaryService, never()).prepareRequest(revoked);
+        verify(client, never()).summarize(requestFor(revoked));
+        verify(recorder, never()).record(eq(revoked), any(), any());
+        verify(recorder, never()).recordSystemError(eq(revoked), any());
+        verify(recorder).record(second, requestFor(second), reply2);
+    }
+
     @Test
     void AI가_요청을_거절하면_그_묶음만_REQUEST_REJECTED로_남기고_다음_묶음을_계속_처리한다() {
         ClaimedSummaryGroup first = group(8L, 1L);
