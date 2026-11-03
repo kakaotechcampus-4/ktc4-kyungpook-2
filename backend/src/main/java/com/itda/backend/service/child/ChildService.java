@@ -65,7 +65,8 @@ public class ChildService {
      * O-11 아이 등록. 아동과 "우리 기관에 다닌다" 연결을 한 트랜잭션으로 만든다 — 연결 없이 아동만 남으면
      * 어느 명부에도 안 보이는 고아 행이 된다.
      *
-     * <p>중복 확인을 하지 않는다. 같은 이름·생일이어도, 다른 기관에 이미 있는 아이여도 새 아동이다.
+     * <p>같은 기관 명부에 이름·생년월일이 같은 아이가 있으면 409 로 막는다 — 관리번호만 다르게 넣으면 같은 아이가 명부에
+     * 두 번 들어가 매칭이 갈린다 (멘토님 리뷰 #256). 다른 기관에 이미 있는 아이는 보지 않고 새 아동을 만든다.
      * 기관끼리 서로의 아동을 조회할 수 없고, 같은 아이인지는 보호자 연결 단계에서 확인한다.
      * 새 아동은 PENDING_CONSENT 라서 AI 매칭 명부에는 보호자가 이 기관에 동의한 뒤에야 들어간다.
      *
@@ -82,6 +83,11 @@ public class ChildService {
         String externalId = request.externalId();
         if (externalId != null && childOrganizationRepository.existsByOrganizationIdAndExternalId(organizationId, externalId)) {
             throw new ChildException(ChildErrorCode.DUPLICATE_EXTERNAL_ID);
+        }
+        // ponytail: 조회만으로 막아 동시에 들어온 같은 등록 두 건은 함께 통과할 수 있다. 이름·생일(child)과
+        // 기관(child_organization)이 다른 테이블이라 유니크 제약을 걸 수 없다. 실제로 겹치면 기관 행 잠금을 건다.
+        if (childRepository.existsInOrganization(organizationId, request.name(), request.birthDateValue())) {
+            throw new ChildException(ChildErrorCode.DUPLICATE_CHILD);
         }
         Child child = childRepository.save(Child.of(request.name(), request.birthDateValue()));
         try {

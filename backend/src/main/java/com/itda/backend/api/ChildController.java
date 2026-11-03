@@ -86,7 +86,7 @@ public class ChildController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
-                    description = "같은 기관에서 이미 쓰고 있는 관리번호 (DUPLICATE_EXTERNAL_ID)",
+                    description = "같은 기관에서 이미 쓰고 있는 관리번호 (DUPLICATE_EXTERNAL_ID) · 이름·생년월일이 같은 아이가 이미 명부에 있음 (DUPLICATE_CHILD)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
