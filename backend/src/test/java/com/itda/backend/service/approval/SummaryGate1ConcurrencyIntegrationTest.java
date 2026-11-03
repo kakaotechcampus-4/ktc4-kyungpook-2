@@ -37,6 +37,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.domain.approval.ApprovalTargetType;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
@@ -46,6 +48,7 @@ import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.repository.approval.ApprovalRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
@@ -93,6 +96,7 @@ class SummaryGate1ConcurrencyIntegrationTest {
     @Autowired private ChildContextRepository childContextRepository;
     @Autowired private ApprovalRepository approvalRepository;
     @Autowired private RawRecordRepository rawRecordRepository;
+    @Autowired private SharingConsentRepository sharingConsentRepository;
     @Autowired private SummaryService summaryService;
     @Autowired private SummaryRunRequests runRequests;
     @Autowired private DataSource dataSource;
@@ -106,6 +110,7 @@ class SummaryGate1ConcurrencyIntegrationTest {
     @BeforeEach
     void setUp() {
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
+        sharingConsentRepository.save(SharingConsent.grant(CHILD, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY)));
         rawRecordId = rawRecordRepository.save(new RawRecord(String.valueOf(ORG), "school.pdf", "kept/school.pdf",
                 "application/pdf", 12, RawRecordStatus.PENDING)).getId();
         summary = summaryResultRepository.save(SummaryResult.of(CHILD, DATE, ORG, 1,
@@ -125,6 +130,7 @@ class SummaryGate1ConcurrencyIntegrationTest {
             statement.executeUpdate("DELETE FROM summary_result");
             statement.executeUpdate("DELETE FROM summary_run_request");
             statement.executeUpdate("DELETE FROM raw_record");
+            statement.executeUpdate("DELETE FROM sharing_consent");
         }
     }
 
