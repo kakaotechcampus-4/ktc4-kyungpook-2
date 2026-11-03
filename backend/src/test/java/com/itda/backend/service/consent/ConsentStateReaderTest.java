@@ -110,6 +110,20 @@ class ConsentStateReaderTest {
         grant(CHILD, MOM, SCHOOL);
 
         assertThat(reader.statesOf(List.of())).isEmpty();
+        assertThat(reader.grantedChildIds(List.of(), SCHOOL)).isEmpty();
+    }
+
+    /** 요약·Gate 1 목록이 쓴다 (#332). 다른 기관 동의는 상관없고 그 기관 동의가 켜진 아이만 남는다. */
+    @Test
+    void 그_기관_동의가_켜진_아이만_고른다() {
+        Long revoked = 3L;
+        Long none = 4L;
+        grant(CHILD, MOM, SCHOOL);
+        revoke(grant(revoked, MOM, SCHOOL), ConsentRevokeReason.GUARDIAN_REVOKED);
+        grant(OTHER_CHILD, DAD, CENTER);
+
+        assertThat(reader.grantedChildIds(List.of(CHILD, OTHER_CHILD, revoked, none), SCHOOL))
+                .containsExactly(CHILD);
     }
 
     /** 하루 요약만 허락한 기관에는 주간 인사이트가 가면 안 된다 (#257, 멘토님 리뷰 #256 P1). */

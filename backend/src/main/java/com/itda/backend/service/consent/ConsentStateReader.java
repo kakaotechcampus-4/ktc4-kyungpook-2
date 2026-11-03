@@ -3,7 +3,9 @@ package com.itda.backend.service.consent;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
@@ -53,6 +55,18 @@ public class ConsentStateReader {
      */
     public Map<Long, Map<Long, ConsentState>> statesOf(Collection<Long> childIds) {
         return statesOf(childIds, SharingConsent::isActive);
+    }
+
+    /**
+     * 주어진 아이들 중 그 기관 동의가 켜진({@link ConsentState#GRANTED}) 아이. 요약 묶음 카드와 Gate 1 목록이 철회된
+     * 아이를 거를 때 쓴다 (#332). 다른 기관 동의는 보지 않는다 — 그것만으로도 {@code child.status} 는 ACTIVE 다.
+     */
+    public Set<Long> grantedChildIds(Collection<Long> childIds, Long organizationId) {
+        Map<Long, Map<Long, ConsentState>> states = statesOf(childIds);
+        return childIds.stream()
+                .filter(childId -> states.getOrDefault(childId, Map.of())
+                        .getOrDefault(organizationId, ConsentState.NOT_GRANTED) == ConsentState.GRANTED)
+                .collect(Collectors.toSet());
     }
 
     /**
