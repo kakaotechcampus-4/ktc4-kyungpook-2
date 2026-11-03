@@ -190,7 +190,7 @@ export default function ParentConsentPage() {
       </section>
 
       {/* 지금 동작으로 지킬 수 있는 것만 적는다. 항목별 공유는 거르는 코드가 없고, 진단명 · 개인정보
-          검사는 AI 판단이라 놓칠 수 있어 약속하지 않는다. 미리보기의 설명 목록(sharedFields)은 쓰지 않는다 */}
+          검사는 AI 판단이라 놓칠 수 있어 약속하지 않는다 */}
       <section className="rounded-2xl bg-surface2 px-4 py-4">
         <p className="mb-2 text-[13px] font-bold text-accentink">동의하면 이렇게 돼요</p>
         <ul className="flex list-disc flex-col gap-2 pl-5 text-[15px] leading-6">
