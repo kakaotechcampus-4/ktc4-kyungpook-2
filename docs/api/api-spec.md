@@ -587,6 +587,7 @@ O-15 ~ O-19 공통 오류:
 | O-25 | POST | `/validation-results/{itemId}/resolve` | 재업로드 / 보류 · **구현됨** | I-07 |
 | O-26 | GET | `/raw-records/progress` | 파일별 처리 현황 · **구현됨** | I-03, I-05 |
 | O-27 | POST | `/raw-records/{id}/retry` | 실패한 기록 재처리 · **만들지 않음** (#181) | I-03, I-05 |
+| O-28 | GET | `/matching-queue/{itemId}` | 확인 필요 큐 항목 하나 · **구현됨** (#331) | I-06 |
 
 **O-20 요청** · `multipart/form-data`
 
@@ -656,6 +657,15 @@ O-15 ~ O-19 공통 오류:
 - `journalEntryId`: 이 결과가 가리키는 기록(`journal_entry`)의 ID
 - `matchedChildId`: 확정된 아동 ID. 큐에 남아 있는 항목은 아직 확정 전이라 보통 `null`입니다
 - 값이 없는 필드(`matchedChildId`·`multiReason`·`evidence` 등)는 생략되지 않고 `null`로 내려갑니다
+- `candidates`에는 **우리 기관 명부(연결 해제·삭제 제외)에 있는 아이만** 나옵니다. AI 가 명부 밖 번호를 줘도 그 후보는 빠집니다 (#331)
+
+**O-28 응답** · `GET /matching-queue/{itemId}` — O-22 항목 하나와 같은 모양입니다 (#331).
+선생님이 한 건을 열 때 이 API 로 본문(`record.fullContent`)·후보·근거를 받아 주세요.
+우리 기관의 **처리 대기** 항목이 아니면 `404 MATCHING_RESULT_NOT_FOUND`입니다 — 없는 항목, 다른 기관 항목,
+이미 처리된 항목을 구분하지 않습니다.
+
+> 11주차 기술멘토링: "matching-queue 값을 가져올 때 필요한 정보만". 지금은 화면이 건수를 세려고도 O-22 로
+> 모든 본문·후보를 받습니다. 화면이 O-28 로 옮겨 가면 O-22 목록에서 본문·후보·근거를 빼는 2단계를 따로 진행합니다.
 
 - `status`: `auto` · `review` · `multi` · `unmatched` · `failed` — AI 매칭 에이전트 실제 계약(`AI/matching/schemas.py`)값 그대로 (9/22 팀 확인, 9/24 DB초안 반영). `failed`는 AI 호출 자체가 실패했을 때만 쓰는 BE 전용 값
 - `confidence`: 0.0~1.0, 항상 채워짐 (AI 계약 기본값 0.0) — `multi`면 후보 중 최고점과 같음
@@ -686,7 +696,8 @@ O-15 ~ O-19 공통 오류:
 확인 필요 큐에는 아직 처리되지 않은 기록만 나옵니다.
 아래 경우는 `400 MATCHING_RESULT_INVALID_REQUEST`로 거절합니다.
 
-- `assign`인데 `childId`가 없거나, 없는 아동이거나, 이 기관 소속이 아님
+- `assign`인데 `childId`가 없거나, 없는 아동이거나, 이 기관 소속이 아님 — 없는 아동과 다른 기관 아동은 **같은 메시지**로
+  거절합니다(#331). 나누면 번호를 바꿔 가며 다른 기관에 어떤 아이가 있는지 알 수 있습니다
 - `assign`으로 고른 아동이 **이 기관에 동의하지 않음** — AI 매칭 명단과 같은 기준. 다른 기관에만 동의해 `status`가
   `active`인 아이도 거절합니다. 보호자가 동의를 철회한 뒤에는 새 확정이 성공하지 않습니다(이미 확정된 기록은 그대로 둡니다)
 - 이미 처리된 기록 (다른 선생님이 먼저 처리한 경우 등. 두 명이 거의 동시에 누르는 경우까지 막지는 않습니다)
@@ -712,7 +723,7 @@ O-15 ~ O-19 공통 오류:
 
 - 처리하면 `status`는 `auto`가 됩니다. AI 계약에 "사람이 확정함"을 뜻하는 값이 따로 없어서, 사람이 처리한 경우도 "더 이상 확인할 필요 없음"이라는 뜻으로 `auto`를 씁니다
 - `matchedChildId`: `assign`이면 고른 아동 ID, `not_ours`이면 `null`
-- 나머지 필드(`confidence`·`candidates` 등)는 AI 판정 값 그대로입니다
+- 나머지 필드(`confidence` 등)는 AI 판정 값 그대로입니다. `candidates`는 O-22와 같이 우리 기관 명부에 있는 아이만 나옵니다
 
 | 상태 | 코드 | 경우 |
 | --- | --- | --- |
