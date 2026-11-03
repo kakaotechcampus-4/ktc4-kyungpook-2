@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
@@ -27,8 +31,10 @@ import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.SummaryRunRequestRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 /** [요약] — 교사가 자기 기관 아이의 그 날짜 묶음을 요약하도록 요청한다. 요약은 이 요청이 있는 묶음만 한다 (#181). */
@@ -40,6 +46,8 @@ class SummaryRunServiceTest {
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
     private static final Long ORG = 3L;
     private static final Long CHILD = 8L;
+    private static final Long OTHER_ORG = 4L;
+    private static final Long GUARDIAN = 100L;
     private static final SummaryGroup GROUP = new SummaryGroup(CHILD, DATE, ORG);
 
     @Autowired
@@ -54,6 +62,9 @@ class SummaryRunServiceTest {
     @Autowired
     private SummaryRunRequestRepository summaryRunRequestRepository;
 
+    @Autowired
+    private SharingConsentRepository sharingConsentRepository;
+
     @MockitoBean
     private UserService userService;
 
@@ -65,13 +76,30 @@ class SummaryRunServiceTest {
         runRequests = new SummaryRunRequests(summaryRunRequestRepository);
         given(userService.getOrganizationIdOf("teacher")).willReturn(ORG);
         em.persist(ChildOrganization.of(CHILD, ORG));
+        grant(CHILD, ORG);
         rawRecordId = em.persist(new RawRecord(String.valueOf(ORG), "school.pdf", "kept/school.pdf",
                 "application/pdf", 12, RawRecordStatus.PENDING)).getId();
     }
 
     private SummaryRunService serviceAt(LocalDateTime now) {
         return new SummaryRunService(userService, childOrganizationRepository, journalEntryRepository,
-                runRequests, Clock.fixed(now.atZone(KST).toInstant(), KST));
+                runRequests, new ConsentStateReader(sharingConsentRepository),
+                Clock.fixed(now.atZone(KST).toInstant(), KST));
+    }
+
+    private SharingConsent grant(Long childId, Long organizationId) {
+        return em.persistAndFlush(
+                SharingConsent.grant(childId, GUARDIAN, organizationId, List.of(ConsentField.DAILY_SUMMARY)));
+    }
+
+    /** 철회 전에 매칭된 아이다 — 명부에 남아 있고 요약할 일지도 있다. */
+    private Long matchedThenRevoked() {
+        Long childId = 9L;
+        em.persist(ChildOrganization.of(childId, ORG));
+        grant(childId, ORG).revoke(GUARDIAN, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(9, 0));
+        em.flush();
+        validated(childId, DATE);
+        return childId;
     }
 
     private void validated(Long childId, LocalDate date) {
@@ -123,6 +151,35 @@ class SummaryRunServiceTest {
     void 우리_기관_아이가_아니면_없는_것으로_응답한다() {
         assertThatThrownBy(() -> serviceAt(DATE.atTime(17, 0)).requestRun("teacher", 99L, DATE))
                 .isInstanceOf(SummaryChildNotFoundException.class);
+    }
+
+    /** 명부에 없는 아이와 같은 404 다 — 화면은 안내하고 카드를 다시 불러온다 (#332). */
+    @Test
+    void 우리_기관_동의를_철회한_아이는_없는_것으로_응답한다() {
+        Long childId = matchedThenRevoked();
+
+        assertThatThrownBy(() -> serviceAt(DATE.atTime(17, 0)).requestRun("teacher", childId, DATE))
+                .isInstanceOf(SummaryChildNotFoundException.class);
+        assertThat(summaryRunRequestRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void 다른_기관에만_동의한_아이도_없는_것으로_응답한다() {
+        Long childId = matchedThenRevoked();
+        grant(childId, OTHER_ORG);
+
+        assertThatThrownBy(() -> serviceAt(DATE.atTime(17, 0)).requestRun("teacher", childId, DATE))
+                .isInstanceOf(SummaryChildNotFoundException.class);
+    }
+
+    @Test
+    void 다시_동의한_아이는_요청을_받는다() {
+        Long childId = matchedThenRevoked();
+        grant(childId, ORG);
+
+        serviceAt(DATE.atTime(17, 0)).requestRun("teacher", childId, DATE);
+
+        assertThat(runRequests.isRequested(new SummaryGroup(childId, DATE, ORG))).isTrue();
     }
 
     @Test
