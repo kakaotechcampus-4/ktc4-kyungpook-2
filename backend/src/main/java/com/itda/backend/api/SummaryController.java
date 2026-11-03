@@ -184,7 +184,7 @@ public class SummaryController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 요약이거나 다른 기관 요약, 또는 우리 기관 동의가 철회된 아동의 요약 (SUMMARY_NOT_FOUND)",
+                    description = "없는 요약이거나 다른 기관 요약, 또는 우리 기관 동의가 철회된 아동의 검토 대기·보류 요약 (SUMMARY_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -225,7 +225,7 @@ public class SummaryController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 요약이거나 다른 기관 요약, 또는 우리 기관 동의가 철회된 아동의 요약 (SUMMARY_NOT_FOUND)",
+                    description = "없는 요약이거나 다른 기관 요약, 또는 우리 기관 동의가 철회된 아동의 검토 대기·보류 요약 (SUMMARY_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(

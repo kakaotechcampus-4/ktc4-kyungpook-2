@@ -968,7 +968,7 @@ AI 원문이 승인됩니다.
 | --- | --- | --- |
 | `decision`·`version` 누락, 허용되지 않은 값, 승인이 아닌데 `cards`, 빈 `cards`, 카드 `action` 에 맞지 않는 `index`·`text`, 카드 100장·글 1000자 초과, 옛 `editedContent` 를 보냄 | 400 | `INVALID_REQUEST` |
 | 원래 문장 `index` 가 빠지거나 겹치거나 범위 밖, 남는 문장이 없음, 문장(`claims`)을 못 읽는 요약에 `cards` 를 보냄, `noContent` 요약에 `confirm`·`revert` 가 아닌 결정 또는 그 밖의 요약에 `confirm`·`revert` | 400 | `SUMMARY_INVALID_REQUEST` |
-| 없는 요약이거나 다른 기관 요약, 또는 보호자가 우리 기관 동의를 철회한 아이의 요약 (#332 — 요약은 그대로 남고 목록에서 빠짐) | 404 | `SUMMARY_NOT_FOUND` |
+| 없는 요약이거나 다른 기관 요약, 또는 보호자가 우리 기관 동의를 철회한 아이의 검토 대기·보류 요약 (#332 — 요약은 그대로 남고 목록에서 빠짐. 이미 처리된 요약은 아래 409 가 먼저) | 404 | `SUMMARY_NOT_FOUND` |
 | 이미 처리된 요약 | 409 | `SUMMARY_ALREADY_REVIEWED` |
 | 보류된 요약을 승인·보류 (보류 해제 먼저) | 409 | `SUMMARY_HELD` |
 | 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
@@ -981,7 +981,7 @@ AI 원문이 승인됩니다.
 
 | 실패 | 상태 | 코드 |
 | --- | --- | --- |
-| 없는 요약이거나 다른 기관 요약, 또는 보호자가 우리 기관 동의를 철회한 아이의 요약 (#332) | 404 | `SUMMARY_NOT_FOUND` |
+| 없는 요약이거나 다른 기관 요약, 또는 보호자가 우리 기관 동의를 철회한 아이의 검토 대기·보류 요약 (#332 — 이미 처리된 요약은 `SUMMARY_NOT_HELD` 가 먼저) | 404 | `SUMMARY_NOT_FOUND` |
 | 보류된 요약이 아님 | 409 | `SUMMARY_NOT_HELD` |
 | 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
 
