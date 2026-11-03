@@ -36,8 +36,9 @@ JWT 쿠키 인증과 CSRF 보호, 회원가입이 구현되어 있습니다. 로
 카카오 계정 하나는 회원 하나이고 역할도 바꿀 수 없어서, 기관과 보호자를 오가는 흐름(아이 등록 → 초대 →
 보호자 동의)을 카카오 계정 하나로는 테스트할 수 없습니다. 로컬에서는 개발용 로그인을 켜서 씁니다.
 
-1. 백엔드를 개발용 로그인을 켠 채 실행합니다. **`application-secret.yml`에는 넣지 마세요.** Docker 이미지가
-   `src`를 통째로 복사하므로, 거기 넣으면 배포 이미지에도 켜진 채로 들어갑니다.
+1. 백엔드를 개발용 로그인을 켠 채 실행합니다. 켜고 끄는 건 실행할 때 환경변수 `DEV_LOGIN_ENABLED`로 합니다.
+   `application-secret.yml` 같은 로컬 설정 파일은 jar·Docker 이미지에 들어가지 않으므로(`build.gradle`,
+   `backend/.dockerignore`) 거기 적어도 서버에는 적용되지 않습니다. 서버에서는 compose 의 `DEV_LOGIN_ENABLED`가 정합니다.
 
    ```bash
    DEV_LOGIN_ENABLED=true ./gradlew bootRun --args='--spring.profiles.active=local'
@@ -193,7 +194,7 @@ dbsql -c "UPDATE journal_entry SET status = 'VALIDATED', updated_at = now() AT T
 | 인증 | Spring Security, OAuth2 Client(카카오), JJWT 0.12.6 |
 | 데이터 접근 | Spring Data JPA |
 | 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
-| AI 서버 호출 | Spring `RestClient` + Apache HttpClient 5. 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, HTTP 클라이언트는 연결이 끊긴 GET 만 1회 다시 보낸다 |
+| AI 서버·카카오 호출 | Spring `RestClient`·`RestTemplate` + Apache HttpClient 5 (`global.config.HttpClientRequestFactories`). HTTP 클라이언트는 503·429 를 다시 보내지 않고 연결이 끊긴 GET 만 1회 다시 보낸다. AI 호출의 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, 카카오 토큰 교환(POST)은 503·429·연결 끊김에 다시 보내지 않는다(인가 코드가 일회용) |
 | API 문서 | Springdoc OpenAPI 2.9.1, Swagger UI |
 | 운영 DB | PostgreSQL |
 | 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |

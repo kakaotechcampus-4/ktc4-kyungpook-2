@@ -1,4 +1,4 @@
-package com.itda.backend.service.agent;
+package com.itda.backend.global.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -10,15 +10,16 @@ import org.apache.hc.core5.http.message.BasicHttpResponse;
 import org.junit.jupiter.api.Test;
 
 /**
- * HTTP 클라이언트가 스스로 하는 재시도 (#153).
+ * HTTP 클라이언트가 스스로 하는 재시도 (#153, #193).
  *
- * <p>응답 코드를 보고 다시 보내는 것(503·429)은 {@link AiAgentClient} 가 하므로 끈다. 켜 두면 3번이 6번이 된다.
+ * <p>응답 코드를 보고 다시 보내는 것(503·429)은 끈다. AI 서버는 {@code AiAgentClient} 가 다시 보내므로 켜 두면 3번이 6번이 되고,
+ * 카카오 토큰 교환은 인가 코드가 일회용이라 두 번째 요청이 {@code invalid_grant} 가 된다.
  * 다만 서버가 막 닫은 keep-alive 연결을 다시 써서 GET 이 응답 없이 끊기는 경우는 계속 다시 보낸다 —
  * {@code /health} 는 앱 쪽 재시도가 없어서, 이것까지 끄면 AI 가 멀쩡한데 "응답 없음" 으로 차례를 건너뛴다.
  */
-class AiAgentRetryStrategyTest {
+class HttpClientRetryStrategyTest {
 
-    private final HttpRequestRetryStrategy strategy = AiAgentClientConfig.retryStrategy();
+    private final HttpRequestRetryStrategy strategy = HttpClientRequestFactories.retryStrategy();
     private final HttpClientContext context = HttpClientContext.create();
 
     @Test

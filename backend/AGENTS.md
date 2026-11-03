@@ -25,7 +25,7 @@ API 계약은 API 규약을, 의존성과 버전은 `build.gradle`을 기준으�
 | API 문서 | Springdoc OpenAPI |
 | 데이터 접근 | Spring Data JPA |
 | 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
-| AI 서버 호출 | Spring `RestClient` + Apache HttpClient 5 (503·429 자동 재시도 끔) |
+| AI 서버·카카오 호출 | Spring `RestClient`·`RestTemplate` + Apache HttpClient 5 (503·429 자동 재시도 끔, `global.config.HttpClientRequestFactories`) |
 | 운영 데이터베이스 | PostgreSQL |
 | 테스트 데이터베이스 | H2 PostgreSQL 호환 모드 |
 | 테스트 | Spring Boot Test, JUnit 5, Spring Security Test, Testcontainers PostgreSQL |
@@ -49,7 +49,7 @@ com.itda.backend
 ├── api                 # Controller
 ├── service             # 유스케이스와 트랜잭션
 │   ├── <기능>          # 기능별 유스케이스, 에이전트 호출 워커와 결과 저장
-│   ├── agent           # AI 서버 호출 공통 (재시도·상태 확인·접속 설정)
+│   ├── agent           # AI 서버 호출 공통 (재시도·상태 확인·접속 설정. HTTP 요청 팩토리는 global.config)
 │   └── storage         # 외부 저장소 구현
 ├── repository
 │   └── <기능>          # Entity 영속화와 조회, 조회용 projection
@@ -62,7 +62,7 @@ com.itda.backend
 │   ├── <기능>          # 기능별 예외·오류 코드·예외 처리기
 │   ├── agent           # 여러 기능이 쓰는 AI 호출 예외
 │   └── auth            # 로그인·토큰 인증 예외
-└── global              # 설정, 보안, JWT, 공통 응답·예외 등 횡단 관심사
+└── global              # 설정, 보안, JWT, 공통 응답·예외, 외부 호출 HTTP 요청 팩토리 등 횡단 관심사
     ├── config
     ├── exception
     ├── jwt
