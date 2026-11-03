@@ -5,3 +5,6 @@ build
 .env
 *.iml
 *.log
+# 로컬 실행용 비밀 설정(카카오·JWT secret). 이미지에 들어가면 compose 환경변수 대신 이 값이 쓰인다.
+# 이미지 실행 시 비밀값은 compose 가 .env 에서 환경변수로 넣는다 (#193).
+src/main/resources/application-secret.yml
