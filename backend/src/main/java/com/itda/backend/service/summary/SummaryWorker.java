@@ -96,6 +96,8 @@ public class SummaryWorker {
     private Outcome process(ClaimedSummaryGroup claimed) {
         try {
             // 집은 뒤 그 기관 동의가 철회됐으면 AI 에 보내지 않는다 (#332). 앞 묶음을 요약하는 동안에도 철회될 수 있다.
+            // 아이 행은 잠그지 않는다 — AI 호출 내내 잠그면 그동안 동의 변경이 멈춘다. 그래서 이 확인 직후에 철회되면 원문은
+            // 보내질 수 있고, 결과를 남길 때 다시 확인해 저장하지 않는다.
             if (recorder.closeIfConsentRevoked(claimed)) {
                 return Outcome.DONE;
             }

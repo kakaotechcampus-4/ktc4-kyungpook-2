@@ -97,15 +97,14 @@ public class SummaryGroupQueryService {
         if (groups.isEmpty()) {
             return new SummaryGroupBoardResponse(matching, List.of());
         }
-        Set<Long> members = childOrganizationRepository
-                .findByChildIdInAndDeletedAtIsNull(groups.keySet().stream().map(GroupKey::childId)
-                        .collect(Collectors.toSet()))
-                .stream()
+        Set<Long> childIds = groups.keySet().stream().map(GroupKey::childId).collect(Collectors.toSet());
+        // 철회 전에 매칭된 일지가 남아 있어도, 우리 기관 동의가 꺼진 아이는 [요약]이 거절하므로 카드를 띄우지 않는다 (#332).
+        Set<Long> granted = consentStateReader.grantedChildIds(childIds, organizationId);
+        Set<Long> members = childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(childIds).stream()
                 .filter(link -> link.getOrganizationId().equals(organizationId))
                 .map(ChildOrganization::getChildId)
-                .collect(Collectors.toCollection(HashSet::new));
-        // 철회 전에 매칭된 일지가 남아 있어도, 우리 기관 동의가 꺼진 아이는 [요약]이 거절하므로 카드를 띄우지 않는다 (#332).
-        members.retainAll(consentStateReader.grantedChildIds(members, organizationId));
+                .filter(granted::contains)
+                .collect(Collectors.toSet());
         groups.keySet().removeIf(group -> !members.contains(group.childId()));
         if (groups.isEmpty()) {
             return new SummaryGroupBoardResponse(matching, List.of());
