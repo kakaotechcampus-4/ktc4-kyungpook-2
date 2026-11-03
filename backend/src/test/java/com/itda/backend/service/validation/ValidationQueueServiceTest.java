@@ -125,6 +125,18 @@ class ValidationQueueServiceTest {
                 .isEqualTo("진단명이나 장애 유형이 단정적으로 적혀 있습니다 / 다른 아이의 이름이 함께 적혀 있습니다");
     }
 
+    /** 검증 v1.3(#262)의 건강관리기록도 코드가 아니라 문장으로 보여준다. */
+    @Test
+    void getBlockedQueue_describesHealthRecordReason() {
+        givenOwnedBlockedEntry(blockedResult("[\"진단명\",\"건강관리기록\"]"), blockedEntry(), OUR_INSTITUTION);
+        given(childRepository.findById(CHILD_ID)).willReturn(Optional.empty());
+
+        List<ValidationQueueItemResponse> queue = validationQueueService.getBlockedQueue(OUR_USER_ID);
+
+        assertThat(queue.get(0).violationReason())
+                .isEqualTo("진단명이나 장애 유형이 단정적으로 적혀 있습니다 / 질병·복약·병원 진료 같은 건강 정보가 적혀 있습니다");
+    }
+
     /** AI가 유형을 안 보내거나 깨진 JSON을 보내도 큐 조회 전체가 죽지 않는다. */
     @ParameterizedTest
     @ValueSource(strings = {"", "{깨진 json", "[]"})
