@@ -193,7 +193,7 @@ dbsql -c "UPDATE journal_entry SET status = 'VALIDATED', updated_at = now() AT T
 | 인증 | Spring Security, OAuth2 Client(카카오), JJWT 0.12.6 |
 | 데이터 접근 | Spring Data JPA |
 | 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
-| AI 서버 호출 | Spring `RestClient` + Apache HttpClient 5. 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, HTTP 클라이언트는 연결이 끊긴 GET 만 1회 다시 보낸다 |
+| AI 서버·카카오 호출 | Spring `RestClient`·`RestTemplate` + Apache HttpClient 5 (`global.config.HttpClientRequestFactories`). HTTP 클라이언트는 503·429 를 다시 보내지 않고 연결이 끊긴 GET 만 1회 다시 보낸다. AI 호출의 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, 카카오 호출은 다시 보내지 않는다(인가 코드가 일회용) |
 | API 문서 | Springdoc OpenAPI 2.9.1, Swagger UI |
 | 운영 DB | PostgreSQL |
 | 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |
