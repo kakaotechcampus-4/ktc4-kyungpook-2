@@ -70,7 +70,24 @@ MODEL_SAYS_CO = {"child_id": None, "confidence": 0.5, "co_mention": True, "co_me
 
 
 def case_invented_co_mention_dropped():
-    return nodes.llm_judge and _judge(False, MODEL_SAYS_CO)["co_mention"] is False
+    return _judge(False, MODEL_SAYS_CO)["co_mention"] is False
+
+
+MODEL_INVENTS_ID = {"child_id": None, "confidence": 0.5, "co_mention": True, "co_mention_child_ids": [2]}
+
+
+def case_invented_ids_not_leaked():
+    # 이름 0개 본문에서 모델이 준 ID 는 mentioned_child_ids 로 새지 않는다 (#306 리뷰)
+    return 2 not in _judge(False, MODEL_INVENTS_ID)["mentioned_child_ids"]
+
+
+def case_invented_ids_back_when_off():
+    original = nodes.CO_MENTION_NEEDS_TWO_NAMES
+    try:
+        nodes.CO_MENTION_NEEDS_TWO_NAMES = False
+        return 2 in _judge(False, MODEL_INVENTS_ID)["mentioned_child_ids"]
+    finally:
+        nodes.CO_MENTION_NEEDS_TWO_NAMES = original
 
 
 def case_confirmed_co_mention_kept():
@@ -94,6 +111,8 @@ CASES = [
     ("② 이름 없는 기록의 co_mention 은 버린다", case_invented_co_mention_dropped),
     ("② 이름 2개인 기록의 co_mention 은 받는다", case_confirmed_co_mention_kept),
     ("② 플래그를 끄면 예전처럼 받는다 (롤백)", case_invented_back_when_off),
+    ("② 이름 없는 기록에서 모델이 준 ID 는 노출 목록에 안 들어간다", case_invented_ids_not_leaked),
+    ("② 플래그를 끄면 그 ID 도 예전처럼 들어간다 (롤백)", case_invented_ids_back_when_off),
 ]
 
 if __name__ == "__main__":
