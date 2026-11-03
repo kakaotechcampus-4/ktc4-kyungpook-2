@@ -87,6 +87,7 @@ public class SummaryGate1Service {
     @Transactional
     public Gate1DecisionResponse reopen(String userId, Long summaryId) {
         SummaryResult summary = lockOwnedSummary(userId, summaryId);
+        requireConsented(summary);
         if (summary.getStatus() != SummaryStatus.HOLD) {
             throw new SummaryException(SummaryErrorCode.NOT_HELD, summaryId);
         }
@@ -191,12 +192,13 @@ public class SummaryGate1Service {
     }
 
     /**
-     * 우리 기관 동의를 철회한 아이의 요약은 결정을 받지 않는다 (#332). 철회 전에 만들어진 요약이 승인돼 아이 맥락에 올라가면
-     * 안 된다. 목록(O-30)에서도 빠지므로 다른 기관 요약처럼 없는 것으로 응답하고, 요약은 그대로 둔다 — 다시 동의하면
-     * 목록에 다시 뜬다.
+     * 우리 기관 동의를 철회한 아이의 요약은 결정도 보류 해제도 받지 않는다 (#332). 철회 전에 만들어진 요약이 승인돼 아이
+     * 맥락에 올라가면 안 된다. 목록(O-30)에서도 빠지므로 다른 기관 요약처럼 없는 것으로 응답하고, 요약은 그대로 둔다 —
+     * 다시 동의하면 목록에 다시 뜬다.
      *
-     * <p>동의를 읽기 전에 아이 행을 잠근다 — 동의 서비스와 같은 순서다 (DB 스키마 §3.3). 안 잠그면 철회와 겹칠 때
-     * "동의 확인 → (철회 커밋) → 승인" 이 되어 꺼진 동의로 승인된다. 동의 서비스는 요약 행을 잠그지 않아 교착은 없다.
+     * <p>동의를 읽기 전에 아이 행을 잠근다 (DB 스키마 §3.3 잠금 표). 안 잠그면 철회와 겹칠 때 "동의 확인 → (철회 커밋) →
+     * 승인" 이 되어 꺼진 동의로 승인된다. 잠금 순서는 요약 행 → 아이 행으로 Gate 2 승인(인사이트 행 → 아이 행)과 같다.
+     * 아이 행을 먼저 잠그는 쪽(동의 변경·연결 해제 등)은 요약 행을 잠그지 않아 교착은 없다.
      */
     private void requireConsented(SummaryResult summary) {
         childRepository.findByIdForUpdate(summary.getChildId());

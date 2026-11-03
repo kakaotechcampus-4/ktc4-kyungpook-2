@@ -675,6 +675,23 @@ class SummaryGate1ServiceTest {
         assertThat(history()).isEmpty();
     }
 
+    /** 철회된 아이의 보류 요약은 보류함에서 빠진다. 직접 불러도 상태와 이력을 바꾸지 않는다 (#332). */
+    @Test
+    void 동의를_철회한_아이의_요약은_보류_해제할_수_없다() {
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
+        em.find(SharingConsent.class, consentId)
+                .revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.reopen(TEACHER, summary.getId()))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.NOT_FOUND);
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
+        assertThat(history()).extracting(Approval::getDecision).containsExactly(ApprovalDecision.HOLD);
+    }
+
     @Test
     void 다른_기관의_요약은_보류_해제할_수_없다() {
         SummaryResult others = summaryOf(OTHER_ORG);
