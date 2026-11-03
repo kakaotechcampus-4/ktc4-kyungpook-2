@@ -37,8 +37,8 @@ JWT 쿠키 인증과 CSRF 보호, 회원가입이 구현되어 있습니다. 로
 보호자 동의)을 카카오 계정 하나로는 테스트할 수 없습니다. 로컬에서는 개발용 로그인을 켜서 씁니다.
 
 1. 백엔드를 개발용 로그인을 켠 채 실행합니다. 켜고 끄는 건 실행할 때 환경변수 `DEV_LOGIN_ENABLED`로 합니다.
-   `application-secret.yml` 같은 로컬 설정 파일은 Docker 이미지에 들어가지 않으므로(`backend/.dockerignore`)
-   거기 적어도 서버에는 적용되지 않습니다. 서버에서는 compose 의 `DEV_LOGIN_ENABLED`가 정합니다.
+   `application-secret.yml` 같은 로컬 설정 파일은 jar·Docker 이미지에 들어가지 않으므로(`build.gradle`,
+   `backend/.dockerignore`) 거기 적어도 서버에는 적용되지 않습니다. 서버에서는 compose 의 `DEV_LOGIN_ENABLED`가 정합니다.
 
    ```bash
    DEV_LOGIN_ENABLED=true ./gradlew bootRun --args='--spring.profiles.active=local'

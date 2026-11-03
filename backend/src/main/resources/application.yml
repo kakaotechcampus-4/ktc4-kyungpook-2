@@ -61,8 +61,8 @@ app:
     dev-login:
       # 개발·테스트 전용 로그인(GET /api/v1/dev/login). 기본은 꺼짐이다.
       # 로컬에서는 DEV_LOGIN_ENABLED=true 로 실행해 켜고, 배포 서버는 compose 가 켜 둔다(정식 오픈 전에 끈다).
-      # 켜고 끄는 건 환경변수로 한다. application-secret.yml 같은 로컬 설정 파일은 Docker 이미지에 들어가지
-      # 않아(backend/.dockerignore) 거기 적어도 서버에는 적용되지 않는다.
+      # 켜고 끄는 건 환경변수로 한다. application-secret.yml 같은 로컬 설정 파일은 jar·Docker 이미지에 들어가지
+      # 않아(build.gradle, backend/.dockerignore) 거기 적어도 서버에는 적용되지 않는다.
       enabled: ${DEV_LOGIN_ENABLED:false}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}

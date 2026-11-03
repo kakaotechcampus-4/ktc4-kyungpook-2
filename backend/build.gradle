@@ -77,3 +77,15 @@ tasks.register('integrationTest', Test) {
 		includeTags 'integration'
 	}
 }
+
+// 개발자별 로컬·비밀 설정은 jar 에 넣지 않는다 — .gitignore 와 같은 목록 (#193).
+// 넣으면 로컬에서 만든 jar·Docker 이미지에 비밀값이 들어가고 환경변수 대신 그 값이 쓰인다.
+// bootRun·IntelliJ 실행·테스트는 jar 가 아니라 resources 폴더를 읽어서 영향이 없다.
+tasks.withType(Jar).configureEach {
+	exclude(
+		'**/application-local.yml', '**/application-local.yaml', '**/application-local.properties',
+		'**/application-secret.yml', '**/application-secret.yaml', '**/application-secret.properties',
+		'**/application-*-local.yml', '**/application-*-local.yaml', '**/application-*-local.properties',
+		'**/application-*-secret.yml', '**/application-*-secret.yaml', '**/application-*-secret.properties'
+	)
+}
