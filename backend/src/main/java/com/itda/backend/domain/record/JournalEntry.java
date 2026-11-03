@@ -284,7 +284,10 @@ public class JournalEntry {
         stopBySystemError(FailureStage.SUMMARY, reason);
     }
 
-    /** 처리하던 앱이 꺼져서 요약 중에 멈춘 일지를 요약하기 전 상태로 돌린다. */
+    /**
+     * 요약 중인 일지를 요약하기 전 상태로 돌린다. 처리하던 앱이 꺼졌거나, AI 가 응답하지 않거나, 집은 뒤 그 기관 동의가
+     * 철회돼 요약하지 않기로 했을 때다.
+     */
     public void releaseSummarizing() {
         requireStatus(JournalEntryStatus.SUMMARIZING);
         this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.VALIDATED;

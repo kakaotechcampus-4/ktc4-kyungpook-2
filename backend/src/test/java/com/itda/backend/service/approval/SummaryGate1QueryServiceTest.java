@@ -21,6 +21,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
@@ -34,13 +37,14 @@ import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
 
 /** Gate 1 검토 목록 — 요약 본문, 다른 아이 이름 경고, 요약에 안 들어간 일지, 요약에 들어간 원본의 REVIEW 사유. */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({SummaryGate1QueryService.class, SummaryRunRequests.class})
+@Import({SummaryGate1QueryService.class, SummaryRunRequests.class, ConsentStateReader.class})
 class SummaryGate1QueryServiceTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
@@ -60,11 +64,13 @@ class SummaryGate1QueryServiceTest {
     private EntityManagerFactory entityManagerFactory;
 
     private Long junho;
+    private SharingConsent consent;
 
     @BeforeEach
     void setUp() {
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
         junho = em.persist(Child.of("김준호", LocalDate.of(2020, 3, 1))).getId();
+        consent = em.persistAndFlush(SharingConsent.grant(junho, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY)));
     }
 
     /** 요약 워커가 집어 간 일지. 요약이 저장되면 {@link #summary} 가 그 요약을 가리키게 한다. */
@@ -135,6 +141,18 @@ class SummaryGate1QueryServiceTest {
 
         assertThat(service.getSummaries(TEACHER, "hold"))
                 .extracting(Gate1SummaryResponse::id).containsExactly(held.getId());
+    }
+
+    /** 철회 전에 만들어진 요약이다 (#332). 목록에 두면 그대로 승인돼 아이 맥락에 올라간다. */
+    @Test
+    void 동의를_철회한_아이의_요약은_검토_대기와_보류함에서_뺀다() {
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        summary(ORG, DATE.plusDays(1), "[]", List.of(), List.of()).hold();
+        consent.revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+
+        assertThat(service.getSummaries(TEACHER, "pending")).isEmpty();
+        assertThat(service.getSummaries(TEACHER, "hold")).isEmpty();
     }
 
     @Test

@@ -37,6 +37,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.domain.approval.ApprovalTargetType;
+import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
@@ -46,6 +49,8 @@ import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.repository.approval.ApprovalRepository;
+import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
@@ -93,6 +98,8 @@ class SummaryGate1ConcurrencyIntegrationTest {
     @Autowired private ChildContextRepository childContextRepository;
     @Autowired private ApprovalRepository approvalRepository;
     @Autowired private RawRecordRepository rawRecordRepository;
+    @Autowired private SharingConsentRepository sharingConsentRepository;
+    @Autowired private ChildRepository childRepository;
     @Autowired private SummaryService summaryService;
     @Autowired private SummaryRunRequests runRequests;
     @Autowired private DataSource dataSource;
@@ -106,6 +113,7 @@ class SummaryGate1ConcurrencyIntegrationTest {
     @BeforeEach
     void setUp() {
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
+        sharingConsentRepository.save(SharingConsent.grant(CHILD, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY)));
         rawRecordId = rawRecordRepository.save(new RawRecord(String.valueOf(ORG), "school.pdf", "kept/school.pdf",
                 "application/pdf", 12, RawRecordStatus.PENDING)).getId();
         summary = summaryResultRepository.save(SummaryResult.of(CHILD, DATE, ORG, 1,
@@ -125,6 +133,8 @@ class SummaryGate1ConcurrencyIntegrationTest {
             statement.executeUpdate("DELETE FROM summary_result");
             statement.executeUpdate("DELETE FROM summary_run_request");
             statement.executeUpdate("DELETE FROM raw_record");
+            statement.executeUpdate("DELETE FROM sharing_consent");
+            statement.executeUpdate("DELETE FROM child");
         }
     }
 
@@ -205,6 +215,58 @@ class SummaryGate1ConcurrencyIntegrationTest {
         assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).isEmpty();
         assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, summary.getId()))
                 .isEmpty();
+    }
+
+    /**
+     * 동의 철회(ConsentService)가 아이 행을 잠근 채 커밋하지 않고 있다 (#332). 승인은 아이 행에서 기다렸다가 철회가 커밋된
+     * 뒤의 동의를 보고 거절해야 한다. 아이 행을 잠그지 않고 읽으면 커밋 전 값(켜짐)을 보고 꺼진 동의로 승인한다.
+     */
+    @Test
+    void 동의_철회가_먼저_잡고_있으면_기다렸다가_철회된_아이로_거절한다() throws Exception {
+        // 위 테스트들의 CHILD 는 아이 행이 없어 잠글 것이 없다. 실제 아이 행을 만든다.
+        Long childId = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1))).getId();
+        sharingConsentRepository.save(SharingConsent.grant(childId, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY)));
+        SummaryResult target = summaryResultRepository.save(SummaryResult.of(childId, DATE, ORG, 1,
+                "블록 놀이에서 친구에게 양보했다.", "[]", "[]", "[]", "{}"));
+        JournalEntry pending = JournalEntry.of(rawRecordId, DATE, "블록 놀이를 했다.", 1);
+        pending.startMatching();
+        pending.confirmMatch(childId);
+        pending.startValidating();
+        pending.passValidation();
+        pending.startSummarizing();
+        pending.completeSummary(target.getId());
+        journalEntryRepository.save(pending);
+        String version = versionOf(target.getId());
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection holder = dataSource.getConnection()) {
+            holder.setAutoCommit(false);
+            int holderPid = backendPid(holder);
+            try (Statement statement = holder.createStatement()) {
+                statement.executeQuery("SELECT id FROM child WHERE id = " + childId + " FOR UPDATE");
+                statement.executeUpdate("UPDATE sharing_consent SET status = 'REVOKED', revoked_at = now(), "
+                        + "revoke_reason = 'GUARDIAN_REVOKED' WHERE child_id = " + childId);
+            }
+
+            Future<?> approve = executor.submit(
+                    () -> service.decide(TEACHER, target.getId(), Gate1Action.APPROVE, null, version));
+            waitUntilBlockedBy(holderPid);
+            holder.commit();
+
+            try {
+                approve.get(10, TimeUnit.SECONDS);
+                fail("철회된 동의로 승인했습니다. 아이 행을 잠그지 않고 커밋 전 동의를 읽었을 수 있습니다.");
+            } catch (ExecutionException e) {
+                assertThat(e.getCause()).isInstanceOf(SummaryException.class);
+                assertThat(((SummaryException) e.getCause()).getErrorCode()).isEqualTo(SummaryErrorCode.NOT_FOUND);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(summaryResultRepository.findById(target.getId()).orElseThrow().getStatus())
+                .isEqualTo(SummaryStatus.GATE1_PENDING);
+        assertThat(childContextRepository.findByChildIdOrderByIdDesc(childId)).isEmpty();
     }
 
     @Test

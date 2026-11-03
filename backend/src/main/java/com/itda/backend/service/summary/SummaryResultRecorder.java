@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
@@ -20,6 +21,7 @@ import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.dto.response.summary.SummaryAgentResponse;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +36,31 @@ public class SummaryResultRecorder {
     private final SummaryResultRepository summaryResultRepository;
     private final SummaryEvidenceChecker evidenceChecker;
     private final SummaryRunRequests runRequests;
+    private final ConsentStateReader consentStateReader;
+
+    /**
+     * 집은 묶음의 그 기관 동의가 꺼졌으면 요약하지 않고 닫는다 (#332). 워커가 AI 를 부르기 전에 부르고, 결과를 남기는
+     * {@link #record}·{@link #recordFailure}·{@link #recordSystemError} 도 먼저 부른다 — AI 호출 수십 초 사이에 철회될 수
+     * 있어서다. 철회됐으면 성공한 요약도 저장하지 않고, 실패도 실패로 남기지 않는다.
+     *
+     * <p>[요약] 요청은 처리한 것으로 남기고, 일지는 요약하기 전 상태로 돌린다 ({@link JournalEntry#releaseSummarizing}).
+     * 새 일지는 VALIDATED 로, 승인 전 판에 있던 일지는 그 판의 Gate 1 대기로 돌아간다 — 그 판은 Gate 1 목록·결정에서
+     * 막힌다. 실패로 남기지 않는다: 다시 동의하면 교사가 [요약]을 다시 눌러 이어 간다.
+     *
+     * @return 닫았으면 true. 워커는 이 묶음을 AI 에 보내지 않는다
+     */
+    @Transactional
+    public boolean closeIfConsentRevoked(ClaimedSummaryGroup claimed) {
+        SummaryGroup group = claimed.group();
+        if (consentStateReader.stateOf(group.childId(), group.institutionId()) == ConsentState.GRANTED) {
+            return false;
+        }
+        log.info("consent revoked, summary group closed without summarizing group={} journalEntryIds={}",
+                group, claimed.journalEntryIds());
+        runRequests.markHandled(group, claimed.claimedAt());
+        summarizingEntries(claimed).forEach(JournalEntry::releaseSummarizing);
+        return true;
+    }
 
     /**
      * 요약을 저장하고 묶음의 일지를 Gate 1 대기로 보낸다. 요약에 반영되지 않은 일지(uncovered)도 같은 요약을
@@ -52,6 +79,10 @@ public class SummaryResultRecorder {
      */
     @Transactional
     public void record(ClaimedSummaryGroup claimed, SummaryAgentRequest request, SummaryAgentReply reply) {
+        // 아이 행을 잠그지 않는다. 이 확인 뒤에 철회가 커밋돼 요약이 저장돼도 Gate 1 목록·결정이 그 아이를 막는다.
+        if (closeIfConsentRevoked(claimed)) {
+            return;
+        }
         SummaryAgentResponse response = reply.response();
         // [요약] 요청은 결과를 남길 때 처리 표시를 한다. 집을 때 하면 AI 장애로 묶음이 되돌아갔을 때 요청까지 사라진다.
         runRequests.markHandled(claimed.group(), claimed.claimedAt());
@@ -119,6 +150,9 @@ public class SummaryResultRecorder {
      */
     @Transactional
     public void recordFailure(ClaimedSummaryGroup claimed) {
+        if (closeIfConsentRevoked(claimed)) {
+            return;
+        }
         runRequests.markHandled(claimed.group(), claimed.claimedAt());
         summarizingEntries(claimed).forEach(JournalEntry::failSummary);
     }
@@ -129,6 +163,9 @@ public class SummaryResultRecorder {
      */
     @Transactional
     public void recordSystemError(ClaimedSummaryGroup claimed, FailureReason reason) {
+        if (closeIfConsentRevoked(claimed)) {
+            return;
+        }
         runRequests.markHandled(claimed.group(), claimed.claimedAt());
         summarizingEntries(claimed).forEach(entry -> entry.failSummaryBySystemError(reason));
     }

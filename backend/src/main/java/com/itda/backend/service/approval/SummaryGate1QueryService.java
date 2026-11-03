@@ -35,6 +35,7 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.LatestRevision;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
 
@@ -72,14 +73,15 @@ public class SummaryGate1QueryService {
     private final ChildRepository childRepository;
     private final ValidationResultRepository validationResultRepository;
     private final SummaryRunRequests runRequests;
+    private final ConsentStateReader consentStateReader;
 
     /** 요청 교사 기관의 검토 대기(pending) 또는 보류함(hold) 요약을 오래된 날짜부터. */
     @Transactional(readOnly = true)
     public List<Gate1SummaryResponse> getSummaries(String userId, String gate1Status) {
         SummaryStatus status = toSummaryStatus(gate1Status);
         Long organizationId = userService.getOrganizationIdOf(userId);
-        List<SummaryResult> summaries =
-                summaryResultRepository.findGate1List(organizationId, status);
+        List<SummaryResult> summaries = withConsent(organizationId,
+                summaryResultRepository.findGate1List(organizationId, status));
         if (summaries.isEmpty()) {
             return List.of();
         }
@@ -124,6 +126,19 @@ public class SummaryGate1QueryService {
                         reviewFlags(s, entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId()),
                                 latestValidation)))
                 .toList();
+    }
+
+    /**
+     * 우리 기관 동의가 켜진 아이의 요약만 남긴다 (#332). 철회 전에 만들어진 요약을 두면 그대로 승인돼 아이 맥락에 올라간다.
+     * 상태를 바꾸지 않고 볼 때마다 거르므로 다시 동의하면 다시 보인다. 결정(O-31)도 같은 기준으로 거절한다.
+     */
+    private List<SummaryResult> withConsent(Long organizationId, List<SummaryResult> summaries) {
+        if (summaries.isEmpty()) {
+            return summaries;
+        }
+        Set<Long> granted = consentStateReader.grantedChildIds(
+                summaries.stream().map(SummaryResult::getChildId).collect(Collectors.toSet()), organizationId);
+        return summaries.stream().filter(s -> granted.contains(s.getChildId())).toList();
     }
 
     /**
