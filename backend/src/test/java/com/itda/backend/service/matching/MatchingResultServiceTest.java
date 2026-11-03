@@ -182,6 +182,60 @@ class MatchingResultServiceTest {
     }
 
     @Test
+    void getItem_returnsOwnPendingItem() {
+        MatchingResult ours = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(7L)).willReturn(Optional.of(ours));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+
+        MatchingQueueItemResponse item = matchingResultService.getItem(7L, OUR_USER_ID);
+
+        assertThat(item.record().fullContent()).isEqualTo("점심시간에 식사를 잘함");
+    }
+
+    // 다른 기관 것, 이미 처리된 것, 없는 것 모두 같은 404 다 — 나누면 그 id 가 어딘가 있다는 게 새어 나간다.
+    @Test
+    void getItem_otherInstitutionsEntry_throwsNotFound() {
+        MatchingResult theirs = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(7L)).willReturn(Optional.of(theirs));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OTHER_INSTITUTION)));
+
+        assertThatThrownBy(() -> matchingResultService.getItem(7L, OUR_USER_ID))
+                .isInstanceOf(MatchingResultNotFoundException.class);
+    }
+
+    @Test
+    void getItem_entryNotAwaitingReview_throwsNotFound() {
+        MatchingResult stale = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        JournalEntry resolved = ourJournalEntry();
+        resolved.confirmMatchByReviewer(5L);
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(7L)).willReturn(Optional.of(stale));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(resolved));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+
+        assertThatThrownBy(() -> matchingResultService.getItem(7L, OUR_USER_ID))
+                .isInstanceOf(MatchingResultNotFoundException.class);
+    }
+
+    @Test
+    void getItem_autoResult_throwsNotFound() {
+        MatchingResult auto = new MatchingResult(
+                1L, 2L, new BigDecimal("0.9"), MatchingStatus.AUTO, null, null, null, null, null, null, "v1");
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(7L)).willReturn(Optional.of(auto));
+
+        assertThatThrownBy(() -> matchingResultService.getItem(7L, OUR_USER_ID))
+                .isInstanceOf(MatchingResultNotFoundException.class);
+    }
+
+    @Test
     void resolveAssign_setsMatchedChildAndAutoStatus() {
         MatchingResult matchingResult = new MatchingResult(
                 1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
@@ -349,7 +403,8 @@ class MatchingResultServiceTest {
 
         assertThatThrownBy(() ->
                 matchingResultService.resolve(1L, "assign", 999L, "kakao-teacher-1", OUR_USER_ID))
-                .isInstanceOf(MatchingResultValidationException.class);
+                .isInstanceOf(MatchingResultValidationException.class)
+                .hasMessage("child not available: 999");
     }
 
     @Test
@@ -367,9 +422,11 @@ class MatchingResultServiceTest {
         given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
                 .willReturn(false);
 
+        // 없는 아이와 같은 문구다 — 다르면 번호를 바꿔 가며 다른 기관 아이가 있는지 알아낼 수 있다.
         assertThatThrownBy(() ->
                 matchingResultService.resolve(1L, "assign", 2L, "kakao-teacher-1", OUR_USER_ID))
-                .isInstanceOf(MatchingResultValidationException.class);
+                .isInstanceOf(MatchingResultValidationException.class)
+                .hasMessage("child not available: 2");
     }
 
     @Test
