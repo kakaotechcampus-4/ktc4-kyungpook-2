@@ -52,7 +52,8 @@ public class SummaryController {
                     + "요약 본문과 문장 카드(claims — 결정할 때 쓰는 index·글), 다른 아이 이름 경고(needsReview·reviewReasons), "
                     + "요약에 안 들어간 일지와 원문, "
                     + "요약에 들어간 원본의 검증 REVIEW 사유를 함께 줍니다. processing 이 true 면 같은 묶음에 아직 요약에 "
-                    + "반영되지 않은 기록이 있어 곧 요약이 바뀝니다. 응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
+                    + "반영되지 않은 기록이 있어 곧 요약이 바뀝니다. 보호자가 우리 기관 동의를 철회한 아이의 요약은 빠집니다. "
+                    + "응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
@@ -87,7 +88,8 @@ public class SummaryController {
                     + "검토 목록으로 옮겨 가 여기에 없습니다. status 는 교사가 할 일을 먼저 보여주는 라벨이고, counts 는 상태별 "
                     + "일지 건수입니다. canSummarize 가 true 면 [요약](O-32)을 누를 수 있습니다. 이미 눌렀으면 "
                     + "summaryRequested 가 true 이고, 같은 날 매칭·검증 중인 일지를 기다리는 동안 waitingCount 에 그 건수가 "
-                    + "옵니다. matching 은 아이가 아직 정해지지 않아 카드에 넣을 수 없는 일지 건수입니다."
+                    + "옵니다. matching 은 아이가 아직 정해지지 않아 카드에 넣을 수 없는 일지 건수입니다. 기관에서 뺀 아이와 "
+                    + "보호자가 우리 기관 동의를 철회한 아이의 묶음은 빠집니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
@@ -129,7 +131,7 @@ public class SummaryController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 아동이거나 다른 기관 소속 (SUMMARY_CHILD_NOT_FOUND)",
+                    description = "없는 아동이거나 다른 기관 소속, 또는 우리 기관 동의가 철회된 아동 (SUMMARY_CHILD_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -182,7 +184,7 @@ public class SummaryController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 요약이거나 다른 기관 요약 (SUMMARY_NOT_FOUND)",
+                    description = "없는 요약이거나 다른 기관 요약, 또는 우리 기관 동의가 철회된 아동의 요약 (SUMMARY_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
