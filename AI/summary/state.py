@@ -34,6 +34,8 @@ class SummaryState(TypedDict, total=False):
     llm_called: bool
     #: 호출이 실패했을 때의 사유. 값이 있으면 run_summary 가 503 으로 올린다.
     llm_error: str | None
+    #: 실패 종류 (timeout · empty_response …). 503 기록에 싣는다 (common/errors.py).
+    llm_failure: str
     #: 토큰 사용량. cached_tokens 로 프롬프트 캐싱이 먹는지 확인한다.
     llm_usage: dict
     #: 모델이 낸 claims 원본. 아직 아무것도 대조하지 않은 상태다.

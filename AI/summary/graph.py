@@ -74,7 +74,7 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
     result = GRAPH.invoke(state)
 
     if result.get("llm_error"):
-        raise LlmUnavailable(result["llm_error"])
+        raise LlmUnavailable(result["llm_error"], failure=result.get("llm_failure", "unknown"))
 
     # 남은 문장이 0 개인 경우는 둘이다 (CRITERIA.md §2).
     #   모델이 처음부터 빈 claims 를 냈다  → 쓸 관찰 사실이 없다 → 200 no_content

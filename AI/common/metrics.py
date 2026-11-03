@@ -63,7 +63,9 @@ def track(path: str, key: str):
     try:
         yield
     except LlmUnavailable as exc:
-        outcome = exc.reason
+        # 실패 종류를 알면 붙인다: "llm_unavailable:timeout". 모르면 reason 만.
+        failure = getattr(exc, "failure", "unknown")
+        outcome = exc.reason if failure == "unknown" else f"{exc.reason}:{failure}"
         raise
     except Exception:
         outcome = "error"
