@@ -81,14 +81,11 @@ public class ConsentService {
         Organization organization = organizationRepository.findById(institutionId)
                 .orElseThrow(ConsentService::targetNotFound);
 
-        ConsentFieldCatalog.Labels labels = ConsentFieldCatalog.labelsOf(organization.getType());
         return new ConsentPreviewResponse(
                 new ConsentPreviewResponse.PreviewChild(
                         String.valueOf(child.getId()), child.getName(), child.getBirthdate().toString()),
                 InstitutionResponse.from(organization),
                 null,
-                labels.shared(),
-                labels.notShared(),
                 ConsentFieldCatalog.ALLOWED_FIELDS);
     }
 

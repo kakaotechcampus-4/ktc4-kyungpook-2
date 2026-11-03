@@ -129,8 +129,8 @@ class ConsentApiTest {
                 .andExpect(jsonPath("$.data.institution.type").value("center"))
                 .andExpect(jsonPath("$.data.institution.verified").value(false))
                 .andExpect(jsonPath("$.data.documentUrl").isEmpty())
-                .andExpect(jsonPath("$.data.sharedFields[0]").value("관찰 요약"))
-                .andExpect(jsonPath("$.data.notSharedFields[0]").value("복지카드 정보"))
+                .andExpect(jsonPath("$.data.sharedFields").doesNotHaveJsonPath())
+                .andExpect(jsonPath("$.data.notSharedFields").doesNotHaveJsonPath())
                 .andExpect(jsonPath("$.data.allowedFields[0]").value("daily_summary"))
                 .andExpect(jsonPath("$.data.allowedFields[1]").value("weekly_insight"));
 

@@ -339,9 +339,9 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.UpdateConsentRequest.properties.allowedFieldsValidForAction").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.allowedFields").exists())
 				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.documentUrl").exists())
-				// 설명 목록은 실제 공유와 맞지 않아 화면이 쓰지 않는다. 이전 화면 호환으로 값은 남기고 사용 중단만 표시한다
-				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.sharedFields.deprecated").value(true))
-				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.notSharedFields.deprecated").value(true))
+				// 기관 유형별 설명 목록은 실제 공유와 맞지 않아 지웠다 — 되살아나지 않게 막는다
+				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.sharedFields").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.notSharedFields").doesNotHaveJsonPath())
 				.andExpect(jsonPath("$.components.schemas.ConsentResponse.properties.length()").value(3))
 				.andExpect(jsonPath("$.components.schemas.InstitutionResponse.properties.verified").exists());
 	}
