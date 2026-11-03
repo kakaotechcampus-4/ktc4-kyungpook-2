@@ -44,6 +44,17 @@ class OAuth2LoginFailureHandlerTest {
     }
 
     @Test
+    void 이름이_code_로_끝나는_다른_값은_가리지_않는다(CapturedOutput output) throws IOException {
+        // 장애 원인을 찾는 단서라 남아야 한다.
+        OAuth2Error error = new OAuth2Error("invalid_request", "error_code=KOE006 status_code=400", null);
+
+        handler.onAuthenticationFailure(new MockHttpServletRequest(), new MockHttpServletResponse(),
+                new OAuth2AuthenticationException(error, error.toString()));
+
+        assertThat(output).contains("error_code=KOE006", "status_code=400");
+    }
+
+    @Test
     void 메시지가_없는_실패도_로그를_남기고_로그인_화면으로_보낸다(CapturedOutput output) throws IOException {
         MockHttpServletResponse response = new MockHttpServletResponse();
 

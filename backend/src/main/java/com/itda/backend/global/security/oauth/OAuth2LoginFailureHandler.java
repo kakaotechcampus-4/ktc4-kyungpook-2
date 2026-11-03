@@ -28,8 +28,9 @@ public class OAuth2LoginFailureHandler extends SimpleUrlAuthenticationFailureHan
     /**
      * 카카오 KOE320 오류 설명의 인가 코드 ({@code "authorization code not found for code=..."}).
      * 요청에 code 가 두 번 붙으면 쉼표로 이어서 돌려주므로 공백·따옴표 전까지 통째로 가린다.
+     * {@code error_code=} 처럼 이름이 code 로 끝나는 다른 값은 원인을 찾는 단서라 남긴다.
      */
-    private static final Pattern AUTHORIZATION_CODE = Pattern.compile("code=[^\\s\"]+");
+    private static final Pattern AUTHORIZATION_CODE = Pattern.compile("(?<![\\w-])code=[^\\s\"]+");
 
     private final String redirectUri;
 
