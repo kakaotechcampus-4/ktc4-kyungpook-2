@@ -616,6 +616,22 @@ class SummaryGate1ServiceTest {
         assertThat(history()).isEmpty();
     }
 
+    /** 승인을 다시 보낸 경우(더블클릭·재시도)다. 이미 처리됐다는 응답이 먼저다 — 없다고 하면 승인한 요약이 사라진 것처럼 보인다. */
+    @Test
+    void 이미_처리된_요약은_동의가_철회된_뒤에도_이미_처리됐다고_응답한다() {
+        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, versionOf(summary.getId()));
+        em.find(SharingConsent.class, consentId)
+                .revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null,
+                versionOf(summary.getId())))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.ALREADY_REVIEWED);
+    }
+
     @Test
     void 이미_처리된_요약은_다시_결정할_수_없다() {
         service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, versionOf(summary.getId()));
