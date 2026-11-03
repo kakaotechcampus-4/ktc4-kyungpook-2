@@ -4,7 +4,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
 
-import com.itda.backend.service.agent.AiAgentClientConfig;
+import com.itda.backend.global.config.HttpClientRequestFactories;
 import com.itda.backend.service.agent.AiAgentProperties;
 
 /**
@@ -21,7 +21,7 @@ public class SummaryAgentClientConfig {
             SummaryProperties summaryProperties) {
         return builder
                 .baseUrl(properties.baseUrl())
-                .requestFactory(AiAgentClientConfig.requestFactory(
+                .requestFactory(HttpClientRequestFactories.create(
                         properties.connectTimeout(), summaryProperties.readTimeout()))
                 .build();
     }
