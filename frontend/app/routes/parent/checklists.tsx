@@ -31,9 +31,19 @@ export default function ChecklistsPageRoute() {
  */
 function ChecklistsPage() {
   const { childId, checklists } = useLoaderData<typeof clientLoader>()!;
+  // 아이가 바뀌면(다른 탭에서 고른 아이가 바뀐 뒤 다시 읽는 등) 확인 응답 · 진행 · 오류를 새로 시작한다. 같은 요청을 두 아이가
+  // 받으면 id 가 같아서, 그대로 두면 한 아이의 확인이 다른 아이 카드에 보인다
+  return <ChecklistsContent key={childId} childId={childId} checklists={checklists} />;
+}
+
+function ChecklistsContent({ childId, checklists }: { childId: string; checklists: ChecklistItem[] }) {
   const revalidator = useRevalidator();
-  // 확인 응답으로 바로 바꿔 보인다. 다시 읽은 목록이 오면 그 값을 쓴다
-  const [confirmed, setConfirmed] = useState<Record<string, ChecklistItem>>({});
+  // 확인 응답은 다시 읽기 전까지만 덧씌운다 — for 가 지금 목록이 아니면(다시 읽은 목록이 오면) 서버 값을 쓴다
+  const [confirmed, setConfirmed] = useState<{ for: ChecklistItem[]; items: Record<string, ChecklistItem> }>({
+    for: checklists,
+    items: {},
+  });
+  const overlay = confirmed.for === checklists ? confirmed.items : {};
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +53,10 @@ function ChecklistsPage() {
     setError(null);
     try {
       const result = await confirmChecklist(childId, id);
-      setConfirmed((prev) => ({ ...prev, [id]: result }));
+      setConfirmed((prev) => ({
+        for: checklists,
+        items: { ...(prev.for === checklists ? prev.items : {}), [id]: result },
+      }));
       await revalidator.revalidate();
     } catch (err) {
       // 기관이 내렸는지 명부에서 빠졌는지 서버가 같은 404 로 답한다 — 원인을 단정하지 않는다
@@ -76,7 +89,7 @@ function ChecklistsPage() {
       ) : (
         <div className="flex flex-col gap-4">
           {checklists.map((raw) => {
-            const req = confirmed[raw.id] ?? raw;
+            const req = overlay[raw.id] ?? raw;
             const done = req.status === "confirmed";
             return (
               <div
