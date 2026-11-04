@@ -13,7 +13,8 @@
 | 파일 (`AI/evals/generated/real/`) | 내용 |
 | --- | --- |
 | `dev.json` | 개발용 실제 일지 88건 (1~7월, 센터 1곳, 아동 12명, 가명) |
-| `test.json` | 테스트용 실제 일지 32건 (8·9·11·12월) — **블라인드, 이 스크립트로 열지 않음** |
+| `blind/test.json` | 테스트용 실제 일지 32건 (8·9·11·12월) — **블라인드, `--real` 로 한 번만 돌린다** ([BLIND_PLAN.md](BLIND_PLAN.md)) |
+| `blind/synthetic_school_blind.json` · `blind/synthetic_school_blind_answer.json` | 블라인드용 가상 학교 일지 20건 · 정답표 (패턴 10개 + 묶으면 안 되는 기록 10개) |
 | `synthetic_school_demo.json` | 가상 학교 일지 7건 (1월) |
 | `synthetic_school_dev.json` | 가상 학교 일지 20건 (4~6월) |
 | `synthetic_school_answer.json` | 정답표 — 찾아야 할 패턴 14개 + 묶으면 안 되는 기록 12개 |
