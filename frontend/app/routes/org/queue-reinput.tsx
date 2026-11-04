@@ -20,7 +20,7 @@ export default function ReinputQueuePage() {
       />
 
       {items.length === 0 ? (
-        <EmptyState icon="✓" title="멈춘 기록이 없습니다" />
+        <EmptyState icon="done" title="멈춘 기록이 없습니다" />
       ) : (
         <div className="flex flex-col gap-4">
           {items.map((item) => (

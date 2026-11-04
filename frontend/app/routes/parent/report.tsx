@@ -58,7 +58,7 @@ function ReportPage() {
 
       {groups.length === 0 ? (
         <EmptyState
-          icon="◦"
+          icon="none"
           title="아직 받은 리포트가 없어요"
           description="기관들이 일주일 기록을 함께 살펴 정리하면 여기에 도착해요."
         />

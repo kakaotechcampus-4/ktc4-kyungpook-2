@@ -80,7 +80,7 @@ export default function ChildDetailPage() {
           {timeline.length === 0 ? (
             <>
               <EmptyState
-                icon="◦"
+                icon="none"
                 title="아직 승인된 요약이 없습니다"
                 description="기록을 등록하고 요약 검토에서 승인하면 여기에 날짜순으로 쌓입니다. 승인되지 않은 기록은 표시되지 않습니다."
               />

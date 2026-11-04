@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
-import { Check, ChevronRight, Upload, X } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, Upload, X } from "lucide-react";
 import { FileProgressList, useProgressPolling } from "@/components/org/FileProgressList";
 import { HelpTip } from "@/components/ui/HelpTip";
 import { Card, Note, PageHeader, Spinner } from "@/components/ui";
@@ -192,9 +192,10 @@ function UploadDone({ count, files, onMore }: { count: number; files: FileProgre
         <div className="flex flex-wrap gap-2 pt-1.5">
           <Link
             to="/dashboard"
-            className="tap inline-flex items-center rounded bg-ink px-5 text-[15px] font-semibold text-paper hover:brightness-110"
+            className="tap inline-flex items-center gap-1.5 rounded bg-ink px-5 text-[15px] font-semibold text-paper hover:brightness-110"
           >
-            오늘의 업무로 가기 →
+            오늘의 업무 보기
+            <ArrowRight aria-hidden size={16} strokeWidth={2.2} />
           </Link>
           <button
             type="button"
