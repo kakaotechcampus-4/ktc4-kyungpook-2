@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 
 import org.hibernate.exception.ConstraintViolationException;
@@ -22,6 +23,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
+import com.itda.backend.domain.user.TermKey;
+import com.itda.backend.domain.user.TermsAgreement;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.dto.request.user.SignupRequest;
@@ -377,22 +380,44 @@ class UserServiceTest {
                 .isEqualTo(UserErrorCode.SESSION_USER_NOT_FOUND);
     }
 
-    /* ── 가입 완료 여부 (가입 미완료 차단 필터용) ───────────── */
+    /* ── 가입 · 약관 동의 여부 (가입 미완료 차단 필터용) ───────────── */
 
     @Test
     void pendingUserIsNotSignedUp() {
         given(userRepository.findByIdAndDeletedAtIsNull(3L))
                 .willReturn(Optional.of(User.pending(KAKAO_ID, "박지현")));
 
-        assertThat(userService.isSignupCompleted("3")).isFalse();
+        assertThat(userService.accessOf("3")).isEqualTo(AccountAccess.SIGNUP_NOT_COMPLETED);
+        verify(termsAgreementRepository, never()).findByUserId(any());
     }
 
     @Test
-    void userWithRoleIsSignedUp() {
+    void parentWithoutTermsAgreementIsBlockedByTerms() {
         given(userRepository.findByIdAndDeletedAtIsNull(2L))
                 .willReturn(Optional.of(UserFixture.parent(KAKAO_ID, "김보호")));
 
-        assertThat(userService.isSignupCompleted("2")).isTrue();
+        assertThat(userService.accessOf("2")).isEqualTo(AccountAccess.TERMS_NOT_AGREED);
+    }
+
+    @Test
+    void parentWithCurrentTermsAgreementPasses() {
+        given(userRepository.findByIdAndDeletedAtIsNull(2L))
+                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID, "김보호")));
+        given(termsAgreementRepository.findByUserId(any())).willReturn(List.of(
+                TermsAgreement.agree(2L, TermKey.TOS, TermsCatalog.currentVersion(TermKey.TOS)),
+                TermsAgreement.agree(2L, TermKey.PRIVACY, TermsCatalog.currentVersion(TermKey.PRIVACY))));
+
+        assertThat(userService.accessOf("2")).isEqualTo(AccountAccess.OK);
+    }
+
+    /** 기관 담당자에게는 약관이 없다 — 동의 기록을 읽지도 않는다. */
+    @Test
+    void organizationUserPassesWithoutReadingTerms() {
+        given(userRepository.findByIdAndDeletedAtIsNull(4L))
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+
+        assertThat(userService.accessOf("4")).isEqualTo(AccountAccess.OK);
+        verify(termsAgreementRepository, never()).findByUserId(any());
     }
 
     @Test
@@ -400,7 +425,7 @@ class UserServiceTest {
         given(userRepository.findByIdAndDeletedAtIsNull(404L)).willReturn(Optional.empty());
 
         for (String principal : new String[]{"404", "not-a-number", "", "9223372036854775808"}) {
-            assertThatThrownBy(() -> userService.isSignupCompleted(principal))
+            assertThatThrownBy(() -> userService.accessOf(principal))
                     .isInstanceOfSatisfying(UserException.class,
                             e -> assertThat(e.getErrorCode()).isEqualTo(UserErrorCode.SESSION_USER_NOT_FOUND));
         }

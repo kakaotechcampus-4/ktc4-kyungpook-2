@@ -10,6 +10,7 @@ import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
+import com.itda.backend.service.user.AccountAccess;
 import com.itda.backend.service.user.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,7 +61,7 @@ class AuthenticationHttpResponseTest {
     @Test
     void databaseOutageReturns500AndTheSameTokenWorksAfterRecovery() throws Exception {
         String token = jwtProvider.createToken("1");
-        when(userService.isSignupCompleted("1"))
+        when(userService.accessOf("1"))
                 .thenThrow(new DataAccessResourceFailureException("private-jdbc-host-and-sql"));
 
         var failure = get(PROTECTED, token);
@@ -71,7 +72,7 @@ class AuthenticationHttpResponseTest {
         assertThat(failure.headers().allValues("Set-Cookie"))
                 .noneMatch(cookie -> cookie.startsWith(JwtCookie.NAME + "=") || cookie.startsWith("JSESSIONID="));
 
-        doReturn(true).when(userService).isSignupCompleted("1");
+        doReturn(AccountAccess.OK).when(userService).accessOf("1");
         var recovered = get(PROTECTED, token);
         assertThat(recovered.statusCode()).isEqualTo(200);
         assertThat(recovered.body()).contains("controller-reached");
@@ -99,13 +100,13 @@ class AuthenticationHttpResponseTest {
 
     @Test
     void missingMemberIs401AndPendingMemberIs403() throws Exception {
-        when(userService.isSignupCompleted("2"))
+        when(userService.accessOf("2"))
                 .thenThrow(new UserException(UserErrorCode.SESSION_USER_NOT_FOUND));
         var missing = get(PROTECTED, jwtProvider.createToken("2"));
         assertThat(missing.statusCode()).isEqualTo(401);
         assertThat(missing.body()).contains("\"code\":\"SESSION_USER_NOT_FOUND\"");
 
-        when(userService.isSignupCompleted("3")).thenReturn(false);
+        when(userService.accessOf("3")).thenReturn(AccountAccess.SIGNUP_NOT_COMPLETED);
         var pending = get(PROTECTED, jwtProvider.createToken("3"));
         assertThat(pending.statusCode()).isEqualTo(403);
         assertThat(pending.body()).contains("\"code\":\"SIGNUP_NOT_COMPLETED\"");

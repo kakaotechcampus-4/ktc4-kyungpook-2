@@ -114,13 +114,17 @@ public class UserService {
     }
 
     /**
-     * 가입 미완료 차단 필터가 쓴다.
+     * 가입 미완료 차단 필터가 쓴다. 회원을 한 번 읽고, 보호자면 약관 동의 기록을 한 번 더 읽는다.
      *
      * <p>없는 회원과 탈퇴 회원은 SESSION_USER_NOT_FOUND 예외로 차단한다.
      */
     @Transactional(readOnly = true)
-    public boolean isSignupCompleted(String principal) {
-        return getByPrincipal(principal).isSignupCompleted();
+    public AccountAccess accessOf(String principal) {
+        User user = getByPrincipal(principal);
+        if (!user.isSignupCompleted()) {
+            return AccountAccess.SIGNUP_NOT_COMPLETED;
+        }
+        return termsService.isAgreed(user) ? AccountAccess.OK : AccountAccess.TERMS_NOT_AGREED;
     }
 
     @Transactional(readOnly = true)

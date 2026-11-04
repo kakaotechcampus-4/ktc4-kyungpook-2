@@ -44,6 +44,7 @@ import com.itda.backend.dto.response.child.GuardianJournalResponse;
 import com.itda.backend.fixture.LockContention;
 import com.itda.backend.fixture.LockContention.Held;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -53,6 +54,7 @@ import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.ChildGuardianService;
 
@@ -95,6 +97,7 @@ class GuardianJournalConcurrencyIntegrationTest {
     @Autowired private GuardianJournalQueryService guardianJournalQueryService;
     @Autowired private ChildGuardianService childGuardianService;
     @Autowired private UserRepository userRepository;
+    @Autowired private TermsAgreementRepository termsAgreementRepository;
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private ChildRepository childRepository;
     @Autowired private ChildOrganizationRepository childOrganizationRepository;
@@ -112,7 +115,7 @@ class GuardianJournalConcurrencyIntegrationTest {
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
         Organization center = organizationRepository.save(OrganizationFixture.center());
-        mom = userRepository.save(UserFixture.parent("kakao-mom", "엄마"));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
 
         childId = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14))).getId();
         childOrganizationRepository.save(ChildOrganization.of(childId, center.getId(), "C-7"));
@@ -136,6 +139,7 @@ class GuardianJournalConcurrencyIntegrationTest {
             statement.executeUpdate("DELETE FROM child_guardian");
             statement.executeUpdate("DELETE FROM child_organization");
             statement.executeUpdate("DELETE FROM child");
+            statement.executeUpdate("DELETE FROM terms_agreement");
             statement.executeUpdate("DELETE FROM users");
             statement.executeUpdate("DELETE FROM organization");
         }
