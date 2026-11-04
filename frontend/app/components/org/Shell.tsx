@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   ChevronDown,
   ClipboardCheck,
+  ClipboardList,
   ClipboardPlus,
   LayoutDashboard,
   ListChecks,
@@ -77,6 +78,7 @@ function nav(counts: OrgShellCounts): NavGroup[] {
         { href: "/queue/reinput", label: "검증 수정 요청", icon: RotateCcw, badge: counts.reinput },
         { href: "/inbox", label: "메시지", icon: Mail, badge: counts.inbox },
         { href: "/children", label: "아동 목록", icon: Users },
+        { href: "/checklists", label: "준비물·확인사항", icon: ClipboardList },
       ],
     },
   ];

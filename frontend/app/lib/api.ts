@@ -90,7 +90,9 @@ import type {
   Insight,
   Institution,
   InstitutionShares,
-  InstitutionRequestItem,
+  ChecklistItem,
+  SentChecklist,
+  SentChecklistPage,
   IssuedInvitation,
   JournalEntry,
   LiveInvitation,
@@ -167,7 +169,7 @@ const BE_READY = {
   guardianConsent: true,
   /**
    * 보호자: 설정 화면의 동의 끄기 (G-41 revoke). 다시 켤 때는 동의 화면(P-02, guardianConsent)을
-   * 거친다. 알림 화면의 "허락"도 이 함수를 쓰지만 알림 화면은 institutionRequests 로 아직 준비 중이다.
+   * 거친다.
    */
   guardianLinks: true,
   /** 보호자: 초대 코드 수락 (G-04) */
@@ -189,8 +191,11 @@ const BE_READY = {
    * 요청 거절(G-42)은 MVP 에서 뺐다 — 알림 화면은 동의 화면으로 보내는 버튼 하나만 둔다.
    */
   consentRequests: true,
-  /** 보호자: 기관 요청사항 — 준비물 · 확인사항 (G-50, G-51) */
-  institutionRequests: false,
+  /**
+   * 준비물·확인사항 — 기관의 보내기 · 보낸 목록 · 내리기(O-70 ~ O-72)와 보호자의 목록 · 확인(G-50, G-51).
+   * 보호자 쪽은 P-12 · 설정 개수 · 알림 화면 · 헤더 알림 점이 본다.
+   */
+  checklists: true,
   /**
    * 보호자: 기관 코드 조회 · 연결 요청 (G-43, G-44). 바로 연결되지 않고 기관이 수락해야 명부에 오른다.
    * 수락 대기 중 기관은 아이 목록·홈 응답(guardianChildren)의 linkRequests 로 온다.
@@ -1388,20 +1393,111 @@ export async function getGuardianInsight(id: string): Promise<GuardianInsight | 
   }
 }
 
-/** GET /api/v1/children/{childId}/institution-requests */
-export async function getInstitutionRequests(childId: string): Promise<InstitutionRequestItem[]> {
-  if (mockFor("institutionRequests")) return mock.INSTITUTION_REQUESTS[childId] ?? [];
-  return request(`/api/v1/children/${childId}/institution-requests`);
+/**
+ * GET /api/v1/children/{childId}/checklists — 확인 안 한 것 전부(최신순) 뒤에 확인한 것 최근 20개 (G-50).
+ * needsCheckOnly 면 확인 안 한 것만 — 헤더 알림 점 · 설정 개수 · 알림 화면이 화면마다 부른다.
+ * 기관이 내린 요청과 아이가 그 기관 명부에서 빠진 요청은 오지 않는다.
+ */
+export async function getChecklists(
+  childId: string,
+  { needsCheckOnly = false }: { needsCheckOnly?: boolean } = {},
+): Promise<ChecklistItem[]> {
+  if (mockFor("checklists")) {
+    const all = mock.CHECKLISTS[childId] ?? [];
+    const open = all.filter((c) => c.status === "needs_check");
+    return needsCheckOnly ? open : [...open, ...all.filter((c) => c.status === "confirmed").slice(0, 20)];
+  }
+  const query = needsCheckOnly ? "?status=needs_check" : "";
+  return request(`/api/v1/children/${encodeURIComponent(childId)}/checklists${query}`);
 }
 
-/** POST /api/v1/institution-requests/{id}/confirm */
-export async function confirmInstitutionRequest(id: string) {
-  if (mockFor("institutionRequests")) {
-    const req = Object.values(mock.INSTITUTION_REQUESTS)
-      .flat()
-      .find((r) => r.id === id);
-    if (req) req.status = "confirmed";
-    return { ok: true };
+/**
+ * 확인 안 한 준비물·확인사항 수 — 헤더 알림 점 · 설정 개수 · 알림 화면이 덧붙여 보는 값.
+ *
+ * 이 값 하나 때문에 화면 전체가 실패하면 안 된다. 기능이 꺼져 있거나 조회가 실패하면(404 · 5xx · 네트워크) null 을 주고,
+ * 화면은 준비물 표시만 숨긴 채 기관 권한 요청 등 나머지를 그대로 보인다. 다음 로더 실행 때 다시 묻는다.
+ * 401 과 403 TERMS_NOT_AGREED 는 삼키지 않는다 — 다시 로그인 · 약관 단계로 보내는 기존 흐름이 맡는다.
+ * 준비물 화면(P-12)은 이 함수를 쓰지 않고 오류를 그대로 받는다.
+ */
+export async function loadOpenChecklistCount(childId: string): Promise<number | null> {
+  if (!isReady("checklists")) return null;
+  try {
+    return (await getChecklists(childId, { needsCheckOnly: true })).length;
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 401 || err.code === "TERMS_NOT_AGREED")) throw err;
+    return null;
   }
-  return request(`/api/v1/institution-requests/${id}/confirm`, { method: "POST" });
+}
+
+/**
+ * POST /api/v1/children/{childId}/checklists/{checklistId}/confirm — 이 아이 몫으로 한 번 확인한다 (G-51).
+ * 이미 다른 보호자가 확인했으면 그 확인(누가 · 언제)을 돌려준다. 내렸거나 명부에서 빠진 요청은 404 CHECKLIST_NOT_FOUND.
+ */
+export async function confirmChecklist(childId: string, checklistId: string): Promise<ChecklistItem> {
+  if (mockFor("checklists")) {
+    const item = (mock.CHECKLISTS[childId] ?? []).find((c) => c.id === checklistId);
+    if (!item) throw new ApiError(404, "CHECKLIST_NOT_FOUND");
+    if (item.status === "needs_check") {
+      item.status = "confirmed";
+      item.confirmedAt = new Date().toISOString();
+      item.confirmedByName = mock.ME.name;
+    }
+    return item;
+  }
+  return request(
+    `/api/v1/children/${encodeURIComponent(childId)}/checklists/${encodeURIComponent(checklistId)}/confirm`,
+    { method: "POST" },
+  );
+}
+
+/* ── 기관: 준비물·확인사항 ──────────────────────────── */
+
+/**
+ * GET /api/v1/institutions/me/checklists — 내리지 않은 요청 최신순 50개씩 (O-71).
+ * before 는 앞 쪽의 nextBefore. 기준 요청을 내렸어도 이어 볼 수 있다.
+ */
+export async function getSentChecklists(before?: string): Promise<SentChecklistPage> {
+  if (mockFor("checklists")) {
+    const live = mock.SENT_CHECKLISTS;
+    const start = before ? live.findIndex((c) => c.id === before) + 1 : 0;
+    return { checklists: live.slice(start, start + 50), nextBefore: live.length > start + 50 ? live[start + 49].id : null };
+  }
+  const query = before ? `?before=${encodeURIComponent(before)}` : "";
+  return request(`/api/v1/institutions/me/checklists${query}`);
+}
+
+/**
+ * POST /api/v1/institutions/me/checklists — 명부의 아이들에게 한 번에 보낸다 (O-70).
+ * 명부에 없는 아이가 섞이면 400 INVALID_CHECKLIST_TARGET. 보낸 뒤에는 고칠 수 없고 내리기만 한다.
+ */
+export async function sendChecklist(input: { items: string[]; childIds: string[] }): Promise<SentChecklist> {
+  if (mockFor("checklists")) {
+    const roster = await getChildren();
+    const sent: SentChecklist = {
+      id: `cl_${Date.now()}`,
+      items: input.items.map((i) => i.trim()),
+      sentAt: new Date().toISOString(),
+      total: input.childIds.length,
+      confirmed: 0,
+      targets: input.childIds.map((id) => ({
+        child: { id, name: roster.find((c) => c.id === id)?.name ?? null },
+        onRoster: true,
+        confirmedAt: null,
+        confirmedByName: null,
+      })),
+    };
+    mock.SENT_CHECKLISTS.unshift(sent);
+    return sent;
+  }
+  return request("/api/v1/institutions/me/checklists", { method: "POST", body: JSON.stringify(input) });
+}
+
+/** DELETE /api/v1/institutions/me/checklists/{id} — 통째로 내린다. 이미 내렸어도 204 (O-72) */
+export async function cancelChecklist(id: string): Promise<void> {
+  if (mockFor("checklists")) {
+    const at = mock.SENT_CHECKLISTS.findIndex((c) => c.id === id);
+    if (at >= 0) mock.SENT_CHECKLISTS.splice(at, 1);
+    return;
+  }
+  return request(`/api/v1/institutions/me/checklists/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

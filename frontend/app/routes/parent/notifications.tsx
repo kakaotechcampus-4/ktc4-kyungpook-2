@@ -1,9 +1,9 @@
-import { Hand } from "lucide-react";
-import { useLoaderData, useNavigate } from "react-router";
+import { ClipboardList, Hand } from "lucide-react";
+import { Link, useLoaderData, useNavigate } from "react-router";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
-import { getParentChildren, getPendingInstitutionRequests, isReady } from "@/lib/api";
+import { getParentChildren, getPendingInstitutionRequests, isReady, loadOpenChecklistCount } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader() {
@@ -11,8 +11,12 @@ export async function clientLoader() {
   if (!isReady("consentRequests")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  const pending = await getPendingInstitutionRequests(childId);
-  return { childId, pending };
+  const [pending, openChecklists] = await Promise.all([
+    getPendingInstitutionRequests(childId),
+    loadOpenChecklistCount(childId),
+  ]);
+  // null 은 "못 받았다" 다. 0건으로 단정하지 않는다
+  return { childId, pending, openChecklists };
 }
 
 /** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
@@ -22,12 +26,18 @@ export default function NotificationsPageRoute() {
 }
 
 /**
+ * 대기 중 기관 권한 요청(G-40)과 확인할 준비물·확인사항(G-50) 개수. 부제와 빈 화면은 둘을 합해 센다 — 권한 요청 0건 ·
+ * 준비물 1건이면 "1건" 이고 빈 화면이 아니다. 준비물은 여기서 확인하지 않고 P-12 로 보낸다. 준비물 수를 못 받으면
+ * 권한 요청만 세고, "확인할 알림이 없습니다" 대신 준비물을 불러오지 못했다고 알린다.
+ *
  * 대기 중 기관 권한 요청(G-40). 권한은 여기서 바로 주지 않고 동의 화면(P-02)으로 보낸다 — 무엇이
  * 공유되는지 서버 미리보기로 보고 동의해야 한다(Consent First). 동의를 마치면 이 화면으로 돌아온다.
  * 요청 거절(G-42)은 MVP 에서 뺐다. 동의하지 않을 기관이면 알림이 남지만 설정에서 언제든 켤 수 있다.
  */
 function NotificationsPage() {
-  const { childId, pending } = useLoaderData<typeof clientLoader>()!;
+  const { childId, pending, openChecklists } = useLoaderData<typeof clientLoader>()!;
+  const checklistsKnown = openChecklists !== null;
+  const total = pending.length + (openChecklists ?? 0);
   const navigate = useNavigate();
 
   function review(institutionId: string) {
@@ -37,11 +47,34 @@ function NotificationsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <ParentPageHeader title="알림" subtitle={`확인이 필요한 요청 ${pending.length}건`} back />
+      <ParentPageHeader
+        title="알림"
+        subtitle={checklistsKnown ? `확인이 필요한 요청 ${total}건` : `기관 권한 요청 ${pending.length}건`}
+        back
+      />
 
-      {pending.length === 0 ? (
+      {!checklistsKnown ? (
+        <p className="rounded-2xl bg-surface2 px-4 py-3 text-[14px] leading-6 text-ink2">
+          준비물·확인사항을 지금 불러오지 못했어요. 잠시 후 다시 열어 주세요.
+        </p>
+      ) : total === 0 ? (
         <p className="py-10 text-center text-[15px] text-muted">확인할 알림이 없습니다.</p>
-      ) : (
+      ) : null}
+
+      {openChecklists !== null && openChecklists > 0 ? (
+        <Link
+          to="/parent/checklists"
+          className="tap flex items-center gap-2 rounded-2xl border border-line px-4 py-3.5 text-[15px] font-semibold"
+        >
+          <ClipboardList aria-hidden size={20} strokeWidth={1.75} className="shrink-0 text-human" />
+          <span className="flex-1">확인할 준비물·확인사항 {openChecklists}건</span>
+          <span aria-hidden className="text-muted">
+            ›
+          </span>
+        </Link>
+      ) : null}
+
+      {pending.length === 0 ? null : (
         pending.map(({ institution }) => (
           <div key={institution.id} className="flex flex-col gap-4">
             <div className="flex items-start gap-2 rounded-2xl border-l-4 border-human bg-humansoft px-4 py-3 text-human">

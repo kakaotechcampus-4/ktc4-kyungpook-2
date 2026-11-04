@@ -25,7 +25,7 @@ const TABS = [
       p.startsWith("/parent/settings") ||
       p.startsWith("/parent/consent/manage") ||
       p.startsWith("/parent/notifications") ||
-      p.startsWith("/parent/institution-requests") ||
+      p.startsWith("/parent/checklists") ||
       p.startsWith("/parent/care-info"),
   },
 ];

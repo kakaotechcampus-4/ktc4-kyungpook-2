@@ -26,7 +26,7 @@
 | 🟡 **초안** | 구조는 유지, **컬럼은 바뀔 수 있음** | 프론트 화면에서 역산. AI 계약이 아직 없음 |
 | ⛔ **추정** | **근거 없음.** 예시일 뿐 | 누구도 확정한 적 없는 값 |
 
-### 0.2 테이블 21개 현황
+### 0.2 테이블 23개 현황
 
 | # | 테이블 | 설계 | 구현 (엔티티) | 삭제 방식 |
 | --- | --- | --- | --- | --- |
@@ -51,12 +51,14 @@
 | 19 | `child_organization_request` | ✅ 확정 | ✅ `ChildOrganizationRequest` | `status` 로 대체 |
 | 20 | `child_care_info` | ✅ 확정 | ✅ `ChildCareInfo` | 삭제 없음 (덮어쓰기) |
 | 21 | `terms_agreement` | ✅ 확정 | ✅ `TermsAgreement` | 삭제 없음 (쌓기만) |
+| 22 | `checklist` | ✅ 확정 | ✅ `Checklist` | `canceled_at` 으로 대체 (내리기) |
+| 23 | `checklist_target` | ✅ 확정 | ✅ `ChecklistTarget` | 삭제 없음 (확인만 찍는다) |
 
-**21개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
+**23개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
 `insight_result`·`sharing_history` 는 Insight 에이전트 계약(`AI/insight/schemas.py`)과 Gate 2 공유 정책이
 정해져서 확정으로 올렸다. `human_review` 는 Gate 1 결정값이 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 정해지며 확정됐다.
 
-**21개 모두 엔티티가 있다** (#337 에서 `terms_agreement` 가 마지막으로 들어왔다).
+**23개 모두 엔티티가 있다** (#340 에서 `checklist`·`checklist_target` 이 마지막으로 들어왔다).
 `human_review` 는 Gate 1 결정 API(#178)와 Gate 2 결정 API(#206)가 함께 쓴다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
@@ -443,6 +445,8 @@ journal_entry
 | `matching_result` `validation_result` `summary_result` `human_review` `child_context` `insight_result` `sharing_history` `insight_run` | 실행·검토 이력이라 애초에 삭제 개념이 없다. 잘못된 결과는 지우는 게 아니라 다시 실행해서 새 행을 쌓는다 |
 | `summary_run_request` | 처리한 요청도 지우지 않는다. `handled_until`(어디까지 처리했는지)이 같은 일을 한다 (§8.3) |
 | `terms_agreement` | 누가 언제 어느 판에 동의했는지가 이 테이블의 전부라 지우지도 고치지도 않는다. 필수 약관 철회는 회원 탈퇴다 (§4.3) |
+| `checklist` | `canceled_at`(내리기)이 같은 일을 한다. 보낸 뒤 고치지 않는다 (§5.8) |
+| `checklist_target` | 확인 기록이라 지우지 않는다. 요청을 내리거나 보호자 연결이 끊겨도 남는다 (§5.9) |
 
 #### 조회 규칙 — 이게 핵심이다
 
@@ -543,6 +547,7 @@ UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변�
 | 인사이트 단건 열람 (G-36 · O-51) | `child` **FOR SHARE** → `sharing_history`(열람 시각 UPDATE 의 행 잠금). 잠글 아이는 `child_id` 값만 골라 알고, 권한 행은 잠근 뒤에 처음 읽는다. 철회·Gate 2 승인과는 줄을 서고 열람끼리는 `child` 에서 막지 않는다 — 같은 권한 행의 UPDATE 끼리만 기다린다 (§9.4) |
 | 돌봄 정보 저장 (G-13) | `child`. 잠근 뒤 보호자 연결·아이 삭제를 보고 덮어쓴다. 첫 저장이 겹쳐 행이 둘 생기지 않고, 연결 해제가 먼저 반영되면 403 이며 돌봄 정보는 생기지도 바뀌지도 않는다 |
 | 초대 코드 수락 (G-04) | `child` → `child_organization` → `invitation` → `child_guardian`. 연결한 뒤 그 아이의 **승인된 인사이트 권한**(`sharing_history`)을 이 보호자에게 열거나 되살린다(§9.4). Gate 2 승인도 `child` 를 잠근 뒤 보호자 목록을 읽으므로 둘이 겹쳐도 어느 쪽이 먼저든 한 번만, 빠짐없이 열린다 |
+| 준비물·확인사항 확인 (G-51) | `child` **FOR SHARE** → `checklist` **FOR SHARE** → `checklist_target`(확인 UPDATE 의 행 잠금). 아이 · 요청 행은 잠그면서 처음 읽는다. 아이 행을 잡은 뒤 삭제 · 보호자 연결을 본다 — 연결 해제(G-05 · O-19, `child` FOR UPDATE)가 먼저면 403 이고 확인은 남지 않으며, 확인이 먼저면 해제는 확인이 커밋된 뒤 진행된다. 내리기(O-72)는 `checklist` 하나를 조건부 UPDATE 로 바꾸므로 요청 행의 공유 잠금과 줄을 선다 — 내리기가 먼저면 확인은 404, 확인이 먼저면 내리기는 확인이 커밋된 뒤 내린다 (§5.9) |
 | 보호자 일지 상세 (G-21) | `child` **FOR SHARE**. 잠근 뒤 보호자 연결·아이 삭제를 본다. 승인본(`child_context`)은 고치지 않는 테이블이라 잠그기 전에 읽어 아이 id 를 안다. 연결 해제와 줄을 서고(해제가 먼저면 404, 열람이 먼저면 200 뒤 해제) 열람끼리는 막지 않는다. 일지 목록(G-20)은 잠그지 않는다 |
 
 **잠그기 전에 같은 행을 엔티티로 읽지 않는다.** JPA 는 이미 읽어 둔 엔티티가 있으면 잠금 조회(`findByIdForUpdate`)가
@@ -1107,6 +1112,57 @@ UNIQUE (child_id)
 
 **저장은 `child` 를 먼저 잠근다** (§3.3) — 첫 저장이 겹쳐도 둘 다 "행 없음" 을 보고 INSERT 해 UNIQUE 위반이 나지 않게 하고,
 연결 해제와 줄을 세운다.
+
+### 5.8 `checklist` ✅ — ✅ 구현 (`Checklist`, #340)
+
+> **근거** — 보호자 설정의 "준비물·확인사항" 화면(P-12)과 기관 화면(I-15). 기관이 명부의 아이들에게 "실내화를 새로 준비해주세요"
+> 같은 준비물 · 확인사항을 보내고, 보호자가 확인했는지 본다
+
+기관이 한 번 보낸 요청 한 줄. 받은 아이마다의 확인은 §5.9 `checklist_target` 에 있다.
+
+| Column | Type | NULL | 설명 |
+| --- | --- | --- | --- |
+| `id` | BIGINT | N | PK |
+| `organization_id` | BIGINT | N | 보낸 기관 |
+| `items` | TEXT | N | 항목 줄의 JSON 문자열 배열. 1~10줄, 줄마다 1~100자(앞뒤 공백 제거)는 요청 검증이 지킨다 |
+| `created_by` | BIGINT | N | 보낸 기관 담당자 (`users.id`) |
+| `created_at` | DATETIME | N | 보낸 시각 |
+| `canceled_at` | DATETIME | Y | 내린 시각. NULL 이면 살아 있다 |
+
+인덱스 `idx_checklist_organization_id_created_at (organization_id, created_at)` — 기관 목록을 최신순으로 50개씩 이어 본다.
+
+**보낸 뒤 고치지 않는다.** 보호자가 확인한 내용이 나중에 바뀌면 확인의 뜻이 흐려진다. 잘못 보냈으면 통째로 내리고 다시 보낸다.
+내리기는 조건부 UPDATE(`canceled_at IS NULL` 일 때만)다 — 동시에 두 번 내려도 처음 시각이 남는다.
+
+**공유 동의와 상관없다.** 동의(§5.5)는 아이 정보가 기관으로 가는 허락이고, 이 요청은 방향이 반대(기관 → 보호자)다.
+기관이 알게 되는 것은 보호자가 확인했다는 사실뿐이다.
+
+### 5.9 `checklist_target` ✅ — ✅ 구현 (`ChecklistTarget`, #340)
+
+요청을 받은 아이 한 명. 보낸 순간 **명부에 있던** 아이마다 한 줄이 생긴다 — "명부 전체" 로 보냈어도 나중에 들어온 아이는 받지 않는다.
+
+| Column | Type | NULL | 설명 |
+| --- | --- | --- | --- |
+| `id` | BIGINT | N | PK |
+| `checklist_id` | BIGINT | N | 요청 (`checklist.id`) |
+| `child_id` | BIGINT | N | 받은 아이 |
+| `confirmed_at` | DATETIME | Y | 확인한 시각. NULL 이면 아직 아무도 확인하지 않았다 |
+| `confirmed_by` | BIGINT | Y | 확인한 보호자 (`users.id`). 연결이 끊겨도 지우지 않는다 |
+| `created_at` | DATETIME | N | |
+
+**UNIQUE** — `uk_checklist_target_checklist_child (checklist_id, child_id)`. 인덱스 `idx_checklist_target_child_id (child_id)` — 보호자 목록.
+
+**"명부에 있다"** 는 아이가 삭제되지 않았고(`child.deleted_at IS NULL`) 보낸 기관의 `child_organization` 이 살아 있다는 뜻이다.
+보내기 검증 · 기관 목록의 집계 · 보호자에게 보이는 조건이 모두 이 기준 하나를 쓴다.
+
+- **보호자에게 보이는 줄** — 이 아이와 연결된 보호자(아이가 삭제되지 않음)에게, 요청이 살아 있고 보낸 기관 명부에 아이가 **지금** 있는 줄만.
+  보낸 뒤 연결된 보호자도 본다(요청은 보호자가 아니라 아이에게 갔다). 연결이 끊긴 보호자는 더 보지 못한다
+- **확인은 아이 몫으로 한 번** — 보호자 중 한 명이 확인하면 끝이고 되돌리지 않는다. 조건부 UPDATE(`confirmed_at IS NULL` 일 때만)라
+  엄마 · 아빠가 동시에 눌러도 먼저 한 사람만 남고, 뒤의 사람도 그 확인을 받는다
+- **확인과 내리기 · 연결 해제가 겹치면** 확인은 `child` → `checklist` 를 FOR SHARE 로 잡은 채 연결 · 내렸는지 보고 확인을 쓴다
+  (§3.3 잠금 순서). 해제가 먼저면 확인은 403, 내리기가 먼저면 404 이고 확인은 남지 않는다. 확인이 먼저면 확인이 남고 해제 · 내리기는
+  그 뒤에 진행된다
+- **기관 목록의 숫자** — `total` · `confirmed` 는 지금 명부에 있는 아이만 센다. 명부에서 빠진 아이는 "명부에서 빠짐" 으로 남는다
 
 ---
 
@@ -2729,6 +2785,8 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 **보호자 약관 동의 (#337)** — `terms_agreement` 는 새 테이블이라 `ddl-auto: update` 가 UNIQUE · CHECK 까지 만든다. 배포 전 조치는 없다.
 나중에 약관 키(`term_key`)를 늘리면 `terms_agreement_term_key_check` 를 DROP 해야 저장된다.
 
+**준비물·확인사항 (#340)** — `checklist`·`checklist_target` 은 새 테이블이라 `ddl-auto: update` 가 UNIQUE · 인덱스까지 만든다. 배포 전 조치는 없다.
+
 새 컬럼 `failure_stage`·`failure_reason` 은 NULL 허용이라 `update` 가 기존 행이 있어도 더한다. **`update` 가 컬럼을
 더할 때도 enum 값으로 CHECK 제약(`journal_entry_failure_stage_check`·`journal_entry_failure_reason_check`)을 함께 건다**
 (10/16 PostgreSQL 16 에서 확인). 지금은 문제없지만, 나중에 원인 코드를 더하면 그 CHECK 를 DROP 해야 저장된다.
@@ -2790,3 +2848,4 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-11-02 | 동의 철회 설명 정정 (§5.5, §10.2 #4) — "철회는 앞으로의 전달만 막는다. 이미 보낸 정보는 회수되지 않는다"는 코드와 반대였다. 철회는 기관 인사이트 열람권을 거두고(§9.4, #213 · #257) 기관이 쓴 기록 · 보호자 열람은 남긴다. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #310 |
 | 2026-11-03 | 동의를 철회한 아이는 요약·Gate 1 에서 막는다 — 상태를 바꾸지 않고 볼 때마다 그 기관 동의(§5.5 GRANTED)를 본다. 묶음 카드(O-34)·Gate 1 목록(O-30)에서 빼고, [요약](O-32)·Gate 1 결정(O-31)·보류 해제(O-33)는 404, 요약 워커는 AI 호출 전과 결과를 남기기 전에 보고 요약하지 않은 채 요청을 닫는다(일지는 요약 전 상태로). Gate 1 결정·보류 해제의 잠금 순서 추가(§3.3 잠금 표). 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #332 |
 | 2026-11-04 | 새 테이블 `terms_agreement`(§4.3) — 보호자 서비스 약관 동의 기록. 회원 · 약관(`TOS` · `PRIVACY`) · 판 · 동의 시각만 쌓고 고치거나 지우지 않는다. `(user_id, term_key, version)` UNIQUE. 판과 다시 받기는 코드 상수가 정한다(개인정보 수집만 판이 바뀌면 다시 받는다). 동의하지 않은 보호자는 보호 API 가 `403 TERMS_NOT_AGREED` (§4.1). 새 테이블이라 배포 전 조치 없음 (§11.4) | #337 |
+| 2026-11-04 | 새 테이블 `checklist`(§5.8) · `checklist_target`(§5.9) — 기관이 명부의 아이들에게 보내는 준비물 · 확인사항과 아이별 확인. 보낸 뒤 고치지 않고 내리기(`canceled_at`, 조건부 UPDATE)만 한다. 받는 아이는 보낸 순간의 명부, 확인은 아이 몫으로 한 번(조건부 UPDATE). 확인은 `child` → `checklist` 를 FOR SHARE 로 잡아 연결 해제 · 내리기와 줄을 선다(§3.3 잠금 순서 표). 공유 동의와 상관없다. 새 테이블이라 배포 전 조치 없음 (§11.4) | #344 |
