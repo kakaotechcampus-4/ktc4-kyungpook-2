@@ -263,11 +263,14 @@ interface GuardianInsight {
   readAt: string | null;      // 처음 열어 본 시각 (ISO). null 이면 "새 글"
 }
 
-interface InstitutionRequestItem {   // 설정 › 기관 요청사항
+interface ChecklistItem {   // P-12 준비물·확인사항 (G-50 · G-51)
   id: string;
   institution: Institution;
-  status: "confirmed" | "needs_check";
+  status: "confirmed" | "needs_check";  // 보호자 중 한 명이 확인하면 모두에게 confirmed
   items: string[];            // 준비물 · 확인사항
+  sentAt: string;             // 보낸 시각 (ISO)
+  confirmedAt: string | null;
+  confirmedByName: string | null;  // 확인한 보호자 닉네임. 없으면 "다른 보호자"
 }
 
 interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
@@ -337,13 +340,14 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `lookupInstitutionByCode` | `(code: string) => Promise<Institution \| null>` | P-13 |
 | `addInstitutionByCode` | `(childId: string, code: string) => Promise<{ institution: Institution; status: "pending"; requestedAt: string }>` — 연결 **요청**. 실패는 `ApiError` | P-13 |
 | `updateChildCare` | `(childId: string, care: ChildCareInfo) => Promise<ChildCareInfo>` — G-13. 통째로 덮어쓰고 다듬은 값을 돌려준다. 400 · 403 은 `ApiError` 로 | P-06 |
-| `getInstitutionRequests` | `(childId: string) => Promise<InstitutionRequestItem[]>` | P-04, P-12 |
+| `getChecklists` | `(childId: string, { needsCheckOnly? }) => Promise<ChecklistItem[]>` | P-04, P-11, P-12, 헤더 알림 점 |
+| `confirmChecklist` | `(childId: string, checklistId: string) => Promise<ChecklistItem>` | P-12 |
 | `confirmInstitutionRequest` | `(id: string) => Promise<{ ok: true }>` | P-12 |
 
 ### 3.3 아이별 조회 규칙 (중요)
 
 학부모 화면의 모든 데이터 조회는 **반드시 `childId`를 인자로 받습니다.** 리포트,
-기관 요청사항, 타임라인, 알림 배지 어느 것도 "현재 선택된 아이"를 서버가 추측해서는
+준비물·확인사항, 타임라인, 알림 배지 어느 것도 "현재 선택된 아이"를 서버가 추측해서는
 안 됩니다. 다자녀 보호자에게 다른 아이의 데이터가 섞여 보이는 사고로 직결됩니다.
 
 `getPendingInstitutionRequests`는 알림 배지의 **단일 기준점**입니다. 홈 · 타임라인 ·
