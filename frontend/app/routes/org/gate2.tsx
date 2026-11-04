@@ -148,7 +148,7 @@ function Gate2Item({
         <InstitutionChip institution={insight.primarySource} withName />
       </p>
 
-      <p className="mb-2 text-[13px] font-semibold tracking-wider text-muted uppercase">
+      <p className="mb-2 text-[13px] font-semibold text-muted">
         근거 기록 {insight.evidence.length}건
       </p>
       {/*
@@ -329,7 +329,7 @@ function Gate2Page() {
       />
       {visible.length === 0 ? (
         <EmptyState
-          icon="✓"
+          icon="done"
           title="검토할 분석 결과가 없습니다"
           description="우리 기관 기록이 근거가 된 관찰·분석 결과가 생기면 여기에 표시됩니다."
         />

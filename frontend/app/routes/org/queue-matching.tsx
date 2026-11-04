@@ -165,7 +165,7 @@ export default function MatchingQueuePage() {
 
       {!item ? (
         <EmptyState
-          icon="✓"
+          icon="done"
           title="매칭을 확인할 기록이 없습니다"
           description="AI가 확신하지 못한 기록이 생기면 여기로 옵니다."
         />

@@ -113,7 +113,7 @@ function TimelinePage() {
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState icon="✉" title="아직 새로운 소식이 없습니다" description="기관에서 일지를 올리면 바로 알려드립니다." />
+        <EmptyState icon="mail" title="아직 새로운 소식이 없습니다" description="기관에서 일지를 올리면 바로 알려드립니다." />
       ) : (
         Object.entries(groups).map(([label, entries]) => (
           <section key={label}>

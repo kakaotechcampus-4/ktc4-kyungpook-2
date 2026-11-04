@@ -6,6 +6,8 @@
  */
 import { useEffect, useId } from "react";
 import { Link } from "react-router";
+import type { LucideIcon } from "lucide-react";
+import { CheckCircle2, CircleDashed, Mail } from "lucide-react";
 import type {
   ConsentState,
   Institution,
@@ -502,20 +504,26 @@ export function Card({
   );
 }
 
+/** 빈 화면에 세울 그림. 이름으로 고른다 — 글자를 그림 자리에 넣지 않는다 */
+const EMPTY_ICON = {
+  done: CheckCircle2,
+  none: CircleDashed,
+  mail: Mail,
+} satisfies Record<string, LucideIcon>;
+
 export function EmptyState({
-  icon = "✉",
+  icon = "mail",
   title,
   description,
 }: {
-  icon?: string;
+  icon?: keyof typeof EMPTY_ICON;
   title: string;
   description?: string;
 }) {
+  const Icon = EMPTY_ICON[icon];
   return (
     <div className="flex flex-col items-center gap-2 rounded border border-dashed border-line2 bg-surface px-6 py-14 text-center">
-      <span aria-hidden className="text-2xl text-muted">
-        {icon}
-      </span>
+      <Icon aria-hidden size={30} strokeWidth={1.5} className="text-line2" />
       <p className="text-[16px] font-semibold text-ink2">{title}</p>
       {description ? (
         <p className="max-w-md text-[14px] leading-6 text-muted">{description}</p>

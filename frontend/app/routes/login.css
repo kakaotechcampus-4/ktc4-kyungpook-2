@@ -32,7 +32,8 @@
   --card: #ffffff;
   --ink: #27241f;
   --muted: #5a554c;
-  --faint: #8a8277;
+  /* 약관 줄·구분선 글자. 12~13px 본문이라 4.5:1 이 필요하다 (paper 5.20:1) */
+  --faint: #706a5f;
   --line: #efe7da;
   --line2: #d8ccb8;
   --green: #2baa7e;

@@ -393,7 +393,7 @@ function GroupRow({
               <li key={chip.text} className={`rounded-full px-2.5 py-0.5 text-[13px] ${chip.cls}`}>
                 {chip.href ? (
                   <Link to={chip.href} className="font-semibold underline">
-                    {chip.text} →
+                    {chip.text}
                   </Link>
                 ) : (
                   chip.text

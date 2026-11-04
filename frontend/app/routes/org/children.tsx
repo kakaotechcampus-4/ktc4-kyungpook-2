@@ -110,7 +110,7 @@ export default function ChildrenPage() {
                       to={`/children/${c.id}#guardians`}
                       className="text-[14px] font-bold text-review hover:underline"
                     >
-                      초대 코드 보기 · 발급 ›
+                      초대 코드 보기 · 발급
                     </Link>
                   </div>
                 ) : null}

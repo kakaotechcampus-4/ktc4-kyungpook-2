@@ -43,7 +43,7 @@ function InsightsPage() {
 
       {insights.length === 0 ? (
         <EmptyState
-          icon="◦"
+          icon="none"
           title="아직 도출된 관찰·분석 결과가 없습니다"
           description="승인된 요약이 일정 기간 쌓이면 반복 패턴과 효과적이었던 지원 방법을 찾아냅니다."
         />

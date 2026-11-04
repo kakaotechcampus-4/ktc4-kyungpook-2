@@ -20,7 +20,9 @@
   --color-surface2: #f7f1e6;
   --color-ink: #27241f;
   --color-ink2: #5a554c;
-  --color-muted: #8a8277;
+  /* 보조 글자. 더 밝히면 크림 바탕에서 WCAG AA(4.5:1)에 못 미친다.
+     paper 5.20:1 · surface 5.36:1 · surface2 4.77:1 */
+  --color-muted: #706a5f;
   --color-line: #efe7da;
   --color-line2: #d8ccb8;
 

@@ -63,7 +63,7 @@ function UploadProgressPage() {
       <>
         <PageHeader title={TITLE} />
         <EmptyState
-          icon="◦"
+          icon="none"
           title="이 파일을 찾지 못했습니다"
           description="처리가 모두 끝나 목록에서 빠졌을 수 있습니다. 기록 등록 화면에서 확인해 주세요."
         />
