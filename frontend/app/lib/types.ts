@@ -481,6 +481,11 @@ export interface Insight {
    * 없다는 보장이 없고, Gate 1 에서 교사가 고친 문장이 검증 없이 근거로 섞일 수 있다.
    */
   needsReview: boolean;
+  /**
+   * 근거(대처 근거 포함)에 교사가 Gate 1 에서 고치거나 새로 쓴 문장이 섞였는지 (#323, CRITERIA §5).
+   * 서버가 근거 문장을 확인하지 못해도 true 다. 없으면(BE 배포 전) 경고를 띄우지 않는다.
+   */
+  teacherWritten?: boolean;
   /** 승인 주체. 근거를 낸 기관 중 기관 종류 우선순위(학교 > 센터 > 활동지원사)로 정한다 */
   primarySource: Institution;
   evidence: EvidenceRef[];

@@ -121,6 +121,16 @@ function Gate2Item({
         <span className="text-[14px] text-muted">분석 결과 · {insight.period}</span>
       </div>
 
+      {/* CRITERIA §5 필수 경고. 기관 경계를 넘는 마지막 관문이라 승인자가 알아야 한다 */}
+      {insight.teacherWritten === true ? (
+        <p
+          role="alert"
+          className="mb-3 rounded bg-blocksoft px-3 py-2 text-[14px] font-semibold text-block"
+        >
+          ⚠️ 검증을 거치지 않은 교사 작성 문장이 포함되어 있습니다
+        </p>
+      ) : null}
+
       {/* BE 는 지금 항상 true 다 — 본문에 다른 아이 이름이 없다는 보장이 없다 */}
       {insight.needsReview ? (
         <p role="note" className="mb-3 rounded bg-reviewsoft px-3 py-2 text-[14px] text-review">
