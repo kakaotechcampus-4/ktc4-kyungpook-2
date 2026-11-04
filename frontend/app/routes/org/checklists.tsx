@@ -1,5 +1,5 @@
 import { ChevronDown, Plus, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
 import { Busy, Card, ConfirmDialog, EmptyState, PageHeader, PanelHead } from "@/components/ui";
 import {
@@ -10,7 +10,7 @@ import {
   sendChecklist,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/datetime";
-import type { ChildListItem, SentChecklist } from "@/lib/types";
+import type { ChildListItem, SentChecklist, SentChecklistPage } from "@/lib/types";
 
 const MAX_LINES = 10;
 const MAX_CHARS = 100;
@@ -29,29 +29,42 @@ export async function clientLoader() {
 export default function ChecklistsPage() {
   const { page, roster } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
-  // 이어 본 쪽. 첫 쪽은 loader 가 다시 읽을 때마다 새로 받는다
-  const [older, setOlder] = useState<SentChecklist[]>([]);
-  const [nextBefore, setNextBefore] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  /*
+   * 이어 본 쪽은 **그 쪽을 이어 붙인 첫 쪽**에 묶는다. 보내기 · 내리기로 loader 가 첫 쪽을 새로 받으면 그 사이 순서가 밀려,
+   * 옛 이어 보기를 붙이면 요청이 빠지거나 겹친다. 그래서 첫 쪽이 바뀌면 이어 본 쪽은 버리고 새 nextBefore 부터 다시 본다.
+   * 갱신 전에 보낸 더 보기 요청의 응답 · 오류도 같은 이유로 버린다(for 가 지금 첫 쪽이 아니면 쓰지 않는다).
+   */
+  const [more, setMore] = useState<{ for: SentChecklistPage; items: SentChecklist[]; next: string | null } | null>(
+    null,
+  );
+  const [loadingFor, setLoadingFor] = useState<SentChecklistPage | null>(null);
   const [cancelling, setCancelling] = useState<SentChecklist | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const latestPage = useRef(page);
+  latestPage.current = page;
 
-  const cursor = older.length > 0 ? nextBefore : page.nextBefore;
-  const sent = [...page.checklists, ...older.filter((o) => !page.checklists.some((c) => c.id === o.id))];
+  const extra = more?.for === page ? more : null;
+  const cursor = extra ? extra.next : page.nextBefore;
+  const sent = [...page.checklists, ...(extra?.items ?? [])];
+  const loadingMore = loadingFor === page;
 
   async function loadMore() {
     if (!cursor || loadingMore) return;
-    setLoadingMore(true);
+    const base = page;
+    setLoadingFor(base);
     setListError(null);
     try {
-      const more = await getSentChecklists(cursor);
-      setOlder((prev) => [...prev, ...more.checklists]);
-      setNextBefore(more.nextBefore);
+      const next = await getSentChecklists(cursor);
+      setMore((prev) => ({
+        for: base,
+        items: [...(prev?.for === base ? prev.items : []), ...next.checklists],
+        next: next.nextBefore,
+      }));
     } catch {
-      setListError("이전 요청을 불러오지 못했어요. 다시 시도해 주세요.");
+      if (latestPage.current === base) setListError("이전 요청을 불러오지 못했어요. 다시 시도해 주세요.");
     } finally {
-      setLoadingMore(false);
+      setLoadingFor((current) => (current === base ? null : current));
     }
   }
 
@@ -61,7 +74,6 @@ export default function ChecklistsPage() {
     setListError(null);
     try {
       await cancelChecklist(cancelling.id);
-      setOlder((prev) => prev.filter((c) => c.id !== cancelling.id));
       setCancelling(null);
       await revalidator.revalidate();
     } catch {
