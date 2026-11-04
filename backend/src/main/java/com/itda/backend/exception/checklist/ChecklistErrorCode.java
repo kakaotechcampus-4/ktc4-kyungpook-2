@@ -19,7 +19,10 @@ public enum ChecklistErrorCode implements ErrorCode {
     INVALID_CHECKLIST_TARGET(HttpStatus.BAD_REQUEST, "INVALID_CHECKLIST_TARGET", "명부에 없는 아이가 있습니다."),
 
     /** 이어 보기 기준(before)이 우리 기관 요청이 아니다. 응답 코드는 공통 INVALID_REQUEST 와 같다. */
-    INVALID_CHECKLIST_CURSOR(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "잘못된 요청입니다.");
+    INVALID_CHECKLIST_CURSOR(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "잘못된 요청입니다."),
+
+    /** 보호자 목록의 status 가 needs_check 가 아니다. 응답 코드는 공통 INVALID_REQUEST 와 같다. */
+    INVALID_CHECKLIST_STATUS(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "잘못된 요청입니다.");
 
     private final HttpStatus status;
     private final String code;

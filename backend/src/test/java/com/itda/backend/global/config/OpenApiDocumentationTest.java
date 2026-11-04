@@ -83,6 +83,11 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists/{checklistId}'].delete.responses.404").exists())
 				.andExpect(jsonPath("$.components.schemas.SendChecklistRequest.properties.items").exists())
 				.andExpect(jsonPath("$.components.schemas.SendChecklistRequest.properties.childIds").exists())
+				// 보호자 준비물·확인사항 — 목록 · 확인
+				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists'].get.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists/{checklistId}/confirm'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists/{checklistId}/confirm'].post.responses.404").exists())
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists())

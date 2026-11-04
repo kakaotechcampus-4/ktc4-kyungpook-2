@@ -120,8 +120,12 @@ public class ChecklistService {
         Long organizationId = userService.getOrganizationIdOf(userId);
         int canceled = checklistRepository.cancelIfActive(checklistId, organizationId, LocalDateTime.now(clock));
         if (canceled == 0 && !checklistRepository.existsByIdAndOrganizationId(checklistId, organizationId)) {
-            throw new ChecklistException(ChecklistErrorCode.CHECKLIST_NOT_FOUND);
+            throw notFound();
         }
+    }
+
+    static ChecklistException notFound() {
+        return new ChecklistException(ChecklistErrorCode.CHECKLIST_NOT_FOUND);
     }
 
     /** 삭제된 아이도 담는다 — 보낸 목록에서 "명부에서 빠짐" 으로 이름을 보여야 한다. */
