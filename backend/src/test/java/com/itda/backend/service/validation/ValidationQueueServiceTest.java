@@ -108,7 +108,7 @@ class ValidationQueueServiceTest {
         assertThat(queue).hasSize(1);
         assertThat(queue.get(0).childName()).isEqualTo("김하늘");
         assertThat(queue.get(0).violationReason())
-                .isEqualTo("전화번호·주민번호 같은 개인정보가 그대로 적혀 있습니다");
+                .isEqualTo("전화번호·주민번호 같은 개인정보가 그대로 적혀 있어요");
         // 화면이 코드로 분기할 수 있게 원본도 같이 내려준다.
         assertThat(queue.get(0).violationCode()).containsExactly("개인정보표현");
     }
@@ -122,7 +122,7 @@ class ValidationQueueServiceTest {
         List<ValidationQueueItemResponse> queue = validationQueueService.getBlockedQueue(OUR_USER_ID);
 
         assertThat(queue.get(0).violationReason())
-                .isEqualTo("진단명이나 장애 유형이 단정적으로 적혀 있습니다 / 다른 아이의 이름이 함께 적혀 있습니다");
+                .isEqualTo("진단명이나 장애 유형이 단정적으로 적혀 있어요 / 다른 아이의 이름이 함께 적혀 있어요");
     }
 
     /** 검증 v1.3(#262)의 건강관리기록도 코드가 아니라 문장으로 보여준다. */
@@ -134,7 +134,7 @@ class ValidationQueueServiceTest {
         List<ValidationQueueItemResponse> queue = validationQueueService.getBlockedQueue(OUR_USER_ID);
 
         assertThat(queue.get(0).violationReason())
-                .isEqualTo("진단명이나 장애 유형이 단정적으로 적혀 있습니다 / 질병·복약·병원 진료 같은 건강 정보가 적혀 있습니다");
+                .isEqualTo("진단명이나 장애 유형이 단정적으로 적혀 있어요 / 질병·복약·병원 진료 같은 건강 정보가 적혀 있어요");
     }
 
     /** AI가 유형을 안 보내거나 깨진 JSON을 보내도 큐 조회 전체가 죽지 않는다. */
@@ -147,7 +147,7 @@ class ValidationQueueServiceTest {
         List<ValidationQueueItemResponse> queue = validationQueueService.getBlockedQueue(OUR_USER_ID);
 
         assertThat(queue).hasSize(1);
-        assertThat(queue.get(0).violationReason()).isEqualTo("검증에서 문제가 발견됐습니다. 원본을 확인해주세요");
+        assertThat(queue.get(0).violationReason()).isEqualTo("검증에서 문제가 발견됐어요. 원본을 확인해 주세요");
     }
 
     /** AI가 모르는 유형을 새로 만들어 보내면 코드라도 보여준다 — 빈칸이면 선생님이 할 수 있는 게 없다. */

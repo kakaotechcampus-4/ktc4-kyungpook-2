@@ -53,7 +53,7 @@ class ValidationResultControllerTest {
                 "11", 1L,
                 RecordResponse.of("5", "0821_특이사항.txt", "오늘 있었던 일", "2026-08-21"),
                 "김하늘",
-                "전화번호·주민번호 같은 개인정보가 그대로 적혀 있습니다",
+                "전화번호·주민번호 같은 개인정보가 그대로 적혀 있어요",
                 List.of("개인정보표현"));
         given(validationQueueService.getBlockedQueue(any())).willReturn(List.of(item));
 
@@ -62,7 +62,7 @@ class ValidationResultControllerTest {
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
                 .andExpect(jsonPath("$.data[0].childName").value("김하늘"))
                 .andExpect(jsonPath("$.data[0].violationReason")
-                        .value("전화번호·주민번호 같은 개인정보가 그대로 적혀 있습니다"))
+                        .value("전화번호·주민번호 같은 개인정보가 그대로 적혀 있어요"))
                 .andExpect(jsonPath("$.data[0].violationCode[0]").value("개인정보표현"))
                 .andExpect(jsonPath("$.data[0].record.fileName").value("0821_특이사항.txt"));
     }

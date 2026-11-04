@@ -767,7 +767,7 @@ O-15 ~ O-19 공통 오류:
     "record": { "id": "5", "fileName": "0821_특이사항.txt", "type": "특이사항",
                 "capturedAt": "2026-08-21T16:00:00+09:00", "preview": "…" },
     "childName": "김하늘",
-    "violationReason": "다른 아이의 이름이 함께 적혀 있습니다" }
+    "violationReason": "다른 아이의 이름이 함께 적혀 있어요" }
 ]
 ```
 
@@ -784,14 +784,14 @@ O-15 ~ O-19 공통 오류:
 >     "record": { "id": "5", "fileName": "0821_특이사항.txt",
 >                 "capturedAt": "2026-08-21", "preview": "…", "fullContent": "…" },
 >     "childName": "김하늘",
->     "violationReason": "전화번호·주민번호 같은 개인정보가 그대로 적혀 있습니다",
+>     "violationReason": "전화번호·주민번호 같은 개인정보가 그대로 적혀 있어요",
 >     "violationCode": ["개인정보표현"] }
 > ]
 > ```
 >
 > | 항목 | 값 |
 > | --- | --- |
-> | `violationReason` | AI가 보낸 `issue_types`를 선생님이 읽을 문장으로 바꾼 값. 유형이 여러 개면 ` / `로 잇습니다. AI가 목록에 없는 유형을 보내면 코드를 그대로 보여주고, 유형 자체가 없으면 "검증에서 문제가 발견됐습니다. 원본을 확인해주세요"로 내려갑니다 |
+> | `violationReason` | AI가 보낸 `issue_types`를 선생님이 읽을 문장으로 바꾼 값. 유형이 여러 개면 ` / `로 잇습니다. AI가 목록에 없는 유형을 보내면 코드를 그대로 보여주고, 유형 자체가 없으면 "검증에서 문제가 발견됐어요. 원본을 확인해 주세요"로 내려갑니다. 유형 → 문장 표는 O-30 `reviewFlags[].reasons` 와 같습니다 (`ValidationReasons`) |
 > | `violationCode` | AI `issue_types` 원본 배열 (`진단명`·`개인정보표현` 등, `AI/validation/config.py`) |
 > | `record.fullContent` | 위반 문장이 60자 뒤에 있으면 미리보기만으로는 무엇을 고쳐야 할지 알 수 없어, 매칭 확인 큐(#111)와 같은 이유로 전체 본문도 함께 내려갑니다 |
 > | `record.type` | **내려가지 않습니다.** `RecordResponse`에 `type` 필드가 없습니다 — 기록 유형 값 목록이 아직 팀에서 안 정해졌습니다 |
@@ -916,7 +916,8 @@ O-15 ~ O-19 공통 오류:
     "claims": [ { "index": 0, "text": "오전 활동에서 블록을 다섯 층까지 쌓았다." }, { "index": 1, "text": "…" } ],
     "noContent": false, "needsReview": true, "reviewReasons": ["다른아동이름"],
     "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
-    "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"] } ] }
+    "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"],
+                      "reasons": ["관찰되지 않은 내용을 추측한 표현이 있어요"] } ] }
 ]
 ```
 
@@ -928,7 +929,7 @@ O-15 ~ O-19 공통 오류:
 | `noContent` | 그날 기록에 요약할 내용이 없다는 결과 (#244). `content` 는 `""`, `claims` 는 `[]` 이고 `uncoveredEntries` 가 **이 요약에 묶인 기록 원본 전체**입니다. "요약할 내용 없음" 카드로 보여주고 원본을 펼쳐 두세요 — 교사가 "왜 없지?" 를 바로 확인할 수 있게. 버튼은 [확인](O-31 `confirm`)과 [요약 되돌리기](O-31 `revert`) 둘만 둡니다 |
 | `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
 | `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
-| `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유(`issue_types` 원본) |
+| `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유. `issueTypes` 는 AI 코드 원본, `reasons` 는 선생님이 읽을 문장(같은 순서, 같은 문장은 한 번)입니다. **화면은 `reasons` 를 보여 줍니다** — 코드를 그대로 띄우지 않습니다 (#351). 문장 표는 O-24 `violationReason` 과 같습니다 |
 
 `reviewFlags` 는 검증이 짚은 구간이 **요약 문장의 근거 구간과 같은 일지에서 겹칠 때만** 나옵니다. 요약에 안 실린
 부분의 문제까지 띄우지 않기 위해서입니다. 검증 사유와 구간이 짝지어져 있지 않아 일지 단위로 판단하고, 겹치면 그 일지의

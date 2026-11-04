@@ -38,6 +38,7 @@ import com.itda.backend.repository.validation.ValidationResultRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.validation.ValidationReasons;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -231,8 +232,9 @@ public class SummaryGate1QueryService {
             List<Span> flagged = parseValidationSpans(validation);
             List<Span> cited = claimSpans.getOrDefault(entryId, List.of());
             if (flagged.isEmpty() || flagged.stream().anyMatch(f -> cited.stream().anyMatch(f::overlaps))) {
-                flags.add(new ReviewFlag(entryId,
-                        parseStrings(validation.getIssueTypes(), "validation_result.issue_types", validation.getId())));
+                List<String> issueTypes =
+                        parseStrings(validation.getIssueTypes(), "validation_result.issue_types", validation.getId());
+                flags.add(new ReviewFlag(entryId, issueTypes, ValidationReasons.sentencesOf(issueTypes)));
             }
         }
         return flags;

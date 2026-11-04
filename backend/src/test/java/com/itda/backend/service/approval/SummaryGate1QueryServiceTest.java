@@ -237,7 +237,8 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         assertThat(item.reviewFlags())
-                .containsExactly(new ReviewFlag(overlapped.getId(), List.of("위험행동표현", "추측성표현")));
+                .containsExactly(new ReviewFlag(overlapped.getId(), List.of("위험행동표현", "추측성표현"),
+                        List.of("위험 행동이 그대로 묘사돼 있어요", "관찰되지 않은 내용을 추측한 표현이 있어요")));
     }
 
     @Test
@@ -257,7 +258,8 @@ class SummaryGate1QueryServiceTest {
         summary(ORG, DATE, "[" + claim(unknown, 0, 4) + "]", List.of(unknown), List.of());
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags())
-                .containsExactly(new ReviewFlag(unknown.getId(), List.of("대상불명확")));
+                .containsExactly(new ReviewFlag(unknown.getId(), List.of("대상불명확"),
+                        List.of("어느 아이의 기록인지 분명하지 않아요")));
     }
 
     @Test
@@ -281,7 +283,7 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         // 구간을 못 읽으면 비어 있는 것과 같다 — 숨기기보다 보여주는 쪽이 안전하다.
-        assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of()));
+        assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of(), List.of()));
         assertThat(item.reviewReasons()).isEmpty();
         assertThat(item.claims()).isEmpty();
     }
