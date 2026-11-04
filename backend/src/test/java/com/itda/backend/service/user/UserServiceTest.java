@@ -32,6 +32,7 @@ import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.InviteCodeGenerator;
 import com.itda.backend.service.organization.OrganizationCodeIssuer;
@@ -47,13 +48,16 @@ class UserServiceTest {
     @Mock
     private OrganizationRepository organizationRepository;
 
+    @Mock
+    private TermsAgreementRepository termsAgreementRepository;
+
     private UserService userService;
 
     @BeforeEach
     void setUp() {
         userService = new UserService(userRepository, organizationRepository,
                 new OrganizationCodeIssuer(organizationRepository, new InviteCodeGenerator()),
-                new LoginUserTransactionService(userRepository));
+                new LoginUserTransactionService(userRepository), new TermsService(termsAgreementRepository));
     }
 
     /**

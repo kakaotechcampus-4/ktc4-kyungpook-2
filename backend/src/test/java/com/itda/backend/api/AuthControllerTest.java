@@ -59,7 +59,7 @@ class AuthControllerTest {
     void meReturnsRoleUserIdNameAndInstitutionIdForOrganization() throws Exception {
         authenticateAs("1");
         given(userService.getCurrentUser("1"))
-                .willReturn(new CurrentUserResponse("org", "1", "박지현", "1", "햇살아동발달센터", true));
+                .willReturn(new CurrentUserResponse("org", "1", "박지현", "1", "햇살아동발달센터", true, true));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
@@ -77,7 +77,7 @@ class AuthControllerTest {
     void meReportsSignupNotCompletedWithoutRole() throws Exception {
         authenticateAs("3");
         given(userService.getCurrentUser("3"))
-                .willReturn(new CurrentUserResponse(null, "3", "박지현", null, null, false));
+                .willReturn(new CurrentUserResponse(null, "3", "박지현", null, null, false, false));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
@@ -91,13 +91,15 @@ class AuthControllerTest {
     void meOmitsInstitutionIdForParent() throws Exception {
         authenticateAs("2");
         given(userService.getCurrentUser("2"))
-                .willReturn(new CurrentUserResponse("parent", "2", "김보호", null, null, true));
+                .willReturn(new CurrentUserResponse("parent", "2", "김보호", null, null, true, false));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.role").value("parent"))
                 .andExpect(jsonPath("$.data.institutionId").doesNotExist())
-                .andExpect(jsonPath("$.data.institutionName").doesNotExist());
+                .andExpect(jsonPath("$.data.institutionName").doesNotExist())
+                // 원시 boolean 이라 false 여도 빠지지 않는다
+                .andExpect(jsonPath("$.data.termsAgreed").value(false));
     }
 
     /** 204 에는 ApiResponse 래퍼를 쓰지 않는다 (AGENTS.md, api-conventions.md). */

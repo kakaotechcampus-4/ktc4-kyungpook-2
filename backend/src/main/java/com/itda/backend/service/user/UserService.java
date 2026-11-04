@@ -4,11 +4,15 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.TermKey;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.dto.request.user.SignupRequest;
 import com.itda.backend.dto.response.user.CurrentUserResponse;
+import com.itda.backend.dto.response.user.TermsAgreementResponse;
 import com.itda.backend.exception.organization.OrganizationErrorCode;
 import com.itda.backend.exception.organization.OrganizationException;
 import com.itda.backend.exception.user.UserErrorCode;
@@ -34,6 +38,7 @@ public class UserService {
     private final OrganizationRepository organizationRepository;
     private final OrganizationCodeIssuer organizationCodeIssuer;
     private final LoginUserTransactionService loginUserTransactionService;
+    private final TermsService termsService;
 
     /**
      * 카카오 로그인 성공 시 회원을 찾거나 만든다.
@@ -89,10 +94,23 @@ public class UserService {
         if (request.isOrganizationSignup()) {
             Organization organization = createOrganization(request);
             user.completeSignup(UserRole.ORGANIZATION, organization.getId());
-            return CurrentUserResponse.from(user, organization);
+            return CurrentUserResponse.from(user, organization, termsService.isAgreed(user));
         }
         user.completeSignup(UserRole.PARENT, null);
-        return CurrentUserResponse.from(user, null);
+        // 막 가입한 보호자는 동의 기록이 없어 false 다. 프론트가 이 값을 보고 약관 단계로 간다.
+        return CurrentUserResponse.from(user, null, termsService.isAgreed(user));
+    }
+
+    /**
+     * 보호자 서비스 약관 동의. 회원 행을 잠그고 시작한다 — 같은 보호자의 요청이 겹쳐도 두 번째는 첫 번째가 남긴
+     * 줄을 보고 아무것도 넣지 않는다(TermsService.agree).
+     */
+    @Transactional
+    public TermsAgreementResponse agreeTerms(String principal, List<TermKey> agreed) {
+        User user = userRepository.findActiveByIdForUpdate(parseUserId(principal))
+                .orElseThrow(() -> new UserException(UserErrorCode.SESSION_USER_NOT_FOUND));
+        termsService.agree(user, agreed);
+        return new TermsAgreementResponse(true);
     }
 
     /**
@@ -108,7 +126,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public CurrentUserResponse getCurrentUser(String principal) {
         User user = getByPrincipal(principal);
-        return CurrentUserResponse.from(user, organizationOf(user));
+        return CurrentUserResponse.from(user, organizationOf(user), termsService.isAgreed(user));
     }
 
     /**

@@ -64,6 +64,16 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.businessNumber").exists())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationSignup").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationInfoMatchingRole").doesNotExist())
+				// 세션 응답은 보호자 약관 동의 여부를 늘 싣는다.
+				.andExpect(jsonPath("$.components.schemas.CurrentUserResponse.properties.termsAgreed").exists())
+				// 약관 동의는 보호 API 다. 요청에는 동의한 키 목록만 있고 검증용 is*() 메서드가 필드로 새지 않는다.
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.403").exists())
+				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.agreed").exists())
+				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.allRequiredAgreed").doesNotExist())
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists())
