@@ -50,7 +50,7 @@ def _to_claim(raw: dict) -> Claim:
     )
 
 
-def run_summary(payload: SummaryInput) -> SummaryOutput:
+def run_summary(payload: SummaryInput, trace: dict | None = None) -> SummaryOutput:
     """
     /summary 엔드포인트의 진입점.
 
@@ -72,6 +72,16 @@ def run_summary(payload: SummaryInput) -> SummaryOutput:
         "other_child_names": payload.other_child_names,
     }
     result = GRAPH.invoke(state)
+
+    # 평가 스크립트만 trace 를 넘긴다. 근거 검사에서 버린 문장과 이유를 담아 준다.
+    # 서버(main.py)는 넘기지 않으므로 응답은 바뀌지 않는다. 503 으로 끝나는 경우
+    # (전부 버려짐)가 수정 루프에 가장 중요한 재료라, 예외를 올리기 전에 채운다.
+    if trace is not None:
+        trace.update(
+            raw_claims=len(result.get("raw_claims") or []),
+            dropped_evidence=result.get("dropped_evidence", 0),
+            dropped_detail=result.get("dropped_detail", []),
+        )
 
     if result.get("llm_error"):
         raise LlmUnavailable(result["llm_error"], failure=result.get("llm_failure", "unknown"))

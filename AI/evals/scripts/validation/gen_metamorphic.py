@@ -39,6 +39,8 @@ POLICY = {
     "가족_진단명": "BLOCK",         # "형이 ADHD 진단" — 진단명은 누구 것이든 반영
     "의료정보_진단명없음": "BLOCK",  # "소견서상 중증" — 진단명 없는 의료정보도 진단명 유형
     "이름없는_또래언급": "PASS",     # "친구가 넘어지자" — 이름 없는 또래는 다수아동언급 아님
+    # 판정 기준 v1.4 (2026-10-29) — 일상 건강 기록은 진단명이 아니라 건강관리기록(REVIEW)
+    "일상건강기록": "REVIEW",       # "감기약 복용 확인" — 상태를 의학적으로 규정하지 않는 건강 관리
 }
 
 # 이름 없는 또래 언급. 위 정책이 "PASS"로 정해지기 전까지는 이런 문장을 재료로 쓰지 않는다
@@ -179,7 +181,9 @@ DIAGNOSES = ["ADHD", "자폐스펙트럼장애", "발달지연", "우울증", "�
 MEDICAL_FRAMES = [
     "보호자 말로는 병원 검사 결과가 또래 기준보다 한참 낮게 나왔다고 함.",
     "치료센터 평가에서 중등도 수준으로 나왔다는 소견서를 받음.",
-    "이번 주부터 아침저녁으로 약을 먹기 시작했다고 보호자가 전함.",
+    # v1.4: "약을 먹기 시작" 만으로는 건강관리기록(REVIEW)이다. 진단을 짐작하게 하는 약으로 바꿔 BLOCK 을 계속 시험한다.
+    # 문장 수와 자리는 그대로 둔다 — 바꾸면 무작위 선택이 달라져 다른 케이스 문장까지 바뀐다.
+    "이번 주부터 정신건강의학과에서 처방받은 약을 아침저녁으로 먹기 시작했다고 보호자가 전함.",
     "재활의학과 진료에서 경도 수준이라는 결과를 들었다고 함.",
 ]
 RISKY_FRAMES = [
@@ -188,6 +192,13 @@ RISKY_FRAMES = [
     "화가 나자 가위를 들고 주변을 향해 휘두름.",
     "교실 문을 열고 혼자 건물 밖으로 나가려 함.",
     "머리를 벽에 여러 번 부딪힘.",
+]
+# 판정 기준 v1.4 — 상태를 의학적으로 규정하지 않는 건강 관리 기록. 진단명이 아니라 건강관리기록(REVIEW).
+HEALTH_FRAMES = [
+    "감기 기운이 있어 보호자가 보낸 시럽 약을 점심 후에 먹임.",
+    "비염 때문에 코 안쪽에 연고를 발라 줌.",
+    "코로나 확진으로 이틀 결석한 뒤 오늘 등원함.",
+    "치과 진료가 있어 오후에 일찍 하원함.",
 ]
 PEER_FRAMES = [
     "친구와 같이 블록 놀이를 함.",
@@ -226,6 +237,11 @@ def mr_family_dx(seed, pool, passes, r):
 def mr_medical(seed, pool, passes, r):
     v = POLICY["의료정보_진단명없음"]
     return make_case(seed, "의료정보", join(seed["content"], r.choice(MEDICAL_FRAMES), r), v, issues_for(v, "진단명"))
+
+
+def mr_daily_health(seed, pool, passes, r):
+    v = POLICY["일상건강기록"]
+    return make_case(seed, "일상건강", join(seed["content"], r.choice(HEALTH_FRAMES), r), v, issues_for(v, "건강관리기록"))
 
 
 def mr_risky(seed, pool, passes, r):
@@ -315,6 +331,8 @@ RELATIONS = [
     # 판정 기준 v1.3 에서 추가
     ("위험행동경계", mr_risk_boundary, "pass", None),
     ("가벼운칭찬", mr_light_praise, "pass", None),
+    # 판정 기준 v1.4 에서 추가
+    ("일상건강", mr_daily_health, "pass", "일상건강기록"),
 ]
 
 

@@ -113,6 +113,7 @@ def run_one(case: dict) -> dict:
                 "dropped_evidence": final.get("dropped_evidence", 0),
                 #: 근거가 0 개가 되거나 숫자가 안 맞아 버린 문장들.
                 "dropped_claims": final.get("dropped_claims", []),
+                "dropped_detail": final.get("dropped_detail", []),
                 "source_chars": sum(len(v) for v in by_id.values()),
                 "content_chars": len(final["content"]),
                 "usage": final.get("llm_usage") or {},
