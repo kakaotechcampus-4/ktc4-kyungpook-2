@@ -22,7 +22,9 @@ import {
 export async function clientLoader({ request }: { request: Request }) {
   const session = await getSession();
   if (!session.loggedIn) return redirect("/login");
-  if (session.signupCompleted && session.role) return redirect(homePathFor(session.role));
+  if (session.signupCompleted && session.role) {
+    return redirect(homePathFor(session.role, session.termsAgreed));
+  }
 
   const hint = new URL(request.url).searchParams.get("role");
   const initialRole: "org" | "parent" | null =
@@ -86,7 +88,7 @@ export default function SignupPage() {
     setPending(true);
     try {
       const session = await signup(input);
-      navigate(homePathFor(session.role ?? role), { replace: true });
+      navigate(homePathFor(session.role ?? role, session.termsAgreed), { replace: true });
     } catch (err) {
       setPending(false);
       await handleError(err);
@@ -109,7 +111,9 @@ export default function SignupPage() {
       case "ALREADY_SIGNED_UP": {
         // 다른 탭에서 먼저 끝낸 경우 등. 역할은 서버에 이미 정해져 있으니 그쪽으로 보낸다.
         const session = await getSession().catch(() => null);
-        navigate(session?.role ? homePathFor(session.role) : "/login", { replace: true });
+        navigate(session?.role ? homePathFor(session.role, session.termsAgreed) : "/login", {
+          replace: true,
+        });
         return;
       }
       case "INVALID_REQUEST":

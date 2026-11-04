@@ -5,11 +5,11 @@ import { KakaoLoginButton } from "@/components/KakaoLoginButton";
 import { StepProgress } from "@/components/parent/StepProgress";
 import { ApiError, acceptInvitation, restoreParentOnboarded } from "@/lib/api";
 import {
+  agreeTerms,
   clearInviteCode,
   getSession,
   grantRole,
   isAuthMock,
-  isOnboarded,
   readInviteCode,
   saveInviteCode,
 } from "@/lib/auth";
@@ -23,41 +23,50 @@ import type { AcceptedInvitation } from "@/lib/types";
  * 보관해서 카카오 로그인 · 회원가입을 다녀와도 남게 한다 (lib/auth.ts saveInviteCode).
  *
  *  - 처음 오는 사람: intro → terms → code → done
- *  - 카카오에서 막 돌아온 사람(`/oauth/success` 가 보낸다): terms 부터
- *  - 이미 쓰고 있는 사람("아이 추가"나 새 링크로 들어온다): code 부터
+ *  - 카카오에서 막 돌아온 사람(`/oauth/success` 가 보낸다): 약관에 동의하지 않았으면 terms 부터
+ *  - 이미 쓰고 있는 사람("아이 추가"나 새 링크로 들어온다): 약관에 동의했으면 code 부터
+ *
+ * 약관 동의 여부는 서버가 안다(`/auth/me` 의 termsAgreed). 동의를 저장한 뒤에는 받아 둔 코드가 있으면
+ * 코드 단계로 이어 가고, 코드 없이 이미 아이가 연결된 보호자(약관 판이 올라 다시 동의한 경우)는 홈으로 간다.
  *
  * code 단계에 보관된 코드가 있으면 바로 수락한다. 링크가 안 열렸거나 sessionStorage 가
  * 사라진 경우(카톡 인앱 브라우저 → 외부 브라우저)를 위해 직접 입력 칸도 둔다.
  */
 type Step = "intro" | "terms" | "code" | "done";
 
+// 서버 TermKey 와 같은 값이다. 지금은 모두 필수라 체크한 목록이 아니라 이 목록 전체를 보낸다.
 const TERMS = [
   { key: "tos", label: "서비스 이용약관 동의", required: true },
   { key: "privacy", label: "개인정보와 민감정보 수집 동의", required: true },
-  { key: "notify", label: "새로운 소식 알림 받기", required: false },
 ] as const;
 
 export async function clientLoader({ request }: { request: Request }) {
   const code = new URL(request.url).searchParams.get("code")?.trim();
   if (code) saveInviteCode(code);
 
-  const { loggedIn, signupCompleted, role } = await getSession();
+  const { loggedIn, signupCompleted, role, termsAgreed } = await getSession();
   // 카카오 로그인만 하고 가입을 안 끝낸 사람은 가입부터 — 코드 수락이 403 이다.
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
+  const isParent = loggedIn && role === "parent";
   return {
     role: loggedIn ? role : null,
-    // 이 주소로 바로 들어온 보호자도 서버에 아이가 있으면 약관을 건너뛰고 코드 입력부터
-    onboarded: role === "parent" && (await restoreParentOnboarded()),
+    termsAgreed: isParent && termsAgreed,
+    // 약관에 동의한 보호자만 묻는다 — 동의 전에는 아이 목록이 403 TERMS_NOT_AGREED 다
+    onboarded: isParent && termsAgreed && (await restoreParentOnboarded()),
     savedCode: readInviteCode(),
   };
 }
 
 export default function ParentInvitePage() {
-  const { role, onboarded, savedCode } = useLoaderData<typeof clientLoader>();
+  const loaded = useLoaderData<typeof clientLoader>();
+  const { role, savedCode } = loaded;
   const [step, setStep] = useState<Step>(() => {
     if (role !== "parent") return "intro";
-    return onboarded ? "code" : "terms";
+    return loaded.termsAgreed ? "code" : "terms";
   });
+  // 약관에 동의한 뒤 다시 구한다 — 로더는 동의 전이라 묻지 않고 false 를 준다. "이미 연결됨"을 홈으로 보낼지,
+  // "홈으로" 링크를 보일지가 이 값을 본다
+  const [onboarded, setOnboarded] = useState(loaded.onboarded);
   const [agreed, setAgreed] = useState<string[]>([]);
   const [code, setCode] = useState(savedCode ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +76,31 @@ export default function ParentInvitePage() {
   const revalidator = useRevalidator();
   const mock = isAuthMock();
   const autoTried = useRef(false);
+
+  async function submitTerms() {
+    if (pending) return;
+    setError(null);
+    setPending(true);
+    try {
+      await agreeTerms(TERMS.map((t) => t.key));
+      const linked = await restoreParentOnboarded();
+      setOnboarded(linked);
+      // 받아 둔 코드(링크로 받았거나 코드 단계에서 막혀 돌아온 입력)가 있으면 수락을 이어 간다
+      if (linked && !readInviteCode() && !code.trim()) {
+        navigate("/parent", { replace: true });
+        return;
+      }
+      setStep("code");
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.code === "SIGNUP_NOT_COMPLETED")) {
+        handleError(err);
+        return;
+      }
+      setError("동의를 저장하지 못했어요. 다시 시도해 주세요.");
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function accept(input: string) {
     if (!input.trim() || pending) return;
@@ -113,6 +147,13 @@ export default function ParentInvitePage() {
         return;
       case "SIGNUP_NOT_COMPLETED":
         navigate("/signup?role=parent", { replace: true });
+        return;
+      case "TERMS_NOT_AGREED":
+        // 코드 단계를 연 채 약관 판이 올라간 경우 등. 공통 처리는 이미 이 주소라 옮기지 않으므로 여기서 약관으로
+        // 돌린다. 보관된 코드는 동의 뒤 다시 자동 수락하도록 시도 표시를 되돌린다.
+        autoTried.current = false;
+        setAgreed([]);
+        setStep("terms");
         return;
     }
     if (err.status === 401) {
@@ -199,10 +240,12 @@ export default function ParentInvitePage() {
               </div>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   grantRole("parent");
                   revalidator.revalidate();
-                  setStep(isOnboarded() ? "code" : "terms");
+                  const session = await getSession();
+                  setOnboarded(session.termsAgreed && (await restoreParentOnboarded()));
+                  setStep(session.termsAgreed ? "code" : "terms");
                 }}
                 className="tap h-14 w-full rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2 hover:bg-surface2"
               >
@@ -230,7 +273,7 @@ export default function ParentInvitePage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              setStep("code");
+              void submitTerms();
             }}
             className="flex flex-col gap-3"
           >
@@ -263,8 +306,13 @@ export default function ParentInvitePage() {
                 );
               })}
             </ul>
-            <button disabled={requiredMissing} className={primary}>
-              동의하고 계속하기
+            {error ? (
+              <p role="alert" className="rounded-2xl bg-blocksoft px-4 py-3 text-[14px] leading-6 text-block">
+                {error}
+              </p>
+            ) : null}
+            <button disabled={requiredMissing || pending} className={primary}>
+              {pending ? <Busy>저장 중…</Busy> : "동의하고 계속하기"}
             </button>
             {requiredMissing ? (
               <p className="text-center text-[14px] text-muted">필수 동의를 선택해주세요</p>
