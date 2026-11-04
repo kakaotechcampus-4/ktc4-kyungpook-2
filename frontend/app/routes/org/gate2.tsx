@@ -23,6 +23,7 @@ import {
   isReady,
   loadIfReady,
 } from "@/lib/api";
+import { evidenceInstitutions } from "@/lib/insight";
 import type { Insight } from "@/lib/types";
 
 /** BE 가 우리 기관이 승인 주체인 것만 준다 — 화면에서 기관으로 다시 거르지 않는다 */
@@ -154,11 +155,13 @@ function Gate2Item({
 
       <p className="mb-4 rounded bg-surface2 p-3 text-[16px] leading-7">{insight.content}</p>
 
-      {/* 승인 주체가 자기 기관 근거인지 확인할 수 있어야 한다 */}
+      {/* 승인 주체가 어느 기관 기록에서 나온 글인지 확인할 수 있어야 한다 — 승인 주체가 아니라 근거의 기관이다 */}
       <p className="mb-2 flex flex-wrap items-center gap-1.5 text-[14px] text-ink2">
         <span className="font-semibold">근거를 제공한 기관</span>
         <span className="text-muted">·</span>
-        <InstitutionChip institution={insight.primarySource} withName />
+        {evidenceInstitutions(insight).map((inst) => (
+          <InstitutionChip key={inst.id} institution={inst} withName />
+        ))}
       </p>
 
       <p className="mb-2 text-[13px] font-semibold text-muted">
