@@ -623,10 +623,14 @@ export interface SentChecklistPage {
   nextBefore: string | null;
 }
 
-/** 설정 › 기관 요청사항 한 건 */
-export interface InstitutionRequestItem {
+/** 보호자 › 준비물·확인사항 한 건 (G-50 · G-51). 보호자 중 한 명이 확인하면 모두에게 confirmed */
+export interface ChecklistItem {
   id: string;
   institution: Institution;
   status: "confirmed" | "needs_check";
   items: string[];
+  sentAt: string;
+  confirmedAt: string | null;
+  /** 확인한 보호자의 카카오 닉네임. 없으면 null — 화면은 "다른 보호자" */
+  confirmedByName: string | null;
 }

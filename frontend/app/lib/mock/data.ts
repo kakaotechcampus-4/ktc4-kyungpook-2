@@ -9,7 +9,7 @@ import type {
   InboxDetail,
   Insight,
   Institution,
-  InstitutionRequestItem,
+  ChecklistItem,
   SentChecklist,
   InstitutionShares,
   JournalEntry,
@@ -1005,26 +1005,35 @@ export const JOURNAL: JournalEntry[] = [
   },
 ];
 
-/** 설정 › 기관 요청사항 — 아이별. 아직 요청이 없는 아이는 빈 배열. */
-export const INSTITUTION_REQUESTS: Record<string, InstitutionRequestItem[]> = {
+/** 보호자 › 준비물·확인사항 — 아이별, 최신순. 아직 받은 요청이 없는 아이는 빈 배열. */
+export const CHECKLISTS: Record<string, ChecklistItem[]> = {
   child_1023: [
     {
-      id: "req_01",
-      institution: SCHOOL,
-      status: "confirmed",
-      items: ["다음 주 현장학습 동의서를 확인해주세요.", "실내화를 새로 준비해주세요."],
+      id: "req_03",
+      institution: ASSISTANT,
+      status: "needs_check",
+      items: ["하원 동행 시간을 10분 늦춰도 될까요."],
+      sentAt: "2026-11-04T08:40:00",
+      confirmedAt: null,
+      confirmedByName: null,
     },
     {
       id: "req_02",
       institution: CENTER,
       status: "needs_check",
       items: ["간식 알레르기 정보를 확인해주세요."],
+      sentAt: "2026-11-03T17:10:00",
+      confirmedAt: null,
+      confirmedByName: null,
     },
     {
-      id: "req_03",
-      institution: ASSISTANT,
-      status: "needs_check",
-      items: ["하원 동행 시간을 10분 늦춰도 될까요."],
+      id: "req_01",
+      institution: SCHOOL,
+      status: "confirmed",
+      items: ["다음 주 현장학습 동의서를 확인해주세요.", "실내화를 새로 준비해주세요."],
+      sentAt: "2026-11-03T15:20:00",
+      confirmedAt: "2026-11-03T19:02:00",
+      confirmedByName: "김아빠",
     },
   ],
   child_2044: [],

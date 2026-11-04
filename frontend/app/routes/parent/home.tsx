@@ -7,6 +7,7 @@ import {
   getJournal,
   getParentChildren,
   getParentHome,
+  getChecklists,
   getPendingInstitutionRequests,
   loadIfReady,
 } from "@/lib/api";
@@ -17,16 +18,24 @@ export async function clientLoader() {
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
   // 일지·기관 요청은 스위치가 꺼져 있으면 null 로 받아 mock 을 진짜 아이 옆에 띄우지 않는다 (loadIfReady).
-  const [{ child, activity }, journal, pending] = await Promise.all([
+  const [{ child, activity }, journal, pending, openChecklists] = await Promise.all([
     getParentHome(childId),
     loadIfReady("guardianJournal", () => getJournal(childId)),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
+    // 헤더 알림 점은 확인 안 한 준비물·확인사항도 본다 — 있는지만 쓴다
+    loadIfReady("checklists", () => getChecklists(childId, { needsCheckOnly: true })),
   ]);
-  return { child, activity, recent: journal?.slice(0, 2) ?? null, pending: pending ?? [] };
+  return {
+    child,
+    activity,
+    recent: journal?.slice(0, 2) ?? null,
+    pending: pending ?? [],
+    openChecklists: openChecklists?.length ?? 0,
+  };
 }
 
 export default function ParentHomePage() {
-  const { child, activity, recent, pending } = useLoaderData<typeof clientLoader>();
+  const { child, activity, recent, pending, openChecklists } = useLoaderData<typeof clientLoader>();
   const pendingRequest = pending[0];
 
   return (
@@ -35,7 +44,7 @@ export default function ParentHomePage() {
         title="오늘의 기록"
         subtitle={child.name}
         showChildSwitch
-        alert={pending.length > 0}
+        alert={pending.length > 0 || openChecklists > 0}
       />
 
       {pendingRequest ? (

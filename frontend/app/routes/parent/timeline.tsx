@@ -7,6 +7,7 @@ import {
   getJournal,
   getParentChildren,
   getParentHome,
+  getChecklists,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
@@ -20,12 +21,13 @@ export async function clientLoader() {
   if (!isReady("guardianJournal")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  const [{ child }, journal, pending] = await Promise.all([
+  const [{ child }, journal, pending, openChecklists] = await Promise.all([
     getParentHome(childId),
     getJournal(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
+    loadIfReady("checklists", () => getChecklists(childId, { needsCheckOnly: true })),
   ]);
-  return { child, journal, pending };
+  return { child, journal, pending, openChecklists: openChecklists?.length ?? 0 };
 }
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -37,7 +39,7 @@ export default function TimelinePageRoute() {
 }
 
 function TimelinePage() {
-  const { child, journal, pending } = useLoaderData<typeof clientLoader>()!;
+  const { child, journal, pending, openChecklists } = useLoaderData<typeof clientLoader>()!;
   const [searchParams, setSearchParams] = useSearchParams();
   // 기관 유형이 아니라 "이 아이에 연결된 기관 하나하나"를 기준으로 거른다 —
   // 같은 유형(예: 센터) 기관이 여러 곳이어도 섞이지 않도록.
@@ -81,7 +83,7 @@ function TimelinePage() {
         title="오늘의 일지"
         subtitle={`${child.name} · ${dateLabel}`}
         showChildSwitch
-        alert={(pending ?? []).length > 0}
+        alert={(pending ?? []).length > 0 || openChecklists > 0}
       />
 
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4">

@@ -5,7 +5,7 @@ import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { Toggle } from "@/components/parent/Toggle";
 import {
-  getInstitutionRequests,
+  getChecklists,
   getInstitutionShares,
   getParentChildren,
   getParentHome,
@@ -23,10 +23,10 @@ import type { ConsentState, InstitutionShares } from "@/lib/types";
 export async function clientLoader() {
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  const [{ child }, requests, pendingRequests, shares, session] = await Promise.all([
+  const [{ child }, openChecklists, pendingRequests, shares, session] = await Promise.all([
     getParentHome(childId),
-    // 기관 요청사항(준비물)은 서버에 생기기 전까지 null — mock 개수를 진짜 아이 설정에 띄우지 않는다
-    loadIfReady("institutionRequests", () => getInstitutionRequests(childId)),
+    // 확인 안 한 준비물·확인사항만. 서버에 없으면 null — mock 개수를 진짜 아이 설정에 띄우지 않는다
+    loadIfReady("checklists", () => getChecklists(childId, { needsCheckOnly: true })),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
     // 기관 줄의 "받은 리포트 N편". 서버에 없으면 null — 줄에 아무것도 붙이지 않는다
     loadIfReady("institutionShares", () => getInstitutionShares(childId)),
@@ -34,7 +34,7 @@ export async function clientLoader() {
   ]);
   // 실연동에서는 /auth/me 의 카카오 닉네임. 동의를 거부해 없으면 이름을 빼고 "보호자"만 쓴다
   const myName = isAuthMock() ? ME.name : (session.name ?? null);
-  return { child, requests, pendingRequests, shares, myName };
+  return { child, openChecklists, pendingRequests, shares, myName };
 }
 
 export default function ParentSettingsPage() {
@@ -46,7 +46,7 @@ export default function ParentSettingsPage() {
 
 function ParentSettingsContent({
   child,
-  requests,
+  openChecklists,
   pendingRequests,
   shares,
   myName,
@@ -126,7 +126,8 @@ function ParentSettingsContent({
   }
 
   const target = institutions.find((i) => i.institution.id === confirming);
-  const needsCheck = requests?.filter((r) => r.status === "needs_check").length ?? null;
+  // 확인 안 한 것은 서버가 상한 없이 모두 주므로 길이가 곧 전체 수다
+  const needsCheck = openChecklists?.length ?? null;
   const careCount = (child.care?.allergies.length ?? 0) + (child.care?.medications.length ?? 0);
   // 돌봄 정보는 서버에 저장할 곳이 없다. "0개"는 "알레르기 없음"으로 읽히니 개수 대신 준비 중이라고 쓴다
   const careReady = isReady("careInfo");
@@ -137,7 +138,7 @@ function ParentSettingsContent({
         title="설정"
         subtitle={guardianLabel}
         showChildSwitch
-        alert={(pendingRequests ?? []).length > 0}
+        alert={(pendingRequests ?? []).length > 0 || (needsCheck ?? 0) > 0}
       />
 
       <div className="flex items-center gap-3 rounded-2xl border border-line px-4 py-4">
@@ -258,10 +259,10 @@ function ParentSettingsContent({
             <span className="text-[14px] text-muted">{careReady ? `${careCount}개` : "준비 중"} ›</span>
           </Link>
           <Link
-            to="/parent/institution-requests"
+            to="/parent/checklists"
             className="tap flex items-center justify-between px-4 py-3.5"
           >
-            <span className="text-[15px]">기관 요청사항</span>
+            <span className="text-[15px]">준비물·확인사항</span>
             <span className="text-[14px] text-muted">
               {needsCheck === null ? "준비 중" : needsCheck > 0 ? `${needsCheck}건 남음` : "완료"} ›
             </span>

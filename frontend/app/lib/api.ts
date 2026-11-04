@@ -90,7 +90,7 @@ import type {
   Insight,
   Institution,
   InstitutionShares,
-  InstitutionRequestItem,
+  ChecklistItem,
   SentChecklist,
   SentChecklistPage,
   IssuedInvitation,
@@ -169,7 +169,7 @@ const BE_READY = {
   guardianConsent: true,
   /**
    * 보호자: 설정 화면의 동의 끄기 (G-41 revoke). 다시 켤 때는 동의 화면(P-02, guardianConsent)을
-   * 거친다. 알림 화면의 "허락"도 이 함수를 쓰지만 알림 화면은 institutionRequests 로 아직 준비 중이다.
+   * 거친다.
    */
   guardianLinks: true,
   /** 보호자: 초대 코드 수락 (G-04) */
@@ -191,9 +191,10 @@ const BE_READY = {
    * 요청 거절(G-42)은 MVP 에서 뺐다 — 알림 화면은 동의 화면으로 보내는 버튼 하나만 둔다.
    */
   consentRequests: true,
-  /** 보호자: 기관 요청사항 — 준비물 · 확인사항 (G-50, G-51) */
-  institutionRequests: false,
-  /** 기관: 준비물·확인사항 보내기 · 보낸 목록 · 내리기 (O-70 ~ O-72) */
+  /**
+   * 준비물·확인사항 — 기관의 보내기 · 보낸 목록 · 내리기(O-70 ~ O-72)와 보호자의 목록 · 확인(G-50, G-51).
+   * 보호자 쪽은 P-12 · 설정 개수 · 알림 화면 · 헤더 알림 점이 본다.
+   */
   checklists: true,
   /**
    * 보호자: 기관 코드 조회 · 연결 요청 (G-43, G-44). 바로 연결되지 않고 기관이 수락해야 명부에 오른다.
@@ -1392,22 +1393,43 @@ export async function getGuardianInsight(id: string): Promise<GuardianInsight | 
   }
 }
 
-/** GET /api/v1/children/{childId}/institution-requests */
-export async function getInstitutionRequests(childId: string): Promise<InstitutionRequestItem[]> {
-  if (mockFor("institutionRequests")) return mock.INSTITUTION_REQUESTS[childId] ?? [];
-  return request(`/api/v1/children/${childId}/institution-requests`);
+/**
+ * GET /api/v1/children/{childId}/checklists — 확인 안 한 것 전부(최신순) 뒤에 확인한 것 최근 20개 (G-50).
+ * needsCheckOnly 면 확인 안 한 것만 — 헤더 알림 점 · 설정 개수 · 알림 화면이 화면마다 부른다.
+ * 기관이 내린 요청과 아이가 그 기관 명부에서 빠진 요청은 오지 않는다.
+ */
+export async function getChecklists(
+  childId: string,
+  { needsCheckOnly = false }: { needsCheckOnly?: boolean } = {},
+): Promise<ChecklistItem[]> {
+  if (mockFor("checklists")) {
+    const all = mock.CHECKLISTS[childId] ?? [];
+    const open = all.filter((c) => c.status === "needs_check");
+    return needsCheckOnly ? open : [...open, ...all.filter((c) => c.status === "confirmed").slice(0, 20)];
+  }
+  const query = needsCheckOnly ? "?status=needs_check" : "";
+  return request(`/api/v1/children/${encodeURIComponent(childId)}/checklists${query}`);
 }
 
-/** POST /api/v1/institution-requests/{id}/confirm */
-export async function confirmInstitutionRequest(id: string) {
-  if (mockFor("institutionRequests")) {
-    const req = Object.values(mock.INSTITUTION_REQUESTS)
-      .flat()
-      .find((r) => r.id === id);
-    if (req) req.status = "confirmed";
-    return { ok: true };
+/**
+ * POST /api/v1/children/{childId}/checklists/{checklistId}/confirm — 이 아이 몫으로 한 번 확인한다 (G-51).
+ * 이미 다른 보호자가 확인했으면 그 확인(누가 · 언제)을 돌려준다. 내렸거나 명부에서 빠진 요청은 404 CHECKLIST_NOT_FOUND.
+ */
+export async function confirmChecklist(childId: string, checklistId: string): Promise<ChecklistItem> {
+  if (mockFor("checklists")) {
+    const item = (mock.CHECKLISTS[childId] ?? []).find((c) => c.id === checklistId);
+    if (!item) throw new ApiError(404, "CHECKLIST_NOT_FOUND");
+    if (item.status === "needs_check") {
+      item.status = "confirmed";
+      item.confirmedAt = new Date().toISOString();
+      item.confirmedByName = mock.ME.name;
+    }
+    return item;
   }
-  return request(`/api/v1/institution-requests/${id}/confirm`, { method: "POST" });
+  return request(
+    `/api/v1/children/${encodeURIComponent(childId)}/checklists/${encodeURIComponent(checklistId)}/confirm`,
+    { method: "POST" },
+  );
 }
 
 /* ── 기관: 준비물·확인사항 ──────────────────────────── */

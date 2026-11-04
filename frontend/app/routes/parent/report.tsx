@@ -6,6 +6,7 @@ import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import {
   getGuardianInsights,
   getParentChildren,
+  getChecklists,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
@@ -18,13 +19,19 @@ export async function clientLoader() {
   if (!isReady("guardianInsights")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  const [insights, pending] = await Promise.all([
+  const [insights, pending, openChecklists] = await Promise.all([
     getGuardianInsights(),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
+    loadIfReady("checklists", () => getChecklists(childId, { needsCheckOnly: true })),
   ]);
   // 서버는 내 모든 아이 것을 준다. 헤더에서 고른 아이 것만 보인다
   const child = kids.find((k) => k.id === childId);
-  return { childName: child?.name ?? "", insights: insights.filter((i) => i.childId === childId), pending };
+  return {
+    childName: child?.name ?? "",
+    insights: insights.filter((i) => i.childId === childId),
+    pending,
+    openChecklists: openChecklists?.length ?? 0,
+  };
 }
 
 /** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
@@ -39,7 +46,7 @@ export default function ReportPageRoute() {
  * 아직 열어 보지 않은 글(readAt 없음)에 "새 글"을 붙인다 — 상세를 열어야 본 시각이 남는다.
  */
 function ReportPage() {
-  const { childName, insights, pending } = useLoaderData<typeof clientLoader>()!;
+  const { childName, insights, pending, openChecklists } = useLoaderData<typeof clientLoader>()!;
   const groups = insights.reduce<{ period: string; items: GuardianInsight[] }[]>((acc, insight) => {
     const group = acc.find((g) => g.period === insight.period);
     if (group) group.items.push(insight);
@@ -53,7 +60,7 @@ function ReportPage() {
         title="주간 리포트"
         subtitle={childName}
         showChildSwitch
-        alert={(pending ?? []).length > 0}
+        alert={(pending ?? []).length > 0 || openChecklists > 0}
       />
 
       {groups.length === 0 ? (
