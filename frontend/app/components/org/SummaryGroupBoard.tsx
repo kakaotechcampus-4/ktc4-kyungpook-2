@@ -180,7 +180,6 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
         : [];
 
   const ready = board.groups.filter((g) => g.status === "ready" && g.canSummarize);
-  const todo = counted("needs_fix") + counted("ready");
 
   const filters: { key: Filter; label: string; count: number; dot: string }[] = [
     { key: "all" as Filter, label: "전체", count: board.groups.length, dot: "bg-ink" },
@@ -195,14 +194,9 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
   return (
     <section aria-labelledby="groups-title" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h2 id="groups-title" className="text-[19px] font-extrabold tracking-[-0.02em]">
-            아이별 진행 현황
-          </h2>
-          <p className="mt-1 text-[14px] leading-6 text-muted">
-            {todo > 0 ? `급한 것부터 ${todo}명` : "지금 할 일 없음"}
-          </p>
-        </div>
+        <h2 id="groups-title" className="text-[19px] font-extrabold tracking-[-0.02em]">
+          아이별 진행 현황
+        </h2>
         <span className="flex items-center gap-2">
           {moving ? (
             <span className="flex items-center gap-1.5 text-[13px] text-accentink">

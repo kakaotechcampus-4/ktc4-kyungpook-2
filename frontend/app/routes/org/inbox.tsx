@@ -1,6 +1,7 @@
 import { Link, useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
 import { NotReadyPage } from "@/components/org/NotReady";
-import { Card, EmptyState, InstitutionChip, Note, PageHeader } from "@/components/ui";
+import { HelpTip } from "@/components/ui/HelpTip";
+import { Card, EmptyState, InstitutionChip, PageHeader } from "@/components/ui";
 import { getInbox, isReady } from "@/lib/api";
 import { formatDateTime } from "@/lib/datetime";
 import { INBOX_CHILD_PARAM, inboxChildOptions, onlyInboxFilterChanged } from "@/lib/inbox";
@@ -52,6 +53,12 @@ function InboxPage() {
     <>
       <PageHeader
         title="메시지"
+        right={
+          <HelpTip label="메시지">
+            보낸 기관의 원본 기록은 전달되지 않습니다. 승인을 거친 관찰·분석 결과만 보이고,
+            보호자가 우리 기관 공유를 끄면 바로 사라집니다.
+          </HelpTip>
+        }
       />
 
       {items.length === 0 ? (
@@ -137,13 +144,6 @@ function InboxPage() {
               </li>
             ))}
           </ul>
-
-          <div className="mt-5">
-            <Note>
-              보낸 기관의 원본 기록은 전달되지 않습니다. 승인을 거친 관찰·분석 결과만 보이고, 보호자가
-              우리 기관 공유를 끄면 바로 사라집니다.
-            </Note>
-          </div>
         </>
       )}
     </>

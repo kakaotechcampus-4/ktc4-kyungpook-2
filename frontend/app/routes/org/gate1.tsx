@@ -9,6 +9,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
+import { HelpTip } from "@/components/ui/HelpTip";
 import { Card, ConfirmDialog, EmptyState, PageHeader, Spinner } from "@/components/ui";
 import { ApiError, decideGate1, getGate1Queue, isReady, reopenGate1 } from "@/lib/api";
 import type { Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
@@ -20,7 +21,6 @@ export async function clientLoader() {
 }
 
 const TITLE = "요약 검토";
-const DESCRIPTION = "AI 요약이 기록과 맞는지 문장마다 확인하고 승인해요";
 
 type Tab = "pending" | "hold";
 type Decision = "approve" | "hold" | "remove";
@@ -415,9 +415,6 @@ function PendingItem({
         <div className="flex flex-col gap-2.5">
           <div className="flex flex-wrap items-baseline justify-between gap-1.5">
             <h2 className="text-[15px] font-bold text-ink2">AI 요약 · 문장 {item.claims.length}개</h2>
-            <p className="text-[13px] text-muted">
-              문장마다 고른 뒤, 아래 승인을 누르면 한 번에 반영돼요
-            </p>
           </div>
 
           <ol className="flex flex-col gap-2">
@@ -876,12 +873,19 @@ function HeldItem({
       aria-label={`${item.childName} ${dateLabel(item.entryDate)} 요약, 보류함`}
       className="flex flex-col gap-3.5 rounded border border-line bg-surface px-6 pt-5.5 pb-5"
     >
-      <ItemHeader item={item} badge={<Pill tone="neutral">보류함</Pill>} />
+      <ItemHeader
+        item={item}
+        badge={
+          <span className="flex items-center gap-1">
+            <Pill tone="neutral">보류함</Pill>
+            <HelpTip label="보류함">
+              보류한 요약은 보호자와 다른 기관에 가지 않습니다. 보류를 해제하면 AI 요약 그대로
+              검토 대기로 돌아갑니다.
+            </HelpTip>
+          </span>
+        }
+      />
       <ReadOnlySentences item={item} />
-      <p className="text-[14px] leading-6 text-muted">
-        보류한 요약은 보호자와 다른 기관에 가지 않아요. 보류 해제하면 AI 요약 그대로 검토 대기로
-        돌아가요.
-      </p>
       {error ? (
         <p role="alert" className="text-right text-[14px] text-block">
           {error}
@@ -983,7 +987,7 @@ function ResolvedCard({ item, outcome, message }: { item: SummaryItem; outcome: 
 
 /** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function Gate1Route() {
-  if (!isReady("gate1")) return <NotReadyPage title={TITLE} description={DESCRIPTION} />;
+  if (!isReady("gate1")) return <NotReadyPage title={TITLE} />;
   return <Gate1Page />;
 }
 
@@ -1025,11 +1029,7 @@ function Gate1Page() {
   return (
     <>
       <PageHeader
-        eyebrow={
-          tab === "hold"
-            ? `${held.length}건 · 넘기지 않고 세워 둔 요약`
-            : `${pending.length}건 · 오래된 것부터`
-        }
+        eyebrow={`${tab === "hold" ? held.length : pending.length}건`}
         title={tab === "hold" ? "보류함" : TITLE}
         right={
           <div role="tablist" aria-label="검토 상태" className="flex gap-1.5">
