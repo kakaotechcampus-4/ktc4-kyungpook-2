@@ -596,6 +596,33 @@ export interface JournalEntry {
   content: string;
 }
 
+/** 기관 › 준비물·확인사항 — 보낸 요청의 받은 아이 한 명 (O-71) */
+export interface SentChecklistTarget {
+  child: { id: string; name: string | null };
+  /** 아이가 삭제되지 않았고 지금도 우리 명부에 있다. false 면 "명부에서 빠짐" 이고 숫자에서 빠진다 */
+  onRoster: boolean;
+  confirmedAt: string | null;
+  /** 확인한 보호자의 카카오 닉네임. 없으면 null */
+  confirmedByName: string | null;
+}
+
+/** 기관 › 준비물·확인사항 — 보낸 요청 한 건 (O-70 · O-71) */
+export interface SentChecklist {
+  id: string;
+  items: string[];
+  sentAt: string;
+  /** 지금 명부에 있는 받은 아이 수 */
+  total: number;
+  confirmed: number;
+  targets: SentChecklistTarget[];
+}
+
+/** O-71 한 쪽. nextBefore 가 있으면 그 값으로 더 오래된 요청을 이어 본다 */
+export interface SentChecklistPage {
+  checklists: SentChecklist[];
+  nextBefore: string | null;
+}
+
 /** 설정 › 기관 요청사항 한 건 */
 export interface InstitutionRequestItem {
   id: string;

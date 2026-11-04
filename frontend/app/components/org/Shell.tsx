@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   ChevronDown,
   ClipboardCheck,
+  ClipboardList,
   ClipboardPlus,
   LayoutDashboard,
   ListChecks,
@@ -133,6 +134,12 @@ function nav(counts: OrgShellCounts): NavGroup[] {
           label: "아동 목록",
           sub: "명부와 보호자 동의",
           icon: Users,
+        },
+        {
+          href: "/checklists",
+          label: "준비물·확인사항",
+          sub: "보호자에게 보내고 확인을 봅니다",
+          icon: ClipboardList,
         },
       ],
     },

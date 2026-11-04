@@ -10,6 +10,7 @@ import type {
   Insight,
   Institution,
   InstitutionRequestItem,
+  SentChecklist,
   InstitutionShares,
   JournalEntry,
   LiveInvitation,
@@ -1028,3 +1029,18 @@ export const INSTITUTION_REQUESTS: Record<string, InstitutionRequestItem[]> = {
   ],
   child_2044: [],
 };
+
+/** 기관 › 준비물·확인사항 — 보낸 요청, 최신순. 보내기 · 내리기가 이 배열을 바꾼다 */
+export const SENT_CHECKLISTS: SentChecklist[] = [
+  {
+    id: "cl_02",
+    items: ["다음 주 현장학습 동의서를 확인해주세요.", "실내화를 새로 준비해주세요."],
+    sentAt: "2026-11-03T15:20:00",
+    total: 2,
+    confirmed: 1,
+    targets: [
+      { child: { id: "child_1023", name: "김OO" }, onRoster: true, confirmedAt: "2026-11-03T19:02:00", confirmedByName: "김보호" },
+      { child: { id: "child_1041", name: "이OO" }, onRoster: true, confirmedAt: null, confirmedByName: null },
+    ],
+  },
+];

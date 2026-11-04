@@ -91,6 +91,8 @@ import type {
   Institution,
   InstitutionShares,
   InstitutionRequestItem,
+  SentChecklist,
+  SentChecklistPage,
   IssuedInvitation,
   JournalEntry,
   LiveInvitation,
@@ -191,6 +193,8 @@ const BE_READY = {
   consentRequests: true,
   /** 보호자: 기관 요청사항 — 준비물 · 확인사항 (G-50, G-51) */
   institutionRequests: false,
+  /** 기관: 준비물·확인사항 보내기 · 보낸 목록 · 내리기 (O-70 ~ O-72) */
+  checklists: true,
   /**
    * 보호자: 기관 코드 조회 · 연결 요청 (G-43, G-44). 바로 연결되지 않고 기관이 수락해야 명부에 오른다.
    * 수락 대기 중 기관은 아이 목록·홈 응답(guardianChildren)의 linkRequests 로 온다.
@@ -1404,4 +1408,56 @@ export async function confirmInstitutionRequest(id: string) {
     return { ok: true };
   }
   return request(`/api/v1/institution-requests/${id}/confirm`, { method: "POST" });
+}
+
+/* ── 기관: 준비물·확인사항 ──────────────────────────── */
+
+/**
+ * GET /api/v1/institutions/me/checklists — 내리지 않은 요청 최신순 50개씩 (O-71).
+ * before 는 앞 쪽의 nextBefore. 기준 요청을 내렸어도 이어 볼 수 있다.
+ */
+export async function getSentChecklists(before?: string): Promise<SentChecklistPage> {
+  if (mockFor("checklists")) {
+    const live = mock.SENT_CHECKLISTS;
+    const start = before ? live.findIndex((c) => c.id === before) + 1 : 0;
+    return { checklists: live.slice(start, start + 50), nextBefore: live.length > start + 50 ? live[start + 49].id : null };
+  }
+  const query = before ? `?before=${encodeURIComponent(before)}` : "";
+  return request(`/api/v1/institutions/me/checklists${query}`);
+}
+
+/**
+ * POST /api/v1/institutions/me/checklists — 명부의 아이들에게 한 번에 보낸다 (O-70).
+ * 명부에 없는 아이가 섞이면 400 INVALID_CHECKLIST_TARGET. 보낸 뒤에는 고칠 수 없고 내리기만 한다.
+ */
+export async function sendChecklist(input: { items: string[]; childIds: string[] }): Promise<SentChecklist> {
+  if (mockFor("checklists")) {
+    const roster = await getChildren();
+    const sent: SentChecklist = {
+      id: `cl_${Date.now()}`,
+      items: input.items.map((i) => i.trim()),
+      sentAt: new Date().toISOString(),
+      total: input.childIds.length,
+      confirmed: 0,
+      targets: input.childIds.map((id) => ({
+        child: { id, name: roster.find((c) => c.id === id)?.name ?? null },
+        onRoster: true,
+        confirmedAt: null,
+        confirmedByName: null,
+      })),
+    };
+    mock.SENT_CHECKLISTS.unshift(sent);
+    return sent;
+  }
+  return request("/api/v1/institutions/me/checklists", { method: "POST", body: JSON.stringify(input) });
+}
+
+/** DELETE /api/v1/institutions/me/checklists/{id} — 통째로 내린다. 이미 내렸어도 204 (O-72) */
+export async function cancelChecklist(id: string): Promise<void> {
+  if (mockFor("checklists")) {
+    const at = mock.SENT_CHECKLISTS.findIndex((c) => c.id === id);
+    if (at >= 0) mock.SENT_CHECKLISTS.splice(at, 1);
+    return;
+  }
+  return request(`/api/v1/institutions/me/checklists/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

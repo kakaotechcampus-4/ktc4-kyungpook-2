@@ -17,6 +17,7 @@ export default [
     route("children", "routes/org/children.tsx"),
     route("children/new", "routes/org/children-new.tsx"),
     route("children/:id", "routes/org/children-detail.tsx"),
+    route("checklists", "routes/org/checklists.tsx"),
     route("insights", "routes/org/insights.tsx"),
     route("inbox", "routes/org/inbox.tsx"),
     route("inbox/:id", "routes/org/inbox-detail.tsx"),
