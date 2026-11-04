@@ -299,7 +299,7 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
                 <div className="flex items-baseline gap-2 px-1 pt-2 pb-1.5">
                   <h3 className={`text-[16px] font-extrabold ${s.tone}`}>{s.title}</h3>
                   <span className="text-[14px] text-muted">
-                    {s.groups.length}명 · {s.desc}
+                    {s.groups.length}건 · {s.desc}
                   </span>
                 </div>
                 <ul className="flex flex-col gap-2">
