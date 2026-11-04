@@ -58,7 +58,7 @@ function NotificationsPage() {
           준비물·확인사항을 지금 불러오지 못했어요. 잠시 후 다시 열어 주세요.
         </p>
       ) : total === 0 ? (
-        <p className="py-10 text-center text-[15px] text-muted">확인할 알림이 없습니다.</p>
+        <p className="py-10 text-center text-[15px] text-muted">확인할 알림이 없어요.</p>
       ) : null}
 
       {openChecklists !== null && openChecklists > 0 ? (
@@ -80,7 +80,7 @@ function NotificationsPage() {
             <div className="flex items-start gap-2 rounded-2xl border-l-4 border-human bg-humansoft px-4 py-3 text-human">
               <Hand size={20} strokeWidth={1.75} className="mt-0.5 shrink-0" />
               <div>
-                <p className="font-bold">새 기관이 권한을 요청했습니다</p>
+                <p className="font-bold">새 기관이 권한을 요청했어요</p>
                 <p className="text-[14px] leading-6">
                   허락하기 전에 무엇이 공유되는지 확인해 주세요.
                 </p>

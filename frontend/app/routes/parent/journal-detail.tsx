@@ -7,7 +7,7 @@ import { getJournal, getJournalEntry, isReady } from "@/lib/api";
 export async function clientLoader({ params }: { params: { id: string } }) {
   // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
   if (!isReady("guardianJournal")) return null;
-  // 볼 수 없는 일지(없음·남의 아이·끊긴 연결)는 undefined 로 온다 → "페이지를 찾을 수 없습니다"
+  // 볼 수 없는 일지(없음·남의 아이·끊긴 연결)는 undefined 로 온다 → "페이지를 찾을 수 없어요"
   const entry = await getJournalEntry(params.id);
   if (!entry) throw new Response("Not Found", { status: 404 });
 

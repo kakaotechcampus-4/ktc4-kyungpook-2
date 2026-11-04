@@ -89,7 +89,7 @@ export default function ParentHomePage() {
           <ParentNotReadySection />
         ) : recent.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-line2 px-4 py-6 text-center text-[14px] text-muted">
-            아직 새로운 소식이 없습니다.
+            아직 새로운 소식이 없어요.
           </p>
         ) : (
           <div className="flex flex-col gap-2.5">
@@ -139,7 +139,7 @@ export default function ParentHomePage() {
         <h2 className="mb-2 text-[16px] font-bold">최근 공유 활동</h2>
         {activity.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-line2 px-4 py-6 text-center text-[14px] text-muted">
-            아직 공유된 활동이 없습니다.
+            아직 공유된 활동이 없어요.
           </p>
         ) : (
           <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line">

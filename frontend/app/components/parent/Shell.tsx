@@ -48,16 +48,10 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
   const navigating = useNavigating();
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] flex-col bg-surface">
+    <div className="parent-ui mx-auto flex min-h-screen w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] flex-col">
       {isOnboarding ? (
-        <header className="flex items-center gap-2 border-b border-line px-4 py-3">
-          <span
-            aria-hidden
-            className="flex size-7 items-center justify-center rounded bg-ink text-[13px] font-bold text-paper"
-          >
-            잇
-          </span>
-          <span className="text-[16px] font-bold tracking-tight">잇다 ITDA</span>
+        <header className="flex items-center px-4 py-3">
+          <img src="/img/logo.png" alt="잇다" width={98} height={36} className="h-9 w-auto" />
         </header>
       ) : null}
 
@@ -71,7 +65,7 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
       {!isOnboarding ? (
         <nav
           aria-label="주 메뉴"
-          className="fixed bottom-0 left-1/2 flex w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] -translate-x-1/2 border-t border-line bg-surface"
+className="fixed bottom-0 left-1/2 flex w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] -translate-x-1/2 border-t border-line bg-surface/92 backdrop-blur-sm"
         >
           {TABS.map((t) => {
             const active = t.match(pathname);
@@ -82,7 +76,7 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
                 to={t.href}
                 aria-current={active ? "page" : undefined}
                 className={`tap flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 text-[12px] ${
-                  active ? "font-bold text-accentink" : "text-muted"
+                  active ? "font-bold text-ink" : "text-muted"
                 }`}
               >
                 <span className="relative">

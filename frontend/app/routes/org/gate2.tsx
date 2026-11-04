@@ -13,13 +13,26 @@ import {
   IrreversibleWarning,
   Note,
   PageHeader,
+  StuckList,
 } from "@/components/ui";
-import { ApiError, decideGate2, getInsights, isReady } from "@/lib/api";
+import {
+  ApiError,
+  decideGate2,
+  getGate1Queue,
+  getInsights,
+  isReady,
+  loadIfReady,
+} from "@/lib/api";
 import type { Insight } from "@/lib/types";
 
 /** BE 가 우리 기관이 승인 주체인 것만 준다 — 화면에서 기관으로 다시 거르지 않는다 */
 export async function clientLoader() {
-  return { mine: await getInsights("pending") };
+  const [mine, gate1] = await Promise.all([
+    getInsights("pending"),
+    loadIfReady("gate1", () => getGate1Queue("pending")),
+  ]);
+  // 비었을 때 앞단(요약 검토)에 걸린 것이 있는지 말해 준다
+  return { mine, upstream: { gate1: gate1 ? gate1.length : null } };
 }
 
 type Decision = "approve" | "hold";
@@ -305,7 +318,7 @@ export default function Gate2Route() {
 }
 
 function Gate2Page() {
-  const { mine } = useLoaderData<typeof clientLoader>();
+  const { mine, upstream } = useLoaderData<typeof clientLoader>();
   /**
    * 승인/보류하면 revalidate 로 사이드바 배지가 갱신되면서 이 항목은 `mine`(pending
    * 목록) 에서 빠진다 — "완료" 카드가 화면에서 사라지지 않도록 이번 방문 동안만
@@ -330,9 +343,17 @@ function Gate2Page() {
       {visible.length === 0 ? (
         <EmptyState
           icon="done"
-          title="검토할 분석 결과가 없습니다"
-          description="우리 기관 기록이 근거가 된 관찰·분석 결과가 생기면 여기에 표시됩니다."
-        />
+          title="검토할 분석 결과가 없어요"
+          description={
+            (upstream.gate1 ?? 0) > 0
+              ? "요약을 승인하면 그 문장이 쌓여 분석 결과가 돼요."
+              : "우리 기관 기록이 근거가 된 관찰·분석 결과가 생기면 여기에 표시돼요."
+          }
+        >
+          <StuckList
+            items={[{ label: "검토할 요약", count: upstream.gate1, href: "/gate1" }]}
+          />
+        </EmptyState>
       ) : (
         <div className="flex flex-col gap-6">
           {visible.map((i) => (
