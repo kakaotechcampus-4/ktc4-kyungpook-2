@@ -87,6 +87,12 @@ export default function ChildRegisterPage() {
       case "DUPLICATE_EXTERNAL_ID":
         setErrors({ externalId: "이미 사용 중인 관리번호입니다" });
         return;
+      case "DUPLICATE_CHILD":
+        // 서버는 관리번호를 먼저 보므로 여기 오면 관리번호는 겹치지 않는다. 명부에서 뺀 아이는 보지 않는다 (#311)
+        setErrors({
+          form: "같은 이름·생년월일의 아이가 이미 등록되어 있어요. 명부를 확인해 주세요.",
+        });
+        return;
       case "INVALID_REQUEST":
         setErrors({ form: "이름·생년월일·관리번호를 확인해 주세요." });
         return;

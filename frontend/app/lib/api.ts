@@ -915,6 +915,7 @@ export async function resolveBlockedItem(
  *
  * 등록과 함께 서버가 첫 초대 코드를 발급해 invitation 으로 준다. 한 트랜잭션이라
  * 503 INVITE_CODE_ISSUE_FAILED 면 아이도 등록되지 않았다 — 그대로 다시 요청하면 된다.
+ * 같은 기관 명부에 이름·생년월일이 같은 아이가 있으면 409 DUPLICATE_CHILD (관리번호 중복을 먼저 본다).
  */
 export async function registerChild(input: {
   name: string;
@@ -927,9 +928,13 @@ export async function registerChild(input: {
     if (mock.CHILDREN.some((c) => c.externalId === externalId)) {
       throw new ApiError(409, "DUPLICATE_EXTERNAL_ID");
     }
+    const trimmedName = input.name.trim();
+    if (mock.CHILDREN.some((c) => c.name === trimmedName && c.birthDate === input.birthDate)) {
+      throw new ApiError(409, "DUPLICATE_CHILD");
+    }
     const child: Child = {
       id: `child_${Math.random().toString(36).slice(2, 8)}`,
-      name: input.name.trim(),
+      name: trimmedName,
       birthDate: input.birthDate,
       externalId,
       status: "pending_consent",
