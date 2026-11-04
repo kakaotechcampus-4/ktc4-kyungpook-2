@@ -39,6 +39,7 @@ import lombok.RequiredArgsConstructor;
  * 보호자의 준비물·확인사항 — 목록(G-50) · 확인(G-51).
  *
  * <p>이 아이와 연결된 보호자이고 아이가 삭제되지 않았을 때만 쓴다. 아니면 이유를 나누지 않고 403 이다(보호자 아이 조회와 같다).
+ * 확인은 아이 행을 공유 잠금으로 먼저 잡은 뒤 이 조건을 본다 — 연결 해제(아이 행 FOR UPDATE)와 줄을 선다.
  * 보이는 요청은 내리지 않았고 보낸 기관 명부에 아이가 지금 있는 것이다. 보낸 뒤에 연결된 보호자도 본다 — 요청은 보호자가
  * 아니라 아이에게 간 것이다.
  */
@@ -79,13 +80,23 @@ public class GuardianChecklistService {
     /**
      * 이 아이 몫으로 확인한다. 한 번뿐이고 되돌리지 않는다. 이미 다른 보호자가 확인했으면 그 확인을 그대로 돌려준다(200).
      *
-     * <p>요청 행을 공유 잠금으로 잡은 채 내렸는지 보고 확인을 쓴다. 내리기(조건부 UPDATE)는 같은 행을 바꾸므로 이 잠금과 줄을
-     * 선다 — 내리기가 먼저 커밋되면 여기서 내린 요청을 보고 404, 확인이 먼저면 내리기는 확인이 커밋된 뒤 내린다. 잠그기 전에
-     * 요청 · 받은 줄을 엔티티로 읽지 않는다 — 영속성 컨텍스트가 잠그기 전 값을 돌려준다.
+     * <p>잠금 순서는 아이 → 요청 → 받은 줄이다 (DB 스키마 §3.3).
+     * <ul>
+     *   <li>아이 행을 공유 잠금으로 잡은 뒤 삭제 · 보호자 연결을 본다. 연결 해제(G-05 · O-19)는 아이 행을 FOR UPDATE 로 먼저
+     *       잠그므로 이 잠금과 줄을 선다 — 해제가 먼저 커밋되면 여기서 403 이고 확인은 남지 않는다. 확인이 먼저면 해제는 확인이
+     *       커밋된 뒤 진행된다.</li>
+     *   <li>요청 행을 공유 잠금으로 잡은 채 내렸는지 본다. 내리기(조건부 UPDATE)는 같은 행을 바꾸므로 이 잠금과 줄을 선다 —
+     *       내리기가 먼저 커밋되면 404, 확인이 먼저면 내리기는 확인이 커밋된 뒤 내린다.</li>
+     * </ul>
+     * 잠그기 전에 아이 · 요청 · 받은 줄을 엔티티로 읽지 않는다 — 영속성 컨텍스트가 잠그기 전 값을 돌려준다.
      */
     @Transactional
     public GuardianChecklistResponse confirm(String userId, Long childId, Long checklistId) {
-        Long parentId = requireLinkedChild(userId, childId);
+        Long parentId = userService.getParentIdOf(userId);
+        boolean alive = childRepository.findByIdForShare(childId).filter(child -> !child.isDeleted()).isPresent();
+        if (!alive || !childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
+            throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
+        }
         Long targetId = checklistTargetRepository.findIdByChecklistIdAndChildId(checklistId, childId)
                 .orElseThrow(ChecklistService::notFound);
         Checklist checklist = checklistRepository.findByIdForShare(checklistId).orElseThrow(ChecklistService::notFound);
@@ -100,14 +111,13 @@ public class GuardianChecklistService {
         return assemble(List.of(new GuardianChecklistRow(target, checklist))).get(0);
     }
 
-    /** @return 보호자 id */
-    private Long requireLinkedChild(String userId, Long childId) {
+    /** 목록용 — 읽기만 하므로 잠그지 않는다. 확인은 {@link #confirm} 이 아이 행을 잠근 뒤 같은 조건을 본다. */
+    private void requireLinkedChild(String userId, Long childId) {
         Long parentId = userService.getParentIdOf(userId);
         if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)
                 || childRepository.findByIdAndDeletedAtIsNull(childId).isEmpty()) {
             throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
         }
-        return parentId;
     }
 
     /** 기관 · 확인한 보호자를 한 번씩 모아 읽는다. */

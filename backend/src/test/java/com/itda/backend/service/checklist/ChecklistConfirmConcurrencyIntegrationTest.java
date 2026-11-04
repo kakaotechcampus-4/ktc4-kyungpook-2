@@ -55,6 +55,7 @@ import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.invitation.ChildGuardianService;
 
 /**
  * 확인이 다른 확인 · 내리기와 겹칠 때를 PostgreSQL 에서 재현한다. 방식은 {@link LockContention} 이다 — 먼저 쪽을 커밋 직전에
@@ -62,7 +63,8 @@ import com.itda.backend.repository.user.UserRepository;
  *
  * <p>정책: 확인끼리는 받은 줄({@code checklist_target}) UPDATE 에서 줄을 서고 먼저 한 사람만 남는다. 확인과 내리기는 요청 행
  * ({@code checklist})에서 줄을 선다 — 확인은 공유 잠금, 내리기는 UPDATE. 내리기가 먼저면 확인은 404, 확인이 먼저면 확인이
- * 남고 내리기는 그 뒤에 204 다.
+ * 남고 내리기는 그 뒤에 204 다. 확인과 보호자 연결 해제는 아이 행({@code child})에서 줄을 선다 — 확인은 공유 잠금, 해제는
+ * FOR UPDATE. 해제가 먼저면 확인은 403 이고 남지 않으며, 확인이 먼저면 확인이 남고 해제는 그 뒤에 204 다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -99,6 +101,7 @@ class ChecklistConfirmConcurrencyIntegrationTest {
     @Autowired private ChildRepository childRepository;
     @Autowired private ChildOrganizationRepository childOrganizationRepository;
     @Autowired private ChildGuardianRepository childGuardianRepository;
+    @Autowired private ChildGuardianService childGuardianService;
 
     private LockContention contention;
     private User staff;
@@ -127,6 +130,8 @@ class ChecklistConfirmConcurrencyIntegrationTest {
     void cleanUp() throws SQLException {
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             statement.executeUpdate("DELETE FROM checklist_target");
+            statement.executeUpdate("DELETE FROM sharing_consent");
+            statement.executeUpdate("DELETE FROM child_organization_request");
             statement.executeUpdate("DELETE FROM checklist");
             statement.executeUpdate("DELETE FROM child_guardian");
             statement.executeUpdate("DELETE FROM child_organization");
@@ -175,6 +180,32 @@ class ChecklistConfirmConcurrencyIntegrationTest {
         assertThat(held.second().getResponse().getStatus()).isEqualTo(204);
         assertThat(target().getConfirmedBy()).isEqualTo(mom.getId());
         assertThat(checklistRepository.findById(checklistId).orElseThrow().isCanceled()).isTrue();
+    }
+
+    @Test
+    void 연결_해제가_먼저면_겹친_확인은_403이고_확인이_남지_않는다() throws Exception {
+        Held<Object> held = contention.firstHoldsThen(
+                () -> {
+                    childGuardianService.unlinkBySelf(principal(dad), childId);
+                    return null;
+                },
+                () -> mockMvc.perform(withCsrf(post(confirmPath()), dad)).andReturn());
+
+        assertThat(held.second().getResponse().getStatus()).isEqualTo(403);
+        assertThat(held.second().getResponse().getContentAsString()).contains("\"code\":\"FORBIDDEN\"");
+        assertThat(target().isConfirmed()).isFalse();
+    }
+
+    @Test
+    void 확인이_먼저면_확인이_남고_겹친_연결_해제는_그_뒤에_204다() throws Exception {
+        Held<GuardianChecklistResponse> held = contention.firstHoldsThen(
+                () -> guardianChecklistService.confirm(principal(dad), childId, checklistId),
+                () -> mockMvc.perform(withCsrf(delete("/api/v1/guardians/me/children/" + childId), dad)).andReturn());
+
+        assertThat(held.first().confirmedByName()).isEqualTo("아빠");
+        assertThat(held.second().getResponse().getStatus()).isEqualTo(204);
+        assertThat(target().getConfirmedBy()).isEqualTo(dad.getId());
+        assertThat(childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, dad.getId())).isFalse();
     }
 
     // --- 도구 ---
