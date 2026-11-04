@@ -1412,6 +1412,24 @@ export async function getChecklists(
 }
 
 /**
+ * 확인 안 한 준비물·확인사항 수 — 헤더 알림 점 · 설정 개수 · 알림 화면이 덧붙여 보는 값.
+ *
+ * 이 값 하나 때문에 화면 전체가 실패하면 안 된다. 기능이 꺼져 있거나 조회가 실패하면(404 · 5xx · 네트워크) null 을 주고,
+ * 화면은 준비물 표시만 숨긴 채 기관 권한 요청 등 나머지를 그대로 보인다. 다음 로더 실행 때 다시 묻는다.
+ * 401 과 403 TERMS_NOT_AGREED 는 삼키지 않는다 — 다시 로그인 · 약관 단계로 보내는 기존 흐름이 맡는다.
+ * 준비물 화면(P-12)은 이 함수를 쓰지 않고 오류를 그대로 받는다.
+ */
+export async function loadOpenChecklistCount(childId: string): Promise<number | null> {
+  if (!isReady("checklists")) return null;
+  try {
+    return (await getChecklists(childId, { needsCheckOnly: true })).length;
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 401 || err.code === "TERMS_NOT_AGREED")) throw err;
+    return null;
+  }
+}
+
+/**
  * POST /api/v1/children/{childId}/checklists/{checklistId}/confirm — 이 아이 몫으로 한 번 확인한다 (G-51).
  * 이미 다른 보호자가 확인했으면 그 확인(누가 · 언제)을 돌려준다. 내렸거나 명부에서 빠진 요청은 404 CHECKLIST_NOT_FOUND.
  */

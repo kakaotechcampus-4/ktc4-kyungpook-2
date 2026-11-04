@@ -6,10 +6,10 @@ import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import {
   getGuardianInsights,
   getParentChildren,
-  getChecklists,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
+  loadOpenChecklistCount,
 } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 import type { GuardianInsight } from "@/lib/types";
@@ -22,7 +22,7 @@ export async function clientLoader() {
   const [insights, pending, openChecklists] = await Promise.all([
     getGuardianInsights(),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
-    loadIfReady("checklists", () => getChecklists(childId, { needsCheckOnly: true })),
+    loadOpenChecklistCount(childId),
   ]);
   // 서버는 내 모든 아이 것을 준다. 헤더에서 고른 아이 것만 보인다
   const child = kids.find((k) => k.id === childId);
@@ -30,7 +30,7 @@ export async function clientLoader() {
     childName: child?.name ?? "",
     insights: insights.filter((i) => i.childId === childId),
     pending,
-    openChecklists: openChecklists?.length ?? 0,
+    openChecklists: openChecklists ?? 0,
   };
 }
 

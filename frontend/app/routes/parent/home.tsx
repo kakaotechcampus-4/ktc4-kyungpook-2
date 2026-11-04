@@ -7,9 +7,9 @@ import {
   getJournal,
   getParentChildren,
   getParentHome,
-  getChecklists,
   getPendingInstitutionRequests,
   loadIfReady,
+  loadOpenChecklistCount,
 } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 import type { ParentActivity } from "@/lib/types";
@@ -22,15 +22,15 @@ export async function clientLoader() {
     getParentHome(childId),
     loadIfReady("guardianJournal", () => getJournal(childId)),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
-    // 헤더 알림 점은 확인 안 한 준비물·확인사항도 본다 — 있는지만 쓴다
-    loadIfReady("checklists", () => getChecklists(childId, { needsCheckOnly: true })),
+    // 헤더 알림 점은 확인 안 한 준비물·확인사항도 본다. 못 받아도 홈은 그대로 연다 (loadOpenChecklistCount)
+    loadOpenChecklistCount(childId),
   ]);
   return {
     child,
     activity,
     recent: journal?.slice(0, 2) ?? null,
     pending: pending ?? [],
-    openChecklists: openChecklists?.length ?? 0,
+    openChecklists: openChecklists ?? 0,
   };
 }
 

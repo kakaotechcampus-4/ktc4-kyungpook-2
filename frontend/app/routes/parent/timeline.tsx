@@ -7,10 +7,10 @@ import {
   getJournal,
   getParentChildren,
   getParentHome,
-  getChecklists,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
+  loadOpenChecklistCount,
 } from "@/lib/api";
 import { todayDate } from "@/lib/datetime";
 import { readSelectedChildId } from "@/lib/selectedChild";
@@ -25,9 +25,9 @@ export async function clientLoader() {
     getParentHome(childId),
     getJournal(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
-    loadIfReady("checklists", () => getChecklists(childId, { needsCheckOnly: true })),
+    loadOpenChecklistCount(childId),
   ]);
-  return { child, journal, pending, openChecklists: openChecklists?.length ?? 0 };
+  return { child, journal, pending, openChecklists: openChecklists ?? 0 };
 }
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];

@@ -5,7 +5,7 @@ import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { Toggle } from "@/components/parent/Toggle";
 import {
-  getChecklists,
+  loadOpenChecklistCount,
   getInstitutionShares,
   getParentChildren,
   getParentHome,
@@ -25,8 +25,8 @@ export async function clientLoader() {
   const childId = readSelectedChildId(kids);
   const [{ child }, openChecklists, pendingRequests, shares, session] = await Promise.all([
     getParentHome(childId),
-    // 확인 안 한 준비물·확인사항만. 서버에 없으면 null — mock 개수를 진짜 아이 설정에 띄우지 않는다
-    loadIfReady("checklists", () => getChecklists(childId, { needsCheckOnly: true })),
+    // 확인 안 한 준비물·확인사항 수. 못 받으면 null — 개수만 숨기고 설정은 그대로 연다
+    loadOpenChecklistCount(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
     // 기관 줄의 "받은 리포트 N편". 서버에 없으면 null — 줄에 아무것도 붙이지 않는다
     loadIfReady("institutionShares", () => getInstitutionShares(childId)),
@@ -126,8 +126,8 @@ function ParentSettingsContent({
   }
 
   const target = institutions.find((i) => i.institution.id === confirming);
-  // 확인 안 한 것은 서버가 상한 없이 모두 주므로 길이가 곧 전체 수다
-  const needsCheck = openChecklists?.length ?? null;
+  // 확인 안 한 것은 서버가 상한 없이 모두 주므로 길이가 곧 전체 수다. null 이면 모른다 — 개수를 띄우지 않는다
+  const needsCheck = openChecklists;
   const careCount = (child.care?.allergies.length ?? 0) + (child.care?.medications.length ?? 0);
   // 돌봄 정보는 서버에 저장할 곳이 없다. "0개"는 "알레르기 없음"으로 읽히니 개수 대신 준비 중이라고 쓴다
   const careReady = isReady("careInfo");
@@ -264,7 +264,7 @@ function ParentSettingsContent({
           >
             <span className="text-[15px]">준비물·확인사항</span>
             <span className="text-[14px] text-muted">
-              {needsCheck === null ? "준비 중" : needsCheck > 0 ? `${needsCheck}건 남음` : "완료"} ›
+              {needsCheck === null ? "" : needsCheck > 0 ? `${needsCheck}건 남음 ` : "완료 "}›
             </span>
           </Link>
         </div>
