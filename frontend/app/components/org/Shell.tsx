@@ -40,7 +40,6 @@ export interface OrgShellCounts {
 interface NavItem {
   href: string;
   label: string;
-  sub: string;
   icon: LucideIcon;
   badge?: number | null;
 }
@@ -59,88 +58,27 @@ function nav(counts: OrgShellCounts): NavGroup[] {
     {
       label: "업로드",
       items: [
-        {
-          href: "/upload",
-          label: "기록 등록",
-          sub: "파일을 올리고 진행을 봅니다",
-          icon: ClipboardPlus,
-        },
-        {
-          href: "/dashboard",
-          label: "대시보드",
-          sub: "오늘 내 차례와 아이별 진행",
-          icon: LayoutDashboard,
-        },
+        { href: "/upload", label: "기록 등록", icon: ClipboardPlus },
+        { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
       ],
     },
     {
       label: "승인 및 결과",
       items: [
-        {
-          href: "/queue/matching",
-          label: "매칭 확인",
-          sub: "누구 기록인지 고릅니다",
-          icon: ClipboardCheck,
-          badge: counts.matching,
-        },
-        {
-          href: "/gate1",
-          label: "요약 검토",
-          sub: "Gate 1 · 문장 단위",
-          icon: ListChecks,
-          badge: counts.gate1,
-        },
-        {
-          href: "/gate1?tab=hold",
-          label: "보류함",
-          sub: "넘기지 않고 세워 둔 요약",
-          icon: PauseCircle,
-          badge: counts.hold,
-        },
-        {
-          href: "/gate2",
-          label: "인사이트 승인",
-          sub: "Gate 2 · 되돌릴 수 없음",
-          icon: Send,
-          badge: counts.gate2,
-        },
-        {
-          href: "/insights",
-          label: "관찰·분석 결과",
-          sub: "아이별 주간 패턴",
-          icon: Sparkles,
-        },
+        { href: "/queue/matching", label: "매칭 확인", icon: ClipboardCheck, badge: counts.matching },
+        { href: "/gate1", label: "요약 검토", icon: ListChecks, badge: counts.gate1 },
+        { href: "/gate1?tab=hold", label: "보류함", icon: PauseCircle, badge: counts.hold },
+        { href: "/gate2", label: "인사이트 승인", icon: Send, badge: counts.gate2 },
+        { href: "/insights", label: "관찰·분석 결과", icon: Sparkles },
       ],
     },
     {
       label: "관리",
       items: [
-        {
-          href: "/queue/reinput",
-          label: "검증 수정 요청",
-          sub: "원본을 고쳐 다시 올립니다",
-          icon: RotateCcw,
-          badge: counts.reinput,
-        },
-        {
-          href: "/inbox",
-          label: "메시지",
-          sub: "다른 기관이 보낸 연락",
-          icon: Mail,
-          badge: counts.inbox,
-        },
-        {
-          href: "/children",
-          label: "아동 목록",
-          sub: "명부와 보호자 동의",
-          icon: Users,
-        },
-        {
-          href: "/checklists",
-          label: "준비물·확인사항",
-          sub: "보호자에게 보내고 확인을 봅니다",
-          icon: ClipboardList,
-        },
+        { href: "/queue/reinput", label: "검증 수정 요청", icon: RotateCcw, badge: counts.reinput },
+        { href: "/inbox", label: "메시지", icon: Mail, badge: counts.inbox },
+        { href: "/children", label: "아동 목록", icon: Users },
+        { href: "/checklists", label: "준비물·확인사항", icon: ClipboardList },
       ],
     },
   ];
@@ -217,7 +155,7 @@ export function OrgShell({
 
                   {/* pt-2 가 알약과 펼침판 사이의 다리다 — 이게 없으면 내려오는 동안 닫힌다 */}
                   <div className="invisible absolute top-full left-1/2 z-40 -translate-x-1/2 pt-2 opacity-0 transition-opacity duration-150 group-hover/nav:visible group-hover/nav:opacity-100 group-focus-within/nav:visible group-focus-within/nav:opacity-100">
-                    <ul className="w-72 max-w-[calc(100vw-2.5rem)] rounded-[22px] border border-line bg-surface p-2 shadow-[0_12px_34px_rgba(120,90,40,0.18)]">
+                    <ul className="w-56 max-w-[calc(100vw-2.5rem)] rounded-[22px] border border-line bg-surface p-2 shadow-[0_12px_34px_rgba(120,90,40,0.18)]">
                       {g.items.map((item) => {
                         const active = isHere(item.href, pathname, search);
                         const Icon = item.icon;
@@ -238,13 +176,8 @@ export function OrgShell({
                                 strokeWidth={1.8}
                                 className="shrink-0"
                               />
-                              <span className="min-w-0 flex-1 leading-tight">
-                                <span className="block truncate font-bold text-ink">
-                                  {item.label}
-                                </span>
-                                <span className="block truncate text-[13px] text-muted">
-                                  {item.sub}
-                                </span>
+                              <span className="min-w-0 flex-1 truncate font-bold text-ink">
+                                {item.label}
                               </span>
                               {item.badge ? <Count n={item.badge} /> : null}
                             </Link>

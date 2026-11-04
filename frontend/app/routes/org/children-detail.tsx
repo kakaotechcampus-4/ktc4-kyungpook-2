@@ -3,6 +3,7 @@ import { useLoaderData, useRevalidator } from "react-router";
 import { InviteCodeCard } from "@/components/org/InviteCodeCard";
 import { NotReadyState } from "@/components/org/NotReady";
 import { RosterConsentBadge } from "@/components/org/RosterConsentBadge";
+import { HelpTip } from "@/components/ui/HelpTip";
 import {
   Busy,
   Card,
@@ -41,7 +42,6 @@ export default function ChildDetailPage() {
     <>
       <PageHeader
         title={`아동 목록 · ${child.name}`}
-        description="승인된 요약이 날짜순으로 쌓인 관찰 기록입니다"
       />
 
       <Card className="mb-6">
@@ -158,7 +158,13 @@ function GuardianSection({
     // 아동 목록 · 등록 완료 화면의 "초대 코드 보기 · 발급" 링크가 #guardians 로 바로 내려온다
     <Card id="guardians" className="mb-6 scroll-mt-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[17px] font-bold">보호자 초대 코드</h2>
+        <span className="flex items-center gap-1">
+          <h2 className="text-[17px] font-bold">보호자 초대 코드</h2>
+          <HelpTip label="보호자 초대 코드" align="left">
+            코드는 10분 동안 한 번만 쓸 수 있습니다. 여러 개를 발급해 보호자마다 따로 보낼 수
+            있습니다.
+          </HelpTip>
+        </span>
         <button
           type="button"
           onClick={() => run("issue", () => issueInvitation(childId))}
@@ -185,10 +191,6 @@ function GuardianSection({
           ))}
         </div>
       )}
-      <p className="mb-6 text-[14px] leading-6 text-muted">
-        코드는 10분 동안 한 번만 쓸 수 있습니다. 여러 개를 발급해 보호자마다 따로 보낼 수 있습니다.
-      </p>
-
       <h2 className="mb-3 text-[17px] font-bold">연결된 보호자</h2>
       {guardians.length === 0 ? (
         <p className="text-[15px] text-muted">아직 코드로 연결한 보호자가 없습니다.</p>

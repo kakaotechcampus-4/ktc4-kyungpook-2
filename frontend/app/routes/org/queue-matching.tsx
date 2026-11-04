@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Lock } from "lucide-react";
-import { HelpTip } from "@/components/ui/HelpTip";
 import { Link, useLoaderData, useRevalidator } from "react-router";
 import { ChildFace } from "@/components/org/ChildFace";
 import { RosterPicker } from "@/components/org/RosterPicker";
+import { HelpTip } from "@/components/ui/HelpTip";
 import {
   Card,
   ConfidenceWarning,
@@ -501,13 +501,6 @@ function MatchingCard({
           ) : null}
         </div>
       ) : null}
-
-      <div className="mb-4">
-        <Note>
-          AI 가 확정하지 못한 기록은 자동으로 넘어가지 않습니다. 사람이 직접 아이를
-          선택해주세요.
-        </Note>
-      </div>
 
       <div className="flex flex-wrap gap-2">
         {/* review 의 "맞아요" 는 위에 따로 있다. 여기는 후보·명부에서 고른 아이로 확정하는 버튼이다 */}

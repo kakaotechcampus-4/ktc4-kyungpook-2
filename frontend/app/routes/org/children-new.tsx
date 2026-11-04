@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { InviteCodeCard } from "@/components/org/InviteCodeCard";
-import { Busy, Card, Note, PageHeader } from "@/components/ui";
+import { Busy, Card, PageHeader } from "@/components/ui";
+import { HelpTip } from "@/components/ui/HelpTip";
 import { ApiError, issueInvitation, registerChild } from "@/lib/api";
 import type { IssuedInvitation, RegisteredChild } from "@/lib/types";
 
@@ -125,7 +126,21 @@ export default function ChildRegisterPage() {
       <>
         <PageHeader
           title="아이 등록 완료"
-          description="초대 코드나 링크를 보호자에게 카톡 등으로 직접 보내 주세요"
+          right={
+            <HelpTip label="초대 코드">
+              코드는 발급 후 <b className="font-semibold">10분</b> 동안{" "}
+              <b className="font-semibold">한 번</b>만 쓸 수 있습니다. 보호자가 늦게 확인했다면
+              새 코드를 발급해 다시 보내 주세요. 새로 발급해도 이전 코드는 그대로 쓸 수 있어,
+              보호자마다 따로 보낼 수 있습니다. 이 화면을 나간 뒤에는{" "}
+              <Link
+                to={`/children/${child.id}#guardians`}
+                className="font-semibold text-accentink hover:underline"
+              >
+                {child.name} 상세 화면
+              </Link>
+              에서 코드를 다시 보거나 발급할 수 있습니다.
+            </HelpTip>
+          }
         />
 
         <Card>
@@ -142,16 +157,6 @@ export default function ChildRegisterPage() {
                 <InviteCodeCard key={invitation.id} invitation={invitation} />
               ))}
             </div>
-
-            <Note>
-              코드는 발급 후 <b className="font-semibold">10분</b> 동안 <b className="font-semibold">한 번</b>만
-              쓸 수 있습니다. 보호자가 늦게 확인했다면 새 코드를 발급해 다시 보내 주세요. 새로
-              발급해도 이전 코드는 그대로 쓸 수 있어, 보호자마다 따로 보낼 수 있습니다. 이 화면을 나간 뒤에는{" "}
-              <Link to={`/children/${child.id}#guardians`} className="font-semibold text-accentink hover:underline">
-                {child.name} 상세 화면
-              </Link>
-              에서 코드를 다시 보거나 발급할 수 있습니다.
-            </Note>
 
             {formError}
 
@@ -188,7 +193,22 @@ export default function ChildRegisterPage() {
     <>
       <PageHeader
         title="아이 등록"
-        description="등록하면 보호자에게 보낼 초대 코드가 함께 발급됩니다"
+        right={
+          <HelpTip label="아이 등록">
+            등록하면 <b className="font-semibold">보호자 동의 대기</b> 상태가 됩니다. 보호자가
+            초대 코드로 연결하고 동의하기 전까지는 이 아이의 기록을 올릴 수 없습니다. 관리번호는
+            같은 이름의 아이를 구분하는 데 쓰이며, 우리 기관 안에서 겹칠 수 없습니다.
+            <br />
+            <br />
+            <b className="font-semibold">이미 다른 기관에 다니는 아이</b>는 새로 등록하지 말고
+            보호자에게{" "}
+            <Link to="/children" className="font-semibold text-accentink underline">
+              우리 기관 코드
+            </Link>
+            를 알려 주세요. 새로 등록하면 같은 아이가 둘이 되어 기관들의 기록이 한 아이에게 모이지
+            않습니다.
+          </HelpTip>
+        }
       />
 
       <Card>
@@ -238,19 +258,6 @@ export default function ChildRegisterPage() {
               ) : null}
             </label>
           </div>
-
-          <Note>
-            등록하면 <b className="font-semibold">보호자 동의 대기</b> 상태가 됩니다. 보호자가
-            초대 코드로 연결하고 동의하기 전까지는 이 아이의 기록을 올릴 수 없습니다. 관리번호는
-            같은 이름의 아이를 구분하는 데 쓰이며, 우리 기관 안에서 겹칠 수 없습니다.
-          </Note>
-          <Note>
-            <b className="font-semibold">이미 다른 기관에 다니는 아이</b>는 새로 등록하지 말고 보호자에게{" "}
-            <Link to="/children" className="font-semibold text-accentink underline">
-              우리 기관 코드
-            </Link>
-            를 알려 주세요. 새로 등록하면 같은 아이가 둘이 되어 기관들의 기록이 한 아이에게 모이지 않습니다.
-          </Note>
 
           {formError}
 

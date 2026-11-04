@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
 import { Lock } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
+import { HelpTip } from "@/components/ui/HelpTip";
 import {
   Card,
   ConfirmDialog,
@@ -121,6 +122,16 @@ function Gate2Item({
         <span className="text-[14px] text-muted">분석 결과 · {insight.period}</span>
       </div>
 
+      {/* CRITERIA §5 필수 경고. 기관 경계를 넘는 마지막 관문이라 승인자가 알아야 한다 */}
+      {insight.teacherWritten === true ? (
+        <p
+          role="alert"
+          className="mb-3 rounded bg-blocksoft px-3 py-2 text-[14px] font-semibold text-block"
+        >
+          ⚠️ 검증을 거치지 않은 교사 작성 문장이 포함되어 있습니다
+        </p>
+      ) : null}
+
       {/* BE 는 지금 항상 true 다 — 본문에 다른 아이 이름이 없다는 보장이 없다 */}
       {insight.needsReview ? (
         <p role="note" className="mb-3 rounded bg-reviewsoft px-3 py-2 text-[14px] text-review">
@@ -157,10 +168,12 @@ function Gate2Item({
         미동의 기관도 숨기지 않고 잠금 + 사유로 보인다 — 왜 안 가는지 알 수 있게.
       */}
       <section className="mb-4">
-        <h3 className="mb-1 text-[17px] font-bold">승인하면 함께 받는 기관</h3>
-        <p className="mb-3 text-[14px] text-muted">
-          보호자가 공유에 동의한 기관만 받습니다. 선생님이 고르지 않습니다.
-        </p>
+        <span className="mb-3 flex items-center gap-1">
+          <h3 className="text-[17px] font-bold">승인하면 함께 받는 기관</h3>
+          <HelpTip label="승인하면 함께 받는 기관" align="left">
+            보호자가 공유에 동의한 기관만 받습니다. 선생님이 고르지 않습니다.
+          </HelpTip>
+        </span>
         {receivers.length === 0 ? (
           <p className="mb-2 rounded border border-dashed border-line2 px-3 py-2.5 text-[14px] text-ink2">
             지금 받을 다른 기관이 없습니다. 승인하면 보호자에게만 보입니다.
@@ -285,10 +298,7 @@ function messageOf(err: unknown): string {
 export default function Gate2Route() {
   if (!isReady("insights")) {
     return (
-      <NotReadyPage
-        title="인사이트 승인"
-        description="근거 기록을 제공한 선생님이 보호자에게 보여도 되는지 판단합니다"
-      />
+<NotReadyPage title="인사이트 승인" />
     );
   }
   return <Gate2Page />;

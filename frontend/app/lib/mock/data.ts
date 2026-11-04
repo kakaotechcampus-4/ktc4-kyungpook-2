@@ -692,6 +692,7 @@ export const INSIGHTS: Insight[] = [
     period: "최근 3주",
     content: "소음 상황에서 반응하는 패턴이 3회 반복됨.",
     needsReview: true,
+    teacherWritten: true,
     primarySource: CENTER,
     evidence: [
       {

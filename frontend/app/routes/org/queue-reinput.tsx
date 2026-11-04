@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLoaderData, useNavigate, useRevalidator } from "react-router";
-import { Busy, Card, EmptyState, Note, PageHeader, ValidationBadge } from "@/components/ui";
+import { Busy, Card, EmptyState, PageHeader, ValidationBadge } from "@/components/ui";
 import { ApiError, getBlockedQueue, resolveBlockedItem } from "@/lib/api";
 import type { BlockedItem } from "@/lib/types";
 
@@ -28,13 +28,6 @@ export default function ReinputQueuePage() {
           ))}
         </div>
       )}
-
-      <div className="mt-5">
-        <Note>
-          원본은 수정하거나 삭제하지 않습니다. 고친 내용을{" "}
-          <b className="font-semibold">새 기록으로 추가</b>합니다 (append-only).
-        </Note>
-      </div>
     </>
   );
 }
@@ -120,9 +113,6 @@ function BlockedCard({ item }: { item: BlockedItem }) {
           {busy === "hold" ? <Busy>처리 중…</Busy> : "이 기록 보류"}
         </button>
       </div>
-      <p className="mt-2 text-[13px] text-muted">
-        다시 올리기를 누르면 이 기록은 목록에서 빠지고 기록 등록 화면으로 이동합니다.
-      </p>
 
       {error ? (
         <p role="alert" className="mt-3 text-[14px] text-block">
