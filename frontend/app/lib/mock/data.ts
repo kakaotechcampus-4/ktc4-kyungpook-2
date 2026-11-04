@@ -450,7 +450,13 @@ export const GATE1_QUEUE: SummaryItem[] = [
     needsReview: true,
     reviewReasons: ["다른아동이름"],
     uncoveredEntries: [{ journalEntryId: "je_5103", content: "내일 하원 시간이 오후 4시로 바뀝니다." }],
-    reviewFlags: [{ journalEntryId: "je_5101", issueTypes: ["추측성표현"] }],
+    reviewFlags: [
+      {
+        journalEntryId: "je_5101",
+        issueTypes: ["추측성표현"],
+        reasons: ["관찰되지 않은 내용을 추측한 표현이 있어요"],
+      },
+    ],
   }),
   // 같은 날 새 기록을 반영하는 중 — 고치기·승인이 잠긴다
   gate1Mock({

@@ -386,8 +386,11 @@ export interface SummaryItem {
   reviewReasons: string[];
   /** 요약에 안 들어간 일지. 승인하면 이 일지도 함께 끝난다 */
   uncoveredEntries: { journalEntryId: string; content: string }[];
-  /** 요약에 들어간 원본 중 검증에서 REVIEW 를 받은 일지와 사유 원본 */
-  reviewFlags: { journalEntryId: string; issueTypes: string[] }[];
+  /**
+   * 요약에 들어간 원본 중 검증에서 REVIEW 를 받은 일지와 사유.
+   * issueTypes 는 AI 코드 원본, reasons 는 선생님이 읽을 문장 — 화면은 reasons 를 보여 준다 (#351)
+   */
+  reviewFlags: { journalEntryId: string; issueTypes: string[]; reasons: string[] }[];
 }
 
 /**

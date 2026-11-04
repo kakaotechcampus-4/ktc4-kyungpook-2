@@ -416,7 +416,7 @@ function PendingItem({
             {item.reviewFlags.length > 0 ? (
               <p className="text-[14px] leading-6">
                 검증이 확인을 요청한 원본 일지 {item.reviewFlags.length}건 ·{" "}
-                {[...new Set(item.reviewFlags.flatMap((f) => f.issueTypes))].join(", ")}
+                {[...new Set(item.reviewFlags.flatMap((f) => f.reasons))].join(" · ")}
               </p>
             ) : null}
           </div>
