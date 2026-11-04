@@ -106,7 +106,7 @@ export default function ChecklistsPage() {
             </p>
           ) : null}
           {sent.length === 0 ? (
-            <EmptyState icon="◦" title="아직 보낸 요청이 없어요" description="위에서 첫 요청을 보내 보세요." />
+            <EmptyState icon="none" title="아직 보낸 요청이 없어요" description="위에서 첫 요청을 보내 보세요." />
           ) : (
             <ul className="flex flex-col gap-3">
               {sent.map((c) => (
