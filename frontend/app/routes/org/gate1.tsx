@@ -1057,12 +1057,12 @@ function Gate1Page() {
         {live.length === 0 && done.length === 0 ? (
           tab === "pending" ? (
             <EmptyState
-              icon="✓"
+              icon="done"
               title="검토할 요약이 없어요"
               description="기록을 등록하고 요약을 요청하면 매칭 · 검증 · 요약을 거쳐 여기로 와요."
             />
           ) : (
-            <EmptyState icon="◦" title="보류한 요약이 없어요" />
+            <EmptyState icon="none" title="보류한 요약이 없어요" />
           )
         ) : null}
 
