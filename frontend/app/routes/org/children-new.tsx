@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { InviteCodeCard } from "@/components/org/InviteCodeCard";
 import { Busy, Card, PageHeader } from "@/components/ui";
@@ -7,6 +7,19 @@ import { ApiError, issueInvitation, registerChild } from "@/lib/api";
 import type { IssuedInvitation, RegisteredChild } from "@/lib/types";
 
 type FormErrors = { externalId?: string; form?: string };
+
+/** 묻는 차례. 이름부터 묻고 관리번호를 마지막에 두는 이유 — 관리번호는 찾아와야 할 때가 있다 */
+const FIELDS = [
+  { key: "name", label: "이름", placeholder: "김OO", max: 100, hint: undefined },
+  { key: "birthDate", label: "생년월일", placeholder: undefined, max: undefined, hint: undefined },
+  {
+    key: "externalId",
+    label: "기관 내부 아동 ID",
+    placeholder: "센터에서 쓰는 관리번호",
+    max: 50,
+    hint: "같은 이름의 아이를 구분하는 번호예요. 우리 기관 안에서 겹칠 수 없어요.",
+  },
+] as const;
 
 /** 생년월일 입력의 상한. 서버가 미래 날짜를 거부한다. toISOString 은 UTC 라 자정 무렵 하루가 어긋나서 직접 만든다 */
 function todayLocal(): string {
@@ -26,6 +39,12 @@ export default function ChildRegisterPage() {
   const [birthDate, setBirthDate] = useState("");
   const [externalId, setExternalId] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
+  /**
+   * 한 번에 한 칸만 묻는다. 다 채우고 [다음] 을 누르면 아래에 다음 칸이 생기고,
+   * 채운 칸은 위에 그대로 남는다. 처음 등록하는 사람이 세 칸을 한꺼번에 보지 않게 한다.
+   */
+  const [open, setOpen] = useState(1);
+  const boxes = useRef<(HTMLInputElement | null)[]>([]);
   const [pending, setPending] = useState(false);
   const [registered, setRegistered] = useState<{
     child: RegisteredChild;
@@ -68,6 +87,7 @@ export default function ChildRegisterPage() {
 
   function startOver() {
     setRegistered(null);
+    setOpen(1);
     setName("");
     setBirthDate("");
     setExternalId("");
@@ -110,6 +130,18 @@ export default function ChildRegisterPage() {
       return;
     }
     setErrors({ form: "잠시 후 다시 시도해 주세요." });
+  }
+
+  const values = { name, birthDate, externalId };
+  const setters = { name: setName, birthDate: setBirthDate, externalId: setExternalId };
+
+  /** 지금 칸이 채워졌으면 다음 칸을 열고 그리로 커서를 옮긴다 */
+  function advance() {
+    if (!values[FIELDS[open - 1].key].trim()) return;
+    const next = Math.min(open + 1, FIELDS.length);
+    setOpen(next);
+    // 칸이 그려진 다음에 커서를 준다
+    requestAnimationFrame(() => boxes.current[next - 1]?.focus());
   }
 
   const inputClass =
@@ -213,61 +245,84 @@ export default function ChildRegisterPage() {
 
       <Card>
         <form onSubmit={handleRegister} className="flex flex-col gap-5">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[15px] font-semibold">이름</span>
-              <input
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={100}
-                placeholder="김OO"
-                className={inputClass}
+          <span aria-hidden className="flex gap-1.5">
+            {FIELDS.map((f, i) => (
+              <span
+                key={f.key}
+                className={`h-1.5 flex-1 rounded-full ${
+                  i + 1 < open ? "bg-accent" : i + 1 === open ? "bg-mark" : "bg-surface2"
+                }`}
               />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[15px] font-semibold">생년월일</span>
-              <input
-                type="date"
-                required
-                value={birthDate}
-                onChange={(e) => setBirthDate(e.target.value)}
-                max={todayLocal()}
-                className={inputClass}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[15px] font-semibold">기관 내부 아동 ID</span>
-              <input
-                required
-                value={externalId}
-                onChange={(e) => {
-                  setExternalId(e.target.value);
-                  if (errors.externalId) setErrors((prev) => ({ ...prev, externalId: undefined }));
-                }}
-                maxLength={50}
-                placeholder="센터에서 쓰는 관리번호"
-                aria-invalid={errors.externalId ? true : undefined}
-                aria-describedby={errors.externalId ? "external-id-error" : undefined}
-                className={inputClass}
-              />
-              {errors.externalId ? (
-                <span id="external-id-error" className="text-[14px] text-block">
-                  {errors.externalId}
-                </span>
-              ) : null}
-            </label>
+            ))}
+          </span>
+
+          <div className="flex flex-col gap-4">
+            {FIELDS.slice(0, open).map((f, i) => (
+              <label key={f.key} className="flex flex-col gap-1.5">
+                <span className="text-[15px] font-semibold">{f.label}</span>
+                <input
+                  ref={(el) => {
+                    boxes.current[i] = el;
+                  }}
+                  type={f.key === "birthDate" ? "date" : "text"}
+                  required
+                  value={values[f.key]}
+                  onChange={(e) => {
+                    setters[f.key](e.target.value);
+                    if (f.key === "externalId" && errors.externalId) {
+                      setErrors((prev) => ({ ...prev, externalId: undefined }));
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    // 마지막 칸이 아니면 엔터가 제출이 아니라 "다음" 이다.
+                    // 한글을 조합하는 중의 엔터는 글자를 확정하는 엔터라 넘기지 않는다
+                    if (e.nativeEvent.isComposing) return;
+                    if (e.key === "Enter" && open < FIELDS.length) {
+                      e.preventDefault();
+                      advance();
+                    }
+                  }}
+                  max={f.key === "birthDate" ? todayLocal() : undefined}
+                  maxLength={f.key === "birthDate" ? undefined : f.max}
+                  placeholder={f.placeholder}
+                  aria-invalid={f.key === "externalId" && errors.externalId ? true : undefined}
+                  aria-describedby={
+                    f.key === "externalId" && errors.externalId ? "external-id-error" : undefined
+                  }
+                  className={inputClass}
+                />
+                {f.key === "externalId" && errors.externalId ? (
+                  <span id="external-id-error" className="text-[14px] text-block">
+                    {errors.externalId}
+                  </span>
+                ) : null}
+                {i + 1 === open && f.hint ? (
+                  <span className="text-[14px] text-muted">{f.hint}</span>
+                ) : null}
+              </label>
+            ))}
           </div>
 
           {formError}
 
-          <button
-            type="submit"
-            disabled={pending}
-            className="tap self-start rounded bg-ink px-5 text-[16px] font-semibold text-paper hover:brightness-110 disabled:opacity-50"
-          >
-            {pending ? <Busy>등록 중…</Busy> : "등록하고 초대 코드 발급"}
-          </button>
+          {open < FIELDS.length ? (
+            <button
+              type="button"
+              onClick={advance}
+              disabled={!values[FIELDS[open - 1].key].trim()}
+              className="tap self-start rounded bg-ink px-5 text-[16px] font-semibold text-paper hover:brightness-110 disabled:bg-line2 disabled:text-muted"
+            >
+              다음
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={pending}
+              className="tap self-start rounded bg-ink px-5 text-[16px] font-semibold text-paper hover:brightness-110 disabled:opacity-50"
+            >
+              {pending ? <Busy>등록 중…</Busy> : "등록하고 초대 코드 발급"}
+            </button>
+          )}
         </form>
       </Card>
     </>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LogOut } from "lucide-react";
 import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { Busy, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
@@ -15,7 +16,7 @@ import {
   unlinkChild,
   updateConsent,
 } from "@/lib/api";
-import { getSession, isAuthMock } from "@/lib/auth";
+import { getSession, isAuthMock, signOut } from "@/lib/auth";
 import { ME } from "@/lib/mock/data";
 import { readSelectedChildId } from "@/lib/selectedChild";
 import type { ConsentState, InstitutionShares } from "@/lib/types";
@@ -62,6 +63,15 @@ function ParentSettingsContent({
   );
   const [confirming, setConfirming] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  /** 보호자는 보호자 입구로 — 기관 로그인(/login)으로 보내면 남의 문 앞에 세우는 셈이다 */
+  async function logout() {
+    setSigningOut(true);
+    await signOut();
+    navigate("/parent/invite", { replace: true });
+  }
+
   const [unlinking, setUnlinking] = useState(false);
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
@@ -274,6 +284,25 @@ function ParentSettingsContent({
         권한을 끄면 그 기관은 받은 주간 리포트를 더 볼 수 없고, 그 기관 기록이 들어간 리포트도 다른
         기관에서 가려져요. 기관이 이미 쓴 기록은 기관에 남아요.
       </p>
+
+      <div>
+        <h2 className="mb-2 text-[15px] font-bold text-ink2">계정</h2>
+        <div className="rounded-2xl border border-line">
+          <button
+            type="button"
+            onClick={logout}
+            disabled={signingOut}
+            className="tap flex w-full items-center justify-between px-4 py-3.5 disabled:opacity-60"
+          >
+            <span className="text-[15px]">{signingOut ? <Busy>로그아웃 중…</Busy> : "로그아웃"}</span>
+            <LogOut aria-hidden size={17} strokeWidth={1.9} className="text-muted" />
+          </button>
+        </div>
+        <p className="mt-2 text-[13px] leading-6 text-muted">
+          로그아웃해도 아이와의 연결과 동의는 그대로예요. 다시 카카오로 로그인하면 이어서 볼 수
+          있어요.
+        </p>
+      </div>
 
       {unlinking ? (
         <div

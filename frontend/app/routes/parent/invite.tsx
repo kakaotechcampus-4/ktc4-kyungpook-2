@@ -163,7 +163,7 @@ export default function ParentInvitePage() {
       return;
     }
     if (err.status === 403) {
-      setError("보안 확인에 실패했습니다. 새로고침한 뒤 다시 시도해 주세요.");
+      setError("보안 확인에 실패했어요. 새로고침한 뒤 다시 시도해 주세요.");
       return;
     }
     setError("잠시 후 다시 시도해 주세요.");
@@ -202,14 +202,47 @@ export default function ParentInvitePage() {
     <div className="flex flex-col gap-6">
       {step === "intro" ? (
         <div className="flex flex-col gap-6">
-          <div>
-            <h1 className="mb-2 text-[26px] leading-[1.3] font-extrabold tracking-tight">
-              흩어진 돌봄 기록을
-              <br />한 곳에서 봅니다
+          {/* 세 곳에서 오던 소식이 아이 하나로 모이는 그림. 선생님 화면과 같은 그림을 쓴다 */}
+          <div className="flex flex-col items-center gap-1 pt-2">
+            <div className="flex items-end justify-center gap-5">
+              <Sender src="/img/school.png" label="학교" />
+              <Sender src="/img/center.png" label="센터" />
+              <Sender src="/img/adult-01.png" label="활동지원사" />
+            </div>
+            <svg aria-hidden viewBox="0 0 160 34" className="h-8 w-40 text-line2">
+              <path
+                d="M18 2 C18 20 80 14 80 32 M80 2 L80 32 M142 2 C142 20 80 14 80 32"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+            <img
+              src="/img/kid-04.png"
+              alt=""
+              aria-hidden
+              width={92}
+              height={92}
+              className="size-[92px] rounded-[26px] bg-surface object-contain p-1 shadow-[0_6px_20px_rgba(120,90,40,0.14)]"
+            />
+          </div>
+
+          {/* 문구는 로그인 화면(web)과 같은 것을 쓴다 — 슬로건 · 핵심 가치 · 서비스 설명 */}
+          <div className="flex flex-col items-center gap-3 text-center">
+            <h1 className="text-[30px] leading-[1.25] font-extrabold tracking-[-0.03em] text-ink">
+              아이의 세상을 <b className="text-accentink">잇다</b>
             </h1>
+
+            <p className="flex items-center gap-2 text-[14px] font-semibold text-ink2">
+              <i aria-hidden className="size-1.5 rounded-full bg-accent" />
+              끊김 없는 돌봄, 이어지는 성장
+              <i aria-hidden className="size-1.5 rounded-full bg-[#ef8c3b]" />
+            </p>
+
             <p className="text-[15px] leading-7 text-ink2">
-              학교와 센터, 학원에서 따로 오던 소식을 아이별로 모읍니다. 정보는 보호자가 허락한
-              기관에만 공유됩니다.
+              아이와 기관의 정보를 연결해
+              <br />더 나은 돌봄과 더 넓은 가능성을 만듭니다.
             </p>
           </div>
 
@@ -219,10 +252,10 @@ export default function ParentInvitePage() {
               label="카카오로 시작하기"
               className="h-14 rounded-2xl"
             />
-            <p className="text-[13px] leading-6 text-muted">
+            <p className="text-center text-[13px] leading-6 text-muted">
               {savedCode
-                ? "기관에서 보낸 초대 코드를 받아 두었어요. 로그인하면 아이와 바로 연결됩니다."
-                : "로그인한 뒤 기관에서 받은 초대 코드를 입력하면 아이와 연결됩니다."}
+                ? "기관에서 보낸 초대 코드를 받아 두었어요. 로그인하면 아이와 바로 연결돼요."
+                : "로그인한 뒤 기관에서 받은 초대 코드를 입력하면 아이와 연결돼요."}
             </p>
           </div>
 
@@ -265,7 +298,7 @@ export default function ParentInvitePage() {
                 서비스 이용에 동의해 주세요
               </h1>
               <p className="text-[15px] leading-7 text-ink2">
-                카카오 로그인 동의와는 별개로, 잇다가 아이 정보를 다루는 방식에 대한 동의입니다.
+                카카오 로그인 동의와는 별개로, 잇다가 아이 정보를 다루는 방식에 대한 동의예요.
               </p>
             </div>
           </div>
@@ -328,10 +361,18 @@ export default function ParentInvitePage() {
             돌아갈 길을 준다. 이 화면은 셸에서 하단 탭이 숨겨지는 온보딩 경로라
             나가는 문이 따로 없다.
           */}
+          {/*
+            처음 오는 사람은 약관 · 코드 · 공유 동의 세 단계.
+            이미 쓰는 사람이 "아이 추가" 로 들어오면 약관은 지났으니 코드 · 공유 동의 두 단계다.
+            전에는 이 경우 단계를 아예 안 보여 줘서 몇 번 더 눌러야 하는지 알 수 없었다.
+          */}
           {onboarded ? (
-            <Link to="/parent" className="text-[14px] font-semibold text-accentink">
-              ‹ 홈으로
-            </Link>
+            <div className="flex flex-col gap-3">
+              <Link to="/parent" className="text-[14px] font-semibold text-accentink">
+                ‹ 홈으로
+              </Link>
+              <StepProgress step={1} total={2} />
+            </div>
           ) : (
             <StepProgress step={2} total={3} />
           )}
@@ -340,7 +381,7 @@ export default function ParentInvitePage() {
               초대 코드를 입력해 주세요
             </h1>
             <p className="text-[15px] leading-7 text-ink2">
-              기관에서 카톡 등으로 받은 8자리 코드입니다. 코드는 발급 후 10분 동안 한 번만 쓸 수
+              기관에서 카톡 등으로 받은 8자리 코드예요. 코드는 발급 후 10분 동안 한 번만 쓸 수
               있어요.
             </p>
           </div>
@@ -417,7 +458,7 @@ function AcceptedStep({
         <div className="rounded-2xl bg-accentsoft px-4 py-4">
           <p className="mb-1 text-[16px] font-bold text-accentink">이미 연결된 아이예요</p>
           <p className="text-[15px] leading-7 text-ink2">
-            이 코드의 아이는 이미 보호자님 계정과 연결돼 있어요. 코드는 쓰이지 않았습니다.
+            이 코드의 아이는 이미 보호자님 계정과 연결돼 있어요. 코드는 쓰이지 않았어요.
           </p>
         </div>
         {home}
@@ -430,7 +471,7 @@ function AcceptedStep({
 
   return (
     <div className="flex flex-col gap-4">
-      {onboarded ? null : <StepProgress step={2} total={3} />}
+      <StepProgress step={onboarded ? 1 : 2} total={onboarded ? 2 : 3} />
       <div className="rounded-2xl bg-accentsoft px-4 py-4">
         <p className="mb-1 text-[16px] font-bold text-accentink">
           {result.childName} 학생과 연결됐어요
@@ -451,5 +492,22 @@ function AcceptedStep({
       </Link>
       {home}
     </div>
+  );
+}
+
+/** 소식을 보내는 쪽 한 칸 — 그림과 이름 */
+function Sender({ src, label }: { src: string; label: string }) {
+  return (
+    <span className="flex flex-col items-center gap-1">
+      <img
+        src={src}
+        alt=""
+        aria-hidden
+        width={54}
+        height={54}
+        className="size-[54px] rounded-[18px] bg-surface object-contain p-0.5 shadow-[0_3px_12px_rgba(120,90,40,0.1)]"
+      />
+      <span className="text-[12px] font-semibold text-muted">{label}</span>
+    </span>
   );
 }

@@ -3,7 +3,7 @@ import { Link, useLoaderData, useRevalidator } from "react-router";
 import { ArrowRight, Check, ChevronRight, Upload, X } from "lucide-react";
 import { FileProgressList, useProgressPolling } from "@/components/org/FileProgressList";
 import { HelpTip } from "@/components/ui/HelpTip";
-import { Card, Note, PageHeader, Spinner } from "@/components/ui";
+import { Card, PageHeader, Spinner } from "@/components/ui";
 import {
   getChildren,
   getFileProgress,
@@ -239,6 +239,7 @@ function NextStep({
 export async function clientLoader() {
   const [children, files] = await Promise.all([getChildren(), getFileProgress()]);
   return {
+    rosterTotal: children.length,
     pending: children.filter((c) => c.consent === "not_granted"),
     files,
   };
@@ -250,7 +251,27 @@ export async function clientLoader() {
  * 오늘의 업무의 아이별 카드(O-34)로 넘긴다. [요약]도 거기서 누른다.
  */
 export default function UploadPage() {
-  const { pending, files } = useLoaderData<typeof clientLoader>();
+  const { rosterTotal, pending, files } = useLoaderData<typeof clientLoader>();
+
+  // 올려도 소용없는 두 경우. 매칭은 명부에 있는 아이만 찾고, 동의 없는 아이는 처리하지 않는다
+  const blocked =
+    rosterTotal === 0
+      ? {
+          picture: "/img/kid-04.png",
+          head: "먼저 아이를 등록해 주세요",
+          why: "AI 가 기록 속 이름을 명부와 맞춰 어느 아이의 기록인지 정합니다. 명부가 비어 있으면 올린 기록이 아무에게도 닿지 않아요.",
+          cta: "아이 등록",
+          href: "/children/new",
+        }
+      : pending.length === rosterTotal
+        ? {
+            picture: "/img/adult-01.png",
+            head: "보호자 동의를 기다리는 중이에요",
+            why: `명부에 있는 ${rosterTotal}명 모두 아직 동의 전입니다. 동의가 없으면 올린 기록을 처리하지 않아요. 초대 코드를 보내 주세요.`,
+            cta: "초대 코드 보기",
+            href: "/children",
+          }
+        : null;
   const revalidator = useRevalidator();
   const inputRef = useRef<HTMLInputElement>(null);
   const [chosen, setChosen] = useState<File[]>([]);
@@ -312,7 +333,33 @@ export default function UploadPage() {
     <>
       <PageHeader title="기록 등록" />
 
-      {uploaded ? (
+      {/* 올리기 전에 막히는 자리. 이유와 다음에 누를 단추를 같은 카드에 둔다 */}
+      {blocked ? (
+        <Card>
+          <div className="flex flex-col items-center gap-4 py-8 text-center">
+            <img
+              src={blocked.picture}
+              alt=""
+              aria-hidden
+              width={84}
+              height={84}
+              className="size-21 rounded-[24px] bg-surface2 object-contain p-1"
+            />
+            <span className="flex flex-col gap-1.5">
+              <b className="text-[20px] font-extrabold text-ink">{blocked.head}</b>
+              <span className="max-w-sm text-[15px] leading-7 text-ink2">{blocked.why}</span>
+            </span>
+            <Link
+              to={blocked.href}
+              className="tap flex items-center gap-1.5 rounded bg-ink px-6 text-[15px] font-bold text-paper hover:brightness-110"
+            >
+              {blocked.cta}
+              <ChevronRight aria-hidden size={16} strokeWidth={2.2} />
+            </Link>
+          </div>
+        </Card>
+      ) : uploaded ? (
+
         <div className="flex flex-col gap-4">
           {failureNotice}
           <UploadDone
@@ -327,6 +374,17 @@ export default function UploadPage() {
       ) : (
       <Card>
         <div className="flex flex-col gap-5">
+          {pending.length > 0 ? (
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[14px] bg-humansoft px-4 py-3 text-[14px] leading-6 text-human">
+              <span>
+                <b className="font-bold">{pending.map((c) => c.name).join(", ")}</b> 은(는) 아직
+                보호자 동의를 기다려요. 이 아이들 기록은 올려도 처리가 멈춰요.
+              </span>
+              <Link to="/children" className="ml-auto font-bold whitespace-nowrap underline">
+                초대 코드 보기
+              </Link>
+            </p>
+          ) : null}
           {/* 아이 · 기록 유형 · 기록 시각은 받지 않는다. 파일 하나에 여러 아이의 기록이 섞여 있어
               아이는 매칭이 판정하고, 시각은 파일 본문에서 뽑는다. */}
           {uploading ? (
@@ -461,15 +519,6 @@ export default function UploadPage() {
         )}
       </Card>
 
-      {pending.length > 0 ? (
-        <div className="mt-5">
-          <Note>
-            <b className="font-semibold">{pending.map((c) => c.name).join(", ")}</b> 은(는) 아직
-            보호자 동의를 기다리는 중이라 기록을 올릴 수 없습니다. 동의가 완료되면 등록이
-            열립니다.
-          </Note>
-        </div>
-      ) : null}
     </>
   );
 }

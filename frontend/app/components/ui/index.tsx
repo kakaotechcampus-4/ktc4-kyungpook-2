@@ -263,13 +263,15 @@ export function InstitutionChip({
 }) {
   const pad = size === "xs" ? "px-1.5 py-0 text-[12px]" : "px-2 py-0.5 text-[13px]";
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
       <span
         className={`inline-flex shrink-0 items-center rounded font-semibold ${pad} ${INST_CLASS[institution.type]}`}
       >
         {INST_LABEL[institution.type]}
       </span>
-      {withName ? <span className="text-ink">{institution.name}</span> : null}
+      {withName ? (
+        <span className="min-w-0 truncate text-ink">{institution.name}</span>
+      ) : null}
     </span>
   );
 }
@@ -515,10 +517,13 @@ export function EmptyState({
   icon = "mail",
   title,
   description,
+  children,
 }: {
   icon?: keyof typeof EMPTY_ICON;
   title: string;
   description?: string;
+  /** 비어 있는 **이유**와 그리로 가는 길. 없으면 안 그린다 */
+  children?: React.ReactNode;
 }) {
   const Icon = EMPTY_ICON[icon];
   return (
@@ -528,7 +533,43 @@ export function EmptyState({
       {description ? (
         <p className="max-w-md text-[14px] leading-6 text-muted">{description}</p>
       ) : null}
+      {children}
     </div>
+  );
+}
+
+/**
+ * 빈 화면 밑에 세우는 "지금 어디에 걸려 있나" 목록.
+ * 0 건인 줄은 그리지 않는다 — 할 일이 없는 곳을 가리키면 길을 더 헤맨다.
+ */
+export function StuckList({
+  items,
+}: {
+  items: { label: string; count: number | null; href: string }[];
+}) {
+  const live = items.filter((i) => (i.count ?? 0) > 0);
+  if (live.length === 0) return null;
+  return (
+    <ul className="mt-3 flex w-full max-w-sm flex-col gap-1.5">
+      {live.map((i) => (
+        <li key={i.href}>
+          <Link
+            to={i.href}
+            className="tap flex items-center gap-3 rounded-[14px] bg-surface2 px-4 text-[15px] hover:brightness-[0.97]"
+          >
+            <span className="min-w-0 flex-1 truncate text-left font-semibold text-ink">
+              {i.label}
+            </span>
+            <span className="shrink-0 text-[15px] font-extrabold text-ink tabular-nums">
+              {i.count}건
+            </span>
+            <span aria-hidden className="shrink-0 text-muted">
+              ›
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 

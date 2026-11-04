@@ -42,7 +42,9 @@ export default function ParentConsentPage() {
   const { preview, from } = useLoaderData<typeof clientLoader>();
   // 설정·알림에서 왔거나 온보딩을 마친 보호자에게는 온보딩 단계 표시가 맞지 않는다
   const returnTo = from ? RETURN_TO[from] : null;
-  const showSteps = !returnTo && !isOnboarded();
+  const showSteps = !returnTo;
+  /** 처음 오는 사람은 3단계 중 3, 이미 쓰는 사람이 아이를 더하면 2단계 중 2 */
+  const stepTotal = isOnboarded() ? 2 : 3;
   const [consented, setConsented] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -143,7 +145,7 @@ export default function ParentConsentPage() {
 
   return (
     <div className="flex flex-col gap-5 pb-24">
-      {showSteps ? <StepProgress step={3} total={3} /> : null}
+      {showSteps ? <StepProgress step={stepTotal} total={stepTotal} /> : null}
 
       <p className="rounded-2xl bg-accentsoft px-4 py-3 text-[15px] leading-6 text-accentink">
         <b className="font-semibold">{institution.name}</b>에서 {child.name} 학생을
@@ -258,7 +260,7 @@ function saveErrorMessage(err: unknown): string {
   }
   if (err.status === 401) return "로그인이 풀렸어요. 다시 로그인한 뒤 시도해 주세요.";
   // 연결이 끊긴 아이이거나 CSRF 토큰 문제다. 둘 다 새로고침하면 미리보기부터 다시 확인한다.
-  if (err.status === 403) return "보안 확인에 실패했습니다. 새로고침한 뒤 다시 시도해 주세요.";
+  if (err.status === 403) return "보안 확인에 실패했어요. 새로고침한 뒤 다시 시도해 주세요.";
   return "일시적인 오류로 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }
 

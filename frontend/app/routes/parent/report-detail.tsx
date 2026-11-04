@@ -9,7 +9,7 @@ import { writeSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader({ params }: { params: { id: string } }) {
   if (!isReady("guardianInsights")) return null;
-  // 처음 열면 서버가 본 시각을 남긴다. 볼 수 없는 글은 undefined 로 온다 → "페이지를 찾을 수 없습니다"
+  // 처음 열면 서버가 본 시각을 남긴다. 볼 수 없는 글은 undefined 로 온다 → "페이지를 찾을 수 없어요"
   const insight = await getGuardianInsight(params.id);
   if (!insight) throw new Response("Not Found", { status: 404 });
   return { insight };

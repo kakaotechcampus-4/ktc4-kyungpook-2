@@ -10,14 +10,36 @@ import {
 } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
 import { HelpTip } from "@/components/ui/HelpTip";
-import { Card, ConfirmDialog, EmptyState, PageHeader, Spinner } from "@/components/ui";
-import { ApiError, decideGate1, getGate1Queue, isReady, reopenGate1 } from "@/lib/api";
+import { Card, ConfirmDialog, EmptyState, PageHeader, Spinner, StuckList } from "@/components/ui";
+import {
+  ApiError,
+  decideGate1,
+  getBlockedQueue,
+  getGate1Queue,
+  getMatchingQueue,
+  isReady,
+  loadIfReady,
+  reopenGate1,
+} from "@/lib/api";
 import type { Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
 
 /** BE 는 상태 하나씩만 준다. 검토 대기와 보류함을 함께 묻는다 */
 export async function clientLoader() {
-  const [pending, held] = await Promise.all([getGate1Queue("pending"), getGate1Queue("hold")]);
-  return { pending, held };
+  const [pending, held, matching, blocked] = await Promise.all([
+    getGate1Queue("pending"),
+    getGate1Queue("hold"),
+    loadIfReady("matchingQueue", getMatchingQueue),
+    loadIfReady("blockedQueue", getBlockedQueue),
+  ]);
+  return {
+    pending,
+    held,
+    // 요약 검토가 비었을 때 앞단 어디에 걸려 있는지 말해 준다
+    upstream: {
+      matching: matching ? matching.length : null,
+      blocked: blocked ? blocked.length : null,
+    },
+  };
 }
 
 const TITLE = "요약 검토";
@@ -992,7 +1014,7 @@ export default function Gate1Route() {
 }
 
 function Gate1Page() {
-  const { pending, held } = useLoaderData<typeof clientLoader>();
+  const { pending, held, upstream } = useLoaderData<typeof clientLoader>();
   // 세로 메뉴의 "보류함"이 /gate1?tab=hold 로 바로 들어온다
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get("tab") === "hold" ? "hold" : "pending";
@@ -1059,8 +1081,19 @@ function Gate1Page() {
             <EmptyState
               icon="done"
               title="검토할 요약이 없어요"
-              description="기록을 등록하고 요약을 요청하면 매칭 · 검증 · 요약을 거쳐 여기로 와요."
-            />
+              description={
+                (upstream.matching ?? 0) + (upstream.blocked ?? 0) > 0
+                  ? "앞단에 걸린 것이 있어요. 아래를 처리하면 요약이 여기로 와요."
+                  : "기록을 등록하고 요약을 요청하면 매칭 · 검증 · 요약을 거쳐 여기로 와요."
+              }
+            >
+              <StuckList
+                items={[
+                  { label: "아이를 고를 기록", count: upstream.matching, href: "/queue/matching" },
+                  { label: "검증에서 멈춘 기록", count: upstream.blocked, href: "/queue/reinput" },
+                ]}
+              />
+            </EmptyState>
           ) : (
             <EmptyState icon="none" title="보류한 요약이 없어요" />
           )

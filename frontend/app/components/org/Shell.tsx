@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ChevronDown,
@@ -6,6 +7,7 @@ import {
   ClipboardPlus,
   LayoutDashboard,
   ListChecks,
+  LogOut,
   Mail,
   PauseCircle,
   RotateCcw,
@@ -14,8 +16,10 @@ import {
   User,
   Users,
 } from "lucide-react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { useNavigating } from "@/components/ui/Loading";
+import { Busy } from "@/components/ui";
+import { signOut } from "@/lib/auth";
 
 /** 머리띠 오른쪽의 내 정보. null 은 서버가 주지 않은 값 — 그 칸을 비운다 */
 export interface OrgShellMe {
@@ -198,17 +202,7 @@ export function OrgShell({
               {me.institutionName}
             </span>
           ) : null}
-          <span className="flex items-center gap-2 rounded-full bg-surface/90 py-1.5 pr-4 pl-1.5 shadow-[0_2px_14px_rgba(120,90,40,0.12)]">
-            <span
-              aria-hidden
-              className="flex size-9 items-center justify-center rounded-full bg-accentsoft text-[15px] font-bold text-accentink"
-            >
-              {me.name ? me.name.slice(0, 1) : <User size={18} strokeWidth={1.75} />}
-            </span>
-            <span className="text-[14px] font-semibold whitespace-nowrap text-ink2">
-              {me.name ? `${me.name} 선생님` : "이름 없음"}
-            </span>
-          </span>
+          <AccountMenu me={me} />
         </span>
       </header>
 
@@ -219,5 +213,91 @@ export function OrgShell({
         {children}
       </main>
     </div>
+  );
+}
+
+/**
+ * 머리띠 오른쪽 이름 칩 — 누르면 계정 메뉴가 열린다.
+ *
+ * 전에는 눌러도 아무 일이 없었고, 로그아웃은 화면 어디에도 없었다. 출입증이 httpOnly 쿠키라
+ * 프론트가 스스로 지울 수 없어 서버에 부탁해야 한다(`signOut`).
+ */
+function AccountMenu({ me }: { me: OrgShellMe }) {
+  const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const box = useRef<HTMLSpanElement>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function logout() {
+    setSigningOut(true);
+    await signOut();
+    navigate("/login", { replace: true });
+  }
+
+  return (
+    <span ref={box} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="tap flex items-center gap-2 rounded-full bg-surface/90 py-1.5 pr-3 pl-1.5 shadow-[0_2px_14px_rgba(120,90,40,0.12)] hover:brightness-[0.98]"
+      >
+        <span
+          aria-hidden
+          className="flex size-9 items-center justify-center rounded-full bg-accentsoft text-[15px] font-bold text-accentink"
+        >
+          {me.name ? me.name.slice(0, 1) : <User size={18} strokeWidth={1.75} />}
+        </span>
+        <span className="text-[14px] font-semibold whitespace-nowrap text-ink2">
+          {me.name ? `${me.name} 선생님` : "이름 없음"}
+        </span>
+        <ChevronDown
+          aria-hidden
+          size={15}
+          strokeWidth={2.4}
+          className={`text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open ? (
+        <span
+          role="menu"
+          className="absolute top-[calc(100%+8px)] right-0 z-40 block w-56 rounded-[18px] border border-line bg-surface p-2 shadow-[0_12px_34px_rgba(120,90,40,0.18)]"
+        >
+          {me.institutionName ? (
+            <span className="block truncate px-3 py-1.5 text-[13px] text-muted">
+              {me.institutionName}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={logout}
+            disabled={signingOut}
+            className="tap flex w-full items-center gap-2.5 rounded-[14px] px-3 text-[15px] font-semibold text-ink2 hover:bg-surface2 disabled:opacity-60"
+          >
+            <LogOut aria-hidden size={17} strokeWidth={1.9} className="shrink-0" />
+            {signingOut ? <Busy>로그아웃 중…</Busy> : "로그아웃"}
+          </button>
+        </span>
+      ) : null}
+    </span>
   );
 }
