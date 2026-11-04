@@ -60,7 +60,7 @@ GET /api/v1/auth/me
 ```json
 {
   "result": "SUCCESS",
-  "data": { "userId": "5", "name": "박지현", "signupCompleted": false }
+  "data": { "userId": "5", "name": "박지현", "signupCompleted": false, "termsAgreed": false }
 }
 ```
 
@@ -69,7 +69,7 @@ GET /api/v1/auth/me
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true }
+  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true, "termsAgreed": true }
 }
 ```
 
@@ -78,7 +78,7 @@ GET /api/v1/auth/me
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "parent", "userId": "5", "name": "박지현", "signupCompleted": true }
+  "data": { "role": "parent", "userId": "5", "name": "박지현", "signupCompleted": true, "termsAgreed": true }
 }
 ```
 
@@ -90,8 +90,9 @@ GET /api/v1/auth/me
 | `role` | `"org"` \| `"parent"` | 아니오 | `signupCompleted: true`일 때만. `admin`은 아직 없습니다 |
 | `institutionId` | string | 아니오 | `role === "org"`일 때만 |
 | `institutionName` | string | 아니오 | `role === "org"`일 때만. 가입 때 입력한 기관명입니다 (#236) |
+| `termsAgreed` | boolean | 예 | 보호자가 서비스 약관(지금 판)에 동의했는지 (§2.5). `false`면 프론트는 약관 단계(`/parent/invite`)로 보냅니다. 기관은 늘 `true`, 가입 미완료는 `false` |
 
-**프론트는 `signupCompleted`만 보고 분기합니다.** `role`이 없다고 로그인 화면으로 보내면
+**프론트는 가입 여부를 `signupCompleted`만 보고 분기합니다.** `role`이 없다고 로그인 화면으로 보내면
 안 됩니다 — 가입 미완료는 정상 상태입니다.
 
 비로그인 요청에는 `401`을 반환합니다. 프론트는 `401`을 "다시 로그인"으로 해석해
@@ -131,10 +132,7 @@ GET /login/oauth2/code/kakao           ← 카카오가 호출하는 콜백. 프
 (예전의 `?invite=` 파라미터로 역할을 정하던 방식은 폐기했습니다.)
 
 로그인 응답에는 바디가 없습니다. 로그인 직후 상태는
-[§2.2 `GET /api/v1/auth/me`](#22-세션-조회--라우트-가드가-매-진입마다-호출)의 `signupCompleted`로 확인합니다.
-`termsAgreed`는 아직 없습니다(약관 도메인 미구현).
-
-> §2.5 약관 동의는 아직 구현되지 않았습니다.
+[§2.2 `GET /api/v1/auth/me`](#22-세션-조회--라우트-가드가-매-진입마다-호출)의 `signupCompleted` · `termsAgreed`로 확인합니다.
 
 #### 2.4.1 개발용 로그인 — 개발·테스트 전용
 
@@ -156,21 +154,48 @@ GET /api/v1/dev/login?as=parent1       ← 브라우저 주소창으로 연다 (
 
 ### 2.5 서비스 약관 동의
 
-카카오 동의 항목과 별개로, 서비스 약관(필수 2 · 선택 1)은 자체 저장이 필요합니다(P-01).
+> **구현 완료 (#337).** 보호자만 씁니다. 카카오 동의 항목과 별개로 서버가 동의 기록을 남깁니다(P-01, DB 스키마 §4.3).
 
 ```http
-POST /api/v1/auth/terms
-{ "agreed": ["tos", "privacy", "notify"] }
+POST /api/v1/auth/terms   → 200 OK
+{ "agreed": ["tos", "privacy"] }
 ```
+
+출입증 쿠키와 `X-XSRF-TOKEN` 헤더가 필요합니다.
 
 | 키 | 라벨 | 필수 |
 | --- | --- | --- |
 | `tos` | 서비스 이용약관 동의 | 예 |
 | `privacy` | 개인정보와 민감정보 수집 동의 | 예 |
-| `notify` | 새로운 소식 알림 받기 | 아니오 |
 
-필수 약관에 동의하지 않은 사용자가 보호 API를 호출하면 `403 TERMS_NOT_AGREED`를
-반환해주세요. 프론트가 약관 화면으로 되돌립니다.
+예전 초안의 선택 항목 `notify`(새로운 소식 알림 받기)는 뺐습니다 — 알림을 보내는 기능이 없습니다. 보내면 모르는 키라 `400`입니다.
+
+**응답**
+
+```json
+{ "result": "SUCCESS", "data": { "termsAgreed": true } }
+```
+
+**처리 규칙**
+
+1. 약관의 **판은 서버가 채웁니다.** 프론트는 키만 보냅니다.
+2. 같은 판에 이미 동의했으면 아무것도 바꾸지 않고 같은 응답입니다(멱등). 같은 보호자의 요청이 겹쳐도 회원 행을 잠가 하나씩 처리하므로 둘 다 `200`입니다.
+3. 기록은 쌓기만 합니다. 판이 바뀐 뒤 다시 동의하면 새 판 기록이 더해지고 옛 기록은 남습니다. 철회 API 는 없습니다(필수 약관 철회는 회원 탈퇴).
+4. 판이 바뀌면 — 개인정보와 민감정보 수집(`privacy`)은 **지금 판에 다시 동의해야** 합니다. 이용약관(`tos`)은 한 번 동의했으면 다시 받지 않습니다(바뀐 내용은 공지로 알립니다 — 공지 기능은 아직 없습니다).
+
+| 상태 | 코드 | 조건 | 프론트 동작 |
+| --- | --- | --- | --- |
+| 400 | `INVALID_REQUEST` | `agreed` 누락 · 빈 목록 · `null` 원소, 모르는 키, 필수 약관 누락 | "동의를 저장하지 못했어요" 표시 |
+| 401 | `UNAUTHORIZED` · `SESSION_USER_NOT_FOUND` | 비로그인 · 없는 회원 | 로그인 화면으로 |
+| 403 | `SIGNUP_NOT_COMPLETED` | 가입 미완료 | 가입 화면으로 |
+| 403 | `PARENT_REQUIRED` | 기관 담당자 | |
+| 403 | `FORBIDDEN` | CSRF 토큰 누락 또는 불일치 | |
+
+**차단** — 동의하지 않은 보호자(`/auth/me` 의 `termsAgreed: false`)는 `/auth/me` · `/auth/terms` · `/auth/logout` · 개발용 로그인 · 헬스 체크 외의
+API 가 모두 `403 TERMS_NOT_AGREED`입니다. 가입 미완료 차단과 같은 필터가 막고, **가입 미완료를 먼저 봅니다.** 기관 담당자는 영향이 없습니다.
+프론트는 공통 요청 함수에서 이 오류를 받으면 약관 단계(`/parent/invite`)로 보냅니다.
+
+> **아직 없는 것** — 약관 본문과 "약관 보기" 화면(라벨만 있습니다), 기관 담당자 약관, 약관이 바뀌었을 때 앱 안 공지.
 
 ### 2.6 회원가입
 
@@ -212,12 +237,13 @@ POST /api/v1/auth/signup   → 201 Created
 가입 화면에서 기관 입력란에 쓰다가 보호자로 바꿨다면, 폼의 `""` 값을 그대로 싣지 말고 필드를 빼 주세요.
 아이 연결은 가입과 별개입니다.
 
-**응답 — `201 Created`.** 본문은 §2.2의 가입 완료 응답과 같습니다.
+**응답 — `201 Created`.** 본문은 §2.2의 가입 완료 응답과 같습니다. 막 가입한 보호자는 동의 기록이 없어
+`termsAgreed: false`이고(프론트가 약관 단계로 갑니다), 기관은 `true`입니다.
 
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true }
+  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true, "termsAgreed": true }
 }
 ```
 
@@ -1275,7 +1301,7 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 ```
 기관: 아이 등록 (O-11) → 코드 발급(10분·일회용) → 카톡 등으로 코드나 링크를 직접 보냄
                                     ↓
-보호자: 링크 열기(코드를 sessionStorage에 보관) → 카카오 로그인 → 회원가입(§2.6) → 약관 동의
+보호자: 링크 열기(코드를 sessionStorage에 보관) → 카카오 로그인 → 회원가입(§2.6) → 약관 동의(§2.5)
         → 코드 수락 (G-04) → 공유 범위 동의 (G-02 → G-41)
 ```
 
@@ -1814,7 +1840,7 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | `SIGNUP_NOT_COMPLETED` | 403 | 가입 미완료 회원이 `/auth/me` · `/auth/signup` · `/auth/logout` 외 API 호출 → 역할 선택 화면으로 이동 |
 | `ALREADY_SIGNED_UP` | 409 | 이미 가입 완료 → `/auth/me` 재조회 후 역할별 홈으로 이동 (§2.6) |
 | `DUPLICATE_BUSINESS_NUMBER` | 409 | "이미 등록된 사업자등록번호입니다" (§2.6) |
-| `TERMS_NOT_AGREED` | 403 | 약관 동의 화면으로 이동 |
+| `TERMS_NOT_AGREED` | 403 | 약관에 동의하지 않은 보호자가 `/auth/me` · `/auth/terms` · `/auth/logout` 외 API 호출 → 약관 동의 화면으로 이동 (§2.5) |
 | `INSTITUTION_CODE_NOT_FOUND` | 404 | "일치하는 기관을 찾지 못했어요. 코드를 다시 확인해주세요." (G-43 조회 · G-44 요청) |
 | `INSTITUTION_ALREADY_LINKED` | 409 | "이미 연결된 기관이에요." (G-44 요청 · O-61 수락) |
 | `LINK_REQUEST_NOT_FOUND` | 404 | 기다리는 연결 요청이 없는 아이. 목록을 다시 불러옵니다 (O-61 · O-62) |
@@ -1865,7 +1891,7 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 
 | 순위 | 범위 | 엔드포인트 | 붙는 화면 |
 | --- | --- | --- | --- |
-| 1 | 인증 · 세션 | `/oauth2/authorization/kakao`(완료), `/auth/logout`(완료), `/auth/me`(완료), `/auth/signup`(완료), `/auth/terms` | I-01, P-01, 전 화면 가드 |
+| 1 | 인증 · 세션 | `/oauth2/authorization/kakao`(완료), `/auth/logout`(완료), `/auth/me`(완료), `/auth/signup`(완료), `/auth/terms`(완료) | I-01, P-01, 전 화면 가드 |
 | 2 | 아동 조회 | O-10, O-14 (O-13 은 만들지 않음) | I-09, I-09-1 |
 | 3 | 기록 등록 · 큐 | O-20 ~ O-25 | I-05, I-06, I-07 |
 | 4 | Gate 1 | O-30, O-31, O-33 | I-08, I-03 |

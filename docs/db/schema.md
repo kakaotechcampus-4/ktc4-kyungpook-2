@@ -26,7 +26,7 @@
 | 🟡 **초안** | 구조는 유지, **컬럼은 바뀔 수 있음** | 프론트 화면에서 역산. AI 계약이 아직 없음 |
 | ⛔ **추정** | **근거 없음.** 예시일 뿐 | 누구도 확정한 적 없는 값 |
 
-### 0.2 테이블 20개 현황
+### 0.2 테이블 21개 현황
 
 | # | 테이블 | 설계 | 구현 (엔티티) | 삭제 방식 |
 | --- | --- | --- | --- | --- |
@@ -50,12 +50,13 @@
 | 18 | `summary_run_request` | ✅ 확정 | ✅ `SummaryRunRequest` | 삭제 없음 (처리 시각으로 대체) |
 | 19 | `child_organization_request` | ✅ 확정 | ✅ `ChildOrganizationRequest` | `status` 로 대체 |
 | 20 | `child_care_info` | ✅ 확정 | ✅ `ChildCareInfo` | 삭제 없음 (덮어쓰기) |
+| 21 | `terms_agreement` | ✅ 확정 | ✅ `TermsAgreement` | 삭제 없음 (쌓기만) |
 
-**20개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
+**21개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
 `insight_result`·`sharing_history` 는 Insight 에이전트 계약(`AI/insight/schemas.py`)과 Gate 2 공유 정책이
 정해져서 확정으로 올렸다. `human_review` 는 Gate 1 결정값이 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 정해지며 확정됐다.
 
-**20개 모두 엔티티가 있다** (#285 에서 `child_care_info` 가 마지막으로 들어왔다).
+**21개 모두 엔티티가 있다** (#337 에서 `terms_agreement` 가 마지막으로 들어왔다).
 `human_review` 는 Gate 1 결정 API(#178)와 Gate 2 결정 API(#206)가 함께 쓴다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
@@ -441,6 +442,7 @@ journal_entry
 | `sharing_consent` | `status = REVOKED`가 이미 같은 일을 한다. 위와 동일 |
 | `matching_result` `validation_result` `summary_result` `human_review` `child_context` `insight_result` `sharing_history` `insight_run` | 실행·검토 이력이라 애초에 삭제 개념이 없다. 잘못된 결과는 지우는 게 아니라 다시 실행해서 새 행을 쌓는다 |
 | `summary_run_request` | 처리한 요청도 지우지 않는다. `handled_until`(어디까지 처리했는지)이 같은 일을 한다 (§8.3) |
+| `terms_agreement` | 누가 언제 어느 판에 동의했는지가 이 테이블의 전부라 지우지도 고치지도 않는다. 필수 약관 철회는 회원 탈퇴다 (§4.3) |
 
 #### 조회 규칙 — 이게 핵심이다
 
@@ -629,7 +631,8 @@ PARENT
 `invitation`(§5.3)은 아동-보호자 연결 전용이고, 회원가입 자체와는 무관하다.
 
 `role`이 `NULL`인 사용자가 `/auth/me`, `/auth/signup`, `/auth/logout` 외의 보호 API를 호출하면
-`403 SIGNUP_NOT_COMPLETED`로 막는다.
+`403 SIGNUP_NOT_COMPLETED`로 막는다. 가입한 보호자가 서비스 약관에 동의하지 않았으면 여기에 `/auth/terms` 를
+더한 경로 외에는 `403 TERMS_NOT_AGREED` 로 막는다 (§4.3). 가입을 먼저 본다.
 
 한 사람은 한 기관에만 속한다. 그래서 중간 테이블 없이 `organization_id` 컬럼 하나로 둔다.
 
@@ -686,6 +689,45 @@ ACTIVITY_SUPPORT
 - NULL 을 허용하는 이유는 위의 기존 기관 때문이다. UNIQUE 는 NULL 끼리 겹치는 것을 허용한다.
 
 삭제 기능은 아직 없다. `deleted_at`을 두지 않는다.
+
+### 4.3 `terms_agreement` ✅ — ✅ 구현 (`TermsAgreement`, #337)
+
+> **근거** — 보호자 첫 화면(P-01)의 서비스 약관 동의. 아이의 발달 · 건강 관찰 기록을 다루는 서비스라
+> 누가 언제 어느 약관에 동의했는지 남긴다
+
+보호자가 서비스 약관에 동의한 기록 한 줄. **쌓기만 한다** — 약관 판이 바뀌어 다시 동의하면 새 판 줄이 하나 더 생기고
+옛 줄은 그대로 남는다. 고치거나 지우지 않으며 `deleted_at` 도 없다. 필수 약관을 철회하는 길은 회원 탈퇴다.
+
+| Column | Type | NULL | 설명 |
+| --- | --- | --- | --- |
+| `id` | BIGINT | N | PK |
+| `user_id` | BIGINT | N | 동의한 보호자 (`users.id`, FK 제약 없음) |
+| `term_key` | VARCHAR(20) | N | 어느 약관인지 |
+| `version` | VARCHAR(20) | N | 동의한 약관의 판. 서버 상수가 채운다 — 프론트가 보내지 않는다 |
+| `created_at` | DATETIME | N | 동의한 시각 |
+
+**UNIQUE** — `uk_terms_agreement_user_key_version (user_id, term_key, version)`. 같은 판에 두 번 동의해도 줄은 하나다.
+같은 보호자의 동의 요청이 겹치면 `users` 행을 잠가 하나씩 처리한다 — 뒤에 온 쪽은 앞쪽이 남긴 줄을 보고 넣지 않는다.
+UNIQUE 는 마지막 안전망이다.
+
+**`term_key`**
+
+```
+TOS        서비스 이용약관
+PRIVACY    개인정보와 민감정보 수집
+```
+
+API 에는 소문자(`tos` · `privacy`)로 오간다. 둘 다 필수다.
+
+**판과 다시 받기 — 코드 상수(`TermsCatalog`)가 정한다.** 판은 지금 날짜 이름표(`2026-11-03`)다. 약관 본문은 아직 없다.
+
+| 약관 | 판이 바뀌면 | 동의한 것으로 보는 조건 |
+| --- | --- | --- |
+| `TOS` | 다시 받지 않는다 (바뀐 내용은 공지로 알린다 — 공지 기능은 아직 없다) | 어느 판이든 줄이 있다 |
+| `PRIVACY` | 다시 받는다 (수집 항목이 바뀌면 새로 동의가 필요하다) | **지금 판** 줄이 있다 |
+
+두 약관 모두 조건을 채워야 동의한 보호자다(`/auth/me` 의 `termsAgreed`). 기관 담당자는 약관이 없어 늘 동의한 것으로 보고
+줄도 남기지 않는다. 동의 기록에는 회원 · 약관 · 판 · 시각만 남긴다 — IP · 브라우저 정보는 모으지 않는다.
 
 ---
 
@@ -2684,6 +2726,9 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 \d human_review      decision CHECK 가 있으면 DROP   (CONFIRMED · REVERTED 추가)
 ```
 
+**보호자 약관 동의 (#337)** — `terms_agreement` 는 새 테이블이라 `ddl-auto: update` 가 UNIQUE · CHECK 까지 만든다. 배포 전 조치는 없다.
+나중에 약관 키(`term_key`)를 늘리면 `terms_agreement_term_key_check` 를 DROP 해야 저장된다.
+
 새 컬럼 `failure_stage`·`failure_reason` 은 NULL 허용이라 `update` 가 기존 행이 있어도 더한다. **`update` 가 컬럼을
 더할 때도 enum 값으로 CHECK 제약(`journal_entry_failure_stage_check`·`journal_entry_failure_reason_check`)을 함께 건다**
 (10/16 PostgreSQL 16 에서 확인). 지금은 문제없지만, 나중에 원인 코드를 더하면 그 CHECK 를 DROP 해야 저장된다.
@@ -2744,3 +2789,4 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-10-30 | `insight_run`(§9.5) 에 `failure_reason` 추가 — 왜 실패했는지(빈 응답·시간 초과 등) 남긴다 (멘토님 리뷰 #256 P1). 연달아 실패한 아이·기간은 1분·5분·30분 기다렸다가 다시 집는다 — 바로 다시 집으면 계속 실패하는 아이가 5초마다 맨 앞에 와서 뒤의 아이들이 차례를 못 받았다. 문자열 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #266 |
 | 2026-11-02 | 동의 철회 설명 정정 (§5.5, §10.2 #4) — "철회는 앞으로의 전달만 막는다. 이미 보낸 정보는 회수되지 않는다"는 코드와 반대였다. 철회는 기관 인사이트 열람권을 거두고(§9.4, #213 · #257) 기관이 쓴 기록 · 보호자 열람은 남긴다. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #310 |
 | 2026-11-03 | 동의를 철회한 아이는 요약·Gate 1 에서 막는다 — 상태를 바꾸지 않고 볼 때마다 그 기관 동의(§5.5 GRANTED)를 본다. 묶음 카드(O-34)·Gate 1 목록(O-30)에서 빼고, [요약](O-32)·Gate 1 결정(O-31)·보류 해제(O-33)는 404, 요약 워커는 AI 호출 전과 결과를 남기기 전에 보고 요약하지 않은 채 요청을 닫는다(일지는 요약 전 상태로). Gate 1 결정·보류 해제의 잠금 순서 추가(§3.3 잠금 표). 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #332 |
+| 2026-11-04 | 새 테이블 `terms_agreement`(§4.3) — 보호자 서비스 약관 동의 기록. 회원 · 약관(`TOS` · `PRIVACY`) · 판 · 동의 시각만 쌓고 고치거나 지우지 않는다. `(user_id, term_key, version)` UNIQUE. 판과 다시 받기는 코드 상수가 정한다(개인정보 수집만 판이 바뀌면 다시 받는다). 동의하지 않은 보호자는 보호 API 가 `403 TERMS_NOT_AGREED` (§4.1). 새 테이블이라 배포 전 조치 없음 (§11.4) | #337 |
