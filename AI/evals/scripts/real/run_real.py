@@ -5,16 +5,19 @@
     python evals/scripts/real/run_real.py --months 01 --child 아동이름
     python evals/scripts/real/run_real.py --months 01                 # 1월, 전체 아동
     python evals/scripts/real/run_real.py --months 04,05,06 --school synthetic_school_dev.json
+    # 블라인드 (한 번만): 센터 일지·정답표를 바꾼다
+    python evals/scripts/real/run_real.py --months 08,09,11,12 --real blind/test.json \
+        --school blind/synthetic_school_blind.json --answer blind/synthetic_school_blind_answer.json
 
 ⚠️ 데이터는 레포에 없다. 실제 기록(가명)과 가상 학교 기록은 git-ignored 폴더
 `evals/generated/real/` 에 따로 받아 둔다 (README 참고).
 
-- 실제 기록: dev.json (센터1). 가상 학교 기록: --school 로 더한다 (학교1).
+- 실제 기록: --real (기본 dev.json, 센터1). 가상 학교 기록: --school 로 더한다 (학교1).
 - 매칭: 명부는 데이터의 아동 전체(생년월일은 가짜). 이용자명 칸을 표지 힌트로 준다.
 - 검증: 매칭이 auto/review 로 고른 아이를 대상으로. 못 고르면 정답 아이로 계속 진행하되 기록한다.
 - 요약: 아동 × 날짜 × 기관 묶음. BLOCK 일지는 넣지 않는다 (BE 와 같음).
 - 인사이트: 아동 × 기간(--window 일, 기본 30). 두 기관 모두 동의한 것으로 둔다.
-- 정답표(synthetic_school_answer.json)가 있으면 패턴을 찾았는지, 관계없는 기록을 묶었는지 센다.
+- 정답표(--answer, 기본 synthetic_school_answer.json)가 있으면 패턴을 찾았는지, 관계없는 기록을 묶었는지 센다.
 
 결과는 evals/generated/real/runs/ 에 JSON·HTML 로 남는다. 레포에 커밋하지 않는다.
 """
@@ -83,11 +86,13 @@ def main():
     ap.add_argument("--months", default="01", help="쉼표로 구분한 월 (예: 01,02)")
     ap.add_argument("--child", default=None)
     ap.add_argument("--school", default="synthetic_school_demo.json")
+    ap.add_argument("--real", default="dev.json", help="실제 센터 일지 파일 (블라인드: blind/test.json)")
+    ap.add_argument("--answer", default="synthetic_school_answer.json", help="정답표 파일")
     ap.add_argument("--window", type=int, default=30, help="인사이트 기간(일). 30 이면 월 단위")
     args = ap.parse_args()
     months = set(args.months.split(","))
 
-    real = [e for e in load("dev.json") if e["date"][:2] in months]
+    real = [e for e in load(args.real) if e["date"][:2] in months]
     school = [e for e in load(args.school) if e["date"][:2] in months]
     entries = real + school
     if args.child:
@@ -96,7 +101,9 @@ def main():
     if not entries:
         sys.exit("해당 조건의 일지가 없습니다")
 
-    names = sorted({e["child"] for e in load("dev.json")} | {e["child"] for e in school})
+    # 명부: dev 아동 전체 + 고른 실제 기록 + 학교 기록. 기본값이면 지금과 같다
+    names = sorted({e["child"] for e in load("dev.json")} | {e["child"] for e in load(args.real)}
+                   | {e["child"] for e in school})
     child_id = {n: i + 1 for i, n in enumerate(names)}
     roster = [RosterEntry(child_id=child_id[n], name=n, birthdate=f"2015-01-{i + 1:02d}") for i, n in enumerate(names)]
     jid = {e["id"]: i + 1 for i, e in enumerate(entries)}
@@ -219,7 +226,7 @@ def main():
     print(f"  검증 사유  건강관리기록 {c['issue_health']} · 진단명 {c['issue_diagnosis']}  (v1 진단명 BLOCK 8, 일상 건강 6)")
     print(f"  '~니다' 말투  요약 {c['polite_summaries']}/{c['ok_summaries']} · 인사이트 {c['polite_insights']}/{len(log['insights'])}  (v1 요약 6/60)")
 
-    answer = load("synthetic_school_answer.json")
+    answer = load(args.answer)
     if answer:
         used = {d for i in log["insights"] for d in i["source_diary_ids"]}
         ids = {e["id"] for e in entries}
@@ -233,7 +240,8 @@ def main():
     print(f"호출 {dict(calls)} · {time.time() - t0:.0f}초")
     out_dir = HERE / "runs"
     out_dir.mkdir(exist_ok=True)
-    name = f"run_{args.months.replace(',', '-')}_{args.child or 'all'}_{dt.datetime.now():%m%d_%H%M}.json"
+    prefix = "" if args.real == "dev.json" else Path(args.real).stem + "_"
+    name = f"run_{prefix}{args.months.replace(',', '-')}_{args.child or 'all'}_{dt.datetime.now():%m%d_%H%M}.json"
     (out_dir / name).write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"저장: {out_dir / name}")
     html_path = (out_dir / name).with_suffix(".html")
