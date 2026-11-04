@@ -74,6 +74,15 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.403").exists())
 				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.agreed").exists())
 				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.allRequiredAgreed").doesNotExist())
+				// 기관 준비물·확인사항 — 보내기 201 · 목록 · 내리기 204. 요청에는 항목과 아이 id 만 있다.
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].post.responses.201").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists/{checklistId}'].delete.responses.204").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists/{checklistId}'].delete.responses.404").exists())
+				.andExpect(jsonPath("$.components.schemas.SendChecklistRequest.properties.items").exists())
+				.andExpect(jsonPath("$.components.schemas.SendChecklistRequest.properties.childIds").exists())
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists())
