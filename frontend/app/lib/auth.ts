@@ -11,6 +11,7 @@
  *          → GET /api/v1/auth/me
  *              signupCompleted: true  → 역할별 첫 화면
  *              signupCompleted: false → /signup → POST /api/v1/auth/signup
+ *              보호자 termsAgreed: false → /parent/invite 약관 단계 → POST /api/v1/auth/terms
  *
  * 출입증이 httpOnly 쿠키라 이 파일은 토큰을 읽지도 지우지도 못한다.
  *  - 요청에 붙이는 일: 브라우저가 자동으로 한다 (lib/api.ts 의 credentials 참고)
@@ -42,10 +43,13 @@ const ROLE_KEY = "itda_role";
 
 /**
  * 온보딩을 끝냈다는 표시. 역할과 따로 둔다 — 보호자는 가입 직후에 역할이 정해지는데,
- * 약관 동의와 첫 기관 연결이 아직 안 끝난 상태를 그것과 구분할 방법이 필요하다.
- * (BE 약관 API `/auth/terms` 가 아직 없어 로컬에 둔다.)
+ * 첫 기관 연결이 아직 안 끝난 상태를 그것과 구분할 방법이 필요하다.
+ * 약관 동의는 여기 두지 않는다 — 서버가 저장하고 `/auth/me` 의 termsAgreed 로 알려준다.
  */
 const ONBOARDED_KEY = "itda_parent_onboarded";
+
+/** mock 모드에서만 쓴다. 보호자가 약관에 동의했다는 표시. 실연동에서는 서버(`termsAgreed`)가 기준이다. */
+const TERMS_KEY = "itda_parent_terms";
 
 /**
  * 로그인 의도. 카카오로 떠나기 전에 적어두고 `/oauth/success` 가 읽는다.
@@ -78,9 +82,14 @@ export type Session = {
   name?: string;
   /** 가입 때 입력한 기관명. 기관 계정만 있고, 서버가 기관을 못 찾으면 없다. */
   institutionName?: string;
+  /**
+   * 보호자가 서비스 약관(지금 판)에 동의했는지. false 면 서버가 보호 API 를 403 TERMS_NOT_AGREED 로 막는다.
+   * 기관 계정은 약관이 없어 늘 true, 가입 미완료는 false.
+   */
+  termsAgreed: boolean;
 };
 
-const ANONYMOUS: Session = { loggedIn: false, signupCompleted: false, role: null };
+const ANONYMOUS: Session = { loggedIn: false, signupCompleted: false, role: null, termsAgreed: false };
 
 /**
  * GET /auth/me · POST /auth/signup 의 data.
@@ -94,6 +103,8 @@ type MeResponse = {
   institutionId?: string;
   /** role === "org" 일 때만 (#236) */
   institutionName?: string;
+  /** 늘 온다. 기관은 true, 가입 미완료는 false */
+  termsAgreed: boolean;
 };
 
 function toSession(me: MeResponse): Session {
@@ -104,6 +115,7 @@ function toSession(me: MeResponse): Session {
     role: me.signupCompleted ? (me.role ?? null) : null,
     name: me.name,
     institutionName: me.institutionName,
+    termsAgreed: me.signupCompleted && me.termsAgreed === true,
   };
 }
 
@@ -143,6 +155,7 @@ export function clearSession(): void {
   try {
     localStorage.removeItem(ROLE_KEY);
     localStorage.removeItem(ONBOARDED_KEY);
+    localStorage.removeItem(TERMS_KEY);
   } catch {
     // 무시
   }
@@ -150,7 +163,7 @@ export function clearSession(): void {
 
 /* ── 온보딩 ─────────────────────────────────────────── */
 
-/** 보호자가 약관 동의와 첫 기관 공유 동의까지 마쳤다는 표시. */
+/** 보호자가 첫 기관 공유 동의까지 마쳤다는 표시. 약관 동의는 따로 본다(Session.termsAgreed). */
 export function markOnboarded(): void {
   try {
     localStorage.setItem(ONBOARDED_KEY, "1");
@@ -182,7 +195,9 @@ export function isOnboarded(): boolean {
 export async function getSession(): Promise<Session> {
   if (USE_MOCK) {
     const role = readRole();
-    return role ? { loggedIn: true, signupCompleted: true, role } : ANONYMOUS;
+    return role
+      ? { loggedIn: true, signupCompleted: true, role, termsAgreed: role === "org" || readTermsMark() }
+      : ANONYMOUS;
   }
 
   const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
@@ -199,14 +214,58 @@ export async function getSession(): Promise<Session> {
 }
 
 /**
- * 가입을 마친 사람이 처음 볼 화면. 보호자는 약관·첫 연결이 남았거나, 초대 링크로 받아 둔
- * 코드가 있으면 온보딩(코드 수락)으로.
+ * 가입을 마친 사람이 처음 볼 화면. 보호자는 약관 · 첫 연결이 남았거나, 초대 링크로 받아 둔
+ * 코드가 있으면 온보딩(약관 또는 코드 수락)으로.
  */
-export function homePathFor(role: "org" | "parent"): string {
+export function homePathFor(role: "org" | "parent", termsAgreed: boolean): string {
   if (role === "parent") {
-    return isOnboarded() && !readInviteCode() ? "/parent" : "/parent/invite";
+    return termsAgreed && isOnboarded() && !readInviteCode() ? "/parent" : "/parent/invite";
   }
   return "/dashboard";
+}
+
+/* ── 약관 동의 ──────────────────────────────────────── */
+
+/** BE TermKey 값 그대로. 지금은 둘 다 필수다. */
+export type TermKey = "tos" | "privacy";
+
+function readTermsMark(): boolean {
+  try {
+    return localStorage.getItem(TERMS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * POST /api/v1/auth/terms — 보호자 약관 동의. 판은 서버가 채운다.
+ *
+ * 인증 mock 스위치(`VITE_AUTH_MOCK`)를 따른다. 데이터 mock(`VITE_USE_MOCK`)을 따르면 "로그인만 실연동"
+ * 모드에서 저장한 척만 하고 다음 `/auth/me` 는 계속 termsAgreed: false 를 돌려준다.
+ *
+ * 실패는 ApiError 로 던진다 (INVALID_REQUEST · PARENT_REQUIRED · SIGNUP_NOT_COMPLETED · 401).
+ */
+export async function agreeTerms(keys: TermKey[]): Promise<void> {
+  if (USE_MOCK) {
+    try {
+      localStorage.setItem(TERMS_KEY, "1");
+    } catch {
+      // 무시 — 약관 화면을 한 번 더 보게 될 뿐이다.
+    }
+    return;
+  }
+
+  const res = await fetch(`${API_BASE}/api/v1/auth/terms`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: { "content-type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({ agreed: keys }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) clearSession();
+    throw await toApiError(res);
+  }
 }
 
 /* ── 초대 코드 ──────────────────────────────────────── */
@@ -268,7 +327,12 @@ export type SignupInput =
 export async function signup(input: SignupInput): Promise<Session> {
   if (USE_MOCK) {
     grantRole(input.role);
-    return { loggedIn: true, signupCompleted: true, role: input.role };
+    return {
+      loggedIn: true,
+      signupCompleted: true,
+      role: input.role,
+      termsAgreed: input.role === "org" || readTermsMark(),
+    };
   }
 
   const body =

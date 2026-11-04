@@ -27,6 +27,9 @@ public enum UserErrorCode implements ErrorCode {
     /** 카카오 로그인만 하고 가입(역할 선택)을 마치지 않았다. /auth/me · /auth/signup · /auth/logout 외에는 막힌다. */
     SIGNUP_NOT_COMPLETED(HttpStatus.FORBIDDEN, "SIGNUP_NOT_COMPLETED", "회원가입을 먼저 완료해주세요."),
 
+    /** 보호자가 서비스 약관(지금 판)에 동의하지 않았다. /auth/me · /auth/terms · /auth/logout 외에는 막힌다. */
+    TERMS_NOT_AGREED(HttpStatus.FORBIDDEN, "TERMS_NOT_AGREED", "서비스 약관에 먼저 동의해주세요."),
+
     /** 이미 역할이 정해진 회원의 가입 재요청. 역할은 한 번 정해지면 바뀌지 않는다. */
     ALREADY_SIGNED_UP(HttpStatus.CONFLICT, "ALREADY_SIGNED_UP", "이미 회원가입을 완료했습니다.");
 

@@ -16,10 +16,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
@@ -43,6 +45,9 @@ class AuthMeSecurityTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private TermsAgreementRepository termsAgreementRepository;
 
     @Autowired
     private OrganizationRepository organizationRepository;
@@ -87,7 +92,7 @@ class AuthMeSecurityTest {
     /** institutionId 는 role 이 org 일 때만 나간다. 보호자 응답에는 아예 없어야 한다. */
     @Test
     void parentResponseOmitsInstitutionId() throws Exception {
-        User user = userRepository.save(UserFixture.parent("me-parent-1", "김보호"));
+        User user = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("me-parent-1", "김보호")));
 
         mockMvc.perform(get(ME).cookie(cookieFor(user)))
                 .andExpect(status().isOk())
@@ -226,7 +231,7 @@ class AuthMeSecurityTest {
     /** 기관 소속이 아닌 사용자는 기관 전용 API 에서 403 으로 막힌다. */
     @Test
     void parentIsForbiddenFromOrganizationOnlyApi() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("me-parent-2", "김보호"));
+        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("me-parent-2", "김보호")));
 
         mockMvc.perform(get("/api/v1/raw-records").cookie(cookieFor(parent)))
                 .andExpect(status().isForbidden())

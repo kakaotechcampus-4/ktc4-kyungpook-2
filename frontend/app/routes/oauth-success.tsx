@@ -10,9 +10,9 @@ import { getSession, homePathFor, readInviteCode, takeLoginIntent } from "@/lib/
  * 출입증은 이미 httpOnly 쿠키로 심겨 있어 프론트가 받아 처리할 것이 없다.
  * (실패는 여기로 오지 않는다. 백엔드가 `/login` 으로 돌려보낸다.)
  *
- *  - 가입 완료: 서버가 알려준 역할의 첫 화면으로. 초대 링크로 받아 둔 코드가 있는
- *    보호자는 `homePathFor` 가 코드 수락 화면(`/parent/invite`)으로 보낸다. 이 브라우저에
- *    온보딩 표시가 없는 보호자는 서버에 연결된 아이가 있는지 먼저 본다 (restoreParentOnboarded)
+ *  - 가입 완료: 서버가 알려준 역할의 첫 화면으로. 약관에 동의하지 않았거나 초대 링크로 받아 둔
+ *    코드가 있는 보호자는 `homePathFor` 가 온보딩 화면(`/parent/invite`)으로 보낸다. 약관에 동의했는데
+ *    이 브라우저에 온보딩 표시가 없는 보호자는 서버에 연결된 아이가 있는지 먼저 본다 (restoreParentOnboarded)
  *  - 가입 미완료(처음 로그인한 사람): 회원가입 화면으로. 떠나기 전 눌렀던 버튼
  *    (`takeLoginIntent()`)은 그 화면에서 역할을 미리 골라두는 데만 쓴다. 초대 코드를
  *    들고 왔으면 보호자일 테니 보호자를 골라 둔다
@@ -25,9 +25,10 @@ export async function clientLoader() {
   if (!session.signupCompleted || !session.role) {
     return redirect(intent ? `/signup?role=${intent}` : "/signup");
   }
-  // 다른 브라우저에서 로그인한 보호자도 서버에 아이가 있으면 약관 화면 대신 홈으로 간다
-  if (session.role === "parent") await restoreParentOnboarded();
-  return redirect(homePathFor(session.role));
+  // 다른 브라우저에서 로그인한 보호자도 서버에 아이가 있으면 코드 입력 대신 홈으로 간다.
+  // 약관 동의 전에는 묻지 않는다 — 아이 목록이 403 TERMS_NOT_AGREED 다
+  if (session.role === "parent" && session.termsAgreed) await restoreParentOnboarded();
+  return redirect(homePathFor(session.role, session.termsAgreed));
 }
 
 export default function OAuthSuccessRoute() {

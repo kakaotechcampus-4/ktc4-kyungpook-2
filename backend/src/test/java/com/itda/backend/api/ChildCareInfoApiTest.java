@@ -28,10 +28,12 @@ import com.jayway.jsonpath.JsonPath;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
@@ -55,6 +57,9 @@ class ChildCareInfoApiTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private TermsAgreementRepository termsAgreementRepository;
 
     @Autowired
     private OrganizationRepository organizationRepository;
@@ -94,7 +99,7 @@ class ChildCareInfoApiTest {
     void setUp() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         staff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
-        parent = userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호"));
+        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -203,7 +208,7 @@ class ChildCareInfoApiTest {
 
     @Test
     void 연결되지_않은_아이는_403_FORBIDDEN() throws Exception {
-        User stranger = userRepository.save(UserFixture.parent(uniqueKakaoId(), "남"));
+        User stranger = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "남")));
 
         save(stranger, "{\"allergies\": [\"땅콩\"], \"medications\": []}")
                 .andExpect(status().isForbidden())
@@ -220,7 +225,7 @@ class ChildCareInfoApiTest {
 
     /** 기관이 새 초대 코드를 내고 두 번째 보호자가 수락한다. */
     private User linkAnotherParent() throws Exception {
-        User other = userRepository.save(UserFixture.parent(uniqueKakaoId(), "아빠"));
+        User other = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "아빠")));
         String body = mockMvc.perform(withCsrf(post(CHILDREN + "/" + childId + "/invitations"), auth(staff)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();

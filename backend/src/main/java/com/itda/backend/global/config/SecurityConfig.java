@@ -145,7 +145,8 @@ public class SecurityConfig {
                         .accessDeniedHandler(jsonAccessDeniedHandler)
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                // 출입증으로 누군지 알아낸 직후, 가입을 마치지 않은 회원을 403 SIGNUP_NOT_COMPLETED 로 막는다.
+                // 출입증으로 누군지 알아낸 직후, 가입을 마치지 않은 회원을 403 SIGNUP_NOT_COMPLETED 로,
+                // 약관에 동의하지 않은 보호자를 403 TERMS_NOT_AGREED 로 막는다.
                 .addFilterAfter(
                         new SignupCompletionFilter(userService, jsonErrorResponseWriter),
                         JwtAuthenticationFilter.class);

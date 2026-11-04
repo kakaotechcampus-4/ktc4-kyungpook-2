@@ -14,10 +14,12 @@ import { readSelectedChildId } from "@/lib/selectedChild";
  * 그 값을 매번 다시 읽어오는 지점이 된다.
  */
 export async function clientLoader() {
-  const { loggedIn, signupCompleted, role } = await getSession();
+  const { loggedIn, signupCompleted, role, termsAgreed } = await getSession();
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   if (role !== "parent") return redirect("/parent/invite");
-  // 카카오 로그인만 하고 약관·첫 기관 동의를 안 끝낸 사람은 아직 본 화면에 들어올 수 없다.
+  // 약관에 동의하지 않은 보호자는 서버가 보호 API 를 모두 막는다 — 아이 목록을 묻기 전에 약관 단계로
+  if (!termsAgreed) return redirect("/parent/invite");
+  // 첫 기관 동의를 안 끝낸 사람은 아직 본 화면에 들어올 수 없다.
   // 이 브라우저에 표시가 없어도 서버에 연결된 아이가 있으면 마친 사람이다 (다른 브라우저 · 기기)
   if (!(await restoreParentOnboarded())) return redirect("/parent/invite");
   // 아이 목록(G-10)을 서버에서 못 받는 빌드면 mock 아이를 띄우지 않는다 — 남의 아이가 보인다

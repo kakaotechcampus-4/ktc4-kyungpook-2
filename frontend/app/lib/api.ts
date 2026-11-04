@@ -264,7 +264,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401) clearSession();
     // BE 공통 에러 형식 { result, code, message } — global/exception/ErrorResponse.java
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.code ?? "UNKNOWN", body.message);
+    const error = new ApiError(res.status, body.code ?? "UNKNOWN", body.message);
+    if (error.status === 403 && error.code === "TERMS_NOT_AGREED") sendToTerms();
+    throw error;
   }
   // 204 No Content 에는 래퍼가 없다(api-conventions.md). 백엔드에 아직 204 를 주는
   // 곳은 없지만 규약이라 미리 받아둔다.
@@ -278,6 +280,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export { ApiError };
+
+/**
+ * 약관에 동의하지 않은 보호자는 서버가 보호 API 를 모두 403 TERMS_NOT_AGREED 로 막는다. 화면마다 처리하지 않고
+ * 여기서 한 번 약관 단계(`/parent/invite`)로 보낸다 — 앱을 열어 둔 사이 약관 판이 올라간 경우 등.
+ * 이미 그 화면이면 옮기지 않는다. 초대 화면이 이 오류를 받아 약관 단계로 돌린다.
+ */
+function sendToTerms(): void {
+  if (typeof window === "undefined" || window.location.pathname === "/parent/invite") return;
+  window.location.replace("/parent/invite");
+}
 
 /* ── 기관 ───────────────────────────────────────────── */
 
@@ -1135,16 +1147,16 @@ export async function getParentChildren(): Promise<Child[]> {
 }
 
 /**
- * 보호자가 온보딩(약관 · 첫 기관 연결)을 마쳤는지 본다. 이 브라우저에 표시가 없으면 서버에 묻는다.
+ * 보호자가 첫 기관 연결을 마쳤는지 본다. 이 브라우저에 표시가 없으면 서버에 묻는다.
+ * 약관 동의는 여기서 보지 않는다 — 서버가 `/auth/me` 의 termsAgreed 로 따로 알려준다.
  *
  * 표시(`itda_parent_onboarded`)는 브라우저마다 따로라, 다른 브라우저 · 기기로 들어온 보호자는
- * 아이 연결과 동의를 마쳤어도 약관 · 초대 코드 화면으로 돌아갔다. 연결된 아이가 한 명이라도 있으면
+ * 아이 연결과 동의를 마쳤어도 초대 코드 화면으로 돌아갔다. 연결된 아이가 한 명이라도 있으면
  * 첫 기관 동의까지 끝낸 것이라(동의해야 연결된다) 표시를 다시 남기고 마친 것으로 본다.
  *
+ * - **약관에 동의한 뒤에만 부른다.** 앞에서 부르면 아이 목록이 403 TERMS_NOT_AGREED 다
  * - mock 아이 목록은 온보딩과 관계없이 늘 있어 근거가 못 된다. mock 이면 표시만 본다
  * - 서버가 실패하면 마치지 않은 것으로 본다 — 온보딩 화면을 한 번 더 볼 뿐, 로그인 흐름은 막지 않는다
- *
- * 약관 동의를 서버에 저장하게 되면 그 값으로 판단을 바꾼다.
  */
 export async function restoreParentOnboarded(): Promise<boolean> {
   if (isOnboarded()) return true;
