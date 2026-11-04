@@ -3,6 +3,7 @@ import { Link, useLoaderData } from "react-router";
 import { InstitutionCodeCard } from "@/components/org/InstitutionCodeCard";
 import { LinkRequestCard } from "@/components/org/LinkRequestCard";
 import { RosterConsentBadge } from "@/components/org/RosterConsentBadge";
+import { HelpTip } from "@/components/ui/HelpTip";
 import { Card, PageHeader, PanelHead } from "@/components/ui";
 import { getChildren, getLinkRequests, getMyInstitution, loadIfReady } from "@/lib/api";
 
@@ -56,7 +57,12 @@ export default function ChildrenPage() {
           <Card>
             <PanelHead
               title={`연결 요청 ${linkRequests.length}건`}
-              note="보호자가 우리 기관 코드로 연결을 요청했습니다. 관리번호를 넣어 수락하면 명부에 오르고, 보호자가 우리 기관에 동의하면 기록을 받을 수 있습니다."
+              right={
+                <HelpTip label="연결 요청">
+                  보호자가 우리 기관 코드로 연결을 요청했습니다. 관리번호를 넣어 수락하면 명부에
+                  오르고, 보호자가 우리 기관에 동의하면 기록을 받을 수 있습니다.
+                </HelpTip>
+              }
             />
             <div className="flex flex-col gap-3">
               {linkRequests.map((r) => (

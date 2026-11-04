@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { Link, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { NotReadyPage } from "@/components/org/NotReady";
-import { Card, EmptyState, InstitutionChip, Note, PageHeader } from "@/components/ui";
+import { HelpTip } from "@/components/ui/HelpTip";
+import { Card, EmptyState, InstitutionChip, PageHeader } from "@/components/ui";
 import { ApiError, getInboxItem, isReady } from "@/lib/api";
 import { formatDateTime } from "@/lib/datetime";
 import { INBOX_CHILD_PARAM } from "@/lib/inbox";
@@ -22,7 +23,7 @@ export async function clientLoader({ params }: { params: { id: string } }) {
 
 export default function InboxDetailRoute() {
   if (!isReady("inbox")) {
-    return <NotReadyPage title="메시지" description="다른 기관이 승인해 우리 기관에 열린 지원 방법입니다" />;
+    return <NotReadyPage title="메시지" />;
   }
   return <InboxDetailPage />;
 }
@@ -63,7 +64,19 @@ function InboxDetailPage() {
 
   return (
     <>
-      <PageHeader title={`메시지 · ${item.childName}`} description={`${item.period} 관찰·분석 결과`} right={back} />
+      <PageHeader
+        eyebrow={`${item.period} 관찰·분석 결과`}
+        title={`메시지 · ${item.childName}`}
+        right={
+          <span className="flex items-center gap-1">
+            <HelpTip label="메시지">
+              보낸 기관의 원본 기록은 전달되지 않습니다. 승인을 거친 관찰·분석 결과만 보이고,
+              보호자가 우리 기관 공유를 끄면 이 글도 더 볼 수 없습니다.
+            </HelpTip>
+            {back}
+          </span>
+        }
+      />
 
       <Card>
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -83,13 +96,6 @@ function InboxDetailPage() {
           </p>
         ) : null}
       </Card>
-
-      <div className="mt-5">
-        <Note>
-          보낸 기관의 원본 기록은 전달되지 않습니다. 승인을 거친 관찰·분석 결과만 보이고, 보호자가 우리 기관
-          공유를 끄면 이 글도 더 볼 수 없습니다.
-        </Note>
-      </div>
     </>
   );
 }

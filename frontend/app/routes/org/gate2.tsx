@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
 import { Lock } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
+import { HelpTip } from "@/components/ui/HelpTip";
 import {
   Card,
   ConfirmDialog,
@@ -157,10 +158,12 @@ function Gate2Item({
         미동의 기관도 숨기지 않고 잠금 + 사유로 보인다 — 왜 안 가는지 알 수 있게.
       */}
       <section className="mb-4">
-        <h3 className="mb-1 text-[17px] font-bold">승인하면 함께 받는 기관</h3>
-        <p className="mb-3 text-[14px] text-muted">
-          보호자가 공유에 동의한 기관만 받습니다. 선생님이 고르지 않습니다.
-        </p>
+        <span className="mb-3 flex items-center gap-1">
+          <h3 className="text-[17px] font-bold">승인하면 함께 받는 기관</h3>
+          <HelpTip label="승인하면 함께 받는 기관" align="left">
+            보호자가 공유에 동의한 기관만 받습니다. 선생님이 고르지 않습니다.
+          </HelpTip>
+        </span>
         {receivers.length === 0 ? (
           <p className="mb-2 rounded border border-dashed border-line2 px-3 py-2.5 text-[14px] text-ink2">
             지금 받을 다른 기관이 없습니다. 승인하면 보호자에게만 보입니다.
@@ -285,10 +288,7 @@ function messageOf(err: unknown): string {
 export default function Gate2Route() {
   if (!isReady("insights")) {
     return (
-      <NotReadyPage
-        title="인사이트 승인"
-        description="근거 기록을 제공한 선생님이 보호자에게 보여도 되는지 판단합니다"
-      />
+<NotReadyPage title="인사이트 승인" />
     );
   }
   return <Gate2Page />;

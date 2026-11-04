@@ -45,7 +45,6 @@ function todayLabel(): string {
 interface Turn {
   href: string;
   label: string;
-  sub: string;
   icon: LucideIcon;
   count: number | null;
 }
@@ -65,28 +64,24 @@ export default function DashboardPage() {
     {
       href: "/queue/matching",
       label: "아이 확인",
-      sub: "누구 기록인지",
       icon: ClipboardCheck,
       count: matching?.length ?? null,
     },
     {
       href: "/gate1",
       label: "요약 확인",
-      sub: "Gate 1 · 문장 단위",
       icon: ListChecks,
       count: gate1?.length ?? null,
     },
     {
       href: "/gate2",
       label: "인사이트 승인",
-      sub: "Gate 2 · 되돌릴 수 없음",
       icon: Send,
       count: insights?.length ?? null,
     },
     {
       href: "/queue/reinput",
       label: "수정 요청",
-      sub: "원본을 고쳐 다시 올려요",
       icon: RotateCcw,
       count: blocked?.length ?? null,
     },
@@ -101,7 +96,6 @@ export default function DashboardPage() {
 
   // 준비 중인 칸은 0건으로 치지 않는다 — 모르는 걸 "할 일 없음"이라고 말하면 안 된다
   const total = turns.reduce((n, t) => n + (t.count ?? 0), 0);
-  const unknown = turns.some((t) => t.count === null);
   const heldCount = held?.length ?? null;
 
   const pending = board?.matching ?? null;
@@ -111,14 +105,13 @@ export default function DashboardPage() {
       <PageHeader
         eyebrow={todayLabel()}
         title={total > 0 ? `오늘 선생님 차례 ${total}건` : "오늘 선생님 차례가 없습니다"}
-        description={unknown ? "준비 중인 기능은 건수에 넣지 않았습니다." : undefined}
         // 실연동에서는 숨긴다. 내 기관명을 받을 API 가 아직 없어, mock 기관명을 띄우면 다른 기관이 보인다
         right={isAuthMock() ? <InstitutionChip institution={MY_INSTITUTION} withName /> : null}
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
         <Card>
-          <PanelHead title="내 차례" note="사람이 눌러야 다음으로 넘어가요" />
+          <PanelHead title="내 차례" />
 
           {lead && (lead.count ?? 0) > 0 ? (
             <Link
@@ -131,11 +124,8 @@ export default function DashboardPage() {
               >
                 <lead.icon size={22} strokeWidth={2} />
               </span>
-              <span className="min-w-0 flex-1 leading-tight">
-                <span className="block text-[19px] font-extrabold text-ink">
-                  {lead.label} {lead.count}건
-                </span>
-                <span className="block text-[14px] text-review">{lead.sub}</span>
+              <span className="min-w-0 flex-1 text-[19px] font-extrabold text-ink">
+                {lead.label} {lead.count}건
               </span>
               <span className="tap flex shrink-0 items-center gap-1.5 rounded-full bg-ink px-5 text-[15px] font-bold text-paper">
                 시작하기
@@ -159,10 +149,7 @@ export default function DashboardPage() {
                     >
                       <Icon size={19} strokeWidth={1.9} />
                     </span>
-                    <span className="min-w-0 flex-1 leading-tight">
-                      <span className="block text-[16px] font-bold text-ink">{t.label}</span>
-                      <span className="block text-[13px] text-muted">{t.sub}</span>
-                    </span>
+                    <span className="min-w-0 flex-1 text-[16px] font-bold text-ink">{t.label}</span>
                     {t.count === null ? (
                       <span className="shrink-0 text-[14px] text-muted">준비 중</span>
                     ) : (
@@ -184,8 +171,7 @@ export default function DashboardPage() {
             <p className="mt-3 border-t border-line pt-3.5 text-[14px] text-muted">
               <Link to="/gate1?tab=hold" className="font-semibold text-ink2 hover:underline">
                 보류함 {heldCount}건
-              </Link>{" "}
-              · 넘기지 않고 세워 둔 요약입니다
+              </Link>
             </p>
           ) : null}
         </Card>
@@ -193,7 +179,6 @@ export default function DashboardPage() {
         <Card>
           <PanelHead
             title="아직 아이가 안 정해진 기록"
-            note="아이가 정해져야 아래 목록에 올라와요"
             right={
               <Link
                 to="/upload"
@@ -240,7 +225,10 @@ export default function DashboardPage() {
 
       <Card className="mt-5">
         {board === null ? (
-          <PanelHead title="아이별 진행 현황" note="준비 중입니다." />
+          <>
+            <PanelHead title="아이별 진행 현황" />
+            <p className="text-[14px] text-muted">준비 중입니다.</p>
+          </>
         ) : (
           <SummaryGroupBoardView initial={board} />
         )}
