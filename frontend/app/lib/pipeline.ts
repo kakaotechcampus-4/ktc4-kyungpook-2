@@ -19,6 +19,15 @@ export const GATE1_INDEX = PIPELINE_STAGES.length - 1;
  */
 export const FILE_STAGES = ["기록 등록", "기록 나누기", "매칭"] as const;
 
+/** 세부 단계 동그라미 아래 짧은 이름 — 좁은 칸이라 "기록"을 한 번만 쓴다 (#359) */
+export const FILE_STAGE_SHORT = ["기록 등록", "나누기", "매칭"] as const;
+
+/**
+ * 검증에서 막혀 수정 요청 큐에 있는 기록. 아이는 정해졌지만 선생님이 고치거나 보류해야 넘어간다 —
+ * 서버는 검증 단계의 "사람 대기"로 내려준다(VALIDATION_BLOCKED, O-26). 파일 진행에서 "완료"로 세지 않는다 (#359).
+ */
+export const isBlocked = (e: EntryProgress) => e.stageIndex === VALIDATION_INDEX && e.state === "waiting";
+
 /** 매칭까지 온 기록. 이보다 뒤(stageIndex 2 이상)는 아이별 카드로 넘어갔다 */
 export const isBeforeChild = (e: EntryProgress) => e.stageIndex <= MATCHING_INDEX;
 
@@ -67,19 +76,24 @@ export interface FileProgressSummary {
   waiting: number;
   /** 매칭에서 시스템 오류 */
   failed: number;
+  /** 검증에서 막혀 수정 요청 큐에서 고치거나 보류해야 한다 */
+  blocked: number;
 }
 
 export function fileProgressOf(entries: EntryProgress[]): FileProgressSummary {
   const total = entries.length;
   if (total === 0) {
-    return { percent: 33, tone: "splitting", total, resolved: 0, running: 0, waiting: 0, failed: 0 };
+    return { percent: 33, tone: "splitting", total, resolved: 0, running: 0, waiting: 0, failed: 0, blocked: 0 };
   }
   const early = entries.filter(isBeforeChild);
   const running = early.filter((e) => e.state === "running").length;
   const waiting = early.filter((e) => e.state === "waiting").length;
   const failed = early.filter((e) => e.state === "failed").length;
-  const resolved = total - running - waiting - failed;
-  const tone: FileTone = failed > 0 ? "failed" : waiting > 0 ? "waiting" : running > 0 ? "running" : "done";
+  // 막힌 기록은 매칭은 지났지만 선생님 손이 남았다 — 다 끝난 100% 로 보이지 않게 마친 것에서 뺀다
+  const blocked = entries.filter(isBlocked).length;
+  const resolved = total - running - waiting - failed - blocked;
+  const tone: FileTone =
+    failed > 0 ? "failed" : waiting > 0 || blocked > 0 ? "waiting" : running > 0 ? "running" : "done";
   const percent = Math.round(((2 + resolved / total) / 3) * 100);
-  return { percent, tone, total, resolved, running, waiting, failed };
+  return { percent, tone, total, resolved, running, waiting, failed, blocked };
 }
