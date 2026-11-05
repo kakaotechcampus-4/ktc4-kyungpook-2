@@ -14,11 +14,13 @@ import org.springframework.web.bind.annotation.RestController;
 import com.itda.backend.dto.request.insight.Gate2DecisionRequest;
 import com.itda.backend.dto.response.insight.Gate2DecisionResponse;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse;
+import com.itda.backend.dto.response.insight.InsightProgressResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.insight.InsightGate2QueryService;
 import com.itda.backend.service.insight.InsightGate2Service;
+import com.itda.backend.service.insight.InsightProgressService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -38,6 +40,7 @@ public class InsightController {
 
     private final InsightGate2QueryService insightGate2QueryService;
     private final InsightGate2Service insightGate2Service;
+    private final InsightProgressService insightProgressService;
 
     @GetMapping
     @Operation(
@@ -72,6 +75,31 @@ public class InsightController {
             @RequestParam(defaultValue = "pending") String gate2Status,
             @AuthenticationPrincipal String userId) {
         return ApiResponse.success(insightGate2QueryService.getInsights(userId, gate2Status));
+    }
+
+    @GetMapping("/progress")
+    @Operation(
+            summary = "인사이트 진행 현황",
+            description = "우리 기관이 최근 Gate 1 에서 승인한 기록이 들어가는 아이·주마다 분석이 어디까지 왔는지 "
+                    + "돌려줍니다. 최근 주부터, 같은 주는 아이 이름 순입니다. 지금 우리 명부에 있고 공유 동의가 켜진 "
+                    + "아이만 나옵니다. message 는 화면에 그대로 쓰는 문장입니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<List<InsightProgressResponse>> progress(@AuthenticationPrincipal String userId) {
+        return ApiResponse.success(insightProgressService.getProgress(userId));
     }
 
     @GetMapping("/{insightId}")

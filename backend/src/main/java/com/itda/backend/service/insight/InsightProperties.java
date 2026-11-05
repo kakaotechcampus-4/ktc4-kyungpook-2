@@ -1,7 +1,10 @@
 package com.itda.backend.service.insight;
 
+import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -24,4 +27,22 @@ import com.itda.backend.service.agent.WorkerProperties;
 @ConfigurationProperties(prefix = "app.insight")
 public record InsightProperties(WorkerProperties worker, int periodDays, ZoneId zone, int lookbackDays,
         boolean includeCurrentWeek, List<Duration> failureBackoffs) {
+
+    /**
+     * 관찰 날짜가 속한 기간의 끝. <b>일요일</b>로 고정한다 — "어제까지 7일" 로 잡으면 자정마다 키가 밀려 같은 아이가
+     * 겹치는 창으로 매일 다시 돈다 ({@code InsightWorker}). 워커와 진행 현황(O-43)이 같은 계산을 쓴다.
+     */
+    public LocalDate periodEndOf(LocalDate entryDate) {
+        return entryDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
+    }
+
+    public LocalDate periodStartOf(LocalDate periodEnd) {
+        return periodEnd.minusDays(periodDays - 1L);
+    }
+
+    /** 오늘 분석할 수 있는 마지막 기간의 끝. 끝나지 않은 이번 주는 {@code includeCurrentWeek} 일 때만 넣는다. */
+    public LocalDate lastPeriodEnd(LocalDate today) {
+        LocalDate thisSunday = periodEndOf(today);
+        return includeCurrentWeek ? thisSunday : thisSunday.minusWeeks(1);
+    }
 }

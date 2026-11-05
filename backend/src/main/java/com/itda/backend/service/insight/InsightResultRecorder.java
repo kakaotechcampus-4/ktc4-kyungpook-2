@@ -83,12 +83,21 @@ public class InsightResultRecorder {
         if (latest.getStatus() == InsightRunStatus.RUNNING) {
             return false;
         }
-        if (latest.getLastContextId() == null) {
+        return materialGrewSince(latest);
+    }
+
+    /**
+     * 끝난 실행 뒤로 그 아이·그 기간에 새 승인이 생겼는지. 집기({@link #shouldRun})와 진행 현황(O-43)이 같은 규칙을 쓴다
+     * — 둘이 갈리면 화면은 "곧 분석" 이라는데 워커는 집지 않는다.
+     */
+    boolean materialGrewSince(InsightRun done) {
+        if (done.getLastContextId() == null) {
             // 눈금을 모르는 행이다 (이 컬럼이 생기기 전). 한 번 더 도는 쪽이 빠뜨리는 쪽보다 낫다.
             return true;
         }
-        Long current = childContextRepository.findMaxIdInPeriod(childId, periodFrom, periodTo);
-        return current != null && current > latest.getLastContextId();
+        Long current = childContextRepository.findMaxIdInPeriod(done.getChildId(), done.getPeriodFrom(),
+                done.getPeriodTo());
+        return current != null && current > done.getLastContextId();
     }
 
     /**

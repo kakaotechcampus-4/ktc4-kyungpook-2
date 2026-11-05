@@ -60,4 +60,14 @@ public interface ChildContextRepository extends JpaRepository<ChildContext, Long
             + "from ChildContext c, SummaryResult s "
             + "where s.id = c.summaryResultId and c.createdAt >= :since")
     List<ApprovedEntryDay> findApprovedEntryDaysSince(@Param("since") LocalDateTime since);
+
+    /**
+     * {@link #findApprovedEntryDaysSince} 중 <b>그 기관이 승인한 것</b>. 인사이트 진행 현황(O-43)이 "우리가 승인한
+     * 기록이 어느 주 분석에 들어가나" 를 고른다. 워커와 같은 창을 봐야 워커가 볼 주와 화면에 뜨는 주가 같다.
+     */
+    @Query("select distinct new com.itda.backend.repository.summary.ApprovedEntryDay(c.childId, s.entryDate) "
+            + "from ChildContext c, SummaryResult s "
+            + "where s.id = c.summaryResultId and s.institutionId = :institutionId and c.createdAt >= :since")
+    List<ApprovedEntryDay> findApprovedEntryDaysSinceByInstitution(@Param("institutionId") Long institutionId,
+            @Param("since") LocalDateTime since);
 }
