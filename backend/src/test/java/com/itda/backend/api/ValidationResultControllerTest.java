@@ -174,7 +174,9 @@ class ValidationResultControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"그대로\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(code.getCode()));
+                .andExpect(jsonPath("$.code").value(code.getCode()))
+                // 응답에는 사용자에게 보여도 되는 문구만 — 내부 사유(id 가 든 영어 문장)는 내보내지 않는다
+                .andExpect(jsonPath("$.message").value(code.getMessage()));
     }
 
     @Test

@@ -80,8 +80,8 @@ public class ValidationResultController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "처리 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "action 누락·오타·reupload, BLOCK이 아닌 결과, 최신이 아닌 판정, 이미 처리된 기록 "
-                            + "(VALIDATION_RESULT_INVALID_REQUEST)",
+                    description = "action 누락·오타·reupload, BLOCK이 아닌 결과, 이미 처리된 기록 "
+                            + "(VALIDATION_RESULT_INVALID_REQUEST) · 최신이 아닌 판정 (VALIDATION_RESULT_OUTDATED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -114,9 +114,10 @@ public class ValidationResultController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "고침 — 다시 검증 대기"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "본문 누락·빈 본문·100000자 초과 (INVALID_REQUEST), 고치지 않은 본문·명부에서 빠졌거나 "
-                            + "동의가 꺼진 아이·BLOCK이 아닌 결과·최신이 아닌 판정·이미 처리된 기록 "
-                            + "(VALIDATION_RESULT_INVALID_REQUEST)",
+                    description = "본문 누락·빈 본문·100000자 초과 (INVALID_REQUEST) · 고치지 않은 본문 "
+                            + "(VALIDATION_RESULT_CONTENT_UNCHANGED) · 삭제됐거나 명부에서 빠졌거나 동의가 꺼진 아이 "
+                            + "(VALIDATION_RESULT_CHILD_NOT_SHARED) · 최신이 아닌 판정 (VALIDATION_RESULT_OUTDATED) · "
+                            + "BLOCK이 아닌 결과·이미 처리된 기록 (VALIDATION_RESULT_INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
