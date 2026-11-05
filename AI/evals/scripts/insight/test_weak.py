@@ -13,8 +13,11 @@ from pathlib import Path
 AI_DIR = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(AI_DIR))
 
-from insight import config  # noqa: E402
-from insight.nodes import perceive, reflect  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+from insight import config, nodes  # noqa: E402
+from insight.llm import LlmError  # noqa: E402
+from insight.nodes import perceive, reflect, refine  # noqa: E402
 from insight.quality import NOT_IN_RECORD, SINGLE_NO_SUPPORT, weak_reasons  # noqa: E402
 
 TYPES = {1: "학교", 2: "센터"}
@@ -28,6 +31,7 @@ def claim(cid, inst, jid):
 
 # 학교 2개(날짜 다름), 센터 1개
 STATE = perceive({
+    "child_name": "아동 A", "period_from": "2026-01-01", "period_to": "2026-01-31",
     "claims": [claim("10-0", 1, 101), claim("11-0", 2, 102), claim("12-0", 1, 103)],
     "consented_institutions": [{"institution_id": i, "institution_type": t} for i, t in TYPES.items()],
 })
@@ -125,6 +129,74 @@ def test_off_면_빼지_않고_찾은_것만_남긴다():
 
 def test_기본값은_off_다():
     assert config.INSIGHT_WEAK_MODE == "off"
+
+
+# ── refine (C, 수정 루프) — 모델 답을 정해 두고 돌린다 ───────────
+
+FIXED = "학교와 센터에서 그림책을 읽어 줄 때 교사를 보지 않았다. 학교에서는 그림을 짚으며 질문하자 대답했다."
+
+
+def run_refine(raws, model_answer):
+    """reflect → refine 을 refine 모드로. model_answer 가 Exception 이면 Luna 실패로 본다."""
+    sent = []
+
+    def fake_ask(messages):
+        sent.append(messages)
+        if isinstance(model_answer, Exception):
+            raise model_answer
+        return SimpleNamespace(data=model_answer, usage={})
+
+    saved_mode, saved_ask = config.INSIGHT_WEAK_MODE, nodes.ask_json
+    config.INSIGHT_WEAK_MODE, nodes.ask_json = "refine", fake_ask
+    try:
+        out = refine(reflect({**STATE, "raw_insights": raws, "llm_error": None}))
+    finally:
+        config.INSIGHT_WEAK_MODE, nodes.ask_json = saved_mode, saved_ask
+    return out, sent
+
+
+def test_refine_고친_것이_통과하면_그_자리를_바꾼다():
+    out, sent = run_refine(RAWS, {"insights": [raw(CROSS, FIXED)]})
+    assert [i.content for i in out["insights"]] == [GOOD, FIXED]
+    assert out["weak_refined"][0]["outcome"] == "rescued" and len(sent) == 1
+
+
+def test_refine_고쳐도_약하면_버린다():
+    out, _ = run_refine(RAWS, {"insights": [raw(CROSS, META)]})
+    assert [i.content for i in out["insights"]] == [GOOD]
+    assert out["weak_refined"][0] == {"before": META, "after": META, "outcome": "dropped", "why": "여전히 약함"}
+
+
+def test_refine_처음에_없던_근거를_쓰면_버린다():
+    out, _ = run_refine(RAWS, {"insights": [raw(["10-0", "11-0", "12-0"], FIXED)]})
+    assert [i.content for i in out["insights"]] == [GOOD]
+    assert out["weak_refined"][0]["why"] == "새 근거"
+
+
+def test_refine_Luna가_실패하면_그것만_버리고_나머지는_낸다():
+    out, _ = run_refine(RAWS, LlmError("시간 초과", "timeout"))
+    assert [i.content for i in out["insights"]] == [GOOD]
+    assert out["weak_refined"][0]["why"] == "timeout"
+
+
+def test_refine_한기관_대처없음은_부르지_않고_버린다():
+    single = raw(SINGLE, "학교에서 그림책을 읽어 줄 때 교사를 보지 않는 날이 이어졌다.")
+    out, sent = run_refine([raw(CROSS, GOOD), single], {"insights": [raw(CROSS, FIXED)]})
+    assert [i.content for i in out["insights"]] == [GOOD] and sent == []
+    assert out["weak_dropped"][0]["reasons"][0]["kind"] == SINGLE_NO_SUPPORT
+
+
+def test_refine_약한_것이_없으면_부르지_않는다():
+    out, sent = run_refine([raw(CROSS, GOOD)], {"insights": []})
+    assert [i.content for i in out["insights"]] == [GOOD] and sent == []
+
+
+def test_refine_요청에는_근거_claim과_문제_문장만_들어간다():
+    _, sent = run_refine(RAWS, {"insights": [raw(CROSS, FIXED)]})
+    user = sent[0][1]["content"]
+    assert "[10-0]" in user and "[11-0]" in user and "[12-0]" not in user  # 처음 근거 밖 claim 은 안 보냄
+    assert "센터에서 질문한 뒤의 반응은 기록되지 않았다." in user
+    assert "인용" not in user  # 원문 인용(다른 아이 이름이 남아 있음)은 넣지 않는다
 
 
 if __name__ == "__main__":

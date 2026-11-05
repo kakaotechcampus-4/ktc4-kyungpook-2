@@ -9,6 +9,8 @@ WRITING_RULES 의 문장은 CRITERIA.md §5 표의 "원칙" 칸과 글자까지 
 프롬프트 캐싱이 먹는다 (매칭에서 98% 캐시 확인).
 """
 
+import json
+
 from . import config
 
 #: CRITERIA §5 와 1:1. 키 = config 플래그 이름.
@@ -91,3 +93,34 @@ def build_messages(state: dict) -> list[dict]:
         {"role": "system", "content": system_prompt()},
         {"role": "user", "content": user_prompt(state)},
     ]
+
+
+def build_refine_messages(state: dict, raw: dict, reasons: list[dict], allowed_ids: list[str]) -> list[dict]:
+    """
+    수정 루프 (nodes.refine). 처음 쓴 인사이트와 코드가 찾은 문제 문장을 주고 한 번 고치게 한다.
+
+    기록은 처음 인사이트가 가리킨 claim 만 넣는다. 다른 claim 을 끌어와 새 인사이트를 만들지
+    못하게 하기 위해서다 — 고치기는 빼는 일이지 새로 쓰는 일이 아니다. 인용은 여기서도 넣지 않는다.
+    """
+    index = {c["claim_id"]: c for c in state["claims"]}
+    lines = [
+        f"[{i}] ({index[i]['entry_date']}, {index[i]['institution_type']}) {index[i]['text']}"
+        for i in allowed_ids if i in index
+    ]
+    keep = {k: raw.get(k) for k in ("situation", "behavior", "supports", "claim_ids", "content")}
+    fixes = "\n".join(
+        f'- {r["field"]}: "{r["sentence"]}"\n  → 기록이 없다는 말이 들어 있다. 다음 사람이 쓸 정보가 아니다. '
+        "그 표현만 빼고 같은 문장의 나머지 내용은 남긴다."
+        for r in reasons if r.get("sentence")
+    )
+    user = (
+        f"아이: {state['child_name']}\n"
+        f"기간: {state['period_from']} ~ {state['period_to']}\n\n"
+        "기록 (이 인사이트의 근거):\n" + "\n".join(lines) + "\n\n"
+        "처음 쓴 인사이트:\n" + json.dumps(keep, ensure_ascii=False) + "\n\n"
+        "고칠 점:\n" + fixes + "\n\n"
+        "고칠 점만 고친다. 위 기록에 없는 내용을 새로 쓰지 않고, 근거 claim_id 는 위 목록에서만 고른다. "
+        "표현을 뺀 뒤 문장이 어색하면 자연스럽게 다듬는다. 나머지 칸은 그대로 둔다.\n"
+        "같은 JSON 형식으로 insights 에 인사이트 하나만 담아 답한다."
+    )
+    return [{"role": "system", "content": system_prompt()}, {"role": "user", "content": user}]

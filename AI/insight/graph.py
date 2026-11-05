@@ -6,7 +6,7 @@ Insight Agent 그래프 조립.
 from langgraph.graph import END, StateGraph
 
 from .llm import LlmUnavailable
-from .nodes import act, perceive, plan, reflect
+from .nodes import act, perceive, plan, reflect, refine
 from .schemas import InsightInput, InsightOutput
 
 
@@ -16,12 +16,14 @@ def build_graph():
     graph.add_node("plan", plan)
     graph.add_node("act", act)
     graph.add_node("reflect", reflect)
+    graph.add_node("refine", refine)  # INSIGHT_WEAK_MODE="refine" 일 때만 일한다
 
     graph.set_entry_point("perceive")
     graph.add_edge("perceive", "plan")
     graph.add_edge("plan", "act")
     graph.add_edge("act", "reflect")
-    graph.add_edge("reflect", END)
+    graph.add_edge("reflect", "refine")
+    graph.add_edge("refine", END)
     return graph.compile()
 
 
@@ -44,7 +46,8 @@ def run_insight(payload: InsightInput, trace: dict | None = None) -> InsightOutp
 
     # 평가 스크립트만 trace 를 넘긴다 (요약과 같은 방식). 약한 인사이트와 이유를 담아 준다.
     if trace is not None:
-        trace.update(weak_found=result.get("weak_found", []), weak_dropped=result.get("weak_dropped", []))
+        trace.update(weak_found=result.get("weak_found", []), weak_dropped=result.get("weak_dropped", []),
+                     weak_refined=result.get("weak_refined", []), refine_calls=result.get("refine_calls", 0))
 
     if result.get("llm_error"):
         raise LlmUnavailable(result.get("llm_error") or "Luna 호출 실패",

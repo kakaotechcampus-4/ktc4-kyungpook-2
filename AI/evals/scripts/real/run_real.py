@@ -89,7 +89,7 @@ def main():
     ap.add_argument("--school", default="synthetic_school_demo.json")
     ap.add_argument("--real", default="dev.json", help="실제 센터 일지 파일 (블라인드: blind/test.json)")
     ap.add_argument("--answer", default="synthetic_school_answer.json", help="정답표 파일")
-    ap.add_argument("--weak-mode", choices=["off", "drop"], default=None,
+    ap.add_argument("--weak-mode", choices=["off", "drop", "refine"], default=None,
                     help="약한 인사이트 처리 (INSIGHT_WEAK_MODE). 안 주면 config 값")
     ap.add_argument("--window", type=int, default=30, help="인사이트 기간(일). 30 이면 월 단위")
     args = ap.parse_args()
@@ -201,9 +201,13 @@ def main():
             for ins in out.insights:
                 src = [e["id"] for e in entries if jid[e["id"]] in set(ins.source_entry_ids)]
                 log["insights"].append({"child": child, "window": key, **ins.model_dump(), "source_diary_ids": src})
+            dropped_texts = {w["content"] for w in trace.get("weak_dropped", [])} | {
+                r["before"] for r in trace.get("weak_refined", []) if r["outcome"] == "dropped"}
             for w in trace.get("weak_found", []):
-                log["weak"].append({"child": child, "window": key, **w,
-                                    "dropped": insight_config.INSIGHT_WEAK_MODE == "drop"})
+                log["weak"].append({"child": child, "window": key, **w, "dropped": w["content"] in dropped_texts})
+            for r in trace.get("weak_refined", []):
+                log.setdefault("refined", []).append({"child": child, "window": key, **r})
+            calls["insight_refine"] += trace.get("refine_calls", 0)
             print(f"[인사이트] {child} {key} claims={len(cs)} → {len(out.insights)}개")
 
     # ── 리포트 ──
@@ -237,7 +241,13 @@ def main():
     by_kind = dict(Counter(r["kind"] for w in W for r in {x["kind"]: x for x in w["reasons"]}.values()))
     log["weak_summary"] = {"weak": len(W), "written": n_written, "by_kind": by_kind,
                            "mode": log["weak_mode"], "dropped": n_dropped}
-    print(f"  약한 인사이트  {len(W)}/{n_written}  {by_kind}  · 모드 {log['weak_mode']} · 버림 {n_dropped}")
+    RF = log.get("refined", [])
+    rescued = sum(r["outcome"] == "rescued" for r in RF)
+    log["weak_summary"]["refined"] = {"tried": len(RF), "rescued": rescued}
+    print(f"  약한 인사이트  {len(W)}/{n_written}  {by_kind}  · 모드 {log['weak_mode']} · 버림 {n_dropped}"
+          + (f" · 고치기 {rescued}/{len(RF)} 살림" if RF else ""))
+    for r in RF:
+        print(f"    ~ [{r['child']}] {r['outcome']} {r['why']}  {r['before'][:50]} → {(r['after'] or '')[:50]}")
     for w in W:
         kinds = sorted({r["kind"] for r in w["reasons"]})
         print(f"    - [{w['child']}] {kinds} {'(버림) ' if w['dropped'] else ''}{w['content'][:60]}")
