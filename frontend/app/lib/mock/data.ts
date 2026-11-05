@@ -388,7 +388,7 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
   {
     id: "bq_01",
     childName: "김OO",
-    violationReason: "다른 아이 이름이 함께 포함되어 있습니다",
+    violationReason: "다른 아이의 이름이 함께 적혀 있어요",
     record: {
       id: "rrf_a301",
       fileName: "0819_관찰일지.txt",
@@ -401,7 +401,7 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
   {
     id: "bq_02",
     childName: null,
-    violationReason: "진단으로 읽히는 확정적 표현이 포함되어 있습니다",
+    violationReason: "진단명이나 장애 유형이 단정적으로 적혀 있어요",
     record: {
       id: "rrf_a402",
       fileName: "0818_특이사항.txt",
