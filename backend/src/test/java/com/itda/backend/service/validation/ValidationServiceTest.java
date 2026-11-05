@@ -80,6 +80,23 @@ class ValidationServiceTest {
                 entry.getId(), "임유진이 블록을 높이 쌓았다.", yujin.getId(), "임유진"));
     }
 
+    /** 수정 요청 큐에서 고친 일지(#357)는 고친 본문으로 다시 검증된다. 고친 사람·시각도 저장된다. */
+    @Test
+    void 막혀서_고친_일지는_다시_집어_가고_고친_본문으로_검증을_요청한다() {
+        JournalEntry entry = validating(yujin.getId());
+        entry.blockValidation();
+        entry.revise("임유진이 블록을 높이 쌓았다. 연락처는 지움", "u-7");
+        em.persistAndFlush(entry);
+
+        JournalEntry saved = reload(entry);
+        assertThat(saved.getRevisedBy()).isEqualTo("u-7");
+        assertThat(saved.getRevisedAt()).isNotNull();
+
+        assertThat(validationService.claimMatched(10)).containsExactly(entry.getId());
+        assertThat(validationService.prepareRequest(entry.getId()).request()).isEqualTo(new ValidationAgentRequest(
+                entry.getId(), "임유진이 블록을 높이 쌓았다. 연락처는 지움", yujin.getId(), "임유진"));
+    }
+
     @Test
     void 입력으로_쓴_매칭_결과는_그_일지의_가장_최근_것이다() {
         JournalEntry entry = validating(yujin.getId());

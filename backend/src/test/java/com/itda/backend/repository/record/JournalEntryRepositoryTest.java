@@ -39,6 +39,20 @@ class JournalEntryRepositoryTest {
         assertThat(found.getStatus()).isEqualTo(JournalEntryStatus.PENDING);
     }
 
+    /** 수정 요청 큐의 처리(#357)가 잠그고 읽는다. 삭제 표시된 일지는 처리 대상이 아니다. */
+    @Test
+    void 잠그고_읽을_때도_삭제된_일지는_빠진다() {
+        JournalEntry alive = journalEntryRepository.saveAndFlush(
+                JournalEntry.of(3L, LocalDate.of(2026, 9, 1), "점심시간에 식사를 잘함", 1));
+        JournalEntry deleted = JournalEntry.of(3L, LocalDate.of(2026, 9, 1), "낮잠을 잘 잠", 2);
+        deleted.delete();
+        journalEntryRepository.saveAndFlush(deleted);
+        entityManager.clear();
+
+        assertThat(journalEntryRepository.findByIdForUpdate(alive.getId())).isPresent();
+        assertThat(journalEntryRepository.findByIdForUpdate(deleted.getId())).isEmpty();
+    }
+
     @Test
     void 원본_파일_없이_직접_입력한_일지도_저장된다() {
         JournalEntry saved = journalEntryRepository.saveAndFlush(
