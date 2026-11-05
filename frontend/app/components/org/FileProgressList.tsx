@@ -211,8 +211,9 @@ function FileRow({ file }: { file: FileProgress }) {
                     className={`mt-3 h-px w-3 ${states[i - 1] === "done" ? "bg-pass" : "bg-line2"}`}
                   />
                 ) : null}
-                <span className="flex w-12 flex-col items-center gap-1">
+                <span className="flex w-14 flex-col items-center gap-1">
                   <span
+                    title={`${stage} · ${STEP[states[i]].word}`}
                     className={`flex size-6 items-center justify-center rounded-full ${STEP[states[i]].ring}`}
                   >
                     <span className="sr-only">

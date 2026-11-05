@@ -108,7 +108,8 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
         // 있으니 위쪽 "내 차례"와 사이드바 배지도 새로 받는다 (#359). 전에는 요약이 끝났을 때만 받았다
         const changed = JSON.stringify(next) !== JSON.stringify(boardRef.current);
         setBoard(next);
-        if (changed && revalidator.state === "idle") revalidator.revalidate();
+        // 이미 다시 받는 중이어도 다시 부른다 — 그 요청이 이 변화 전에 나갔을 수 있다 (나중 것이 앞 것을 대신한다)
+        if (changed) revalidator.revalidate();
       } catch {
         // 다음 차례에 다시 묻는다
       }

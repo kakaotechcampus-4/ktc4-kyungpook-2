@@ -177,6 +177,8 @@ export function OrgShell({
                             <Link
                               to={item.href}
                               aria-current={active ? "page" : undefined}
+                              // 터치에서는 mouseleave 가 없다 — 누르면 바로 포커스를 놓아 닫는다
+                              onClick={(e) => e.currentTarget.blur()}
                               className={`tap flex items-center gap-3 rounded-[14px] px-3 text-[15px] transition-colors duration-150 ${
                                 active
                                   ? "bg-accentsoft text-accentink"

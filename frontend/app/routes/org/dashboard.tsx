@@ -18,6 +18,7 @@ import {
   getInsights,
   getMatchingQueue,
   getSummaryGroups,
+  isReady,
   loadIfReady,
 } from "@/lib/api";
 import { isAuthMock } from "@/lib/auth";
@@ -26,36 +27,58 @@ import { MY_INSTITUTION } from "@/lib/mock/data";
 
 /** 백엔드에 아직 없는 기능은 null 로 와서 "준비 중"으로 그린다 (loadIfReady 참고) */
 export async function clientLoader() {
-  const [matching, blocked, gate1, held, insights, board, insightProgress] = await Promise.all([
+  const [matching, blocked, gate1, held, insights, board] = await Promise.all([
     loadIfReady("matchingQueue", getMatchingQueue),
     loadIfReady("blockedQueue", getBlockedQueue),
     loadIfReady("gate1", () => getGate1Queue("pending")),
     loadIfReady("gate1", () => getGate1Queue("hold")),
     loadIfReady("insights", getInsights),
     loadIfReady("summaryGroups", getSummaryGroups),
-    // 진행 현황은 다시 받을지 정하는 데만 쓴다 — 못 받아도 화면은 그대로 그린다
-    loadIfReady("insights", getInsightProgress).catch(() => null),
   ]);
-  return { matching, blocked, gate1, held, insights, board, insightProgress };
+  return { matching, blocked, gate1, held, insights, board };
 }
 
 const INSIGHT_POLL_MS = 4000;
+/** 분석이 이보다 오래 걸리면 더 기다리지 않는다 — 워커가 꺼졌거나 멈춘 서버에서 계속 묻지 않게 */
+const INSIGHT_POLL_LIMIT_MS = 5 * 60 * 1000;
+
+const analyzing = (list: InsightProgress[]) =>
+  list.some((p) => p.status === "queued" || p.status === "running");
 
 /**
- * 요약 검토에서 승인하면 인사이트 분석은 따로 돈다. 대시보드를 열었을 때 분석 중이면 끝날 때까지 화면 전체를 다시 받아,
- * "인사이트 승인" 건수와 메뉴 배지를 새로고침 없이 띄운다 (#359). 분석이 끝나면(done · nothing_new 등) 멈춘다.
- * 실패 뒤 다시 시도를 기다리는 동안(retrying)은 언제 끝날지 몰라 기다리지 않는다.
+ * 요약 검토에서 승인하면 인사이트 분석은 따로 돈다. 대시보드를 열었을 때 분석 중이면 진행 현황(O-43)만 4초마다 다시
+ * 묻고, 분석이 끝나면(done · nothing_new 등) 화면 전체를 한 번 다시 받아 "인사이트 승인" 건수와 메뉴 배지를 새로고침
+ * 없이 띄운다 (#359). 진행 현황은 서버가 묻는 주마다 재료를 다시 만들어 보는 무거운 조회라, 화면 전체를 다시 받을 때마다
+ * 함께 부르지 않고 여기서만 부른다. 실패 뒤 다시 시도를 기다리는 동안(retrying)은 언제 끝날지 몰라 기다리지 않는다.
  */
-function useInsightPolling(progress: InsightProgress[] | null) {
+function useInsightPolling() {
   const revalidator = useRevalidator();
-  const analyzing = (progress ?? []).some((p) => p.status === "queued" || p.status === "running");
   useEffect(() => {
-    if (!analyzing) return;
-    const t = setInterval(() => {
-      if (revalidator.state === "idle") revalidator.revalidate();
-    }, INSIGHT_POLL_MS);
-    return () => clearInterval(t);
-  }, [analyzing, revalidator]);
+    if (!isReady("insights")) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+
+    async function check(wasAnalyzing: boolean) {
+      let now = false;
+      try {
+        now = analyzing(await getInsightProgress());
+      } catch {
+        return; // 진행 현황을 못 받으면 기다리지 않는다 — 화면은 그대로 쓸 수 있다
+      }
+      if (stopped) return;
+      if (wasAnalyzing && !now) revalidator.revalidate();
+      if (now && Date.now() - startedAt < INSIGHT_POLL_LIMIT_MS) {
+        timer = setTimeout(() => check(true), INSIGHT_POLL_MS);
+      }
+    }
+    check(false);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+    // 화면에 들어올 때 한 번 시작한다. revalidator 는 렌더마다 새 객체라 넣으면 다시 시작한다
+  }, []);
 }
 
 const WEEKDAY = "일월화수목금토";
@@ -82,9 +105,8 @@ interface Turn {
  * 아래 "아이별 진행 현황"(O-34)은 그대로다 — 파일별 진행(O-26)은 기록 등록 화면이 보여준다.
  */
 export default function DashboardPage() {
-  const { matching, blocked, gate1, held, insights, board, insightProgress } =
-    useLoaderData<typeof clientLoader>();
-  useInsightPolling(insightProgress);
+  const { matching, blocked, gate1, held, insights, board } = useLoaderData<typeof clientLoader>();
+  useInsightPolling();
 
   const turns: Turn[] = [
     {

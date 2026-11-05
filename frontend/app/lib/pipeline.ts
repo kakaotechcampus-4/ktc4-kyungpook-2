@@ -60,6 +60,7 @@ export function fileStageStatesOf(entries: EntryProgress[]): StageState[] {
  * 기록을 아직 떼어내지 못했으면 entries 가 비어 있어 ⅓에서 기다린다.
  *
  * tone 은 막대 색과 상태 줄을 고른다. 우선순위는 fileStageStatesOf 와 같다: 실패 > 사람 대기 > 진행 중 > 완료.
+ * 다만 검증에서 막힌 기록(수정 요청)도 사람 대기로 친다 — 세부 단계는 매칭까지라 그 기록을 보지 않는다 (#359).
  */
 export type FileTone = "splitting" | "running" | "waiting" | "failed" | "done";
 
@@ -89,11 +90,12 @@ export function fileProgressOf(entries: EntryProgress[]): FileProgressSummary {
   const running = early.filter((e) => e.state === "running").length;
   const waiting = early.filter((e) => e.state === "waiting").length;
   const failed = early.filter((e) => e.state === "failed").length;
-  // 막힌 기록은 매칭은 지났지만 선생님 손이 남았다 — 다 끝난 100% 로 보이지 않게 마친 것에서 뺀다
+  const resolved = total - running - waiting - failed;
+  // 막힌 기록은 아이는 정해졌지만 선생님 손이 남았다 — 다 끝난 100% 로 보이지 않게 막대에서만 뺀다.
+  // 세부 단계(fileStageStatesOf)는 매칭까지라 그대로 완료다. 상태 칩과 펼친 줄이 수정 요청으로 보낸다
   const blocked = entries.filter(isBlocked).length;
-  const resolved = total - running - waiting - failed - blocked;
   const tone: FileTone =
     failed > 0 ? "failed" : waiting > 0 || blocked > 0 ? "waiting" : running > 0 ? "running" : "done";
-  const percent = Math.round(((2 + resolved / total) / 3) * 100);
+  const percent = Math.round(((2 + (resolved - blocked) / total) / 3) * 100);
   return { percent, tone, total, resolved, running, waiting, failed, blocked };
 }
