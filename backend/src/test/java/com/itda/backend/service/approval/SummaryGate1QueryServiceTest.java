@@ -283,7 +283,8 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         // 구간을 못 읽으면 비어 있는 것과 같다 — 숨기기보다 보여주는 쪽이 안전하다.
-        assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of(), List.of()));
+        assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of(),
+                List.of("검증에서 문제가 발견됐어요. 원본을 확인해 주세요")));
         assertThat(item.reviewReasons()).isEmpty();
         assertThat(item.claims()).isEmpty();
     }

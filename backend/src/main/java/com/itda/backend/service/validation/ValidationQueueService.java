@@ -141,11 +141,7 @@ public class ValidationQueueService {
     }
 
     private static String describeViolation(List<String> issueTypes) {
-        if (issueTypes.isEmpty()) {
-            // AI가 BLOCK을 주면서 유형을 안 보낸 경우 — 화면이 빈칸이 되면 선생님이 할 수 있는 게 없다.
-            return "검증에서 문제가 발견됐어요. 원본을 확인해 주세요";
-        }
-        // 유형 → 문장 표는 Gate 1 확인 표시와 같이 쓴다 (ValidationReasons)
+        // 유형 → 문장 표와 유형이 없을 때의 문장은 Gate 1 확인 표시와 같이 쓴다 (ValidationReasons)
         return String.join(" / ", ValidationReasons.sentencesOf(issueTypes));
     }
 

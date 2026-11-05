@@ -25,11 +25,17 @@ public final class ValidationReasons {
             Map.entry("대상불명확", "어느 아이의 기록인지 분명하지 않아요"),
             Map.entry("모델호출실패", "자동 검사를 마치지 못했어요. 직접 읽고 확인해 주세요"));
 
+    /** AI 가 판정만 주고 유형을 안 보냈거나 깨진 값을 보냈을 때. 빈칸이면 선생님이 할 수 있는 게 없다. */
+    private static final String UNKNOWN = "검증에서 문제가 발견됐어요. 원본을 확인해 주세요";
+
     private ValidationReasons() {
     }
 
-    /** 받은 순서대로 바꾸고, 같은 문장은 한 번만 남긴다. */
+    /** 받은 순서대로 바꾸고, 같은 문장은 한 번만 남긴다. 유형이 없으면 원본을 확인하라는 문장 하나다. */
     public static List<String> sentencesOf(Collection<String> issueTypes) {
+        if (issueTypes.isEmpty()) {
+            return List.of(UNKNOWN);
+        }
         return issueTypes.stream()
                 .map(type -> SENTENCES.getOrDefault(type, type))
                 .distinct()

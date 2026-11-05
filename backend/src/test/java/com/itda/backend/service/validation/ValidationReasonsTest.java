@@ -32,6 +32,16 @@ class ValidationReasonsTest {
         assertThat(ValidationReasons.sentencesOf(List.of("새유형"))).containsExactly("새유형");
     }
 
+    /**
+     * AI 가 판정만 주고 유형을 안 보내거나 깨진 값을 보내도 빈칸으로 두지 않는다. 수정 요청 큐와 Gate 1 이 같은 문장을
+     * 쓴다 — 전에는 Gate 1 안내가 "원본 일지 1건 · " 에서 끊겼다.
+     */
+    @Test
+    void 유형이_없으면_원본을_확인하라는_문장_하나를_준다() {
+        assertThat(ValidationReasons.sentencesOf(List.of()))
+                .containsExactly("검증에서 문제가 발견됐어요. 원본을 확인해 주세요");
+    }
+
     /** 같은 문장이 두 번 서지 않게 한 번만 남긴다. 순서는 받은 순서 그대로다. */
     @Test
     void 같은_유형이_겹치면_한_번만_남긴다() {
