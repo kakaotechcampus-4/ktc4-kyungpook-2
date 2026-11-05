@@ -67,11 +67,6 @@ function isMoving(board: SummaryGroupBoard): boolean {
   );
 }
 
-/** 요약이 돌고 있는 묶음 수. 줄면 요약이 끝나 요약 검토로 간 것이다 */
-function inFlight(board: SummaryGroupBoard): number {
-  return board.groups.filter((g) => g.summaryRequested || g.counts.summarizing > 0).length;
-}
-
 function messageOf(err: unknown): string {
   if (!(err instanceof ApiError)) return "네트워크 연결을 확인하고 다시 시도해 주세요.";
   if (err.code === "SUMMARY_IN_PROGRESS") {
@@ -109,10 +104,11 @@ export function SummaryGroupBoardView({ initial }: { initial: SummaryGroupBoard 
     const t = setInterval(async () => {
       try {
         const next = await getSummaryGroups();
-        const finished = inFlight(next) < inFlight(boardRef.current);
+        // 카드가 바뀌었으면 매칭·검증·요약 중 무언가 끝난 것이다 — 확인 필요 · 수정 요청 · 요약 검토가 새로 생겼을 수
+        // 있으니 위쪽 "내 차례"와 사이드바 배지도 새로 받는다 (#359). 전에는 요약이 끝났을 때만 받았다
+        const changed = JSON.stringify(next) !== JSON.stringify(boardRef.current);
         setBoard(next);
-        // 요약이 끝나 요약 검토로 갔다 — 위쪽 칸과 사이드바 배지도 새로 받는다
-        if (finished) revalidator.revalidate();
+        if (changed && revalidator.state === "idle") revalidator.revalidate();
       } catch {
         // 다음 차례에 다시 묻는다
       }
