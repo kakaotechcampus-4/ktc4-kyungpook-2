@@ -304,7 +304,8 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `getMatchingQueue` | `() => Promise<MatchingItem[]>` | I-03, I-06, 사이드바 배지 |
 | `resolveMatchingItem` | `(id: string, resolution: { action: "assign"; childId: string } \| { action: "not_ours" }) => Promise<{ ok: true }>` | I-06 |
 | `getBlockedQueue` | `() => Promise<BlockedItem[]>` | I-03, I-07, 사이드바 배지 |
-| `resolveBlockedItem` | `(id: string, action: "reupload" \| "hold") => Promise<{ ok: true }>` | I-07 |
+| `resolveBlockedItem` | `(id: string, action: "hold") => Promise<{ ok: true }>` — O-25 보류. `reupload` 는 #357 부터 없음 | I-07 |
+| `reviseBlockedItem` | `(id: string, content: string) => Promise<{ ok: true }>` — O-25 고쳐서 다시 검사(#357). 고치지 않은 본문·이미 처리된 건 400, 없는 건 404 | I-07 |
 | `getGate1Queue` | `(gate1Status?: "pending" \| "hold") => Promise<SummaryItem[]>` | I-03, I-08 |
 | `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "hold" \| "remove" \| "confirm" \| "revert"; cards?: Gate1Card[]; version: string }) => Promise<{ summaryId: string }>` · `confirm` · `revert` 는 `noContent` 요약만 | I-08 |
 | `reopenGate1` | `(summaryId: string) => Promise<{ summaryId: string }>` | I-08 |

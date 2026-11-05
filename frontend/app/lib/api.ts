@@ -50,6 +50,7 @@
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
  *      POST /api/v1/validation-results/{id}/resolve
+ *      POST /api/v1/validation-results/{id}/revise
  *      GET  /api/v1/auth/me          (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/signup       (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/logout       (lib/auth.ts 에서 호출)
@@ -912,14 +913,11 @@ function tickSimulation() {
 /**
  * POST /api/v1/validation-results/{id}/resolve (api-spec O-25)
  *
- * 둘 다 그 일지의 처리를 여기서 끝내고 큐에서 뺀다. 원본은 고치지도 지우지도 않는다 —
- * reupload 는 "고친 내용을 새 파일로 올리겠다"는 표시일 뿐, 업로드는 따로 해야 한다.
+ * 이 기록 보류 — 그 일지의 처리를 여기서 끝내고 큐에서 뺀다.
+ * "수정한 원본 다시 올리기"(reupload)는 서버가 더 받지 않는다(#357). 본문은 reviseBlockedItem 으로 고친다.
  * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
  */
-export async function resolveBlockedItem(
-  id: string,
-  action: "reupload" | "hold",
-): Promise<{ ok: true }> {
+export async function resolveBlockedItem(id: string, action: "hold"): Promise<{ ok: true }> {
   if (mockFor("blockedQueue")) {
     const idx = mock.BLOCKED_QUEUE.findIndex((b) => b.id === id);
     if (idx !== -1) mock.BLOCKED_QUEUE.splice(idx, 1);
@@ -928,6 +926,29 @@ export async function resolveBlockedItem(
   return request(`/api/v1/validation-results/${id}/resolve`, {
     method: "POST",
     body: JSON.stringify({ action }),
+  });
+}
+
+/** 고친 본문 최대 길이. 서버 ReviseBlockedEntryRequest 와 같다 */
+export const MAX_REVISED_CONTENT = 10_000;
+
+/**
+ * POST /api/v1/validation-results/{id}/revise (api-spec O-25, #357)
+ *
+ * 막힌 일지의 본문을 고쳐 검증을 다시 받게 한다. 아이는 그대로다. 성공하면 큐에서 빠지고,
+ * 통과하면 요약 대기, 또 막히면 큐에 최신 사유로 다시 뜬다.
+ * 빈 본문·10000자 초과는 400 INVALID_REQUEST, 고치지 않은 본문·이미 처리된 건은
+ * 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
+ */
+export async function reviseBlockedItem(id: string, content: string): Promise<{ ok: true }> {
+  if (mockFor("blockedQueue")) {
+    const idx = mock.BLOCKED_QUEUE.findIndex((b) => b.id === id);
+    if (idx !== -1) mock.BLOCKED_QUEUE.splice(idx, 1);
+    return { ok: true };
+  }
+  return request(`/api/v1/validation-results/${id}/revise`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
   });
 }
 
