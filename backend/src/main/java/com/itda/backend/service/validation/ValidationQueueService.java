@@ -74,20 +74,49 @@ public class ValidationQueueService {
     }
 
     /**
-     * 선생님이 막힌 기록을 처리한다. 둘 다 이 일지의 파이프라인을 여기서 끝낸다.
+     * 선생님이 막힌 기록을 보류한다. 이 일지의 파이프라인을 여기서 끝낸다.
      *
-     * <p>{@code reupload} 는 고친 내용을 새 파일로 올리겠다는 뜻이다 — 원본은 고치지도 지우지도
-     * 않는다(append-only, CLAUDE.md Raw Data 규칙). 그래서 이 일지를 되살리지 않고 종료시킨다.
+     * <p>{@code reupload}(고친 원본 다시 올리기)는 #357 부터 받지 않는다 — 본문을 바로 고치는 {@link #revise} 로 바뀌었다.
      */
     @Transactional
     public void resolve(Long id, String action, String userId) {
+        JournalEntry entry = lockBlockedEntry(id, userId);
+
+        if (!"hold".equals(action)) {
+            throw new ValidationResultValidationException("unsupported action: " + action);
+        }
+        entry.holdAfterValidation();
+        log.info("validation result resolved id={} action={} journalEntryId={}", id, action, entry.getId());
+    }
+
+    /**
+     * 선생님이 막힌 본문을 고친다(#357). 같은 일지의 본문을 바꾸고 검증 대기로 보내 검증을 다시 받게 한다. 아동은 그대로다.
+     * 처음 올라온 글은 원본 파일(raw_record)에 남아 있어 따로 보관하지 않고, 고친 사람·시각만 일지에 남긴다.
+     */
+    @Transactional
+    public void revise(Long id, String content, String userId) {
+        JournalEntry entry = lockBlockedEntry(id, userId);
+        try {
+            entry.revise(content, userId);
+        } catch (IllegalArgumentException e) {
+            // 빈 본문이거나 고치지 않은 본문 — 같은 글을 다시 돌려 판정이 바뀌길 기다리는 우회를 막는다.
+            throw new ValidationResultValidationException("invalid revised content: " + e.getMessage());
+        }
+        log.info("blocked journal entry revised id={} journalEntryId={}", id, entry.getId());
+    }
+
+    /**
+     * 처리할 막힌 일지를 잠가서 가져온다. 다른 기관 소속이면 "권한 없음"이 아니라 "없음"으로 응답한다
+     * (MatchingResultService.resolve와 같은 이유). 다른 선생님이 먼저 처리했으면 거절한다.
+     */
+    private JournalEntry lockBlockedEntry(Long id, String userId) {
         String institutionId = String.valueOf(userService.getOrganizationIdOf(userId));
 
         ValidationResult result = validationResultRepository.findById(id)
                 .orElseThrow(() -> new ValidationResultNotFoundException(id));
 
-        // 다른 기관 소속이면 "권한 없음"이 아니라 "없음"으로 응답한다 (MatchingResultService.resolve와 같은 이유).
-        OwnedContext ctx = resolveOwnedContext(result.getJournalEntryId(), institutionId)
+        OwnedContext ctx = ownedContextOf(journalEntryRepository.findByIdForUpdate(result.getJournalEntryId()),
+                institutionId)
                 .orElseThrow(() -> new ValidationResultNotFoundException(id));
 
         if (result.getVerdict() != ValidationVerdict.BLOCK) {
@@ -97,14 +126,7 @@ public class ValidationQueueService {
             throw new ValidationResultValidationException(
                     "journal entry is not awaiting reinput: " + ctx.entry().getStatus());
         }
-
-        switch (action == null ? "" : action) {
-            case "reupload" -> ctx.entry().requestReupload();
-            case "hold" -> ctx.entry().holdAfterValidation();
-            default -> throw new ValidationResultValidationException("unsupported action: " + action);
-        }
-        log.info("validation result resolved id={} action={} journalEntryId={}",
-                id, action, result.getJournalEntryId());
+        return ctx.entry();
     }
 
     private record OwnedContext(JournalEntry entry, RawRecord rawRecord) {
@@ -112,7 +134,11 @@ public class ValidationQueueService {
 
     /** journalEntryId가 institutionId 소속 RawRecord로 이어지는지 확인한다 (MatchingResultService와 같은 규칙). */
     private Optional<OwnedContext> resolveOwnedContext(Long journalEntryId, String institutionId) {
-        return journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId)
+        return ownedContextOf(journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId), institutionId);
+    }
+
+    private Optional<OwnedContext> ownedContextOf(Optional<JournalEntry> found, String institutionId) {
+        return found
                 .filter(entry -> entry.getRawRecordId() != null)
                 .flatMap(entry -> rawRecordRepository.findByIdAndDeletedAtIsNull(entry.getRawRecordId())
                         .filter(record -> record.getInstitutionId().equals(institutionId))

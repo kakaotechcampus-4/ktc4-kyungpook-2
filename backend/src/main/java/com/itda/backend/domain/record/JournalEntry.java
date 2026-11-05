@@ -197,15 +197,6 @@ public class JournalEntry {
     }
 
     /**
-     * 선생님이 원본을 고쳐 다시 올리기로 했다(#122). 원본은 수정하지 않고 새 파일로 올라오므로
-     * 이 일지는 대체될 예정이고 여기서 끝난다.
-     */
-    public void requestReupload() {
-        requireAwaitingReinput();
-        this.status = JournalEntryStatus.REUPLOAD_REQUESTED;
-    }
-
-    /**
      * 선생님이 막힌 본문을 수정 요청 큐에서 고쳤다(#357). 고친 본문으로 검증을 다시 받도록 검증 대기로 보내고, 아동은 그대로 둔다.
      * 고치지 않은 본문은 거절한다 — 같은 글을 다시 돌려 판정이 바뀌길 기다리는 우회가 되기 때문이다.
      */

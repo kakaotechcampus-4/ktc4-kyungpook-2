@@ -7,11 +7,14 @@ import java.util.Optional;
 
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
+
+import jakarta.persistence.LockModeType;
 
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long> {
 
@@ -23,6 +26,14 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
 
 
     Optional<JournalEntry> findByIdAndDeletedAtIsNull(Long id);
+
+    /**
+     * 수정 요청 큐의 처리(보류·고치기)용 (#357). 두 선생님이 같은 막힌 일지를 동시에 처리하면 둘 다 "막힘"으로 읽고
+     * 나중 것이 앞 것을 덮으므로, 행을 잠근 뒤 상태를 확인한다. 검증 워커는 막힌 일지를 집지 않아 워커와는 겹치지 않는다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from JournalEntry e where e.id = :id and e.deletedAt is null")
+    Optional<JournalEntry> findByIdForUpdate(@Param("id") Long id);
 
     /**
      * 매칭 워커가 처리할 일지. 원본 파일이 없는 직접 입력은 매칭 단계를 건너뛰므로 뺀다 (DB 스키마 §6.2).

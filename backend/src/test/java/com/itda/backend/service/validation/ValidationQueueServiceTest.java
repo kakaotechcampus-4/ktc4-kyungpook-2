@@ -228,15 +228,15 @@ class ValidationQueueServiceTest {
 
     // --- 처리 (O-25) -------------------------------------------------------------
 
+    /** 다시 올리기는 본문을 바로 고치는 것(revise)으로 바뀌었다 (#357). */
     @Test
-    void resolveReupload_endsPipelineForThisEntry() {
+    void resolveReupload_isNoLongerSupported() {
         JournalEntry entry = blockedEntry();
         givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), entry, OUR_INSTITUTION);
 
-        validationQueueService.resolve(11L, "reupload", OUR_USER_ID);
-
-        // 원본은 고치지도 지우지도 않는다(append-only) — 이 일지만 여기서 끝난다.
-        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.REUPLOAD_REQUESTED);
+        assertThatThrownBy(() -> validationQueueService.resolve(11L, "reupload", OUR_USER_ID))
+                .isInstanceOf(ValidationResultValidationException.class);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
     }
 
     @Test
@@ -262,7 +262,7 @@ class ValidationQueueServiceTest {
     @Test
     void resolve_alreadyResolvedEntry_throwsValidationException() {
         JournalEntry resolved = blockedEntry();
-        resolved.requestReupload();
+        resolved.holdAfterValidation();
         givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), resolved, OUR_INSTITUTION);
 
         assertThatThrownBy(() -> validationQueueService.resolve(11L, "hold", OUR_USER_ID))
@@ -298,10 +298,75 @@ class ValidationQueueServiceTest {
                 .isInstanceOf(ValidationResultNotFoundException.class);
     }
 
+    // --- 고쳐서 다시 검사 (#357) -----------------------------------------------------
+
+    @Test
+    void revise_replacesContentAndSendsEntryBackToValidation() {
+        JournalEntry entry = blockedEntry();
+        givenOwnedResultForResolve(blockedResult("[\"개인정보표현\"]"), entry, OUR_INSTITUTION);
+
+        validationQueueService.revise(11L, "점심시간에 식사를 잘함. 연락처는 지움", OUR_USER_ID);
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
+        assertThat(entry.getContent()).isEqualTo("점심시간에 식사를 잘함. 연락처는 지움");
+        assertThat(entry.getChildId()).isEqualTo(CHILD_ID);
+        assertThat(entry.getRevisedBy()).isEqualTo(OUR_USER_ID);
+    }
+
+    /** 안 고친 채 다시 돌려 판정이 바뀌길 기다리는 우회를 막는다. 빈 본문도 400 이다. */
+    @ParameterizedTest
+    @ValueSource(strings = {"점심시간에 식사를 잘함", " 점심시간에 식사를 잘함\n", "   "})
+    void revise_unchangedOrBlankContent_throwsValidationException(String content) {
+        JournalEntry entry = blockedEntry();
+        givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), entry, OUR_INSTITUTION);
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, content, OUR_USER_ID))
+                .isInstanceOf(ValidationResultValidationException.class);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+    }
+
+    @Test
+    void revise_alreadyResolvedEntry_throwsValidationException() {
+        JournalEntry held = blockedEntry();
+        held.holdAfterValidation();
+        givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), held, OUR_INSTITUTION);
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(ValidationResultValidationException.class);
+    }
+
+    @Test
+    void revise_nonBlockedResult_throwsValidationException() {
+        ValidationResult passed = ValidationResult.of(1L, 9L, CHILD_ID, ValidationVerdict.PASS, null, null, null);
+        ReflectionTestUtils.setField(passed, "id", 11L);
+        givenOwnedResultForResolve(passed, blockedEntry(), OUR_INSTITUTION);
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(ValidationResultValidationException.class);
+    }
+
+    @Test
+    void revise_otherInstitutionsRecord_throwsNotFound() {
+        givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), blockedEntry(), OTHER_INSTITUTION);
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(ValidationResultNotFoundException.class);
+    }
+
+    @Test
+    void revise_unknownId_throwsNotFound() {
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(validationResultRepository.findById(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> validationQueueService.revise(99L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(ValidationResultNotFoundException.class);
+    }
+
+    /** 처리(보류·고치기)는 일지 행을 잠그고 읽는다 — 두 선생님이 같은 일지를 동시에 처리하지 않게. */
     private void givenOwnedResultForResolve(ValidationResult result, JournalEntry entry, String institutionId) {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
         given(validationResultRepository.findById(11L)).willReturn(Optional.of(result));
-        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
+        given(journalEntryRepository.findByIdForUpdate(1L)).willReturn(Optional.of(entry));
         given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L))
                 .willReturn(Optional.of(rawRecordOf(institutionId)));
     }
