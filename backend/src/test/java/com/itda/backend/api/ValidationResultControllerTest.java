@@ -148,7 +148,7 @@ class ValidationResultControllerTest {
 
     @Test
     void revise_tooLongContent_returns400WithoutCallingService() throws Exception {
-        String tooLong = "가".repeat(10_001);
+        String tooLong = "가".repeat(100_001);
 
         mockMvc.perform(post(BASE_URL + "/11/revise")
                         .contentType(MediaType.APPLICATION_JSON)

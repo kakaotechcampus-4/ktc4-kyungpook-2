@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class JournalEntryTest {
 
@@ -333,6 +334,14 @@ class JournalEntryTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> blocked().revise("  점심시간에 식사를 잘함\n", "u-7"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 아동이_없는_막힌_일지는_고칠_수_없다() {
+        JournalEntry entry = blocked();
+        ReflectionTestUtils.setField(entry, "childId", null);
+
+        assertThatThrownBy(() -> entry.revise("고친 글", "u-7")).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

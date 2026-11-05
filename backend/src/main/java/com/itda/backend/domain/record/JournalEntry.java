@@ -198,10 +198,15 @@ public class JournalEntry {
 
     /**
      * 선생님이 막힌 본문을 수정 요청 큐에서 고쳤다(#357). 고친 본문으로 검증을 다시 받도록 검증 대기로 보내고, 아동은 그대로 둔다.
-     * 고치지 않은 본문은 거절한다 — 같은 글을 다시 돌려 판정이 바뀌길 기다리는 우회가 되기 때문이다.
+     * 고치지 않은 본문(앞뒤 공백만 다른 글 포함)은 거절한다 — 실수로 그대로 저장하는 것과, 같은 글을 그대로 다시 돌려 판정이
+     * 바뀌길 기다리는 가장 쉬운 우회를 막는다. 한 글자만 바꾸는 우회까지 막지는 못한다(고친 사람이 남는다).
      */
     public void revise(String newContent, String reviserId) {
         requireAwaitingReinput();
+        if (this.childId == null) {
+            // 검증은 아동이 정해진 일지만 한다. 비어 있으면 데이터가 망가진 것이라 입력 오류와 구분한다.
+            throw new IllegalStateException("확정된 아동이 없는 일지입니다.");
+        }
         if (newContent == null || newContent.isBlank()) {
             throw new IllegalArgumentException("고친 본문은 필수입니다.");
         }

@@ -13,6 +13,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.validation.ValidationResult;
@@ -21,7 +22,9 @@ import com.itda.backend.dto.response.record.RecordResponse;
 import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
 import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
@@ -49,6 +52,8 @@ public class ValidationQueueService {
     private final RawRecordRepository rawRecordRepository;
     private final ChildRepository childRepository;
     private final UserService userService;
+    private final ChildOrganizationRepository childOrganizationRepository;
+    private final SharingConsentRepository sharingConsentRepository;
 
     @Transactional(readOnly = true)
     public List<ValidationQueueItemResponse> getBlockedQueue(String userId) {
@@ -80,11 +85,14 @@ public class ValidationQueueService {
      */
     @Transactional
     public void resolve(Long id, String action, String userId) {
-        JournalEntry entry = lockBlockedEntry(id, userId);
-
+        // 잘못된 action 은 일지를 잠그기 전에 거절한다 — 그동안 다른 선생님의 처리가 잠금을 기다리지 않게.
         if (!"hold".equals(action)) {
             throw new ValidationResultValidationException("unsupported action: " + action);
         }
+        String institutionId = String.valueOf(userService.getOrganizationIdOf(userId));
+        ValidationResult result = findResult(id);
+
+        JournalEntry entry = lockBlockedEntry(result, institutionId);
         entry.holdAfterValidation();
         log.info("validation result resolved id={} action={} journalEntryId={}", id, action, entry.getId());
     }
@@ -92,29 +100,45 @@ public class ValidationQueueService {
     /**
      * 선생님이 막힌 본문을 고친다(#357). 같은 일지의 본문을 바꾸고 검증 대기로 보내 검증을 다시 받게 한다. 아동은 그대로다.
      * 처음 올라온 글은 원본 파일(raw_record)에 남아 있어 따로 보관하지 않고, 고친 사람·시각만 일지에 남긴다.
+     *
+     * <p>고치면 본문과 아이 이름이 다시 AI 검증으로 가므로, 매칭 확정(MatchingResultService.resolve)과 같이 아이가 아직
+     * 우리 명부에 있고 우리 기관 동의가 켜져 있는지 본다. 아동 행을 먼저 잠근다 — 동의 철회·명부 제외도 이 행을 먼저
+     * 잠그므로 철회가 커밋된 뒤에는 고치기가 성공하지 않는다 (잠금 순서 child → journal_entry, DB 스키마 §3.3).
      */
     @Transactional
     public void revise(Long id, String content, String userId) {
-        JournalEntry entry = lockBlockedEntry(id, userId);
+        Long organizationId = userService.getOrganizationIdOf(userId);
+        ValidationResult result = findResult(id);
+        // 판정의 아동이 곧 일지의 아동이다(막힌 일지는 아동이 바뀌지 않는다). 일지를 잠그기 전에 아동부터 잠근다.
+        if (result.getChildId() != null) {
+            childRepository.findByIdForUpdate(result.getChildId());
+        }
+
+        JournalEntry entry = lockBlockedEntry(result, String.valueOf(organizationId));
+        requireStillShared(entry.getChildId(), organizationId);
         try {
             entry.revise(content, userId);
         } catch (IllegalArgumentException e) {
-            // 빈 본문이거나 고치지 않은 본문 — 같은 글을 다시 돌려 판정이 바뀌길 기다리는 우회를 막는다.
+            // 빈 본문이거나 고치지 않은 본문.
             throw new ValidationResultValidationException("invalid revised content: " + e.getMessage());
         }
         log.info("blocked journal entry revised id={} journalEntryId={}", id, entry.getId());
     }
 
+    private ValidationResult findResult(Long id) {
+        return validationResultRepository.findById(id)
+                .orElseThrow(() -> new ValidationResultNotFoundException(id));
+    }
+
     /**
      * 처리할 막힌 일지를 잠가서 가져온다. 다른 기관 소속이면 "권한 없음"이 아니라 "없음"으로 응답한다
      * (MatchingResultService.resolve와 같은 이유). 다른 선생님이 먼저 처리했으면 거절한다.
+     *
+     * <p>화면이 보던 판정이 그 일지의 최신 판정이어야 한다. 다른 선생님이 고쳤는데 또 막혀 새 판정이 생겼으면 일지는
+     * 다시 "막힘"이라 상태만으로는 구분되지 않고, 옛 카드로 저장하면 그 선생님이 고친 본문을 덮어쓴다.
      */
-    private JournalEntry lockBlockedEntry(Long id, String userId) {
-        String institutionId = String.valueOf(userService.getOrganizationIdOf(userId));
-
-        ValidationResult result = validationResultRepository.findById(id)
-                .orElseThrow(() -> new ValidationResultNotFoundException(id));
-
+    private JournalEntry lockBlockedEntry(ValidationResult result, String institutionId) {
+        Long id = result.getId();
         OwnedContext ctx = ownedContextOf(journalEntryRepository.findByIdForUpdate(result.getJournalEntryId()),
                 institutionId)
                 .orElseThrow(() -> new ValidationResultNotFoundException(id));
@@ -126,7 +150,30 @@ public class ValidationQueueService {
             throw new ValidationResultValidationException(
                     "journal entry is not awaiting reinput: " + ctx.entry().getStatus());
         }
+        Long latestId = validationResultRepository.findFirstByJournalEntryIdOrderByIdDesc(result.getJournalEntryId())
+                .map(ValidationResult::getId)
+                .orElse(null);
+        if (!id.equals(latestId)) {
+            throw new ValidationResultValidationException("validation result is outdated: " + id);
+        }
         return ctx.entry();
+    }
+
+    /**
+     * 아이가 아직 우리 명부에 있고 우리 기관 동의가 켜져 있는지. 없는 아이·명부에서 뺀 아이·동의 철회를 같은 400 으로
+     * 거절한다 — 선생님이 할 수 있는 일은 보류뿐이라 나눌 필요가 없다. 아이가 비어 있으면 데이터가 망가진 것이다.
+     */
+    private void requireStillShared(Long childId, Long organizationId) {
+        if (childId == null) {
+            throw new IllegalStateException("blocked journal entry has no matched child");
+        }
+        boolean available = childRepository.findByIdForUpdate(childId).filter(child -> !child.isDeleted()).isPresent()
+                && childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)
+                && sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(
+                        childId, organizationId, SharingConsentStatus.ACTIVE);
+        if (!available) {
+            throw new ValidationResultValidationException("child not available for revalidation: " + childId);
+        }
     }
 
     private record OwnedContext(JournalEntry entry, RawRecord rawRecord) {

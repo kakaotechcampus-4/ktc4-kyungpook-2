@@ -3,6 +3,8 @@ package com.itda.backend.service.validation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -18,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.consent.SharingConsentStatus;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
@@ -27,7 +30,9 @@ import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
 import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
@@ -54,6 +59,10 @@ class ValidationQueueServiceTest {
     private ChildRepository childRepository;
     @Mock
     private UserService userService;
+    @Mock
+    private ChildOrganizationRepository childOrganizationRepository;
+    @Mock
+    private SharingConsentRepository sharingConsentRepository;
 
     private ValidationQueueService validationQueueService;
 
@@ -61,7 +70,7 @@ class ValidationQueueServiceTest {
     void setUp() {
         validationQueueService = new ValidationQueueService(
                 validationResultRepository, journalEntryRepository, rawRecordRepository,
-                childRepository, userService);
+                childRepository, userService, childOrganizationRepository, sharingConsentRepository);
     }
 
     /** 검증에서 BLOCK 으로 막힌 일지 — 수정 요청 큐에 뜨는 상태다. */
@@ -232,7 +241,6 @@ class ValidationQueueServiceTest {
     @Test
     void resolveReupload_isNoLongerSupported() {
         JournalEntry entry = blockedEntry();
-        givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), entry, OUR_INSTITUTION);
 
         assertThatThrownBy(() -> validationQueueService.resolve(11L, "reupload", OUR_USER_ID))
                 .isInstanceOf(ValidationResultValidationException.class);
@@ -252,10 +260,10 @@ class ValidationQueueServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"", "approve", "REUPLOAD"})
     void resolve_unsupportedAction_throwsValidationException(String action) {
-        givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), blockedEntry(), OUR_INSTITUTION);
-
         assertThatThrownBy(() -> validationQueueService.resolve(11L, action, OUR_USER_ID))
                 .isInstanceOf(ValidationResultValidationException.class);
+        // 잘못된 action 은 일지를 잠그기 전에 거절한다 — 다른 선생님의 처리를 기다리게 하지 않는다.
+        verifyNoInteractions(journalEntryRepository);
     }
 
     /** 다른 선생님이 먼저 처리했으면 거절한다 — 큐에서 사라지기 전에 눌렀을 수 있다. */
@@ -303,7 +311,7 @@ class ValidationQueueServiceTest {
     @Test
     void revise_replacesContentAndSendsEntryBackToValidation() {
         JournalEntry entry = blockedEntry();
-        givenOwnedResultForResolve(blockedResult("[\"개인정보표현\"]"), entry, OUR_INSTITUTION);
+        givenRevisable(blockedResult("[\"개인정보표현\"]"), entry);
 
         validationQueueService.revise(11L, "점심시간에 식사를 잘함. 연락처는 지움", OUR_USER_ID);
 
@@ -318,7 +326,7 @@ class ValidationQueueServiceTest {
     @ValueSource(strings = {"점심시간에 식사를 잘함", " 점심시간에 식사를 잘함\n", "   "})
     void revise_unchangedOrBlankContent_throwsValidationException(String content) {
         JournalEntry entry = blockedEntry();
-        givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), entry, OUR_INSTITUTION);
+        givenRevisable(blockedResult("[\"진단명\"]"), entry);
 
         assertThatThrownBy(() -> validationQueueService.revise(11L, content, OUR_USER_ID))
                 .isInstanceOf(ValidationResultValidationException.class);
@@ -329,7 +337,7 @@ class ValidationQueueServiceTest {
     void revise_alreadyResolvedEntry_throwsValidationException() {
         JournalEntry held = blockedEntry();
         held.holdAfterValidation();
-        givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), held, OUR_INSTITUTION);
+        givenRevisable(blockedResult("[\"진단명\"]"), held);
 
         assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
                 .isInstanceOf(ValidationResultValidationException.class);
@@ -339,7 +347,7 @@ class ValidationQueueServiceTest {
     void revise_nonBlockedResult_throwsValidationException() {
         ValidationResult passed = ValidationResult.of(1L, 9L, CHILD_ID, ValidationVerdict.PASS, null, null, null);
         ReflectionTestUtils.setField(passed, "id", 11L);
-        givenOwnedResultForResolve(passed, blockedEntry(), OUR_INSTITUTION);
+        givenRevisable(passed, blockedEntry());
 
         assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
                 .isInstanceOf(ValidationResultValidationException.class);
@@ -362,6 +370,85 @@ class ValidationQueueServiceTest {
                 .isInstanceOf(ValidationResultNotFoundException.class);
     }
 
+    /**
+     * 예전 카드로 처리하지 않는다. 다른 선생님이 고쳤는데 또 막혀 새 판정(20)이 생겼으면, 옛 판정(11)을 보던 화면의 저장이
+     * 그 선생님이 고친 본문을 덮어쓴다 — 일지 상태만으로는 둘 다 "막힘"이라 구분하지 못한다.
+     */
+    @Test
+    void revise_staleResultAfterAnotherTeacherRevised_throwsValidationException() {
+        JournalEntry entry = blockedEntry();
+        givenRevisable(blockedResult("[\"진단명\"]"), entry);
+        ValidationResult newer = blockedResult("[\"진단명\"]");
+        ReflectionTestUtils.setField(newer, "id", 20L);
+        given(validationResultRepository.findFirstByJournalEntryIdOrderByIdDesc(1L)).willReturn(Optional.of(newer));
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(ValidationResultValidationException.class);
+        assertThat(entry.getContent()).isEqualTo("점심시간에 식사를 잘함");
+    }
+
+    @Test
+    void resolve_staleResult_throwsValidationException() {
+        JournalEntry entry = blockedEntry();
+        givenOwnedResultForResolve(blockedResult("[\"진단명\"]"), entry, OUR_INSTITUTION);
+        ValidationResult newer = blockedResult("[\"진단명\"]");
+        ReflectionTestUtils.setField(newer, "id", 20L);
+        given(validationResultRepository.findFirstByJournalEntryIdOrderByIdDesc(1L)).willReturn(Optional.of(newer));
+
+        assertThatThrownBy(() -> validationQueueService.resolve(11L, "hold", OUR_USER_ID))
+                .isInstanceOf(ValidationResultValidationException.class);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+    }
+
+    /** 고치면 본문과 아이 이름이 다시 AI 검증으로 간다. 그사이 동의가 철회됐으면 보내지 않는다 (매칭 확정과 같은 기준). */
+    @Test
+    void revise_consentNoLongerActive_throwsValidationException() {
+        JournalEntry entry = blockedEntry();
+        givenRevisable(blockedResult("[\"진단명\"]"), entry);
+        given(sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(
+                CHILD_ID, OUR_ORG_ID, SharingConsentStatus.ACTIVE)).willReturn(false);
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(ValidationResultValidationException.class);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+    }
+
+    @Test
+    void revise_childRemovedFromRoster_throwsValidationException() {
+        JournalEntry entry = blockedEntry();
+        givenRevisable(blockedResult("[\"진단명\"]"), entry);
+        given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(CHILD_ID, OUR_ORG_ID))
+                .willReturn(false);
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(ValidationResultValidationException.class);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+    }
+
+    @Test
+    void revise_deletedChild_throwsValidationException() {
+        JournalEntry entry = blockedEntry();
+        givenRevisable(blockedResult("[\"진단명\"]"), entry);
+        Child deleted = Child.of("김하늘", LocalDate.of(2020, 1, 1));
+        deleted.delete();
+        given(childRepository.findByIdForUpdate(CHILD_ID)).willReturn(Optional.of(deleted));
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(ValidationResultValidationException.class);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+    }
+
+    /** 아이가 없는 막힌 일지는 데이터가 망가진 것이다. 사용자 입력 오류(400)로 가리지 않는다. */
+    @Test
+    void revise_blockedEntryWithoutChild_isNotReportedAsBadInput() {
+        JournalEntry entry = blockedEntry();
+        ReflectionTestUtils.setField(entry, "childId", null);
+        givenRevisable(blockedResult("[\"진단명\"]"), entry);
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
     /** 처리(보류·고치기)는 일지 행을 잠그고 읽는다 — 두 선생님이 같은 일지를 동시에 처리하지 않게. */
     private void givenOwnedResultForResolve(ValidationResult result, JournalEntry entry, String institutionId) {
         given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
@@ -369,5 +456,19 @@ class ValidationQueueServiceTest {
         given(journalEntryRepository.findByIdForUpdate(1L)).willReturn(Optional.of(entry));
         given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L))
                 .willReturn(Optional.of(rawRecordOf(institutionId)));
+        // 그 일지의 최신 판정이 이 판정이다 (앞에서 거절되는 경우에는 쓰이지 않는다)
+        lenient().when(validationResultRepository.findFirstByJournalEntryIdOrderByIdDesc(1L))
+                .thenReturn(Optional.of(result));
+    }
+
+    /** 우리 기관 막힌 일지이고, 아이가 아직 명부에 있고 우리 기관 동의가 켜져 있다. 테스트마다 하나씩 뒤집는다. */
+    private void givenRevisable(ValidationResult result, JournalEntry entry) {
+        givenOwnedResultForResolve(result, entry, OUR_INSTITUTION);
+        lenient().when(childRepository.findByIdForUpdate(CHILD_ID))
+                .thenReturn(Optional.of(Child.of("김하늘", LocalDate.of(2020, 1, 1))));
+        lenient().when(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(
+                CHILD_ID, OUR_ORG_ID)).thenReturn(true);
+        lenient().when(sharingConsentRepository.existsByChildIdAndOrganizationIdAndStatus(
+                CHILD_ID, OUR_ORG_ID, SharingConsentStatus.ACTIVE)).thenReturn(true);
     }
 }
