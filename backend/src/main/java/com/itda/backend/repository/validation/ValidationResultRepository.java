@@ -2,6 +2,7 @@ package com.itda.backend.repository.validation;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -17,4 +18,7 @@ public interface ValidationResultRepository extends JpaRepository<ValidationResu
 
     // Gate 1 목록. 일지당 최신 것을 고르도록 최신순이다 — 고르는 것은 SummaryGate1QueryService 가 한다.
     List<ValidationResult> findByJournalEntryIdInOrderByIdDesc(Collection<Long> journalEntryIds);
+
+    // 수정 요청 큐 처리(O-25). 화면이 보던 판정이 그 일지의 최신 판정인지 본다 — 고쳐서 다시 막혔으면 옛 카드다 (#357).
+    Optional<ValidationResult> findFirstByJournalEntryIdOrderByIdDesc(Long journalEntryId);
 }

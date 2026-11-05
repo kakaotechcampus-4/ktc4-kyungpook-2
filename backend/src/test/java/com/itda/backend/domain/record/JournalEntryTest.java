@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class JournalEntryTest {
 
@@ -282,6 +283,78 @@ class JournalEntryTest {
         assertThatThrownBy(() -> matched().failValidation(FailureReason.INTERNAL_ERROR))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> matched().releaseValidating()).isInstanceOf(IllegalStateException.class);
+    }
+
+    private JournalEntry blocked() {
+        JournalEntry entry = validating();
+        entry.blockValidation();
+        return entry;
+    }
+
+    @Test
+    void 막힌_일지를_고치면_본문이_바뀌고_아동은_그대로_다시_검증_대기가_된다() {
+        JournalEntry entry = blocked();
+
+        entry.revise("점심시간에 식사를 잘함. 연락처는 지움", "u-7");
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
+        assertThat(entry.getContent()).isEqualTo("점심시간에 식사를 잘함. 연락처는 지움");
+        assertThat(entry.getChildId()).isEqualTo(8L);
+        assertThat(entry.getRevisedBy()).isEqualTo("u-7");
+        assertThat(entry.getRevisedAt()).isNotNull();
+        assertThat(entry.getAgentRetryCount()).isZero();
+    }
+
+    @Test
+    void 처음_만든_일지는_고친_사람과_시각이_비어_있다() {
+        JournalEntry entry = pending();
+
+        assertThat(entry.getRevisedBy()).isNull();
+        assertThat(entry.getRevisedAt()).isNull();
+    }
+
+    @Test
+    void 검증에서_막힌_일지만_고칠_수_있다() {
+        assertThatThrownBy(() -> matched().revise("고친 글", "u-7")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> validated().revise("고친 글", "u-7")).isInstanceOf(IllegalStateException.class);
+        JournalEntry held = blocked();
+        held.holdAfterValidation();
+        assertThatThrownBy(() -> held.revise("고친 글", "u-7")).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 빈_본문으로는_고칠_수_없다() {
+        assertThatThrownBy(() -> blocked().revise(null, "u-7")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> blocked().revise("  \n ", "u-7")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 고치지_않은_본문으로는_다시_검증받을_수_없다() {
+        assertThatThrownBy(() -> blocked().revise("점심시간에 식사를 잘함", "u-7"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> blocked().revise("  점심시간에 식사를 잘함\n", "u-7"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** 서비스가 "고치지 않음"을 다른 거절과 나눠 알려 주려고 먼저 묻는다. 고칠 때와 같은 기준이다. */
+    @Test
+    void 앞뒤_공백만_다르면_같은_본문이다() {
+        assertThat(blocked().hasSameContent(" 점심시간에 식사를 잘함\n")).isTrue();
+        assertThat(blocked().hasSameContent("점심시간에 식사를 잘 함")).isFalse();
+        assertThat(blocked().hasSameContent(null)).isFalse();
+    }
+
+    @Test
+    void 아동이_없는_막힌_일지는_고칠_수_없다() {
+        JournalEntry entry = blocked();
+        ReflectionTestUtils.setField(entry, "childId", null);
+
+        assertThatThrownBy(() -> entry.revise("고친 글", "u-7")).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 고친_사람은_필수다() {
+        assertThatThrownBy(() -> blocked().revise("고친 글", null)).isInstanceOf(IllegalArgumentException.class);
     }
 
     private JournalEntry validated() {

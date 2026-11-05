@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItems;
 
@@ -95,6 +96,16 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.400").exists())
+				// 화면이 400 을 code 로 나눠 안내한다 — 문서도 나뉜 코드를 적는다
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.400.description",
+						allOf(containsString("VALIDATION_RESULT_CONTENT_UNCHANGED"),
+								containsString("VALIDATION_RESULT_CHILD_NOT_SHARED"),
+								containsString("VALIDATION_RESULT_OUTDATED"))))
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.404").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.security[0].cookieAuth").exists())
