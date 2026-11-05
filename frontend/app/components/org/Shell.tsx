@@ -137,7 +137,16 @@ export function OrgShell({
               const here = g.items.some((i) => isHere(i.href, pathname, search));
               const total = g.items.reduce((n, i) => n + (i.badge ?? 0), 0);
               return (
-                <li key={g.label} className="group/nav relative">
+                <li
+                  key={g.label}
+                  className="group/nav relative"
+                  // 항목을 누르면 그 링크에 포커스가 남아 focus-within 으로 계속 열려 있다. 마우스가 묶음을
+                  // 벗어나면 포커스를 놓아 닫는다 — 키보드로 옮겨 다닐 때는 마우스가 안 움직여 그대로 열린다
+                  onMouseLeave={(e) => {
+                    const focused = document.activeElement;
+                    if (focused instanceof HTMLElement && e.currentTarget.contains(focused)) focused.blur();
+                  }}
+                >
                   <Link
                     to={g.items[0].href}
                     aria-current={here ? "true" : undefined}
