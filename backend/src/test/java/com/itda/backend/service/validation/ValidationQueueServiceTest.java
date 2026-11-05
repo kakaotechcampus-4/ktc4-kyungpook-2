@@ -269,11 +269,11 @@ class ValidationQueueServiceTest {
     void resolve_unsupportedAction_throwsValidationException(String action) {
         assertThatThrownBy(() -> validationQueueService.resolve(11L, action, OUR_USER_ID))
                 .isInstanceOf(ValidationResultValidationException.class);
-        // 잘못된 action 은 일지를 잠그기 전에 거절한다 — 다른 선생님의 처리를 기다리게 하지 않는다.
+        // 잘못된 action 은 일지를 잠그기 전에 거절한다 — 같은 일지의 다른 처리를 기다리게 하지 않는다.
         verifyNoInteractions(journalEntryRepository);
     }
 
-    /** 다른 선생님이 먼저 처리했으면 거절한다 — 큐에서 사라지기 전에 눌렀을 수 있다. */
+    /** 이미 처리됐으면 거절한다 — 큐에서 사라지기 전에 눌렀을 수 있다. */
     @Test
     void resolve_alreadyResolvedEntry_throwsValidationException() {
         JournalEntry resolved = blockedEntry();
@@ -435,11 +435,11 @@ class ValidationQueueServiceTest {
     }
 
     /**
-     * 예전 카드로 처리하지 않는다. 다른 선생님이 고쳤는데 또 막혀 새 판정(20)이 생겼으면, 옛 판정(11)을 보던 화면의 저장이
-     * 그 선생님이 고친 본문을 덮어쓴다 — 일지 상태만으로는 둘 다 "막힘"이라 구분하지 못한다.
+     * 예전 카드로 처리하지 않는다. 이미 고쳐 다시 검사했는데 또 막혀 새 판정(20)이 생겼으면, 옛 판정(11)을 보던 화면의 저장이
+     * 먼저 고친 본문을 덮어쓴다 — 일지 상태만으로는 둘 다 "막힘"이라 구분하지 못한다.
      */
     @Test
-    void revise_staleResultAfterAnotherTeacherRevised_throwsOutdated() {
+    void revise_staleResultAfterAlreadyRevised_throwsOutdated() {
         JournalEntry entry = blockedEntry();
         givenRevisable(blockedResult("[\"진단명\"]"), entry);
         givenNewerResult();
@@ -516,7 +516,7 @@ class ValidationQueueServiceTest {
     }
 
     /**
-     * 판정 11 과 그 일지(1). 소유는 잠그지 않고 먼저 보고, 처리(보류·고치기)는 일지 행을 잠그고 읽는다 — 두 선생님이 같은
+     * 판정 11 과 그 일지(1). 소유는 잠그지 않고 먼저 보고, 처리(보류·고치기)는 일지 행을 잠그고 읽는다 — 같은
      * 일지를 동시에 처리하지 않게. 앞에서 거절되는 경우에는 잠금 조회와 최신 판정 조회가 쓰이지 않는다.
      */
     private void givenOwnedResult(ValidationResult result, JournalEntry entry, String institutionId) {
@@ -529,7 +529,7 @@ class ValidationQueueServiceTest {
                 .thenReturn(Optional.of(result));
     }
 
-    /** 다른 선생님이 고쳤는데 또 막혀 그 일지의 새 판정(20)이 생겼다. */
+    /** 이미 고쳐 다시 검사했는데 또 막혀 그 일지의 새 판정(20)이 생겼다. */
     private void givenNewerResult() {
         ValidationResult newer = blockedResult("[\"진단명\"]");
         ReflectionTestUtils.setField(newer, "id", 20L);

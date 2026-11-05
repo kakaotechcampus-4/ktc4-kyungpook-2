@@ -72,7 +72,7 @@ public class ValidationQueueService {
                         LinkedHashMap::new))
                 .values().stream()
                 .flatMap(result -> resolveOwnedContext(result.getJournalEntryId(), institutionId)
-                        // 이미 처리된 일지(다른 선생님이 먼저 처리 등)는 큐에서 뺀다 — 눌러도 resolve가 거절한다.
+                        // 이미 처리된 일지(다른 창에서 먼저 처리 등)는 큐에서 뺀다 — 눌러도 resolve가 거절한다.
                         .filter(ctx -> ctx.entry().isAwaitingReinput())
                         .map(ctx -> buildResponse(result, ctx))
                         .stream())
@@ -86,7 +86,7 @@ public class ValidationQueueService {
      */
     @Transactional
     public void resolve(Long id, String action, String userId) {
-        // 잘못된 action 은 일지를 잠그기 전에 거절한다 — 그동안 다른 선생님의 처리가 잠금을 기다리지 않게.
+        // 잘못된 action 은 일지를 잠그기 전에 거절한다 — 그동안 같은 일지의 다른 처리가 잠금을 기다리지 않게.
         if (!"hold".equals(action)) {
             throw new ValidationResultValidationException("unsupported action: " + action);
         }
@@ -159,10 +159,10 @@ public class ValidationQueueService {
     }
 
     /**
-     * 처리할 막힌 일지를 잠가서 가져온다. 다른 선생님이 먼저 처리했으면 거절한다.
+     * 처리할 막힌 일지를 잠가서 가져온다. 이미 처리됐으면 거절한다.
      *
-     * <p>화면이 보던 판정이 그 일지의 최신 판정이어야 한다. 다른 선생님이 고쳤는데 또 막혀 새 판정이 생겼으면 일지는
-     * 다시 "막힘"이라 상태만으로는 구분되지 않고, 옛 카드로 저장하면 그 선생님이 고친 본문을 덮어쓴다.
+     * <p>화면이 보던 판정이 그 일지의 최신 판정이어야 한다. 이미 고쳐 다시 검사했는데 또 막혀 새 판정이 생겼으면 일지는
+     * 다시 "막힘"이라 상태만으로는 구분되지 않고, 옛 카드로 저장하면 먼저 고친 본문을 덮어쓴다.
      */
     private JournalEntry lockAwaitingEntry(ValidationResult result) {
         Long id = result.getId();

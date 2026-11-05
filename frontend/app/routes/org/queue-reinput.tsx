@@ -230,7 +230,7 @@ function failureOf(err: unknown, action: Action): Failure {
       case "VALIDATION_RESULT_OUTDATED":
         return {
           text:
-            "다른 선생님이 먼저 고쳐 다시 검사한 기록이에요. 새로 멈춘 이유를 보고 다시 처리해 주세요." +
+            "이미 고쳐 다시 검사했는데 또 멈춘 기록이에요. 새로 멈춘 이유를 보고 다시 처리해 주세요." +
             (action === "revise" ? " 고치던 글은 저장되지 않았어요." : ""),
           refresh: true,
         };

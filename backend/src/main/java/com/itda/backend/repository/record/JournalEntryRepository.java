@@ -28,7 +28,7 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     Optional<JournalEntry> findByIdAndDeletedAtIsNull(Long id);
 
     /**
-     * 수정 요청 큐의 처리(보류·고치기)용 (#357). 두 선생님이 같은 막힌 일지를 동시에 처리하면 둘 다 "막힘"으로 읽고
+     * 수정 요청 큐의 처리(보류·고치기)용 (#357). 같은 막힌 일지를 두 요청이 동시에 처리하면 둘 다 "막힘"으로 읽고
      * 나중 것이 앞 것을 덮으므로, 행을 잠근 뒤 상태를 확인한다. 검증 워커는 막힌 일지를 집지 않아 워커와는 겹치지 않는다.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
