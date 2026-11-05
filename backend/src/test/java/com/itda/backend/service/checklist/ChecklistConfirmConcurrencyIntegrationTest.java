@@ -114,7 +114,7 @@ class ChecklistConfirmConcurrencyIntegrationTest {
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = userRepository.save(UserFixture.organizationUser("kakao-staff", "이선생", organization.getId()));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-staff", "이선생", organization.getId())));
         mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
         dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad", "아빠")));
         Child sky = childRepository.save(Child.of("하늘", LocalDate.of(2017, 3, 14)));

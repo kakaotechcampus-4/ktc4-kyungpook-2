@@ -116,7 +116,7 @@ class GuardianChildApiTest {
     void setUp() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         organizationId = String.valueOf(organization.getId());
-        staff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
         parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))

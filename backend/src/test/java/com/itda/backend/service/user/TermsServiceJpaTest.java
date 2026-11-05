@@ -33,6 +33,7 @@ import com.itda.backend.repository.user.TermsAgreementRepository;
 class TermsServiceJpaTest {
 
     private static final List<TermKey> ALL = List.of(TermKey.TOS, TermKey.PRIVACY);
+    private static final List<TermKey> ORG_ALL = List.of(TermKey.ORG_TOS, TermKey.ORG_PRIVACY, TermKey.ORG_CHILD_DATA);
     private static final String OLD = "2000-01-01";
 
     @Autowired
@@ -94,20 +95,39 @@ class TermsServiceJpaTest {
     }
 
     @Test
-    void 기관_담당자는_동의할_수_없다() {
-        User staff = em.persist(UserFixture.organizationUser("terms-staff", "박지현", 1L));
-
-        assertThatThrownBy(() -> termsService.agree(staff, ALL))
-                .isInstanceOfSatisfying(UserException.class,
-                        e -> assertThat(e.getErrorCode()).isEqualTo(UserErrorCode.PARENT_REQUIRED));
-        assertThat(termsAgreementRepository.findByUserId(staff.getId())).isEmpty();
+    void 필수_약관이_빠지면_저장하지_않는다() {
+        assertInvalid(parent, List.of(TermKey.TOS));
     }
 
     @Test
-    void 필수_약관이_빠지면_저장하지_않는다() {
-        assertThatThrownBy(() -> termsService.agree(parent, List.of(TermKey.TOS)))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThat(termsAgreementRepository.findByUserId(parent.getId())).isEmpty();
+    void 보호자가_기관_약관을_섞으면_저장하지_않는다() {
+        assertInvalid(parent, List.of(TermKey.TOS, TermKey.PRIVACY, TermKey.ORG_TOS));
+    }
+
+    @Test
+    void 기관_담당자는_기관_약관_셋에_동의하면_줄이_셋_생긴다() {
+        User staff = staff("terms-staff");
+
+        termsService.agree(staff, ORG_ALL);
+        em.flush();
+
+        assertThat(termsAgreementRepository.findByUserId(staff.getId()))
+                .extracting(TermsAgreement::getTermKey, TermsAgreement::getVersion)
+                .containsExactlyInAnyOrder(
+                        tuple(TermKey.ORG_TOS, TermsCatalog.currentVersion(TermKey.ORG_TOS)),
+                        tuple(TermKey.ORG_PRIVACY, TermsCatalog.currentVersion(TermKey.ORG_PRIVACY)),
+                        tuple(TermKey.ORG_CHILD_DATA, TermsCatalog.currentVersion(TermKey.ORG_CHILD_DATA)));
+        assertThat(termsService.isAgreed(staff)).isTrue();
+    }
+
+    @Test
+    void 기관_담당자가_보호자_약관을_보내면_저장하지_않는다() {
+        assertInvalid(staff("terms-staff-parent-keys"), ALL);
+    }
+
+    @Test
+    void 기관_담당자가_서약을_빠뜨리면_저장하지_않는다() {
+        assertInvalid(staff("terms-staff-missing"), List.of(TermKey.ORG_TOS, TermKey.ORG_PRIVACY));
     }
 
     @Test
@@ -116,8 +136,40 @@ class TermsServiceJpaTest {
     }
 
     @Test
-    void 기관_담당자는_기록_없이도_동의한_것으로_본다() {
-        User staff = em.persist(UserFixture.organizationUser("terms-staff-2", "박지현", 1L));
+    void 기록이_없는_기관_담당자는_동의하지_않은_것이다() {
+        assertThat(termsService.isAgreed(staff("terms-staff-2"))).isFalse();
+    }
+
+    /** 다른 역할의 약관 줄은 판정에 쓰지 않는다. */
+    @Test
+    void 기관_담당자에게_보호자_약관_줄만_있으면_동의하지_않은_것이다() {
+        User staff = staff("terms-staff-3");
+        em.persist(TermsAgreement.agree(staff.getId(), TermKey.TOS, TermsCatalog.currentVersion(TermKey.TOS)));
+        em.persist(TermsAgreement.agree(staff.getId(), TermKey.PRIVACY, TermsCatalog.currentVersion(TermKey.PRIVACY)));
+        em.flush();
+
+        assertThat(termsService.isAgreed(staff)).isFalse();
+    }
+
+    /** 기관 개인정보 수집 · 아동 정보 보호 서약은 판이 바뀌면 다시 받는다. */
+    @Test
+    void 기관_개인정보_수집이나_서약이_옛_판뿐이면_동의하지_않은_것이다() {
+        User privacyOld = staff("terms-staff-4");
+        agreeOrg(privacyOld, TermKey.ORG_PRIVACY);
+        User childDataOld = staff("terms-staff-5");
+        agreeOrg(childDataOld, TermKey.ORG_CHILD_DATA);
+        em.flush();
+
+        assertThat(termsService.isAgreed(privacyOld)).isFalse();
+        assertThat(termsService.isAgreed(childDataOld)).isFalse();
+    }
+
+    /** 기관 이용약관은 한 번 동의했으면 판이 바뀌어도 통과한다. */
+    @Test
+    void 기관_이용약관이_옛_판뿐이어도_동의한_것이다() {
+        User staff = staff("terms-staff-6");
+        agreeOrg(staff, TermKey.ORG_TOS);
+        em.flush();
 
         assertThat(termsService.isAgreed(staff)).isTrue();
     }
@@ -155,5 +207,25 @@ class TermsServiceJpaTest {
         em.flush();
 
         assertThat(termsService.isAgreed(parent)).isFalse();
+    }
+
+    private User staff(String kakaoId) {
+        User staff = em.persist(UserFixture.organizationUser(kakaoId, "박지현", 1L));
+        em.flush();
+        return staff;
+    }
+
+    /** 기관 약관 셋을 쌓되 {@code oldKey} 만 옛 판으로 둔다. */
+    private void agreeOrg(User staff, TermKey oldKey) {
+        for (TermKey key : ORG_ALL) {
+            em.persist(TermsAgreement.agree(staff.getId(), key, key == oldKey ? OLD : TermsCatalog.currentVersion(key)));
+        }
+    }
+
+    private void assertInvalid(User user, List<TermKey> agreed) {
+        assertThatThrownBy(() -> termsService.agree(user, agreed))
+                .isInstanceOfSatisfying(UserException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(UserErrorCode.INVALID_TERMS_AGREEMENT));
+        assertThat(termsAgreementRepository.findByUserId(user.getId())).isEmpty();
     }
 }

@@ -85,9 +85,9 @@ class OrganizationTimelineApiTest {
     @BeforeEach
     void setUp() throws Exception {
         organization = organizationRepository.save(OrganizationFixture.center());
-        staff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
         Organization other = organizationRepository.save(OrganizationFixture.center());
-        otherStaff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "박선생", other.getId()));
+        otherStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "박선생", other.getId())));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)

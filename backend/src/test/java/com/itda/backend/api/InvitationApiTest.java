@@ -76,7 +76,7 @@ class InvitationApiTest {
 
     private User organizationUser() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        return userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
+        return TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
     }
 
     private Cookie auth(User user) {

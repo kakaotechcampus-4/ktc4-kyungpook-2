@@ -41,6 +41,7 @@ import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.LockContention;
 import com.itda.backend.fixture.LockContention.Held;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -48,6 +49,7 @@ import com.itda.backend.repository.checklist.ChecklistRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
@@ -84,6 +86,7 @@ class ChecklistCancelConcurrencyIntegrationTest {
     @Autowired private ChecklistService checklistService;
     @Autowired private ChecklistRepository checklistRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private TermsAgreementRepository termsAgreementRepository;
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private ChildRepository childRepository;
     @Autowired private ChildOrganizationRepository childOrganizationRepository;
@@ -96,7 +99,7 @@ class ChecklistCancelConcurrencyIntegrationTest {
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = userRepository.save(UserFixture.organizationUser("kakao-staff", "이선생", organization.getId()));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-staff", "이선생", organization.getId())));
         Child sky = childRepository.save(Child.of("하늘", LocalDate.of(2017, 3, 14)));
         childOrganizationRepository.save(ChildOrganization.of(sky.getId(), organization.getId()));
         checklistId = checklistService.send(String.valueOf(staff.getId()), List.of("실내화를 새로 준비해주세요."),
@@ -110,6 +113,7 @@ class ChecklistCancelConcurrencyIntegrationTest {
             statement.executeUpdate("DELETE FROM checklist");
             statement.executeUpdate("DELETE FROM child_organization");
             statement.executeUpdate("DELETE FROM child");
+            statement.executeUpdate("DELETE FROM terms_agreement");
             statement.executeUpdate("DELETE FROM users");
             statement.executeUpdate("DELETE FROM organization");
         }

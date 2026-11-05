@@ -122,8 +122,8 @@ class InstitutionInboxApiTest {
         school = organizationRepository.save(
                 Organization.of("햇살특수학교", OrganizationType.SCHOOL, OrganizationFixture.nextBusinessNumber()));
         center = organizationRepository.save(OrganizationFixture.center());
-        schoolStaff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "학교선생", school.getId()));
-        centerStaff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "센터선생", center.getId()));
+        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "학교선생", school.getId())));
+        centerStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "센터선생", center.getId())));
         mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "엄마")));
 
         childId = json(mockMvc.perform(withCsrf(post(ROSTER), auth(schoolStaff))

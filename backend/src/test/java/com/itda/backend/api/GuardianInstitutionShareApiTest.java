@@ -89,7 +89,7 @@ class GuardianInstitutionShareApiTest {
         Organization receiver = organizationRepository.save(OrganizationFixture.center());
         senderId = sender.getId();
         receiverId = receiver.getId();
-        staff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", senderId));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", senderId)));
         parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
         childId = childRepository.save(Child.of("김하늘", LocalDate.of(2017, 3, 14))).getId();
         childGuardianRepository.save(ChildGuardian.link(childId, parent.getId(), 1L));
