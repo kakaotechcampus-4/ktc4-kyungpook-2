@@ -336,6 +336,14 @@ class JournalEntryTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /** 서비스가 "고치지 않음"을 다른 거절과 나눠 알려 주려고 먼저 묻는다. 고칠 때와 같은 기준이다. */
+    @Test
+    void 앞뒤_공백만_다르면_같은_본문이다() {
+        assertThat(blocked().hasSameContent(" 점심시간에 식사를 잘함\n")).isTrue();
+        assertThat(blocked().hasSameContent("점심시간에 식사를 잘 함")).isFalse();
+        assertThat(blocked().hasSameContent(null)).isFalse();
+    }
+
     @Test
     void 아동이_없는_막힌_일지는_고칠_수_없다() {
         JournalEntry entry = blocked();

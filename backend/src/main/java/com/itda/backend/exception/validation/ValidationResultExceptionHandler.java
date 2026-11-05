@@ -17,8 +17,9 @@ public class ValidationResultExceptionHandler {
 
     @ExceptionHandler(ValidationResultValidationException.class)
     public ResponseEntity<ErrorResponse> handleValidation(ValidationResultValidationException e) {
-        return ResponseEntity.status(ValidationResultErrorCode.INVALID_REQUEST.getStatus())
-                .body(new ErrorResponse("FAIL", ValidationResultErrorCode.INVALID_REQUEST.getCode(), e.getMessage()));
+        ValidationResultErrorCode code = e.getErrorCode();
+        return ResponseEntity.status(code.getStatus())
+                .body(new ErrorResponse("FAIL", code.getCode(), e.getMessage()));
     }
 
     @ExceptionHandler(ValidationResultNotFoundException.class)

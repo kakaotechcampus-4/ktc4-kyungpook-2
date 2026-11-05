@@ -14,6 +14,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -23,6 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.dto.response.record.RecordResponse;
 import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
+import com.itda.backend.exception.validation.ValidationResultErrorCode;
 import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
 import com.itda.backend.global.jwt.JwtCookie;
@@ -141,7 +144,9 @@ class ValidationResultControllerTest {
         mockMvc.perform(post(BASE_URL + "/11/revise")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"  \"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                // 화면이 이 코드로 "본문이 비어 있거나 너무 길어요"를 고른다
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
         verify(validationQueueService, never()).revise(any(), any(), any());
     }
@@ -158,16 +163,18 @@ class ValidationResultControllerTest {
         verify(validationQueueService, never()).revise(any(), any(), any());
     }
 
-    @Test
-    void revise_unchangedContent_returns400() throws Exception {
-        willThrow(new ValidationResultValidationException("invalid revised content"))
+    /** 화면이 거절 이유마다 다른 안내를 하므로 코드를 나눈다 — 고칠 게 없는지, 옛 카드인지, 아이 공유가 끝났는지. */
+    @ParameterizedTest
+    @EnumSource(value = ValidationResultErrorCode.class, names = {"CONTENT_UNCHANGED", "OUTDATED", "CHILD_NOT_SHARED"})
+    void revise_rejectedForReason_returns400WithItsCode(ValidationResultErrorCode code) throws Exception {
+        willThrow(new ValidationResultValidationException(code, "rejected"))
                 .given(validationQueueService).revise(any(), any(), any());
 
         mockMvc.perform(post(BASE_URL + "/11/revise")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"그대로\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_RESULT_INVALID_REQUEST"));
+                .andExpect(jsonPath("$.code").value(code.getCode()));
     }
 
     @Test

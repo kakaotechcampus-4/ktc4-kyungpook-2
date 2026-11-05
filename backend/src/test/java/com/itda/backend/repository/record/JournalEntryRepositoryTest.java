@@ -14,6 +14,8 @@ import org.springframework.test.context.ActiveProfiles;
 
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -51,6 +53,40 @@ class JournalEntryRepositoryTest {
 
         assertThat(journalEntryRepository.findByIdForUpdate(alive.getId())).isPresent();
         assertThat(journalEntryRepository.findByIdForUpdate(deleted.getId())).isEmpty();
+    }
+
+    private Long rawRecordOf(String institutionId) {
+        return entityManager.persistAndFlush(new RawRecord(institutionId, "0821_특이사항.txt", "stored.txt",
+                "text/plain", 10L, RawRecordStatus.PENDING)).getId();
+    }
+
+    /**
+     * 수정 요청 큐의 고치기(#357)가 아동 행을 잠그기 전에 우리 기관 일지인지 잠그지 않고 본다 — 남의 아이 행은 잠그지 않는다.
+     * 원본 파일의 기관으로 판단하고, 일지나 원본 파일이 삭제됐으면 없는 것으로 본다.
+     */
+    @Test
+    void 우리_기관_원본_파일에서_나온_살아_있는_일지만_우리_것으로_본다() {
+        Long ours = rawRecordOf("1");
+        Long theirs = rawRecordOf("2");
+        JournalEntry mine = journalEntryRepository.saveAndFlush(JournalEntry.of(ours, LocalDate.of(2026, 9, 1), "기록", 1));
+        JournalEntry other = journalEntryRepository.saveAndFlush(JournalEntry.of(theirs, LocalDate.of(2026, 9, 1), "기록", 1));
+        JournalEntry deleted = JournalEntry.of(ours, LocalDate.of(2026, 9, 1), "기록", 2);
+        deleted.delete();
+        journalEntryRepository.saveAndFlush(deleted);
+        Long removedFile = rawRecordOf("1");
+        JournalEntry fromRemovedFile = journalEntryRepository.saveAndFlush(
+                JournalEntry.of(removedFile, LocalDate.of(2026, 9, 1), "기록", 1));
+        entityManager.find(RawRecord.class, removedFile).delete();
+        JournalEntry direct = journalEntryRepository.saveAndFlush(JournalEntry.of(null, null, "직접 입력", null));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(journalEntryRepository.existsOwnedBy(mine.getId(), "1")).isTrue();
+        assertThat(journalEntryRepository.existsOwnedBy(other.getId(), "1")).isFalse();
+        assertThat(journalEntryRepository.existsOwnedBy(deleted.getId(), "1")).isFalse();
+        assertThat(journalEntryRepository.existsOwnedBy(fromRemovedFile.getId(), "1")).isFalse();
+        assertThat(journalEntryRepository.existsOwnedBy(direct.getId(), "1")).isFalse();
+        assertThat(journalEntryRepository.existsOwnedBy(9999L, "1")).isFalse();
     }
 
     @Test

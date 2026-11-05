@@ -210,7 +210,7 @@ public class JournalEntry {
         if (newContent == null || newContent.isBlank()) {
             throw new IllegalArgumentException("고친 본문은 필수입니다.");
         }
-        if (newContent.strip().equals(this.content.strip())) {
+        if (hasSameContent(newContent)) {
             throw new IllegalArgumentException("본문이 고쳐지지 않았습니다.");
         }
         if (reviserId == null || reviserId.isBlank()) {
@@ -220,6 +220,11 @@ public class JournalEntry {
         this.revisedBy = reviserId;
         this.revisedAt = LocalDateTime.now();
         enterValidationQueue(this.childId);
+    }
+
+    /** 고친 본문이 지금 본문과 같은지. 앞뒤 공백만 다른 것도 같다고 본다 — {@link #revise} 가 거절하는 기준이다. */
+    public boolean hasSameContent(String newContent) {
+        return newContent != null && newContent.strip().equals(this.content.strip());
     }
 
     /** 선생님이 이 기록을 보류했다(#122). 다음 단계로 가지 않는다. */

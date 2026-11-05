@@ -36,6 +36,18 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     Optional<JournalEntry> findByIdForUpdate(@Param("id") Long id);
 
     /**
+     * 그 기관이 올린 원본 파일에서 나온 살아 있는 일지인지 (#357). 수정 요청 큐의 처리가 행을 잠그기 전에 묻는다 — 다른
+     * 기관 id 로 그 기관 아이·일지 행을 잠그면 그 기관 처리가 기다리고, 기다린 시간으로 id 가 있는지도 드러난다.
+     * 일지 엔티티를 읽지 않아, 뒤에 잠그고 읽는 {@link #findByIdForUpdate} 가 잠금을 기다린 뒤의 상태를 그대로 가져온다.
+     */
+    @Query("""
+            select count(e) > 0 from JournalEntry e, RawRecord r
+            where e.id = :id and e.deletedAt is null
+              and r.id = e.rawRecordId and r.deletedAt is null and r.institutionId = :institutionId
+            """)
+    boolean existsOwnedBy(@Param("id") Long id, @Param("institutionId") String institutionId);
+
+    /**
      * 매칭 워커가 처리할 일지. 원본 파일이 없는 직접 입력은 매칭 단계를 건너뛰므로 뺀다 (DB 스키마 §6.2).
      * 오래된 것부터 처리하도록 id 순으로 가져온다.
      */
