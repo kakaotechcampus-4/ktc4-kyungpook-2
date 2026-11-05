@@ -92,11 +92,11 @@ class ValidationResultControllerTest {
     void resolve_passesActionToService() throws Exception {
         mockMvc.perform(post(BASE_URL + "/11/resolve")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"reupload\"}"))
+                        .content("{\"action\":\"hold\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("SUCCESS"));
 
-        verify(validationQueueService).resolve(eq(11L), eq("reupload"), any());
+        verify(validationQueueService).resolve(eq(11L), eq("hold"), any());
     }
 
     @Test
@@ -119,6 +119,65 @@ class ValidationResultControllerTest {
         mockMvc.perform(post(BASE_URL + "/99/resolve")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"action\":\"hold\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("VALIDATION_RESULT_NOT_FOUND"));
+    }
+
+    // --- 고쳐서 다시 검사 (#357) -----------------------------------------------------
+
+    @Test
+    void revise_passesContentToService() throws Exception {
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"점심을 잘 먹음\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").value("SUCCESS"));
+
+        verify(validationQueueService).revise(eq(11L), eq("점심을 잘 먹음"), any());
+    }
+
+    @Test
+    void revise_blankContent_returns400WithoutCallingService() throws Exception {
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"  \"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(validationQueueService, never()).revise(any(), any(), any());
+    }
+
+    @Test
+    void revise_tooLongContent_returns400WithoutCallingService() throws Exception {
+        String tooLong = "가".repeat(10_001);
+
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"" + tooLong + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(validationQueueService, never()).revise(any(), any(), any());
+    }
+
+    @Test
+    void revise_unchangedContent_returns400() throws Exception {
+        willThrow(new ValidationResultValidationException("invalid revised content"))
+                .given(validationQueueService).revise(any(), any(), any());
+
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"그대로\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_RESULT_INVALID_REQUEST"));
+    }
+
+    @Test
+    void revise_unknownOrOtherInstitution_returns404() throws Exception {
+        willThrow(new ValidationResultNotFoundException(99L))
+                .given(validationQueueService).revise(any(), any(), any());
+
+        mockMvc.perform(post(BASE_URL + "/99/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"고친 글\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("VALIDATION_RESULT_NOT_FOUND"));
     }
