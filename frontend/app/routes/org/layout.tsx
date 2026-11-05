@@ -23,10 +23,12 @@ import "./org.css";
  * 배지가 실시간으로 줄어든다.
  */
 export async function clientLoader() {
-  const { loggedIn, signupCompleted, role, name, institutionName } = await getSession();
+  const { loggedIn, signupCompleted, role, name, institutionName, termsAgreed } = await getSession();
   // 카카오 로그인만 하고 역할을 안 고른 사람 — 보호 API 가 403 SIGNUP_NOT_COMPLETED 를 준다.
   if (loggedIn && !signupCompleted) return redirect("/signup?role=org");
   if (role !== "org") return redirect("/login");
+  // 기관 약관 전에는 보호 API 가 모두 403 TERMS_NOT_AGREED 다 — 배지를 묻기 전에 약관 화면으로 보낸다.
+  if (!termsAgreed) return redirect("/org-terms");
 
   // 백엔드에 아직 없는 기능은 null → 배지를 띄우지 않는다 (loadIfReady 참고)
   const [matching, blocked, gate1, held, insights, inbox] = await Promise.all([

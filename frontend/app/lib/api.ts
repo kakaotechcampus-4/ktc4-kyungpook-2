@@ -67,7 +67,7 @@
  */
 
 import { ApiError } from "@/lib/apiError";
-import { clearSession, csrfHeader, isOnboarded, markOnboarded } from "@/lib/auth";
+import { clearSession, csrfHeader, getSession, isOnboarded, markOnboarded } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
@@ -270,7 +270,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // BE 공통 에러 형식 { result, code, message } — global/exception/ErrorResponse.java
     const body = await res.json().catch(() => ({}));
     const error = new ApiError(res.status, body.code ?? "UNKNOWN", body.message);
-    if (error.status === 403 && error.code === "TERMS_NOT_AGREED") sendToTerms();
+    if (error.status === 403 && error.code === "TERMS_NOT_AGREED") void sendToTerms();
     throw error;
   }
   // 204 No Content 에는 래퍼가 없다(api-conventions.md). 백엔드에 아직 204 를 주는
@@ -287,13 +287,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export { ApiError };
 
 /**
- * 약관에 동의하지 않은 보호자는 서버가 보호 API 를 모두 403 TERMS_NOT_AGREED 로 막는다. 화면마다 처리하지 않고
- * 여기서 한 번 약관 단계(`/parent/invite`)로 보낸다 — 앱을 열어 둔 사이 약관 판이 올라간 경우 등.
- * 이미 그 화면이면 옮기지 않는다. 초대 화면이 이 오류를 받아 약관 단계로 돌린다.
+ * 약관에 동의하지 않은 회원은 서버가 보호 API 를 모두 403 TERMS_NOT_AGREED 로 막는다. 화면마다 처리하지 않고
+ * 여기서 한 번 그 역할의 약관 화면으로 보낸다 — 앱을 열어 둔 사이 약관 판이 올라간 경우 등.
+ *
+ * 기관 화면 주소에는 앞머리가 없어 주소로는 역할을 알 수 없다. 그래서 세션(`/auth/me`, 약관 전에도 열려 있다)을
+ * 다시 읽는다. 기관 → `/org-terms`, 보호자 → `/parent/invite`(초대 화면이 이 오류를 받아 약관 단계로 돌린다),
+ * 로그인이 풀렸으면 `/login`. 세션 조회가 실패하면 어디로도 보내지 않는다 — 원래 요청의 오류는 그대로 던져져
+ * 화면의 오류 안내 · 다시 시도가 돈다. 짐작으로 보호자 화면에 보내면 기관이 거기 갇힌다.
+ * 이미 그 화면이면 옮기지 않는다.
  */
-function sendToTerms(): void {
-  if (typeof window === "undefined" || window.location.pathname === "/parent/invite") return;
-  window.location.replace("/parent/invite");
+async function sendToTerms(): Promise<void> {
+  if (typeof window === "undefined") return;
+  let target: string;
+  try {
+    const session = await getSession();
+    if (!session.loggedIn) target = "/login";
+    else if (session.role === "org") target = "/org-terms";
+    else target = "/parent/invite";
+  } catch {
+    return;
+  }
+  if (window.location.pathname !== target) window.location.replace(target);
 }
 
 /* ── 기관 ───────────────────────────────────────────── */
