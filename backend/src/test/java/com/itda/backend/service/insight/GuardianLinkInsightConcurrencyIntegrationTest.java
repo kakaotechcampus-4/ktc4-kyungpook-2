@@ -120,7 +120,7 @@ class GuardianLinkInsightConcurrencyIntegrationTest {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
         school = organizationRepository.save(
                 Organization.of("햇살특수학교", OrganizationType.SCHOOL, OrganizationFixture.nextBusinessNumber()));
-        schoolStaff = userRepository.save(UserFixture.organizationUser("kakao-school", "학교선생", school.getId()));
+        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-school", "학교선생", school.getId())));
         mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
         dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad", "아빠")));
 

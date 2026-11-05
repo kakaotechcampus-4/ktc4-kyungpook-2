@@ -166,8 +166,8 @@ class InstitutionLinkApiTest {
         school = organizationRepository.save(
                 Organization.of("햇살특수학교", OrganizationType.SCHOOL, OrganizationFixture.nextBusinessNumber()));
         center = organizationRepository.save(OrganizationFixture.center());
-        schoolStaff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "학교선생", school.getId()));
-        centerStaff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "센터선생", center.getId()));
+        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "학교선생", school.getId())));
+        centerStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "센터선생", center.getId())));
         mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "엄마")));
         dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "아빠")));
 
@@ -376,7 +376,7 @@ class InstitutionLinkApiTest {
     @Test
     void 다른_기관에_낸_요청은_수락할_수_없다() throws Exception {
         Organization other = organizationRepository.save(OrganizationFixture.center());
-        User otherStaff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "다른선생", other.getId()));
+        User otherStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "다른선생", other.getId())));
         requestLink(mom, centerCode);
 
         accept(otherStaff, "X-1").andExpect(status().isNotFound());

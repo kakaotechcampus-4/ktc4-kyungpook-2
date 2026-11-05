@@ -16,8 +16,8 @@ import com.itda.backend.domain.user.UserRole;
  *
  * <p>{@code institutionName} 은 사이드바에 기관명을 띄우려고 둔다(#236). {@code institutionId} 와 같이 기관 회원만 있다.
  *
- * <p>{@code termsAgreed} 도 원시 boolean 이라 늘 나간다. 보호자가 서비스 약관에 동의했는지다 — false 면 프론트가
- * 약관 단계로 보내고, 서버도 보호 API 를 403 TERMS_NOT_AGREED 로 막는다. 기관 담당자는 약관이 없어 늘 true,
+ * <p>{@code termsAgreed} 도 원시 boolean 이라 늘 나간다. 회원이 자기 역할의 서비스 약관에 동의했는지다 — false 면
+ * 프론트가 약관 화면(보호자 · 기관 따로)으로 보내고, 서버도 보호 API 를 403 TERMS_NOT_AGREED 로 막는다.
  * 가입 미완료는 false 다.
  *
  * <p>{@code @JsonInclude} 를 여기에 직접 붙여야 한다 — ApiResponse 에 붙은 설정은

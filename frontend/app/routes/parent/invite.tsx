@@ -3,6 +3,7 @@ import { Busy } from "@/components/ui";
 import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
 import { StepProgress } from "@/components/parent/StepProgress";
+import { TermsForm, type TermItem } from "@/components/TermsForm";
 import { ApiError, acceptInvitation, restoreParentOnboarded } from "@/lib/api";
 import {
   agreeTerms,
@@ -12,6 +13,7 @@ import {
   isAuthMock,
   readInviteCode,
   saveInviteCode,
+  type TermKey,
 } from "@/lib/auth";
 import type { AcceptedInvitation } from "@/lib/types";
 
@@ -35,10 +37,10 @@ import type { AcceptedInvitation } from "@/lib/types";
 type Step = "intro" | "terms" | "code" | "done";
 
 // 서버 TermKey 와 같은 값이다. 지금은 모두 필수라 체크한 목록이 아니라 이 목록 전체를 보낸다.
-const TERMS = [
+const TERMS: readonly TermItem[] = [
   { key: "tos", label: "서비스 이용약관 동의", required: true },
   { key: "privacy", label: "개인정보와 민감정보 수집 동의", required: true },
-] as const;
+];
 
 export async function clientLoader({ request }: { request: Request }) {
   const code = new URL(request.url).searchParams.get("code")?.trim();
@@ -67,7 +69,7 @@ export default function ParentInvitePage() {
   // 약관에 동의한 뒤 다시 구한다 — 로더는 동의 전이라 묻지 않고 false 를 준다. "이미 연결됨"을 홈으로 보낼지,
   // "홈으로" 링크를 보일지가 이 값을 본다
   const [onboarded, setOnboarded] = useState(loaded.onboarded);
-  const [agreed, setAgreed] = useState<string[]>([]);
+  const [agreed, setAgreed] = useState<TermKey[]>([]);
   const [code, setCode] = useState(savedCode ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -180,7 +182,6 @@ export default function ParentInvitePage() {
     "tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted";
   const secondary =
     "tap flex h-14 w-full items-center justify-center rounded-2xl border border-line2 px-4 text-[16px] font-bold text-ink2 hover:bg-surface2";
-  const requiredMissing = TERMS.some((t) => t.required && !agreed.includes(t.key));
 
   if (role === "org") {
     return (
@@ -303,54 +304,15 @@ export default function ParentInvitePage() {
             </div>
           </div>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void submitTerms();
-            }}
-            className="flex flex-col gap-3"
-          >
-            <ul className="flex flex-col gap-2">
-              {TERMS.map((t) => {
-                const on = agreed.includes(t.key);
-                return (
-                  <li key={t.key}>
-                    <label className="tap flex cursor-pointer items-center gap-3 rounded-2xl border border-line2 px-4 has-checked:border-accent has-checked:bg-accentsoft">
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() =>
-                          setAgreed((a) => (on ? a.filter((k) => k !== t.key) : [...a, t.key]))
-                        }
-                        className="size-5 shrink-0 accent-accent"
-                      />
-                      <span className="flex flex-1 items-center gap-2 text-[15px]">
-                        {t.label}
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[12px] font-bold ${
-                            t.required ? "bg-accentsoft text-accentink" : "bg-surface2 text-muted"
-                          }`}
-                        >
-                          {t.required ? "필수" : "선택"}
-                        </span>
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-            {error ? (
-              <p role="alert" className="rounded-2xl bg-blocksoft px-4 py-3 text-[14px] leading-6 text-block">
-                {error}
-              </p>
-            ) : null}
-            <button disabled={requiredMissing || pending} className={primary}>
-              {pending ? <Busy>저장 중…</Busy> : "동의하고 계속하기"}
-            </button>
-            {requiredMissing ? (
-              <p className="text-center text-[14px] text-muted">필수 동의를 선택해주세요</p>
-            ) : null}
-          </form>
+          <TermsForm
+            terms={TERMS}
+            agreed={agreed}
+            onChange={setAgreed}
+            pending={pending}
+            error={error}
+            onSubmit={() => void submitTerms()}
+            buttonClassName={primary}
+          />
         </>
       ) : null}
 

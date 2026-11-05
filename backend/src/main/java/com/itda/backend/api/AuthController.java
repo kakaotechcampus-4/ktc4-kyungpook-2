@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code /oauth2/authorization/kakao} 와 {@code /login/oauth2/code/kakao} 를 직접 제공한다.
  *
  * <p>여기 있는 건 로그인 이후에 필요한 것들이다 — 프론트 라우트 가드가 매 진입마다 부르는
- * 세션 조회, 역할을 정하는 회원가입, 보호자 약관 동의, 출입증 쿠키를 지우는 로그아웃이다. 출입증이 httpOnly 쿠키라 프론트가 스스로
+ * 세션 조회, 역할을 정하는 회원가입, 약관 동의, 출입증 쿠키를 지우는 로그아웃이다. 출입증이 httpOnly 쿠키라 프론트가 스스로
  * 지울 수 없어서, 서버가 지워주지 않으면 사용자는 로그아웃할 방법이 아예 없다.
  */
 @RestController
@@ -54,7 +54,7 @@ public class AuthController {
                     + "화면에 들어갈 때마다 호출합니다. signupCompleted 는 항상 포함되며 false 면 "
                     + "가입 미완료입니다(role 없음). role 은 org 또는 parent 이며, "
                     + "institutionId · institutionName(기관명) 은 role 이 org 일 때만 포함됩니다. "
-                    + "termsAgreed 도 항상 포함되며 보호자가 서비스 약관에 동의했는지입니다. 기관은 항상 true, "
+                    + "termsAgreed 도 항상 포함되며 자기 역할의 서비스 약관(보호자 · 기관 따로)에 동의했는지입니다. "
                     + "가입 미완료는 false 입니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
@@ -76,7 +76,7 @@ public class AuthController {
             description = "카카오 로그인만 한 사용자의 역할을 확정합니다. 보호자는 role 만, 기관은 "
                     + "organizationName·organizationType·businessNumber(숫자 10자리, 진위 검증 없음)를 함께 "
                     + "보냅니다. 기관이면 기관을 새로 만들고 소속시킵니다. 응답은 /auth/me 의 가입 완료 응답과 "
-                    + "같습니다(막 가입한 보호자는 termsAgreed 가 false, 기관은 true). 요청 전에 받은 XSRF-TOKEN "
+                    + "같습니다(막 가입하면 보호자 · 기관 모두 termsAgreed 가 false). 요청 전에 받은 XSRF-TOKEN "
                     + "쿠키 값을 X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
@@ -110,9 +110,11 @@ public class AuthController {
 
     @PostMapping("/terms")
     @Operation(
-            summary = "보호자 서비스 약관 동의",
-            description = "보호자가 동의한 약관 키를 보냅니다(tos · privacy 모두 필수). 약관의 판은 서버가 채웁니다. "
-                    + "같은 판에 이미 동의했으면 아무것도 바꾸지 않고 같은 응답을 돌려줍니다. 동의하기 전의 보호자는 "
+            summary = "서비스 약관 동의",
+            description = "회원이 동의한 약관 키를 보냅니다. 보호자는 tos · privacy, 기관 담당자는 "
+                    + "org_tos · org_privacy · org_child_data 가 모두 필수이고 다른 역할의 약관은 섞을 수 없습니다. "
+                    + "약관의 판은 서버가 채웁니다. "
+                    + "같은 판에 이미 동의했으면 아무것도 바꾸지 않고 같은 응답을 돌려줍니다. 동의하기 전의 회원은 "
                     + "/auth/me · /auth/terms · /auth/logout 외의 API 가 403 TERMS_NOT_AGREED 로 막힙니다. "
                     + "요청 전에 받은 XSRF-TOKEN 쿠키 값을 X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
@@ -122,7 +124,8 @@ public class AuthController {
                     responseCode = "200", description = "동의 저장(또는 이미 동의함)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "agreed 누락·빈 목록, 모르는 약관 키, 필수 약관 누락 (INVALID_REQUEST)",
+                    description = "agreed 누락·빈 목록, 모르는 약관 키, 다른 역할의 약관이 섞임, 필수 약관 누락 "
+                            + "(INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
@@ -130,8 +133,7 @@ public class AuthController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아님 (PARENT_REQUIRED), "
-                            + "CSRF 토큰 누락 또는 불일치 (FORBIDDEN)",
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), CSRF 토큰 누락 또는 불일치 (FORBIDDEN)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ApiResponse<TermsAgreementResponse> agreeTerms(

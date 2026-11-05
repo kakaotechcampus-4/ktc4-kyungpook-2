@@ -65,7 +65,7 @@ class ChecklistApiTest {
     @BeforeEach
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = userRepository.save(UserFixture.organizationUser("cl-api-" + UUID.randomUUID(), "이선생", organization.getId()));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("cl-api-" + UUID.randomUUID(), "이선생", organization.getId())));
         sky = childRepository.save(Child.of("하늘", LocalDate.of(2017, 3, 14)));
         childOrganizationRepository.save(ChildOrganization.of(sky.getId(), organization.getId()));
     }

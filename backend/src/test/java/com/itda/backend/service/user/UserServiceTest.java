@@ -410,14 +410,28 @@ class UserServiceTest {
         assertThat(userService.accessOf("2")).isEqualTo(AccountAccess.OK);
     }
 
-    /** 기관 담당자에게는 약관이 없다 — 동의 기록을 읽지도 않는다. */
+    /** 기관 담당자도 기관 약관에 동의하기 전에는 막힌다. 보호자 약관 줄로는 통과하지 못한다. */
     @Test
-    void organizationUserPassesWithoutReadingTerms() {
+    void organizationUserWithoutOrganizationTermsIsTermsNotAgreed() {
         given(userRepository.findByIdAndDeletedAtIsNull(4L))
                 .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+        given(termsAgreementRepository.findByUserId(any())).willReturn(List.of(
+                TermsAgreement.agree(4L, TermKey.TOS, TermsCatalog.currentVersion(TermKey.TOS)),
+                TermsAgreement.agree(4L, TermKey.PRIVACY, TermsCatalog.currentVersion(TermKey.PRIVACY))));
+
+        assertThat(userService.accessOf("4")).isEqualTo(AccountAccess.TERMS_NOT_AGREED);
+    }
+
+    @Test
+    void organizationUserWithCurrentOrganizationTermsPasses() {
+        given(userRepository.findByIdAndDeletedAtIsNull(4L))
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+        given(termsAgreementRepository.findByUserId(any())).willReturn(List.of(
+                TermsAgreement.agree(4L, TermKey.ORG_TOS, TermsCatalog.currentVersion(TermKey.ORG_TOS)),
+                TermsAgreement.agree(4L, TermKey.ORG_PRIVACY, TermsCatalog.currentVersion(TermKey.ORG_PRIVACY)),
+                TermsAgreement.agree(4L, TermKey.ORG_CHILD_DATA, TermsCatalog.currentVersion(TermKey.ORG_CHILD_DATA))));
 
         assertThat(userService.accessOf("4")).isEqualTo(AccountAccess.OK);
-        verify(termsAgreementRepository, never()).findByUserId(any());
     }
 
     @Test

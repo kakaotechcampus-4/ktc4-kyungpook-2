@@ -91,18 +91,18 @@ public class UserService {
             throw new UserException(UserErrorCode.ALREADY_SIGNED_UP);
         }
 
+        // 막 가입한 회원은 동의 기록이 없어 termsAgreed 가 false 다. 프론트가 이 값을 보고 약관 화면으로 간다.
         if (request.isOrganizationSignup()) {
             Organization organization = createOrganization(request);
             user.completeSignup(UserRole.ORGANIZATION, organization.getId());
             return CurrentUserResponse.from(user, organization, termsService.isAgreed(user));
         }
         user.completeSignup(UserRole.PARENT, null);
-        // 막 가입한 보호자는 동의 기록이 없어 false 다. 프론트가 이 값을 보고 약관 단계로 간다.
         return CurrentUserResponse.from(user, null, termsService.isAgreed(user));
     }
 
     /**
-     * 보호자 서비스 약관 동의. 회원 행을 잠그고 시작한다 — 같은 보호자의 요청이 겹쳐도 두 번째는 첫 번째가 남긴
+     * 서비스 약관 동의. 회원 행을 잠그고 시작한다 — 같은 회원의 요청이 겹쳐도 두 번째는 첫 번째가 남긴
      * 줄을 보고 아무것도 넣지 않는다(TermsService.agree).
      */
     @Transactional
@@ -114,7 +114,7 @@ public class UserService {
     }
 
     /**
-     * 가입 미완료 차단 필터가 쓴다. 회원을 한 번 읽고, 보호자면 약관 동의 기록을 한 번 더 읽는다.
+     * 가입 미완료 차단 필터가 쓴다. 회원을 한 번 읽고, 가입을 마쳤으면 약관 동의 기록을 한 번 더 읽는다.
      *
      * <p>없는 회원과 탈퇴 회원은 SESSION_USER_NOT_FOUND 예외로 차단한다.
      */

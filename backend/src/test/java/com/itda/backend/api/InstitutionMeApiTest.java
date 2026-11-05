@@ -64,7 +64,7 @@ class InstitutionMeApiTest {
     void 코드가_없던_기관은_처음_열_때_코드가_붙고_다시_열어도_같다() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         assertThat(organization.getCode()).isNull();
-        User staff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
+        User staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
 
         String first = JsonPath.read(mockMvc.perform(get(ME).cookie(auth(staff)))
                 .andExpect(status().isOk())

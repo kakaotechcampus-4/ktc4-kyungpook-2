@@ -215,19 +215,19 @@ export async function getSession(): Promise<Session> {
 
 /**
  * 가입을 마친 사람이 처음 볼 화면. 보호자는 약관 · 첫 연결이 남았거나, 초대 링크로 받아 둔
- * 코드가 있으면 온보딩(약관 또는 코드 수락)으로.
+ * 코드가 있으면 온보딩(약관 또는 코드 수락)으로. 기관은 약관이 남았으면 기관 약관 화면으로.
  */
 export function homePathFor(role: "org" | "parent", termsAgreed: boolean): string {
   if (role === "parent") {
     return termsAgreed && isOnboarded() && !readInviteCode() ? "/parent" : "/parent/invite";
   }
-  return "/dashboard";
+  return termsAgreed ? "/dashboard" : "/org-terms";
 }
 
 /* ── 약관 동의 ──────────────────────────────────────── */
 
-/** BE TermKey 값 그대로. 지금은 둘 다 필수다. */
-export type TermKey = "tos" | "privacy";
+/** BE TermKey 값 그대로. 보호자는 앞의 둘, 기관은 org_ 셋이 모두 필수다(다른 역할의 약관은 보낼 수 없다). */
+export type TermKey = "tos" | "privacy" | "org_tos" | "org_privacy" | "org_child_data";
 
 function readTermsMark(): boolean {
   try {
@@ -238,12 +238,12 @@ function readTermsMark(): boolean {
 }
 
 /**
- * POST /api/v1/auth/terms — 보호자 약관 동의. 판은 서버가 채운다.
+ * POST /api/v1/auth/terms — 약관 동의(보호자 · 기관). 판은 서버가 채운다.
  *
  * 인증 mock 스위치(`VITE_AUTH_MOCK`)를 따른다. 데이터 mock(`VITE_USE_MOCK`)을 따르면 "로그인만 실연동"
  * 모드에서 저장한 척만 하고 다음 `/auth/me` 는 계속 termsAgreed: false 를 돌려준다.
  *
- * 실패는 ApiError 로 던진다 (INVALID_REQUEST · PARENT_REQUIRED · SIGNUP_NOT_COMPLETED · 401).
+ * 실패는 ApiError 로 던진다 (INVALID_REQUEST · SIGNUP_NOT_COMPLETED · 401).
  */
 export async function agreeTerms(keys: TermKey[]): Promise<void> {
   if (USE_MOCK) {

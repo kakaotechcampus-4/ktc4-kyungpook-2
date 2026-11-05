@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * 보호자가 동의하는 서비스 약관. 지금은 둘 다 필수다.
+ * 회원이 동의하는 서비스 약관. 역할마다 필수 약관이 다르다 ({@code TermsCatalog.required}).
  *
  * <p>JSON 에는 소문자({@code tos})로, {@code terms_agreement.term_key} 에는 이름 그대로({@code TOS}) 들어간다.
  * 모르는 값이면 {@link #fromJson} 이 실패해 요청 전체가 400 이 된다.
@@ -17,7 +17,13 @@ public enum TermKey {
     /** 서비스 이용약관 */
     TOS,
     /** 개인정보와 민감정보 수집 */
-    PRIVACY;
+    PRIVACY,
+    /** 기관 서비스 이용약관 */
+    ORG_TOS,
+    /** 기관 담당자 개인정보 수집 */
+    ORG_PRIVACY,
+    /** 공유받은 아동 정보를 목적 밖으로 쓰지 않는다는 기관의 서약 */
+    ORG_CHILD_DATA;
 
     @JsonValue
     public String toJson() {

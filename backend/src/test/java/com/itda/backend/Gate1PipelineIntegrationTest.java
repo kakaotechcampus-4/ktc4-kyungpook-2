@@ -64,6 +64,7 @@ import com.itda.backend.dto.response.matching.MatchingAgentResponse;
 import com.itda.backend.dto.response.summary.SummaryAgentResponse;
 import com.itda.backend.dto.response.validation.ValidationAgentResponse;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -75,6 +76,7 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.approval.Gate1Version;
@@ -138,6 +140,7 @@ class Gate1PipelineIntegrationTest {
 
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private TermsAgreementRepository termsAgreementRepository;
     @Autowired private ChildRepository childRepository;
     @Autowired private ChildOrganizationRepository childOrganizationRepository;
     @Autowired private SharingConsentRepository sharingConsentRepository;
@@ -167,8 +170,8 @@ class Gate1PipelineIntegrationTest {
     @BeforeEach
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        teacher = userRepository.save(UserFixture.organizationUser(
-                "pipeline-" + UUID.randomUUID(), "이선생", organization.getId()));
+        teacher = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(
+                "pipeline-" + UUID.randomUUID(), "이선생", organization.getId())));
         junho = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1)));
         childOrganizationRepository.save(ChildOrganization.of(junho.getId(), organization.getId()));
         // 매칭 명부는 이 기관에 살아 있는 동의가 있는 아이만 받는다 (DB 스키마 §5.1).

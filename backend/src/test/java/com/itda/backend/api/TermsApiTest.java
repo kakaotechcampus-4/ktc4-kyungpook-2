@@ -41,6 +41,9 @@ class TermsApiTest {
     private static final String BOTH = """
             {"agreed": ["tos", "privacy"]}
             """;
+    private static final String ORG_ALL = """
+            {"agreed": ["org_tos", "org_privacy", "org_child_data"]}
+            """;
 
     @Autowired
     private MockMvc mockMvc;
@@ -116,25 +119,44 @@ class TermsApiTest {
     }
 
     @Test
-    void 기관_담당자는_403_PARENT_REQUIRED다() throws Exception {
-        Organization organization = organizationRepository.save(OrganizationFixture.center());
-        User staff = userRepository.save(
-                UserFixture.organizationUser("terms-api-staff", "박지현", organization.getId()));
+    void 기관_담당자가_기관_약관에_동의하면_저장하고_세션에_동의가_보인다() throws Exception {
+        User staff = staff("terms-api-staff");
+        mockMvc.perform(get("/api/v1/auth/me").cookie(cookieFor(staff)))
+                .andExpect(jsonPath("$.data.termsAgreed").value(false));
 
-        agree(staff, BOTH)
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("PARENT_REQUIRED"));
+        agree(staff, ORG_ALL)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.termsAgreed").value(true));
+
+        assertThat(termsAgreementRepository.findByUserId(staff.getId())).hasSize(3);
+        mockMvc.perform(get("/api/v1/auth/me").cookie(cookieFor(staff)))
+                .andExpect(jsonPath("$.data.termsAgreed").value(true));
+    }
+
+    /** 약관은 역할마다 따로다. 다른 역할의 약관이 섞이거나 필수가 빠지면 400 이고 아무것도 남지 않는다. */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"agreed\": [\"tos\", \"privacy\"]}",
+            "{\"agreed\": [\"org_tos\", \"org_privacy\"]}",
+            "{\"agreed\": [\"org_tos\", \"org_privacy\", \"org_child_data\", \"tos\"]}"
+    })
+    void 기관_담당자의_잘못된_약관은_400이다(String body) throws Exception {
+        User staff = staff("terms-api-staff-bad-" + Math.abs(body.hashCode()));
+
+        agree(staff, body)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
         assertThat(termsAgreementRepository.findByUserId(staff.getId())).isEmpty();
     }
 
     @Test
-    void 기관_담당자의_세션은_늘_동의한_것이다() throws Exception {
-        Organization organization = organizationRepository.save(OrganizationFixture.center());
-        User staff = userRepository.save(
-                UserFixture.organizationUser("terms-api-staff-2", "박지현", organization.getId()));
+    void 보호자가_기관_약관을_섞으면_400이다() throws Exception {
+        User parent = userRepository.save(UserFixture.parent("terms-api-mixed", "김보호"));
 
-        mockMvc.perform(get("/api/v1/auth/me").cookie(cookieFor(staff)))
-                .andExpect(jsonPath("$.data.termsAgreed").value(true));
+        agree(parent, "{\"agreed\": [\"tos\", \"privacy\", \"org_child_data\"]}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        assertThat(termsAgreementRepository.findByUserId(parent.getId())).isEmpty();
     }
 
     /** 가입 전에는 약관보다 가입이 먼저다 — 가입 미완료 차단이 그대로 막는다. */
@@ -145,5 +167,10 @@ class TermsApiTest {
         agree(pending, BOTH)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("SIGNUP_NOT_COMPLETED"));
+    }
+
+    private User staff(String kakaoId) {
+        Organization organization = organizationRepository.save(OrganizationFixture.center());
+        return userRepository.save(UserFixture.organizationUser(kakaoId, "박지현", organization.getId()));
     }
 }

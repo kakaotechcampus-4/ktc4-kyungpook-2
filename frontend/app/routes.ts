@@ -5,6 +5,8 @@ export default [
   route("login", "routes/login.tsx"),
   route("oauth/success", "routes/oauth-success.tsx"),
   route("signup", "routes/signup.tsx"),
+  // 기관 약관(I-16). 기관 가드가 동의하지 않은 기관을 이리 보내므로 기관 묶음 밖에 둔다.
+  route("org-terms", "routes/org-terms.tsx"),
 
   layout("routes/org/layout.tsx", [
     route("dashboard", "routes/org/dashboard.tsx"),

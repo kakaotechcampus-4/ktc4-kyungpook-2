@@ -3,10 +3,12 @@ package com.itda.backend.global.security;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
@@ -47,14 +49,17 @@ class JwtCookieAuthTest {
     @Autowired
     private OrganizationRepository organizationRepository;
 
+    @Autowired
+    private TermsAgreementRepository termsAgreementRepository;
+
     /**
      * 출입증의 subject 는 내부 userId 다. 실제로 존재하는 기관 담당자를 만들어 토큰을 발급한다 —
      * 아무 숫자나 넣으면 보호 API 가 사용자를 찾지 못해 401 이 된다.
      */
     private String tokenForOrganizationUser(String kakaoId) {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        User user = userRepository.save(
-                UserFixture.organizationUser(kakaoId, "테스트", organization.getId()));
+        User user = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(
+                UserFixture.organizationUser(kakaoId, "테스트", organization.getId())));
         return jwtProvider.createToken(String.valueOf(user.getId()));
     }
 
