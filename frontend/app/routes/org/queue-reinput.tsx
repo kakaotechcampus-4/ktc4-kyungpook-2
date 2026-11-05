@@ -38,13 +38,7 @@ export default function ReinputQueuePage() {
       ) : (
         <div className="flex flex-col gap-4">
           {items.map((item) => (
-            <BlockedCard
-              key={item.id}
-              item={item}
-              onRevised={() =>
-                setNotice("다시 검사를 시작했어요. 통과하면 오늘의 업무에서 요약할 수 있어요.")
-              }
-            />
+            <BlockedCard key={item.id} item={item} onNotice={setNotice} />
           ))}
         </div>
       )}
@@ -52,7 +46,14 @@ export default function ReinputQueuePage() {
   );
 }
 
-function BlockedCard({ item, onRevised }: { item: BlockedItem; onRevised: () => void }) {
+function BlockedCard({
+  item,
+  onNotice,
+}: {
+  item: BlockedItem;
+  /** 페이지 위 안내. 다른 처리를 시작하면 지난 안내를 지운다 */
+  onNotice: (message: string | null) => void;
+}) {
   const revalidator = useRevalidator();
   const [busy, setBusy] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,16 +76,17 @@ function BlockedCard({ item, onRevised }: { item: BlockedItem; onRevised: () => 
   async function run(action: Action) {
     setBusy(action);
     setError(null);
+    onNotice(null);
     try {
       if (action === "revise") {
         await reviseBlockedItem(item.id, draft);
-        onRevised();
+        onNotice("다시 검사를 시작했어요. 통과하면 오늘의 업무에서 요약할 수 있어요.");
       } else {
         await resolveBlockedItem(item.id, "hold");
       }
       await revalidator.revalidate();
     } catch (err) {
-      setError(messageOf(err));
+      setError(messageOf(err, action));
       // 이미 처리됐거나 없어진 건이면 목록을 새로 받아 화면을 서버와 맞춘다
       if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
         await revalidator.revalidate();
@@ -201,8 +203,15 @@ function formatDate(value: string | null): string | null {
   return date.toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
 }
 
-function messageOf(err: unknown): string {
+function messageOf(err: unknown, action: Action): string {
   if (!(err instanceof ApiError)) return "네트워크 연결을 확인하고 다시 시도해 주세요.";
+  if (action === "revise" && err.status === 400) {
+    // 본문 형식 문제 — 카드는 그대로 남아 있다
+    if (err.code === "INVALID_REQUEST") return "본문이 비어 있거나 너무 길어요. 고친 내용을 확인해 주세요.";
+    // 이미 처리됐거나 다른 선생님이 먼저 고친 기록은 목록을 새로 받으면 카드가 바뀌어 이 문구가 남지 않는다.
+    // 카드가 그대로라면 아이가 명단에서 빠졌거나 공유 동의가 꺼져 다시 검사할 수 없는 기록이다
+    return "다시 검사할 수 없는 기록이에요. 아이가 명단에서 빠졌거나 공유 동의가 꺼졌을 수 있어요. 이 기록은 보류해 주세요.";
+  }
   if (err.status === 400 || err.status === 404) {
     return "이미 처리됐거나 없어진 기록입니다. 목록을 새로 불러왔습니다.";
   }

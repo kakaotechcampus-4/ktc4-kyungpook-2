@@ -930,14 +930,14 @@ export async function resolveBlockedItem(id: string, action: "hold"): Promise<{ 
 }
 
 /** 고친 본문 최대 길이. 서버 ReviseBlockedEntryRequest 와 같다 */
-export const MAX_REVISED_CONTENT = 10_000;
+export const MAX_REVISED_CONTENT = 100_000;
 
 /**
  * POST /api/v1/validation-results/{id}/revise (api-spec O-25, #357)
  *
  * 막힌 일지의 본문을 고쳐 검증을 다시 받게 한다. 아이는 그대로다. 성공하면 큐에서 빠지고,
  * 통과하면 요약 대기, 또 막히면 큐에 최신 사유로 다시 뜬다.
- * 빈 본문·10000자 초과는 400 INVALID_REQUEST, 고치지 않은 본문·이미 처리된 건은
+ * 빈 본문·100000자 초과는 400 INVALID_REQUEST, 고치지 않은 본문·이미 처리된 건은
  * 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
  */
 export async function reviseBlockedItem(id: string, content: string): Promise<{ ok: true }> {
