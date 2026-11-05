@@ -51,6 +51,13 @@ class ValidationReasonsTest {
                 .containsExactly("관찰되지 않은 내용을 추측한 표현이 있어요");
     }
 
+    /** 앞뒤 공백이 붙어 와도 같은 유형이다 — 코드가 그대로 화면에 나가지 않게. */
+    @Test
+    void 앞뒤_공백이_붙은_유형도_문장으로_바꾼다() {
+        assertThat(ValidationReasons.sentencesOf(List.of(" 추측성표현", "추측성표현 ")))
+                .containsExactly("관찰되지 않은 내용을 추측한 표현이 있어요");
+    }
+
     /** 같은 문장이 두 번 서지 않게 한 번만 남긴다. 순서는 받은 순서 그대로다. */
     @Test
     void 같은_유형이_겹치면_한_번만_남긴다() {

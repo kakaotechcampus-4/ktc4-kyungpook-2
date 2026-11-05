@@ -32,12 +32,13 @@ public final class ValidationReasons {
     }
 
     /**
-     * 받은 순서대로 바꾸고, 같은 문장은 한 번만 남긴다 — 그래서 유형 목록과 칸 수가 다를 수 있다. 빈 문자열·공백
-     * 유형은 버린다. 남는 게 없으면 원본을 확인하라는 문장 하나다.
+     * 받은 순서대로 바꾸고, 같은 문장은 한 번만 남긴다 — 그래서 유형 목록과 칸 수가 다를 수 있다. 앞뒤 공백은 떼고
+     * 보고, 빈 유형은 버린다. 남는 게 없으면 원본을 확인하라는 문장 하나다.
      */
     public static List<String> sentencesOf(Collection<String> issueTypes) {
         List<String> sentences = issueTypes.stream()
                 .filter(type -> type != null && !type.isBlank())
+                .map(String::strip)
                 .map(type -> SENTENCES.getOrDefault(type, type))
                 .distinct()
                 .toList();
