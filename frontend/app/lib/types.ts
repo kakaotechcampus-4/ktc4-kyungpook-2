@@ -473,6 +473,27 @@ export interface EvidenceRef {
   institution: Institution;
 }
 
+/** 인사이트 진행 현황 한 줄의 상태 (api-spec O-43). queued · running 이면 곧 Gate 2 에 글이 뜰 수 있다 */
+export type InsightProgressStatus =
+  | "not_consented"
+  | "waiting_week_end"
+  | "queued"
+  | "running"
+  | "retrying"
+  | "done"
+  | "nothing_new";
+
+/** 인사이트 진행 현황 한 줄 — 우리 기관이 최근 승인한 기록이 속한 (아이, 주) 하나 (api-spec O-43) */
+export interface InsightProgress {
+  childId: string;
+  childName: string;
+  periodFrom: string;
+  periodTo: string;
+  period: string;
+  status: InsightProgressStatus;
+  message: string;
+}
+
 export interface Insight {
   id: string;
   childId: string;

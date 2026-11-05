@@ -89,6 +89,7 @@ import type {
   InboxDetail,
   InboxItem,
   Insight,
+  InsightProgress,
   Institution,
   InstitutionShares,
   ChecklistItem,
@@ -712,6 +713,16 @@ export async function getInsights(gate2Status: Gate2Status = "pending"): Promise
     );
   }
   return request(`/api/v1/insights?gate2Status=${gate2Status}`);
+}
+
+/**
+ * GET /api/v1/insights/progress (O-43) — 최근 승인한 기록이 속한 (아이, 주)마다 인사이트 분석이 어디쯤인지.
+ * 대시보드가 분석 중인 동안 다시 받아, 끝나면 "인사이트 승인" 건수를 새로고침 없이 띄운다 (#359).
+ * mock 에는 진행 중인 분석이 없다.
+ */
+export async function getInsightProgress(): Promise<InsightProgress[]> {
+  if (mockFor("insights")) return [];
+  return request("/api/v1/insights/progress");
 }
 
 export async function getInsight(id: string): Promise<Insight | undefined> {
