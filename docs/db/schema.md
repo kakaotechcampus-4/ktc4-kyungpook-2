@@ -1255,6 +1255,8 @@ S3 객체의 실제 파기는 개인정보 파기 절차(§3.2 마지막)에서 
 | `agent_retry_count` | INT | Y | AI 다운으로 지금 단계(매칭·검증)를 되돌린 횟수 (#153). NULL 은 0. `PENDING` 으로 만들 때 0, 매칭이 확정돼 `MATCHED` 로 들어올 때 0 으로. **`MATCHING`·`VALIDATING`·되돌려진 대기 상태에서만 뜻이 있고**, 다른 상태에 남은 값은 지난 단계의 것이다 (실패 원인은 `failure_reason` 으로 읽는다) |
 | `failure_stage` | VARCHAR(30) | Y | `SYSTEM_ERROR` 로 멈춘 단계 — `VALIDATION`·`SUMMARY` (#180). 그 상태일 때만 채운다. 되돌릴 자리가 단계마다 달라서 둔다 |
 | `failure_reason` | VARCHAR(30) | Y | `SYSTEM_ERROR` 로 멈춘 원인 코드 (#180, 아래 "실패 상태와 원인 코드"). 그 상태일 때만 채운다 |
+| `revised_by` | VARCHAR(50) | Y | 검증에서 막힌 본문을 수정 요청 큐에서 **마지막으로** 고친 선생님 (`users.id`, #357). 고친 적 없으면 NULL |
+| `revised_at` | DATETIME | Y | 마지막으로 고친 시각 (#357) |
 
 기관 컬럼이 없다 — 어느 기관의 일지인지는 `raw_record_id`로 `raw_record`를 거쳐 찾는다.
 
@@ -1286,6 +1288,14 @@ S3 객체의 실제 파기는 개인정보 파기 절차(§3.2 마지막)에서 
 생성 시점에는 어느 아동의 기록인지 모른다. **매칭 결과가 확정되면 이 컬럼이 채워진다.**
 파이프라인 전체가 이 값을 채우기 위해 도는 구조다.
 
+**`content`는 수정 요청 큐에서만 고친다** (#357)
+
+검증에서 막힌(`VALIDATION_BLOCKED`) 일지는 선생님이 본문을 고쳐 검증을 다시 받게 할 수 있다. 같은 행의 `content`를 덮어쓰고
+`revised_by`·`revised_at`만 남긴다. **이전 본문 기록은 두지 않는다** — 처음 올라온 글은 원본 파일(`raw_record`)에 그대로 있고,
+중간에 고쳤다가 또 막힌 글은 남길 이유가 약하며 개인정보가 든 글을 하나 더 보관하는 셈이라서다. 올린 원본 파일은 고치지 않는다.
+같은 행을 고치므로 `validation_result`·`summary_id` 처럼 일지를 id 로 가리키는 곳은 그대로 이어진다. 옛 판정의
+`evidence` 위치는 옛 본문 기준이지만, 큐와 Gate 1 은 일지마다 최신 판정만 쓴다(§8.1).
+
 **`raw_record`를 삭제해도 `journal_entry`는 자동으로 삭제되지 않는다**
 
 FK 제약이 없으므로 연쇄 동작이 없다. 원본을 내릴 때 **그 원본에서 나온 일지들도 같은 트랜잭션에서
@@ -1303,7 +1313,7 @@ CONSENT_BLOCKED    동의 대기 아동의 기록이라 정지
 VALIDATING         검증 중
 VALIDATED          검증 통과 (PASS·REVIEW) — 요약 대기 (BE 추가)
 VALIDATION_BLOCKED 검증에서 막힘 (BLOCK) — 수정 요청 큐 (BE 추가)
-REUPLOAD_REQUESTED 선생님이 수정한 원본을 다시 올리기로 함 — 여기서 끝 (BE 추가)
+REUPLOAD_REQUESTED 선생님이 수정한 원본을 다시 올리기로 함 — 여기서 끝 (BE 추가). #357 부터 새로 생기지 않는다
 VALIDATION_HELD    선생님이 보류함 — 여기서 끝 (BE 추가)
 SUMMARIZING        요약 중
 GATE1_PENDING      1차 검토 대기
@@ -1358,12 +1368,16 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 `VALIDATED`·`VALIDATION_BLOCKED`도 초안에 없던 값이다. `BLOCK`에 실패 상태를 쓰지 않는 이유는 `BLOCK`이
 정상 판정이고 교사가 수정 요청 큐에서 처리하기 때문이다 — 실패 상태는 시스템이 처리하지 못했다는 뜻이다.
 
-수정 요청 큐(O-25)에서 선생님이 처리하면 `VALIDATION_BLOCKED`가 아래 둘 중 하나로 끝난다 (#122).
+수정 요청 큐(O-25)에서 선생님이 처리하면 `VALIDATION_BLOCKED`가 아래 둘 중 하나가 된다 (#122, #357).
+`VALIDATION_BLOCKED`인 일지만 처리할 수 있고, 두 선생님이 동시에 처리하지 않도록 일지 행을 잠근 뒤 상태를 확인한다.
 
 | 선생님 선택 | `journal_entry.status` | 뜻 |
 | --- | --- | --- |
-| 수정한 원본 다시 올리기 | `REUPLOAD_REQUESTED` | 고친 내용이 **새 파일**로 올라온다. 원본은 고치지도 지우지도 않으므로(append-only) 이 일지는 대체될 예정이고 여기서 끝난다 |
+| 고쳐서 다시 검사 | `MATCHED` | `content`를 고친 본문으로 바꾸고 `revised_by`·`revised_at`을 채운다. 아동은 그대로, `agent_retry_count`는 0. 검증 워커가 다시 집어 가서 통과하면 `VALIDATED`, 또 막히면 `VALIDATION_BLOCKED`. 고치지 않은 본문(앞뒤 공백 제외 같은 글)은 거절한다 |
 | 이 기록 보류 | `VALIDATION_HELD` | 다음 단계로 가지 않는다 |
+
+#357 전에는 "수정한 원본 다시 올리기"(`REUPLOAD_REQUESTED`, 고친 내용을 새 파일로 올리고 이 일지는 끝)도 있었다. 파일을
+통째로 다시 올려 같은 파일의 다른 일지까지 두 번 등록돼서 없앴다. 배포 DB 에 남은 행 때문에 값은 둔다.
 
 > **LLM 을 못 쓰면 AI 가 503 을 준다** (#98). 판정 없이 `REVIEW`로 오면 검증을 못 한 일지가 요약으로 새기 때문이다.
 > 정규식으로 개인정보가 잡힌 경우만 LLM 과 상관없이 200 + `BLOCK`이다. Luna 설정이 없으면 `/health`도 503 이라
@@ -2871,4 +2885,5 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-11-03 | 동의를 철회한 아이는 요약·Gate 1 에서 막는다 — 상태를 바꾸지 않고 볼 때마다 그 기관 동의(§5.5 GRANTED)를 본다. 묶음 카드(O-34)·Gate 1 목록(O-30)에서 빼고, [요약](O-32)·Gate 1 결정(O-31)·보류 해제(O-33)는 404, 요약 워커는 AI 호출 전과 결과를 남기기 전에 보고 요약하지 않은 채 요청을 닫는다(일지는 요약 전 상태로). Gate 1 결정·보류 해제의 잠금 순서 추가(§3.3 잠금 표). 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #332 |
 | 2026-11-04 | 새 테이블 `terms_agreement`(§4.3) — 보호자 서비스 약관 동의 기록. 회원 · 약관(`TOS` · `PRIVACY`) · 판 · 동의 시각만 쌓고 고치거나 지우지 않는다. `(user_id, term_key, version)` UNIQUE. 판과 다시 받기는 코드 상수가 정한다(개인정보 수집만 판이 바뀌면 다시 받는다). 동의하지 않은 보호자는 보호 API 가 `403 TERMS_NOT_AGREED` (§4.1). 새 테이블이라 배포 전 조치 없음 (§11.4) | #337 |
 | 2026-11-04 | 새 테이블 `checklist`(§5.8) · `checklist_target`(§5.9) — 기관이 명부의 아이들에게 보내는 준비물 · 확인사항과 아이별 확인. 보낸 뒤 고치지 않고 내리기(`canceled_at`, 조건부 UPDATE)만 한다. 받는 아이는 보낸 순간의 명부, 확인은 아이 몫으로 한 번(조건부 UPDATE). 확인은 `child` → `checklist` 를 FOR SHARE 로 잡아 연결 해제 · 내리기와 줄을 선다(§3.3 잠금 순서 표). 공유 동의와 상관없다. 새 테이블이라 배포 전 조치 없음 (§11.4) | #344 |
+| 2026-11-05 | `journal_entry` 에 `revised_by` · `revised_at` 추가 (§6.2, NULL 허용) — 수정 요청 큐에서 막힌 본문을 고쳐 검증을 다시 받는다(`VALIDATION_BLOCKED` → `MATCHED`, 아동 유지). 같은 행의 `content` 를 덮어쓰고 이전 본문은 남기지 않는다(처음 글은 원본 파일에 있다). "수정한 원본 다시 올리기"를 없애 `REUPLOAD_REQUESTED` 는 새로 생기지 않는다. NULL 허용 컬럼 추가라 §11.4 수동 조치 불필요 | #357 |
 | 2026-11-05 | `terms_agreement.term_key` 에 기관 약관 `ORG_TOS` · `ORG_PRIVACY` · `ORG_CHILD_DATA` 추가 (§4.3). 역할마다 자기 약관이 모두 필수이고 다른 역할의 약관은 받지 않는다. 기관 개인정보 수집 · 아동 정보 보호 서약은 판이 바뀌면 다시 받는다. 동의하지 않은 기관 담당자도 보호 API 가 `403 TERMS_NOT_AGREED` (§4.1). enum 값 추가라 **배포 전 `term_key` CHECK 제거 필요** (§11.4) | #TBD |
