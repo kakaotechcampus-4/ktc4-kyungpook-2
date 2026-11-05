@@ -52,9 +52,14 @@ function JournalDetailPage() {
         <p className="text-[16px] leading-7 whitespace-pre-line">{entry.content}</p>
       </section>
 
+      {/* 이전·다음은 방문 기록을 쌓지 않고 바꿔 끼운다 — 쌓으면 뒤로가기가 타임라인이 아니라 직전 일지로 간다 (#351) */}
       <div className="grid grid-cols-2 gap-2">
         {prevId ? (
-          <Link to={`/parent/journal/${prevId}`} className={`${navBtn} border-line2 text-ink2 hover:bg-surface2`}>
+          <Link
+            to={`/parent/journal/${prevId}`}
+            replace
+            className={`${navBtn} border-line2 text-ink2 hover:bg-surface2`}
+          >
             이전 일지
           </Link>
         ) : (
@@ -63,7 +68,11 @@ function JournalDetailPage() {
           </span>
         )}
         {nextId ? (
-          <Link to={`/parent/journal/${nextId}`} className={`${navBtn} border-line2 text-ink2 hover:bg-surface2`}>
+          <Link
+            to={`/parent/journal/${nextId}`}
+            replace
+            className={`${navBtn} border-line2 text-ink2 hover:bg-surface2`}
+          >
             다음 일지
           </Link>
         ) : (

@@ -3,7 +3,6 @@ package com.itda.backend.service.validation;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -44,22 +43,6 @@ import lombok.extern.slf4j.Slf4j;
 public class ValidationQueueService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    /**
-     * AI 가 보낸 이슈 유형(AI/validation/config.py ISSUE_LEVEL)을 선생님이 읽을 문장으로 바꾼다.
-     *
-     * <p>화면에 그대로 뜨는 값이라 "무엇이 문제인지"가 바로 읽혀야 한다. AI 가 유형을 새로 만들면
-     * 여기 없는 값이 올 수 있어서, 없으면 원본 코드를 그대로 보여준다 — 빈칸보다 낫다.
-     */
-    private static final Map<String, String> VIOLATION_REASONS = Map.of(
-            "진단명", "진단명이나 장애 유형이 단정적으로 적혀 있습니다",
-            "개인정보표현", "전화번호·주민번호 같은 개인정보가 그대로 적혀 있습니다",
-            "다수아동언급", "다른 아이의 이름이 함께 적혀 있습니다",
-            "확정적표현", "관찰이 아니라 단정하는 표현이 있습니다",
-            "추측성표현", "관찰되지 않은 내용을 추측한 표현이 있습니다",
-            "감정적표현", "감정이나 평가가 섞인 표현이 있습니다",
-            "위험행동표현", "위험 행동이 그대로 묘사돼 있습니다",
-            "건강관리기록", "질병·복약·병원 진료 같은 건강 정보가 적혀 있습니다");
 
     private final ValidationResultRepository validationResultRepository;
     private final JournalEntryRepository journalEntryRepository;
@@ -158,15 +141,8 @@ public class ValidationQueueService {
     }
 
     private static String describeViolation(List<String> issueTypes) {
-        if (issueTypes.isEmpty()) {
-            // AI가 BLOCK을 주면서 유형을 안 보낸 경우 — 화면이 빈칸이 되면 선생님이 할 수 있는 게 없다.
-            return "검증에서 문제가 발견됐습니다. 원본을 확인해주세요";
-        }
-        return issueTypes.stream()
-                .map(type -> VIOLATION_REASONS.getOrDefault(type, type))
-                .distinct()
-                .reduce((a, b) -> a + " / " + b)
-                .orElseThrow();
+        // 유형 → 문장 표와 유형이 없을 때의 문장은 Gate 1 확인 표시와 같이 쓴다 (ValidationReasons)
+        return String.join(" / ", ValidationReasons.sentencesOf(issueTypes));
     }
 
     private static List<String> parseIssueTypes(String raw, Long validationResultId) {

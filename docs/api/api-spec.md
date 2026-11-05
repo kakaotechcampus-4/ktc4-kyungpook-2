@@ -25,7 +25,7 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 | # | 항목 | 현황 | 프론트 의견 |
 | --- | --- | --- | --- |
 | 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`(로컬 Compose의 Caddy를 거치면 `http://localhost/login/oauth2/code/kakao`), 운영 `https://iitda.duckdns.org/login/oauth2/code/kakao`. 동의 항목은 현재 `profile_nickname`만 요청합니다(§2.4) | 보호자 연결은 초대 코드 방식으로 확정돼(§5.1) 전화번호 동의 항목은 필요 없습니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
-| 2 | **세션 전달 방식** | **확정·구현됨** — `access_token` httpOnly 쿠키(1시간). 쓰기 요청은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보냅니다. refresh token은 없습니다 | - |
+| 2 | **세션 전달 방식** | **확정·구현됨** — `access_token` httpOnly 쿠키(3시간). 쓰기 요청은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보냅니다. refresh token은 없습니다 | - |
 | 3 | **필드 네이밍** | **확정·구현됨** — 프론트↔백엔드 JSON API 는 요청·응답 모두 camelCase입니다(Jackson 기본값). 백엔드↔AI 통신은 별도로 snake_case 입니다 | - |
 | 4 | **보호자–아이 연결 방식** | **확정·구현됨 (10.12 변경)** — **초대 코드** 방식입니다. 기관이 아이를 등록하면 10분짜리 일회용 코드가 나오고, 기관이 카톡 등으로 직접 보냅니다. 보호자는 가입한 뒤 코드를 입력해 연결됩니다(§5.1). SMS·전화번호 대조는 쓰지 않습니다. 이전의 "대기 중 연결 요청" 방식은 매칭 키를 정할 수 없어 폐기했습니다. (이것은 **보호자 ↔ 아이** 연결 이야기입니다. 이미 연결된 아이를 **다른 기관**에 붙이는 기관 코드 요청(G-44, O-60~O-62)은 아이와 기관이 이미 정해져 있어 매칭 키 문제가 없습니다) | 링크(`/parent/invite?code=…`)로 보내면 로그인·가입 동안 코드를 sessionStorage에 들고 있다가 가입 뒤 G-04를 부르면 됩니다. 링크가 안 열리는 경우를 위해 코드 입력 칸도 남겨 주세요 |
 | 4-1 | **역할 구분** | **확정·구현됨** — 카카오 로그인 뒤 **회원가입에서 사용자가 직접 선택**합니다(§2.6). 기관은 기관명·유형·사업자등록번호를 함께 입력하며, 사업자등록번호는 형식만 검사합니다 | 로그인 직후 `/auth/me`의 `signupCompleted`가 `false`면 역할 선택 화면으로 보냅니다. sessionStorage로 역할을 정하던 방식은 이 흐름으로 바꿔야 합니다 |
@@ -767,7 +767,7 @@ O-15 ~ O-19 공통 오류:
     "record": { "id": "5", "fileName": "0821_특이사항.txt", "type": "특이사항",
                 "capturedAt": "2026-08-21T16:00:00+09:00", "preview": "…" },
     "childName": "김하늘",
-    "violationReason": "다른 아이의 이름이 함께 적혀 있습니다" }
+    "violationReason": "다른 아이의 이름이 함께 적혀 있어요" }
 ]
 ```
 
@@ -784,14 +784,14 @@ O-15 ~ O-19 공통 오류:
 >     "record": { "id": "5", "fileName": "0821_특이사항.txt",
 >                 "capturedAt": "2026-08-21", "preview": "…", "fullContent": "…" },
 >     "childName": "김하늘",
->     "violationReason": "전화번호·주민번호 같은 개인정보가 그대로 적혀 있습니다",
+>     "violationReason": "전화번호·주민번호 같은 개인정보가 그대로 적혀 있어요",
 >     "violationCode": ["개인정보표현"] }
 > ]
 > ```
 >
 > | 항목 | 값 |
 > | --- | --- |
-> | `violationReason` | AI가 보낸 `issue_types`를 선생님이 읽을 문장으로 바꾼 값. 유형이 여러 개면 ` / `로 잇습니다. AI가 목록에 없는 유형을 보내면 코드를 그대로 보여주고, 유형 자체가 없으면 "검증에서 문제가 발견됐습니다. 원본을 확인해주세요"로 내려갑니다 |
+> | `violationReason` | AI가 보낸 `issue_types`를 선생님이 읽을 문장으로 바꾼 값. 유형이 여러 개면 ` / `로 잇습니다. AI가 목록에 없는 유형을 보내면 코드를 그대로 보여주고, 유형 자체가 없으면 "검증에서 문제가 발견됐어요. 원본을 확인해 주세요"로 내려갑니다. 유형 → 문장 표는 O-30 `reviewFlags[].reasons` 와 같습니다 (`ValidationReasons`) |
 > | `violationCode` | AI `issue_types` 원본 배열 (`진단명`·`개인정보표현` 등, `AI/validation/config.py`) |
 > | `record.fullContent` | 위반 문장이 60자 뒤에 있으면 미리보기만으로는 무엇을 고쳐야 할지 알 수 없어, 매칭 확인 큐(#111)와 같은 이유로 전체 본문도 함께 내려갑니다 |
 > | `record.type` | **내려가지 않습니다.** `RecordResponse`에 `type` 필드가 없습니다 — 기록 유형 값 목록이 아직 팀에서 안 정해졌습니다 |
@@ -916,7 +916,8 @@ O-15 ~ O-19 공통 오류:
     "claims": [ { "index": 0, "text": "오전 활동에서 블록을 다섯 층까지 쌓았다." }, { "index": 1, "text": "…" } ],
     "noContent": false, "needsReview": true, "reviewReasons": ["다른아동이름"],
     "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
-    "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"] } ] }
+    "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"],
+                      "reasons": ["관찰되지 않은 내용을 추측한 표현이 있어요"] } ] }
 ]
 ```
 
@@ -928,7 +929,7 @@ O-15 ~ O-19 공통 오류:
 | `noContent` | 그날 기록에 요약할 내용이 없다는 결과 (#244). `content` 는 `""`, `claims` 는 `[]` 이고 `uncoveredEntries` 가 **이 요약에 묶인 기록 원본 전체**입니다. "요약할 내용 없음" 카드로 보여주고 원본을 펼쳐 두세요 — 교사가 "왜 없지?" 를 바로 확인할 수 있게. 버튼은 [확인](O-31 `confirm`)과 [요약 되돌리기](O-31 `revert`) 둘만 둡니다 |
 | `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
 | `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
-| `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유(`issue_types` 원본) |
+| `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유. `issueTypes` 는 AI 코드 원본, `reasons` 는 선생님이 읽을 문장입니다. 받은 순서대로 바꾸되 같은 문장은 한 번만 남겨 **두 배열의 칸이 짝지어지지 않습니다**. **화면은 `reasons` 를 보여 줍니다** — 코드를 그대로 띄우지 않습니다 (#351). 유형이 없거나 깨졌으면 `reasons` 는 "검증에서 문제가 발견됐어요. 원본을 확인해 주세요" 한 줄입니다. 문장 표는 O-24 `violationReason` 과 같습니다 |
 
 `reviewFlags` 는 검증이 짚은 구간이 **요약 문장의 근거 구간과 같은 일지에서 겹칠 때만** 나옵니다. 요약에 안 실린
 부분의 문제까지 띄우지 않기 위해서입니다. 검증 사유와 구간이 짝지어져 있지 않아 일지 단위로 판단하고, 겹치면 그 일지의

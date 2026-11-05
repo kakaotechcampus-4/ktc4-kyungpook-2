@@ -297,6 +297,7 @@ function PendingItem({
   const approveBlocked = item.processing || blankEdit || nothingLeft;
   const countText = `수정 ${edits} · 삭제 ${dels} · 추가 ${adds}`;
   const flagged = item.needsReview || item.reviewFlags.length > 0;
+  const flagReasons = [...new Set(item.reviewFlags.flatMap((f) => f.reasons))];
 
   function setLine(i: number, patch: Partial<Line>) {
     setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -415,8 +416,9 @@ function PendingItem({
             ) : null}
             {item.reviewFlags.length > 0 ? (
               <p className="text-[14px] leading-6">
-                검증이 확인을 요청한 원본 일지 {item.reviewFlags.length}건 ·{" "}
-                {[...new Set(item.reviewFlags.flatMap((f) => f.issueTypes))].join(", ")}
+                검증이 확인을 요청한 원본 일지 {item.reviewFlags.length}건
+                {/* 사유가 없는 예전 서버 응답이어도 안내가 " · " 에서 끊기지 않게 있을 때만 잇는다 */}
+                {flagReasons.length > 0 ? ` · ${flagReasons.join(" · ")}` : null}
               </p>
             ) : null}
           </div>

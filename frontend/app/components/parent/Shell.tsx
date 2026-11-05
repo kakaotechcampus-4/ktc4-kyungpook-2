@@ -55,9 +55,10 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
         </header>
       ) : null}
 
+      {/* 아래 여백은 하단 메뉴 자리다. md:py-6 으로 쓰면 넓은 화면에서 pb-24 를 덮어 끝 내용이 메뉴에 가려진다 (#351) */}
       <main
         aria-busy={navigating}
-        className={`flex-1 px-4 py-5 transition-opacity duration-200 md:px-6 md:py-6 ${isOnboarding ? "" : "pb-24"} ${navigating ? "opacity-60" : ""}`}
+        className={`flex-1 px-4 pt-5 transition-opacity duration-200 md:px-6 md:pt-6 ${isOnboarding ? "pb-5 md:pb-6" : "pb-24"} ${navigating ? "opacity-60" : ""}`}
       >
         {children}
       </main>

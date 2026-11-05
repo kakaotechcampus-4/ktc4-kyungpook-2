@@ -388,7 +388,7 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
   {
     id: "bq_01",
     childName: "김OO",
-    violationReason: "다른 아이 이름이 함께 포함되어 있습니다",
+    violationReason: "다른 아이의 이름이 함께 적혀 있어요",
     record: {
       id: "rrf_a301",
       fileName: "0819_관찰일지.txt",
@@ -401,7 +401,7 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
   {
     id: "bq_02",
     childName: null,
-    violationReason: "진단으로 읽히는 확정적 표현이 포함되어 있습니다",
+    violationReason: "진단명이나 장애 유형이 단정적으로 적혀 있어요",
     record: {
       id: "rrf_a402",
       fileName: "0818_특이사항.txt",
@@ -450,7 +450,13 @@ export const GATE1_QUEUE: SummaryItem[] = [
     needsReview: true,
     reviewReasons: ["다른아동이름"],
     uncoveredEntries: [{ journalEntryId: "je_5103", content: "내일 하원 시간이 오후 4시로 바뀝니다." }],
-    reviewFlags: [{ journalEntryId: "je_5101", issueTypes: ["추측성표현"] }],
+    reviewFlags: [
+      {
+        journalEntryId: "je_5101",
+        issueTypes: ["추측성표현"],
+        reasons: ["관찰되지 않은 내용을 추측한 표현이 있어요"],
+      },
+    ],
   }),
   // 같은 날 새 기록을 반영하는 중 — 고치기·승인이 잠긴다
   gate1Mock({

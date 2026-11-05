@@ -2,6 +2,7 @@ import { Link, useLoaderData } from "react-router";
 import { NotReadyPage } from "@/components/org/NotReady";
 import { Card, EmptyState, EvidenceChip, InstitutionChip, PageHeader } from "@/components/ui";
 import { getInsights, isReady } from "@/lib/api";
+import { evidenceInstitutions } from "@/lib/insight";
 import type { Gate2Status } from "@/lib/types";
 
 const GATE2_LABEL: Record<Gate2Status, { text: string; cls: string }> = {
@@ -68,7 +69,9 @@ function InsightsPage() {
                 <p className="mb-2 flex flex-wrap items-center gap-1.5 text-[14px] text-ink2">
                   <span className="font-semibold">근거를 제공한 기관</span>
                   <span className="text-muted">·</span>
-                  <InstitutionChip institution={i.primarySource} withName />
+                  {evidenceInstitutions(i).map((inst) => (
+                    <InstitutionChip key={inst.id} institution={inst} withName />
+                  ))}
                 </p>
 
                 {/* 근거 칩은 누르지 않는다 — Gate 2 와 같다. 기관이 근거 기록 내용을 볼 API 가 없다 */}

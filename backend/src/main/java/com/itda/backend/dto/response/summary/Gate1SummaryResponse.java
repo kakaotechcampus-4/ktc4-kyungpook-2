@@ -41,7 +41,13 @@ public record Gate1SummaryResponse(
     public record UncoveredEntry(Long journalEntryId, String content) {
     }
 
-    /** 검증 issue_types 원본. 사유 문장 변환은 화면 확정 뒤에 정한다. */
-    public record ReviewFlag(Long journalEntryId, List<String> issueTypes) {
+    /**
+     * 검증이 확인을 요청한 원본 일지 하나.
+     *
+     * @param issueTypes 검증 issue_types 원본 코드. 지금 화면은 쓰지 않는다 — O-24 {@code violationCode} 처럼 코드로
+     *                   가를 일이 생길 때를 위해 남긴다
+     * @param reasons    선생님이 읽을 문장 ("다른 아이의 이름이 함께 적혀 있어요"). 화면은 이것을 보여 준다
+     */
+    public record ReviewFlag(Long journalEntryId, List<String> issueTypes, List<String> reasons) {
     }
 }
