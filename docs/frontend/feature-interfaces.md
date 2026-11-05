@@ -305,7 +305,7 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `resolveMatchingItem` | `(id: string, resolution: { action: "assign"; childId: string } \| { action: "not_ours" }) => Promise<{ ok: true }>` | I-06 |
 | `getBlockedQueue` | `() => Promise<BlockedItem[]>` | I-03, I-07, 사이드바 배지 |
 | `resolveBlockedItem` | `(id: string, action: "hold") => Promise<{ ok: true }>` — O-25 보류. `reupload` 는 #357 부터 없음 | I-07 |
-| `reviseBlockedItem` | `(id: string, content: string) => Promise<{ ok: true }>` — O-25 고쳐서 다시 검사(#357). 고치지 않은 본문·이미 처리된 건 400, 없는 건 404 | I-07 |
+| `reviseBlockedItem` | `(id: string, content: string) => Promise<{ ok: true }>` — O-25 고쳐서 다시 검사(#357). 400 은 `code` 로 이유를 나눈다 — 빈 본문·너무 긺 `INVALID_REQUEST`, 고치지 않음 `VALIDATION_RESULT_CONTENT_UNCHANGED`, 공유 끝난 아이 `VALIDATION_RESULT_CHILD_NOT_SHARED`(보류만 가능), 옛 카드 `VALIDATION_RESULT_OUTDATED`, 이미 처리됨 `VALIDATION_RESULT_INVALID_REQUEST`. 없는 건 404 | I-07 |
 | `getGate1Queue` | `(gate1Status?: "pending" \| "hold") => Promise<SummaryItem[]>` | I-03, I-08 |
 | `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "hold" \| "remove" \| "confirm" \| "revert"; cards?: Gate1Card[]; version: string }) => Promise<{ summaryId: string }>` · `confirm` · `revert` 는 `noContent` 요약만 | I-08 |
 | `reopenGate1` | `(summaryId: string) => Promise<{ summaryId: string }>` | I-08 |
