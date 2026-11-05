@@ -90,7 +90,7 @@ GET /api/v1/auth/me
 | `role` | `"org"` \| `"parent"` | 아니오 | `signupCompleted: true`일 때만. `admin`은 아직 없습니다 |
 | `institutionId` | string | 아니오 | `role === "org"`일 때만 |
 | `institutionName` | string | 아니오 | `role === "org"`일 때만. 가입 때 입력한 기관명입니다 (#236) |
-| `termsAgreed` | boolean | 예 | 보호자가 서비스 약관(지금 판)에 동의했는지 (§2.5). `false`면 프론트는 약관 단계(`/parent/invite`)로 보냅니다. 기관은 늘 `true`, 가입 미완료는 `false` |
+| `termsAgreed` | boolean | 예 | 자기 역할의 서비스 약관(지금 판)에 동의했는지 (§2.5). `false`면 프론트는 보호자를 약관 단계(`/parent/invite`)로, 기관을 기관 약관 화면(`/org-terms`)으로 보냅니다. 가입 미완료는 `false` |
 
 **프론트는 가입 여부를 `signupCompleted`만 보고 분기합니다.** `role`이 없다고 로그인 화면으로 보내면
 안 됩니다 — 가입 미완료는 정상 상태입니다.
@@ -154,19 +154,25 @@ GET /api/v1/dev/login?as=parent1       ← 브라우저 주소창으로 연다 (
 
 ### 2.5 서비스 약관 동의
 
-> **구현 완료 (#337).** 보호자만 씁니다. 카카오 동의 항목과 별개로 서버가 동의 기록을 남깁니다(P-01, DB 스키마 §4.3).
+> **구현 완료 (보호자 #337 · 기관 #354).** 보호자(P-01)와 기관 담당자(I-16)가 씁니다. 카카오 동의 항목과 별개로 서버가 동의 기록을 남깁니다(DB 스키마 §4.3).
 
 ```http
 POST /api/v1/auth/terms   → 200 OK
-{ "agreed": ["tos", "privacy"] }
+{ "agreed": ["tos", "privacy"] }                               보호자
+{ "agreed": ["org_tos", "org_privacy", "org_child_data"] }     기관 담당자
 ```
 
 출입증 쿠키와 `X-XSRF-TOKEN` 헤더가 필요합니다.
 
-| 키 | 라벨 | 필수 |
-| --- | --- | --- |
-| `tos` | 서비스 이용약관 동의 | 예 |
-| `privacy` | 개인정보와 민감정보 수집 동의 | 예 |
+| 키 | 라벨 | 역할 | 필수 |
+| --- | --- | --- | --- |
+| `tos` | 서비스 이용약관 동의 | 보호자 | 예 |
+| `privacy` | 개인정보와 민감정보 수집 동의 | 보호자 | 예 |
+| `org_tos` | 기관 서비스 이용약관 동의 | 기관 담당자 | 예 |
+| `org_privacy` | 담당자 개인정보 수집 동의 | 기관 담당자 | 예 |
+| `org_child_data` | 아동 정보 보호 서약 | 기관 담당자 | 예 |
+
+자기 역할의 약관만 보냅니다. 다른 역할의 약관이 섞이면 `400`입니다.
 
 예전 초안의 선택 항목 `notify`(새로운 소식 알림 받기)는 뺐습니다 — 알림을 보내는 기능이 없습니다. 보내면 모르는 키라 `400`입니다.
 
@@ -179,23 +185,22 @@ POST /api/v1/auth/terms   → 200 OK
 **처리 규칙**
 
 1. 약관의 **판은 서버가 채웁니다.** 프론트는 키만 보냅니다.
-2. 같은 판에 이미 동의했으면 아무것도 바꾸지 않고 같은 응답입니다(멱등). 같은 보호자의 요청이 겹쳐도 회원 행을 잠가 하나씩 처리하므로 둘 다 `200`입니다.
+2. 같은 판에 이미 동의했으면 아무것도 바꾸지 않고 같은 응답입니다(멱등). 같은 회원의 요청이 겹쳐도 회원 행을 잠가 하나씩 처리하므로 둘 다 `200`입니다.
 3. 기록은 쌓기만 합니다. 판이 바뀐 뒤 다시 동의하면 새 판 기록이 더해지고 옛 기록은 남습니다. 철회 API 는 없습니다(필수 약관 철회는 회원 탈퇴).
-4. 판이 바뀌면 — 개인정보와 민감정보 수집(`privacy`)은 **지금 판에 다시 동의해야** 합니다. 이용약관(`tos`)은 한 번 동의했으면 다시 받지 않습니다(바뀐 내용은 공지로 알립니다 — 공지 기능은 아직 없습니다).
+4. 판이 바뀌면 — 개인정보 수집(`privacy` · `org_privacy`)과 아동 정보 보호 서약(`org_child_data`)은 **지금 판에 다시 동의해야** 합니다. 이용약관(`tos` · `org_tos`)은 한 번 동의했으면 다시 받지 않습니다(바뀐 내용은 공지로 알립니다 — 공지 기능은 아직 없습니다).
 
 | 상태 | 코드 | 조건 | 프론트 동작 |
 | --- | --- | --- | --- |
-| 400 | `INVALID_REQUEST` | `agreed` 누락 · 빈 목록 · `null` 원소, 모르는 키, 필수 약관 누락 | "동의를 저장하지 못했어요" 표시 |
+| 400 | `INVALID_REQUEST` | `agreed` 누락 · 빈 목록 · `null` 원소, 모르는 키, 다른 역할의 약관이 섞임, 필수 약관 누락 | "동의를 저장하지 못했어요" 표시 |
 | 401 | `UNAUTHORIZED` · `SESSION_USER_NOT_FOUND` | 비로그인 · 없는 회원 | 로그인 화면으로 |
 | 403 | `SIGNUP_NOT_COMPLETED` | 가입 미완료 | 가입 화면으로 |
-| 403 | `PARENT_REQUIRED` | 기관 담당자 | |
 | 403 | `FORBIDDEN` | CSRF 토큰 누락 또는 불일치 | |
 
-**차단** — 동의하지 않은 보호자(`/auth/me` 의 `termsAgreed: false`)는 `/auth/me` · `/auth/terms` · `/auth/logout` · 개발용 로그인 · 헬스 체크 외의
-API 가 모두 `403 TERMS_NOT_AGREED`입니다. 가입 미완료 차단과 같은 필터가 막고, **가입 미완료를 먼저 봅니다.** 기관 담당자는 영향이 없습니다.
-프론트는 공통 요청 함수에서 이 오류를 받으면 약관 단계(`/parent/invite`)로 보냅니다.
+**차단** — 동의하지 않은 회원(`/auth/me` 의 `termsAgreed: false`, 보호자 · 기관 담당자 모두)은 `/auth/me` · `/auth/terms` · `/auth/logout` · 개발용 로그인 · 헬스 체크 외의
+API 가 모두 `403 TERMS_NOT_AGREED`입니다. 가입 미완료 차단과 같은 필터가 막고, **가입 미완료를 먼저 봅니다.**
+프론트는 공통 요청 함수에서 이 오류를 받으면 세션을 다시 읽어 기관은 `/org-terms`, 보호자는 약관 단계(`/parent/invite`), 로그인이 풀렸으면 로그인 화면으로 보냅니다. 세션 조회가 실패하면 옮기지 않고 그 화면의 오류 처리에 맡깁니다.
 
-> **아직 없는 것** — 약관 본문과 "약관 보기" 화면(라벨만 있습니다), 기관 담당자 약관, 약관이 바뀌었을 때 앱 안 공지.
+> **아직 없는 것** — 약관 본문과 "약관 보기" 화면(라벨만 있습니다), 약관이 바뀌었을 때 앱 안 공지.
 
 ### 2.6 회원가입
 
@@ -237,13 +242,13 @@ POST /api/v1/auth/signup   → 201 Created
 가입 화면에서 기관 입력란에 쓰다가 보호자로 바꿨다면, 폼의 `""` 값을 그대로 싣지 말고 필드를 빼 주세요.
 아이 연결은 가입과 별개입니다.
 
-**응답 — `201 Created`.** 본문은 §2.2의 가입 완료 응답과 같습니다. 막 가입한 보호자는 동의 기록이 없어
-`termsAgreed: false`이고(프론트가 약관 단계로 갑니다), 기관은 `true`입니다.
+**응답 — `201 Created`.** 본문은 §2.2의 가입 완료 응답과 같습니다. 막 가입한 회원은 보호자 · 기관 모두 동의 기록이 없어
+`termsAgreed: false`입니다(프론트가 그 역할의 약관 화면으로 갑니다).
 
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true, "termsAgreed": true }
+  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true, "termsAgreed": false }
 }
 ```
 
@@ -1903,7 +1908,7 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | `SIGNUP_NOT_COMPLETED` | 403 | 가입 미완료 회원이 `/auth/me` · `/auth/signup` · `/auth/logout` 외 API 호출 → 역할 선택 화면으로 이동 |
 | `ALREADY_SIGNED_UP` | 409 | 이미 가입 완료 → `/auth/me` 재조회 후 역할별 홈으로 이동 (§2.6) |
 | `DUPLICATE_BUSINESS_NUMBER` | 409 | "이미 등록된 사업자등록번호입니다" (§2.6) |
-| `TERMS_NOT_AGREED` | 403 | 약관에 동의하지 않은 보호자가 `/auth/me` · `/auth/terms` · `/auth/logout` 외 API 호출 → 약관 동의 화면으로 이동 (§2.5) |
+| `TERMS_NOT_AGREED` | 403 | 자기 역할의 약관에 동의하지 않은 회원(보호자 · 기관 담당자)이 `/auth/me` · `/auth/terms` · `/auth/logout` 외 API 호출 → 그 역할의 약관 화면으로 이동 (§2.5) |
 | `INSTITUTION_CODE_NOT_FOUND` | 404 | "일치하는 기관을 찾지 못했어요. 코드를 다시 확인해주세요." (G-43 조회 · G-44 요청) |
 | `INSTITUTION_ALREADY_LINKED` | 409 | "이미 연결된 기관이에요." (G-44 요청 · O-61 수락) |
 | `LINK_REQUEST_NOT_FOUND` | 404 | 기다리는 연결 요청이 없는 아이. 목록을 다시 불러옵니다 (O-61 · O-62) |

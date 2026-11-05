@@ -636,8 +636,8 @@ PARENT
 `invitation`(§5.3)은 아동-보호자 연결 전용이고, 회원가입 자체와는 무관하다.
 
 `role`이 `NULL`인 사용자가 `/auth/me`, `/auth/signup`, `/auth/logout` 외의 보호 API를 호출하면
-`403 SIGNUP_NOT_COMPLETED`로 막는다. 가입한 보호자가 서비스 약관에 동의하지 않았으면 여기에 `/auth/terms` 를
-더한 경로 외에는 `403 TERMS_NOT_AGREED` 로 막는다 (§4.3). 가입을 먼저 본다.
+`403 SIGNUP_NOT_COMPLETED`로 막는다. 가입한 회원(보호자 · 기관 담당자)이 자기 역할의 서비스 약관에 동의하지 않았으면 여기에
+`/auth/terms` 를 더한 경로 외에는 `403 TERMS_NOT_AGREED` 로 막는다 (§4.3). 가입을 먼저 본다.
 
 한 사람은 한 기관에만 속한다. 그래서 중간 테이블 없이 `organization_id` 컬럼 하나로 둔다.
 
@@ -695,44 +695,50 @@ ACTIVITY_SUPPORT
 
 삭제 기능은 아직 없다. `deleted_at`을 두지 않는다.
 
-### 4.3 `terms_agreement` ✅ — ✅ 구현 (`TermsAgreement`, #337)
+### 4.3 `terms_agreement` ✅ — ✅ 구현 (`TermsAgreement`, #337 · 기관 약관 #354)
 
-> **근거** — 보호자 첫 화면(P-01)의 서비스 약관 동의. 아이의 발달 · 건강 관찰 기록을 다루는 서비스라
-> 누가 언제 어느 약관에 동의했는지 남긴다
+> **근거** — 보호자 첫 화면(P-01)과 기관 약관 화면(I-16)의 서비스 약관 동의. 아이의 발달 · 건강 관찰 기록을 다루는
+> 서비스라 누가 언제 어느 약관에 동의했는지 남긴다
 
-보호자가 서비스 약관에 동의한 기록 한 줄. **쌓기만 한다** — 약관 판이 바뀌어 다시 동의하면 새 판 줄이 하나 더 생기고
+회원(보호자 · 기관 담당자)이 서비스 약관에 동의한 기록 한 줄. **쌓기만 한다** — 약관 판이 바뀌어 다시 동의하면 새 판 줄이 하나 더 생기고
 옛 줄은 그대로 남는다. 고치거나 지우지 않으며 `deleted_at` 도 없다. 필수 약관을 철회하는 길은 회원 탈퇴다.
 
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
-| `user_id` | BIGINT | N | 동의한 보호자 (`users.id`, FK 제약 없음) |
+| `user_id` | BIGINT | N | 동의한 회원 (`users.id`, FK 제약 없음) |
 | `term_key` | VARCHAR(20) | N | 어느 약관인지 |
 | `version` | VARCHAR(20) | N | 동의한 약관의 판. 서버 상수가 채운다 — 프론트가 보내지 않는다 |
 | `created_at` | DATETIME | N | 동의한 시각 |
 
 **UNIQUE** — `uk_terms_agreement_user_key_version (user_id, term_key, version)`. 같은 판에 두 번 동의해도 줄은 하나다.
-같은 보호자의 동의 요청이 겹치면 `users` 행을 잠가 하나씩 처리한다 — 뒤에 온 쪽은 앞쪽이 남긴 줄을 보고 넣지 않는다.
+같은 회원의 동의 요청이 겹치면 `users` 행을 잠가 하나씩 처리한다 — 뒤에 온 쪽은 앞쪽이 남긴 줄을 보고 넣지 않는다.
 UNIQUE 는 마지막 안전망이다.
 
 **`term_key`**
 
 ```
-TOS        서비스 이용약관
-PRIVACY    개인정보와 민감정보 수집
+TOS              서비스 이용약관                  보호자
+PRIVACY          개인정보와 민감정보 수집         보호자
+ORG_TOS          기관 서비스 이용약관             기관 담당자
+ORG_PRIVACY      담당자 개인정보 수집             기관 담당자
+ORG_CHILD_DATA   아동 정보 보호 서약              기관 담당자
 ```
 
-API 에는 소문자(`tos` · `privacy`)로 오간다. 둘 다 필수다.
+API 에는 소문자(`tos` · `org_child_data` …)로 오간다. **역할마다 자기 약관이 모두 필수이고, 다른 역할의 약관은 받지 않는다**
+(섞여 오면 `400 INVALID_REQUEST`, 아무 줄도 남기지 않는다).
 
-**판과 다시 받기 — 코드 상수(`TermsCatalog`)가 정한다.** 판은 지금 날짜 이름표(`2026-11-03`)다. 약관 본문은 아직 없다.
+**판과 다시 받기 — 코드 상수(`TermsCatalog`)가 정한다.** 판은 날짜 이름표다(보호자 약관 `2026-11-03`, 기관 약관
+`2026-11-05`). 약관 본문은 아직 없다.
 
 | 약관 | 판이 바뀌면 | 동의한 것으로 보는 조건 |
 | --- | --- | --- |
-| `TOS` | 다시 받지 않는다 (바뀐 내용은 공지로 알린다 — 공지 기능은 아직 없다) | 어느 판이든 줄이 있다 |
-| `PRIVACY` | 다시 받는다 (수집 항목이 바뀌면 새로 동의가 필요하다) | **지금 판** 줄이 있다 |
+| `TOS` · `ORG_TOS` | 다시 받지 않는다 (바뀐 내용은 공지로 알린다 — 공지 기능은 아직 없다) | 어느 판이든 줄이 있다 |
+| `PRIVACY` · `ORG_PRIVACY` | 다시 받는다 (수집 항목이 바뀌면 새로 동의가 필요하다) | **지금 판** 줄이 있다 |
+| `ORG_CHILD_DATA` | 다시 받는다 (기관이 지킬 의무라, 바뀐 의무에 다시 동의해야 한다) | **지금 판** 줄이 있다 |
 
-두 약관 모두 조건을 채워야 동의한 보호자다(`/auth/me` 의 `termsAgreed`). 기관 담당자는 약관이 없어 늘 동의한 것으로 보고
-줄도 남기지 않는다. 동의 기록에는 회원 · 약관 · 판 · 시각만 남긴다 — IP · 브라우저 정보는 모으지 않는다.
+자기 역할의 약관이 모두 조건을 채워야 동의한 회원이다(`/auth/me` 의 `termsAgreed`). 다른 역할 약관의 줄은 판정에 쓰지 않는다.
+동의 기록에는 회원 · 약관 · 판 · 시각만 남긴다 — IP · 브라우저 정보는 모으지 않는다.
 
 ---
 
@@ -2785,6 +2791,22 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 **보호자 약관 동의 (#337)** — `terms_agreement` 는 새 테이블이라 `ddl-auto: update` 가 UNIQUE · CHECK 까지 만든다. 배포 전 조치는 없다.
 나중에 약관 키(`term_key`)를 늘리면 `terms_agreement_term_key_check` 를 DROP 해야 저장된다.
 
+**기관 약관 동의 (#354) 배포 절차** — `term_key` 에 `ORG_TOS` · `ORG_PRIVACY` · `ORG_CHILD_DATA` 가 는다. 배포 DB 의
+`term_key` CHECK 는 `TOS` · `PRIVACY` 만 허용하므로 **새 버전 배포 전에 지운다.** 지우지 않으면 기관 동의 저장이 CHECK 위반으로
+실패하는데, 서버는 동의하지 않은 기관을 이미 막으므로 기관이 앱을 전혀 쓰지 못한다. 백엔드 · 프론트 자동 배포는 따로 돌아
+어느 쪽이 먼저 올라가도 잠깐 어긋난다(백엔드가 먼저면 예전 프론트가 막힌 기관을 보호자 초대 화면으로 보낸다). 그래서 이 순서로 한다.
+
+1. 팀 테스트를 멈춘다
+2. CHECK 의 실제 이름을 확인하고 지운다
+   ```
+   \d terms_agreement     term_key CHECK 의 이름 확인 (보통 terms_agreement_term_key_check)
+   ALTER TABLE terms_agreement DROP CONSTRAINT <확인한 이름>;
+   ```
+3. 머지 → 백엔드 · 프론트 배포가 둘 다 성공했는지 확인한다
+4. 열린 탭을 모두 새로고침한 뒤 테스트를 다시 시작한다
+
+새 컬럼 · 테이블은 없다. 이미 가입한 기관은 다음 접속 때 기관 약관 화면을 한 번 본다(동의 기록을 미리 채워 넣지 않는다).
+
 **준비물·확인사항 (#340)** — `checklist`·`checklist_target` 은 새 테이블이라 `ddl-auto: update` 가 UNIQUE · 인덱스까지 만든다. 배포 전 조치는 없다.
 
 새 컬럼 `failure_stage`·`failure_reason` 은 NULL 허용이라 `update` 가 기존 행이 있어도 더한다. **`update` 가 컬럼을
@@ -2849,3 +2871,4 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-11-03 | 동의를 철회한 아이는 요약·Gate 1 에서 막는다 — 상태를 바꾸지 않고 볼 때마다 그 기관 동의(§5.5 GRANTED)를 본다. 묶음 카드(O-34)·Gate 1 목록(O-30)에서 빼고, [요약](O-32)·Gate 1 결정(O-31)·보류 해제(O-33)는 404, 요약 워커는 AI 호출 전과 결과를 남기기 전에 보고 요약하지 않은 채 요청을 닫는다(일지는 요약 전 상태로). Gate 1 결정·보류 해제의 잠금 순서 추가(§3.3 잠금 표). 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #332 |
 | 2026-11-04 | 새 테이블 `terms_agreement`(§4.3) — 보호자 서비스 약관 동의 기록. 회원 · 약관(`TOS` · `PRIVACY`) · 판 · 동의 시각만 쌓고 고치거나 지우지 않는다. `(user_id, term_key, version)` UNIQUE. 판과 다시 받기는 코드 상수가 정한다(개인정보 수집만 판이 바뀌면 다시 받는다). 동의하지 않은 보호자는 보호 API 가 `403 TERMS_NOT_AGREED` (§4.1). 새 테이블이라 배포 전 조치 없음 (§11.4) | #337 |
 | 2026-11-04 | 새 테이블 `checklist`(§5.8) · `checklist_target`(§5.9) — 기관이 명부의 아이들에게 보내는 준비물 · 확인사항과 아이별 확인. 보낸 뒤 고치지 않고 내리기(`canceled_at`, 조건부 UPDATE)만 한다. 받는 아이는 보낸 순간의 명부, 확인은 아이 몫으로 한 번(조건부 UPDATE). 확인은 `child` → `checklist` 를 FOR SHARE 로 잡아 연결 해제 · 내리기와 줄을 선다(§3.3 잠금 순서 표). 공유 동의와 상관없다. 새 테이블이라 배포 전 조치 없음 (§11.4) | #344 |
+| 2026-11-05 | `terms_agreement.term_key` 에 기관 약관 `ORG_TOS` · `ORG_PRIVACY` · `ORG_CHILD_DATA` 추가 (§4.3). 역할마다 자기 약관이 모두 필수이고 다른 역할의 약관은 받지 않는다. 기관 개인정보 수집 · 아동 정보 보호 서약은 판이 바뀌면 다시 받는다. 동의하지 않은 기관 담당자도 보호 API 가 `403 TERMS_NOT_AGREED` (§4.1). enum 값 추가라 **배포 전 `term_key` CHECK 제거 필요** (§11.4) | #TBD |
