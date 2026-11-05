@@ -246,7 +246,12 @@ function failureOf(err: unknown, action: Action): Failure {
     }
   }
   if (err.status === 400 || err.status === 404) {
-    return { text: "이미 처리됐거나 없어진 기록이에요. 목록을 새로 불러왔어요.", refresh: true };
+    return {
+      text:
+        "이미 처리됐거나 없어진 기록이에요. 목록을 새로 불러왔어요." +
+        (action === "revise" ? " 고치던 글은 저장되지 않았어요." : ""),
+      refresh: true,
+    };
   }
   return { text: "처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", refresh: false };
 }
