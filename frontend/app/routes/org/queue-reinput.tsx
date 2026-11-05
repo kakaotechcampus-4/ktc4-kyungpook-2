@@ -12,6 +12,12 @@ import type { BlockedItem } from "@/lib/types";
 
 type Action = "revise" | "hold";
 
+/** 페이지 위 안내. 처리가 끝났거나 카드가 바뀌어 카드 안에 남길 수 없는 말을 여기 둔다 */
+type Notice = { tone: "done" | "warn"; text: string };
+
+/** 처리 실패 안내. 목록을 새로 받으면 카드가 사라지거나 바뀌므로 그때는 페이지 위에 남긴다 */
+type Failure = { text: string; refresh: boolean };
+
 export async function clientLoader() {
   return { items: await getBlockedQueue() };
 }
@@ -19,7 +25,7 @@ export async function clientLoader() {
 export default function ReinputQueuePage() {
   const { items } = useLoaderData<typeof clientLoader>();
   // 고친 카드는 큐에서 빠져 사라진다. 무엇이 됐는지 페이지에 남겨 둔다
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   return (
     <>
@@ -28,8 +34,13 @@ export default function ReinputQueuePage() {
       />
 
       {notice ? (
-        <p role="status" className="mb-4 rounded bg-passsoft px-3 py-2 text-[15px] text-pass">
-          {notice}
+        <p
+          role="status"
+          className={`mb-4 rounded px-3 py-2 text-[15px] ${
+            notice.tone === "done" ? "bg-passsoft text-pass" : "bg-reviewsoft text-review"
+          }`}
+        >
+          {notice.text}
         </p>
       ) : null}
 
@@ -52,7 +63,7 @@ function BlockedCard({
 }: {
   item: BlockedItem;
   /** 페이지 위 안내. 다른 처리를 시작하면 지난 안내를 지운다 */
-  onNotice: (message: string | null) => void;
+  onNotice: (notice: Notice | null) => void;
 }) {
   const revalidator = useRevalidator();
   const [busy, setBusy] = useState<Action | null>(null);
@@ -80,16 +91,23 @@ function BlockedCard({
     try {
       if (action === "revise") {
         await reviseBlockedItem(item.id, draft);
-        onNotice("다시 검사를 시작했어요. 통과하면 오늘의 업무에서 요약할 수 있어요.");
+        onNotice({
+          tone: "done",
+          text: "다시 검사를 시작했어요. 통과하면 오늘의 업무에서 요약할 수 있어요.",
+        });
       } else {
         await resolveBlockedItem(item.id, "hold");
       }
       await revalidator.revalidate();
     } catch (err) {
-      setError(messageOf(err, action));
-      // 이미 처리됐거나 없어진 건이면 목록을 새로 받아 화면을 서버와 맞춘다
-      if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
+      const failure = failureOf(err, action);
+      if (failure.refresh) {
+        // 이미 처리됐거나 카드가 바뀐 건이면 목록을 새로 받아 화면을 서버와 맞춘다. 이 카드는 사라지거나
+        // 새 카드로 바뀌므로 안내는 페이지 위에 남긴다
+        onNotice({ tone: "warn", text: failure.text });
         await revalidator.revalidate();
+      } else {
+        setError(failure.text);
       }
     } finally {
       setBusy(null);
@@ -203,17 +221,32 @@ function formatDate(value: string | null): string | null {
   return date.toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
 }
 
-function messageOf(err: unknown, action: Action): string {
-  if (!(err instanceof ApiError)) return "네트워크 연결을 확인하고 다시 시도해 주세요.";
-  if (action === "revise" && err.status === 400) {
-    // 본문 형식 문제 — 카드는 그대로 남아 있다
-    if (err.code === "INVALID_REQUEST") return "본문이 비어 있거나 너무 길어요. 고친 내용을 확인해 주세요.";
-    // 이미 처리됐거나 다른 선생님이 먼저 고친 기록은 목록을 새로 받으면 카드가 바뀌어 이 문구가 남지 않는다.
-    // 카드가 그대로라면 아이가 명단에서 빠졌거나 공유 동의가 꺼져 다시 검사할 수 없는 기록이다
-    return "다시 검사할 수 없는 기록이에요. 아이가 명단에서 빠졌거나 공유 동의가 꺼졌을 수 있어요. 이 기록은 보류해 주세요.";
+function failureOf(err: unknown, action: Action): Failure {
+  if (!(err instanceof ApiError)) {
+    return { text: "네트워크 연결을 확인하고 다시 시도해 주세요.", refresh: false };
+  }
+  if (err.status === 400) {
+    switch (err.code) {
+      case "VALIDATION_RESULT_OUTDATED":
+        return {
+          text:
+            "다른 선생님이 먼저 고쳐 다시 검사한 기록이에요. 새로 멈춘 이유를 보고 다시 처리해 주세요." +
+            (action === "revise" ? " 고치던 글은 저장되지 않았어요." : ""),
+          refresh: true,
+        };
+      case "INVALID_REQUEST":
+        return { text: "본문이 비어 있거나 너무 길어요. 고친 내용을 확인해 주세요.", refresh: false };
+      case "VALIDATION_RESULT_CONTENT_UNCHANGED":
+        return { text: "고친 내용이 없어요. 멈춘 이유에 적힌 부분을 고쳐 주세요.", refresh: false };
+      case "VALIDATION_RESULT_CHILD_NOT_SHARED":
+        return {
+          text: "아이가 명단에서 빠졌거나 공유 동의가 꺼져 다시 검사할 수 없어요. 이 기록은 보류해 주세요.",
+          refresh: false,
+        };
+    }
   }
   if (err.status === 400 || err.status === 404) {
-    return "이미 처리됐거나 없어진 기록입니다. 목록을 새로 불러왔습니다.";
+    return { text: "이미 처리됐거나 없어진 기록이에요. 목록을 새로 불러왔어요.", refresh: true };
   }
-  return "처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
+  return { text: "처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", refresh: false };
 }

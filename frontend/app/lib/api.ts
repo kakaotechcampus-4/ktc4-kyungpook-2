@@ -915,7 +915,8 @@ function tickSimulation() {
  *
  * 이 기록 보류 — 그 일지의 처리를 여기서 끝내고 큐에서 뺀다.
  * "수정한 원본 다시 올리기"(reupload)는 서버가 더 받지 않는다(#357). 본문은 reviseBlockedItem 으로 고친다.
- * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
+ * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 그 일지에 더 최근 판정이 생겼으면(다른 선생님이 고쳤는데
+ * 또 막힘) 400 VALIDATION_RESULT_OUTDATED, 없는 건은 404 다.
  */
 export async function resolveBlockedItem(id: string, action: "hold"): Promise<{ ok: true }> {
   if (mockFor("blockedQueue")) {
@@ -937,8 +938,13 @@ export const MAX_REVISED_CONTENT = 100_000;
  *
  * 막힌 일지의 본문을 고쳐 검증을 다시 받게 한다. 아이는 그대로다. 성공하면 큐에서 빠지고,
  * 통과하면 요약 대기, 또 막히면 큐에 최신 사유로 다시 뜬다.
- * 빈 본문·100000자 초과는 400 INVALID_REQUEST, 고치지 않은 본문·이미 처리된 건은
- * 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
+ * 400 은 code 로 이유를 나눈다.
+ * - INVALID_REQUEST: 빈 본문·100000자 초과
+ * - VALIDATION_RESULT_CONTENT_UNCHANGED: 앞뒤 공백 말고 고친 게 없다
+ * - VALIDATION_RESULT_CHILD_NOT_SHARED: 아이가 삭제됐거나 명단에서 빠졌거나 우리 기관 동의가 꺼졌다 — 보류만 할 수 있다
+ * - VALIDATION_RESULT_OUTDATED: 그 일지에 더 최근 판정이 있다(다른 선생님이 고쳤는데 또 막힘)
+ * - VALIDATION_RESULT_INVALID_REQUEST: 이미 처리됐거나 BLOCK 판정이 아니다
+ * 없는 건은 404 다.
  */
 export async function reviseBlockedItem(id: string, content: string): Promise<{ ok: true }> {
   if (mockFor("blockedQueue")) {
