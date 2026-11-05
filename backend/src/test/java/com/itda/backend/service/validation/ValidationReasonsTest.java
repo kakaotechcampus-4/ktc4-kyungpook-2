@@ -42,6 +42,15 @@ class ValidationReasonsTest {
                 .containsExactly("검증에서 문제가 발견됐어요. 원본을 확인해 주세요");
     }
 
+    /** 빈 문자열·공백 유형은 문장이 아니라 빈칸이다. 버리고, 남는 게 없으면 원본을 확인하라는 문장이다. */
+    @Test
+    void 빈_유형은_버리고_남는_게_없으면_원본을_확인하라고_한다() {
+        assertThat(ValidationReasons.sentencesOf(List.of("", " ")))
+                .containsExactly("검증에서 문제가 발견됐어요. 원본을 확인해 주세요");
+        assertThat(ValidationReasons.sentencesOf(List.of("", "추측성표현")))
+                .containsExactly("관찰되지 않은 내용을 추측한 표현이 있어요");
+    }
+
     /** 같은 문장이 두 번 서지 않게 한 번만 남긴다. 순서는 받은 순서 그대로다. */
     @Test
     void 같은_유형이_겹치면_한_번만_남긴다() {
