@@ -1,6 +1,7 @@
 package com.itda.backend.repository.insight;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,4 +30,7 @@ public interface InsightRunRepository extends JpaRepository<InsightRun, Long> {
      * 되돌리지 않으면 그 아동·기간은 <b>영영 처리되지 않는다</b>.
      */
     List<InsightRun> findByStatus(InsightRunStatus status);
+
+    /** 아이들의 그날 이후로 끝나는 실행 전부. 진행 현황(O-43)이 기간마다 최신 판을 고른다 — 한 번에 가져와 기간마다 묻지 않는다. */
+    List<InsightRun> findByChildIdInAndPeriodToGreaterThanEqual(Collection<Long> childIds, LocalDate periodTo);
 }

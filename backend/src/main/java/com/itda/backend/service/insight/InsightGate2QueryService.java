@@ -265,7 +265,7 @@ public class InsightGate2QueryService {
      * {@code InsightWorker}). <b>그 설정을 7 이 아닌 값으로 바꾸면 "주차" 라는 말 자체가 안 맞는다</b> —
      * 기간 단위를 바꾸는 날 이 문구도 같이 정해야 한다.
      */
-    private static String periodLabel(LocalDate periodFrom) {
+    static String periodLabel(LocalDate periodFrom) {
         int weekOfMonth = (periodFrom.getDayOfMonth() - 1) / 7 + 1;
         return "%d년 %d월 %d주차".formatted(periodFrom.getYear(), periodFrom.getMonthValue(), weekOfMonth);
     }
