@@ -464,8 +464,8 @@ function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
     reviewFlags: (raw.reviewFlags ?? []).map((f) => ({
       journalEntryId: String(f.journalEntryId),
       issueTypes: f.issueTypes ?? [],
-      // reasons 가 없는 예전 서버면 코드라도 보여 준다 — 빈칸보다 낫다
-      reasons: f.reasons ?? f.issueTypes ?? [],
+      // reasons 가 없는 예전 서버면 코드라도 보여 준다 — 빈칸보다 낫다. 빈 값은 버린다(안내가 " · " 에서 끊기지 않게)
+      reasons: (f.reasons ?? f.issueTypes ?? []).filter((r) => r.trim() !== ""),
     })),
   };
 }
