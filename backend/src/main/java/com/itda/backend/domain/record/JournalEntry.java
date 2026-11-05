@@ -82,6 +82,14 @@ public class JournalEntry {
     @Column(name = "failure_reason", length = 30)
     private FailureReason failureReason;
 
+    // 검증에서 막힌 본문을 선생님이 수정 요청 큐에서 마지막으로 고친 사람(user id)과 시각 (#357). 고친 적 없으면 비어 있다.
+    // 이전 본문은 따로 남기지 않는다 — 처음 올라온 글은 원본 파일(raw_record)에 그대로 있다.
+    @Column(name = "revised_by", length = 50)
+    private String revisedBy;
+
+    @Column(name = "revised_at")
+    private LocalDateTime revisedAt;
+
     private JournalEntry(Long rawRecordId, LocalDate entryDate, String content, Integer sequenceNo) {
         this.rawRecordId = rawRecordId;
         this.entryDate = entryDate;
@@ -195,6 +203,27 @@ public class JournalEntry {
     public void requestReupload() {
         requireAwaitingReinput();
         this.status = JournalEntryStatus.REUPLOAD_REQUESTED;
+    }
+
+    /**
+     * 선생님이 막힌 본문을 수정 요청 큐에서 고쳤다(#357). 고친 본문으로 검증을 다시 받도록 검증 대기로 보내고, 아동은 그대로 둔다.
+     * 고치지 않은 본문은 거절한다 — 같은 글을 다시 돌려 판정이 바뀌길 기다리는 우회가 되기 때문이다.
+     */
+    public void revise(String newContent, String reviserId) {
+        requireAwaitingReinput();
+        if (newContent == null || newContent.isBlank()) {
+            throw new IllegalArgumentException("고친 본문은 필수입니다.");
+        }
+        if (newContent.strip().equals(this.content.strip())) {
+            throw new IllegalArgumentException("본문이 고쳐지지 않았습니다.");
+        }
+        if (reviserId == null || reviserId.isBlank()) {
+            throw new IllegalArgumentException("고친 사람은 필수입니다.");
+        }
+        this.content = newContent;
+        this.revisedBy = reviserId;
+        this.revisedAt = LocalDateTime.now();
+        enterValidationQueue(this.childId);
     }
 
     /** 선생님이 이 기록을 보류했다(#122). 다음 단계로 가지 않는다. */
