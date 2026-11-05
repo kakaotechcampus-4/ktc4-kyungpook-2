@@ -543,6 +543,7 @@ UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변�
 | 연결 요청 수락 (O-61) | `child` → `child_organization` → `child_organization_request`. 요청 행은 잠그면서 처음 읽는다 — 그사이 연결 해제로 거둬진 요청을 옛 `PENDING` 으로 보지 않는다 |
 | 연결 요청 거절 (O-62) | `child` → `child_organization_request` |
 | 사람의 매칭 확정 (O-23 assign) | `child`. 잠근 뒤 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 새 확정이 성공하지 않는다 |
+| 막힌 일지 고쳐서 다시 검사 (O-25 revise) | `child` → `journal_entry`. 아이 행을 잠근 뒤 일지 행을 잠가 상태·최신 판정을 보고, 명부·그 기관 동의를 확인한다 — 철회·명부 제외가 커밋된 뒤에는 고치기가 성공하지 않는다(400, #357). 보류(O-25 hold)는 `journal_entry` 만 잠근다. 막힌 일지 행을 잠그는 다른 작업은 없다 |
 | Gate 1 결정 · 보류 해제 (O-31 · O-33) | `summary_result` → `child`. 요약 행을 잠가 결정끼리 줄을 세운 뒤 아이 행을 잠그고 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 승인·보류 해제가 성공하지 않는다(404, #332). Gate 2 승인(`insight_result` → `child`)과 같은 모양이고, `child` 를 먼저 잠그는 작업들은 요약 행을 잠그지 않아 교착이 없다 |
 | 인사이트 단건 열람 (G-36 · O-51) | `child` **FOR SHARE** → `sharing_history`(열람 시각 UPDATE 의 행 잠금). 잠글 아이는 `child_id` 값만 골라 알고, 권한 행은 잠근 뒤에 처음 읽는다. 철회·Gate 2 승인과는 줄을 서고 열람끼리는 `child` 에서 막지 않는다 — 같은 권한 행의 UPDATE 끼리만 기다린다 (§9.4) |
 | 돌봄 정보 저장 (G-13) | `child`. 잠근 뒤 보호자 연결·아이 삭제를 보고 덮어쓴다. 첫 저장이 겹쳐 행이 둘 생기지 않고, 연결 해제가 먼저 반영되면 403 이며 돌봄 정보는 생기지도 바뀌지도 않는다 |
@@ -1370,10 +1371,14 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 
 수정 요청 큐(O-25)에서 선생님이 처리하면 `VALIDATION_BLOCKED`가 아래 둘 중 하나가 된다 (#122, #357).
 `VALIDATION_BLOCKED`인 일지만 처리할 수 있고, 두 선생님이 동시에 처리하지 않도록 일지 행을 잠근 뒤 상태를 확인한다.
+화면이 보던 판정이 그 일지의 **최신 판정**이어야 한다 — 다른 선생님이 고쳤는데 또 막히면 일지는 다시 `VALIDATION_BLOCKED` 라
+상태만으로는 구분되지 않고, 옛 카드로 저장하면 그 선생님이 고친 본문을 덮어쓴다(400).
+고치기는 본문과 아이 이름을 다시 AI 검증으로 보내므로, 매칭 확정(O-23)과 같이 아이가 아직 명부에 있고 그 기관 동의가
+`ACTIVE` 인지 본다(§3.3 잠금 표).
 
 | 선생님 선택 | `journal_entry.status` | 뜻 |
 | --- | --- | --- |
-| 고쳐서 다시 검사 | `MATCHED` | `content`를 고친 본문으로 바꾸고 `revised_by`·`revised_at`을 채운다. 아동은 그대로, `agent_retry_count`는 0. 검증 워커가 다시 집어 가서 통과하면 `VALIDATED`, 또 막히면 `VALIDATION_BLOCKED`. 고치지 않은 본문(앞뒤 공백 제외 같은 글)은 거절한다 |
+| 고쳐서 다시 검사 | `MATCHED` | `content`를 고친 본문으로 바꾸고 `revised_by`·`revised_at`을 채운다. 아동은 그대로, `agent_retry_count`는 0. 검증 워커가 다시 집어 가서 통과하면 `VALIDATED`, 또 막히면 `VALIDATION_BLOCKED`. 고치지 않은 본문(앞뒤 공백 제외 같은 글)은 거절한다 — 실수로 그대로 저장하는 것과 같은 글을 그대로 다시 돌리는 우회를 막는 정도이고, 한 글자만 바꾸는 우회까지 막지는 못한다(`revised_by` 가 남는다) |
 | 이 기록 보류 | `VALIDATION_HELD` | 다음 단계로 가지 않는다 |
 
 #357 전에는 "수정한 원본 다시 올리기"(`REUPLOAD_REQUESTED`, 고친 내용을 새 파일로 올리고 이 일지는 끝)도 있었다. 파일을
@@ -2885,5 +2890,5 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-11-03 | 동의를 철회한 아이는 요약·Gate 1 에서 막는다 — 상태를 바꾸지 않고 볼 때마다 그 기관 동의(§5.5 GRANTED)를 본다. 묶음 카드(O-34)·Gate 1 목록(O-30)에서 빼고, [요약](O-32)·Gate 1 결정(O-31)·보류 해제(O-33)는 404, 요약 워커는 AI 호출 전과 결과를 남기기 전에 보고 요약하지 않은 채 요청을 닫는다(일지는 요약 전 상태로). Gate 1 결정·보류 해제의 잠금 순서 추가(§3.3 잠금 표). 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #332 |
 | 2026-11-04 | 새 테이블 `terms_agreement`(§4.3) — 보호자 서비스 약관 동의 기록. 회원 · 약관(`TOS` · `PRIVACY`) · 판 · 동의 시각만 쌓고 고치거나 지우지 않는다. `(user_id, term_key, version)` UNIQUE. 판과 다시 받기는 코드 상수가 정한다(개인정보 수집만 판이 바뀌면 다시 받는다). 동의하지 않은 보호자는 보호 API 가 `403 TERMS_NOT_AGREED` (§4.1). 새 테이블이라 배포 전 조치 없음 (§11.4) | #337 |
 | 2026-11-04 | 새 테이블 `checklist`(§5.8) · `checklist_target`(§5.9) — 기관이 명부의 아이들에게 보내는 준비물 · 확인사항과 아이별 확인. 보낸 뒤 고치지 않고 내리기(`canceled_at`, 조건부 UPDATE)만 한다. 받는 아이는 보낸 순간의 명부, 확인은 아이 몫으로 한 번(조건부 UPDATE). 확인은 `child` → `checklist` 를 FOR SHARE 로 잡아 연결 해제 · 내리기와 줄을 선다(§3.3 잠금 순서 표). 공유 동의와 상관없다. 새 테이블이라 배포 전 조치 없음 (§11.4) | #344 |
-| 2026-11-05 | `journal_entry` 에 `revised_by` · `revised_at` 추가 (§6.2, NULL 허용) — 수정 요청 큐에서 막힌 본문을 고쳐 검증을 다시 받는다(`VALIDATION_BLOCKED` → `MATCHED`, 아동 유지). 같은 행의 `content` 를 덮어쓰고 이전 본문은 남기지 않는다(처음 글은 원본 파일에 있다). "수정한 원본 다시 올리기"를 없애 `REUPLOAD_REQUESTED` 는 새로 생기지 않는다. NULL 허용 컬럼 추가라 §11.4 수동 조치 불필요 | #357 |
+| 2026-11-05 | `journal_entry` 에 `revised_by` · `revised_at` 추가 (§6.2, NULL 허용) — 수정 요청 큐에서 막힌 본문을 고쳐 검증을 다시 받는다(`VALIDATION_BLOCKED` → `MATCHED`, 아동 유지). 같은 행의 `content` 를 덮어쓰고 이전 본문은 남기지 않는다(처음 글은 원본 파일에 있다). "수정한 원본 다시 올리기"를 없애 `REUPLOAD_REQUESTED` 는 새로 생기지 않는다. 처리는 최신 판정 카드로만, 고치기는 명부·동의를 다시 보고 `child` → `journal_entry` 순서로 잠근다(§3.3). NULL 허용 컬럼 추가라 §11.4 수동 조치 불필요 | #357 |
 | 2026-11-05 | `terms_agreement.term_key` 에 기관 약관 `ORG_TOS` · `ORG_PRIVACY` · `ORG_CHILD_DATA` 추가 (§4.3). 역할마다 자기 약관이 모두 필수이고 다른 역할의 약관은 받지 않는다. 기관 개인정보 수집 · 아동 정보 보호 서약은 판이 바뀌면 다시 받는다. 동의하지 않은 기관 담당자도 보호 API 가 `403 TERMS_NOT_AGREED` (§4.1). enum 값 추가라 **배포 전 `term_key` CHECK 제거 필요** (§11.4) | #TBD |
