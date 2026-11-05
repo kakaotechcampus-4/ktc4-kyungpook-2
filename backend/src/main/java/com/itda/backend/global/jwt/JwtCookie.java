@@ -37,7 +37,7 @@ public class JwtCookie {
 
     public JwtCookie(
             @Value("${app.auth.cookie.secure:false}") boolean secure,
-            @Value("${jwt.access-token-expiration-ms:3600000}") long expirationMs
+            @Value("${jwt.access-token-expiration-ms:10800000}") long expirationMs
     ) {
         this.secure = secure;
         this.ttl = Duration.ofMillis(expirationMs);
