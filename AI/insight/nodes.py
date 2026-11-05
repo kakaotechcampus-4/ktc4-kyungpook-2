@@ -8,6 +8,7 @@ Insight Agent 의 4단계 노드 — 인식/계획/행동/반영.
 """
 
 from . import config
+from .quality import weak_reasons
 from .llm import LlmError, ask_json
 from .prompts import build_messages
 from .schemas import Insight, Support
@@ -201,6 +202,19 @@ def reflect(state: dict) -> dict:
             teacher_claim_ids=_teacher_ids(ids + support_ids, index),
         ))
 
+    # 약한 인사이트 (quality.py). 모드가 off 여도 검사는 해서 남긴다 — 루프를 켜기 전의 비율을 재야 한다.
+    weak_found = []
+    kept = []
+    for ins in insights:
+        reasons = weak_reasons(ins)
+        if reasons:
+            weak_found.append({"content": ins.content, "claim_ids": ins.claim_ids, "reasons": reasons})
+        if reasons and config.INSIGHT_WEAK_MODE == "drop":
+            continue
+        kept.append(ins)
+    weak_dropped = weak_found if config.INSIGHT_WEAK_MODE == "drop" else []
+    insights = kept
+
     if config.MAX_INSIGHTS is not None:
         insights = insights[: config.MAX_INSIGHTS]
-    return {**state, "insights": insights}
+    return {**state, "insights": insights, "weak_found": weak_found, "weak_dropped": weak_dropped}
