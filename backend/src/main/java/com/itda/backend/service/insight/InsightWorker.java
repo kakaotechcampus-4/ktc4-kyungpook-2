@@ -1,10 +1,7 @@
 package com.itda.backend.service.insight;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.temporal.TemporalAdjusters;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -41,10 +38,7 @@ public class InsightWorker {
     private final InsightResultRecorder recorder;
     private final ChildContextRepository childContextRepository;
     private final int batchSize;
-    private final int periodDays;
-    private final ZoneId zone;
-    private final int lookbackDays;
-    private final boolean includeCurrentWeek;
+    private final InsightProperties properties;
 
     /** 앱이 켜진 뒤 첫 실행인지. 되돌리기를 여기서 하는 이유는 {@code SummaryWorker} 와 같다 (집기와 겹치지 않게). */
     private boolean released;
@@ -59,10 +53,7 @@ public class InsightWorker {
         this.recorder = recorder;
         this.childContextRepository = childContextRepository;
         this.batchSize = properties.worker().batchSize();
-        this.periodDays = properties.periodDays();
-        this.zone = properties.zone();
-        this.lookbackDays = properties.lookbackDays();
-        this.includeCurrentWeek = properties.includeCurrentWeek();
+        this.properties = properties;
     }
 
     /** 첫 실행 지연은 운영에선 0 이다. 워커를 직접 돌리는 테스트가 앱 시작 틱과 겹치지 않게 늦추려고 둔다. */
@@ -126,13 +117,12 @@ public class InsightWorker {
      * 마지막으로 본 {@code child_context.id} 를 커서로 남겨 이어 보게 바꾼다.
      */
     private List<Period> candidates() {
-        LocalDate thisSunday = LocalDate.now(zone).with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
-        LocalDate lastEnd = includeCurrentWeek ? thisSunday : thisSunday.minusWeeks(1);
-        return childContextRepository.findApprovedEntryDaysSince(LocalDateTime.now().minusDays(lookbackDays))
-                .stream()
+        LocalDate lastEnd = properties.lastPeriodEnd(LocalDate.now(properties.zone()));
+        return childContextRepository
+                .findApprovedEntryDaysSince(LocalDateTime.now().minusDays(properties.lookbackDays())).stream()
                 .map(day -> {
-                    LocalDate to = day.entryDate().with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
-                    return new Period(day.childId(), to.minusDays(periodDays - 1L), to);
+                    LocalDate to = properties.periodEndOf(day.entryDate());
+                    return new Period(day.childId(), properties.periodStartOf(to), to);
                 })
                 .filter(period -> !period.to().isAfter(lastEnd))
                 .distinct()
