@@ -88,8 +88,9 @@ public class SummaryFailureService {
      * 그 묶음의 요약 실패 일지를 요약 전으로 돌린다. 워커가 다음 차례에 다시 집는다 — 같은 묶음에 다른 요약 대기 일지가
      * 있으면 함께, 승인 전 판이 있으면 그 판과 함께 다시 요약한다. 횟수 제한은 없다.
      *
-     * <p>자동 요약이 꺼져 있으면 [요약] 요청이 있어야 요약하므로 요청도 남긴다. 아이 행을 잠가 같은 묶음 요청이 줄을 서
-     * 요청 행 UNIQUE 에 걸리지 않는다.
+     * <p>자동 요약이 꺼져 있으면 [요약] 요청이 있어야 요약하므로 요청도 남긴다. 아이 행 잠금으로 [다시 요약]끼리는 줄을
+     * 서지만 O-32 [요약]({@link SummaryRunService#requestRun})은 아이 행을 잠그지 않아, 같은 묶음 첫 요청이 동시에 들어오면
+     * 늦은 쪽이 요청 행 UNIQUE 에 걸려 이 처리 전체가 롤백된다(500, 다시 누르면 된다). 꺼짐은 장애 때만 쓰는 모드라 두었다.
      */
     @Transactional
     public void retry(String userId, Long childId, LocalDate entryDate) {
