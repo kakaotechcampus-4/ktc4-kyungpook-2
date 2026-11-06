@@ -33,9 +33,9 @@ import java.util.Optional;
  * 401 이 된다. 이때 만료 쿠키를 내려주지 않는다 — 이 응답이 늦게 도착하면 그 사이 새로 로그인한 쿠키를 지운다.
  *
  * <p><b>자동 연장.</b> 남은 시간이 유효시간의 절반보다 적은 {@code /api/} 요청에는 응답에 새 출입증 쿠키를 싣는다
- * (만료는 최대 로그인 시간을 넘지 않는다, {@link JwtProvider#renew}). 브라우저가 알아서 바꿔 끼워 프론트는 할 일이 없다.
- * 로그아웃과 개발용 로그인은 연장하지 않는다. 그 응답도 출입증 쿠키를 싣는데(만료 쿠키 · 새 로그인 쿠키) 연장 쿠키가
- * 한 응답에 같이 실리면 어느 쪽이 남을지 순서에 달린다. 로그아웃은 아예 출입증을 보지 않는다(아래 본문 주석).
+ * (만료는 최대 로그인 시간을 넘지 않는다, {@link JwtProvider#renew}). 갱신 쿠키는 로그인 번호마다 다른 이름이고,
+ * 로그인할 때 받은 원본 쿠키가 어떤 번호를 읽을지 정한다. 이전 로그인의 늦은 응답은 새 로그인의 쿠키를 덮지 못한다.
+ * 로그아웃과 개발용 로그인은 연장하지 않는다. 로그아웃은 아예 출입증을 보지 않는다(아래 본문 주석).
  *
  * <p>{@code @Component} 로 두지 않는다. 그러면 Spring Boot 가 서블릿 필터로도 등록해 보안 체인 밖에서
  * 한 번 더 돌고, 컨트롤러 단위 테스트마다 이 필터의 의존성을 채워야 한다. SecurityConfig 가 직접 만든다.
@@ -71,7 +71,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // DB 장애로 끝나면 쿠키를 지우지 못하므로 보지 않고 지나간다
         Optional<AccessToken> parsed = ApiPaths.AUTH_LOGOUT.equals(path)
                 ? Optional.empty()
-                : jwtProvider.parse(jwtCookie.read(request));
+                : readAccessToken(request);
 
         if (parsed.isPresent()) {
             AccessToken token = parsed.get();
@@ -89,11 +89,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 if (path.startsWith(ApiPaths.API_PREFIX) && !ApiPaths.DEV_LOGIN.equals(path)) {
                     jwtProvider.renew(token).ifPresent(issued -> response.addHeader(
-                            HttpHeaders.SET_COOKIE, jwtCookie.issue(issued.token(), issued.maxAge()).toString()));
+                            HttpHeaders.SET_COOKIE, jwtCookie.issueRenewal(
+                                    token.sessionId(), issued.token(), issued.maxAge()).toString()));
                 }
             }
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private Optional<AccessToken> readAccessToken(HttpServletRequest request) {
+        String original = jwtCookie.read(request);
+        // 만료된 원본은 로그인 선택에만 사용한다. 실제 인증은 원본 또는 같은 로그인의 갱신 JWT 가 유효해야 한다.
+        return jwtProvider.parseForLogout(original).flatMap(session ->
+                jwtProvider.parse(jwtCookie.readRenewal(request, session.sessionId()))
+                        .filter(renewed -> session.sessionId().equals(renewed.sessionId())
+                                && session.subject().equals(renewed.subject())
+                                && session.loginAt().equals(renewed.loginAt()))
+                        .or(() -> jwtProvider.parse(original)));
     }
 }

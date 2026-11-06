@@ -32,6 +32,8 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.type").value("apiKey"))
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.in").value("cookie"))
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.name").value("access_token"))
+				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.description")
+						.value(containsString("access_token_renewal_{sid}")))
 				.andExpect(jsonPath("$.paths['/oauth2/authorization/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/login/oauth2/code/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.201").exists())

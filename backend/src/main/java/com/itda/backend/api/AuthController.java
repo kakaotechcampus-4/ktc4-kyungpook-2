@@ -185,6 +185,8 @@ public class AuthController {
                 .ifPresent(this::revoke);
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, jwtCookie.expire().toString())
+                .headers(headers -> jwtCookie.expireRenewals(request).forEach(cookie ->
+                        headers.add(HttpHeaders.SET_COOKIE, cookie.toString())))
                 .build();
     }
 

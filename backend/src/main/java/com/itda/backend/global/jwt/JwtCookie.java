@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.WebUtils;
 
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * 출입증(JWT)을 담는 httpOnly 쿠키.
@@ -28,29 +30,33 @@ import java.time.Duration;
 public class JwtCookie {
 
     public static final String NAME = "access_token";
+    public static final String RENEWAL_PREFIX = NAME + "_renewal_";
 
     private static final String PATH = "/";
     private static final String SAME_SITE = "Lax";
 
     private final boolean secure;
-    private final Duration ttl;
+    private final Duration maxSession;
 
     public JwtCookie(
             @Value("${app.auth.cookie.secure:false}") boolean secure,
-            @Value("${jwt.access-token-expiration-ms:10800000}") long expirationMs
+            @Value("${jwt.max-session-ms:43200000}") long maxSessionMs
     ) {
         this.secure = secure;
-        this.ttl = Duration.ofMillis(expirationMs);
+        this.maxSession = Duration.ofMillis(maxSessionMs);
     }
 
-    /** 로그인 성공 직후. 만료를 토큰 유효시간과 맞춰 둔다. */
+    /**
+     * 로그인할 때만 원본을 심는다. 원본 JWT 는 3시간 뒤 만료돼도, 어느 로그인의 갱신 쿠키를 읽을지 선택하려고
+     * 최대 로그인 시간까지 보관한다. 인증에는 별도로 JWT 만료를 검사한다.
+     */
     public ResponseCookie issue(String token) {
-        return issue(token, ttl);
+        return base(NAME, token).maxAge(maxSession).build();
     }
 
-    /** 연장한 출입증. 최대 로그인 시간에 걸리면 유효시간보다 짧게 끝나므로 만료를 받아서 건다. */
-    public ResponseCookie issue(String token, Duration maxAge) {
-        return base(token).maxAge(maxAge).build();
+    /** 늦게 도착한 이전 로그인의 응답이 새 로그인을 덮지 않도록 로그인 번호마다 다른 이름을 쓴다. */
+    public ResponseCookie issueRenewal(String sessionId, String token, Duration maxAge) {
+        return base(RENEWAL_PREFIX + sessionId, token).maxAge(maxAge).build();
     }
 
     /**
@@ -58,16 +64,38 @@ public class JwtCookie {
      * 사용자는 로그아웃할 방법이 없다.
      */
     public ResponseCookie expire() {
-        return base("").maxAge(0).build();
+        return base(NAME, "").maxAge(0).build();
     }
 
     public String read(HttpServletRequest request) {
-        Cookie cookie = WebUtils.getCookie(request, NAME);
+        return read(request, NAME);
+    }
+
+    public String readRenewal(HttpServletRequest request, String sessionId) {
+        return sessionId == null ? null : read(request, RENEWAL_PREFIX + sessionId);
+    }
+
+    /** 계정을 반복 전환해도 이전 갱신 쿠키가 쌓이지 않도록 로그인·로그아웃 때 요청에 실린 것만 지운다. */
+    public List<ResponseCookie> expireRenewals(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return List.of();
+        }
+        return Arrays.stream(cookies)
+                .map(Cookie::getName)
+                .filter(name -> name.startsWith(RENEWAL_PREFIX))
+                .distinct()
+                .map(name -> base(name, "").maxAge(0).build())
+                .toList();
+    }
+
+    private String read(HttpServletRequest request, String name) {
+        Cookie cookie = WebUtils.getCookie(request, name);
         return cookie == null ? null : cookie.getValue();
     }
 
-    private ResponseCookie.ResponseCookieBuilder base(String value) {
-        return ResponseCookie.from(NAME, value)
+    private ResponseCookie.ResponseCookieBuilder base(String name, String value) {
+        return ResponseCookie.from(name, value)
                 .httpOnly(true)
                 .secure(secure)
                 .sameSite(SAME_SITE)

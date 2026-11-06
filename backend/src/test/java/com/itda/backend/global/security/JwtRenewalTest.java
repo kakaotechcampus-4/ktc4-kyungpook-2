@@ -31,12 +31,16 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.net.URI;
+import java.net.HttpCookie;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -111,7 +115,19 @@ class JwtRenewalTest {
     }
 
     private static String valueOf(String setCookie) {
-        return setCookie.substring(JwtCookie.NAME.length() + 1, setCookie.indexOf(';'));
+        return setCookie.substring(setCookie.indexOf('=') + 1, setCookie.indexOf(';'));
+    }
+
+    private static List<String> renewalCookies(MockHttpServletResponse response) {
+        return response.getHeaders(HttpHeaders.SET_COOKIE).stream()
+                .filter(cookie -> cookie.startsWith(JwtCookie.RENEWAL_PREFIX))
+                .toList();
+    }
+
+    private static Cookie renewalCookie(MockHttpServletResponse response) {
+        assertThat(renewalCookies(response)).hasSize(1);
+        HttpCookie parsed = HttpCookie.parse(renewalCookies(response).get(0)).get(0);
+        return new Cookie(parsed.getName(), parsed.getValue());
     }
 
     private MockHttpServletResponse perform(MockHttpServletRequestBuilder request) throws Exception {
@@ -124,6 +140,177 @@ class JwtRenewalTest {
         return perform(request.cookie(auth(token), csrf).header("X-XSRF-TOKEN", csrf.getValue()));
     }
 
+    /** 같은 이름·경로의 쿠키는 나중에 도착한 응답으로 교체하는 브라우저 저장소. 이 테스트의 경로는 모두 / 다. */
+    private record StoredCookie(Cookie cookie, Instant expiresAt) {}
+
+    private class BrowserCookies {
+        private final Map<String, StoredCookie> cookies = new LinkedHashMap<>();
+
+        void accept(MockHttpServletResponse response) {
+            for (String header : response.getHeaders(HttpHeaders.SET_COOKIE)) {
+                for (HttpCookie cookie : HttpCookie.parse(header)) {
+                    if (cookie.getMaxAge() == 0) {
+                        cookies.remove(cookie.getName());
+                    } else {
+                        Instant expiresAt = cookie.getMaxAge() < 0 ? null
+                                : clock.instant().plusSeconds(cookie.getMaxAge());
+                        cookies.put(cookie.getName(), new StoredCookie(
+                                new Cookie(cookie.getName(), cookie.getValue()), expiresAt));
+                    }
+                }
+            }
+        }
+
+        Cookie[] all() {
+            cookies.values().removeIf(stored -> stored.expiresAt() != null
+                    && !clock.instant().isBefore(stored.expiresAt()));
+            return cookies.values().stream().map(StoredCookie::cookie).toArray(Cookie[]::new);
+        }
+
+        String value(String name) {
+            return cookies.get(name).cookie().getValue();
+        }
+    }
+
+    private void login(BrowserCookies browser, String account) throws Exception {
+        MockHttpServletRequestBuilder request = get("/api/v1/dev/login").param("as", account);
+        if (browser.all().length > 0) {
+            request.cookie(browser.all());
+        }
+        MockHttpServletResponse response = perform(request);
+        assertThat(response.getStatus()).isEqualTo(302);
+        browser.accept(response);
+    }
+
+    @Test
+    void lateRenewalDoesNotReplaceNewLoginAfterLogout() throws Exception {
+        BrowserCookies browser = new BrowserCookies();
+        login(browser, "renewal-race");
+        clock.advance(Duration.ofHours(2));
+        MockHttpServletResponse delayed = perform(get(ME).cookie(browser.all()));
+        assertThat(delayed.getStatus()).isEqualTo(200);
+        assertThat(renewalCookies(delayed)).hasSize(1);
+
+        browser.accept(perform(get("/api/health").cookie(browser.all())));
+        MockHttpServletResponse logout = perform(post(LOGOUT).cookie(browser.all())
+                .header("X-XSRF-TOKEN", browser.value("XSRF-TOKEN")));
+        assertThat(logout.getStatus()).isEqualTo(204);
+        browser.accept(logout);
+        login(browser, "renewal-race");
+        String newLogin = browser.value(JwtCookie.NAME);
+
+        browser.accept(delayed);
+
+        assertThat(perform(get(ME).cookie(browser.all())).getStatus()).isEqualTo(200);
+        assertThat(browser.value(JwtCookie.NAME)).isEqualTo(newLogin);
+    }
+
+    @Test
+    void lateRenewalDoesNotRestorePreviousAccountAfterDevLogin() throws Exception {
+        BrowserCookies browser = new BrowserCookies();
+        login(browser, "renewal-old");
+        clock.advance(Duration.ofHours(2));
+        MockHttpServletResponse delayed = perform(get(ME).cookie(browser.all()));
+        assertThat(delayed.getStatus()).isEqualTo(200);
+        assertThat(renewalCookies(delayed)).hasSize(1);
+        login(browser, "renewal-new");
+        String currentUser = perform(get(ME).cookie(browser.all())).getContentAsString();
+
+        browser.accept(delayed);
+
+        MockHttpServletResponse response = perform(get(ME).cookie(browser.all()));
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getContentAsString()).isEqualTo(currentUser);
+    }
+
+    @Test
+    void latePreviousLoginResponseCannotInterruptCurrentRenewedLogin() throws Exception {
+        BrowserCookies browser = new BrowserCookies();
+        login(browser, "renewal-old");
+        clock.advance(Duration.ofHours(2));
+        MockHttpServletResponse delayed = perform(get(ME).cookie(browser.all()));
+        assertThat(renewalCookies(delayed)).hasSize(1);
+        login(browser, "renewal-new");
+
+        clock.advance(Duration.ofHours(2));
+        MockHttpServletResponse current = perform(get(ME).cookie(browser.all()));
+        assertThat(current.getStatus()).isEqualTo(200);
+        assertThat(renewalCookies(current)).hasSize(1);
+        browser.accept(current);
+
+        clock.advance(Duration.ofHours(2));
+        browser.accept(delayed);
+
+        MockHttpServletResponse response = perform(get(ME).cookie(browser.all()));
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getContentAsString()).isEqualTo(current.getContentAsString());
+    }
+
+    @Test
+    void retainingOriginalCookieDoesNotExtendIdleAuthentication() throws Exception {
+        BrowserCookies browser = new BrowserCookies();
+        login(browser, "renewal-idle");
+        clock.advance(Duration.ofMillis(ttlMs).plusSeconds(1));
+
+        MockHttpServletResponse response = perform(get(ME).cookie(browser.all()));
+
+        assertThat(browser.value(JwtCookie.NAME)).isNotBlank();
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(renewalCookies(response)).isEmpty();
+    }
+
+    @Test
+    void renewalCookieCannotSelectAnotherLogin() throws Exception {
+        String expiredOriginal = loggedInAgo(Duration.ofHours(4));
+        Clock past = Clock.offset(clock, Duration.ofHours(-4));
+        String sessionId = new JwtProvider(secret, ttlMs, maxSessionMs, past)
+                .parse(expiredOriginal).orElseThrow().sessionId();
+        Cookie otherLogin = new Cookie(JwtCookie.RENEWAL_PREFIX + sessionId, loggedInAgo(Duration.ZERO));
+
+        MockHttpServletResponse response = perform(get(ME).cookie(auth(expiredOriginal), otherLogin));
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(renewalCookies(response)).isEmpty();
+    }
+
+    @Test
+    void originalCookieSurvivesRenewalsButNotTheMaximumSession() throws Exception {
+        BrowserCookies browser = new BrowserCookies();
+        login(browser, "renewal-cap");
+        String original = browser.value(JwtCookie.NAME);
+        MockHttpServletResponse response = null;
+        for (int hour = 2; hour <= 10; hour += 2) {
+            clock.advance(Duration.ofHours(2));
+            response = perform(get(ME).cookie(browser.all()));
+            assertThat(response.getStatus()).isEqualTo(200);
+            browser.accept(response);
+            assertThat(browser.value(JwtCookie.NAME)).isEqualTo(original);
+        }
+        assertThat(renewalCookies(response)).singleElement()
+                .satisfies(cookie -> assertThat(cookie).contains("Max-Age=7200"));
+
+        clock.advance(Duration.ofHours(2).plusSeconds(1));
+        MockHttpServletRequestBuilder request = get(ME);
+        if (browser.all().length > 0) {
+            request.cookie(browser.all());
+        }
+        assertThat(perform(request).getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void switchingLoginClearsPreviouslyReceivedRenewalCookies() throws Exception {
+        BrowserCookies browser = new BrowserCookies();
+        login(browser, "renewal-old");
+        clock.advance(Duration.ofHours(2));
+        browser.accept(perform(get(ME).cookie(browser.all())));
+        assertThat(browser.all()).anyMatch(cookie -> cookie.getName().startsWith(JwtCookie.RENEWAL_PREFIX));
+
+        login(browser, "renewal-new");
+
+        assertThat(browser.all()).noneMatch(cookie -> cookie.getName().startsWith(JwtCookie.RENEWAL_PREFIX));
+        assertThat(perform(get(ME).cookie(browser.all())).getStatus()).isEqualTo(200);
+    }
+
     @Test
     void freshTokenIsNotRenewed() throws Exception {
         MockHttpServletResponse response = perform(get(ME).cookie(auth(loggedInAgo(Duration.ZERO))));
@@ -134,14 +321,15 @@ class JwtRenewalTest {
 
     @Test
     void tokenWithLessThanHalfLeftIsRenewedAndTheNewCookieWorks() throws Exception {
-        MockHttpServletResponse response = perform(get(ME).cookie(auth(loggedInAgo(Duration.ofHours(2)))));
+        String original = loggedInAgo(Duration.ofHours(2));
+        MockHttpServletResponse response = perform(get(ME).cookie(auth(original)));
 
         assertThat(response.getStatus()).isEqualTo(200);
-        assertThat(accessTokenCookies(response)).singleElement().satisfies(cookie -> assertThat(cookie)
+        assertThat(accessTokenCookies(response)).isEmpty();
+        assertThat(renewalCookies(response)).singleElement().satisfies(cookie -> assertThat(cookie)
                 .contains("Max-Age=10800").contains("HttpOnly").contains("SameSite=Lax").contains("Path=/"));
 
-        String renewed = valueOf(accessTokenCookies(response).get(0));
-        assertThat(perform(get(ME).cookie(auth(renewed))).getStatus()).isEqualTo(200);
+        assertThat(perform(get(ME).cookie(auth(original), renewalCookie(response))).getStatus()).isEqualTo(200);
     }
 
     /** 로그아웃 응답에 연장 쿠키가 같이 실리면 만료 쿠키를 덮을 수 있다. */
@@ -192,14 +380,16 @@ class JwtRenewalTest {
     @Test
     void renewedCookieArrivingAfterLogoutCannotBeUsed() throws Exception {
         String x = loggedInAgo(Duration.ofHours(2));
-        String y = valueOf(accessTokenCookies(perform(get(ME).cookie(auth(x)))).get(0));
+        Cookie y = renewalCookie(perform(get(ME).cookie(auth(x))));
 
         assertThat(logout(post(LOGOUT), x).getStatus()).isEqualTo(204);
 
-        MockHttpServletResponse withY = perform(get(ME).cookie(auth(y)));
+        MockHttpServletResponse withY = perform(get(ME).cookie(auth(x), y));
         assertThat(withY.getStatus()).isEqualTo(401);
         // 늦게 도착할 수 있는 응답이라 만료 쿠키도 내려주지 않는다 — 그 사이 새로 로그인한 쿠키를 지우지 않게
         assertThat(accessTokenCookies(withY)).isEmpty();
+        assertThat(renewalCookies(withY)).isEmpty();
+        assertThat(perform(get(ME).cookie(y)).getStatus()).isEqualTo(401);
         assertThat(perform(get(ME).cookie(auth(x))).getStatus()).isEqualTo(401);
     }
 
@@ -210,11 +400,11 @@ class JwtRenewalTest {
         clock.advance(Duration.ofMillis(ttlMs).minusSeconds(1));
         MockHttpServletResponse renewal = perform(get(ME).cookie(auth(x)));
         assertThat(renewal.getStatus()).isEqualTo(200);
-        String y = valueOf(accessTokenCookies(renewal).get(0));
+        Cookie y = renewalCookie(renewal);
 
         clock.advance(Duration.ofSeconds(2));
         assertThat(perform(get(ME).cookie(auth(x))).getStatus()).isEqualTo(401);
-        assertThat(perform(get(ME).cookie(auth(y))).getStatus()).isEqualTo(200);
+        assertThat(perform(get(ME).cookie(auth(x), y)).getStatus()).isEqualTo(200);
         String colleague = loggedInAgo(Duration.ZERO);
 
         MockHttpServletResponse response = logout(post(LOGOUT), x);
@@ -222,7 +412,7 @@ class JwtRenewalTest {
         assertThat(accessTokenCookies(response)).singleElement()
                 .satisfies(cookie -> assertThat(cookie).contains("Max-Age=0"));
 
-        MockHttpServletResponse withY = perform(get(ME).cookie(auth(y)));
+        MockHttpServletResponse withY = perform(get(ME).cookie(auth(x), y));
         assertThat(withY.getStatus()).isEqualTo(401);
         assertThat(accessTokenCookies(withY)).isEmpty();
         assertThat(perform(get(ME).cookie(auth(colleague))).getStatus()).isEqualTo(200);

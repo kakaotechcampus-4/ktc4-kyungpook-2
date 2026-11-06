@@ -71,6 +71,7 @@ public class JwtProvider {
     /**
      * 로그아웃할 로그인을 읽는다. 서명이 맞으면 출입증 자체가 만료됐어도 읽는다 — 만료 직전에 발급한 연장 쿠키가
      * 아직 도착 중일 수 있다. 최대 로그인 시간이 지났으면 그 로그인의 출입증은 더 쓸 수 없어 기록하지 않는다.
+     * 원본 쿠키에서 현재 로그인 번호를 선택할 때도 사용한다. 이 경우에도 실제 인증할 JWT 는 따로 만료를 검사한다.
      * 인증에는 만료를 검사하는 {@link #parse(String)} 를 사용한다.
      */
     public Optional<AccessToken> parseForLogout(String token) {

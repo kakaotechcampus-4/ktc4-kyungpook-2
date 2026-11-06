@@ -137,6 +137,7 @@ HTTP/1.1 404 Not Found
   현재 구현의 예외: `RawRecord`의 `id`와 확인 필요 큐 항목의 `journalEntryId`는 숫자로 나간다.
 - 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.yml.example) 참고).
 - 인증 방식은 JWT 쿠키다. 브라우저는 `GET /oauth2/authorization/kakao`로 이동해 카카오 로그인을 시작한다. 카카오 콜백(`GET /login/oauth2/code/kakao`)은 Spring Security가 처리하며, 클라이언트가 직접 호출하지 않는다. 성공 시 서버는 `access_token` httpOnly 쿠키를 발급하고 설정된 프론트엔드 주소로 리다이렉트한다.
+- `access_token` 원본 쿠키는 로그인할 때만 설정하고 현재 로그인 번호를 선택하도록 최대 12시간 보관한다. JWT 자체의 유효시간은 3시간이며, 남은 시간이 절반보다 짧은 API 요청에서는 `access_token_renewal_{sid}` httpOnly 쿠키로 갱신 JWT 를 전달한다. 원본 또는 같은 로그인 번호·회원·최초 로그인 시각의 갱신 JWT 가 유효해야 인증된다. 갱신 쿠키만으로는 인증되지 않는다. 이전 로그인의 응답이 늦게 와도 새 로그인의 쿠키를 덮지 못한다. 프론트는 두 쿠키를 직접 읽거나 조립하지 않고 브라우저 자동 전송을 사용한다.
 - 로그인 실패(state 불일치, 동의 취소, 카카오 장애 등)는 JSON 오류가 아니라 설정된 실패 주소에
   `?error=login_failed`를 붙인 리다이렉트로 전달한다. 상세 원인은 서버 로그에만 남긴다. 그래서 위
   표의 `KAKAO_SERVER_ERROR`·`KAKAO_UNAVAILABLE`과 `AuthErrorCode`의 `KAKAO_AUTH_FAILED`는 현재
