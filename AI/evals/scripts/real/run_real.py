@@ -48,6 +48,7 @@ from summary.schemas import SummaryInput, SourceEntry  # noqa: E402
 from summary.graph import run_summary  # noqa: E402
 from insight.schemas import InsightInput  # noqa: E402
 from insight.graph import run_insight  # noqa: E402
+from insight import config as insight_config  # noqa: E402
 
 YEAR = 2025  # 날짜 계산용. 데이터에는 연도를 쓰지 않는다.
 INST = {"센터1": (1, "센터"), "학교1": (2, "학교")}
@@ -88,9 +89,13 @@ def main():
     ap.add_argument("--school", default="synthetic_school_demo.json")
     ap.add_argument("--real", default="dev.json", help="실제 센터 일지 파일 (블라인드: blind/test.json)")
     ap.add_argument("--answer", default="synthetic_school_answer.json", help="정답표 파일")
+    ap.add_argument("--weak-mode", choices=["off", "drop", "refine"], default=None,
+                    help="약한 인사이트 처리 (INSIGHT_WEAK_MODE). 안 주면 config 값")
     ap.add_argument("--window", type=int, default=30, help="인사이트 기간(일). 30 이면 월 단위")
     args = ap.parse_args()
     months = set(args.months.split(","))
+    if args.weak_mode:
+        insight_config.INSIGHT_WEAK_MODE = args.weak_mode
 
     real = [e for e in load(args.real) if e["date"][:2] in months]
     school = [e for e in load(args.school) if e["date"][:2] in months]
@@ -107,7 +112,8 @@ def main():
     child_id = {n: i + 1 for i, n in enumerate(names)}
     roster = [RosterEntry(child_id=child_id[n], name=n, birthdate=f"2015-01-{i + 1:02d}") for i, n in enumerate(names)]
     jid = {e["id"]: i + 1 for i, e in enumerate(entries)}
-    log = {"args": vars(args), "entries": [], "summaries": [], "insights": []}
+    log = {"args": vars(args), "entries": [], "summaries": [], "insights": [], "weak": [],
+           "weak_mode": insight_config.INSIGHT_WEAK_MODE}
     calls = Counter()
     t0 = time.time()
 
@@ -185,7 +191,8 @@ def main():
                 continue
             payload = InsightInput(child_id=child_id[child], child_name=child, period_from=days[0],
                                    period_to=days[-1], claims=cs, consented_institutions=consented)
-            out, err = retry(lambda: run_insight(payload))
+            trace = {}
+            out, err = retry(lambda: run_insight(payload, trace=trace))
             calls["insight"] += 1
             if not out:
                 log.setdefault("insight_errors", []).append({"child": child, "window": key, "error": err})
@@ -194,6 +201,13 @@ def main():
             for ins in out.insights:
                 src = [e["id"] for e in entries if jid[e["id"]] in set(ins.source_entry_ids)]
                 log["insights"].append({"child": child, "window": key, **ins.model_dump(), "source_diary_ids": src})
+            dropped_texts = {w["content"] for w in trace.get("weak_dropped", [])} | {
+                r["before"] for r in trace.get("weak_refined", []) if r["outcome"] == "dropped"}
+            for w in trace.get("weak_found", []):
+                log["weak"].append({"child": child, "window": key, **w, "dropped": w["content"] in dropped_texts})
+            for r in trace.get("weak_refined", []):
+                log.setdefault("refined", []).append({"child": child, "window": key, **r})
+            calls["insight_refine"] += trace.get("refine_calls", 0)
             print(f"[인사이트] {child} {key} claims={len(cs)} → {len(out.insights)}개")
 
     # ── 리포트 ──
@@ -220,6 +234,23 @@ def main():
                             "all_dropped_groups": sum(1 for s in S_all if not s.get("ok") and s.get("raw_claims"))}
     sd = log["summary_drops"]
     print(f"  요약 버린 문장  {sd['dropped']}/{sd['raw_claims']}  {sd['by_reason']}  · 전부 버려져 실패한 묶음 {sd['all_dropped_groups']}")
+    # 약한 인사이트 (insight/quality.py). drop 이면 버린 것도 분모에 넣는다 — 모델이 쓴 인사이트 수 기준
+    W = log["weak"]
+    n_dropped = sum(w["dropped"] for w in W)
+    n_written = len(log["insights"]) + n_dropped
+    by_kind = dict(Counter(r["kind"] for w in W for r in {x["kind"]: x for x in w["reasons"]}.values()))
+    log["weak_summary"] = {"weak": len(W), "written": n_written, "by_kind": by_kind,
+                           "mode": log["weak_mode"], "dropped": n_dropped}
+    RF = log.get("refined", [])
+    rescued = sum(r["outcome"] == "rescued" for r in RF)
+    log["weak_summary"]["refined"] = {"tried": len(RF), "rescued": rescued}
+    print(f"  약한 인사이트  {len(W)}/{n_written}  {by_kind}  · 모드 {log['weak_mode']} · 버림 {n_dropped}"
+          + (f" · 고치기 {rescued}/{len(RF)} 살림" if RF else ""))
+    for r in RF:
+        print(f"    ~ [{r['child']}] {r['outcome']} {r['why']}  {r['before'][:50]} → {(r['after'] or '')[:50]}")
+    for w in W:
+        kinds = sorted({r["kind"] for r in w["reasons"]})
+        print(f"    - [{w['child']}] {kinds} {'(버림) ' if w['dropped'] else ''}{w['content'][:60]}")
     print("── v1 비교 ──")
     print(f"  요약할 내용 없음(no_content)  {c['no_content']}건 {c['no_content_groups']}")
     print(f"  하루 기록 하나로 만든 인사이트  {c['single_record_insights']}/{len(log['insights'])}  (v1 4/17)")
@@ -241,6 +272,8 @@ def main():
     out_dir = HERE / "runs"
     out_dir.mkdir(exist_ok=True)
     prefix = "" if args.real == "dev.json" else Path(args.real).stem + "_"
+    if log["weak_mode"] != "off":
+        prefix += f"weak-{log['weak_mode']}_"
     name = f"run_{prefix}{args.months.replace(',', '-')}_{args.child or 'all'}_{dt.datetime.now():%m%d_%H%M}.json"
     (out_dir / name).write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"저장: {out_dir / name}")
