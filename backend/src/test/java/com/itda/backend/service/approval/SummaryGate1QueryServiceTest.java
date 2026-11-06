@@ -38,6 +38,7 @@ import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
 
@@ -59,6 +60,10 @@ class SummaryGate1QueryServiceTest {
 
     @MockitoBean
     private UserService userService;
+
+    /** 기본은 자동 요약 꺼짐(mock 의 false). 켜진 동작은 테스트가 직접 켠다 (#369). */
+    @MockitoBean
+    private SummaryProperties summaryProperties;
 
     @Autowired
     private EntityManagerFactory entityManagerFactory;
@@ -374,6 +379,27 @@ class SummaryGate1QueryServiceTest {
         // 매칭 전이라 누구 일지인지 모른다. 이 아이 일지일 수 있다.
         summary(ORG, DATE, "[]", List.of(), List.of());
         requestRun(DATE);
+        em.persistAndFlush(JournalEntry.of(schoolRecord(), DATE, "누구 기록인지 모름", 3));
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
+    }
+
+    @Test
+    void 자동_요약이_켜져_있으면_누르지_않아도_반영되지_않은_일지가_있을_때_처리_중이다() {
+        given(summaryProperties.autoRun()).willReturn(true);
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isFalse();
+
+        // 워커가 곧 이 일지까지 묶어 같은 판을 다시 만든다.
+        validatedInSameGroup();
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
+    }
+
+    @Test
+    void 자동_요약이_켜져_있으면_누르지_않아도_같은_날_매칭_전_일지가_있을_때_처리_중이다() {
+        given(summaryProperties.autoRun()).willReturn(true);
+        summary(ORG, DATE, "[]", List.of(), List.of());
         em.persistAndFlush(JournalEntry.of(schoolRecord(), DATE, "누구 기록인지 모름", 3));
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
