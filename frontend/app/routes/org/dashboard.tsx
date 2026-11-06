@@ -4,6 +4,7 @@ import {
   ClipboardCheck,
   ListChecks,
   RotateCcw,
+  ScrollText,
   Send,
   Upload,
 } from "lucide-react";
@@ -99,8 +100,9 @@ interface Turn {
 /**
  * 오늘의 업무 — 캔버스 02-today 의 두 칸.
  *
- * 왼쪽 "내 차례": 사람이 눌러야 넘어가는 네 가지를 **한 목록**으로 모으고, 쌓인 것 하나만 위로 올려
+ * 왼쪽 "내 차례": 사람이 눌러야 넘어가는 다섯 가지를 **한 목록**으로 모으고, 쌓인 것 하나만 위로 올려
  * 시작 단추를 단다. 전에는 같은 크기 네모 넷이라 어디부터 손대야 할지가 화면에 없었다.
+ * "요약 대기"는 아래 "아이별 진행 현황"의 [요약]이다 — 빼면 요약할 아이가 있어도 "차례가 없습니다"가 된다.
  * 오른쪽 "아직 아이가 안 정해진 기록": 아이가 정해져야 아래 목록에 오르므로 그 앞단을 따로 세운다.
  * 아래 "아이별 진행 현황"(O-34)은 그대로다 — 파일별 진행(O-26)은 기록 등록 화면이 보여준다.
  */
@@ -114,6 +116,13 @@ export default function DashboardPage() {
       label: "아이 확인",
       icon: ClipboardCheck,
       count: matching?.length ?? null,
+    },
+    {
+      // [요약]은 이 화면 아래 "아이별 진행 현황"에서 누른다. 그 칸의 "요약 대기 N건 모두 요약"과 같은 기준이다
+      href: "#groups",
+      label: "요약 대기",
+      icon: ScrollText,
+      count: board ? board.groups.filter((g) => g.status === "ready" && g.canSummarize).length : null,
     },
     {
       href: "/gate1",
@@ -271,7 +280,8 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <Card className="mt-5">
+      {/* 내 차례 "요약 대기"가 여기로 내려온다 */}
+      <Card id="groups" className="mt-5 scroll-mt-6">
         {board === null ? (
           <>
             <PanelHead title="아이별 진행 현황" />
