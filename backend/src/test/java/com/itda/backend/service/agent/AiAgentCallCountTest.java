@@ -75,7 +75,7 @@ class AiAgentCallCountTest {
     @Test
     void 요약용_클라이언트도_설정된_재시도_횟수만큼만_부른다() {
         SummaryProperties summaryProperties = new SummaryProperties(new WorkerProperties(true, 5000, 10),
-                Duration.ofSeconds(10));
+                Duration.ofSeconds(10), false);
         RestClient restClient = new SummaryAgentClientConfig()
                 .summaryAgentRestClient(RestClient.builder(), properties, summaryProperties);
         AiAgentClient client = new AiAgentClient(restClient, new ObjectMapper(), properties);

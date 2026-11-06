@@ -16,6 +16,9 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
@@ -23,13 +26,18 @@ import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.summary.SummaryRunRequestRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 
-/** 요약할 묶음을 고르는 조건 — 교사가 [요약]을 눌렀고, 같은 기관·날짜에 처리 중인 일지가 없음 (#181). */
+/**
+ * 요약할 묶음을 고르는 조건 — 같은 기관·날짜에 처리 중인 일지가 없음. 자동 요약이 꺼져 있으면 교사가 [요약]을 눌러야 하고
+ * (#181), 켜져 있으면 누르지 않아도 그 기관 동의가 켜진 아이 묶음을 집는다 (#369).
+ */
 @DataJpaTest
 @ActiveProfiles("test")
 class SummaryServiceClaimTest {
@@ -60,6 +68,9 @@ class SummaryServiceClaimTest {
     @Autowired
     private SummaryRunRequestRepository summaryRunRequestRepository;
 
+    @Autowired
+    private SharingConsentRepository sharingConsentRepository;
+
     private SummaryRunRequests runRequests;
     private Long school;
     private Long center;
@@ -74,13 +85,27 @@ class SummaryServiceClaimTest {
     }
 
     private SummaryService serviceAt(LocalDateTime now) {
+        return serviceAt(now, false);
+    }
+
+    private SummaryService serviceAt(LocalDateTime now, boolean autoRun) {
         Clock clock = Clock.fixed(now.atZone(KST).toInstant(), KST);
         return new SummaryService(journalEntryRepository, matchingResultRepository, childRepository,
-                organizationRepository, summaryResultRepository, runRequests, clock);
+                organizationRepository, summaryResultRepository, runRequests,
+                new ConsentStateReader(sharingConsentRepository), new SummaryProperties(null, null, autoRun), clock);
     }
 
     private List<ClaimedSummaryGroup> claim() {
         return serviceAt(NOW).claimReadyGroups(10);
+    }
+
+    private List<ClaimedSummaryGroup> autoClaim() {
+        return serviceAt(NOW, true).claimReadyGroups(10);
+    }
+
+    private SharingConsent consent(Long childId, Long organizationId) {
+        return em.persistAndFlush(SharingConsent.grant(childId, 100L, organizationId,
+                List.of(ConsentField.DAILY_SUMMARY)));
     }
 
     private ClaimedSummaryGroup claimedOf(SummaryGroup group, JournalEntry... entries) {
@@ -418,5 +443,99 @@ class SummaryServiceClaimTest {
         assertThat(statusOf(fresh)).isEqualTo(JournalEntryStatus.VALIDATED);
         assertThat(statusOf(again)).isEqualTo(JournalEntryStatus.GATE1_PENDING);
         assertThat(statusOf(untouched)).isEqualTo(JournalEntryStatus.VALIDATED);
+    }
+
+    // ── 자동 요약 (#369) ──
+
+    @Test
+    void 자동_요약이_켜져_있으면_요약을_누르지_않아도_묶음을_집는다() {
+        consent(8L, 3L);
+        JournalEntry first = validated(school, 8L);
+        JournalEntry second = validated(school, 8L);
+
+        assertThat(autoClaim()).containsExactly(claimedOf(GROUP, first, second));
+        assertThat(statusOf(first)).isEqualTo(JournalEntryStatus.SUMMARIZING);
+    }
+
+    @Test
+    void 자동_요약이어도_같은_기관_같은_날짜에_처리_중인_일지가_있으면_기다린다() {
+        consent(8L, 3L);
+        JournalEntry entry = validated(school, 8L);
+        // 아직 매칭 전이라 아이를 모른다. 이 아이 일지일 수 있어 날짜 단위로 기다린다.
+        pending(school);
+
+        assertThat(autoClaim()).isEmpty();
+        assertThat(statusOf(entry)).isEqualTo(JournalEntryStatus.VALIDATED);
+    }
+
+    @Test
+    void 자동_요약은_다른_기관의_처리_중인_일지는_기다리지_않는다() {
+        consent(8L, 3L);
+        validated(school, 8L);
+        pending(center);
+
+        assertThat(autoClaim()).hasSize(1);
+    }
+
+    @Test
+    void 자동_요약은_사람_손을_기다리는_일지만_남았으면_통과분부터_요약한다() {
+        consent(8L, 3L);
+        JournalEntry ok = validated(school, 8L);
+        JournalEntry inReview = JournalEntry.of(school, DATE, "누구인지 애매한 기록", 2);
+        inReview.startMatching();
+        inReview.requestMatchReview();
+        em.persistAndFlush(inReview);
+
+        assertThat(autoClaim()).containsExactly(claimedOf(GROUP, ok));
+    }
+
+    @Test
+    void 자동_요약은_검토_대기_판에_새_일지가_오면_함께_다시_요약한다() {
+        consent(8L, 3L);
+        JournalEntry summarized = inSummary(summaryOf(1));
+        JournalEntry late = lateEntry();
+
+        assertThat(autoClaim()).containsExactly(claimedOf(GROUP, summarized, late));
+        assertThat(statusOf(summarized)).isEqualTo(JournalEntryStatus.SUMMARIZING);
+    }
+
+    @Test
+    void 자동_요약은_승인_뒤_새_일지만_묶는다() {
+        consent(8L, 3L);
+        SummaryResult approved = summaryOf(1);
+        JournalEntry approvedEntry = inSummary(approved);
+        approved.approve();
+        approvedEntry.completeGate1();
+        em.flush();
+        JournalEntry late = lateEntry();
+
+        assertThat(autoClaim()).containsExactly(claimedOf(GROUP, late));
+        assertThat(statusOf(approvedEntry)).isEqualTo(JournalEntryStatus.COMPLETED);
+    }
+
+    @Test
+    void 자동_요약은_그_기관_동의가_없거나_철회된_아이_묶음을_집지_않는다() {
+        // 집었다가 철회로 되돌리면 다음 차례에 또 집혀 5초마다 같은 일을 되풀이한다.
+        consent(9L, 3L).revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, NOW);
+        em.flush();
+        consent(8L, 4L);
+        JournalEntry notGranted = validated(school, 8L);
+        JournalEntry revoked = validated(school, 9L);
+
+        assertThat(autoClaim()).isEmpty();
+        assertThat(statusOf(notGranted)).isEqualTo(JournalEntryStatus.VALIDATED);
+        assertThat(statusOf(revoked)).isEqualTo(JournalEntryStatus.VALIDATED);
+    }
+
+    @Test
+    void 자동_요약이_켜져_있어도_요약_실패와_시스템_오류_일지는_다시_집지_않는다() {
+        consent(8L, 3L);
+        JournalEntry summaryFailed = validated(school, 8L);
+        summaryFailed.startSummarizing();
+        summaryFailed.failSummary();
+        em.persistAndFlush(summaryFailed);
+
+        assertThat(autoClaim()).isEmpty();
+        assertThat(statusOf(summaryFailed)).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
     }
 }

@@ -38,6 +38,8 @@ app:
   summary:
     worker:
       enabled: false
+    # 요청 기반(#181) 테스트를 그대로 두려고 끈다. 켜진 동작은 테스트가 설정을 직접 넘겨 본다.
+    auto-run: false
   insight:
     worker:
       enabled: false

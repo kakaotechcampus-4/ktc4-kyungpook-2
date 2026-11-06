@@ -23,6 +23,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.dto.request.summary.Gate1DecisionRequest.Card;
+import com.itda.backend.dto.response.summary.FailedSummaryGroupResponse;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse;
@@ -38,6 +39,7 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.service.approval.SummaryGate1QueryService;
 import com.itda.backend.service.approval.SummaryGate1Service;
+import com.itda.backend.service.summary.SummaryFailureService;
 import com.itda.backend.service.summary.SummaryGroupQueryService;
 import com.itda.backend.service.summary.SummaryRunService;
 
@@ -61,6 +63,9 @@ class SummaryControllerTest {
 
     @MockitoBean
     private SummaryGroupQueryService summaryGroupQueryService;
+
+    @MockitoBean
+    private SummaryFailureService summaryFailureService;
 
     @MockitoBean
     private JwtProvider jwtProvider;
@@ -343,5 +348,78 @@ class SummaryControllerTest {
                 .andExpect(jsonPath("$.code").value("SUMMARY_INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value(SummaryErrorCode.INVALID_REQUEST.getMessage()));
     }
-}
 
+    // ── 요약 실패 (#369) ──
+
+    private static final String FAILED_BODY = "{\"childId\": 8, \"entryDate\": \"2026-10-08\"}";
+
+    @Test
+    void failed_returnsFailedGroups() throws Exception {
+        given(summaryFailureService.getFailedGroups(any())).willReturn(List.of(new FailedSummaryGroupResponse(
+                8L, "김하늘", LocalDate.of(2026, 10, 8),
+                List.of(new FailedSummaryGroupResponse.Entry(31L, "블록 놀이를 했다.")), "NO_GROUNDED_CLAIMS")));
+
+        mockMvc.perform(get("/api/v1/summaries/failed"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").value("SUCCESS"))
+                .andExpect(jsonPath("$.data[0].childId").value(8))
+                .andExpect(jsonPath("$.data[0].childName").value("김하늘"))
+                .andExpect(jsonPath("$.data[0].entryDate").value("2026-10-08"))
+                .andExpect(jsonPath("$.data[0].entries[0].journalEntryId").value(31))
+                .andExpect(jsonPath("$.data[0].entries[0].content").value("블록 놀이를 했다."))
+                .andExpect(jsonPath("$.data[0].reason").value("NO_GROUNDED_CLAIMS"));
+    }
+
+    @Test
+    void failedRetry_sendsGroupBackToSummary() throws Exception {
+        mockMvc.perform(post("/api/v1/summaries/failed/retry")
+                        .contentType(MediaType.APPLICATION_JSON).content(FAILED_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").value("SUCCESS"));
+
+        verify(summaryFailureService).retry(any(), eq(8L), eq(LocalDate.of(2026, 10, 8)));
+    }
+
+    @Test
+    void failedClose_closesGroupWithoutSummary() throws Exception {
+        mockMvc.perform(post("/api/v1/summaries/failed/close")
+                        .contentType(MediaType.APPLICATION_JSON).content(FAILED_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").value("SUCCESS"));
+
+        verify(summaryFailureService).close(any(), eq(8L), eq(LocalDate.of(2026, 10, 8)));
+    }
+
+    @Test
+    void failedRetryAndClose_rejectInvalidBody() throws Exception {
+        for (String url : new String[] {"/api/v1/summaries/failed/retry", "/api/v1/summaries/failed/close"}) {
+            for (String body : new String[] {
+                    "{\"childId\": 8}",
+                    "{\"childId\": 8, \"entryDate\": \"2026-02-30\"}",
+                    "{\"entryDate\": \"2026-10-08\"}"}) {
+                mockMvc.perform(post(url).contentType(MediaType.APPLICATION_JSON).content(body))
+                        .andExpect(status().isBadRequest());
+            }
+        }
+
+        verify(summaryFailureService, never()).retry(any(), any(), any());
+        verify(summaryFailureService, never()).close(any(), any(), any());
+    }
+
+    @Test
+    void failedRetry_returns404WhenNothingLeftOrChildNotInInstitution() throws Exception {
+        willThrow(new SummaryException(SummaryErrorCode.FAILED_NOT_FOUND, "none"))
+                .given(summaryFailureService).retry(any(), any(), any());
+        willThrow(new SummaryChildNotFoundException(8L))
+                .given(summaryFailureService).close(any(), any(), any());
+
+        mockMvc.perform(post("/api/v1/summaries/failed/retry")
+                        .contentType(MediaType.APPLICATION_JSON).content(FAILED_BODY))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("SUMMARY_FAILED_NOT_FOUND"));
+        mockMvc.perform(post("/api/v1/summaries/failed/close")
+                        .contentType(MediaType.APPLICATION_JSON).content(FAILED_BODY))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("SUMMARY_CHILD_NOT_FOUND"));
+    }
+}
