@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
-import { Busy, ConfirmDialog } from "@/components/ui";
+import { Busy, ConfirmDialog, ReloginButton } from "@/components/ui";
 import { ListPopup, useWalk } from "@/components/ui/ListPopup";
 import { Pager, usePage } from "@/components/ui/Pager";
 import {
@@ -22,7 +22,10 @@ import {
   resolveMatchingItem,
   reviseBlockedItem,
 } from "@/lib/api";
+import { isLoginLost } from "@/lib/apiError";
+import { RESTORED, splitCarried, useCarried } from "@/lib/carriedDraft";
 import { formatMonthDay } from "@/lib/datetime";
+import { forgetReinputDrafts, readReinputDrafts, saveReinputDraft, type ReinputDraft } from "@/lib/reinputDraft";
 import type { BlockedItem, ChildListItem, MatchingItem, MatchResolution } from "@/lib/types";
 
 /**
@@ -40,8 +43,12 @@ export async function clientLoader() {
       () => ({ roster: [] as ChildListItem[], rosterFailed: true }),
     ),
   ]);
-  return { confirms, blocked, ...rosterResult };
+  // 로그인이 풀려 맡겨 둔 고치던 본문(lib/reinputDraft). 목록을 받은 뒤에 읽고, 지우지는 않는다(팝업이 그린 뒤 지움)
+  const carried = splitCarried(readReinputDrafts(), blocked.map((b) => b.id));
+  return { confirms, blocked, ...rosterResult, carried };
 }
+
+const DROPPED = "로그인하는 사이 기록이 바뀌어 고치던 내용은 지웠어요.";
 
 const PAGE = 5;
 const idOf = (x: { id: string }) => x.id;
@@ -51,7 +58,8 @@ function dayOf(value: string | null): string {
 }
 
 export default function CheckPage() {
-  const { confirms, blocked, roster, rosterFailed } = useLoaderData<typeof clientLoader>();
+  const { confirms, blocked, roster, rosterFailed, carried: loadedCarried } = useLoaderData<typeof clientLoader>();
+  const draftsLogin = useCarried(loadedCarried, forgetReinputDrafts, readReinputDrafts);
   const revalidator = useRevalidator();
   const [params, setParams] = useSearchParams();
 
@@ -75,6 +83,15 @@ export default function CheckPage() {
     // 주소의 open 이 바뀔 때만 본다
   }, [params]);
 
+  // 다시 로그인하고 돌아왔으면 맡겨 둔 기록 하나를 바로 연다(바로가기로 온 게 아니면)
+  const [autoOpened, setAutoOpened] = useState(false);
+  useEffect(() => {
+    if (autoOpened || params.get("open")) return;
+    setAutoOpened(true);
+    const first = blocked.find((b) => b.id in draftsLogin.carried.drafts);
+    if (first) bw.open(first.id);
+  }, [autoOpened]);
+
   /** 처리한 건은 ✓ 2초 뒤 빠진다 — 그 뒤에 목록·메뉴 배지를 서버와 맞춘다 */
   function settle(done: (id: string) => void, id: string) {
     done(id);
@@ -88,6 +105,12 @@ export default function CheckPage() {
   return (
     <div>
       <WorkHead title="기록 확인" jobs={jobs} />
+
+      {draftsLogin.carried.gone.length > 0 ? (
+        <p role="status" className="mb-4 rounded-[14px] bg-humansoft px-4 py-3 text-[14px] text-human">
+          로그인하는 사이 {draftsLogin.carried.gone.length}건은 이미 처리돼 고치던 내용을 지웠어요.
+        </p>
+      ) : null}
 
       <section className="mb-8 grid gap-2.5">
         <SectionHead title="아이 확인" count={cLeft} />
@@ -171,6 +194,11 @@ export default function CheckPage() {
             bw.close();
             revalidator.revalidate();
           }}
+          carriedDraft={draftsLogin.carried.drafts[bw.current.id]}
+          loggedOut={draftsLogin.loggedOut}
+          onCarriedUsed={draftsLogin.used}
+          onLoggedOut={draftsLogin.lost}
+          onReached={draftsLogin.reached}
         />
       ) : null}
     </div>
@@ -353,33 +381,72 @@ function BlockedPopup({
   onClose,
   onDone,
   onStale,
+  carriedDraft,
+  loggedOut,
+  onCarriedUsed,
+  onLoggedOut,
+  onReached,
 }: {
   item: BlockedItem;
   position?: { index: number; total: number };
   onClose: () => void;
   onDone: (id: string) => void;
   onStale: () => void;
+  /** 로그인이 풀려 맡겨 둔 이 기록의 고치던 본문 */
+  carriedDraft?: ReinputDraft;
+  /** 이 화면에서 401 을 받았다 — 고칠 때마다 맡겨 둔다 */
+  loggedOut: boolean;
+  onCarriedUsed: (id: string) => void;
+  onLoggedOut: () => void;
+  /** 요청이 서버에 닿았다(성공이거나 401 이 아닌 서버 응답) — 로그인이 살아 있다 */
+  onReached: () => void;
 }) {
   // 전체 본문이 없으면(미리보기만 옴) 고치게 두지 않는다 — 잘린 미리보기를 보내면 뒤쪽 본문이 사라진다
   const full = item.record.fullContent;
   const original = full ?? item.record.preview ?? "";
-  const [draft, setDraft] = useState(original);
+  // 맡겨 둔 본문은 원래 본문이 그대로일 때만 되살린다 — 그사이 바뀌었으면 옛 본문 위에 덮어쓰지 않는다
+  const [restored] = useState(() =>
+    carriedDraft && full != null && carriedDraft.original === full ? carriedDraft.draft : null,
+  );
+  const [carriedNote] = useState(() => (carriedDraft ? (restored != null ? RESTORED : DROPPED) : null));
+  const [draft, setDraft] = useState(restored ?? original);
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loginLost, setLoginLost] = useState(false);
   const changed = full != null && draft.trim() !== "" && draft.trim() !== original.trim();
+
+  useEffect(() => {
+    if (carriedDraft) onCarriedUsed(item.id);
+  }, [carriedDraft, item.id, onCarriedUsed]);
+
+  // 로그인이 풀린 뒤로는 고칠 때마다 맡긴 본문을 갱신한다. 원래대로면 칸을 지운다
+  useEffect(() => {
+    if (!loggedOut) return;
+    saveReinputDraft(item.id, changed && full != null ? { original: full, draft } : null);
+  }, [loggedOut, changed, full, draft, item.id]);
 
   async function run(action: "revise" | "drop") {
     setBusy(true);
     setError(null);
+    setLoginLost(false);
     try {
       if (action === "revise") await reviseBlockedItem(item.id, draft);
       else await resolveBlockedItem(item.id, "hold");
       setAsking(false);
+      onReached();
       onDone(item.id);
     } catch (err) {
-      const f = failureOf(err);
       setAsking(false);
+      if (isLoginLost(err)) {
+        setLoginLost(true);
+        setError("로그인이 풀렸어요. 다시 로그인하면 고치던 내용을 되살려요.");
+        onLoggedOut();
+        return;
+      }
+      // 통신 오류에서는 로그인 여부를 알 수 없다 — 맡긴 본문 보관을 유지한다
+      if (err instanceof ApiError) onReached();
+      const f = failureOf(err);
       if (f.stale) onStale();
       else setError(f.text);
     } finally {
@@ -401,13 +468,25 @@ function BlockedPopup({
               이 기록 빼기
             </PopButton>
             <span className="flex-1" />
-            {error ? <span className="basis-full text-[14px] font-bold text-block sm:basis-auto">{error}</span> : null}
+            {error ? (
+              <span className="flex basis-full flex-wrap items-center gap-x-3 gap-y-1 sm:basis-auto">
+                <span role="alert" className="text-[14px] font-bold text-block">
+                  {error}
+                </span>
+                {loginLost ? <ReloginButton role="org" returnTo="/check" /> : null}
+              </span>
+            ) : null}
             <PopButton tone="dark" disabled={!changed || busy} onClick={() => run("revise")}>
               {busy ? <Busy>보내는 중…</Busy> : "다시 보내기"}
             </PopButton>
           </>
         }
       >
+        {carriedNote ? (
+          <p role="status" className="rounded-[14px] bg-humansoft px-3.5 py-3 text-[14px] leading-6 text-human">
+            {carriedNote}
+          </p>
+        ) : null}
         <div className="rounded-[14px] bg-blocksoft px-3.5 py-3 text-[14px] text-block">
           {item.violationCode?.length ? <b>{item.violationCode.join(" · ")} · </b> : null}
           {item.violationReason}
