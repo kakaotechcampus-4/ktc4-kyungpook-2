@@ -671,3 +671,99 @@ export interface ChecklistItem {
   /** 확인한 보호자의 카카오 닉네임. 없으면 null — 화면은 "다른 보호자" */
   confirmedByName: string | null;
 }
+
+/* ── 대시보드 (O-80 ~ O-82) ──────────────────── */
+
+/** 선생님 차례 5줄 건수 (O-80 `turn`) */
+export interface PipelineTurn {
+  /** 아이 확인 (O-22 건수) */
+  confirm: number;
+  /** 고쳐야 할 기록 (O-24 건수) */
+  blocked: number;
+  /** 검토 대기 요약 + 요약 실패 묶음 */
+  review: number;
+  /** 우리가 승인할 분석 (O-40 pending 건수) */
+  approve: number;
+  /** 보호자 연결 요청 (O-60 건수) */
+  requests: number;
+}
+
+/** 0 아이 찾기 · 1 AI 확인 · 2 요약 · 3 검토 · 4 주간 분석 · 5 분석 승인 */
+export type PipelineStep = 0 | 1 | 2 | 3 | 4 | 5;
+
+/** me 선생님 차례 · ai AI 가 하는 중 · wait 기다리는 중 · other 다른 사람 차례 · done 끝 */
+export type PipelineWho = "me" | "ai" | "wait" | "other" | "done";
+
+export type PipelineStatus =
+  | "matching"
+  | "match_review"
+  | "validating"
+  | "blocked"
+  | "system_error"
+  | "waiting_same_date"
+  | "summarizing"
+  | "summary_failed"
+  | "review"
+  | "review_held"
+  | "regenerating"
+  | "waiting_week_end"
+  | "queued"
+  | "running"
+  | "retrying"
+  | "not_consented"
+  | "nothing_new"
+  | "review_here"
+  | "insight_held"
+  | "review_elsewhere"
+  | "approved";
+
+/** 바로가기 대상. summary_failed 는 id 가 없다 — 줄의 childId · date 로 찾는다 */
+export interface PipelineTarget {
+  type: "matching" | "validation" | "summary" | "summary_failed" | "insight";
+  id?: string;
+}
+
+/** 진행 현황 한 줄 (O-80 `rows[]`). 검토 승인 전은 entry(아이×날짜), 뒤는 week(아이×주) */
+export interface PipelineRow {
+  kind: "entry" | "week";
+  /** 아이를 아직 못 찾은 줄은 null */
+  childId: string | null;
+  childName: string | null;
+  /** entry 줄만. YYYY-MM-DD */
+  date: string | null;
+  /** week 줄만 */
+  week: { from: string; to: string; label: string } | null;
+  step: PipelineStep;
+  who: PipelineWho;
+  status: PipelineStatus;
+  detail: {
+    count?: number;
+    kinds?: string[];
+    reasons?: string[];
+    noContent?: boolean;
+    approverName?: string;
+  } | null;
+  /** 선생님 차례가 아니면 null */
+  target: PipelineTarget | null;
+}
+
+export interface Pipeline {
+  turn: PipelineTurn;
+  rows: PipelineRow[];
+}
+
+/** 서울 기준 오늘 0시부터 우리 기관 기록에 AI 가 한 일 (O-81) */
+export interface AiActivity {
+  split: number;
+  matched: number;
+  validated: number;
+  /** 근사값 */
+  summarized: number;
+  insights: number;
+}
+
+/** AI 장애 배너용 (O-82). available 이 true 면 since 는 null */
+export interface AiStatus {
+  available: boolean;
+  since: string | null;
+}

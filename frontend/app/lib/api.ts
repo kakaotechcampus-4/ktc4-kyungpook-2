@@ -73,6 +73,8 @@ import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
   AcceptedInvitation,
+  AiActivity,
+  AiStatus,
   BlockedItem,
   Child,
   ChildCareInfo,
@@ -103,6 +105,8 @@ import type {
   MyInstitution,
   ParentActivity,
   PendingLinkRequest,
+  Pipeline,
+  PipelineRow,
   RegisteredChild,
   SummaryGroup,
   SummaryGroupBoard,
@@ -155,6 +159,8 @@ const BE_READY = {
   gate1: true,
   /** 오늘의 업무 묶음 카드 조회 · [요약] (O-34, O-32) */
   summaryGroups: true,
+  /** 대시보드 진행 현황 · 오늘 AI가 한 일 · AI 상태 (O-80 ~ O-82) */
+  dashboard: true,
   /** 인사이트 조회 · 2차 공유 (O-40 ~ O-42) */
   insights: true,
   /** 원본 업로드 (POST /raw-records) */
@@ -606,6 +612,48 @@ export async function reopenGate1(summaryId: string): Promise<{ summaryId: strin
     { method: "POST" },
   );
   return { summaryId: String(res.summaryId) };
+}
+
+/* ── 대시보드 (O-80 ~ O-82) ──────────────────── */
+
+/** BE 응답 그대로. childId · target.id 가 숫자로 올 수 있다 */
+interface PipelineRaw {
+  turn: Pipeline["turn"];
+  rows: (Omit<PipelineRow, "childId" | "target"> & {
+    childId: string | number | null;
+    target: { type: NonNullable<PipelineRow["target"]>["type"]; id?: string | number | null } | null;
+  })[];
+}
+
+/** GET /api/v1/dashboard/pipeline (O-80) — 선생님 차례 건수와 진행 현황 줄. 단계 판정은 서버가 한다 */
+export async function getPipeline(): Promise<Pipeline> {
+  if (mockFor("dashboard")) {
+    const p = mock.PIPELINE;
+    return { turn: { ...p.turn }, rows: p.rows.map((r) => ({ ...r })) };
+  }
+  const raw = await request<PipelineRaw>("/api/v1/dashboard/pipeline");
+  return {
+    turn: raw.turn,
+    rows: raw.rows.map((r) => ({
+      ...r,
+      childId: r.childId == null ? null : String(r.childId),
+      target: r.target
+        ? { type: r.target.type, ...(r.target.id != null ? { id: String(r.target.id) } : {}) }
+        : null,
+    })),
+  };
+}
+
+/** GET /api/v1/dashboard/ai-activity (O-81) — 서울 기준 오늘 0시부터 AI 가 한 일 */
+export async function getAiActivity(): Promise<AiActivity> {
+  if (mockFor("dashboard")) return { ...mock.AI_ACTIVITY };
+  return request<AiActivity>("/api/v1/dashboard/ai-activity");
+}
+
+/** GET /api/v1/system/ai-status (O-82) — AI 장애 배너용 */
+export async function getAiStatus(): Promise<AiStatus> {
+  if (mockFor("dashboard")) return { ...mock.AI_STATUS };
+  return request<AiStatus>("/api/v1/system/ai-status");
 }
 
 /* ── 오늘의 업무 묶음 카드 · [요약] ──────────────────── */

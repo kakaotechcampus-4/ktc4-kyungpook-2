@@ -1,4 +1,6 @@
 import type {
+  AiActivity,
+  AiStatus,
   BlockedItem,
   Child,
   ChildGuardian,
@@ -17,6 +19,7 @@ import type {
   MatchingItem,
   ParentActivity,
   PendingLinkRequest,
+  Pipeline,
   SummaryGroup,
   SummaryGroupBoard,
   SummaryItem,
@@ -1060,3 +1063,43 @@ export const SENT_CHECKLISTS: SentChecklist[] = [
     ],
   },
 ];
+
+/* ── 대시보드 (O-80 ~ O-82) ──────────────────── */
+
+/** 진행 현황. 단계마다 한두 줄씩, 선생님 차례 줄은 위 큐의 id 를 가리킨다 */
+export const PIPELINE: Pipeline = {
+  turn: { confirm: 2, blocked: 2, review: 3, approve: 1, requests: 1 },
+  rows: [
+    { kind: "entry", childId: null, childName: null, date: "2026-11-05", week: null, step: 0, who: "me",
+      status: "match_review", detail: null, target: { type: "matching", id: "mq_01" } },
+    { kind: "entry", childId: "child_1041", childName: "이OO", date: "2026-11-05", week: null, step: 1, who: "me",
+      status: "blocked", detail: { kinds: ["진단명"], reasons: ["진단명이 들어 있어요"] },
+      target: { type: "validation", id: "bq_01" } },
+    { kind: "entry", childId: "child_1023", childName: "김OO", date: "2026-11-04", week: null, step: 3, who: "me",
+      status: "review", detail: { noContent: false }, target: { type: "summary", id: "sum_9012" } },
+    { kind: "entry", childId: "child_1077", childName: "박OO", date: "2026-11-04", week: null, step: 2, who: "me",
+      status: "summary_failed", detail: null, target: { type: "summary_failed" } },
+    { kind: "week", childId: "child_1023", childName: "김OO", date: null,
+      week: { from: "2026-10-26", to: "2026-11-01", label: "2026년 10월 4주차" }, step: 5, who: "me",
+      status: "review_here", detail: null, target: { type: "insight", id: "ins_5501" } },
+    { kind: "entry", childId: null, childName: null, date: "2026-11-06", week: null, step: 0, who: "ai",
+      status: "matching", detail: { count: 3 }, target: null },
+    { kind: "entry", childId: "child_1041", childName: "이OO", date: "2026-11-06", week: null, step: 1, who: "ai",
+      status: "validating", detail: null, target: null },
+    { kind: "entry", childId: "child_1023", childName: "김OO", date: "2026-11-06", week: null, step: 2, who: "ai",
+      status: "summarizing", detail: null, target: null },
+    { kind: "week", childId: "child_1077", childName: "박OO", date: null,
+      week: { from: "2026-11-02", to: "2026-11-08", label: "2026년 11월 1주차" }, step: 4, who: "wait",
+      status: "waiting_week_end", detail: null, target: null },
+    { kind: "week", childId: "child_1041", childName: "이OO", date: null,
+      week: { from: "2026-10-26", to: "2026-11-01", label: "2026년 10월 4주차" }, step: 5, who: "other",
+      status: "review_elsewhere", detail: { approverName: "OO초등학교" }, target: null },
+    { kind: "week", childId: "child_1023", childName: "김OO", date: null,
+      week: { from: "2026-10-19", to: "2026-10-25", label: "2026년 10월 3주차" }, step: 5, who: "done",
+      status: "approved", detail: null, target: null },
+  ],
+};
+
+export const AI_ACTIVITY: AiActivity = { split: 12, matched: 7, validated: 11, summarized: 3, insights: 1 };
+
+export const AI_STATUS: AiStatus = { available: true, since: null };
