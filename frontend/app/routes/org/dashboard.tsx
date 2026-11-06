@@ -15,6 +15,7 @@ import { Link, useLoaderData } from "react-router";
 import { Busy } from "@/components/ui";
 import {
   getAiActivity,
+  getAiStatus,
   getFileProgress,
   getPipeline,
   UPLOAD_EXTENSIONS,
@@ -30,8 +31,13 @@ import { usePolling } from "@/lib/usePolling";
  * 요약은 자동으로 시작하므로(#369) [요약] 버튼이 없다.
  */
 export async function clientLoader() {
-  const [pipeline, activity, files] = await Promise.all([getPipeline(), getAiActivity(), getFileProgress()]);
-  return { pipeline, activity, files };
+  const [pipeline, activity, files, ai] = await Promise.all([
+    getPipeline(),
+    getAiActivity(),
+    getFileProgress(),
+    getAiStatus().catch(() => null),
+  ]);
+  return { pipeline, activity, files, aiDown: ai?.available === false };
 }
 
 const POLL_MS = 10_000;
@@ -61,12 +67,20 @@ export default function DashboardPage() {
   const [pipeline, setPipeline] = useState<Pipeline>(initial.pipeline);
   const [activity, setActivity] = useState<AiActivity>(initial.activity);
   const [files, setFiles] = useState<FileProgress[]>(initial.files);
+  /** AI 가 멈췄으면 AI 차례 줄을 "멈춤" 으로 보인다 (O-82) */
+  const [aiDown, setAiDown] = useState(initial.aiDown);
 
   async function refresh() {
-    const [p, a, f] = await Promise.all([getPipeline(), getAiActivity(), getFileProgress()]);
+    const [p, a, f, ai] = await Promise.all([
+      getPipeline(),
+      getAiActivity(),
+      getFileProgress(),
+      getAiStatus().catch(() => null),
+    ]);
     setPipeline(p);
     setActivity(a);
     setFiles(f);
+    setAiDown(ai?.available === false);
   }
   usePolling(refresh, POLL_MS, true, false);
 
@@ -93,7 +107,7 @@ export default function DashboardPage() {
         </Panel>
       </div>
 
-      <ProgressBoard rows={pipeline.rows} />
+      <ProgressBoard rows={pipeline.rows} aiDown={aiDown} />
     </div>
   );
 }
@@ -352,7 +366,7 @@ const isMe = (r: PipelineRow) => r.who === "me";
 const isRun = (r: PipelineRow) => r.who === "ai" || r.who === "wait" || r.who === "other";
 const isDone = (r: PipelineRow) => r.who === "done";
 
-function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
+function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean }) {
   const [stage, setStage] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [showDone, setShowDone] = useState(false);
@@ -401,7 +415,13 @@ function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
               </span>
               <span className="flex flex-wrap gap-1 text-[12px] font-bold">
                 {c.me ? <span className="rounded-full bg-mark px-1.5 text-markink">내 차례 {c.me}</span> : null}
-                {c.ai ? <span className="rounded-full bg-accentsoft px-1.5 text-accentink">진행 중 {c.ai}</span> : null}
+                {c.ai ? (
+                  aiDown ? (
+                    <span className="rounded-full bg-surface2 px-1.5 text-ink2">멈춤 {c.ai}</span>
+                  ) : (
+                    <span className="rounded-full bg-accentsoft px-1.5 text-accentink">진행 중 {c.ai}</span>
+                  )
+                ) : null}
                 {c.wait ? <span className="rounded-full bg-surface2 px-1.5 text-ink2">대기 {c.wait}</span> : null}
                 {!c.me && !c.ai && !c.wait ? <span className={on ? "text-paper/60" : "text-line2"}>없음</span> : null}
               </span>
@@ -443,7 +463,7 @@ function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
         ) : null}
         {list.length === 0 && doneTail.length ? <p className="px-4 py-6 text-center text-[14px] text-muted">지금 진행 중인 기록이 없어요</p> : null}
         {list.map((r, i) => (
-          <JRow key={rowKey(r, i)} r={r} />
+          <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} />
         ))}
         {doneTail.length ? (
           <>
@@ -455,7 +475,7 @@ function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
             >
               {showDone ? `완료 ${doneTail.length}건 접기` : `완료 ${doneTail.length}건 펼치기`}
             </button>
-            {showDone ? doneTail.map((r, i) => <JRow key={rowKey(r, i)} r={r} />) : null}
+            {showDone ? doneTail.map((r, i) => <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} />) : null}
           </>
         ) : null}
       </div>
@@ -546,8 +566,9 @@ const DOT = {
   skip: "border-dashed border-line text-line2",
 } as const;
 
-function JRow({ r }: { r: PipelineRow }) {
-  const info = describe(r);
+function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
+  const paused = aiDown && r.who === "ai";
+  const info = paused ? { ...describe(r), text: "AI 점검 중이라 잠시 멈췄어요 · 돌아오면 이어서 해요" } : describe(r);
   const sub = r.kind === "week" ? `${r.week?.label ?? ""} 분석` : r.date ? md(r.date) : "";
   const tag = isMe(r) ? (
     info.hold ? (
@@ -555,6 +576,8 @@ function JRow({ r }: { r: PipelineRow }) {
     ) : (
       <span className="rounded-full bg-humansoft px-2 py-px text-[12px] font-bold text-human">내 차례</span>
     )
+  ) : paused ? (
+    <span className="rounded-full bg-surface2 px-2 py-px text-[12px] font-bold text-ink2">멈춤</span>
   ) : r.who === "ai" ? (
     <span className="rounded-full bg-accentsoft px-2 py-px text-[12px] font-bold text-accentink">진행 중</span>
   ) : (
@@ -576,7 +599,7 @@ function JRow({ r }: { r: PipelineRow }) {
                 : i === r.step
                   ? r.who === "me"
                     ? "me"
-                    : r.who === "ai"
+                    : r.who === "ai" && !paused
                       ? "ai"
                       : info.skip
                         ? "skip"
