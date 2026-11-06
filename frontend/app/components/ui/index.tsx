@@ -362,7 +362,7 @@ export function ConfirmDialog({
       role="dialog"
       aria-modal
       aria-labelledby={titleId}
-      className="fixed inset-0 z-20 flex items-center justify-center bg-ink/40 px-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/40 px-4"
     >
       <div className="flex w-full max-w-[440px] flex-col gap-2.5 rounded-md bg-surface p-5 shadow-[0_12px_32px_rgba(22,28,27,0.18)]">
         <p id={titleId} className="text-[18px] font-bold">
