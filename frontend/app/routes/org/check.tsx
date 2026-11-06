@@ -234,10 +234,9 @@ function whyUnsure(item: MatchingItem): string {
       ? "한 기록에 여러 아이가 함께 나와요. 대표 아이를 골라 주세요."
       : "이름만으로는 구별되지 않아요. 생년월일을 보고 골라 주세요.";
   }
+  // 못 찾은 이유(이름이 없음 · 명부에 없는 이름)는 서버가 주지 않는다 — 둘 다일 수 있게 말한다
   if (item.status === "unmatched") {
-    return item.unmatchedReason === "not_in_roster"
-      ? "일지 속 이름이 명부에 없어요. 아직 등록하지 않은 아이일 수 있어요."
-      : "일지에 아이를 가리키는 이름이 없어요.";
+    return "AI가 누구의 기록인지 찾지 못했어요. 일지에 이름이 없거나, 아직 명부에 없는 아이일 수 있어요.";
   }
   if (item.status === "failed") return "AI 판정을 받지 못했어요.";
   return "AI가 한 명을 골랐지만 확정하지 않았어요.";
