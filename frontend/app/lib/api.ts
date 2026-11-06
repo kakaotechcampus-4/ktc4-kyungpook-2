@@ -555,6 +555,8 @@ function mockGate1Guard(item: SummaryItem | undefined, decision: string): Summar
 export async function decideGate1(
   summaryId: string,
   body: { decision: Gate1Decision; cards?: Gate1Card[]; version: string },
+  /** 페이지를 떠나는 중에 보낼 때(되돌리기 대기 중이던 승인) — 브라우저가 요청을 끊지 않게 */
+  opts?: { keepalive?: boolean },
 ): Promise<{ summaryId: string }> {
   if (mockFor("gate1")) {
     const item = mockGate1Guard(
@@ -566,7 +568,7 @@ export async function decideGate1(
   }
   const res = await request<{ summaryId: number }>(
     `/api/v1/summaries/${encodeURIComponent(summaryId)}/gate1`,
-    { method: "POST", body: JSON.stringify(body) },
+    { method: "POST", body: JSON.stringify(body), keepalive: opts?.keepalive },
   );
   return { summaryId: String(res.summaryId) };
 }

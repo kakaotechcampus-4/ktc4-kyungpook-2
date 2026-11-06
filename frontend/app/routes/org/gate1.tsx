@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Check, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
@@ -334,8 +334,14 @@ function Gate1Page() {
   const tab: Tab = params.get("tab") === "hold" ? "hold" : "pending";
   const [toast, setToast] = useState<string | null>(null);
   const clearToast = useCallback(() => setToast(null), []);
+  const clearUndo = useCallback(() => setUndoable(null), []);
   /** 처리한 줄 id → 결과 문구. ✓ 줄에 쓴다 */
   const [outcomes, setOutcomes] = useState<Record<string, string>>({});
+  /** 되돌리기를 기다리는 승인 — 5초 뒤에 보낸다. 그 사이 페이지를 떠나면 바로 보낸다 */
+  const sends = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; send: (keepalive: boolean) => void }>());
+  /** 되돌린 승인의 고치던 내용 — 팝업을 다시 열 때 채운다 */
+  const drafts = useRef(new Map<string, Draft>());
+  const [undoable, setUndoable] = useState<{ id: string; message: string } | null>(null);
 
   // [전체] = 요약 실패 + 검토 대기. 오래된 날짜부터(같은 날은 실패를 앞에)
   const pendingRows = useMemo(
@@ -381,6 +387,59 @@ function Gate1Page() {
     // ✓ 를 2초 보인 뒤 목록·메뉴 배지를 서버와 맞춘다
     setTimeout(() => revalidator.revalidate(), 2100);
   }
+
+  /**
+   * 승인: 목록에서 바로 빼고 다음 요약을 연 뒤, 5초 동안 [되돌리기]를 준다. 서버에는 5초 뒤에 보낸다.
+   * 보내다 실패하면(그새 요약이 바뀜 등) 알리고 그 요약을 목록에 되살린다.
+   */
+  function approveLater(item: SummaryItem, cards: Gate1Card[] | undefined, draft: Draft) {
+    const outcome = cards ? "corrected" : "approved";
+    setOutcomes((o) => ({ ...o, [item.id]: OUTCOME[outcome] }));
+    walk.done(item.id);
+    drafts.current.set(item.id, draft);
+    const send = (keepalive: boolean) => {
+      const entry = sends.current.get(item.id);
+      if (!entry) return;
+      clearTimeout(entry.timer);
+      sends.current.delete(item.id);
+      setUndoable((u) => (u?.id === item.id ? null : u));
+      decideGate1(item.id, { decision: "approve", version: item.version, ...(cards ? { cards } : {}) }, { keepalive })
+        .then(() => drafts.current.delete(item.id))
+        .catch((err) => {
+          pw.undo(item.id);
+          setToast(
+            err instanceof ApiError && (err.code === "SUMMARY_REGENERATING" || err.code === "SUMMARY_CHANGED")
+              ? `${item.childName} 요약에 새 기록이 들어와 승인하지 못했어요. 다시 읽고 승인해 주세요`
+              : `${item.childName} 승인을 보내지 못했어요. ${messageOf(err)}`,
+          );
+        })
+        .finally(() => revalidator.revalidate());
+    };
+    sends.current.set(item.id, { timer: setTimeout(() => send(false), 5000), send });
+    setUndoable({ id: item.id, message: `${item.childName} ${dateLabel(item.entryDate)} 요약을 승인했어요` });
+  }
+
+  function undoApprove() {
+    if (!undoable) return;
+    const entry = sends.current.get(undoable.id);
+    if (entry) {
+      clearTimeout(entry.timer);
+      sends.current.delete(undoable.id);
+      pw.undo(undoable.id);
+      pw.open(undoable.id);
+    }
+    setUndoable(null);
+  }
+
+  // 페이지를 떠나거나(탭 닫기·새로고침) 다른 화면으로 옮기면 기다리던 승인을 바로 보낸다
+  useEffect(() => {
+    const flush = () => [...sends.current.values()].forEach((e) => e.send(true));
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
 
   /** 그새 요약이 바뀌었거나 이미 처리된 건 — 팝업을 닫고 알린 뒤 목록을 새로 받는다 */
   function stale(message: string) {
@@ -458,11 +517,26 @@ function Gate1Page() {
         ) : current.s.noContent ? (
           <NoContentPopup key={current.id} item={current.s} {...popupProps} />
         ) : (
-          <PendingPopup key={current.id} item={current.s} {...popupProps} />
+          <PendingPopup
+            key={current.id}
+            item={current.s}
+            {...popupProps}
+            onApprove={approveLater}
+            onMove={walk.move}
+            draft={drafts.current.get(current.id)}
+          />
         )
       ) : null}
 
       <Toast message={toast} onGone={clearToast} />
+      {undoable ? (
+        <Toast
+          key={undoable.id}
+          message={undoable.message}
+          onGone={clearUndo}
+          action={{ label: "되돌리기", onClick: undoApprove }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -597,11 +671,39 @@ function SourceEntries({
 
 /* ── 검토 대기 팝업 ─────────────────────────────────── */
 
-function PendingPopup({ item, position, onClose, onDone, onStale }: PopupProps) {
-  const [lines, setLines] = useState<Line[]>(() => freshLines(item.claims));
-  const [added, setAdded] = useState<Added[]>([]);
-  const [nextKey, setNextKey] = useState(0);
-  const [confirming, setConfirming] = useState<Decision | null>(null);
+/** 고치던 내용 — 승인을 되돌리면 이것으로 팝업을 다시 연다 */
+interface Draft {
+  lines: Line[];
+  added: Added[];
+}
+
+/** 입력 중이면 단축키를 무시한다 */
+function typing(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+  );
+}
+
+function PendingPopup({
+  item,
+  position,
+  onClose,
+  onDone,
+  onStale,
+  onApprove,
+  onMove,
+  draft,
+}: PopupProps & {
+  /** 승인은 바로 보내지 않는다 — 화면이 5초 되돌리기를 준 뒤 보낸다 */
+  onApprove: (item: SummaryItem, cards: Gate1Card[] | undefined, draft: Draft) => void;
+  onMove: (delta: number) => void;
+  draft?: Draft;
+}) {
+  const [lines, setLines] = useState<Line[]>(() => draft?.lines ?? freshLines(item.claims));
+  const [added, setAdded] = useState<Added[]>(() => draft?.added ?? []);
+  const [nextKey, setNextKey] = useState(() => (draft?.added.length ? Math.max(...draft.added.map((a) => a.key)) + 1 : 0));
+  const [confirming, setConfirming] = useState<"hold" | "remove" | null>(null);
   /** [근거]를 누른 문장 번호 */
   const [ev, setEv] = useState<number | null>(null);
   const { busy, error, run } = useDecide(item, onDone, onStale);
@@ -621,25 +723,44 @@ function PendingPopup({ item, position, onClose, onDone, onStale }: PopupProps) 
     setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   }
 
-  function decide(decision: Decision) {
-    const cards = decision === "approve" ? buildCards(item.claims, lines, added) : undefined;
-    const outcome = decision === "approve" ? (cards ? "corrected" : "approved") : decision === "hold" ? "held" : "removed";
-    void run(
-      () => decideGate1(item.id, { decision, version: item.version, ...(cards ? { cards } : {}) }),
-      outcome,
-    ).finally(() => setConfirming(null));
+  function decide(decision: "hold" | "remove") {
+    void run(() => decideGate1(item.id, { decision, version: item.version }), decision === "hold" ? "held" : "removed").finally(
+      () => setConfirming(null),
+    );
   }
 
+  const canApprove = !busy && !blankEdit && !nothingLeft;
+  function approve() {
+    if (!canApprove) return;
+    onApprove(item, buildCards(item.claims, lines, added), { lines, added });
+  }
+  /** 보류는 되돌릴 수 있어(보류 풀기) 바로 한다. 고치던 문장이 있으면 버려진다고 한 번 묻는다 */
+  function hold() {
+    if (busy) return;
+    if (hasChanges) setConfirming("hold");
+    else decide("hold");
+  }
+
+  // 단축키: A 승인 · H 보류 · ←→ 이동. 입력 중이거나 확인 창이 떠 있으면 무시한다
+  const keys = useRef({ approve, hold, onMove });
+  keys.current = { approve, hold, onMove };
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
+      if (document.querySelectorAll('[role="dialog"][aria-modal]').length > 1) return;
+      // 한글 자판이어도 같은 자리 키로 — e.key 는 "ㅁ" 이 된다
+      if (e.code === "KeyA") keys.current.approve();
+      else if (e.code === "KeyH") keys.current.hold();
+      else if (e.key === "ArrowRight") keys.current.onMove(1);
+      else if (e.key === "ArrowLeft") keys.current.onMove(-1);
+      else return;
+      e.preventDefault();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const dialog = {
-    approve: {
-      title: `${item.childName} 요약을 승인할까요?`,
-      body:
-        (hasChanges ? `고친 내용으로 승인해요 (${countText}).` : "AI 요약 그대로 승인해요.") +
-        (uncovered > 0 ? ` 요약에 안 들어간 일지 ${uncovered}건도 함께 끝나요.` : ""),
-      warning: "승인은 되돌릴 수 없어요",
-      label: hasChanges ? "변경 내용으로 승인" : "승인하기",
-      tone: "human",
-    },
     hold: {
       title: `${item.childName} 요약을 보류할까요?`,
       body: "보류 칸으로 옮겨요. 보류를 풀거나 제거할 수 있어요.",
@@ -672,11 +793,15 @@ function PendingPopup({ item, position, onClose, onDone, onStale }: PopupProps) 
               요약 제거
             </PopButton>
             <span className="flex-1" />
+            <span className="hidden text-[13px] text-muted md:inline [@media(hover:none)]:hidden">
+              <Kbd>A</Kbd> 승인 <Kbd>H</Kbd> 보류 <Kbd>←</Kbd>
+              <Kbd>→</Kbd> 이동
+            </span>
             {hasChanges ? <span className="text-[14px] text-ink2">{countText}</span> : null}
-            <PopButton onClick={() => setConfirming("hold")} disabled={busy}>
+            <PopButton onClick={hold} disabled={busy}>
               보류
             </PopButton>
-            <PopButton tone="dark" onClick={() => setConfirming("approve")} disabled={busy || blankEdit || nothingLeft}>
+            <PopButton tone="dark" onClick={approve} disabled={!canApprove}>
               {busy ? <Busy>보내는 중…</Busy> : hasChanges ? "변경 내용으로 승인" : "승인"}
             </PopButton>
             {nothingLeft ? (
@@ -1036,5 +1161,13 @@ function FailedPopup({
         </ConfirmDialog>
       ) : null}
     </>
+  );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="mx-0.5 rounded border border-line2 bg-surface px-1.5 py-px font-sans text-[12px] font-bold text-ink2">
+      {children}
+    </kbd>
   );
 }

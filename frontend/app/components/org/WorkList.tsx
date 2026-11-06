@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Link } from "react-router";
 
@@ -159,24 +159,41 @@ export function PopButton({
 }
 
 /**
- * 화면 아래에 잠깐 뜨는 알림 한 줄. `message` 가 바뀔 때마다 5초 보인다.
- * 같은 문구를 다시 띄우려면 `key` 를 바꿔 준다.
+ * 화면 아래에 잠깐 뜨는 알림 한 줄. `message` 가 바뀔 때마다 `ms`(기본 5초) 보인다.
+ * `action` 을 주면 오른쪽에 버튼(예: 되돌리기)을 둔다.
  */
-export function Toast({ message, onGone }: { message: string | null; onGone: () => void }) {
-  const [shown, setShown] = useState(message);
+export function Toast({
+  message,
+  onGone,
+  action,
+  ms = 5000,
+}: {
+  message: string | null;
+  onGone: () => void;
+  action?: { label: string; onClick: () => void };
+  ms?: number;
+}) {
   useEffect(() => {
-    setShown(message);
     if (!message) return;
-    const t = setTimeout(onGone, 5000);
+    const t = setTimeout(onGone, ms);
     return () => clearTimeout(t);
-  }, [message, onGone]);
-  if (!shown) return null;
+  }, [message, onGone, ms]);
+  if (!message) return null;
   return (
     <div
       role="status"
-      className="fixed inset-x-4 bottom-6 z-[70] mx-auto w-fit max-w-[560px] rounded-full bg-ink px-5 py-3 text-[15px] font-bold text-paper shadow-[0_12px_32px_rgba(22,28,27,0.25)] max-[560px]:bottom-[calc(24px+env(safe-area-inset-bottom,0px))]"
+      className="fixed inset-x-4 bottom-6 z-[70] mx-auto flex w-fit max-w-[560px] items-center gap-3 rounded-full bg-ink py-2.5 pr-2.5 pl-5 text-[15px] font-bold text-paper shadow-[0_12px_32px_rgba(22,28,27,0.25)] max-[560px]:bottom-[calc(24px+env(safe-area-inset-bottom,0px))]"
     >
-      {shown}
+      <span className={action ? "" : "pr-2.5"}>{message}</span>
+      {action ? (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className="rounded-full bg-paper/15 px-3.5 py-1.5 text-[14px] font-bold text-mark hover:bg-paper/25"
+        >
+          {action.label}
+        </button>
+      ) : null}
     </div>
   );
 }
