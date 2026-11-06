@@ -208,8 +208,9 @@ function BlockedCard({
       await revalidator.revalidate();
     } catch (err) {
       const failure = failureOf(err, action);
+      // 통신 오류에서는 로그인 여부를 알 수 없다 — 맡긴 본문과 이후 편집의 보관을 유지한다
       if (isLoginLost(err)) onLoggedOut();
-      else onReached();
+      else if (err instanceof ApiError) onReached();
       if (failure.refresh) {
         // 이미 처리됐거나 카드가 바뀐 건이면 목록을 새로 받아 화면을 서버와 맞춘다. 이 카드는 사라지거나
         // 새 카드로 바뀌므로 안내는 페이지 위에 남긴다
