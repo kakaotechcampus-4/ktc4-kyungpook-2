@@ -11,6 +11,8 @@ import { getSession, rememberReturnPath } from "@/lib/auth";
  */
 export async function clientLoader({ request }: { request: Request }) {
   const { loggedIn } = await getSession();
+  // 취소된 탐색의 늦은 응답이 마지막으로 선택한 복귀 주소를 덮어쓰지 않게 한다.
+  if (request.signal.aborted) return null;
   if (!loggedIn) {
     rememberReturnPath("org", new URL(request.url));
     return redirect("/login");
