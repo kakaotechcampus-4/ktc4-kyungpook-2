@@ -1,25 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { LucideIcon } from "lucide-react";
-import {
-  ChevronDown,
-  ClipboardCheck,
-  ClipboardList,
-  ClipboardPlus,
-  LayoutDashboard,
-  ListChecks,
-  LogOut,
-  Mail,
-  PauseCircle,
-  RotateCcw,
-  Send,
-  Sparkles,
-  User,
-  Users,
-} from "lucide-react";
+import { ChevronDown, LogOut, User } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useNavigating } from "@/components/ui/Loading";
 import { Busy } from "@/components/ui";
+import { getInbox, getPipeline, loadIfReady } from "@/lib/api";
 import { signOut } from "@/lib/auth";
+import { usePolling } from "@/lib/usePolling";
 
 /** 머리띠 오른쪽의 내 정보. null 은 서버가 주지 않은 값 — 그 칸을 비운다 */
 export interface OrgShellMe {
@@ -28,67 +14,50 @@ export interface OrgShellMe {
   institutionName: string | null;
 }
 
-/**
- * org/layout.tsx 의 clientLoader 가 계산해서 내려주는 원본 카운트.
- * null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다
- */
+/** 메뉴 배지. null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다 */
 export interface OrgShellCounts {
-  matching: number | null;
-  reinput: number | null;
-  gate1: number | null;
-  gate2: number | null;
-  inbox: number | null;
-  hold: number | null;
+  /** 아이 확인 + 고쳐야 할 기록 */
+  check: number | null;
+  /** 검토 대기 (요약 실패 포함) */
+  review: number | null;
+  /** 분석 승인 + 새 분석(안 읽은 수신함) + 보호자 연결 요청 */
+  children: number | null;
 }
+
+/** 메뉴 배지 숫자를 센다. 진행 현황(O-80)의 선생님 차례와 수신함(O-50) 안 읽은 글 */
+export async function loadOrgCounts(): Promise<OrgShellCounts> {
+  const [pipeline, inbox] = await Promise.all([
+    loadIfReady("dashboard", getPipeline),
+    loadIfReady("inbox", getInbox),
+  ]);
+  const t = pipeline?.turn;
+  const unread = inbox?.filter((i) => !i.readAt).length ?? 0;
+  return {
+    check: t ? t.confirm + t.blocked : null,
+    review: t ? t.review : null,
+    children: t ? t.approve + t.requests + unread : null,
+  };
+}
+
+const POLL_MS = 10_000;
 
 interface NavItem {
   href: string;
   label: string;
-  icon: LucideIcon;
   badge?: number | null;
 }
 
-interface NavGroup {
-  label: string;
-  items: NavItem[];
-}
-
-/**
- * 머리띠 묶음 세 개. 각 묶음에 마우스를 올리거나 키보드 포커스가 들어오면 세부 화면이 펼쳐진다.
- * 묶음 이름을 눌러도 되는데, 그러면 그 묶음의 **첫 화면**으로 간다 — 눌러도 아무 일 없는 자리를 만들지 않는다.
- */
-function nav(counts: OrgShellCounts): NavGroup[] {
+function nav(counts: OrgShellCounts): NavItem[] {
   return [
-    {
-      label: "업로드",
-      items: [
-        { href: "/upload", label: "기록 등록", icon: ClipboardPlus },
-        { href: "/dashboard", label: "대시보드", icon: LayoutDashboard },
-      ],
-    },
-    {
-      label: "승인 및 결과",
-      items: [
-        { href: "/queue/matching", label: "매칭 확인", icon: ClipboardCheck, badge: counts.matching },
-        { href: "/gate1", label: "요약 검토", icon: ListChecks, badge: counts.gate1 },
-        { href: "/gate1?tab=hold", label: "보류함", icon: PauseCircle, badge: counts.hold },
-        { href: "/gate2", label: "인사이트 승인", icon: Send, badge: counts.gate2 },
-        { href: "/insights", label: "관찰·분석 결과", icon: Sparkles },
-      ],
-    },
-    {
-      label: "관리",
-      items: [
-        { href: "/queue/reinput", label: "검증 수정 요청", icon: RotateCcw, badge: counts.reinput },
-        { href: "/inbox", label: "메시지", icon: Mail, badge: counts.inbox },
-        { href: "/children", label: "아동 목록", icon: Users },
-        { href: "/checklists", label: "준비물·확인사항", icon: ClipboardList },
-      ],
-    },
+    { href: "/dashboard", label: "대시보드" },
+    { href: "/check", label: "기록 확인", badge: counts.check },
+    { href: "/gate1", label: "검토", badge: counts.review },
+    { href: "/children", label: "아동 목록", badge: counts.children },
+    { href: "/checklists", label: "준비물·확인사항" },
   ];
 }
 
-/** 캔버스가 "셀 수 있는 내 차례"에 쓰는 노랑 배지 */
+/** "셀 수 있는 내 차례"에 쓰는 노랑 배지 */
 function Count({ n }: { n: number }) {
   return (
     <span className="shrink-0 rounded-full bg-mark px-2 py-px text-[13px] font-bold tabular-nums text-markink">
@@ -97,13 +66,8 @@ function Count({ n }: { n: number }) {
   );
 }
 
-/** `/gate1?tab=hold` 처럼 물음표가 붙은 메뉴는 그 값까지 봐야 지금 자리를 안다 */
-function isHere(href: string, pathname: string, search: string): boolean {
-  const [path, query] = href.split("?");
-  if (pathname !== path && !pathname.startsWith(path + "/")) return false;
-  const here = new URLSearchParams(search);
-  if (query) return new URLSearchParams(query).get("tab") === here.get("tab");
-  return !here.get("tab");
+function isHere(href: string, pathname: string): boolean {
+  return pathname === href || pathname.startsWith(href + "/");
 }
 
 export function OrgShell({
@@ -115,10 +79,16 @@ export function OrgShell({
   me: OrgShellMe;
   counts: OrgShellCounts;
 }) {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   // 다음 화면을 기다리는 동안 지금 화면을 살짝 흐린다 — 맨 위 막대(NavigationProgress)와 함께
   const navigating = useNavigating();
-  const GROUPS = nav(counts);
+
+  // 처음 숫자는 layout 의 clientLoader 가 준다. 화면을 옮기거나 처리 뒤 revalidate 되면 그 값으로 바뀌고,
+  // 그 사이에는 10초마다 직접 다시 센다(탭이 숨으면 멈춤)
+  const [live, setLive] = useState(counts);
+  useEffect(() => setLive(counts), [counts]);
+  usePolling(async () => setLive(await loadOrgCounts()), POLL_MS, true, false);
+  const ITEMS = nav(live);
 
   return (
     <div className="org-ui min-h-screen">
@@ -127,80 +97,25 @@ export function OrgShell({
           <img src="/img/logo.png" alt="잇다" width={120} height={44} className="h-11 w-auto" />
         </Link>
 
-        {/* 묶음 셋. 펼침은 CSS 로만 — 마우스를 올려도, 키보드 포커스가 들어와도 같이 열린다 */}
         <nav
           aria-label="주 메뉴"
-          className="order-last flex w-full justify-center md:order-none md:w-auto md:flex-1"
+          className="order-last flex w-full justify-center overflow-x-auto md:order-none md:w-auto md:flex-1"
         >
           <ul className="flex items-center gap-1 rounded-full bg-surface/90 p-1.5 shadow-[0_2px_14px_rgba(120,90,40,0.12)] backdrop-blur-sm">
-            {GROUPS.map((g) => {
-              const here = g.items.some((i) => isHere(i.href, pathname, search));
-              const total = g.items.reduce((n, i) => n + (i.badge ?? 0), 0);
+            {ITEMS.map((item) => {
+              const here = isHere(item.href, pathname);
               return (
-                <li
-                  key={g.label}
-                  className="group/nav relative"
-                  // 항목을 누르면 그 링크에 포커스가 남아 focus-within 으로 계속 열려 있다. 마우스가 묶음을
-                  // 벗어나면 포커스를 놓아 닫는다 — 키보드로 옮겨 다닐 때는 마우스가 안 움직여 그대로 열린다
-                  onMouseLeave={(e) => {
-                    const focused = document.activeElement;
-                    if (focused instanceof HTMLElement && e.currentTarget.contains(focused)) focused.blur();
-                  }}
-                >
+                <li key={item.href}>
                   <Link
-                    to={g.items[0].href}
-                    aria-current={here ? "true" : undefined}
-                    className={`tap flex items-center gap-1.5 rounded-full px-4 text-[16px] font-bold whitespace-nowrap transition-colors duration-200 ease-out sm:px-5 ${
-                      here
-                        ? "bg-ink text-paper"
-                        : "text-ink2 hover:bg-surface2 group-focus-within/nav:bg-surface2"
+                    to={item.href}
+                    aria-current={here ? "page" : undefined}
+                    className={`tap flex items-center gap-1.5 rounded-full px-3.5 text-[16px] font-bold whitespace-nowrap transition-colors duration-200 ease-out sm:px-4 ${
+                      here ? "bg-ink text-paper" : "text-ink2 hover:bg-surface2"
                     }`}
                   >
-                    {g.label}
-                    {total > 0 ? <Count n={total} /> : null}
-                    <ChevronDown
-                      aria-hidden
-                      size={15}
-                      strokeWidth={2.4}
-                      className="opacity-60 transition-transform duration-200 group-hover/nav:rotate-180 group-focus-within/nav:rotate-180"
-                    />
+                    {item.label}
+                    {item.badge ? <Count n={item.badge} /> : null}
                   </Link>
-
-                  {/* pt-2 가 알약과 펼침판 사이의 다리다 — 이게 없으면 내려오는 동안 닫힌다 */}
-                  <div className="invisible absolute top-full left-1/2 z-40 -translate-x-1/2 pt-2 opacity-0 transition-opacity duration-150 group-hover/nav:visible group-hover/nav:opacity-100 group-focus-within/nav:visible group-focus-within/nav:opacity-100">
-                    <ul className="w-56 max-w-[calc(100vw-2.5rem)] rounded-[22px] border border-line bg-surface p-2 shadow-[0_12px_34px_rgba(120,90,40,0.18)]">
-                      {g.items.map((item) => {
-                        const active = isHere(item.href, pathname, search);
-                        const Icon = item.icon;
-                        return (
-                          <li key={item.href}>
-                            <Link
-                              to={item.href}
-                              aria-current={active ? "page" : undefined}
-                              // 터치에서는 mouseleave 가 없다 — 누르면 바로 포커스를 놓아 닫는다
-                              onClick={(e) => e.currentTarget.blur()}
-                              className={`tap flex items-center gap-3 rounded-[14px] px-3 text-[15px] transition-colors duration-150 ${
-                                active
-                                  ? "bg-accentsoft text-accentink"
-                                  : "text-ink2 hover:bg-surface2"
-                              }`}
-                            >
-                              <Icon
-                                aria-hidden
-                                size={18}
-                                strokeWidth={1.8}
-                                className="shrink-0"
-                              />
-                              <span className="min-w-0 flex-1 truncate font-bold text-ink">
-                                {item.label}
-                              </span>
-                              {item.badge ? <Count n={item.badge} /> : null}
-                            </Link>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
                 </li>
               );
             })}

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 
 /**
- * 화면이 보이는 동안 `intervalMs` 마다 `tick` 을 부른다. 처음 붙을 때 한 번 바로 부른다.
+ * 화면이 보이는 동안 `intervalMs` 마다 `tick` 을 부른다. `immediate` 면 처음 붙을 때 한 번 바로 부른다
+ * (loader 가 이미 첫 값을 줬으면 false).
  * 탭이 숨으면 멈추고, 다시 보이면 바로 한 번 부른 뒤 이어 간다.
  * 앞 호출이 끝나기 전에는 다음 호출을 겹쳐 보내지 않는다.
  */
-export function usePolling(tick: () => Promise<unknown> | void, intervalMs = 10_000, enabled = true) {
+export function usePolling(tick: () => Promise<unknown> | void, intervalMs = 10_000, enabled = true, immediate = true) {
   const tickRef = useRef(tick);
   tickRef.current = tick;
 
@@ -25,9 +26,9 @@ export function usePolling(tick: () => Promise<unknown> | void, intervalMs = 10_
         running = false;
       }
     }
-    function start() {
+    function start(now = true) {
       if (timer) return;
-      void run();
+      if (now) void run();
       timer = setInterval(run, intervalMs);
     }
     function stop() {
@@ -39,11 +40,11 @@ export function usePolling(tick: () => Promise<unknown> | void, intervalMs = 10_
       else start();
     }
 
-    if (document.visibilityState !== "hidden") start();
+    if (document.visibilityState !== "hidden") start(immediate);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [intervalMs, enabled]);
+  }, [intervalMs, enabled, immediate]);
 }
