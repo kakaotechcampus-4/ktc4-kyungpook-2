@@ -204,7 +204,8 @@ public class DashboardPipelineService {
 
     /**
      * 아이×날짜 본 줄과 시스템 오류 줄. 검토 대기 판이 있는 묶음은 그 판 한 줄이다 — 새 일지는 그 판을 다시 만드는
-     * 재료라 판의 {@code processing} 이 이미 말한다. 보류한 판은 다시 요약하지 않으므로 새 일지는 따로 보인다.
+     * 재료라 판의 {@code processing} 이 이미 말한다(다시 요약에 실패한 일지만 따로 보인다). 보류한 판은 다시 요약하지
+     * 않으므로 새 일지는 따로 보인다.
      */
     private List<Row> entryRows(String userId, List<PipelineEntry> entries, Set<Long> members,
             Map<Long, String> names) {
@@ -231,6 +232,11 @@ public class DashboardPipelineService {
             groupEntries.stream().filter(e -> e.status() == JournalEntryStatus.SYSTEM_ERROR).findFirst()
                     .ifPresent(e -> rows.add(systemErrorRow(group, name, e.failureStage())));
             if (pendingGroups.contains(group)) {
+                // 다시 요약이 실패하면 원래 일지는 검토 대기로 돌아가고 새 일지만 SUMMARY_FAILED 로 남는다 — 그 실패도 보인다.
+                if (groupEntries.stream().anyMatch(e -> e.status() == JournalEntryStatus.SUMMARY_FAILED)) {
+                    rows.add(entryRow(group.childId(), name, group.entryDate(), Status.SUMMARY_FAILED, null,
+                            new Target("summary_failed", null)));
+                }
                 return;
             }
             Status status = mainStatusOf(groupEntries, busyDates.contains(group.entryDate()));

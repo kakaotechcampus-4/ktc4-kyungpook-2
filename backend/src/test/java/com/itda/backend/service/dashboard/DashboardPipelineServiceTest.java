@@ -265,6 +265,20 @@ class DashboardPipelineServiceTest {
     }
 
     @Test
+    void 검토_대기_요약이_있어도_새_일지의_요약이_실패하면_그_실패도_내_차례로_보인다() {
+        // 다시 요약이 실패하면 원래 일지는 검토 대기로 돌아가고 새 일지만 SUMMARY_FAILED 로 남는다.
+        given(summaryGate1QueryService.getSummaries(TEACHER, "pending"))
+                .willReturn(List.of(gate1(50L, JUNHO, DATE, false, false)));
+        entry(1L, JUNHO, DATE, JournalEntryStatus.SUMMARY_FAILED);
+
+        DashboardPipelineResponse response = service.getPipeline(TEACHER);
+
+        assertThat(response.rows()).extracting(Row::status)
+                .containsExactly(Status.SUMMARY_FAILED, Status.REVIEW);
+        assertThat(response.turn().review()).isEqualTo(2);
+    }
+
+    @Test
     void 보류한_요약이_있어도_새_일지는_새_판으로_요약되니_따로_보인다() {
         given(summaryGate1QueryService.getSummaries(TEACHER, "hold"))
                 .willReturn(List.of(gate1(52L, JUNHO, DATE, false, false)));
