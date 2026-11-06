@@ -107,8 +107,9 @@ export function ListPopup({
  * `open(id)` 로 열고, 처리가 끝나면 `done(id)` — 그 건은 ✓ 표시 뒤 2초 지나 목록에서 빠지고,
  * 팝업은 아직 처리하지 않은 다음 건(없으면 앞 건)으로 넘어가며, 남은 건이 없으면 닫힌다.
  * `list` 는 서버에서 받은 목록 그대로 준다. 처리한 건이 폴링으로 먼저 빠져도 그대로 동작한다.
+ * `skip` 이 참인 건(예: 요약을 다시 만드는 중)은 목록에는 보이되 "다음 건" 과 "n / N" 에서 뺀다.
  */
-export function useWalk<T>(list: T[], idOf: (item: T) => string) {
+export function useWalk<T>(list: T[], idOf: (item: T) => string, skip?: (item: T) => boolean) {
   const [openId, setOpenId] = useState<string | null>(null);
   /** ✓ 를 보이는 중인 건 */
   const [doneIds, setDoneIds] = useState<ReadonlySet<string>>(new Set());
@@ -120,7 +121,10 @@ export function useWalk<T>(list: T[], idOf: (item: T) => string) {
 
   const visible = useMemo(() => list.filter((it) => !goneIds.has(idOf(it))), [list, goneIds, idOf]);
   /** 팝업이 돌 수 있는 건 = 아직 처리하지 않은 것 */
-  const todo = useMemo(() => visible.filter((it) => !doneIds.has(idOf(it))), [visible, doneIds, idOf]);
+  const todo = useMemo(
+    () => visible.filter((it) => !doneIds.has(idOf(it)) && !skip?.(it)),
+    [visible, doneIds, idOf, skip],
+  );
 
   const current = openId == null ? null : (visible.find((it) => idOf(it) === openId) ?? null);
   const index = current ? todo.findIndex((it) => idOf(it) === openId) : -1;

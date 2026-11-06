@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Link } from "react-router";
 
@@ -84,7 +85,8 @@ export function WorkRow({
   sub: React.ReactNode;
   text: React.ReactNode;
   tag?: React.ReactNode;
-  action: string;
+  /** 없으면 버튼 대신 빈칸 — 지금 열 수 없는 건(요약을 다시 만드는 중) */
+  action?: string;
   onOpen: () => void;
   done?: React.ReactNode;
 }) {
@@ -107,14 +109,18 @@ export function WorkRow({
       <p className="col-span-full row-start-2 line-clamp-2 min-w-0 text-[14px] text-ink2 sm:col-span-1 sm:row-start-auto sm:truncate">
         {text}
       </p>
-      <span className="hidden sm:inline">{tag}</span>
-      <button
-        type="button"
-        onClick={onOpen}
-        className="tap justify-self-end rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110"
-      >
-        {action}
-      </button>
+      <span className={action ? "hidden sm:inline" : "justify-self-end"}>{tag}</span>
+      {action ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="tap justify-self-end rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110"
+        >
+          {action}
+        </button>
+      ) : (
+        <span className="hidden sm:block" />
+      )}
     </article>
   );
 }
@@ -149,5 +155,28 @@ export function PopButton({
       {...props}
       className={`tap rounded-full px-5 text-[15px] font-bold disabled:opacity-50 ${cls} ${props.className ?? ""}`}
     />
+  );
+}
+
+/**
+ * 화면 아래에 잠깐 뜨는 알림 한 줄. `message` 가 바뀔 때마다 5초 보인다.
+ * 같은 문구를 다시 띄우려면 `key` 를 바꿔 준다.
+ */
+export function Toast({ message, onGone }: { message: string | null; onGone: () => void }) {
+  const [shown, setShown] = useState(message);
+  useEffect(() => {
+    setShown(message);
+    if (!message) return;
+    const t = setTimeout(onGone, 5000);
+    return () => clearTimeout(t);
+  }, [message, onGone]);
+  if (!shown) return null;
+  return (
+    <div
+      role="status"
+      className="fixed inset-x-4 bottom-6 z-[70] mx-auto w-fit max-w-[560px] rounded-full bg-ink px-5 py-3 text-[15px] font-bold text-paper shadow-[0_12px_32px_rgba(22,28,27,0.25)] max-[560px]:bottom-[calc(24px+env(safe-area-inset-bottom,0px))]"
+    >
+      {shown}
+    </div>
   );
 }

@@ -1,48 +1,35 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
-import {
-  Check,
-  ChevronRight,
-  Pencil,
-  Plus,
-  Trash2,
-  TriangleAlert,
-} from "lucide-react";
+import { Check, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
-import { HelpTip } from "@/components/ui/HelpTip";
-import { Card, ConfirmDialog, EmptyState, PageHeader, Spinner, StuckList } from "@/components/ui";
+import { Busy, ConfirmDialog, Spinner } from "@/components/ui";
+import { ListPopup, useWalk } from "@/components/ui/ListPopup";
+import { Pager, usePage } from "@/components/ui/Pager";
 import {
-  ApiError,
-  decideGate1,
-  getBlockedQueue,
-  getGate1Queue,
-  getMatchingQueue,
-  isReady,
-  loadIfReady,
-  reopenGate1,
-} from "@/lib/api";
+  Chip,
+  EmptyLine,
+  PopButton,
+  PopSection,
+  Toast,
+  WorkHead,
+  WorkRow,
+} from "@/components/org/WorkList";
+import { ApiError, decideGate1, getGate1Queue, isReady, reopenGate1 } from "@/lib/api";
 import type { Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
 
-/** BE 는 상태 하나씩만 준다. 검토 대기와 보류함을 함께 묻는다 */
+/**
+ * 검토 — 요약을 읽고 승인한다 (O-30 · O-31 · O-33).
+ * 목록은 한 줄 카드, 누르면 팝업에서 문장마다 유지·수정·삭제를 고르고 원본 일지를 함께 본다.
+ * 처리하면 같은 칸의 다음 요약이 이어서 열린다. 칸은 [전체](검토 대기) · [보류].
+ * 대시보드 바로가기: `?open=first` (첫 건), `?open=summary&id=` (그 요약), `?tab=hold` (보류 칸).
+ */
 export async function clientLoader() {
-  const [pending, held, matching, blocked] = await Promise.all([
-    getGate1Queue("pending"),
-    getGate1Queue("hold"),
-    loadIfReady("matchingQueue", getMatchingQueue),
-    loadIfReady("blockedQueue", getBlockedQueue),
-  ]);
-  return {
-    pending,
-    held,
-    // 요약 검토가 비었을 때 앞단 어디에 걸려 있는지 말해 준다
-    upstream: {
-      matching: matching ? matching.length : null,
-      blocked: blocked ? blocked.length : null,
-    },
-  };
+  // BE 는 상태 하나씩만 준다 — 검토 대기와 보류를 함께 묻는다
+  const [pending, held] = await Promise.all([getGate1Queue("pending"), getGate1Queue("hold")]);
+  return { pending, held };
 }
 
-const TITLE = "요약 검토";
+const TITLE = "검토";
 
 type Tab = "pending" | "hold";
 type Decision = "approve" | "hold" | "remove";
@@ -155,36 +142,6 @@ function messageOf(err: unknown): string {
   return "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }
 
-/* ── 공통 조각 ───────────────────────────────────────── */
-
-function ItemHeader({ item, badge }: { item: SummaryItem; badge?: React.ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2.5 border-b border-surface2 pb-3.5">
-      <span
-        aria-hidden
-        className="flex size-[34px] items-center justify-center rounded-full bg-surface2 text-[14px] font-semibold text-ink2"
-      >
-        {item.childName.slice(0, 1)}
-      </span>
-      <span className="text-[17px] font-bold">{item.childName}</span>
-      <span className="text-[14px] text-muted">
-        {dateLabel(item.entryDate)} · {item.revision}회차 요약
-      </span>
-      {badge ? <span className="ml-auto">{badge}</span> : null}
-    </div>
-  );
-}
-
-function Pill({ tone, children }: { tone: "review" | "accent" | "neutral"; children: React.ReactNode }) {
-  const cls = {
-    review: "bg-reviewsoft text-review",
-    accent: "bg-accentsoft text-accentink",
-    neutral: "bg-surface2 text-ink2",
-  }[tone];
-  return (
-    <span className={`rounded-full px-2.5 py-0.5 text-[13px] font-bold ${cls}`}>{children}</span>
-  );
-}
 
 function NumberDot({ n, className }: { n: number; className: string }) {
   return (
@@ -197,404 +154,6 @@ function NumberDot({ n, className }: { n: number; className: string }) {
   );
 }
 
-/** 고칠 수 없는 상태(처리 중 · 보류함)에서 문장을 그대로 보인다 */
-function ReadOnlySentences({ item, dim = false }: { item: SummaryItem; dim?: boolean }) {
-  if (item.claims.length === 0) {
-    return (
-      <p className={`rounded bg-surface2/60 p-3 text-[16px] leading-7 ${dim ? "opacity-55" : ""}`}>
-        {item.content}
-      </p>
-    );
-  }
-  return (
-    <ol className={`flex flex-col gap-2 ${dim ? "opacity-55" : ""}`}>
-      {item.claims.map((c, i) => (
-        <li
-          key={c.index}
-          className="flex items-start gap-3 rounded border border-line bg-surface px-3.5 py-3"
-        >
-          <NumberDot n={i + 1} className="bg-surface2 text-ink2" />
-          <span className="pt-0.5 text-[16px] leading-6 text-ink2">{c.text}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function UncoveredEntries({ item }: { item: SummaryItem }) {
-  if (item.uncoveredEntries.length === 0) return null;
-  return (
-    <details className="group rounded border border-line bg-paper/60">
-      <summary className="tap flex cursor-pointer list-none items-center gap-2 px-3.5 text-[14px] text-ink2 [&::-webkit-details-marker]:hidden">
-        <ChevronRight
-          aria-hidden
-          size={15}
-          strokeWidth={2}
-          className="transition-transform group-open:rotate-90"
-        />
-        <b className="font-bold">요약에 안 들어간 일지 {item.uncoveredEntries.length}건</b>
-        <span className="text-muted">· 승인하면 함께 끝나요</span>
-      </summary>
-      <ul className="flex flex-col gap-2 px-3.5 pb-3.5 pl-9">
-        {item.uncoveredEntries.map((e) => (
-          <li key={e.journalEntryId} className="text-[15px] leading-6 text-ink2">
-            “{e.content}”
-          </li>
-        ))}
-      </ul>
-    </details>
-  );
-}
-
-/* ── 검토 대기 카드 ─────────────────────────────────── */
-
-function PendingItem({
-  item,
-  onResolved,
-}: {
-  item: SummaryItem;
-  onResolved: (outcome: Outcome, message?: string) => void;
-}) {
-  const revalidator = useRevalidator();
-  const [lines, setLines] = useState<Line[]>(() => freshLines(item.claims));
-  const [added, setAdded] = useState<Added[]>([]);
-  const [nextKey, setNextKey] = useState(0);
-  const [seenVersion, setSeenVersion] = useState(item.version);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<Decision | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  /*
-   * 목록을 다시 받았는데 요약이 바뀌었으면 고치던 내용을 버린다. 옛 문장 번호로 보내면
-   * 엉뚱한 문장이 고쳐지거나 400 이 난다. (렌더 중 상태 조정 — React 문서의 권장 방식)
-   * 아래 계산보다 먼저 해야 한다 — 옛 lines 와 새 claims 는 길이가 달라 짝을 지으면 화면이 깨진다.
-   * 열려 있던 확인 창도 닫는다. 안 닫으면 새 문장을 읽지 않고 승인하게 된다.
-   */
-  if (seenVersion !== item.version) {
-    const touched = lines.some((l) => l.action !== "KEEP") || added.some((a) => a.text.trim());
-    setSeenVersion(item.version);
-    setLines(freshLines(item.claims));
-    setAdded([]);
-    setConfirming(null);
-    setError(null);
-    setNotice(
-      "요약이 새 기록으로 바뀌었어요. 바뀐 문장을 다시 읽고 결정해 주세요." +
-        (touched ? " 고치던 내용은 지웠어요." : ""),
-    );
-    // 이 렌더 결과는 React 가 버리고 새 상태로 바로 다시 그린다
-    return null;
-  }
-
-  const edits = lines.filter((l, i) => isEdited(l, item.claims[i])).length;
-  const dels = lines.filter((l) => l.action === "DELETE").length;
-  const adds = added.filter((a) => a.text.trim()).length;
-  const hasChanges = edits + dels + adds > 0;
-
-  const canEdit = item.claims.length > 0 && !item.processing;
-  const blankEdit = lines.some((l) => l.action === "EDIT" && !l.text.trim());
-  const nothingLeft = item.claims.length > 0 && dels === item.claims.length && adds === 0;
-  const approveBlocked = item.processing || blankEdit || nothingLeft;
-  const countText = `수정 ${edits} · 삭제 ${dels} · 추가 ${adds}`;
-  const flagged = item.needsReview || item.reviewFlags.length > 0;
-  const flagReasons = [...new Set(item.reviewFlags.flatMap((f) => f.reasons))];
-
-  function setLine(i: number, patch: Partial<Line>) {
-    setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  }
-
-  function cancelEdits() {
-    setLines(freshLines(item.claims));
-    setAdded([]);
-  }
-
-  async function decide(decision: Decision) {
-    const cards = decision === "approve" ? buildCards(item.claims, lines, added) : undefined;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      await decideGate1(item.id, { decision, version: item.version, ...(cards ? { cards } : {}) });
-      onResolved(
-        decision === "approve" ? (cards ? "corrected" : "approved") : decision === "hold" ? "held" : "removed",
-      );
-      await revalidator.revalidate();
-    } catch (err) {
-      if (isStale(err)) {
-        onResolved("stale", messageOf(err));
-        await revalidator.revalidate();
-      } else {
-        setError(messageOf(err));
-        if (needsReload(err)) await revalidator.revalidate();
-      }
-    } finally {
-      setBusy(false);
-      setConfirming(null);
-    }
-  }
-
-  const uncovered = item.uncoveredEntries.length;
-  const dialog = {
-    approve: {
-      title: `${item.childName} 요약을 승인할까요?`,
-      body:
-        (hasChanges ? `고친 내용으로 승인해요 (${countText}).` : "AI 요약 그대로 승인해요.") +
-        (uncovered > 0 ? ` 요약에 안 들어간 일지 ${uncovered}건도 함께 끝나요.` : ""),
-      warning: "승인하면 되돌릴 수 없어요.",
-      label: hasChanges ? "변경 내용으로 승인" : "승인하기",
-      tone: "human",
-    },
-    hold: {
-      title: `${item.childName} 요약을 보류할까요?`,
-      body: "보류함으로 옮겨요. 보류함에서 해제하거나 제거할 수 있어요.",
-      warning: hasChanges ? "고치던 문장은 저장되지 않아요." : undefined,
-      label: "보류하기",
-      tone: "neutral",
-    },
-    remove: {
-      title: `${item.childName} 요약을 제거할까요?`,
-      body:
-        "이 요약과 그 일지를 모두 지워요." +
-        (uncovered > 0 ? ` 요약에 안 들어간 일지 ${uncovered}건도 함께 지워져요.` : ""),
-      warning: "제거하면 되돌릴 수 없어요.",
-      label: "제거하기",
-      tone: "block",
-    },
-  } as const;
-  const d = confirming ? dialog[confirming] : null;
-
-  return (
-    <article
-      aria-label={`${item.childName} ${dateLabel(item.entryDate)} 요약`}
-      className="flex flex-col gap-4 rounded border border-line bg-surface px-6 pt-5.5 pb-5"
-    >
-      <ItemHeader
-        item={item}
-        badge={
-          item.processing ? (
-            <Pill tone="accent">요약 다시 만드는 중</Pill>
-          ) : flagged ? (
-            <Pill tone="review">확인 필요</Pill>
-          ) : null
-        }
-      />
-
-      {item.processing ? (
-        <div
-          role="status"
-          className="flex items-center gap-2.5 rounded bg-accentsoft px-3.5 py-3 text-accentink"
-        >
-          <Spinner size={18} />
-          <p className="text-[14px] leading-6">
-            <b className="font-bold">새 기록을 반영하는 중이에요.</b> 요약이 곧 바뀌어서 지금은
-            고치거나 승인할 수 없어요.
-          </p>
-        </div>
-      ) : null}
-
-      {notice ? (
-        <p role="status" className="rounded bg-reviewsoft px-3.5 py-3 text-[14px] leading-6 text-review">
-          {notice}
-        </p>
-      ) : null}
-
-      {/* 막지 않고 경고만 한다. 어느 단어인지는 BE 가 주지 않아 본문 강조는 하지 않는다 */}
-      {flagged && !item.processing ? (
-        <div role="note" className="flex items-start gap-2.5 rounded bg-reviewsoft px-3.5 py-3 text-review">
-          <TriangleAlert aria-hidden size={18} strokeWidth={1.7} className="mt-0.5 shrink-0" />
-          <div className="flex flex-col gap-0.5">
-            {item.needsReview ? (
-              <>
-                <p className="text-[15px] font-bold">
-                  {item.reviewReasons.map((r) => REVIEW_REASON[r]).find(Boolean) ??
-                    "공유 전에 한 번 더 확인해 주세요"}
-                </p>
-                <p className="text-[14px] leading-6">
-                  보호자와 다른 기관에 가기 전에 문장을 읽고, 해당 문장을 고치거나 삭제해 주세요.
-                </p>
-              </>
-            ) : null}
-            {item.reviewFlags.length > 0 ? (
-              <p className="text-[14px] leading-6">
-                검증이 확인을 요청한 원본 일지 {item.reviewFlags.length}건
-                {/* 사유가 없는 예전 서버 응답이어도 안내가 " · " 에서 끊기지 않게 있을 때만 잇는다 */}
-                {flagReasons.length > 0 ? ` · ${flagReasons.join(" · ")}` : null}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {item.processing ? (
-        <ReadOnlySentences item={item} dim />
-      ) : item.claims.length === 0 ? (
-        <div className="flex flex-col gap-2.5">
-          <h2 className="text-[15px] font-bold text-ink2">AI 요약</h2>
-          <p className="rounded bg-surface2/60 p-3 text-[16px] leading-7">{item.content}</p>
-          <p className="text-[14px] text-muted">
-            문장을 나누지 못한 요약이라 문장별로 고칠 수 없어요. 그대로 승인하거나 제거해 주세요.
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2.5">
-          <div className="flex flex-wrap items-baseline justify-between gap-1.5">
-            <h2 className="text-[15px] font-bold text-ink2">AI 요약 · 문장 {item.claims.length}개</h2>
-          </div>
-
-          <ol className="flex flex-col gap-2">
-            {item.claims.map((claim, i) => (
-              <SentenceRow
-                key={claim.index}
-                no={i + 1}
-                claim={claim}
-                line={lines[i]}
-                onChange={(patch) => setLine(i, patch)}
-              />
-            ))}
-            {added.map((a) => (
-              <li
-                key={a.key}
-                className="flex flex-wrap items-start gap-3 rounded border border-dashed border-human/50 bg-humansoft/30 py-3 pr-3 pl-3.5"
-              >
-                <span
-                  aria-hidden
-                  className="mt-2.5 flex size-[26px] shrink-0 items-center justify-center rounded-full bg-humansoft text-human"
-                >
-                  <Plus size={14} strokeWidth={2} />
-                </span>
-                <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-1.5">
-                  <textarea
-                    aria-label="새 문장"
-                    placeholder="일지에 없던 사실을 적어요"
-                    rows={2}
-                    maxLength={MAX_TEXT}
-                    value={a.text}
-                    onChange={(e) =>
-                      setAdded((xs) =>
-                        xs.map((x) => (x.key === a.key ? { ...x, text: e.target.value } : x)),
-                      )
-                    }
-                    className="w-full resize-y rounded border border-human/50 bg-surface px-3 py-2.5 text-[16px] leading-6 outline-none focus:border-human focus:ring-2 focus:ring-human/20"
-                  />
-                  <p className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
-                    <span className="rounded bg-humansoft px-2 py-0.5 text-[12px] font-bold text-human">
-                      새로 쓴 문장
-                    </span>
-                    근거 일지 없음 · 검증을 거치지 않아요
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-label="새 문장 빼기"
-                  onClick={() => setAdded((xs) => xs.filter((x) => x.key !== a.key))}
-                  className="min-h-10 shrink-0 rounded border border-line2 bg-surface px-3 text-[14px] font-semibold text-ink2 hover:bg-surface2"
-                >
-                  빼기
-                </button>
-              </li>
-            ))}
-          </ol>
-
-          <button
-            type="button"
-            onClick={() => {
-              setAdded((xs) => [...xs, { key: nextKey, text: "" }]);
-              setNextKey((k) => k + 1);
-            }}
-            disabled={item.claims.length + added.length >= MAX_CARDS}
-            className="tap flex items-center justify-center gap-1.5 rounded border border-dashed border-line2 bg-surface text-[15px] font-semibold text-accentink hover:bg-surface2 disabled:opacity-60"
-          >
-            <Plus aria-hidden size={15} strokeWidth={2} />
-            문장 추가
-          </button>
-        </div>
-      )}
-
-      <UncoveredEntries item={item} />
-
-      <div className="flex flex-col gap-1.5 border-t border-surface2 pt-3.5">
-        <div className="flex flex-wrap items-center gap-2.5">
-          {canEdit ? (
-            <>
-              <p aria-live="polite" className="text-[14px] text-ink2">
-                {hasChanges ? countText : "고친 문장 없음"}
-              </p>
-              {hasChanges ? (
-                <button
-                  type="button"
-                  onClick={cancelEdits}
-                  className="tap px-2 text-[14px] font-semibold text-accentink underline"
-                >
-                  편집 취소
-                </button>
-              ) : null}
-            </>
-          ) : null}
-          <div className="ml-auto flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirming("hold")}
-              disabled={busy || item.processing}
-              className="tap rounded border border-line2 bg-surface px-4.5 text-[16px] font-semibold text-ink2 hover:bg-surface2 disabled:border-line disabled:bg-paper disabled:text-muted"
-            >
-              보류
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirming("approve")}
-              disabled={busy || approveBlocked}
-              className="tap rounded bg-ink px-5.5 text-[16px] font-bold text-paper hover:brightness-95 disabled:bg-line disabled:text-muted"
-            >
-              {hasChanges ? "변경 내용으로 승인" : "승인"}
-            </button>
-          </div>
-        </div>
-
-        {nothingLeft ? (
-          <p className="text-right text-[14px] text-block">
-            남는 문장이 없어요. 요약을 통째로 지우려면 요약 제거를 눌러 주세요.
-          </p>
-        ) : blankEdit ? (
-          <p className="text-right text-[14px] text-block">
-            고칠 문장이 비어 있어요. 문장을 빼려면 삭제를 눌러 주세요.
-          </p>
-        ) : null}
-
-        {error ? (
-          <p role="alert" className="text-right text-[14px] text-block">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => setConfirming("remove")}
-            disabled={busy || item.processing}
-            className="flex min-h-9 items-center gap-1.5 px-1 text-[14px] font-semibold text-block hover:underline disabled:text-muted disabled:no-underline"
-          >
-            <Trash2 aria-hidden size={14} strokeWidth={1.8} />
-            요약 제거
-          </button>
-        </div>
-      </div>
-
-      {confirming && d ? (
-        <ConfirmDialog
-          title={d.title}
-          warning={d.warning}
-          confirmLabel={d.label}
-          tone={d.tone}
-          busy={busy}
-          onCancel={() => setConfirming(null)}
-          onConfirm={() => decide(confirming)}
-        >
-          {d.body}
-        </ConfirmDialog>
-      ) : null}
-    </article>
-  );
-}
 
 const SEGMENT = [
   { action: "KEEP", label: "유지", Icon: Check, on: "bg-ink2 text-white" },
@@ -698,316 +257,21 @@ function SentenceRow({
   );
 }
 
-/* ── 요약할 내용 없음 카드 (#244) ──────────────────────── */
-
-/**
- * AI 가 그날 기록에서 전할 내용을 찾지 못한 결과. 고칠 문장이 없어 [확인] · [요약 되돌리기] 만 둔다.
- * 교사가 "왜 없지?" 를 바로 볼 수 있게 묶인 기록 원본을 펼쳐 둔다.
- */
-function NoContentItem({
-  item,
-  onResolved,
-}: {
-  item: SummaryItem;
-  onResolved: (outcome: Outcome, message?: string) => void;
-}) {
-  const revalidator = useRevalidator();
-  const [confirming, setConfirming] = useState<"confirm" | "revert" | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const count = item.uncoveredEntries.length;
-
-  async function decide(decision: "confirm" | "revert") {
-    setBusy(true);
-    setError(null);
-    try {
-      await decideGate1(item.id, { decision, version: item.version });
-      onResolved(decision === "confirm" ? "confirmed" : "reverted");
-      await revalidator.revalidate();
-    } catch (err) {
-      if (isStale(err)) {
-        onResolved("stale", messageOf(err));
-        await revalidator.revalidate();
-      } else {
-        setError(messageOf(err));
-        if (needsReload(err)) await revalidator.revalidate();
-      }
-    } finally {
-      setBusy(false);
-      setConfirming(null);
-    }
-  }
-
-  return (
-    <article
-      aria-label={`${item.childName} ${dateLabel(item.entryDate)} 요약할 내용 없음`}
-      className="flex flex-col gap-4 rounded border border-line bg-surface px-6 pt-5.5 pb-5"
-    >
-      <ItemHeader
-        item={item}
-        badge={
-          item.processing ? (
-            <Pill tone="accent">요약 다시 만드는 중</Pill>
-          ) : (
-            <Pill tone="neutral">요약할 내용 없음</Pill>
-          )
-        }
-      />
-
-      {item.processing ? (
-        <div
-          role="status"
-          className="flex items-center gap-2.5 rounded bg-accentsoft px-3.5 py-3 text-accentink"
-        >
-          <Spinner size={18} />
-          <p className="text-[14px] leading-6">
-            <b className="font-bold">새 기록을 반영하는 중이에요.</b> 결과가 곧 바뀌어서 지금은
-            확인하거나 되돌릴 수 없어요.
-          </p>
-        </div>
-      ) : null}
-
-      <div className="flex flex-col gap-1 rounded bg-surface2/60 px-4 py-3.5">
-        <p className="text-[16px] font-bold">이날 기록에서 요약할 내용을 찾지 못했어요</p>
-        <p className="text-[14px] leading-6 text-ink2">
-          AI 가 내용을 지어내지 않도록 요약을 비워 두었어요. 아래 기록을 읽고 골라 주세요.
-        </p>
-        <ul className="mt-1 flex flex-col gap-0.5 text-[14px] leading-6 text-ink2">
-          <li>
-            <b className="font-semibold text-ink">확인</b> · 원문을 읽었고 전할 내용이 없어요. 요약
-            없이 마무리해요.
-          </li>
-          <li>
-            <b className="font-semibold text-ink">요약 되돌리기</b> · 이 기록을 다시 요약할 수 있도록
-            오늘의 업무의 "요약 대기"로 돌려요.
-          </li>
-        </ul>
-      </div>
-
-      {count > 0 ? (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-[15px] font-bold text-ink2">이 날 기록 {count}건</h2>
-          <ul className="flex flex-col gap-2">
-            {item.uncoveredEntries.map((e) => (
-              <li
-                key={e.journalEntryId}
-                className="rounded border border-line bg-surface px-3.5 py-3 text-[16px] leading-relaxed text-ink"
-              >
-                {e.content}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <div className="flex flex-col gap-1.5 border-t border-surface2 pt-3.5">
-        <div className="flex flex-wrap justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => setConfirming("revert")}
-            disabled={busy || item.processing}
-            className="tap rounded border border-line2 bg-surface px-4.5 text-[16px] font-semibold text-ink2 hover:bg-surface2 disabled:border-line disabled:bg-paper disabled:text-muted"
-          >
-            요약 되돌리기
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirming("confirm")}
-            disabled={busy || item.processing}
-            className="tap rounded bg-ink px-5.5 text-[16px] font-bold text-paper hover:brightness-95 disabled:bg-line disabled:text-muted"
-          >
-            확인
-          </button>
-        </div>
-        {error ? (
-          <p role="alert" className="text-right text-[14px] text-block">
-            {error}
-          </p>
-        ) : null}
-      </div>
-
-      {confirming === "confirm" ? (
-        <ConfirmDialog
-          title={`${item.childName} 기록을 요약 없이 끝낼까요?`}
-          warning="확인하면 되돌릴 수 없어요."
-          confirmLabel="확인하기"
-          tone="human"
-          busy={busy}
-          onCancel={() => setConfirming(null)}
-          onConfirm={() => decide("confirm")}
-        >
-          원문을 읽고 요약 없이 마무리해요. 이날 기록{count > 0 ? ` ${count}건` : ""}은 "요약할 내용
-          없음"으로 끝나고, 아동 타임라인에는 올라가지 않아요.
-        </ConfirmDialog>
-      ) : confirming === "revert" ? (
-        <ConfirmDialog
-          title={`${item.childName} 요약을 되돌릴까요?`}
-          confirmLabel="되돌리기"
-          tone="neutral"
-          busy={busy}
-          onCancel={() => setConfirming(null)}
-          onConfirm={() => decide("revert")}
-        >
-          이 결과는 목록에서 빠지고, 이날 기록은 오늘의 업무에서 다시 "요약 대기"가 돼요. [요약]을
-          누르면 그 사이 들어온 같은 날 기록과 함께 새로 요약해요.
-        </ConfirmDialog>
-      ) : null}
-    </article>
-  );
-}
-
-/* ── 보류함 카드 ─────────────────────────────────────── */
-
-function HeldItem({
-  item,
-  onResolved,
-}: {
-  item: SummaryItem;
-  onResolved: (outcome: Outcome, message?: string) => void;
-}) {
-  const revalidator = useRevalidator();
-  const [confirming, setConfirming] = useState<"reopen" | "remove" | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function run(kind: "reopen" | "remove") {
-    setBusy(true);
-    setError(null);
-    try {
-      if (kind === "reopen") await reopenGate1(item.id);
-      else await decideGate1(item.id, { decision: "remove", version: item.version });
-      onResolved(kind === "reopen" ? "reopened" : "removed");
-      await revalidator.revalidate();
-    } catch (err) {
-      if (isStale(err)) {
-        onResolved("stale", messageOf(err));
-        await revalidator.revalidate();
-      } else {
-        setError(messageOf(err));
-        if (needsReload(err)) await revalidator.revalidate();
-      }
-    } finally {
-      setBusy(false);
-      setConfirming(null);
-    }
-  }
-
-  return (
-    <article
-      aria-label={`${item.childName} ${dateLabel(item.entryDate)} 요약, 보류함`}
-      className="flex flex-col gap-3.5 rounded border border-line bg-surface px-6 pt-5.5 pb-5"
-    >
-      <ItemHeader
-        item={item}
-        badge={
-          <span className="flex items-center gap-1">
-            <Pill tone="neutral">보류함</Pill>
-            <HelpTip label="보류함">
-              보류한 요약은 보호자와 다른 기관에 가지 않습니다. 보류를 해제하면 AI 요약 그대로
-              검토 대기로 돌아갑니다.
-            </HelpTip>
-          </span>
-        }
-      />
-      <ReadOnlySentences item={item} />
-      {error ? (
-        <p role="alert" className="text-right text-[14px] text-block">
-          {error}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <button
-          type="button"
-          onClick={() => setConfirming("remove")}
-          disabled={busy}
-          className="tap px-1 text-[14px] font-semibold text-block hover:underline disabled:text-muted"
-        >
-          요약 제거
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirming("reopen")}
-          disabled={busy}
-          className="tap rounded border border-accent bg-surface px-5 text-[16px] font-bold text-accentink hover:bg-accentsoft/50 disabled:opacity-60"
-        >
-          보류 해제
-        </button>
-      </div>
-
-      {confirming === "reopen" ? (
-        <ConfirmDialog
-          title={`${item.childName} 요약의 보류를 해제할까요?`}
-          confirmLabel="보류 해제"
-          tone="accent"
-          busy={busy}
-          onCancel={() => setConfirming(null)}
-          onConfirm={() => run("reopen")}
-        >
-          AI 요약 그대로 검토 대기로 돌아가요.
-        </ConfirmDialog>
-      ) : confirming === "remove" ? (
-        <ConfirmDialog
-          title={`${item.childName} 요약을 제거할까요?`}
-          warning="제거하면 되돌릴 수 없어요."
-          confirmLabel="제거하기"
-          tone="block"
-          busy={busy}
-          onCancel={() => setConfirming(null)}
-          onConfirm={() => run("remove")}
-        >
-          이 요약과 그 일지를 모두 지워요.
-        </ConfirmDialog>
-      ) : null}
-    </article>
-  );
-}
-
-/* ── 처리한 뒤 ─────────────────────────────────────── */
-
-const OUTCOME: Record<Exclude<Outcome, "stale">, { title: string; tone: "pass" | "neutral" }> = {
-  approved: { title: "AI 요약 그대로 승인했어요", tone: "pass" },
-  corrected: { title: "고친 내용으로 승인했어요", tone: "pass" },
-  held: { title: "보류함으로 옮겼어요", tone: "neutral" },
-  removed: { title: "요약을 제거했어요", tone: "neutral" },
-  reopened: { title: "보류를 해제했어요 · 검토 대기에서 다시 볼 수 있어요", tone: "pass" },
-  confirmed: { title: "요약할 내용 없음으로 확인했어요", tone: "pass" },
-  reverted: { title: "요약 대기로 되돌렸어요", tone: "neutral" },
-};
-
-function ResolvedCard({ item, outcome, message }: { item: SummaryItem; outcome: Outcome; message?: string }) {
-  const sub = `${item.childName} · ${dateLabel(item.entryDate)} 요약`;
-  if (outcome === "stale") {
-    return (
-      <Card className="border-line2">
-        <p className="mb-1 text-[16px] font-bold text-ink2">{sub}</p>
-        <p role="alert" className="text-[15px] leading-7 text-muted">
-          {message}
-        </p>
-      </Card>
-    );
-  }
-  const o = OUTCOME[outcome];
-  return (
-    <section className="flex flex-wrap items-center gap-3 rounded border border-line bg-surface px-6 py-5">
-      <span
-        aria-hidden
-        className={`flex size-9 items-center justify-center rounded-full ${
-          o.tone === "pass" ? "bg-passsoft text-pass" : "bg-surface2 text-ink2"
-        }`}
-      >
-        <Check size={18} strokeWidth={2} />
-      </span>
-      <div className="flex flex-col gap-0.5">
-        <p role="status" className="text-[16px] font-bold">
-          {o.title}
-        </p>
-        <p className="text-[14px] text-muted">{sub}</p>
-      </div>
-    </section>
-  );
-}
-
 /* ── 화면 ─────────────────────────────────────────── */
+
+const idOf = (s: SummaryItem) => s.id;
+const isProcessing = (s: SummaryItem) => s.processing;
+
+/** 처리한 결과 한 줄 (목록 카드가 ✓ 로 바뀌는 2초 동안) */
+const OUTCOME: Record<Exclude<Outcome, "stale">, string> = {
+  approved: "AI 요약 그대로 승인했어요",
+  corrected: "고친 내용으로 승인했어요",
+  held: "보류로 옮겼어요",
+  removed: "요약을 제거했어요",
+  reopened: "보류를 풀었어요 · 전체 칸에서 다시 볼 수 있어요",
+  confirmed: "요약 없이 마무리했어요",
+  reverted: "다시 요약하도록 돌렸어요",
+};
 
 /** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function Gate1Route() {
@@ -1016,117 +280,553 @@ export default function Gate1Route() {
 }
 
 function Gate1Page() {
-  const { pending, held, upstream } = useLoaderData<typeof clientLoader>();
-  // 세로 메뉴의 "보류함"이 /gate1?tab=hold 로 바로 들어온다
+  const { pending, held } = useLoaderData<typeof clientLoader>();
+  const revalidator = useRevalidator();
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get("tab") === "hold" ? "hold" : "pending";
-  const setTab = (next: Tab) =>
-    setParams(next === "hold" ? { tab: "hold" } : {}, { replace: true, preventScrollReset: true });
-  /**
-   * 처리하면 revalidate 로 그 요약이 목록에서 빠진다 — 결과 카드가 바로 사라지지 않도록
-   * 이번 방문 동안만 탭별로 기억한다. 키는 "탭:id" (보류 → 해제처럼 탭을 오가는 요약이 있다).
-   */
-  const [resolved, setResolved] = useState<
-    Record<string, { item: SummaryItem; outcome: Outcome; message?: string }>
-  >({});
+  const [toast, setToast] = useState<string | null>(null);
+  const clearToast = useCallback(() => setToast(null), []);
+  /** 처리한 요약 id → 결과 문구. ✓ 줄에 쓴다 */
+  const [outcomes, setOutcomes] = useState<Record<string, string>>({});
 
-  function resolve(from: Tab, item: SummaryItem, outcome: Outcome, message?: string) {
-    const other: Tab = from === "pending" ? "hold" : "pending";
-    setResolved((r) => {
-      const next = { ...r, [`${from}:${item.id}`]: { item, outcome, message } };
-      delete next[`${other}:${item.id}`];
-      return next;
-    });
+  const pw = useWalk(pending, idOf, isProcessing);
+  const hw = useWalk(held, idOf);
+  const walk = tab === "hold" ? hw : pw;
+  const page = usePage(walk.visible);
+
+  function setTab(next: Tab) {
+    setParams(next === "hold" ? { tab: "hold" } : {}, { replace: true, preventScrollReset: true });
   }
 
-  const list = tab === "pending" ? pending : held;
-  const live = list.filter((s) => !resolved[`${tab}:${s.id}`]);
-  const done = Object.entries(resolved)
-    .filter(([key]) => key.startsWith(`${tab}:`))
-    .map(([, r]) => r);
+  // 대시보드 바로가기: ?open=first | summary&id= → 그 요약 팝업을 연 채로. 주소에서는 지운다
+  useEffect(() => {
+    const open = params.get("open");
+    if (!open) return;
+    const list = (tab === "hold" ? held : pending).filter((s) => !s.processing);
+    const id = params.get("id");
+    const target = (open === "summary" && id && list.find((s) => s.id === id)) || (open !== "failed" ? list[0] : undefined);
+    if (target) walk.open(target.id);
+    setParams(tab === "hold" ? { tab: "hold" } : {}, { replace: true });
+  }, [params]);
 
+  function finish(id: string, outcome: Exclude<Outcome, "stale">) {
+    setOutcomes((o) => ({ ...o, [id]: OUTCOME[outcome] }));
+    walk.done(id);
+    // ✓ 를 2초 보인 뒤 목록·메뉴 배지를 서버와 맞춘다
+    setTimeout(() => revalidator.revalidate(), 2100);
+  }
+
+  /** 그새 요약이 바뀌었거나 이미 처리된 건 — 팝업을 닫고 알린 뒤 목록을 새로 받는다 */
+  function stale(message: string) {
+    walk.close();
+    setToast(message);
+    revalidator.revalidate();
+  }
+
+  const pendingLeft = pending.filter((s) => !pw.isDone(s.id)).length;
+  const heldLeft = held.filter((s) => !hw.isDone(s.id)).length;
   const tabs: { key: Tab; label: string; count: number }[] = [
-    { key: "pending", label: "검토 대기", count: pending.length },
-    { key: "hold", label: "보류함", count: held.length },
+    { key: "pending", label: "전체", count: pendingLeft },
+    { key: "hold", label: "보류", count: heldLeft },
   ];
+  const current = walk.current;
+
+  return (
+    <div>
+      <WorkHead
+        title={TITLE}
+        jobs={[pendingLeft ? `검토 ${pendingLeft}건` : "", heldLeft ? `보류 ${heldLeft}건` : ""].filter(Boolean)}
+      />
+
+      <div role="tablist" aria-label="검토 칸" className="mb-4 flex gap-1.5">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => setTab(t.key)}
+            className={`tap rounded-full px-5 text-[15px] font-bold ${
+              tab === t.key ? "bg-ink text-paper" : "border border-line2 bg-surface text-ink2 hover:bg-surface2"
+            }`}
+          >
+            {t.label} <span className="ml-1 tabular-nums">{t.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {walk.visible.length === 0 ? (
+        <EmptyLine>{tab === "hold" ? "보류한 요약이 없어요" : "검토할 요약이 없어요"}</EmptyLine>
+      ) : (
+        <>
+          <div className="grid gap-2.5">
+            {page.items.map((s) => (
+              <WorkRow
+                key={s.id}
+                who={s.childName}
+                sub={dateLabel(s.entryDate)}
+                text={s.noContent ? "요약할 내용을 찾지 못했어요" : (s.claims[0]?.text ?? s.content)}
+                tag={rowTag(s, tab)}
+                action={s.processing ? undefined : tab === "hold" ? "다시 보기" : "검토하기"}
+                onOpen={() => walk.open(s.id)}
+                done={walk.isDone(s.id) ? `${s.childName} ${dateLabel(s.entryDate)} · ${outcomes[s.id] ?? "처리했어요"}` : undefined}
+              />
+            ))}
+          </div>
+          <Pager {...page} onChange={page.setPage} />
+        </>
+      )}
+
+      {current ? (
+        tab === "hold" ? (
+          <HeldPopup key={current.id} item={current} position={walk.position} onClose={walk.close} onDone={finish} onStale={stale} />
+        ) : current.noContent ? (
+          <NoContentPopup key={current.id} item={current} position={walk.position} onClose={walk.close} onDone={finish} onStale={stale} />
+        ) : (
+          <PendingPopup key={current.id} item={current} position={walk.position} onClose={walk.close} onDone={finish} onStale={stale} />
+        )
+      ) : null}
+
+      <Toast message={toast} onGone={clearToast} />
+    </div>
+  );
+}
+
+function rowTag(s: SummaryItem, tab: Tab): React.ReactNode {
+  if (s.processing) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-accentink">
+        <Spinner size={14} />
+        요약 다시 만드는 중
+      </span>
+    );
+  }
+  if (tab === "hold") return <Chip tone="idle">보류</Chip>;
+  if (s.noContent) return <Chip tone="idle">요약할 내용 없음</Chip>;
+  if (s.needsReview || s.reviewFlags.length > 0) return <Chip tone="human">확인 필요</Chip>;
+  return null;
+}
+
+/* ── 팝업 공통 ─────────────────────────────────────── */
+
+interface PopupProps {
+  item: SummaryItem;
+  position?: { index: number; total: number };
+  onClose: () => void;
+  onDone: (id: string, outcome: Exclude<Outcome, "stale">) => void;
+  onStale: (message: string) => void;
+}
+
+/**
+ * 결정 하나를 보내고 결과를 나눈다. 그새 바뀐 요약(409 SUMMARY_CHANGED · SUMMARY_REGENERATING)과 이미 처리된 요약은
+ * 팝업을 닫고 알린다. 나머지 오류는 팝업 안에 보인다.
+ */
+function useDecide(item: SummaryItem, onDone: PopupProps["onDone"], onStale: PopupProps["onStale"]) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(send: () => Promise<unknown>, outcome: Exclude<Outcome, "stale">) {
+    setBusy(true);
+    setError(null);
+    try {
+      await send();
+      onDone(item.id, outcome);
+    } catch (err) {
+      if (err instanceof ApiError && (err.code === "SUMMARY_REGENERATING" || err.code === "SUMMARY_CHANGED")) {
+        onStale("새 기록이 들어와 요약을 다시 만들고 있어요");
+      } else if (isStale(err) || needsReload(err)) {
+        onStale(messageOf(err));
+      } else {
+        setError(messageOf(err));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+  return { busy, error, run };
+}
+
+function popTitle(item: SummaryItem): string {
+  return `${item.childName} · ${dateLabel(item.entryDate)}`;
+}
+
+function ErrorLine({ error }: { error: string | null }) {
+  return error ? (
+    <span role="alert" className="basis-full text-[14px] font-bold text-block">
+      {error}
+    </span>
+  ) : null;
+}
+
+/** 원본 일지. 요약에 안 들어간 일지는 흐리게 두고 머리에 건수를 보인다 */
+function SourceEntries({ item }: { item: SummaryItem }) {
+  const uncovered = new Set(item.uncoveredEntries.map((e) => e.journalEntryId));
+  const entries = item.entries.length ? item.entries : item.uncoveredEntries;
+  return (
+    <PopSection title="원본 일지">
+      {uncovered.size > 0 && !item.noContent ? (
+        <p className="-mt-1 mb-2">
+          <Chip tone="idle">요약에 안 들어간 일지 {uncovered.size}건 · 승인하면 함께 끝나요</Chip>
+        </p>
+      ) : null}
+      <div className="grid gap-2 rounded-[14px] border border-line bg-paper px-4 py-3.5">
+        {entries.length === 0 ? (
+          <p className="text-[15px] text-muted">원본 일지를 불러오지 못했어요</p>
+        ) : (
+          entries.map((e) => (
+            <p
+              key={e.journalEntryId}
+              className={`max-w-[62ch] text-[16px] leading-[1.75] whitespace-pre-wrap ${
+                uncovered.has(e.journalEntryId) && !item.noContent ? "text-muted" : ""
+              }`}
+            >
+              {e.content}
+            </p>
+          ))
+        )}
+      </div>
+    </PopSection>
+  );
+}
+
+/* ── 검토 대기 팝업 ─────────────────────────────────── */
+
+function PendingPopup({ item, position, onClose, onDone, onStale }: PopupProps) {
+  const [lines, setLines] = useState<Line[]>(() => freshLines(item.claims));
+  const [added, setAdded] = useState<Added[]>([]);
+  const [nextKey, setNextKey] = useState(0);
+  const [confirming, setConfirming] = useState<Decision | null>(null);
+  const { busy, error, run } = useDecide(item, onDone, onStale);
+
+  const edits = lines.filter((l, i) => isEdited(l, item.claims[i])).length;
+  const dels = lines.filter((l) => l.action === "DELETE").length;
+  const adds = added.filter((a) => a.text.trim()).length;
+  const hasChanges = edits + dels + adds > 0;
+  const blankEdit = lines.some((l) => l.action === "EDIT" && !l.text.trim());
+  const nothingLeft = item.claims.length > 0 && dels === item.claims.length && adds === 0;
+  const countText = `수정 ${edits} · 삭제 ${dels} · 추가 ${adds}`;
+  const flagged = item.needsReview || item.reviewFlags.length > 0;
+  const flagReasons = [...new Set(item.reviewFlags.flatMap((f) => f.reasons))];
+  const uncovered = item.uncoveredEntries.length;
+
+  function setLine(i: number, patch: Partial<Line>) {
+    setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  }
+
+  function decide(decision: Decision) {
+    const cards = decision === "approve" ? buildCards(item.claims, lines, added) : undefined;
+    const outcome = decision === "approve" ? (cards ? "corrected" : "approved") : decision === "hold" ? "held" : "removed";
+    void run(
+      () => decideGate1(item.id, { decision, version: item.version, ...(cards ? { cards } : {}) }),
+      outcome,
+    ).finally(() => setConfirming(null));
+  }
+
+  const dialog = {
+    approve: {
+      title: `${item.childName} 요약을 승인할까요?`,
+      body:
+        (hasChanges ? `고친 내용으로 승인해요 (${countText}).` : "AI 요약 그대로 승인해요.") +
+        (uncovered > 0 ? ` 요약에 안 들어간 일지 ${uncovered}건도 함께 끝나요.` : ""),
+      warning: "승인은 되돌릴 수 없어요",
+      label: hasChanges ? "변경 내용으로 승인" : "승인하기",
+      tone: "human",
+    },
+    hold: {
+      title: `${item.childName} 요약을 보류할까요?`,
+      body: "보류 칸으로 옮겨요. 보류를 풀거나 제거할 수 있어요.",
+      warning: hasChanges ? "고치던 문장은 저장되지 않아요" : undefined,
+      label: "보류하기",
+      tone: "neutral",
+    },
+    remove: {
+      title: `${item.childName} 요약을 제거할까요?`,
+      body: "이 요약과 그 일지를 모두 지워요." + (uncovered > 0 ? ` 요약에 안 들어간 일지 ${uncovered}건도 함께 지워져요.` : ""),
+      warning: "제거하면 되돌릴 수 없어요",
+      label: "제거하기",
+      tone: "block",
+    },
+  } as const;
+  const d = confirming ? dialog[confirming] : null;
 
   return (
     <>
-      <PageHeader
-        eyebrow={`${tab === "hold" ? held.length : pending.length}건`}
-        title={tab === "hold" ? "보류함" : TITLE}
-        right={
-          <div role="tablist" aria-label="검토 상태" className="flex gap-1.5">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={tab === t.key}
-                onClick={() => setTab(t.key)}
-                className={`tap rounded-full px-5 text-[15px] font-bold ${
-                  tab === t.key
-                    ? "bg-ink text-paper"
-                    : "border border-line2 bg-surface text-ink2 hover:bg-surface2"
-                }`}
-              >
-                {t.label} <span className="ml-1 tabular-nums">{t.count}</span>
-              </button>
-            ))}
-          </div>
+      <ListPopup
+        title={popTitle(item)}
+        subtitle="문장마다 유지·수정·삭제를 고른 뒤 승인해 주세요"
+        icon={<Check aria-hidden size={20} />}
+        position={position}
+        busy={busy}
+        onClose={onClose}
+        footer={
+          <>
+            <PopButton tone="text" onClick={() => setConfirming("remove")} disabled={busy}>
+              요약 제거
+            </PopButton>
+            <span className="flex-1" />
+            {hasChanges ? <span className="text-[14px] text-ink2">{countText}</span> : null}
+            <PopButton onClick={() => setConfirming("hold")} disabled={busy}>
+              보류
+            </PopButton>
+            <PopButton tone="dark" onClick={() => setConfirming("approve")} disabled={busy || blankEdit || nothingLeft}>
+              {busy ? <Busy>보내는 중…</Busy> : hasChanges ? "변경 내용으로 승인" : "승인"}
+            </PopButton>
+            {nothingLeft ? (
+              <span className="basis-full text-right text-[14px] text-block">
+                남는 문장이 없어요. 요약을 통째로 지우려면 요약 제거를 눌러 주세요.
+              </span>
+            ) : blankEdit ? (
+              <span className="basis-full text-right text-[14px] text-block">고칠 문장이 비어 있어요. 문장을 빼려면 삭제를 눌러 주세요.</span>
+            ) : null}
+            <ErrorLine error={error} />
+          </>
         }
-      />
-
-      <div className="flex flex-col gap-5">
-        {live.length === 0 && done.length === 0 ? (
-          tab === "pending" ? (
-            <EmptyState
-              icon="done"
-              title="검토할 요약이 없어요"
-              description={
-                (upstream.matching ?? 0) + (upstream.blocked ?? 0) > 0
-                  ? "앞단에 걸린 것이 있어요. 아래를 처리하면 요약이 여기로 와요."
-                  : "기록을 등록하고 요약을 요청하면 매칭 · 검증 · 요약을 거쳐 여기로 와요."
-              }
-            >
-              <StuckList
-                items={[
-                  { label: "아이를 고를 기록", count: upstream.matching, href: "/queue/matching" },
-                  { label: "검증에서 멈춘 기록", count: upstream.blocked, href: "/queue/reinput" },
-                ]}
-              />
-            </EmptyState>
-          ) : (
-            <EmptyState icon="none" title="보류한 요약이 없어요" />
-          )
+      >
+        {flagged ? (
+          <div role="note" className="flex items-start gap-2.5 rounded-[14px] bg-humansoft px-3.5 py-3 text-human">
+            <TriangleAlert aria-hidden size={18} strokeWidth={1.7} className="mt-0.5 shrink-0" />
+            <div className="grid gap-0.5 text-[14px] leading-6">
+              {item.needsReview ? (
+                <b className="text-[15px]">
+                  {item.reviewReasons.map((r) => REVIEW_REASON[r]).find(Boolean) ?? "공유 전에 한 번 더 확인해 주세요"}
+                </b>
+              ) : null}
+              {item.reviewFlags.length > 0 ? (
+                <span>
+                  검증이 확인을 요청한 원본 일지 {item.reviewFlags.length}건
+                  {flagReasons.length > 0 ? ` · ${flagReasons.join(" · ")}` : null}
+                </span>
+              ) : null}
+            </div>
+          </div>
         ) : null}
 
-        {live.map((s) =>
-          tab === "pending" && s.noContent ? (
-            <NoContentItem
-              key={s.id}
-              item={s}
-              onResolved={(outcome, message) => resolve("pending", s, outcome, message)}
-            />
-          ) : tab === "pending" ? (
-            <PendingItem
-              key={s.id}
-              item={s}
-              onResolved={(outcome, message) => resolve("pending", s, outcome, message)}
-            />
-          ) : (
-            <HeldItem
-              key={s.id}
-              item={s}
-              onResolved={(outcome, message) => resolve("hold", s, outcome, message)}
-            />
-          ),
+        {item.claims.length === 0 ? (
+          <PopSection title="AI 요약">
+            <p className="rounded-[14px] bg-surface2/60 p-3 text-[16px] leading-7">{item.content}</p>
+            <p className="mt-1.5 text-[14px] text-muted">문장을 나누지 못한 요약이라 그대로 승인하거나 제거해 주세요.</p>
+          </PopSection>
+        ) : (
+          <PopSection title={`AI 요약 ${item.claims.length}문장`}>
+            <ol className="grid gap-2">
+              {item.claims.map((claim, i) => (
+                <SentenceRow key={claim.index} no={i + 1} claim={claim} line={lines[i]} onChange={(patch) => setLine(i, patch)} />
+              ))}
+              {added.map((a) => (
+                <li
+                  key={a.key}
+                  className="flex flex-wrap items-start gap-3 rounded border border-dashed border-human/50 bg-humansoft/30 py-3 pr-3 pl-3.5"
+                >
+                  <span aria-hidden className="mt-2.5 flex size-[26px] shrink-0 items-center justify-center rounded-full bg-humansoft text-human">
+                    <Plus size={14} strokeWidth={2} />
+                  </span>
+                  <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-1.5">
+                    <textarea
+                      aria-label="새 문장"
+                      placeholder="일지에 없던 사실을 적어요"
+                      rows={2}
+                      maxLength={MAX_TEXT}
+                      value={a.text}
+                      onChange={(e) => setAdded((xs) => xs.map((x) => (x.key === a.key ? { ...x, text: e.target.value } : x)))}
+                      className="w-full resize-y rounded border border-human/50 bg-surface px-3 py-2.5 text-[16px] leading-6 outline-none focus:border-human focus:ring-2 focus:ring-human/20"
+                    />
+                    <span className="self-start rounded bg-humansoft px-2 py-0.5 text-[12px] font-bold text-human">새로 쓴 문장</span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="새 문장 빼기"
+                    onClick={() => setAdded((xs) => xs.filter((x) => x.key !== a.key))}
+                    className="min-h-10 shrink-0 rounded border border-line2 bg-surface px-3 text-[14px] font-semibold text-ink2 hover:bg-surface2"
+                  >
+                    빼기
+                  </button>
+                </li>
+              ))}
+            </ol>
+            <button
+              type="button"
+              onClick={() => {
+                setAdded((xs) => [...xs, { key: nextKey, text: "" }]);
+                setNextKey((k) => k + 1);
+              }}
+              disabled={item.claims.length + added.length >= MAX_CARDS}
+              className="mt-2 inline-flex min-h-9 items-center gap-1 px-1 text-[15px] font-bold text-accentink hover:underline disabled:opacity-60"
+            >
+              <Plus aria-hidden size={15} strokeWidth={2} />
+              문장 추가
+            </button>
+          </PopSection>
         )}
 
-        {done.map((r) => (
-          <ResolvedCard key={r.item.id} item={r.item} outcome={r.outcome} message={r.message} />
-        ))}
-      </div>
+        <SourceEntries item={item} />
+      </ListPopup>
+
+      {confirming && d ? (
+        <ConfirmDialog
+          title={d.title}
+          warning={d.warning}
+          confirmLabel={d.label}
+          tone={d.tone}
+          busy={busy}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => decide(confirming)}
+        >
+          {d.body}
+        </ConfirmDialog>
+      ) : null}
+    </>
+  );
+}
+
+/* ── 요약할 내용 없음 팝업 (#244) ─────────────────────── */
+
+function NoContentPopup({ item, position, onClose, onDone, onStale }: PopupProps) {
+  const [confirming, setConfirming] = useState<"confirm" | "revert" | null>(null);
+  const { busy, error, run } = useDecide(item, onDone, onStale);
+  const count = item.entries.length || item.uncoveredEntries.length;
+
+  function decide(decision: "confirm" | "revert") {
+    void run(() => decideGate1(item.id, { decision, version: item.version }), decision === "confirm" ? "confirmed" : "reverted").finally(
+      () => setConfirming(null),
+    );
+  }
+
+  return (
+    <>
+      <ListPopup
+        title={popTitle(item)}
+        subtitle="AI가 요약할 내용을 찾지 못했어요"
+        icon={<Check aria-hidden size={20} />}
+        position={position}
+        busy={busy}
+        onClose={onClose}
+        footer={
+          <>
+            <PopButton onClick={() => setConfirming("revert")} disabled={busy}>
+              다시 요약
+            </PopButton>
+            <span className="flex-1" />
+            <PopButton tone="dark" onClick={() => setConfirming("confirm")} disabled={busy}>
+              {busy ? <Busy>보내는 중…</Busy> : "확인"}
+            </PopButton>
+            <ErrorLine error={error} />
+          </>
+        }
+      >
+        <div className="rounded-[14px] bg-surface2/60 px-4 py-3.5">
+          <b className="text-[16px]">이날 기록에서 요약할 내용을 찾지 못했어요</b>
+          <p className="mt-1 text-[14px] leading-6 text-ink2">
+            AI가 내용을 지어내지 않도록 요약을 비워 뒀어요. 원문을 읽고 [확인]으로 마무리하거나, [다시 요약]으로 다시 요약할 수 있게
+            해 주세요.
+          </p>
+        </div>
+        <SourceEntries item={item} />
+      </ListPopup>
+
+      {confirming === "confirm" ? (
+        <ConfirmDialog
+          title={`${item.childName} 기록을 요약 없이 끝낼까요?`}
+          warning="확인하면 되돌릴 수 없어요"
+          confirmLabel="확인하기"
+          tone="human"
+          busy={busy}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => decide("confirm")}
+        >
+          이날 기록{count > 0 ? ` ${count}건` : ""}은 "요약할 내용 없음"으로 끝나고, 아동 타임라인에는 올라가지 않아요.
+        </ConfirmDialog>
+      ) : confirming === "revert" ? (
+        <ConfirmDialog
+          title={`${item.childName} 기록을 다시 요약할까요?`}
+          confirmLabel="다시 요약"
+          tone="neutral"
+          busy={busy}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => decide("revert")}
+        >
+          이 결과는 목록에서 빠지고, 그 사이 들어온 같은 날 기록과 함께 AI가 새로 요약해요.
+        </ConfirmDialog>
+      ) : null}
+    </>
+  );
+}
+
+/* ── 보류 팝업 ─────────────────────────────────────── */
+
+function HeldPopup({ item, position, onClose, onDone, onStale }: PopupProps) {
+  const [confirming, setConfirming] = useState<"reopen" | "remove" | null>(null);
+  const { busy, error, run } = useDecide(item, onDone, onStale);
+
+  function act(kind: "reopen" | "remove") {
+    void run(
+      () => (kind === "reopen" ? reopenGate1(item.id) : decideGate1(item.id, { decision: "remove", version: item.version })),
+      kind === "reopen" ? "reopened" : "removed",
+    ).finally(() => setConfirming(null));
+  }
+
+  return (
+    <>
+      <ListPopup
+        title={popTitle(item)}
+        subtitle="보류한 요약은 보호자와 다른 기관에 가지 않아요"
+        icon={<Check aria-hidden size={20} />}
+        position={position}
+        busy={busy}
+        onClose={onClose}
+        footer={
+          <>
+            <PopButton tone="text" onClick={() => setConfirming("remove")} disabled={busy}>
+              요약 제거
+            </PopButton>
+            <span className="flex-1" />
+            <PopButton tone="dark" onClick={() => setConfirming("reopen")} disabled={busy}>
+              {busy ? <Busy>보내는 중…</Busy> : "보류 풀기"}
+            </PopButton>
+            <ErrorLine error={error} />
+          </>
+        }
+      >
+        <PopSection title={item.claims.length ? `AI 요약 ${item.claims.length}문장` : "AI 요약"}>
+          {item.claims.length === 0 ? (
+            <p className="rounded-[14px] bg-surface2/60 p-3 text-[16px] leading-7">{item.content}</p>
+          ) : (
+            <ol className="grid gap-2">
+              {item.claims.map((c, i) => (
+                <li key={c.index} className="flex items-start gap-3 rounded border border-line bg-surface px-3.5 py-3">
+                  <NumberDot n={i + 1} className="bg-surface2 text-ink2" />
+                  <span className="pt-0.5 text-[16px] leading-6 text-ink2">{c.text}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </PopSection>
+        <SourceEntries item={item} />
+      </ListPopup>
+
+      {confirming === "reopen" ? (
+        <ConfirmDialog
+          title={`${item.childName} 요약의 보류를 풀까요?`}
+          confirmLabel="보류 풀기"
+          tone="accent"
+          busy={busy}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => act("reopen")}
+        >
+          AI 요약 그대로 전체 칸으로 돌아가요.
+        </ConfirmDialog>
+      ) : confirming === "remove" ? (
+        <ConfirmDialog
+          title={`${item.childName} 요약을 제거할까요?`}
+          warning="제거하면 되돌릴 수 없어요"
+          confirmLabel="제거하기"
+          tone="block"
+          busy={busy}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => act("remove")}
+        >
+          이 요약과 그 일지를 모두 지워요.
+        </ConfirmDialog>
+      ) : null}
     </>
   );
 }

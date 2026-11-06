@@ -462,6 +462,8 @@ interface Gate1SummaryRaw {
   reviewReasons: string[] | null;
   uncoveredEntries: { journalEntryId: number; content: string }[] | null;
   reviewFlags: { journalEntryId: number; issueTypes: string[]; reasons?: string[] }[] | null;
+  /** 예전 서버는 주지 않는다 — 그때는 요약에 안 들어간 일지만 원본으로 보인다 */
+  entries?: { journalEntryId: number; content: string }[] | null;
 }
 
 function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
@@ -484,6 +486,10 @@ function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
     needsReview: raw.needsReview,
     reviewReasons: raw.reviewReasons ?? [],
     uncoveredEntries: (raw.uncoveredEntries ?? []).map((e) => ({
+      journalEntryId: String(e.journalEntryId),
+      content: e.content,
+    })),
+    entries: (raw.entries ?? raw.uncoveredEntries ?? []).map((e) => ({
       journalEntryId: String(e.journalEntryId),
       content: e.content,
     })),

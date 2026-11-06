@@ -423,13 +423,24 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
 
 /** 요약 본문은 문장(claims)을 이은 것이다 — mock 도 그렇게 만든다 */
 function gate1Mock(
-  item: Omit<SummaryItem, "content" | "claims"> & { sentences: string[] },
+  item: Omit<SummaryItem, "content" | "claims" | "entries"> & { sentences: string[] },
 ): SummaryItem {
   const { sentences, ...rest } = item;
+  // 원본 일지는 요약 문장을 조금 늘여 쓴 한 편 + 요약에 안 들어간 일지. 근거 인용은 문장에서 끝의 "다." 를 뺀 구절
+  const sourceId = `je_${item.id}`;
+  const quotes = sentences.map((t) => t.replace(/다\.$/, ""));
   return {
     ...rest,
     content: sentences.join(" "),
-    claims: sentences.map((text, index) => ({ index, text })),
+    claims: sentences.map((text, index) => ({
+      index,
+      text,
+      evidence: [{ journalEntryId: sourceId, quote: quotes[index] }],
+    })),
+    entries: [
+      { journalEntryId: sourceId, content: `오늘 하루 기록. ${quotes.map((q) => `${q}다.`).join(" ")} 특별한 일은 없었다.` },
+      ...item.uncoveredEntries,
+    ],
   };
 }
 
@@ -490,6 +501,7 @@ export const GATE1_QUEUE: SummaryItem[] = [
     processing: false,
     content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
     claims: [],
+    entries: [{ journalEntryId: "je_5150", content: "자유놀이가 끝났다고 알려 주자 장난감을 스스로 정리하고 책상으로 왔다." }],
     noContent: false,
     needsReview: false,
     reviewReasons: [],
@@ -512,6 +524,10 @@ export const GATE1_QUEUE: SummaryItem[] = [
     needsReview: false,
     reviewReasons: [],
     uncoveredEntries: [
+      { journalEntryId: "je_5201", content: "특이사항 없음." },
+      { journalEntryId: "je_5202", content: "오후 일정 평소와 같음." },
+    ],
+    entries: [
       { journalEntryId: "je_5201", content: "특이사항 없음." },
       { journalEntryId: "je_5202", content: "오후 일정 평소와 같음." },
     ],
