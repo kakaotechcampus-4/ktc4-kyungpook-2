@@ -8,9 +8,10 @@ Insight Agent 의 4단계 노드 — 인식/계획/행동/반영.
 """
 
 from . import config
-from .quality import NOT_IN_RECORD, weak_reasons
-from .llm import LlmError, ask_json
-from .prompts import build_messages, build_refine_messages
+from .quality import NOT_IN_RECORD, SINGLE_NO_SUPPORT, weak_reasons
+from .tools import TOOL_SPECS, find_claims
+from .llm import LlmError, ask_json, ask_with_tools
+from .prompts import build_lookup_messages, build_messages, build_refine_messages
 from .schemas import Insight, Support
 
 
@@ -36,6 +37,12 @@ def perceive(state: dict) -> dict:
     state["claims"] = claims  # 프롬프트도 이 목록만 본다
     state["dropped_claim_ids"] = dropped
     state["claim_index"] = {c["claim_id"]: c for c in claims}
+
+    # 도구가 찾을 지난 기록도 같은 동의로 거른다. 이번 기간 claim 과 겹치는 번호는 뺀다
+    history = state.get("history_claims") or []
+    if config.FILTER_UNCONSENTED_SOURCES:
+        history = [c for c in history if c["institution_id"] in allowed]
+    state["history_index"] = {c["claim_id"]: c for c in history if c["claim_id"] not in state["claim_index"]}
     return state
 
 
@@ -234,6 +241,11 @@ def reflect(state: dict) -> dict:
             # 자리를 지켜 둔다. refine 이 고친 것으로 바꾸거나 뺀다
             to_refine.append({"pos": len(insights), "raw": raw, "reasons": reasons})
             insights.append(ins)
+        elif (mode == "refine" and config.INSIGHT_TOOLS and kinds == {SINGLE_NO_SUPPORT}
+              and state.get("history_index")):
+            # 버리기 전에 지난 기록을 찾아 보강해 본다 (딥다이브 3, 도구 사용)
+            to_refine.append({"pos": len(insights), "raw": raw, "reasons": reasons, "action": "lookup"})
+            insights.append(ins)
         else:
             weak_dropped.append(record)
 
@@ -261,6 +273,15 @@ def refine(state: dict) -> dict:
     replace, drop, log = {}, set(), []
 
     for item in todo:
+        if item.get("action") == "lookup":
+            ins, entry = _lookup(state, item, known_types)
+            if ins is not None:
+                replace[item["pos"]] = ins
+            else:
+                drop.add(item["pos"])
+            log.append({"before": insights[item["pos"]].content, **entry})
+            continue
+
         raw = item["raw"]
         allowed = set(_ids(raw.get("claim_ids"))) | {
             i for s in (raw.get("supports") or []) if isinstance(s, dict) for i in _ids(s.get("claim_ids"))
@@ -301,3 +322,65 @@ def refine(state: dict) -> dict:
     if config.MAX_INSIGHTS is not None:
         insights = insights[: config.MAX_INSIGHTS]
     return {**state, "insights": insights, "weak_refined": log, "refine_calls": len(todo)}
+
+
+def _lookup(state: dict, item: dict, known_types: set[str]) -> tuple[Insight | None, dict]:
+    """
+    도구 사용 (딥다이브 3): 한 기관뿐인 인사이트를 지난 기록으로 보강한다.
+
+    모델은 find_claims 로 같은 아이의 지난 기록(history_index, 동의 기관만)을 찾을 수 있다.
+    코드가 지키는 것
+      - 찾는 범위: BE 가 넣은 history_claims 안에서만. 모델이 정하지 않는다
+      - 새 근거: 처음 인사이트의 claim + 도구가 **실제로 돌려준** claim 만
+      - 보강한 것도 _build(성립 조건)와 quality(약한 검사)를 다시 통과해야 한다
+    실패하거나 Luna 가 실패하면 버린다 — 도구가 없을 때와 같다.
+    """
+    raw = item["raw"]
+    history = state.get("history_index") or {}
+    returned: dict[str, dict] = {}
+
+    def run_tool(name: str, args: dict) -> list[dict]:
+        if name != "find_claims":
+            return []
+        found = find_claims(list(history.values()), args.get("situation", ""),
+                            weeks_back=args.get("weeks_back"), before=state.get("period_from"),
+                            limit=config.INSIGHT_TOOL_LIMIT)
+        for c in found:
+            returned[c["claim_id"]] = history[c["claim_id"]]
+        return found
+
+    original = set(_ids(raw.get("claim_ids"))) | {
+        i for s in (raw.get("supports") or []) if isinstance(s, dict) for i in _ids(s.get("claim_ids"))
+    }
+    try:
+        instructions, user = build_lookup_messages(state, raw, sorted(original))
+        result = ask_with_tools(instructions, user, TOOL_SPECS, run_tool,
+                                max_calls=config.INSIGHT_TOOL_MAX_CALLS)
+    except LlmError as exc:
+        return None, {"after": None, "outcome": "dropped", "why": exc.kind, "action": "lookup",
+                      "tool_calls": 0, "looked_up": []}
+
+    calls = result.usage.get("tool_calls", 0)
+    got = result.data.get("insights")
+    new_raw = got[0] if isinstance(got, list) and got else None
+    if not isinstance(new_raw, dict):
+        return None, {"after": None, "outcome": "dropped", "why": "같은 상황 없음", "action": "lookup",
+                      "tool_calls": calls, "looked_up": sorted(returned)}
+
+    used = set(_ids(new_raw.get("claim_ids"))) | {
+        i for s in (new_raw.get("supports") or []) if isinstance(s, dict) for i in _ids(s.get("claim_ids"))
+    }
+    if not used <= original | set(returned):
+        return None, {"after": None, "outcome": "dropped", "why": "조회 밖 근거", "action": "lookup",
+                      "tool_calls": calls, "looked_up": sorted(returned)}
+
+    index = {**state["claim_index"], **returned}
+    ins = _build(new_raw, index, known_types | {c["institution_type"] for c in returned.values()})
+    if ins is None or weak_reasons(ins):
+        why = "성립 조건" if ins is None else "여전히 약함"
+        return None, {"after": ins.content if ins else None, "outcome": "dropped", "why": why,
+                      "action": "lookup", "tool_calls": calls, "looked_up": sorted(returned)}
+
+    ins.looked_up_claim_ids = sorted(used & set(returned))
+    return ins, {"after": ins.content, "outcome": "rescued", "why": "", "action": "lookup",
+                 "tool_calls": calls, "looked_up": ins.looked_up_claim_ids}

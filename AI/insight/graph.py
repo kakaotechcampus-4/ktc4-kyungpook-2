@@ -47,7 +47,8 @@ def run_insight(payload: InsightInput, trace: dict | None = None) -> InsightOutp
     # 평가 스크립트만 trace 를 넘긴다 (요약과 같은 방식). 약한 인사이트와 이유를 담아 준다.
     if trace is not None:
         trace.update(weak_found=result.get("weak_found", []), weak_dropped=result.get("weak_dropped", []),
-                     weak_refined=result.get("weak_refined", []), refine_calls=result.get("refine_calls", 0))
+                     weak_refined=result.get("weak_refined", []), refine_calls=result.get("refine_calls", 0),
+                     history_claims=len(result.get("history_index") or {}))
 
     if result.get("llm_error"):
         raise LlmUnavailable(result.get("llm_error") or "Luna 호출 실패",

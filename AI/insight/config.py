@@ -106,6 +106,19 @@ FILTER_UNCONSENTED_SOURCES = True
 INSIGHT_WEAK_MODE = "off"
 
 
+# ── 도구 사용 (딥다이브 3) ─────────────────────────────────────
+
+#: refine 모드에서 "한기관_대처없음" 을 버리기 전에, 같은 아이의 지난 기록(history_claims)을
+#: 도구 find_claims 로 찾아 기관 간 인사이트로 보강할지. 기본 꺼짐.
+#: Luna 는 /v1/chat/completions 에서 생각(reasoning)과 도구를 같이 못 쓴다 (11/06 확인).
+#: 그래서 도구 호출만 /v1/responses 로 부른다 (llm.ask_with_tools).
+INSIGHT_TOOLS = False
+#: 인사이트 하나에 도구를 부를 수 있는 최대 횟수. 넘으면 도구 없이 답하게 한다.
+INSIGHT_TOOL_MAX_CALLS = 2
+#: find_claims 가 돌려주는 최대 문장 수. 길면 출력 2000 토큰 상한에 걸린다.
+INSIGHT_TOOL_LIMIT = 5
+
+
 # ── 출력 크기 ───────────────────────────────────────────────────
 
 #: 한 번에 내보낼 최대 인사이트 수. 정하지 않았다 (CRITERIA §10). None = 제한 없음.
