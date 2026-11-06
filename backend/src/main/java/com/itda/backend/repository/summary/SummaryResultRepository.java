@@ -1,6 +1,7 @@
 package com.itda.backend.repository.summary;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -72,4 +73,13 @@ public interface SummaryResultRepository extends JpaRepository<SummaryResult, Lo
     @Query("select s from SummaryResult s where s.id = :id and s.institutionId = :institutionId")
     Optional<SummaryResult> findByIdAndInstitutionIdForUpdate(@Param("id") Long id,
             @Param("institutionId") Long institutionId);
+
+    /**
+     * 그 기관에서 {@code since} 뒤로 AI 가 만든 요약 수 (#370, 근사). 승인 전 판은 다시 요약해도 같은 행을 덮어써 생성 시각이
+     * 그대로라, 수정 시각이 바뀐 검토 대기 판도 센다 — 보류를 풀어 검토 대기로 돌아온 판도 섞일 수 있다.
+     */
+    @Query("select count(s) from SummaryResult s where s.institutionId = :institutionId "
+            + "and (s.createdAt >= :since or (s.status = :pending and s.updatedAt >= :since))")
+    long countGeneratedSince(@Param("institutionId") Long institutionId, @Param("pending") SummaryStatus pending,
+            @Param("since") LocalDateTime since);
 }

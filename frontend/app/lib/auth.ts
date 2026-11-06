@@ -20,6 +20,8 @@
  */
 
 import { ApiError } from "@/lib/apiError";
+import { clearGate1Drafts } from "@/lib/gate1Draft";
+import { clearReinputDrafts } from "@/lib/reinputDraft";
 
 /**
  * 인증만 실연동하고 나머지 데이터는 mock 으로 둘 수 있게 플래그를 분리했다
@@ -65,6 +67,13 @@ const INTENT_KEY = "itda_login_intent";
  * P-01 에 직접 입력 칸을 따로 둔다.
  */
 const INVITE_CODE_KEY = "itda_invite_code";
+
+/**
+ * 로그인이 풀려 로그인 화면으로 보낼 때 가려던 주소와 그 화면의 역할(`{ role, path }`).
+ * 다시 로그인하면 `/oauth/success` 가 한 번 읽고 지운다. 로그인 의도와 같은 이유로 sessionStorage 다 —
+ * 카카오를 다녀오는 동안은 같은 탭이라 남고, 탭을 닫으면 사라진다.
+ */
+const RETURN_PATH_KEY = "itda_return_path";
 
 export type Role = "org" | "parent" | null;
 
@@ -386,12 +395,56 @@ export function takeLoginIntent(): "org" | "parent" | null {
   }
 }
 
+/* ── 로그인 뒤 돌아갈 주소 ──────────────────────────── */
+
+/**
+ * 로그인이 풀려 로그인 화면으로 보내기 직전에 가려던 주소(경로 + `?` 뒤)를 남긴다. 가드 · 세션 확인 레이아웃 ·
+ * 최상위 오류 화면이 부른다. 역할도 함께 남겨, 같은 탭에서 다른 역할로 로그인하면 쓰지 않는다.
+ */
+export function rememberReturnPath(role: "org" | "parent", url: URL): void {
+  try {
+    sessionStorage.setItem(RETURN_PATH_KEY, JSON.stringify({ role, path: url.pathname + url.search }));
+  } catch {
+    // 무시 — 로그인 뒤 첫 화면으로 갈 뿐이다.
+  }
+}
+
+/** 로그인이 풀려서 왔는지. 로그인 화면의 만료 안내에만 쓴다 — 지우지 않는다. */
+export function hasReturnPath(): boolean {
+  try {
+    return sessionStorage.getItem(RETURN_PATH_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 남긴 주소를 **한 번만** 읽는다 — 읽고 지운다. 역할이 다르면 버린다(남의 화면 주소로 보내면 403 이다).
+ * 우리 앱 안의 경로(`/` 로 시작, `//` 는 아님)만 돌려준다. 역할이 없으면(가입 전) 지우기만 한다.
+ */
+export function takeReturnPath(role: Role): string | null {
+  try {
+    const raw = sessionStorage.getItem(RETURN_PATH_KEY);
+    sessionStorage.removeItem(RETURN_PATH_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as { role?: unknown; path?: unknown };
+    if (saved.role !== role || typeof saved.path !== "string") return null;
+    if (!saved.path.startsWith("/") || saved.path.startsWith("//")) return null;
+    return saved.path;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 로그아웃. 출입증이 httpOnly 쿠키라 **프론트가 스스로 지울 수 없다.**
  * 서버가 만료된 쿠키를 다시 심어줘야 한다.
  */
 export async function signOut(): Promise<void> {
   clearSession();
+  // 요약 검토 · 검증 수정 요청에서 로그인이 풀려 맡겨 둔 글 — 아이에 대한 글이라 남기지 않는다
+  clearGate1Drafts();
+  clearReinputDrafts();
   if (USE_MOCK) return;
 
   try {

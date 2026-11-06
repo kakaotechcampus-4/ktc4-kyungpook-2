@@ -25,6 +25,7 @@ import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimEvidence;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -36,6 +37,7 @@ import com.itda.backend.repository.summary.LatestRevision;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
 import com.itda.backend.service.validation.ValidationReasons;
@@ -64,7 +66,7 @@ public class SummaryGate1QueryService {
     private static final Set<JournalEntryStatus> CHILD_UNKNOWN =
             Set.of(JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING);
 
-    /** 아동이 정해졌지만 아직 요약에 반영되지 않은 일지. 그 아이 묶음만 본다. [요약]을 눌러야 요약된다. */
+    /** 아동이 정해졌지만 아직 요약에 반영되지 않은 일지. 그 아이 묶음만 본다. 자동 요약이 꺼져 있으면 [요약]을 눌러야 요약된다. */
     private static final Set<JournalEntryStatus> NOT_YET_SUMMARIZED = Set.of(JournalEntryStatus.MATCHED,
             JournalEntryStatus.VALIDATING, JournalEntryStatus.VALIDATED);
 
@@ -75,6 +77,7 @@ public class SummaryGate1QueryService {
     private final ValidationResultRepository validationResultRepository;
     private final SummaryRunRequests runRequests;
     private final ConsentStateReader consentStateReader;
+    private final SummaryProperties summaryProperties;
 
     /** 요청 교사 기관의 검토 대기(pending) 또는 보류함(hold) 요약을 오래된 날짜부터. */
     @Transactional(readOnly = true)
@@ -143,8 +146,9 @@ public class SummaryGate1QueryService {
     }
 
     /**
-     * 곧 바뀌는 요약들. 그 묶음을 지금 요약 중이거나, 교사가 [요약]을 눌러 뒀고 아직 요약에 반영되지 않은 일지가
-     * 있는 경우다. 누르지 않았으면 일지가 기다려도 요약은 바뀌지 않는다 — 자동 요약이 없다 (#181). 아동이 정해진
+     * 곧 바뀌는 요약들. 그 묶음을 지금 요약 중이거나, 아직 요약에 반영되지 않은 일지가 있고 워커가 곧 집을 경우다.
+     * 자동 요약(#369)이 켜져 있으면 그런 일지만 있으면 되고, 꺼져 있으면 교사가 [요약]을 눌러 뒀어야 한다 — 누르지
+     * 않았으면 일지가 기다려도 요약은 바뀌지 않는다 (#181). 아동이 정해진
      * 일지(매칭 확정 뒤 검증·요약 대기)는 그 아이 묶음만 본다. 매칭 전·매칭 중 일지는 누구 것인지 몰라 기관·날짜로
      * 본다 — 다른 아이 일지 때문에 그날 모든 요약을 막지 않으려는 것이다. 워커는 최신 판이 대기일 때만 덮어쓰므로,
      * 보류된 판이나 옛 판은 바뀌지 않는다.
@@ -179,7 +183,7 @@ public class SummaryGate1QueryService {
         for (SummaryResult s : pending) {
             GroupKey group = new GroupKey(s.getChildId(), s.getEntryDate());
             boolean latest = s.getRevision().equals(latestRevision.get(group));
-            boolean willSummarize = requestedGroups.contains(group)
+            boolean willSummarize = (summaryProperties.autoRun() || requestedGroups.contains(group))
                     && (busyDates.contains(s.getEntryDate()) || waitingGroups.contains(group));
             if (latest && (summarizingGroups.contains(group) || willSummarize)) {
                 processing.add(s.getId());
@@ -206,9 +210,29 @@ public class SummaryGate1QueryService {
         JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
         List<ClaimCard> cards = new ArrayList<>();
         for (int index = 0; index < claims.size(); index++) {
-            cards.add(new ClaimCard(index, claims.get(index).path("text").asText("")));
+            JsonNode claim = claims.get(index);
+            cards.add(new ClaimCard(index, claim.path("text").asText(""), claimEvidence(claim)));
         }
         return cards;
+    }
+
+    /**
+     * AI 가 든 근거만 보여준다. 선생님이 고친 문장({@code EDITED})은 AI 근거가 남아 있어도 글이 달라 인용이 맞지 않고,
+     * 새로 쓴 문장({@code TEACHER})의 근거는 그 문장 자신이라 빈 목록으로 보낸다. 일지 번호를 못 읽는 근거는 뺀다.
+     */
+    private static List<ClaimEvidence> claimEvidence(JsonNode claim) {
+        String source = claim.path("source").asText("AI");
+        if (!"AI".equals(source)) {
+            return List.of();
+        }
+        List<ClaimEvidence> evidence = new ArrayList<>();
+        for (JsonNode item : claim.path("evidence")) {
+            JsonNode entryId = item.path("journal_entry_id");
+            if (entryId.canConvertToLong()) {
+                evidence.add(new ClaimEvidence(entryId.asLong(), item.path("quote").asText("")));
+            }
+        }
+        return evidence;
     }
 
     private static List<UncoveredEntry> uncoveredEntries(List<JournalEntry> entries, Set<Long> coveredIds) {

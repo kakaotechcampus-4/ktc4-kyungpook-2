@@ -25,6 +25,7 @@ API 계약은 API 규약을, 의존성과 버전은 `build.gradle`을 기준으�
 | API 문서 | Springdoc OpenAPI |
 | 데이터 접근 | Spring Data JPA |
 | 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
+| 일지 텍스트 추출 | Apache POI(docx), Apache PDFBox(pdf) |
 | AI 서버·카카오 호출 | Spring `RestClient`·`RestTemplate` + Apache HttpClient 5 (503·429 자동 재시도 끔, `global.config.HttpClientRequestFactories`) |
 | 운영 데이터베이스 | PostgreSQL |
 | 테스트 데이터베이스 | H2 PostgreSQL 호환 모드 |
@@ -80,10 +81,10 @@ com.itda.backend
 - `global`은 설정, 보안, JWT, 공통 응답·예외처럼 여러 계층에서 공유하는 횡단 관심사에만 사용한다.
 - OAuth2 핸들러처럼 Spring Security 구성에 결합된 구현은 `global.security.oauth`에 둔다.
 - 새 최상위 패키지는 기존 계층으로 표현할 수 없는 횡단 관심사일 때만 추가한다.
-- 계층 안은 기능 하위 패키지로 나눈다. 기능 이름은 `user` `organization` `child` `invitation` `consent` `record` `matching` `validation` `summary` `approval` `insight`를 쓴다.
+- 계층 안은 기능 하위 패키지로 나눈다. 기능 이름은 `user` `organization` `child` `invitation` `consent` `record` `matching` `validation` `summary` `approval` `insight` `dashboard`를 쓴다.
   - 새 클래스는 계층 루트가 아니라 해당 기능 하위 패키지에 둔다(예: 아동 등록 요청 → `dto/request/child`).
   - 맞는 기능이 없으면 이름을 정해 이 목록에 추가한다.
-  - 기능이 아닌 기술 관심사는 `service.agent`·`service.storage`·`exception.agent`·`exception.auth`에 둔다.
+  - 기능이 아닌 기술 관심사는 `service.agent`·`service.storage`·`exception.agent`·`exception.auth`에 둔다. AI 상태 응답처럼 기술 관심사의 DTO 는 `dto.response.agent`에 둔다.
   - `api`는 컨트롤러가 적어 한 폴더에 둔다.
 
 ## 코드 컨벤션

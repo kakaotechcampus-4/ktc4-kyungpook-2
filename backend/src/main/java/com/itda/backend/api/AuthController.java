@@ -6,8 +6,11 @@ import com.itda.backend.dto.response.user.CurrentUserResponse;
 import com.itda.backend.dto.response.user.TermsAgreementResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
+import com.itda.backend.global.jwt.AccessToken;
 import com.itda.backend.global.jwt.JwtCookie;
+import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.global.response.ApiResponse;
+import com.itda.backend.service.user.RevokedSessionService;
 import com.itda.backend.service.user.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -15,7 +18,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,17 +39,27 @@ import org.springframework.web.bind.annotation.RestController;
  * 세션 조회, 역할을 정하는 회원가입, 약관 동의, 출입증 쿠키를 지우는 로그아웃이다. 출입증이 httpOnly 쿠키라 프론트가 스스로
  * 지울 수 없어서, 서버가 지워주지 않으면 사용자는 로그아웃할 방법이 아예 없다.
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/auth")
 @Tag(name = "인증", description = "카카오 로그인 이후의 세션 조회·회원가입·약관 동의·로그아웃")
 public class AuthController {
 
     private final JwtCookie jwtCookie;
+    private final JwtProvider jwtProvider;
     private final UserService userService;
+    private final RevokedSessionService revokedSessionService;
 
-    public AuthController(JwtCookie jwtCookie, UserService userService) {
+    public AuthController(
+            JwtCookie jwtCookie,
+            JwtProvider jwtProvider,
+            UserService userService,
+            RevokedSessionService revokedSessionService
+    ) {
         this.jwtCookie = jwtCookie;
+        this.jwtProvider = jwtProvider;
         this.userService = userService;
+        this.revokedSessionService = revokedSessionService;
     }
 
     @GetMapping("/me")
@@ -148,7 +163,10 @@ public class AuthController {
     @PostMapping("/logout")
     @Operation(
             summary = "로그아웃",
-            description = "access_token 쿠키를 만료시킵니다. 요청 전에 받은 XSRF-TOKEN 쿠키 값을 "
+            description = "access_token 쿠키를 만료시키고, 그 출입증의 로그인을 서버에 로그아웃으로 남깁니다. "
+                    + "그 로그인의 출입증(연장된 것 포함)은 이후 인증되지 않습니다. 같은 회원의 다른 로그인은 그대로입니다. "
+                    + "서명이 유효하고 최대 로그인 시간이 남아 있으면 만료된 출입증으로도 그 로그인을 무효로 합니다. "
+                    + "로그인 번호가 없는 옛 출입증은 쿠키만 지웁니다. 요청 전에 받은 XSRF-TOKEN 쿠키 값을 "
                     + "X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
     @ApiResponses({
@@ -159,9 +177,25 @@ public class AuthController {
                     description = "CSRF 토큰 누락 또는 불일치 (FORBIDDEN)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
-    public ResponseEntity<Void> logout() {
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        // 출입증 필터는 로그아웃에서 출입증을 보지 않는다 — 여기서 직접 읽는다. 만료 직전 발급한 연장 쿠키도 막아야
+        // 하므로, 서명이 맞고 최대 로그인 시간이 남아 있으면 만료된 출입증으로도 로그인 번호를 기록한다
+        jwtProvider.parseForLogout(jwtCookie.read(request))
+                .filter(token -> token.sessionId() != null)
+                .ifPresent(this::revoke);
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, jwtCookie.expire().toString())
+                .headers(headers -> jwtCookie.expireRenewals(request).forEach(cookie ->
+                        headers.add(HttpHeaders.SET_COOKIE, cookie.toString())))
                 .build();
+    }
+
+    /** 기록에 실패해도 쿠키는 지운다. 로그아웃이 듣지 않으면 공용 PC 의 다음 사람이 그대로 들어온다. */
+    private void revoke(AccessToken token) {
+        try {
+            revokedSessionService.revoke(token.sessionId(), Long.valueOf(token.subject()));
+        } catch (RuntimeException e) {
+            log.error("로그아웃 기록에 실패했습니다. 쿠키는 지웁니다: userId={}", token.subject(), e);
+        }
     }
 }

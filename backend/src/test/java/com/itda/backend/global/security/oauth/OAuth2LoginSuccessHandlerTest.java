@@ -74,8 +74,8 @@ class OAuth2LoginSuccessHandlerTest {
         User saved = userRepository.findByKakaoId("900002").orElseThrow();
         String token = response.getCookie(JwtCookie.NAME).getValue();
 
-        assertThat(jwtProvider.getSubject(token)).isEqualTo(String.valueOf(saved.getId()));
-        assertThat(jwtProvider.getSubject(token)).isNotEqualTo("900002");
+        assertThat(jwtProvider.parse(token).orElseThrow().subject()).isEqualTo(String.valueOf(saved.getId()));
+        assertThat(jwtProvider.parse(token).orElseThrow().subject()).isNotEqualTo("900002");
     }
 
     @Test

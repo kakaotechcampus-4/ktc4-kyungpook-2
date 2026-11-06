@@ -3,6 +3,7 @@ import { Check, ChevronDown, Clock, FileText, LoaderCircle, TriangleAlert } from
 import { Link, useRevalidator } from "react-router";
 import type { StageState } from "@/components/ui";
 import {
+  FILE_STAGE_SHORT,
   FILE_STAGES,
   type FileTone,
   fileProgressOf,
@@ -168,7 +169,7 @@ function FileRow({ file }: { file: FileProgress }) {
   // 아이가 정해진 뒤 검증 · 요약에서 멈춘 기록은 넘어간 것으로 치지 않는다 — 카드에서는 "관리자 확인 중"이다
   const later = entries.filter((e) => !isBeforeChild(e));
   const stuck = later.filter((e) => e.state === "failed").length;
-  const handed = later.length - stuck;
+  const handed = later.length - stuck - p.blocked;
 
   return (
     <>
@@ -201,33 +202,39 @@ function FileRow({ file }: { file: FileProgress }) {
           </span>
         </td>
         <td className="px-3 py-3.5">
-          <ol className="flex items-center gap-1.5">
+          <ol className="flex items-start gap-1">
             {FILE_STAGES.map((stage, i) => (
-              <li key={stage} className="flex items-center gap-1.5">
+              <li key={stage} className="flex items-start gap-1">
                 {i > 0 ? (
                   <span
                     aria-hidden
-                    className={`h-px w-4 ${states[i - 1] === "done" ? "bg-pass" : "bg-line2"}`}
+                    className={`mt-3 h-px w-3 ${states[i - 1] === "done" ? "bg-pass" : "bg-line2"}`}
                   />
                 ) : null}
-                <span
-                  title={`${stage} · ${STEP[states[i]].word}`}
-                  className={`flex size-6 items-center justify-center rounded-full ${STEP[states[i]].ring}`}
-                >
-                  <span className="sr-only">
-                    {stage} {STEP[states[i]].word}
+                <span className="flex w-14 flex-col items-center gap-1">
+                  <span
+                    title={`${stage} · ${STEP[states[i]].word}`}
+                    className={`flex size-6 items-center justify-center rounded-full ${STEP[states[i]].ring}`}
+                  >
+                    <span className="sr-only">
+                      {stage} {STEP[states[i]].word}
+                    </span>
+                    {states[i] === "done" ? (
+                      <Check aria-hidden size={13} strokeWidth={3} />
+                    ) : states[i] === "active" ? (
+                      <LoaderCircle aria-hidden size={13} strokeWidth={3} className="animate-spin" />
+                    ) : states[i] === "waiting" ? (
+                      <Clock aria-hidden size={12} strokeWidth={2.6} />
+                    ) : states[i] === "failed" ? (
+                      <TriangleAlert aria-hidden size={12} strokeWidth={2.6} />
+                    ) : (
+                      <span aria-hidden className="size-1.5 rounded-full bg-line2" />
+                    )}
                   </span>
-                  {states[i] === "done" ? (
-                    <Check aria-hidden size={13} strokeWidth={3} />
-                  ) : states[i] === "active" ? (
-                    <LoaderCircle aria-hidden size={13} strokeWidth={3} className="animate-spin" />
-                  ) : states[i] === "waiting" ? (
-                    <Clock aria-hidden size={12} strokeWidth={2.6} />
-                  ) : states[i] === "failed" ? (
-                    <TriangleAlert aria-hidden size={12} strokeWidth={2.6} />
-                  ) : (
-                    <span aria-hidden className="size-1.5 rounded-full bg-line2" />
-                  )}
+                  {/* 단계 이름을 늘 보이게 한다 — 전에는 마우스를 올려야 툴팁으로만 나왔다 (#359) */}
+                  <span aria-hidden className="text-[12px] leading-4 whitespace-nowrap text-muted">
+                    {FILE_STAGE_SHORT[i]}
+                  </span>
                 </span>
               </li>
             ))}
@@ -299,6 +306,15 @@ function FileRow({ file }: { file: FileProgress }) {
               {p.running > 0 ? (
                 <li className="text-accentink">
                   매칭 중 — {p.total}건 중 {p.resolved}건의 아이를 정했어요.
+                </li>
+              ) : null}
+              {p.blocked > 0 ? (
+                <li className="text-human">
+                  <b className="font-bold">수정 요청 {p.blocked}건</b> — 검증에서 멈췄어요. 고치거나 보류해야
+                  넘어가요.{" "}
+                  <Link to="/queue/reinput" className="font-bold underline">
+                    수정 요청에서 고치기
+                  </Link>
                 </li>
               ) : null}
               {handed > 0 ? (

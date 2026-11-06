@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.itda.backend.dto.request.validation.ReviseBlockedEntryRequest;
 import com.itda.backend.dto.request.validation.ValidationResolveRequest;
 import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
@@ -24,6 +25,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 // docs/api/api-spec.md O-24, O-25.
@@ -69,15 +71,17 @@ public class ValidationResultController {
 
     @PostMapping("/{id}/resolve")
     @Operation(
-            summary = "수정한 원본 다시 올리기 / 보류",
-            description = "action=reupload 또는 hold. 둘 다 이 일지의 파이프라인을 여기서 끝냅니다."
+            summary = "이 기록 보류",
+            description = "action=hold 만 받습니다. 이 일지의 파이프라인을 여기서 끝냅니다. "
+                    + "reupload(수정한 원본 다시 올리기)는 받지 않습니다 — 본문을 고치려면 revise 를 씁니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "처리 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "action 누락·오타, BLOCK이 아닌 결과, 이미 처리된 기록 (VALIDATION_RESULT_INVALID_REQUEST)",
+                    description = "action 누락·오타·reupload, BLOCK이 아닌 결과, 이미 처리된 기록 "
+                            + "(VALIDATION_RESULT_INVALID_REQUEST) · 최신이 아닌 판정 (VALIDATION_RESULT_OUTDATED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -96,6 +100,42 @@ public class ValidationResultController {
             @RequestBody ValidationResolveRequest request,
             @AuthenticationPrincipal String userId) {
         validationQueueService.resolve(id, request.action(), userId);
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/{id}/revise")
+    @Operation(
+            summary = "고쳐서 다시 검사",
+            description = "막힌 일지의 본문을 고친 본문으로 바꾸고 검증을 다시 받게 합니다. 아이는 그대로입니다. "
+                    + "통과하면 요약 대기가 되고, 또 막히면 수정 요청 큐에 최신 사유로 다시 뜹니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "고침 — 다시 검증 대기"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "본문 누락·빈 본문·100000자 초과 (INVALID_REQUEST) · 고치지 않은 본문 "
+                            + "(VALIDATION_RESULT_CONTENT_UNCHANGED) · 삭제됐거나 명부에서 빠졌거나 동의가 꺼진 아이 "
+                            + "(VALIDATION_RESULT_CHILD_NOT_SHARED) · 최신이 아닌 판정 (VALIDATION_RESULT_OUTDATED) · "
+                            + "BLOCK이 아닌 결과·이미 처리된 기록 (VALIDATION_RESULT_INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "없는 검증 결과이거나 다른 기관 소속 (VALIDATION_RESULT_NOT_FOUND)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<Void> revise(
+            @PathVariable Long id,
+            @Valid @RequestBody ReviseBlockedEntryRequest request,
+            @AuthenticationPrincipal String userId) {
+        validationQueueService.revise(id, request.content(), userId);
         return ApiResponse.success(null);
     }
 }

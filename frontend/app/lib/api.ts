@@ -50,6 +50,7 @@
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
  *      POST /api/v1/validation-results/{id}/resolve
+ *      POST /api/v1/validation-results/{id}/revise
  *      GET  /api/v1/auth/me          (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/signup       (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/logout       (lib/auth.ts 에서 호출)
@@ -88,6 +89,7 @@ import type {
   InboxDetail,
   InboxItem,
   Insight,
+  InsightProgress,
   Institution,
   InstitutionShares,
   ChecklistItem,
@@ -448,7 +450,7 @@ interface Gate1SummaryRaw {
   version: string;
   processing: boolean;
   content: string;
-  claims: SummaryItem["claims"] | null;
+  claims: { index: number; text: string; evidence?: { journalEntryId: number; quote: string }[] | null }[] | null;
   noContent: boolean;
   needsReview: boolean;
   reviewReasons: string[] | null;
@@ -467,7 +469,11 @@ function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
     version: raw.version,
     processing: raw.processing,
     content: raw.content,
-    claims: raw.claims ?? [],
+    claims: (raw.claims ?? []).map((c) => ({
+      index: c.index,
+      text: c.text,
+      evidence: (c.evidence ?? []).map((e) => ({ journalEntryId: String(e.journalEntryId), quote: e.quote })),
+    })),
     noContent: raw.noContent ?? false,
     needsReview: raw.needsReview,
     reviewReasons: raw.reviewReasons ?? [],
@@ -713,6 +719,16 @@ export async function getInsights(gate2Status: Gate2Status = "pending"): Promise
   return request(`/api/v1/insights?gate2Status=${gate2Status}`);
 }
 
+/**
+ * GET /api/v1/insights/progress (O-43) — 최근 승인한 기록이 속한 (아이, 주)마다 인사이트 분석이 어디쯤인지.
+ * 대시보드가 분석 중인 동안 다시 받아, 끝나면 "인사이트 승인" 건수를 새로고침 없이 띄운다 (#359).
+ * mock 에는 진행 중인 분석이 없다.
+ */
+export async function getInsightProgress(): Promise<InsightProgress[]> {
+  if (mockFor("insights")) return [];
+  return request("/api/v1/insights/progress");
+}
+
 export async function getInsight(id: string): Promise<Insight | undefined> {
   if (mockFor("insights")) return mock.INSIGHTS.find((i) => i.id === id);
   return request(`/api/v1/insights/${id}`);
@@ -912,14 +928,12 @@ function tickSimulation() {
 /**
  * POST /api/v1/validation-results/{id}/resolve (api-spec O-25)
  *
- * 둘 다 그 일지의 처리를 여기서 끝내고 큐에서 뺀다. 원본은 고치지도 지우지도 않는다 —
- * reupload 는 "고친 내용을 새 파일로 올리겠다"는 표시일 뿐, 업로드는 따로 해야 한다.
- * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
+ * 이 기록 보류 — 그 일지의 처리를 여기서 끝내고 큐에서 뺀다.
+ * "수정한 원본 다시 올리기"(reupload)는 서버가 더 받지 않는다(#357). 본문은 reviseBlockedItem 으로 고친다.
+ * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 그 일지에 더 최근 판정이 생겼으면(이미 고쳐 다시 검사했는데
+ * 또 막힘) 400 VALIDATION_RESULT_OUTDATED, 없는 건은 404 다.
  */
-export async function resolveBlockedItem(
-  id: string,
-  action: "reupload" | "hold",
-): Promise<{ ok: true }> {
+export async function resolveBlockedItem(id: string, action: "hold"): Promise<{ ok: true }> {
   if (mockFor("blockedQueue")) {
     const idx = mock.BLOCKED_QUEUE.findIndex((b) => b.id === id);
     if (idx !== -1) mock.BLOCKED_QUEUE.splice(idx, 1);
@@ -931,11 +945,40 @@ export async function resolveBlockedItem(
   });
 }
 
+/** 고친 본문 최대 길이. 서버 ReviseBlockedEntryRequest 와 같다 */
+export const MAX_REVISED_CONTENT = 100_000;
+
+/**
+ * POST /api/v1/validation-results/{id}/revise (api-spec O-25, #357)
+ *
+ * 막힌 일지의 본문을 고쳐 검증을 다시 받게 한다. 아이는 그대로다. 성공하면 큐에서 빠지고,
+ * 통과하면 요약 대기, 또 막히면 큐에 최신 사유로 다시 뜬다.
+ * 400 은 code 로 이유를 나눈다.
+ * - INVALID_REQUEST: 빈 본문·100000자 초과
+ * - VALIDATION_RESULT_CONTENT_UNCHANGED: 앞뒤 공백 말고 고친 게 없다
+ * - VALIDATION_RESULT_CHILD_NOT_SHARED: 아이가 삭제됐거나 명단에서 빠졌거나 우리 기관 동의가 꺼졌다 — 보류만 할 수 있다
+ * - VALIDATION_RESULT_OUTDATED: 그 일지에 더 최근 판정이 있다(이미 고쳐 다시 검사했는데 또 막힘)
+ * - VALIDATION_RESULT_INVALID_REQUEST: 이미 처리됐거나 BLOCK 판정이 아니다
+ * 없는 건은 404 다.
+ */
+export async function reviseBlockedItem(id: string, content: string): Promise<{ ok: true }> {
+  if (mockFor("blockedQueue")) {
+    const idx = mock.BLOCKED_QUEUE.findIndex((b) => b.id === id);
+    if (idx !== -1) mock.BLOCKED_QUEUE.splice(idx, 1);
+    return { ok: true };
+  }
+  return request(`/api/v1/validation-results/${id}/revise`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
 /**
  * POST /api/v1/institutions/me/children — 아이 등록 (api-spec O-11).
  *
  * 등록과 함께 서버가 첫 초대 코드를 발급해 invitation 으로 준다. 한 트랜잭션이라
  * 503 INVITE_CODE_ISSUE_FAILED 면 아이도 등록되지 않았다 — 그대로 다시 요청하면 된다.
+ * 같은 기관 명부에 이름·생년월일이 같은 아이가 있으면 409 DUPLICATE_CHILD (관리번호 중복을 먼저 본다).
  */
 export async function registerChild(input: {
   name: string;
@@ -948,9 +991,13 @@ export async function registerChild(input: {
     if (mock.CHILDREN.some((c) => c.externalId === externalId)) {
       throw new ApiError(409, "DUPLICATE_EXTERNAL_ID");
     }
+    const trimmedName = input.name.trim();
+    if (mock.CHILDREN.some((c) => c.name === trimmedName && c.birthDate === input.birthDate)) {
+      throw new ApiError(409, "DUPLICATE_CHILD");
+    }
     const child: Child = {
       id: `child_${Math.random().toString(36).slice(2, 8)}`,
-      name: input.name.trim(),
+      name: trimmedName,
       birthDate: input.birthDate,
       externalId,
       status: "pending_consent",

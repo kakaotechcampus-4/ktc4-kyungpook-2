@@ -14,6 +14,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -23,10 +25,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.dto.response.record.RecordResponse;
 import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
+import com.itda.backend.exception.validation.ValidationResultErrorCode;
 import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
-import com.itda.backend.global.jwt.JwtCookie;
-import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.validation.ValidationQueueService;
 
 @WebMvcTest(ValidationResultController.class)
@@ -40,12 +41,6 @@ class ValidationResultControllerTest {
 
     @MockitoBean
     private ValidationQueueService validationQueueService;
-
-    @MockitoBean
-    private JwtProvider jwtProvider;
-
-    @MockitoBean
-    private JwtCookie jwtCookie;
 
     @Test
     void getQueue_returnsBlockedItems() throws Exception {
@@ -92,11 +87,11 @@ class ValidationResultControllerTest {
     void resolve_passesActionToService() throws Exception {
         mockMvc.perform(post(BASE_URL + "/11/resolve")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"reupload\"}"))
+                        .content("{\"action\":\"hold\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("SUCCESS"));
 
-        verify(validationQueueService).resolve(eq(11L), eq("reupload"), any());
+        verify(validationQueueService).resolve(eq(11L), eq("hold"), any());
     }
 
     @Test
@@ -119,6 +114,71 @@ class ValidationResultControllerTest {
         mockMvc.perform(post(BASE_URL + "/99/resolve")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"action\":\"hold\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("VALIDATION_RESULT_NOT_FOUND"));
+    }
+
+    // --- 고쳐서 다시 검사 (#357) -----------------------------------------------------
+
+    @Test
+    void revise_passesContentToService() throws Exception {
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"점심을 잘 먹음\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").value("SUCCESS"));
+
+        verify(validationQueueService).revise(eq(11L), eq("점심을 잘 먹음"), any());
+    }
+
+    @Test
+    void revise_blankContent_returns400WithoutCallingService() throws Exception {
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"  \"}"))
+                .andExpect(status().isBadRequest())
+                // 화면이 이 코드로 "본문이 비어 있거나 너무 길어요"를 고른다
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        verify(validationQueueService, never()).revise(any(), any(), any());
+    }
+
+    @Test
+    void revise_tooLongContent_returns400WithoutCallingService() throws Exception {
+        String tooLong = "가".repeat(100_001);
+
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"" + tooLong + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(validationQueueService, never()).revise(any(), any(), any());
+    }
+
+    /** 화면이 거절 이유마다 다른 안내를 하므로 코드를 나눈다 — 고칠 게 없는지, 옛 카드인지, 아이 공유가 끝났는지. */
+    @ParameterizedTest
+    @EnumSource(value = ValidationResultErrorCode.class, names = {"CONTENT_UNCHANGED", "OUTDATED", "CHILD_NOT_SHARED"})
+    void revise_rejectedForReason_returns400WithItsCode(ValidationResultErrorCode code) throws Exception {
+        willThrow(new ValidationResultValidationException(code, "rejected"))
+                .given(validationQueueService).revise(any(), any(), any());
+
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"그대로\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(code.getCode()))
+                // 응답에는 사용자에게 보여도 되는 문구만 — 내부 사유(id 가 든 영어 문장)는 내보내지 않는다
+                .andExpect(jsonPath("$.message").value(code.getMessage()));
+    }
+
+    @Test
+    void revise_unknownOrOtherInstitution_returns404() throws Exception {
+        willThrow(new ValidationResultNotFoundException(99L))
+                .given(validationQueueService).revise(any(), any(), any());
+
+        mockMvc.perform(post(BASE_URL + "/99/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"고친 글\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("VALIDATION_RESULT_NOT_FOUND"));
     }

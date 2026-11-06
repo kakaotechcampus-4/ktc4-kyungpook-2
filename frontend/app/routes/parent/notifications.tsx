@@ -77,7 +77,7 @@ function NotificationsPage() {
       {pending.length === 0 ? null : (
         pending.map(({ institution }) => (
           <div key={institution.id} className="flex flex-col gap-4">
-            <div className="flex items-start gap-2 rounded-2xl border-l-4 border-human bg-humansoft px-4 py-3 text-human">
+            <div className="flex items-start gap-2 rounded-2xl bg-humansoft px-4 py-3 text-human">
               <Hand size={20} strokeWidth={1.75} className="mt-0.5 shrink-0" />
               <div>
                 <p className="font-bold">새 기관이 권한을 요청했어요</p>

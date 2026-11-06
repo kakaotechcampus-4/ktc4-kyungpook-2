@@ -4,21 +4,26 @@ import {
   ClipboardCheck,
   ListChecks,
   RotateCcw,
+  ScrollText,
   Send,
   Upload,
 } from "lucide-react";
-import { Link, useLoaderData } from "react-router";
+import { useEffect } from "react";
+import { Link, useLoaderData, useRevalidator } from "react-router";
 import { SummaryGroupBoardView } from "@/components/org/SummaryGroupBoard";
 import { BigNum, Card, InstitutionChip, PageHeader, PanelHead } from "@/components/ui";
 import {
   getBlockedQueue,
   getGate1Queue,
+  getInsightProgress,
   getInsights,
   getMatchingQueue,
   getSummaryGroups,
+  isReady,
   loadIfReady,
 } from "@/lib/api";
 import { isAuthMock } from "@/lib/auth";
+import type { InsightProgress } from "@/lib/types";
 import { MY_INSTITUTION } from "@/lib/mock/data";
 
 /** 백엔드에 아직 없는 기능은 null 로 와서 "준비 중"으로 그린다 (loadIfReady 참고) */
@@ -32,6 +37,49 @@ export async function clientLoader() {
     loadIfReady("summaryGroups", getSummaryGroups),
   ]);
   return { matching, blocked, gate1, held, insights, board };
+}
+
+const INSIGHT_POLL_MS = 4000;
+/** 분석이 이보다 오래 걸리면 더 기다리지 않는다 — 워커가 꺼졌거나 멈춘 서버에서 계속 묻지 않게 */
+const INSIGHT_POLL_LIMIT_MS = 5 * 60 * 1000;
+
+const analyzing = (list: InsightProgress[]) =>
+  list.some((p) => p.status === "queued" || p.status === "running");
+
+/**
+ * 요약 검토에서 승인하면 인사이트 분석은 따로 돈다. 대시보드를 열었을 때 분석 중이면 진행 현황(O-43)만 4초마다 다시
+ * 묻고, 분석이 끝나면(done · nothing_new 등) 화면 전체를 한 번 다시 받아 "인사이트 승인" 건수와 메뉴 배지를 새로고침
+ * 없이 띄운다 (#359). 진행 현황은 서버가 묻는 주마다 재료를 다시 만들어 보는 무거운 조회라, 화면 전체를 다시 받을 때마다
+ * 함께 부르지 않고 여기서만 부른다. 실패 뒤 다시 시도를 기다리는 동안(retrying)은 언제 끝날지 몰라 기다리지 않는다.
+ */
+function useInsightPolling() {
+  const revalidator = useRevalidator();
+  useEffect(() => {
+    if (!isReady("insights")) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+
+    async function check(wasAnalyzing: boolean) {
+      let now = false;
+      try {
+        now = analyzing(await getInsightProgress());
+      } catch {
+        return; // 진행 현황을 못 받으면 기다리지 않는다 — 화면은 그대로 쓸 수 있다
+      }
+      if (stopped) return;
+      if (wasAnalyzing && !now) revalidator.revalidate();
+      if (now && Date.now() - startedAt < INSIGHT_POLL_LIMIT_MS) {
+        timer = setTimeout(() => check(true), INSIGHT_POLL_MS);
+      }
+    }
+    check(false);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+    // 화면에 들어올 때 한 번 시작한다. revalidator 는 렌더마다 새 객체라 넣으면 다시 시작한다
+  }, []);
 }
 
 const WEEKDAY = "일월화수목금토";
@@ -52,13 +100,15 @@ interface Turn {
 /**
  * 오늘의 업무 — 캔버스 02-today 의 두 칸.
  *
- * 왼쪽 "내 차례": 사람이 눌러야 넘어가는 네 가지를 **한 목록**으로 모으고, 쌓인 것 하나만 위로 올려
+ * 왼쪽 "내 차례": 사람이 눌러야 넘어가는 다섯 가지를 **한 목록**으로 모으고, 쌓인 것 하나만 위로 올려
  * 시작 단추를 단다. 전에는 같은 크기 네모 넷이라 어디부터 손대야 할지가 화면에 없었다.
+ * "요약 대기"는 아래 "아이별 진행 현황"의 [요약]이다 — 빼면 요약할 아이가 있어도 "차례가 없습니다"가 된다.
  * 오른쪽 "아직 아이가 안 정해진 기록": 아이가 정해져야 아래 목록에 오르므로 그 앞단을 따로 세운다.
  * 아래 "아이별 진행 현황"(O-34)은 그대로다 — 파일별 진행(O-26)은 기록 등록 화면이 보여준다.
  */
 export default function DashboardPage() {
   const { matching, blocked, gate1, held, insights, board } = useLoaderData<typeof clientLoader>();
+  useInsightPolling();
 
   const turns: Turn[] = [
     {
@@ -66,6 +116,13 @@ export default function DashboardPage() {
       label: "아이 확인",
       icon: ClipboardCheck,
       count: matching?.length ?? null,
+    },
+    {
+      // [요약]은 이 화면 아래 "아이별 진행 현황"에서 누른다. 그 칸의 "요약 대기 N건 모두 요약"과 같은 기준이다
+      href: "#groups",
+      label: "요약 대기",
+      icon: ScrollText,
+      count: board ? board.groups.filter((g) => g.status === "ready" && g.canSummarize).length : null,
     },
     {
       href: "/gate1",
@@ -223,7 +280,8 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <Card className="mt-5">
+      {/* 내 차례 "요약 대기"가 여기로 내려온다 */}
+      <Card id="groups" className="mt-5 scroll-mt-6">
         {board === null ? (
           <>
             <PanelHead title="아이별 진행 현황" />

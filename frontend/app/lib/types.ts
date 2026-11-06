@@ -354,6 +354,14 @@ export interface BlockedItem {
 export interface SummaryClaim {
   index: number;
   text: string;
+  /** AI 가 든 근거 일지와 원문 인용. 선생님이 고치거나 새로 쓴 문장은 빈 목록 */
+  evidence?: ClaimEvidence[];
+}
+
+/** 요약 문장 근거 하나 — 어느 일지의 어떤 원문 구절인지 */
+export interface ClaimEvidence {
+  journalEntryId: string;
+  quote: string;
 }
 
 /**
@@ -471,6 +479,27 @@ export interface EvidenceRef {
   label: string;
   /** 어느 기관 기록인지 — Gate 2 승인자가 확인해야 한다 */
   institution: Institution;
+}
+
+/** 인사이트 진행 현황 한 줄의 상태 (api-spec O-43). queued · running 이면 곧 Gate 2 에 글이 뜰 수 있다 */
+export type InsightProgressStatus =
+  | "not_consented"
+  | "waiting_week_end"
+  | "queued"
+  | "running"
+  | "retrying"
+  | "done"
+  | "nothing_new";
+
+/** 인사이트 진행 현황 한 줄 — 우리 기관이 최근 승인한 기록이 속한 (아이, 주) 하나 (api-spec O-43) */
+export interface InsightProgress {
+  childId: string;
+  childName: string;
+  periodFrom: string;
+  periodTo: string;
+  period: string;
+  status: InsightProgressStatus;
+  message: string;
 }
 
 export interface Insight {

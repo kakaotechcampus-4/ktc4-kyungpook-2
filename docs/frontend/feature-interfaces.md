@@ -304,7 +304,8 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `getMatchingQueue` | `() => Promise<MatchingItem[]>` | I-03, I-06, 사이드바 배지 |
 | `resolveMatchingItem` | `(id: string, resolution: { action: "assign"; childId: string } \| { action: "not_ours" }) => Promise<{ ok: true }>` | I-06 |
 | `getBlockedQueue` | `() => Promise<BlockedItem[]>` | I-03, I-07, 사이드바 배지 |
-| `resolveBlockedItem` | `(id: string, action: "reupload" \| "hold") => Promise<{ ok: true }>` | I-07 |
+| `resolveBlockedItem` | `(id: string, action: "hold") => Promise<{ ok: true }>` — O-25 보류. `reupload` 는 #357 부터 없음 | I-07 |
+| `reviseBlockedItem` | `(id: string, content: string) => Promise<{ ok: true }>` — O-25 고쳐서 다시 검사(#357). 400 은 `code` 로 이유를 나눈다 — 빈 본문·너무 긺 `INVALID_REQUEST`, 고치지 않음 `VALIDATION_RESULT_CONTENT_UNCHANGED`, 공유 끝난 아이 `VALIDATION_RESULT_CHILD_NOT_SHARED`(보류만 가능), 옛 카드 `VALIDATION_RESULT_OUTDATED`, 이미 처리됨 `VALIDATION_RESULT_INVALID_REQUEST`. 없는 건 404 | I-07 |
 | `getGate1Queue` | `(gate1Status?: "pending" \| "hold") => Promise<SummaryItem[]>` | I-03, I-08 |
 | `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "hold" \| "remove" \| "confirm" \| "revert"; cards?: Gate1Card[]; version: string }) => Promise<{ summaryId: string }>` · `confirm` · `revert` 는 `noContent` 요약만 | I-08 |
 | `reopenGate1` | `(summaryId: string) => Promise<{ summaryId: string }>` | I-08 |
@@ -312,6 +313,7 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `runSummary` | `(childId: string, entryDate: string) => Promise<void>` — O-32. 409 `SUMMARY_IN_PROGRESS` · 400 `SUMMARY_INVALID_REQUEST` · 404 `SUMMARY_CHILD_NOT_FOUND` | I-03 |
 | `getInsights` | `(gate2Status?: Gate2Status) => Promise<Insight[]>` — 기본 `pending`. 우리 기관이 승인 주체인 것만 온다 | I-03, I-10, I-11 |
 | `getInsight` | `(id: string) => Promise<Insight \| undefined>` | I-10 |
+| `getInsightProgress` | `() => Promise<InsightProgress[]>` — O-43. 대시보드가 분석 중(`queued`·`running`)인 동안 다시 받아 인사이트 승인 건수를 새로고침 없이 띄운다(#359) | I-03 |
 | `decideGate2` | `(insightId: string, body: { decision: "approve" \| "hold" }) => Promise<{ insightId: string; gate2Status: Gate2Status; decision: string }>` — 받을 기관은 보내지 않는다. 409 `INSIGHT_ALREADY_REVIEWED` · `INSIGHT_SUPERSEDED` · `INSIGHT_MATERIAL_CONSENT_REVOKED`(승인만) | I-11 |
 | `registerChild` | `({ name, birthDate, externalId }) => Promise<{ child: RegisteredChild; invitation: IssuedInvitation }>` — O-11. 등록과 함께 서버가 첫 초대 코드를 발급. 503 `INVITE_CODE_ISSUE_FAILED`면 아이도 등록되지 않음 | I-04 |
 | `issueInvitation` | `(childId: string) => Promise<IssuedInvitation>` — O-15. 이전 코드는 그대로 살아 있음 | I-04, I-09-1 |

@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItems;
 
@@ -31,6 +32,8 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.type").value("apiKey"))
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.in").value("cookie"))
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.name").value("access_token"))
+				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.description")
+						.value(containsString("access_token_renewal_{sid}")))
 				.andExpect(jsonPath("$.paths['/oauth2/authorization/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/login/oauth2/code/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.201").exists())
@@ -91,10 +94,22 @@ class OpenApiDocumentationTest {
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.description")
+						.value(containsString("만료된 출입증")))
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.400").exists())
+				// 화면이 400 을 code 로 나눠 안내한다 — 문서도 나뉜 코드를 적는다
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.400.description",
+						allOf(containsString("VALIDATION_RESULT_CONTENT_UNCHANGED"),
+								containsString("VALIDATION_RESULT_CHILD_NOT_SHARED"),
+								containsString("VALIDATION_RESULT_OUTDATED"))))
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.404").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.security[0].cookieAuth").exists())
@@ -114,6 +129,41 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.409.description",
 						containsString("SUMMARY_IN_PROGRESS")))
 				.andExpect(jsonPath("$.components.schemas.RunSummaryRequest.properties.entryDateValid").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.FailedSummaryGroupRequest.properties.entryDateValid").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed'].get.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.requestBody").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.404.description",
+						containsString("SUMMARY_FAILED_NOT_FOUND")))
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.requestBody").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.404.description",
+						containsString("SUMMARY_FAILED_NOT_FOUND")))
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.403").exists())
+				.andExpect(jsonPath("$.components.schemas.DashboardPipelineResponse.properties.turn").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/ai-activity'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/ai-activity'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/ai-activity'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/ai-activity'].get.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.responses.403").exists())
+				.andExpect(jsonPath("$.components.schemas.AiStatusResponse.properties.since").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.401").exists())

@@ -1,7 +1,7 @@
 import { Outlet, redirect, useLoaderData, type ShouldRevalidateFunctionArgs } from "react-router";
 import { ChildProvider } from "@/components/parent/ChildContext";
 import { ParentNotReady } from "@/components/parent/NotReady";
-import { getSession } from "@/lib/auth";
+import { getSession, rememberReturnPath } from "@/lib/auth";
 import { getGuardianInsights, getParentChildren, isReady, loadIfReady, restoreParentOnboarded } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
@@ -13,9 +13,14 @@ import { readSelectedChildId } from "@/lib/selectedChild";
  * localStorage 에 쓰고 revalidate() 하는 방식이라, 이 clientLoader 가
  * 그 값을 매번 다시 읽어오는 지점이 된다.
  */
-export async function clientLoader() {
+export async function clientLoader({ request }: { request: Request }) {
   const { loggedIn, signupCompleted, role, termsAgreed } = await getSession();
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
+  // 로그인이 풀렸으면 다시 로그인한 뒤 이 화면으로 돌아오게 주소를 남긴다(보호자 로그인은 진입 화면에서 한다)
+  if (!loggedIn) {
+    rememberReturnPath("parent", new URL(request.url));
+    return redirect("/parent/invite");
+  }
   if (role !== "parent") return redirect("/parent/invite");
   // 약관에 동의하지 않은 보호자는 서버가 보호 API 를 모두 막는다 — 아이 목록을 묻기 전에 약관 단계로
   if (!termsAgreed) return redirect("/parent/invite");

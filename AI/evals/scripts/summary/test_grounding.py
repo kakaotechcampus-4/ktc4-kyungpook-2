@@ -180,6 +180,18 @@ COUNT_CASES = [
     # ── 일부러 안 잡는 것 (한자어 수사) ──
     # "이 회기에는" 의 "이" 를 2 로 읽어 정상 문장을 버린다. 놓치는 쪽을 택했다.
     ("제외", "공을 칠 회 주고받았다", "공을 주고받았다", True),
+    # ── 실데이터 오탐 (11/03~11/06 버린 문장) — 통과해야 한다 ──
+    ("실데이터", "귀를 여러 차례 팠다", "귀를여러 차례 파지만", True),
+    ("실데이터", "한쪽 고리를 잡고 담당자가 손을 잡아주자 안정을 찾았다", "한 개의고리는 잡게하고 한 손은 담당자가 잡아주니", True),
+    ("실데이터", "한 명씩 독창을 하는 차례에는 일어서기를 싫어했다", "일어서기를 싫어하는 표정을 지어", True),
+    ("실데이터", "약 10분 뒤 다시 코를 팠다", "10여분이 지나자 다시 코 파기", True),
+    # ── 위를 넓혀도 계속 버려야 하는 것 ──
+    ("실데이터", "귀를 다섯 차례 팠다", "귀를여러 차례 파지만", False),
+    ("실데이터", "20분 뒤 다시 코를 팠다", "10여분이 지나자", False),
+    ("실데이터", "두 명씩 짝을 지었다", "짝을 지었다", False),
+    ("실데이터", "그림책 세 쪽을 읽었다", "그림책을 읽었다", False),
+    ("실데이터", "그림책 3쪽을 읽었다", "그림책을 읽었다", False),
+    ("실데이터", "총열두 번 했다", "했다", True),
 ]
 
 REASON_CASES = [
@@ -419,7 +431,7 @@ def main():
     group = None
     for cat, text, quote, want_pass in COUNT_CASES:
         left = _numbers_outside_dates(text, "2026-10-07") - _numbers(quote)
-        got_pass = not left and not (_counts(text) - _counts(quote))
+        got_pass = not left and not (_counts(text) - _counts(quote, loose=True))
         ok = got_pass == want_pass
         if cat != group:
             print(f"    [{cat}]")
