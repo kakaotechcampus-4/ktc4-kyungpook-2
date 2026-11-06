@@ -415,6 +415,43 @@ class JournalEntryTest {
         assertThat(entry.getFailureReason()).isNull();
     }
 
+    private JournalEntry summaryFailed() {
+        JournalEntry entry = validated();
+        entry.startSummarizing();
+        entry.failSummary();
+        return entry;
+    }
+
+    @Test
+    void 요약_실패_일지를_다시_요약하면_요약_대기로_돌아간다() {
+        JournalEntry entry = summaryFailed();
+
+        entry.retrySummary();
+
+        // 워커가 다음 차례에 다시 집는다 (#369). 횟수 제한은 없다.
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+        assertThat(entry.getSummaryId()).isNull();
+    }
+
+    @Test
+    void 요약_실패_일지를_요약_없이_마무리하면_끝난다() {
+        JournalEntry entry = summaryFailed();
+
+        entry.closeFailedSummary();
+
+        // 요약할 내용 없음 확인(#244)과 같은 끝 상태다. 요약을 가리키지 않으니 아동 맥락·보호자로 가지 않는다.
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.COMPLETED);
+        assertThat(entry.getSummaryId()).isNull();
+    }
+
+    @Test
+    void 요약_실패가_아닌_일지는_다시_요약하거나_마무리하지_않는다() {
+        JournalEntry entry = validated();
+
+        assertThatThrownBy(entry::retrySummary).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(entry::closeFailedSummary).isInstanceOf(IllegalStateException.class);
+    }
+
     @Test
     void 요약하다_시스템_오류가_나면_처음_요약하던_일지는_단계와_원인을_남긴다() {
         JournalEntry entry = validated();
