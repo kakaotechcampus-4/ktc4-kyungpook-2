@@ -6,6 +6,43 @@
 
 ---
 
+## 0. 혼자 해 보기 — BE·DB·Gate 1 화면 없이
+
+팀원을 모으기 전에 **혼자 한 바퀴 돌려** 숫자가 어떻게 생기는지 볼 수 있다.
+
+```bash
+# ① 이미 돌린 평가 결과에서 고칠 거리를 뽑는다 (모델 안 부름)
+python evals/scripts/feedback/solo.py draft \
+  --from-run evals/generated/summary/runs/base_off_dev12.json \
+  --out evals/generated/feedback/mine.json
+```
+
+② **`mine.json` 을 편집기로 연다.** 이 파일이 Gate 1 화면을 대신한다.
+
+```
+그대로 둔다 → 아무것도 안 함
+고친다      → text 를 고침 (id 는 건드리지 않음)
+지운다      → 그 { } 덩어리를 통째로 삭제
+새로 쓴다   → {"text": "내가 쓴 문장."} 를 더함 (id 없이)
+```
+
+```bash
+# ③ 편집 결과를 summary_result 가 저장하는 모양으로 바꾼다
+python evals/scripts/feedback/solo.py apply evals/generated/feedback/mine.json \
+  --out evals/generated/feedback/gate1.json
+
+# ④ 리포트
+python evals/scripts/feedback/report.py evals/generated/feedback/gate1.json --rows
+```
+
+`apply` 가 만드는 파일은 **DB 를 내보낸 것과 같은 모양**이다. 그래서 혼자 해 본 숫자와
+팀이 모은 숫자를 같은 스크립트·같은 표로 비교할 수 있다.
+
+> `dev12` 결과는 문장이 16개뿐이다. 감을 잡는 데는 충분하지만 **"반복 오류" 의 분모로는
+> 모자란다** — 그건 40~60개가 필요하다 (아래 3절).
+
+---
+
 ## 1. 데이터 뽑기
 
 필요한 것은 `summary_result` 의 **두 칸**뿐이다.
@@ -96,4 +133,5 @@ Gate 1 카드(유지·수정·삭제·추가)는 적용되고 버려진다. 남�
 | --- | --- |
 | `kinds.py` | 짝 맞추기 · 종류 가르기 (순수 함수, 모델 없음) |
 | `report.py` | 내보낸 JSON → 한 장짜리 리포트 |
+| `solo.py` | 혼자 교사 노릇 해 보기 (0절) |
 | `test_kinds.py` | 23건. `python evals/scripts/feedback/test_kinds.py` |
