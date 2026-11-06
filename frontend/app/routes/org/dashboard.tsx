@@ -11,11 +11,12 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { Link, useLoaderData } from "react-router";
+import { Link, useLoaderData, useRevalidator } from "react-router";
 import { Busy } from "@/components/ui";
 import {
   getAiActivity,
   getAiStatus,
+  getChildren,
   getFileProgress,
   getPipeline,
   UPLOAD_EXTENSIONS,
@@ -31,13 +32,22 @@ import { usePolling } from "@/lib/usePolling";
  * 요약은 자동으로 시작하므로(#369) [요약] 버튼이 없다.
  */
 export async function clientLoader() {
-  const [pipeline, activity, files, ai] = await Promise.all([
+  const [pipeline, activity, files, ai, children] = await Promise.all([
     getPipeline(),
     getAiActivity(),
     getFileProgress(),
     getAiStatus().catch(() => null),
+    // 시작하기 체크리스트용. 못 받아도 대시보드는 띄운다
+    getChildren().catch(() => null),
   ]);
-  return { pipeline, activity, files, aiDown: ai?.available === false };
+  return {
+    pipeline,
+    activity,
+    files,
+    aiDown: ai?.available === false,
+    kids: children ? children.length : null,
+    guardians: children ? children.filter((c) => c.consent === "granted").length : null,
+  };
 }
 
 const POLL_MS = 10_000;
@@ -98,6 +108,8 @@ export default function DashboardPage() {
 
       <AiDay a={activity} />
 
+      <Onboarding kids={initial.kids} guardians={initial.guardians} uploads={files.length} />
+
       <div className="grid grid-cols-1 gap-5 min-[821px]:grid-cols-2">
         <Panel title="선생님 차례">
           <TurnList turn={turn} />
@@ -117,6 +129,116 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
     <section className="rounded-[22px] bg-surface p-5 shadow-[0_2px_14px_rgba(120,90,40,0.08)]">
       <h2 className="mb-3 text-[19px] font-extrabold tracking-[-0.02em]">{title}</h2>
       {children}
+    </section>
+  );
+}
+
+/* ── 시작하기 체크리스트 ─────────────────────────── */
+
+const ONB_KEY = "itda.org.onboarding.closed";
+
+function readClosed(): boolean {
+  try {
+    return localStorage.getItem(ONB_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 처음 쓰는 기관: 아이가 0명이거나 올린 일지가 0건이면 대시보드 위에 세 단계를 띄운다
+ * (아이 등록 → 보호자 초대 → 첫 일지 올리기). 한 번 뜨면 이 방문 동안은 남아 있고, 세 단계를 마치면 [닫기]가 생긴다.
+ */
+function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardians: number | null; uploads: number }) {
+  const revalidator = useRevalidator();
+  const [closed, setClosed] = useState(readClosed);
+  const [shown] = useState(() => kids === 0 || uploads === 0);
+  if (closed || !shown || kids == null || guardians == null) return null;
+
+  const steps: { title: string; text: string; done: boolean; act?: React.ReactNode }[] = [
+    {
+      title: "아이 등록",
+      text: kids ? `${kids}명 등록했어요` : "명부에 아이를 올려요",
+      done: kids > 0,
+      act: (
+        <Link to="/children?register=1" className="tap inline-flex items-center rounded-full bg-ink px-3.5 text-[14px] font-bold text-paper">
+          아이 등록
+        </Link>
+      ),
+    },
+    {
+      title: "보호자 초대",
+      text: guardians ? `${guardians}명의 보호자가 공유에 동의했어요` : "초대 코드를 보호자에게 보내요",
+      done: guardians > 0,
+      act: (
+        <Link to="/children" className="tap inline-flex items-center rounded-full border border-line2 px-3.5 text-[14px] font-bold text-ink2">
+          초대 코드 보기
+        </Link>
+      ),
+    },
+    {
+      title: "첫 관찰일지 올리기",
+      text: uploads ? "올렸어요 · 이제 AI가 이어서 처리해요" : "파일을 올리면 AI가 나머지를 처리해요",
+      done: uploads > 0,
+      act: (
+        <button
+          type="button"
+          onClick={() => document.getElementById("upload-input")?.click()}
+          className="tap rounded-full bg-ink px-3.5 text-[14px] font-bold text-paper"
+        >
+          파일 고르기
+        </button>
+      ),
+    },
+  ];
+  const done = steps.filter((x) => x.done).length;
+
+  return (
+    <section aria-labelledby="onb-t" className="rounded-[22px] bg-surface p-5 shadow-[0_2px_14px_rgba(120,90,40,0.08)]">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 id="onb-t" className="flex items-center gap-2 text-[19px] font-extrabold tracking-[-0.02em]">
+          잇다 시작하기
+          <span className="rounded-full bg-surface2 px-2 py-px text-[14px] font-bold tabular-nums text-ink2">{done} / 3</span>
+        </h2>
+        {done === 3 ? (
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                localStorage.setItem(ONB_KEY, "1");
+              } catch {
+                // 저장이 막힌 브라우저 — 이번 방문에서만 닫는다
+              }
+              setClosed(true);
+            }}
+            className="tap rounded-full border border-line2 px-3.5 text-[14px] font-bold text-ink2 hover:bg-surface2"
+          >
+            닫기
+          </button>
+        ) : (
+          <button type="button" onClick={() => revalidator.revalidate()} className="text-[13px] font-bold text-muted hover:text-ink">
+            새로고침
+          </button>
+        )}
+      </div>
+      <ol className="grid grid-cols-1 gap-2.5 min-[821px]:grid-cols-3">
+        {steps.map((x, i) => (
+          <li key={x.title} className="flex flex-wrap items-center gap-2.5 rounded-[16px] border border-line px-3.5 py-3">
+            <span
+              className={`grid size-[26px] flex-none place-items-center rounded-full text-[13px] font-extrabold ${
+                x.done ? "bg-accent text-white" : "bg-surface2 text-ink2"
+              }`}
+            >
+              {x.done ? "✓" : i + 1}
+            </span>
+            <span className="grid min-w-0 flex-[1_1_140px]">
+              <b className={x.done ? "text-ink2" : ""}>{x.title}</b>
+              <span className="text-[13px] text-muted">{x.text}</span>
+            </span>
+            {x.done ? null : x.act}
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -303,6 +425,7 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           type="file"
           multiple
           hidden
+          id="upload-input"
           accept={UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(",")}
           onChange={(e) => void upload(e.target.files)}
         />
