@@ -117,7 +117,7 @@ public class InsightGate2QueryService {
      * 같은 아동·기간의 마지막 회차만 남긴다. 목록이 id 내림차순이라 같은 묶음에서 처음 본 것이 최신이지만,
      * 회차 번호로 가른다 — id 순서가 회차 순서와 어긋날 여지를 남기지 않는다.
      */
-    private static List<InsightResult> latestRevisionOnly(List<InsightResult> insights) {
+    static List<InsightResult> latestRevisionOnly(List<InsightResult> insights) {
         Map<PeriodKey, Integer> maxRevision = new HashMap<>();
         for (InsightResult insight : insights) {
             maxRevision.merge(PeriodKey.of(insight), insight.getRevision(), Math::max);
