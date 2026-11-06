@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useLoaderData, useNavigate, useRevalidator, useSearchParams } from "react-router";
+import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import {
   Check,
   ChevronRight,
@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
 import { HelpTip } from "@/components/ui/HelpTip";
-import { Card, ConfirmDialog, EmptyState, PageHeader, Spinner, StuckList } from "@/components/ui";
+import { Card, ConfirmDialog, EmptyState, PageHeader, ReloginButton, Spinner, StuckList } from "@/components/ui";
 import {
   ApiError,
   decideGate1,
@@ -21,7 +21,7 @@ import {
   loadIfReady,
   reopenGate1,
 } from "@/lib/api";
-import { rememberReturnPath } from "@/lib/auth";
+import { isLoginLost, shownError, type ShownError } from "@/lib/apiError";
 import {
   forgetGate1Drafts,
   readGate1Drafts,
@@ -175,10 +175,6 @@ function messageOf(err: unknown): string {
   return "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }
 
-function isLoginLost(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 401;
-}
-
 const RESTORED = "로그인 전에 고치던 내용을 되살렸어요.";
 const DROPPED = "로그인하는 사이 요약이 바뀌어 고치던 내용은 지웠어요.";
 
@@ -198,30 +194,17 @@ function restoredOf(item: SummaryItem, draft: Gate1Draft | undefined): { lines: 
 /* ── 공통 조각 ───────────────────────────────────────── */
 
 /**
- * 카드 아래 오류 줄. 로그인이 풀려 실패했으면 [다시 로그인]을 붙인다 — 요약 검토를 돌아올 곳으로 남기고
- * 로그인 화면으로 간다. 저절로 보내지 않는다(고친 문장을 다시 읽거나 복사할 틈을 둔다)
+ * 카드 아래 오류 줄. 로그인이 풀려 실패했으면 [다시 로그인]을 붙인다. 고칠 수 있는 카드는 검토 대기에만 있어
+ * 보류함에서 눌러도 검토 대기로 돌아온다
  */
-function ErrorLine({ message, loginLost }: { message: string | null; loginLost: boolean }) {
-  const navigate = useNavigate();
-  if (!message) return null;
+function ErrorLine({ error }: { error: ShownError | null }) {
+  if (!error) return null;
   return (
     <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
       <p role="alert" className="text-right text-[14px] text-block">
-        {message}
+        {error.text}
       </p>
-      {loginLost ? (
-        <button
-          type="button"
-          onClick={() => {
-            // 고칠 수 있는 카드는 검토 대기에만 있다 — 보류함에서 눌러도 검토 대기로 돌아온다
-            rememberReturnPath("org", new URL("/gate1", window.location.href));
-            navigate("/login");
-          }}
-          className="min-h-9 rounded border border-line2 bg-surface px-3.5 text-[14px] font-semibold text-ink2 hover:bg-surface2"
-        >
-          다시 로그인
-        </button>
-      ) : null}
+      {error.loginLost ? <ReloginButton role="org" returnTo="/gate1" /> : null}
     </div>
   );
 }
@@ -343,8 +326,7 @@ function PendingItem({
   const [notice, setNotice] = useState<string | null>(() =>
     carriedDraft ? (restored ? RESTORED : DROPPED) : null,
   );
-  const [error, setError] = useState<string | null>(null);
-  const [loginLost, setLoginLost] = useState(false);
+  const [error, setError] = useState<ShownError | null>(null);
   const [confirming, setConfirming] = useState<Decision | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -412,7 +394,6 @@ function PendingItem({
     const cards = decision === "approve" ? buildCards(item.claims, lines, added) : undefined;
     setBusy(true);
     setError(null);
-    setLoginLost(false);
     setNotice(null);
     try {
       await decideGate1(item.id, { decision, version: item.version, ...(cards ? { cards } : {}) });
@@ -425,11 +406,8 @@ function PendingItem({
         onResolved("stale", messageOf(err));
         await revalidator.revalidate();
       } else {
-        setError(messageOf(err));
-        if (isLoginLost(err)) {
-          setLoginLost(true);
-          onLoggedOut();
-        }
+        setError(shownError(err, messageOf(err)));
+        if (isLoginLost(err)) onLoggedOut();
         if (needsReload(err)) await revalidator.revalidate();
       }
     } finally {
@@ -665,7 +643,7 @@ function PendingItem({
           </p>
         ) : null}
 
-        <ErrorLine message={error} loginLost={loginLost} />
+        <ErrorLine error={error} />
 
         <div className="flex justify-end">
           <button
@@ -822,8 +800,7 @@ function NoContentItem({
   const revalidator = useRevalidator();
   const [confirming, setConfirming] = useState<"confirm" | "revert" | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loginLost, setLoginLost] = useState(false);
+  const [error, setError] = useState<ShownError | null>(null);
   const [notice] = useState(() => (carriedDraft ? DROPPED : null));
   const count = item.uncoveredEntries.length;
 
@@ -834,7 +811,6 @@ function NoContentItem({
   async function decide(decision: "confirm" | "revert") {
     setBusy(true);
     setError(null);
-    setLoginLost(false);
     try {
       await decideGate1(item.id, { decision, version: item.version });
       onResolved(decision === "confirm" ? "confirmed" : "reverted");
@@ -844,11 +820,8 @@ function NoContentItem({
         onResolved("stale", messageOf(err));
         await revalidator.revalidate();
       } else {
-        setError(messageOf(err));
-        if (isLoginLost(err)) {
-          setLoginLost(true);
-          onLoggedOut();
-        }
+        setError(shownError(err, messageOf(err)));
+        if (isLoginLost(err)) onLoggedOut();
         if (needsReload(err)) await revalidator.revalidate();
       }
     } finally {
@@ -944,7 +917,7 @@ function NoContentItem({
             확인
           </button>
         </div>
-        <ErrorLine message={error} loginLost={loginLost} />
+        <ErrorLine error={error} />
       </div>
 
       {confirming === "confirm" ? (
@@ -991,13 +964,11 @@ function HeldItem({
   const revalidator = useRevalidator();
   const [confirming, setConfirming] = useState<"reopen" | "remove" | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loginLost, setLoginLost] = useState(false);
+  const [error, setError] = useState<ShownError | null>(null);
 
   async function run(kind: "reopen" | "remove") {
     setBusy(true);
     setError(null);
-    setLoginLost(false);
     try {
       if (kind === "reopen") await reopenGate1(item.id);
       else await decideGate1(item.id, { decision: "remove", version: item.version });
@@ -1008,11 +979,8 @@ function HeldItem({
         onResolved("stale", messageOf(err));
         await revalidator.revalidate();
       } else {
-        setError(messageOf(err));
-        if (isLoginLost(err)) {
-          setLoginLost(true);
-          onLoggedOut();
-        }
+        setError(shownError(err, messageOf(err)));
+        if (isLoginLost(err)) onLoggedOut();
         if (needsReload(err)) await revalidator.revalidate();
       }
     } finally {
@@ -1039,7 +1007,7 @@ function HeldItem({
         }
       />
       <ReadOnlySentences item={item} />
-      <ErrorLine message={error} loginLost={loginLost} />
+      <ErrorLine error={error} />
       <div className="flex flex-wrap items-center justify-end gap-3">
         <button
           type="button"
