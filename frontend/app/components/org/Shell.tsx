@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, LogOut, TriangleAlert, User } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useNavigating } from "@/components/ui/Loading";
 import { Busy } from "@/components/ui";
+import { Toast } from "@/components/org/WorkList";
 import { getAiStatus, getInbox, getPipeline, loadIfReady } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { usePolling } from "@/lib/usePolling";
@@ -26,6 +27,9 @@ export interface OrgShellCounts {
   turnTotal: number | null;
   /** AI 가 멈춘 상태(O-82 available=false). 모든 기관 화면 위에 배너를 띄운다 */
   aiDown: boolean;
+  /** 분석 도착 알림용 — 우리가 승인할 분석 수 · 안 읽은 받은 분석 수 */
+  approve: number | null;
+  unread: number | null;
 }
 
 /** 메뉴 배지 숫자를 센다. 진행 현황(O-80)의 선생님 차례와 수신함(O-50) 안 읽은 글 */
@@ -44,7 +48,16 @@ export async function loadOrgCounts(): Promise<OrgShellCounts> {
     children: t ? t.approve + t.requests + unread : null,
     turnTotal: t ? t.confirm + t.blocked + t.review + t.approve + t.requests : null,
     aiDown: ai?.available === false,
+    approve: t ? t.approve : null,
+    unread: inbox ? unread : null,
   };
+}
+
+/** 이전 폴링보다 늘었으면 새로 도착한 분석이 있다. 숫자를 모르면(준비 중) 비교하지 않는다 */
+function arrived(prev: OrgShellCounts, next: OrgShellCounts): "approve" | "unread" | null {
+  if (prev.approve != null && next.approve != null && next.approve > prev.approve) return "approve";
+  if (prev.unread != null && next.unread != null && next.unread > prev.unread) return "unread";
+  return null;
 }
 
 const POLL_MS = 10_000;
@@ -88,6 +101,7 @@ export function OrgShell({
   counts: OrgShellCounts;
 }) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   // 다음 화면을 기다리는 동안 지금 화면을 살짝 흐린다 — 맨 위 막대(NavigationProgress)와 함께
   const navigating = useNavigating();
 
@@ -95,7 +109,25 @@ export function OrgShell({
   // 그 사이에는 10초마다 직접 다시 센다(탭이 숨으면 멈춤)
   const [live, setLive] = useState(counts);
   useEffect(() => setLive(counts), [counts]);
-  usePolling(async () => setLive(await loadOrgCounts()), POLL_MS, true, false);
+  /**
+   * 분석 도착 알림: 10초 폴링이 이전 값보다 늘었을 때만 띄운다. 첫 로드 · 새로고침 · 선생님이 처리해 다시 센 값(loader)은
+   * 비교 기준만 바꾸고 알리지 않는다.
+   */
+  const [arrival, setArrival] = useState<"approve" | "unread" | null>(null);
+  const clearArrival = useCallback(() => setArrival(null), []);
+  usePolling(
+    async () => {
+      const next = await loadOrgCounts();
+      setLive((prev) => {
+        const kind = arrived(prev, next);
+        if (kind) setArrival(kind);
+        return next;
+      });
+    },
+    POLL_MS,
+    true,
+    false,
+  );
   const ITEMS = nav(live);
 
   // 탭 제목 "(N) 잇다 ITDA" — 다른 탭에 있어도 선생님 차례가 생긴 걸 알 수 있게
@@ -166,6 +198,18 @@ export function OrgShell({
       >
         {children}
       </main>
+
+      <Toast
+        message={arrival ? "새 분석이 도착했어요" : null}
+        onGone={clearArrival}
+        action={{
+          label: "보기",
+          onClick: () => {
+            navigate(arrival === "approve" ? "/children?tab=approve" : "/children");
+            setArrival(null);
+          },
+        }}
+      />
     </div>
   );
 }
