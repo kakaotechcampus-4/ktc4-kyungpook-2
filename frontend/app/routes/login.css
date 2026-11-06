@@ -227,6 +227,19 @@
   transform: scale(0.98);
 }
 
+/* 로그인이 풀려서 왔을 때만 버튼 위에 뜨는 한 줄 */
+.land .expired {
+  max-width: 440px;
+  padding: 10px 16px;
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  background: var(--card);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  text-align: center;
+}
+
 .land .lede {
   max-width: 36ch;
   font-size: 15px;

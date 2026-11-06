@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { grantRole, isAuthMock, startKakaoLogin } from "@/lib/auth";
+import { grantRole, hasReturnPath, isAuthMock, startKakaoLogin } from "@/lib/auth";
 import "./login.css";
 
 /**
@@ -23,6 +24,9 @@ import "./login.css";
 export default function LoginPage() {
   const navigate = useNavigate();
   const mock = isAuthMock();
+  // 빌드 때 미리 그린 첫 화면과 어긋나지 않게 탭 저장소는 그린 뒤에 읽는다
+  const [expired, setExpired] = useState(false);
+  useEffect(() => setExpired(hasReturnPath()), []);
 
   return (
     <main className="land">
@@ -40,6 +44,12 @@ export default function LoginPage() {
 
       <div className="inner">
         <Ring />
+
+        {expired ? (
+          <p className="expired" role="status">
+            로그인이 만료됐어요. 다시 로그인하면 보던 화면으로 돌아가요
+          </p>
+        ) : null}
 
         <button type="button" className="kakao" onClick={() => startKakaoLogin("org")}>
           <KakaoMark />

@@ -10,6 +10,7 @@ import {
   clearInviteCode,
   getSession,
   grantRole,
+  hasReturnPath,
   isAuthMock,
   readInviteCode,
   saveInviteCode,
@@ -78,6 +79,9 @@ export default function ParentInvitePage() {
   const revalidator = useRevalidator();
   const mock = isAuthMock();
   const autoTried = useRef(false);
+  // 로그인이 풀려서 왔는지 — 빌드 때 미리 그린 첫 화면과 어긋나지 않게 탭 저장소는 그린 뒤에 읽는다
+  const [expired, setExpired] = useState(false);
+  useEffect(() => setExpired(hasReturnPath()), []);
 
   async function submitTerms() {
     if (pending) return;
@@ -248,6 +252,14 @@ export default function ParentInvitePage() {
           </div>
 
           <div className="flex flex-col gap-3">
+            {expired ? (
+              <p
+                role="status"
+                className="rounded-2xl border border-line2 bg-surface px-4 py-3 text-center text-[14px] leading-6 text-ink"
+              >
+                로그인이 만료됐어요. 다시 로그인하면 보던 화면으로 돌아가요
+              </p>
+            ) : null}
             <KakaoLoginButton
               intent="parent"
               label="카카오로 시작하기"
