@@ -91,7 +91,6 @@ import type {
   InboxDetail,
   InboxItem,
   Insight,
-  InsightProgress,
   Institution,
   InstitutionShares,
   ChecklistItem,
@@ -108,8 +107,6 @@ import type {
   Pipeline,
   PipelineRow,
   RegisteredChild,
-  SummaryGroup,
-  SummaryGroupBoard,
   SummaryItem,
   TimelineEntry,
   UploadFailReason,
@@ -154,11 +151,9 @@ const BE_READY = {
   /**
    * 요약 검토 조회 · 문장 카드 승인 · 보류 · 제거 · 보류 해제 (O-30, O-31, O-33).
    * 문장 카드(#231)가 있는 서버여야 한다 — 그 전 서버는 cards 를 조용히 버리고 AI 원문을 승인한다.
-   * 요약은 오늘의 업무 묶음 카드의 [요약](summaryGroups)을 눌러야 생긴다.
+   * 요약은 AI 확인이 끝나면 자동으로 만들어진다 (#369).
    */
   gate1: true,
-  /** 오늘의 업무 묶음 카드 조회 · [요약] (O-34, O-32) */
-  summaryGroups: true,
   /** 대시보드 진행 현황 · 오늘 AI가 한 일 · AI 상태 (O-80 ~ O-82) */
   dashboard: true,
   /** 인사이트 조회 · 2차 공유 (O-40 ~ O-42) */
@@ -561,7 +556,6 @@ export async function decideGate1(
       body.decision,
     );
     item.gate1Status = GATE1_STATUS_AFTER[body.decision];
-    if (body.decision === "revert") revertToSummaryWait(item);
     return { summaryId };
   }
   const res = await request<{ summaryId: number }>(
@@ -569,35 +563,6 @@ export async function decideGate1(
     { method: "POST", body: JSON.stringify(body) },
   );
   return { summaryId: String(res.summaryId) };
-}
-
-/**
- * mock 전용: 요약할 내용 없음을 되돌리면 그날 기록이 오늘의 업무에 "요약 대기"로 돌아온다.
- * BE 는 일지를 요약 전(VALIDATED)으로 돌리고, 보드는 그 일지를 아이 × 날짜 카드로 다시 묶는다.
- */
-function revertToSummaryWait(item: SummaryItem) {
-  const board = mock.SUMMARY_GROUP_BOARD;
-  const entries = Math.max(item.uncoveredEntries.length, 1);
-  let group = board.groups.find((g) => g.childId === item.childId && g.entryDate === item.entryDate);
-  if (!group) {
-    group = {
-      childId: item.childId,
-      childName: item.childName,
-      birthdate: mock.CHILDREN.find((c) => c.id === item.childId)?.birthDate ?? null,
-      entryDate: item.entryDate,
-      status: "ready",
-      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
-      canSummarize: true,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    };
-    board.groups.push(group);
-    board.groups.sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.childId.localeCompare(b.childId));
-  }
-  group.counts.ready += entries;
-  group.canSummarize = !group.summaryRequested;
-  group.status = groupStatusOf(group);
 }
 
 /**
@@ -662,102 +627,6 @@ export async function getAiStatus(): Promise<AiStatus> {
   return request<AiStatus>("/api/v1/system/ai-status");
 }
 
-/* ── 오늘의 업무 묶음 카드 · [요약] ──────────────────── */
-
-/** BE SummaryGroupBoardResponse 그대로. childId 가 숫자다 */
-interface SummaryGroupBoardRaw {
-  matching: SummaryGroupBoard["matching"];
-  groups: (Omit<SummaryGroup, "childId"> & { childId: number })[];
-}
-
-/**
- * GET /api/v1/summaries/groups (O-34) — 요약 전 묶음(아이 × 날짜) 카드. 오래된 날짜부터 온다.
- * 기록 등록 화면의 파일별 진행(O-26)과 같은 일지를 아이별로 묶어 본 것이다.
- */
-export async function getSummaryGroups(): Promise<SummaryGroupBoard> {
-  if (mockFor("summaryGroups")) {
-    tickSummaryRuns();
-    // 화면이 상태로 들고 있다가 비교하므로 매번 새 객체로 준다
-    const board = mock.SUMMARY_GROUP_BOARD;
-    return {
-      matching: { ...board.matching },
-      groups: board.groups.map((g) => ({ ...g, counts: { ...g.counts } })),
-    };
-  }
-  const raw = await request<SummaryGroupBoardRaw>("/api/v1/summaries/groups");
-  return {
-    matching: raw.matching,
-    groups: raw.groups.map((g) => ({ ...g, childId: String(g.childId) })),
-  };
-}
-
-/**
- * POST /api/v1/summaries/run (O-32) — 그 아이 · 날짜 묶음을 요약해 달라고 요청한다. 응답 data 는 null 이다.
- * 같은 날 매칭 · 검증 중인 기록이 있으면 그것이 끝난 뒤 요약한다. 요약 중에 누르면 409 SUMMARY_IN_PROGRESS.
- */
-export async function runSummary(childId: string, entryDate: string): Promise<void> {
-  if (mockFor("summaryGroups")) {
-    const group = mock.SUMMARY_GROUP_BOARD.groups.find(
-      (g) => g.childId === childId && g.entryDate === entryDate,
-    );
-    if (!group) throw new ApiError(404, "SUMMARY_CHILD_NOT_FOUND", "아이를 찾을 수 없습니다.");
-    if (group.summaryRequested || group.counts.summarizing > 0) {
-      throw new ApiError(409, "SUMMARY_IN_PROGRESS", "요약하는 중입니다.");
-    }
-    if (group.counts.ready === 0 && group.counts.validating === 0) {
-      throw new ApiError(400, "SUMMARY_INVALID_REQUEST", "요약할 기록이 없습니다.");
-    }
-    group.summaryRequested = true;
-    group.canSummarize = false;
-    group.waitingCount = group.counts.validating;
-    group.status = groupStatusOf(group);
-    summaryRuns.set(`${childId}:${entryDate}`, Date.now());
-    return;
-  }
-  await request("/api/v1/summaries/run", {
-    method: "POST",
-    body: JSON.stringify({ childId: Number(childId), entryDate }),
-  });
-}
-
-/** mock 전용: BE 라벨 규칙 그대로 (위에서부터 처음 맞는 것) */
-function groupStatusOf(g: SummaryGroup): SummaryGroup["status"] {
-  const c = g.counts;
-  if (c.needsFix > 0) return "needs_fix";
-  if (c.ready > 0 && !g.summaryRequested && c.summarizing === 0) return "ready";
-  if (c.summarizing > 0 || g.summaryRequested) return "summarizing";
-  if (c.validating > 0) return "validating";
-  return "admin_check";
-}
-
-/**
- * mock 전용: [요약]을 누른 묶음이 잠시 뒤 요약을 마치고 요약 검토로 옮겨 가는 것을 흉내낸다.
- * 요약 대기 기록만 빠지고, 수정 요청 · 검증 중 기록이 남으면 카드는 남는다 (BE 와 같음).
- */
-const summaryRuns = new Map<string, number>();
-const SUMMARY_RUN_MS = 3000;
-
-function tickSummaryRuns() {
-  const now = Date.now();
-  for (const [key, at] of summaryRuns) {
-    if (now - at < SUMMARY_RUN_MS) continue;
-    summaryRuns.delete(key);
-    const board = mock.SUMMARY_GROUP_BOARD;
-    const group = board.groups.find((g) => `${g.childId}:${g.entryDate}` === key);
-    if (!group) continue;
-
-    mock.GATE1_QUEUE.push(mock.gate1FromRun(group));
-    group.counts.ready = 0;
-    group.summaryRequested = false;
-    group.waitingCount = 0;
-    group.previousSummaryInReview = true;
-    group.canSummarize = false;
-    group.status = groupStatusOf(group);
-    const left = Object.values(group.counts).reduce((a, b) => a + b, 0);
-    if (left === 0) board.groups.splice(board.groups.indexOf(group), 1);
-  }
-}
-
 /**
  * GET /api/v1/insights?gate2Status= (O-40)
  *
@@ -771,21 +640,6 @@ export async function getInsights(gate2Status: Gate2Status = "pending"): Promise
     );
   }
   return request(`/api/v1/insights?gate2Status=${gate2Status}`);
-}
-
-/**
- * GET /api/v1/insights/progress (O-43) — 최근 승인한 기록이 속한 (아이, 주)마다 인사이트 분석이 어디쯤인지.
- * 대시보드가 분석 중인 동안 다시 받아, 끝나면 "인사이트 승인" 건수를 새로고침 없이 띄운다 (#359).
- * mock 에는 진행 중인 분석이 없다.
- */
-export async function getInsightProgress(): Promise<InsightProgress[]> {
-  if (mockFor("insights")) return [];
-  return request("/api/v1/insights/progress");
-}
-
-export async function getInsight(id: string): Promise<Insight | undefined> {
-  if (mockFor("insights")) return mock.INSIGHTS.find((i) => i.id === id);
-  return request(`/api/v1/insights/${id}`);
 }
 
 /**
