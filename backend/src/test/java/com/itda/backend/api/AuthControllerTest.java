@@ -24,6 +24,7 @@ import static org.mockito.BDDMockito.given;
 import com.itda.backend.dto.response.user.CurrentUserResponse;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
+import com.itda.backend.service.user.RevokedSessionService;
 import com.itda.backend.service.user.UserService;
 
 // addFilters(false) 라 필터 체인이 돌지 않는다 — JwtAuthenticationFilter 가 하는 일
@@ -44,6 +45,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private JwtProvider jwtProvider;
+
+    @MockitoBean
+    private RevokedSessionService revokedSessionService;
 
     @AfterEach
     void clearSecurityContext() {

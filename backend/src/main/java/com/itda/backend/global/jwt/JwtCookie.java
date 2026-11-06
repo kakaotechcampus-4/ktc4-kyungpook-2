@@ -45,7 +45,12 @@ public class JwtCookie {
 
     /** 로그인 성공 직후. 만료를 토큰 유효시간과 맞춰 둔다. */
     public ResponseCookie issue(String token) {
-        return base(token).maxAge(ttl).build();
+        return issue(token, ttl);
+    }
+
+    /** 연장한 출입증. 최대 로그인 시간에 걸리면 유효시간보다 짧게 끝나므로 만료를 받아서 건다. */
+    public ResponseCookie issue(String token, Duration maxAge) {
+        return base(token).maxAge(maxAge).build();
     }
 
     /**

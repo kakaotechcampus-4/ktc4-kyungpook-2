@@ -33,8 +33,6 @@ import com.itda.backend.exception.summary.SummaryChildNotFoundException;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
-import com.itda.backend.global.jwt.JwtCookie;
-import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.service.approval.SummaryGate1QueryService;
 import com.itda.backend.service.approval.SummaryGate1Service;
@@ -61,12 +59,6 @@ class SummaryControllerTest {
 
     @MockitoBean
     private SummaryGroupQueryService summaryGroupQueryService;
-
-    @MockitoBean
-    private JwtProvider jwtProvider;
-
-    @MockitoBean
-    private JwtCookie jwtCookie;
 
     @Test
     void groups_returnsMatchingCountsAndCards() throws Exception {

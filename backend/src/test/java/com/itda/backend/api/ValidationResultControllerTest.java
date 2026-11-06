@@ -28,8 +28,6 @@ import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
 import com.itda.backend.exception.validation.ValidationResultErrorCode;
 import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
-import com.itda.backend.global.jwt.JwtCookie;
-import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.validation.ValidationQueueService;
 
 @WebMvcTest(ValidationResultController.class)
@@ -43,12 +41,6 @@ class ValidationResultControllerTest {
 
     @MockitoBean
     private ValidationQueueService validationQueueService;
-
-    @MockitoBean
-    private JwtProvider jwtProvider;
-
-    @MockitoBean
-    private JwtCookie jwtCookie;
 
     @Test
     void getQueue_returnsBlockedItems() throws Exception {
