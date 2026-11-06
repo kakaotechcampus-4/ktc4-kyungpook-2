@@ -29,6 +29,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.UnexpectedRollbackException;
 
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.domain.insight.InsightRun;
 import com.itda.backend.dto.request.insight.InsightAgentRequest;
 import com.itda.backend.dto.response.insight.InsightAgentResponse;
@@ -53,12 +54,14 @@ class InsightWorkerTest {
     private InsightResultRecorder recorder;
     @Mock
     private ChildContextRepository childContextRepository;
+    @Mock
+    private AiAvailability availability;
 
     private InsightWorker worker;
 
     @BeforeEach
     void setUp() {
-        worker = new InsightWorker(insightService, client, recorder, childContextRepository, PROPERTIES);
+        worker = new InsightWorker(insightService, client, recorder, childContextRepository, PROPERTIES, availability);
         // 기본은 "아직 안 다룬 기간". 다룬 기간을 보는 테스트가 따로 덮어쓴다.
         lenient().when(recorder.needsRun(anyLong(), any(), any())).thenReturn(true);
     }
@@ -171,7 +174,7 @@ class InsightWorkerTest {
     @Test
     void 설정을_켜면_이번_주_기록도_본다() {
         worker = new InsightWorker(insightService, client, recorder, childContextRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, true, List.of()));
+                new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, true, List.of()), availability);
         agentUp();
         approved(new ApprovedEntryDay(8L, LocalDate.now(SEOUL)));
 
@@ -335,12 +338,13 @@ class InsightWorkerTest {
 
         verify(childContextRepository, never()).findApprovedEntryDaysSince(any());
         verify(recorder, never()).claim(anyLong(), any(), any());
+        verify(availability).reportHealth(false);
     }
 
     @Test
     void 한_차례에_batch_size_만큼만_집는다() {
         worker = new InsightWorker(insightService, client, recorder, childContextRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 2), 7, SEOUL, 14, false, List.of()));
+                new InsightProperties(new WorkerProperties(true, 5000, 2), 7, SEOUL, 14, false, List.of()), availability);
         agentUp();
         candidates(8L, 9L, 10L);
         ready(8L);
@@ -357,7 +361,7 @@ class InsightWorkerTest {
     @Test
     void 집지_못한_아이는_처리_수에_넣지_않는다() {
         worker = new InsightWorker(insightService, client, recorder, childContextRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 1), 7, SEOUL, 14, false, List.of()));
+                new InsightProperties(new WorkerProperties(true, 5000, 1), 7, SEOUL, 14, false, List.of()), availability);
         agentUp();
         candidates(8L, 9L);
         given(insightService.prepare(anyLong(), any(), any()))

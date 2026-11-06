@@ -44,6 +44,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.ApprovalTargetType;
@@ -180,11 +181,11 @@ class Gate1PipelineIntegrationTest {
                 List.of(ConsentField.DAILY_SUMMARY)));
 
         matchingWorker = new MatchingWorker(matchingService, fakeMatchingAgent(), matchingResultRecorder,
-                matchingProperties, agentDownProperties, clock);
+                matchingProperties, agentDownProperties, clock, new AiAvailability(clock));
         validationWorker = new ValidationWorker(validationService, fakeValidationAgent(), validationResultRecorder,
-                validationProperties, agentDownProperties, clock);
+                validationProperties, agentDownProperties, clock, new AiAvailability(clock));
         summaryWorker = new SummaryWorker(summaryService, fakeSummaryAgent(), summaryResultRecorder,
-                summaryProperties);
+                summaryProperties, new AiAvailability(clock));
     }
 
     @Test

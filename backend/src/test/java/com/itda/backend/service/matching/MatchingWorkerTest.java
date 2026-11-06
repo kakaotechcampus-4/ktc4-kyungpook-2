@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.dto.request.matching.MatchingAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
@@ -46,13 +47,15 @@ class MatchingWorkerTest {
     private MatchingAgentClient client;
     @Mock
     private MatchingResultRecorder recorder;
+    @Mock
+    private AiAvailability availability;
 
     private MatchingWorker worker;
     private final MutableClock clock = new MutableClock(LocalDateTime.of(2026, 10, 14, 10, 0));
 
     @BeforeEach
     void setUp() {
-        worker = new MatchingWorker(matchingService, client, recorder, PROPERTIES, AGENT_DOWN, clock);
+        worker = new MatchingWorker(matchingService, client, recorder, PROPERTIES, AGENT_DOWN, clock, availability);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -132,6 +135,7 @@ class MatchingWorkerTest {
                 .withBean(MatchingProperties.class, () -> PROPERTIES)
                 .withBean(AgentDownProperties.class, () -> AGENT_DOWN)
                 .withBean(Clock.class, () -> clock)
+                .withBean(AiAvailability.class, () -> mock(AiAvailability.class))
                 .withUserConfiguration(MatchingWorker.class);
 
         runner.withPropertyValues("app.matching.worker.enabled=false")
@@ -160,6 +164,7 @@ class MatchingWorkerTest {
 
         verify(matchingService, never()).claimPending(anyInt());
         verify(client, never()).match(any());
+        verify(availability).reportHealth(false);
     }
 
     @Test

@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.dto.request.validation.ValidationAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
@@ -49,13 +50,15 @@ class ValidationWorkerTest {
     private ValidationAgentClient client;
     @Mock
     private ValidationResultRecorder recorder;
+    @Mock
+    private AiAvailability availability;
 
     private ValidationWorker worker;
     private final MutableClock clock = new MutableClock(LocalDateTime.of(2026, 10, 14, 10, 0));
 
     @BeforeEach
     void setUp() {
-        worker = new ValidationWorker(validationService, client, recorder, PROPERTIES, AGENT_DOWN, clock);
+        worker = new ValidationWorker(validationService, client, recorder, PROPERTIES, AGENT_DOWN, clock, availability);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -158,6 +161,7 @@ class ValidationWorkerTest {
 
         verify(validationService, never()).claimMatched(anyInt());
         verify(client, never()).validate(any());
+        verify(availability).reportHealth(false);
     }
 
     @Test
@@ -222,6 +226,7 @@ class ValidationWorkerTest {
                 .withBean(ValidationProperties.class, () -> PROPERTIES)
                 .withBean(AgentDownProperties.class, () -> AGENT_DOWN)
                 .withBean(Clock.class, () -> clock)
+                .withBean(AiAvailability.class, () -> mock(AiAvailability.class))
                 .withUserConfiguration(ValidationWorker.class);
 
         runner.withPropertyValues("app.validation.worker.enabled=false")

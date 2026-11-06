@@ -146,6 +146,11 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.404.description",
 						containsString("SUMMARY_FAILED_NOT_FOUND")))
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.responses.403").exists())
+				.andExpect(jsonPath("$.components.schemas.AiStatusResponse.properties.since").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.401").exists())
