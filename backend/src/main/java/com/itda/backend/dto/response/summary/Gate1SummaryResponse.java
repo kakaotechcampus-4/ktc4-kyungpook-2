@@ -16,8 +16,8 @@ import java.util.List;
  * @param reviewReasons    왜 봐야 하는지 — ["다른아동이름"]
  * @param uncoveredEntries 요약에 안 들어간 일지와 원문. 승인하면 이 일지도 함께 끝난다.
  * @param reviewFlags      요약에 들어간 원본 중 검증에서 REVIEW 를 받은 일지와 그 사유
- * @param entries          이 요약에 묶인 일지 원문 전체(요약에 든 것 + 안 든 것, id 순). 검토 화면이 원본 일지를 늘 보이고
- *                         {@code claims[].evidence} 인용을 그 안에서 강조한다 (#371)
+ * @param entries          이 요약에 묶인 일지 원문 전체(요약에 든 것 + 안 든 것, id 순). 검토 화면이 원본 일지를 늘 보인다
+ *                         (#371). {@code claims[].evidence} 인용 강조는 이 원문 위에서 한다
  */
 public record Gate1SummaryResponse(
         Long id,
