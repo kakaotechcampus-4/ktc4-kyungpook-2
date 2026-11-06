@@ -120,7 +120,8 @@ def build_refine_messages(state: dict, raw: dict, reasons: list[dict], allowed_i
         "처음 쓴 인사이트:\n" + json.dumps(keep, ensure_ascii=False) + "\n\n"
         "고칠 점:\n" + fixes + "\n\n"
         "고칠 점만 고친다. 위 기록에 없는 내용을 새로 쓰지 않고, 근거 claim_id 는 위 목록에서만 고른다. "
-        "표현을 뺀 뒤 문장이 어색하면 자연스럽게 다듬는다. 나머지 칸은 그대로 둔다.\n"
+        "표현을 뺀 뒤 문장이 어색하면 자연스럽게 다듬는다. 그 표현을 빼서 결과가 없는 대처가 남으면, "
+        "그 대처는 본문과 supports 에서 모두 뺀다. 결과가 기록에 없는 대처는 쓰지 않는다. 나머지 칸은 그대로 둔다.\n"
         "같은 JSON 형식으로 insights 에 인사이트 하나만 담아 답한다."
     )
     return [{"role": "system", "content": system_prompt()}, {"role": "user", "content": user}]
