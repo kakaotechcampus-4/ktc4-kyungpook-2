@@ -31,7 +31,13 @@ export function InstitutionIcon({ type }: { type?: InstitutionType | null }) {
       aria-hidden
       width={44}
       height={44}
-      loading="lazy"
+      /*
+        lazy 로 두지 않는다. 이 그림은 홈 첫 화면의 **접히는 선 위**에 나온다
+        ("새 소식" 카드마다 하나). 늦게 뜨면 보호자가 처음 보는 화면에 빈 회색
+        네모가 줄줄이 남는다 — 디자인이 안 먹은 것처럼 보인다.
+        종류가 셋뿐이라(school · center · adult-01) 한 번 받으면 끝이다.
+      */
+      decoding="async"
       className="size-11 shrink-0 rounded-2xl bg-surface2 object-contain p-0.5"
     />
   );
