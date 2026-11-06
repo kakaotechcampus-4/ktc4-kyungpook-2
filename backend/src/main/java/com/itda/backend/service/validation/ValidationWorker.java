@@ -119,6 +119,7 @@ public class ValidationWorker {
         try {
             ValidationTarget target = validationService.prepareRequest(journalEntryId);
             ValidationAgentReply reply = client.validate(target.request());
+            availability.reportCallSucceeded();
             recorder.record(target, reply);
             return Outcome.DONE;
         } catch (RuntimeException e) {
@@ -128,6 +129,8 @@ public class ValidationWorker {
             }
             if (e instanceof AiAgentUnavailableException) {
                 log.warn("validation agent unavailable journalEntryId={}", journalEntryId, e);
+                // /health 는 LLM 까지 보지 않으므로 여기서 멈춘 것을 AI 장애 배너에 따로 알린다 (#370).
+                availability.reportCallGaveUp();
                 return releaseOrFail(journalEntryId);
             }
             FailureReason reason = AgentFailureReasons.of(e);

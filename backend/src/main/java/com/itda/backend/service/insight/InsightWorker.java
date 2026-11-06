@@ -157,6 +157,7 @@ public class InsightWorker {
     private boolean process(InsightRun run, PreparedInsight prepared) {
         try {
             InsightAgentReply reply = client.analyze(prepared.request());
+            availability.reportCallSucceeded();
             recorder.record(run, reply.response(), reply.rawJson(), prepared.lastContextId(),
                     prepared.request().claims().size());
             return true;
@@ -168,6 +169,8 @@ public class InsightWorker {
             log.warn("insight agent unavailable, stopping this turn childId={} period={}..{} reason={}",
                     run.getChildId(), run.getPeriodFrom(), run.getPeriodTo(), reason, e);
             recorder.recordFailure(run, reason);
+            // /health 는 LLM 까지 보지 않으므로 여기서 멈춘 것을 AI 장애 배너에 따로 알린다 (#370).
+            availability.reportCallGaveUp();
             return false;
         } catch (RuntimeException e) {
             if (Thread.currentThread().isInterrupted()) {

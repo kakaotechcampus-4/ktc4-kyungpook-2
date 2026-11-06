@@ -11,10 +11,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>멈춘 것으로 보는 경우는 둘이다.
  * <ul>
- *   <li>{@code /health} 실패가 마지막 성공 뒤로 {@link #DOWN_AFTER} 넘게, {@link #MIN_FAILURES} 번 넘게 이어질 때.
+ *   <li>{@code /health} 실패가 마지막 성공 뒤로 {@link #DOWN_AFTER} 이상, {@link #MIN_FAILURES} 번 이상 이어질 때.
  *       워커 네 개가 5초마다 같은 순간에 보고하므로 횟수만 세면 한 번 깜빡여도 멈춘 것이 된다 — 시간으로 묶는다.</li>
- *   <li>요약 워커가 재시도 끝에 AI 를 못 불렀을 때. {@code /health} 는 LLM 까지 보지 않아 LLM 장애 동안에도 성공하므로,
- *       {@link #GAVE_UP_HOLD} 동안은 {@code /health} 성공으로 풀지 않는다. 요약 호출이 성공하면 바로 풀린다.</li>
+ *   <li>워커가 재시도 끝에 AI 를 못 불렀을 때. {@code /health} 는 LLM 까지 보지 않아 LLM 장애 동안에도 성공하므로,
+ *       {@link #GAVE_UP_HOLD} 동안은 {@code /health} 성공으로 풀지 않는다. 어느 워커든 AI 호출이 응답을 받으면 바로 풀린다.</li>
  * </ul>
  * {@code since} 는 지금 이어지는 장애가 처음 보인 시각이다. 앱이 다시 켜지면 처음부터 다시 센다(메모리에만 둔다).
  */
@@ -31,7 +31,7 @@ public class AiAvailability {
     private Instant failingSince;
     private int failures;
 
-    /** 요약 워커가 처음 멈춘 시각과 마지막으로 멈춘 시각. 호출이 성공하거나 마지막 멈춤에서 GAVE_UP_HOLD 가 지나면 비운다. */
+    /** 워커가 처음 멈춘 시각과 마지막으로 멈춘 시각. 호출이 성공하거나 마지막 멈춤에서 GAVE_UP_HOLD 가 지나면 비운다. */
     private Instant gaveUpSince;
     private Instant lastGaveUp;
 
@@ -52,7 +52,7 @@ public class AiAvailability {
         failures++;
     }
 
-    /** 요약 워커가 재시도까지 응답을 못 받아 멈췄다. */
+    /** 워커가 재시도까지 AI 응답을 못 받아 멈췄다. */
     public synchronized void reportCallGaveUp() {
         Instant now = clock.instant();
         expireGaveUp(now);
@@ -62,7 +62,7 @@ public class AiAvailability {
         lastGaveUp = now;
     }
 
-    /** 요약 호출이 응답을 받았다. LLM 이 살아 있다는 뜻이라 멈춤을 바로 푼다. */
+    /** AI 호출이 응답을 받았다. LLM 이 살아 있다는 뜻이라 멈춤을 바로 푼다. */
     public synchronized void reportCallSucceeded() {
         gaveUpSince = null;
         lastGaveUp = null;

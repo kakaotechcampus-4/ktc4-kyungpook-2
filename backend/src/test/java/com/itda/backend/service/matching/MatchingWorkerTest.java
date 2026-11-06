@@ -80,6 +80,8 @@ class MatchingWorkerTest {
         order.verify(recorder).record(1L, reply1);
         order.verify(client).match(requestFor(2L));
         order.verify(recorder).record(2L, reply2);
+        // 호출이 응답을 받았다 — LLM 이 살아 있으니 AI 장애 배너를 내린다 (#370).
+        verify(availability, times(2)).reportCallSucceeded();
     }
 
     @Test
@@ -180,6 +182,8 @@ class MatchingWorkerTest {
         verify(matchingService).release(List.of(2L, 3L));
         verify(matchingService, never()).prepareRequest(2L);
         verify(matchingService, never()).prepareRequest(3L);
+        // /health 는 LLM 까지 보지 않아 이 멈춤을 따로 알려야 AI 장애 배너에 뜬다 (#370).
+        verify(availability).reportCallGaveUp();
     }
 
     @Test

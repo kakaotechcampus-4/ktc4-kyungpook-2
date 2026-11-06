@@ -292,6 +292,7 @@ class InsightWorkerTest {
         verify(recorder).recordFailure(any(), eq("llm_unavailable:empty_response"));
         verify(insightService, never()).prepare(eq(9L), any(), any());
         verify(client, times(1)).analyze(any());
+        verify(availability).reportCallGaveUp();
     }
 
     /**

@@ -30,7 +30,7 @@ public class SystemController {
     @GetMapping("/ai-status")
     @Operation(
             summary = "AI 상태",
-            description = "워커가 본 AI /health 실패가 15초 넘게 이어지거나 요약 워커가 재시도 끝에 멈추면 "
+            description = "워커가 본 AI /health 실패가 15초 이상 이어지거나 워커가 재시도 끝에 AI 를 부르지 못해 멈추면 "
                     + "available=false 와 그 장애가 처음 보인 시각(since)을 돌려줍니다. 기관 사용자만 볼 수 있습니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)

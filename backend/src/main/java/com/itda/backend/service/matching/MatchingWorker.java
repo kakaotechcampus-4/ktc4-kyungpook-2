@@ -124,6 +124,7 @@ public class MatchingWorker {
         try {
             MatchingAgentRequest request = matchingService.prepareRequest(journalEntryId);
             MatchingAgentReply reply = client.match(request);
+            availability.reportCallSucceeded();
             recorder.record(journalEntryId, reply);
             return Outcome.DONE;
         } catch (RuntimeException e) {
@@ -133,6 +134,8 @@ public class MatchingWorker {
             }
             if (e instanceof AiAgentUnavailableException) {
                 log.warn("matching agent unavailable journalEntryId={}", journalEntryId, e);
+                // /health 는 LLM 까지 보지 않으므로 여기서 멈춘 것을 AI 장애 배너에 따로 알린다 (#370).
+                availability.reportCallGaveUp();
                 return releaseOrFail(journalEntryId);
             }
             log.warn("matching failed journalEntryId={}", journalEntryId, e);

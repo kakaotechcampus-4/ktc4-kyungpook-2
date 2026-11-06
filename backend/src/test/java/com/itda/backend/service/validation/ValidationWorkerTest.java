@@ -83,6 +83,7 @@ class ValidationWorkerTest {
         order.verify(recorder).record(targetFor(1L), reply1);
         order.verify(client).validate(targetFor(2L).request());
         order.verify(recorder).record(targetFor(2L), reply2);
+        verify(availability, times(2)).reportCallSucceeded();
     }
 
     @Test
@@ -178,6 +179,7 @@ class ValidationWorkerTest {
         verify(validationService).release(List.of(2L, 3L));
         verify(validationService, never()).prepareRequest(2L);
         verify(validationService, never()).prepareRequest(3L);
+        verify(availability).reportCallGaveUp();
     }
 
     @Test
