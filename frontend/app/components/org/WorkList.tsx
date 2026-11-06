@@ -171,8 +171,8 @@ export function PopButton({
   );
 }
 
-/** 토스트 자리 — 겹치지 않게 아래에서부터 쌓는다. 0: 되돌리기, 1: 화면 알림, 2: 도착 알림 */
-const TOAST_SLOT = ["bottom-6", "bottom-[84px]", "bottom-[144px]"] as const;
+/** 토스트 자리 — 겹치지 않게 아래에서부터 쌓는다. 0: 되돌리기, 1: 화면 알림, 2: 메뉴 알림(lib/notice), 3: 도착 알림 */
+const TOAST_SLOT = ["bottom-6", "bottom-[84px]", "bottom-[144px]", "bottom-[204px]"] as const;
 
 /**
  * 화면 아래에 잠깐 뜨는 알림 한 줄. `message` 가 바뀔 때마다 `ms`(기본 5초) 보인다. `persist` 면 스스로 사라지지 않는다.
@@ -191,7 +191,7 @@ export function Toast({
   action?: { label: string; onClick: () => void };
   ms?: number;
   persist?: boolean;
-  slot?: 0 | 1 | 2;
+  slot?: 0 | 1 | 2 | 3;
 }) {
   useEffect(() => {
     if (!message || persist) return;

@@ -35,10 +35,11 @@ export interface OrgShellCounts {
 
 /** 메뉴 배지 숫자를 센다. 진행 현황(O-80)의 선생님 차례와 수신함(O-50) 안 읽은 글 */
 export async function loadOrgCounts(): Promise<OrgShellCounts> {
+  // 배지는 덤이다 — 하나가 실패해도 기관 화면 전체(이 값을 쓰는 layout loader)가 깨지지 않게 각각 null 로 둔다.
+  // AI 상태를 못 받았다고 배너를 띄우지도 않는다 — 서버가 "멈췄다" 고 할 때만
   const [pipeline, inbox, ai] = await Promise.all([
-    loadIfReady("dashboard", getPipeline),
-    loadIfReady("inbox", getInbox),
-    // AI 상태를 못 받았다고 배너를 띄우지는 않는다 — 서버가 "멈췄다" 고 할 때만
+    loadIfReady("dashboard", getPipeline).catch(() => null),
+    loadIfReady("inbox", getInbox).catch(() => null),
     loadIfReady("dashboard", getAiStatus).catch(() => null),
   ]);
   const t = pipeline?.turn;
@@ -109,7 +110,12 @@ export function OrgShell({
   // 처음 숫자는 layout 의 clientLoader 가 준다. 화면을 옮기거나 처리 뒤 revalidate 되면 그 값으로 바뀌고,
   // 그 사이에는 10초마다 직접 다시 센다(탭이 숨으면 멈춤)
   const [live, setLive] = useState(counts);
-  useEffect(() => setLive(counts), [counts]);
+  /** loader 가 다시 센 값이 들어올 때마다 올린다 — 그 전에 떠난 폴링 응답은 버린다(늦게 와서 최신 값을 덮지 않게) */
+  const generation = useRef(0);
+  useEffect(() => {
+    generation.current += 1;
+    setLive(counts);
+  }, [counts]);
   /**
    * 분석 도착 알림: 10초 폴링이 이전 값보다 늘었을 때만 띄운다. 첫 로드 · 새로고침 · 선생님이 처리해 다시 센 값(loader)은
    * 비교 기준만 바꾸고 알리지 않는다.
@@ -122,7 +128,9 @@ export function OrgShell({
   useEffect(() => onNotice(setNotice), []);
   usePolling(
     async () => {
+      const started = generation.current;
       const next = await loadOrgCounts();
+      if (started !== generation.current) return;
       setLive((prev) => {
         const kind = arrived(prev, next);
         if (kind) setArrival(kind);
@@ -205,9 +213,9 @@ export function OrgShell({
         {children}
       </main>
 
-      <Toast message={notice} onGone={clearNotice} ms={8000} />
+      <Toast slot={2} message={notice} onGone={clearNotice} ms={8000} />
       <Toast
-        slot={2}
+        slot={3}
         message={arrival ? "새 분석이 도착했어요" : null}
         onGone={clearArrival}
         action={{

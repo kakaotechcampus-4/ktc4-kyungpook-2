@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { skipSearchOnlyChange } from "@/lib/revalidate";
 import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Check, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
@@ -37,6 +38,9 @@ import type { FailedSummary, Gate1Card, SummaryClaim, SummaryItem } from "@/lib/
  * 대시보드 바로가기: `?open=first` (첫 건), `?open=summary&id=` (그 요약), `?open=failed&child=&date=` (그 요약 실패),
  * `?tab=hold` (보류 칸).
  */
+/** 칸 바꾸기 · `?open=` 지우기로는 다시 불러오지 않는다 (lib/revalidate) */
+export const shouldRevalidate = skipSearchOnlyChange;
+
 export async function clientLoader() {
   // BE 는 상태 하나씩만 준다 — 검토 대기와 보류를 함께 묻는다
   const [pending, held, failed] = await Promise.all([
@@ -347,6 +351,8 @@ function Gate1Page() {
   const bump = () => setSendsTick((n) => n + 1);
   /** 되돌린 승인의 고치던 내용 — 같은 판(version)의 요약을 다시 열 때만 채운다 */
   const drafts = useRef(new Map<string, { version: string; draft: Draft }>());
+  /** 페이지를 닫을 때 keepalive 로 내보낸 본문 바이트 합 */
+  const keepaliveUsed = useRef(0);
   /** 승인 직후 잠깐은 다음 승인을 받지 않는다 — 키를 오래 누르거나 두 번 눌러 다음 요약까지 승인되지 않게 */
   const lastApprove = useRef(0);
 
@@ -414,8 +420,11 @@ function Gate1Page() {
       clearTimeout(entry.timer);
       sends.current.delete(item.id);
       bump();
-      // 페이지를 닫는 중이면 keepalive 로 보낸다. 브라우저가 64KB 넘는 keepalive 본문을 거부해서 그때는 그냥 보낸다
-      const keepalive = leaving && JSON.stringify(body).length < 60_000;
+      // 페이지를 닫는 중이면 keepalive 로 보낸다. 브라우저는 동시에 나가는 keepalive 본문을 합쳐 64KB(바이트)까지만
+      // 받으므로, 이번 닫기에서 쓴 양을 더해 넘으면 그냥 보낸다(닫히면 끊길 수 있다)
+      const bytes = new TextEncoder().encode(JSON.stringify(body)).length;
+      const keepalive = leaving && keepaliveUsed.current + bytes < 60_000;
+      if (keepalive) keepaliveUsed.current += bytes;
       decideGate1(item.id, body, { keepalive })
         .then(() => drafts.current.delete(item.id))
         .catch((err) => {
@@ -444,7 +453,8 @@ function Gate1Page() {
     clearTimeout(entry.timer);
     sends.current.delete(last);
     pw.undo(last);
-    if (!walk.current) pw.open(last);
+    // [전체] 칸에서 열린 팝업이 없을 때만 그 요약을 연다(보류 칸에선 목록에만 되살린다)
+    if (tab === "pending" && !pw.current) pw.open(last);
     bump();
   }
   const latestSend = [...sends.current.values()].pop();
@@ -647,7 +657,7 @@ function SourceEntries({
   const located = evidence && evidence.length ? locateEvidence(entries, evidence) : null;
   const evNote =
     evidence == null ? null : evidence.length === 0 ? (
-      "선생님이 쓴 문장이에요. 원본 일지에 근거가 없어요"
+      "이 문장에는 근거로 든 일지가 없어요. 원본 일지를 직접 읽고 맞는지 확인해 주세요"
     ) : located?.found ? (
       <>
         <mark className="rounded bg-mark/55 px-0.5 text-inherit">노란 부분</mark>이 고른 문장의 근거예요

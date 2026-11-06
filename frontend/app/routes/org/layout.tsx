@@ -1,4 +1,5 @@
 import { Outlet, redirect, useLoaderData } from "react-router";
+import { skipSearchOnlyChange } from "@/lib/revalidate";
 import { loadOrgCounts, OrgShell } from "@/components/org/Shell";
 import { getSession, isAuthMock, rememberReturnPath } from "@/lib/auth";
 import { ME, MY_INSTITUTION } from "@/lib/mock/data";
@@ -12,6 +13,9 @@ import "./org.css";
  * 메뉴 배지 숫자도 여기서 처음 센다 — 화면이 useRevalidator() 로 갱신을 요청하면
  * 이 clientLoader 도 다시 돌아 배지가 바로 줄어든다. 그 사이에는 Shell 이 10초마다 다시 센다.
  */
+/** 칸 바꾸기 · `?open=` 지우기로는 다시 불러오지 않는다 (lib/revalidate) */
+export const shouldRevalidate = skipSearchOnlyChange;
+
 export async function clientLoader({ request }: { request: Request }) {
   const { loggedIn, signupCompleted, role, name, institutionName, termsAgreed } = await getSession();
   // 카카오 로그인만 하고 역할을 안 고른 사람 — 보호 API 가 403 SIGNUP_NOT_COMPLETED 를 준다.

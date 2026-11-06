@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { skipSearchOnlyChange } from "@/lib/revalidate";
 import { Plus } from "lucide-react";
 import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { ChildPopup, guardianChip, type ChildTab } from "@/components/org/ChildPopup";
@@ -19,6 +20,9 @@ import type { ChildListItem, Insight } from "@/lib/types";
  * 주소: `?tab=kids|approve|req`, `&open=first` (분석 승인 첫 건) · `&open=insight&id=` (그 분석),
  * `?register=1` (등록 팝업), `?child=<id>` (그 아이 팝업, 옛 /children/:id).
  */
+/** 칸 바꾸기 · `?open=` 지우기로는 다시 불러오지 않는다 (lib/revalidate) */
+export const shouldRevalidate = skipSearchOnlyChange;
+
 export async function clientLoader() {
   const [children, institution, linkRequests, pending, approved, inbox] = await Promise.all([
     getChildren(),

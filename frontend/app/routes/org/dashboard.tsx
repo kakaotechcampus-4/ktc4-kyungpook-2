@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronRight,
@@ -80,6 +80,14 @@ export default function DashboardPage() {
   const [files, setFiles] = useState<FileProgress[]>(initial.files);
   /** AI 가 멈췄으면 AI 차례 줄을 "멈춤" 으로 보인다 (O-82) */
   const [aiDown, setAiDown] = useState(initial.aiDown);
+
+  // loader 가 다시 돌면(다른 화면에서 처리하고 돌아옴 · revalidate) 새 값으로 바꾼다 — 다음 폴링까지 옛 숫자가 남지 않게
+  useEffect(() => {
+    setPipeline(initial.pipeline);
+    setActivity(initial.activity);
+    setFiles(initial.files);
+    setAiDown(initial.aiDown);
+  }, [initial]);
 
   async function refresh() {
     const [p, a, f, ai] = await Promise.all([
