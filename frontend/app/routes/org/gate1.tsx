@@ -552,7 +552,6 @@ function Gate1Page() {
             item={current.s}
             {...popupProps}
             onApprove={approveLater}
-            onMove={walk.move}
             draft={(() => {
               const saved = drafts.current.get(current.id);
               return saved && saved.version === current.s.version ? saved.draft : undefined;
@@ -713,14 +712,6 @@ interface Draft {
   added: Added[];
 }
 
-/** 입력 중이면 단축키를 무시한다 */
-function typing(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
-  );
-}
-
 function PendingPopup({
   item,
   position,
@@ -728,12 +719,10 @@ function PendingPopup({
   onDone,
   onStale,
   onApprove,
-  onMove,
   draft,
 }: PopupProps & {
   /** 승인은 바로 보내지 않는다 — 화면이 5초 되돌리기를 준 뒤 보낸다 */
   onApprove: (item: SummaryItem, cards: Gate1Card[] | undefined, draft: Draft) => void;
-  onMove: (delta: number) => void;
   draft?: Draft;
 }) {
   const [lines, setLines] = useState<Line[]>(() => draft?.lines ?? freshLines(item.claims));
@@ -777,25 +766,6 @@ function PendingPopup({
     else decide("hold");
   }
 
-  // 단축키: A 승인 · H 보류 · ←→ 이동. 입력 중이거나 확인 창이 떠 있으면 무시한다
-  const keys = useRef({ approve, hold, onMove });
-  keys.current = { approve, hold, onMove };
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
-      if (document.querySelectorAll('[role="dialog"][aria-modal]').length > 1) return;
-      // 한글 자판이어도 같은 자리 키로 — e.key 는 "ㅁ" 이 된다
-      if (e.code === "KeyA") keys.current.approve();
-      else if (e.code === "KeyH") keys.current.hold();
-      else if (e.key === "ArrowRight") keys.current.onMove(1);
-      else if (e.key === "ArrowLeft") keys.current.onMove(-1);
-      else return;
-      e.preventDefault();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
   const dialog = {
     hold: {
       title: `${item.childName} 요약을 보류할까요?`,
@@ -829,10 +799,6 @@ function PendingPopup({
               요약 제거
             </PopButton>
             <span className="flex-1" />
-            <span className="hidden text-[13px] text-muted md:inline [@media(hover:none)]:hidden">
-              <Kbd>A</Kbd> 승인 <Kbd>H</Kbd> 보류 <Kbd>←</Kbd>
-              <Kbd>→</Kbd> 이동
-            </span>
             {hasChanges ? <span className="text-[14px] text-ink2">{countText}</span> : null}
             <PopButton onClick={hold} disabled={busy}>
               보류
@@ -1197,13 +1163,5 @@ function FailedPopup({
         </ConfirmDialog>
       ) : null}
     </>
-  );
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="mx-0.5 rounded border border-line2 bg-surface px-1.5 py-px font-sans text-[12px] font-bold text-ink2">
-      {children}
-    </kbd>
   );
 }

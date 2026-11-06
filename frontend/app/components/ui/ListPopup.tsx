@@ -171,16 +171,6 @@ export function useWalk<T>(list: T[], idOf: (item: T) => string, skip?: (item: T
     setGoneIds((s) => without(s, id));
   }, []);
 
-  /** 열린 팝업을 앞(-1)·뒤(+1) 건으로 옮긴다 */
-  const move = useCallback(
-    (delta: number) => {
-      if (index < 0) return;
-      const to = todo[index + delta];
-      if (to) setOpenId(idOf(to));
-    },
-    [todo, index, idOf],
-  );
-
   return {
     /** 목록에 그릴 건 (✓ 표시 중인 것 포함) */
     visible,
@@ -192,7 +182,6 @@ export function useWalk<T>(list: T[], idOf: (item: T) => string, skip?: (item: T
     close: () => setOpenId(null),
     done,
     undo,
-    move,
   };
 }
 
