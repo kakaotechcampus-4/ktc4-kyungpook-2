@@ -1156,11 +1156,22 @@ function Gate1Page() {
   >({});
 
   /*
-   * 로그인이 풀려 맡겨 둔 내용. 처음 받은 것만 붙잡는다 — 처리 뒤 다시 불러오기로 loader 가 다시 돌아도 덮지 않는다.
+   * 로그인이 풀려 맡겨 둔 내용. 처음 받은 초안만 붙잡고, 목록에서 빠진 미복원 초안은 갱신한다.
    * 카드가 쓰면 그 칸을 빼서, 탭을 갔다 와 카드가 새로 그려져도 옛 내용을 다시 받지 않는다
    */
   const [carried, setCarried] = useState(loaded);
   const [loggedOut, setLoggedOut] = useState(false);
+
+  // 보류함에 머무는 동안 다른 곳에서 처리된 요약도 알린다. 이미 쓴 초안은 다시 가져오지 않는다
+  useEffect(() => {
+    setCarried((c) => {
+      const gone = loaded.gone.filter((id) => id in c.drafts);
+      if (gone.length === 0) return c;
+      const drafts = { ...c.drafts };
+      for (const id of gone) delete drafts[id];
+      return { drafts, gone: [...c.gone, ...gone] };
+    });
+  }, [loaded.gone]);
 
   // 목록에서 빠진 요약은 위 한 줄로 알리고 지운다. 번호를 골라 지우므로 두 번 돌아도 같다
   useEffect(() => {
@@ -1232,7 +1243,7 @@ function Gate1Page() {
       />
 
       <div className="flex flex-col gap-5">
-        {tab === "pending" && carried.gone.length > 0 ? (
+        {carried.gone.length > 0 ? (
           <p role="status" className="rounded bg-reviewsoft px-3.5 py-3 text-[14px] leading-6 text-review">
             로그인하는 사이 {carried.gone.length}건은 이미 처리돼 고치던 내용을 지웠어요.
           </p>
