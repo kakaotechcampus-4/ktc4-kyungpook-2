@@ -692,6 +692,7 @@ O-15 ~ O-19 공통 오류:
     "confidence": 0.62,
     "multiReason": "ambiguous_identity",
     "hintMismatch": false,
+    "hintName": null,
     "record": { "id": "3", "fileName": "0821_활동일지.docx",
                 "preview": "…", "capturedAt": "2026-08-21", "fullContent": "…" },
     "candidates": [ { "childId": "1", "name": "김하늘", "birthDate": "2020-01-01", "confidence": 0.62 } ],
@@ -702,6 +703,7 @@ O-15 ~ O-19 공통 오류:
 - `id`·`record.id`·`candidates[].childId`·`matchedChildId`는 문자열, `journalEntryId`는 숫자입니다 (api-conventions.md의 PK 규칙 참고)
 - `journalEntryId`: 이 결과가 가리키는 기록(`journal_entry`)의 ID
 - `matchedChildId`: 확정된 아동 ID. 큐에 남아 있는 항목은 아직 확정 전이라 보통 `null`입니다
+- `hintName`: 표지 힌트 — 업로드 때 **파일 이름**에 명부 아이 이름이 정확히 한 명 들어 있으면 그 이름, 아니면 `null` (#381). 일지 본문에서 찾은 이름은 `evidence` 입니다. 아이 확인 화면은 `hintName` 이 있으면 "표지 이름 '○○'", 없으면 파일 이름을 보입니다
 - 값이 없는 필드(`matchedChildId`·`multiReason`·`evidence` 등)는 생략되지 않고 `null`로 내려갑니다
 - `candidates`에는 **우리 기관 명부(연결 해제·삭제 제외)에 있는 아이만** 나옵니다. AI 가 명부 밖 번호를 줘도 그 후보는 빠집니다 (#331)
 
