@@ -33,8 +33,6 @@ import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.exception.insight.InsightExceptionHandler;
-import com.itda.backend.global.jwt.JwtCookie;
-import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.insight.InsightGate2QueryService;
 import com.itda.backend.service.insight.InsightGate2Service;
 import com.itda.backend.service.insight.InsightProgressService;
@@ -58,12 +56,6 @@ class InsightControllerTest {
 
     @MockitoBean
     private InsightProgressService insightProgressService;
-
-    @MockitoBean
-    private JwtProvider jwtProvider;
-
-    @MockitoBean
-    private JwtCookie jwtCookie;
 
     @Test
     void progress_returnsStatusAndSentence() throws Exception {

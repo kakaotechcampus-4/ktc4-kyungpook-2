@@ -30,7 +30,9 @@ public class OpenApiConfig {
 								.type(SecurityScheme.Type.APIKEY)
 								.in(SecurityScheme.In.COOKIE)
 								.name("access_token")
-								.description("카카오 로그인 성공 후 서버가 발급하는 httpOnly JWT 쿠키입니다.")))
+								.description("로그인할 때 발급하는 httpOnly 원본 JWT 쿠키입니다. 현재 로그인을 선택하며, "
+										+ "갱신 JWT 는 access_token_renewal_{sid} 쿠키로 전달합니다. "
+										+ "브라우저가 두 쿠키를 자동 전송하고, 서버는 현재 로그인의 유효한 JWT 만 인증합니다.")))
 				.paths(new Paths()
 						.addPathItem("/oauth2/authorization/kakao", oauthAuthorizationPath())
 						.addPathItem("/login/oauth2/code/kakao", oauthCallbackPath()));
