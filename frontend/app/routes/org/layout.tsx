@@ -1,6 +1,6 @@
 import { Outlet, redirect, useLoaderData, type ShouldRevalidateFunctionArgs } from "react-router";
 import { OrgShell } from "@/components/org/Shell";
-import { getSession, isAuthMock } from "@/lib/auth";
+import { getSession, isAuthMock, rememberReturnPath } from "@/lib/auth";
 import {
   getBlockedQueue,
   getGate1Queue,
@@ -22,10 +22,15 @@ import "./org.css";
  * useRevalidator() 로 갱신을 요청하면 이 clientLoader 도 다시 실행되어
  * 배지가 실시간으로 줄어든다.
  */
-export async function clientLoader() {
+export async function clientLoader({ request }: { request: Request }) {
   const { loggedIn, signupCompleted, role, name, institutionName, termsAgreed } = await getSession();
   // 카카오 로그인만 하고 역할을 안 고른 사람 — 보호 API 가 403 SIGNUP_NOT_COMPLETED 를 준다.
   if (loggedIn && !signupCompleted) return redirect("/signup?role=org");
+  // 로그인이 풀렸으면 다시 로그인한 뒤 이 화면으로 돌아오게 주소를 남긴다. 다른 역할이 들어온 경우는 남기지 않는다
+  if (!loggedIn) {
+    rememberReturnPath("org", new URL(request.url));
+    return redirect("/login");
+  }
   if (role !== "org") return redirect("/login");
   // 기관 약관 전에는 보호 API 가 모두 403 TERMS_NOT_AGREED 다 — 배지를 묻기 전에 약관 화면으로 보낸다.
   if (!termsAgreed) return redirect("/org-terms");
