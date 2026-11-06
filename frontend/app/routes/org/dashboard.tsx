@@ -529,7 +529,7 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
         진행 현황
       </h2>
 
-      <div data-tour="pipe" role="group" aria-label="단계 고르기" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 min-[1000px]:grid-cols-6">
+      <div data-tour="pipe" role="group" aria-label="단계 고르기" className="mb-3 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
         {STEPS.map((name, i) => {
           const c = by[i];
           const on = stage === i;
@@ -540,17 +540,17 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
               title={STEP_DESC[i]}
               aria-pressed={on}
               onClick={() => setStage(on ? null : i)}
-              className={`grid gap-1.5 rounded-[16px] border px-3 py-2.5 text-left ${
+              className={`grid min-w-0 content-start gap-1 rounded-[14px] border px-2 py-2 text-left ${
                 on ? "border-ink bg-ink text-paper" : c.me ? "border-mark bg-surface" : "border-line bg-surface hover:bg-surface2"
               }`}
             >
-              <span className="flex items-center gap-1.5">
-                <span className={`grid size-5 place-items-center rounded-full text-[12px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
+              <span className="flex min-w-0 items-center gap-1">
+                <span className={`grid size-[18px] flex-none place-items-center rounded-full text-[11px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
                   {i + 1}
                 </span>
-                <b className="text-[14px]">{name}</b>
+                <b className="truncate text-[13px]">{name}</b>
               </span>
-              <span className="flex flex-wrap gap-1 text-[12px] font-bold">
+              <span className="flex flex-wrap gap-1 text-[11px] leading-[18px] font-bold whitespace-nowrap">
                 {c.me ? <span className="rounded-full bg-mark px-1.5 text-markink">내 차례 {c.me}</span> : null}
                 {c.ai ? (
                   aiDown ? (
