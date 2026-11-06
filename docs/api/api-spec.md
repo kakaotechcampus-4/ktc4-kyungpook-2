@@ -968,7 +968,9 @@ O-15 ~ O-19 공통 오류:
     "noContent": false, "needsReview": true, "reviewReasons": ["다른아동이름"],
     "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
     "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"],
-                      "reasons": ["관찰되지 않은 내용을 추측한 표현이 있어요"] } ] }
+                      "reasons": ["관찰되지 않은 내용을 추측한 표현이 있어요"] } ],
+    "entries": [ { "journalEntryId": 1041, "content": "오전 활동에서 블록을 다섯 층까지 쌓았다." },
+                 { "journalEntryId": 1042, "content": "낮잠을 잤다." } ] }
 ]
 ```
 
@@ -982,6 +984,7 @@ O-15 ~ O-19 공통 오류:
 | `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
 | `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
 | `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유. `issueTypes` 는 AI 코드 원본, `reasons` 는 선생님이 읽을 문장입니다. 받은 순서대로 바꾸되 같은 문장은 한 번만 남겨 **두 배열의 칸이 짝지어지지 않습니다**. **화면은 `reasons` 를 보여 줍니다** — 코드를 그대로 띄우지 않습니다 (#351). 유형이 없거나 깨졌으면 `reasons` 는 "검증에서 문제가 발견됐어요. 원본을 확인해 주세요" 한 줄입니다. 문장 표는 O-24 `violationReason` 과 같습니다 |
+| `entries` | 이 요약에 묶인 일지 원문 전체(요약에 든 것 + 안 든 것, id 순, 삭제된 일지 제외). 검토 화면은 원본 일지를 늘 펼쳐 두고 `claims[].evidence[].quote` 를 이 안에서 강조합니다 (#371) |
 
 `reviewFlags` 는 검증이 짚은 구간이 **요약 문장의 근거 구간과 같은 일지에서 겹칠 때만** 나옵니다. 요약에 안 실린
 부분의 문제까지 띄우지 않기 위해서입니다. 검증 사유와 구간이 짝지어져 있지 않아 일지 단위로 판단하고, 겹치면 그 일지의
