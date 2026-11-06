@@ -102,6 +102,16 @@ def main() -> None:
         for kind, cnt in t["종류"].items():
             print(f"  {kind}  {_bar(cnt, worst)}  {cnt:>4}")
 
+    repeated = {w: n for w, n in t["자주뺀말"].items() if n >= 2}
+    if repeated:
+        print("\n■ 교사가 **여러 번 지운 말** — 프롬프트에서 고칠 자리")
+        for word, cnt in repeated.items():
+            print(f"  {cnt}번  \"{word}\"")
+    elif t["자주뺀말"]:
+        print("\n■ 교사가 지운 말 (한 번씩)")
+        for word, cnt in list(t["자주뺀말"].items())[:5]:
+            print(f"        \"{word}\"")
+
     if t["반복오류"]:
         print("\n■ 반복 오류 — 같은 종류로 두 번 이상. 다음에 고칠 곳")
         for kind, cnt in t["반복오류"].items():

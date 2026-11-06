@@ -20,6 +20,7 @@ Gate 1 카드(유지·수정·삭제·추가)는 적용되고 버려진다. 남�
 글로 짝지으면 많이 고친 문장을 놓친다.
 """
 
+import difflib
 import re
 from collections import Counter
 
@@ -80,6 +81,36 @@ def edit_kind(before: str, after: str) -> str:
     return OTHER
 
 
+#: 이보다 짧은 조각은 조사·어미라 세지 않는다. "을" 이 100번 지워졌다는 것은 알려 주는 게 없다.
+MIN_FRAGMENT = 5
+
+#: 같은 말인데 잇는 어미만 다른 경우를 묶는다 — "지냈으며" 와 "지냈고" 는 같은 군더더기다.
+#: 안 묶으면 세 번 지운 표현이 2번·1번으로 갈려 "여러 번" 에 안 걸린다 (61문장 시험에서 겪었다).
+_TAIL = re.compile(r"(?:으며|며|으나|나|지만|고|어서|아서|여서|하여|해서)$")
+
+
+def fragments(before: str, after: str) -> tuple[list[str], list[str]]:
+    """
+    고치면서 **무엇을 빼고 무엇을 넣었는지** 글자 조각으로 돌려준다.
+
+    종류("줄임")만으로는 다음에 뭘 고칠지 알 수 없다 — 군더더기를 지운 것과 다른 아이
+    이야기를 지운 것이 같은 칸에 들어간다. 지워진 **문구 자체**를 모아야 "이 표현을
+    세 번 지웠다" 가 나오고, 그게 곧 프롬프트에서 고칠 자리다.
+    """
+    sm = difflib.SequenceMatcher(None, before or "", after or "", autojunk=False)
+    out: tuple[list[str], list[str]] = ([], [])
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag in ("delete", "replace"):
+            piece = (before or "")[i1:i2].strip(" ,.·")
+            if len(piece) >= MIN_FRAGMENT:
+                out[0].append(piece)
+        if tag in ("insert", "replace"):
+            piece = (after or "")[j1:j2].strip(" ,.·")
+            if len(piece) >= MIN_FRAGMENT:
+                out[1].append(piece)
+    return out
+
+
 def _key(claim: dict) -> tuple | None:
     """근거로 만든 짝 열쇠. 교사가 쓴 문장(일지 없음)은 짝지을 초안이 없어 None 이다."""
     items = []
@@ -128,9 +159,11 @@ def compare(draft: list[dict], final: list[dict]) -> list[dict]:
         before = (origin.get("text") or "").strip() if origin else None
 
         if source == "EDITED" or (before is not None and before != text):
+            removed, added = fragments(before or "", text)
             out.append({"action": EDIT, "kind": edit_kind(before or "", text),
                         "before": before, "after": text,
-                        "chars": len(text) - len(before or "")})
+                        "chars": len(text) - len(before or ""),
+                        "뺀말": removed, "넣은말": added})
         else:
             out.append({"action": KEEP, "kind": None, "before": before, "after": text, "chars": 0})
 
@@ -140,6 +173,20 @@ def compare(draft: list[dict], final: list[dict]) -> list[dict]:
         before = (claim.get("text") or "").strip()
         out.append({"action": DELETE, "kind": None, "before": before, "after": None, "chars": -len(before)})
     return out
+
+
+def _stem(fragment: str) -> str:
+    """잇는 어미를 떼어 같은 말끼리 묶을 열쇠를 만든다."""
+    return _TAIL.sub("", fragment.strip()) or fragment.strip()
+
+
+def _group(pieces) -> dict:
+    """어미만 다른 조각을 한 줄로 묶는다. 보여줄 때는 **가장 흔한 꼴** 그대로 쓴다."""
+    forms: dict[str, Counter] = {}
+    for piece in pieces:
+        forms.setdefault(_stem(piece), Counter())[piece] += 1
+    out = sorted(forms.values(), key=lambda c: -sum(c.values()))
+    return {c.most_common(1)[0][0]: sum(c.values()) for c in out[:8]}
 
 
 def tally(rows: list[dict]) -> dict:
@@ -157,4 +204,8 @@ def tally(rows: list[dict]) -> dict:
         #: 같은 종류로 두 번 이상 고친 것. "다음에 고칠 곳" 이다 (멘토 리뷰 표)
         "반복오류": {k: n for k, n in kinds.most_common() if n >= 2},
         "수정량평균": round(sum(abs(r["chars"]) for r in edited) / len(edited), 1) if edited else None,
+        #: **같은 문구를 여러 번 뺐다면** 그게 프롬프트에서 고칠 자리다.
+        #: 종류("줄임")보다 이쪽이 훨씬 구체적이다 — 쓰다 보니 알게 됐다.
+        "자주뺀말": _group(f for r in edited for f in r.get("뺀말") or []),
+        "자주넣은말": _group(f for r in edited for f in r.get("넣은말") or []),
     }
