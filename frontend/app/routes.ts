@@ -11,7 +11,6 @@ export default [
   layout("routes/org/layout.tsx", [
     route("dashboard", "routes/org/dashboard.tsx"),
     route("upload", "routes/org/upload.tsx"),
-    route("upload/:id", "routes/org/upload-progress.tsx"),
     route("queue/matching", "routes/org/queue-matching.tsx"),
     route("queue/reinput", "routes/org/queue-reinput.tsx"),
     route("gate1", "routes/org/gate1.tsx"),

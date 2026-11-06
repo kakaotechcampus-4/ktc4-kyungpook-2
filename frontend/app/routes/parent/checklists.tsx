@@ -75,7 +75,7 @@ function ChecklistsContent({ childId, checklists }: { childId: string; checklist
     <div className="flex flex-col gap-5">
       <ParentPageHeader title="준비물·확인사항" back />
       <p className="text-[15px] leading-7 text-ink2">
-        기관에서 보낸 준비물과 확인할 것입니다. 보호자 중 한 명이 확인하면 기관에도 확인으로 보입니다.
+        기관에서 보낸 준비물과 확인할 것이에요. 보호자 중 한 분이 확인하면 기관에도 확인으로 보여요.
       </p>
 
       {error ? (
@@ -85,7 +85,16 @@ function ChecklistsContent({ childId, checklists }: { childId: string; checklist
       ) : null}
 
       {checklists.length === 0 ? (
-        <p className="py-10 text-center text-[15px] text-muted">받은 준비물·확인사항이 없습니다.</p>
+        /* 빈 화면이 **이유**를 말하게 한다 (멘토 리뷰 #347). "없습니다" 만 있으면
+           보호자는 고장인지 아직 안 온 것인지 모른다. */
+        <div className="flex flex-col items-center gap-2 py-12 text-center">
+          <p className="text-[16px] font-bold text-ink">아직 받은 것이 없어요</p>
+          <p className="text-[14px] leading-6 text-muted">
+            기관이 준비물이나 확인할 것을 보내면
+            <br />
+            여기에 모여요.
+          </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-4">
           {checklists.map((raw) => {

@@ -72,28 +72,99 @@ export function NavigationProgress() {
   );
 }
 
-/** 처음 열 때 — 잇다 로고를 도는 원이 감싼다 */
+/** 한 번에 치는 글자 수 · 치는 간격. 사람이 또박또박 치는 속도다 */
+const TYPE_STEP = 2;
+const TYPE_TICK = 85;
+
+const MESSAGE = "아이의 세상을 연결하는 중";
+
+/**
+ * 처음 열 때(root 의 HydrateFallback).
+ *
+ * 그림을 쓰지 않는다 — 로고 한 장뿐이다. 클레이 그림을 네모에 앉히면 그림마다
+ * 여백이 달라 미묘하게 어긋나 보이고, 보호자는 SMS 링크로 모바일에서 들어와
+ * **첫 페인트가 동의 완료율을 좌우한다.**
+ *
+ * 세 가지가 움직인다.
+ *   로고   통통 뛴다
+ *   글     두 글자씩 쳐진다 — 멈춘 화면이 아니라는 걸 글이 말한다
+ *   막대   빠르게 차다가 느려진다
+ *
+ * ⚠️ 막대는 **진짜 진행률이 아니다.** 얼마나 걸릴지 알 수 없어서, 끝에서 멈추지 않고
+ * 97% 까지 천천히 기어간다 (NProgress 가 쓰는 꼴). 100% 로 채워 두면 다 됐다고
+ * 거짓말하는 화면이 된다.
+ */
 export function FullPageLoading() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-3.5">
-      <span className="relative flex size-14 items-center justify-center">
-        <span className="flex size-10 items-center justify-center rounded-md bg-ink text-[18px] font-bold text-paper">
-          잇
-        </span>
-        <svg
-          aria-hidden
-          viewBox="0 0 56 56"
-          fill="none"
-          strokeWidth={2.4}
-          strokeLinecap="round"
-          className="absolute inset-0 size-14 animate-spin stroke-accent"
-        >
-          <path d="M53 28a25 25 0 0 0-25-25" />
-        </svg>
-      </span>
-      <span role="status" className="text-[15px] text-muted">
-        불러오는 중…
-      </span>
+    <div
+      className="flex min-h-screen flex-col items-center justify-center gap-9 px-6"
+      /* 기관 · 보호자 캔버스와 같은 두 겹 바탕. 이 화면은 셸 **밖**이라
+         org.css · parent.css 가 닿지 않아 여기에 직접 깐다 */
+      style={{
+        background:
+          "radial-gradient(620px 380px at 100% 0%, #fff0b4 0%, rgb(255 240 180 / 0) 64%)," +
+          "radial-gradient(560px 460px at 0% 100%, #ddf2e3 0%, rgb(221 242 227 / 0) 64%)," +
+          "var(--color-paper)",
+      }}
+    >
+      <img
+        src="/img/logo.png"
+        alt="잇다"
+        width={600}
+        height={220}
+        className="block h-auto w-[180px] animate-logo-bob"
+      />
+
+      <Typing />
+
+      <div
+        role="progressbar"
+        aria-label="서비스를 준비하는 중"
+        className="h-2.5 w-full max-w-[248px] overflow-hidden rounded-full bg-line"
+      >
+        <div className="h-full origin-left animate-load-fill rounded-full bg-accent" />
+      </div>
     </div>
+  );
+}
+
+/**
+ * 두 글자씩 쳐지는 글.
+ *
+ * 글이 길어지면 가운데 맞춤이 매 글자마다 흔들린다. 그래서 **다 친 글을 안 보이게 깔아**
+ * 자리를 미리 잡고, 그 위에 쳐지는 만큼만 그린다. 글은 왼쪽에서 오른쪽으로 자란다.
+ *
+ * 읽어 주는 프로그램에는 다 친 글 한 번만 들려준다 — 두 글자마다 다시 읽으면 못 듣는다.
+ */
+function Typing() {
+  const [typed, setTyped] = useState(0);
+
+  useEffect(() => {
+    if (typed >= MESSAGE.length) return;
+    const timer = setTimeout(
+      () => setTyped((n) => Math.min(n + TYPE_STEP, MESSAGE.length)),
+      TYPE_TICK,
+    );
+    return () => clearTimeout(timer);
+  }, [typed]);
+
+  return (
+    <p className="grid text-[17px] leading-none font-semibold tracking-[-0.02em] text-ink2">
+      <span role="status" className="sr-only">
+        {MESSAGE}
+      </span>
+      {/* 자리만 잡는 글. 안 보이지만 너비를 차지한다 */}
+      <span aria-hidden className="invisible col-start-1 row-start-1">
+        {MESSAGE}…
+      </span>
+      <span aria-hidden className="col-start-1 row-start-1">
+        {MESSAGE.slice(0, typed)}
+        {typed >= MESSAGE.length ? (
+          <span className="animate-dots">…</span>
+        ) : (
+          <span className="animate-caret text-accent">|</span>
+        )}
+      </span>
+    </p>
   );
 }
