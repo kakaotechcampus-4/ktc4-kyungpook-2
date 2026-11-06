@@ -26,6 +26,7 @@ import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.record.RecordProgressResponse;
 import com.itda.backend.dto.response.record.RecordProgressResponse.EntryProgress;
+import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.user.UserService;
 
 /** 업로드한 파일이 지금 어디까지 갔는지 (O-26). 읽기만 한다. */
@@ -48,6 +49,10 @@ class RecordProgressServiceTest {
 
     @MockitoBean
     private UserService userService;
+
+    /** 기본은 자동 요약 꺼짐(mock 의 false). */
+    @MockitoBean
+    private SummaryProperties summaryProperties;
 
     @BeforeEach
     void setUp() {
@@ -111,7 +116,7 @@ class RecordProgressServiceTest {
                         tuple(4, "done"));
     }
 
-    /** 자동 요약이 없어 요약 대기는 교사가 [요약]을 눌러야 넘어간다 (#181). 누른 뒤 요약 중이면 다시 자동이다. */
+    /** 자동 요약이 꺼져 있으면 요약 대기는 교사가 [요약]을 눌러야 넘어간다 (#181). 누른 뒤 요약 중이면 다시 자동이다. */
     @Test
     void 요약_대기는_사람_대기이고_요약_중은_진행_중이다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");
@@ -121,6 +126,29 @@ class RecordProgressServiceTest {
         assertThat(service.getProgress(TEACHER).get(0).entries())
                 .extracting(EntryProgress::stageIndex, EntryProgress::state)
                 .containsExactly(tuple(3, "waiting"), tuple(3, "running"));
+    }
+
+    /** 자동 요약(#369)이 켜져 있으면 요약 대기는 사람 없이 넘어가므로 진행 중이다 — 화면이 폴링을 멈추지 않게. */
+    @Test
+    void 자동_요약이_켜져_있으면_요약_대기도_진행_중이다() {
+        given(summaryProperties.autoRun()).willReturn(true);
+        Long recordId = record(ORG, "0821_관찰일지.txt");
+        entry(recordId, RecordProgressServiceTest::validated);                       // VALIDATED
+
+        assertThat(service.getProgress(TEACHER).get(0).entries())
+                .extracting(EntryProgress::stageIndex, EntryProgress::state)
+                .containsExactly(tuple(3, "running"));
+    }
+
+    /** 요약 실패를 요약 없이 마무리한 기록은 요약 단계에서 끝났다 — 1차 검토를 지난 것처럼 보이면 안 된다 (#369). */
+    @Test
+    void 요약_없이_마무리한_기록은_요약_단계에서_끝난다() {
+        Long recordId = record(ORG, "0821_관찰일지.txt");
+        entry(recordId, e -> { validated(e); e.startSummarizing(); e.failSummary(); e.closeFailedSummary(); });
+
+        assertThat(service.getProgress(TEACHER).get(0).entries())
+                .extracting(EntryProgress::stageIndex, EntryProgress::state)
+                .containsExactly(tuple(3, "done"));
     }
 
     /** 교사가 끝낸 기록은 아동 맥락에 안 올라가지만 계약의 값이 넷뿐이라 done 으로 간다 (#210). */

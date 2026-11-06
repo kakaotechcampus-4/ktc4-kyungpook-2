@@ -20,6 +20,7 @@ import com.itda.backend.dto.response.record.RecordProgressResponse.EntryProgress
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
+import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -60,6 +61,7 @@ public class RecordProgressService {
     private final RawRecordRepository rawRecordRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final ValidationResultRepository validationResultRepository;
+    private final SummaryProperties summaryProperties;
 
     /** 우리 기관이 올린 파일들. 최근 업로드가 먼저 온다. */
     @Transactional(readOnly = true)
@@ -111,9 +113,9 @@ public class RecordProgressService {
                 .collect(Collectors.toSet());
     }
 
-    private static EntryProgress progressOf(JournalEntry entry, Set<Long> validatedIds) {
+    private EntryProgress progressOf(JournalEntry entry, Set<Long> validatedIds) {
         return new EntryProgress(String.valueOf(entry.getId()), stageOf(entry, validatedIds),
-                stateOf(entry.getStatus()));
+                stateOf(entry.getStatus(), summaryProperties.autoRun()));
     }
 
     /**
@@ -131,7 +133,9 @@ public class RecordProgressService {
             case MATCHING, MATCH_REVIEW, CONSENT_BLOCKED, EXCLUDED -> STAGE_MATCHING;
             case MATCHED, VALIDATING, VALIDATION_BLOCKED, REUPLOAD_REQUESTED, VALIDATION_HELD -> STAGE_VALIDATING;
             case VALIDATED, SUMMARIZING -> STAGE_SUMMARIZING;
-            case GATE1_PENDING, GATE1_HELD, COMPLETED -> STAGE_GATE1;
+            case GATE1_PENDING, GATE1_HELD -> STAGE_GATE1;
+            // 요약 실패를 요약 없이 마무리한 기록은 가리키는 요약이 없다 — 요약 단계에서 끝났다 (#369).
+            case COMPLETED -> entry.getSummaryId() == null ? STAGE_SUMMARIZING : STAGE_GATE1;
             case SUMMARY_FAILED -> STAGE_SUMMARIZING;
             case SYSTEM_ERROR -> entry.getFailureStage() == FailureStage.SUMMARY ? STAGE_SUMMARIZING : STAGE_VALIDATING;
             case FAILED -> failedStageOf(entry, validatedIds);
@@ -168,11 +172,14 @@ public class RecordProgressService {
      * <p>{@code CONSENT_BLOCKED} 는 지금 아무 데서도 쓰지 않는다. 쓰게 되면 {@code waiting} 이 맞는지
      * 다시 봐야 한다 — 동의는 보호자가 하는 일이라 교사는 치울 큐가 없는데 기다리라고만 보인다.
      */
-    private static String stateOf(JournalEntryStatus status) {
+    private static String stateOf(JournalEntryStatus status, boolean autoRun) {
+        // 요약 대기. 자동 요약(#369)이 켜져 있으면 같은 날짜 처리가 끝나는 대로 사람 없이 넘어가 running 이다 — waiting 이면
+        // 화면이 폴링을 멈춰 요약이 끝나도 바뀌지 않는다. 꺼져 있으면 교사가 [요약]을 눌러야 해서 waiting 이다 (#181).
+        if (status == JournalEntryStatus.VALIDATED) {
+            return autoRun ? RUNNING : WAITING;
+        }
         return switch (status) {
             case PENDING, MATCHING, MATCHED, VALIDATING, SUMMARIZING -> RUNNING;
-            // 요약 대기. 자동 요약(#369)이 켜져 있으면 같은 날짜 처리가 끝나는 대로 넘어가지만, 꺼져 있으면 교사가
-            // [요약]을 눌러야 해서 waiting 으로 둔다 (#181). 값의 뜻은 바꾸지 않는다.
             case MATCH_REVIEW, CONSENT_BLOCKED, VALIDATION_BLOCKED, VALIDATED, GATE1_PENDING, GATE1_HELD -> WAITING;
             case EXCLUDED, REUPLOAD_REQUESTED, VALIDATION_HELD, COMPLETED -> DONE;
             case FAILED, SUMMARY_FAILED, SYSTEM_ERROR -> FAILED;
