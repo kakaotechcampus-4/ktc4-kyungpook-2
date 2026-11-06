@@ -20,6 +20,7 @@
  */
 
 import { ApiError } from "@/lib/apiError";
+import { clearGate1Drafts } from "@/lib/gate1Draft";
 
 /**
  * 인증만 실연동하고 나머지 데이터는 mock 으로 둘 수 있게 플래그를 분리했다
@@ -440,6 +441,8 @@ export function takeReturnPath(role: Role): string | null {
  */
 export async function signOut(): Promise<void> {
   clearSession();
+  // 요약 검토에서 로그인이 풀려 맡겨 둔 문장 — 아이에 대한 글이라 남기지 않는다
+  clearGate1Drafts();
   if (USE_MOCK) return;
 
   try {

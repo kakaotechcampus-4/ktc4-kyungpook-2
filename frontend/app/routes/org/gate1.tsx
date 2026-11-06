@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { useLoaderData, useNavigate, useRevalidator, useSearchParams } from "react-router";
 import {
   Check,
   ChevronRight,
@@ -21,6 +21,13 @@ import {
   loadIfReady,
   reopenGate1,
 } from "@/lib/api";
+import { rememberReturnPath } from "@/lib/auth";
+import {
+  forgetGate1Drafts,
+  readGate1Drafts,
+  saveGate1Draft,
+  type Gate1Draft,
+} from "@/lib/gate1Draft";
 import type { Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
 
 /** BE 는 상태 하나씩만 준다. 검토 대기와 보류함을 함께 묻는다 */
@@ -31,6 +38,18 @@ export async function clientLoader() {
     loadIfReady("matchingQueue", getMatchingQueue),
     loadIfReady("blockedQueue", getBlockedQueue),
   ]);
+  /*
+   * 로그인이 풀려 맡겨 둔 고치던 내용. 목록을 받은 뒤에 읽는다 — 로그인이 풀린 채 오면 위에서 401 로 끝난다.
+   * 지우지 않는다 — 탐색이 취소돼 이 화면이 안 열려도 loader 는 끝까지 돈다. 화면에 반영한 뒤 지운다(Gate1Page · 카드).
+   * 판은 여기서 가르지 않는다. 카드가 그려질 때 그때의 판과 다시 맞춰 본다
+   */
+  const saved = readGate1Drafts();
+  const pendingIds = new Set(pending.map((s) => s.id));
+  const carried = {
+    drafts: Object.fromEntries(Object.entries(saved).filter(([id]) => pendingIds.has(id))),
+    // 이미 처리됐거나 보류됐거나 다른 기관 요약이다
+    gone: Object.keys(saved).filter((id) => !pendingIds.has(id)),
+  };
   return {
     pending,
     held,
@@ -39,6 +58,7 @@ export async function clientLoader() {
       matching: matching ? matching.length : null,
       blocked: blocked ? blocked.length : null,
     },
+    carried,
   };
 }
 
@@ -155,7 +175,56 @@ function messageOf(err: unknown): string {
   return "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }
 
+function isLoginLost(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
+}
+
+const RESTORED = "로그인 전에 고치던 내용을 되살렸어요.";
+const DROPPED = "로그인하는 사이 요약이 바뀌어 고치던 내용은 지웠어요.";
+
+/**
+ * 맡겨 둔 내용을 이 카드에 되살려도 되는지. 탭에 없는 동안 새 판이 오면 새 카드는 판 변경 검사를 거치지 않으므로
+ * 여기서 그때의 판 · 문장 수와 다시 맞춰 본다. 안 맞으면 null — 옛 문장 번호로 고치면 엉뚱한 문장이 고쳐진다
+ */
+function restoredOf(item: SummaryItem, draft: Gate1Draft | undefined): { lines: Line[]; added: Added[] } | null {
+  if (!draft || item.noContent) return null;
+  if (draft.version !== item.version || draft.lines.length !== item.claims.length) return null;
+  return {
+    lines: draft.lines.map((l) => ({ action: l.action, text: l.text })),
+    added: draft.added.map((text, key) => ({ key, text })),
+  };
+}
+
 /* ── 공통 조각 ───────────────────────────────────────── */
+
+/**
+ * 카드 아래 오류 줄. 로그인이 풀려 실패했으면 [다시 로그인]을 붙인다 — 요약 검토를 돌아올 곳으로 남기고
+ * 로그인 화면으로 간다. 저절로 보내지 않는다(고친 문장을 다시 읽거나 복사할 틈을 둔다)
+ */
+function ErrorLine({ message, loginLost }: { message: string | null; loginLost: boolean }) {
+  const navigate = useNavigate();
+  if (!message) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+      <p role="alert" className="text-right text-[14px] text-block">
+        {message}
+      </p>
+      {loginLost ? (
+        <button
+          type="button"
+          onClick={() => {
+            // 고칠 수 있는 카드는 검토 대기에만 있다 — 보류함에서 눌러도 검토 대기로 돌아온다
+            rememberReturnPath("org", new URL("/gate1", window.location.href));
+            navigate("/login");
+          }}
+          className="min-h-9 rounded border border-line2 bg-surface px-3.5 text-[14px] font-semibold text-ink2 hover:bg-surface2"
+        >
+          다시 로그인
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function ItemHeader({ item, badge }: { item: SummaryItem; badge?: React.ReactNode }) {
   return (
@@ -250,20 +319,51 @@ function UncoveredEntries({ item }: { item: SummaryItem }) {
 
 function PendingItem({
   item,
+  carriedDraft,
+  loggedOut,
+  onCarriedUsed,
+  onLoggedOut,
   onResolved,
 }: {
   item: SummaryItem;
+  /** 로그인이 풀려 맡겨 둔 이 요약의 고치던 내용. 쓰고 나면 페이지가 빼서 다시 오지 않는다 */
+  carriedDraft: Gate1Draft | undefined;
+  /** 이 화면에서 어느 카드든 401 을 받았다 — 이 카드도 고칠 때마다 맡겨 둔다 */
+  loggedOut: boolean;
+  onCarriedUsed: (summaryId: string) => void;
+  onLoggedOut: () => void;
   onResolved: (outcome: Outcome, message?: string) => void;
 }) {
   const revalidator = useRevalidator();
-  const [lines, setLines] = useState<Line[]>(() => freshLines(item.claims));
-  const [added, setAdded] = useState<Added[]>([]);
-  const [nextKey, setNextKey] = useState(0);
+  const [restored] = useState(() => restoredOf(item, carriedDraft));
+  const [lines, setLines] = useState<Line[]>(() => restored?.lines ?? freshLines(item.claims));
+  const [added, setAdded] = useState<Added[]>(() => restored?.added ?? []);
+  const [nextKey, setNextKey] = useState(() => restored?.added.length ?? 0);
   const [seenVersion, setSeenVersion] = useState(item.version);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(() =>
+    carriedDraft ? (restored ? RESTORED : DROPPED) : null,
+  );
   const [error, setError] = useState<string | null>(null);
+  const [loginLost, setLoginLost] = useState(false);
   const [confirming, setConfirming] = useState<Decision | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // 아래 두 effect 는 판 변경 처리의 이른 return 보다 위에 둔다 — 그 렌더에서도 Hook 수가 같아야 한다
+
+  // 맡겨 둔 내용을 화면에 반영했다 — 되살렸든 버렸든 지운다
+  useEffect(() => {
+    if (carriedDraft) onCarriedUsed(item.id);
+  }, [carriedDraft, item.id, onCarriedUsed]);
+
+  // 로그인이 풀린 뒤로는 고칠 때마다 맡긴 내용을 갱신한다. 고친 게 없으면 칸을 지운다
+  useEffect(() => {
+    if (!loggedOut) return;
+    const touched = lines.some((l) => l.action !== "KEEP") || added.some((a) => a.text.trim());
+    saveGate1Draft(
+      item.id,
+      touched ? { version: item.version, lines, added: added.map((a) => a.text) } : null,
+    );
+  }, [loggedOut, lines, added, item.id, item.version]);
 
   /*
    * 목록을 다시 받았는데 요약이 바뀌었으면 고치던 내용을 버린다. 옛 문장 번호로 보내면
@@ -312,6 +412,7 @@ function PendingItem({
     const cards = decision === "approve" ? buildCards(item.claims, lines, added) : undefined;
     setBusy(true);
     setError(null);
+    setLoginLost(false);
     setNotice(null);
     try {
       await decideGate1(item.id, { decision, version: item.version, ...(cards ? { cards } : {}) });
@@ -325,6 +426,10 @@ function PendingItem({
         await revalidator.revalidate();
       } else {
         setError(messageOf(err));
+        if (isLoginLost(err)) {
+          setLoginLost(true);
+          onLoggedOut();
+        }
         if (needsReload(err)) await revalidator.revalidate();
       }
     } finally {
@@ -560,11 +665,7 @@ function PendingItem({
           </p>
         ) : null}
 
-        {error ? (
-          <p role="alert" className="text-right text-[14px] text-block">
-            {error}
-          </p>
-        ) : null}
+        <ErrorLine message={error} loginLost={loginLost} />
 
         <div className="flex justify-end">
           <button
@@ -706,20 +807,34 @@ function SentenceRow({
  */
 function NoContentItem({
   item,
+  carriedDraft,
+  onCarriedUsed,
+  onLoggedOut,
   onResolved,
 }: {
   item: SummaryItem;
+  /** 고치던 요약이 로그인하는 사이 다시 만들어지며 이 카드가 됐다. 고칠 문장이 없어 되살리지 않는다 */
+  carriedDraft: Gate1Draft | undefined;
+  onCarriedUsed: (summaryId: string) => void;
+  onLoggedOut: () => void;
   onResolved: (outcome: Outcome, message?: string) => void;
 }) {
   const revalidator = useRevalidator();
   const [confirming, setConfirming] = useState<"confirm" | "revert" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loginLost, setLoginLost] = useState(false);
+  const [notice] = useState(() => (carriedDraft ? DROPPED : null));
   const count = item.uncoveredEntries.length;
+
+  useEffect(() => {
+    if (carriedDraft) onCarriedUsed(item.id);
+  }, [carriedDraft, item.id, onCarriedUsed]);
 
   async function decide(decision: "confirm" | "revert") {
     setBusy(true);
     setError(null);
+    setLoginLost(false);
     try {
       await decideGate1(item.id, { decision, version: item.version });
       onResolved(decision === "confirm" ? "confirmed" : "reverted");
@@ -730,6 +845,10 @@ function NoContentItem({
         await revalidator.revalidate();
       } else {
         setError(messageOf(err));
+        if (isLoginLost(err)) {
+          setLoginLost(true);
+          onLoggedOut();
+        }
         if (needsReload(err)) await revalidator.revalidate();
       }
     } finally {
@@ -765,6 +884,12 @@ function NoContentItem({
             확인하거나 되돌릴 수 없어요.
           </p>
         </div>
+      ) : null}
+
+      {notice ? (
+        <p role="status" className="rounded bg-reviewsoft px-3.5 py-3 text-[14px] leading-6 text-review">
+          {notice}
+        </p>
       ) : null}
 
       <div className="flex flex-col gap-1 rounded bg-surface2/60 px-4 py-3.5">
@@ -819,11 +944,7 @@ function NoContentItem({
             확인
           </button>
         </div>
-        {error ? (
-          <p role="alert" className="text-right text-[14px] text-block">
-            {error}
-          </p>
-        ) : null}
+        <ErrorLine message={error} loginLost={loginLost} />
       </div>
 
       {confirming === "confirm" ? (
@@ -860,19 +981,23 @@ function NoContentItem({
 
 function HeldItem({
   item,
+  onLoggedOut,
   onResolved,
 }: {
   item: SummaryItem;
+  onLoggedOut: () => void;
   onResolved: (outcome: Outcome, message?: string) => void;
 }) {
   const revalidator = useRevalidator();
   const [confirming, setConfirming] = useState<"reopen" | "remove" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loginLost, setLoginLost] = useState(false);
 
   async function run(kind: "reopen" | "remove") {
     setBusy(true);
     setError(null);
+    setLoginLost(false);
     try {
       if (kind === "reopen") await reopenGate1(item.id);
       else await decideGate1(item.id, { decision: "remove", version: item.version });
@@ -884,6 +1009,10 @@ function HeldItem({
         await revalidator.revalidate();
       } else {
         setError(messageOf(err));
+        if (isLoginLost(err)) {
+          setLoginLost(true);
+          onLoggedOut();
+        }
         if (needsReload(err)) await revalidator.revalidate();
       }
     } finally {
@@ -910,11 +1039,7 @@ function HeldItem({
         }
       />
       <ReadOnlySentences item={item} />
-      {error ? (
-        <p role="alert" className="text-right text-[14px] text-block">
-          {error}
-        </p>
-      ) : null}
+      <ErrorLine message={error} loginLost={loginLost} />
       <div className="flex flex-wrap items-center justify-end gap-3">
         <button
           type="button"
@@ -1016,7 +1141,7 @@ export default function Gate1Route() {
 }
 
 function Gate1Page() {
-  const { pending, held, upstream } = useLoaderData<typeof clientLoader>();
+  const { pending, held, upstream, carried: loaded } = useLoaderData<typeof clientLoader>();
   // 세로 메뉴의 "보류함"이 /gate1?tab=hold 로 바로 들어온다
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get("tab") === "hold" ? "hold" : "pending";
@@ -1030,7 +1155,47 @@ function Gate1Page() {
     Record<string, { item: SummaryItem; outcome: Outcome; message?: string }>
   >({});
 
+  /*
+   * 로그인이 풀려 맡겨 둔 내용. 처음 받은 초안만 붙잡고, 목록에서 빠진 미복원 초안은 갱신한다.
+   * 카드가 쓰면 그 칸을 빼서, 탭을 갔다 와 카드가 새로 그려져도 옛 내용을 다시 받지 않는다
+   */
+  const [carried, setCarried] = useState(loaded);
+  const [loggedOut, setLoggedOut] = useState(false);
+
+  // 보류함에 머무는 동안 다른 곳에서 처리된 요약도 알린다. 이미 쓴 초안은 다시 가져오지 않는다
+  useEffect(() => {
+    setCarried((c) => {
+      const gone = loaded.gone.filter((id) => id in c.drafts);
+      if (gone.length === 0) return c;
+      const drafts = { ...c.drafts };
+      for (const id of gone) delete drafts[id];
+      return { drafts, gone: [...c.gone, ...gone] };
+    });
+  }, [loaded.gone]);
+
+  // 목록에서 빠진 요약은 위 한 줄로 알리고 지운다. 번호를 골라 지우므로 두 번 돌아도 같다
+  useEffect(() => {
+    forgetGate1Drafts(carried.gone);
+  }, [carried.gone]);
+
+  const onCarriedUsed = useCallback((id: string) => {
+    setCarried((c) => {
+      if (!(id in c.drafts)) return c;
+      const drafts = { ...c.drafts };
+      delete drafts[id];
+      return { ...c, drafts };
+    });
+    forgetGate1Drafts([id]);
+  }, []);
+  const onLoggedOut = useCallback(() => setLoggedOut(true), []);
+
   function resolve(from: Tab, item: SummaryItem, outcome: Outcome, message?: string) {
+    // 401 뒤에 다른 결정이 서버에 닿았다 — 다른 탭에서 다시 로그인했다. 이 화면에서 맡긴 내용은 이제 필요 없다.
+    // 아직 그리지 않은 맡긴 내용(보류함으로 들어와 검토 대기를 안 연 경우)은 남긴다
+    if (loggedOut) {
+      setLoggedOut(false);
+      forgetGate1Drafts(Object.keys(readGate1Drafts()).filter((id) => !(id in carried.drafts)));
+    }
     const other: Tab = from === "pending" ? "hold" : "pending";
     setResolved((r) => {
       const next = { ...r, [`${from}:${item.id}`]: { item, outcome, message } };
@@ -1078,6 +1243,12 @@ function Gate1Page() {
       />
 
       <div className="flex flex-col gap-5">
+        {carried.gone.length > 0 ? (
+          <p role="status" className="rounded bg-reviewsoft px-3.5 py-3 text-[14px] leading-6 text-review">
+            로그인하는 사이 {carried.gone.length}건은 이미 처리돼 고치던 내용을 지웠어요.
+          </p>
+        ) : null}
+
         {live.length === 0 && done.length === 0 ? (
           tab === "pending" ? (
             <EmptyState
@@ -1106,18 +1277,26 @@ function Gate1Page() {
             <NoContentItem
               key={s.id}
               item={s}
+              carriedDraft={carried.drafts[s.id]}
+              onCarriedUsed={onCarriedUsed}
+              onLoggedOut={onLoggedOut}
               onResolved={(outcome, message) => resolve("pending", s, outcome, message)}
             />
           ) : tab === "pending" ? (
             <PendingItem
               key={s.id}
               item={s}
+              carriedDraft={carried.drafts[s.id]}
+              loggedOut={loggedOut}
+              onCarriedUsed={onCarriedUsed}
+              onLoggedOut={onLoggedOut}
               onResolved={(outcome, message) => resolve("pending", s, outcome, message)}
             />
           ) : (
             <HeldItem
               key={s.id}
               item={s}
+              onLoggedOut={onLoggedOut}
               onResolved={(outcome, message) => resolve("hold", s, outcome, message)}
             />
           ),
