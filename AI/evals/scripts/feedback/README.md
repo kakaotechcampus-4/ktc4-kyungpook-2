@@ -11,10 +11,10 @@
 팀원을 모으기 전에 **혼자 한 바퀴 돌려** 숫자가 어떻게 생기는지 볼 수 있다.
 
 ```bash
-# ① 이미 돌린 평가 결과에서 고칠 거리를 뽑는다 (모델 안 부름)
-python evals/scripts/feedback/solo.py draft \
-  --from-run evals/generated/summary/runs/base_off_dev12.json \
-  --out evals/generated/feedback/mine.json
+# ① 이미 돌린 평가 결과에서 고칠 거리를 뽑는다 (모델 안 부름).
+#    결과 파일을 여러 개 주면 합친다 — 한 세트로는 문장이 모자란다.
+python evals/scripts/feedback/solo.py draft --out evals/generated/feedback/mine.json \
+  --from-run evals/generated/summary/runs/base_off_{dev12,dev12_r2,dev12_r3,names5,outside3,smoke}.json
 ```
 
 ② **`mine.json` 을 편집기로 연다.** 이 파일이 Gate 1 화면을 대신한다.
@@ -38,8 +38,22 @@ python evals/scripts/feedback/report.py evals/generated/feedback/gate1.json --ro
 `apply` 가 만드는 파일은 **DB 를 내보낸 것과 같은 모양**이다. 그래서 혼자 해 본 숫자와
 팀이 모은 숫자를 같은 스크립트·같은 표로 비교할 수 있다.
 
-> `dev12` 결과는 문장이 16개뿐이다. 감을 잡는 데는 충분하지만 **"반복 오류" 의 분모로는
-> 모자란다** — 그건 40~60개가 필요하다 (아래 3절).
+### 문장을 얼마나 모을 수 있나
+
+지금 로컬에 있는 세트로 두 가지가 나온다.
+
+| 합치는 것 | 문장 | 서로 다른 기록 | |
+| --- | --- | --- | --- |
+| dev12 · names5 · outside3 · smoke | **28** | 23 | 전부 다른 기록이지만 40 미만 |
+| 위 + dev12 재실행 2회 | **61** | 23 | 40~60 을 채우지만 24건이 **같은 일지** |
+
+재실행본은 글이 다르지만 **바탕이 된 일지가 같다.** `draft` 가 `#2` 를 붙여 표시하고 경고한다.
+
+- **유지 · 수정 비율**은 그대로 읽어도 된다 — 세는 단위가 "모델이 낸 문장" 이라서다
+- **반복 오류는 부풀 수 있다** — 같은 일지에서 같은 실수가 거듭 나오기 때문이다
+
+서로 다른 기록을 늘리는 길은 하나뿐이다. **일지를 더 받는 것** (근찬 `real/dev.json`
+또는 시연 일지). 23건이 지금 로컬에 있는 전부다.
 
 ---
 

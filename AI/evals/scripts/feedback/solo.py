@@ -2,7 +2,7 @@
 """
 **혼자서** 교사 노릇을 해 보는 길. BE·DB·Gate 1 화면이 없어도 된다.
 
-    ① python evals/scripts/feedback/solo.py draft --from-run <평가결과.json> --out mine.json
+    ① python evals/scripts/feedback/solo.py draft --from-run <평가결과.json ...> --out mine.json
     ②  mine.json 을 편집기로 연다 — 고치고, 지우고, 새 문장을 더한다
     ③ python evals/scripts/feedback/solo.py apply mine.json --out gate1.json
     ④ python evals/scripts/feedback/report.py gate1.json --rows
@@ -49,24 +49,35 @@ def _draft_claims(record: dict) -> list[dict]:
 
 
 def cmd_draft(args) -> None:
-    src = json.loads(Path(args.from_run).read_text(encoding="utf-8"))
-    records = src.get("records") if isinstance(src, dict) else src
-
     summaries, serial = [], 0
-    for n, record in enumerate(records or [], 1):
-        claims = _draft_claims(record)
-        if not claims:
-            continue                      # 요약할 내용 없음(no_content) 이거나 실패한 건
-        rows = []
-        for claim in claims:
-            serial += 1
-            rows.append({"id": serial, "text": claim["text"],
-                         "근거": "; ".join(e["quote"] or "" for e in claim["evidence"])[:60]})
-        summaries.append({
-            "summary_id": record.get("case_id") or n,
-            "_초안": claims,               # 손대지 않는 비교 기준
-            "요약": rows,
-        })
+    seen: dict[str, int] = {}             # 같은 기록이 여러 실행에 나오면 표시하려고 센다
+
+    for path in args.from_run:
+        src = json.loads(Path(path).read_text(encoding="utf-8"))
+        records = src.get("records") if isinstance(src, dict) else src
+        run = Path(path).stem
+
+        for n, record in enumerate(records or [], 1):
+            claims = _draft_claims(record)
+            if not claims:
+                continue                  # 요약할 내용 없음(no_content) 이거나 실패한 건
+            case = str(record.get("case_id") or f"{run}-{n}")
+            seen[case] = seen.get(case, 0) + 1
+            # 같은 기록을 다시 요약한 것이면 번호를 붙여 구별한다. 글은 다르지만
+            # **바탕이 된 일지는 같다** — 반복 오류를 셀 때 부풀 수 있다 (아래 경고).
+            label = case if seen[case] == 1 else f"{case}#{seen[case]}"
+
+            rows = []
+            for claim in claims:
+                serial += 1
+                rows.append({"id": serial, "text": claim["text"],
+                             "근거": "; ".join(e["quote"] or "" for e in claim["evidence"])[:60]})
+            summaries.append({
+                "summary_id": label,
+                "_출처": run,
+                "_초안": claims,           # 손대지 않는 비교 기준
+                "요약": rows,
+            })
 
     if not summaries:
         sys.exit("초안이 없다. --from-run 에 run_eval.py 결과 파일을 준다")
@@ -76,13 +87,19 @@ def cmd_draft(args) -> None:
     out.write_text(json.dumps({"_읽어주세요": HOWTO, "요약들": summaries},
                               ensure_ascii=False, indent=2), encoding="utf-8")
     total = sum(len(s["요약"]) for s in summaries)
-    print(f"\n요약 {len(summaries)}건 · 문장 {total}개 → {out}\n")
+    again = sum(n - 1 for n in seen.values() if n > 1)
+    print(f"\n요약 {len(summaries)}건 · 문장 {total}개 · 서로 다른 기록 {len(seen)}건 → {out}\n")
     for line in HOWTO:
         print(f"  {line}")
     print(f"\n  다 고쳤으면:  python {Path(__file__).name} apply {out} --out gate1.json\n")
+
     if total < 40:
         print(f"  ⚠️ 문장이 {total}개다. 반복 오류를 보려면 40~60개가 필요하다 (README).")
-        print("     세트를 더 돌려 결과 파일을 늘리거나, 여러 결과를 합쳐서 쓴다.\n")
+        print("     --from-run 에 결과 파일을 여러 개 준다.\n")
+    if again:
+        print(f"  ⚠️ 같은 기록을 다시 요약한 것이 {again}건 섞여 있다 (`#2` 가 붙은 것).")
+        print("     글은 다르지만 바탕이 된 일지가 같다. 유지·수정 비율은 그대로 읽어도 되지만,")
+        print("     **반복 오류는 부풀 수 있다** — 같은 일지에서 같은 실수가 거듭 나오기 때문이다.\n")
 
 
 def cmd_apply(args) -> None:
@@ -146,8 +163,8 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("draft", help="평가 결과에서 고칠 거리를 뽑는다 (모델 안 부름)")
-    d.add_argument("--from-run", required=True,
-                   help="run_eval.py 가 만든 결과 JSON (evals/generated/summary/runs/…)")
+    d.add_argument("--from-run", required=True, nargs="+",
+                   help="run_eval.py 가 만든 결과 JSON. 여러 개를 주면 합친다")
     d.add_argument("--out", default="evals/generated/feedback/mine.json")
     d.set_defaults(func=cmd_draft)
 
