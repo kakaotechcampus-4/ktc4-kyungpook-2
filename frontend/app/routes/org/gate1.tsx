@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Check, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
@@ -14,19 +14,35 @@ import {
   WorkHead,
   WorkRow,
 } from "@/components/org/WorkList";
-import { ApiError, decideGate1, getGate1Queue, isReady, reopenGate1 } from "@/lib/api";
-import type { Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
+import {
+  ApiError,
+  closeFailedSummary,
+  decideGate1,
+  getFailedSummaries,
+  getGate1Queue,
+  isReady,
+  loadIfReady,
+  reopenGate1,
+  retryFailedSummary,
+} from "@/lib/api";
+import type { FailedSummary, Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
 
 /**
  * 검토 — 요약을 읽고 승인한다 (O-30 · O-31 · O-33).
  * 목록은 한 줄 카드, 누르면 팝업에서 문장마다 유지·수정·삭제를 고르고 원본 일지를 함께 본다.
  * 처리하면 같은 칸의 다음 요약이 이어서 열린다. 칸은 [전체](검토 대기) · [보류].
- * 대시보드 바로가기: `?open=first` (첫 건), `?open=summary&id=` (그 요약), `?tab=hold` (보류 칸).
+ * 요약에 실패한 묶음(O-35)도 [전체] 칸에 "요약 실패" 카드로 함께 올린다 — 다시 요약하거나 요약 없이 마무리한다.
+ * 대시보드 바로가기: `?open=first` (첫 건), `?open=summary&id=` (그 요약), `?open=failed&child=&date=` (그 요약 실패),
+ * `?tab=hold` (보류 칸).
  */
 export async function clientLoader() {
   // BE 는 상태 하나씩만 준다 — 검토 대기와 보류를 함께 묻는다
-  const [pending, held] = await Promise.all([getGate1Queue("pending"), getGate1Queue("hold")]);
-  return { pending, held };
+  const [pending, held, failed] = await Promise.all([
+    getGate1Queue("pending"),
+    getGate1Queue("hold"),
+    loadIfReady("summaryFailures", getFailedSummaries),
+  ]);
+  return { pending, held, failed: failed ?? [] };
 }
 
 const TITLE = "검토";
@@ -42,6 +58,8 @@ type Outcome =
   | "reopened"
   | "confirmed"
   | "reverted"
+  | "retried"
+  | "closed"
   | "stale";
 
 /** 문장 하나에 고른 처리. text 는 EDIT 일 때 고치는 글 */
@@ -259,8 +277,18 @@ function SentenceRow({
 
 /* ── 화면 ─────────────────────────────────────────── */
 
-const idOf = (s: SummaryItem) => s.id;
-const isProcessing = (s: SummaryItem) => s.processing;
+/** 목록 한 줄 — 검토할 요약 또는 요약 실패 묶음 */
+interface Row {
+  id: string;
+  childName: string;
+  date: string;
+  s?: SummaryItem;
+  f?: FailedSummary;
+}
+const failedId = (childId: string, date: string) => `failed:${childId}:${date}`;
+const rowOf = (s: SummaryItem): Row => ({ id: s.id, childName: s.childName, date: s.entryDate, s });
+const idOf = (r: Row) => r.id;
+const isProcessing = (r: Row) => !!r.s?.processing;
 
 /** 처리한 결과 한 줄 (목록 카드가 ✓ 로 바뀌는 2초 동안) */
 const OUTCOME: Record<Exclude<Outcome, "stale">, string> = {
@@ -271,6 +299,8 @@ const OUTCOME: Record<Exclude<Outcome, "stale">, string> = {
   reopened: "보류를 풀었어요 · 전체 칸에서 다시 볼 수 있어요",
   confirmed: "요약 없이 마무리했어요",
   reverted: "다시 요약하도록 돌렸어요",
+  retried: "다시 요약하도록 돌렸어요",
+  closed: "요약 없이 마무리했어요",
 };
 
 /** 백엔드에 아직 없으면 mock 데이터 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
@@ -280,17 +310,28 @@ export default function Gate1Route() {
 }
 
 function Gate1Page() {
-  const { pending, held } = useLoaderData<typeof clientLoader>();
+  const { pending, held, failed } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get("tab") === "hold" ? "hold" : "pending";
   const [toast, setToast] = useState<string | null>(null);
   const clearToast = useCallback(() => setToast(null), []);
-  /** 처리한 요약 id → 결과 문구. ✓ 줄에 쓴다 */
+  /** 처리한 줄 id → 결과 문구. ✓ 줄에 쓴다 */
   const [outcomes, setOutcomes] = useState<Record<string, string>>({});
 
-  const pw = useWalk(pending, idOf, isProcessing);
-  const hw = useWalk(held, idOf);
+  // [전체] = 요약 실패 + 검토 대기. 오래된 날짜부터(같은 날은 실패를 앞에)
+  const pendingRows = useMemo(
+    () =>
+      [
+        ...failed.map((f): Row => ({ id: failedId(f.childId, f.entryDate), childName: f.childName, date: f.entryDate, f })),
+        ...pending.map(rowOf),
+      ].sort((a, b) => a.date.localeCompare(b.date)),
+    [failed, pending],
+  );
+  const heldRows = useMemo(() => held.map(rowOf), [held]);
+
+  const pw = useWalk(pendingRows, idOf, isProcessing);
+  const hw = useWalk(heldRows, idOf);
   const walk = tab === "hold" ? hw : pw;
   const page = usePage(walk.visible);
 
@@ -298,14 +339,20 @@ function Gate1Page() {
     setParams(next === "hold" ? { tab: "hold" } : {}, { replace: true, preventScrollReset: true });
   }
 
-  // 대시보드 바로가기: ?open=first | summary&id= → 그 요약 팝업을 연 채로. 주소에서는 지운다
+  // 대시보드 바로가기: ?open=first | summary&id= | failed&child=&date= → 그 팝업을 연 채로. 주소에서는 지운다
   useEffect(() => {
     const open = params.get("open");
     if (!open) return;
-    const list = (tab === "hold" ? held : pending).filter((s) => !s.processing);
+    const list = (tab === "hold" ? heldRows : pendingRows).filter((r) => !isProcessing(r));
     const id = params.get("id");
-    // id 를 줬는데 없으면(그새 처리됨) 다른 요약으로 대신 열지 않는다
-    const target = open === "summary" && id ? list.find((s) => s.id === id) : open === "first" ? list[0] : undefined;
+    // id 를 줬는데 없으면(그새 처리됨) 다른 건으로 대신 열지 않는다
+    const want =
+      open === "summary" && id
+        ? id
+        : open === "failed"
+          ? failedId(params.get("child") ?? "", params.get("date") ?? "")
+          : null;
+    const target = want ? list.find((r) => r.id === want) : open === "first" ? list[0] : undefined;
     if (target) walk.open(target.id);
     setParams(tab === "hold" ? { tab: "hold" } : {}, { replace: true });
   }, [params]);
@@ -324,13 +371,14 @@ function Gate1Page() {
     revalidator.revalidate();
   }
 
-  const pendingLeft = pw.visible.filter((s) => !pw.isDone(s.id)).length;
-  const heldLeft = hw.visible.filter((s) => !hw.isDone(s.id)).length;
+  const pendingLeft = pw.visible.filter((r) => !pw.isDone(r.id)).length;
+  const heldLeft = hw.visible.filter((r) => !hw.isDone(r.id)).length;
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: "pending", label: "전체", count: pendingLeft },
     { key: "hold", label: "보류", count: heldLeft },
   ];
   const current = walk.current;
+  const popupProps = { position: walk.position, onClose: walk.close, onDone: finish, onStale: stale };
 
   return (
     <div>
@@ -361,16 +409,22 @@ function Gate1Page() {
       ) : (
         <>
           <div className="grid gap-2.5">
-            {page.items.map((s) => (
+            {page.items.map((r) => (
               <WorkRow
-                key={s.id}
-                who={s.childName}
-                sub={dateLabel(s.entryDate)}
-                text={s.noContent ? "요약할 내용을 찾지 못했어요" : (s.claims[0]?.text ?? s.content)}
-                tag={rowTag(s, tab)}
-                action={s.processing ? undefined : tab === "hold" ? "다시 보기" : "검토하기"}
-                onOpen={() => walk.open(s.id)}
-                done={walk.isDone(s.id) ? `${s.childName} ${dateLabel(s.entryDate)} · ${outcomes[s.id] ?? "처리했어요"}` : undefined}
+                key={r.id}
+                who={r.childName}
+                sub={dateLabel(r.date)}
+                text={
+                  r.f
+                    ? (r.f.entries[0]?.content ?? "")
+                    : r.s!.noContent
+                      ? "요약할 내용을 찾지 못했어요"
+                      : (r.s!.claims[0]?.text ?? r.s!.content)
+                }
+                tag={r.f ? <Chip tone="bad">요약 실패</Chip> : rowTag(r.s!, tab)}
+                action={isProcessing(r) ? undefined : r.f ? "확인하기" : tab === "hold" ? "다시 보기" : "검토하기"}
+                onOpen={() => walk.open(r.id)}
+                done={walk.isDone(r.id) ? `${r.childName} ${dateLabel(r.date)} · ${outcomes[r.id] ?? "처리했어요"}` : undefined}
               />
             ))}
           </div>
@@ -378,13 +432,15 @@ function Gate1Page() {
         </>
       )}
 
-      {current ? (
+      {current?.f ? (
+        <FailedPopup key={current.id} rowId={current.id} item={current.f} {...popupProps} />
+      ) : current?.s ? (
         tab === "hold" ? (
-          <HeldPopup key={current.id} item={current} position={walk.position} onClose={walk.close} onDone={finish} onStale={stale} />
-        ) : current.noContent ? (
-          <NoContentPopup key={current.id} item={current} position={walk.position} onClose={walk.close} onDone={finish} onStale={stale} />
+          <HeldPopup key={current.id} item={current.s} {...popupProps} />
+        ) : current.s.noContent ? (
+          <NoContentPopup key={current.id} item={current.s} {...popupProps} />
         ) : (
-          <PendingPopup key={current.id} item={current} position={walk.position} onClose={walk.close} onDone={finish} onStale={stale} />
+          <PendingPopup key={current.id} item={current.s} {...popupProps} />
         )
       ) : null}
 
@@ -826,6 +882,98 @@ function HeldPopup({ item, position, onClose, onDone, onStale }: PopupProps) {
           onConfirm={() => act("remove")}
         >
           이 요약과 그 일지를 모두 지워요.
+        </ConfirmDialog>
+      ) : null}
+    </>
+  );
+}
+
+/* ── 요약 실패 팝업 (O-35 ~ O-37) ─────────────────────── */
+
+const FAIL_REASON: Record<string, string> = {
+  NO_GROUNDED_CLAIMS: "요약 문장의 근거를 원문에서 찾지 못했어요.",
+};
+
+/**
+ * AI 가 근거를 찾지 못해 요약을 버린 날(실패 복구 2번). 원본 일지를 보고 다시 요약하거나 요약 없이 마무리한다.
+ * 다시 요약은 횟수 제한이 없다 — 또 실패하면 다시 이 카드로 온다.
+ */
+function FailedPopup({
+  rowId,
+  item,
+  position,
+  onClose,
+  onDone,
+  onStale,
+}: Omit<PopupProps, "item"> & { rowId: string; item: FailedSummary }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  async function run(kind: "retry" | "close") {
+    setBusy(true);
+    setError(null);
+    try {
+      if (kind === "retry") await retryFailedSummary(item.childId, item.entryDate);
+      else await closeFailedSummary(item.childId, item.entryDate);
+      setConfirming(false);
+      onDone(rowId, kind === "retry" ? "retried" : "closed");
+    } catch (err) {
+      setConfirming(false);
+      if (err instanceof ApiError && err.status === 404) onStale("이미 처리했거나 볼 수 없는 기록이에요. 목록을 새로 불러왔어요.");
+      else setError(messageOf(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <ListPopup
+        title={`${item.childName} · ${dateLabel(item.entryDate)}`}
+        subtitle="요약 실패 · 선생님이 정해 주세요"
+        icon={<TriangleAlert aria-hidden size={20} />}
+        position={position}
+        busy={busy}
+        onClose={onClose}
+        footer={
+          <>
+            <PopButton onClick={() => setConfirming(true)} disabled={busy}>
+              요약 없이 마무리
+            </PopButton>
+            <span className="flex-1" />
+            <PopButton tone="dark" onClick={() => run("retry")} disabled={busy}>
+              {busy ? <Busy>보내는 중…</Busy> : "다시 요약"}
+            </PopButton>
+            <ErrorLine error={error} />
+          </>
+        }
+      >
+        <div className="rounded-[14px] bg-humansoft px-3.5 py-3 text-[14px] leading-normal text-human">
+          <b>AI가 요약을 마치지 못했어요.</b> {FAIL_REASON[item.reason] ?? "원본 일지를 보고 정해 주세요."}
+        </div>
+        <PopSection title={`원본 일지 ${item.entries.length}건`}>
+          <div className="grid gap-2 rounded-[14px] border border-line bg-paper px-4 py-3.5">
+            {item.entries.map((e) => (
+              <p key={e.journalEntryId} className="max-w-[62ch] text-[16px] leading-[1.75] whitespace-pre-wrap">
+                {e.content}
+              </p>
+            ))}
+          </div>
+        </PopSection>
+      </ListPopup>
+
+      {confirming ? (
+        <ConfirmDialog
+          title={`${item.childName} 기록을 요약 없이 끝낼까요?`}
+          warning="되돌릴 수 없어요"
+          confirmLabel="요약 없이 마무리"
+          tone="human"
+          busy={busy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => run("close")}
+        >
+          이날 기록 {item.entries.length}건은 보호자·아동 기록·주간 분석으로 가지 않아요.
         </ConfirmDialog>
       ) : null}
     </>
