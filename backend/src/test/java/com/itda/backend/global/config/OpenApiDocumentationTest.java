@@ -32,6 +32,8 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.type").value("apiKey"))
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.in").value("cookie"))
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.name").value("access_token"))
+				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.description")
+						.value(containsString("access_token_renewal_{sid}")))
 				.andExpect(jsonPath("$.paths['/oauth2/authorization/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/login/oauth2/code/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.201").exists())
@@ -92,6 +94,8 @@ class OpenApiDocumentationTest {
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.description")
+						.value(containsString("만료된 출입증")))
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.400").exists())

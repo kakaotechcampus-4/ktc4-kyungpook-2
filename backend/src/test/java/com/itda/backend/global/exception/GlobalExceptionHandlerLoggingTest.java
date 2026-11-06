@@ -23,8 +23,6 @@ import com.itda.backend.api.ChildController;
 import com.itda.backend.api.GuardianController;
 import com.itda.backend.exception.invitation.InvitationErrorCode;
 import com.itda.backend.exception.invitation.InvitationException;
-import com.itda.backend.global.jwt.JwtCookie;
-import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.child.ChildService;
 import com.itda.backend.service.child.GuardianChildQueryService;
 import com.itda.backend.service.invitation.ChildGuardianService;
@@ -64,12 +62,6 @@ class GlobalExceptionHandlerLoggingTest {
 
     @MockitoBean
     private GuardianInstitutionShareService guardianInstitutionShareService;
-
-    @MockitoBean
-    private JwtProvider jwtProvider;
-
-    @MockitoBean
-    private JwtCookie jwtCookie;
 
     private void postBadRequest(String body) throws Exception {
         mockMvc.perform(post(CHILDREN).contentType(MediaType.APPLICATION_JSON).content(body))

@@ -37,8 +37,6 @@ import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
-import com.itda.backend.global.jwt.JwtCookie;
-import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.child.ChildService;
 
 @WebMvcTest(ChildController.class)
@@ -52,12 +50,6 @@ class ChildControllerTest {
 
     @MockitoBean
     private ChildService childService;
-
-    @MockitoBean
-    private JwtProvider jwtProvider;
-
-    @MockitoBean
-    private JwtCookie jwtCookie;
 
     @Test
     void getRoster_returnsChildren() throws Exception {

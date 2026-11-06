@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -5,9 +6,13 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLocation,
+  useNavigate,
 } from "react-router";
 import type { Route } from "./+types/root";
 import { FullPageLoading, NavigationProgress } from "@/components/ui/Loading";
+import { ApiError } from "@/lib/apiError";
+import { rememberReturnPath } from "@/lib/auth";
 import "./app.css";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -53,7 +58,29 @@ export function HydrateFallback() {
   return <FullPageLoading />;
 }
 
+/**
+ * 화면 loader 가 401 로 실패하면(출입증 만료 — 세션 확인 레이아웃보다 화면 loader 가 먼저 끝난 경우 등) 오류 화면 대신
+ * 주소를 남기고 로그인 화면으로 보낸다. `/parent` 아래면 보호자 진입 화면, 그 밖은 기관 로그인 화면이다.
+ * 화면 안에서 저장하다 받은 401 은 loader 오류가 아니라 여기까지 오지 않는다 — 고치던 내용이 화면에 남는다.
+ */
+function useSendExpiredToLogin(expired: boolean) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!expired) return;
+    const parent = location.pathname === "/parent" || location.pathname.startsWith("/parent/");
+    const target = parent ? "/parent/invite" : "/login";
+    if (location.pathname === target) return;
+    rememberReturnPath(parent ? "parent" : "org", new URL(location.pathname + location.search, window.location.origin));
+    navigate(target, { replace: true });
+  }, [expired, location.pathname, location.search, navigate]);
+}
+
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  const expired = error instanceof ApiError && error.status === 401;
+  useSendExpiredToLogin(expired);
+  if (expired) return <FullPageLoading />;
+
   let message = "문제가 발생했습니다";
   let details = "예기치 않은 오류가 발생했습니다.";
 

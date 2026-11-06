@@ -1,6 +1,8 @@
 package com.itda.backend.global.config;
 
 import com.itda.backend.global.jwt.JwtAuthenticationFilter;
+import com.itda.backend.global.jwt.JwtCookie;
+import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.global.security.CsrfCookieFilter;
 import com.itda.backend.global.security.JsonAccessDeniedHandler;
 import com.itda.backend.global.security.JsonAuthenticationEntryPoint;
@@ -8,6 +10,7 @@ import com.itda.backend.global.security.JsonErrorResponseWriter;
 import com.itda.backend.global.security.SignupCompletionFilter;
 import com.itda.backend.global.security.oauth.OAuth2LoginFailureHandler;
 import com.itda.backend.global.security.oauth.OAuth2LoginSuccessHandler;
+import com.itda.backend.service.user.RevokedSessionService;
 import com.itda.backend.service.user.UserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -31,7 +34,9 @@ import java.util.List;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JwtProvider jwtProvider;
+    private final JwtCookie jwtCookie;
+    private final RevokedSessionService revokedSessionService;
     private final JsonAuthenticationEntryPoint jsonAuthenticationEntryPoint;
     private final JsonAccessDeniedHandler jsonAccessDeniedHandler;
     private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
@@ -43,7 +48,9 @@ public class SecurityConfig {
     private String[] allowedOrigins;
 
     public SecurityConfig(
-            JwtAuthenticationFilter jwtAuthenticationFilter,
+            JwtProvider jwtProvider,
+            JwtCookie jwtCookie,
+            RevokedSessionService revokedSessionService,
             JsonAuthenticationEntryPoint jsonAuthenticationEntryPoint,
             JsonAccessDeniedHandler jsonAccessDeniedHandler,
             OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler,
@@ -51,7 +58,9 @@ public class SecurityConfig {
             UserService userService,
             JsonErrorResponseWriter jsonErrorResponseWriter
     ) {
-        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.jwtProvider = jwtProvider;
+        this.jwtCookie = jwtCookie;
+        this.revokedSessionService = revokedSessionService;
         this.jsonAuthenticationEntryPoint = jsonAuthenticationEntryPoint;
         this.jsonAccessDeniedHandler = jsonAccessDeniedHandler;
         this.oAuth2LoginSuccessHandler = oAuth2LoginSuccessHandler;
@@ -144,7 +153,10 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jsonAuthenticationEntryPoint)
                         .accessDeniedHandler(jsonAccessDeniedHandler)
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // 출입증으로 인증을 세우고 쓰는 동안 연장한다. 로그아웃한 로그인은 받지 않는다.
+                .addFilterBefore(
+                        new JwtAuthenticationFilter(jwtProvider, jwtCookie, revokedSessionService, jsonErrorResponseWriter),
+                        UsernamePasswordAuthenticationFilter.class)
                 // 출입증으로 누군지 알아낸 직후, 가입을 마치지 않은 회원을 403 SIGNUP_NOT_COMPLETED 로,
                 // 약관에 동의하지 않은 보호자를 403 TERMS_NOT_AGREED 로 막는다.
                 .addFilterAfter(

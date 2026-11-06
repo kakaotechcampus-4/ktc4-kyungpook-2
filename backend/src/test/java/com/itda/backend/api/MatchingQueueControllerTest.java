@@ -26,8 +26,6 @@ import com.itda.backend.dto.response.matching.MatchingQueueItemResponse;
 import com.itda.backend.dto.response.record.RecordResponse;
 import com.itda.backend.exception.matching.MatchingResultNotFoundException;
 import com.itda.backend.exception.matching.MatchingResultValidationException;
-import com.itda.backend.global.jwt.JwtCookie;
-import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.matching.MatchingResultService;
 
 @WebMvcTest(MatchingQueueController.class)
@@ -42,12 +40,6 @@ class MatchingQueueControllerTest {
 
     @MockitoBean
     private MatchingResultService matchingResultService;
-
-    @MockitoBean
-    private JwtProvider jwtProvider;
-
-    @MockitoBean
-    private JwtCookie jwtCookie;
 
     @Test
     void getQueue_excludesAutoStatus() throws Exception {

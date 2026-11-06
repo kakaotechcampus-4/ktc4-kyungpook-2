@@ -11,7 +11,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.web.util.UrlPathHelper;
 
 import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
@@ -38,16 +37,14 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class SignupCompletionFilter extends OncePerRequestFilter {
 
-    private static final String API_PREFIX = "/api/";
-
     private static final Set<String> ALLOWED_BEFORE_SIGNUP = Set.of(
-            "/api/v1/auth/me",
-            "/api/v1/auth/signup",
-            "/api/v1/auth/logout",
-            "/api/v1/dev/login",
-            "/api/health");
+            ApiPaths.AUTH_ME,
+            ApiPaths.AUTH_SIGNUP,
+            ApiPaths.AUTH_LOGOUT,
+            ApiPaths.DEV_LOGIN,
+            ApiPaths.HEALTH);
 
-    private static final Set<String> ALLOWED_BEFORE_TERMS = Set.of("/api/v1/auth/terms");
+    private static final Set<String> ALLOWED_BEFORE_TERMS = Set.of(ApiPaths.AUTH_TERMS);
 
     private final UserService userService;
     private final JsonErrorResponseWriter jsonErrorResponseWriter;
@@ -59,14 +56,9 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // getRequestURI() 는 디코딩 전 값이라 "/%61pi/..." 가 "/api/" 로 시작하지 않는 것으로 보여 필터를 건너뛴다.
-        // 컨트롤러 매핑과 같은 기준인, 디코딩하고 ";" 파라미터를 뗀 애플리케이션 내부 경로로 판단한다.
-        String path = pathOf(request);
-        return !path.startsWith(API_PREFIX) || ALLOWED_BEFORE_SIGNUP.contains(path);
-    }
-
-    private static String pathOf(HttpServletRequest request) {
-        return UrlPathHelper.defaultInstance.getPathWithinApplication(request);
+        // 디코딩 전 주소로 보면 "/%61pi/..." 가 이 필터를 건너뛴다 (ApiPaths.pathOf)
+        String path = ApiPaths.pathOf(request);
+        return !path.startsWith(ApiPaths.API_PREFIX) || ALLOWED_BEFORE_SIGNUP.contains(path);
     }
 
     @Override
@@ -84,7 +76,7 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
                     jsonErrorResponseWriter.write(response, UserErrorCode.SIGNUP_NOT_COMPLETED);
                     return;
                 }
-                if (access == AccountAccess.TERMS_NOT_AGREED && !ALLOWED_BEFORE_TERMS.contains(pathOf(request))) {
+                if (access == AccountAccess.TERMS_NOT_AGREED && !ALLOWED_BEFORE_TERMS.contains(ApiPaths.pathOf(request))) {
                     jsonErrorResponseWriter.write(response, UserErrorCode.TERMS_NOT_AGREED);
                     return;
                 }
