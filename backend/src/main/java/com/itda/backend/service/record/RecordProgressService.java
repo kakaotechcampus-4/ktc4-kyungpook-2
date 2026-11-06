@@ -171,7 +171,8 @@ public class RecordProgressService {
     private static String stateOf(JournalEntryStatus status) {
         return switch (status) {
             case PENDING, MATCHING, MATCHED, VALIDATING, SUMMARIZING -> RUNNING;
-            // 요약 대기는 자동 요약이 없어 교사가 [요약]을 눌러야 넘어간다 (#181).
+            // 요약 대기. 자동 요약(#369)이 켜져 있으면 같은 날짜 처리가 끝나는 대로 넘어가지만, 꺼져 있으면 교사가
+            // [요약]을 눌러야 해서 waiting 으로 둔다 (#181). 값의 뜻은 바꾸지 않는다.
             case MATCH_REVIEW, CONSENT_BLOCKED, VALIDATION_BLOCKED, VALIDATED, GATE1_PENDING, GATE1_HELD -> WAITING;
             case EXCLUDED, REUPLOAD_REQUESTED, VALIDATION_HELD, COMPLETED -> DONE;
             case FAILED, SUMMARY_FAILED, SYSTEM_ERROR -> FAILED;

@@ -98,6 +98,9 @@ app:
       delay-ms: 5000
       # 요약은 일지가 아니라 묶음(아동·날짜·기관) 단위로 집는다.
       batch-size: 10
+    # 자동 요약 (#369). 같은 기관·날짜에 매칭·검증 중인 일지가 없으면 [요약] 요청 없이 요약한다.
+    # 끄면 교사가 [요약](O-32)을 누른 묶음만 요약한다 (#181) — 장애 때 되돌리는 스위치.
+    auto-run: ${SUMMARY_AUTO_RUN:true}
     # 요약은 AI 가 LLM 을 90초(AI/summary/config.py LUNA_TIMEOUT)까지 기다린다. app.ai.read-timeout(70초)으로는
     # 느린 정상 응답을 먼저 끊고 다시 불러서 LLM 을 여러 번 부르게 된다.
     read-timeout: 120s

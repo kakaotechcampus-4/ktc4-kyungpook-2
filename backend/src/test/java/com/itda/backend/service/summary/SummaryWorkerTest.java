@@ -38,7 +38,7 @@ import com.itda.backend.service.agent.WorkerProperties;
 @ExtendWith(MockitoExtension.class)
 class SummaryWorkerTest {
 
-    private static final SummaryProperties PROPERTIES = new SummaryProperties(new WorkerProperties(true, 5000, 10), Duration.ofSeconds(120));
+    private static final SummaryProperties PROPERTIES = new SummaryProperties(new WorkerProperties(true, 5000, 10), Duration.ofSeconds(120), false);
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
 

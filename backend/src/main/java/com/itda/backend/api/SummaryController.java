@@ -112,8 +112,9 @@ public class SummaryController {
     @PostMapping("/run")
     @Operation(
             summary = "요약",
-            description = "그 아이·날짜의 일지를 요약하도록 요청합니다. 요약은 이 요청이 있는 묶음만 하며 자동으로는 하지 "
-                    + "않습니다. 워커가 곧이어 하고, 같은 날짜에 매칭·검증 중인 일지가 있으면 그것이 끝난 뒤에 합니다."
+            description = "그 아이·날짜의 일지를 요약하도록 요청합니다. 자동 요약(SUMMARY_AUTO_RUN, 기본 켜짐)이 켜져 있으면 "
+                    + "누르지 않아도 요약하므로 이 요청은 \"지금 요약\"과 같습니다. 꺼져 있으면 이 요청이 있는 묶음만 요약합니다. "
+                    + "워커가 곧이어 하고, 같은 날짜에 매칭·검증 중인 일지가 있으면 그것이 끝난 뒤에 합니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
