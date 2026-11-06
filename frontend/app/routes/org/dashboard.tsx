@@ -518,11 +518,15 @@ function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolea
     case "review_here":
       return { text: "분석이 왔어요 · 읽고 승인하면 보호자에게 가요", go: ["읽고 승인", `/children?tab=approve&open=insight${id}`] };
     case "insight_held":
-      return { text: "분석을 보류해 뒀어요", hold: true, go: ["다시 읽기", `/children?tab=approve&open=insight${id}`] };
+      // Gate 2 보류는 되돌릴 수 없다 — 다시 읽을 화면이 없어 바로가기를 두지 않는다
+      return { text: "분석을 보류해 뒀어요", hold: true };
     case "review_elsewhere":
       return { text: `${d.approverName ?? "다른 기관"}에서 승인할 차례예요` };
     case "approved":
       return { text: "승인했어요 · 보호자가 볼 수 있어요" };
+    default:
+      // 서버가 새 상태를 먼저 보내도 화면이 깨지지 않게
+      return { text: "" };
   }
 }
 

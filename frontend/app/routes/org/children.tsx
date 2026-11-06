@@ -84,7 +84,8 @@ export default function ChildrenPage() {
     if (child && children.some((c) => c.id === child)) setOpenKid({ id: child, tab: "analysis", unread: false });
     if (open && tab === "approve") {
       const id = params.get("id");
-      const target = (open === "insight" && id && pending.find((i) => i.id === id)) || pending[0];
+      // id 를 줬는데 없으면(보류·승인됨) 다른 아이 분석으로 대신 열지 않는다
+      const target = open === "insight" && id ? pending.find((i) => i.id === id) : pending[0];
       if (target) walk.open(target.id);
     }
     setParams(tab === "kids" ? {} : { tab }, { replace: true });
@@ -115,7 +116,7 @@ export default function ChildrenPage() {
   }
 
   const unreadAll = inbox.filter((m) => !m.readAt).length;
-  const approveLeft = pending.filter((i) => !walk.isDone(i.id)).length;
+  const approveLeft = walk.visible.filter((i) => !walk.isDone(i.id)).length;
   const tabs: { key: Tab; label: string; count: number; hot: boolean; dot?: boolean }[] = [
     { key: "kids", label: "아이", count: children.length, hot: false, dot: unreadAll > 0 },
     { key: "approve", label: "분석 승인", count: approveLeft, hot: approveLeft > 0 },

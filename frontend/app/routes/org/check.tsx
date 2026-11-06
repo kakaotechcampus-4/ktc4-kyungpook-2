@@ -17,6 +17,7 @@ import {
   getBlockedQueue,
   getChildren,
   getMatchingQueue,
+  MAX_REVISED_CONTENT,
   resolveBlockedItem,
   resolveMatchingItem,
   reviseBlockedItem,
@@ -67,7 +68,7 @@ export default function CheckPage() {
     const walk = open === "blocked" ? bw : open === "confirm" ? cw : null;
     const list = open === "blocked" ? blocked : confirms;
     if (walk) {
-      const target = (id && list.find((x) => x.id === id)) || list[0];
+      const target = id ? list.find((x) => x.id === id) : list[0];
       if (target) walk.open(target.id);
     }
     setParams({}, { replace: true });
@@ -80,8 +81,8 @@ export default function CheckPage() {
     setTimeout(() => revalidator.revalidate(), 2100);
   }
 
-  const cLeft = confirms.filter((c) => !cw.isDone(c.id)).length;
-  const bLeft = blocked.filter((b) => !bw.isDone(b.id)).length;
+  const cLeft = cw.visible.filter((c) => !cw.isDone(c.id)).length;
+  const bLeft = bw.visible.filter((b) => !bw.isDone(b.id)).length;
   const jobs = [cLeft ? `아이 확인 ${cLeft}건` : "", bLeft ? `고쳐야 할 기록 ${bLeft}건` : ""].filter(Boolean);
 
   return (
@@ -232,7 +233,9 @@ function ConfirmPopup({
 }) {
   const rec = recommendedId(item);
   const recChild = rec ? roster.find((r) => r.id === rec) : undefined;
-  const [sel, setSel] = useState<string | null>(rec && (!recChild || !pickBlocked(recChild)) ? rec : null);
+  // 추천 아이가 고를 수 있는 목록에 있을 때만 미리 고른다(명부에서 빠졌거나 동의 전이면 비워 둔다)
+  const recPickable = rec != null && (recChild ? !pickBlocked(recChild) : rosterFailed);
+  const [sel, setSel] = useState<string | null>(recPickable ? rec : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -357,12 +360,14 @@ function BlockedPopup({
   onDone: (id: string) => void;
   onStale: () => void;
 }) {
-  const original = item.record.fullContent ?? item.record.preview ?? "";
+  // 전체 본문이 없으면(미리보기만 옴) 고치게 두지 않는다 — 잘린 미리보기를 보내면 뒤쪽 본문이 사라진다
+  const full = item.record.fullContent;
+  const original = full ?? item.record.preview ?? "";
   const [draft, setDraft] = useState(original);
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const changed = draft.trim() !== "" && draft.trim() !== original.trim();
+  const changed = full != null && draft.trim() !== "" && draft.trim() !== original.trim();
 
   async function run(action: "revise" | "drop") {
     setBusy(true);
@@ -408,9 +413,14 @@ function BlockedPopup({
           {item.violationReason}
         </div>
         <PopSection title="문장 고치기">
+          {full == null ? (
+            <p className="mb-2 text-[14px] font-bold text-block">전체 본문을 불러오지 못해 앞부분만 보여요. 본문을 고칠 수 없어 이 기록은 빼 주세요.</p>
+          ) : null}
           <textarea
             aria-label="고칠 문장"
             value={draft}
+            readOnly={full == null}
+            maxLength={MAX_REVISED_CONTENT}
             onChange={(e) => setDraft(e.target.value)}
             className="min-h-[130px] w-full resize-y rounded-[14px] border border-line2 bg-surface px-3.5 py-3 text-[15px] leading-[1.6] text-ink focus:border-accent focus:outline-2 focus:outline-accent"
           />

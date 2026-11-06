@@ -304,7 +304,8 @@ function Gate1Page() {
     if (!open) return;
     const list = (tab === "hold" ? held : pending).filter((s) => !s.processing);
     const id = params.get("id");
-    const target = (open === "summary" && id && list.find((s) => s.id === id)) || (open !== "failed" ? list[0] : undefined);
+    // id 를 줬는데 없으면(그새 처리됨) 다른 요약으로 대신 열지 않는다
+    const target = open === "summary" && id ? list.find((s) => s.id === id) : open === "first" ? list[0] : undefined;
     if (target) walk.open(target.id);
     setParams(tab === "hold" ? { tab: "hold" } : {}, { replace: true });
   }, [params]);
@@ -323,8 +324,8 @@ function Gate1Page() {
     revalidator.revalidate();
   }
 
-  const pendingLeft = pending.filter((s) => !pw.isDone(s.id)).length;
-  const heldLeft = held.filter((s) => !hw.isDone(s.id)).length;
+  const pendingLeft = pw.visible.filter((s) => !pw.isDone(s.id)).length;
+  const heldLeft = hw.visible.filter((s) => !hw.isDone(s.id)).length;
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: "pending", label: "전체", count: pendingLeft },
     { key: "hold", label: "보류", count: heldLeft },

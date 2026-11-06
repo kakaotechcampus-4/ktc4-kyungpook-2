@@ -31,7 +31,10 @@ export function ListPopup({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && !busy) closeRef.current();
+      if (e.key !== "Escape" || busy) return;
+      // 위에 확인 창이 떠 있으면 Esc 는 그 창만 닫는다 — 팝업까지 닫으면 고치던 내용이 사라진다
+      if (document.querySelectorAll('[role="dialog"][aria-modal]').length > 1) return;
+      closeRef.current();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -118,6 +121,16 @@ export function useWalk<T>(list: T[], idOf: (item: T) => string, skip?: (item: T
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  // 서버 목록에서 빠진 건은 숨김 목록에서도 지운다 — 같은 id 가 나중에 다시 오면(보류를 풀어 돌아옴) 보여야 한다
+  useEffect(() => {
+    setGoneIds((g) => {
+      if (g.size === 0) return g;
+      const live = new Set(list.map(idOf));
+      const next = new Set([...g].filter((id) => live.has(id)));
+      return next.size === g.size ? g : next;
+    });
+  }, [list, idOf]);
 
   const visible = useMemo(() => list.filter((it) => !goneIds.has(idOf(it))), [list, goneIds, idOf]);
   /** 팝업이 돌 수 있는 건 = 아직 처리하지 않은 것 */
