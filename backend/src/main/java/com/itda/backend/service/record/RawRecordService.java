@@ -1,7 +1,6 @@
 package com.itda.backend.service.record;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.time.DateTimeException;
 import java.time.LocalDate;
@@ -40,17 +39,14 @@ public class RawRecordService {
     // ponytail: 매직바이트 스니핑 없이 확장자/선언된 content-type 이중 화이트리스트로만 검증.
     // 팀 합의로 파일 종류가 늘어나면 이 목록만 넓히면 됨.
     // jpg/jpeg/png/hwp는 이번 학기 범위 밖으로 제외(노션 "파일 형식 결정" 문서, 2026-09-29) —
-    // jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려움. docx는 아직 추가 전(다음 이슈).
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("csv", "txt", "pdf");
+    // jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려움. docx는 #383에서 추가.
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("csv", "txt", "pdf", "docx");
 
     // application/vnd.ms-excel: Windows가 .csv를 저장할 때 흔히 이 Content-Type으로 보낸다
     // (#113, 최재혁님 리뷰) — 실제로 정상 csv 파일이 이 값 때문에 거부됐었다.
-    private static final Set<String> ALLOWED_CONTENT_TYPES =
-            Set.of("text/csv", "application/vnd.ms-excel", "text/plain", "application/pdf");
-
-    // 텍스트 추출이 아직 안 되는 형식 — 업로드는 받되 기록 분리는 건너뛴다(entries: [] 유지).
-    // pdf 추출(PDFBox)은 다음 이슈에서 추가한다.
-    private static final Set<String> TEXT_EXTRACTABLE_EXTENSIONS = Set.of("csv", "txt");
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+            "text/csv", "application/vnd.ms-excel", "text/plain", "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
     // "8월21일" · "2026년 8월 21일" — 한글 표기는 뜻이 분명해서 가장 먼저 본다.
     private static final Pattern FILENAME_DATE_KOREAN =
@@ -71,6 +67,7 @@ public class RawRecordService {
     private final JournalEntryRepository journalEntryRepository;
     private final JournalEntrySplitter journalEntrySplitter;
     private final ChildRepository childRepository;
+    private final RawTextExtractor rawTextExtractor;
 
     /**
      * 인증된 사용자의 소속 기관을 찾는다.
@@ -107,7 +104,9 @@ public class RawRecordService {
         }
 
         String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
+        // Office 가 없는 PC·일부 모바일 브라우저는 docx 를 application/octet-stream 으로 보낸다(#113 과 같은 종류).
+        boolean docxAsOctetStream = "docx".equals(extension) && "application/octet-stream".equals(contentType);
+        if (contentType == null || !(ALLOWED_CONTENT_TYPES.contains(contentType) || docxAsOctetStream)) {
             throw new RawRecordValidationException("unsupported content type");
         }
 
@@ -117,12 +116,10 @@ public class RawRecordService {
         // (store()가 곧이어 독자적으로 다시 읽는데, 정말 스트림이 깨졌다면 거기서도 실패해서
         // 기존 RawRecordStorageException 경로로 자연스럽게 처리된다).
         byte[] fileBytes = null;
-        if (TEXT_EXTRACTABLE_EXTENSIONS.contains(extension)) {
-            try {
-                fileBytes = file.getBytes();
-            } catch (IOException e) {
-                log.warn("failed to pre-read raw file bytes for splitting institutionId={}", institutionId, e);
-            }
+        try {
+            fileBytes = file.getBytes();
+        } catch (IOException e) {
+            log.warn("failed to pre-read raw file bytes for splitting institutionId={}", institutionId, e);
         }
 
         String storedPath;
@@ -164,7 +161,7 @@ public class RawRecordService {
         log.info("raw record intake recorded id={} institutionId={} status={}",
                 saved.getId(), institutionId, saved.getStatus());
 
-        splitIntoJournalEntries(saved, fileBytes);
+        splitIntoJournalEntries(saved, extension, fileBytes);
 
         return saved;
     }
@@ -177,15 +174,16 @@ public class RawRecordService {
      * <p>워커가 아니라 요청 안에서 동기로 처리한다 — AI 호출(매칭)은 여기서 하지 않는다,
      * 그건 별도 워커가 PENDING 상태의 JournalEntry를 긁어가서 한다(노션 "기록 분리 기능" 문서).
      */
-    private void splitIntoJournalEntries(RawRecord saved, byte[] fileBytes) {
-        if (fileBytes == null) {
-            // pdf 등 아직 텍스트를 못 뽑는 형식이거나, 사전 읽기 자체가 실패한 경우 —
+    private void splitIntoJournalEntries(RawRecord saved, String extension, byte[] fileBytes) {
+        Optional<String> text = rawTextExtractor.extract(extension, fileBytes);
+        if (text.isEmpty()) {
+            // 텍스트를 못 뽑은 파일(깨진 docx, 사진만 있는 pdf)이거나 사전 읽기가 실패한 경우 —
             // entries가 계속 비어있는 게 정상이다(O-26).
             return;
         }
 
-        String text = new String(fileBytes, StandardCharsets.UTF_8);
-        List<JournalEntrySplitter.SplitEntry> entries = journalEntrySplitter.split(text);
+        List<JournalEntrySplitter.SplitEntry> entries = withoutDocumentPreamble(
+                extension, journalEntrySplitter.split(text.get()));
         LocalDate fallbackDate = resolveFallbackDate(saved, entries);
         try {
             int seq = 1;
@@ -199,6 +197,31 @@ public class RawRecordService {
             // 업로드는 이미 성공했다 — 기록 분리 실패로 업로드 응답까지 실패시키지 않는다.
             log.error("failed to save journal entries for rawRecordId={}", saved.getId(), e);
         }
+    }
+
+    /**
+     * docx·pdf 는 첫 날짜 앞의 머리말을 기록으로 만들지 않는다 (#383).
+     *
+     * <p>문서 형식 일지는 맨 위에 제목과 아동 이름·생년월일 같은 머리말이 있다. 이걸 날짜 없는 기록으로
+     * 만들면 검증이 개인정보로 막고, 선생님이 수정 요청 큐에서 처리해야 한다. 아동 이름·생년월일은 이미
+     * 파일명 힌트로 매칭에 쓰고, 원본 파일에는 그대로 남아 있으니 기록으로 만들 필요가 없다.
+     *
+     * <p>날짜 헤더가 하나도 없는 문서는 그대로 둔다 — 그때는 전체가 한 건이라 버리면 기록이 사라진다.
+     * txt·csv 는 지금처럼 머리말도 첫 날짜를 받아 기록으로 남긴다(코드리뷰 반영 동작).
+     */
+    private static List<JournalEntrySplitter.SplitEntry> withoutDocumentPreamble(
+            String extension, List<JournalEntrySplitter.SplitEntry> entries) {
+        boolean hasDatedEntry = entries.stream().anyMatch(entry -> entry.entryDate() != null);
+        if (!RawTextExtractor.DOCUMENT_EXTENSIONS.contains(extension) || !hasDatedEntry) {
+            return entries;
+        }
+        // 날짜 헤더가 있는 파일에서 날짜 없는 기록은 첫 헤더 앞의 머리말뿐이다. 내용은 남기지 않고 건수만 남긴다.
+        List<JournalEntrySplitter.SplitEntry> dated =
+                entries.stream().filter(entry -> entry.entryDate() != null).toList();
+        if (dated.size() < entries.size()) {
+            log.info("dropped {} preamble block(s) before the first date in a {} file", entries.size() - dated.size(), extension);
+        }
+        return dated;
     }
 
     /**
