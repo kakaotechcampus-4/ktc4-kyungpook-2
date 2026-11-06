@@ -10,10 +10,12 @@ export default [
 
   layout("routes/org/layout.tsx", [
     route("dashboard", "routes/org/dashboard.tsx"),
-    route("upload", "routes/org/upload.tsx"),
-    route("queue/matching", "routes/org/queue-matching.tsx"),
-    route("queue/reinput", "routes/org/queue-reinput.tsx"),
     route("check", "routes/org/check.tsx"),
+    // 옛 주소 → 새 화면 (북마크·알림 링크 보호)
+    route("upload", "routes/org/to-dashboard.tsx", { id: "old-upload" }),
+    route("upload/:id", "routes/org/to-dashboard.tsx", { id: "old-upload-item" }),
+    route("queue/matching", "routes/org/to-check.tsx", { id: "old-queue-matching" }),
+    route("queue/reinput", "routes/org/to-check.tsx", { id: "old-queue-reinput" }),
     route("gate1", "routes/org/gate1.tsx"),
     route("gate2", "routes/org/gate2.tsx"),
     route("children", "routes/org/children.tsx"),
