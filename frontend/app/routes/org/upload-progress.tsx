@@ -184,7 +184,7 @@ function End({ src, label }: { src: string; label: string }) {
         aria-hidden
         width={72}
         height={72}
-        className="size-[72px] rounded-[20px] bg-surface2 object-contain p-1.5"
+        className="size-[72px] object-contain"
       />
       <span className="text-[14px] font-bold text-ink2">{label}</span>
     </span>

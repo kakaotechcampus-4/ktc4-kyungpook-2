@@ -38,7 +38,9 @@ export function InstitutionIcon({ type }: { type?: InstitutionType | null }) {
         종류가 셋뿐이라(school · center · adult-01) 한 번 받으면 끝이다.
       */
       decoding="async"
-      className="size-11 shrink-0 rounded-2xl bg-surface2 object-contain p-0.5"
+      /* 바탕도 모서리도 주지 않는다 — 그림이 이미 둥근 네모를 가지고 있다
+         (frontend/public/img/README.md). 씌우면 네모 안에 네모가 생긴다. */
+      className="size-11 shrink-0 object-contain"
     />
   );
 }

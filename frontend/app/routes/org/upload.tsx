@@ -343,7 +343,7 @@ export default function UploadPage() {
               aria-hidden
               width={84}
               height={84}
-              className="size-21 rounded-[24px] bg-surface2 object-contain p-1"
+              className="size-21 object-contain"
             />
             <span className="flex flex-col gap-1.5">
               <b className="text-[20px] font-extrabold text-ink">{blocked.head}</b>

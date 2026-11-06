@@ -225,7 +225,7 @@ export default function ParentInvitePage() {
               aria-hidden
               width={92}
               height={92}
-              className="size-[92px] rounded-[26px] bg-surface object-contain p-1 shadow-[0_6px_20px_rgba(120,90,40,0.14)]"
+              className="size-[92px] object-contain drop-shadow-[0_6px_16px_rgba(120,90,40,0.2)]"
             />
           </div>
 
@@ -467,7 +467,7 @@ function Sender({ src, label }: { src: string; label: string }) {
         aria-hidden
         width={54}
         height={54}
-        className="size-[54px] rounded-[18px] bg-surface object-contain p-0.5 shadow-[0_3px_12px_rgba(120,90,40,0.1)]"
+        className="size-[54px] object-contain drop-shadow-[0_3px_10px_rgba(120,90,40,0.16)]"
       />
       <span className="text-[12px] font-semibold text-muted">{label}</span>
     </span>
