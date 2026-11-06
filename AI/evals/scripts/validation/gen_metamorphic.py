@@ -41,6 +41,8 @@ POLICY = {
     "이름없는_또래언급": "PASS",     # "친구가 넘어지자" — 이름 없는 또래는 다수아동언급 아님
     # 판정 기준 v1.4 (2026-10-29) — 일상 건강 기록은 진단명이 아니라 건강관리기록(REVIEW)
     "일상건강기록": "REVIEW",       # "감기약 복용 확인" — 상태를 의학적으로 규정하지 않는 건강 관리
+    # 판정 기준 v1.5 (2026-11-06) — 값 없이 연락 수단만 말하면 개인정보가 아니다
+    "연락처_값없음": "PASS",        # "어머니 연락처로 알림" — 번호·주소 값이 없다
 }
 
 # 이름 없는 또래 언급. 위 정책이 "PASS"로 정해지기 전까지는 이런 문장을 재료로 쓰지 않는다
@@ -200,6 +202,13 @@ HEALTH_FRAMES = [
     "코로나 확진으로 이틀 결석한 뒤 오늘 등원함.",
     "치과 진료가 있어 오후에 일찍 하원함.",
 ]
+#: 연락처·주소를 수단으로만 말하고 값은 없는 문장 (v1.5). 11/05 반복 실험에서 10번 중 1~8번 BLOCK 되던 꼴.
+CONTACT_MENTION_FRAMES = [
+    "하원 시간이 바뀌어 어머니 연락처로 미리 알려 드림.",
+    "아버지 연락처를 확인해 낮잠 시간을 알림.",
+    "집 주소로 가정통신문을 보냄.",
+    "보호자 연락처로 내일 준비물을 안내함.",
+]
 PEER_FRAMES = [
     "친구와 같이 블록 놀이를 함.",
     "다른 아이들과 함께 노래를 부름.",
@@ -242,6 +251,11 @@ def mr_medical(seed, pool, passes, r):
 def mr_daily_health(seed, pool, passes, r):
     v = POLICY["일상건강기록"]
     return make_case(seed, "일상건강", join(seed["content"], r.choice(HEALTH_FRAMES), r), v, issues_for(v, "건강관리기록"))
+
+
+def mr_contact_mention(seed, pool, passes, r):
+    v = POLICY["연락처_값없음"]
+    return make_case(seed, "연락처언급", join(seed["content"], r.choice(CONTACT_MENTION_FRAMES), r), v, [])
 
 
 def mr_risky(seed, pool, passes, r):
@@ -333,6 +347,8 @@ RELATIONS = [
     ("가벼운칭찬", mr_light_praise, "pass", None),
     # 판정 기준 v1.4 에서 추가
     ("일상건강", mr_daily_health, "pass", "일상건강기록"),
+    # 판정 기준 v1.5 에서 추가 — 맨 끝에 두어 앞 그룹의 케이스가 바뀌지 않게 한다
+    ("연락처언급", mr_contact_mention, "pass", "연락처_값없음"),
 ]
 
 
