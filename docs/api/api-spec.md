@@ -31,7 +31,7 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 | 4-1 | **역할 구분** | **확정·구현됨** — 카카오 로그인 뒤 **회원가입에서 사용자가 직접 선택**합니다(§2.6). 기관은 기관명·유형·사업자등록번호를 함께 입력하며, 사업자등록번호는 형식만 검사합니다 | 로그인 직후 `/auth/me`의 `signupCompleted`가 `false`면 역할 선택 화면으로 보냅니다. sessionStorage로 역할을 정하던 방식은 이 흐름으로 바꿔야 합니다 |
 | 5 | **파이프라인 진행 상태** | 프론트는 `setTimeout` 시뮬레이션 | 폴링 / SSE / WebSocket 중 선택. 폴링이면 권장 주기와 상태 조회 엔드포인트가 필요합니다 |
 | 6 | **페이지네이션** | 미정 | 현재 프론트는 전체 조회를 가정합니다. 큐·타임라인·일지 목록에 커서 또는 오프셋 페이징이 필요하면 형식을 정해주세요 |
-| 7 | **파일 업로드** | 현재 구현: `POST /api/v1/raw-records` multipart, **파일 1개**(`file`), 최대 **20MB**, 허용 확장자 `csv` · `txt` · `pdf` (§4.3) — **결정됨**(2026-09-29): jpg/png/hwp는 이번 학기 범위 밖으로 제외 | 다중 업로드, `docx` 추가 여부는 여전히 논의 필요(다음 이슈에서 진행 예정) |
+| 7 | **파일 업로드** | 현재 구현: `POST /api/v1/raw-records` multipart, **파일 1개**(`file`), 최대 **20MB**, 허용 확장자 `csv` · `txt` · `pdf` · `docx` (§4.3, docx·pdf 텍스트 추출은 #383) — **결정됨**(2026-09-29): jpg/png/hwp는 이번 학기 범위 밖으로 제외 | 다중 업로드는 프론트가 파일마다 한 번씩 보내는 방식으로 처리 중 |
 | 8 | **RawRecord 응답 형식** | 현재 구현 응답이 프론트 `RawRecord` 타입과 다릅니다 (§3 RawRecord의 "현재 구현" 참고) | 프론트 `RawRecord` 타입(§3.2)과 매핑표 합의 필요 |
 
 ---
@@ -653,9 +653,9 @@ O-15 ~ O-19 공통 오류:
 >
 > | 항목 | 값 |
 > | --- | --- |
-> | 허용 확장자 | `csv` · `txt` · `pdf` (2026-09-29, 이슈 #67로 `jpg`·`jpeg`·`png`·`hwp` 제외 — jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려워 이번 학기 범위 밖) |
-> | 허용 Content-Type | `text/csv` · `application/vnd.ms-excel`(Windows가 csv에 흔히 붙이는 값, #113) · `text/plain` · `application/pdf` |
-> | 기록 분리(텍스트 추출) | `csv`·`txt`만 지원. `pdf`는 업로드는 되지만 아직 `JournalEntry`로 안 쪼개짐(`entries: []` 유지) — 다음 이슈에서 추가 |
+> | 허용 확장자 | `csv` · `txt` · `pdf` · `docx` (`docx`는 #383에서 추가. 2026-09-29, 이슈 #67로 `jpg`·`jpeg`·`png`·`hwp` 제외 — jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려워 이번 학기 범위 밖) |
+> | 허용 Content-Type | `text/csv` · `application/vnd.ms-excel`(Windows가 csv에 흔히 붙이는 값, #113) · `text/plain` · `application/pdf` · `application/vnd.openxmlformats-officedocument.wordprocessingml.document`(docx) |
+> | 기록 분리(텍스트 추출) | 네 형식 모두 지원(#383). `docx`는 문단과 표 칸을 문서 순서대로 한 줄씩, `pdf`는 글자 위치 순서로 뽑습니다. `docx`·`pdf`는 **첫 날짜 앞 머리말(제목·아동 이름·생년월일)을 기록으로 만들지 않습니다**(날짜가 하나도 없으면 전체를 한 건으로 둡니다). 텍스트를 못 뽑는 파일(깨진 docx, 암호 걸린 pdf, 사진만 있는 pdf)은 업로드는 성공하고 `entries: []`로 남습니다 |
 > | 최대 크기 | 20MB (Caddy는 25MiB에서 먼저 차단) |
 > | 성공 | `201 Created` |
 > | 오류 | 확장자·형식·파일명 오류 `400 RAW_RECORD_INVALID_REQUEST`, 용량 초과 `413 RAW_RECORD_FILE_TOO_LARGE`, 저장 실패 `500 RAW_RECORD_STORAGE_FAILED` |
