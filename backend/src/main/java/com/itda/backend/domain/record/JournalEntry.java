@@ -323,6 +323,24 @@ public class JournalEntry {
         this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.VALIDATED;
     }
 
+    /**
+     * 교사가 검토에서 요약 실패 일지를 [다시 요약]했다 (#369). 요약 전으로 돌아가 워커가 다시 집는다. 횟수 제한은 없다 —
+     * 또 실패하면 다시 요약 실패로 검토에 뜬다.
+     */
+    public void retrySummary() {
+        requireStatus(JournalEntryStatus.SUMMARY_FAILED);
+        this.status = JournalEntryStatus.VALIDATED;
+    }
+
+    /**
+     * 교사가 검토에서 요약 실패 일지를 [요약 없이 마무리]했다 (#369). 요약할 내용 없음 확인(#244)처럼 끝내되, 가리킬
+     * 요약이 없어 요약 행은 만들지 않는다. 아동 맥락·보호자·인사이트로 가지 않는다.
+     */
+    public void closeFailedSummary() {
+        requireStatus(JournalEntryStatus.SUMMARY_FAILED);
+        this.status = JournalEntryStatus.COMPLETED;
+    }
+
     /** 이 일지가 든 요약이 승인됐다. 다시 요약 대상이 되지 않는다. */
     public void completeGate1() {
         requireStatus(JournalEntryStatus.GATE1_PENDING);

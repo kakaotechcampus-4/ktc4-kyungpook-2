@@ -354,6 +354,14 @@ export interface BlockedItem {
 export interface SummaryClaim {
   index: number;
   text: string;
+  /** AI 가 든 근거 일지와 원문 인용. 선생님이 고치거나 새로 쓴 문장은 빈 목록 */
+  evidence?: ClaimEvidence[];
+}
+
+/** 요약 문장 근거 하나 — 어느 일지의 어떤 원문 구절인지 */
+export interface ClaimEvidence {
+  journalEntryId: string;
+  quote: string;
 }
 
 /**

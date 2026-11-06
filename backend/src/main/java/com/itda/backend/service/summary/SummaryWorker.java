@@ -11,6 +11,7 @@ import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.summary.SummaryNoGroundedClaimsException;
 import com.itda.backend.service.agent.AgentFailureReasons;
+import com.itda.backend.service.agent.AiAvailability;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,6 +34,7 @@ public class SummaryWorker {
     private final SummaryAgentClient client;
     private final SummaryResultRecorder recorder;
     private final int batchSize;
+    private final AiAvailability availability;
 
     /** 앱이 켜진 뒤 첫 실행인지. 되돌리기를 여기서 하는 이유는 MatchingWorker 와 같다 (집기와 겹치지 않게). */
     private boolean released;
@@ -44,11 +46,13 @@ public class SummaryWorker {
             SummaryService summaryService,
             SummaryAgentClient client,
             SummaryResultRecorder recorder,
-            SummaryProperties properties) {
+            SummaryProperties properties,
+            AiAvailability availability) {
         this.summaryService = summaryService;
         this.client = client;
         this.recorder = recorder;
         this.batchSize = properties.worker().batchSize();
+        this.availability = availability;
     }
 
     @Scheduled(fixedDelayString = "${app.summary.worker.delay-ms}")
@@ -82,6 +86,7 @@ public class SummaryWorker {
 
     private boolean agentAvailable() {
         boolean available = client.isAvailable();
+        availability.reportHealth(available);
         if (available == agentDown) {
             if (available) {
                 log.info("summary agent is back");
@@ -104,6 +109,7 @@ public class SummaryWorker {
             }
             SummaryAgentRequest request = summaryService.prepareRequest(claimed);
             SummaryAgentReply reply = client.summarize(request);
+            availability.reportCallSucceeded();
             recorder.record(claimed, request, reply);
             return Outcome.DONE;
         } catch (RuntimeException e) {
@@ -114,6 +120,8 @@ public class SummaryWorker {
             if (e instanceof AiAgentUnavailableException) {
                 log.warn("summary agent unavailable, releasing group={} journalEntryIds={}",
                         claimed.group(), claimed.journalEntryIds(), e);
+                // /health 는 LLM 까지 보지 않으므로 여기서 멈춘 것을 AI 장애 배너에 따로 알린다 (#370).
+                availability.reportCallGaveUp();
                 return Outcome.AGENT_DOWN;
             }
             if (e instanceof SummaryNoGroundedClaimsException) {

@@ -5,11 +5,13 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
@@ -32,6 +34,7 @@ import com.itda.backend.repository.record.InProgressKey;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.SummaryCandidate;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,14 +58,17 @@ public class SummaryService {
     private final OrganizationRepository organizationRepository;
     private final SummaryResultRepository summaryResultRepository;
     private final SummaryRunRequests runRequests;
+    private final ConsentStateReader consentStateReader;
+    private final SummaryProperties properties;
     private final Clock clock;
 
     /**
      * 요약할 준비가 된 묶음을 집어 가며 그 안의 일지를 SUMMARIZING 으로 바꾼다 (AI/summary/CRITERIA.md §5).
      *
-     * <p>준비 조건은 둘이다. 교사가 그 묶음에 [요약]을 눌렀고({@link SummaryRunRequests}), 같은 기관·같은 날짜에
-     * 매칭·검증 중인 일지가 없어야 한다. 누르지 않은 묶음은 요약하지 않는다 — 자동 요약은 없다 (#181).
-     * 요약할 일지가 없게 된 요청은 이때 거둔다.
+     * <p>준비 조건: 같은 기관·같은 날짜에 매칭·검증 중인 일지가 없어야 한다. 자동 요약({@link SummaryProperties#autoRun})이
+     * 켜져 있으면 그 기관 동의가 켜진 아이 묶음을 바로 집는다 (#369). 동의가 꺼진 아이를 집으면 결과를 남길 때 되돌려지고
+     * 다음 차례에 또 집히므로 미리 거른다. 꺼져 있으면 교사가 그 묶음에 [요약]을 눌렀어야 한다({@link SummaryRunRequests},
+     * #181) — 그때 동의는 요청을 받을 때 본다. 요약할 일지가 없게 된 요청은 이때 거둔다.
      *
      * <p>새로 검증을 통과한 일지(VALIDATED)가 있는 묶음만 집는다. 그 묶음의 최신 판이 아직 Gate 1 대기면, 그 판에 든
      * 일지(GATE1_PENDING)도 새 일지와 함께 다시 요약하도록 같이 담는다. 보류된 일지(GATE1_HELD)와 보류 해제된 옛 판의
@@ -80,6 +86,7 @@ public class SummaryService {
         Map<SummaryGroup, List<SummaryCandidate>> groups = groupCandidates(
                 journalEntryRepository.findSummaryCandidates(List.of(JournalEntryStatus.VALIDATED)));
         cancelStaleRequests(requests, groups.keySet(), busy);
+        Set<SummaryGroup> consented = properties.autoRun() ? consentedGroups(groups.keySet()) : Set.of();
 
         List<ClaimedSummaryGroup> claimed = new ArrayList<>();
         for (Map.Entry<SummaryGroup, List<SummaryCandidate>> e : groups.entrySet()) {
@@ -88,7 +95,7 @@ public class SummaryService {
             }
             SummaryGroup group = e.getKey();
             List<SummaryCandidate> members = e.getValue();
-            if (!isReady(group, members, busy, requests.keySet())) {
+            if (!isReady(group, members, busy, properties.autoRun() ? consented : requests.keySet())) {
                 continue;
             }
             List<Long> pending = findLatestPendingEntryIds(group);
@@ -148,14 +155,30 @@ public class SummaryService {
         return groups;
     }
 
+    /**
+     * @param allowed 집어도 되는 묶음. 자동 요약이면 동의가 켜진 묶음, 아니면 [요약]을 누른 묶음이다
+     */
     private boolean isReady(SummaryGroup group, List<SummaryCandidate> members, Set<InProgressKey> busy,
-            Set<SummaryGroup> requested) {
+            Set<SummaryGroup> allowed) {
         // 기관·날짜만 같아도 기다린다 — 매칭 전 일지는 아동이 비어 있어 이 아이 일지인지 아직 모른다.
         String institutionId = members.get(0).institutionId();
         if (busy.contains(new InProgressKey(institutionId, group.entryDate()))) {
             return false;
         }
-        return requested.contains(group);
+        return allowed.contains(group);
+    }
+
+    /** 묶음 중 그 기관 동의가 켜진 아이의 묶음 (#332). 기관마다 한 번씩 묻는다. */
+    private Set<SummaryGroup> consentedGroups(Set<SummaryGroup> groups) {
+        Map<Long, List<SummaryGroup>> byInstitution = groups.stream()
+                .collect(Collectors.groupingBy(SummaryGroup::institutionId));
+        Set<SummaryGroup> consented = new HashSet<>();
+        byInstitution.forEach((institutionId, members) -> {
+            Set<Long> granted = consentStateReader.grantedChildIds(
+                    members.stream().map(SummaryGroup::childId).collect(Collectors.toSet()), institutionId);
+            members.stream().filter(g -> granted.contains(g.childId())).forEach(consented::add);
+        });
+        return consented;
     }
 
     /**

@@ -26,11 +26,13 @@ import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.summary.SummaryTargetException;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.summary.SummaryRunRequestRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 
 /** 요약 요청 조립 — 묶음의 일지들, 아동·기관 이름, 본문에 이름이 나온 다른 아이들. */
 @DataJpaTest
@@ -60,6 +62,9 @@ class SummaryServicePrepareTest {
     @Autowired
     private SummaryRunRequestRepository summaryRunRequestRepository;
 
+    @Autowired
+    private SharingConsentRepository sharingConsentRepository;
+
     private SummaryService summaryService;
     private Organization school;
     private Long rawRecordId;
@@ -71,6 +76,7 @@ class SummaryServicePrepareTest {
     void setUp() {
         summaryService = new SummaryService(journalEntryRepository, matchingResultRepository, childRepository,
                 organizationRepository, summaryResultRepository, new SummaryRunRequests(summaryRunRequestRepository),
+                new ConsentStateReader(sharingConsentRepository), new SummaryProperties(null, null, false),
                 Clock.systemDefaultZone());
         school = em.persist(Organization.of("햇살초등학교", OrganizationType.SCHOOL, "1234567890"));
         rawRecordId = em.persist(new RawRecord(String.valueOf(school.getId()), "school.pdf", "kept/school.pdf",

@@ -33,11 +33,13 @@ import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimEvidence;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
 
@@ -59,6 +61,10 @@ class SummaryGate1QueryServiceTest {
 
     @MockitoBean
     private UserService userService;
+
+    /** 기본은 자동 요약 꺼짐(mock 의 false). 켜진 동작은 테스트가 직접 켠다 (#369). */
+    @MockitoBean
+    private SummaryProperties summaryProperties;
 
     @Autowired
     private EntityManagerFactory entityManagerFactory;
@@ -217,7 +223,39 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         // index 는 결정(O-31) 카드에 그대로 돌려보내는 번호다 — claims 배열 순서다.
-        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다."), new ClaimCard(1, "낮잠을 잤다."));
+        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다.", List.of()),
+                new ClaimCard(1, "낮잠을 잤다.", List.of()));
+    }
+
+    @Test
+    void 요약_문장마다_AI가_든_근거_일지와_인용을_보여준다() {
+        JournalEntry blocks = entry("블록을 높이 쌓았다.");
+        summary(ORG, DATE, "[{\"text\":\"블록을 쌓았다.\",\"evidence\":["
+                + "{\"journal_entry_id\":" + blocks.getId() + ",\"quote\":\"블록을 높이 쌓았다\","
+                + "\"span\":{\"start\":0,\"end\":10}}]}]", List.of(blocks), List.of());
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다.",
+                List.of(new ClaimEvidence(blocks.getId(), "블록을 높이 쌓았다"))));
+    }
+
+    @Test
+    void 선생님이_고치거나_새로_쓴_문장은_근거를_비워_보여준다() {
+        // 고친 문장은 AI 근거가 남아 있어도 글이 달라 인용이 맞지 않고, 새로 쓴 문장의 근거는 그 문장 자신이다.
+        JournalEntry blocks = entry("블록을 높이 쌓았다.");
+        String evidence = "[{\"journal_entry_id\":" + blocks.getId() + ",\"quote\":\"블록\","
+                + "\"span\":{\"start\":0,\"end\":2}}]";
+        summary(ORG, DATE, "[{\"text\":\"블록을 아주 높이 쌓았다.\",\"evidence\":" + evidence + ",\"source\":\"EDITED\"},"
+                + "{\"text\":\"웃었다.\",\"evidence\":[{\"journal_entry_id\":null,\"quote\":\"웃었다.\"}],"
+                + "\"source\":\"TEACHER\"},"
+                + "{\"text\":\"블록을 쌓았다.\",\"evidence\":" + evidence + ",\"source\":\"AI\"}]",
+                List.of(blocks), List.of());
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.claims()).extracting(ClaimCard::evidence).containsExactly(
+                List.of(), List.of(), List.of(new ClaimEvidence(blocks.getId(), "블록")));
     }
 
     @Test
@@ -374,6 +412,27 @@ class SummaryGate1QueryServiceTest {
         // 매칭 전이라 누구 일지인지 모른다. 이 아이 일지일 수 있다.
         summary(ORG, DATE, "[]", List.of(), List.of());
         requestRun(DATE);
+        em.persistAndFlush(JournalEntry.of(schoolRecord(), DATE, "누구 기록인지 모름", 3));
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
+    }
+
+    @Test
+    void 자동_요약이_켜져_있으면_누르지_않아도_반영되지_않은_일지가_있을_때_처리_중이다() {
+        given(summaryProperties.autoRun()).willReturn(true);
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isFalse();
+
+        // 워커가 곧 이 일지까지 묶어 같은 판을 다시 만든다.
+        validatedInSameGroup();
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
+    }
+
+    @Test
+    void 자동_요약이_켜져_있으면_누르지_않아도_같은_날_매칭_전_일지가_있을_때_처리_중이다() {
+        given(summaryProperties.autoRun()).willReturn(true);
+        summary(ORG, DATE, "[]", List.of(), List.of());
         em.persistAndFlush(JournalEntry.of(schoolRecord(), DATE, "누구 기록인지 모름", 3));
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();

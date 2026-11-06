@@ -1,6 +1,7 @@
 package com.itda.backend.repository.record;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -87,6 +88,16 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<Long> findGroupEntryIds(@Param("status") JournalEntryStatus status, @Param("childId") Long childId,
             @Param("entryDate") LocalDate entryDate, @Param("institutionId") String institutionId);
 
+    /**
+     * 한 기관의 주어진 상태 일지를 묶음(날짜·아동) 순으로. 아동이 정해진 일지만 — 요약 실패 목록이 묶음으로 보여준다 (#369).
+     */
+    @Query("select e from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where e.status = :status and r.institutionId = :institutionId and e.childId is not null "
+            + "and e.deletedAt is null "
+            + "order by e.entryDate, e.childId, e.id")
+    List<JournalEntry> findByInstitutionAndStatus(@Param("institutionId") String institutionId,
+            @Param("status") JournalEntryStatus status);
+
     /** 한 요약(판)에 든 일지 중 주어진 상태인 것의 id. */
     @Query("select e.id from JournalEntry e "
             + "where e.summaryId = :summaryId and e.status = :status and e.deletedAt is null "
@@ -162,4 +173,18 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and e.entryDate is not null and e.deletedAt is null")
     List<InProgressKey> findInProgressKeys(@Param("statuses") Collection<JournalEntryStatus> statuses);
+
+    /** 그 기관에서 {@code since} 뒤로 나눠 만든 일지 수 — 오늘 AI가 한 일의 "기록 나누기" (#370). 지운 일지도 센다. */
+    @Query("select count(e) from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where r.institutionId = :institutionId and e.createdAt >= :since")
+    long countCreatedSince(@Param("institutionId") String institutionId, @Param("since") LocalDateTime since);
+
+    /** 대시보드 진행 현황(#370). 한 기관의 살아 있는 일지 중 주어진 상태인 것을 날짜·id 순으로 — 요청마다 한 번 읽는다. */
+    @Query("select new com.itda.backend.repository.record.PipelineEntry("
+            + "e.id, e.childId, e.entryDate, e.status, e.failureStage) "
+            + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where r.institutionId = :institutionId and e.status in :statuses and e.deletedAt is null "
+            + "order by e.entryDate, e.id")
+    List<PipelineEntry> findPipelineEntries(@Param("institutionId") String institutionId,
+            @Param("statuses") Collection<JournalEntryStatus> statuses);
 }

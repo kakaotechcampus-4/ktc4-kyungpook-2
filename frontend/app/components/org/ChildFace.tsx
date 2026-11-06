@@ -14,7 +14,9 @@ export function ChildFace({ size = 40 }: { size?: number }) {
       width={size}
       height={size}
       style={{ width: size, height: size }}
-      className="shrink-0 rounded-full bg-reviewsoft object-cover"
+      /* 동그라미로 자르지 않는다. 그림이 가진 둥근 네모의 모서리가 잘려
+         위아래가 뭉툭해진다 (frontend/public/img/README.md). */
+      className="shrink-0 object-contain"
     />
   );
 }

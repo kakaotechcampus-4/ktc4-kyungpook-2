@@ -120,6 +120,55 @@ def _is_subject_name_only(quote: str, subject_name: str | None) -> bool:
     return any(q == form + tail for form in forms for tail in _NAME_TAILS)
 
 
+#: 연락처·주소를 "말하는" 낱말. 이것과 이름·가족 호칭만 있으면 값이 없는 언급이다.
+_MENTION_WORDS = ("휴대폰번호", "전화번호", "연락처", "집주소", "주소", "번호", "이메일", "메일")
+_RELATION_WORDS = ("부모님", "어머님", "아버님", "어머니", "아버지", "할머니", "할아버지", "보호자",
+                   "엄마", "아빠", "가정", "집")
+_PARTICLES = ("으로", "께서", "에게", "한테", "로", "께", "를", "을", "가", "이", "는", "은", "도", "의", "에", "와", "과")
+_MENTION_ONLY = re.compile(
+    r"^(?:(?:%s)(?:%s)?)*(?:(?:%s)(?:%s)?)+$" % (
+        "|".join(_RELATION_WORDS), "|".join(_PARTICLES), "|".join(_MENTION_WORDS), "|".join(_PARTICLES))
+)
+#: 문장에 이런 게 있으면 값이 적혀 있을 수 있다 — 숫자, 이메일, 주소 같은 낱말.
+#: 넓게 잡는다. 여기 걸리면 모델 판정을 그대로 둔다 (놓치는 쪽보다 막는 쪽이 안전하다).
+_VALUE_HINT = re.compile(r"\d|@|아파트|빌라|번지|호수|[가-힣](?:시|구|군|동|읍|면|리)(?=[\s,.에]|$)")
+
+
+def _is_mention_only(content: str, quote: str, subject_name: str | None) -> bool:
+    """
+    모델이 개인정보라고 가리킨 곳이 "(아이 이름) (가족 호칭) 연락처·주소" 처럼 값 없는 언급뿐인가.
+
+    "우진이 어머니 연락처로 하원 시간을 알렸다" 는 연락처로 연락했다는 수단이지 번호가 아니다.
+    그런데 모델이 "연락처" 낱말을 보고 같은 문장을 10번 중 1~8번 BLOCK 했다 (11/05, "집 주소로" 80%).
+    두 조건을 모두 만족할 때만 그 판정을 버린다.
+      1. 가리킨 말에서 아이 이름·가족 호칭·연락처 낱말·조사를 빼면 남는 게 없다
+      2. 그 문장 어디에도 값일 수 있는 것(숫자, @, 주소 같은 낱말)이 없다
+    값이 적힌 문장은 모델이 앞부분만 짚어도 그대로 BLOCK 된다. 전화번호는 정규식이 따로 잡는다.
+    """
+    q = re.sub(r"\s+", "", quote or "")
+    if not q:
+        return False
+    if subject_name:
+        name = re.sub(r"\s+", "", subject_name)
+        forms = [name] + ([name[1:]] if len(name) >= 3 else [])
+        heads = sorted((f + t for f in forms for t in _NAME_TAILS if t), key=len, reverse=True) + forms
+        for h in heads:
+            if q.startswith(h) and len(q) > len(h):
+                q = q[len(h):]
+                break
+    if not _MENTION_ONLY.match(q):
+        return False
+
+    at = (content or "").find((quote or "").strip())
+    if at < 0:
+        return False  # 원문에서 못 찾으면 판단하지 않는다 — 그대로 둔다
+    start = max(content.rfind(".", 0, at), content.rfind("\n", 0, at)) + 1
+    ends = [i for i in (content.find(".", at), content.find("\n", at)) if i >= 0]
+    sentence = content[start:min(ends) if ends else len(content)]
+    rest = sentence.replace(quote.strip(), " ")
+    return not _VALUE_HINT.search(rest)
+
+
 def reflect(state: dict) -> dict:
     """반영: 최종 검사.
 
@@ -178,6 +227,8 @@ def reflect(state: dict) -> dict:
         quote = candidate.get("evidence_quote", "")
         if issue_type == "개인정보표현" and _is_subject_name_only(quote, state.get("subject_name")):
             continue  # 주인공 이름을 개인정보로 본 판정은 버린다. 글은 그대로 둔다
+        if issue_type == "개인정보표현" and _is_mention_only(content, quote, state.get("subject_name")):
+            continue  # "연락처로 알렸다" 처럼 값 없는 언급은 개인정보가 아니다. 글은 그대로 둔다
         spans = spans_for_quotes(content, [quote])
         if not spans:
             continue  # 원문에서 못 찾은 근거는 신뢰하지 않음

@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.dto.request.matching.MatchingAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
@@ -46,13 +47,15 @@ class MatchingWorkerTest {
     private MatchingAgentClient client;
     @Mock
     private MatchingResultRecorder recorder;
+    @Mock
+    private AiAvailability availability;
 
     private MatchingWorker worker;
     private final MutableClock clock = new MutableClock(LocalDateTime.of(2026, 10, 14, 10, 0));
 
     @BeforeEach
     void setUp() {
-        worker = new MatchingWorker(matchingService, client, recorder, PROPERTIES, AGENT_DOWN, clock);
+        worker = new MatchingWorker(matchingService, client, recorder, PROPERTIES, AGENT_DOWN, clock, availability);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -77,6 +80,8 @@ class MatchingWorkerTest {
         order.verify(recorder).record(1L, reply1);
         order.verify(client).match(requestFor(2L));
         order.verify(recorder).record(2L, reply2);
+        // 호출이 응답을 받았다 — LLM 이 살아 있으니 AI 장애 배너를 내린다 (#370).
+        verify(availability, times(2)).reportCallSucceeded();
     }
 
     @Test
@@ -132,6 +137,7 @@ class MatchingWorkerTest {
                 .withBean(MatchingProperties.class, () -> PROPERTIES)
                 .withBean(AgentDownProperties.class, () -> AGENT_DOWN)
                 .withBean(Clock.class, () -> clock)
+                .withBean(AiAvailability.class, () -> mock(AiAvailability.class))
                 .withUserConfiguration(MatchingWorker.class);
 
         runner.withPropertyValues("app.matching.worker.enabled=false")
@@ -160,6 +166,7 @@ class MatchingWorkerTest {
 
         verify(matchingService, never()).claimPending(anyInt());
         verify(client, never()).match(any());
+        verify(availability).reportHealth(false);
     }
 
     @Test
@@ -175,6 +182,8 @@ class MatchingWorkerTest {
         verify(matchingService).release(List.of(2L, 3L));
         verify(matchingService, never()).prepareRequest(2L);
         verify(matchingService, never()).prepareRequest(3L);
+        // /health 는 LLM 까지 보지 않아 이 멈춤을 따로 알려야 AI 장애 배너에 뜬다 (#370).
+        verify(availability).reportCallGaveUp();
     }
 
     @Test

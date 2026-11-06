@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import com.itda.backend.dto.request.matching.MatchingAgentRequest;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.service.agent.AgentDownProperties;
+import com.itda.backend.service.agent.AiAvailability;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -42,6 +43,7 @@ public class MatchingWorker {
     private final int maxReleases;
     private final Duration pause;
     private final Clock clock;
+    private final AiAvailability availability;
 
     /**
      * 앱이 켜진 뒤 첫 실행인지. 멈춘 일지 되돌리기를 ApplicationReadyEvent 가 아니라 여기서 하는 이유는,
@@ -62,7 +64,8 @@ public class MatchingWorker {
             MatchingResultRecorder recorder,
             MatchingProperties properties,
             AgentDownProperties agentDown,
-            Clock clock) {
+            Clock clock,
+            AiAvailability availability) {
         this.matchingService = matchingService;
         this.client = client;
         this.recorder = recorder;
@@ -70,6 +73,7 @@ public class MatchingWorker {
         this.maxReleases = agentDown.maxReleases();
         this.pause = agentDown.pause();
         this.clock = clock;
+        this.availability = availability;
     }
 
     @Scheduled(fixedDelayString = "${app.matching.worker.delay-ms}")
@@ -104,6 +108,7 @@ public class MatchingWorker {
 
     private boolean agentAvailable() {
         boolean available = client.isAvailable();
+        availability.reportHealth(available);
         if (available == agentDown) {
             if (available) {
                 log.info("matching agent is back");
@@ -119,6 +124,7 @@ public class MatchingWorker {
         try {
             MatchingAgentRequest request = matchingService.prepareRequest(journalEntryId);
             MatchingAgentReply reply = client.match(request);
+            availability.reportCallSucceeded();
             recorder.record(journalEntryId, reply);
             return Outcome.DONE;
         } catch (RuntimeException e) {
@@ -128,6 +134,8 @@ public class MatchingWorker {
             }
             if (e instanceof AiAgentUnavailableException) {
                 log.warn("matching agent unavailable journalEntryId={}", journalEntryId, e);
+                // /health 는 LLM 까지 보지 않으므로 여기서 멈춘 것을 AI 장애 배너에 따로 알린다 (#370).
+                availability.reportCallGaveUp();
                 return releaseOrFail(journalEntryId);
             }
             log.warn("matching failed journalEntryId={}", journalEntryId, e);

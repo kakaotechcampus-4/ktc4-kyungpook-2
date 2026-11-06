@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -232,5 +233,36 @@ class JournalEntryRepositoryTest {
 
         assertThat(journalEntryRepository.findIdsBySummaryIdAndStatus(50L, JournalEntryStatus.GATE1_PENDING))
                 .containsExactly(kept.getId());
+    }
+
+    /** 대시보드 진행 현황(#370)이 읽는 일지 — 우리 기관의 살아 있는, 주어진 상태의 일지만 날짜·id 순으로. */
+    @Test
+    void 진행_현황은_우리_기관의_살아_있는_주어진_상태_일지만_읽는다() {
+        Long ours = rawRecordOf("1");
+        LocalDate date = LocalDate.of(2026, 11, 5);
+        JournalEntry later = JournalEntry.of(ours, date.plusDays(1), "블록", 1);
+        journalEntryRepository.saveAndFlush(later);
+        JournalEntry blocked = JournalEntry.of(ours, date, "낮잠", 2);
+        blocked.startMatching();
+        blocked.confirmMatch(8L);
+        blocked.startValidating();
+        blocked.blockValidation();
+        journalEntryRepository.saveAndFlush(blocked);
+        JournalEntry deleted = JournalEntry.of(ours, date, "삭제", 3);
+        deleted.delete();
+        journalEntryRepository.saveAndFlush(deleted);
+        JournalEntry excluded = JournalEntry.of(ours, date, "제외", 4);
+        excluded.startMatching();
+        excluded.requestMatchReview();
+        excluded.exclude();
+        journalEntryRepository.saveAndFlush(excluded);
+        journalEntryRepository.saveAndFlush(JournalEntry.of(rawRecordOf("2"), date, "남의 기관", 1));
+
+        List<PipelineEntry> entries = journalEntryRepository.findPipelineEntries("1",
+                Set.of(JournalEntryStatus.PENDING, JournalEntryStatus.VALIDATION_BLOCKED));
+
+        assertThat(entries).containsExactly(
+                new PipelineEntry(blocked.getId(), 8L, date, JournalEntryStatus.VALIDATION_BLOCKED, null),
+                new PipelineEntry(later.getId(), null, date.plusDays(1), JournalEntryStatus.PENDING, null));
     }
 }

@@ -16,7 +16,8 @@ import com.itda.backend.repository.summary.SummaryRunRequestRepository;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 교사가 누른 [요약] 요청({@link SummaryRunRequest}). 요약은 아직 처리하지 않은 요청이 있는 묶음만 한다.
+ * 교사가 누른 [요약] 요청({@link SummaryRunRequest}). 자동 요약이 꺼져 있으면 아직 처리하지 않은 요청이 있는 묶음만
+ * 요약한다. 켜져 있으면 요청이 없어도 요약하고, 요청은 처리 표시만 따라간다 ({@link SummaryProperties#autoRun}).
  *
  * <p>워커는 집을 때가 아니라 결과를 남길 때 처리 표시를 한다. 집을 때 하면 AI 장애로 묶음이 되돌아갔을 때 요청까지
  * 사라진다. 처리한 요청도 지우지 않는다 (DB 스키마 §3.2).
