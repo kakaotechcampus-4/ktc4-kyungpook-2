@@ -76,7 +76,7 @@ class RawRecordServiceTest {
         // JournalEntrySplitter는 의존성 없는 순수 로직이라 목 대신 실제 구현을 쓴다.
         rawRecordService = new RawRecordService(
                 rawRecordRepository, rawRecordRecorder, rawFileStorage, userService, journalEntryRepository,
-                new JournalEntrySplitter(), childRepository);
+                new JournalEntrySplitter(), childRepository, new RawTextExtractor());
     }
 
     /** 보호자처럼 기관 소속이 아닌 사용자는 파일이 저장소에 올라가기 전에 막혀야 한다. */
@@ -334,9 +334,79 @@ class RawRecordServiceTest {
         assertThat(saved.get(1).getContent()).isEqualTo("미술 시간에 그림을 완성함.");
     }
 
-    /** pdf처럼 아직 텍스트를 못 뽑는 형식은 기록 분리를 건너뛴다 — entries가 비는 게 정상이다. */
+    /** docx 일지는 표의 날짜 칸으로 나누고, 첫 날짜 앞 머리말(이름·생년월일)은 기록으로 만들지 않는다 (#383). */
     @Test
-    void ingest_skipsSplittingForNonExtractableExtension() throws Exception {
+    void ingest_splitsDocxTableAndDropsPreambleBeforeFirstDate() throws Exception {
+        byte[] docx = RawTextExtractorTest.docx(
+                List.of("관찰일지", "아동: 김하늘 / 생년월일: 2018-03-02"),
+                List.of(List.of("생년월일", "2018-03-02", ""),
+                        List.of("날짜", "출처기관", "관찰 내용"),
+                        List.of("2026-09-15", "센터", "손을 잡고 30까지 세자 편안해짐"),
+                        List.of("2026-09-16", "센터", "블록을 혼자 쌓음")));
+        MockMultipartFile file = new MockMultipartFile("file", "note.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx);
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.docx");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository, times(2)).save(captor.capture());
+        List<JournalEntry> saved = captor.getAllValues();
+        assertThat(saved.get(0).getEntryDate()).isEqualTo(LocalDate.of(2026, 9, 15));
+        assertThat(saved.get(0).getContent()).isEqualTo("센터 손을 잡고 30까지 세자 편안해짐");
+        assertThat(saved.get(1).getEntryDate()).isEqualTo(LocalDate.of(2026, 9, 16));
+        assertThat(saved).noneMatch(entry -> entry.getContent().contains("생년월일"));
+    }
+
+    /** Office 가 없는 PC 는 docx 를 application/octet-stream 으로 보낸다 — docx 일 때만 받아 준다. */
+    @Test
+    void ingest_acceptsDocxSentAsOctetStream() throws Exception {
+        byte[] docx = RawTextExtractorTest.docx(List.of("2026-09-15 블록을 혼자 쌓음"), List.of());
+        MockMultipartFile file = new MockMultipartFile("file", "note.docx", "application/octet-stream", docx);
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.docx");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        verify(journalEntryRepository).save(any());
+    }
+
+    /** octet-stream 예외는 docx 에만 준다 — 다른 확장자는 여전히 막는다. */
+    @Test
+    void ingest_rejectsOctetStreamForNonDocx() {
+        MockMultipartFile file = new MockMultipartFile("file", "note.txt", "application/octet-stream", "x".getBytes());
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        assertThatThrownBy(() -> rawRecordService.ingest(ORG_USER_ID, file))
+                .isInstanceOf(RawRecordValidationException.class);
+    }
+
+    /** 날짜가 하나도 없는 docx 는 머리말을 버리지 않는다 — 버리면 기록이 통째로 사라진다. */
+    @Test
+    void ingest_keepsWholeDocxWhenItHasNoDateHeader() throws Exception {
+        byte[] docx = RawTextExtractorTest.docx(List.of("오늘 블록을 혼자 쌓았다."), List.of());
+        MockMultipartFile file = new MockMultipartFile("file", "note.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx);
+        given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.docx");
+        given(rawRecordRecorder.save(any(RawRecord.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+        given(userService.getOrganizationIdOf(ORG_USER_ID)).willReturn(ORGANIZATION_ID);
+
+        rawRecordService.ingest(ORG_USER_ID, file);
+
+        ArgumentCaptor<JournalEntry> captor = ArgumentCaptor.forClass(JournalEntry.class);
+        verify(journalEntryRepository).save(captor.capture());
+        assertThat(captor.getValue().getContent()).isEqualTo("오늘 블록을 혼자 쌓았다.");
+    }
+
+    /** 텍스트를 못 뽑는 파일(깨진 pdf)은 업로드는 두고 기록 분리만 건너뛴다 — entries가 비는 게 정상이다. */
+    @Test
+    void ingest_skipsSplittingWhenTextCannotBeExtracted() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "note.pdf", "application/pdf", "%PDF-1.4 fake".getBytes());
         given(rawFileStorage.store(any(), anyString())).willReturn("generated-uuid.pdf");
         given(rawRecordRecorder.save(any(RawRecord.class)))
