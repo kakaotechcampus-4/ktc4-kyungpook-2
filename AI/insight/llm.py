@@ -10,6 +10,8 @@ import os
 import re
 from dataclasses import dataclass, field
 
+import time
+
 import requests
 
 #: 503 으로 나가는 예외. 모든 에이전트가 **같은 클래스**를 쓴다 — 따로 두면
@@ -109,14 +111,29 @@ def _parse_json_block(text: str) -> dict:
         raise LlmError(f"JSON 파싱 실패: {text[:200]}", "bad_json") from exc
 
 
-def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResult:
+#: 마감까지 이보다 적게 남으면 부르지 않는다 — 부르자마자 시간 초과가 날 호출이다.
+MIN_CALL_SECONDS = 5.0
+
+
+def _budget(timeout: float, deadline: float | None) -> float:
+    """이번 호출의 제한시간 = min(timeout, 마감까지 남은 시간). 모자라면 LlmError(deadline)."""
+    if deadline is None:
+        return timeout
+    left = deadline - time.monotonic()
+    if left < MIN_CALL_SECONDS:
+        raise LlmError(f"시간 상한 (남은 {left:.0f}초)", "deadline")
+    return min(timeout, left)
+
+
+def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT,
+             deadline: float | None = None) -> LlmResult:
     """
     Luna에 물어보고 JSON 객체를 돌려받는다.
     response_format으로 JSON 출력을 강제한다.
     temperature는 보내지 않는다 — 이 모델은 기본값(1)만 허용한다.
     """
     url, key = _endpoint()
-    payload = _post(url, key, messages, timeout)
+    payload = _post(url, key, messages, _budget(timeout, deadline))
 
     # Luna 프록시는 출력(생각 + 답)을 2000 토큰까지만 준다. 입력이 길면 생각에 다 써서
     # 답이 빈 채로 온다 (finish_reason=length). 그때만 생각을 줄여 한 번 더 부른다.
@@ -126,7 +143,7 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
     retried = False
     if choice.get("finish_reason") == "length" and not (content or "").strip():
         print(f"[{AGENT}] 생각 한도 초과 → reasoning_effort={LUNA_REASONING_EFFORT_ON_OVERFLOW} 로 다시 부른다")
-        payload = _post(url, key, messages, timeout,
+        payload = _post(url, key, messages, _budget(timeout, deadline),
                         reasoning_effort=LUNA_REASONING_EFFORT_ON_OVERFLOW)
         retried = True
 
@@ -218,7 +235,8 @@ def _responses(url: str, key: str, body: dict, timeout: float) -> dict:
 
 
 def ask_with_tools(instructions: str, user_input: str, tools: list[dict], run_tool,
-                   *, max_calls: int = 2, timeout: float = LUNA_TIMEOUT) -> LlmResult:
+                   *, max_calls: int = 2, timeout: float = LUNA_TIMEOUT,
+                   deadline: float | None = None) -> LlmResult:
     """
     도구를 쓸 수 있게 Luna 를 부르고, 마지막에 JSON 객체를 돌려받는다.
 
@@ -233,7 +251,7 @@ def ask_with_tools(instructions: str, user_input: str, tools: list[dict], run_to
     usage: dict = {}
 
     for _ in range(max_calls + 1):
-        payload = _responses(url, key, body, timeout)
+        payload = _responses(url, key, body, _budget(timeout, deadline))
         for k, v in (payload.get("usage") or {}).items():
             if isinstance(v, int):
                 usage[k] = usage.get(k, 0) + v

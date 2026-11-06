@@ -61,7 +61,7 @@ def run(answer, tool_args=({"situation": "차량 탑승을 거부하고 바닥�
     """reflect → refine. 가짜 Luna 는 tool_args 대로 도구를 부른 뒤 answer 를 답한다."""
     seen = []
 
-    def fake(instructions, user, specs, run_tool, max_calls=2, timeout=None):
+    def fake(instructions, user, specs, run_tool, max_calls=2, timeout=None, deadline=None):
         if isinstance(answer, Exception):
             raise answer
         for args in tool_args[:max_calls]:
@@ -119,6 +119,29 @@ def test_같은_상황이_없다고_하면_버린다():
 def test_보강해도_한_기관이면_버린다():
     out, _ = run({"insights": [SINGLE]})
     assert out["insights"] == [] and out["weak_refined"][0]["why"] == "여전히 약함"
+
+
+def test_같은_기관_지난_기록을_대처로만_붙이면_버린다():
+    # 11/07 도구 평가: 센터 인사이트에 센터의 지난 기록을 대처로 붙여 "대처 없음" 만 벗어남
+    past_center = claim("13-0", 2, 113, "2026-10-09", "화장실 가기를 거부해 손을 잡고 함께 갔다.")
+    state = perceive({**{k: STATE[k] for k in ("child_name", "period_from", "period_to")},
+                      "claims": [dict(c) for c in NOW], "history_claims": [dict(past_center)],
+                      "consented_institutions": [{"institution_id": 1, "institution_type": "학교"},
+                                                 {"institution_id": 2, "institution_type": "센터"}]})
+    same = {**SINGLE, "supports": [{"action": "센터에서 손을 잡고 함께 갔다.", "result": "함께 갔다.",
+                                    "claim_ids": ["13-0"]}]}
+
+    def fake(instructions, user, specs, run_tool, max_calls=2, timeout=None, deadline=None):
+        run_tool("find_claims", {"situation": "화장실 가기를 거부", "weeks_back": 4})
+        return SimpleNamespace(data={"insights": [same]}, usage={"tool_calls": 1})
+
+    saved = (config.INSIGHT_WEAK_MODE, config.INSIGHT_TOOLS, nodes.ask_with_tools)
+    config.INSIGHT_WEAK_MODE, config.INSIGHT_TOOLS, nodes.ask_with_tools = "refine", True, fake
+    try:
+        out = refine(reflect({**state, "raw_insights": [SINGLE], "llm_error": None}))
+    finally:
+        config.INSIGHT_WEAK_MODE, config.INSIGHT_TOOLS, nodes.ask_with_tools = saved
+    assert out["insights"] == [] and out["weak_refined"][0]["why"] == "기관 간 아님", out["weak_refined"]
 
 
 def test_Luna가_실패하면_버린다():

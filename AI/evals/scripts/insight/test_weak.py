@@ -138,10 +138,11 @@ FIXED = "학교와 센터에서 그림책을 읽어 줄 때 교사를 보지 않
 
 def run_refine(raws, model_answer):
     """reflect → refine 을 refine 모드로. model_answer 가 Exception 이면 Luna 실패로 본다."""
-    sent = []
+    sent, deadlines = [], []
 
-    def fake_ask(messages):
+    def fake_ask(messages, deadline=None):
         sent.append(messages)
+        deadlines.append(deadline)
         if isinstance(model_answer, Exception):
             raise model_answer
         return SimpleNamespace(data=model_answer, usage={})
@@ -152,6 +153,7 @@ def run_refine(raws, model_answer):
         out = refine(reflect({**STATE, "raw_insights": raws, "llm_error": None}))
     finally:
         config.INSIGHT_WEAK_MODE, nodes.ask_json = saved_mode, saved_ask
+    run_refine.deadlines = deadlines
     return out, sent
 
 
@@ -205,6 +207,25 @@ def test_refine_한_요청에서_고치는_수는_상한까지만():
     out, sent = run_refine(raws, {"insights": [raw(CROSS, FIXED)]})
     assert len(sent) == config.INSIGHT_REFINE_MAX
     assert len(out["weak_dropped"]) == 2 and len(out["insights"]) == config.INSIGHT_REFINE_MAX
+
+
+
+def test_refine_시간이_없으면_고치지_않고_버린다():
+    saved = config.INSIGHT_DEADLINE
+    config.INSIGHT_DEADLINE = 0
+    try:
+        out, sent = run_refine(RAWS, {"insights": [raw(CROSS, FIXED)]})
+    finally:
+        config.INSIGHT_DEADLINE = saved
+    assert sent == [] and [i.content for i in out["insights"]] == [GOOD]
+    assert out["weak_refined"][0]["why"] == "시간 상한"
+
+
+def test_refine_마감_시각을_Luna_호출에_넘긴다():
+    import time
+    run_refine(RAWS, {"insights": [raw(CROSS, FIXED)]})
+    d = run_refine.deadlines[0]
+    assert d is not None and d <= time.monotonic() + config.INSIGHT_DEADLINE
 
 
 if __name__ == "__main__":

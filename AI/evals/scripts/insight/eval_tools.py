@@ -16,6 +16,7 @@
 
 import argparse
 import json
+from collections import Counter
 import sys
 import time
 from pathlib import Path
@@ -105,12 +106,13 @@ def run_case(case):
                       "claims": [dict(x) for x in case["now"]], "history_claims": [dict(x) for x in case["history"]],
                       "consented_institutions": CONSENT})
     if not state["history_index"]:
-        return {"rescued": False, "why": "지난 기록 없음(도구 안 부름)", "tool_calls": 0, "looked_up": [], "after": None}
+        return {"rescued": False, "why": "지난 기록 없음(도구 안 부름)", "tool_calls": 0, "looked_up": [],
+                "after": None, "scores": {}}
     item = {"pos": 0, "raw": case["raw"], "action": "lookup",
             "reasons": [{"kind": "한기관_대처없음", "field": "", "sentence": ""}]}
     ins, entry = nodes._lookup(state, item, nodes._known_types(state))
     return {"rescued": ins is not None, "why": entry["why"], "tool_calls": entry["tool_calls"],
-            "looked_up": entry["looked_up"], "after": entry["after"]}
+            "looked_up": entry["looked_up"], "after": entry["after"], "scores": entry.get("scores", {})}
 
 
 def main():
@@ -139,6 +141,13 @@ def main():
         print(f"  {g:<8} {sum(r['ok'] for r in rs)}/{len(rs)}")
     wrong = [r for r in records if r["group"] == "찾으면 안 됨" and r["rescued"]]
     print(f"  잘못 묶음 {len(wrong)}건 {[r['id'] for r in wrong]}")
+    # 도구가 돌려준 기록의 점수 분포 (#373 리뷰 3: score>=1 이 느슨한지)
+    allscores = [s for r in records for s in r["scores"].values()]
+    if allscores:
+        ones = sum(s == 1 for s in allscores)
+        used = [r["scores"].get(i) for r in records for i in (r["looked_up"] or []) if r["rescued"]]
+        print(f"  돌려준 기록 {len(allscores)}개 · 점수 1 은 {ones}개 ({ones / len(allscores):.0%}) · "
+              f"분포 {dict(sorted(Counter(allscores).items()))} · 실제로 근거에 쓴 것의 점수 {sorted(x for x in used if x)}")
     calls = [r["tool_calls"] for r in records if r["tool_calls"]]
     print(f"  도구 호출 평균 {sum(calls) / max(len(calls), 1):.1f}번 · {time.time() - t0:.0f}초")
     out = AI_DIR / "evals" / "generated" / "insight" / "runs" / f"tools_{args.name}.json"

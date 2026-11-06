@@ -41,7 +41,7 @@ def _bigrams(text: str) -> set[str]:
 
 
 def find_claims(history: list[dict], situation: str, *, weeks_back=None, before: str | None = None,
-                limit: int = 5) -> list[dict]:
+                limit: int = 5, scores: dict | None = None) -> list[dict]:
     """
     history 안에서 situation 과 겹치는 조각이 많은 claim 을 최대 limit 개.
 
@@ -71,6 +71,8 @@ def find_claims(history: list[dict], situation: str, *, weeks_back=None, before:
         if score >= 1:
             scored.append((score, c["entry_date"], c))
     scored.sort(key=lambda x: (-x[0], x[1]))
+    if scores is not None:  # 평가용 — 돌려준 기록의 점수. 모델에게는 보이지 않는다 (#373 리뷰 3)
+        scores.update({c["claim_id"]: s for s, _, c in scored[:limit]})
     return [
         {"claim_id": c["claim_id"], "entry_date": c["entry_date"],
          "institution_type": c["institution_type"], "text": c["text"]}
