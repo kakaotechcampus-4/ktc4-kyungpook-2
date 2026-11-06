@@ -1,5 +1,6 @@
 import type {
   AiActivity,
+  FailedSummary,
   AiStatus,
   BlockedItem,
   Child,
@@ -1000,3 +1001,17 @@ export const PIPELINE: Pipeline = {
 export const AI_ACTIVITY: AiActivity = { split: 12, matched: 7, validated: 11, summarized: 3, insights: 1 };
 
 export const AI_STATUS: AiStatus = { available: true, since: null };
+
+/** 요약 실패 (O-35). 진행 현황 mock 의 summary_failed 줄(박OO 11/4)과 같은 묶음 */
+export const FAILED_SUMMARIES: FailedSummary[] = [
+  {
+    childId: "child_1077",
+    childName: "박OO",
+    entryDate: "2026-11-04",
+    entries: [
+      { journalEntryId: "je_6101", content: "오전에 그림 그리기 활동을 했다. 색연필을 골라 동그라미를 여러 개 그렸다." },
+      { journalEntryId: "je_6102", content: "점심 뒤 낮잠 시간에 쉽게 잠들지 못해 교사가 등을 토닥여 주었다." },
+    ],
+    reason: "NO_GROUNDED_CLAIMS",
+  },
+];
