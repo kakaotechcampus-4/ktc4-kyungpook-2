@@ -83,7 +83,7 @@ com.itda.backend
 - 계층 안은 기능 하위 패키지로 나눈다. 기능 이름은 `user` `organization` `child` `invitation` `consent` `record` `matching` `validation` `summary` `approval` `insight` `dashboard`를 쓴다.
   - 새 클래스는 계층 루트가 아니라 해당 기능 하위 패키지에 둔다(예: 아동 등록 요청 → `dto/request/child`).
   - 맞는 기능이 없으면 이름을 정해 이 목록에 추가한다.
-  - 기능이 아닌 기술 관심사는 `service.agent`·`service.storage`·`exception.agent`·`exception.auth`에 둔다.
+  - 기능이 아닌 기술 관심사는 `service.agent`·`service.storage`·`exception.agent`·`exception.auth`에 둔다. AI 상태 응답처럼 기술 관심사의 DTO 는 `dto.response.agent`에 둔다.
   - `api`는 컨트롤러가 적어 한 폴더에 둔다.
 
 ## 코드 컨벤션
