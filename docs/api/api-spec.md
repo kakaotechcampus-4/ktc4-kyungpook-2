@@ -947,7 +947,9 @@ O-15 ~ O-19 공통 오류:
   { "id": 50, "childId": 8, "childName": "김하늘", "entryDate": "2026-10-08", "revision": 1,
     "status": "GATE1_PENDING", "version": "2026-10-09T03:05:12.345678/1041,1042", "processing": false,
     "content": "오전 활동에서 블록을 다섯 층까지 쌓았다 …",
-    "claims": [ { "index": 0, "text": "오전 활동에서 블록을 다섯 층까지 쌓았다." }, { "index": 1, "text": "…" } ],
+    "claims": [ { "index": 0, "text": "오전 활동에서 블록을 다섯 층까지 쌓았다.",
+                  "evidence": [ { "journalEntryId": 1041, "quote": "블록을 다섯 층까지 쌓았다" } ] },
+                { "index": 1, "text": "…", "evidence": [] } ],
     "noContent": false, "needsReview": true, "reviewReasons": ["다른아동이름"],
     "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
     "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"],
@@ -960,6 +962,7 @@ O-15 ~ O-19 공통 오류:
 | `version` | 결정(O-31)할 때 그대로 돌려보내는 값(요약 수정 시각 + 요약에 든 일지 id). 해석하지 말고 문자열 그대로 보내주세요 |
 | `processing` | 곧 이 요약이 바뀜. 지금 다시 요약 중이거나, 같은 날 이 아이 기록 중 아직 요약에 반영되지 않은 것이 있을 때(검증 중 포함) 켜집니다. 매칭 전이라 누구 기록인지 모르는 것이 같은 날 있어도 켜집니다. 자동 요약(#369, 기본 켜짐)이 꺼져 있으면 [요약](O-32)을 눌러 둔 경우에만 켜집니다 — 누르기 전까지 바뀌지 않기 때문입니다 (#181). 열기·승인 버튼을 막아주세요. 보류함 항목과 옛 판은 항상 `false` |
 | `claims` | 요약 문장 카드. 카드마다 [유지]·[수정]·[삭제]를 두고, 결정(O-31) 때 `index` 를 그대로 돌려보냅니다 (#221). **빈 배열이면** 문장을 읽지 못한 요약이라 카드 편집([추가] 포함)을 막아 주세요 — 카드를 보내면 400 입니다. 그대로 승인하거나 제거만 됩니다. `noContent` 요약도 빈 배열이지만 그건 아래 `noContent` 를 따릅니다 |
+| `claims[].evidence` | 그 문장의 근거 — AI 가 든 일지(`journalEntryId`)와 원문 인용(`quote`) (#370). 화면은 원본 일지에서 인용을 찾아 강조합니다. 인용은 원문 그대로가 원칙이지만 글자가 조금 다를 수 있어 공백·문장부호를 무시하고 찾고, 그래도 없으면 강조 없이 안내해 주세요. 선생님이 고치거나 새로 쓴 문장(`source` 가 `EDITED`·`TEACHER`)은 빈 배열입니다 — 지금 목록에는 승인 전 판만 나와 실제로는 AI 문장뿐입니다 |
 | `noContent` | 그날 기록에 요약할 내용이 없다는 결과 (#244). `content` 는 `""`, `claims` 는 `[]` 이고 `uncoveredEntries` 가 **이 요약에 묶인 기록 원본 전체**입니다. "요약할 내용 없음" 카드로 보여주고 원본을 펼쳐 두세요 — 교사가 "왜 없지?" 를 바로 확인할 수 있게. 버튼은 [확인](O-31 `confirm`)과 [요약 되돌리기](O-31 `revert`) 둘만 둡니다 |
 | `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
 | `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
@@ -1439,6 +1442,100 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 
 **O-72 → 204** · 받은 아이 모두에게서 통째로 내립니다. 이미 내렸으면 아무것도 바꾸지 않고 같은 204 입니다(처음 내린 시각이 남습니다).
 없거나 다른 기관 요청이면 `404 CHECKLIST_NOT_FOUND`. 이미 남은 확인 기록은 지우지 않습니다. 보호자가 확인하는 중이면 그 확인이 끝난 뒤 내려집니다(§5.6).
+
+### 4.8 대시보드 (#370)
+
+기관 첫 화면(대시보드)이 쓰는 조회입니다. 대시보드는 10초마다 부릅니다 — 세 API 모두 요청마다 쿼리 수가 아이·일지 수와
+상관없이 같습니다. 셋 다 기관 사용자만 볼 수 있고 아니면 `403 ORGANIZATION_NOT_ASSIGNED` 입니다.
+
+| # | 메서드 | 경로 | 설명 | 화면 |
+| --- | --- | --- | --- | --- |
+| O-80 | GET | `/dashboard/pipeline` | 선생님 차례 건수와 진행 현황 줄 · **구현됨** | I-03 |
+| O-81 | GET | `/dashboard/ai-activity` | 오늘 AI가 한 일 · **구현됨** | I-03 |
+| O-82 | GET | `/system/ai-status` | AI 상태 (AI 장애 배너) · **구현됨** | 기관 화면 전체 |
+
+**O-80 응답** · 단계 판정은 서버가 합니다. 화면은 받은 그대로 그리고, 여러 목록 API 를 맞춰 보지 않습니다.
+
+```json
+{ "turn": { "confirm": 1, "blocked": 1, "review": 2, "approve": 1, "requests": 0 },
+  "rows": [
+    { "kind": "entry", "childId": null, "childName": null, "date": "2026-11-05", "week": null,
+      "step": 0, "who": "me", "status": "match_review", "detail": null,
+      "target": { "type": "matching", "id": "12" } },
+    { "kind": "entry", "childId": "8", "childName": "김하늘", "date": "2026-11-05", "week": null,
+      "step": 1, "who": "me", "status": "blocked",
+      "detail": { "kinds": ["진단명"], "reasons": ["진단명이 있어요 …"] },
+      "target": { "type": "validation", "id": "30" } },
+    { "kind": "week", "childId": "9", "childName": "이바다", "date": null,
+      "week": { "from": "2026-10-26", "to": "2026-11-01", "label": "2026년 10월 4주차" },
+      "step": 5, "who": "other", "status": "review_elsewhere",
+      "detail": { "approverName": "해솔초등학교" }, "target": null } ] }
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| `turn` | 선생님 차례 5줄. `confirm` = 아이 확인(O-22 건수), `blocked` = 고쳐야 할 기록(O-24 건수), `review` = 검토 대기 요약(다시 만드는 중 제외) + 요약 실패 묶음, `approve` = 우리가 승인할 Gate 2 대기(O-40 `pending` 건수), `requests` = 보호자 연결 요청(O-60 건수) |
+| `rows[].kind` | 검토 승인 전에는 `entry`(아이×날짜), 승인 뒤에는 `week`(아이×주, 월~일). 승인한 기록은 `entry` 에서 빠지고 그 주 줄로 모입니다 |
+| `rows[].childId` · `childName` | 아이를 아직 못 찾은 줄은 `null` |
+| `rows[].step` | 0 아이 찾기 · 1 AI 확인 · 2 요약 · 3 검토 · 4 주간 분석 · 5 분석 승인 |
+| `rows[].who` | `me` 선생님 차례 · `ai` AI 가 하는 중 · `wait` 기다리는 중 · `other` 다른 사람(관리자·다른 기관·보호자) 차례 · `done` 끝. 줄은 이 순서 → 단계 → 날짜(주 줄은 주 시작일) 순입니다 |
+| `rows[].detail` | 상태마다 덧붙이는 값. 없는 키는 빠집니다 (`matching` → `count`, `blocked` → `kinds`·`reasons`, `review`·`review_held` → `noContent`, `review_elsewhere` → `approverName`) |
+| `rows[].target` | 바로가기 대상. `matching`(O-28 항목 id) · `validation`(O-24 항목 id) · `summary`(요약 id) · `summary_failed`(`id` 없음 — 줄의 `childId`·`date` 로 O-35~37) · `insight`(인사이트 id). 선생님 차례가 아니면 `null` |
+
+| step | status | who | 뜻 |
+| --- | --- | --- | --- |
+| 0 | `matching` | ai | 아이를 찾는 중. 아이 미정이라 **날짜마다 한 줄**, `detail.count` = 그날 일지 수 |
+| 0 | `match_review` | me | AI 가 아이를 정하지 못함. 일지마다 한 줄 |
+| 1 | `validating` | ai | 검증 대기·검증 중 |
+| 1 | `blocked` | me | 검증에서 막힘. **일지마다 한 줄** — 같은 날 다른 일지는 본 줄로 계속 흘러갑니다 |
+| 1·2 | `system_error` | other | 관리자 확인 대기 (#180). 묶음마다 한 줄, 실패한 단계(검증 1 · 요약 2)에 둡니다 |
+| 2 | `waiting_same_date` | wait | 검증은 끝났지만 같은 기관·같은 날짜에 아직 매칭·검증 중인 일지가 있어 요약을 기다림 (#369) |
+| 2 | `summarizing` | ai | 곧 요약하거나 요약 중 |
+| 2 | `summary_failed` | me | 요약 실패 (O-35~37) |
+| 3 | `review` · `review_held` | me | 검토 대기 · 보류해 둔 요약 |
+| 3 | `regenerating` | ai | 새 기록이 들어와 요약을 다시 만드는 중 (O-30 `processing`) |
+| 4 | `waiting_week_end` · `queued` · `running` · `retrying` | wait · ai · ai · ai | 주간 분석 (O-43 과 같은 판정) |
+| 4 | `not_consented` | other | 보호자가 주간 분석 공유를 허락하지 않아 우리 기록은 쓰지 않음 |
+| 4 | `nothing_new` | done | 이번 주는 새로 알릴 내용이 없음 (분석은 됐지만 우리 기록이 쓰인 글이 없는 주 포함) |
+| 5 | `review_here` · `insight_held` | me | 우리가 승인 주체인 분석 — 승인 대기 · 보류 |
+| 5 | `review_elsewhere` | other | 다른 기관이 승인할 차례. `detail.approverName` = 그 기관 이름. 승인 주체는 Gate 2 와 같습니다(학교 > 센터 > 활동지원사, 같은 종류면 기관 id 가 작은 곳) |
+| 5 | `approved` | done | 모두 승인됨 |
+
+- 아이를 아는 줄은 **지금 우리 명부에 있고 우리 기관 동의가 켜진 아이만** 나옵니다(O-34 와 같음). `match_review`·`blocked` 줄은
+  그 큐(O-22·O-24)와 건수가 맞도록 거르지 않습니다.
+- 검토 대기 요약이 있는 묶음에 새 일지가 들어오면 따로 줄을 만들지 않고 그 요약 줄이 `regenerating` 이 됩니다(다시
+  요약이 실패한 새 일지만 `summary_failed` 줄로 따로 나옵니다). 보류한
+  요약은 다시 요약하지 않으므로 새 일지는 따로 줄로 나옵니다.
+- 주 줄은 **최근 14일 안에 검토를 승인한 주**만 나옵니다(O-43 과 같음). 그래서 `done` 줄도 최근 것만 남습니다.
+- 자동 요약(#369)을 끈 비상 모드에서도 검증을 마친 묶음은 `summarizing` 으로 보입니다.
+- O-43 은 기존 화면용으로 그대로 둡니다.
+
+**O-81 응답** · 서울 기준 오늘 0시부터, 우리 기관 기록에 AI 가 한 일입니다. 선생님이 처리한 횟수는 넣지 않습니다.
+
+```json
+{ "split": 12, "matched": 7, "validated": 11, "summarized": 3, "insights": 1 }
+```
+
+| 필드 | 센 것 | 정확도 |
+| --- | --- | --- |
+| `split` | 오늘 나눠 만든 일지 수(지운 일지 포함) | 정확 |
+| `matched` | 오늘 AI 가 그대로 확정한 매칭 수. 선생님이 확인 큐에서 고른 것은 뺍니다 | 정확 |
+| `validated` | 오늘 남은 검증 결과 중 통과(`PASS`·`REVIEW`)와 막힘(`BLOCK`). AI 호출 실패는 뺍니다. 다시 검사하면 한 번 더 셉니다 | 정확 |
+| `summarized` | 오늘 만든 요약 + 오늘 다시 만든 검토 대기 요약 | **근사** — 승인 전 요약은 다시 요약해도 같은 행을 덮어써서 수정 시각으로 셉니다. 보류를 풀어 검토 대기로 돌아온 요약도 섞일 수 있습니다 |
+| `insights` | 오늘 만든 인사이트 중 지금 우리 명부 아이의, 우리 기관이 근거를 낸 것 | 정확 |
+
+**O-82 응답** · AI 장애 배너용입니다.
+
+```json
+{ "available": false, "since": "2026-11-06T10:00:00+09:00" }
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| `available` | 워커가 일을 집기 전에 보는 AI `/health` 실패가 **15초 이상(3번 이상)** 이어지거나, 워커(매칭·검증·요약·인사이트)가 재시도(2초·5초) 끝에 AI 를 부르지 못해 멈추면 `false` 입니다. 워커 멈춤은 `/health` 가 LLM 까지 보지 않아 따로 알리며, 60초 동안은 `/health` 성공으로 풀지 않고 어느 워커든 AI 호출이 응답을 받으면 바로 풀립니다 |
+| `since` | 이번 장애가 처음 보인 시각. `available` 이 `true` 면 `null` |
+
+- 서버 메모리에만 두므로 서버가 다시 켜지면 처음부터 다시 셉니다. 서버가 여러 대가 되면 대마다 따로 판단합니다.
 
 ---
 

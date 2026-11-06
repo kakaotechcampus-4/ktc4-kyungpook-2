@@ -15,6 +15,7 @@ import org.springframework.transaction.UnexpectedRollbackException;
 import com.itda.backend.domain.insight.InsightRun;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.repository.summary.ChildContextRepository;
+import com.itda.backend.service.agent.AiAvailability;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,6 +40,7 @@ public class InsightWorker {
     private final ChildContextRepository childContextRepository;
     private final int batchSize;
     private final InsightProperties properties;
+    private final AiAvailability availability;
 
     /** 앱이 켜진 뒤 첫 실행인지. 되돌리기를 여기서 하는 이유는 {@code SummaryWorker} 와 같다 (집기와 겹치지 않게). */
     private boolean released;
@@ -47,13 +49,14 @@ public class InsightWorker {
 
     public InsightWorker(InsightService insightService, InsightAgentClient client,
             InsightResultRecorder recorder, ChildContextRepository childContextRepository,
-            InsightProperties properties) {
+            InsightProperties properties, AiAvailability availability) {
         this.insightService = insightService;
         this.client = client;
         this.recorder = recorder;
         this.childContextRepository = childContextRepository;
         this.batchSize = properties.worker().batchSize();
         this.properties = properties;
+        this.availability = availability;
     }
 
     /** 첫 실행 지연은 운영에선 0 이다. 워커를 직접 돌리는 테스트가 앱 시작 틱과 겹치지 않게 늦추려고 둔다. */
@@ -154,6 +157,7 @@ public class InsightWorker {
     private boolean process(InsightRun run, PreparedInsight prepared) {
         try {
             InsightAgentReply reply = client.analyze(prepared.request());
+            availability.reportCallSucceeded();
             recorder.record(run, reply.response(), reply.rawJson(), prepared.lastContextId(),
                     prepared.request().claims().size());
             return true;
@@ -165,6 +169,8 @@ public class InsightWorker {
             log.warn("insight agent unavailable, stopping this turn childId={} period={}..{} reason={}",
                     run.getChildId(), run.getPeriodFrom(), run.getPeriodTo(), reason, e);
             recorder.recordFailure(run, reason);
+            // /health 는 LLM 까지 보지 않으므로 여기서 멈춘 것을 AI 장애 배너에 따로 알린다 (#370).
+            availability.reportCallGaveUp();
             return false;
         } catch (RuntimeException e) {
             if (Thread.currentThread().isInterrupted()) {
@@ -184,6 +190,7 @@ public class InsightWorker {
 
     private boolean agentAvailable() {
         boolean available = client.isAvailable();
+        availability.reportHealth(available);
         if (!available && !agentDown) {
             log.warn("insight agent is down, skipping turns until it is back");
             agentDown = true;

@@ -42,6 +42,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.consent.ConsentField;
@@ -154,9 +155,9 @@ class BlockedEntryRevisionIntegrationTest {
                 List.of(ConsentField.DAILY_SUMMARY)));
 
         matchingWorker = new MatchingWorker(matchingService, fakeMatchingAgent(), matchingResultRecorder,
-                matchingProperties, agentDownProperties, clock);
+                matchingProperties, agentDownProperties, clock, new AiAvailability(clock));
         validationWorker = new ValidationWorker(validationService, fakeValidationAgent(), validationResultRecorder,
-                validationProperties, agentDownProperties, clock);
+                validationProperties, agentDownProperties, clock, new AiAvailability(clock));
     }
 
     @Test

@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
@@ -48,12 +49,14 @@ class SummaryWorkerTest {
     private SummaryAgentClient client;
     @Mock
     private SummaryResultRecorder recorder;
+    @Mock
+    private AiAvailability availability;
 
     private SummaryWorker worker;
 
     @BeforeEach
     void setUp() {
-        worker = new SummaryWorker(summaryService, client, recorder, PROPERTIES);
+        worker = new SummaryWorker(summaryService, client, recorder, PROPERTIES, availability);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -200,6 +203,7 @@ class SummaryWorkerTest {
 
         verify(summaryService, never()).claimReadyGroups(anyInt());
         verify(client, never()).summarize(any());
+        verify(availability).reportHealth(false);
     }
 
     @Test
@@ -219,6 +223,21 @@ class SummaryWorkerTest {
         verify(summaryService).release(List.of(first, second, third));
         verify(summaryService, never()).prepareRequest(second);
         verify(summaryService, never()).prepareRequest(third);
+        // /health 는 LLM 까지 보지 않아 이 멈춤은 따로 알려야 AI 장애 배너에 뜬다.
+        verify(availability).reportCallGaveUp();
+    }
+
+    @Test
+    void 요약_호출이_응답을_받으면_AI_멈춤을_푼다() {
+        ClaimedSummaryGroup first = group(8L, 1L);
+        given(summaryService.claimReadyGroups(10)).willReturn(List.of(first));
+        given(summaryService.prepareRequest(first)).willReturn(requestFor(first));
+
+        worker.run();
+
+        verify(availability).reportHealth(true);
+        verify(availability).reportCallSucceeded();
+        verify(availability, never()).reportCallGaveUp();
     }
 
     @Test
@@ -252,6 +271,7 @@ class SummaryWorkerTest {
                 .withBean(SummaryAgentClient.class, () -> mock(SummaryAgentClient.class))
                 .withBean(SummaryResultRecorder.class, () -> mock(SummaryResultRecorder.class))
                 .withBean(SummaryProperties.class, () -> PROPERTIES)
+                .withBean(AiAvailability.class, () -> mock(AiAvailability.class))
                 .withUserConfiguration(SummaryWorker.class);
 
         runner.withPropertyValues("app.summary.worker.enabled=false")
