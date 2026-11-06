@@ -237,12 +237,15 @@ def reflect(state: dict) -> dict:
         kinds = {r["kind"] for r in reasons}
         if mode == "off":
             insights.append(ins)
+        elif mode == "refine" and len(to_refine) >= config.INSIGHT_REFINE_MAX:
+            weak_dropped.append(record)  # 한 요청에서 고칠 수 있는 수를 넘었다 — 시간 상한
         elif mode == "refine" and kinds == {NOT_IN_RECORD}:
             # 자리를 지켜 둔다. refine 이 고친 것으로 바꾸거나 뺀다
             to_refine.append({"pos": len(insights), "raw": raw, "reasons": reasons})
             insights.append(ins)
-        elif (mode == "refine" and config.INSIGHT_TOOLS and kinds == {SINGLE_NO_SUPPORT}
-              and state.get("history_index")):
+        elif (mode == "refine" and config.INSIGHT_TOOLS and SINGLE_NO_SUPPORT in kinds
+              and kinds <= {SINGLE_NO_SUPPORT, NOT_IN_RECORD} and state.get("history_index")):
+            # 기록에없는말 이 같이 걸려도 보강한다. 그 문장을 빼라는 말은 보강 요청에 같이 넣는다
             # 버리기 전에 지난 기록을 찾아 보강해 본다 (딥다이브 3, 도구 사용)
             to_refine.append({"pos": len(insights), "raw": raw, "reasons": reasons, "action": "lookup"})
             insights.append(ins)
@@ -353,7 +356,7 @@ def _lookup(state: dict, item: dict, known_types: set[str]) -> tuple[Insight | N
         i for s in (raw.get("supports") or []) if isinstance(s, dict) for i in _ids(s.get("claim_ids"))
     }
     try:
-        instructions, user = build_lookup_messages(state, raw, sorted(original))
+        instructions, user = build_lookup_messages(state, raw, sorted(original), item.get("reasons"))
         result = ask_with_tools(instructions, user, TOOL_SPECS, run_tool,
                                 max_calls=config.INSIGHT_TOOL_MAX_CALLS)
     except LlmError as exc:

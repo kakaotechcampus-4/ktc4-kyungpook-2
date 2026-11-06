@@ -6,6 +6,8 @@ CRITERIA.md 가 원본이고 이 파일이 따라간다. 플래그 이름은 CRI
 이름과 글자까지 같아야 한다 (test_criteria_sync.py 가 대조한다).
 """
 
+import os
+
 from common.luna import CHAT_PATH
 
 
@@ -103,7 +105,13 @@ FILTER_UNCONSENTED_SOURCES = True
 #:   "refine" 한기관_대처없음 은 버리고, 기록에없는말 은 문제 문장을 짚어 Luna 로 한 번 고친다 (nodes.refine)
 #: 11/05 A·B 1회: drop 은 약한 것만 뺐지만, A 의 기록에없는말 하나가 정답 패턴(P12)이었다 → refine 을 만든 이유
 #: 실데이터 dev 65개 중 코드로 잡히는 8개를 모두 잡고, 블라인드 11개에서 오탐 0 (11/05).
-INSIGHT_WEAK_MODE = "off"
+#: 서버에서는 AI/.env 의 INSIGHT_WEAK_MODE 로 켠다 (compose.yaml env_file). 모르는 값이면 off.
+INSIGHT_WEAK_MODE = os.environ.get("INSIGHT_WEAK_MODE", "off").strip().lower()
+if INSIGHT_WEAK_MODE not in ("off", "drop", "refine"):
+    INSIGHT_WEAK_MODE = "off"
+#: 한 요청에서 refine 으로 고치거나 보강할 최대 인사이트 수. 넘는 것은 버린다.
+#: 하나마다 Luna 를 더 부르므로(각 최대 LUNA_TIMEOUT) 요청 시간의 상한을 정한다 — BE read-timeout 과 맞춘다.
+INSIGHT_REFINE_MAX = 3
 
 
 # ── 도구 사용 (딥다이브 3) ─────────────────────────────────────
@@ -112,7 +120,7 @@ INSIGHT_WEAK_MODE = "off"
 #: 도구 find_claims 로 찾아 기관 간 인사이트로 보강할지. 기본 꺼짐.
 #: Luna 는 /v1/chat/completions 에서 생각(reasoning)과 도구를 같이 못 쓴다 (11/06 확인).
 #: 그래서 도구 호출만 /v1/responses 로 부른다 (llm.ask_with_tools).
-INSIGHT_TOOLS = False
+INSIGHT_TOOLS = os.environ.get("INSIGHT_TOOLS", "").strip().lower() in ("1", "true", "yes", "on")
 #: 인사이트 하나에 도구를 부를 수 있는 최대 횟수. 넘으면 도구 없이 답하게 한다.
 INSIGHT_TOOL_MAX_CALLS = 2
 #: find_claims 가 돌려주는 최대 문장 수. 길면 출력 2000 토큰 상한에 걸린다.

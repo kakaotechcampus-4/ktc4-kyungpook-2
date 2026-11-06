@@ -127,7 +127,8 @@ def build_refine_messages(state: dict, raw: dict, reasons: list[dict], allowed_i
     return [{"role": "system", "content": system_prompt()}, {"role": "user", "content": user}]
 
 
-def build_lookup_messages(state: dict, raw: dict, claim_ids: list[str]) -> tuple[str, str]:
+def build_lookup_messages(state: dict, raw: dict, claim_ids: list[str],
+                          reasons: list[dict] | None = None) -> tuple[str, str]:
     """
     도구 사용 (nodes._lookup). 한 기관뿐인 인사이트를 지난 기록으로 보강하게 한다.
 
@@ -154,4 +155,10 @@ def build_lookup_messages(state: dict, raw: dict, claim_ids: list[str]) -> tuple
         "기록 (이 인사이트의 근거):\n" + "\n".join(lines) + "\n\n"
         "처음 쓴 인사이트:\n" + json.dumps(keep, ensure_ascii=False)
     )
+    # 기록에없는말 이 같이 걸렸으면 그 문장도 빼게 한다 (build_refine_messages 와 같은 말)
+    fixes = [r for r in (reasons or []) if r.get("sentence")]
+    if fixes:
+        user += "\n\n같이 고칠 점:\n" + "\n".join(
+            f'- {r["field"]}: "{r["sentence"]}" → 기록이 없다는 말이다. 그 표현은 빼고 나머지는 남긴다.'
+            for r in fixes)
     return instructions, user

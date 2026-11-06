@@ -199,6 +199,14 @@ def test_refine_요청에는_근거_claim과_문제_문장만_들어간다():
     assert "인용" not in user  # 원문 인용(다른 아이 이름이 남아 있음)은 넣지 않는다
 
 
+
+def test_refine_한_요청에서_고치는_수는_상한까지만():
+    raws = [raw(CROSS, META) for _ in range(config.INSIGHT_REFINE_MAX + 2)]
+    out, sent = run_refine(raws, {"insights": [raw(CROSS, FIXED)]})
+    assert len(sent) == config.INSIGHT_REFINE_MAX
+    assert len(out["weak_dropped"]) == 2 and len(out["insights"]) == config.INSIGHT_REFINE_MAX
+
+
 if __name__ == "__main__":
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     failed = 0
