@@ -450,7 +450,7 @@ interface Gate1SummaryRaw {
   version: string;
   processing: boolean;
   content: string;
-  claims: SummaryItem["claims"] | null;
+  claims: { index: number; text: string; evidence?: { journalEntryId: number; quote: string }[] | null }[] | null;
   noContent: boolean;
   needsReview: boolean;
   reviewReasons: string[] | null;
@@ -469,7 +469,11 @@ function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
     version: raw.version,
     processing: raw.processing,
     content: raw.content,
-    claims: raw.claims ?? [],
+    claims: (raw.claims ?? []).map((c) => ({
+      index: c.index,
+      text: c.text,
+      evidence: (c.evidence ?? []).map((e) => ({ journalEntryId: String(e.journalEntryId), quote: e.quote })),
+    })),
     noContent: raw.noContent ?? false,
     needsReview: raw.needsReview,
     reviewReasons: raw.reviewReasons ?? [],

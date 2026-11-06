@@ -25,6 +25,7 @@ import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimEvidence;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -209,9 +210,29 @@ public class SummaryGate1QueryService {
         JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
         List<ClaimCard> cards = new ArrayList<>();
         for (int index = 0; index < claims.size(); index++) {
-            cards.add(new ClaimCard(index, claims.get(index).path("text").asText("")));
+            JsonNode claim = claims.get(index);
+            cards.add(new ClaimCard(index, claim.path("text").asText(""), claimEvidence(claim)));
         }
         return cards;
+    }
+
+    /**
+     * AI 가 든 근거만 보여준다. 선생님이 고친 문장({@code EDITED})은 AI 근거가 남아 있어도 글이 달라 인용이 맞지 않고,
+     * 새로 쓴 문장({@code TEACHER})의 근거는 그 문장 자신이라 빈 목록으로 보낸다. 일지 번호를 못 읽는 근거는 뺀다.
+     */
+    private static List<ClaimEvidence> claimEvidence(JsonNode claim) {
+        String source = claim.path("source").asText("AI");
+        if (!"AI".equals(source)) {
+            return List.of();
+        }
+        List<ClaimEvidence> evidence = new ArrayList<>();
+        for (JsonNode item : claim.path("evidence")) {
+            JsonNode entryId = item.path("journal_entry_id");
+            if (entryId.canConvertToLong()) {
+                evidence.add(new ClaimEvidence(entryId.asLong(), item.path("quote").asText("")));
+            }
+        }
+        return evidence;
     }
 
     private static List<UncoveredEntry> uncoveredEntries(List<JournalEntry> entries, Set<Long> coveredIds) {

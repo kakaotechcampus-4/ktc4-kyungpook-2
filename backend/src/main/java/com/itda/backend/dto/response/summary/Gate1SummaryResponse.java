@@ -34,8 +34,16 @@ public record Gate1SummaryResponse(
         List<UncoveredEntry> uncoveredEntries,
         List<ReviewFlag> reviewFlags) {
 
-    /** 요약 문장 하나. {@code index} 는 {@code summary_result.claims} 배열 순서다. */
-    public record ClaimCard(int index, String text) {
+    /**
+     * 요약 문장 하나. {@code index} 는 {@code summary_result.claims} 배열 순서다.
+     *
+     * @param evidence AI 가 이 문장의 근거로 든 일지와 원문 인용. 선생님이 고치거나 새로 쓴 문장은 빈 목록이다.
+     */
+    public record ClaimCard(int index, String text, List<ClaimEvidence> evidence) {
+    }
+
+    /** 문장 근거 하나 — 어느 일지의 어떤 원문 구절인지. */
+    public record ClaimEvidence(Long journalEntryId, String quote) {
     }
 
     public record UncoveredEntry(Long journalEntryId, String content) {

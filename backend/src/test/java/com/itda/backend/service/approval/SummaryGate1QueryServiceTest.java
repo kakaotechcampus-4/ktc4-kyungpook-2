@@ -33,6 +33,7 @@ import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimEvidence;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
@@ -222,7 +223,39 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         // index 는 결정(O-31) 카드에 그대로 돌려보내는 번호다 — claims 배열 순서다.
-        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다."), new ClaimCard(1, "낮잠을 잤다."));
+        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다.", List.of()),
+                new ClaimCard(1, "낮잠을 잤다.", List.of()));
+    }
+
+    @Test
+    void 요약_문장마다_AI가_든_근거_일지와_인용을_보여준다() {
+        JournalEntry blocks = entry("블록을 높이 쌓았다.");
+        summary(ORG, DATE, "[{\"text\":\"블록을 쌓았다.\",\"evidence\":["
+                + "{\"journal_entry_id\":" + blocks.getId() + ",\"quote\":\"블록을 높이 쌓았다\","
+                + "\"span\":{\"start\":0,\"end\":10}}]}]", List.of(blocks), List.of());
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다.",
+                List.of(new ClaimEvidence(blocks.getId(), "블록을 높이 쌓았다"))));
+    }
+
+    @Test
+    void 선생님이_고치거나_새로_쓴_문장은_근거를_비워_보여준다() {
+        // 고친 문장은 AI 근거가 남아 있어도 글이 달라 인용이 맞지 않고, 새로 쓴 문장의 근거는 그 문장 자신이다.
+        JournalEntry blocks = entry("블록을 높이 쌓았다.");
+        String evidence = "[{\"journal_entry_id\":" + blocks.getId() + ",\"quote\":\"블록\","
+                + "\"span\":{\"start\":0,\"end\":2}}]";
+        summary(ORG, DATE, "[{\"text\":\"블록을 아주 높이 쌓았다.\",\"evidence\":" + evidence + ",\"source\":\"EDITED\"},"
+                + "{\"text\":\"웃었다.\",\"evidence\":[{\"journal_entry_id\":null,\"quote\":\"웃었다.\"}],"
+                + "\"source\":\"TEACHER\"},"
+                + "{\"text\":\"블록을 쌓았다.\",\"evidence\":" + evidence + ",\"source\":\"AI\"}]",
+                List.of(blocks), List.of());
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.claims()).extracting(ClaimCard::evidence).containsExactly(
+                List.of(), List.of(), List.of(new ClaimEvidence(blocks.getId(), "블록")));
     }
 
     @Test
