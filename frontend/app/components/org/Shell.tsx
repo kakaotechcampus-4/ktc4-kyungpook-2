@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LogOut, User } from "lucide-react";
+import { ChevronDown, LogOut, TriangleAlert, User } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useNavigating } from "@/components/ui/Loading";
 import { Busy } from "@/components/ui";
-import { getInbox, getPipeline, loadIfReady } from "@/lib/api";
+import { getAiStatus, getInbox, getPipeline, loadIfReady } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { usePolling } from "@/lib/usePolling";
 
@@ -22,13 +22,19 @@ export interface OrgShellCounts {
   review: number | null;
   /** 분석 승인 + 새 분석(안 읽은 수신함) + 보호자 연결 요청 */
   children: number | null;
+  /** 선생님 차례 합계(O-80 turn 다섯 줄). 탭 제목 "(N) 잇다" 에 쓴다 */
+  turnTotal: number | null;
+  /** AI 가 멈춘 상태(O-82 available=false). 모든 기관 화면 위에 배너를 띄운다 */
+  aiDown: boolean;
 }
 
 /** 메뉴 배지 숫자를 센다. 진행 현황(O-80)의 선생님 차례와 수신함(O-50) 안 읽은 글 */
 export async function loadOrgCounts(): Promise<OrgShellCounts> {
-  const [pipeline, inbox] = await Promise.all([
+  const [pipeline, inbox, ai] = await Promise.all([
     loadIfReady("dashboard", getPipeline),
     loadIfReady("inbox", getInbox),
+    // AI 상태를 못 받았다고 배너를 띄우지는 않는다 — 서버가 "멈췄다" 고 할 때만
+    loadIfReady("dashboard", getAiStatus).catch(() => null),
   ]);
   const t = pipeline?.turn;
   const unread = inbox?.filter((i) => !i.readAt).length ?? 0;
@@ -36,6 +42,8 @@ export async function loadOrgCounts(): Promise<OrgShellCounts> {
     check: t ? t.confirm + t.blocked : null,
     review: t ? t.review : null,
     children: t ? t.approve + t.requests + unread : null,
+    turnTotal: t ? t.confirm + t.blocked + t.review + t.approve + t.requests : null,
+    aiDown: ai?.available === false,
   };
 }
 
@@ -90,6 +98,15 @@ export function OrgShell({
   usePolling(async () => setLive(await loadOrgCounts()), POLL_MS, true, false);
   const ITEMS = nav(live);
 
+  // 탭 제목 "(N) 잇다 ITDA" — 다른 탭에 있어도 선생님 차례가 생긴 걸 알 수 있게
+  useEffect(() => {
+    const base = "잇다 ITDA";
+    document.title = live.turnTotal ? `(${live.turnTotal}) ${base}` : base;
+    return () => {
+      document.title = base;
+    };
+  }, [live.turnTotal]);
+
   return (
     <div className="org-ui min-h-screen">
       <header className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-4 gap-y-3 px-6 py-4">
@@ -131,6 +148,17 @@ export function OrgShell({
           <AccountMenu me={me} />
         </span>
       </header>
+
+      {live.aiDown ? (
+        <div role="alert" className="mx-auto mb-2 max-w-[1240px] px-6">
+          <p className="flex items-start gap-2.5 rounded-[18px] bg-humansoft px-5 py-3.5 text-[15px] leading-6 text-human">
+            <TriangleAlert aria-hidden size={18} className="mt-0.5 shrink-0" />
+            <span>
+              <b>AI 서버를 점검하고 있어요.</b> 올린 기록은 안전하게 보관돼요. AI가 돌아오면 멈춘 곳부터 자동으로 이어서 처리해요.
+            </span>
+          </p>
+        </div>
+      ) : null}
 
       <main
         aria-busy={navigating}
