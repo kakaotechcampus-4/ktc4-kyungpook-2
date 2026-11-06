@@ -224,7 +224,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     id: "mq_03",
     status: "unmatched",
     matchedChildId: null,
-    unmatchedReason: "no_anchor",
     record: {
       id: "rrf_8c11",
       fileName: "0821_특이사항.txt",
@@ -240,7 +239,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     id: "mq_04",
     status: "unmatched",
     matchedChildId: null,
-    unmatchedReason: "not_in_roster",
     hintName: "정OO",
     record: {
       id: "rrf_8c24",
@@ -306,7 +304,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     id: "mq_09",
     status: "unmatched",
     matchedChildId: null,
-    unmatchedReason: "no_anchor",
     record: {
       id: "rrf_9d48",
       fileName: "0819_관찰일지.hwp",

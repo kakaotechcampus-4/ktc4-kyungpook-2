@@ -18,9 +18,6 @@ export type MatchStatus = "auto" | "review" | "multi" | "unmatched" | "failed";
 /** multi 로 내려온 이유 — 둘은 교사가 할 일이 서로 다르다 */
 export type MultiReason = "co_mention" | "ambiguous_identity";
 
-/** unmatched 로 내려온 이유 — 미등록 아동이면 등록 화면으로 보내야 한다 */
-export type UnmatchedReason = "no_anchor" | "not_in_roster";
-
 /**
  * 본문에서 판정 근거가 된 구간.
  * 인덱스는 **유니코드 코드포인트** 기준이다(Python str 인덱스, `AI/matching/schemas.py`).
@@ -256,7 +253,7 @@ export interface MatchingItem {
   /** 본문에서 이 판정의 근거가 된 구간. 화면에서 하이라이트한다. */
   evidence: EvidenceSpan[];
   multiReason?: MultiReason | null;
-  unmatchedReason?: UnmatchedReason | null;
+  // unmatched 의 이유는 AI · 서버 어디에도 없다(O-22). 화면은 이유를 나누지 않는다 (#381)
   /** 표지에 적힌 이름과 본문 판정이 어긋남 */
   hintMismatch?: boolean;
   /**
