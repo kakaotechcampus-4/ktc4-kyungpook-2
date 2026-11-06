@@ -25,6 +25,7 @@ import {
   reopenGate1,
   retryFailedSummary,
 } from "@/lib/api";
+import { locateEvidence, markSegments } from "@/lib/evidence";
 import type { FailedSummary, Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
 
 /**
@@ -184,11 +185,16 @@ function SentenceRow({
   claim,
   line,
   onChange,
+  evOn = false,
+  onEv,
 }: {
   no: number;
   claim: SummaryClaim;
   line: Line;
   onChange: (patch: Partial<Line>) => void;
+  /** 이 문장의 근거를 원본 일지에 강조하는 중 */
+  evOn?: boolean;
+  onEv?: () => void;
 }) {
   const isEdit = line.action === "EDIT";
   const isDelete = line.action === "DELETE";
@@ -206,7 +212,7 @@ function SentenceRow({
       : "bg-surface2 text-ink2";
 
   return (
-    <li className={`flex flex-wrap items-start gap-3 rounded border py-3 pr-3 pl-3.5 ${row}`}>
+    <li className={`flex flex-wrap items-start gap-3 rounded border py-3 pr-3 pl-3.5 ${row} ${evOn ? "shadow-[inset_0_0_0_2px_var(--color-mark)]" : ""}`}>
       <span className="mt-2">
         <NumberDot n={no} className={dot} />
       </span>
@@ -243,6 +249,18 @@ function SentenceRow({
           </span>
         ) : null}
       </div>
+      {onEv ? (
+        <button
+          type="button"
+          aria-pressed={evOn}
+          onClick={onEv}
+          className={`min-h-10 shrink-0 rounded-full border px-3 text-[13px] font-bold ${
+            evOn ? "border-mark bg-mark text-human" : "border-line2 bg-surface text-ink2 hover:bg-surface2"
+          }`}
+        >
+          근거
+        </button>
+      ) : null}
       <div
         role="group"
         aria-label={`${no}번 문장 처리`}
@@ -516,14 +534,37 @@ function ErrorLine({ error }: { error: string | null }) {
 }
 
 /** 원본 일지. 요약에 안 들어간 일지는 흐리게 두고 머리에 건수를 보인다 */
-function SourceEntries({ item }: { item: SummaryItem }) {
+function SourceEntries({
+  item,
+  evidence = null,
+}: {
+  item: SummaryItem;
+  /** [근거]를 누른 문장의 근거. null 이면 강조하지 않는다 */
+  evidence?: { journalEntryId: string; quote: string }[] | null;
+}) {
   const uncovered = new Set(item.uncoveredEntries.map((e) => e.journalEntryId));
   const entries = item.entries.length ? item.entries : item.uncoveredEntries;
+  const located = evidence && evidence.length ? locateEvidence(entries, evidence) : null;
+  const evNote =
+    evidence == null ? null : evidence.length === 0 ? (
+      "선생님이 쓴 문장이에요. 원본 일지에 근거가 없어요"
+    ) : located?.found ? (
+      <>
+        <mark className="rounded bg-mark/55 px-0.5 text-inherit">노란 부분</mark>이 고른 문장의 근거예요
+      </>
+    ) : (
+      "근거 위치를 못 찾았어요. 원본 일지를 직접 읽어 봐 주세요"
+    );
   return (
     <PopSection title="원본 일지">
       {uncovered.size > 0 && !item.noContent ? (
         <p className="-mt-1 mb-2">
           <Chip tone="idle">요약에 안 들어간 일지 {uncovered.size}건 · 승인하면 함께 끝나요</Chip>
+        </p>
+      ) : null}
+      {evNote ? (
+        <p role="status" className="mb-1.5 text-[13px] text-ink2">
+          {evNote}
         </p>
       ) : null}
       <div className="grid gap-2 rounded-[14px] border border-line bg-paper px-4 py-3.5">
@@ -537,7 +578,15 @@ function SourceEntries({ item }: { item: SummaryItem }) {
                 uncovered.has(e.journalEntryId) && !item.noContent ? "text-muted" : ""
               }`}
             >
-              {e.content}
+              {markSegments(e.content, located?.ranges.get(e.journalEntryId) ?? []).map((seg, i) =>
+                seg.marked ? (
+                  <mark key={i} className="rounded bg-mark/55 px-0.5 text-inherit">
+                    {seg.text}
+                  </mark>
+                ) : (
+                  <span key={i}>{seg.text}</span>
+                ),
+              )}
             </p>
           ))
         )}
@@ -553,6 +602,8 @@ function PendingPopup({ item, position, onClose, onDone, onStale }: PopupProps) 
   const [added, setAdded] = useState<Added[]>([]);
   const [nextKey, setNextKey] = useState(0);
   const [confirming, setConfirming] = useState<Decision | null>(null);
+  /** [근거]를 누른 문장 번호 */
+  const [ev, setEv] = useState<number | null>(null);
   const { busy, error, run } = useDecide(item, onDone, onStale);
 
   const edits = lines.filter((l, i) => isEdited(l, item.claims[i])).length;
@@ -667,7 +718,15 @@ function PendingPopup({ item, position, onClose, onDone, onStale }: PopupProps) 
           <PopSection title={`AI 요약 ${item.claims.length}문장`}>
             <ol className="grid gap-2">
               {item.claims.map((claim, i) => (
-                <SentenceRow key={claim.index} no={i + 1} claim={claim} line={lines[i]} onChange={(patch) => setLine(i, patch)} />
+                <SentenceRow
+                  key={claim.index}
+                  no={i + 1}
+                  claim={claim}
+                  line={lines[i]}
+                  onChange={(patch) => setLine(i, patch)}
+                  evOn={ev === i}
+                  onEv={() => setEv((cur) => (cur === i ? null : i))}
+                />
               ))}
               {added.map((a) => (
                 <li
@@ -715,7 +774,7 @@ function PendingPopup({ item, position, onClose, onDone, onStale }: PopupProps) 
           </PopSection>
         )}
 
-        <SourceEntries item={item} />
+        <SourceEntries item={item} evidence={ev != null ? (item.claims[ev]?.evidence ?? []) : null} />
       </ListPopup>
 
       {confirming && d ? (
