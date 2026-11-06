@@ -53,6 +53,6 @@ public interface InsightResultRepository extends JpaRepository<InsightResult, Lo
     @Query("select i from InsightResult i where i.id = :id")
     Optional<InsightResult> findByIdForUpdate(@Param("id") Long id);
 
-    /** {@code since} 뒤로 만든 인사이트 전부. 근거 기관이 JSON 글이라 기관으로는 자바에서 거른다 (#370). */
-    List<InsightResult> findByCreatedAtGreaterThanEqual(LocalDateTime since);
+    /** 그 아이들의 {@code since} 뒤로 만든 인사이트. 근거 기관이 JSON 글이라 기관으로는 자바에서 거른다 (#370). */
+    List<InsightResult> findByChildIdInAndCreatedAtGreaterThanEqual(Collection<Long> childIds, LocalDateTime since);
 }

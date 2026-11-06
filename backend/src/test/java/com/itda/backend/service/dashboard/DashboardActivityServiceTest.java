@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.matching.MatchingStatus;
@@ -133,10 +134,13 @@ class DashboardActivityServiceTest {
     }
 
     @Test
-    void 오늘_만든_인사이트_중_우리_기관이_근거를_낸_것만_센다() {
-        atInsight(insight("[1,2]"), NOW);
-        atInsight(insight("[2]"), NOW);
-        atInsight(insight("[1]"), YESTERDAY_LAST);
+    void 오늘_만든_인사이트_중_우리_명부_아이의_우리_기관이_근거를_낸_것만_센다() {
+        em.persistAndFlush(ChildOrganization.of(8L, ORG));
+        atInsight(insight(8L, "[1,2]"), NOW);
+        atInsight(insight(8L, "[2]"), NOW);
+        atInsight(insight(8L, "[1]"), YESTERDAY_LAST);
+        // 그날 플랫폼 전체 인사이트를 읽지 않도록 우리 명부 아이로 먼저 좁힌다.
+        atInsight(insight(9L, "[1]"), NOW);
 
         assertThat(service.getActivity(TEACHER).insights()).isEqualTo(1);
     }
@@ -167,8 +171,8 @@ class DashboardActivityServiceTest {
         return em.persistAndFlush(SummaryResult.of(childId, date, institutionId, 1, "요약 본문", "[]", "[]", "[]", "{}"));
     }
 
-    private InsightResult insight(String sourceInstitutionIds) {
-        return em.persistAndFlush(InsightResult.of(8L, LocalDate.of(2026, 10, 26), LocalDate.of(2026, 11, 1), 1,
+    private InsightResult insight(Long childId, String sourceInstitutionIds) {
+        return em.persistAndFlush(InsightResult.of(childId, LocalDate.of(2026, 10, 26), LocalDate.of(2026, 11, 1), 1,
                 "상황", "반응", "본문", "[]", "[]", "[]", sourceInstitutionIds, false, "{}"));
     }
 
