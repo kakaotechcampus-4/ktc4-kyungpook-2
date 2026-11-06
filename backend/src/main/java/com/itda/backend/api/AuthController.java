@@ -165,6 +165,7 @@ public class AuthController {
             summary = "로그아웃",
             description = "access_token 쿠키를 만료시키고, 그 출입증의 로그인을 서버에 로그아웃으로 남깁니다. "
                     + "그 로그인의 출입증(연장된 것 포함)은 이후 인증되지 않습니다. 같은 회원의 다른 로그인은 그대로입니다. "
+                    + "서명이 유효하고 최대 로그인 시간이 남아 있으면 만료된 출입증으로도 그 로그인을 무효로 합니다. "
                     + "로그인 번호가 없는 옛 출입증은 쿠키만 지웁니다. 요청 전에 받은 XSRF-TOKEN 쿠키 값을 "
                     + "X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
@@ -177,9 +178,9 @@ public class AuthController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<Void> logout(HttpServletRequest request) {
-        // 출입증 필터는 로그아웃에서 출입증을 보지 않는다 — 여기서 직접 읽는다. 이미 죽었거나 로그인 번호가 없는
-        // 옛 출입증이면 남길 것이 없어 쿠키만 지운다
-        jwtProvider.parse(jwtCookie.read(request))
+        // 출입증 필터는 로그아웃에서 출입증을 보지 않는다 — 여기서 직접 읽는다. 만료 직전 발급한 연장 쿠키도 막아야
+        // 하므로, 서명이 맞고 최대 로그인 시간이 남아 있으면 만료된 출입증으로도 로그인 번호를 기록한다
+        jwtProvider.parseForLogout(jwtCookie.read(request))
                 .filter(token -> token.sessionId() != null)
                 .ifPresent(this::revoke);
         return ResponseEntity.noContent()

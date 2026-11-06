@@ -3,7 +3,8 @@ package com.itda.backend.global.jwt;
 import java.time.Instant;
 
 /**
- * 서명과 만료를 확인한 출입증의 내용.
+ * 서명을 확인한 출입증의 내용. 인증용 {@link JwtProvider#parse} 는 만료도 확인하고,
+ * 로그아웃용 {@link JwtProvider#parseForLogout} 은 만료됐어도 최대 로그인 시간이 남아 있으면 읽는다.
  *
  * @param subject   내부 userId
  * @param sessionId 로그인 번호({@code sid}). 로그인할 때 정해져 연장해도 그대로다. 로그아웃은 이 번호를 무효로 한다.

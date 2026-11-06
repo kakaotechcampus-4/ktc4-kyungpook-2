@@ -143,7 +143,7 @@ HTTP/1.1 404 Not Found
   로그인 흐름에서 응답으로 나가지 않는다.
 - 보호 API 요청은 브라우저가 `access_token` 쿠키를 자동으로 전송하도록 `credentials: include`를 사용한다. 클라이언트는 JWT를 읽거나 `Authorization: Bearer` 헤더에 직접 넣지 않는다.
 - `POST`, `PUT`, `PATCH`, `DELETE` 요청에는 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 함께 보낸다. OAuth 로그인 시작·콜백 경로는 이 CSRF 검사에서 제외된다.
-- OAuth 인가 요청의 state 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로만 처리하며, **로그인 정보는 세션에 저장하지 않는다**(`JSESSIONID`만으로는 인증되지 않는다). refresh token 발급과 토큰 폐기 전략은 아직 없다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시키고 `204 No Content`로 응답한다.
+- OAuth 인가 요청의 state 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로만 처리하며, **로그인 정보는 세션에 저장하지 않는다**(`JSESSIONID`만으로는 인증되지 않는다). refresh token은 발급하지 않는다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시키고, 로그인 번호(`sid`)를 서버에 기록해 같은 로그인의 출입증(연장된 것 포함)을 무효로 한 뒤 `204 No Content`로 응답한다. 서명이 유효하고 최대 로그인 시간(처음 로그인부터 12시간)이 남아 있으면 요청의 출입증이 만료됐어도 기록한다. 로그인 번호가 없는 옛 출입증과 최대 로그인 시간이 지난 출입증은 쿠키만 지운다.
 - API 인증 실패 요청의 RequestCache는 비활성화한다. 비로그인 API GET 요청을 저장하기 위한 세션·`JSESSIONID`는 생성하지 않으며, OAuth 인가 요청의 state 세션은 유지한다.
 
 ## 변경 절차

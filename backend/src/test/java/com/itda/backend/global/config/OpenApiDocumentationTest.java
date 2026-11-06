@@ -92,6 +92,8 @@ class OpenApiDocumentationTest {
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.description")
+						.value(containsString("만료된 출입증")))
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.400").exists())

@@ -1,6 +1,7 @@
 package com.itda.backend.global.jwt;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
@@ -64,11 +65,34 @@ public class JwtProvider {
 
     /** 서명이 맞고 만료되지 않았으면 그 내용. 아니면 빈 값이다. */
     public Optional<AccessToken> parse(String token) {
+        return read(token, false);
+    }
+
+    /**
+     * 로그아웃할 로그인을 읽는다. 서명이 맞으면 출입증 자체가 만료됐어도 읽는다 — 만료 직전에 발급한 연장 쿠키가
+     * 아직 도착 중일 수 있다. 최대 로그인 시간이 지났으면 그 로그인의 출입증은 더 쓸 수 없어 기록하지 않는다.
+     * 인증에는 만료를 검사하는 {@link #parse(String)} 를 사용한다.
+     */
+    public Optional<AccessToken> parseForLogout(String token) {
+        return read(token, true)
+                .filter(parsed -> now().isBefore(parsed.loginAt().plus(maxSession)));
+    }
+
+    private Optional<AccessToken> read(String token, boolean allowExpired) {
         if (!StringUtils.hasText(token)) {
             return Optional.empty();
         }
         try {
-            Claims claims = parser.parseSignedClaims(token).getPayload();
+            Claims claims;
+            try {
+                claims = parser.parseSignedClaims(token).getPayload();
+            } catch (ExpiredJwtException e) {
+                if (!allowExpired) {
+                    return Optional.empty();
+                }
+                // JJWT 는 서명을 확인한 뒤 만료 예외를 던진다. 서명 실패 등 다른 오류는 아래에서 거절한다.
+                claims = e.getClaims();
+            }
             Number authTime = claims.get(AUTH_TIME, Number.class);
             Instant loginAt = authTime != null
                     ? Instant.ofEpochSecond(authTime.longValue())

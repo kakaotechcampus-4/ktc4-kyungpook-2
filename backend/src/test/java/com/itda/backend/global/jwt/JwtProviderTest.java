@@ -75,6 +75,40 @@ class JwtProviderTest {
     }
 
     @Test
+    void logoutReadsExpiredTokenWithoutAuthenticatingIt() {
+        String token = at(LOGIN).createToken("12345");
+        JwtProvider afterExpiry = at(LOGIN.plus(Duration.ofHours(3)).plusSeconds(1));
+
+        assertThat(afterExpiry.parse(token)).isEmpty();
+        assertThat(afterExpiry.parseForLogout(token)).contains(at(LOGIN).parse(token).orElseThrow());
+    }
+
+    @Test
+    void logoutOnlyReadsTokensBeforeTheMaximumSessionEnds() {
+        String token = at(LOGIN).createToken("12345");
+        Instant sessionEnd = LOGIN.plus(Duration.ofMillis(MAX_SESSION_MS));
+
+        assertThat(at(sessionEnd.minusSeconds(1)).parseForLogout(token)).isPresent();
+        assertThat(at(sessionEnd).parseForLogout(token)).isEmpty();
+        assertThat(at(sessionEnd.plusSeconds(1)).parseForLogout(token)).isEmpty();
+    }
+
+    @Test
+    void logoutRejectsExpiredTokenSignedWithAnotherKey() {
+        String forged = new JwtProvider("another-secret-key-for-jwt-unit-test-99", TTL_MS, MAX_SESSION_MS,
+                Clock.fixed(LOGIN, ZoneOffset.UTC)).createToken("12345");
+
+        assertThat(at(LOGIN.plus(Duration.ofHours(3)).plusSeconds(1)).parseForLogout(forged)).isEmpty();
+    }
+
+    @Test
+    void logoutRejectsInvalidTokens() {
+        assertThat(at(LOGIN).parseForLogout("not-a-real-token")).isEmpty();
+        assertThat(at(LOGIN).parseForLogout("")).isEmpty();
+        assertThat(at(LOGIN).parseForLogout(null)).isEmpty();
+    }
+
+    @Test
     void doesNotRenewWhileMoreThanHalfRemains() {
         Instant now = LOGIN.plus(Duration.ofMinutes(89));
 

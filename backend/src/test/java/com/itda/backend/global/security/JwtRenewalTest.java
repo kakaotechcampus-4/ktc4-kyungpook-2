@@ -2,6 +2,7 @@ package com.itda.backend.global.security;
 
 import com.itda.backend.domain.user.RevokedSession;
 import com.itda.backend.domain.user.User;
+import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
@@ -19,6 +20,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.ActiveProfiles;
@@ -29,7 +34,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.List;
 
@@ -47,12 +52,24 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Import(JwtRenewalTest.TestClockConfig.class)
 class JwtRenewalTest {
 
     private static final String ME = "/api/v1/auth/me";
     private static final String LOGOUT = "/api/v1/auth/logout";
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 6, 9, 0);
+
+    @TestConfiguration
+    static class TestClockConfig {
+        @Bean
+        @Primary
+        MutableClock testClock() {
+            return new MutableClock(NOW);
+        }
+    }
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private MutableClock clock;
     @Autowired private UserRepository userRepository;
     @Autowired private TermsAgreementRepository termsAgreementRepository;
     @Autowired private RevokedSessionRepository revokedSessionRepository;
@@ -65,6 +82,7 @@ class JwtRenewalTest {
 
     @BeforeEach
     void setUp() {
+        clock.setTo(NOW);
         parent = TermsFixture.agreeAll(termsAgreementRepository,
                 userRepository.save(UserFixture.parent("kakao-renewal-parent", "김보호")));
     }
@@ -78,7 +96,7 @@ class JwtRenewalTest {
 
     /** {@code ago} 전에 로그인한 출입증. */
     private String loggedInAgo(Duration ago) {
-        Clock past = Clock.offset(Clock.systemUTC(), ago.negated());
+        Clock past = Clock.offset(clock, ago.negated());
         return new JwtProvider(secret, ttlMs, maxSessionMs, past).createToken(String.valueOf(parent.getId()));
     }
 
@@ -185,6 +203,70 @@ class JwtRenewalTest {
         assertThat(perform(get(ME).cookie(auth(x))).getStatus()).isEqualTo(401);
     }
 
+    /** X 가 만료되기 직전에 Y 를 발급하고, 로그아웃은 X 가 만료된 직후 처리되는 경우에도 Y 를 거절한다. */
+    @Test
+    void renewedCookieCannotReviveLoginWhenOriginalTokenExpiresBeforeLogout() throws Exception {
+        String x = loggedInAgo(Duration.ZERO);
+        clock.advance(Duration.ofMillis(ttlMs).minusSeconds(1));
+        MockHttpServletResponse renewal = perform(get(ME).cookie(auth(x)));
+        assertThat(renewal.getStatus()).isEqualTo(200);
+        String y = valueOf(accessTokenCookies(renewal).get(0));
+
+        clock.advance(Duration.ofSeconds(2));
+        assertThat(perform(get(ME).cookie(auth(x))).getStatus()).isEqualTo(401);
+        assertThat(perform(get(ME).cookie(auth(y))).getStatus()).isEqualTo(200);
+        String colleague = loggedInAgo(Duration.ZERO);
+
+        MockHttpServletResponse response = logout(post(LOGOUT), x);
+        assertThat(response.getStatus()).isEqualTo(204);
+        assertThat(accessTokenCookies(response)).singleElement()
+                .satisfies(cookie -> assertThat(cookie).contains("Max-Age=0"));
+
+        MockHttpServletResponse withY = perform(get(ME).cookie(auth(y)));
+        assertThat(withY.getStatus()).isEqualTo(401);
+        assertThat(accessTokenCookies(withY)).isEmpty();
+        assertThat(perform(get(ME).cookie(auth(colleague))).getStatus()).isEqualTo(200);
+        assertThat(revokedSessionRepository.findAll()).singleElement()
+                .extracting(RevokedSession::getUserId).isEqualTo(parent.getId());
+    }
+
+    @Test
+    void logoutWithExpiredTokenStillRequiresCsrf() throws Exception {
+        String expired = loggedInAgo(Duration.ofHours(4));
+
+        MockHttpServletResponse response = perform(post(LOGOUT).cookie(auth(expired)));
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(revokedSessionRepository.count()).isZero();
+    }
+
+    @Test
+    void logoutWithExpiredTokenSignedWithAnotherKeyOnlyExpiresTheCookie() throws Exception {
+        Clock past = Clock.offset(clock, Duration.ofHours(-4));
+        String forged = new JwtProvider("another-secret-key-for-jwt-unit-test-99", ttlMs, maxSessionMs, past)
+                .createToken(String.valueOf(parent.getId()));
+
+        MockHttpServletResponse response = logout(post(LOGOUT), forged);
+
+        assertThat(response.getStatus()).isEqualTo(204);
+        assertThat(accessTokenCookies(response)).singleElement()
+                .satisfies(cookie -> assertThat(cookie).contains("Max-Age=0"));
+        assertThat(revokedSessionRepository.count()).isZero();
+    }
+
+    @Test
+    void logoutAfterMaximumSessionOnlyExpiresTheCookie() throws Exception {
+        String token = loggedInAgo(Duration.ZERO);
+        clock.advance(Duration.ofMillis(maxSessionMs));
+
+        MockHttpServletResponse response = logout(post(LOGOUT), token);
+
+        assertThat(response.getStatus()).isEqualTo(204);
+        assertThat(accessTokenCookies(response)).singleElement()
+                .satisfies(cookie -> assertThat(cookie).contains("Max-Age=0"));
+        assertThat(revokedSessionRepository.count()).isZero();
+    }
+
     /** 1기관 1계정이라 한 사람의 로그아웃이 같은 계정의 다른 로그인을 끊으면 안 된다. */
     @Test
     void otherLoginOfTheSameUserSurvivesLogout() throws Exception {
@@ -212,8 +294,8 @@ class JwtRenewalTest {
     void loggingOutWithALegacyTokenOnlyExpiresTheCookie() throws Exception {
         String legacy = Jwts.builder()
                 .subject(String.valueOf(parent.getId()))
-                .issuedAt(new Date())
-                .expiration(Date.from(Instant.now().plus(Duration.ofHours(1))))
+                .issuedAt(Date.from(clock.instant()))
+                .expiration(Date.from(clock.instant().plus(Duration.ofHours(1))))
                 .signWith(Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8)))
                 .compact();
 
@@ -230,8 +312,8 @@ class JwtRenewalTest {
     void legacyTokenIsAcceptedButNotRenewed() throws Exception {
         String legacy = Jwts.builder()
                 .subject(String.valueOf(parent.getId()))
-                .issuedAt(Date.from(Instant.now().minus(Duration.ofHours(2))))
-                .expiration(Date.from(Instant.now().plus(Duration.ofHours(1))))
+                .issuedAt(Date.from(clock.instant().minus(Duration.ofHours(2))))
+                .expiration(Date.from(clock.instant().plus(Duration.ofHours(1))))
                 .signWith(Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8)))
                 .compact();
 
