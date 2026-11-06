@@ -1,6 +1,7 @@
 package com.itda.backend.repository.record;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -172,4 +173,9 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and e.entryDate is not null and e.deletedAt is null")
     List<InProgressKey> findInProgressKeys(@Param("statuses") Collection<JournalEntryStatus> statuses);
+
+    /** 그 기관에서 {@code since} 뒤로 나눠 만든 일지 수 — 오늘 AI가 한 일의 "기록 나누기" (#370). 지운 일지도 센다. */
+    @Query("select count(e) from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where r.institutionId = :institutionId and e.createdAt >= :since")
+    long countCreatedSince(@Param("institutionId") String institutionId, @Param("since") LocalDateTime since);
 }

@@ -1,6 +1,7 @@
 package com.itda.backend.repository.insight;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -51,4 +52,7 @@ public interface InsightResultRepository extends JpaRepository<InsightResult, Lo
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from InsightResult i where i.id = :id")
     Optional<InsightResult> findByIdForUpdate(@Param("id") Long id);
+
+    /** {@code since} 뒤로 만든 인사이트 전부. 근거 기관이 JSON 글이라 기관으로는 자바에서 거른다 (#370). */
+    List<InsightResult> findByCreatedAtGreaterThanEqual(LocalDateTime since);
 }
