@@ -91,12 +91,15 @@ export default function ChecklistsPage() {
 
   return (
     <>
-      <WorkHead title="준비물·확인사항" />
+      <WorkHead title="준비물·확인사항" tour="lists" />
 
       <div className="flex flex-col gap-5">
-        <Composer roster={roster} onSent={() => revalidator.revalidate()} />
+        <div data-tour="composer">
+          <Composer roster={roster} onSent={() => revalidator.revalidate()} />
+        </div>
 
-        <Card>
+        <div data-tour="sent">
+          <Card>
           <PanelHead title={`보낸 요청 ${sent.length}${cursor ? "+" : ""}건`} />
           {listError ? (
             <p role="alert" className="mb-3 rounded bg-blocksoft px-3 py-2 text-[14px] text-block">
@@ -125,7 +128,8 @@ export default function ChecklistsPage() {
               {loadingMore ? <Busy>불러오는 중…</Busy> : "이전 요청 더 보기"}
             </button>
           ) : null}
-        </Card>
+          </Card>
+        </div>
       </div>
 
       {cancelling ? (

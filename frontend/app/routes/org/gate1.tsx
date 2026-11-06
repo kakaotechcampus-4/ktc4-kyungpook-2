@@ -460,6 +460,7 @@ function Gate1Page() {
   return (
     <div>
       <WorkHead
+        tour="review"
         title={TITLE}
         jobs={[pendingLeft ? `검토 ${pendingLeft}건` : "", heldLeft ? `보류 ${heldLeft}건` : ""].filter(Boolean)}
       />
@@ -485,7 +486,7 @@ function Gate1Page() {
         <EmptyLine>{tab === "hold" ? "보류한 요약이 없어요" : "검토할 요약이 없어요"}</EmptyLine>
       ) : (
         <>
-          <div className="grid gap-2.5">
+          <div data-tour="list" className="grid gap-2.5">
             {page.items.map((r) => (
               <WorkRow
                 key={r.id}

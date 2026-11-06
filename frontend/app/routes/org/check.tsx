@@ -87,9 +87,9 @@ export default function CheckPage() {
 
   return (
     <div>
-      <WorkHead title="기록 확인" jobs={jobs} />
+      <WorkHead title="기록 확인" jobs={jobs} tour="check" />
 
-      <section className="mb-8 grid gap-2.5">
+      <section data-tour="confirm" className="mb-8 grid gap-2.5">
         <SectionHead title="아이 확인" count={cLeft} />
         {cw.visible.length === 0 ? (
           <EmptyLine>아이를 확인할 기록이 없어요</EmptyLine>
@@ -120,7 +120,7 @@ export default function CheckPage() {
         )}
       </section>
 
-      <section className="grid gap-2.5">
+      <section data-tour="blocked" className="grid gap-2.5">
         <SectionHead title="고쳐야 할 기록" count={bLeft} />
         {bw.visible.length === 0 ? (
           <EmptyLine>막힌 기록이 없어요</EmptyLine>

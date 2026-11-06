@@ -24,6 +24,7 @@ import {
 } from "@/lib/api";
 import { fileProgressOf } from "@/lib/pipeline";
 import type { AiActivity, FileProgress, Pipeline, PipelineRow, PipelineTurn, UploadResult } from "@/lib/types";
+import { TourButton } from "@/components/org/Tour";
 import { usePolling } from "@/lib/usePolling";
 
 /**
@@ -103,6 +104,7 @@ export default function DashboardPage() {
         <p className="mb-1 text-[15px] text-muted">{today()}</p>
         <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em]">
           {total ? `오늘 선생님 차례 ${total}건` : "오늘 선생님 차례가 없어요"}
+          <TourButton screen="dash" auto />
         </h1>
       </header>
 
@@ -256,6 +258,7 @@ function AiDay({ a }: { a: AiActivity }) {
   const sum = items.reduce((n, [, v]) => n + v, 0);
   return (
     <section
+      data-tour="aiday"
       aria-label="오늘 AI가 한 일"
       className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[18px] bg-accentsoft px-5 py-3 text-[14px] text-accentink"
     >
@@ -285,7 +288,7 @@ const TURN: { key: keyof PipelineTurn; label: string; desc: string; icon: typeof
 
 function TurnList({ turn }: { turn: PipelineTurn }) {
   return (
-    <ul className="grid">
+    <ul data-tour="turn" className="grid">
       {TURN.map((t) => {
         const n = turn[t.key];
         const Icon = t.icon;
@@ -389,6 +392,7 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   return (
     <div className="grid gap-3">
       <div
+        data-tour="upload"
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -515,7 +519,7 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
         진행 현황
       </h2>
 
-      <div role="group" aria-label="단계 고르기" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 min-[1000px]:grid-cols-6">
+      <div data-tour="pipe" role="group" aria-label="단계 고르기" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 min-[1000px]:grid-cols-6">
         {STEPS.map((name, i) => {
           const c = by[i];
           const on = stage === i;
@@ -578,7 +582,7 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
         ) : null}
       </div>
 
-      <div tabIndex={0} aria-label="진행 현황 목록" className="flex h-[470px] flex-col overflow-y-auto overscroll-contain rounded-[14px] border border-line max-[720px]:h-[70vh]">
+      <div data-tour="table" tabIndex={0} aria-label="진행 현황 목록" className="flex h-[470px] flex-col overflow-y-auto overscroll-contain rounded-[14px] border border-line max-[720px]:h-[70vh]">
         {rows.length === 0 ? (
           <p className="m-auto px-4 text-center text-[14px] text-muted">아직 올린 기록이 없어요. 관찰일지를 올리면 여기서 단계별로 볼 수 있어요</p>
         ) : list.length === 0 && !doneTail.length ? (

@@ -130,11 +130,13 @@ export default function ChildrenPage() {
     <div>
       <WorkHead
         title="아동 목록"
+        tour="kids"
         right={
           <div className="flex flex-wrap items-center gap-2">
             {institution ? <OrgCode code={institution.code} /> : null}
             <button
               type="button"
+              data-tour="register"
               onClick={() => setRegistering(true)}
               className="tap inline-flex items-center gap-1.5 rounded-full bg-ink px-5 text-[15px] font-bold text-paper hover:brightness-110"
             >
@@ -145,7 +147,7 @@ export default function ChildrenPage() {
         }
       />
 
-      <div role="tablist" aria-label="아동 목록 나눠 보기" className="mb-4 flex w-fit rounded-full bg-surface2 p-1">
+      <div data-tour="tabs" role="tablist" aria-label="아동 목록 나눠 보기" className="mb-4 flex w-fit rounded-full bg-surface2 p-1">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -171,7 +173,7 @@ export default function ChildrenPage() {
           <EmptyLine>아직 등록한 아이가 없어요</EmptyLine>
         ) : (
           <>
-            <div className="grid gap-2.5">
+            <div data-tour="kids" className="grid gap-2.5">
               {kidPage.items.map((c) => (
                 <KidCard
                   key={c.id}
@@ -333,7 +335,7 @@ function OrgCode({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
   const shown = formatInviteCode(code);
   return (
-    <span className="flex items-center gap-2 rounded-full bg-surface py-1 pr-1 pl-4 text-[14px] shadow-[0_2px_14px_rgba(120,90,40,0.08)]">
+    <span data-tour="orgcode" className="flex items-center gap-2 rounded-full bg-surface py-1 pr-1 pl-4 text-[14px] shadow-[0_2px_14px_rgba(120,90,40,0.08)]">
       <span className="text-muted">우리 기관 코드</span>
       <b className="tabular-nums tracking-wide">{shown}</b>
       <button

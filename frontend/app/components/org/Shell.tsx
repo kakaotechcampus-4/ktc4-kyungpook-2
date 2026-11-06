@@ -147,6 +147,7 @@ export function OrgShell({
         </Link>
 
         <nav
+          data-tour="menu"
           aria-label="주 메뉴"
           className="order-last flex w-full justify-center overflow-x-auto md:order-none md:w-auto md:flex-1"
         >

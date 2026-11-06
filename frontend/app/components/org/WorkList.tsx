@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Link } from "react-router";
+import { TourButton, type TourScreen } from "@/components/org/Tour";
 
 /** 대시보드가 아닌 화면의 제목 위 "‹ 대시보드". 화면마다 같은 자리 */
 export function BackHome() {
@@ -16,13 +17,25 @@ export function BackHome() {
 }
 
 /** 화면 머리: ‹ 대시보드 · 제목 · 할 일 한 줄(데이터) */
-export function WorkHead({ title, jobs, right }: { title: string; jobs?: string[]; right?: React.ReactNode }) {
+export function WorkHead({
+  title,
+  jobs,
+  right,
+  tour,
+}: {
+  title: string;
+  jobs?: string[];
+  right?: React.ReactNode;
+  /** 제목 옆 "?" 사용법 */
+  tour?: TourScreen;
+}) {
   return (
     <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
         <BackHome />
         <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em] text-ink">
           {title}
+          {tour ? <TourButton screen={tour} /> : null}
         </h1>
         {jobs ? (
           <p className="mt-1.5 text-[15px] text-ink2">
