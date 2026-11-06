@@ -1,7 +1,9 @@
 import { ChevronDown, Plus, Trash2, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
-import { Busy, Card, ConfirmDialog, EmptyState, PageHeader, PanelHead } from "@/components/ui";
+import { WorkHead } from "@/components/org/WorkList";
+import { Busy, Card, ConfirmDialog, EmptyState, PanelHead } from "@/components/ui";
+import { Pager, usePage } from "@/components/ui/Pager";
 import {
   ApiError,
   cancelChecklist,
@@ -84,22 +86,18 @@ export default function ChecklistsPage() {
     }
   }
 
+  // 받아 둔 목록을 10건씩 쪽으로 나눈다. 더 오래된 요청은 아래 [이전 요청 더 보기]로 서버에서 더 받는다
+  const sentPage = usePage(sent);
+
   return (
     <>
-      <PageHeader
-        eyebrow={`보낸 요청 ${sent.length}${cursor ? "+" : ""}건`}
-        title="준비물·확인사항"
-        description="명부의 아이들에게 준비물과 확인할 것을 보내고, 보호자가 확인했는지 봅니다."
-      />
+      <WorkHead title="준비물·확인사항" />
 
       <div className="flex flex-col gap-5">
         <Composer roster={roster} onSent={() => revalidator.revalidate()} />
 
         <Card>
-          <PanelHead
-            title="보낸 요청"
-            note="보호자 중 한 명이 확인하면 그 아이는 확인 완료예요. 명부에서 빠진 아이는 숫자에서 뺍니다."
-          />
+          <PanelHead title={`보낸 요청 ${sent.length}${cursor ? "+" : ""}건`} />
           {listError ? (
             <p role="alert" className="mb-3 rounded bg-blocksoft px-3 py-2 text-[14px] text-block">
               {listError}
@@ -108,11 +106,14 @@ export default function ChecklistsPage() {
           {sent.length === 0 ? (
             <EmptyState icon="none" title="아직 보낸 요청이 없어요" description="위에서 첫 요청을 보내 보세요." />
           ) : (
-            <ul className="flex flex-col gap-3">
-              {sent.map((c) => (
-                <SentRow key={c.id} checklist={c} onCancel={() => setCancelling(c)} />
-              ))}
-            </ul>
+            <>
+              <ul className="flex flex-col gap-3">
+                {sentPage.items.map((c) => (
+                  <SentRow key={c.id} checklist={c} onCancel={() => setCancelling(c)} />
+                ))}
+              </ul>
+              <Pager {...sentPage} onChange={sentPage.setPage} />
+            </>
           )}
           {cursor ? (
             <button
