@@ -3,7 +3,7 @@ import { skipSearchOnlyChange } from "@/lib/revalidate";
 import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Check, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
-import { Busy, ConfirmDialog, Spinner } from "@/components/ui";
+import { Busy, ConfirmDialog, ReloginButton, Spinner } from "@/components/ui";
 import { ListPopup, useWalk } from "@/components/ui/ListPopup";
 import { Pager, usePage } from "@/components/ui/Pager";
 import {
@@ -26,7 +26,10 @@ import {
   reopenGate1,
   retryFailedSummary,
 } from "@/lib/api";
+import { isLoginLost } from "@/lib/apiError";
+import { RESTORED, splitCarried, useCarried } from "@/lib/carriedDraft";
 import { locateEvidence, markSegments } from "@/lib/evidence";
+import { forgetGate1Drafts, readGate1Drafts, saveGate1Draft, type Gate1Draft } from "@/lib/gate1Draft";
 import { notify } from "@/lib/notice";
 import type { FailedSummary, Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
 
@@ -49,7 +52,22 @@ export async function clientLoader() {
     // 요약 실패 목록을 못 받아도 검토는 할 수 있어야 한다
     loadIfReady("summaryFailures", getFailedSummaries).catch(() => null),
   ]);
-  return { pending, held, failed: failed ?? [] };
+  // 로그인이 풀려 맡겨 둔 고치던 내용(lib/gate1Draft). 목록을 받은 뒤에 읽는다 — 로그인이 풀린 채 오면 위에서 401 로 끝난다.
+  // 지우지 않는다(탐색이 취소돼도 남게). 팝업이 그린 뒤 지운다. 판은 팝업이 그때의 판과 다시 맞춰 본다
+  const carried = splitCarried(readGate1Drafts(), pending.map((s) => s.id));
+  return { pending, held, failed: failed ?? [], carried };
+}
+
+const DROPPED = "로그인하는 사이 요약이 바뀌어 고치던 내용은 지웠어요.";
+
+/** 맡겨 둔 내용을 이 요약에 되살려도 되는지 — 판 · 문장 수가 그대로일 때만(옛 번호로 고치면 엉뚱한 문장이 고쳐진다) */
+function restoredOf(item: SummaryItem, draft: Gate1Draft | undefined): { lines: Line[]; added: Added[] } | null {
+  if (!draft || item.noContent) return null;
+  if (draft.version !== item.version || draft.lines.length !== item.claims.length) return null;
+  return {
+    lines: draft.lines.map((l) => ({ action: l.action, text: l.text })),
+    added: draft.added.map((text, key) => ({ key, text })),
+  };
 }
 
 const TITLE = "검토";
@@ -334,7 +352,10 @@ export default function Gate1Route() {
 }
 
 function Gate1Page() {
-  const { pending, held, failed } = useLoaderData<typeof clientLoader>();
+  const { pending, held, failed, carried: loadedCarried } = useLoaderData<typeof clientLoader>();
+  // 로그인이 풀려 맡겨 둔 고치던 내용(lib/carriedDraft)
+  const draftsLogin = useCarried(loadedCarried, forgetGate1Drafts, readGate1Drafts);
+  const login = useMemo(() => ({ lost: draftsLogin.lost, reached: draftsLogin.reached }), [draftsLogin.lost, draftsLogin.reached]);
   const revalidator = useRevalidator();
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get("tab") === "hold" ? "hold" : "pending";
@@ -394,6 +415,15 @@ function Gate1Page() {
     setParams(tab === "hold" ? { tab: "hold" } : {}, { replace: true });
   }, [params]);
 
+  // 다시 로그인하고 돌아왔으면 맡겨 둔 요약 하나를 바로 연다(바로가기로 온 게 아니면)
+  const [autoOpened, setAutoOpened] = useState(false);
+  useEffect(() => {
+    if (autoOpened || params.get("open")) return;
+    setAutoOpened(true);
+    const first = pending.find((s) => s.id in draftsLogin.carried.drafts && !s.processing);
+    if (first && tab === "pending") pw.open(first.id);
+  }, [autoOpened]);
+
   function finish(id: string, outcome: Exclude<Outcome, "stale">) {
     setOutcomes((o) => ({ ...o, [id]: OUTCOME[outcome] }));
     walk.done(id);
@@ -426,9 +456,20 @@ function Gate1Page() {
       const keepalive = leaving && keepaliveUsed.current + bytes < 60_000;
       if (keepalive) keepaliveUsed.current += bytes;
       decideGate1(item.id, body, { keepalive })
-        .then(() => drafts.current.delete(item.id))
+        .then(() => {
+          drafts.current.delete(item.id);
+          login.reached();
+        })
         .catch((err) => {
           pw.undo(item.id);
+          if (isLoginLost(err)) {
+            // 로그인이 풀렸다 — 고치던 내용을 맡겨 두면 다시 로그인해 검토에 왔을 때 그 요약을 열어 되살린다
+            saveGate1Draft(item.id, { version: item.version, lines: draft.lines, added: draft.added.map((a) => a.text) });
+            login.lost();
+            notify(`로그인이 풀려 ${item.childName} 승인을 보내지 못했어요. 다시 로그인하면 고치던 내용을 되살려요`);
+            return;
+          }
+          if (err instanceof ApiError) login.reached();
           notify(
             err instanceof ApiError && (err.code === "SUMMARY_REGENERATING" || err.code === "SUMMARY_CHANGED")
               ? `${item.childName} 요약에 새 기록이 들어와 승인하지 못했어요. 검토에서 다시 읽고 승인해 주세요`
@@ -484,7 +525,7 @@ function Gate1Page() {
     { key: "hold", label: "보류", count: heldLeft },
   ];
   const current = walk.current;
-  const popupProps = { position: walk.position, onClose: walk.close, onDone: finish, onStale: stale };
+  const popupProps = { position: walk.position, onClose: walk.close, onDone: finish, onStale: stale, login };
 
   return (
     <div>
@@ -510,6 +551,12 @@ function Gate1Page() {
           </button>
         ))}
       </div>
+
+      {draftsLogin.carried.gone.length > 0 ? (
+        <p role="status" className="mb-4 rounded-[14px] bg-humansoft px-4 py-3 text-[14px] text-human">
+          로그인하는 사이 {draftsLogin.carried.gone.length}건은 이미 처리돼 고치던 내용을 지웠어요.
+        </p>
+      ) : null}
 
       {walk.visible.length === 0 ? (
         <EmptyLine>{tab === "hold" ? "보류한 요약이 없어요" : "검토할 요약이 없어요"}</EmptyLine>
@@ -545,7 +592,13 @@ function Gate1Page() {
         tab === "hold" ? (
           <HeldPopup key={current.id} item={current.s} {...popupProps} />
         ) : current.s.noContent ? (
-          <NoContentPopup key={current.id} item={current.s} {...popupProps} />
+          <NoContentPopup
+            key={current.id}
+            item={current.s}
+            {...popupProps}
+            carriedDraft={draftsLogin.carried.drafts[current.id]}
+            onCarriedUsed={draftsLogin.used}
+          />
         ) : (
           <PendingPopup
             key={current.id}
@@ -556,6 +609,9 @@ function Gate1Page() {
               const saved = drafts.current.get(current.id);
               return saved && saved.version === current.s.version ? saved.draft : undefined;
             })()}
+            carriedDraft={draftsLogin.carried.drafts[current.id]}
+            loggedOut={draftsLogin.loggedOut}
+            onCarriedUsed={draftsLogin.used}
           />
         )
       ) : null}
@@ -599,23 +655,37 @@ interface PopupProps {
   onClose: () => void;
   onDone: (id: string, outcome: Exclude<Outcome, "stale">) => void;
   onStale: (message: string) => void;
+  /** 저장이 401 로 실패함(lost) · 요청이 서버에 닿음(reached) — lib/carriedDraft */
+  login: { lost: () => void; reached: () => void };
 }
 
 /**
  * 결정 하나를 보내고 결과를 나눈다. 그새 바뀐 요약(409 SUMMARY_CHANGED · SUMMARY_REGENERATING)과 이미 처리된 요약은
  * 팝업을 닫고 알린다. 나머지 오류는 팝업 안에 보인다.
  */
-function useDecide(item: SummaryItem, onDone: PopupProps["onDone"], onStale: PopupProps["onStale"]) {
+function useDecide(item: SummaryItem, onDone: PopupProps["onDone"], onStale: PopupProps["onStale"], login: PopupProps["login"]) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loginLost, setLoginLost] = useState(false);
 
   async function run(send: () => Promise<unknown>, outcome: Exclude<Outcome, "stale">) {
     setBusy(true);
     setError(null);
+    setLoginLost(false);
     try {
       await send();
+      login.reached();
       onDone(item.id, outcome);
     } catch (err) {
+      if (isLoginLost(err)) {
+        // 로그인이 풀렸다 — 팝업을 닫지 않고 [다시 로그인]을 붙인다. 고치던 내용은 맡겨 둔다(PendingPopup)
+        setLoginLost(true);
+        setError(messageOf(err));
+        login.lost();
+        return;
+      }
+      // 통신 오류에서는 로그인 여부를 알 수 없다 — 맡긴 내용 보관을 유지한다
+      if (err instanceof ApiError) login.reached();
       if (err instanceof ApiError && (err.code === "SUMMARY_REGENERATING" || err.code === "SUMMARY_CHANGED")) {
         onStale("새 기록이 들어와 요약을 다시 만들고 있어요");
       } else if (isStale(err) || needsReload(err)) {
@@ -627,18 +697,31 @@ function useDecide(item: SummaryItem, onDone: PopupProps["onDone"], onStale: Pop
       setBusy(false);
     }
   }
-  return { busy, error, run };
+  return { busy, error, loginLost, run };
 }
 
 function popTitle(item: SummaryItem): string {
   return `${item.childName} · ${dateLabel(item.entryDate)}`;
 }
 
-function ErrorLine({ error }: { error: string | null }) {
+/** 팝업 버튼 줄의 오류 한 줄. 로그인이 풀려 실패했으면 [다시 로그인](검토로 돌아옴) — 저절로 보내지 않는다 */
+function ErrorLine({ error, loginLost = false }: { error: string | null; loginLost?: boolean }) {
   return error ? (
-    <span role="alert" className="basis-full text-[14px] font-bold text-block">
-      {error}
+    <span className="flex basis-full flex-wrap items-center justify-end gap-x-3 gap-y-1">
+      <span role="alert" className="text-[14px] font-bold text-block">
+        {error}
+      </span>
+      {loginLost ? <ReloginButton role="org" returnTo="/gate1" /> : null}
     </span>
+  ) : null;
+}
+
+/** 맡겨 둔 내용을 되살렸는지 · 버렸는지 팝업 맨 위에 한 줄 */
+function CarriedNote({ text }: { text: string | null }) {
+  return text ? (
+    <p role="status" className="rounded-[14px] bg-humansoft px-3.5 py-3 text-[14px] leading-6 text-human">
+      {text}
+    </p>
   ) : null;
 }
 
@@ -718,20 +801,46 @@ function PendingPopup({
   onClose,
   onDone,
   onStale,
+  login,
   onApprove,
   draft,
+  carriedDraft,
+  loggedOut,
+  onCarriedUsed,
 }: PopupProps & {
   /** 승인은 바로 보내지 않는다 — 화면이 5초 되돌리기를 준 뒤 보낸다 */
   onApprove: (item: SummaryItem, cards: Gate1Card[] | undefined, draft: Draft) => void;
+  /** 승인을 되돌린 요약의 고치던 내용(같은 판일 때만 화면이 준다) */
   draft?: Draft;
+  /** 로그인이 풀려 맡겨 둔 이 요약의 고치던 내용 */
+  carriedDraft?: Gate1Draft;
+  /** 이 화면에서 401 을 받았다 — 고칠 때마다 맡겨 둔다 */
+  loggedOut: boolean;
+  onCarriedUsed: (summaryId: string) => void;
 }) {
-  const [lines, setLines] = useState<Line[]>(() => draft?.lines ?? freshLines(item.claims));
-  const [added, setAdded] = useState<Added[]>(() => draft?.added ?? []);
-  const [nextKey, setNextKey] = useState(() => (draft?.added.length ? Math.max(...draft.added.map((a) => a.key)) + 1 : 0));
+  // 되돌린 승인의 내용이 먼저, 없으면 로그인 전에 맡긴 내용
+  const [restored] = useState(() => (draft ? null : restoredOf(item, carriedDraft)));
+  const start = draft ?? restored;
+  const [lines, setLines] = useState<Line[]>(() => start?.lines ?? freshLines(item.claims));
+  const [added, setAdded] = useState<Added[]>(() => start?.added ?? []);
+  const [nextKey, setNextKey] = useState(() => (start?.added.length ? Math.max(...start.added.map((a) => a.key)) + 1 : 0));
+  const [carriedNote] = useState(() => (carriedDraft && !draft ? (restored ? RESTORED : DROPPED) : null));
   const [confirming, setConfirming] = useState<"hold" | "remove" | null>(null);
   /** [근거]를 누른 문장 번호 */
   const [ev, setEv] = useState<number | null>(null);
-  const { busy, error, run } = useDecide(item, onDone, onStale);
+  const { busy, error, loginLost, run } = useDecide(item, onDone, onStale, login);
+
+  // 맡겨 둔 내용을 반영했다 — 되살렸든 버렸든 지운다
+  useEffect(() => {
+    if (carriedDraft) onCarriedUsed(item.id);
+  }, [carriedDraft, item.id, onCarriedUsed]);
+
+  // 로그인이 풀린 뒤로는 고칠 때마다 맡긴 내용을 갱신한다. 고친 게 없으면 칸을 지운다
+  useEffect(() => {
+    if (!loggedOut) return;
+    const touched = lines.some((l) => l.action !== "KEEP") || added.some((a) => a.text.trim());
+    saveGate1Draft(item.id, touched ? { version: item.version, lines, added: added.map((a) => a.text) } : null);
+  }, [loggedOut, lines, added, item.id, item.version]);
 
   const edits = lines.filter((l, i) => isEdited(l, item.claims[i])).length;
   const dels = lines.filter((l) => l.action === "DELETE").length;
@@ -813,10 +922,11 @@ function PendingPopup({
             ) : blankEdit ? (
               <span className="basis-full text-right text-[14px] text-block">고칠 문장이 비어 있어요. 문장을 빼려면 삭제를 눌러 주세요.</span>
             ) : null}
-            <ErrorLine error={error} />
+            <ErrorLine error={error} loginLost={loginLost} />
           </>
         }
       >
+        <CarriedNote text={carriedNote} />
         {flagged ? (
           <div role="note" className="flex items-start gap-2.5 rounded-[14px] bg-humansoft px-3.5 py-3 text-human">
             <TriangleAlert aria-hidden size={18} strokeWidth={1.7} className="mt-0.5 shrink-0" />
@@ -923,9 +1033,23 @@ function PendingPopup({
 
 /* ── 요약할 내용 없음 팝업 (#244) ─────────────────────── */
 
-function NoContentPopup({ item, position, onClose, onDone, onStale }: PopupProps) {
+function NoContentPopup({
+  item,
+  position,
+  onClose,
+  onDone,
+  onStale,
+  login,
+  carriedDraft,
+  onCarriedUsed,
+}: PopupProps & { carriedDraft?: Gate1Draft; onCarriedUsed: (summaryId: string) => void }) {
   const [confirming, setConfirming] = useState<"confirm" | "revert" | null>(null);
-  const { busy, error, run } = useDecide(item, onDone, onStale);
+  const { busy, error, loginLost, run } = useDecide(item, onDone, onStale, login);
+  // 고치던 요약이 로그인하는 사이 "요약할 내용 없음" 으로 다시 만들어졌다 — 고칠 문장이 없어 되살리지 않는다
+  const [carriedNote] = useState(() => (carriedDraft ? DROPPED : null));
+  useEffect(() => {
+    if (carriedDraft) onCarriedUsed(item.id);
+  }, [carriedDraft, item.id, onCarriedUsed]);
   const count = item.entries.length || item.uncoveredEntries.length;
 
   function decide(decision: "confirm" | "revert") {
@@ -952,10 +1076,11 @@ function NoContentPopup({ item, position, onClose, onDone, onStale }: PopupProps
             <PopButton tone="dark" onClick={() => setConfirming("confirm")} disabled={busy}>
               {busy ? <Busy>보내는 중…</Busy> : "확인"}
             </PopButton>
-            <ErrorLine error={error} />
+            <ErrorLine error={error} loginLost={loginLost} />
           </>
         }
       >
+        <CarriedNote text={carriedNote} />
         <div className="rounded-[14px] bg-surface2/60 px-4 py-3.5">
           <b className="text-[16px]">이날 기록에서 요약할 내용을 찾지 못했어요</b>
           <p className="mt-1 text-[14px] leading-6 text-ink2">
@@ -996,9 +1121,9 @@ function NoContentPopup({ item, position, onClose, onDone, onStale }: PopupProps
 
 /* ── 보류 팝업 ─────────────────────────────────────── */
 
-function HeldPopup({ item, position, onClose, onDone, onStale }: PopupProps) {
+function HeldPopup({ item, position, onClose, onDone, onStale, login }: PopupProps) {
   const [confirming, setConfirming] = useState<"reopen" | "remove" | null>(null);
-  const { busy, error, run } = useDecide(item, onDone, onStale);
+  const { busy, error, loginLost, run } = useDecide(item, onDone, onStale, login);
 
   function act(kind: "reopen" | "remove") {
     void run(
@@ -1025,7 +1150,7 @@ function HeldPopup({ item, position, onClose, onDone, onStale }: PopupProps) {
             <PopButton tone="dark" onClick={() => setConfirming("reopen")} disabled={busy}>
               {busy ? <Busy>보내는 중…</Busy> : "보류 풀기"}
             </PopButton>
-            <ErrorLine error={error} />
+            <ErrorLine error={error} loginLost={loginLost} />
           </>
         }
       >
@@ -1094,6 +1219,7 @@ function FailedPopup({
 }: Omit<PopupProps, "item"> & { rowId: string; item: FailedSummary }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loginLost, setLoginLost] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
   async function run(kind: "retry" | "close") {
@@ -1106,6 +1232,7 @@ function FailedPopup({
       onDone(rowId, kind === "retry" ? "retried" : "closed");
     } catch (err) {
       setConfirming(false);
+      setLoginLost(isLoginLost(err));
       if (err instanceof ApiError && err.status === 404) onStale("이미 처리했거나 볼 수 없는 기록이에요. 목록을 새로 불러왔어요.");
       else setError(messageOf(err));
     } finally {
@@ -1131,7 +1258,7 @@ function FailedPopup({
             <PopButton tone="dark" onClick={() => run("retry")} disabled={busy}>
               {busy ? <Busy>보내는 중…</Busy> : "다시 요약"}
             </PopButton>
-            <ErrorLine error={error} />
+            <ErrorLine error={error} loginLost={loginLost} />
           </>
         }
       >

@@ -18,6 +18,7 @@ import type {
 import { Busy } from "./Loading";
 export { PipelineStepper, StageDots } from "./PipelineStepper";
 export { Busy, FullPageLoading, NavigationProgress, Spinner, useNavigating } from "./Loading";
+export { ReloginButton } from "./ReloginButton";
 export type { StageState, PipelineStepperProps } from "./PipelineStepper";
 
 /* ── C1 판정 배지 ───────────────────────────────────── */
