@@ -128,7 +128,7 @@ export default function CheckPage() {
             <WorkRow
               key={c.id}
               who={dayOf(c.record.capturedAt)}
-              sub={c.hintName ? `일지 속 이름 '${c.hintName}'` : "일지에 이름 없음"}
+              sub={sourceOf(c)}
               text={c.record.preview ?? c.record.fullContent ?? ""}
               tag={
                 recommendedId(c) ? (
@@ -206,6 +206,14 @@ export default function CheckPage() {
 }
 
 /* ── 아이 확인 ─────────────────────────────────── */
+
+/**
+ * 어느 파일의 일지인지. 파일 이름에 명부 아이 이름이 있었으면 그 표지 이름, 없으면 파일 이름.
+ * 표지 이름이 없다고 "이름 없음" 이라 하지 않는다 — 일지 본문에는 이름이 있을 수 있다
+ */
+function sourceOf(item: MatchingItem): string {
+  return item.hintName ? `표지 이름 '${item.hintName}'` : item.record.fileName;
+}
 
 /** AI 가 지목한 아이. review 는 matchedChildId 로만, 후보가 하나면 그 아이 */
 function recommendedId(item: MatchingItem): string | null {
@@ -308,7 +316,7 @@ function ConfirmPopup({
   return (
     <ListPopup
       title="아이 확인"
-      subtitle={`${dayOf(item.record.capturedAt)} 기록 · ${item.hintName ? `일지 속 이름 '${item.hintName}'` : "일지에 아이 이름 없음"}`}
+      subtitle={`${dayOf(item.record.capturedAt)} 기록 · ${sourceOf(item)}`}
       position={position}
       busy={busy}
       onClose={onClose}

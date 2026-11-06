@@ -44,7 +44,7 @@ class MatchingQueueControllerTest {
     @Test
     void getQueue_excludesAutoStatus() throws Exception {
         var review = new MatchingQueueItemResponse(
-                "1", 1L, null, MatchingStatus.REVIEW, new BigDecimal("0.4"), null, null,
+                "1", 1L, null, MatchingStatus.REVIEW, new BigDecimal("0.4"), null, null, "김하늘",
                 new RecordResponse("3", "0821_관찰일지.docx", "점심시간에…", "2026-08-21", "점심시간에 식사를 잘함"),
                 List.of(),
                 MAPPER.readTree("[{\"start\":0,\"end\":3}]"));
@@ -55,6 +55,7 @@ class MatchingQueueControllerTest {
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
                 .andExpect(jsonPath("$.data[0].status").value("review"))
                 .andExpect(jsonPath("$.data[0].record.fileName").value("0821_관찰일지.docx"))
+                .andExpect(jsonPath("$.data[0].hintName").value("김하늘"))
                 // 팀원 리뷰 반영: evidence는 문자열이 아니라 실제 JSON 배열로 내려가야
                 // 프론트(EvidenceSpan[])가 바로 쓸 수 있다.
                 .andExpect(jsonPath("$.data[0].evidence[0].start").value(0))
@@ -64,7 +65,7 @@ class MatchingQueueControllerTest {
     @Test
     void getItem_returnsOneItem() throws Exception {
         var item = new MatchingQueueItemResponse(
-                "1", 1L, null, MatchingStatus.REVIEW, new BigDecimal("0.4"), null, null,
+                "1", 1L, null, MatchingStatus.REVIEW, new BigDecimal("0.4"), null, null, null,
                 new RecordResponse("3", "0821_관찰일지.docx", "점심시간에…", "2026-08-21", "점심시간에 식사를 잘함"),
                 List.of(), null);
         given(matchingResultService.getItem(eq(1L), any())).willReturn(item);
@@ -87,7 +88,7 @@ class MatchingQueueControllerTest {
     @Test
     void resolveAssign_updatesMatchedChild() throws Exception {
         var resolved = new MatchingQueueItemResponse(
-                "1", 1L, "2", MatchingStatus.AUTO, new BigDecimal("0.4"), null, null,
+                "1", 1L, "2", MatchingStatus.AUTO, new BigDecimal("0.4"), null, null, null,
                 new RecordResponse("3", "0821_관찰일지.docx", "점심시간에…", "2026-08-21", "점심시간에 식사를 잘함"),
                 List.of(), null);
         given(matchingResultService.resolve(eq(1L), eq("assign"), eq(2L), any(), any())).willReturn(resolved);

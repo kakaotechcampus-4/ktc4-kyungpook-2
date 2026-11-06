@@ -259,7 +259,10 @@ export interface MatchingItem {
   unmatchedReason?: UnmatchedReason | null;
   /** 표지에 적힌 이름과 본문 판정이 어긋남 */
   hintMismatch?: boolean;
-  /** 표지에 적혀 있던 이름 */
+  /**
+   * 표지 힌트 — 업로드 때 **파일 이름**에 명부 아이 이름이 한 명 들어 있으면 그 이름(O-22, #381).
+   * 일지 본문에서 찾은 이름이 아니다(그건 AI 판정의 `evidence`). 없으면 null — 화면은 파일 이름을 보인다
+   */
   hintName?: string | null;
 }
 

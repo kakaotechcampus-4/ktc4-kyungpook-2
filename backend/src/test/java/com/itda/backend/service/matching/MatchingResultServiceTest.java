@@ -111,6 +111,31 @@ class MatchingResultServiceTest {
         assertThat(queue.get(0).record().fileName()).isEqualTo("0821_관찰일지.docx");
     }
 
+    // 아이 확인 화면이 "표지 이름 '김하늘'" 을 띄운다(#381). 표지 힌트는 업로드 때 파일 이름에서 정해진다
+    // (RawRecordService.applyHintFromFilename) — 없으면 null 로 보내고, 화면은 그때 파일 이름을 보인다.
+    @Test
+    void getQueue_returnsFilenameHintNameOrNull() {
+        MatchingResult hinted = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        MatchingResult plain = new MatchingResult(
+                2L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        RawRecord hintedRecord = ourRawRecord(OUR_INSTITUTION);
+        hintedRecord.applyHint("김하늘", LocalDate.of(2020, 1, 1));
+        JournalEntry plainEntry = JournalEntry.of(4L, LocalDate.of(2026, 9, 1), "점심시간에 식사를 잘함", 1);
+        plainEntry.startMatching();
+        plainEntry.requestMatchReview();
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findByStatusNot(MatchingStatus.AUTO)).willReturn(List.of(hinted, plain));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(2L)).willReturn(Optional.of(plainEntry));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(hintedRecord));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(4L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+
+        List<MatchingQueueItemResponse> queue = matchingResultService.getQueue(OUR_USER_ID);
+
+        assertThat(queue).extracting(MatchingQueueItemResponse::hintName).containsExactly("김하늘", null);
+    }
+
     // 코드리뷰 반영(멘토 PR #86, #111): 목록 미리보기(preview)는 60자로 그대로 유지하되,
     // 아이 선택 시 펼쳐 볼 전체 본문(fullContent)을 별도로 내려줘서 뒤에 나오는 아이 이름·
     // AI 판단 근거를 선생님이 놓치지 않게 한다.
