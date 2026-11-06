@@ -27,6 +27,7 @@ import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimEvidence;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.SourceEntry;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
@@ -128,7 +129,8 @@ public class SummaryGate1QueryService {
                         parseStrings(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
                         uncoveredEntries(entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId())),
                         reviewFlags(s, entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId()),
-                                latestValidation)))
+                                latestValidation),
+                        sourceEntries(entriesBySummary.getOrDefault(s.getId(), List.of()))))
                 .toList();
     }
 
@@ -233,6 +235,11 @@ public class SummaryGate1QueryService {
             }
         }
         return evidence;
+    }
+
+    /** 요약에 묶인 일지 원문 전체. 조회가 id 순이라 그 순서 그대로다 */
+    private static List<SourceEntry> sourceEntries(List<JournalEntry> entries) {
+        return entries.stream().map(e -> new SourceEntry(e.getId(), e.getContent())).toList();
     }
 
     private static List<UncoveredEntry> uncoveredEntries(List<JournalEntry> entries, Set<Long> coveredIds) {

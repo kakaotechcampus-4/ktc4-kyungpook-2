@@ -307,7 +307,9 @@ class SummaryControllerTest {
                         false, true, List.of("다른아동이름"),
                         List.of(new Gate1SummaryResponse.UncoveredEntry(1042L, "낮잠을 잤다.")),
                         List.of(new Gate1SummaryResponse.ReviewFlag(1041L, List.of("추측성표현"),
-                                List.of("관찰되지 않은 내용을 추측한 표현이 있어요"))))));
+                                List.of("관찰되지 않은 내용을 추측한 표현이 있어요"))),
+                        List.of(new Gate1SummaryResponse.SourceEntry(1041L, "블록을 쌓았다."),
+                                new Gate1SummaryResponse.SourceEntry(1042L, "낮잠을 잤다.")))));
 
         mockMvc.perform(get("/api/v1/summaries"))
                 .andExpect(status().isOk())
@@ -323,7 +325,9 @@ class SummaryControllerTest {
                 .andExpect(jsonPath("$.data[0].reviewReasons[0]").value("다른아동이름"))
                 .andExpect(jsonPath("$.data[0].uncoveredEntries[0].journalEntryId").value(1042))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].issueTypes[0]").value("추측성표현"))
-                .andExpect(jsonPath("$.data[0].reviewFlags[0].reasons[0]").value("관찰되지 않은 내용을 추측한 표현이 있어요"));
+                .andExpect(jsonPath("$.data[0].reviewFlags[0].reasons[0]").value("관찰되지 않은 내용을 추측한 표현이 있어요"))
+                .andExpect(jsonPath("$.data[0].entries[0].journalEntryId").value(1041))
+                .andExpect(jsonPath("$.data[0].entries[1].content").value("낮잠을 잤다."));
     }
 
     @Test

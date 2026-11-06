@@ -35,6 +35,7 @@ import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimEvidence;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.SourceEntry;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
@@ -213,6 +214,21 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         assertThat(item.uncoveredEntries()).containsExactly(new UncoveredEntry(left.getId(), "낮잠을 잤다."));
+    }
+
+    @Test
+    void 요약에_든_일지와_안_든_일지의_원문을_모두_id_순으로_보여주고_삭제된_일지는_뺀다() {
+        JournalEntry used = entry("블록을 다섯 층까지 쌓았다.");
+        JournalEntry left = entry("낮잠을 잤다.");
+        JournalEntry deleted = entry("지워진 기록");
+        deleted.delete();
+        summary(ORG, DATE, "[]", List.of(used), List.of(left, deleted));
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.entries()).containsExactly(
+                new SourceEntry(used.getId(), "블록을 다섯 층까지 쌓았다."),
+                new SourceEntry(left.getId(), "낮잠을 잤다."));
     }
 
     @Test
