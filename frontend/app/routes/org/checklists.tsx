@@ -1,7 +1,7 @@
 import { ChevronDown, Plus, Trash2, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
-import { Busy, Card, ConfirmDialog, EmptyState, PageHeader, PanelHead } from "@/components/ui";
+import { Busy, Card, ConfirmDialog, EmptyState, PageHeader, PanelHead, ReloginButton } from "@/components/ui";
 import {
   ApiError,
   cancelChecklist,
@@ -9,6 +9,7 @@ import {
   getSentChecklists,
   sendChecklist,
 } from "@/lib/api";
+import { isLoginLost, type ShownError } from "@/lib/apiError";
 import { formatDateTime } from "@/lib/datetime";
 import type { ChildListItem, SentChecklist, SentChecklistPage } from "@/lib/types";
 
@@ -40,7 +41,8 @@ export default function ChecklistsPage() {
   const [loadingFor, setLoadingFor] = useState<SentChecklistPage | null>(null);
   const [cancelling, setCancelling] = useState<SentChecklist | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
-  const [listError, setListError] = useState<string | null>(null);
+  // 더 보기와 내리기가 함께 쓴다. 문구와 [다시 로그인]을 한 값으로 들어, 내리기 401 뒤 더 보기가 실패하면 버튼도 사라진다
+  const [listError, setListError] = useState<ShownError | null>(null);
   const latestPage = useRef(page);
   latestPage.current = page;
 
@@ -62,7 +64,7 @@ export default function ChecklistsPage() {
         next: next.nextBefore,
       }));
     } catch {
-      if (latestPage.current === base) setListError("이전 요청을 불러오지 못했어요. 다시 시도해 주세요.");
+      if (latestPage.current === base) setListError({ text: "이전 요청을 불러오지 못했어요. 다시 시도해 주세요.", loginLost: false });
     } finally {
       setLoadingFor((current) => (current === base ? null : current));
     }
@@ -76,8 +78,12 @@ export default function ChecklistsPage() {
       await cancelChecklist(cancelling.id);
       setCancelling(null);
       await revalidator.revalidate();
-    } catch {
-      setListError("내리지 못했어요. 새로고침한 뒤 다시 시도해 주세요.");
+    } catch (err) {
+      setListError(
+        isLoginLost(err)
+          ? { text: "로그인이 풀렸어요. 다시 로그인한 뒤 시도해 주세요.", loginLost: true }
+          : { text: "내리지 못했어요. 새로고침한 뒤 다시 시도해 주세요.", loginLost: false },
+      );
       setCancelling(null);
     } finally {
       setCancelPending(false);
@@ -101,9 +107,12 @@ export default function ChecklistsPage() {
             note="보호자 중 한 명이 확인하면 그 아이는 확인 완료예요. 명부에서 빠진 아이는 숫자에서 뺍니다."
           />
           {listError ? (
-            <p role="alert" className="mb-3 rounded bg-blocksoft px-3 py-2 text-[14px] text-block">
-              {listError}
-            </p>
+            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded bg-blocksoft px-3 py-2">
+              <p role="alert" className="text-[14px] text-block">
+                {listError.text}
+              </p>
+              {listError.loginLost ? <ReloginButton role="org" /> : null}
+            </div>
           ) : null}
           {sent.length === 0 ? (
             <EmptyState icon="none" title="아직 보낸 요청이 없어요" description="위에서 첫 요청을 보내 보세요." />
@@ -152,7 +161,7 @@ function Composer({ roster, onSent }: { roster: ChildListItem[]; onSent: () => v
   const [selected, setSelected] = useState<string[]>([]);
   const [asking, setAsking] = useState(false);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ShownError | null>(null);
 
   const items = lines.map((l) => l.trim()).filter((l) => l.length > 0);
   const tooLong = lines.some((l) => l.trim().length > MAX_CHARS);
@@ -181,13 +190,17 @@ function Composer({ roster, onSent }: { roster: ChildListItem[]; onSent: () => v
     } catch (err) {
       setAsking(false);
       if (err instanceof ApiError && err.code === "INVALID_CHECKLIST_TARGET") {
-        setError("명부에 없는 아이가 있어요. 목록을 새로 불러왔으니 다시 골라 주세요.");
+        setError({ text: "명부에 없는 아이가 있어요. 목록을 새로 불러왔으니 다시 골라 주세요.", loginLost: false });
         setSelected([]);
         onSent();
       } else if (err instanceof ApiError && err.code === "INVALID_REQUEST") {
-        setError(`항목은 1~${MAX_LINES}줄, 줄마다 ${MAX_CHARS}자까지 쓸 수 있어요.`);
+        setError({ text: `항목은 1~${MAX_LINES}줄, 줄마다 ${MAX_CHARS}자까지 쓸 수 있어요.`, loginLost: false });
       } else {
-        setError("보내지 못했어요. 다시 시도해 주세요.");
+        setError(
+          isLoginLost(err)
+            ? { text: "로그인이 풀렸어요. 다시 로그인한 뒤 시도해 주세요.", loginLost: true }
+            : { text: "보내지 못했어요. 다시 시도해 주세요.", loginLost: false },
+        );
       }
     } finally {
       setPending(false);
@@ -320,9 +333,13 @@ function Composer({ roster, onSent }: { roster: ChildListItem[]; onSent: () => v
         </fieldset>
 
         {error ? (
-          <p role="alert" className="rounded bg-blocksoft px-3 py-2 text-[14px] text-block">
-            {error}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded bg-blocksoft px-3 py-2">
+            <p role="alert" className="text-[14px] text-block">
+              {error.text}
+            </p>
+            {/* 이 줄은 보내기 폼 안이다 — 버튼은 type="button" 이라 폼을 제출하지 않는다 */}
+            {error.loginLost ? <ReloginButton role="org" /> : null}
+          </div>
         ) : null}
 
         <button
