@@ -6,7 +6,7 @@ import { ListPopup, useWalk } from "@/components/ui/ListPopup";
 import { Pager, usePage } from "@/components/ui/Pager";
 import {
   Chip,
-  EmptyLine,
+  FixedRows,
   PopButton,
   PopSection,
   SectionHead,
@@ -95,58 +95,54 @@ export default function CheckPage() {
 
       <section data-tour="confirm" className="mb-8 grid gap-2.5">
         <SectionHead title="아이 확인" count={cLeft} />
-        {cw.visible.length === 0 ? (
-          <EmptyLine>아이를 확인할 기록이 없어요</EmptyLine>
-        ) : (
-          <>
-            <div className="grid gap-2.5">
-              {cPage.items.map((c) => (
-                <WorkRow
-                  key={c.id}
-                  who={dayOf(c.record.capturedAt)}
-                  sub={c.hintName ? `일지 속 이름 '${c.hintName}'` : "일지에 이름 없음"}
-                  text={c.record.preview ?? c.record.fullContent ?? ""}
-                  tag={
-                    recommendedId(c) ? (
-                      <Chip tone="ai">AI 추천 {nameOf(recommendedId(c)!, c, roster) ?? ""}</Chip>
-                    ) : (
-                      <Chip tone="human">직접 골라야 해요</Chip>
-                    )
-                  }
-                  action="확인하기"
-                  onOpen={() => cw.open(c.id)}
-                  done={cw.isDone(c.id) ? `${dayOf(c.record.capturedAt)} · 처리했어요` : undefined}
-                />
-              ))}
-            </div>
-            <Pager {...cPage} onChange={cPage.setPage} />
-          </>
-        )}
+        <FixedRows
+          size={PAGE}
+          count={cPage.items.length}
+          empty="아이를 확인할 기록이 없어요"
+          pager={<Pager {...cPage} onChange={cPage.setPage} />}
+        >
+          {cPage.items.map((c) => (
+            <WorkRow
+              key={c.id}
+              who={dayOf(c.record.capturedAt)}
+              sub={c.hintName ? `일지 속 이름 '${c.hintName}'` : "일지에 이름 없음"}
+              text={c.record.preview ?? c.record.fullContent ?? ""}
+              tag={
+                recommendedId(c) ? (
+                  <Chip tone="ai">AI 추천 {nameOf(recommendedId(c)!, c, roster) ?? ""}</Chip>
+                ) : (
+                  <Chip tone="human">직접 골라야 해요</Chip>
+                )
+              }
+              action="확인하기"
+              onOpen={() => cw.open(c.id)}
+              done={cw.isDone(c.id) ? `${dayOf(c.record.capturedAt)} · 처리했어요` : undefined}
+            />
+          ))}
+        </FixedRows>
       </section>
 
       <section data-tour="blocked" className="grid gap-2.5">
         <SectionHead title="고쳐야 할 기록" count={bLeft} />
-        {bw.visible.length === 0 ? (
-          <EmptyLine>막힌 기록이 없어요</EmptyLine>
-        ) : (
-          <>
-            <div className="grid gap-2.5">
-              {bPage.items.map((b) => (
-                <WorkRow
-                  key={b.id}
-                  who={b.childName ?? "아이 미정"}
-                  sub={dayOf(b.record.capturedAt)}
-                  text={b.record.preview ?? b.record.fullContent ?? ""}
-                  tag={<Chip tone="bad">{b.violationCode?.[0] ?? "확인 필요"}</Chip>}
-                  action="고치기"
-                  onOpen={() => bw.open(b.id)}
-                  done={bw.isDone(b.id) ? `${b.childName ?? "아이 미정"} ${dayOf(b.record.capturedAt)} · 처리했어요` : undefined}
-                />
-              ))}
-            </div>
-            <Pager {...bPage} onChange={bPage.setPage} />
-          </>
-        )}
+        <FixedRows
+          size={PAGE}
+          count={bPage.items.length}
+          empty="막힌 기록이 없어요"
+          pager={<Pager {...bPage} onChange={bPage.setPage} />}
+        >
+          {bPage.items.map((b) => (
+            <WorkRow
+              key={b.id}
+              who={b.childName ?? "아이 미정"}
+              sub={dayOf(b.record.capturedAt)}
+              text={b.record.preview ?? b.record.fullContent ?? ""}
+              tag={<Chip tone="bad">{b.violationCode?.[0] ?? "확인 필요"}</Chip>}
+              action="고치기"
+              onOpen={() => bw.open(b.id)}
+              done={bw.isDone(b.id) ? `${b.childName ?? "아이 미정"} ${dayOf(b.record.capturedAt)} · 처리했어요` : undefined}
+            />
+          ))}
+        </FixedRows>
       </section>
 
       {cw.current ? (

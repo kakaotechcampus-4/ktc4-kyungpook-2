@@ -104,10 +104,18 @@ export function WorkRow({
   done?: React.ReactNode;
 }) {
   if (done) {
+    // 일반 줄과 같은 두 줄 높이로 — 2초 뒤 사라질 때까지 아래 줄이 흔들리지 않게
     return (
-      <article className={`${CARD} flex items-center gap-2 px-[18px] py-3.5 text-[15px] font-bold text-accentink`}>
-        <span aria-hidden>✓</span>
-        {done}
+      <article className={`${CARD} grid items-center px-[18px] py-3.5`}>
+        <div className="grid min-w-0">
+          <b className="flex items-center gap-2 truncate text-[15px] text-accentink">
+            <span aria-hidden>✓</span>
+            {done}
+          </b>
+          <span aria-hidden className="text-[13px]">
+            &nbsp;
+          </span>
+        </div>
       </article>
     );
   }
@@ -217,3 +225,45 @@ export function Toast({
     </div>
   );
 }
+
+/**
+ * 한 쪽 건수(`size`)만큼 높이를 늘 차지하는 목록. 건수가 적거나 0건이어도 칸 높이가 그대로라
+ * 아래 칸이 위로 당겨 올라오지 않는다. 모자란 만큼 보이지 않는 빈 줄을 채우고, 0건이면 그 위에 안내를 띄운다.
+ * 쪽 번호 자리도 늘 비워 둔다(한 쪽뿐이라 숨겨도 높이가 같게).
+ */
+export function FixedRows({
+  size,
+  count,
+  empty,
+  pager,
+  children,
+}: {
+  size: number;
+  /** 지금 쪽에 그린 줄 수 */
+  count: number;
+  /** 0건일 때 안내 */
+  empty: React.ReactNode;
+  pager?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="relative grid gap-2.5">
+        {children}
+        {Array.from({ length: Math.max(0, size - count) }, (_, i) => (
+          <div key={`blank-${i}`} aria-hidden className="invisible">
+            <WorkRow who="-" sub="-" text="-" action="-" onOpen={noop} />
+          </div>
+        ))}
+        {count === 0 ? (
+          <p className="absolute inset-0 grid place-items-center rounded-[18px] bg-surface/60 px-5 text-center text-[15px] text-muted">
+            {empty}
+          </p>
+        ) : null}
+      </div>
+      <div className="min-h-12">{pager}</div>
+    </div>
+  );
+}
+
+const noop = () => {};
