@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * 화면별 사용법(코치마크). 제목 옆 "?" 를 누르면 화면이 어두워지고 설명할 부분만 밝게 보인다.
@@ -96,11 +97,12 @@ export function TourButton({ screen, auto = false }: { screen: TourScreen; auto?
         onClick={start}
         aria-label="이 화면 사용법 보기"
         title="사용법"
-        className="ml-2.5 inline-grid size-[26px] place-items-center rounded-full border-[1.5px] border-line2 bg-surface align-[0.3em] text-[14px] font-extrabold text-muted hover:border-ink2 hover:text-ink"
+        className="inline-grid size-[26px] flex-none place-items-center rounded-full border-[1.5px] border-line2 bg-surface text-[14px] font-extrabold text-muted hover:border-ink2 hover:text-ink"
       >
         ?
       </button>
-      {steps ? <Coach steps={steps} onEnd={end} /> : null}
+      {/* 제목(h1) 옆에 있어도 제목의 글꼴·읽기 이름에 섞이지 않게 body 에 그린다 */}
+      {steps ? createPortal(<Coach steps={steps} onEnd={end} />, document.body) : null}
     </>
   );
 }

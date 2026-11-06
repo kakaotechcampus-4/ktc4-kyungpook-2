@@ -33,10 +33,10 @@ export function WorkHead({
     <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
         <BackHome />
-        <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em] text-ink">
-          {title}
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em] text-ink">{title}</h1>
           {tour ? <TourButton screen={tour} /> : null}
-        </h1>
+        </div>
         {jobs ? (
           <p className="mt-1.5 text-[15px] text-ink2">
             {jobs.length ? (
@@ -171,8 +171,11 @@ export function PopButton({
   );
 }
 
+/** 토스트 자리 — 겹치지 않게 아래에서부터 쌓는다. 0: 되돌리기, 1: 화면 알림, 2: 도착 알림 */
+const TOAST_SLOT = ["bottom-6", "bottom-[84px]", "bottom-[144px]"] as const;
+
 /**
- * 화면 아래에 잠깐 뜨는 알림 한 줄. `message` 가 바뀔 때마다 `ms`(기본 5초) 보인다.
+ * 화면 아래에 잠깐 뜨는 알림 한 줄. `message` 가 바뀔 때마다 `ms`(기본 5초) 보인다. `persist` 면 스스로 사라지지 않는다.
  * `action` 을 주면 오른쪽에 버튼(예: 되돌리기)을 둔다.
  */
 export function Toast({
@@ -180,22 +183,26 @@ export function Toast({
   onGone,
   action,
   ms = 5000,
+  persist = false,
+  slot = 1,
 }: {
   message: string | null;
   onGone: () => void;
   action?: { label: string; onClick: () => void };
   ms?: number;
+  persist?: boolean;
+  slot?: 0 | 1 | 2;
 }) {
   useEffect(() => {
-    if (!message) return;
+    if (!message || persist) return;
     const t = setTimeout(onGone, ms);
     return () => clearTimeout(t);
-  }, [message, onGone, ms]);
+  }, [message, onGone, ms, persist]);
   if (!message) return null;
   return (
     <div
       role="status"
-      className="fixed inset-x-4 bottom-6 z-[70] mx-auto flex w-fit max-w-[560px] items-center gap-3 rounded-full bg-ink py-2.5 pr-2.5 pl-5 text-[15px] font-bold text-paper shadow-[0_12px_32px_rgba(22,28,27,0.25)] max-[560px]:bottom-[calc(24px+env(safe-area-inset-bottom,0px))]"
+      className={`fixed inset-x-4 ${TOAST_SLOT[slot]} z-[70] mx-auto flex w-fit max-w-[560px] items-center gap-3 rounded-full bg-ink py-2.5 pr-2.5 pl-5 text-[15px] font-bold text-paper shadow-[0_12px_32px_rgba(22,28,27,0.25)]`}
     >
       <span className={action ? "" : "pr-2.5"}>{message}</span>
       {action ? (

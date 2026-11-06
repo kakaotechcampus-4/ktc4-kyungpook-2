@@ -26,6 +26,7 @@ import {
   retryFailedSummary,
 } from "@/lib/api";
 import { locateEvidence, markSegments } from "@/lib/evidence";
+import { notify } from "@/lib/notice";
 import type { FailedSummary, Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
 
 /**
@@ -41,7 +42,8 @@ export async function clientLoader() {
   const [pending, held, failed] = await Promise.all([
     getGate1Queue("pending"),
     getGate1Queue("hold"),
-    loadIfReady("summaryFailures", getFailedSummaries),
+    // 요약 실패 목록을 못 받아도 검토는 할 수 있어야 한다
+    loadIfReady("summaryFailures", getFailedSummaries).catch(() => null),
   ]);
   return { pending, held, failed: failed ?? [] };
 }
@@ -334,14 +336,19 @@ function Gate1Page() {
   const tab: Tab = params.get("tab") === "hold" ? "hold" : "pending";
   const [toast, setToast] = useState<string | null>(null);
   const clearToast = useCallback(() => setToast(null), []);
-  const clearUndo = useCallback(() => setUndoable(null), []);
   /** 처리한 줄 id → 결과 문구. ✓ 줄에 쓴다 */
   const [outcomes, setOutcomes] = useState<Record<string, string>>({});
-  /** 되돌리기를 기다리는 승인 — 5초 뒤에 보낸다. 그 사이 페이지를 떠나면 바로 보낸다 */
-  const sends = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; send: (keepalive: boolean) => void }>());
-  /** 되돌린 승인의 고치던 내용 — 팝업을 다시 열 때 채운다 */
-  const drafts = useRef(new Map<string, Draft>());
-  const [undoable, setUndoable] = useState<{ id: string; message: string } | null>(null);
+  /**
+   * 되돌리기를 기다리는 승인 — 건마다 5초 뒤에 보낸다(그 사이 페이지를 떠나면 바로). 넣은 순서대로 쌓이고,
+   * [되돌리기]는 가장 최근 승인부터 하나씩 되돌린다. 기다리는 승인이 있는 동안 토스트가 떠 있다.
+   */
+  const sends = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; send: (leaving: boolean) => void; message: string }>());
+  const [, setSendsTick] = useState(0);
+  const bump = () => setSendsTick((n) => n + 1);
+  /** 되돌린 승인의 고치던 내용 — 같은 판(version)의 요약을 다시 열 때만 채운다 */
+  const drafts = useRef(new Map<string, { version: string; draft: Draft }>());
+  /** 승인 직후 잠깐은 다음 승인을 받지 않는다 — 키를 오래 누르거나 두 번 눌러 다음 요약까지 승인되지 않게 */
+  const lastApprove = useRef(0);
 
   // [전체] = 요약 실패 + 검토 대기. 오래된 날짜부터(같은 날은 실패를 앞에)
   const pendingRows = useMemo(
@@ -390,54 +397,66 @@ function Gate1Page() {
 
   /**
    * 승인: 목록에서 바로 빼고 다음 요약을 연 뒤, 5초 동안 [되돌리기]를 준다. 서버에는 5초 뒤에 보낸다.
-   * 보내다 실패하면(그새 요약이 바뀜 등) 알리고 그 요약을 목록에 되살린다.
+   * 보내다 실패하면(그새 요약이 바뀜 등) 알리고 그 요약을 목록에 되살린다. 화면을 떠난 뒤의 실패는 메뉴가 알린다(lib/notice).
    */
   function approveLater(item: SummaryItem, cards: Gate1Card[] | undefined, draft: Draft) {
+    const now = Date.now();
+    if (now - lastApprove.current < 700) return;
+    lastApprove.current = now;
     const outcome = cards ? "corrected" : "approved";
     setOutcomes((o) => ({ ...o, [item.id]: OUTCOME[outcome] }));
     walk.done(item.id);
-    drafts.current.set(item.id, draft);
-    const send = (keepalive: boolean) => {
+    drafts.current.set(item.id, { version: item.version, draft });
+    const body = { decision: "approve" as const, version: item.version, ...(cards ? { cards } : {}) };
+    const send = (leaving: boolean) => {
       const entry = sends.current.get(item.id);
       if (!entry) return;
       clearTimeout(entry.timer);
       sends.current.delete(item.id);
-      setUndoable((u) => (u?.id === item.id ? null : u));
-      decideGate1(item.id, { decision: "approve", version: item.version, ...(cards ? { cards } : {}) }, { keepalive })
+      bump();
+      // 페이지를 닫는 중이면 keepalive 로 보낸다. 브라우저가 64KB 넘는 keepalive 본문을 거부해서 그때는 그냥 보낸다
+      const keepalive = leaving && JSON.stringify(body).length < 60_000;
+      decideGate1(item.id, body, { keepalive })
         .then(() => drafts.current.delete(item.id))
         .catch((err) => {
           pw.undo(item.id);
-          setToast(
+          notify(
             err instanceof ApiError && (err.code === "SUMMARY_REGENERATING" || err.code === "SUMMARY_CHANGED")
-              ? `${item.childName} 요약에 새 기록이 들어와 승인하지 못했어요. 다시 읽고 승인해 주세요`
+              ? `${item.childName} 요약에 새 기록이 들어와 승인하지 못했어요. 검토에서 다시 읽고 승인해 주세요`
               : `${item.childName} 승인을 보내지 못했어요. ${messageOf(err)}`,
           );
         })
         .finally(() => revalidator.revalidate());
     };
-    sends.current.set(item.id, { timer: setTimeout(() => send(false), 5000), send });
-    setUndoable({ id: item.id, message: `${item.childName} ${dateLabel(item.entryDate)} 요약을 승인했어요` });
+    sends.current.set(item.id, {
+      timer: setTimeout(() => send(false), 5000),
+      send,
+      message: `${item.childName} ${dateLabel(item.entryDate)} 요약을 승인했어요`,
+    });
+    bump();
   }
 
+  /** 가장 최근 승인을 되돌린다. 목록에만 되살리고, 지금 열린 팝업(다음 요약)은 그대로 둔다 — 고치던 내용을 잃지 않게 */
   function undoApprove() {
-    if (!undoable) return;
-    const entry = sends.current.get(undoable.id);
-    if (entry) {
-      clearTimeout(entry.timer);
-      sends.current.delete(undoable.id);
-      pw.undo(undoable.id);
-      pw.open(undoable.id);
-    }
-    setUndoable(null);
+    const last = [...sends.current.keys()].pop();
+    if (!last) return;
+    const entry = sends.current.get(last)!;
+    clearTimeout(entry.timer);
+    sends.current.delete(last);
+    pw.undo(last);
+    if (!walk.current) pw.open(last);
+    bump();
   }
+  const latestSend = [...sends.current.values()].pop();
 
   // 페이지를 떠나거나(탭 닫기·새로고침) 다른 화면으로 옮기면 기다리던 승인을 바로 보낸다
   useEffect(() => {
-    const flush = () => [...sends.current.values()].forEach((e) => e.send(true));
-    window.addEventListener("pagehide", flush);
+    const leave = () => [...sends.current.values()].forEach((e) => e.send(true));
+    const move = () => [...sends.current.values()].forEach((e) => e.send(false));
+    window.addEventListener("pagehide", leave);
     return () => {
-      window.removeEventListener("pagehide", flush);
-      flush();
+      window.removeEventListener("pagehide", leave);
+      move();
     };
   }, []);
 
@@ -524,23 +543,29 @@ function Gate1Page() {
             {...popupProps}
             onApprove={approveLater}
             onMove={walk.move}
-            draft={drafts.current.get(current.id)}
+            draft={(() => {
+              const saved = drafts.current.get(current.id);
+              return saved && saved.version === current.s.version ? saved.draft : undefined;
+            })()}
           />
         )
       ) : null}
 
       <Toast message={toast} onGone={clearToast} />
-      {undoable ? (
-        <Toast
-          key={undoable.id}
-          message={undoable.message}
-          onGone={clearUndo}
-          action={{ label: "되돌리기", onClick: undoApprove }}
-        />
-      ) : null}
+      <Toast
+        slot={0}
+        persist
+        message={
+          latestSend ? (sends.current.size > 1 ? `${latestSend.message} 외 ${sends.current.size - 1}건` : latestSend.message) : null
+        }
+        onGone={noop}
+        action={{ label: "되돌리기", onClick: undoApprove }}
+      />
     </div>
   );
 }
+
+const noop = () => {};
 
 function rowTag(s: SummaryItem, tab: Tab): React.ReactNode {
   if (s.processing) {
@@ -747,7 +772,7 @@ function PendingPopup({
   keys.current = { approve, hold, onMove };
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
       if (document.querySelectorAll('[role="dialog"][aria-modal]').length > 1) return;
       // 한글 자판이어도 같은 자리 키로 — e.key 는 "ㅁ" 이 된다
       if (e.code === "KeyA") keys.current.approve();

@@ -6,6 +6,7 @@ import { Busy } from "@/components/ui";
 import { Toast } from "@/components/org/WorkList";
 import { getAiStatus, getInbox, getPipeline, loadIfReady } from "@/lib/api";
 import { signOut } from "@/lib/auth";
+import { onNotice } from "@/lib/notice";
 import { usePolling } from "@/lib/usePolling";
 
 /** 머리띠 오른쪽의 내 정보. null 은 서버가 주지 않은 값 — 그 칸을 비운다 */
@@ -115,6 +116,10 @@ export function OrgShell({
    */
   const [arrival, setArrival] = useState<"approve" | "unread" | null>(null);
   const clearArrival = useCallback(() => setArrival(null), []);
+  /** 화면을 떠난 뒤 생긴 알림(lib/notice) */
+  const [notice, setNotice] = useState<string | null>(null);
+  const clearNotice = useCallback(() => setNotice(null), []);
+  useEffect(() => onNotice(setNotice), []);
   usePolling(
     async () => {
       const next = await loadOrgCounts();
@@ -200,7 +205,9 @@ export function OrgShell({
         {children}
       </main>
 
+      <Toast message={notice} onGone={clearNotice} ms={8000} />
       <Toast
+        slot={2}
         message={arrival ? "새 분석이 도착했어요" : null}
         onGone={clearArrival}
         action={{

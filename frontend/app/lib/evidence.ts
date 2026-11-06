@@ -15,19 +15,26 @@ export function findQuote(text: string, quote: string): [number, number] | null 
   const at = text.indexOf(q);
   if (at >= 0) return [at, at + q.length];
 
-  // 느슨히: 무시할 글자를 뺀 문자열과 원래 위치 표를 만든다
-  const kept: number[] = [];
+  // 느슨히: 무시할 글자를 뺀 문자열과 원래 위치 표를 만든다. 이모지처럼 두 칸짜리 글자도 한 글자로 다룬다
+  const starts: number[] = [];
+  const ends: number[] = [];
   let flat = "";
-  for (let i = 0; i < text.length; i++) {
-    if (LOOSE.test(text[i])) continue;
-    kept.push(i);
-    flat += text[i];
+  for (let i = 0; i < text.length; ) {
+    const ch = String.fromCodePoint(text.codePointAt(i)!);
+    if (!LOOSE.test(ch)) {
+      for (let u = 0; u < ch.length; u++) {
+        starts.push(i);
+        ends.push(i + ch.length);
+      }
+      flat += ch;
+    }
+    i += ch.length;
   }
   const fq = [...q].filter((c) => !LOOSE.test(c)).join("");
   if (!fq) return null;
   const k = flat.indexOf(fq);
   if (k < 0) return null;
-  return [kept[k], kept[k + fq.length - 1] + 1];
+  return [starts[k], ends[k + fq.length - 1]];
 }
 
 export interface Segment {

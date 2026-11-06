@@ -38,8 +38,8 @@ export async function clientLoader() {
     getAiActivity(),
     getFileProgress(),
     getAiStatus().catch(() => null),
-    // 시작하기 체크리스트용. 못 받아도 대시보드는 띄운다
-    getChildren().catch(() => null),
+    // 시작하기 체크리스트용. 이미 닫은 기관은 받지 않는다. 못 받아도 대시보드는 띄운다
+    readClosed() ? Promise.resolve(null) : getChildren().catch(() => null),
   ]);
   return {
     pipeline,
@@ -102,10 +102,12 @@ export default function DashboardPage() {
     <div className="grid gap-5">
       <header>
         <p className="mb-1 text-[15px] text-muted">{today()}</p>
-        <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em]">
-          {total ? `오늘 선생님 차례 ${total}건` : "오늘 선생님 차례가 없어요"}
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em]">
+            {total ? `오늘 선생님 차례 ${total}건` : "오늘 선생님 차례가 없어요"}
+          </h1>
           <TourButton screen="dash" auto />
-        </h1>
+        </div>
       </header>
 
       <AiDay a={activity} />
