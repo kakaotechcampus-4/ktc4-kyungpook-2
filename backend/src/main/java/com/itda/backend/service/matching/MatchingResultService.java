@@ -175,6 +175,7 @@ public class MatchingResultService {
                 mr.getConfidence(),
                 mr.getMultiReason(),
                 mr.getHintMismatch(),
+                ctx.rawRecord().getHintName(),
                 record,
                 buildCandidates(mr.getCandidates(), mr.getId(), organizationId),
                 parseJson(mr.getEvidence(), mr.getId()));
