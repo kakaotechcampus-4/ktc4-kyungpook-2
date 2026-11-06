@@ -97,7 +97,7 @@ function ChecklistsContent({ childId, checklists }: { childId: string; checklist
                 className={`rounded-2xl px-4 py-4 ${
                   done
                     ? "border border-line"
-                    : "border-y border-r border-l-4 border-line border-l-human bg-humansoft/40"
+                    : "border border-line bg-humansoft/40"
                 }`}
               >
                 <div className="mb-2.5 flex items-center gap-2.5">
