@@ -3,7 +3,7 @@ import { Link, useLoaderData, useRevalidator } from "react-router";
 import { ArrowRight, Check, ChevronRight, Upload, X } from "lucide-react";
 import { FileProgressList, useProgressPolling } from "@/components/org/FileProgressList";
 import { HelpTip } from "@/components/ui/HelpTip";
-import { Card, PageHeader, Spinner } from "@/components/ui";
+import { Busy, Card, PageHeader, Spinner } from "@/components/ui";
 import {
   getChildren,
   getFileProgress,
@@ -104,8 +104,7 @@ function FailureNotice({
             aria-busy={uploading}
             className="tap inline-flex items-center gap-2 rounded bg-ink px-4 text-[15px] font-semibold text-paper hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {uploading ? <Spinner size={16} /> : null}
-            {uploading ? "올리는 중…" : `실패한 파일만 다시 올리기 (${retryable.length}개)`}
+            {uploading ? <Busy>올리는 중…</Busy> : `실패한 파일만 다시 올리기 (${retryable.length}개)`}
           </button>
         ) : null}
         <button
@@ -491,10 +490,7 @@ export default function UploadPage() {
               }`}
             >
               {uploading ? (
-                <>
-                  <Spinner size={18} />
-                  올리는 중…
-                </>
+                <Busy>올리는 중…</Busy>
               ) : chosen.length > 0 ? (
                 `등록하고 처리 시작 (${chosen.length}개)`
               ) : (

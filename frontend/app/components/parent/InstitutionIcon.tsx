@@ -2,7 +2,7 @@ import { CircleHelp } from "lucide-react";
 import type { InstitutionType } from "@/lib/types";
 
 /**
- * 기관 유형 그림. 선생님 화면(`upload-progress`)과 같은 그림을 쓴다.
+ * 기관 유형 그림. 초대 화면(P-01)이 보내는 쪽을 보여줄 때와 같은 그림을 쓴다.
  *
  * 사람이 아니라 **유형**을 가리킨다 — 어느 학교인지, 어느 센터인지는 구분하지 않는다.
  * 그래서 아이 얼굴(`ChildFace`)과 달리 같은 그림이 여러 기관에 겹쳐도 된다.
