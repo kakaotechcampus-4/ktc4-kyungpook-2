@@ -655,7 +655,7 @@ O-15 ~ O-19 공통 오류:
 > | --- | --- |
 > | 허용 확장자 | `csv` · `txt` · `pdf` · `docx` (`docx`는 #383에서 추가. 2026-09-29, 이슈 #67로 `jpg`·`jpeg`·`png`·`hwp` 제외 — jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려워 이번 학기 범위 밖) |
 > | 허용 Content-Type | `text/csv` · `application/vnd.ms-excel`(Windows가 csv에 흔히 붙이는 값, #113) · `text/plain` · `application/pdf` · `application/vnd.openxmlformats-officedocument.wordprocessingml.document`(docx) |
-> | 기록 분리(텍스트 추출) | 네 형식 모두 지원(#383). `docx`는 문단과 표 칸을 문서 순서대로 한 줄씩, `pdf`는 글자 위치 순서로 뽑습니다. `docx`·`pdf`는 **첫 날짜 앞 머리말(제목·아동 이름·생년월일)을 기록으로 만들지 않습니다**(날짜가 하나도 없으면 전체를 한 건으로 둡니다). 텍스트를 못 뽑는 파일(깨진 docx, 암호 걸린 pdf, 사진만 있는 pdf)은 업로드는 성공하고 `entries: []`로 남습니다 |
+> | 기록 분리(텍스트 추출) | 네 형식 모두 지원(#383). `docx`는 문단과 표 칸을 문서 순서대로 한 줄씩, `pdf`는 글자 위치 순서로 뽑고, 표 칸 끝에서 꺾인 줄은 다음 줄이 날짜로 시작하지 않으면 이어 붙입니다(#385). `docx`·`pdf`는 **첫 날짜 앞 머리말(제목·아동 이름·생년월일)을 기록으로 만들지 않습니다**(날짜가 하나도 없으면 전체를 한 건으로 둡니다). 텍스트를 못 뽑는 파일(깨진 docx, 암호 걸린 pdf, 사진만 있는 pdf)은 업로드는 성공하고 `entries: []`로 남습니다 |
 > | 최대 크기 | 20MB (Caddy는 25MiB에서 먼저 차단) |
 > | 성공 | `201 Created` |
 > | 오류 | 확장자·형식·파일명 오류 `400 RAW_RECORD_INVALID_REQUEST`, 용량 초과 `413 RAW_RECORD_FILE_TOO_LARGE`, 저장 실패 `500 RAW_RECORD_STORAGE_FAILED` |
