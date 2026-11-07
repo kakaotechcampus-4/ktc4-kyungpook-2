@@ -143,7 +143,7 @@ class InsightControllerTest {
         InstitutionResponse school = new InstitutionResponse("1", "○○초등학교", "school", false);
         InstitutionResponse center = new InstitutionResponse("2", "햇살센터", "center", false);
         return new Gate2InsightResponse("1", "1", "김하늘", "2026년 8월 3주차", "오후 시간대 …", true, false, school,
-                List.of(new EvidenceRef("10", "2026-08-19", "관찰일지 요약", center)),
+                List.of(new EvidenceRef("10", "2026-08-19", "관찰일지 요약", center, false)),
                 List.of(new Target(center, ConsentState.GRANTED)), "pending");
     }
 }

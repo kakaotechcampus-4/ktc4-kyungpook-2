@@ -33,8 +33,14 @@ public record Gate2InsightResponse(
         List<Target> targets,
         String gate2Status) {
 
-    /** 근거가 된 승인 요약 한 건. {@code label} 은 화면 문구라 고정값이다. */
-    public record EvidenceRef(String childContextId, String date, String label, InstitutionResponse institution) {
+    /**
+     * 근거가 된 승인 요약 한 건. {@code label} 은 화면 문구라 고정값이다.
+     *
+     * @param lookedUp 이번 기간이 아니라 AI 가 지난 기록에서 찾아 쓴 근거인지 (#387). 하나라도 {@code true} 면 화면이
+     *                 "지난 기록을 찾아 씀" 을 표시하고, 이 근거를 날짜·기관과 함께 "지난 기록" 으로 구분한다
+     */
+    public record EvidenceRef(String childContextId, String date, String label, InstitutionResponse institution,
+            boolean lookedUp) {
     }
 
     public record Target(InstitutionResponse institution, ConsentState consent) {

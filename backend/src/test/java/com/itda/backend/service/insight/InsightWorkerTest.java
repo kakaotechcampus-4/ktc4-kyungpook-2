@@ -2,7 +2,6 @@ package com.itda.backend.service.insight;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -76,7 +75,7 @@ class InsightWorkerTest {
     }
 
     private PreparedInsight request(Long childId) {
-        return new PreparedInsight(new InsightAgentRequest(childId, "김준호", "2026-10-01", "2026-10-07", List.of(), List.of()), 41L);
+        return new PreparedInsight(new InsightAgentRequest(childId, "김준호", "2026-10-01", "2026-10-07", List.of(), List.of(), List.of()), 41L);
     }
 
     private InsightAgentReply reply() {
@@ -221,7 +220,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(client).analyze(any());
-        verify(recorder).record(any(), any(), eq("{}"), eq(41L), anyInt());
+        verify(recorder).record(any(), any(), eq("{}"), eq(41L), any());
     }
 
     /** 이미 끝난 기간이다. 재료를 모으는 일이 쿼리 몇 번이라 그 전에 걸러야 한다. */
@@ -252,7 +251,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(recorder, never()).claim(anyLong(), any(), any());
-        verify(recorder, never()).record(any(), any(), any(), any(), anyInt());
+        verify(recorder, never()).record(any(), any(), any(), any(), any());
         verify(client, never()).analyze(any());
     }
 
@@ -270,7 +269,7 @@ class InsightWorkerTest {
         worker.run();
 
         verify(recorder).recordFailure(any(), any());
-        verify(recorder).record(any(), any(), any(), any(), anyInt());
+        verify(recorder).record(any(), any(), any(), any(), any());
         verify(client, times(2)).analyze(any());
     }
 
@@ -315,7 +314,7 @@ class InsightWorkerTest {
 
         // 진 쪽은 건너뛰고 다음 아이로 이어간다
         verify(client, times(1)).analyze(any());
-        verify(recorder).record(any(), any(), any(), any(), anyInt());
+        verify(recorder).record(any(), any(), any(), any(), any());
     }
 
     @Test

@@ -1246,7 +1246,8 @@ AI 원문이 승인됩니다.
     "evidence": [
       { "childContextId": "10", "date": "2026-08-19", "label": "관찰일지 요약",
         "institution": { "id": "2", "name": "햇살아동발달센터",
-                         "type": "center", "verified": false } }
+                         "type": "center", "verified": false },
+        "lookedUp": false }
     ],
     "targets": [
       { "institution": { "id": "1", "name": "○○초등학교",
@@ -1285,6 +1286,11 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 근거(대처 근거 포함) 중 교사가 Gate 1 에서 고치거나(`EDITED`) 새로 쓴(`TEACHER`) 문장이 하나라도 있으면 `true` 입니다
 (CRITERIA §5 `teacher_claim_ids` 와 같은 판단). 근거 번호가 없거나 서버가 근거 문장을 찾지 못하면 확인할 수 없어 `true` 로 보냅니다.
 `needsReview` 는 그대로 모든 글이 `true` 입니다.
+
+**`evidence[].lookedUp` 이 `true` 인 근거는 이번 기간이 아니라 AI 가 지난 기록에서 찾아 쓴 것입니다** (#387).
+하나라도 있으면 "지난 기록을 찾아 씀" 을 표시하고, 그 근거를 날짜 · 기관과 함께 "지난 기록" 으로 이번 주 근거와 구분해 주세요(#388).
+지난 기록은 이번 기간 앞 12주치의 Gate 1 승인 요약 중 주간 인사이트 동의 기관 것만 AI 에 보냅니다. 대처 근거에만 쓰인 지난 기록도
+`evidence` 에 들어옵니다. 지금은 AI 쪽 도구 사용이 꺼져 있어 모두 `false` 로 옵니다.
 
 **`targets` 는 승인하면 이 글을 받을 후보 기관입니다** (#233). 그 아이 명부에 있는 기관 중 **승인 기관
 자신만 뺀 것**이며(재료를 낸 다른 기관도 받습니다), 그중 **`consent` 가 `granted` 인 기관만 실제로 받습니다.**
