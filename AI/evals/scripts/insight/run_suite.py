@@ -223,7 +223,12 @@ def main() -> None:
     ap.add_argument("--name", default="latest", help="결과 파일 이름 (runs/<name>.json)")
     ap.add_argument("--rescore", help="저장된 결과 파일을 LLM 없이 다시 채점")
     ap.add_argument("--sample", type=int, default=0, help="사람 판정용 표본 수")
+    ap.add_argument("--weak-mode", choices=["off", "drop", "refine"], default=None,
+                    help="약한 인사이트 처리 (INSIGHT_WEAK_MODE). 안 주면 config 값")
     args = ap.parse_args()
+    if args.weak_mode:
+        config.INSIGHT_WEAK_MODE = args.weak_mode
+    print(f"[suite] INSIGHT_WEAK_MODE={config.INSIGHT_WEAK_MODE}")
 
     if args.rescore:
         result = json.loads(Path(args.rescore).read_text(encoding="utf-8"))

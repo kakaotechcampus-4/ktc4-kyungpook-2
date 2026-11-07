@@ -1,4 +1,7 @@
 import type {
+  AiActivity,
+  FailedSummary,
+  AiStatus,
   BlockedItem,
   Child,
   ChildGuardian,
@@ -9,14 +12,15 @@ import type {
   InboxDetail,
   Insight,
   Institution,
-  InstitutionRequestItem,
+  ChecklistItem,
+  SentChecklist,
+  InstitutionShares,
   JournalEntry,
   LiveInvitation,
   MatchingItem,
   ParentActivity,
   PendingLinkRequest,
-  SummaryGroup,
-  SummaryGroupBoard,
+  Pipeline,
   SummaryItem,
   TimelineEntry,
 } from "@/lib/types";
@@ -221,7 +225,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     id: "mq_03",
     status: "unmatched",
     matchedChildId: null,
-    unmatchedReason: "no_anchor",
     record: {
       id: "rrf_8c11",
       fileName: "0821_특이사항.txt",
@@ -237,7 +240,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     id: "mq_04",
     status: "unmatched",
     matchedChildId: null,
-    unmatchedReason: "not_in_roster",
     hintName: "정OO",
     record: {
       id: "rrf_8c24",
@@ -303,7 +305,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     id: "mq_09",
     status: "unmatched",
     matchedChildId: null,
-    unmatchedReason: "no_anchor",
     record: {
       id: "rrf_9d48",
       fileName: "0819_관찰일지.hwp",
@@ -386,7 +387,7 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
   {
     id: "bq_01",
     childName: "김OO",
-    violationReason: "다른 아이 이름이 함께 포함되어 있습니다",
+    violationReason: "다른 아이의 이름이 함께 적혀 있어요",
     record: {
       id: "rrf_a301",
       fileName: "0819_관찰일지.txt",
@@ -399,7 +400,7 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
   {
     id: "bq_02",
     childName: null,
-    violationReason: "진단으로 읽히는 확정적 표현이 포함되어 있습니다",
+    violationReason: "진단명이나 장애 유형이 단정적으로 적혀 있어요",
     record: {
       id: "rrf_a402",
       fileName: "0818_특이사항.txt",
@@ -418,13 +419,24 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
 
 /** 요약 본문은 문장(claims)을 이은 것이다 — mock 도 그렇게 만든다 */
 function gate1Mock(
-  item: Omit<SummaryItem, "content" | "claims"> & { sentences: string[] },
+  item: Omit<SummaryItem, "content" | "claims" | "entries"> & { sentences: string[] },
 ): SummaryItem {
   const { sentences, ...rest } = item;
+  // 원본 일지는 요약 문장을 조금 늘여 쓴 한 편 + 요약에 안 들어간 일지. 근거 인용은 문장에서 끝의 "다." 를 뺀 구절
+  const sourceId = `je_${item.id}`;
+  const quotes = sentences.map((t) => t.replace(/다\.$/, ""));
   return {
     ...rest,
     content: sentences.join(" "),
-    claims: sentences.map((text, index) => ({ index, text })),
+    claims: sentences.map((text, index) => ({
+      index,
+      text,
+      evidence: [{ journalEntryId: sourceId, quote: quotes[index] }],
+    })),
+    entries: [
+      { journalEntryId: sourceId, content: `오늘 하루 기록. ${quotes.map((q) => `${q}다.`).join(" ")} 특별한 일은 없었다.` },
+      ...item.uncoveredEntries,
+    ],
   };
 }
 
@@ -448,7 +460,13 @@ export const GATE1_QUEUE: SummaryItem[] = [
     needsReview: true,
     reviewReasons: ["다른아동이름"],
     uncoveredEntries: [{ journalEntryId: "je_5103", content: "내일 하원 시간이 오후 4시로 바뀝니다." }],
-    reviewFlags: [{ journalEntryId: "je_5101", issueTypes: ["추측성표현"] }],
+    reviewFlags: [
+      {
+        journalEntryId: "je_5101",
+        issueTypes: ["추측성표현"],
+        reasons: ["관찰되지 않은 내용을 추측한 표현이 있어요"],
+      },
+    ],
   }),
   // 같은 날 새 기록을 반영하는 중 — 고치기·승인이 잠긴다
   gate1Mock({
@@ -479,6 +497,7 @@ export const GATE1_QUEUE: SummaryItem[] = [
     processing: false,
     content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
     claims: [],
+    entries: [{ journalEntryId: "je_5150", content: "자유놀이가 끝났다고 알려 주자 장난감을 스스로 정리하고 책상으로 왔다." }],
     noContent: false,
     needsReview: false,
     reviewReasons: [],
@@ -504,6 +523,10 @@ export const GATE1_QUEUE: SummaryItem[] = [
       { journalEntryId: "je_5201", content: "특이사항 없음." },
       { journalEntryId: "je_5202", content: "오후 일정 평소와 같음." },
     ],
+    entries: [
+      { journalEntryId: "je_5201", content: "특이사항 없음." },
+      { journalEntryId: "je_5202", content: "오후 일정 평소와 같음." },
+    ],
     reviewFlags: [],
   },
   gate1Mock({
@@ -523,123 +546,6 @@ export const GATE1_QUEUE: SummaryItem[] = [
     reviewFlags: [],
   }),
 ];
-
-/* 오늘의 업무 묶음 카드 (O-34) ─────────────────────── */
-
-/** 라벨 다섯 가지와 버튼 세 갈래(강조 · 약하게 · 꺼짐)가 모두 보이게 골랐다. 오래된 날짜부터 */
-export const SUMMARY_GROUP_BOARD: SummaryGroupBoard = {
-  matching: { inProgress: 3, needsReview: 2 },
-  groups: [
-    {
-      childId: "child_2044",
-      childName: "최OO",
-      birthdate: "2021-05-30",
-      entryDate: "2026-08-18",
-      status: "admin_check",
-      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 1 },
-      canSummarize: false,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-    {
-      childId: "child_1077",
-      childName: "박OO",
-      birthdate: "2020-01-25",
-      entryDate: "2026-08-19",
-      status: "needs_fix",
-      counts: { validating: 0, needsFix: 1, ready: 0, summarizing: 0, adminCheck: 0 },
-      canSummarize: false,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-    {
-      childId: "child_1023",
-      childName: "김OO",
-      birthdate: "2019-03-12",
-      entryDate: "2026-08-20",
-      status: "needs_fix",
-      counts: { validating: 1, needsFix: 1, ready: 2, summarizing: 0, adminCheck: 0 },
-      canSummarize: true,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-    {
-      childId: "child_1041",
-      childName: "이OO",
-      birthdate: "2018-07-02",
-      entryDate: "2026-08-20",
-      status: "ready",
-      counts: { validating: 0, needsFix: 0, ready: 3, summarizing: 0, adminCheck: 0 },
-      canSummarize: true,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-    // 같은 이름 — 생년월일로 구분한다
-    {
-      childId: "child_1088",
-      childName: "김OO",
-      birthdate: "2021-09-02",
-      entryDate: "2026-08-21",
-      status: "ready",
-      counts: { validating: 0, needsFix: 0, ready: 2, summarizing: 0, adminCheck: 0 },
-      canSummarize: true,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: true,
-    },
-    {
-      childId: "child_1041",
-      childName: "이OO",
-      birthdate: "2018-07-02",
-      entryDate: "2026-08-21",
-      status: "summarizing",
-      counts: { validating: 2, needsFix: 0, ready: 1, summarizing: 0, adminCheck: 0 },
-      canSummarize: false,
-      summaryRequested: true,
-      waitingCount: 2,
-      previousSummaryInReview: false,
-    },
-    {
-      childId: "child_1023",
-      childName: "김OO",
-      birthdate: "2019-03-12",
-      entryDate: "2026-08-21",
-      status: "validating",
-      counts: { validating: 2, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
-      canSummarize: false,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-  ],
-};
-
-let gate1RunSeq = 0;
-
-/** mock 전용: [요약]을 마친 묶음이 요약 검토에 올리는 요약 한 건 */
-export function gate1FromRun(group: SummaryGroup): SummaryItem {
-  gate1RunSeq += 1;
-  return gate1Mock({
-    id: `sum_run_${gate1RunSeq}`,
-    childId: group.childId,
-    childName: group.childName,
-    entryDate: group.entryDate,
-    revision: group.previousSummaryInReview ? 2 : 1,
-    gate1Status: "pending",
-    version: `mock_v_run_${gate1RunSeq}`,
-    processing: false,
-    sentences: ["오전 활동 시간에 끝까지 자리에 앉아 참여했다.", "점심을 남기지 않고 먹었다."],
-    noContent: false,
-    needsReview: false,
-    reviewReasons: [],
-    uncoveredEntries: [],
-    reviewFlags: [],
-  });
-}
 
 /* Child Context 타임라인 (I-09) ───────────────────── */
 
@@ -690,6 +596,7 @@ export const INSIGHTS: Insight[] = [
     period: "최근 3주",
     content: "소음 상황에서 반응하는 패턴이 3회 반복됨.",
     needsReview: true,
+    teacherWritten: true,
     primarySource: CENTER,
     evidence: [
       {
@@ -843,6 +750,35 @@ export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
 };
 
 /**
+ * 보호자 기관 공유 내역 (G-45). 김OO 기준 — 센터는 지금 보는 중, 활동지원사는 끈 뒤 가려짐 하나, 미술학원은 명부에서
+ * 빠진 기관이라 설정의 "지금은 연결되지 않은 기관" 에 보인다. insightId 는 GUARDIAN_INSIGHTS 와 맞춰 상세로 이어진다
+ */
+export const INSTITUTION_SHARES: Record<string, InstitutionShares[]> = {
+  child_1023: [
+    {
+      institution: CENTER,
+      shares: [
+        { insightId: "gi_01", period: "2026년 10월 4주차", from: SCHOOL, grantedAt: "2026-10-29T17:40:00", visible: true, hiddenAt: null },
+        { insightId: "gi_03", period: "2026년 10월 3주차", from: SCHOOL, grantedAt: "2026-10-22T17:10:00", visible: true, hiddenAt: null },
+      ],
+    },
+    {
+      institution: ASSISTANT,
+      shares: [
+        { insightId: "gi_02", period: "2026년 10월 4주차", from: SCHOOL, grantedAt: "2026-10-29T17:20:00", visible: true, hiddenAt: null },
+        { insightId: "gi_03", period: "2026년 10월 3주차", from: SCHOOL, grantedAt: "2026-10-22T17:10:00", visible: false, hiddenAt: "2026-10-30T09:15:00" },
+      ],
+    },
+    {
+      institution: ART_ACADEMY,
+      shares: [
+        { insightId: "gi_03", period: "2026년 10월 3주차", from: SCHOOL, grantedAt: "2026-10-22T17:10:00", visible: false, hiddenAt: null },
+      ],
+    },
+  ],
+};
+
+/**
  * 보호자가 받은 인사이트 (G-35 · G-36 mock). 승인 시각 최근 순 — 서버와 같은 순서로 둔다.
  * 한 기간에 두 편(하나는 읽음), 함께 보는 기관이 있는 글과 없는 글, 승인 기관을 모르는 글(from: null)을 함께 둔다.
  */
@@ -974,27 +910,105 @@ export const JOURNAL: JournalEntry[] = [
   },
 ];
 
-/** 설정 › 기관 요청사항 — 아이별. 아직 요청이 없는 아이는 빈 배열. */
-export const INSTITUTION_REQUESTS: Record<string, InstitutionRequestItem[]> = {
+/** 보호자 › 준비물·확인사항 — 아이별, 최신순. 아직 받은 요청이 없는 아이는 빈 배열. */
+export const CHECKLISTS: Record<string, ChecklistItem[]> = {
   child_1023: [
     {
-      id: "req_01",
-      institution: SCHOOL,
-      status: "confirmed",
-      items: ["다음 주 현장학습 동의서를 확인해주세요.", "실내화를 새로 준비해주세요."],
+      id: "req_03",
+      institution: ASSISTANT,
+      status: "needs_check",
+      items: ["하원 동행 시간을 10분 늦춰도 될까요."],
+      sentAt: "2026-11-04T08:40:00",
+      confirmedAt: null,
+      confirmedByName: null,
     },
     {
       id: "req_02",
       institution: CENTER,
       status: "needs_check",
       items: ["간식 알레르기 정보를 확인해주세요."],
+      sentAt: "2026-11-03T17:10:00",
+      confirmedAt: null,
+      confirmedByName: null,
     },
     {
-      id: "req_03",
-      institution: ASSISTANT,
-      status: "needs_check",
-      items: ["하원 동행 시간을 10분 늦춰도 될까요."],
+      id: "req_01",
+      institution: SCHOOL,
+      status: "confirmed",
+      items: ["다음 주 현장학습 동의서를 확인해주세요.", "실내화를 새로 준비해주세요."],
+      sentAt: "2026-11-03T15:20:00",
+      confirmedAt: "2026-11-03T19:02:00",
+      confirmedByName: "김아빠",
     },
   ],
   child_2044: [],
 };
+
+/** 기관 › 준비물·확인사항 — 보낸 요청, 최신순. 보내기 · 내리기가 이 배열을 바꾼다 */
+export const SENT_CHECKLISTS: SentChecklist[] = [
+  {
+    id: "cl_02",
+    items: ["다음 주 현장학습 동의서를 확인해주세요.", "실내화를 새로 준비해주세요."],
+    sentAt: "2026-11-03T15:20:00",
+    total: 2,
+    confirmed: 1,
+    targets: [
+      { child: { id: "child_1023", name: "김OO" }, onRoster: true, confirmedAt: "2026-11-03T19:02:00", confirmedByName: "김보호" },
+      { child: { id: "child_1041", name: "이OO" }, onRoster: true, confirmedAt: null, confirmedByName: null },
+    ],
+  },
+];
+
+/* ── 대시보드 (O-80 ~ O-82) ──────────────────── */
+
+/** 진행 현황. 단계마다 한두 줄씩, 선생님 차례 줄은 위 큐의 id 를 가리킨다 */
+export const PIPELINE: Pipeline = {
+  turn: { confirm: 2, blocked: 2, review: 3, approve: 1, requests: 1 },
+  rows: [
+    { kind: "entry", childId: null, childName: null, date: "2026-11-05", week: null, step: 0, who: "me",
+      status: "match_review", detail: null, target: { type: "matching", id: "mq_01" } },
+    { kind: "entry", childId: "child_1041", childName: "이OO", date: "2026-11-05", week: null, step: 1, who: "me",
+      status: "blocked", detail: { kinds: ["진단명"], reasons: ["진단명이 들어 있어요"] },
+      target: { type: "validation", id: "bq_01" } },
+    { kind: "entry", childId: "child_1023", childName: "김OO", date: "2026-11-04", week: null, step: 3, who: "me",
+      status: "review", detail: { noContent: false }, target: { type: "summary", id: "sum_9012" } },
+    { kind: "entry", childId: "child_1077", childName: "박OO", date: "2026-11-04", week: null, step: 2, who: "me",
+      status: "summary_failed", detail: null, target: { type: "summary_failed" } },
+    { kind: "week", childId: "child_1023", childName: "김OO", date: null,
+      week: { from: "2026-10-26", to: "2026-11-01", label: "2026년 10월 4주차" }, step: 5, who: "me",
+      status: "review_here", detail: null, target: { type: "insight", id: "ins_5501" } },
+    { kind: "entry", childId: null, childName: null, date: "2026-11-06", week: null, step: 0, who: "ai",
+      status: "matching", detail: { count: 3 }, target: null },
+    { kind: "entry", childId: "child_1041", childName: "이OO", date: "2026-11-06", week: null, step: 1, who: "ai",
+      status: "validating", detail: null, target: null },
+    { kind: "entry", childId: "child_1023", childName: "김OO", date: "2026-11-06", week: null, step: 2, who: "ai",
+      status: "summarizing", detail: null, target: null },
+    { kind: "week", childId: "child_1077", childName: "박OO", date: null,
+      week: { from: "2026-11-02", to: "2026-11-08", label: "2026년 11월 1주차" }, step: 4, who: "wait",
+      status: "waiting_week_end", detail: null, target: null },
+    { kind: "week", childId: "child_1041", childName: "이OO", date: null,
+      week: { from: "2026-10-26", to: "2026-11-01", label: "2026년 10월 4주차" }, step: 5, who: "other",
+      status: "review_elsewhere", detail: { approverName: "OO초등학교" }, target: null },
+    { kind: "week", childId: "child_1023", childName: "김OO", date: null,
+      week: { from: "2026-10-19", to: "2026-10-25", label: "2026년 10월 3주차" }, step: 5, who: "done",
+      status: "approved", detail: null, target: null },
+  ],
+};
+
+export const AI_ACTIVITY: AiActivity = { split: 12, matched: 7, validated: 11, summarized: 3, insights: 1 };
+
+export const AI_STATUS: AiStatus = { available: true, since: null };
+
+/** 요약 실패 (O-35). 진행 현황 mock 의 summary_failed 줄(박OO 11/4)과 같은 묶음 */
+export const FAILED_SUMMARIES: FailedSummary[] = [
+  {
+    childId: "child_1077",
+    childName: "박OO",
+    entryDate: "2026-11-04",
+    entries: [
+      { journalEntryId: "je_6101", content: "오전에 그림 그리기 활동을 했다. 색연필을 골라 동그라미를 여러 개 그렸다." },
+      { journalEntryId: "je_6102", content: "점심 뒤 낮잠 시간에 쉽게 잠들지 못해 교사가 등을 토닥여 주었다." },
+    ],
+    reason: "NO_GROUNDED_CLAIMS",
+  },
+];

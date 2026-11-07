@@ -53,7 +53,7 @@ function summaryOf(stages: string[], states: StageState[]): string {
 }
 
 const CIRCLE_CLASS: Record<StageState, string> = {
-  done: "bg-accent text-white",
+  done: "bg-accent text-white", // 체크 아이콘 한 개뿐 — 글자가 아니라 캔버스 초록을 그대로 쓴다
   waiting: "border-2 border-human bg-humansoft text-human",
   failed: "border-2 border-block bg-blocksoft text-block",
   active: "border-2 border-accent bg-accentsoft text-accentink animate-pulse",

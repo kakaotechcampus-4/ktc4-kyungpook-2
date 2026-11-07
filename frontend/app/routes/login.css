@@ -32,7 +32,8 @@
   --card: #ffffff;
   --ink: #27241f;
   --muted: #5a554c;
-  --faint: #8a8277;
+  /* 약관 줄·구분선 글자. 12~13px 본문이라 4.5:1 이 필요하다 (paper 5.20:1) */
+  --faint: #706a5f;
   --line: #efe7da;
   --line2: #d8ccb8;
   --green: #2baa7e;
@@ -61,6 +62,23 @@
   filter: blur(70px);
 }
 
+/* 왼쪽 위 로고. 번짐(blobs) 위에 올라오도록 z-index 를 준다 */
+.land .brandbar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 16px max(24px, env(safe-area-inset-right, 0px)) 0
+    max(24px, env(safe-area-inset-left, 0px));
+}
+.land .brandbar img {
+  display: block;
+  height: 44px;
+  width: auto;
+}
+
 .land .inner {
   position: relative;
   z-index: 1;
@@ -70,7 +88,7 @@
   gap: 16px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px max(16px, env(safe-area-inset-left, 0px)) 48px;
+  padding: 8px max(16px, env(safe-area-inset-left, 0px)) 48px;
 }
 
 /* ── 고리 ───────────────────────────────────────────
@@ -207,6 +225,19 @@
 }
 .land .kakao:active {
   transform: scale(0.98);
+}
+
+/* 로그인이 풀려서 왔을 때만 버튼 위에 뜨는 한 줄 */
+.land .expired {
+  max-width: 440px;
+  padding: 10px 16px;
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  background: var(--card);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  text-align: center;
 }
 
 .land .lede {

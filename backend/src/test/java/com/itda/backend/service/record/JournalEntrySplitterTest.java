@@ -210,4 +210,19 @@ class JournalEntrySplitterTest {
         assertThat(result.get(0).entryDate()).isEqualTo(LocalDate.of(Year.now().getValue(), 3, 4));
         assertThat(result.get(0).content()).isEqualTo("오늘 급식을 잘 먹었다.");
     }
+
+    /** pdf 칸 끝에서 꺾인 줄은 잇고, 공백에서 꺾인 자리는 줄 끝 공백이 남아 띄어쓰기가 보존된다. */
+    @Test
+    void 꺾인_줄은_잇고_새_날짜와_빈_줄과_날짜만_있는_줄은_그대로_둔다() {
+        String pdfText = "2026-03-02 학교 지속 시간까지 필\n요 이상으로 보호자와 \n실랑이가 있었음.\n"
+                + "2026-03-08 학교 손을 잡고 이동함.\n\n"
+                + "3/4\n오늘 급식을 잘 먹었다.";
+
+        List<SplitEntry> result = splitter.split(splitter.joinWrappedLines(pdfText));
+
+        assertThat(result).extracting(SplitEntry::content).containsExactly(
+                "학교 지속 시간까지 필요 이상으로 보호자와 실랑이가 있었음.",
+                "학교 손을 잡고 이동함.",
+                "오늘 급식을 잘 먹었다.");
+    }
 }

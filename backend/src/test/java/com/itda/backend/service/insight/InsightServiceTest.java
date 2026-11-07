@@ -168,6 +168,78 @@ class InsightServiceTest {
         assertThat(first.evidence().get(0).quote()).isEqualTo("줄에서 차례를 기다림");
     }
 
+    /** 지난 기록은 이번 기간 바로 앞 12주치의 승인된 요약이다 (#387). 이번 기간 claim 은 들어가지 않는다. */
+    @Test
+    void 이번_기간_앞_12주치_승인_기록을_지난_기록으로_보낸다() {
+        SummaryResult thisWeek = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+        SummaryResult dayBefore = approved(school, FROM.minusDays(1), CLAIMS);
+        SummaryResult oldest = approved(center, FROM.minusWeeks(12), CLAIMS);
+        SummaryResult tooOld = approved(center, FROM.minusWeeks(12).minusDays(1), CLAIMS);
+        SummaryResult notApproved = em.persistAndFlush(SummaryResult.of(junho.getId(), FROM.minusDays(2),
+                school.getId(), 1, "요약 본문", CLAIMS, "[1041]", "[]", "{}"));
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.historyClaims()).extracting(InsightAgentRequest.Claim::claimId)
+                .containsExactly(oldest.getId() + "-0", oldest.getId() + "-1",
+                        dayBefore.getId() + "-0", dayBefore.getId() + "-1")
+                .doesNotContain(thisWeek.getId() + "-0", tooOld.getId() + "-0", notApproved.getId() + "-0");
+        assertThat(request.historyClaims().get(0).institutionType()).isEqualTo("센터");
+    }
+
+    /** 지난 기록도 이번 기간과 같이 동의 기관 것만 보낸다 — AI 가 찾아 쓴 기록도 다른 기관으로 나가기 때문이다. */
+    @Test
+    void 동의가_꺼진_기관의_지난_기록은_보내지_않는다() {
+        approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+        SummaryResult revoked = approved(center, FROM.minusWeeks(1), CLAIMS);
+        revokeConsentsTo(center);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.historyClaims()).extracting(InsightAgentRequest.Claim::claimId)
+                .doesNotContain(revoked.getId() + "-0", revoked.getId() + "-1");
+    }
+
+    /** 200 개를 넘으면 가장 오래된 요약부터 버린다 (#387). */
+    @Test
+    void 지난_기록이_200개를_넘으면_오래된_요약부터_뺀다() {
+        approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+        SummaryResult oldest = approved(center, FROM.minusWeeks(3), CLAIMS);
+        SummaryResult middle = approved(school, FROM.minusWeeks(2), claims(InsightService.HISTORY_LIMIT - 2));
+        SummaryResult newest = approved(center, FROM.minusWeeks(1), CLAIMS);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.historyClaims()).hasSize(InsightService.HISTORY_LIMIT);
+        assertThat(request.historyClaims()).extracting(InsightAgentRequest.Claim::claimId)
+                .doesNotContain(oldest.getId() + "-0", oldest.getId() + "-1")
+                .contains(middle.getId() + "-0", newest.getId() + "-1");
+    }
+
+    /** 자를 자리가 요약 한가운데면 그 요약을 통째로 뺀다 — 앞뒤 맥락 없는 문장 조각을 보내지 않는다. */
+    @Test
+    void 지난_기록을_자를_때_요약을_쪼개지_않는다() {
+        approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
+        approved(center, FROM.minusWeeks(3), CLAIMS);
+        SummaryResult middle = approved(school, FROM.minusWeeks(2), claims(InsightService.HISTORY_LIMIT - 1));
+        SummaryResult newest = approved(center, FROM.minusWeeks(1), CLAIMS);
+
+        InsightAgentRequest request = prepare().orElseThrow().request();
+
+        assertThat(request.historyClaims()).extracting(InsightAgentRequest.Claim::claimId)
+                .containsExactly(newest.getId() + "-0", newest.getId() + "-1")
+                .doesNotContain(middle.getId() + "-1");
+    }
+
+    private static String claims(int count) {
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < count; i++) {
+            json.append(i == 0 ? "" : ",").append("""
+                    {"text": "문장 %d", "evidence": [{"journal_entry_id": 1041, "quote": "인용"}]}""".formatted(i));
+        }
+        return json.append("]").toString();
+    }
+
     /** claim_id 는 요약에 없는 값이라 BE 가 붙인다. 뒷자리는 claims 배열 순서다. */
     @Test
     void claim_id는_요약_id와_배열_순서로_만든다() {

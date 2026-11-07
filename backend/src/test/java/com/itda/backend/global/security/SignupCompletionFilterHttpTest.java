@@ -8,6 +8,7 @@ import java.util.Map;
 
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
+import com.itda.backend.service.user.AccountAccess;
 import com.itda.backend.service.user.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +36,7 @@ class SignupCompletionFilterHttpTest {
 
     private static final String PROTECTED = "/api/v1/signup-filter-http-test/probe";
     private static final String PENDING_USER_ID = "1";
+    private static final String UNAGREED_PARENT_ID = "2";
 
     @LocalServerPort private int port;
     @Autowired private JwtProvider jwtProvider;
@@ -51,9 +53,18 @@ class SignupCompletionFilterHttpTest {
     }
 
     private HttpResponse<String> getAsPendingUser(String rawPath) throws Exception {
-        when(userService.isSignupCompleted(PENDING_USER_ID)).thenReturn(false);
+        when(userService.accessOf(PENDING_USER_ID)).thenReturn(AccountAccess.SIGNUP_NOT_COMPLETED);
+        return getAs(PENDING_USER_ID, rawPath);
+    }
+
+    private HttpResponse<String> getAsUnagreedParent(String rawPath) throws Exception {
+        when(userService.accessOf(UNAGREED_PARENT_ID)).thenReturn(AccountAccess.TERMS_NOT_AGREED);
+        return getAs(UNAGREED_PARENT_ID, rawPath);
+    }
+
+    private HttpResponse<String> getAs(String userId, String rawPath) throws Exception {
         var request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + rawPath))
-                .header("Cookie", JwtCookie.NAME + "=" + jwtProvider.createToken(PENDING_USER_ID))
+                .header("Cookie", JwtCookie.NAME + "=" + jwtProvider.createToken(userId))
                 .GET()
                 .build();
         return client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -97,6 +108,30 @@ class SignupCompletionFilterHttpTest {
 
             assertThat(response.statusCode()).as(rawPath).isBetween(400, 499);
             assertThat(response.body()).as(rawPath).doesNotContain("controller-reached");
+        }
+    }
+
+    /** 약관 차단도 같은 경로 기준이다 — 인코딩된 경로로 건너뛰지 못한다. */
+    @Test
+    void percentEncodedPathCannotSkipTermsCheck() throws Exception {
+        for (String rawPath : new String[]{
+                PROTECTED,
+                "/%61pi/v1/signup-filter-http-test/probe",
+                "/api/v1/signup-filter-http-test/%70robe"}) {
+            var response = getAsUnagreedParent(rawPath);
+
+            assertThat(response.statusCode()).as(rawPath).isEqualTo(403);
+            assertThat(response.body()).as(rawPath)
+                    .contains("\"code\":\"TERMS_NOT_AGREED\"").doesNotContain("controller-reached");
+        }
+    }
+
+    /** 약관 본문은 가입 · 약관 차단에서 빠진다. 인코딩해도 같은 경로로 보고 통과시킨다 — 서비스는 실제 것이 돈다. */
+    @Test
+    void termsDocumentsPassForPendingAndUnagreedUsersEvenEncoded() throws Exception {
+        for (String rawPath : new String[]{"/api/v1/terms?role=parent", "/api/v1/%74erms?role=parent"}) {
+            assertThat(getAsPendingUser(rawPath).statusCode()).as(rawPath).isEqualTo(200);
+            assertThat(getAsUnagreedParent(rawPath).statusCode()).as(rawPath).isEqualTo(200);
         }
     }
 

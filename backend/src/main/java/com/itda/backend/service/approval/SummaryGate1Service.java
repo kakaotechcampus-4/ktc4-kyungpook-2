@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.Gate1Action;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.ChildContext;
@@ -18,9 +19,11 @@ import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.repository.approval.ApprovalRepository;
+import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -41,6 +44,8 @@ public class SummaryGate1Service {
     private final JournalEntryRepository journalEntryRepository;
     private final ChildContextRepository childContextRepository;
     private final ApprovalRepository approvalRepository;
+    private final ChildRepository childRepository;
+    private final ConsentStateReader consentStateReader;
 
     /**
      * Gate 1 결정을 반영한다. 승인하면 그 요약의 일지가 요약에 안 들어간 것까지 모두 끝나고, 보류하면 함께 보류되고,
@@ -53,6 +58,10 @@ public class SummaryGate1Service {
     public Gate1DecisionResponse decide(String userId, Long summaryId, Gate1Action action, List<Card> cards,
             String version) {
         SummaryResult summary = lockOwnedSummary(userId, summaryId);
+        if (isClosed(summary)) {
+            throw new SummaryException(SummaryErrorCode.ALREADY_REVIEWED, summaryId);
+        }
+        requireConsented(summary);
         requireDecidable(summary, action);
         // 보류된 판은 워커가 덮어쓰지 않는다(새 일지는 새 판이 된다). 보류함에서 제거할 때는 볼 필요가 없다.
         if (summary.getStatus() == SummaryStatus.GATE1_PENDING) {
@@ -81,6 +90,10 @@ public class SummaryGate1Service {
     @Transactional
     public Gate1DecisionResponse reopen(String userId, Long summaryId) {
         SummaryResult summary = lockOwnedSummary(userId, summaryId);
+        if (isClosed(summary)) {
+            throw new SummaryException(SummaryErrorCode.NOT_HELD, summaryId);
+        }
+        requireConsented(summary);
         if (summary.getStatus() != SummaryStatus.HOLD) {
             throw new SummaryException(SummaryErrorCode.NOT_HELD, summaryId);
         }
@@ -182,6 +195,31 @@ public class SummaryGate1Service {
                 summary.getEntryDate(), String.valueOf(summary.getInstitutionId())).isEmpty()) {
             throw new SummaryException(SummaryErrorCode.REGENERATING, summary.getId());
         }
+    }
+
+    /**
+     * 우리 기관 동의를 철회한 아이의 요약은 결정도 보류 해제도 받지 않는다 (#332). 철회 전에 만들어진 요약이 승인돼 아이
+     * 맥락에 올라가면 안 된다. 목록(O-30)에서도 빠지므로 다른 기관 요약처럼 없는 것으로 응답하고, 요약은 그대로 둔다 —
+     * 다시 동의하면 목록에 다시 뜬다.
+     *
+     * <p>이미 끝난 요약({@link #isClosed})이면 그 응답(409)이 먼저다 — 승인을 다시 보낸 교사에게 승인한 요약이 없다고 하지
+     * 않고, 어차피 거절할 요청으로 아이 행을 잠그지 않는다. 아직 끝나지 않은 요약(검토 대기·보류)은 이 확인이 먼저다 —
+     * 보류 요약에 "보류 해제 먼저"(409)라고 하면 그 해제가 다시 404 라 앞뒤가 맞지 않는다.
+     *
+     * <p>동의를 읽기 전에 아이 행을 잠근다 (DB 스키마 §3.3 잠금 표). 안 잠그면 철회와 겹칠 때 "동의 확인 → (철회 커밋) →
+     * 승인" 이 되어 꺼진 동의로 승인된다. 잠금 순서는 요약 행 → 아이 행으로 Gate 2 승인(인사이트 행 → 아이 행)과 같다.
+     * 아이 행을 먼저 잠그는 쪽(동의 변경·연결 해제 등)은 요약 행을 잠그지 않아 교착은 없다.
+     */
+    private void requireConsented(SummaryResult summary) {
+        childRepository.findByIdForUpdate(summary.getChildId());
+        if (consentStateReader.stateOf(summary.getChildId(), summary.getInstitutionId()) != ConsentState.GRANTED) {
+            throw new SummaryException(SummaryErrorCode.NOT_FOUND, summary.getId());
+        }
+    }
+
+    /** 검토 대기도 보류도 아니다 — 승인·확인·제거·되돌림으로 Gate 1 이 끝났다. */
+    private static boolean isClosed(SummaryResult summary) {
+        return summary.getStatus() != SummaryStatus.GATE1_PENDING && summary.getStatus() != SummaryStatus.HOLD;
     }
 
     private static List<JournalEntry> pendingOf(List<JournalEntry> entries) {

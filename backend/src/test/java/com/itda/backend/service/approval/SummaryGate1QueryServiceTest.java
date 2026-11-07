@@ -21,6 +21,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
@@ -30,17 +33,21 @@ import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimEvidence;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.SourceEntry;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
+import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
 
 /** Gate 1 검토 목록 — 요약 본문, 다른 아이 이름 경고, 요약에 안 들어간 일지, 요약에 들어간 원본의 REVIEW 사유. */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({SummaryGate1QueryService.class, SummaryRunRequests.class})
+@Import({SummaryGate1QueryService.class, SummaryRunRequests.class, ConsentStateReader.class})
 class SummaryGate1QueryServiceTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
@@ -56,15 +63,21 @@ class SummaryGate1QueryServiceTest {
     @MockitoBean
     private UserService userService;
 
+    /** 기본은 자동 요약 꺼짐(mock 의 false). 켜진 동작은 테스트가 직접 켠다 (#369). */
+    @MockitoBean
+    private SummaryProperties summaryProperties;
+
     @Autowired
     private EntityManagerFactory entityManagerFactory;
 
     private Long junho;
+    private SharingConsent consent;
 
     @BeforeEach
     void setUp() {
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
         junho = em.persist(Child.of("김준호", LocalDate.of(2020, 3, 1))).getId();
+        consent = em.persistAndFlush(SharingConsent.grant(junho, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY)));
     }
 
     /** 요약 워커가 집어 간 일지. 요약이 저장되면 {@link #summary} 가 그 요약을 가리키게 한다. */
@@ -137,6 +150,18 @@ class SummaryGate1QueryServiceTest {
                 .extracting(Gate1SummaryResponse::id).containsExactly(held.getId());
     }
 
+    /** 철회 전에 만들어진 요약이다 (#332). 목록에 두면 그대로 승인돼 아이 맥락에 올라간다. */
+    @Test
+    void 동의를_철회한_아이의_요약은_검토_대기와_보류함에서_뺀다() {
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        summary(ORG, DATE.plusDays(1), "[]", List.of(), List.of()).hold();
+        consent.revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+
+        assertThat(service.getSummaries(TEACHER, "pending")).isEmpty();
+        assertThat(service.getSummaries(TEACHER, "hold")).isEmpty();
+    }
+
     @Test
     void 요약할_내용_없음은_표시와_함께_그날_일지_원본을_모두_보여준다() {
         // 교사가 "왜 없지?" 할 때 바로 원본을 볼 수 있어야 한다 (#244). covered 가 비어 일지가 모두 uncovered 로 간다.
@@ -192,6 +217,21 @@ class SummaryGate1QueryServiceTest {
     }
 
     @Test
+    void 요약에_든_일지와_안_든_일지의_원문을_모두_id_순으로_보여주고_삭제된_일지는_뺀다() {
+        JournalEntry used = entry("블록을 다섯 층까지 쌓았다.");
+        JournalEntry left = entry("낮잠을 잤다.");
+        JournalEntry deleted = entry("지워진 기록");
+        deleted.delete();
+        summary(ORG, DATE, "[]", List.of(used), List.of(left, deleted));
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.entries()).containsExactly(
+                new SourceEntry(used.getId(), "블록을 다섯 층까지 쌓았다."),
+                new SourceEntry(left.getId(), "낮잠을 잤다."));
+    }
+
+    @Test
     void 요약_문장을_카드로_고칠_수_있게_순서와_글을_보여준다() {
         summary(ORG, DATE, "[{\"text\":\"블록을 쌓았다.\",\"evidence\":[]},"
                 + "{\"text\":\"낮잠을 잤다.\",\"evidence\":[]}]", List.of(), List.of());
@@ -199,7 +239,39 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         // index 는 결정(O-31) 카드에 그대로 돌려보내는 번호다 — claims 배열 순서다.
-        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다."), new ClaimCard(1, "낮잠을 잤다."));
+        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다.", List.of()),
+                new ClaimCard(1, "낮잠을 잤다.", List.of()));
+    }
+
+    @Test
+    void 요약_문장마다_AI가_든_근거_일지와_인용을_보여준다() {
+        JournalEntry blocks = entry("블록을 높이 쌓았다.");
+        summary(ORG, DATE, "[{\"text\":\"블록을 쌓았다.\",\"evidence\":["
+                + "{\"journal_entry_id\":" + blocks.getId() + ",\"quote\":\"블록을 높이 쌓았다\","
+                + "\"span\":{\"start\":0,\"end\":10}}]}]", List.of(blocks), List.of());
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다.",
+                List.of(new ClaimEvidence(blocks.getId(), "블록을 높이 쌓았다"))));
+    }
+
+    @Test
+    void 선생님이_고치거나_새로_쓴_문장은_근거를_비워_보여준다() {
+        // 고친 문장은 AI 근거가 남아 있어도 글이 달라 인용이 맞지 않고, 새로 쓴 문장의 근거는 그 문장 자신이다.
+        JournalEntry blocks = entry("블록을 높이 쌓았다.");
+        String evidence = "[{\"journal_entry_id\":" + blocks.getId() + ",\"quote\":\"블록\","
+                + "\"span\":{\"start\":0,\"end\":2}}]";
+        summary(ORG, DATE, "[{\"text\":\"블록을 아주 높이 쌓았다.\",\"evidence\":" + evidence + ",\"source\":\"EDITED\"},"
+                + "{\"text\":\"웃었다.\",\"evidence\":[{\"journal_entry_id\":null,\"quote\":\"웃었다.\"}],"
+                + "\"source\":\"TEACHER\"},"
+                + "{\"text\":\"블록을 쌓았다.\",\"evidence\":" + evidence + ",\"source\":\"AI\"}]",
+                List.of(blocks), List.of());
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.claims()).extracting(ClaimCard::evidence).containsExactly(
+                List.of(), List.of(), List.of(new ClaimEvidence(blocks.getId(), "블록")));
     }
 
     @Test
@@ -219,7 +291,8 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         assertThat(item.reviewFlags())
-                .containsExactly(new ReviewFlag(overlapped.getId(), List.of("위험행동표현", "추측성표현")));
+                .containsExactly(new ReviewFlag(overlapped.getId(), List.of("위험행동표현", "추측성표현"),
+                        List.of("위험 행동이 그대로 묘사돼 있어요", "관찰되지 않은 내용을 추측한 표현이 있어요")));
     }
 
     @Test
@@ -239,7 +312,8 @@ class SummaryGate1QueryServiceTest {
         summary(ORG, DATE, "[" + claim(unknown, 0, 4) + "]", List.of(unknown), List.of());
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags())
-                .containsExactly(new ReviewFlag(unknown.getId(), List.of("대상불명확")));
+                .containsExactly(new ReviewFlag(unknown.getId(), List.of("대상불명확"),
+                        List.of("어느 아이의 기록인지 분명하지 않아요")));
     }
 
     @Test
@@ -263,7 +337,8 @@ class SummaryGate1QueryServiceTest {
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
         // 구간을 못 읽으면 비어 있는 것과 같다 — 숨기기보다 보여주는 쪽이 안전하다.
-        assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of()));
+        assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of(),
+                List.of("검증에서 문제가 발견됐어요. 원본을 확인해 주세요")));
         assertThat(item.reviewReasons()).isEmpty();
         assertThat(item.claims()).isEmpty();
     }
@@ -353,6 +428,27 @@ class SummaryGate1QueryServiceTest {
         // 매칭 전이라 누구 일지인지 모른다. 이 아이 일지일 수 있다.
         summary(ORG, DATE, "[]", List.of(), List.of());
         requestRun(DATE);
+        em.persistAndFlush(JournalEntry.of(schoolRecord(), DATE, "누구 기록인지 모름", 3));
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
+    }
+
+    @Test
+    void 자동_요약이_켜져_있으면_누르지_않아도_반영되지_않은_일지가_있을_때_처리_중이다() {
+        given(summaryProperties.autoRun()).willReturn(true);
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isFalse();
+
+        // 워커가 곧 이 일지까지 묶어 같은 판을 다시 만든다.
+        validatedInSameGroup();
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
+    }
+
+    @Test
+    void 자동_요약이_켜져_있으면_누르지_않아도_같은_날_매칭_전_일지가_있을_때_처리_중이다() {
+        given(summaryProperties.autoRun()).willReturn(true);
+        summary(ORG, DATE, "[]", List.of(), List.of());
         em.persistAndFlush(JournalEntry.of(schoolRecord(), DATE, "누구 기록인지 모름", 3));
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Busy } from "@/components/ui";
+import { Busy, ReloginButton } from "@/components/ui";
 import { useLoaderData, useNavigate } from "react-router";
 import { getParentChildren, getParentHome, isReady, updateChildCare } from "@/lib/api";
-import { ApiError } from "@/lib/apiError";
+import { ApiError, shownError, type ShownError } from "@/lib/apiError";
 import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { readSelectedChildId } from "@/lib/selectedChild";
@@ -45,7 +45,7 @@ function CareInfoPage() {
   const [medName, setMedName] = useState("");
   const [medTime, setMedTime] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ShownError | null>(null);
   const navigate = useNavigate();
 
   const allergiesFull = care.allergies.length >= MAX_ITEMS;
@@ -90,7 +90,7 @@ function CareInfoPage() {
       await updateChildCare(childId, care);
       navigate("/parent/settings");
     } catch (err) {
-      setError(saveErrorMessage(err));
+      setError(shownError(err, saveErrorMessage(err)));
     } finally {
       setSaving(false);
     }
@@ -115,7 +115,7 @@ function CareInfoPage() {
                 onClick={() => toggleCommonAllergy(label)}
                 disabled={!on && allergiesFull}
                 className={`tap rounded-2xl px-4 text-[14px] font-semibold transition-colors disabled:opacity-50 ${
-                  on ? "bg-accent text-white" : "border border-line2 text-ink2 hover:bg-surface2"
+                  on ? "bg-ink text-paper" : "border border-line2 text-ink2 hover:bg-surface2"
                 }`}
               >
                 {label}
@@ -232,14 +232,18 @@ function CareInfoPage() {
       {/* 화면 아래 탭과 겹치지 않게 고정하지 않고 목록 끝에 둔다 */}
       <div className="flex flex-col gap-2">
         {error ? (
-          <p role="alert" className="text-[14px] leading-6 text-block">
-            {error}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <p role="alert" className="text-[14px] leading-6 text-block">
+              {error.text}
+            </p>
+            {/* 보호자 진입 화면에서 다시 로그인하면 이 화면으로 돌아온다. 고른 칩은 같은 탭이면 사라진다 */}
+            {error.loginLost ? <ReloginButton role="parent" /> : null}
+          </div>
         ) : null}
         <button
           onClick={save}
           disabled={saving}
-          className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:opacity-50"
+          className="tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:opacity-50"
         >
           {saving ? <Busy>저장 중…</Busy> : "저장"}
         </button>
@@ -253,6 +257,7 @@ function saveErrorMessage(err: unknown): string {
   if (err.status === 400) {
     return `입력한 내용을 확인해 주세요. 항목은 ${MAX_ITEMS}개, 글자는 ${MAX_LENGTH}자까지예요.`;
   }
+  if (err.status === 401) return "로그인이 풀렸어요. 다시 로그인한 뒤 시도해 주세요.";
   if (err.status === 403) return "이 아이의 정보를 고칠 수 없어요. 연결 상태를 확인해 주세요.";
   return "저장하지 못했어요. 잠시 후 다시 시도해 주세요.";
 }

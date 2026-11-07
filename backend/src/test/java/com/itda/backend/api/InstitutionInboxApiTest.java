@@ -31,12 +31,14 @@ import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.sharing.ReceiverType;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
@@ -62,6 +64,9 @@ class InstitutionInboxApiTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private TermsAgreementRepository termsAgreementRepository;
 
     @Autowired
     private OrganizationRepository organizationRepository;
@@ -117,9 +122,9 @@ class InstitutionInboxApiTest {
         school = organizationRepository.save(
                 Organization.of("햇살특수학교", OrganizationType.SCHOOL, OrganizationFixture.nextBusinessNumber()));
         center = organizationRepository.save(OrganizationFixture.center());
-        schoolStaff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "학교선생", school.getId()));
-        centerStaff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "센터선생", center.getId()));
-        mom = userRepository.save(UserFixture.parent(uniqueKakaoId(), "엄마"));
+        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "학교선생", school.getId())));
+        centerStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "센터선생", center.getId())));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "엄마")));
 
         childId = json(mockMvc.perform(withCsrf(post(ROSTER), auth(schoolStaff))
                         .contentType(MediaType.APPLICATION_JSON)

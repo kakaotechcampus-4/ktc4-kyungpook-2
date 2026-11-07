@@ -28,14 +28,14 @@ import com.itda.backend.dto.response.insight.Gate2DecisionResponse;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse.EvidenceRef;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse.Target;
+import com.itda.backend.dto.response.insight.InsightProgressResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.exception.insight.InsightExceptionHandler;
-import com.itda.backend.global.jwt.JwtCookie;
-import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.insight.InsightGate2QueryService;
 import com.itda.backend.service.insight.InsightGate2Service;
+import com.itda.backend.service.insight.InsightProgressService;
 
 @WebMvcTest(InsightController.class)
 @Import(InsightExceptionHandler.class)
@@ -55,10 +55,23 @@ class InsightControllerTest {
     private InsightGate2Service insightGate2Service;
 
     @MockitoBean
-    private JwtProvider jwtProvider;
+    private InsightProgressService insightProgressService;
 
-    @MockitoBean
-    private JwtCookie jwtCookie;
+    @Test
+    void progress_returnsStatusAndSentence() throws Exception {
+        given(insightProgressService.getProgress(any())).willReturn(List.of(InsightProgressResponse.of(
+                1L, "김하늘", "2026-08-17", "2026-08-23", "2026년 8월 3주차",
+                InsightProgressResponse.Status.WAITING_WEEK_END)));
+
+        // /{insightId} 가 아니라 이 경로로 와야 한다.
+        mockMvc.perform(get(LIST_URL + "/progress"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].childId").value("1"))
+                .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
+                .andExpect(jsonPath("$.data[0].status").value("waiting_week_end"))
+                .andExpect(jsonPath("$.data[0].message").value("이번 주가 끝나면 분석해요"));
+        verify(insightGate2QueryService, never()).getInsight(any(), any());
+    }
 
     @Test
     void list_defaultsToPendingAndReturnsScreenShape() throws Exception {
@@ -69,6 +82,7 @@ class InsightControllerTest {
                 .andExpect(jsonPath("$.data[0].id").value("1"))
                 .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
                 .andExpect(jsonPath("$.data[0].needsReview").value(true))
+                .andExpect(jsonPath("$.data[0].teacherWritten").value(false))
                 .andExpect(jsonPath("$.data[0].primarySource.type").value("school"))
                 .andExpect(jsonPath("$.data[0].primarySource.verified").value(false))
                 .andExpect(jsonPath("$.data[0].evidence[0].childContextId").value("10"))
@@ -128,8 +142,8 @@ class InsightControllerTest {
     private static Gate2InsightResponse insight() {
         InstitutionResponse school = new InstitutionResponse("1", "○○초등학교", "school", false);
         InstitutionResponse center = new InstitutionResponse("2", "햇살센터", "center", false);
-        return new Gate2InsightResponse("1", "1", "김하늘", "2026년 8월 3주차", "오후 시간대 …", true, school,
-                List.of(new EvidenceRef("10", "2026-08-19", "관찰일지 요약", center)),
+        return new Gate2InsightResponse("1", "1", "김하늘", "2026년 8월 3주차", "오후 시간대 …", true, false, school,
+                List.of(new EvidenceRef("10", "2026-08-19", "관찰일지 요약", center, false)),
                 List.of(new Target(center, ConsentState.GRANTED)), "pending");
     }
 }

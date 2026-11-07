@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,8 @@ import org.springframework.test.context.ActiveProfiles;
 
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.record.RawRecord;
+import com.itda.backend.domain.record.RawRecordStatus;
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -37,6 +40,54 @@ class JournalEntryRepositoryTest {
         assertThat(found.getSequenceNo()).isEqualTo(1);
         assertThat(found.getChildId()).isNull();
         assertThat(found.getStatus()).isEqualTo(JournalEntryStatus.PENDING);
+    }
+
+    /** 수정 요청 큐의 처리(#357)가 잠그고 읽는다. 삭제 표시된 일지는 처리 대상이 아니다. */
+    @Test
+    void 잠그고_읽을_때도_삭제된_일지는_빠진다() {
+        JournalEntry alive = journalEntryRepository.saveAndFlush(
+                JournalEntry.of(3L, LocalDate.of(2026, 9, 1), "점심시간에 식사를 잘함", 1));
+        JournalEntry deleted = JournalEntry.of(3L, LocalDate.of(2026, 9, 1), "낮잠을 잘 잠", 2);
+        deleted.delete();
+        journalEntryRepository.saveAndFlush(deleted);
+        entityManager.clear();
+
+        assertThat(journalEntryRepository.findByIdForUpdate(alive.getId())).isPresent();
+        assertThat(journalEntryRepository.findByIdForUpdate(deleted.getId())).isEmpty();
+    }
+
+    private Long rawRecordOf(String institutionId) {
+        return entityManager.persistAndFlush(new RawRecord(institutionId, "0821_특이사항.txt", "stored.txt",
+                "text/plain", 10L, RawRecordStatus.PENDING)).getId();
+    }
+
+    /**
+     * 수정 요청 큐의 고치기(#357)가 아동 행을 잠그기 전에 우리 기관 일지인지 잠그지 않고 본다 — 남의 아이 행은 잠그지 않는다.
+     * 원본 파일의 기관으로 판단하고, 일지나 원본 파일이 삭제됐으면 없는 것으로 본다.
+     */
+    @Test
+    void 우리_기관_원본_파일에서_나온_살아_있는_일지만_우리_것으로_본다() {
+        Long ours = rawRecordOf("1");
+        Long theirs = rawRecordOf("2");
+        JournalEntry mine = journalEntryRepository.saveAndFlush(JournalEntry.of(ours, LocalDate.of(2026, 9, 1), "기록", 1));
+        JournalEntry other = journalEntryRepository.saveAndFlush(JournalEntry.of(theirs, LocalDate.of(2026, 9, 1), "기록", 1));
+        JournalEntry deleted = JournalEntry.of(ours, LocalDate.of(2026, 9, 1), "기록", 2);
+        deleted.delete();
+        journalEntryRepository.saveAndFlush(deleted);
+        Long removedFile = rawRecordOf("1");
+        JournalEntry fromRemovedFile = journalEntryRepository.saveAndFlush(
+                JournalEntry.of(removedFile, LocalDate.of(2026, 9, 1), "기록", 1));
+        entityManager.find(RawRecord.class, removedFile).delete();
+        JournalEntry direct = journalEntryRepository.saveAndFlush(JournalEntry.of(null, null, "직접 입력", null));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(journalEntryRepository.existsOwnedBy(mine.getId(), "1")).isTrue();
+        assertThat(journalEntryRepository.existsOwnedBy(other.getId(), "1")).isFalse();
+        assertThat(journalEntryRepository.existsOwnedBy(deleted.getId(), "1")).isFalse();
+        assertThat(journalEntryRepository.existsOwnedBy(fromRemovedFile.getId(), "1")).isFalse();
+        assertThat(journalEntryRepository.existsOwnedBy(direct.getId(), "1")).isFalse();
+        assertThat(journalEntryRepository.existsOwnedBy(9999L, "1")).isFalse();
     }
 
     @Test
@@ -182,5 +233,36 @@ class JournalEntryRepositoryTest {
 
         assertThat(journalEntryRepository.findIdsBySummaryIdAndStatus(50L, JournalEntryStatus.GATE1_PENDING))
                 .containsExactly(kept.getId());
+    }
+
+    /** 대시보드 진행 현황(#370)이 읽는 일지 — 우리 기관의 살아 있는, 주어진 상태의 일지만 날짜·id 순으로. */
+    @Test
+    void 진행_현황은_우리_기관의_살아_있는_주어진_상태_일지만_읽는다() {
+        Long ours = rawRecordOf("1");
+        LocalDate date = LocalDate.of(2026, 11, 5);
+        JournalEntry later = JournalEntry.of(ours, date.plusDays(1), "블록", 1);
+        journalEntryRepository.saveAndFlush(later);
+        JournalEntry blocked = JournalEntry.of(ours, date, "낮잠", 2);
+        blocked.startMatching();
+        blocked.confirmMatch(8L);
+        blocked.startValidating();
+        blocked.blockValidation();
+        journalEntryRepository.saveAndFlush(blocked);
+        JournalEntry deleted = JournalEntry.of(ours, date, "삭제", 3);
+        deleted.delete();
+        journalEntryRepository.saveAndFlush(deleted);
+        JournalEntry excluded = JournalEntry.of(ours, date, "제외", 4);
+        excluded.startMatching();
+        excluded.requestMatchReview();
+        excluded.exclude();
+        journalEntryRepository.saveAndFlush(excluded);
+        journalEntryRepository.saveAndFlush(JournalEntry.of(rawRecordOf("2"), date, "남의 기관", 1));
+
+        List<PipelineEntry> entries = journalEntryRepository.findPipelineEntries("1",
+                Set.of(JournalEntryStatus.PENDING, JournalEntryStatus.VALIDATION_BLOCKED));
+
+        assertThat(entries).containsExactly(
+                new PipelineEntry(blocked.getId(), 8L, date, JournalEntryStatus.VALIDATION_BLOCKED, null),
+                new PipelineEntry(later.getId(), null, date.plusDays(1), JournalEntryStatus.PENDING, null));
     }
 }

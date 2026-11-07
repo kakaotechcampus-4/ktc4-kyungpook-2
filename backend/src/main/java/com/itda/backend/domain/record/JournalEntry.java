@@ -82,6 +82,14 @@ public class JournalEntry {
     @Column(name = "failure_reason", length = 30)
     private FailureReason failureReason;
 
+    // 검증에서 막힌 본문을 선생님이 수정 요청 큐에서 마지막으로 고친 사람(user id)과 시각 (#357). 고친 적 없으면 비어 있다.
+    // 이전 본문은 따로 남기지 않는다 — 처음 올라온 글은 원본 파일(raw_record)에 그대로 있다.
+    @Column(name = "revised_by", length = 50)
+    private String revisedBy;
+
+    @Column(name = "revised_at")
+    private LocalDateTime revisedAt;
+
     private JournalEntry(Long rawRecordId, LocalDate entryDate, String content, Integer sequenceNo) {
         this.rawRecordId = rawRecordId;
         this.entryDate = entryDate;
@@ -189,12 +197,34 @@ public class JournalEntry {
     }
 
     /**
-     * 선생님이 원본을 고쳐 다시 올리기로 했다(#122). 원본은 수정하지 않고 새 파일로 올라오므로
-     * 이 일지는 대체될 예정이고 여기서 끝난다.
+     * 선생님이 막힌 본문을 수정 요청 큐에서 고쳤다(#357). 고친 본문으로 검증을 다시 받도록 검증 대기로 보내고, 아동은 그대로 둔다.
+     * 고치지 않은 본문(앞뒤 공백만 다른 글 포함)은 거절한다 — 실수로 그대로 저장하는 것과, 같은 글을 그대로 다시 돌려 판정이
+     * 바뀌길 기다리는 가장 쉬운 우회를 막는다. 한 글자만 바꾸는 우회까지 막지는 못한다(고친 사람이 남는다).
      */
-    public void requestReupload() {
+    public void revise(String newContent, String reviserId) {
         requireAwaitingReinput();
-        this.status = JournalEntryStatus.REUPLOAD_REQUESTED;
+        if (this.childId == null) {
+            // 검증은 아동이 정해진 일지만 한다. 비어 있으면 데이터가 망가진 것이라 입력 오류와 구분한다.
+            throw new IllegalStateException("확정된 아동이 없는 일지입니다.");
+        }
+        if (newContent == null || newContent.isBlank()) {
+            throw new IllegalArgumentException("고친 본문은 필수입니다.");
+        }
+        if (hasSameContent(newContent)) {
+            throw new IllegalArgumentException("본문이 고쳐지지 않았습니다.");
+        }
+        if (reviserId == null || reviserId.isBlank()) {
+            throw new IllegalArgumentException("고친 사람은 필수입니다.");
+        }
+        this.content = newContent;
+        this.revisedBy = reviserId;
+        this.revisedAt = LocalDateTime.now();
+        enterValidationQueue(this.childId);
+    }
+
+    /** 고친 본문이 지금 본문과 같은지. 앞뒤 공백만 다른 것도 같다고 본다 — {@link #revise} 가 거절하는 기준이다. */
+    public boolean hasSameContent(String newContent) {
+        return newContent != null && newContent.strip().equals(this.content.strip());
     }
 
     /** 선생님이 이 기록을 보류했다(#122). 다음 단계로 가지 않는다. */
@@ -284,10 +314,31 @@ public class JournalEntry {
         stopBySystemError(FailureStage.SUMMARY, reason);
     }
 
-    /** 처리하던 앱이 꺼져서 요약 중에 멈춘 일지를 요약하기 전 상태로 돌린다. */
+    /**
+     * 요약 중인 일지를 요약하기 전 상태로 돌린다. 처리하던 앱이 꺼졌거나, AI 가 응답하지 않거나, 집은 뒤 그 기관 동의가
+     * 철회돼 요약하지 않기로 했을 때다.
+     */
     public void releaseSummarizing() {
         requireStatus(JournalEntryStatus.SUMMARIZING);
         this.status = this.summaryId != null ? JournalEntryStatus.GATE1_PENDING : JournalEntryStatus.VALIDATED;
+    }
+
+    /**
+     * 교사가 검토에서 요약 실패 일지를 [다시 요약]했다 (#369). 요약 전으로 돌아가 워커가 다시 집는다. 횟수 제한은 없다 —
+     * 또 실패하면 다시 요약 실패로 검토에 뜬다.
+     */
+    public void retrySummary() {
+        requireStatus(JournalEntryStatus.SUMMARY_FAILED);
+        this.status = JournalEntryStatus.VALIDATED;
+    }
+
+    /**
+     * 교사가 검토에서 요약 실패 일지를 [요약 없이 마무리]했다 (#369). 요약할 내용 없음 확인(#244)처럼 끝내되, 가리킬
+     * 요약이 없어 요약 행은 만들지 않는다. 아동 맥락·보호자·인사이트로 가지 않는다.
+     */
+    public void closeFailedSummary() {
+        requireStatus(JournalEntryStatus.SUMMARY_FAILED);
+        this.status = JournalEntryStatus.COMPLETED;
     }
 
     /** 이 일지가 든 요약이 승인됐다. 다시 요약 대상이 되지 않는다. */

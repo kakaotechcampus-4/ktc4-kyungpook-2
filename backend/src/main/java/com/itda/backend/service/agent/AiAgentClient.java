@@ -1,8 +1,11 @@
 package com.itda.backend.service.agent;
 
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.List;
 
+import org.apache.hc.client5.http.ConnectTimeoutException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -36,14 +39,28 @@ public class AiAgentClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final List<Duration> retryBackoffs;
+    private final int timeoutRetries;
 
+    @Autowired
     public AiAgentClient(
             @Qualifier("aiAgentRestClient") RestClient restClient,
             ObjectMapper objectMapper,
             AiAgentProperties properties) {
+        this(restClient, objectMapper, properties, properties.retryBackoffs().size());
+    }
+
+    /**
+     * 응답 대기 시간 초과만 따로 덜 다시 보내는 에이전트용 (#386). 연결 실패·5xx 는 그대로 {@code retryBackoffs} 만큼 다시 보낸다.
+     *
+     * <p>인사이트는 한 번에 몇 분을 기다린다. 시간 초과를 다른 실패처럼 세 번 보내면 한 아이에 십 분 넘게 묶인다.
+     * 연결 실패·5xx 는 금방 끝나서 줄일 이유가 없다.
+     */
+    public AiAgentClient(RestClient restClient, ObjectMapper objectMapper, AiAgentProperties properties,
+            int timeoutRetries) {
         this.restClient = restClient;
         this.objectMapper = objectMapper;
         this.retryBackoffs = properties.retryBackoffs();
+        this.timeoutRetries = timeoutRetries;
     }
 
     /** {@code path} 로 요청을 보내고 응답 원문을 돌려준다. 원문은 결과 테이블의 raw_response 에 그대로 남긴다. */
@@ -60,6 +77,7 @@ public class AiAgentClient {
      * <p>⚠️ {@code context} 에 아이 이름 같은 개인정보를 넣지 않는다. ID 와 기간이면 충분하다.
      */
     public String post(String path, Object request, String context) {
+        int timeouts = 0;
         for (int attempt = 0; ; attempt++) {
             try {
                 return restClient.post()
@@ -72,7 +90,10 @@ public class AiAgentClient {
                 if (!isTransient(e)) {
                     throw notRetried(e, path, context);
                 }
-                if (attempt >= retryBackoffs.size()) {
+                if (isReadTimeout(e)) {
+                    timeouts++;
+                }
+                if (attempt >= retryBackoffs.size() || timeouts > timeoutRetries) {
                     throw new AiAgentUnavailableException(
                             "agent call failed after retries path=" + path + " " + context, e);
                 }
@@ -91,6 +112,14 @@ public class AiAgentClient {
         return e instanceof HttpClientErrorException clientError
                 && (clientError.getStatusCode().value() == HttpStatus.REQUEST_TIMEOUT.value()
                         || clientError.getStatusCode().value() == HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    // 응답 대기 시간 초과. 연결 시간 초과(3초)는 금방 끝나서 덜 보낼 이유가 없다 — HttpClient 5 는 이것도
+    // SocketTimeoutException 의 하위 타입으로 던져서 따로 뺀다.
+    private static boolean isReadTimeout(RestClientException e) {
+        return e instanceof ResourceAccessException
+                && e.getCause() instanceof SocketTimeoutException
+                && !(e.getCause() instanceof ConnectTimeoutException);
     }
 
     // 그 밖의 4xx 는 BE 가 계약과 다른 요청을 보낸 것이다. 4xx 도 아닌데 실패했으면 요청 본문을 못 만드는 등 BE 쪽에서

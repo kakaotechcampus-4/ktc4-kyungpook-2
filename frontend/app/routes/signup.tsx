@@ -22,7 +22,9 @@ import {
 export async function clientLoader({ request }: { request: Request }) {
   const session = await getSession();
   if (!session.loggedIn) return redirect("/login");
-  if (session.signupCompleted && session.role) return redirect(homePathFor(session.role));
+  if (session.signupCompleted && session.role) {
+    return redirect(homePathFor(session.role, session.termsAgreed));
+  }
 
   const hint = new URL(request.url).searchParams.get("role");
   const initialRole: "org" | "parent" | null =
@@ -37,8 +39,8 @@ const ORG_TYPES: { value: OrganizationType; label: string }[] = [
 ];
 
 const ROLES = [
-  { value: "org", label: "기관 담당자", description: "학교·센터·활동지원 기관에서 기록을 올립니다" },
-  { value: "parent", label: "보호자", description: "아이의 기록을 모아 보고 공유를 허락합니다" },
+  { value: "org", label: "기관 담당자", description: "학교·센터·활동지원 기관에서 기록을 올려요" },
+  { value: "parent", label: "보호자", description: "아이의 기록을 모아 보고 공유를 허락해요" },
 ] as const;
 
 type Errors = { organizationName?: string; businessNumber?: string; form?: string };
@@ -86,7 +88,7 @@ export default function SignupPage() {
     setPending(true);
     try {
       const session = await signup(input);
-      navigate(homePathFor(session.role ?? role), { replace: true });
+      navigate(homePathFor(session.role ?? role, session.termsAgreed), { replace: true });
     } catch (err) {
       setPending(false);
       await handleError(err);
@@ -109,7 +111,9 @@ export default function SignupPage() {
       case "ALREADY_SIGNED_UP": {
         // 다른 탭에서 먼저 끝낸 경우 등. 역할은 서버에 이미 정해져 있으니 그쪽으로 보낸다.
         const session = await getSession().catch(() => null);
-        navigate(session?.role ? homePathFor(session.role) : "/login", { replace: true });
+        navigate(session?.role ? homePathFor(session.role, session.termsAgreed) : "/login", {
+          replace: true,
+        });
         return;
       }
       case "INVALID_REQUEST":
@@ -127,32 +131,40 @@ export default function SignupPage() {
     "tap rounded border border-line2 bg-surface px-3 text-[16px] outline-none focus:border-accent aria-invalid:border-block";
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10 break-keep">
+    <div
+      className="flex min-h-screen items-center justify-center px-4 py-10 break-keep"
+      /*
+        기관·보호자 캔버스와 같은 두 겹 바탕.
+
+        이 화면은 **둘 중 어느 묶음에도 안 들어간다** — 역할을 고르는 자리라
+        아직 기관인지 보호자인지 모른다. 그래서 org.css 도 parent.css 도 닿지 않아
+        여기만 맨 크림으로 남아 있었다 (로그인 → 이 화면 → 초대 순으로 보면 가운데
+        한 장만 색이 빠진다). 두 캔버스가 같은 바탕을 쓰므로 여기에 직접 깐다.
+      */
+      style={{
+        background:
+          "radial-gradient(620px 380px at 100% 0%, #fff0b4 0%, rgb(255 240 180 / 0) 64%)," +
+          "radial-gradient(560px 460px at 0% 100%, #ddf2e3 0%, rgb(221 242 227 / 0) 64%)," +
+          "var(--color-paper)",
+      }}
+    >
       <div className="w-full max-w-[460px]">
-        <div className="mb-7 flex items-center gap-2.5">
-          <span
-            aria-hidden
-            className="flex size-10 items-center justify-center rounded bg-accent text-[17px] font-bold text-white"
-          >
-            잇
-          </span>
-          <div>
-            <p className="text-[19px] font-bold tracking-tight">잇다 ITDA</p>
-            <p className="text-[14px] text-muted">회원가입</p>
-          </div>
+        <div className="mb-7 flex flex-col items-center gap-1.5 text-center">
+          <img src="/img/logo.png" alt="잇다" width={600} height={220} className="h-auto w-[116px]" />
+          <p className="text-[14px] text-muted">회원가입</p>
         </div>
 
         <form
           noValidate
           onSubmit={handleSubmit}
-          className="flex flex-col gap-5 rounded border border-line bg-surface p-6"
+          className="flex flex-col gap-5 rounded-[22px] border border-line bg-surface p-6 shadow-[0_10px_30px_rgba(120,90,40,0.07)]"
         >
           <div>
             <h1 className="mb-1.5 text-[20px] font-bold tracking-tight">
               {name ? `${name}님, 어떤 분이신가요?` : "어떤 분이신가요?"}
             </h1>
             <p className="text-[15px] leading-7 text-ink2">
-              역할에 따라 보이는 화면이 달라집니다. 가입한 뒤에는 바꿀 수 없습니다.
+              고른 역할에 따라 보이는 화면이 달라져요. 가입한 뒤에는 바꿀 수 없어요.
             </p>
           </div>
 
@@ -161,7 +173,7 @@ export default function SignupPage() {
             {ROLES.map((r) => (
               <label
                 key={r.value}
-                className="tap flex cursor-pointer items-center gap-3 rounded border border-line2 px-4 py-3 has-checked:border-accent has-checked:bg-accentsoft"
+                className="tap flex cursor-pointer items-center gap-3 rounded-[18px] border border-line2 px-4 py-3 has-checked:border-accent has-checked:bg-accentsoft"
               >
                 <input
                   type="radio"
@@ -248,7 +260,7 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={!role || pending}
-            className="tap w-full rounded bg-accent px-4 text-[16px] font-semibold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted"
+            className="tap w-full rounded bg-ink px-4 text-[16px] font-semibold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted"
           >
             {pending ? <Busy>가입하는 중…</Busy> : "가입하기"}
           </button>

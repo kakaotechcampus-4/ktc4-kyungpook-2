@@ -13,7 +13,8 @@
 | 파일 (`AI/evals/generated/real/`) | 내용 |
 | --- | --- |
 | `dev.json` | 개발용 실제 일지 88건 (1~7월, 센터 1곳, 아동 12명, 가명) |
-| `test.json` | 테스트용 실제 일지 32건 (8·9·11·12월) — **블라인드, 이 스크립트로 열지 않음** |
+| `blind/test.json` | 테스트용 실제 일지 32건 (8·9·11·12월) — **블라인드, `--real` 로 한 번만 돌린다** ([BLIND_PLAN.md](BLIND_PLAN.md)) |
+| `blind/synthetic_school_blind.json` · `blind/synthetic_school_blind_answer.json` | 블라인드용 가상 학교 일지 20건 · 정답표 (패턴 10개 + 묶으면 안 되는 기록 10개) |
 | `synthetic_school_demo.json` | 가상 학교 일지 7건 (1월) |
 | `synthetic_school_dev.json` | 가상 학교 일지 20건 (4~6월) |
 | `synthetic_school_answer.json` | 정답표 — 찾아야 할 패턴 14개 + 묶으면 안 되는 기록 12개 |
@@ -226,7 +227,7 @@ v2 에서 남은 문제 셋을 고치면서, 같은 두 범위로 설정 두 가
 - 긴 입력은 low 로 살리는 대신 품질이 떨어집니다. 1월 아동 A(30일, 문장 30개 안팎)가 그 경우입니다. 실제 서비스는 7일 단위라 이렇게 긴 입력은 드뭅니다.
 
 **v2 의 다른 두 문제**
-- 건강 기록만으로 만든 인사이트: 쓰는 원칙 `DROP_HEALTH_ONLY` 추가 후 **v3-A·B 모두 사라짐** (인사이트 CRITERIA v0.9.4).
+- 건강 기록만으로 만든 인사이트: 쓰는 원칙 `DROP_HEALTH_ONLY` 추가 후 **v3-A·B 모두 사라짐** (인사이트 CRITERIA v0.9.5).
 - P6 (두 기관 모두 안아 주면 안정): `NEED_DIFFERENCE` 에 "두 기관에서 같은 대처가 같은 결과" 를 넣어 봤지만 v3-A 에서 찾지 못해 **되돌렸습니다**. v3-B 에서는 원래 문장으로 찾았습니다 — 실행마다 흔들리는 범위로 보입니다.
 
 **아쉬운 것**

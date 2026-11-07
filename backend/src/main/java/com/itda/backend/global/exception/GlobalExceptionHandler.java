@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.itda.backend.exception.auth.AuthException;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.exception.child.InstitutionLinkException;
+import com.itda.backend.exception.checklist.ChecklistException;
 import com.itda.backend.exception.consent.ConsentException;
 import com.itda.backend.exception.invitation.InvitationException;
 import com.itda.backend.exception.organization.OrganizationException;
@@ -95,6 +96,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ConsentException.class)
     public ResponseEntity<ErrorResponse> handleConsentException(ConsentException e) {
         log.warn("동의 처리 실패: {}", e.getMessage());
+        return ResponseEntity.status(e.getErrorCode().getStatus())
+                .body(ErrorResponse.of(e.getErrorCode()));
+    }
+
+    @ExceptionHandler(ChecklistException.class)
+    public ResponseEntity<ErrorResponse> handleChecklistException(ChecklistException e) {
+        log.warn("준비물·확인사항 처리 실패: {}", e.getMessage());
         return ResponseEntity.status(e.getErrorCode().getStatus())
                 .body(ErrorResponse.of(e.getErrorCode()));
     }

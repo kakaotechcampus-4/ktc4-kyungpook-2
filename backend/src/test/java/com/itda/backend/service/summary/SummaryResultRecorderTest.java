@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -15,6 +16,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.FailureStage;
 import com.itda.backend.domain.record.JournalEntry;
@@ -24,10 +28,12 @@ import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.dto.response.summary.SummaryAgentResponse;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({SummaryResultRecorder.class, SummaryEvidenceChecker.class, SummaryRunRequests.class})
+@Import({SummaryResultRecorder.class, SummaryEvidenceChecker.class, SummaryRunRequests.class,
+        ConsentStateReader.class})
 class SummaryResultRecorderTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
@@ -45,6 +51,18 @@ class SummaryResultRecorderTest {
 
     @Autowired
     private SummaryRunRequests runRequests;
+
+    private SharingConsent consent;
+
+    @BeforeEach
+    void setUp() {
+        consent = em.persistAndFlush(SharingConsent.grant(8L, 100L, 3L, List.of(ConsentField.DAILY_SUMMARY)));
+    }
+
+    private void revokeConsent() {
+        consent.revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, CLAIMED_AT.plusSeconds(10));
+        em.flush();
+    }
 
     private JournalEntry summarizing(String content) {
         JournalEntry entry = JournalEntry.of(5L, DATE, content, 1);
@@ -485,6 +503,74 @@ class SummaryResultRecorderTest {
         recorder.record(claimed(ok), sent(ok), reply("블록 놀이를 했다.", ok, "[" + ok.getId() + "]", "[]"));
 
         assertThat(runRequests.isRequested(GROUP)).isTrue();
+    }
+
+    /** 집은 뒤 AI 를 부르기 전에 철회됐다 (#332). 요약하지 않고, 실패로도 남기지 않는다. */
+    @Test
+    void 요약하기_전에_동의가_철회됐으면_요청을_닫고_일지를_요약_전으로_돌린다() {
+        SummaryResult existing = summaryResultRepository.saveAndFlush(
+                SummaryResult.of(8L, DATE, 3L, 1, "이전 요약", "[]", "[]", "[]", "{}"));
+        JournalEntry old = resummarizing(existing);
+        JournalEntry fresh = summarizing("블록 놀이를 했다.");
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
+        revokeConsent();
+
+        boolean closed = recorder.closeIfConsentRevoked(claimed(old, fresh));
+
+        assertThat(closed).isTrue();
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
+        assertThat(reload(fresh).getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+        // 이전 판에 있던 일지는 그 판의 대기로 돌아간다. 그 판은 Gate 1 목록·결정에서 막힌다.
+        assertThat(reload(old).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(summaryResultRepository.findAll()).singleElement()
+                .extracting(SummaryResult::getContent).isEqualTo("이전 요약");
+    }
+
+    @Test
+    void 동의가_켜져_있으면_닫지_않는다() {
+        JournalEntry entry = summarizing("블록 놀이를 했다.");
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
+
+        boolean closed = recorder.closeIfConsentRevoked(claimed(entry));
+
+        assertThat(closed).isFalse();
+        assertThat(runRequests.isRequested(GROUP)).isTrue();
+        assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.SUMMARIZING);
+    }
+
+    /** AI 를 부르는 수십 초 사이에 철회됐다 (#332). 받은 요약을 저장하지 않는다. */
+    @Test
+    void AI_응답을_받는_사이_동의가_철회됐으면_저장하지_않고_요청을_닫는다() throws Exception {
+        JournalEntry entry = summarizing("블록 놀이를 했다.");
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
+        SummaryAgentReply reply = reply("블록 놀이를 했다.", entry, "[" + entry.getId() + "]", "[]");
+        revokeConsent();
+
+        recorder.record(claimed(entry), sent(entry), reply);
+
+        assertThat(summaryResultRepository.findAll()).isEmpty();
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
+        JournalEntry found = reload(entry);
+        assertThat(found.getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+        assertThat(found.getSummaryId()).isNull();
+    }
+
+    /** AI 호출 사이에 철회됐고 AI 도 실패했다 (#332). 실패로 남기지 않고 요약하지 않은 것으로 닫는다. */
+    @Test
+    void AI_가_실패해도_그사이_동의가_철회됐으면_실패로_남기지_않고_요청을_닫는다() {
+        JournalEntry failed = summarizing("블록 놀이를 했다.");
+        JournalEntry systemError = summarizing("점심을 먹었다.");
+        runRequests.request(GROUP, CLAIMED_AT.minusMinutes(1));
+        revokeConsent();
+
+        recorder.recordFailure(claimed(failed));
+        recorder.recordSystemError(claimed(systemError), FailureReason.RESPONSE_UNREADABLE);
+
+        assertThat(runRequests.isRequested(GROUP)).isFalse();
+        assertThat(reload(failed).getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+        JournalEntry found = reload(systemError);
+        assertThat(found.getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
+        assertThat(found.getFailureReason()).isNull();
     }
 
     private static void assertSystemError(JournalEntry entry, FailureReason reason) {

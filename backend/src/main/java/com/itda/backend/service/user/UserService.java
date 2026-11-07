@@ -4,11 +4,16 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Map;
+
 import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.TermKey;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.dto.request.user.SignupRequest;
 import com.itda.backend.dto.response.user.CurrentUserResponse;
+import com.itda.backend.dto.response.user.TermsAgreementResponse;
 import com.itda.backend.exception.organization.OrganizationErrorCode;
 import com.itda.backend.exception.organization.OrganizationException;
 import com.itda.backend.exception.user.UserErrorCode;
@@ -34,6 +39,7 @@ public class UserService {
     private final OrganizationRepository organizationRepository;
     private final OrganizationCodeIssuer organizationCodeIssuer;
     private final LoginUserTransactionService loginUserTransactionService;
+    private final TermsService termsService;
 
     /**
      * 카카오 로그인 성공 시 회원을 찾거나 만든다.
@@ -86,29 +92,46 @@ public class UserService {
             throw new UserException(UserErrorCode.ALREADY_SIGNED_UP);
         }
 
+        // 막 가입한 회원은 동의 기록이 없어 termsAgreed 가 false 다. 프론트가 이 값을 보고 약관 화면으로 간다.
         if (request.isOrganizationSignup()) {
             Organization organization = createOrganization(request);
             user.completeSignup(UserRole.ORGANIZATION, organization.getId());
-            return CurrentUserResponse.from(user, organization);
+            return CurrentUserResponse.from(user, organization, termsService.isAgreed(user));
         }
         user.completeSignup(UserRole.PARENT, null);
-        return CurrentUserResponse.from(user, null);
+        return CurrentUserResponse.from(user, null, termsService.isAgreed(user));
     }
 
     /**
-     * 가입 미완료 차단 필터가 쓴다.
+     * 서비스 약관 동의. 회원 행을 잠그고 시작한다 — 같은 회원의 요청이 겹쳐도 두 번째는 첫 번째가 남긴
+     * 줄을 보고 아무것도 넣지 않는다(TermsService.agree).
+     */
+    @Transactional
+    public TermsAgreementResponse agreeTerms(String principal, List<TermKey> agreed, Map<TermKey, String> versions) {
+        User user = userRepository.findActiveByIdForUpdate(parseUserId(principal))
+                .orElseThrow(() -> new UserException(UserErrorCode.SESSION_USER_NOT_FOUND));
+        termsService.agree(user, agreed, versions);
+        return new TermsAgreementResponse(true);
+    }
+
+    /**
+     * 가입 미완료 차단 필터가 쓴다. 회원을 한 번 읽고, 가입을 마쳤으면 약관 동의 기록을 한 번 더 읽는다.
      *
      * <p>없는 회원과 탈퇴 회원은 SESSION_USER_NOT_FOUND 예외로 차단한다.
      */
     @Transactional(readOnly = true)
-    public boolean isSignupCompleted(String principal) {
-        return getByPrincipal(principal).isSignupCompleted();
+    public AccountAccess accessOf(String principal) {
+        User user = getByPrincipal(principal);
+        if (!user.isSignupCompleted()) {
+            return AccountAccess.SIGNUP_NOT_COMPLETED;
+        }
+        return termsService.isAgreed(user) ? AccountAccess.OK : AccountAccess.TERMS_NOT_AGREED;
     }
 
     @Transactional(readOnly = true)
     public CurrentUserResponse getCurrentUser(String principal) {
         User user = getByPrincipal(principal);
-        return CurrentUserResponse.from(user, organizationOf(user));
+        return CurrentUserResponse.from(user, organizationOf(user), termsService.isAgreed(user));
     }
 
     /**

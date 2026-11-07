@@ -70,6 +70,7 @@ cd infra/docker && docker compose up -d --build
 | `/queue/reinput` | I-07 재입력 요청 큐 (BLOCK) |
 | `/gate1` | I-08 Gate 1 요약 검토 |
 | `/children`, `/children/:id` | I-09 아동 관리 · Child Context |
+| `/checklists` | I-15 준비물·확인사항 — 보내기 · 보낸 목록 · 내리기 |
 | `/insights` | I-10 Insight 목록 |
 | `/gate2` | I-11 Gate 2 발송 검토 |
 | `/inbox` | I-12 수신함 |
@@ -92,9 +93,9 @@ cd infra/docker && docker compose up -d --build
 | `/parent/report` | 케어 리포트 — 주간/월간, 변화 추이, 반복 패턴, 오프라인 에러 상태 |
 | `/parent/report/evidence` | 리포트 근거 일지 목록 |
 | `/parent/notifications` | 알림 — 새 기관 권한 요청 승인/거절 |
-| `/parent/settings` | P-04 설정 — 기관 권한 토글, 아이 정보, 기관 요청사항 바로가기 |
+| `/parent/settings` | P-04 설정 — 기관 권한 토글, 아이 정보, 준비물·확인사항 바로가기 |
 | `/parent/consent/manage/add` | 기관 직접 추가(코드 입력) |
-| `/parent/institution-requests` | 기관 요청사항(준비물·확인사항) |
+| `/parent/checklists` | P-12 준비물·확인사항 |
 | `/parent/history` | P-05 활동 이력 (하단 탭에는 없음, 직접 접근 가능) |
 
 하단 탭은 **홈 · 타임라인 · 리포트 · 설정** 4개입니다. 헤더 아바타를 누르면 아이
@@ -115,7 +116,7 @@ cd infra/docker && docker compose up -d --build
 8. 동의 회수/권한 끄기 화면에는 **"이미 보낸 정보는 회수되지 않는다"** 는 문구가 반드시 있어야 합니다.
 9. 상태는 색 단독으로 전달하지 않습니다. **텍스트 라벨을 항상 함께** 씁니다.
 10. 기관 화면 본문은 16px 이상, 클릭 타깃은 44px 이상 (`tap` 유틸).
-11. **아이별 데이터는 반드시 childId 로 조회합니다.** 리포트·기관 요청사항·타임라인·알림 배지 등 어떤 것도 "현재 선택된 아이" 를 빼먹고 전역 데이터를 그대로 돌려주면 안 됩니다 — 다자녀일 때 다른 아이 데이터가 섞이는 사고로 이어집니다.
+11. **아이별 데이터는 반드시 childId 로 조회합니다.** 리포트·준비물·확인사항·타임라인·알림 배지 등 어떤 것도 "현재 선택된 아이" 를 빼먹고 전역 데이터를 그대로 돌려주면 안 됩니다 — 다자녀일 때 다른 아이 데이터가 섞이는 사고로 이어집니다.
 
 ## 역할 경계
 

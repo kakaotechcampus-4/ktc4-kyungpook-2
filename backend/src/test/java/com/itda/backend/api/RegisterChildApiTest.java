@@ -24,10 +24,12 @@ import com.jayway.jsonpath.JsonPath;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
@@ -57,6 +59,9 @@ class RegisterChildApiTest {
     private UserRepository userRepository;
 
     @Autowired
+    private TermsAgreementRepository termsAgreementRepository;
+
+    @Autowired
     private OrganizationRepository organizationRepository;
 
     private static String uniqueKakaoId() {
@@ -65,7 +70,7 @@ class RegisterChildApiTest {
 
     private User organizationUser() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        return userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
+        return TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
     }
 
     private Cookie authCookie(User user) {
@@ -135,6 +140,28 @@ class RegisterChildApiTest {
     }
 
     @Test
+    void sameNameAndBirthDateInSameOrganizationIsConflict() throws Exception {
+        User user = organizationUser();
+        mockMvc.perform(registerWithCsrf(authCookie(user))).andExpect(status().isCreated());
+
+        mockMvc.perform(registerWithCsrf("""
+                        {"name": "김하늘", "birthDate": "2017-03-14", "externalId": "2026-0099"}
+                        """, authCookie(user)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_CHILD"));
+
+        mockMvc.perform(get(CHILDREN).cookie(authCookie(user)))
+                .andExpect(jsonPath("$.data.length()").value(1));
+    }
+
+    @Test
+    void sameNameAndBirthDateInAnotherOrganizationIsRegistered() throws Exception {
+        mockMvc.perform(registerWithCsrf(authCookie(organizationUser()))).andExpect(status().isCreated());
+
+        mockMvc.perform(registerWithCsrf(authCookie(organizationUser()))).andExpect(status().isCreated());
+    }
+
+    @Test
     void anonymousRequestWithValidCsrfIsUnauthorized() throws Exception {
         mockMvc.perform(registerWithCsrf())
                 .andExpect(status().isUnauthorized())
@@ -152,7 +179,7 @@ class RegisterChildApiTest {
 
     @Test
     void parentWithValidCsrfIsForbiddenBecauseNoOrganization() throws Exception {
-        User parent = userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호"));
+        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
 
         mockMvc.perform(registerWithCsrf(authCookie(parent)))
                 .andExpect(status().isForbidden())

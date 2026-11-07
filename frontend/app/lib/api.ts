@@ -21,10 +21,13 @@
  *      GET  /api/v1/summaries?gate1Status=pending|hold
  *      POST /api/v1/summaries/{summaryId}/gate1
  *      POST /api/v1/summaries/{summaryId}/reopen
- *      GET  /api/v1/summaries/groups
- *      POST /api/v1/summaries/run
+ *      GET  /api/v1/summaries/failed
+ *      POST /api/v1/summaries/failed/retry
+ *      POST /api/v1/summaries/failed/close
+ *      GET  /api/v1/dashboard/pipeline
+ *      GET  /api/v1/dashboard/ai-activity
+ *      GET  /api/v1/system/ai-status
  *      GET  /api/v1/insights?gate2Status=pending|approved|hold
- *      GET  /api/v1/insights/{insightId}
  *      POST /api/v1/insights/{insightId}/gate2
  *      GET  /api/v1/children/{childId}/consent-preview?institutionId=
  *      PUT  /api/v1/children/{childId}/consent-scopes/{institutionId}
@@ -50,6 +53,7 @@
  *      POST /api/v1/matching-queue/{id}/resolve
  *      GET  /api/v1/validation-results?status=BLOCK
  *      POST /api/v1/validation-results/{id}/resolve
+ *      POST /api/v1/validation-results/{id}/revise
  *      GET  /api/v1/auth/me          (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/signup       (lib/auth.ts 에서 호출)
  *      POST /api/v1/auth/logout       (lib/auth.ts 에서 호출)
@@ -67,11 +71,14 @@
  */
 
 import { ApiError } from "@/lib/apiError";
-import { clearSession, csrfHeader, isOnboarded, markOnboarded } from "@/lib/auth";
+import { clearSession, csrfHeader, getSession, isOnboarded, markOnboarded } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
   AcceptedInvitation,
+  FailedSummary,
+  AiActivity,
+  AiStatus,
   BlockedItem,
   Child,
   ChildCareInfo,
@@ -89,7 +96,10 @@ import type {
   InboxItem,
   Insight,
   Institution,
-  InstitutionRequestItem,
+  InstitutionShares,
+  ChecklistItem,
+  SentChecklist,
+  SentChecklistPage,
   IssuedInvitation,
   JournalEntry,
   LiveInvitation,
@@ -98,9 +108,9 @@ import type {
   MyInstitution,
   ParentActivity,
   PendingLinkRequest,
+  Pipeline,
+  PipelineRow,
   RegisteredChild,
-  SummaryGroup,
-  SummaryGroupBoard,
   SummaryItem,
   TimelineEntry,
   UploadFailReason,
@@ -145,11 +155,13 @@ const BE_READY = {
   /**
    * 요약 검토 조회 · 문장 카드 승인 · 보류 · 제거 · 보류 해제 (O-30, O-31, O-33).
    * 문장 카드(#231)가 있는 서버여야 한다 — 그 전 서버는 cards 를 조용히 버리고 AI 원문을 승인한다.
-   * 요약은 오늘의 업무 묶음 카드의 [요약](summaryGroups)을 눌러야 생긴다.
+   * 요약은 AI 확인이 끝나면 자동으로 만들어진다 (#369).
    */
   gate1: true,
-  /** 오늘의 업무 묶음 카드 조회 · [요약] (O-34, O-32) */
-  summaryGroups: true,
+  /** 대시보드 진행 현황 · 오늘 AI가 한 일 · AI 상태 (O-80 ~ O-82) */
+  dashboard: true,
+  /** 요약 실패 목록 · 다시 요약 · 요약 없이 마무리 (O-35 ~ O-37, #369) */
+  summaryFailures: true,
   /** 인사이트 조회 · 2차 공유 (O-40 ~ O-42) */
   insights: true,
   /** 원본 업로드 (POST /raw-records) */
@@ -166,7 +178,7 @@ const BE_READY = {
   guardianConsent: true,
   /**
    * 보호자: 설정 화면의 동의 끄기 (G-41 revoke). 다시 켤 때는 동의 화면(P-02, guardianConsent)을
-   * 거친다. 알림 화면의 "허락"도 이 함수를 쓰지만 알림 화면은 institutionRequests 로 아직 준비 중이다.
+   * 거친다.
    */
   guardianLinks: true,
   /** 보호자: 초대 코드 수락 (G-04) */
@@ -188,8 +200,11 @@ const BE_READY = {
    * 요청 거절(G-42)은 MVP 에서 뺐다 — 알림 화면은 동의 화면으로 보내는 버튼 하나만 둔다.
    */
   consentRequests: true,
-  /** 보호자: 기관 요청사항 — 준비물 · 확인사항 (G-50, G-51) */
-  institutionRequests: false,
+  /**
+   * 준비물·확인사항 — 기관의 보내기 · 보낸 목록 · 내리기(O-70 ~ O-72)와 보호자의 목록 · 확인(G-50, G-51).
+   * 보호자 쪽은 P-12 · 설정 개수 · 알림 화면 · 헤더 알림 점이 본다.
+   */
+  checklists: true,
   /**
    * 보호자: 기관 코드 조회 · 연결 요청 (G-43, G-44). 바로 연결되지 않고 기관이 수락해야 명부에 오른다.
    * 수락 대기 중 기관은 아이 목록·홈 응답(guardianChildren)의 linkRequests 로 온다.
@@ -200,6 +215,10 @@ const BE_READY = {
    * 단건을 열면 처음 열람 시각이 남는다
    */
   guardianInsights: true,
+  /**
+   * 보호자: 기관 공유 내역 (G-45). 설정 기관 줄의 "받은 리포트 N편" 과 기관 공유 내역 화면. 거둔(가려진) 공유도 온다
+   */
+  institutionShares: true,
   /** 보호자: 돌봄 정보 저장 (G-13). 알레르기·복용약. 연결된 보호자끼리 함께 보고 고친다. 기관에는 공유하지 않는다 */
   careInfo: true,
 } satisfies Record<string, boolean>;
@@ -259,7 +278,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401) clearSession();
     // BE 공통 에러 형식 { result, code, message } — global/exception/ErrorResponse.java
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.code ?? "UNKNOWN", body.message);
+    const error = new ApiError(res.status, body.code ?? "UNKNOWN", body.message);
+    if (error.status === 403 && error.code === "TERMS_NOT_AGREED") void sendToTerms();
+    throw error;
   }
   // 204 No Content 에는 래퍼가 없다(api-conventions.md). 백엔드에 아직 204 를 주는
   // 곳은 없지만 규약이라 미리 받아둔다.
@@ -273,6 +294,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export { ApiError };
+
+/**
+ * 약관에 동의하지 않은 회원은 서버가 보호 API 를 모두 403 TERMS_NOT_AGREED 로 막는다. 화면마다 처리하지 않고
+ * 여기서 한 번 그 역할의 약관 화면으로 보낸다 — 앱을 열어 둔 사이 약관 판이 올라간 경우 등.
+ *
+ * 기관 화면 주소에는 앞머리가 없어 주소로는 역할을 알 수 없다. 그래서 세션(`/auth/me`, 약관 전에도 열려 있다)을
+ * 다시 읽는다. 기관 → `/org-terms`, 보호자 → `/parent/invite`(초대 화면이 이 오류를 받아 약관 단계로 돌린다),
+ * 로그인이 풀렸으면 `/login`. 세션 조회가 실패하면 어디로도 보내지 않는다 — 원래 요청의 오류는 그대로 던져져
+ * 화면의 오류 안내 · 다시 시도가 돈다. 짐작으로 보호자 화면에 보내면 기관이 거기 갇힌다.
+ * 이미 그 화면이면 옮기지 않는다.
+ */
+async function sendToTerms(): Promise<void> {
+  if (typeof window === "undefined") return;
+  let target: string;
+  try {
+    const session = await getSession();
+    if (!session.loggedIn) target = "/login";
+    else if (session.role === "org") target = "/org-terms";
+    else target = "/parent/invite";
+  } catch {
+    return;
+  }
+  if (window.location.pathname !== target) window.location.replace(target);
+}
 
 /* ── 기관 ───────────────────────────────────────────── */
 
@@ -412,12 +457,14 @@ interface Gate1SummaryRaw {
   version: string;
   processing: boolean;
   content: string;
-  claims: SummaryItem["claims"] | null;
+  claims: { index: number; text: string; evidence?: { journalEntryId: number; quote: string }[] | null }[] | null;
   noContent: boolean;
   needsReview: boolean;
   reviewReasons: string[] | null;
   uncoveredEntries: { journalEntryId: number; content: string }[] | null;
-  reviewFlags: { journalEntryId: number; issueTypes: string[] }[] | null;
+  reviewFlags: { journalEntryId: number; issueTypes: string[]; reasons?: string[] }[] | null;
+  /** 예전 서버는 주지 않는다 — 그때는 요약에 안 들어간 일지만 원본으로 보인다 */
+  entries?: { journalEntryId: number; content: string }[] | null;
 }
 
 function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
@@ -431,7 +478,11 @@ function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
     version: raw.version,
     processing: raw.processing,
     content: raw.content,
-    claims: raw.claims ?? [],
+    claims: (raw.claims ?? []).map((c) => ({
+      index: c.index,
+      text: c.text,
+      evidence: (c.evidence ?? []).map((e) => ({ journalEntryId: String(e.journalEntryId), quote: e.quote })),
+    })),
     noContent: raw.noContent ?? false,
     needsReview: raw.needsReview,
     reviewReasons: raw.reviewReasons ?? [],
@@ -439,9 +490,15 @@ function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
       journalEntryId: String(e.journalEntryId),
       content: e.content,
     })),
+    entries: (raw.entries ?? raw.uncoveredEntries ?? []).map((e) => ({
+      journalEntryId: String(e.journalEntryId),
+      content: e.content,
+    })),
     reviewFlags: (raw.reviewFlags ?? []).map((f) => ({
       journalEntryId: String(f.journalEntryId),
       issueTypes: f.issueTypes ?? [],
+      // reasons 가 없는 예전 서버면 코드라도 보여 준다 — 빈칸보다 낫다. 빈 값은 버린다(안내가 " · " 에서 끊기지 않게)
+      reasons: (f.reasons ?? f.issueTypes ?? []).filter((r) => r.trim() !== ""),
     })),
   };
 }
@@ -498,6 +555,8 @@ function mockGate1Guard(item: SummaryItem | undefined, decision: string): Summar
 export async function decideGate1(
   summaryId: string,
   body: { decision: Gate1Decision; cards?: Gate1Card[]; version: string },
+  /** 페이지를 떠나는 중에 보낼 때(되돌리기 대기 중이던 승인) — 브라우저가 요청을 끊지 않게 */
+  opts?: { keepalive?: boolean },
 ): Promise<{ summaryId: string }> {
   if (mockFor("gate1")) {
     const item = mockGate1Guard(
@@ -505,43 +564,13 @@ export async function decideGate1(
       body.decision,
     );
     item.gate1Status = GATE1_STATUS_AFTER[body.decision];
-    if (body.decision === "revert") revertToSummaryWait(item);
     return { summaryId };
   }
   const res = await request<{ summaryId: number }>(
     `/api/v1/summaries/${encodeURIComponent(summaryId)}/gate1`,
-    { method: "POST", body: JSON.stringify(body) },
+    { method: "POST", body: JSON.stringify(body), keepalive: opts?.keepalive },
   );
   return { summaryId: String(res.summaryId) };
-}
-
-/**
- * mock 전용: 요약할 내용 없음을 되돌리면 그날 기록이 오늘의 업무에 "요약 대기"로 돌아온다.
- * BE 는 일지를 요약 전(VALIDATED)으로 돌리고, 보드는 그 일지를 아이 × 날짜 카드로 다시 묶는다.
- */
-function revertToSummaryWait(item: SummaryItem) {
-  const board = mock.SUMMARY_GROUP_BOARD;
-  const entries = Math.max(item.uncoveredEntries.length, 1);
-  let group = board.groups.find((g) => g.childId === item.childId && g.entryDate === item.entryDate);
-  if (!group) {
-    group = {
-      childId: item.childId,
-      childName: item.childName,
-      birthdate: mock.CHILDREN.find((c) => c.id === item.childId)?.birthDate ?? null,
-      entryDate: item.entryDate,
-      status: "ready",
-      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
-      canSummarize: true,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    };
-    board.groups.push(group);
-    board.groups.sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.childId.localeCompare(b.childId));
-  }
-  group.counts.ready += entries;
-  group.canSummarize = !group.summaryRequested;
-  group.status = groupStatusOf(group);
 }
 
 /**
@@ -564,100 +593,89 @@ export async function reopenGate1(summaryId: string): Promise<{ summaryId: strin
   return { summaryId: String(res.summaryId) };
 }
 
-/* ── 오늘의 업무 묶음 카드 · [요약] ──────────────────── */
+/* ── 대시보드 (O-80 ~ O-82) ──────────────────── */
 
-/** BE SummaryGroupBoardResponse 그대로. childId 가 숫자다 */
-interface SummaryGroupBoardRaw {
-  matching: SummaryGroupBoard["matching"];
-  groups: (Omit<SummaryGroup, "childId"> & { childId: number })[];
+/** BE 응답 그대로. childId · target.id 가 숫자로 올 수 있다 */
+interface PipelineRaw {
+  turn: Pipeline["turn"];
+  rows: (Omit<PipelineRow, "childId" | "target"> & {
+    childId: string | number | null;
+    target: { type: NonNullable<PipelineRow["target"]>["type"]; id?: string | number | null } | null;
+  })[];
 }
 
-/**
- * GET /api/v1/summaries/groups (O-34) — 요약 전 묶음(아이 × 날짜) 카드. 오래된 날짜부터 온다.
- * 기록 등록 화면의 파일별 진행(O-26)과 같은 일지를 아이별로 묶어 본 것이다.
- */
-export async function getSummaryGroups(): Promise<SummaryGroupBoard> {
-  if (mockFor("summaryGroups")) {
-    tickSummaryRuns();
-    // 화면이 상태로 들고 있다가 비교하므로 매번 새 객체로 준다
-    const board = mock.SUMMARY_GROUP_BOARD;
-    return {
-      matching: { ...board.matching },
-      groups: board.groups.map((g) => ({ ...g, counts: { ...g.counts } })),
-    };
+/** GET /api/v1/dashboard/pipeline (O-80) — 선생님 차례 건수와 진행 현황 줄. 단계 판정은 서버가 한다 */
+export async function getPipeline(): Promise<Pipeline> {
+  if (mockFor("dashboard")) {
+    const p = mock.PIPELINE;
+    return { turn: { ...p.turn }, rows: p.rows.map((r) => ({ ...r })) };
   }
-  const raw = await request<SummaryGroupBoardRaw>("/api/v1/summaries/groups");
+  const raw = await request<PipelineRaw>("/api/v1/dashboard/pipeline");
   return {
-    matching: raw.matching,
-    groups: raw.groups.map((g) => ({ ...g, childId: String(g.childId) })),
+    turn: raw.turn,
+    rows: raw.rows.map((r) => ({
+      ...r,
+      childId: r.childId == null ? null : String(r.childId),
+      target: r.target
+        ? { type: r.target.type, ...(r.target.id != null ? { id: String(r.target.id) } : {}) }
+        : null,
+    })),
   };
 }
 
-/**
- * POST /api/v1/summaries/run (O-32) — 그 아이 · 날짜 묶음을 요약해 달라고 요청한다. 응답 data 는 null 이다.
- * 같은 날 매칭 · 검증 중인 기록이 있으면 그것이 끝난 뒤 요약한다. 요약 중에 누르면 409 SUMMARY_IN_PROGRESS.
- */
-export async function runSummary(childId: string, entryDate: string): Promise<void> {
-  if (mockFor("summaryGroups")) {
-    const group = mock.SUMMARY_GROUP_BOARD.groups.find(
-      (g) => g.childId === childId && g.entryDate === entryDate,
-    );
-    if (!group) throw new ApiError(404, "SUMMARY_CHILD_NOT_FOUND", "아이를 찾을 수 없습니다.");
-    if (group.summaryRequested || group.counts.summarizing > 0) {
-      throw new ApiError(409, "SUMMARY_IN_PROGRESS", "요약하는 중입니다.");
-    }
-    if (group.counts.ready === 0 && group.counts.validating === 0) {
-      throw new ApiError(400, "SUMMARY_INVALID_REQUEST", "요약할 기록이 없습니다.");
-    }
-    group.summaryRequested = true;
-    group.canSummarize = false;
-    group.waitingCount = group.counts.validating;
-    group.status = groupStatusOf(group);
-    summaryRuns.set(`${childId}:${entryDate}`, Date.now());
-    return;
-  }
-  await request("/api/v1/summaries/run", {
-    method: "POST",
-    body: JSON.stringify({ childId: Number(childId), entryDate }),
-  });
+/** GET /api/v1/dashboard/ai-activity (O-81) — 서울 기준 오늘 0시부터 AI 가 한 일 */
+export async function getAiActivity(): Promise<AiActivity> {
+  if (mockFor("dashboard")) return { ...mock.AI_ACTIVITY };
+  return request<AiActivity>("/api/v1/dashboard/ai-activity");
 }
 
-/** mock 전용: BE 라벨 규칙 그대로 (위에서부터 처음 맞는 것) */
-function groupStatusOf(g: SummaryGroup): SummaryGroup["status"] {
-  const c = g.counts;
-  if (c.needsFix > 0) return "needs_fix";
-  if (c.ready > 0 && !g.summaryRequested && c.summarizing === 0) return "ready";
-  if (c.summarizing > 0 || g.summaryRequested) return "summarizing";
-  if (c.validating > 0) return "validating";
-  return "admin_check";
+/** GET /api/v1/system/ai-status (O-82) — AI 장애 배너용 */
+export async function getAiStatus(): Promise<AiStatus> {
+  if (mockFor("dashboard")) return { ...mock.AI_STATUS };
+  return request<AiStatus>("/api/v1/system/ai-status");
 }
 
-/**
- * mock 전용: [요약]을 누른 묶음이 잠시 뒤 요약을 마치고 요약 검토로 옮겨 가는 것을 흉내낸다.
- * 요약 대기 기록만 빠지고, 수정 요청 · 검증 중 기록이 남으면 카드는 남는다 (BE 와 같음).
- */
-const summaryRuns = new Map<string, number>();
-const SUMMARY_RUN_MS = 3000;
+/* ── 요약 실패 (O-35 ~ O-37) ──────────────────── */
 
-function tickSummaryRuns() {
-  const now = Date.now();
-  for (const [key, at] of summaryRuns) {
-    if (now - at < SUMMARY_RUN_MS) continue;
-    summaryRuns.delete(key);
-    const board = mock.SUMMARY_GROUP_BOARD;
-    const group = board.groups.find((g) => `${g.childId}:${g.entryDate}` === key);
-    if (!group) continue;
+interface FailedSummaryRaw {
+  childId: number;
+  childName: string;
+  entryDate: string;
+  entries: { journalEntryId: number; content: string }[] | null;
+  reason: string;
+}
 
-    mock.GATE1_QUEUE.push(mock.gate1FromRun(group));
-    group.counts.ready = 0;
-    group.summaryRequested = false;
-    group.waitingCount = 0;
-    group.previousSummaryInReview = true;
-    group.canSummarize = false;
-    group.status = groupStatusOf(group);
-    const left = Object.values(group.counts).reduce((a, b) => a + b, 0);
-    if (left === 0) board.groups.splice(board.groups.indexOf(group), 1);
-  }
+/** GET /api/v1/summaries/failed (O-35) — 재시도 뒤에도 요약하지 못한 묶음. 오래된 날짜부터 */
+export async function getFailedSummaries(): Promise<FailedSummary[]> {
+  if (mockFor("summaryFailures")) return mock.FAILED_SUMMARIES.map((f) => ({ ...f }));
+  const raw = await request<FailedSummaryRaw[]>("/api/v1/summaries/failed");
+  return raw.map((f) => ({
+    ...f,
+    childId: String(f.childId),
+    entries: (f.entries ?? []).map((e) => ({ journalEntryId: String(e.journalEntryId), content: e.content })),
+  }));
+}
+
+function failedBody(childId: string, entryDate: string): string {
+  return JSON.stringify({ childId: Number(childId), entryDate });
+}
+
+function dropMockFailed(childId: string, entryDate: string) {
+  const at = mock.FAILED_SUMMARIES.findIndex((f) => f.childId === childId && f.entryDate === entryDate);
+  if (at < 0) throw new ApiError(404, "SUMMARY_FAILED_NOT_FOUND", "요약 실패 기록이 없습니다.");
+  mock.FAILED_SUMMARIES.splice(at, 1);
+}
+
+/** POST /api/v1/summaries/failed/retry (O-36) — 다시 요약. 워커가 곧 요약하고 결과는 O-30 에 온다 */
+export async function retryFailedSummary(childId: string, entryDate: string): Promise<void> {
+  if (mockFor("summaryFailures")) return dropMockFailed(childId, entryDate);
+  await request("/api/v1/summaries/failed/retry", { method: "POST", body: failedBody(childId, entryDate) });
+}
+
+/** POST /api/v1/summaries/failed/close (O-37) — 요약 없이 마무리. 되돌릴 수 없다 */
+export async function closeFailedSummary(childId: string, entryDate: string): Promise<void> {
+  if (mockFor("summaryFailures")) return dropMockFailed(childId, entryDate);
+  await request("/api/v1/summaries/failed/close", { method: "POST", body: failedBody(childId, entryDate) });
 }
 
 /**
@@ -673,11 +691,6 @@ export async function getInsights(gate2Status: Gate2Status = "pending"): Promise
     );
   }
   return request(`/api/v1/insights?gate2Status=${gate2Status}`);
-}
-
-export async function getInsight(id: string): Promise<Insight | undefined> {
-  if (mockFor("insights")) return mock.INSIGHTS.find((i) => i.id === id);
-  return request(`/api/v1/insights/${id}`);
 }
 
 /**
@@ -757,7 +770,7 @@ export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
   }
   return Promise.all(
     files.map(async (file): Promise<UploadResult> => {
-      // BE 는 pdf 도 받지만 아직 기록으로 나누지 못해 아무것도 생기지 않는다 — 보내기 전에 거절한다
+      // BE 도 400 으로 거절하지만, 보내기 전에 걸러 20MB 짜리 hwp 같은 걸 끝까지 올리지 않게 한다
       if (!hasUploadExtension(file)) return { ok: false, file, reason: "invalid" };
       try {
         return { ok: true, file, progress: await uploadOne(file) };
@@ -794,10 +807,10 @@ function uploadFailReasonOf(err: unknown): UploadFailReason {
 }
 
 /**
- * 올릴 수 있는 형식. BE 는 pdf 도 받지만 기록으로 나누는 단계가 pdf 를 건너뛰어,
- * 올려도 처리 현황에 아무것도 나오지 않는다. pdf 를 지원하면 여기에 다시 넣는다.
+ * 올릴 수 있는 형식. BE RawRecordService.ALLOWED_EXTENSIONS 와 같게 둔다 (docx · pdf 글자 뽑기 #383).
+ * 스캔하거나 사진으로 만든 pdf 는 글자가 없어 업로드는 되지만 기록이 나뉘지 않는다(entries: []).
  */
-export const UPLOAD_EXTENSIONS = ["csv", "txt"];
+export const UPLOAD_EXTENSIONS = ["csv", "txt", "docx", "pdf"];
 /** mock 도 BE 와 같은 용량 제한으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
 const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -874,14 +887,12 @@ function tickSimulation() {
 /**
  * POST /api/v1/validation-results/{id}/resolve (api-spec O-25)
  *
- * 둘 다 그 일지의 처리를 여기서 끝내고 큐에서 뺀다. 원본은 고치지도 지우지도 않는다 —
- * reupload 는 "고친 내용을 새 파일로 올리겠다"는 표시일 뿐, 업로드는 따로 해야 한다.
- * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 없는 건은 404 다.
+ * 이 기록 보류 — 그 일지의 처리를 여기서 끝내고 큐에서 뺀다.
+ * "수정한 원본 다시 올리기"(reupload)는 서버가 더 받지 않는다(#357). 본문은 reviseBlockedItem 으로 고친다.
+ * 이미 처리된 건은 400 VALIDATION_RESULT_INVALID_REQUEST, 그 일지에 더 최근 판정이 생겼으면(이미 고쳐 다시 검사했는데
+ * 또 막힘) 400 VALIDATION_RESULT_OUTDATED, 없는 건은 404 다.
  */
-export async function resolveBlockedItem(
-  id: string,
-  action: "reupload" | "hold",
-): Promise<{ ok: true }> {
+export async function resolveBlockedItem(id: string, action: "hold"): Promise<{ ok: true }> {
   if (mockFor("blockedQueue")) {
     const idx = mock.BLOCKED_QUEUE.findIndex((b) => b.id === id);
     if (idx !== -1) mock.BLOCKED_QUEUE.splice(idx, 1);
@@ -893,11 +904,40 @@ export async function resolveBlockedItem(
   });
 }
 
+/** 고친 본문 최대 길이. 서버 ReviseBlockedEntryRequest 와 같다 */
+export const MAX_REVISED_CONTENT = 100_000;
+
+/**
+ * POST /api/v1/validation-results/{id}/revise (api-spec O-25, #357)
+ *
+ * 막힌 일지의 본문을 고쳐 검증을 다시 받게 한다. 아이는 그대로다. 성공하면 큐에서 빠지고,
+ * 통과하면 요약 대기, 또 막히면 큐에 최신 사유로 다시 뜬다.
+ * 400 은 code 로 이유를 나눈다.
+ * - INVALID_REQUEST: 빈 본문·100000자 초과
+ * - VALIDATION_RESULT_CONTENT_UNCHANGED: 앞뒤 공백 말고 고친 게 없다
+ * - VALIDATION_RESULT_CHILD_NOT_SHARED: 아이가 삭제됐거나 명단에서 빠졌거나 우리 기관 동의가 꺼졌다 — 보류만 할 수 있다
+ * - VALIDATION_RESULT_OUTDATED: 그 일지에 더 최근 판정이 있다(이미 고쳐 다시 검사했는데 또 막힘)
+ * - VALIDATION_RESULT_INVALID_REQUEST: 이미 처리됐거나 BLOCK 판정이 아니다
+ * 없는 건은 404 다.
+ */
+export async function reviseBlockedItem(id: string, content: string): Promise<{ ok: true }> {
+  if (mockFor("blockedQueue")) {
+    const idx = mock.BLOCKED_QUEUE.findIndex((b) => b.id === id);
+    if (idx !== -1) mock.BLOCKED_QUEUE.splice(idx, 1);
+    return { ok: true };
+  }
+  return request(`/api/v1/validation-results/${id}/revise`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
 /**
  * POST /api/v1/institutions/me/children — 아이 등록 (api-spec O-11).
  *
  * 등록과 함께 서버가 첫 초대 코드를 발급해 invitation 으로 준다. 한 트랜잭션이라
  * 503 INVITE_CODE_ISSUE_FAILED 면 아이도 등록되지 않았다 — 그대로 다시 요청하면 된다.
+ * 같은 기관 명부에 이름·생년월일이 같은 아이가 있으면 409 DUPLICATE_CHILD (관리번호 중복을 먼저 본다).
  */
 export async function registerChild(input: {
   name: string;
@@ -910,9 +950,13 @@ export async function registerChild(input: {
     if (mock.CHILDREN.some((c) => c.externalId === externalId)) {
       throw new ApiError(409, "DUPLICATE_EXTERNAL_ID");
     }
+    const trimmedName = input.name.trim();
+    if (mock.CHILDREN.some((c) => c.name === trimmedName && c.birthDate === input.birthDate)) {
+      throw new ApiError(409, "DUPLICATE_CHILD");
+    }
     const child: Child = {
       id: `child_${Math.random().toString(36).slice(2, 8)}`,
-      name: input.name.trim(),
+      name: trimmedName,
       birthDate: input.birthDate,
       externalId,
       status: "pending_consent",
@@ -1130,16 +1174,16 @@ export async function getParentChildren(): Promise<Child[]> {
 }
 
 /**
- * 보호자가 온보딩(약관 · 첫 기관 연결)을 마쳤는지 본다. 이 브라우저에 표시가 없으면 서버에 묻는다.
+ * 보호자가 첫 기관 연결을 마쳤는지 본다. 이 브라우저에 표시가 없으면 서버에 묻는다.
+ * 약관 동의는 여기서 보지 않는다 — 서버가 `/auth/me` 의 termsAgreed 로 따로 알려준다.
  *
  * 표시(`itda_parent_onboarded`)는 브라우저마다 따로라, 다른 브라우저 · 기기로 들어온 보호자는
- * 아이 연결과 동의를 마쳤어도 약관 · 초대 코드 화면으로 돌아갔다. 연결된 아이가 한 명이라도 있으면
+ * 아이 연결과 동의를 마쳤어도 초대 코드 화면으로 돌아갔다. 연결된 아이가 한 명이라도 있으면
  * 첫 기관 동의까지 끝낸 것이라(동의해야 연결된다) 표시를 다시 남기고 마친 것으로 본다.
  *
+ * - **약관에 동의한 뒤에만 부른다.** 앞에서 부르면 아이 목록이 403 TERMS_NOT_AGREED 다
  * - mock 아이 목록은 온보딩과 관계없이 늘 있어 근거가 못 된다. mock 이면 표시만 본다
  * - 서버가 실패하면 마치지 않은 것으로 본다 — 온보딩 화면을 한 번 더 볼 뿐, 로그인 흐름은 막지 않는다
- *
- * 약관 동의를 서버에 저장하게 되면 그 값으로 판단을 바꾼다.
  */
 export async function restoreParentOnboarded(): Promise<boolean> {
   if (isOnboarded()) return true;
@@ -1344,6 +1388,15 @@ export async function getGuardianInsights(): Promise<GuardianInsight[]> {
 }
 
 /**
+ * GET /api/v1/guardians/me/children/{childId}/institution-shares — 이 아이 주간 리포트가 어느 기관에 언제 열렸고
+ * 지금도 보이는지, 기관별로 (G-45). 연결되지 않은 아이면 403 을 그대로 던진다
+ */
+export async function getInstitutionShares(childId: string): Promise<InstitutionShares[]> {
+  if (mockFor("institutionShares")) return mock.INSTITUTION_SHARES[childId] ?? [];
+  return request(`/api/v1/guardians/me/children/${encodeURIComponent(childId)}/institution-shares`);
+}
+
+/**
  * GET /api/v1/guardians/me/insights/{insightId} — 처음 열면 열람 시각이 남는다.
  * 볼 수 없는 글(없음 · 남의 아이 · 연결 해제로 거둬짐 → SHARING_NOT_FOUND)은 undefined. 일지 상세와 같은 약속이다
  */
@@ -1362,20 +1415,111 @@ export async function getGuardianInsight(id: string): Promise<GuardianInsight | 
   }
 }
 
-/** GET /api/v1/children/{childId}/institution-requests */
-export async function getInstitutionRequests(childId: string): Promise<InstitutionRequestItem[]> {
-  if (mockFor("institutionRequests")) return mock.INSTITUTION_REQUESTS[childId] ?? [];
-  return request(`/api/v1/children/${childId}/institution-requests`);
+/**
+ * GET /api/v1/children/{childId}/checklists — 확인 안 한 것 전부(최신순) 뒤에 확인한 것 최근 20개 (G-50).
+ * needsCheckOnly 면 확인 안 한 것만 — 헤더 알림 점 · 설정 개수 · 알림 화면이 화면마다 부른다.
+ * 기관이 내린 요청과 아이가 그 기관 명부에서 빠진 요청은 오지 않는다.
+ */
+export async function getChecklists(
+  childId: string,
+  { needsCheckOnly = false }: { needsCheckOnly?: boolean } = {},
+): Promise<ChecklistItem[]> {
+  if (mockFor("checklists")) {
+    const all = mock.CHECKLISTS[childId] ?? [];
+    const open = all.filter((c) => c.status === "needs_check");
+    return needsCheckOnly ? open : [...open, ...all.filter((c) => c.status === "confirmed").slice(0, 20)];
+  }
+  const query = needsCheckOnly ? "?status=needs_check" : "";
+  return request(`/api/v1/children/${encodeURIComponent(childId)}/checklists${query}`);
 }
 
-/** POST /api/v1/institution-requests/{id}/confirm */
-export async function confirmInstitutionRequest(id: string) {
-  if (mockFor("institutionRequests")) {
-    const req = Object.values(mock.INSTITUTION_REQUESTS)
-      .flat()
-      .find((r) => r.id === id);
-    if (req) req.status = "confirmed";
-    return { ok: true };
+/**
+ * 확인 안 한 준비물·확인사항 수 — 헤더 알림 점 · 설정 개수 · 알림 화면이 덧붙여 보는 값.
+ *
+ * 이 값 하나 때문에 화면 전체가 실패하면 안 된다. 기능이 꺼져 있거나 조회가 실패하면(404 · 5xx · 네트워크) null 을 주고,
+ * 화면은 준비물 표시만 숨긴 채 기관 권한 요청 등 나머지를 그대로 보인다. 다음 로더 실행 때 다시 묻는다.
+ * 401 과 403 TERMS_NOT_AGREED 는 삼키지 않는다 — 다시 로그인 · 약관 단계로 보내는 기존 흐름이 맡는다.
+ * 준비물 화면(P-12)은 이 함수를 쓰지 않고 오류를 그대로 받는다.
+ */
+export async function loadOpenChecklistCount(childId: string): Promise<number | null> {
+  if (!isReady("checklists")) return null;
+  try {
+    return (await getChecklists(childId, { needsCheckOnly: true })).length;
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 401 || err.code === "TERMS_NOT_AGREED")) throw err;
+    return null;
   }
-  return request(`/api/v1/institution-requests/${id}/confirm`, { method: "POST" });
+}
+
+/**
+ * POST /api/v1/children/{childId}/checklists/{checklistId}/confirm — 이 아이 몫으로 한 번 확인한다 (G-51).
+ * 이미 다른 보호자가 확인했으면 그 확인(누가 · 언제)을 돌려준다. 내렸거나 명부에서 빠진 요청은 404 CHECKLIST_NOT_FOUND.
+ */
+export async function confirmChecklist(childId: string, checklistId: string): Promise<ChecklistItem> {
+  if (mockFor("checklists")) {
+    const item = (mock.CHECKLISTS[childId] ?? []).find((c) => c.id === checklistId);
+    if (!item) throw new ApiError(404, "CHECKLIST_NOT_FOUND");
+    if (item.status === "needs_check") {
+      item.status = "confirmed";
+      item.confirmedAt = new Date().toISOString();
+      item.confirmedByName = mock.ME.name;
+    }
+    return item;
+  }
+  return request(
+    `/api/v1/children/${encodeURIComponent(childId)}/checklists/${encodeURIComponent(checklistId)}/confirm`,
+    { method: "POST" },
+  );
+}
+
+/* ── 기관: 준비물·확인사항 ──────────────────────────── */
+
+/**
+ * GET /api/v1/institutions/me/checklists — 내리지 않은 요청 최신순 50개씩 (O-71).
+ * before 는 앞 쪽의 nextBefore. 기준 요청을 내렸어도 이어 볼 수 있다.
+ */
+export async function getSentChecklists(before?: string): Promise<SentChecklistPage> {
+  if (mockFor("checklists")) {
+    const live = mock.SENT_CHECKLISTS;
+    const start = before ? live.findIndex((c) => c.id === before) + 1 : 0;
+    return { checklists: live.slice(start, start + 50), nextBefore: live.length > start + 50 ? live[start + 49].id : null };
+  }
+  const query = before ? `?before=${encodeURIComponent(before)}` : "";
+  return request(`/api/v1/institutions/me/checklists${query}`);
+}
+
+/**
+ * POST /api/v1/institutions/me/checklists — 명부의 아이들에게 한 번에 보낸다 (O-70).
+ * 명부에 없는 아이가 섞이면 400 INVALID_CHECKLIST_TARGET. 보낸 뒤에는 고칠 수 없고 내리기만 한다.
+ */
+export async function sendChecklist(input: { items: string[]; childIds: string[] }): Promise<SentChecklist> {
+  if (mockFor("checklists")) {
+    const roster = await getChildren();
+    const sent: SentChecklist = {
+      id: `cl_${Date.now()}`,
+      items: input.items.map((i) => i.trim()),
+      sentAt: new Date().toISOString(),
+      total: input.childIds.length,
+      confirmed: 0,
+      targets: input.childIds.map((id) => ({
+        child: { id, name: roster.find((c) => c.id === id)?.name ?? null },
+        onRoster: true,
+        confirmedAt: null,
+        confirmedByName: null,
+      })),
+    };
+    mock.SENT_CHECKLISTS.unshift(sent);
+    return sent;
+  }
+  return request("/api/v1/institutions/me/checklists", { method: "POST", body: JSON.stringify(input) });
+}
+
+/** DELETE /api/v1/institutions/me/checklists/{id} — 통째로 내린다. 이미 내렸어도 204 (O-72) */
+export async function cancelChecklist(id: string): Promise<void> {
+  if (mockFor("checklists")) {
+    const at = mock.SENT_CHECKLISTS.findIndex((c) => c.id === id);
+    if (at >= 0) mock.SENT_CHECKLISTS.splice(at, 1);
+    return;
+  }
+  return request(`/api/v1/institutions/me/checklists/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

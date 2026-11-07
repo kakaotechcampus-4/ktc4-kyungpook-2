@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItems;
 
@@ -31,6 +32,8 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.type").value("apiKey"))
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.in").value("cookie"))
 				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.name").value("access_token"))
+				.andExpect(jsonPath("$.components.securitySchemes.cookieAuth.description")
+						.value(containsString("access_token_renewal_{sid}")))
 				.andExpect(jsonPath("$.paths['/oauth2/authorization/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/login/oauth2/code/kakao'].get.responses.302").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].post.responses.201").exists())
@@ -64,13 +67,55 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.businessNumber").exists())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationSignup").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationInfoMatchingRole").doesNotExist())
+				// 세션 응답은 보호자 약관 동의 여부를 늘 싣는다.
+				.andExpect(jsonPath("$.components.schemas.CurrentUserResponse.properties.termsAgreed").exists())
+				// 약관 동의는 보호 API 다. 요청에는 동의한 키 목록만 있고 검증용 is*() 메서드가 필드로 새지 않는다.
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.409").exists())
+				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.agreed").exists())
+				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.versions").exists())
+				// 약관 본문은 공개다 — 출입증 요구가 붙지 않는다.
+				.andExpect(jsonPath("$.paths['/api/v1/terms'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/terms'].get.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/terms'].get.security").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.allRequiredAgreed").doesNotExist())
+				// 기관 준비물·확인사항 — 보내기 201 · 목록 · 내리기 204. 요청에는 항목과 아이 id 만 있다.
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].post.responses.201").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists/{checklistId}'].delete.responses.204").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists/{checklistId}'].delete.responses.404").exists())
+				.andExpect(jsonPath("$.components.schemas.SendChecklistRequest.properties.items").exists())
+				.andExpect(jsonPath("$.components.schemas.SendChecklistRequest.properties.childIds").exists())
+				// 보호자 준비물·확인사항 — 목록 · 확인
+				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists'].get.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists/{checklistId}/confirm'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists/{checklistId}/confirm'].post.responses.404").exists())
 				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.description")
+						.value(containsString("만료된 출입증")))
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/matching-queue/{id}/resolve'].post.responses.404").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.400").exists())
+				// 화면이 400 을 code 로 나눠 안내한다 — 문서도 나뉜 코드를 적는다
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.400.description",
+						allOf(containsString("VALIDATION_RESULT_CONTENT_UNCHANGED"),
+								containsString("VALIDATION_RESULT_CHILD_NOT_SHARED"),
+								containsString("VALIDATION_RESULT_OUTDATED"))))
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.404").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/children'].post.security[0].cookieAuth").exists())
@@ -90,6 +135,41 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/run'].post.responses.409.description",
 						containsString("SUMMARY_IN_PROGRESS")))
 				.andExpect(jsonPath("$.components.schemas.RunSummaryRequest.properties.entryDateValid").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.FailedSummaryGroupRequest.properties.entryDateValid").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed'].get.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.requestBody").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/retry'].post.responses.404.description",
+						containsString("SUMMARY_FAILED_NOT_FOUND")))
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.requestBody").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.400").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/summaries/failed/close'].post.responses.404.description",
+						containsString("SUMMARY_FAILED_NOT_FOUND")))
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.403").exists())
+				.andExpect(jsonPath("$.components.schemas.DashboardPipelineResponse.properties.turn").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/ai-activity'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/ai-activity'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/ai-activity'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/ai-activity'].get.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.responses.200").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.responses.401").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/system/ai-status'].get.responses.403").exists())
+				.andExpect(jsonPath("$.components.schemas.AiStatusResponse.properties.since").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/groups'].get.responses.401").exists())
@@ -339,11 +419,28 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.UpdateConsentRequest.properties.allowedFieldsValidForAction").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.allowedFields").exists())
 				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.documentUrl").exists())
-				// 설명 목록은 실제 공유와 맞지 않아 화면이 쓰지 않는다. 이전 화면 호환으로 값은 남기고 사용 중단만 표시한다
-				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.sharedFields.deprecated").value(true))
-				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.notSharedFields.deprecated").value(true))
+				// 기관 유형별 설명 목록은 실제 공유와 맞지 않아 지웠다 — 되살아나지 않게 막는다
+				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.sharedFields").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.notSharedFields").doesNotHaveJsonPath())
 				.andExpect(jsonPath("$.components.schemas.ConsentResponse.properties.length()").value(3))
 				.andExpect(jsonPath("$.components.schemas.InstitutionResponse.properties.verified").exists());
+	}
+
+	/** 보호자 기관 공유 내역(G-45). 가려진 공유를 나타내는 visible · hiddenAt 이 응답에 있어야 한다. */
+	@Test
+	void institutionSharesApiIsDocumented() throws Exception {
+		String shares = "$.paths['/api/v1/guardians/me/children/{childId}/institution-shares']";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath(shares + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(shares + ".get.responses.200").exists())
+				.andExpect(jsonPath(shares + ".get.responses.401").exists())
+				.andExpect(jsonPath(shares + ".get.responses.403.description").value(containsString("PARENT_REQUIRED")))
+				.andExpect(jsonPath("$.components.schemas.InstitutionSharesResponse.properties.institution").exists())
+				.andExpect(jsonPath("$.components.schemas.InstitutionSharesResponse.properties.shares").exists())
+				.andExpect(jsonPath("$.components.schemas.SharedInsight.properties.visible").exists())
+				.andExpect(jsonPath("$.components.schemas.SharedInsight.properties.hiddenAt").exists());
 	}
 
 	/** 보호자 아이 목록·홈(G-10·G-11). school 은 저장하는 곳이 없어 스키마에도 없어야 한다. care 는 돌봄 정보(G-13)다. */

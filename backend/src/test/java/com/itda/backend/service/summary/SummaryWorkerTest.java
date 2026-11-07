@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
@@ -38,7 +39,7 @@ import com.itda.backend.service.agent.WorkerProperties;
 @ExtendWith(MockitoExtension.class)
 class SummaryWorkerTest {
 
-    private static final SummaryProperties PROPERTIES = new SummaryProperties(new WorkerProperties(true, 5000, 10), Duration.ofSeconds(120));
+    private static final SummaryProperties PROPERTIES = new SummaryProperties(new WorkerProperties(true, 5000, 10), Duration.ofSeconds(120), false);
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
 
@@ -48,12 +49,14 @@ class SummaryWorkerTest {
     private SummaryAgentClient client;
     @Mock
     private SummaryResultRecorder recorder;
+    @Mock
+    private AiAvailability availability;
 
     private SummaryWorker worker;
 
     @BeforeEach
     void setUp() {
-        worker = new SummaryWorker(summaryService, client, recorder, PROPERTIES);
+        worker = new SummaryWorker(summaryService, client, recorder, PROPERTIES, availability);
         lenient().when(client.isAvailable()).thenReturn(true);
     }
 
@@ -88,6 +91,26 @@ class SummaryWorkerTest {
         order.verify(recorder).record(first, requestFor(first), reply1);
         order.verify(client).summarize(requestFor(second));
         order.verify(recorder).record(second, requestFor(second), reply2);
+    }
+
+    /** 집은 뒤 그 기관 동의가 철회된 묶음은 AI 에 보내지 않는다 (#332). 닫는 일은 레코더가 한다. */
+    @Test
+    void 동의가_철회된_묶음은_요약하지_않고_다음_묶음을_처리한다() {
+        ClaimedSummaryGroup revoked = group(8L, 1L);
+        ClaimedSummaryGroup second = group(9L, 2L);
+        SummaryAgentReply reply2 = new SummaryAgentReply(null, "{}");
+        given(summaryService.claimReadyGroups(10)).willReturn(List.of(revoked, second));
+        given(recorder.closeIfConsentRevoked(revoked)).willReturn(true);
+        given(summaryService.prepareRequest(second)).willReturn(requestFor(second));
+        given(client.summarize(requestFor(second))).willReturn(reply2);
+
+        worker.run();
+
+        verify(summaryService, never()).prepareRequest(revoked);
+        verify(client, never()).summarize(requestFor(revoked));
+        verify(recorder, never()).record(eq(revoked), any(), any());
+        verify(recorder, never()).recordSystemError(eq(revoked), any());
+        verify(recorder).record(second, requestFor(second), reply2);
     }
 
     @Test
@@ -180,6 +203,7 @@ class SummaryWorkerTest {
 
         verify(summaryService, never()).claimReadyGroups(anyInt());
         verify(client, never()).summarize(any());
+        verify(availability).reportHealth(false);
     }
 
     @Test
@@ -199,6 +223,21 @@ class SummaryWorkerTest {
         verify(summaryService).release(List.of(first, second, third));
         verify(summaryService, never()).prepareRequest(second);
         verify(summaryService, never()).prepareRequest(third);
+        // /health 는 LLM 까지 보지 않아 이 멈춤은 따로 알려야 AI 장애 배너에 뜬다.
+        verify(availability).reportCallGaveUp();
+    }
+
+    @Test
+    void 요약_호출이_응답을_받으면_AI_멈춤을_푼다() {
+        ClaimedSummaryGroup first = group(8L, 1L);
+        given(summaryService.claimReadyGroups(10)).willReturn(List.of(first));
+        given(summaryService.prepareRequest(first)).willReturn(requestFor(first));
+
+        worker.run();
+
+        verify(availability).reportHealth(true);
+        verify(availability).reportCallSucceeded();
+        verify(availability, never()).reportCallGaveUp();
     }
 
     @Test
@@ -232,6 +271,7 @@ class SummaryWorkerTest {
                 .withBean(SummaryAgentClient.class, () -> mock(SummaryAgentClient.class))
                 .withBean(SummaryResultRecorder.class, () -> mock(SummaryResultRecorder.class))
                 .withBean(SummaryProperties.class, () -> PROPERTIES)
+                .withBean(AiAvailability.class, () -> mock(AiAvailability.class))
                 .withUserConfiguration(SummaryWorker.class);
 
         runner.withPropertyValues("app.summary.worker.enabled=false")

@@ -28,7 +28,7 @@ class SignupCompletionFilterFailureTest {
     void databaseFailureReturns500WithoutClearingAuthentication() throws Exception {
         UserService service = mock(UserService.class);
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("database offline");
-        when(service.isSignupCompleted("1")).thenThrow(failure);
+        when(service.accessOf("1")).thenThrow(failure);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("1", null, List.of()));
         var filter = new SignupCompletionFilter(service, new JsonErrorResponseWriter(new ObjectMapper()));

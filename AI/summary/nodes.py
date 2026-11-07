@@ -59,7 +59,7 @@ def write(state: SummaryState) -> dict:
     try:
         result = ask_json(build_messages(state))
     except LlmError as exc:
-        return {"llm_called": True, "llm_error": str(exc), "raw_claims": []}
+        return {"llm_called": True, "llm_error": str(exc), "llm_failure": exc.kind, "raw_claims": []}
 
     raw = result.data.get("claims")
     if not isinstance(raw, list):
@@ -152,6 +152,16 @@ _TAIL = r"(?=[을를이가은는에의와과도만씩째쯤적까부보마처밖
 #: 앞에 글자가 붙어 있으면 세지 않는다 — "총열두" 처럼 다른 낱말의 꼬리를 집지 않게.
 COUNT = re.compile(rf"(?<![0-9가-힣])(\d+|{_KNOWN})\s*({_UNIT_RE})" + _TAIL)
 
+#: 근거(원문 인용) 쪽에서만 쓰는 느슨한 모양. 교사 일지는 띄어쓰기가 자주 빠진다.
+#:   "귀를여러 차례" — 조사 바로 뒤에 붙은 수량도 센다 (위 COUNT 는 앞 글자가 있으면 안 셈)
+#:   "10여분"       — "10여" 를 10 으로 본다 (요약이 "약 10분" 으로 쓴다)
+#: 근거 쪽을 넓히면 "덜 버리는" 방향으로만 틀린다. 요약 쪽은 그대로 엄격하게 본다.
+#: 실데이터 4~6월 버린 문장 대부분이 이 꼴이었다 (11/03~11/06, "귀를여러 차례" 매 실행).
+_JOSA_BEFORE = r"(?<=[을를이가은는에의도와과로])"
+COUNT_LOOSE = re.compile(
+    rf"(?:(?<![0-9가-힣])|{_JOSA_BEFORE})(\d+여|\d+|{_KNOWN})\s*({_UNIT_RE})" + _TAIL
+)
+
 #: 부정 표현. "한 번도 울지 않았다" 는 횟수 주장이 아니다.
 #: "안" 은 넣지 않는다 — "안았다" · "책상 안에" 와 겹쳐 오탐이 난다.
 #:
@@ -222,9 +232,9 @@ def _clause_from(text: str, start: int) -> str:
     return text[start:end.start()] if end else text[start:]
 
 
-def _counts(text: str) -> set[tuple[str, str]]:
+def _counts(text: str, loose: bool = False) -> set[tuple[str, str]]:
     """
-    문장에 쓰인 수량을 (값, 단위) 쌍으로 모은다.
+    문장에 쓰인 수량을 (값, 단위) 쌍으로 모은다. loose=True 는 근거 쪽에서만 쓴다 (COUNT_LOOSE).
 
     숫자만 비교하면 네 가지를 놓친다.
       ① "세 번" — 한글 수사는 숫자 검사에 안 걸린다
@@ -234,14 +244,22 @@ def _counts(text: str) -> set[tuple[str, str]]:
     """
     text = text or ""
     pairs = set()
-    for m in COUNT.finditer(text):
+    for m in (COUNT_LOOSE if loose else COUNT).finditer(text):
+        token, unit = m.group(1), m.group(2)
+        # "한 명씩" · "한 개씩" — 하나씩 차례로라는 뜻이지 1명이라는 주장이 아니다
+        if token in ("한", "1") and text[m.end():m.end() + 1] == "씩":
+            continue
+        # "한쪽" · "양쪽" — 방향이다. 쪽수는 "3쪽", "세 쪽" 처럼 숫자거나 띄어 쓴다
+        if unit == "쪽" and not token.isdigit() and not re.search(r"\s", m.group(0)):
+            continue
         # 단위 뒤에 "도" 가 붙고 **그 횟수가 속한 절이** 부정이면 횟수 주장이 아니다.
         # "한 번도 울지 않았다" 는 빼고, "세 번도 넘게 시도했다" 는 센다 —
         # 뒤쪽은 횟수를 주장하므로 근거가 있어야 한다.
         if text[m.end():m.end() + 1] == "도" and NEGATION.search(_clause_from(text, m.end())):
             continue
-        value = _count_value(m.group(1))
-        unit = m.group(2)
+        if loose and token.endswith("여") and token[:-1].isdigit():
+            token = token[:-1]    # "10여분" → 10분
+        value = _count_value(token)
         if value is None:
             continue              # 수량이 아닌 수식어 ("이 장면", "매번")
         pairs.add((value, _UNIT_GROUP[unit]))
@@ -301,7 +319,7 @@ def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> boo
 
     # 횟수는 (값, 단위) 로 따로 본다. 위 검사는 값만 보기 때문에 한글 수사와
     # "여러 번" 을 놓치고, 단위가 달라도 같은 값이면 통과시킨다.
-    return not (_counts(text) - _counts(quotes))
+    return not (_counts(text) - _counts(quotes, loose=True))
 
 
 def ground(state: SummaryState) -> dict:
@@ -315,6 +333,9 @@ def ground(state: SummaryState) -> dict:
     claims: list[dict] = []
     dropped_evidence = 0
     dropped_claims: list[str] = []
+    #: 버린 문장마다 이유와 모델이 낸 인용. 수정 루프가 피드백을 만들 재료이자
+    #: 루프가 몇 개를 살렸는지 재는 기준선이다 (평가 스크립트만 읽는다).
+    dropped_detail: list[dict] = []
 
     for raw in state.get("raw_claims") or []:
         if not isinstance(raw, dict):
@@ -351,11 +372,15 @@ def ground(state: SummaryState) -> dict:
         # ② 근거가 하나도 안 남은 문장은 버린다.
         if DROP_CLAIMS_WITHOUT_EVIDENCE and not kept:
             dropped_claims.append(text)
+            dropped_detail.append({"text": text, "reason": "인용_못찾음",
+                                   "evidence": raw.get("evidence") or []})
             continue
 
         # ③ 숫자가 근거에 없으면 버린다.
         if CHECK_PROPER_NOUNS and kept and not _facts_grounded(text, kept, state):
             dropped_claims.append(text)
+            dropped_detail.append({"text": text, "reason": "숫자_불일치",
+                                   "evidence": raw.get("evidence") or []})
             continue
 
         claims.append({"text": text.strip(), "evidence": kept})
@@ -364,6 +389,7 @@ def ground(state: SummaryState) -> dict:
         "claims": claims,
         "dropped_evidence": dropped_evidence,
         "dropped_claims": dropped_claims,
+        "dropped_detail": dropped_detail,
     }
 
 

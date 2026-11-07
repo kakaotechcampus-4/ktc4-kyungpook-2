@@ -26,10 +26,12 @@ import com.jayway.jsonpath.JsonPath;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
@@ -53,6 +55,9 @@ class GuardianLinkApiTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private TermsAgreementRepository termsAgreementRepository;
 
     @Autowired
     private OrganizationRepository organizationRepository;
@@ -96,8 +101,8 @@ class GuardianLinkApiTest {
     void setUp() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         organizationId = String.valueOf(organization.getId());
-        staff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
-        parent = userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호"));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
+        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -134,7 +139,7 @@ class GuardianLinkApiTest {
     @Test
     void 한_번_쓴_코드는_400() throws Exception {
         accept(code, auth(parent)).andExpect(status().isOk());
-        User otherParent = userRepository.save(UserFixture.parent(uniqueKakaoId(), "이보호"));
+        User otherParent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "이보호")));
 
         accept(code, auth(otherParent))
                 .andExpect(status().isBadRequest())

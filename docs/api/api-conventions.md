@@ -137,13 +137,14 @@ HTTP/1.1 404 Not Found
   현재 구현의 예외: `RawRecord`의 `id`와 확인 필요 큐 항목의 `journalEntryId`는 숫자로 나간다.
 - 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.yml.example) 참고).
 - 인증 방식은 JWT 쿠키다. 브라우저는 `GET /oauth2/authorization/kakao`로 이동해 카카오 로그인을 시작한다. 카카오 콜백(`GET /login/oauth2/code/kakao`)은 Spring Security가 처리하며, 클라이언트가 직접 호출하지 않는다. 성공 시 서버는 `access_token` httpOnly 쿠키를 발급하고 설정된 프론트엔드 주소로 리다이렉트한다.
+- `access_token` 원본 쿠키는 로그인할 때만 설정하고 현재 로그인 번호를 선택하도록 최대 12시간 보관한다. JWT 자체의 유효시간은 3시간이며, 남은 시간이 절반보다 짧은 API 요청에서는 `access_token_renewal_{sid}` httpOnly 쿠키로 갱신 JWT 를 전달한다. 원본 또는 같은 로그인 번호·회원·최초 로그인 시각의 갱신 JWT 가 유효해야 인증된다. 갱신 쿠키만으로는 인증되지 않는다. 이전 로그인의 응답이 늦게 와도 새 로그인의 쿠키를 덮지 못한다. 프론트는 두 쿠키를 직접 읽거나 조립하지 않고 브라우저 자동 전송을 사용한다.
 - 로그인 실패(state 불일치, 동의 취소, 카카오 장애 등)는 JSON 오류가 아니라 설정된 실패 주소에
   `?error=login_failed`를 붙인 리다이렉트로 전달한다. 상세 원인은 서버 로그에만 남긴다. 그래서 위
   표의 `KAKAO_SERVER_ERROR`·`KAKAO_UNAVAILABLE`과 `AuthErrorCode`의 `KAKAO_AUTH_FAILED`는 현재
   로그인 흐름에서 응답으로 나가지 않는다.
 - 보호 API 요청은 브라우저가 `access_token` 쿠키를 자동으로 전송하도록 `credentials: include`를 사용한다. 클라이언트는 JWT를 읽거나 `Authorization: Bearer` 헤더에 직접 넣지 않는다.
 - `POST`, `PUT`, `PATCH`, `DELETE` 요청에는 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더에 함께 보낸다. OAuth 로그인 시작·콜백 경로는 이 CSRF 검사에서 제외된다.
-- OAuth 인가 요청의 state 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로만 처리하며, **로그인 정보는 세션에 저장하지 않는다**(`JSESSIONID`만으로는 인증되지 않는다). refresh token 발급과 토큰 폐기 전략은 아직 없다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시키고 `204 No Content`로 응답한다.
+- OAuth 인가 요청의 state 보관에만 짧게 HTTP 세션을 사용하고, 성공·실패 처리 후 세션을 폐기한다. 이후 API 인증은 JWT 쿠키로만 처리하며, **로그인 정보는 세션에 저장하지 않는다**(`JSESSIONID`만으로는 인증되지 않는다). refresh token은 발급하지 않는다. 로그아웃은 `POST /api/v1/auth/logout`이 `access_token` 쿠키를 만료시키고, 로그인 번호(`sid`)를 서버에 기록해 같은 로그인의 출입증(연장된 것 포함)을 무효로 한 뒤 `204 No Content`로 응답한다. 서명이 유효하고 최대 로그인 시간(처음 로그인부터 12시간)이 남아 있으면 요청의 출입증이 만료됐어도 기록한다. 로그인 번호가 없는 옛 출입증과 최대 로그인 시간이 지난 출입증은 쿠키만 지운다.
 - API 인증 실패 요청의 RequestCache는 비활성화한다. 비로그인 API GET 요청을 저장하기 위한 세션·`JSESSIONID`는 생성하지 않으며, OAuth 인가 요청의 state 세션은 유지한다.
 
 ## 변경 절차

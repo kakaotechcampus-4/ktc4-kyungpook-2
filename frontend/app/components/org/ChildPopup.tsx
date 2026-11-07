@@ -1,0 +1,387 @@
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChildGuardians } from "@/components/org/ChildGuardians";
+import { ChildTimeline } from "@/components/org/ChildTimeline";
+import { Chip, PopButton, PopSection } from "@/components/org/WorkList";
+import { Busy, ConfirmDialog, EvidenceChip, InstitutionChip, Spinner } from "@/components/ui";
+import { ListPopup } from "@/components/ui/ListPopup";
+import { ApiError, decideGate2, getInboxItem } from "@/lib/api";
+import type { ChildListItem, InboxDetail, InboxItem, Insight } from "@/lib/types";
+
+export type ChildTab = "analysis" | "records" | "guardian";
+
+/** 지난 분석 한 건 — 우리가 승인한 것(O-40 approved) 또는 다른 기관이 보낸 것(O-50) */
+type Past = { kind: "approved"; insight: Insight } | { kind: "inbox"; item: InboxItem };
+
+/** 보호자 칩은 우리 기관 동의(O-10 consent)로만 정한다 */
+export function guardianChip(consent: ChildListItem["consent"]): string | null {
+  if (consent === "not_granted") return "보호자 동의 전";
+  if (consent === "revoked") return "동의 철회";
+  return null;
+}
+
+/** 분석이 다룬 때. 받은 글은 받은 시각, 우리 승인분은 근거 기록 중 가장 늦은 날 — 주 묶음 정렬에 쓴다 */
+function whenOf(p: Past): string {
+  if (p.kind === "inbox") return p.item.receivedAt;
+  return p.insight.evidence.reduce((max, e) => (e.date > max ? e.date : max), "");
+}
+function periodOf(p: Past): string {
+  return p.kind === "inbox" ? p.item.period : p.insight.period;
+}
+
+/** 주(기간 라벨)로 묶고 최신 주를 위에 */
+function byWeek(list: Past[]): { period: string; items: Past[] }[] {
+  const groups = new Map<string, Past[]>();
+  for (const p of [...list].sort((a, b) => (whenOf(b) > whenOf(a) ? 1 : -1))) {
+    const key = periodOf(p);
+    groups.set(key, [...(groups.get(key) ?? []), p]);
+  }
+  return [...groups].map(([period, items]) => ({ period, items }));
+}
+
+function firstSentence(text: string): string {
+  const m = /^(.+?[.!?。])\s/.exec(text);
+  return m ? m[1] : text;
+}
+
+export function ChildPopup({
+  child,
+  review,
+  approved,
+  inbox,
+  initialTab = "analysis",
+  openUnread = false,
+  position,
+  onClose,
+  onDecided,
+  onStale,
+  onRead,
+}: {
+  child: ChildListItem;
+  /** 우리 기관이 승인할 차례인 분석(O-40 pending). 있으면 분석 탭 맨 위에 보고서와 보류·승인을 둔다 */
+  review?: Insight;
+  approved: Insight[];
+  inbox: InboxItem[];
+  initialTab?: ChildTab;
+  /** 안 읽은 받은 분석이 있으면 그 글을 바로 연다 */
+  openUnread?: boolean;
+  position?: { index: number; total: number };
+  onClose: () => void;
+  onDecided: (insight: Insight, decision: "approve" | "hold") => void;
+  onStale: (message: string) => void;
+  /** 받은 분석을 처음 열었다 — 배지를 줄이려 목록을 새로 받는다 */
+  onRead: () => void;
+}) {
+  const [tab, setTab] = useState<ChildTab>(initialTab);
+  const firstUnread = openUnread ? inbox.find((m) => !m.readAt) : undefined;
+  const [view, setView] = useState<Past | null>(firstUnread ? { kind: "inbox", item: firstUnread } : null);
+  const [confirming, setConfirming] = useState<"approve" | "hold" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const unread = inbox.filter((m) => !m.readAt).length;
+  const chip = guardianChip(child.consent);
+
+  async function decide(decision: "approve" | "hold") {
+    if (!review) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await decideGate2(review.id, { decision });
+      setConfirming(null);
+      onDecided(review, decision);
+    } catch (err) {
+      setConfirming(null);
+      if (isStale(err)) onStale(messageOf(err));
+      else setError(messageOf(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const reviewing = tab === "analysis" && !view && review;
+  const footer = view ? (
+    <>
+      <PopButton onClick={() => setView(null)}>
+        <span className="inline-flex items-center gap-0.5">
+          <ChevronLeft aria-hidden size={15} />
+          목록으로
+        </span>
+      </PopButton>
+      <span className="flex-1" />
+      <PopButton tone="dark" onClick={onClose}>
+        닫기
+      </PopButton>
+    </>
+  ) : reviewing ? (
+    <>
+      <PopButton onClick={onClose} disabled={busy}>
+        닫기
+      </PopButton>
+      <span className="flex-1" />
+      <span className="text-[13px] text-muted max-[520px]:order-first max-[520px]:basis-full">승인은 되돌릴 수 없어요</span>
+      <PopButton onClick={() => setConfirming("hold")} disabled={busy}>
+        보류
+      </PopButton>
+      <PopButton tone="dark" onClick={() => setConfirming("approve")} disabled={busy}>
+        {busy ? <Busy>보내는 중…</Busy> : "승인"}
+      </PopButton>
+      {error ? (
+        <span role="alert" className="basis-full text-[14px] font-bold text-block">
+          {error}
+        </span>
+      ) : null}
+    </>
+  ) : (
+    <>
+      <span className="flex-1" />
+      <PopButton tone="dark" onClick={onClose}>
+        닫기
+      </PopButton>
+    </>
+  );
+
+  const past: Past[] = [
+    ...approved.map((insight) => ({ kind: "approved" as const, insight })),
+    ...inbox.map((item) => ({ kind: "inbox" as const, item })),
+  ];
+
+  return (
+    <>
+      <ListPopup
+        title={view ? `${child.name} · ${periodOf(view)} 분석` : child.name}
+        subtitle={`${child.birthDate}${chip ? ` · ${chip}` : ""}`}
+        icon={<span className="text-[17px] font-bold">{child.name.slice(0, 1)}</span>}
+        position={position}
+        busy={busy}
+        onClose={onClose}
+        footer={footer}
+      >
+        {view ? null : (
+          <div role="tablist" aria-label={`${child.name} 보기`} className="-mt-1 flex w-fit rounded-full bg-surface2 p-1">
+            {(
+              [
+                ["analysis", "분석"],
+                ["records", "기록"],
+                ["guardian", "보호자"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => setTab(key)}
+                className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[14px] font-bold ${
+                  tab === key ? "bg-surface text-ink shadow-sm" : "text-ink2"
+                }`}
+              >
+                {label}
+                {key === "analysis" && (review || unread) ? <span aria-label="새 분석" className="size-2 rounded-full bg-block" /> : null}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {view ? (
+          view.kind === "approved" ? (
+            <Report insight={view.insight} kind="approved" />
+          ) : (
+            <InboxReport item={view.item} onRead={onRead} />
+          )
+        ) : tab === "records" ? (
+          <ChildTimeline childId={child.id} />
+        ) : tab === "guardian" ? (
+          <ChildGuardians childId={child.id} />
+        ) : (
+          <>
+            {review ? <Report insight={review} kind="review" /> : null}
+            {past.length ? (
+              <>
+                {review ? <hr className="border-line" /> : null}
+                <PopSection title={`지난 분석 ${past.length}건 · 주차별`}>
+                  <div className="grid gap-3">
+                    {byWeek(past).map((w) => (
+                      <div key={w.period}>
+                        <h4 className="mb-1 text-[14px] font-extrabold">{w.period}</h4>
+                        <ul className="grid">
+                          {w.items.map((p) => (
+                            <li key={p.kind === "inbox" ? `in-${p.item.id}` : `ap-${p.insight.id}`}>
+                              <button
+                                type="button"
+                                onClick={() => setView(p)}
+                                className="flex w-full items-center gap-2 border-t border-line py-2.5 text-left first:border-t-0 hover:bg-surface2/60"
+                              >
+                                {p.kind === "inbox" ? (
+                                  <Chip tone="ai">{p.item.from.name}가 보냄</Chip>
+                                ) : (
+                                  <Chip tone="idle">우리 기관 승인</Chip>
+                                )}
+                                <span className="min-w-0 flex-1 truncate text-[14px]">
+                                  {p.kind === "inbox" ? `${p.item.period} 분석` : firstSentence(p.insight.content)}
+                                </span>
+                                {p.kind === "inbox" && !p.item.readAt ? <Chip tone="human">새 분석</Chip> : null}
+                                <ChevronRight aria-hidden size={16} className="text-muted" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </PopSection>
+              </>
+            ) : !review ? (
+              <p className="text-[15px] text-muted">아직 분석이 없어요</p>
+            ) : null}
+          </>
+        )}
+      </ListPopup>
+
+      {confirming && review ? (
+        <ConfirmDialog
+          title={`${child.name} 분석을 ${confirming === "approve" ? "승인할까요?" : "보류할까요?"}`}
+          warning="되돌릴 수 없어요"
+          confirmLabel={confirming === "approve" ? "승인하기" : "보류하기"}
+          tone={confirming === "approve" ? "human" : "neutral"}
+          busy={busy}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => decide(confirming)}
+        >
+          {confirming === "approve"
+            ? `승인하면 ${viewers(review).join("·")}가 바로 볼 수 있어요.`
+            : "보류하면 이 분석은 보호자와 다른 기관에 보이지 않아요."}
+        </ConfirmDialog>
+      ) : null}
+    </>
+  );
+}
+
+/** 승인하면 볼 수 있는 곳 — 보호자 + 공유에 동의한 기관 (#233) */
+function viewers(insight: Insight): string[] {
+  return ["보호자", ...insight.targets.filter((t) => t.consent === "granted").map((t) => t.institution.name)];
+}
+
+function Paragraphs({ text }: { text: string }) {
+  return (
+    <div className="rounded-[14px] border border-line bg-paper px-4 py-3.5">
+      {text.split(/\n+/).map((t, i) => (
+        <p key={i} className="max-w-[62ch] text-[16px] leading-[1.75] [&+&]:mt-2">
+          {t}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/** 분석 보고서 — 본문 · 근거 기록 · 볼 수 있는 곳 · 교사 작성 경고 (O-40 에 있는 것만) */
+function Report({ insight, kind }: { insight: Insight; kind: "review" | "approved" }) {
+  const granted = insight.targets.filter((t) => t.consent === "granted");
+  return (
+    <>
+      <p className="flex flex-wrap items-center gap-2 text-[14px] text-ink2">
+        <Chip tone="idle">{insight.period}</Chip>
+        {kind === "review" ? `기록 ${insight.evidence.length}건 · 승인 전` : "우리 기관이 승인"}
+      </p>
+      <PopSection title="분석 내용">
+        <Paragraphs text={insight.content} />
+      </PopSection>
+      <PopSection title={`근거 기록 ${insight.evidence.length}건`}>
+        <ul className="flex flex-col items-start gap-2">
+          {insight.evidence.map((e) => (
+            <li key={e.childContextId}>
+              <EvidenceChip date={e.date} label={e.label} institution={e.institution} />
+            </li>
+          ))}
+        </ul>
+      </PopSection>
+      <PopSection title={kind === "review" ? "승인하면 볼 수 있는 곳" : "볼 수 있는 곳"}>
+        <ul className="grid">
+          <li className="border-t border-line py-2 text-[14px] font-bold first:border-t-0">보호자</li>
+          {granted.map((t) => (
+            <li key={t.institution.id} className="flex items-center gap-2 border-t border-line py-2 text-[14px]">
+              <InstitutionChip institution={t.institution} withName />
+              <Chip tone="ai">공유 동의함</Chip>
+            </li>
+          ))}
+        </ul>
+      </PopSection>
+      {/* CRITERIA §5 필수 경고. 기관 경계를 넘는 마지막 관문이라 승인자가 알아야 한다 */}
+      {insight.teacherWritten ? (
+        <div role="alert" className="rounded-[14px] bg-humansoft px-3.5 py-3 text-[14px] leading-normal text-human">
+          <b>선생님이 고쳐 쓴 문장이 근거에 들어 있어요.</b> AI 확인을 거치지 않은 문장이니 내용을 한 번 더 봐 주세요.
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** 다른 기관이 보낸 분석 한 편(O-51). 처음 열면 열람 시각이 남는다 */
+function InboxReport({ item, onRead }: { item: InboxItem; onRead: () => void }) {
+  const [detail, setDetail] = useState<InboxDetail | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getInboxItem(item.id).then(
+      (d) => {
+        if (!alive) return;
+        setDetail(d);
+        if (!item.readAt) onRead();
+      },
+      () => alive && setFailed(true),
+    );
+    return () => {
+      alive = false;
+    };
+    // 글이 바뀔 때만 다시 연다
+  }, [item.id]);
+
+  if (failed) return <p className="text-[15px] text-block">더 이상 볼 수 없는 분석이에요. 보호자가 공유를 껐을 수 있어요.</p>;
+  if (!detail) {
+    return (
+      <p className="flex items-center gap-2 text-[15px] text-muted">
+        <Spinner size={16} /> 불러오는 중…
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="flex flex-wrap items-center gap-2 text-[14px] text-ink2">
+        <Chip tone="idle">{detail.period}</Chip>
+        {detail.from.name}가 보냄
+      </p>
+      <PopSection title="분석 내용">
+        <Paragraphs text={detail.content} />
+      </PopSection>
+    </>
+  );
+}
+
+/** 다시 눌러도 결과가 같은 오류 — 팝업을 닫고 목록을 새로 받는다 */
+function isStale(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    (err.code === "INSIGHT_ALREADY_REVIEWED" ||
+      err.code === "INSIGHT_SUPERSEDED" ||
+      err.code === "INSIGHT_NOT_PRIMARY_SOURCE" ||
+      err.status === 404)
+  );
+}
+
+function messageOf(err: unknown): string {
+  if (!(err instanceof ApiError)) return "네트워크 연결을 확인하고 다시 시도해 주세요.";
+  switch (err.code) {
+    case "INSIGHT_ALREADY_REVIEWED":
+      return "이미 승인 또는 보류된 분석이에요. 목록을 새로 불러왔어요.";
+    case "INSIGHT_SUPERSEDED":
+      return "같은 기간의 더 새 분석이 만들어졌어요. 목록에서 새 분석을 읽어 주세요.";
+    case "INSIGHT_NOT_PRIMARY_SOURCE":
+      return "우리 기관이 승인하는 분석이 아니에요. 학교 > 센터 > 활동지원사 순으로 한 곳이 승인해요.";
+    // 여러 기관 기록을 엮은 글이라 일부만 뺄 수 없다. 보류는 된다
+    case "INSIGHT_MATERIAL_CONSENT_REVOKED":
+      return "근거를 낸 기관 중 보호자가 공유를 끈 곳이 있어 승인할 수 없어요. 보류는 할 수 있어요.";
+  }
+  if (err.status === 404) return "더 이상 볼 수 없는 분석이에요. 목록을 새로 불러왔어요.";
+  if (err.status === 403) return "보안 확인에 실패했어요. 새로고침한 뒤 다시 시도해 주세요.";
+  return "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+}

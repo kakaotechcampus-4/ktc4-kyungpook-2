@@ -1,17 +1,21 @@
 package com.itda.backend.repository.record;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
+
+import jakarta.persistence.LockModeType;
 
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long> {
 
@@ -23,6 +27,26 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
 
 
     Optional<JournalEntry> findByIdAndDeletedAtIsNull(Long id);
+
+    /**
+     * 수정 요청 큐의 처리(보류·고치기)용 (#357). 같은 막힌 일지를 두 요청이 동시에 처리하면 둘 다 "막힘"으로 읽고
+     * 나중 것이 앞 것을 덮으므로, 행을 잠근 뒤 상태를 확인한다. 검증 워커는 막힌 일지를 집지 않아 워커와는 겹치지 않는다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from JournalEntry e where e.id = :id and e.deletedAt is null")
+    Optional<JournalEntry> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * 그 기관이 올린 원본 파일에서 나온 살아 있는 일지인지 (#357). 수정 요청 큐의 처리가 행을 잠그기 전에 묻는다 — 다른
+     * 기관 id 로 그 기관 아이·일지 행을 잠그면 그 기관 처리가 기다리고, 기다린 시간으로 id 가 있는지도 드러난다.
+     * 일지 엔티티를 읽지 않아, 뒤에 잠그고 읽는 {@link #findByIdForUpdate} 가 잠금을 기다린 뒤의 상태를 그대로 가져온다.
+     */
+    @Query("""
+            select count(e) > 0 from JournalEntry e, RawRecord r
+            where e.id = :id and e.deletedAt is null
+              and r.id = e.rawRecordId and r.deletedAt is null and r.institutionId = :institutionId
+            """)
+    boolean existsOwnedBy(@Param("id") Long id, @Param("institutionId") String institutionId);
 
     /**
      * 매칭 워커가 처리할 일지. 원본 파일이 없는 직접 입력은 매칭 단계를 건너뛰므로 뺀다 (DB 스키마 §6.2).
@@ -63,6 +87,16 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             + "order by e.id")
     List<Long> findGroupEntryIds(@Param("status") JournalEntryStatus status, @Param("childId") Long childId,
             @Param("entryDate") LocalDate entryDate, @Param("institutionId") String institutionId);
+
+    /**
+     * 한 기관의 주어진 상태 일지를 묶음(날짜·아동) 순으로. 아동이 정해진 일지만 — 요약 실패 목록이 묶음으로 보여준다 (#369).
+     */
+    @Query("select e from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where e.status = :status and r.institutionId = :institutionId and e.childId is not null "
+            + "and e.deletedAt is null "
+            + "order by e.entryDate, e.childId, e.id")
+    List<JournalEntry> findByInstitutionAndStatus(@Param("institutionId") String institutionId,
+            @Param("status") JournalEntryStatus status);
 
     /** 한 요약(판)에 든 일지 중 주어진 상태인 것의 id. */
     @Query("select e.id from JournalEntry e "
@@ -139,4 +173,18 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and e.entryDate is not null and e.deletedAt is null")
     List<InProgressKey> findInProgressKeys(@Param("statuses") Collection<JournalEntryStatus> statuses);
+
+    /** 그 기관에서 {@code since} 뒤로 나눠 만든 일지 수 — 오늘 AI가 한 일의 "기록 나누기" (#370). 지운 일지도 센다. */
+    @Query("select count(e) from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where r.institutionId = :institutionId and e.createdAt >= :since")
+    long countCreatedSince(@Param("institutionId") String institutionId, @Param("since") LocalDateTime since);
+
+    /** 대시보드 진행 현황(#370). 한 기관의 살아 있는 일지 중 주어진 상태인 것을 날짜·id 순으로 — 요청마다 한 번 읽는다. */
+    @Query("select new com.itda.backend.repository.record.PipelineEntry("
+            + "e.id, e.childId, e.entryDate, e.status, e.failureStage) "
+            + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where r.institutionId = :institutionId and e.status in :statuses and e.deletedAt is null "
+            + "order by e.entryDate, e.id")
+    List<PipelineEntry> findPipelineEntries(@Param("institutionId") String institutionId,
+            @Param("statuses") Collection<JournalEntryStatus> statuses);
 }

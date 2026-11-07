@@ -66,12 +66,9 @@ public class InsightGate2QueryService {
     private static final String EVIDENCE_LABEL = "관찰일지 요약";
 
     /**
-     * 지금은 모든 인사이트가 {@code true} 다. 본문에 <b>다른 아이 이름이 없다는 보장이 없고</b>
-     * ({@code AI/insight/CRITERIA.md} §5), Gate 1 에서 교사가 검증 없이 고치거나 새로 쓴 문장이 근거로
-     * 섞일 수 있다 (#199). 둘 다 걸러지는 지점이 없어서 모든 글이 "봐야 할 글" 이다.
-     *
-     * <p>AI 계약에 "교사 작성 포함" 표시가 들어오면 (#206 김근찬) 그때 건별로 갈린다. 그 전까지
-     * 상수로 두는 것은 화면이 경고를 띄울 자리를 미리 잡아 두기 위해서다 — 나중에 값만 바뀐다.
+     * 모든 인사이트가 {@code true} 다. 본문에 <b>다른 아이 이름이 없다는 보장이 없다</b>
+     * ({@code AI/insight/CRITERIA.md} §5). 걸러지는 지점이 없어서 모든 글이 "봐야 할 글" 이다.
+     * 교사가 쓴 문장이 섞였는지는 건별로 따로 알린다 ({@code teacherWritten}, #323).
      */
     private static final boolean NEEDS_REVIEW = true;
 
@@ -120,7 +117,7 @@ public class InsightGate2QueryService {
      * 같은 아동·기간의 마지막 회차만 남긴다. 목록이 id 내림차순이라 같은 묶음에서 처음 본 것이 최신이지만,
      * 회차 번호로 가른다 — id 순서가 회차 순서와 어긋날 여지를 남기지 않는다.
      */
-    private static List<InsightResult> latestRevisionOnly(List<InsightResult> insights) {
+    static List<InsightResult> latestRevisionOnly(List<InsightResult> insights) {
         Map<PeriodKey, Integer> maxRevision = new HashMap<>();
         for (InsightResult insight : insights) {
             maxRevision.merge(PeriodKey.of(insight), insight.getRevision(), Math::max);
@@ -242,7 +239,7 @@ public class InsightGate2QueryService {
                 // 기관 행이 사라진 근거는 뺀다. 이름을 모르는 출처를 화면에 올리느니 그 줄을 안 보이는 쪽이 낫다.
                 .filter(ref -> organizations.containsKey(ref.institutionId()))
                 .map(ref -> new EvidenceRef(ref.childContextId(), ref.date(), EVIDENCE_LABEL,
-                        InstitutionResponse.from(organizations.get(ref.institutionId()))))
+                        InstitutionResponse.from(organizations.get(ref.institutionId())), ref.lookedUp()))
                 .toList();
 
         return new Gate2InsightResponse(
@@ -252,6 +249,7 @@ public class InsightGate2QueryService {
                 periodLabel(insight.getPeriodFrom()),
                 insight.getContent(),
                 NEEDS_REVIEW,
+                evidences.getOrDefault(insight.getId(), Evidence.EMPTY).teacherWritten(),
                 InstitutionResponse.from(primary),
                 evidence,
                 targets,
@@ -267,7 +265,7 @@ public class InsightGate2QueryService {
      * {@code InsightWorker}). <b>그 설정을 7 이 아닌 값으로 바꾸면 "주차" 라는 말 자체가 안 맞는다</b> —
      * 기간 단위를 바꾸는 날 이 문구도 같이 정해야 한다.
      */
-    private static String periodLabel(LocalDate periodFrom) {
+    static String periodLabel(LocalDate periodFrom) {
         int weekOfMonth = (periodFrom.getDayOfMonth() - 1) / 7 + 1;
         return "%d년 %d월 %d주차".formatted(periodFrom.getYear(), periodFrom.getMonthValue(), weekOfMonth);
     }
@@ -279,11 +277,18 @@ public class InsightGate2QueryService {
      */
     private Map<Long, Evidence> evidenceOf(List<InsightResult> insights) {
         Map<Long, List<Long>> summaryIdsOf = new HashMap<>();
+        Map<Long, Set<Long>> lookedUpOf = new HashMap<>();
         Set<Long> allSummaryIds = new HashSet<>();
         for (InsightResult insight : insights) {
             List<Long> ids = summaryIdsIn(insight);
+            Set<Long> lookedUp = lookedUpSummaryIdsOf(insight);
+            lookedUpOf.put(insight.getId(), lookedUp);
+            // 지난 기록은 대처 근거에만 들어 있을 수도 있다. 근거 목록에서 빠지면 "지난 기록을 찾아 씀" 이 화면에 안 보인다.
+            lookedUp.stream().filter(id -> !ids.contains(id)).forEach(ids::add);
             summaryIdsOf.put(insight.getId(), ids);
             allSummaryIds.addAll(ids);
+            // 대처 근거의 요약도 읽는다 — 교사 문장인지 볼 때만 쓴다.
+            allClaimRefs(insight).forEach(ref -> allSummaryIds.add(ref.summaryId()));
         }
         if (allSummaryIds.isEmpty()) {
             return Map.of();
@@ -295,6 +300,7 @@ public class InsightGate2QueryService {
 
         Map<Long, Evidence> evidences = new HashMap<>();
         for (InsightResult insight : insights) {
+            Set<Long> lookedUp = lookedUpOf.get(insight.getId());
             List<Ref> refs = new ArrayList<>();
             for (Long summaryId : summaryIdsOf.getOrDefault(insight.getId(), List.of())) {
                 SummaryResult summary = summaries.get(summaryId);
@@ -310,39 +316,102 @@ public class InsightGate2QueryService {
                             insight.getId(), summaryId);
                     continue;
                 }
+                // 지난 기록 표시는 날짜로 한 번 더 본다 — AI 가 이번 기간 기록을 잘못 넣어도 "지난 기록" 으로 나가지 않게.
+                boolean past = lookedUp.contains(summaryId) && summary.getEntryDate().isBefore(insight.getPeriodFrom());
                 refs.add(new Ref(String.valueOf(contextId), summary.getEntryDate().toString(),
-                        summary.getInstitutionId()));
+                        summary.getInstitutionId(), past));
             }
-            evidences.put(insight.getId(), new Evidence(refs));
+            evidences.put(insight.getId(), new Evidence(refs, hasTeacherClaim(insight, summaries)));
         }
         return evidences;
+    }
+
+    /**
+     * 근거(대처 근거 포함)에 교사가 Gate 1 에서 고치거나 새로 쓴 문장({@code EDITED}·{@code TEACHER})이 있는지 (#323).
+     * AI 출력의 {@code teacher_claim_ids} 와 같은 판단이다 (CRITERIA §5). 그 값은 저장하지 않아서 요약의
+     * {@code source} 로 다시 본다. {@code source} 가 없으면 AI 원문이다 ({@code InsightService.sourceOf}).
+     *
+     * <p>근거 번호가 없거나 가리키는 요약·문장을 찾지 못하면 <b>있다</b> 로 본다. 확인하지 못한 문장을 AI 원문으로
+     * 두면 경고가 사라진다.
+     */
+    private static boolean hasTeacherClaim(InsightResult insight, Map<Long, SummaryResult> summaries) {
+        List<ClaimRef> refs = allClaimRefs(insight);
+        if (refs.isEmpty()) {
+            return true;
+        }
+        for (ClaimRef ref : refs) {
+            SummaryResult summary = summaries.get(ref.summaryId());
+            if (summary == null || !summary.getChildId().equals(insight.getChildId())) {
+                return true;
+            }
+            JsonNode claim = readArray(summary.getClaims(), "summary_result.claims", summary.getId())
+                    .path(ref.order());
+            JsonNode source = claim.path("source");
+            boolean ai = source.isMissingNode() || source.isNull() || "AI".equals(source.asText());
+            if (claim.isMissingNode() || !ai) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * {@code claim_ids} 와 {@code supports[].claim_ids}. 형식이 어긋난 번호는 "확인 못 함" 으로 남긴다.
+     * 근거 번호가 없는 대처도 마찬가지다 — 그 대처가 무엇을 근거로 했는지 알 수 없다.
+     */
+    private static List<ClaimRef> allClaimRefs(InsightResult insight) {
+        List<ClaimRef> refs = new ArrayList<>();
+        readArray(insight.getClaimIds(), "insight_result.claim_ids", insight.getId())
+                .forEach(node -> refs.add(ClaimRef.parse(node.asText())));
+        for (JsonNode support : readArray(insight.getSupports(), "insight_result.supports", insight.getId())) {
+            JsonNode claimIds = support.path("claim_ids");
+            if (!claimIds.isArray() || claimIds.isEmpty()) {
+                refs.add(ClaimRef.UNKNOWN);
+                continue;
+            }
+            claimIds.forEach(node -> refs.add(ClaimRef.parse(node.asText())));
+        }
+        return refs;
     }
 
     /** {@code ["31-0", "31-2", "34-1"]} → {@code [31, 34]}. 순서를 지키고 중복은 한 번만 센다. */
     private List<Long> summaryIdsIn(InsightResult insight) {
         List<Long> ids = new ArrayList<>();
-        for (JsonNode node : readArray(insight.getClaimIds(), insight.getId())) {
+        for (JsonNode node : readArray(insight.getClaimIds(), "insight_result.claim_ids", insight.getId())) {
             if (!node.isTextual()) {
                 continue;
             }
-            String claimId = node.asText();
-            int dash = claimId.indexOf('-');
-            if (dash <= 0) {
-                continue;
-            }
-            try {
-                Long summaryId = Long.valueOf(claimId.substring(0, dash));
-                if (!ids.contains(summaryId)) {
-                    ids.add(summaryId);
-                }
-            } catch (NumberFormatException e) {
-                log.warn("unexpected claim_id format insightId={} claimId={}", insight.getId(), claimId);
+            ClaimRef ref = ClaimRef.parse(node.asText());
+            if (ref == ClaimRef.UNKNOWN) {
+                log.warn("unexpected claim_id format insightId={} claimId={}", insight.getId(), node.asText());
+            } else if (!ids.contains(ref.summaryId())) {
+                ids.add(ref.summaryId());
             }
         }
         return ids;
     }
 
-    private static JsonNode readArray(String raw, Long insightId) {
+    /**
+     * {@code looked_up_claim_ids} 가 가리키는 요약 중 <b>근거로 실제 인용된 것만</b> (#387). AI 계약상 찾아 쓴 claim 은
+     * {@code claim_ids}·{@code supports} 안에 들어 있다. 거기 없는 번호는 인용하지 않은 기록이라 근거 목록에 올리지 않는다.
+     * 이 컬럼 전에 만든 행은 비어 있다.
+     */
+    private static Set<Long> lookedUpSummaryIdsOf(InsightResult insight) {
+        Set<Long> cited = allClaimRefs(insight).stream().map(ClaimRef::summaryId).collect(Collectors.toSet());
+        Set<Long> ids = new java.util.LinkedHashSet<>();
+        for (JsonNode node : readArray(insight.getLookedUpClaimIds(), "insight_result.looked_up_claim_ids",
+                insight.getId())) {
+            ClaimRef ref = ClaimRef.parse(node.asText());
+            if (ref == ClaimRef.UNKNOWN || !cited.contains(ref.summaryId())) {
+                log.warn("looked_up_claim_id not cited, ignored insightId={} claimId={}", insight.getId(), node);
+                continue;
+            }
+            ids.add(ref.summaryId());
+        }
+        return ids;
+    }
+
+    private static JsonNode readArray(String raw, String column, Long rowId) {
         if (raw == null || raw.isBlank()) {
             return MAPPER.createArrayNode();
         }
@@ -350,17 +419,37 @@ public class InsightGate2QueryService {
             JsonNode node = MAPPER.readTree(raw);
             return node.isArray() ? node : MAPPER.createArrayNode();
         } catch (JsonProcessingException e) {
-            log.warn("failed to parse insight_result.claim_ids id={}", insightId, e);
+            log.warn("failed to parse {} id={}", column, rowId, e);
             return MAPPER.createArrayNode();
         }
     }
 
-    private record Ref(String childContextId, String date, Long institutionId) {
+    /** {@code "31-2"} → 요약 31 의 claims[2]. 읽을 수 없으면 {@link #UNKNOWN} — 어떤 요약도 가리키지 않는다. */
+    private record ClaimRef(Long summaryId, int order) {
+
+        static final ClaimRef UNKNOWN = new ClaimRef(-1L, -1);
+
+        static ClaimRef parse(String claimId) {
+            int dash = claimId.indexOf('-');
+            if (dash <= 0) {
+                return UNKNOWN;
+            }
+            try {
+                return new ClaimRef(Long.valueOf(claimId.substring(0, dash)),
+                        Integer.parseInt(claimId.substring(dash + 1)));
+            } catch (NumberFormatException e) {
+                return UNKNOWN;
+            }
+        }
     }
 
-    private record Evidence(List<Ref> refs) {
+    private record Ref(String childContextId, String date, Long institutionId, boolean lookedUp) {
+    }
 
-        static final Evidence EMPTY = new Evidence(List.of());
+    /** {@link #EMPTY} 는 근거 번호가 하나도 없는 인사이트다 — 확인할 수 없으니 교사 작성으로 본다. */
+    private record Evidence(List<Ref> refs, boolean teacherWritten) {
+
+        static final Evidence EMPTY = new Evidence(List.of(), true);
 
         Set<Long> institutionIds() {
             return refs.stream().map(Ref::institutionId).collect(Collectors.toSet());

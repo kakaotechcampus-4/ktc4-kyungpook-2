@@ -6,6 +6,8 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -16,6 +18,8 @@ import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.ApprovalTargetType;
 import com.itda.backend.domain.child.Child;
+import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.sharing.ReceiverType;
@@ -26,11 +30,13 @@ import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.sharing.SharingErrorCode;
 import com.itda.backend.exception.sharing.SharingException;
 import com.itda.backend.repository.approval.ApprovalRepository;
+import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.service.child.ActivityLine;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -41,6 +47,10 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>Gate 2 승인이 보호자와 동의한 기관에 권한을 함께 연다. 보호자는 여기서 읽기만 한다 — 글마다 기관을
  * 고르는 단계는 10/26 기획 변경으로 없앴다. 특정 기관을 막고 싶으면 그 기관 동의를 끈다.
+ *
+ * <p><b>"함께 보는 기관"({@code sharedWith}) 은 기관 수신함 · 기관 공유 내역(G-45)과 같은 판정이다</b>
+ * ({@link OrganizationGrantVisibility}). 거둔 기록만 보면, 거두기 없이 명부에서 빠진 기관이 리포트 상세에는 남고 공유
+ * 내역에는 "가려짐" 으로 보여 같은 사실이 두 화면에서 달라진다 (#319).
  */
 @Slf4j
 @Service
@@ -49,6 +59,8 @@ public class GuardianInsightService {
 
     private final UserService userService;
     private final ChildRepository childRepository;
+    private final ChildOrganizationRepository childOrganizationRepository;
+    private final ConsentStateReader consentStateReader;
     private final OrganizationRepository organizationRepository;
     private final InsightResultRepository insightResultRepository;
     private final SharingHistoryRepository sharingHistoryRepository;
@@ -60,8 +72,7 @@ public class GuardianInsightService {
      * 한꺼번에 열리는데, 그 순서를 따르면 지난 글이 모두 "오늘 온 글" 로 맨 위에 쌓이고 엄마·아빠 화면이 달라진다.
      * 승인 기록이 없는 예전 데이터는 열린 시각으로 대신한다. 같으면 id 큰 순.
      *
-     * <p>ponytail: {@code toResponse} 가 인사이트마다 받은 기관을 다시 읽어 질의가 건수에 비례한다.
-     * 보호자 한 명이 아이 한둘, 주마다 한 편이라 지금은 가볍다. 무거워지면 인사이트 id 로 모아 한 번만 읽는다.
+     * <p>받은 기관 · 아이 · 명부 · 동의는 모아서 한 번씩 읽는다 ({@link #toResponses}) — 글 수와 상관없이 조회 횟수가 같다.
      */
     @Transactional(readOnly = true)
     public List<GuardianInsightResponse> getInsights(String userId) {
@@ -77,10 +88,7 @@ public class GuardianInsightService {
                 .stream().collect(Collectors.toMap(InsightResult::getId, insight -> insight));
         Map<Long, LocalDateTime> approvedAt = approvedAtOf(insightIds);
 
-        return mine.stream()
-                .map(grant -> toResponse(grant, insights.get(grant.getInsightResultId()),
-                        approvedAt.getOrDefault(grant.getInsightResultId(), grant.getGrantedAt())))
-                .filter(response -> response != null)
+        return toResponses(mine, insights, approvedAt).stream()
                 .sorted(Comparator.comparing(GuardianInsightResponse::approvedAt).reversed()
                         .thenComparing(response -> Long.valueOf(response.id()), Comparator.reverseOrder()))
                 .toList();
@@ -100,8 +108,9 @@ public class GuardianInsightService {
             log.warn("sharing grant points at a missing insight insightId={}", insightId);
             throw new SharingException(SharingErrorCode.NOT_FOUND, insightId);
         }
+        // 응답은 markRead 가 다시 읽어 돌려준 행으로 만든다 — 넘긴 grant 의 readAt 은 낡은 값이다
         SharingHistory read = sharingReadRecorder.markRead(grant);
-        return toResponse(read, insight, approvedAtOf(List.of(insightId)).getOrDefault(insightId, read.getGrantedAt()));
+        return toResponses(List.of(read), Map.of(insightId, insight), approvedAtOf(List.of(insightId))).get(0);
     }
 
     /**
@@ -171,41 +180,80 @@ public class GuardianInsightService {
                         (a, b) -> a.isAfter(b) ? a : b));
     }
 
-    private GuardianInsightResponse toResponse(SharingHistory grant, InsightResult insight,
-            LocalDateTime approvedAt) {
-        if (insight == null) {
-            // 인사이트는 지우지 않는 테이블이라 올 일이 없다. 와도 목록 전체를 500 내지는 않는다.
-            log.warn("sharing grant points at a missing insight insightId={}", grant.getInsightResultId());
-            return null;
+    /**
+     * 권한 줄들을 응답으로. 목록(G-35)과 단건(G-36)이 같은 갈래를 써서 어긋나지 않는다.
+     *
+     * <p>받은 기관 권한 · 아이 · 명부 · 동의 · 기관을 글 묶음 기준으로 한 번씩 읽는다. {@code sharedWith} 는 그 글의 기관
+     * 권한 중 <b>받는 기관이 지금 읽을 수 있는 것</b>만 — 기관 수신함과 같은 판정이다 — 기관 이름순이다. 삭제된 아이의 글은
+     * {@code childName} 이 {@code null} 이고, 판정에서 모든 기관이 빠져 {@code sharedWith} 가 비어 있다.
+     *
+     * @param insightsById 인사이트. 목록은 한 번에 읽은 것을, 단건은 이미 읽은 것을 넘긴다. 없는 글의 줄은 건너뛴다
+     * @param approvedAt   글별 Gate 2 승인 시각. 없으면 열린 시각으로 대신한다
+     */
+    private List<GuardianInsightResponse> toResponses(List<SharingHistory> grants,
+            Map<Long, InsightResult> insightsById, Map<Long, LocalDateTime> approvedAt) {
+        List<SharingHistory> known = grants.stream()
+                .filter(grant -> {
+                    if (insightsById.containsKey(grant.getInsightResultId())) {
+                        return true;
+                    }
+                    // 인사이트는 지우지 않는 테이블이라 올 일이 없다. 와도 목록 전체를 500 내지는 않는다.
+                    log.warn("sharing grant points at a missing insight insightId={}", grant.getInsightResultId());
+                    return false;
+                })
+                .toList();
+        if (known.isEmpty()) {
+            return List.of();
         }
-        List<Long> receivers = sharingHistoryRepository
-                .findByInsightResultIdAndReceiverType(insight.getId(), ReceiverType.ORGANIZATION).stream()
-                .filter(SharingHistory::isActive)
-                .map(SharingHistory::getReceiverId)
-                .toList();
+
+        List<Long> insightIds = known.stream().map(SharingHistory::getInsightResultId).distinct().toList();
+        Map<Long, List<SharingHistory>> receivedBy = sharingHistoryRepository
+                .findByInsightResultIdInAndReceiverType(insightIds, ReceiverType.ORGANIZATION).stream()
+                .collect(Collectors.groupingBy(SharingHistory::getInsightResultId));
+        List<Long> childIds = insightIds.stream().map(id -> insightsById.get(id).getChildId()).distinct().toList();
+        Map<Long, Child> children = childRepository.findByIdInAndDeletedAtIsNull(childIds).stream()
+                .collect(Collectors.toMap(Child::getId, Function.identity()));
+        Map<Long, Map<Long, ChildOrganization>> enrollments = childOrganizationRepository
+                .findByChildIdInAndDeletedAtIsNull(childIds).stream()
+                .collect(Collectors.groupingBy(ChildOrganization::getChildId,
+                        Collectors.toMap(ChildOrganization::getOrganizationId, Function.identity(), (a, b) -> a)));
+        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
         Map<Long, Organization> organizations = organizationRepository
-                .findAllById(Stream.concat(receivers.stream(), Stream.of(grant.getSenderOrganizationId())).toList())
-                .stream().collect(Collectors.toMap(Organization::getId, org -> org));
+                .findAllById(Stream.concat(
+                                receivedBy.values().stream().flatMap(List::stream).map(SharingHistory::getReceiverId),
+                                known.stream().map(SharingHistory::getSenderOrganizationId))
+                        .distinct()
+                        .toList())
+                .stream().collect(Collectors.toMap(Organization::getId, Function.identity()));
 
-        List<InstitutionResponse> sharedWith = receivers.stream().sorted()
-                .map(organizations::get)
-                .filter(org -> org != null)
-                .map(InstitutionResponse::from)
+        return known.stream()
+                .map(grant -> {
+                    InsightResult insight = insightsById.get(grant.getInsightResultId());
+                    Long childId = insight.getChildId();
+                    Child child = children.get(childId);
+                    List<InstitutionResponse> sharedWith = receivedBy.getOrDefault(insight.getId(), List.of()).stream()
+                            .filter(received -> OrganizationGrantVisibility.readable(received, child,
+                                    enrollments.getOrDefault(childId, Map.of()).get(received.getReceiverId()),
+                                    consents.getOrDefault(childId, Map.of())
+                                            .getOrDefault(received.getReceiverId(), ConsentState.NOT_GRANTED)))
+                            .map(received -> organizations.get(received.getReceiverId()))
+                            .filter(Objects::nonNull)
+                            .sorted(Comparator.comparing(Organization::getName).thenComparing(Organization::getId))
+                            .map(InstitutionResponse::from)
+                            .toList();
+                    Organization sender = organizations.get(grant.getSenderOrganizationId());
+                    return new GuardianInsightResponse(
+                            String.valueOf(insight.getId()),
+                            String.valueOf(childId),
+                            child == null ? null : child.getName(),
+                            periodLabel(insight.getPeriodFrom()),
+                            insight.getContent(),
+                            sender == null ? null : InstitutionResponse.from(sender),
+                            sharedWith,
+                            approvedAt.getOrDefault(insight.getId(), grant.getGrantedAt()),
+                            grant.getReadAt());
+                })
                 .toList();
-        Organization sender = organizations.get(grant.getSenderOrganizationId());
-        String childName = childRepository.findByIdAndDeletedAtIsNull(insight.getChildId())
-                .map(Child::getName).orElse(null);
-
-        return new GuardianInsightResponse(
-                String.valueOf(insight.getId()),
-                String.valueOf(insight.getChildId()),
-                childName,
-                periodLabel(insight.getPeriodFrom()),
-                insight.getContent(),
-                sender == null ? null : InstitutionResponse.from(sender),
-                sharedWith,
-                approvedAt,
-                grant.getReadAt());
     }
 
     /**

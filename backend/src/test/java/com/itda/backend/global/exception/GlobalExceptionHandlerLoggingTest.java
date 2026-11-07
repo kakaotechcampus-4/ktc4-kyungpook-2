@@ -23,12 +23,11 @@ import com.itda.backend.api.ChildController;
 import com.itda.backend.api.GuardianController;
 import com.itda.backend.exception.invitation.InvitationErrorCode;
 import com.itda.backend.exception.invitation.InvitationException;
-import com.itda.backend.global.jwt.JwtCookie;
-import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.child.ChildService;
 import com.itda.backend.service.child.GuardianChildQueryService;
 import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
+import com.itda.backend.service.sharing.GuardianInstitutionShareService;
 
 /**
  * 잘못된 요청(4xx) 로그에 사용자가 보낸 값이 남지 않는지 실제 출력으로 확인한다.
@@ -62,10 +61,7 @@ class GlobalExceptionHandlerLoggingTest {
     private GuardianChildQueryService guardianChildQueryService;
 
     @MockitoBean
-    private JwtProvider jwtProvider;
-
-    @MockitoBean
-    private JwtCookie jwtCookie;
+    private GuardianInstitutionShareService guardianInstitutionShareService;
 
     private void postBadRequest(String body) throws Exception {
         mockMvc.perform(post(CHILDREN).contentType(MediaType.APPLICATION_JSON).content(body))
