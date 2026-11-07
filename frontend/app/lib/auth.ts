@@ -22,6 +22,7 @@
 import { ApiError } from "@/lib/apiError";
 import { clearGate1Drafts } from "@/lib/gate1Draft";
 import { clearReinputDrafts } from "@/lib/reinputDraft";
+import { MOCK_TERMS } from "@/lib/mock/terms";
 
 /**
  * 인증만 실연동하고 나머지 데이터는 mock 으로 둘 수 있게 플래그를 분리했다
@@ -238,6 +239,34 @@ export function homePathFor(role: "org" | "parent", termsAgreed: boolean): strin
 /** BE TermKey 값 그대로. 보호자는 앞의 둘, 기관은 org_ 셋이 모두 필수다(다른 역할의 약관은 보낼 수 없다). */
 export type TermKey = "tos" | "privacy" | "org_tos" | "org_privacy" | "org_child_data";
 
+/** 약관 한 개의 지금 판 (GET /api/v1/terms 의 원소). */
+export interface TermsDocument {
+  key: TermKey;
+  title: string;
+  /** 동의할 때 `versions` 에 그대로 보낸다 */
+  version: string;
+  /** 시행일 YYYY-MM-DD */
+  effectiveDate: string;
+  /** 팀 검토 전 초안 — 화면은 본문 위에 초안 표시를 띄운다 */
+  draft: boolean;
+  /** 줄바꿈만 살리는 그냥 글 */
+  body: string;
+}
+
+/**
+ * GET /api/v1/terms?role= — 그 역할이 동의해야 하는 약관의 지금 판 본문. 로그인 없이 부른다.
+ *
+ * 동의 요청과 같은 인증 mock 스위치를 따른다 — 둘이 다르면 mock 판으로 실서버에 동의해 409 가 난다.
+ */
+export async function getTerms(role: "parent" | "org"): Promise<TermsDocument[]> {
+  if (USE_MOCK) return MOCK_TERMS.filter((t) => t.key.startsWith("org_") === (role === "org"));
+
+  const res = await fetch(`${API_BASE}/api/v1/terms?role=${role}`, { cache: "no-store" });
+  if (!res.ok) throw await toApiError(res);
+  const body = await res.json();
+  return body.data as TermsDocument[];
+}
+
 function readTermsMark(): boolean {
   try {
     return localStorage.getItem(TERMS_KEY) === "1";
@@ -247,14 +276,15 @@ function readTermsMark(): boolean {
 }
 
 /**
- * POST /api/v1/auth/terms — 약관 동의(보호자 · 기관). 판은 서버가 채운다.
+ * POST /api/v1/auth/terms — 약관 동의(보호자 · 기관). 체크한 약관마다 화면이 받아 둔 판(사용자가 읽은 판)을 붙여 보낸다.
+ * 서버는 그 판으로 기록하고, 지금 판과 다르면 아무것도 기록하지 않고 409 TERMS_VERSION_CHANGED 를 준다.
  *
  * 인증 mock 스위치(`VITE_AUTH_MOCK`)를 따른다. 데이터 mock(`VITE_USE_MOCK`)을 따르면 "로그인만 실연동"
  * 모드에서 저장한 척만 하고 다음 `/auth/me` 는 계속 termsAgreed: false 를 돌려준다.
  *
- * 실패는 ApiError 로 던진다 (INVALID_REQUEST · SIGNUP_NOT_COMPLETED · 401).
+ * 실패는 ApiError 로 던진다 (INVALID_REQUEST · SIGNUP_NOT_COMPLETED · TERMS_VERSION_CHANGED · 401).
  */
-export async function agreeTerms(keys: TermKey[]): Promise<void> {
+export async function agreeTerms(agreed: { key: TermKey; version: string }[]): Promise<void> {
   if (USE_MOCK) {
     try {
       localStorage.setItem(TERMS_KEY, "1");
@@ -269,7 +299,10 @@ export async function agreeTerms(keys: TermKey[]): Promise<void> {
     credentials: "include",
     cache: "no-store",
     headers: { "content-type": "application/json", ...csrfHeader() },
-    body: JSON.stringify({ agreed: keys }),
+    body: JSON.stringify({
+      agreed: agreed.map((t) => t.key),
+      versions: Object.fromEntries(agreed.map((t) => [t.key, t.version])),
+    }),
   });
   if (!res.ok) {
     if (res.status === 401) clearSession();

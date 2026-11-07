@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, LogOut, TriangleAlert, User } from "lucide-react";
+import { ChevronDown, FileText, LogOut, TriangleAlert, User } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useNavigating } from "@/components/ui/Loading";
 import { Busy } from "@/components/ui";
@@ -300,6 +300,14 @@ function AccountMenu({ me }: { me: OrgShellMe }) {
               {me.institutionName}
             </span>
           ) : null}
+          <Link
+            to="/terms/org_tos"
+            role="menuitem"
+            className="tap flex w-full items-center gap-2.5 rounded-[14px] px-3 text-[15px] font-semibold text-ink2 hover:bg-surface2"
+          >
+            <FileText aria-hidden size={17} strokeWidth={1.9} className="shrink-0" />
+            약관
+          </Link>
           <button
             type="button"
             role="menuitem"
