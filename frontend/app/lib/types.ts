@@ -439,6 +439,11 @@ export interface EvidenceRef {
   label: string;
   /** 어느 기관 기록인지 — Gate 2 승인자가 확인해야 한다 */
   institution: Institution;
+  /**
+   * 이번 기간이 아니라 AI 가 지난 기록(앞 12주)에서 찾아 쓴 근거인지 (#387 · #388).
+   * 없으면(BE 배포 전) 이번 기간 근거로 본다
+   */
+  lookedUp?: boolean;
 }
 
 export interface Insight {
@@ -459,6 +464,7 @@ export interface Insight {
   teacherWritten?: boolean;
   /** 승인 주체. 근거를 낸 기관 중 기관 종류 우선순위(학교 > 센터 > 활동지원사)로 정한다 */
   primarySource: Institution;
+  /** 근거 기록. `lookedUp` 이 하나라도 true 면 "지난 기록" 이 섞인 분석이다 */
   evidence: EvidenceRef[];
   /** 읽기 전용 참고. 수신 기관은 기관이 고르지 않고 승인 뒤 보호자가 정한다 (#206) */
   targets: { institution: Institution; consent: ConsentState }[];
