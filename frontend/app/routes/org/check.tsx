@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { skipSearchOnlyChange } from "@/lib/revalidate";
 import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Busy, ConfirmDialog, ReloginButton } from "@/components/ui";
 import { ListPopup, useWalk } from "@/components/ui/ListPopup";
 import { Pager, usePage } from "@/components/ui/Pager";
 import {
   Chip,
-  EmptyLine,
+  FixedRows,
   PopButton,
   PopSection,
   SectionHead,
@@ -33,6 +34,9 @@ import type { BlockedItem, ChildListItem, MatchingItem, MatchResolution } from "
  * 두 칸 모두 한 줄 카드 목록이고, 누르면 처리 팝업이 뜬다. 처리하면 같은 칸 다음 건이 이어서 열린다.
  * 대시보드 바로가기는 `?open=confirm|blocked` (첫 건), `&id=` 를 붙이면 그 건을 연다.
  */
+/** 칸 바꾸기 · `?open=` 지우기로는 다시 불러오지 않는다 (lib/revalidate) */
+export const shouldRevalidate = skipSearchOnlyChange;
+
 export async function clientLoader() {
   // 명부를 못 받아도 큐는 띄운다. "우리 기관 아이가 아니에요" 는 명부 없이도 처리할 수 있다
   const [confirms, blocked, rosterResult] = await Promise.all([
@@ -104,7 +108,7 @@ export default function CheckPage() {
 
   return (
     <div>
-      <WorkHead title="기록 확인" jobs={jobs} />
+      <WorkHead title="기록 확인" jobs={jobs} tour="check" />
 
       {draftsLogin.carried.gone.length > 0 ? (
         <p role="status" className="mb-4 rounded-[14px] bg-humansoft px-4 py-3 text-[14px] text-human">
@@ -112,60 +116,56 @@ export default function CheckPage() {
         </p>
       ) : null}
 
-      <section className="mb-8 grid gap-2.5">
+      <section data-tour="confirm" className="mb-8 grid gap-2.5">
         <SectionHead title="아이 확인" count={cLeft} />
-        {cw.visible.length === 0 ? (
-          <EmptyLine>아이를 확인할 기록이 없어요</EmptyLine>
-        ) : (
-          <>
-            <div className="grid gap-2.5">
-              {cPage.items.map((c) => (
-                <WorkRow
-                  key={c.id}
-                  who={dayOf(c.record.capturedAt)}
-                  sub={sourceOf(c)}
-                  text={c.record.preview ?? c.record.fullContent ?? ""}
-                  tag={
-                    recommendedId(c) ? (
-                      <Chip tone="ai">AI 추천 {nameOf(recommendedId(c)!, c, roster) ?? ""}</Chip>
-                    ) : (
-                      <Chip tone="human">직접 골라야 해요</Chip>
-                    )
-                  }
-                  action="확인하기"
-                  onOpen={() => cw.open(c.id)}
-                  done={cw.isDone(c.id) ? `${dayOf(c.record.capturedAt)} · 처리했어요` : undefined}
-                />
-              ))}
-            </div>
-            <Pager {...cPage} onChange={cPage.setPage} />
-          </>
-        )}
+        <FixedRows
+          size={PAGE}
+          count={cPage.items.length}
+          empty="아이를 확인할 기록이 없어요"
+          pager={<Pager {...cPage} onChange={cPage.setPage} />}
+        >
+          {cPage.items.map((c) => (
+            <WorkRow
+              key={c.id}
+              who={dayOf(c.record.capturedAt)}
+              sub={sourceOf(c)}
+              text={c.record.preview ?? c.record.fullContent ?? ""}
+              tag={
+                recommendedId(c) ? (
+                  <Chip tone="ai">AI 추천 {nameOf(recommendedId(c)!, c, roster) ?? ""}</Chip>
+                ) : (
+                  <Chip tone="human">직접 골라야 해요</Chip>
+                )
+              }
+              action="확인하기"
+              onOpen={() => cw.open(c.id)}
+              done={cw.isDone(c.id) ? `${dayOf(c.record.capturedAt)} · 처리했어요` : undefined}
+            />
+          ))}
+        </FixedRows>
       </section>
 
-      <section className="grid gap-2.5">
+      <section data-tour="blocked" className="grid gap-2.5">
         <SectionHead title="고쳐야 할 기록" count={bLeft} />
-        {bw.visible.length === 0 ? (
-          <EmptyLine>막힌 기록이 없어요</EmptyLine>
-        ) : (
-          <>
-            <div className="grid gap-2.5">
-              {bPage.items.map((b) => (
-                <WorkRow
-                  key={b.id}
-                  who={b.childName ?? "아이 미정"}
-                  sub={dayOf(b.record.capturedAt)}
-                  text={b.record.preview ?? b.record.fullContent ?? ""}
-                  tag={<Chip tone="bad">{b.violationCode?.[0] ?? "확인 필요"}</Chip>}
-                  action="고치기"
-                  onOpen={() => bw.open(b.id)}
-                  done={bw.isDone(b.id) ? `${b.childName ?? "아이 미정"} ${dayOf(b.record.capturedAt)} · 처리했어요` : undefined}
-                />
-              ))}
-            </div>
-            <Pager {...bPage} onChange={bPage.setPage} />
-          </>
-        )}
+        <FixedRows
+          size={PAGE}
+          count={bPage.items.length}
+          empty="막힌 기록이 없어요"
+          pager={<Pager {...bPage} onChange={bPage.setPage} />}
+        >
+          {bPage.items.map((b) => (
+            <WorkRow
+              key={b.id}
+              who={b.childName ?? "아이 미정"}
+              sub={dayOf(b.record.capturedAt)}
+              text={b.record.preview ?? b.record.fullContent ?? ""}
+              tag={<Chip tone="bad">{b.violationCode?.[0] ?? "확인 필요"}</Chip>}
+              action="고치기"
+              onOpen={() => bw.open(b.id)}
+              done={bw.isDone(b.id) ? `${b.childName ?? "아이 미정"} ${dayOf(b.record.capturedAt)} · 처리했어요` : undefined}
+            />
+          ))}
+        </FixedRows>
       </section>
 
       {cw.current ? (

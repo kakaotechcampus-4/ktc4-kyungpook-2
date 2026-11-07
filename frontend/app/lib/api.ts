@@ -21,10 +21,13 @@
  *      GET  /api/v1/summaries?gate1Status=pending|hold
  *      POST /api/v1/summaries/{summaryId}/gate1
  *      POST /api/v1/summaries/{summaryId}/reopen
- *      GET  /api/v1/summaries/groups
- *      POST /api/v1/summaries/run
+ *      GET  /api/v1/summaries/failed
+ *      POST /api/v1/summaries/failed/retry
+ *      POST /api/v1/summaries/failed/close
+ *      GET  /api/v1/dashboard/pipeline
+ *      GET  /api/v1/dashboard/ai-activity
+ *      GET  /api/v1/system/ai-status
  *      GET  /api/v1/insights?gate2Status=pending|approved|hold
- *      GET  /api/v1/insights/{insightId}
  *      POST /api/v1/insights/{insightId}/gate2
  *      GET  /api/v1/children/{childId}/consent-preview?institutionId=
  *      PUT  /api/v1/children/{childId}/consent-scopes/{institutionId}
@@ -73,6 +76,7 @@ import * as mock from "@/lib/mock/data";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
   AcceptedInvitation,
+  FailedSummary,
   AiActivity,
   AiStatus,
   BlockedItem,
@@ -156,6 +160,8 @@ const BE_READY = {
   gate1: true,
   /** 대시보드 진행 현황 · 오늘 AI가 한 일 · AI 상태 (O-80 ~ O-82) */
   dashboard: true,
+  /** 요약 실패 목록 · 다시 요약 · 요약 없이 마무리 (O-35 ~ O-37, #369) */
+  summaryFailures: true,
   /** 인사이트 조회 · 2차 공유 (O-40 ~ O-42) */
   insights: true,
   /** 원본 업로드 (POST /raw-records) */
@@ -549,6 +555,8 @@ function mockGate1Guard(item: SummaryItem | undefined, decision: string): Summar
 export async function decideGate1(
   summaryId: string,
   body: { decision: Gate1Decision; cards?: Gate1Card[]; version: string },
+  /** 페이지를 떠나는 중에 보낼 때(되돌리기 대기 중이던 승인) — 브라우저가 요청을 끊지 않게 */
+  opts?: { keepalive?: boolean },
 ): Promise<{ summaryId: string }> {
   if (mockFor("gate1")) {
     const item = mockGate1Guard(
@@ -560,7 +568,7 @@ export async function decideGate1(
   }
   const res = await request<{ summaryId: number }>(
     `/api/v1/summaries/${encodeURIComponent(summaryId)}/gate1`,
-    { method: "POST", body: JSON.stringify(body) },
+    { method: "POST", body: JSON.stringify(body), keepalive: opts?.keepalive },
   );
   return { summaryId: String(res.summaryId) };
 }
@@ -625,6 +633,49 @@ export async function getAiActivity(): Promise<AiActivity> {
 export async function getAiStatus(): Promise<AiStatus> {
   if (mockFor("dashboard")) return { ...mock.AI_STATUS };
   return request<AiStatus>("/api/v1/system/ai-status");
+}
+
+/* ── 요약 실패 (O-35 ~ O-37) ──────────────────── */
+
+interface FailedSummaryRaw {
+  childId: number;
+  childName: string;
+  entryDate: string;
+  entries: { journalEntryId: number; content: string }[] | null;
+  reason: string;
+}
+
+/** GET /api/v1/summaries/failed (O-35) — 재시도 뒤에도 요약하지 못한 묶음. 오래된 날짜부터 */
+export async function getFailedSummaries(): Promise<FailedSummary[]> {
+  if (mockFor("summaryFailures")) return mock.FAILED_SUMMARIES.map((f) => ({ ...f }));
+  const raw = await request<FailedSummaryRaw[]>("/api/v1/summaries/failed");
+  return raw.map((f) => ({
+    ...f,
+    childId: String(f.childId),
+    entries: (f.entries ?? []).map((e) => ({ journalEntryId: String(e.journalEntryId), content: e.content })),
+  }));
+}
+
+function failedBody(childId: string, entryDate: string): string {
+  return JSON.stringify({ childId: Number(childId), entryDate });
+}
+
+function dropMockFailed(childId: string, entryDate: string) {
+  const at = mock.FAILED_SUMMARIES.findIndex((f) => f.childId === childId && f.entryDate === entryDate);
+  if (at < 0) throw new ApiError(404, "SUMMARY_FAILED_NOT_FOUND", "요약 실패 기록이 없습니다.");
+  mock.FAILED_SUMMARIES.splice(at, 1);
+}
+
+/** POST /api/v1/summaries/failed/retry (O-36) — 다시 요약. 워커가 곧 요약하고 결과는 O-30 에 온다 */
+export async function retryFailedSummary(childId: string, entryDate: string): Promise<void> {
+  if (mockFor("summaryFailures")) return dropMockFailed(childId, entryDate);
+  await request("/api/v1/summaries/failed/retry", { method: "POST", body: failedBody(childId, entryDate) });
+}
+
+/** POST /api/v1/summaries/failed/close (O-37) — 요약 없이 마무리. 되돌릴 수 없다 */
+export async function closeFailedSummary(childId: string, entryDate: string): Promise<void> {
+  if (mockFor("summaryFailures")) return dropMockFailed(childId, entryDate);
+  await request("/api/v1/summaries/failed/close", { method: "POST", body: failedBody(childId, entryDate) });
 }
 
 /**

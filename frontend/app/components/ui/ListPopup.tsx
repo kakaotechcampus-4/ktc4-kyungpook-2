@@ -118,7 +118,8 @@ export function useWalk<T>(list: T[], idOf: (item: T) => string, skip?: (item: T
   const [doneIds, setDoneIds] = useState<ReadonlySet<string>>(new Set());
   /** 2초가 지나 목록에서 숨긴 건 (서버 목록에서 빠질 때까지) */
   const [goneIds, setGoneIds] = useState<ReadonlySet<string>>(new Set());
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  /** 건마다 "2초 뒤 숨기기" 타이머. 되돌리면 지운다 */
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -148,20 +149,27 @@ export function useWalk<T>(list: T[], idOf: (item: T) => string, skip?: (item: T
       const rest = todo.filter((it) => idOf(it) !== id);
       const next = rest.length === 0 ? null : rest[Math.min(Math.max(at, 0), rest.length - 1)];
       setDoneIds((s) => new Set(s).add(id));
-      timers.current.push(
+      clearTimeout(timers.current.get(id));
+      timers.current.set(
+        id,
         setTimeout(() => {
+          timers.current.delete(id);
           setGoneIds((s) => new Set(s).add(id));
-          setDoneIds((s) => {
-            const n = new Set(s);
-            n.delete(id);
-            return n;
-          });
+          setDoneIds((s) => without(s, id));
         }, 2000),
       );
       setOpenId((cur) => (cur === id ? (next ? idOf(next) : null) : cur));
     },
     [todo, idOf],
   );
+
+  /** 처리를 되돌린다 — 목록에 다시 보이고 다음 건 순서에도 돌아온다 */
+  const undo = useCallback((id: string) => {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+    setDoneIds((s) => without(s, id));
+    setGoneIds((s) => without(s, id));
+  }, []);
 
   return {
     /** 목록에 그릴 건 (✓ 표시 중인 것 포함) */
@@ -173,5 +181,13 @@ export function useWalk<T>(list: T[], idOf: (item: T) => string, skip?: (item: T
     open: setOpenId,
     close: () => setOpenId(null),
     done,
+    undo,
   };
+}
+
+function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
+  if (!set.has(id)) return set;
+  const n = new Set(set);
+  n.delete(id);
+  return n;
 }

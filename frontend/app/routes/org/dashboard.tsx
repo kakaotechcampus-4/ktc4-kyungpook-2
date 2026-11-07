@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronRight,
@@ -11,10 +11,12 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { Link, useLoaderData } from "react-router";
+import { Link, useLoaderData, useRevalidator } from "react-router";
 import { Busy } from "@/components/ui";
 import {
   getAiActivity,
+  getAiStatus,
+  getChildren,
   getFileProgress,
   getPipeline,
   UPLOAD_EXTENSIONS,
@@ -22,6 +24,7 @@ import {
 } from "@/lib/api";
 import { fileProgressOf } from "@/lib/pipeline";
 import type { AiActivity, FileProgress, Pipeline, PipelineRow, PipelineTurn, UploadResult } from "@/lib/types";
+import { TourButton } from "@/components/org/Tour";
 import { usePolling } from "@/lib/usePolling";
 
 /**
@@ -30,8 +33,22 @@ import { usePolling } from "@/lib/usePolling";
  * 요약은 자동으로 시작하므로(#369) [요약] 버튼이 없다.
  */
 export async function clientLoader() {
-  const [pipeline, activity, files] = await Promise.all([getPipeline(), getAiActivity(), getFileProgress()]);
-  return { pipeline, activity, files };
+  const [pipeline, activity, files, ai, children] = await Promise.all([
+    getPipeline(),
+    getAiActivity(),
+    getFileProgress(),
+    getAiStatus().catch(() => null),
+    // 시작하기 체크리스트용. 이미 닫은 기관은 받지 않는다. 못 받아도 대시보드는 띄운다
+    readClosed() ? Promise.resolve(null) : getChildren().catch(() => null),
+  ]);
+  return {
+    pipeline,
+    activity,
+    files,
+    aiDown: ai?.available === false,
+    kids: children ? children.length : null,
+    guardians: children ? children.filter((c) => c.consent === "granted").length : null,
+  };
 }
 
 const POLL_MS = 10_000;
@@ -61,12 +78,28 @@ export default function DashboardPage() {
   const [pipeline, setPipeline] = useState<Pipeline>(initial.pipeline);
   const [activity, setActivity] = useState<AiActivity>(initial.activity);
   const [files, setFiles] = useState<FileProgress[]>(initial.files);
+  /** AI 가 멈췄으면 AI 차례 줄을 "멈춤" 으로 보인다 (O-82) */
+  const [aiDown, setAiDown] = useState(initial.aiDown);
+
+  // loader 가 다시 돌면(다른 화면에서 처리하고 돌아옴 · revalidate) 새 값으로 바꾼다 — 다음 폴링까지 옛 숫자가 남지 않게
+  useEffect(() => {
+    setPipeline(initial.pipeline);
+    setActivity(initial.activity);
+    setFiles(initial.files);
+    setAiDown(initial.aiDown);
+  }, [initial]);
 
   async function refresh() {
-    const [p, a, f] = await Promise.all([getPipeline(), getAiActivity(), getFileProgress()]);
+    const [p, a, f, ai] = await Promise.all([
+      getPipeline(),
+      getAiActivity(),
+      getFileProgress(),
+      getAiStatus().catch(() => null),
+    ]);
     setPipeline(p);
     setActivity(a);
     setFiles(f);
+    setAiDown(ai?.available === false);
   }
   usePolling(refresh, POLL_MS, true, false);
 
@@ -77,12 +110,17 @@ export default function DashboardPage() {
     <div className="grid gap-5">
       <header>
         <p className="mb-1 text-[15px] text-muted">{today()}</p>
-        <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em]">
-          {total ? `오늘 선생님 차례 ${total}건` : "오늘 선생님 차례가 없어요"}
-        </h1>
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em]">
+            {total ? `오늘 선생님 차례 ${total}건` : "오늘 선생님 차례가 없어요"}
+          </h1>
+          <TourButton screen="dash" auto />
+        </div>
       </header>
 
       <AiDay a={activity} />
+
+      <Onboarding kids={initial.kids} guardians={initial.guardians} uploads={files.length} />
 
       <div className="grid grid-cols-1 gap-5 min-[821px]:grid-cols-2">
         <Panel title="선생님 차례">
@@ -93,7 +131,7 @@ export default function DashboardPage() {
         </Panel>
       </div>
 
-      <ProgressBoard rows={pipeline.rows} />
+      <ProgressBoard rows={pipeline.rows} aiDown={aiDown} />
     </div>
   );
 }
@@ -103,6 +141,116 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
     <section className="rounded-[22px] bg-surface p-5 shadow-[0_2px_14px_rgba(120,90,40,0.08)]">
       <h2 className="mb-3 text-[19px] font-extrabold tracking-[-0.02em]">{title}</h2>
       {children}
+    </section>
+  );
+}
+
+/* ── 시작하기 체크리스트 ─────────────────────────── */
+
+const ONB_KEY = "itda.org.onboarding.closed";
+
+function readClosed(): boolean {
+  try {
+    return localStorage.getItem(ONB_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 처음 쓰는 기관: 아이가 0명이거나 올린 일지가 0건이면 대시보드 위에 세 단계를 띄운다
+ * (아이 등록 → 보호자 초대 → 첫 일지 올리기). 한 번 뜨면 이 방문 동안은 남아 있고, 세 단계를 마치면 [닫기]가 생긴다.
+ */
+function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardians: number | null; uploads: number }) {
+  const revalidator = useRevalidator();
+  const [closed, setClosed] = useState(readClosed);
+  const [shown] = useState(() => kids === 0 || uploads === 0);
+  if (closed || !shown || kids == null || guardians == null) return null;
+
+  const steps: { title: string; text: string; done: boolean; act?: React.ReactNode }[] = [
+    {
+      title: "아이 등록",
+      text: kids ? `${kids}명 등록했어요` : "명부에 아이를 올려요",
+      done: kids > 0,
+      act: (
+        <Link to="/children?register=1" className="tap inline-flex items-center rounded-full bg-ink px-3.5 text-[14px] font-bold text-paper">
+          아이 등록
+        </Link>
+      ),
+    },
+    {
+      title: "보호자 초대",
+      text: guardians ? `${guardians}명의 보호자가 공유에 동의했어요` : "초대 코드를 보호자에게 보내요",
+      done: guardians > 0,
+      act: (
+        <Link to="/children" className="tap inline-flex items-center rounded-full border border-line2 px-3.5 text-[14px] font-bold text-ink2">
+          초대 코드 보기
+        </Link>
+      ),
+    },
+    {
+      title: "첫 관찰일지 올리기",
+      text: uploads ? "올렸어요 · 이제 AI가 이어서 처리해요" : "파일을 올리면 AI가 나머지를 처리해요",
+      done: uploads > 0,
+      act: (
+        <button
+          type="button"
+          onClick={() => document.getElementById("upload-input")?.click()}
+          className="tap rounded-full bg-ink px-3.5 text-[14px] font-bold text-paper"
+        >
+          파일 고르기
+        </button>
+      ),
+    },
+  ];
+  const done = steps.filter((x) => x.done).length;
+
+  return (
+    <section aria-labelledby="onb-t" className="rounded-[22px] bg-surface p-5 shadow-[0_2px_14px_rgba(120,90,40,0.08)]">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 id="onb-t" className="flex items-center gap-2 text-[19px] font-extrabold tracking-[-0.02em]">
+          잇다 시작하기
+          <span className="rounded-full bg-surface2 px-2 py-px text-[14px] font-bold tabular-nums text-ink2">{done} / 3</span>
+        </h2>
+        {done === 3 ? (
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                localStorage.setItem(ONB_KEY, "1");
+              } catch {
+                // 저장이 막힌 브라우저 — 이번 방문에서만 닫는다
+              }
+              setClosed(true);
+            }}
+            className="tap rounded-full border border-line2 px-3.5 text-[14px] font-bold text-ink2 hover:bg-surface2"
+          >
+            닫기
+          </button>
+        ) : (
+          <button type="button" onClick={() => revalidator.revalidate()} className="text-[13px] font-bold text-muted hover:text-ink">
+            새로고침
+          </button>
+        )}
+      </div>
+      <ol className="grid grid-cols-1 gap-2.5 min-[821px]:grid-cols-3">
+        {steps.map((x, i) => (
+          <li key={x.title} className="flex flex-wrap items-center gap-2.5 rounded-[16px] border border-line px-3.5 py-3">
+            <span
+              className={`grid size-[26px] flex-none place-items-center rounded-full text-[13px] font-extrabold ${
+                x.done ? "bg-accent text-white" : "bg-surface2 text-ink2"
+              }`}
+            >
+              {x.done ? "✓" : i + 1}
+            </span>
+            <span className="grid min-w-0 flex-[1_1_140px]">
+              <b className={x.done ? "text-ink2" : ""}>{x.title}</b>
+              <span className="text-[13px] text-muted">{x.text}</span>
+            </span>
+            {x.done ? null : x.act}
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -120,6 +268,7 @@ function AiDay({ a }: { a: AiActivity }) {
   const sum = items.reduce((n, [, v]) => n + v, 0);
   return (
     <section
+      data-tour="aiday"
       aria-label="오늘 AI가 한 일"
       className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[18px] bg-accentsoft px-5 py-3 text-[14px] text-accentink"
     >
@@ -149,7 +298,7 @@ const TURN: { key: keyof PipelineTurn; label: string; desc: string; icon: typeof
 
 function TurnList({ turn }: { turn: PipelineTurn }) {
   return (
-    <ul className="grid">
+    <ul data-tour="turn" className="grid">
       {TURN.map((t) => {
         const n = turn[t.key];
         const Icon = t.icon;
@@ -253,6 +402,7 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   return (
     <div className="grid gap-3">
       <div
+        data-tour="upload"
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -289,6 +439,7 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           type="file"
           multiple
           hidden
+          id="upload-input"
           accept={UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(",")}
           onChange={(e) => void upload(e.target.files)}
         />
@@ -352,7 +503,7 @@ const isMe = (r: PipelineRow) => r.who === "me";
 const isRun = (r: PipelineRow) => r.who === "ai" || r.who === "wait" || r.who === "other";
 const isDone = (r: PipelineRow) => r.who === "done";
 
-function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
+function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean }) {
   const [stage, setStage] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [showDone, setShowDone] = useState(false);
@@ -378,7 +529,7 @@ function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
         진행 현황
       </h2>
 
-      <div role="group" aria-label="단계 고르기" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 min-[1000px]:grid-cols-6">
+      <div data-tour="pipe" role="group" aria-label="단계 고르기" className="mb-3 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
         {STEPS.map((name, i) => {
           const c = by[i];
           const on = stage === i;
@@ -389,19 +540,25 @@ function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
               title={STEP_DESC[i]}
               aria-pressed={on}
               onClick={() => setStage(on ? null : i)}
-              className={`grid gap-1.5 rounded-[16px] border px-3 py-2.5 text-left ${
+              className={`grid min-w-0 content-start gap-1 rounded-[14px] border px-2 py-2 text-left ${
                 on ? "border-ink bg-ink text-paper" : c.me ? "border-mark bg-surface" : "border-line bg-surface hover:bg-surface2"
               }`}
             >
-              <span className="flex items-center gap-1.5">
-                <span className={`grid size-5 place-items-center rounded-full text-[12px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
+              <span className="flex min-w-0 items-center gap-1">
+                <span className={`grid size-[18px] flex-none place-items-center rounded-full text-[11px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
                   {i + 1}
                 </span>
-                <b className="text-[14px]">{name}</b>
+                <b className="truncate text-[13px]">{name}</b>
               </span>
-              <span className="flex flex-wrap gap-1 text-[12px] font-bold">
+              <span className="flex flex-wrap gap-1 text-[11px] leading-[18px] font-bold whitespace-nowrap">
                 {c.me ? <span className="rounded-full bg-mark px-1.5 text-markink">내 차례 {c.me}</span> : null}
-                {c.ai ? <span className="rounded-full bg-accentsoft px-1.5 text-accentink">진행 중 {c.ai}</span> : null}
+                {c.ai ? (
+                  aiDown ? (
+                    <span className="rounded-full bg-surface2 px-1.5 text-ink2">멈춤 {c.ai}</span>
+                  ) : (
+                    <span className="rounded-full bg-accentsoft px-1.5 text-accentink">진행 중 {c.ai}</span>
+                  )
+                ) : null}
                 {c.wait ? <span className="rounded-full bg-surface2 px-1.5 text-ink2">대기 {c.wait}</span> : null}
                 {!c.me && !c.ai && !c.wait ? <span className={on ? "text-paper/60" : "text-line2"}>없음</span> : null}
               </span>
@@ -435,7 +592,7 @@ function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
         ) : null}
       </div>
 
-      <div tabIndex={0} aria-label="진행 현황 목록" className="flex h-[470px] flex-col overflow-y-auto overscroll-contain rounded-[14px] border border-line max-[720px]:h-[70vh]">
+      <div data-tour="table" tabIndex={0} aria-label="진행 현황 목록" className="flex h-[470px] flex-col overflow-y-auto overscroll-contain rounded-[14px] border border-line max-[720px]:h-[70vh]">
         {rows.length === 0 ? (
           <p className="m-auto px-4 text-center text-[14px] text-muted">아직 올린 기록이 없어요. 관찰일지를 올리면 여기서 단계별로 볼 수 있어요</p>
         ) : list.length === 0 && !doneTail.length ? (
@@ -443,7 +600,7 @@ function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
         ) : null}
         {list.length === 0 && doneTail.length ? <p className="px-4 py-6 text-center text-[14px] text-muted">지금 진행 중인 기록이 없어요</p> : null}
         {list.map((r, i) => (
-          <JRow key={rowKey(r, i)} r={r} />
+          <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} />
         ))}
         {doneTail.length ? (
           <>
@@ -455,7 +612,7 @@ function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
             >
               {showDone ? `완료 ${doneTail.length}건 접기` : `완료 ${doneTail.length}건 펼치기`}
             </button>
-            {showDone ? doneTail.map((r, i) => <JRow key={rowKey(r, i)} r={r} />) : null}
+            {showDone ? doneTail.map((r, i) => <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} />) : null}
           </>
         ) : null}
       </div>
@@ -546,8 +703,9 @@ const DOT = {
   skip: "border-dashed border-line text-line2",
 } as const;
 
-function JRow({ r }: { r: PipelineRow }) {
-  const info = describe(r);
+function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
+  const paused = aiDown && r.who === "ai";
+  const info = paused ? { ...describe(r), text: "AI 점검 중이라 잠시 멈췄어요 · 돌아오면 이어서 해요" } : describe(r);
   const sub = r.kind === "week" ? `${r.week?.label ?? ""} 분석` : r.date ? md(r.date) : "";
   const tag = isMe(r) ? (
     info.hold ? (
@@ -555,6 +713,8 @@ function JRow({ r }: { r: PipelineRow }) {
     ) : (
       <span className="rounded-full bg-humansoft px-2 py-px text-[12px] font-bold text-human">내 차례</span>
     )
+  ) : paused ? (
+    <span className="rounded-full bg-surface2 px-2 py-px text-[12px] font-bold text-ink2">멈춤</span>
   ) : r.who === "ai" ? (
     <span className="rounded-full bg-accentsoft px-2 py-px text-[12px] font-bold text-accentink">진행 중</span>
   ) : (
@@ -576,7 +736,7 @@ function JRow({ r }: { r: PipelineRow }) {
                 : i === r.step
                   ? r.who === "me"
                     ? "me"
-                    : r.who === "ai"
+                    : r.who === "ai" && !paused
                       ? "ai"
                       : info.skip
                         ? "skip"

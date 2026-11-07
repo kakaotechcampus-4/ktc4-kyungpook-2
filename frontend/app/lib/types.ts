@@ -704,3 +704,14 @@ export interface AiStatus {
   available: boolean;
   since: string | null;
 }
+
+/** 요약에 실패한 묶음(아이 × 날짜, O-35). 요약 행이 없어 O-30 에 섞이지 않는다 (#369) */
+export interface FailedSummary {
+  childId: string;
+  childName: string;
+  entryDate: string;
+  /** 요약하지 못한 기록과 원문(id 순) */
+  entries: { journalEntryId: string; content: string }[];
+  /** 실패 원인. 지금은 NO_GROUNDED_CLAIMS(요약 문장의 근거를 원문에서 찾지 못함) 하나 */
+  reason: string;
+}
