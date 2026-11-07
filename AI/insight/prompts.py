@@ -147,7 +147,11 @@ def build_lookup_messages(state: dict, raw: dict, claim_ids: list[str],
         "다른 기관에서 같은 상황이 있었으면, 그 기록의 claim_id 를 근거에 더해 기관 간 비교로 다시 쓴다. "
         "대처와 결과가 그 기록에 있으면 supports 에 쓴다. "
         "같은 상황이 없으면 억지로 묶지 말고 insights 를 빈 배열로 둔다. "
-        "근거 claim_id 는 아래 기록과 find_claims 가 돌려준 것에서만 고른다."
+        "근거 claim_id 는 아래 기록과 find_claims 가 돌려준 것에서만 고른다. "
+        # 다시 쓴 글도 quality.weak_reasons 를 다시 통과해야 한다. 이 말이 없으면 "…한 기록도 있었다" 처럼
+        # 기록 자체를 말하는 표현을 새로 써서 기록에없는말 로 버려진다 (시연 데이터 3회 중 1회).
+        "'기록되지 않았다', '기록도 있다', '확인되지 않았다', '알 수 없다' 처럼 기록에 대해 말하는 "
+        "표현은 쓰지 않는다. 기록에 있는 사실만 쓴다."
     )
     user = (
         f"아이: {state['child_name']}\n"
