@@ -3,6 +3,7 @@ package com.itda.backend.service.insight;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -55,7 +56,7 @@ class InsightProgressServiceTest {
     static class Config {
         @Bean
         InsightProperties insightProperties() {
-            return new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, false, List.of());
+            return new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, false, List.of(), Duration.ofSeconds(210), 1);
         }
 
         @Bean
