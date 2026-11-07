@@ -116,6 +116,28 @@ class SignupCompletionFilterTest {
                 .andExpect(status().isOk());
     }
 
+    /** 약관 본문은 동의하기 전에 읽어야 한다 — 가입 미완료 · 약관 미동의 회원도 읽는다. 인코딩된 주소는 SignupCompletionFilterHttpTest. */
+    @Test
+    void userBeforeSignupOrTermsCanReadTermsDocuments() throws Exception {
+        User pending = userRepository.save(User.pending("filter-pending-terms-doc", "박지현"));
+        User parent = userRepository.save(UserFixture.parent("filter-parent-terms-doc", "김보호"));
+
+        for (User user : new User[]{pending, parent}) {
+            mockMvc.perform(get("/api/v1/terms").param("role", "parent").cookie(cookieFor(user)))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    /** 약관 본문 아래 경로는 열리지 않는다 — 정확히 /api/v1/terms 만 통과한다. */
+    @Test
+    void pathsBelowTermsDocumentsAreNotOpened() throws Exception {
+        User parent = userRepository.save(UserFixture.parent("filter-parent-terms-sub", "김보호"));
+
+        mockMvc.perform(get("/api/v1/terms/tos").cookie(cookieFor(parent)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("TERMS_NOT_AGREED"));
+    }
+
     @Test
     void signedUpUserPassesThrough() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
