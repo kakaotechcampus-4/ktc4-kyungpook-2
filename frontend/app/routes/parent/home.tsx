@@ -1,4 +1,5 @@
 import { Link, useLoaderData } from "react-router";
+import { TourButton } from "@/components/Tour";
 import { ConsentStatus, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentNotReadySection } from "@/components/parent/NotReady";
@@ -44,6 +45,7 @@ export default function ParentHomePage() {
         title="오늘의 기록"
         subtitle={child.name}
         showChildSwitch
+        help="home"
         alert={pending.length > 0 || openChecklists > 0}
       />
 
@@ -78,7 +80,7 @@ export default function ParentHomePage() {
         </span>
       </section>
 
-      <section>
+      <section data-tour="news">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-[16px] font-bold">새 소식</h2>
           <Link to="/parent/timeline" className="text-[14px] font-semibold text-accentink">
@@ -112,7 +114,7 @@ export default function ParentHomePage() {
         )}
       </section>
 
-      <section>
+      <section data-tour="orgs">
         <h2 className="mb-2 text-[16px] font-bold">연결된 기관</h2>
         <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line">
           {child.institutions.map(({ institution, consent }) => (

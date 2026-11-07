@@ -2,6 +2,7 @@ package com.itda.backend.service.sharing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
@@ -26,22 +27,28 @@ import com.itda.backend.domain.consent.ConsentField;
 import com.itda.backend.domain.consent.ConsentRevokeReason;
 import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.insight.InsightResult;
+import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.sharing.ReceiverType;
 import com.itda.backend.domain.sharing.SharingHistory;
+import com.itda.backend.domain.summary.ChildContext;
+import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.sharing.SharingErrorCode;
 import com.itda.backend.exception.sharing.SharingException;
 import com.itda.backend.global.config.ClockConfig;
+import com.itda.backend.service.child.GuardianJournalQueryService;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.insight.InsightEvidenceReader;
 import com.itda.backend.service.user.UserService;
 
 /** 보호자가 Gate 2 를 지나 받은 인사이트를 읽는다 (#233). */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianInsightService.class, SharingReadRecorder.class, ConsentStateReader.class, ClockConfig.class})
+@Import({GuardianInsightService.class, InsightEvidenceReader.class, GuardianJournalQueryService.class,
+        SharingReadRecorder.class, ConsentStateReader.class, ClockConfig.class})
 class GuardianInsightServiceTest {
 
     private static final LocalDate FROM = LocalDate.of(2026, 8, 17);
@@ -54,6 +61,9 @@ class GuardianInsightServiceTest {
 
     @Autowired
     private GuardianInsightService service;
+
+    @Autowired
+    private GuardianJournalQueryService journalService;
 
     @MockitoBean
     private UserService userService;
@@ -267,6 +277,147 @@ class GuardianInsightServiceTest {
         LocalDateTime grantedAt = em.find(SharingHistory.class, mineId).getGrantedAt();
 
         assertThat(service.getInsights(MOTHER).get(0).approvedAt()).isEqualTo(grantedAt);
+    }
+
+    // --- 근거 (#405) ---
+
+    @Test
+    void 근거는_일지_id_날짜_기관을_관찰_날짜_오래된_순으로_준다() {
+        Long school = journal(LocalDate.of(2026, 8, 20), schoolId);
+        Long center = journal(LocalDate.of(2026, 8, 18), centerId);
+        Long id = citing("[\"%d-0\",\"%d-0\"]".formatted(summaryOf(school), summaryOf(center)), null, null);
+
+        assertThat(service.getInsight(MOTHER, id).evidence())
+                .extracting(GuardianInsightResponse.Evidence::journalEntryId, GuardianInsightResponse.Evidence::date,
+                        e -> e.institution().name())
+                .containsExactly(
+                        tuple(String.valueOf(center), "2026-08-18", "햇살센터"),
+                        tuple(String.valueOf(school), "2026-08-20", "○○초등학교"));
+    }
+
+    @Test
+    void 같은_날은_기관_이름순이고_같은_일지는_한_줄이다() {
+        Long school = journal(LocalDate.of(2026, 8, 19), schoolId);
+        Long center = journal(LocalDate.of(2026, 8, 19), centerId);
+        Long id = citing("[\"%d-0\",\"%d-0\",\"%d-2\"]".formatted(summaryOf(school), summaryOf(center),
+                summaryOf(school)), null, null);
+
+        assertThat(service.getInsight(MOTHER, id).evidence())
+                .extracting(e -> e.institution().name())
+                .containsExactly("○○초등학교", "햇살센터");
+    }
+
+    /** 교사 화면(Gate 2)과 같은 범위다 — 본문 근거가 비어도 대처에서 인용한 지난 기록은 근거다 (#387). */
+    @Test
+    void 대처에서만_인용한_지난_기록도_근거로_남는다() {
+        Long past = journal(LocalDate.of(2026, 7, 1), centerId);
+        Long notCited = journal(LocalDate.of(2026, 7, 8), centerId);
+        Long id = citing("[]",
+                "[{\"action\": \"예고\", \"result\": \"진정\", \"claim_ids\": [\"%d-0\"]}]".formatted(summaryOf(past)),
+                "[\"%d-0\",\"%d-0\"]".formatted(summaryOf(past), summaryOf(notCited)));
+
+        assertThat(service.getInsight(MOTHER, id).evidence())
+                .extracting(GuardianInsightResponse.Evidence::journalEntryId)
+                .containsExactly(String.valueOf(past));
+    }
+
+    /** 다른 아이 요약 · 1차 검토 전 요약 · 없는 요약 · 기관 행이 없는 요약은 일지 상세가 열지 않는다. 그 줄만 뺀다. */
+    @Test
+    void 열_수_없는_근거는_그_줄만_빠진다() {
+        Long ok = journal(LocalDate.of(2026, 8, 19), centerId);
+        Long otherChild = em.persistAndFlush(Child.of("박소망", LocalDate.of(2019, 5, 1))).getId();
+        Long otherSummary = em.persistAndFlush(SummaryResult.of(
+                otherChild, LocalDate.of(2026, 8, 19), centerId, 1, "다른 아이", "[]", "[]", "[]", "{}")).getId();
+        em.persistAndFlush(ChildContext.of(otherChild, otherSummary, "다른 아이"));
+        Long unapproved = em.persistAndFlush(SummaryResult.of(
+                childId, LocalDate.of(2026, 8, 20), centerId, 1, "검토 전", "[]", "[]", "[]", "{}")).getId();
+        Long orphan = journal(LocalDate.of(2026, 8, 21), 9999L);
+        Long id = citing("[\"%d-0\",\"%d-0\",\"%d-0\",\"%d-0\",\"987654-0\"]".formatted(
+                summaryOf(ok), otherSummary, unapproved, summaryOf(orphan)), null, null);
+
+        assertThat(service.getInsight(MOTHER, id).evidence())
+                .extracting(GuardianInsightResponse.Evidence::journalEntryId)
+                .containsExactly(String.valueOf(ok));
+    }
+
+    /**
+     * 동의는 기관끼리 보는 것을 막는 장치다. 보호자는 그 기관 일지를 일지 탭에서 계속 보므로 근거에서도 빼지 않는다 —
+     * 근거 줄을 누르면 일지 상세가 열린다.
+     */
+    @Test
+    void 동의를_끄고_명부에서_빠진_기관의_근거도_남고_그_일지가_열린다() {
+        Long center = journal(LocalDate.of(2026, 8, 19), centerId);
+        Long id = citing("[\"%d-0\"]".formatted(summaryOf(center)), null, null);
+        em.persistAndFlush(ChildGuardian.link(childId, guardianId, 1L));
+        em.find(SharingConsent.class, centerConsentId)
+                .revoke(guardianId, ConsentRevokeReason.GUARDIAN_REVOKED, LocalDateTime.now());
+        em.find(ChildOrganization.class, centerEnrollmentId).delete();
+        em.flush();
+        em.clear();
+
+        assertThat(service.getInsight(MOTHER, id).evidence())
+                .extracting(GuardianInsightResponse.Evidence::journalEntryId)
+                .containsExactly(String.valueOf(center));
+        assertThat(journalService.entry(MOTHER, center).id()).isEqualTo(String.valueOf(center));
+    }
+
+    /** 삭제된 아이의 일지는 일지 상세가 열지 않는다. 글은 지금처럼 보이고 근거만 비운다. */
+    @Test
+    void 삭제된_아이의_글은_근거가_비어_있다() {
+        Long center = journal(LocalDate.of(2026, 8, 19), centerId);
+        Long id = citing("[\"%d-0\"]".formatted(summaryOf(center)), null, null);
+        em.find(Child.class, childId).delete();
+        em.flush();
+        em.clear();
+
+        assertThat(service.getInsight(MOTHER, id)).satisfies(insight -> {
+            assertThat(insight.childName()).isNull();
+            assertThat(insight.evidence()).isEmpty();
+        });
+    }
+
+    @Test
+    void 어느_인용_경로에도_유효한_근거가_없으면_빈_배열이고_글은_보인다() {
+        Long id = citing("[\"깨진 번호\", 42]", "[{\"result\": \"번호 없는 대처\"}]", null);
+
+        assertThat(service.getInsight(MOTHER, id).evidence()).isEmpty();
+        assertThat(service.getInsight(MOTHER, insightId).evidence()).isEmpty();
+    }
+
+    @Test
+    void 목록과_단건의_근거가_같다() {
+        Long school = journal(LocalDate.of(2026, 8, 20), schoolId);
+        Long center = journal(LocalDate.of(2026, 8, 18), centerId);
+        Long id = citing("[\"%d-0\"]".formatted(summaryOf(school)), null, null);
+        Long other = citing("[\"%d-0\"]".formatted(summaryOf(center)), null, null);
+
+        List<GuardianInsightResponse> list = service.getInsights(MOTHER);
+
+        assertThat(list).filteredOn(i -> i.id().equals(String.valueOf(id))).singleElement()
+                .satisfies(i -> assertThat(i.evidence()).isEqualTo(service.getInsight(MOTHER, id).evidence()));
+        assertThat(list).filteredOn(i -> i.id().equals(String.valueOf(other))).singleElement()
+                .satisfies(i -> assertThat(i.evidence()).extracting(GuardianInsightResponse.Evidence::journalEntryId)
+                        .containsExactly(String.valueOf(center)));
+    }
+
+    /** 승인된 일지 하나 — 요약과 그 승인본. 승인본 id(= 일지 id)를 돌려준다. */
+    private Long journal(LocalDate date, Long institutionId) {
+        Long summary = em.persistAndFlush(SummaryResult.of(
+                childId, date, institutionId, 1, "요약", "[]", "[]", "[]", "{}")).getId();
+        return em.persistAndFlush(ChildContext.of(childId, summary, "요약")).getId();
+    }
+
+    private Long summaryOf(Long journalId) {
+        return em.find(ChildContext.class, journalId).getSummaryResultId();
+    }
+
+    /** 근거 번호를 단 글을 엄마에게 연다. */
+    private Long citing(String claimIds, String supports, String lookedUpClaimIds) {
+        Long id = em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "상황", "반응", "본문", supports,
+                claimIds, "[]", "[%d]".formatted(schoolId), false, null, lookedUpClaimIds)).getId();
+        em.persistAndFlush(SharingHistory.grant(childId, id, schoolId, ReceiverType.GUARDIAN, guardianId));
+        em.clear();
+        return id;
     }
 
     private Long insight(String content) {

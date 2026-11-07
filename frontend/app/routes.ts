@@ -7,6 +7,8 @@ export default [
   route("signup", "routes/signup.tsx"),
   // 기관 약관(I-16). 기관 가드가 동의하지 않은 기관을 이리 보내므로 기관 묶음 밖에 둔다.
   route("org-terms", "routes/org-terms.tsx"),
+  // 약관 다시 읽기. 로그인 없이 열고 역할 묶음 밖에 둔다(가드가 동의를 요구하면 동의 전에 못 읽는다).
+  route("terms/:key", "routes/terms.tsx"),
 
   layout("routes/org/layout.tsx", [
     // 화면을 옮길 때마다 로그인이 풀렸는지 본다 — 가드는 같은 레이아웃 안 이동에서 다시 돌지 않는다

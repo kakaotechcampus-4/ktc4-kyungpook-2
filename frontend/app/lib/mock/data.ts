@@ -462,9 +462,16 @@ export const GATE1_QUEUE: SummaryItem[] = [
     uncoveredEntries: [{ journalEntryId: "je_5103", content: "내일 하원 시간이 오후 4시로 바뀝니다." }],
     reviewFlags: [
       {
+        journalEntryId: "je_sum_9012",
+        issueTypes: ["감정적표현", "추측성표현"],
+        reasons: ["감정이나 평가가 섞인 표현이 있어요", "관찰되지 않은 내용을 추측한 표현이 있어요"],
+        claimIndexes: [1],
+      },
+      {
         journalEntryId: "je_5101",
-        issueTypes: ["추측성표현"],
-        reasons: ["관찰되지 않은 내용을 추측한 표현이 있어요"],
+        issueTypes: ["대상불명확"],
+        reasons: ["어느 아이의 기록인지 분명하지 않아요"],
+        claimIndexes: [],
       },
     ],
   }),
@@ -793,6 +800,10 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     sharedWith: [CENTER],
     approvedAt: "2026-10-29T17:40:00",
     readAt: null,
+    evidence: [
+      { journalEntryId: "jrn_04", date: "2026-08-14", institution: SCHOOL },
+      { journalEntryId: "jrn_05", date: "2026-08-14", institution: CENTER },
+    ],
   },
   {
     id: "gi_02",
@@ -804,6 +815,7 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     sharedWith: [],
     approvedAt: "2026-10-29T17:20:00",
     readAt: "2026-10-29T20:05:00",
+    evidence: [],
   },
   {
     id: "gi_03",
@@ -815,6 +827,10 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     sharedWith: [CENTER],
     approvedAt: "2026-10-27T10:00:00",
     readAt: "2026-10-27T21:00:00",
+    evidence: [
+      { journalEntryId: "jrn_01", date: "2026-08-21", institution: SCHOOL },
+      { journalEntryId: "jrn_02", date: "2026-08-21", institution: CENTER },
+    ],
   },
   {
     id: "gi_04",
@@ -826,6 +842,7 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     sharedWith: [],
     approvedAt: "2026-10-28T09:00:00",
     readAt: null,
+    evidence: [],
   },
 ];
 

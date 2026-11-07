@@ -15,6 +15,14 @@ export function todayDate(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/**
+ * 서버 날짜("2026-10-21")를 "10월 21일" 처럼. 날짜만 있는 값은 Date 로 바꾸지 않는다 — UTC 자정으로 읽혀 기기
+ * 시간대에 따라 하루가 밀린다. 리포트 근거 일지의 관찰 날짜에 쓴다
+ */
+export function formatDateMonthDay(date: string): string {
+  return `${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일`;
+}
+
 /** 서버 시각(ISO)을 "10월 28일" 처럼 월·일만. 받은 리포트의 승인 날짜에 쓴다 */
 export function formatMonthDay(iso: string): string {
   const d = new Date(iso);

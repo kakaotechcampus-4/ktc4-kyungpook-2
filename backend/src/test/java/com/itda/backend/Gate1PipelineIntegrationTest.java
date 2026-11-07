@@ -207,6 +207,9 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(jsonPath("$.data[0].reviewFlags", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].journalEntryId").value(pushed))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].issueTypes[0]").value("위험행동표현"))
+                // 검증 구간이 짚은 일지를 근거로 든 문장은 두 번째 것뿐이다
+                .andExpect(jsonPath("$.data[0].reviewFlags[0].claimIndexes", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].reviewFlags[0].claimIndexes[0]").value(1))
                 .andReturn().getResponse().getContentAsString();
         Long id = ((Number) JsonPath.read(listed, "$.data[0].id")).longValue();
         String version = JsonPath.read(listed, "$.data[0].version");

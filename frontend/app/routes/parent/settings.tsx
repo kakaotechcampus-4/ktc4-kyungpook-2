@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LogOut } from "lucide-react";
+import { FileText, LogOut } from "lucide-react";
 import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { Busy, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
@@ -287,7 +287,11 @@ function ParentSettingsContent({
 
       <div>
         <h2 className="mb-2 text-[15px] font-bold text-ink2">계정</h2>
-        <div className="rounded-2xl border border-line">
+        <div className="divide-y divide-line rounded-2xl border border-line">
+          <Link to="/terms/tos" className="tap flex w-full items-center justify-between px-4 py-3.5">
+            <span className="text-[15px]">약관 보기</span>
+            <FileText aria-hidden size={17} strokeWidth={1.9} className="text-muted" />
+          </Link>
           <button
             type="button"
             onClick={logout}

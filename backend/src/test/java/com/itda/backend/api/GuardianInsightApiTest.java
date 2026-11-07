@@ -102,7 +102,10 @@ class GuardianInsightApiTest {
                 .andExpect(jsonPath("$.data[0].id").value(String.valueOf(insightId)))
                 .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
                 .andExpect(jsonPath("$.data[0].approvedAt").value("2026-10-27T15:30:00"))
-                .andExpect(jsonPath("$.data[0].readAt").value(nullValue()));
+                .andExpect(jsonPath("$.data[0].readAt").value(nullValue()))
+                // 근거 번호가 없는 글도 근거 칸은 빈 배열로 온다 — 화면이 null 을 따로 보지 않게
+                .andExpect(jsonPath("$.data[0].evidence").isArray())
+                .andExpect(jsonPath("$.data[0].evidence.length()").value(0));
     }
 
     @Test

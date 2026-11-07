@@ -3,7 +3,7 @@ import { Busy } from "@/components/ui";
 import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
 import { StepProgress } from "@/components/parent/StepProgress";
-import { TermsForm, type TermItem } from "@/components/TermsForm";
+import { TERMS_CHANGED_MESSAGE, TermsForm, useTermsDocuments, type TermItem } from "@/components/TermsForm";
 import { ApiError, acceptInvitation, restoreParentOnboarded } from "@/lib/api";
 import {
   agreeTerms,
@@ -37,7 +37,7 @@ import type { AcceptedInvitation } from "@/lib/types";
  */
 type Step = "intro" | "terms" | "code" | "done";
 
-// 서버 TermKey 와 같은 값이다. 지금은 모두 필수라 체크한 목록이 아니라 이 목록 전체를 보낸다.
+// 서버 TermKey 와 같은 값이다. 본문 · 판은 약관 단계에 들어갈 때 서버에서 받는다.
 const TERMS: readonly TermItem[] = [
   { key: "tos", label: "서비스 이용약관 동의", required: true },
   { key: "privacy", label: "개인정보와 민감정보 수집 동의", required: true },
@@ -71,6 +71,7 @@ export default function ParentInvitePage() {
   // "홈으로" 링크를 보일지가 이 값을 본다
   const [onboarded, setOnboarded] = useState(loaded.onboarded);
   const [agreed, setAgreed] = useState<TermKey[]>([]);
+  const terms = useTermsDocuments("parent", TERMS, step === "terms");
   const [code, setCode] = useState(savedCode ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -84,11 +85,12 @@ export default function ParentInvitePage() {
   useEffect(() => setExpired(hasReturnPath()), []);
 
   async function submitTerms() {
-    if (pending) return;
+    const picked = terms.versionsOf(agreed);
+    if (pending || !picked) return;
     setError(null);
     setPending(true);
     try {
-      await agreeTerms(TERMS.map((t) => t.key));
+      await agreeTerms(picked);
       const linked = await restoreParentOnboarded();
       setOnboarded(linked);
       // 받아 둔 코드(링크로 받았거나 코드 단계에서 막혀 돌아온 입력)가 있으면 수락을 이어 간다
@@ -100,6 +102,13 @@ export default function ParentInvitePage() {
     } catch (err) {
       if (err instanceof ApiError && (err.status === 401 || err.code === "SIGNUP_NOT_COMPLETED")) {
         handleError(err);
+        return;
+      }
+      if (err instanceof ApiError && err.code === "TERMS_VERSION_CHANGED") {
+        // 약관 단계를 연 뒤 약관이 바뀌었다 — 바뀐 약관의 체크만 풀고 다시 보게 한다
+        const changed = await terms.reloadChanged();
+        setAgreed((prev) => prev.filter((k) => !changed.includes(k)));
+        setError(TERMS_CHANGED_MESSAGE);
         return;
       }
       setError("동의를 저장하지 못했어요. 다시 시도해 주세요.");
@@ -318,6 +327,8 @@ export default function ParentInvitePage() {
 
           <TermsForm
             terms={TERMS}
+            docs={terms.docs}
+            onRetry={() => void terms.retry()}
             agreed={agreed}
             onChange={setAgreed}
             pending={pending}

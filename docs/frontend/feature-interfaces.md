@@ -169,7 +169,12 @@ interface SummaryItem {       // Gate 1 검토 대기 · 보류함 한 건 (BE G
   needsReview: boolean;       // 다른 아이 이름이 남았을 수 있음. 경고만
   reviewReasons: string[];    // ["다른아동이름"]
   uncoveredEntries: { journalEntryId: string; content: string }[];   // 승인하면 함께 끝남
-  reviewFlags: { journalEntryId: string; issueTypes: string[] }[];
+  reviewFlags: {               // 검증 REVIEW 를 받은 원본 일지. 화면은 reasons 를 보여 준다
+    journalEntryId: string;
+    issueTypes: string[];
+    reasons: string[];
+    claimIndexes: number[];    // 검증 구간과 근거가 겹친 문장 카드 번호. 비어도 경고는 그대로 (#408)
+  }[];
 }
 
 type Gate1Card =              // 승인 때 보내는 문장 카드. 원래 문장은 모두 한 번씩, 배열 순서 = 최종 순서
@@ -261,6 +266,11 @@ interface GuardianInsight {
   sharedWith: Institution[];  // 지금 이 글을 볼 수 있는 다른 기관, 이름순. 기관 수신함 · 공유 내역(G-45)과 같은 판정
   approvedAt: string;         // 승인 시각 (ISO). 모든 보호자에게 같다
   readAt: string | null;      // 처음 열어 본 시각 (ISO). null 이면 "새 글"
+  evidence: {                 // 근거 일지, 관찰 날짜 오래된 순. 응답 시점에 일지 상세로 열 수 있는 것만. 없으면 [] (#405)
+    journalEntryId: string;   // 일지 상세(G-21) id → /parent/journal/:id
+    date: string;             // 관찰 날짜 "2026-10-21"
+    institution: Institution; // 명부에서 빠진 기관일 수 있다
+  }[];
 }
 
 interface ChecklistItem {   // P-12 준비물·확인사항 (G-50 · G-51)

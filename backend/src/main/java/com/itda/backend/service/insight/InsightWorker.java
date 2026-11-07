@@ -158,8 +158,7 @@ public class InsightWorker {
         try {
             InsightAgentReply reply = client.analyze(prepared.request());
             availability.reportCallSucceeded();
-            recorder.record(run, reply.response(), reply.rawJson(), prepared.lastContextId(),
-                    prepared.request().claims().size());
+            recorder.record(run, reply.response(), reply.rawJson(), prepared.lastContextId(), prepared.request());
             return true;
         } catch (AiAgentUnavailableException e) {
             // 재시도까지 응답이 없었다. 이 아이는 FAILED 로 두고 남은 아이는 건드리지 않는다. 이 아이는 연속 실패

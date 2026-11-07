@@ -204,6 +204,39 @@ const SEGMENT = [
   { action: "DELETE", label: "삭제", Icon: Trash2, on: "bg-block text-white" },
 ] as const;
 
+/**
+ * 문장 카드 번호 → 그 문장을 짚은 검증 경고들의 사유(중복 제거). 경고의 사유는 문장과 짝지어지지 않아 그 일지 사유를
+ * 모두 모은다 (#408). 경고가 짚지 않은 문장은 들어 있지 않다
+ */
+function flagsByClaim(item: SummaryItem): Map<number, string[]> {
+  const byClaim = new Map<number, string[]>();
+  for (const flag of item.reviewFlags) {
+    for (const index of flag.claimIndexes) {
+      byClaim.set(index, [...new Set([...(byClaim.get(index) ?? []), ...flag.reasons])]);
+    }
+  }
+  return byClaim;
+}
+
+/** 경고가 짚은 곳 — "2 · 3번 문장". 번호가 없거나 카드에 없는 번호뿐이면 "원본 일지" 다 */
+function flagPlace(item: SummaryItem, claimIndexes: number[]): string {
+  const nos = claimIndexes
+    .map((index) => item.claims.findIndex((c) => c.index === index))
+    .filter((at) => at >= 0)
+    .map((at) => at + 1);
+  return nos.length > 0 ? `${nos.join(" · ")}번 문장` : "원본 일지";
+}
+
+/**
+ * 문장 카드의 검증 경고 칩. 사유가 하나면 그 문장을 그대로, 둘 이상이면 어느 사유가 이 문장 것인지 몰라 수만 적고 위
+ * 안내로 보낸다 — 사유를 엉뚱한 문장에 붙이지 않는다
+ */
+function flagChipText(reasons: string[]): string {
+  if (reasons.length === 0) return "검증이 확인을 요청했어요";
+  if (reasons.length === 1) return reasons[0];
+  return `검증 사유 ${reasons.length}가지 · 위 안내를 봐 주세요`;
+}
+
 function SentenceRow({
   no,
   claim,
@@ -211,6 +244,7 @@ function SentenceRow({
   onChange,
   evOn = false,
   onEv,
+  flag,
 }: {
   no: number;
   claim: SummaryClaim;
@@ -219,16 +253,21 @@ function SentenceRow({
   /** 이 문장의 근거를 원본 일지에 강조하는 중 */
   evOn?: boolean;
   onEv?: () => void;
+  /** 이 문장을 짚은 검증 경고의 사유. 없으면 경고가 짚지 않은 문장 */
+  flag?: string[];
 }) {
   const isEdit = line.action === "EDIT";
   const isDelete = line.action === "DELETE";
   const changed = isEdited(line, claim);
 
+  // 경고색 테두리는 유지 상태일 때만 — 수정 · 삭제 상태의 색을 가리지 않는다. 칩은 상태와 상관없이 남는다
   const row = isDelete
     ? "border-line bg-paper"
     : isEdit
       ? "border-accent/35 bg-accentsoft/35"
-      : "border-line bg-surface";
+      : flag
+        ? "border-human/60 bg-humansoft/25"
+        : "border-line bg-surface";
   const dot = isEdit
     ? "bg-ink text-paper"
     : isDelete
@@ -258,6 +297,12 @@ function SentenceRow({
             {claim.text}
           </p>
         )}
+        {flag ? (
+          <span className="flex items-start gap-1 self-start rounded bg-humansoft px-2 py-0.5 text-[12px] font-bold text-human">
+            <TriangleAlert aria-hidden size={13} strokeWidth={2} className="mt-[3px] shrink-0" />
+            {flagChipText(flag)}
+          </span>
+        ) : null}
         {changed ? (
           <p className="text-[13px] text-muted">
             원문 · <span className="line-through">{claim.text}</span>
@@ -850,7 +895,7 @@ function PendingPopup({
   const nothingLeft = item.claims.length > 0 && dels === item.claims.length && adds === 0;
   const countText = `수정 ${edits} · 삭제 ${dels} · 추가 ${adds}`;
   const flagged = item.needsReview || item.reviewFlags.length > 0;
-  const flagReasons = [...new Set(item.reviewFlags.flatMap((f) => f.reasons))];
+  const claimFlags = flagsByClaim(item);
   const uncovered = item.uncoveredEntries.length;
 
   function setLine(i: number, patch: Partial<Line>) {
@@ -937,10 +982,18 @@ function PendingPopup({
                 </b>
               ) : null}
               {item.reviewFlags.length > 0 ? (
-                <span>
-                  검증이 확인을 요청한 원본 일지 {item.reviewFlags.length}건
-                  {flagReasons.length > 0 ? ` · ${flagReasons.join(" · ")}` : null}
-                </span>
+                <>
+                  <span>검증이 확인을 요청한 원본 일지 {item.reviewFlags.length}건</span>
+                  {/* 경고마다 짚은 문장과 그 사유. 문장 번호가 없는 경고(어디가 문제인지 모름)는 "원본 일지" 로 적는다 */}
+                  <ul className="grid gap-0.5">
+                    {item.reviewFlags.map((f) => (
+                      <li key={f.journalEntryId}>
+                        <b>{flagPlace(item, f.claimIndexes)}</b>
+                        {f.reasons.length > 0 ? ` · ${f.reasons.join(" · ")}` : null}
+                      </li>
+                    ))}
+                  </ul>
+                </>
               ) : null}
             </div>
           </div>
@@ -963,6 +1016,7 @@ function PendingPopup({
                   onChange={(patch) => setLine(i, patch)}
                   evOn={ev === i}
                   onEv={() => setEv((cur) => (cur === i ? null : i))}
+                  flag={claimFlags.get(claim.index)}
                 />
               ))}
               {added.map((a) => (

@@ -37,6 +37,8 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.service.child.ActivityLine;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.insight.InsightEvidenceReader;
+import com.itda.backend.service.insight.InsightEvidenceReader.Ref;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -66,6 +68,7 @@ public class GuardianInsightService {
     private final SharingHistoryRepository sharingHistoryRepository;
     private final SharingReadRecorder sharingReadRecorder;
     private final ApprovalRepository approvalRepository;
+    private final InsightEvidenceReader insightEvidenceReader;
 
     /**
      * 내게 열린 인사이트 전부, <b>승인 시각</b> 최근 순 (#287). 권한 행 순서가 아니다 — 늦게 연결된 보호자에게는 지난 글이
@@ -187,6 +190,9 @@ public class GuardianInsightService {
      * 권한 중 <b>받는 기관이 지금 읽을 수 있는 것</b>만 — 기관 수신함과 같은 판정이다 — 기관 이름순이다. 삭제된 아이의 글은
      * {@code childName} 이 {@code null} 이고, 판정에서 모든 기관이 빠져 {@code sharedWith} 가 비어 있다.
      *
+     * <p>{@code evidence} 는 Gate 2 와 같은 근거({@link InsightEvidenceReader}) 중 일지 상세(G-21)가 여는 것만이다
+     * ({@link #evidenceOf}).
+     *
      * @param insightsById 인사이트. 목록은 한 번에 읽은 것을, 단건은 이미 읽은 것을 넘긴다. 없는 글의 줄은 건너뛴다
      * @param approvedAt   글별 Gate 2 승인 시각. 없으면 열린 시각으로 대신한다
      */
@@ -218,10 +224,14 @@ public class GuardianInsightService {
                 .collect(Collectors.groupingBy(ChildOrganization::getChildId,
                         Collectors.toMap(ChildOrganization::getOrganizationId, Function.identity(), (a, b) -> a)));
         Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
+        Map<Long, InsightEvidenceReader.Evidence> evidences = insightEvidenceReader.read(
+                insightIds.stream().map(insightsById::get).toList());
         Map<Long, Organization> organizations = organizationRepository
-                .findAllById(Stream.concat(
+                .findAllById(Stream.of(
                                 receivedBy.values().stream().flatMap(List::stream).map(SharingHistory::getReceiverId),
-                                known.stream().map(SharingHistory::getSenderOrganizationId))
+                                known.stream().map(SharingHistory::getSenderOrganizationId),
+                                evidences.values().stream().flatMap(evidence -> evidence.institutionIds().stream()))
+                        .flatMap(Function.identity())
                         .distinct()
                         .toList())
                 .stream().collect(Collectors.toMap(Organization::getId, Function.identity()));
@@ -251,8 +261,33 @@ public class GuardianInsightService {
                             sender == null ? null : InstitutionResponse.from(sender),
                             sharedWith,
                             approvedAt.getOrDefault(insight.getId(), grant.getGrantedAt()),
-                            grant.getReadAt());
+                            grant.getReadAt(),
+                            child == null ? List.of() : evidenceOf(
+                                    evidences.getOrDefault(insight.getId(), InsightEvidenceReader.Evidence.EMPTY),
+                                    organizations));
                 })
+                .toList();
+    }
+
+    /**
+     * 근거 줄 중 <b>보호자가 지금 일지 상세(G-21)로 열 수 있는 것</b>만, 관찰 날짜 오래된 순 · 같은 날은 기관 이름순 (#405).
+     * 승인본 · 요약 · 같은 아이는 {@link InsightEvidenceReader} 가 이미 봤다. 여기서는 일지 상세처럼 기관 행이 없는 줄을 뺀다.
+     * 아이 연결은 이 글의 권한이 살아 있다는 것으로 확인됐고, 삭제된 아이는 부르는 쪽이 빈 배열로 둔다.
+     *
+     * <p><b>동의로 거르지 않는다.</b> 동의를 끈 기관 · 명부에서 빠진 기관의 일지도 보호자는 일지 탭에서 계속 본다
+     * ({@code GuardianJournalQueryService}). 여기서만 빼면 글은 그 기관 기록으로 쓴 그대로인데 출처만 사라진다.
+     */
+    private static List<GuardianInsightResponse.Evidence> evidenceOf(InsightEvidenceReader.Evidence evidence,
+            Map<Long, Organization> organizations) {
+        return evidence.refs().stream()
+                .filter(ref -> organizations.containsKey(ref.institutionId()))
+                .sorted(Comparator.comparing(Ref::date)
+                        .thenComparing(ref -> organizations.get(ref.institutionId()).getName())
+                        .thenComparing(Ref::childContextId))
+                .map(ref -> new GuardianInsightResponse.Evidence(
+                        String.valueOf(ref.childContextId()),
+                        ref.date().toString(),
+                        InstitutionResponse.from(organizations.get(ref.institutionId()))))
                 .toList();
     }
 

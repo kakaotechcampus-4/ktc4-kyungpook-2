@@ -23,6 +23,7 @@ import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.insight.InsightRunStatus;
 import com.itda.backend.domain.insight.InsightStatus;
+import com.itda.backend.dto.request.insight.InsightAgentRequest;
 import com.itda.backend.dto.response.insight.InsightAgentResponse;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.insight.InsightRunRepository;
@@ -93,6 +94,15 @@ class InsightResultRecorderTest {
         elapse(Duration.ofDays(1));
     }
 
+    /** AI 에 보낸 요청. 인용된 claim 의 기관을 저장할 때 여기서 찾는다 (#387). */
+    private static final InsightAgentRequest REQUEST = new InsightAgentRequest(CHILD, "김준호", "2026-10-01", "2026-10-07",
+            List.of(claim("31-0", 3L), claim("34-1", 5L)), List.of(), List.of(claim("12-0", 7L)));
+
+    private static InsightAgentRequest.Claim claim(String claimId, Long institutionId) {
+        return new InsightAgentRequest.Claim(claimId, "문장", "2026-10-02", institutionId, "센터",
+                InsightAgentRequest.ClaimSource.AI, List.of(new InsightAgentRequest.Evidence(1L, "인용")));
+    }
+
     private InsightAgentResponse response(String json) throws Exception {
         return objectMapper.readValue(json, InsightAgentResponse.class);
     }
@@ -108,7 +118,8 @@ class InsightResultRecorderTest {
                     "claim_ids": ["31-0", "34-1"],
                     "source_entry_ids": [1041, 1042],
                     "source_institution_ids": [3, 5],
-                    "cross_institution": true}],
+                    "cross_institution": true,
+                    "looked_up_claim_ids": ["34-1"]}],
                  "llm_called": true}
                 """);
     }
@@ -127,7 +138,7 @@ class InsightResultRecorderTest {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
         recorder.record(run, response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", 41L, 1);
+                """), "{}", 41L, REQUEST);
 
         assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
         assertThat(insightRunRepository.findAll()).singleElement()
@@ -140,7 +151,7 @@ class InsightResultRecorderTest {
     @Test
     void 결과가_있는_기간도_다시_집지_않는다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
-        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L, 1);
+        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L, REQUEST);
 
         assertThat(recorder.claim(CHILD, FROM, TO)).isEmpty();
     }
@@ -176,7 +187,7 @@ class InsightResultRecorderTest {
     void 응답을_인사이트_행으로_남긴다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L, 1);
+        recorder.record(run, oneInsight(), "{\"raw\": true}", 41L, REQUEST);
 
         List<InsightResult> saved = insightResultRepository.findByStatusOrderByIdDesc(InsightStatus.GATE2_PENDING);
         assertThat(saved).singleElement().satisfies(result -> {
@@ -188,10 +199,35 @@ class InsightResultRecorderTest {
             // AI 가 보낸 JSON 조각을 그대로 담는다 — summary_result.claims 와 같은 방식
             assertThat(result.getClaimIds()).isEqualTo("[\"31-0\",\"34-1\"]");
             assertThat(result.getSourceEntryIds()).isEqualTo("[1041,1042]");
+            assertThat(result.getLookedUpClaimIds()).isEqualTo("[\"34-1\"]");
             assertThat(result.getRawResponse()).isEqualTo("{\"raw\": true}");
         });
         assertThat(insightRunRepository.findAll()).singleElement()
                 .satisfies(saved2 -> assertThat(saved2.getInsightCount()).isEqualTo(1));
+    }
+
+    /**
+     * 근거 기관은 AI 가 준 값에 인용한 claim 의 기관을 BE 가 더한다 (#387). 동의 철회 때 거두기가 이 값을 보므로,
+     * AI 가 찾아 쓴 지난 기록의 기관을 빠뜨려도 막을 수 있어야 한다.
+     */
+    @Test
+    void 인용한_claim의_기관을_근거_기관에_더한다() throws Exception {
+        InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
+
+        recorder.record(run, response("""
+                {"child_id": 8, "period_from": "2026-10-01", "period_to": "2026-10-07",
+                 "insights": [
+                   {"situation": "상황", "behavior": "반응", "content": "본문",
+                    "supports": [{"action": "예고", "result": "진정", "claim_ids": ["34-1"]}],
+                    "claim_ids": ["31-0", "12-0"],
+                    "source_institution_ids": [3],
+                    "cross_institution": true,
+                    "looked_up_claim_ids": ["12-0"]}],
+                 "llm_called": true}
+                """), "{}", 41L, REQUEST);
+
+        assertThat(insightResultRepository.findAll()).singleElement()
+                .satisfies(result -> assertThat(result.getSourceInstitutionIds()).isEqualTo("[3,7,5]"));
     }
 
     /** 교사가 읽고 판단할 글이 없는 건이다. 한 건 때문에 나머지를 버리지는 않는다. */
@@ -204,7 +240,7 @@ class InsightResultRecorderTest {
                    {"situation": "상황", "behavior": "반응", "content": "  "},
                    {"situation": "상황2", "behavior": "반응2", "content": "제대로 된 본문"}],
                  "llm_called": true}
-                """), "{}", 41L, 1);
+                """), "{}", 41L, REQUEST);
 
         assertThat(insightResultRepository.findAll()).singleElement()
                 .satisfies(result -> assertThat(result.getContent()).isEqualTo("제대로 된 본문"));
@@ -216,7 +252,7 @@ class InsightResultRecorderTest {
     void 저장한_인사이트는_Gate2_대기로_들어간다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, oneInsight(), "{}", 41L, 1);
+        recorder.record(run, oneInsight(), "{}", 41L, REQUEST);
 
         assertThat(insightResultRepository.findAll()).singleElement()
                 .satisfies(result -> assertThat(result.getStatus()).isEqualTo(InsightStatus.GATE2_PENDING));
@@ -240,7 +276,7 @@ class InsightResultRecorderTest {
     void 응답의_insights가_null이어도_끝낸_것으로_남긴다() throws Exception {
         InsightRun run = recorder.claim(CHILD, FROM, TO).orElseThrow();
 
-        recorder.record(run, new InsightAgentResponse(CHILD, null, null, null, false), null, 41L, 1);
+        recorder.record(run, new InsightAgentResponse(CHILD, null, null, null, false), null, 41L, REQUEST);
 
         assertThat(insightRunRepository.findAll()).singleElement().satisfies(saved -> {
             assertThat(saved.getStatus()).isEqualTo(InsightRunStatus.DONE);
@@ -253,7 +289,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark, 1);
+                """), "{}", mark, REQUEST);
 
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
     }
@@ -267,7 +303,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark, 1);
+                """), "{}", mark, REQUEST);
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
 
         approve(FROM.plusDays(3));
@@ -283,7 +319,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark, 1);
+                """), "{}", mark, REQUEST);
 
         approve(TO.plusDays(1));
 
@@ -324,7 +360,7 @@ class InsightResultRecorderTest {
 
     @Test
     void 끝난_실행은_되돌리지_않는다() throws Exception {
-        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), oneInsight(), "{}", 41L, 1);
+        recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), oneInsight(), "{}", 41L, REQUEST);
 
         assertThat(recorder.releaseStuck()).isZero();
         assertThat(recorder.needsRun(CHILD, FROM, TO)).isFalse();
@@ -380,7 +416,7 @@ class InsightResultRecorderTest {
         Long mark = approve(FROM.plusDays(1));
         recorder.record(recorder.claim(CHILD, FROM, TO).orElseThrow(), response("""
                 {"child_id": 8, "insights": [], "llm_called": true}
-                """), "{}", mark, 1);
+                """), "{}", mark, REQUEST);
         approve(FROM.plusDays(2));
 
         recorder.recordFailure(recorder.claim(CHILD, FROM, TO).orElseThrow(), "llm_unavailable");

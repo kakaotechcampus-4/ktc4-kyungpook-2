@@ -399,8 +399,10 @@ export interface SummaryItem {
   /**
    * 요약에 들어간 원본 중 검증에서 REVIEW 를 받은 일지와 사유.
    * issueTypes 는 AI 코드 원본, reasons 는 선생님이 읽을 문장 — 화면은 reasons 를 보여 준다 (#351)
+   * claimIndexes 는 검증 구간과 근거가 겹친 문장 카드 번호(claims[].index). 비어도 경고는 그대로다 —
+   * 어디가 문제인지 모르는 사유이거나 문장을 못 읽은 요약이다. 사유와 짝지어지지 않는다 (#408)
    */
-  reviewFlags: { journalEntryId: string; issueTypes: string[]; reasons: string[] }[];
+  reviewFlags: { journalEntryId: string; issueTypes: string[]; reasons: string[]; claimIndexes: number[] }[];
 }
 
 /**
@@ -552,6 +554,20 @@ export interface GuardianInsight {
   approvedAt: string;
   /** 처음 열어 본 시각 (ISO). 아직 안 봤으면 null — "새 글" 표시 */
   readAt: string | null;
+  /**
+   * 이 글의 근거가 된 일지, 관찰 날짜 오래된 순. 응답 시점에 일지 상세로 열 수 있는 것만 온다 —
+   * 동의를 끈 기관 · 명부에서 빠진 기관의 일지도 남는다(일지 탭과 같다). 없으면 빈 배열
+   */
+  evidence: GuardianInsightEvidence[];
+}
+
+/** 리포트 근거 일지 한 건. journalEntryId 로 일지 상세(`/parent/journal/:id`)를 연다 */
+export interface GuardianInsightEvidence {
+  journalEntryId: string;
+  /** 관찰 날짜 "2026-10-21" */
+  date: string;
+  /** 그 일지를 쓴 기관. 명부에서 빠진 기관일 수 있다 */
+  institution: Institution;
 }
 
 /**

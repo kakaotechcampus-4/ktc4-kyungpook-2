@@ -292,7 +292,8 @@ class SummaryGate1QueryServiceTest {
 
         assertThat(item.reviewFlags())
                 .containsExactly(new ReviewFlag(overlapped.getId(), List.of("위험행동표현", "추측성표현"),
-                        List.of("위험 행동이 그대로 묘사돼 있어요", "관찰되지 않은 내용을 추측한 표현이 있어요")));
+                        List.of("위험 행동이 그대로 묘사돼 있어요", "관찰되지 않은 내용을 추측한 표현이 있어요"),
+                        List.of(0)));
     }
 
     @Test
@@ -313,7 +314,91 @@ class SummaryGate1QueryServiceTest {
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags())
                 .containsExactly(new ReviewFlag(unknown.getId(), List.of("대상불명확"),
-                        List.of("어느 아이의 기록인지 분명하지 않아요")));
+                        List.of("어느 아이의 기록인지 분명하지 않아요"), List.of()));
+    }
+
+    // --- 경고가 짚은 문장 (#408) ---
+
+    @Test
+    void 검증_구간과_겹친_문장_번호만_오름차순으로_준다() {
+        JournalEntry pushed = entry("블록 놀이 중 친구를 밀었다. 점심을 먹었다.");
+        validated(pushed, ValidationVerdict.REVIEW, "[\"위험행동표현\"]", "[{\"start\":5,\"end\":15}]");
+        summary(ORG, DATE, "[" + claim(pushed, 0, 6) + "," + claim(pushed, 17, 23) + "," + claim(pushed, 10, 16) + "]",
+                List.of(pushed), List.of());
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags())
+                .singleElement().extracting(ReviewFlag::claimIndexes).isEqualTo(List.of(0, 2));
+    }
+
+    @Test
+    void 한_문장이_구간_둘로_겹쳐도_번호는_한_번이다() {
+        JournalEntry pushed = entry("블록 놀이 중 친구를 밀었다. 다시 밀었다.");
+        validated(pushed, ValidationVerdict.REVIEW, "[\"위험행동표현\"]",
+                "[{\"start\":5,\"end\":15},{\"start\":17,\"end\":23}]");
+        String twoSpans = "{\"text\":\"문장\",\"evidence\":["
+                + "{\"journal_entry_id\":" + pushed.getId() + ",\"quote\":\"q\",\"span\":{\"start\":0,\"end\":8}},"
+                + "{\"journal_entry_id\":" + pushed.getId() + ",\"quote\":\"q\",\"span\":{\"start\":18,\"end\":22}}]}";
+        summary(ORG, DATE, "[" + twoSpans + "]", List.of(pushed), List.of());
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags())
+                .singleElement().extracting(ReviewFlag::claimIndexes).isEqualTo(List.of(0));
+    }
+
+    /** 구간 비교는 같은 일지 안에서만 한다. 경고마다 자기 일지와 겹친 문장만 든다. */
+    @Test
+    void 일지가_둘이면_경고마다_자기_일지와_겹친_문장만_든다() {
+        JournalEntry morning = entry("블록 놀이 중 친구를 밀었다.");
+        JournalEntry afternoon = entry("간식을 먹고 아마 졸렸던 것 같다.");
+        validated(morning, ValidationVerdict.REVIEW, "[\"위험행동표현\"]", "[{\"start\":5,\"end\":15}]");
+        validated(afternoon, ValidationVerdict.REVIEW, "[\"추측성표현\"]", "[{\"start\":7,\"end\":18}]");
+        // 1번 문장은 오후 일지의 같은 위치를 근거로 들었다 — 오전 경고에는 들지 않는다
+        summary(ORG, DATE, "[" + claim(morning, 0, 8) + "," + claim(afternoon, 5, 12) + "," + claim(afternoon, 0, 4) + "]",
+                List.of(morning, afternoon), List.of());
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags())
+                .extracting(ReviewFlag::journalEntryId, ReviewFlag::claimIndexes)
+                .containsExactly(tuple(morning.getId(), List.of(0)), tuple(afternoon.getId(), List.of(1)));
+    }
+
+    /** 카드로 못 읽는 요약이라도 판정은 지금처럼 원시 근거 구간으로 한다. 번호만 비운다. */
+    @Test
+    void 카드로_못_읽는_요약은_경고와_사유는_그대로고_번호만_비어_있다() {
+        JournalEntry pushed = entry("블록 놀이 중 친구를 밀었다.");
+        validated(pushed, ValidationVerdict.REVIEW, "[\"위험행동표현\"]", "[{\"start\":5,\"end\":15}]");
+        summary(ORG, DATE, "[" + claim(pushed, 0, 8) + ", 3]", List.of(pushed), List.of());
+
+        Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
+
+        assertThat(item.claims()).isEmpty();
+        assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(pushed.getId(), List.of("위험행동표현"),
+                List.of("위험 행동이 그대로 묘사돼 있어요"), List.of()));
+    }
+
+    /** 고친 문장의 남은 근거도 판정에는 쓰인다(지금 그대로). 카드가 근거를 보이지 않는 문장이라 번호에는 넣지 않는다. */
+    @Test
+    void 고친_문장의_남은_근거로만_겹치면_경고는_그대로고_번호만_비어_있다() {
+        JournalEntry pushed = entry("블록 놀이 중 친구를 밀었다.");
+        validated(pushed, ValidationVerdict.REVIEW, "[\"위험행동표현\"]", "[{\"start\":5,\"end\":15}]");
+        summary(ORG, DATE, "[" + edited(claim(pushed, 0, 8)) + "]", List.of(pushed), List.of());
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags())
+                .containsExactly(new ReviewFlag(pushed.getId(), List.of("위험행동표현"),
+                        List.of("위험 행동이 그대로 묘사돼 있어요"), List.of()));
+    }
+
+    @Test
+    void AI_문장과_고친_문장이_함께_겹치면_AI_문장_번호만_든다() {
+        JournalEntry pushed = entry("블록 놀이 중 친구를 밀었다.");
+        validated(pushed, ValidationVerdict.REVIEW, "[\"위험행동표현\"]", "[{\"start\":5,\"end\":15}]");
+        summary(ORG, DATE, "[" + edited(claim(pushed, 0, 8)) + "," + claim(pushed, 6, 12) + "]",
+                List.of(pushed), List.of());
+
+        assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags())
+                .singleElement().extracting(ReviewFlag::claimIndexes).isEqualTo(List.of(1));
+    }
+
+    private static String edited(String claim) {
+        return claim.substring(0, claim.length() - 1) + ",\"source\":\"EDITED\"}";
     }
 
     @Test
@@ -338,7 +423,7 @@ class SummaryGate1QueryServiceTest {
 
         // 구간을 못 읽으면 비어 있는 것과 같다 — 숨기기보다 보여주는 쪽이 안전하다.
         assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of(),
-                List.of("검증에서 문제가 발견됐어요. 원본을 확인해 주세요")));
+                List.of("검증에서 문제가 발견됐어요. 원본을 확인해 주세요"), List.of()));
         assertThat(item.reviewReasons()).isEmpty();
         assertThat(item.claims()).isEmpty();
     }

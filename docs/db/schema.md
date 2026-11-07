@@ -276,6 +276,7 @@ erDiagram
         text claim_ids "JSON 문자열"
         text source_entry_ids "JSON 문자열"
         text source_institution_ids "JSON 문자열"
+        text looked_up_claim_ids "JSON 문자열"
         boolean cross_institution
         varchar status
     }
@@ -2318,6 +2319,7 @@ child_context.content        = 교사가 승인한 최종본 — 그 기관 담�
 | `claim_ids` | TEXT | Y | 근거가 된 claim JSON 문자열 `["31-0", "34-2"]` |
 | `source_entry_ids` | TEXT | Y | 근거가 된 일지 JSON 문자열 `[1041, 1042]` |
 | `source_institution_ids` | TEXT | Y | 근거를 낸 기관 JSON 문자열 |
+| `looked_up_claim_ids` | TEXT | Y | AI 가 도구로 지난 기록에서 찾아 근거로 쓴 claim JSON 문자열 `["12-0"]` (#387). `claim_ids`·`supports` 근거 안에 들어 있다. 안 썼으면 `[]`, 이 컬럼 전 행은 `NULL` — 둘 다 "찾아 쓴 것 없음" |
 | `cross_institution` | BOOLEAN | N | 두 기관 이상의 근거를 이었는지 |
 | `status` | VARCHAR(30) | N | 처리 상태 |
 | `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
@@ -2960,4 +2962,5 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-11-06 | 새 테이블 `revoked_session`(§4.4) — 로그아웃한 로그인(출입증의 로그인 번호) 기록. 출입증이 쓰는 동안 자동으로 연장되면서, 로그아웃보다 늦게 도착한 연장 쿠키가 로그인을 되살리지 못하게 서버가 그 번호의 출입증을 거절한다. 회원이 아니라 로그인 단위(1기관 1계정). `session_id` UNIQUE, 쌓기만 하고 지우지 않는다. 새 테이블이라 배포 전 조치 없음 (§11.4) | #366 |
 | 2026-11-06 | 요약 자동 시작·요약 실패 처리. `app.summary.auto-run`(기본 켜짐)이면 [요약] 요청 없이 같은 기관·날짜 처리 중 일지가 없을 때 바로 요약하고, 동의가 꺼진 아이 묶음은 집지 않는다 (§6.2). `SUMMARY_FAILED` 일지를 검토 화면에 묶음으로 띄우고 다시 요약(→ `VALIDATED`)·요약 없이 마무리(→ `COMPLETED`, `summary_id` 없음) 전이 추가 (§6.2). 컬럼·enum 변경 없음 | #369 |
 | 2026-11-07 | 약관 판 규칙 (§4.3) — 한 판 = 한 본문(판마다 문안 파일, 내보낸 파일은 고치지 않음). 본문이 생긴 첫 판 `2026-11-07`(초안)을 새로 내고, 본문 없던 판(`2026-11-03` · `2026-11-05`)은 라벨 판으로 남긴다. `version` 은 동의 화면이 읽은 판을 서버가 확인해 넣고, 판 없이 온 동의는 라벨 판을 넣는다. 다시 받는 약관은 통과 판(라벨 판 · 지금 판)으로 판정해 이미 동의한 회원은 다시 동의하지 않는다. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #390 |
+| 2026-11-07 | `insight_result` 에 `looked_up_claim_ids` 추가 (§9.3, NULL 허용) — AI 가 같은 아이의 지난 기록(이번 기간 앞 12주치 승인 요약, 동의 기관만, 최대 200개)에서 찾아 근거로 쓴 claim 이다 (#387). Gate 2 근거에 "지난 기록" 으로 표시한다. 저장할 때 BE 가 인용된 claim(`claim_ids`·`supports`·`looked_up_claim_ids`)의 기관을 `source_institution_ids` 에 직접 더한다 — 동의 확인과 철회 때 권한 거두기가 이 값만 보므로 AI 출력에 맡기지 않는다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #387 |
 | 2026-11-07 | 요약 결과를 남길 때(저장 · 요약 실패 · 시스템 오류) 그 묶음의 요약 행 → 아이 행을 잠근 뒤 동의를 본다 — 동의 철회가 먼저 커밋됐으면 요약을 저장하지 않는다(멘토 8차 리뷰 P2). 잠금 순서 표(§3.3)에 추가, Gate 1 결정과 같은 순서. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #398 |
