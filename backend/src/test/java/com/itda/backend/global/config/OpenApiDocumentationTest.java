@@ -75,7 +75,9 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.401").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.403").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.409").exists())
 				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.agreed").exists())
+				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.versions").exists())
 				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.allRequiredAgreed").doesNotExist())
 				// 기관 준비물·확인사항 — 보내기 201 · 목록 · 내리기 204. 요청에는 항목과 아이 id 만 있다.
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].post.responses.201").exists())

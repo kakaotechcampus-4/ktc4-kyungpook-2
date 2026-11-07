@@ -102,7 +102,7 @@ class TermsAgreeConcurrencyIntegrationTest {
         Cookie csrf = mockMvc.perform(get("/api/health")).andReturn().getResponse().getCookie("XSRF-TOKEN");
 
         Held<TermsAgreementResponse> held = contention.firstHoldsThen(
-                () -> userService.agreeTerms(principal, List.of(TermKey.TOS, TermKey.PRIVACY)),
+                () -> userService.agreeTerms(principal, List.of(TermKey.TOS, TermKey.PRIVACY), null),
                 () -> mockMvc.perform(post("/api/v1/auth/terms")
                                 .cookie(auth, csrf)
                                 .header("X-XSRF-TOKEN", csrf.getValue())

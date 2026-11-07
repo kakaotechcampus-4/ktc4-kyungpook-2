@@ -20,6 +20,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.TermKey;
+import com.itda.backend.domain.user.TermsAgreement;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
@@ -28,6 +30,7 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.user.TermsCatalog;
 
 /**
  * POST /api/v1/auth/terms — 보안 필터·검증·예외 처리까지 실제로 거친다.
@@ -167,6 +170,58 @@ class TermsApiTest {
         agree(pending, BOTH)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("SIGNUP_NOT_COMPLETED"));
+    }
+
+    @Test
+    void 읽은_판을_보내면_그_판으로_기록한다() throws Exception {
+        User parent = userRepository.save(UserFixture.parent("terms-api-read", "김보호"));
+        String body = "{\"agreed\": [\"tos\", \"privacy\"], \"versions\": {\"tos\": \"%s\", \"privacy\": \"%s\"}}"
+                .formatted(TermsCatalog.currentVersion(TermKey.TOS), TermsCatalog.currentVersion(TermKey.PRIVACY));
+
+        agree(parent, body)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.termsAgreed").value(true));
+        assertThat(termsAgreementRepository.findByUserId(parent.getId()))
+                .extracting(TermsAgreement::getVersion)
+                .containsOnly(TermsCatalog.currentVersion(TermKey.TOS));
+    }
+
+    /** 판 없이 오는 지금 화면은 본문을 보여 주지 못한다 — 라벨 판으로 남는다. */
+    @Test
+    void 판_없이_동의하면_라벨_판으로_기록한다() throws Exception {
+        User parent = userRepository.save(UserFixture.parent("terms-api-label", "김보호"));
+
+        agree(parent, BOTH).andExpect(status().isOk());
+        assertThat(termsAgreementRepository.findByUserId(parent.getId()))
+                .extracting(TermsAgreement::getVersion)
+                .containsOnly(TermsCatalog.labelOnlyVersion(TermKey.TOS));
+    }
+
+    @Test
+    void 읽은_판이_지금_판과_다르면_409_TERMS_VERSION_CHANGED다() throws Exception {
+        User parent = userRepository.save(UserFixture.parent("terms-api-stale", "김보호"));
+
+        agree(parent, "{\"agreed\": [\"tos\", \"privacy\"], \"versions\": {\"tos\": \"2000-01-01\", \"privacy\": \"%s\"}}"
+                .formatted(TermsCatalog.currentVersion(TermKey.PRIVACY)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TERMS_VERSION_CHANGED"));
+        assertThat(termsAgreementRepository.findByUserId(parent.getId())).isEmpty();
+    }
+
+    /** 판의 약관 키는 동의한 약관과 같아야 한다. 모르는 키 · 빠진 키 · 빈 판은 400 이다. */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"agreed\": [\"tos\", \"privacy\"], \"versions\": {\"tos\": \"2026-11-07\"}}",
+            "{\"agreed\": [\"tos\", \"privacy\"], \"versions\": {\"tos\": \"2026-11-07\", \"privacy\": \"2026-11-07\", \"notify\": \"2026-11-07\"}}",
+            "{\"agreed\": [\"tos\", \"privacy\"], \"versions\": {\"tos\": \"2026-11-07\", \"privacy\": null}}"
+    })
+    void 판의_약관이_동의한_약관과_다르면_400이다(String body) throws Exception {
+        User parent = userRepository.save(UserFixture.parent("terms-api-vkeys-" + body.hashCode(), "김보호"));
+
+        agree(parent, body)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        assertThat(termsAgreementRepository.findByUserId(parent.getId())).isEmpty();
     }
 
     private User staff(String kakaoId) {

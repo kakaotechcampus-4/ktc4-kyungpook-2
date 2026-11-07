@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +30,7 @@ import com.itda.backend.repository.user.TermsAgreementRepository;
  * 약관 동의가 실제로 몇 줄을 남기는지, 남은 줄로 동의 여부를 어떻게 판정하는지 본다.
  *
  * <p>"판이 바뀐 뒤" 는 옛 판 줄을 직접 넣어 재현한다 — 상수를 바꾸지 않아도 같은 상황이다.
+ * 동의 화면이 읽은 판을 보내는 요청과, 판 없이 오는 옛 화면의 요청을 나눠 본다.
  */
 @DataJpaTest
 @ActiveProfiles("test")
@@ -54,8 +59,8 @@ class TermsServiceJpaTest {
     }
 
     @Test
-    void 동의하면_약관마다_지금_판_줄이_하나씩_생긴다() {
-        termsService.agree(parent, ALL);
+    void 읽은_판을_보내_동의하면_약관마다_지금_판_줄이_하나씩_생긴다() {
+        termsService.agree(parent, ALL, current(ALL));
         em.flush();
 
         assertThat(termsAgreementRepository.findByUserId(parent.getId()))
@@ -70,12 +75,69 @@ class TermsServiceJpaTest {
 
     @Test
     void 같은_판에_다시_동의해도_줄이_늘지_않는다() {
-        termsService.agree(parent, ALL);
+        termsService.agree(parent, ALL, current(ALL));
         em.flush();
-        termsService.agree(parent, List.of(TermKey.PRIVACY, TermKey.TOS, TermKey.TOS));
+        termsService.agree(parent, List.of(TermKey.PRIVACY, TermKey.TOS, TermKey.TOS), current(ALL));
         em.flush();
 
         assertThat(termsAgreementRepository.findByUserId(parent.getId())).hasSize(2);
+    }
+
+    /** 판 없이 오는 옛 화면은 본문을 보여 주지 못했다 — 본문 판이 아니라 라벨 판으로 남는다. */
+    @Test
+    void 판_없이_동의하면_라벨_판으로_기록하고_동의한_것이다() {
+        termsService.agree(parent, ALL, null);
+        em.flush();
+
+        assertThat(termsAgreementRepository.findByUserId(parent.getId()))
+                .extracting(TermsAgreement::getTermKey, TermsAgreement::getVersion)
+                .containsExactlyInAnyOrder(
+                        tuple(TermKey.TOS, TermsCatalog.labelOnlyVersion(TermKey.TOS)),
+                        tuple(TermKey.PRIVACY, TermsCatalog.labelOnlyVersion(TermKey.PRIVACY)));
+        assertThat(termsService.isAgreed(parent)).isTrue();
+    }
+
+    @Test
+    void 판_없이_다시_동의해도_줄이_늘지_않는다() {
+        termsService.agree(parent, ALL, null);
+        em.flush();
+        termsService.agree(parent, ALL, null);
+        em.flush();
+
+        assertThat(termsAgreementRepository.findByUserId(parent.getId())).hasSize(2);
+    }
+
+    /** 라벨에만 동의한 사람이 본문을 읽고 다시 동의하면 본문 판 줄이 더해진다. 옛 줄은 남는다. */
+    @Test
+    void 라벨_판에_동의한_뒤_읽은_판으로_동의하면_본문_판_줄이_더해진다() {
+        termsService.agree(parent, ALL, null);
+        em.flush();
+        termsService.agree(parent, ALL, current(ALL));
+        em.flush();
+
+        assertThat(termsAgreementRepository.findByUserId(parent.getId()))
+                .extracting(TermsAgreement::getVersion)
+                .containsExactlyInAnyOrder(
+                        TermsCatalog.labelOnlyVersion(TermKey.TOS), TermsCatalog.labelOnlyVersion(TermKey.PRIVACY),
+                        TermsCatalog.currentVersion(TermKey.TOS), TermsCatalog.currentVersion(TermKey.PRIVACY));
+    }
+
+    /** 화면을 연 뒤 판이 바뀌었다 — 읽은 판과 지금 판이 다르면 아무것도 남기지 않는다. */
+    @Test
+    void 읽은_판이_지금_판과_하나라도_다르면_409이고_아무것도_남지_않는다() {
+        Map<TermKey, String> stale = Map.of(
+                TermKey.TOS, TermsCatalog.currentVersion(TermKey.TOS),
+                TermKey.PRIVACY, TermsCatalog.labelOnlyVersion(TermKey.PRIVACY));
+
+        assertThatThrownBy(() -> termsService.agree(parent, ALL, stale))
+                .isInstanceOfSatisfying(UserException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(UserErrorCode.TERMS_VERSION_CHANGED));
+        assertThat(termsAgreementRepository.findByUserId(parent.getId())).isEmpty();
+    }
+
+    @Test
+    void 읽은_판의_약관이_보낸_약관과_다르면_저장하지_않는다() {
+        assertInvalid(parent, ALL, Map.of(TermKey.TOS, TermsCatalog.currentVersion(TermKey.TOS)));
     }
 
     /** 옛 판 줄은 지우거나 고치지 않는다. 다시 동의하면 지금 판 줄이 옆에 쌓인다. */
@@ -85,7 +147,7 @@ class TermsServiceJpaTest {
         em.persist(TermsAgreement.agree(parent.getId(), TermKey.PRIVACY, OLD));
         em.flush();
 
-        termsService.agree(parent, ALL);
+        termsService.agree(parent, ALL, current(ALL));
         em.flush();
 
         assertThat(termsAgreementRepository.findByUserId(parent.getId()))
@@ -108,7 +170,7 @@ class TermsServiceJpaTest {
     void 기관_담당자는_기관_약관_셋에_동의하면_줄이_셋_생긴다() {
         User staff = staff("terms-staff");
 
-        termsService.agree(staff, ORG_ALL);
+        termsService.agree(staff, ORG_ALL, current(ORG_ALL));
         em.flush();
 
         assertThat(termsAgreementRepository.findByUserId(staff.getId()))
@@ -201,6 +263,16 @@ class TermsServiceJpaTest {
         assertThat(termsService.isAgreed(parent)).isTrue();
     }
 
+    /** 판 없는 동의를 받는 호환 기간에는 라벨 판도 통과 판이다. */
+    @Test
+    void 개인정보_수집이_라벨_판이어도_동의한_것이다() {
+        em.persist(TermsAgreement.agree(parent.getId(), TermKey.TOS, TermsCatalog.labelOnlyVersion(TermKey.TOS)));
+        em.persist(TermsAgreement.agree(parent.getId(), TermKey.PRIVACY, TermsCatalog.labelOnlyVersion(TermKey.PRIVACY)));
+        em.flush();
+
+        assertThat(termsService.isAgreed(parent)).isTrue();
+    }
+
     @Test
     void 하나라도_없으면_동의하지_않은_것이다() {
         em.persist(TermsAgreement.agree(parent.getId(), TermKey.PRIVACY, TermsCatalog.currentVersion(TermKey.PRIVACY)));
@@ -222,8 +294,16 @@ class TermsServiceJpaTest {
         }
     }
 
+    private static Map<TermKey, String> current(Collection<TermKey> keys) {
+        return keys.stream().distinct().collect(Collectors.toMap(Function.identity(), TermsCatalog::currentVersion));
+    }
+
     private void assertInvalid(User user, List<TermKey> agreed) {
-        assertThatThrownBy(() -> termsService.agree(user, agreed))
+        assertInvalid(user, agreed, null);
+    }
+
+    private void assertInvalid(User user, List<TermKey> agreed, Map<TermKey, String> versions) {
+        assertThatThrownBy(() -> termsService.agree(user, agreed, versions))
                 .isInstanceOfSatisfying(UserException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(UserErrorCode.INVALID_TERMS_AGREEMENT));
         assertThat(termsAgreementRepository.findByUserId(user.getId())).isEmpty();

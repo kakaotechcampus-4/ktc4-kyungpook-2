@@ -35,6 +35,12 @@ public enum UserErrorCode implements ErrorCode {
      */
     INVALID_TERMS_AGREEMENT(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "잘못된 요청입니다."),
 
+    /**
+     * 동의 화면이 읽은 약관 판이 지금 판과 다르다 — 화면을 연 뒤 약관이 바뀌었다. 아무것도 기록하지 않는다.
+     * 화면은 약관을 다시 받아 바뀐 약관을 다시 확인하게 한다.
+     */
+    TERMS_VERSION_CHANGED(HttpStatus.CONFLICT, "TERMS_VERSION_CHANGED", "약관이 바뀌었습니다. 바뀐 약관을 확인하고 다시 동의해주세요."),
+
     /** 이미 역할이 정해진 회원의 가입 재요청. 역할은 한 번 정해지면 바뀌지 않는다. */
     ALREADY_SIGNED_UP(HttpStatus.CONFLICT, "ALREADY_SIGNED_UP", "이미 회원가입을 완료했습니다.");
 
