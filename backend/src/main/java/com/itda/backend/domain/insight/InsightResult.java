@@ -85,6 +85,13 @@ public class InsightResult {
     @Column(name = "source_institution_ids", columnDefinition = "TEXT")
     private String sourceInstitutionIds;
 
+    /**
+     * 도구로 지난 기록에서 찾아 근거로 쓴 claim JSON 문자열 {@code ["12-0"]} (#387). {@code claimIds}·{@code supports} 근거
+     * 안에 들어 있다. 도구를 안 썼으면 {@code []}, 이 컬럼 전에 만든 행은 {@code null} 이다 — 둘 다 "찾아 쓴 것 없음" 이다.
+     */
+    @Column(name = "looked_up_claim_ids", columnDefinition = "TEXT")
+    private String lookedUpClaimIds;
+
     /** 두 기관 이상의 근거를 이었는지. */
     @Column(name = "cross_institution", nullable = false)
     private boolean crossInstitution;
@@ -127,6 +134,15 @@ public class InsightResult {
     public static InsightResult of(Long childId, LocalDate periodFrom, LocalDate periodTo, int revision,
             String situation, String behavior, String content, String supports, String claimIds,
             String sourceEntryIds, String sourceInstitutionIds, boolean crossInstitution, String rawResponse) {
+        return of(childId, periodFrom, periodTo, revision, situation, behavior, content, supports, claimIds,
+                sourceEntryIds, sourceInstitutionIds, crossInstitution, rawResponse, null);
+    }
+
+    /** {@code lookedUpClaimIds} 까지 받는다 (#387). */
+    public static InsightResult of(Long childId, LocalDate periodFrom, LocalDate periodTo, int revision,
+            String situation, String behavior, String content, String supports, String claimIds,
+            String sourceEntryIds, String sourceInstitutionIds, boolean crossInstitution, String rawResponse,
+            String lookedUpClaimIds) {
         if (childId == null || periodFrom == null || periodTo == null) {
             throw new IllegalArgumentException("인사이트의 아동·기간은 필수입니다.");
         }
@@ -136,8 +152,10 @@ public class InsightResult {
         requireText(situation, "상황");
         requireText(behavior, "반응");
         requireText(content, "본문");
-        return new InsightResult(childId, periodFrom, periodTo, revision, situation, behavior, content,
+        InsightResult result = new InsightResult(childId, periodFrom, periodTo, revision, situation, behavior, content,
                 supports, claimIds, sourceEntryIds, sourceInstitutionIds, crossInstitution, rawResponse);
+        result.lookedUpClaimIds = lookedUpClaimIds;
+        return result;
     }
 
     /** Gate 2 승인. 허용된 수신자가 볼 수 있게 된다 — 되돌리는 경로는 없다. */

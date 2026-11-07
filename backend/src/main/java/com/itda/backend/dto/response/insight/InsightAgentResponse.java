@@ -42,6 +42,8 @@ public record InsightAgentResponse(
      * @param institutionTypes      근거 기관의 종류. {@code insight_result} 에 담지 않는다 —
      *                              {@code sourceInstitutionIds} 로 organization 을 조인하면 나오는 값이라
      *                              복사해 두면 두 벌이 어긋난다 (§9.3)
+     * @param lookedUpClaimIds      도구로 지난 기록({@code history_claims})에서 찾아 근거로 쓴 claim (#387). {@code claimIds}·
+     *                              {@code supports} 근거 안에 들어 있다. 도구를 안 썼으면 빈 배열이다
      */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -54,6 +56,7 @@ public record InsightAgentResponse(
             JsonNode sourceEntryIds,
             JsonNode sourceInstitutionIds,
             JsonNode institutionTypes,
-            Boolean crossInstitution) {
+            Boolean crossInstitution,
+            JsonNode lookedUpClaimIds) {
     }
 }

@@ -4,8 +4,12 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -15,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightRun;
 import com.itda.backend.domain.insight.InsightRunStatus;
+import com.itda.backend.dto.request.insight.InsightAgentRequest;
 import com.itda.backend.dto.response.insight.InsightAgentResponse;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.insight.InsightRunRepository;
@@ -173,10 +178,14 @@ public class InsightResultRecorder {
      * @param rawJson       AI 응답 원문. {@code insight_result.raw_response} 에 그대로 남긴다
      * @param lastContextId 재료를 모을 때 본 {@code child_context} 중 가장 큰 id. 다음 차례가 이 값과
      *                      견줘 재료가 늘었는지 본다 (§9.5)
+     * @param request       AI 에 보낸 요청. 인용된 claim 이 어느 기관 것인지 여기서 찾는다 ({@link #sourceInstitutionsOf})
      */
     @Transactional
     public void record(InsightRun run, InsightAgentResponse response, String rawJson, Long lastContextId,
-            int claimCount) {
+            InsightAgentRequest request) {
+        Map<String, Long> institutionOfClaim = new HashMap<>();
+        request.claims().forEach(c -> institutionOfClaim.put(c.claimId(), c.institutionId()));
+        request.historyClaims().forEach(c -> institutionOfClaim.put(c.claimId(), c.institutionId()));
         List<InsightAgentResponse.Insight> insights =
                 response.insights() == null ? List.of() : response.insights();
 
@@ -188,7 +197,7 @@ public class InsightResultRecorder {
                         run.getChildId(), run.getPeriodFrom(), run.getPeriodTo());
                 continue;
             }
-            saved.add(toEntity(run, insight, rawJson));
+            saved.add(toEntity(run, insight, rawJson, institutionOfClaim));
         }
         insightResultRepository.saveAll(saved);
         if (saved.isEmpty()) {
@@ -197,7 +206,7 @@ public class InsightResultRecorder {
             // #212), 교사가 카드를 많이 고친 주에는 조용히 빈 주가 된다. 교사는 "이번 주엔 패턴이 없었나" 로
             // 읽지 자기가 고쳐서라고는 생각하지 못한다. 데모에서 "왜 안 나오지" 가 나오면 여기부터 본다.
             log.info("insight run produced nothing childId={} period={}..{} claims={}",
-                    run.getChildId(), run.getPeriodFrom(), run.getPeriodTo(), claimCount);
+                    run.getChildId(), run.getPeriodFrom(), run.getPeriodTo(), request.claims().size());
         }
 
         run.finish(saved.size(), lastContextId);
@@ -215,14 +224,54 @@ public class InsightResultRecorder {
         insightRunRepository.save(run);
     }
 
-    private InsightResult toEntity(InsightRun run, InsightAgentResponse.Insight insight, String rawJson) {
+    private InsightResult toEntity(InsightRun run, InsightAgentResponse.Insight insight, String rawJson,
+            Map<String, Long> institutionOfClaim) {
         LocalDate from = run.getPeriodFrom();
         LocalDate to = run.getPeriodTo();
         return InsightResult.of(run.getChildId(), from, to, run.getRevision(),
                 insight.situation(), insight.behavior(), insight.content(),
                 json(insight.supports()), json(insight.claimIds()),
-                json(insight.sourceEntryIds()), json(insight.sourceInstitutionIds()),
-                Boolean.TRUE.equals(insight.crossInstitution()), rawJson);
+                json(insight.sourceEntryIds()), sourceInstitutionsOf(insight, institutionOfClaim),
+                Boolean.TRUE.equals(insight.crossInstitution()), rawJson, json(insight.lookedUpClaimIds()));
+    }
+
+    /**
+     * 근거 기관. AI 가 준 {@code source_institution_ids} 에, 인용한 claim({@code claim_ids}·{@code supports}·
+     * {@code looked_up_claim_ids})의 기관을 <b>BE 가 직접 더한다</b> (#387 코드리뷰).
+     *
+     * <p>이 값이 동의 판단의 열쇠다 — 재료 기관 동의 확인({@code InsightGate2QueryService})과 철회 때 권한 거두기
+     * ({@code InsightAccessRevoker})가 이것만 본다. AI 가 지난 기록을 찾아 쓰고 그 기관을 빠뜨리면, 그 기관이 동의를
+     * 꺼도 글이 계속 보인다. 동의 판단을 LLM 출력에 맡기지 않는다 (CLAUDE.md). 요청에 없는 claim 번호는 기관을 알 수
+     * 없어 더하지 않는다 — 그런 근거는 Gate 2 가 어차피 버린다.
+     */
+    private String sourceInstitutionsOf(InsightAgentResponse.Insight insight, Map<String, Long> institutionOfClaim) {
+        Set<Long> ids = new LinkedHashSet<>();
+        JsonNode given = insight.sourceInstitutionIds();
+        if (given != null && given.isArray()) {
+            given.forEach(node -> {
+                if (node.canConvertToLong()) {
+                    ids.add(node.asLong());
+                }
+            });
+        }
+        List<JsonNode> cited = new ArrayList<>();
+        cited.add(insight.claimIds());
+        cited.add(insight.lookedUpClaimIds());
+        if (insight.supports() != null && insight.supports().isArray()) {
+            insight.supports().forEach(support -> cited.add(support.path("claim_ids")));
+        }
+        for (JsonNode claimIds : cited) {
+            if (claimIds == null || !claimIds.isArray()) {
+                continue;
+            }
+            claimIds.forEach(node -> {
+                Long institutionId = institutionOfClaim.get(node.asText());
+                if (institutionId != null) {
+                    ids.add(institutionId);
+                }
+            });
+        }
+        return ids.toString().replace(" ", "");
     }
 
     /** AI 가 보낸 JSON 조각을 그대로 담는다 — {@code summary_result.claims} 와 같은 방식이다. */

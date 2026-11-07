@@ -239,7 +239,7 @@ public class InsightGate2QueryService {
                 // 기관 행이 사라진 근거는 뺀다. 이름을 모르는 출처를 화면에 올리느니 그 줄을 안 보이는 쪽이 낫다.
                 .filter(ref -> organizations.containsKey(ref.institutionId()))
                 .map(ref -> new EvidenceRef(ref.childContextId(), ref.date(), EVIDENCE_LABEL,
-                        InstitutionResponse.from(organizations.get(ref.institutionId()))))
+                        InstitutionResponse.from(organizations.get(ref.institutionId())), ref.lookedUp()))
                 .toList();
 
         return new Gate2InsightResponse(
@@ -277,9 +277,14 @@ public class InsightGate2QueryService {
      */
     private Map<Long, Evidence> evidenceOf(List<InsightResult> insights) {
         Map<Long, List<Long>> summaryIdsOf = new HashMap<>();
+        Map<Long, Set<Long>> lookedUpOf = new HashMap<>();
         Set<Long> allSummaryIds = new HashSet<>();
         for (InsightResult insight : insights) {
             List<Long> ids = summaryIdsIn(insight);
+            Set<Long> lookedUp = lookedUpSummaryIdsOf(insight);
+            lookedUpOf.put(insight.getId(), lookedUp);
+            // 지난 기록은 대처 근거에만 들어 있을 수도 있다. 근거 목록에서 빠지면 "지난 기록을 찾아 씀" 이 화면에 안 보인다.
+            lookedUp.stream().filter(id -> !ids.contains(id)).forEach(ids::add);
             summaryIdsOf.put(insight.getId(), ids);
             allSummaryIds.addAll(ids);
             // 대처 근거의 요약도 읽는다 — 교사 문장인지 볼 때만 쓴다.
@@ -295,6 +300,7 @@ public class InsightGate2QueryService {
 
         Map<Long, Evidence> evidences = new HashMap<>();
         for (InsightResult insight : insights) {
+            Set<Long> lookedUp = lookedUpOf.get(insight.getId());
             List<Ref> refs = new ArrayList<>();
             for (Long summaryId : summaryIdsOf.getOrDefault(insight.getId(), List.of())) {
                 SummaryResult summary = summaries.get(summaryId);
@@ -310,8 +316,10 @@ public class InsightGate2QueryService {
                             insight.getId(), summaryId);
                     continue;
                 }
+                // 지난 기록 표시는 날짜로 한 번 더 본다 — AI 가 이번 기간 기록을 잘못 넣어도 "지난 기록" 으로 나가지 않게.
+                boolean past = lookedUp.contains(summaryId) && summary.getEntryDate().isBefore(insight.getPeriodFrom());
                 refs.add(new Ref(String.valueOf(contextId), summary.getEntryDate().toString(),
-                        summary.getInstitutionId()));
+                        summary.getInstitutionId(), past));
             }
             evidences.put(insight.getId(), new Evidence(refs, hasTeacherClaim(insight, summaries)));
         }
@@ -383,6 +391,26 @@ public class InsightGate2QueryService {
         return ids;
     }
 
+    /**
+     * {@code looked_up_claim_ids} 가 가리키는 요약 중 <b>근거로 실제 인용된 것만</b> (#387). AI 계약상 찾아 쓴 claim 은
+     * {@code claim_ids}·{@code supports} 안에 들어 있다. 거기 없는 번호는 인용하지 않은 기록이라 근거 목록에 올리지 않는다.
+     * 이 컬럼 전에 만든 행은 비어 있다.
+     */
+    private static Set<Long> lookedUpSummaryIdsOf(InsightResult insight) {
+        Set<Long> cited = allClaimRefs(insight).stream().map(ClaimRef::summaryId).collect(Collectors.toSet());
+        Set<Long> ids = new java.util.LinkedHashSet<>();
+        for (JsonNode node : readArray(insight.getLookedUpClaimIds(), "insight_result.looked_up_claim_ids",
+                insight.getId())) {
+            ClaimRef ref = ClaimRef.parse(node.asText());
+            if (ref == ClaimRef.UNKNOWN || !cited.contains(ref.summaryId())) {
+                log.warn("looked_up_claim_id not cited, ignored insightId={} claimId={}", insight.getId(), node);
+                continue;
+            }
+            ids.add(ref.summaryId());
+        }
+        return ids;
+    }
+
     private static JsonNode readArray(String raw, String column, Long rowId) {
         if (raw == null || raw.isBlank()) {
             return MAPPER.createArrayNode();
@@ -415,7 +443,7 @@ public class InsightGate2QueryService {
         }
     }
 
-    private record Ref(String childContextId, String date, Long institutionId) {
+    private record Ref(String childContextId, String date, Long institutionId, boolean lookedUp) {
     }
 
     /** {@link #EMPTY} 는 근거 번호가 하나도 없는 인사이트다 — 확인할 수 없으니 교사 작성으로 본다. */
