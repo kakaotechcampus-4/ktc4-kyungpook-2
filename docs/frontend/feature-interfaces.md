@@ -261,6 +261,11 @@ interface GuardianInsight {
   sharedWith: Institution[];  // 지금 이 글을 볼 수 있는 다른 기관, 이름순. 기관 수신함 · 공유 내역(G-45)과 같은 판정
   approvedAt: string;         // 승인 시각 (ISO). 모든 보호자에게 같다
   readAt: string | null;      // 처음 열어 본 시각 (ISO). null 이면 "새 글"
+  evidence: {                 // 근거 일지, 관찰 날짜 오래된 순. 응답 시점에 일지 상세로 열 수 있는 것만. 없으면 [] (#405)
+    journalEntryId: string;   // 일지 상세(G-21) id → /parent/journal/:id
+    date: string;             // 관찰 날짜 "2026-10-21"
+    institution: Institution; // 명부에서 빠진 기관일 수 있다
+  }[];
 }
 
 interface ChecklistItem {   // P-12 준비물·확인사항 (G-50 · G-51)
