@@ -17,6 +17,8 @@ public final class ApiPaths {
     public static final String AUTH_TERMS = "/api/v1/auth/terms";
     public static final String DEV_LOGIN = "/api/v1/dev/login";
     public static final String HEALTH = "/api/health";
+    /** 약관 본문. 공개 문서라 로그인 · 가입 · 약관 동의 없이 연다 */
+    public static final String TERMS = "/api/v1/terms";
 
     private ApiPaths() {
     }

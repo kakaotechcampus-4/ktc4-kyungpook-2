@@ -126,9 +126,10 @@ public class AuthController {
     @PostMapping("/terms")
     @Operation(
             summary = "서비스 약관 동의",
-            description = "회원이 동의한 약관 키를 보냅니다. 보호자는 tos · privacy, 기관 담당자는 "
-                    + "org_tos · org_privacy · org_child_data 가 모두 필수이고 다른 역할의 약관은 섞을 수 없습니다. "
-                    + "약관의 판은 서버가 채웁니다. "
+            description = "회원이 동의한 약관 키와, 동의 화면이 읽은 약관의 판(versions)을 보냅니다. 보호자는 tos · privacy, "
+                    + "기관 담당자는 org_tos · org_privacy · org_child_data 가 모두 필수이고 다른 역할의 약관은 섞을 수 없습니다. "
+                    + "versions 가 지금 판(GET /api/v1/terms)과 다르면 아무것도 기록하지 않고 409 입니다. "
+                    + "versions 를 보내지 않으면 본문을 보지 않은 동의로 보고 본문 없던 판으로 기록합니다(곧 필수). "
                     + "같은 판에 이미 동의했으면 아무것도 바꾸지 않고 같은 응답을 돌려줍니다. 동의하기 전의 회원은 "
                     + "/auth/me · /auth/terms · /auth/logout 외의 API 가 403 TERMS_NOT_AGREED 로 막힙니다. "
                     + "요청 전에 받은 XSRF-TOKEN 쿠키 값을 X-XSRF-TOKEN 헤더에 포함해야 합니다."
@@ -139,8 +140,8 @@ public class AuthController {
                     responseCode = "200", description = "동의 저장(또는 이미 동의함)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "agreed 누락·빈 목록, 모르는 약관 키, 다른 역할의 약관이 섞임, 필수 약관 누락 "
-                            + "(INVALID_REQUEST)",
+                    description = "agreed 누락·빈 목록, 모르는 약관 키, 다른 역할의 약관이 섞임, 필수 약관 누락, "
+                            + "versions 의 키가 agreed 와 다름 (INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
@@ -149,11 +150,15 @@ public class AuthController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "가입 미완료 (SIGNUP_NOT_COMPLETED), CSRF 토큰 누락 또는 불일치 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "versions 의 판이 지금 판과 다름 — 화면을 연 뒤 약관이 바뀌었다 (TERMS_VERSION_CHANGED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ApiResponse<TermsAgreementResponse> agreeTerms(
             @AuthenticationPrincipal String userId, @Valid @RequestBody AgreeTermsRequest request) {
-        return ApiResponse.success(userService.agreeTerms(userId, request.agreed()));
+        return ApiResponse.success(userService.agreeTerms(userId, request.agreed(), request.versions()));
     }
 
     /**

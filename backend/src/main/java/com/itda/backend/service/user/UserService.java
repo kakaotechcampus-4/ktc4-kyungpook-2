@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.user.TermKey;
@@ -106,10 +107,10 @@ public class UserService {
      * 줄을 보고 아무것도 넣지 않는다(TermsService.agree).
      */
     @Transactional
-    public TermsAgreementResponse agreeTerms(String principal, List<TermKey> agreed) {
+    public TermsAgreementResponse agreeTerms(String principal, List<TermKey> agreed, Map<TermKey, String> versions) {
         User user = userRepository.findActiveByIdForUpdate(parseUserId(principal))
                 .orElseThrow(() -> new UserException(UserErrorCode.SESSION_USER_NOT_FOUND));
-        termsService.agree(user, agreed);
+        termsService.agree(user, agreed, versions);
         return new TermsAgreementResponse(true);
     }
 

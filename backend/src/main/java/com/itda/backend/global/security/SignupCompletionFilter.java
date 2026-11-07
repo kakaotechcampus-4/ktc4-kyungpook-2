@@ -28,7 +28,7 @@ import lombok.extern.slf4j.Slf4j;
  * 대가로 로그인한 사용자의 /api 요청마다 조회가 더 일어난다 — 회원 PK 조회 한 번과 약관 동의 기록 조회 한 번. 두 검사를 필터 하나에 두는 것도 회원을 두 번 읽지 않기 위해서다.
  *
  * <p>가입 화면에 필요한 세 경로 — 상태 조회(/auth/me), 가입(/auth/signup), 로그아웃 — 와
- * 헬스 체크, 개발용 로그인만 통과시킨다. 개발용 로그인은 가입 미완료 회원의 출입증을 든 채로
+ * 헬스 체크, 개발용 로그인, 약관 본문(/terms — 동의하기 전에 읽어야 한다)만 통과시킨다. 개발용 로그인은 가입 미완료 회원의 출입증을 든 채로
  * 다른 테스트 회원으로 바꿔 들어갈 수 있어야 한다. 약관 동의 전에는 여기에 약관 동의(/auth/terms)가 더해진다.
  *
  * <p>{@code @Component} 로 두지 않는다. 그러면 Spring Boot 가 서블릿 필터로도 등록해 보안 체인 밖에서
@@ -42,7 +42,8 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
             ApiPaths.AUTH_SIGNUP,
             ApiPaths.AUTH_LOGOUT,
             ApiPaths.DEV_LOGIN,
-            ApiPaths.HEALTH);
+            ApiPaths.HEALTH,
+            ApiPaths.TERMS);
 
     private static final Set<String> ALLOWED_BEFORE_TERMS = Set.of(ApiPaths.AUTH_TERMS);
 

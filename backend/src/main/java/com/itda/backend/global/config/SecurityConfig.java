@@ -139,6 +139,8 @@ public class SecurityConfig {
                                 // 개발용 로그인. app.auth.dev-login.enabled 가 꺼져 있으면 컨트롤러가 없어 404 다.
                                 "/api/v1/dev/login",
                                 "/api/health",
+                                // 약관 본문. 동의하기 전에 읽어야 하는 공개 문서다. 정확히 이 경로만 — 아래에 새 API 가 생겨도 열리지 않게
+                                "/api/v1/terms",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"

@@ -126,6 +126,15 @@ class SignupCompletionFilterHttpTest {
         }
     }
 
+    /** 약관 본문은 가입 · 약관 차단에서 빠진다. 인코딩해도 같은 경로로 보고 통과시킨다 — 서비스는 실제 것이 돈다. */
+    @Test
+    void termsDocumentsPassForPendingAndUnagreedUsersEvenEncoded() throws Exception {
+        for (String rawPath : new String[]{"/api/v1/terms?role=parent", "/api/v1/%74erms?role=parent"}) {
+            assertThat(getAsPendingUser(rawPath).statusCode()).as(rawPath).isEqualTo(200);
+            assertThat(getAsUnagreedParent(rawPath).statusCode()).as(rawPath).isEqualTo(200);
+        }
+    }
+
     @Test
     void pendingUserCanStillReachHealthCheck() throws Exception {
         var response = getAsPendingUser("/api/health");
