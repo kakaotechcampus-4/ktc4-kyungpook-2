@@ -90,7 +90,7 @@ GET /api/v1/auth/me
 | `role` | `"org"` \| `"parent"` | 아니오 | `signupCompleted: true`일 때만. `admin`은 아직 없습니다 |
 | `institutionId` | string | 아니오 | `role === "org"`일 때만 |
 | `institutionName` | string | 아니오 | `role === "org"`일 때만. 가입 때 입력한 기관명입니다 (#236) |
-| `termsAgreed` | boolean | 예 | 자기 역할의 서비스 약관(지금 판)에 동의했는지 (§2.5). `false`면 프론트는 보호자를 약관 단계(`/parent/invite`)로, 기관을 기관 약관 화면(`/org-terms`)으로 보냅니다. 가입 미완료는 `false` |
+| `termsAgreed` | boolean | 예 | 자기 역할의 서비스 약관(통과로 치는 판)에 동의했는지 (§2.5). `false`면 프론트는 보호자를 약관 단계(`/parent/invite`)로, 기관을 기관 약관 화면(`/org-terms`)으로 보냅니다. 가입 미완료는 `false` |
 
 **프론트는 가입 여부를 `signupCompleted`만 보고 분기합니다.** `role`이 없다고 로그인 화면으로 보내면
 안 됩니다 — 가입 미완료는 정상 상태입니다.
@@ -173,11 +173,16 @@ GET /api/v1/dev/login?as=parent1       ← 브라우저 주소창으로 연다 (
 
 ```http
 POST /api/v1/auth/terms   → 200 OK
-{ "agreed": ["tos", "privacy"] }                               보호자
-{ "agreed": ["org_tos", "org_privacy", "org_child_data"] }     기관 담당자
+{ "agreed": ["tos", "privacy"],
+  "versions": { "tos": "2026-11-07", "privacy": "2026-11-07" } }               보호자
+{ "agreed": ["org_tos", "org_privacy", "org_child_data"],
+  "versions": { "org_tos": "2026-11-07", "org_privacy": "2026-11-07", "org_child_data": "2026-11-07" } }   기관 담당자
 ```
 
 출입증 쿠키와 `X-XSRF-TOKEN` 헤더가 필요합니다.
+
+`versions` 는 동의 화면이 [약관 본문](#251-약관-본문)에서 받아 둔 판입니다 — 사용자가 읽은 판으로 기록하려는 것입니다.
+키는 `agreed` 와 같아야 합니다. **선택이지만 곧 필수가 됩니다**(아래 처리 규칙 4).
 
 | 키 | 라벨 | 역할 | 필수 |
 | --- | --- | --- | --- |
@@ -199,23 +204,64 @@ POST /api/v1/auth/terms   → 200 OK
 
 **처리 규칙**
 
-1. 약관의 **판은 서버가 채웁니다.** 프론트는 키만 보냅니다.
-2. 같은 판에 이미 동의했으면 아무것도 바꾸지 않고 같은 응답입니다(멱등). 같은 회원의 요청이 겹쳐도 회원 행을 잠가 하나씩 처리하므로 둘 다 `200`입니다.
+1. 어느 판으로 기록하나 — `versions` 를 보내면 판이 모두 **지금 판**이어야 하고 그 판으로 기록합니다. 하나라도 다르면
+   화면을 연 뒤 약관이 바뀐 것이라 아무것도 기록하지 않고 `409 TERMS_VERSION_CHANGED` 입니다. `versions` 가 없으면 본문을
+   보여 주지 못한 옛 화면으로 보고 **본문이 없던 판**(보호자 `2026-11-03`, 기관 `2026-11-05`)으로 기록합니다
+2. 기록할 판에 이미 동의했으면 아무것도 바꾸지 않고 같은 응답입니다(멱등). 같은 회원의 요청이 겹쳐도 회원 행을 잠가 하나씩 처리하므로 둘 다 `200`입니다.
 3. 기록은 쌓기만 합니다. 판이 바뀐 뒤 다시 동의하면 새 판 기록이 더해지고 옛 기록은 남습니다. 철회 API 는 없습니다(필수 약관 철회는 회원 탈퇴).
-4. 판이 바뀌면 — 개인정보 수집(`privacy` · `org_privacy`)과 아동 정보 보호 서약(`org_child_data`)은 **지금 판에 다시 동의해야** 합니다. 이용약관(`tos` · `org_tos`)은 한 번 동의했으면 다시 받지 않습니다(바뀐 내용은 공지로 알립니다 — 공지 기능은 아직 없습니다).
+4. **한 판 = 한 본문.** 내보낸 판의 글은 고치지 않고, 글을 바꾸면(초안 수정 포함) 새 판입니다. 본문 판과 "다시 동의를 요구하는가"는 따로 정합니다 —
+   개인정보 수집(`privacy` · `org_privacy`)과 아동 정보 보호 서약(`org_child_data`)은 **통과로 치는 판**에 동의해야 통과합니다.
+   지금 통과 판은 본문이 없던 판과 지금 판(`2026-11-07`) 둘이라, 이미 동의한 사람은 다시 동의하지 않습니다. 초안을 확정할 때는
+   `versions` 를 필수로 바꾼 뒤 통과 판을 확정 판 하나로 줄여 다시 받습니다.
+   이용약관(`tos` · `org_tos`)은 한 번 동의했으면 다시 받지 않습니다(바뀐 내용은 공지로 알립니다 — 공지 기능은 아직 없습니다).
 
 | 상태 | 코드 | 조건 | 프론트 동작 |
 | --- | --- | --- | --- |
-| 400 | `INVALID_REQUEST` | `agreed` 누락 · 빈 목록 · `null` 원소, 모르는 키, 다른 역할의 약관이 섞임, 필수 약관 누락 | "동의를 저장하지 못했어요" 표시 |
+| 400 | `INVALID_REQUEST` | `agreed` 누락 · 빈 목록 · `null` 원소, 모르는 키, 다른 역할의 약관이 섞임, 필수 약관 누락, `versions` 의 키가 `agreed` 와 다름 · `null` 판 | "동의를 저장하지 못했어요" 표시 |
 | 401 | `UNAUTHORIZED` · `SESSION_USER_NOT_FOUND` | 비로그인 · 없는 회원 | 로그인 화면으로 |
 | 403 | `SIGNUP_NOT_COMPLETED` | 가입 미완료 | 가입 화면으로 |
 | 403 | `FORBIDDEN` | CSRF 토큰 누락 또는 불일치 | |
+| 409 | `TERMS_VERSION_CHANGED` | `versions` 의 판이 지금 판과 다름 — 화면을 연 뒤 약관이 바뀌었다. 아무것도 기록하지 않음 | 약관을 다시 받아 바뀐 약관의 체크를 풀고 다시 확인하게 |
 
-**차단** — 동의하지 않은 회원(`/auth/me` 의 `termsAgreed: false`, 보호자 · 기관 담당자 모두)은 `/auth/me` · `/auth/terms` · `/auth/logout` · 개발용 로그인 · 헬스 체크 외의
+**차단** — 동의하지 않은 회원(`/auth/me` 의 `termsAgreed: false`, 보호자 · 기관 담당자 모두)은 `/auth/me` · `/auth/terms` · `/auth/logout` · 약관 본문 · 개발용 로그인 · 헬스 체크 외의
 API 가 모두 `403 TERMS_NOT_AGREED`입니다. 가입 미완료 차단과 같은 필터가 막고, **가입 미완료를 먼저 봅니다.**
 프론트는 공통 요청 함수에서 이 오류를 받으면 세션을 다시 읽어 기관은 `/org-terms`, 보호자는 약관 단계(`/parent/invite`), 로그인이 풀렸으면 로그인 화면으로 보냅니다. 세션 조회가 실패하면 옮기지 않고 그 화면의 오류 처리에 맡깁니다.
 
-> **아직 없는 것** — 약관 본문과 "약관 보기" 화면(라벨만 있습니다), 약관이 바뀌었을 때 앱 안 공지.
+#### 2.5.1 약관 본문
+
+```http
+GET /api/v1/terms?role=parent   → 200 OK      (role: parent | org)
+```
+
+그 역할이 동의해야 하는 약관을 지금 판의 본문까지 모두 줍니다. **로그인 없이 부릅니다** — 약관은 공개 문서이고 동의하기 전에
+읽어야 하는 글이라, 가입 미완료 · 약관 미동의 차단에서도 빠집니다. 정확히 이 경로만 열려 있습니다.
+`Cache-Control: no-cache` 입니다.
+
+```json
+{ "result": "SUCCESS", "data": [
+  { "key": "tos", "title": "서비스 이용약관", "version": "2026-11-07", "effectiveDate": "2026-11-07",
+    "draft": true, "body": "제1조(목적)\n이 약관은 …" },
+  { "key": "privacy", "title": "개인정보와 민감정보 수집 · 이용", "version": "2026-11-07", … }
+] }
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `key` | 약관 키. 동의 요청의 `agreed` · `versions` 키와 같다. 보호자 `tos` · `privacy`, 기관 `org_tos` · `org_privacy` · `org_child_data` 순서 |
+| `title` | 화면 제목 |
+| `version` | 지금 판. 동의할 때 `versions` 에 그대로 보낸다 |
+| `effectiveDate` | 시행일 (YYYY-MM-DD) |
+| `draft` | 팀 검토 전 초안이면 `true` — 화면은 본문 위에 초안 표시를 띄운다 |
+| `body` | 본문. 줄바꿈만 살리는 그냥 글이다 — 조항 번호와 `- ` 목록은 글자 그대로 |
+
+| 상태 | 코드 | 조건 |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | `role` 누락 또는 `parent` · `org` 가 아님 |
+
+> **지금 문안은 초안입니다** (`draft: true`). 보유 기간 · AI 처리 업체와 위치 · 문의처는 자리 표시로 남아 있습니다.
+> 확정할 때 민감정보(보호자의 알레르기 · 복용약)를 일반 개인정보와 따로 동의받을지도 함께 정합니다.
+
+> **아직 없는 것** — 약관이 바뀌었을 때 앱 안 공지.
 
 ### 2.6 회원가입
 
@@ -2126,7 +2172,8 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | `SIGNUP_NOT_COMPLETED` | 403 | 가입 미완료 회원이 `/auth/me` · `/auth/signup` · `/auth/logout` 외 API 호출 → 역할 선택 화면으로 이동 |
 | `ALREADY_SIGNED_UP` | 409 | 이미 가입 완료 → `/auth/me` 재조회 후 역할별 홈으로 이동 (§2.6) |
 | `DUPLICATE_BUSINESS_NUMBER` | 409 | "이미 등록된 사업자등록번호입니다" (§2.6) |
-| `TERMS_NOT_AGREED` | 403 | 자기 역할의 약관에 동의하지 않은 회원(보호자 · 기관 담당자)이 `/auth/me` · `/auth/terms` · `/auth/logout` 외 API 호출 → 그 역할의 약관 화면으로 이동 (§2.5) |
+| `TERMS_NOT_AGREED` | 403 | 자기 역할의 약관에 동의하지 않은 회원(보호자 · 기관 담당자)이 `/auth/me` · `/auth/terms` · `/auth/logout` · 약관 본문 외 API 호출 → 그 역할의 약관 화면으로 이동 (§2.5) |
+| `TERMS_VERSION_CHANGED` | 409 | 동의 요청의 `versions` 가 지금 판과 다름 — 화면을 연 뒤 약관이 바뀜 → 약관을 다시 받아 다시 확인 (§2.5) |
 | `INSTITUTION_CODE_NOT_FOUND` | 404 | "일치하는 기관을 찾지 못했어요. 코드를 다시 확인해주세요." (G-43 조회 · G-44 요청) |
 | `INSTITUTION_ALREADY_LINKED` | 409 | "이미 연결된 기관이에요." (G-44 요청 · O-61 수락) |
 | `LINK_REQUEST_NOT_FOUND` | 404 | 기다리는 연결 요청이 없는 아이. 목록을 다시 불러옵니다 (O-61 · O-62) |
@@ -2180,7 +2227,7 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 
 | 순위 | 범위 | 엔드포인트 | 붙는 화면 |
 | --- | --- | --- | --- |
-| 1 | 인증 · 세션 | `/oauth2/authorization/kakao`(완료), `/auth/logout`(완료), `/auth/me`(완료), `/auth/signup`(완료), `/auth/terms`(완료) | I-01, P-01, 전 화면 가드 |
+| 1 | 인증 · 세션 | `/oauth2/authorization/kakao`(완료), `/auth/logout`(완료), `/auth/me`(완료), `/auth/signup`(완료), `/auth/terms`(완료), `/terms`(약관 본문, 완료) | I-01, P-01, 전 화면 가드 |
 | 2 | 아동 조회 | O-10, O-14 (O-13 은 만들지 않음) | I-09, I-09-1 |
 | 3 | 기록 등록 · 큐 | O-20 ~ O-25 | I-05, I-06, I-07 |
 | 4 | Gate 1 | O-30, O-31, O-33 | I-08, I-03 |
