@@ -249,9 +249,15 @@ public class SummaryGate1QueryService {
                 .toList();
     }
 
+    /**
+     * 검증이 확인을 요청한 원본 일지. 경고를 낼지 · 사유는 {@link #parseClaimSpans} 구간으로 정하고, 그 경고에 겹친 문장
+     * 카드 번호({@code claimIndexes})는 {@link #cardSpans} 로 따로 붙인다 (#408). 번호용 읽기를 판정에 쓰면 카드로 못
+     * 읽는 요약 · 고친 문장의 남은 근거로만 겹치던 경고가 사라진다.
+     */
     private List<ReviewFlag> reviewFlags(SummaryResult summary, List<JournalEntry> entries, Set<Long> coveredIds,
             Map<Long, ValidationResult> latestValidation) {
         Map<Long, List<Span>> claimSpans = parseClaimSpans(summary);
+        Map<Long, List<CardSpan>> cardSpans = cardSpans(summary);
         List<ReviewFlag> flags = new ArrayList<>();
         for (JournalEntry entry : entries) {
             Long entryId = entry.getId();
@@ -265,7 +271,15 @@ public class SummaryGate1QueryService {
             if (flagged.isEmpty() || flagged.stream().anyMatch(f -> cited.stream().anyMatch(f::overlaps))) {
                 List<String> issueTypes =
                         parseStrings(validation.getIssueTypes(), "validation_result.issue_types", validation.getId());
-                flags.add(new ReviewFlag(entryId, issueTypes, ValidationReasons.sentencesOf(issueTypes)));
+                // 검증 구간이 비면 겹칠 곳이 없어 번호도 비어 있다 — 어디가 문제인지 모른다
+                List<Integer> claimIndexes = cardSpans.getOrDefault(entryId, List.of()).stream()
+                        .filter(card -> flagged.stream().anyMatch(card.span()::overlaps))
+                        .map(CardSpan::index)
+                        .distinct()
+                        .sorted()
+                        .toList();
+                flags.add(new ReviewFlag(entryId, issueTypes, ValidationReasons.sentencesOf(issueTypes),
+                        claimIndexes));
             }
         }
         return flags;
@@ -303,6 +317,34 @@ public class SummaryGate1QueryService {
             }
         }
         return spans;
+    }
+
+    /**
+     * 문장 카드 번호가 붙은 근거 구간 — {@code claimIndexes} 에만 쓴다. 번호는 카드와 같은 읽기
+     * ({@link Gate1Cards#readClaims})의 순서이고, 카드가 근거를 보이는 AI 문장만 든다 ({@link #claimEvidence}).
+     * 카드로 못 읽는 요약은 비어 있다.
+     */
+    private static Map<Long, List<CardSpan>> cardSpans(SummaryResult summary) {
+        JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
+        Map<Long, List<CardSpan>> spans = new HashMap<>();
+        for (int index = 0; index < claims.size(); index++) {
+            JsonNode claim = claims.get(index);
+            if (!"AI".equals(claim.path("source").asText("AI"))) {
+                continue;
+            }
+            for (JsonNode evidence : claim.path("evidence")) {
+                JsonNode entryId = evidence.path("journal_entry_id");
+                Span span = toSpan(evidence.path("span"));
+                if (entryId.canConvertToLong() && span != null) {
+                    spans.computeIfAbsent(entryId.asLong(), k -> new ArrayList<>()).add(new CardSpan(index, span));
+                }
+            }
+        }
+        return spans;
+    }
+
+    /** 문장 카드 번호와 그 문장의 근거 구간 하나. */
+    private record CardSpan(int index, Span span) {
     }
 
     /** evidence: [{start, end}]. 못 읽은 구간은 버린다 — 모두 못 읽으면 비어 있는 것으로 보고 사유를 보여준다. */
