@@ -406,7 +406,7 @@ class DashboardPipelineServiceTest {
             boolean noContent) {
         return new Gate1SummaryResponse(id, childId, childId.equals(JUNHO) ? "김준호" : "이서아", date, 1,
                 "GATE1_PENDING", "v1", processing, "요약", List.of(), noContent, false, List.of(), List.of(),
-                List.of());
+                List.of(), List.of());
     }
 
     private static InsightProgressResponse progress(Long childId, String name, String from, String to,

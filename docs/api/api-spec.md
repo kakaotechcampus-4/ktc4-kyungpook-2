@@ -692,6 +692,7 @@ O-15 ~ O-19 공통 오류:
     "confidence": 0.62,
     "multiReason": "ambiguous_identity",
     "hintMismatch": false,
+    "hintName": null,
     "record": { "id": "3", "fileName": "0821_활동일지.docx",
                 "preview": "…", "capturedAt": "2026-08-21", "fullContent": "…" },
     "candidates": [ { "childId": "1", "name": "김하늘", "birthDate": "2020-01-01", "confidence": 0.62 } ],
@@ -702,6 +703,7 @@ O-15 ~ O-19 공통 오류:
 - `id`·`record.id`·`candidates[].childId`·`matchedChildId`는 문자열, `journalEntryId`는 숫자입니다 (api-conventions.md의 PK 규칙 참고)
 - `journalEntryId`: 이 결과가 가리키는 기록(`journal_entry`)의 ID
 - `matchedChildId`: 확정된 아동 ID. 큐에 남아 있는 항목은 아직 확정 전이라 보통 `null`입니다
+- `hintName`: 표지 힌트 — 업로드 때 **파일 이름**에 명부 아이 이름이 정확히 한 명 들어 있으면 그 이름, 아니면 `null` (#381). 일지 본문에서 찾은 이름은 `evidence` 입니다. 아이 확인 화면은 `hintName` 이 있으면 "표지 이름 '○○'", 없으면 파일 이름을 보입니다
 - 값이 없는 필드(`matchedChildId`·`multiReason`·`evidence` 등)는 생략되지 않고 `null`로 내려갑니다
 - `candidates`에는 **우리 기관 명부(연결 해제·삭제 제외)에 있는 아이만** 나옵니다. AI 가 명부 밖 번호를 줘도 그 후보는 빠집니다 (#331)
 
@@ -968,7 +970,9 @@ O-15 ~ O-19 공통 오류:
     "noContent": false, "needsReview": true, "reviewReasons": ["다른아동이름"],
     "uncoveredEntries": [ { "journalEntryId": 1042, "content": "낮잠을 잤다." } ],
     "reviewFlags": [ { "journalEntryId": 1041, "issueTypes": ["추측성표현"],
-                      "reasons": ["관찰되지 않은 내용을 추측한 표현이 있어요"] } ] }
+                      "reasons": ["관찰되지 않은 내용을 추측한 표현이 있어요"] } ],
+    "entries": [ { "journalEntryId": 1041, "content": "오전 활동에서 블록을 다섯 층까지 쌓았다." },
+                 { "journalEntryId": 1042, "content": "낮잠을 잤다." } ] }
 ]
 ```
 
@@ -982,6 +986,7 @@ O-15 ~ O-19 공통 오류:
 | `needsReview` · `reviewReasons` | 요약 본문에 다른 아이 이름이 남아 공유 전에 봐야 하는지와 그 이유. 막지 않고 경고만 합니다 |
 | `uncoveredEntries` | 요약에 안 들어간 일지와 원문. **승인하면 이 일지도 함께 끝납니다** — "요약에 안 들어간 일지 N건"으로 보여주세요. AI 가 목록에 넣지 않은 일지도 여기에 나옵니다 |
 | `reviewFlags` | 요약에 들어간 원본 중 검증에서 `REVIEW` 를 받은 일지와 그 사유. `issueTypes` 는 AI 코드 원본, `reasons` 는 선생님이 읽을 문장입니다. 받은 순서대로 바꾸되 같은 문장은 한 번만 남겨 **두 배열의 칸이 짝지어지지 않습니다**. **화면은 `reasons` 를 보여 줍니다** — 코드를 그대로 띄우지 않습니다 (#351). 유형이 없거나 깨졌으면 `reasons` 는 "검증에서 문제가 발견됐어요. 원본을 확인해 주세요" 한 줄입니다. 문장 표는 O-24 `violationReason` 과 같습니다 |
+| `entries` | 이 요약에 묶인 일지 원문 전체(요약에 든 것 + 안 든 것, id 순, 삭제된 일지 제외). 검토 화면은 원본 일지를 늘 펼쳐 둡니다 (#371). `claims[].evidence[].quote` 를 이 안에서 강조하는 것은 #372 에서 붙입니다 |
 
 `reviewFlags` 는 검증이 짚은 구간이 **요약 문장의 근거 구간과 같은 일지에서 겹칠 때만** 나옵니다. 요약에 안 실린
 부분의 문제까지 띄우지 않기 위해서입니다. 검증 사유와 구간이 짝지어져 있지 않아 일지 단위로 판단하고, 겹치면 그 일지의

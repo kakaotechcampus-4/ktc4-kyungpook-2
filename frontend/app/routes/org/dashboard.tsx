@@ -1,296 +1,618 @@
-import type { LucideIcon } from "lucide-react";
+import { useRef, useState } from "react";
 import {
-  ArrowRight,
-  ClipboardCheck,
-  ListChecks,
-  RotateCcw,
-  ScrollText,
+  Check,
+  ChevronRight,
+  FileText,
+  Link2,
+  PenLine,
   Send,
+  Sparkles,
   Upload,
+  UserRound,
+  X,
 } from "lucide-react";
-import { useEffect } from "react";
-import { Link, useLoaderData, useRevalidator } from "react-router";
-import { SummaryGroupBoardView } from "@/components/org/SummaryGroupBoard";
-import { BigNum, Card, InstitutionChip, PageHeader, PanelHead } from "@/components/ui";
+import { Link, useLoaderData } from "react-router";
+import { Busy } from "@/components/ui";
 import {
-  getBlockedQueue,
-  getGate1Queue,
-  getInsightProgress,
-  getInsights,
-  getMatchingQueue,
-  getSummaryGroups,
-  isReady,
-  loadIfReady,
+  getAiActivity,
+  getFileProgress,
+  getPipeline,
+  UPLOAD_EXTENSIONS,
+  uploadRawRecords,
 } from "@/lib/api";
-import { isAuthMock } from "@/lib/auth";
-import type { InsightProgress } from "@/lib/types";
-import { MY_INSTITUTION } from "@/lib/mock/data";
+import { fileProgressOf } from "@/lib/pipeline";
+import type { AiActivity, FileProgress, Pipeline, PipelineRow, PipelineTurn, UploadResult } from "@/lib/types";
+import { usePolling } from "@/lib/usePolling";
 
-/** 백엔드에 아직 없는 기능은 null 로 와서 "준비 중"으로 그린다 (loadIfReady 참고) */
+/**
+ * 대시보드 — 선생님 차례 · 기록 올리기 · 진행 현황 · 오늘 AI가 한 일 (시안 screenDash).
+ * 단계 판정은 서버(O-80)가 하고 화면은 받은 그대로 그린다. 10초마다 다시 받는다(탭이 숨으면 멈춤).
+ * 요약은 자동으로 시작하므로(#369) [요약] 버튼이 없다.
+ */
 export async function clientLoader() {
-  const [matching, blocked, gate1, held, insights, board] = await Promise.all([
-    loadIfReady("matchingQueue", getMatchingQueue),
-    loadIfReady("blockedQueue", getBlockedQueue),
-    loadIfReady("gate1", () => getGate1Queue("pending")),
-    loadIfReady("gate1", () => getGate1Queue("hold")),
-    loadIfReady("insights", getInsights),
-    loadIfReady("summaryGroups", getSummaryGroups),
-  ]);
-  return { matching, blocked, gate1, held, insights, board };
+  const [pipeline, activity, files] = await Promise.all([getPipeline(), getAiActivity(), getFileProgress()]);
+  return { pipeline, activity, files };
 }
 
-const INSIGHT_POLL_MS = 4000;
-/** 분석이 이보다 오래 걸리면 더 기다리지 않는다 — 워커가 꺼졌거나 멈춘 서버에서 계속 묻지 않게 */
-const INSIGHT_POLL_LIMIT_MS = 5 * 60 * 1000;
+const POLL_MS = 10_000;
 
-const analyzing = (list: InsightProgress[]) =>
-  list.some((p) => p.status === "queued" || p.status === "running");
+const STEPS = ["아이 찾기", "AI 확인", "요약", "검토", "주간 분석", "분석 승인"] as const;
+const STEP_DESC = [
+  "AI가 파일 이름과 일지 속 이름을 아동 명부와 맞춰 누구의 기록인지 찾아요",
+  "AI가 개인정보·진단명이 있으면 막고, 다른 아이 이름 같은 표현은 표시해요",
+  "AI 확인이 끝나면 AI가 그날 기록을 바로 요약해요",
+  "선생님이 요약 문장을 읽고 고친 뒤 승인해요",
+  "한 주(월~일) 동안 승인한 기록을 모아 AI가 되풀이되는 행동을 찾아요",
+  "선생님이 AI 분석을 읽고 승인하면 보호자와 동의한 기관이 봐요",
+];
 
-/**
- * 요약 검토에서 승인하면 인사이트 분석은 따로 돈다. 대시보드를 열었을 때 분석 중이면 진행 현황(O-43)만 4초마다 다시
- * 묻고, 분석이 끝나면(done · nothing_new 등) 화면 전체를 한 번 다시 받아 "인사이트 승인" 건수와 메뉴 배지를 새로고침
- * 없이 띄운다 (#359). 진행 현황은 서버가 묻는 주마다 재료를 다시 만들어 보는 무거운 조회라, 화면 전체를 다시 받을 때마다
- * 함께 부르지 않고 여기서만 부른다. 실패 뒤 다시 시도를 기다리는 동안(retrying)은 언제 끝날지 몰라 기다리지 않는다.
- */
-function useInsightPolling() {
-  const revalidator = useRevalidator();
-  useEffect(() => {
-    if (!isReady("insights")) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const startedAt = Date.now();
-
-    async function check(wasAnalyzing: boolean) {
-      let now = false;
-      try {
-        now = analyzing(await getInsightProgress());
-      } catch {
-        return; // 진행 현황을 못 받으면 기다리지 않는다 — 화면은 그대로 쓸 수 있다
-      }
-      if (stopped) return;
-      if (wasAnalyzing && !now) revalidator.revalidate();
-      if (now && Date.now() - startedAt < INSIGHT_POLL_LIMIT_MS) {
-        timer = setTimeout(() => check(true), INSIGHT_POLL_MS);
-      }
-    }
-    check(false);
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
-    // 화면에 들어올 때 한 번 시작한다. revalidator 는 렌더마다 새 객체라 넣으면 다시 시작한다
-  }, []);
+const WD = "일월화수목금토";
+function md(d: string): string {
+  const [, m, day] = d.split("-");
+  return `${+m}월 ${+day}일`;
 }
-
-const WEEKDAY = "일월화수목금토";
-function todayLabel(): string {
-  // 기관 PC 의 시계를 그대로 쓴다 — 서버 시각을 따로 받지 않는다
+function today(): string {
   const d = new Date();
-  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAY[d.getDay()]})`;
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})`;
 }
 
-/** 내 차례 한 줄. count 가 null 이면 백엔드가 아직 없는 기능 — 0 으로 세지 않는다 */
-interface Turn {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  count: number | null;
-}
-
-/**
- * 오늘의 업무 — 캔버스 02-today 의 두 칸.
- *
- * 왼쪽 "내 차례": 사람이 눌러야 넘어가는 다섯 가지를 **한 목록**으로 모으고, 쌓인 것 하나만 위로 올려
- * 시작 단추를 단다. 전에는 같은 크기 네모 넷이라 어디부터 손대야 할지가 화면에 없었다.
- * "요약 대기"는 아래 "아이별 진행 현황"의 [요약]이다 — 빼면 요약할 아이가 있어도 "차례가 없습니다"가 된다.
- * 오른쪽 "아직 아이가 안 정해진 기록": 아이가 정해져야 아래 목록에 오르므로 그 앞단을 따로 세운다.
- * 아래 "아이별 진행 현황"(O-34)은 그대로다 — 파일별 진행(O-26)은 기록 등록 화면이 보여준다.
- */
 export default function DashboardPage() {
-  const { matching, blocked, gate1, held, insights, board } = useLoaderData<typeof clientLoader>();
-  useInsightPolling();
+  const initial = useLoaderData<typeof clientLoader>();
+  const [pipeline, setPipeline] = useState<Pipeline>(initial.pipeline);
+  const [activity, setActivity] = useState<AiActivity>(initial.activity);
+  const [files, setFiles] = useState<FileProgress[]>(initial.files);
 
-  const turns: Turn[] = [
-    {
-      href: "/queue/matching",
-      label: "아이 확인",
-      icon: ClipboardCheck,
-      count: matching?.length ?? null,
-    },
-    {
-      // [요약]은 이 화면 아래 "아이별 진행 현황"에서 누른다. 그 칸의 "요약 대기 N건 모두 요약"과 같은 기준이다
-      href: "#groups",
-      label: "요약 대기",
-      icon: ScrollText,
-      count: board ? board.groups.filter((g) => g.status === "ready" && g.canSummarize).length : null,
-    },
-    {
-      href: "/gate1",
-      label: "요약 확인",
-      icon: ListChecks,
-      count: gate1?.length ?? null,
-    },
-    {
-      href: "/gate2",
-      label: "인사이트 승인",
-      icon: Send,
-      count: insights?.length ?? null,
-    },
-    {
-      href: "/queue/reinput",
-      label: "수정 요청",
-      icon: RotateCcw,
-      count: blocked?.length ?? null,
-    },
-  ];
+  async function refresh() {
+    const [p, a, f] = await Promise.all([getPipeline(), getAiActivity(), getFileProgress()]);
+    setPipeline(p);
+    setActivity(a);
+    setFiles(f);
+  }
+  usePolling(refresh, POLL_MS, true, false);
 
-  // 제일 많이 쌓인 한 줄만 위로 올린다. 다 0 이면 아무것도 올리지 않는다
-  const lead = turns.reduce<Turn | null>(
-    (best, t) => ((t.count ?? 0) > (best?.count ?? 0) ? t : best),
-    null,
-  );
-  const rest = turns.filter((t) => t !== lead);
-
-  // 준비 중인 칸은 0건으로 치지 않는다 — 모르는 걸 "할 일 없음"이라고 말하면 안 된다
-  const total = turns.reduce((n, t) => n + (t.count ?? 0), 0);
-  const heldCount = held?.length ?? null;
-
-  const pending = board?.matching ?? null;
+  const turn = pipeline.turn;
+  const total = turn.confirm + turn.blocked + turn.review + turn.approve + turn.requests;
 
   return (
-    <>
-      <PageHeader
-        eyebrow={todayLabel()}
-        title={total > 0 ? `오늘 선생님 차례 ${total}건` : "오늘 선생님 차례가 없습니다"}
-        // 실연동에서는 숨긴다. 내 기관명을 받을 API 가 아직 없어, mock 기관명을 띄우면 다른 기관이 보인다
-        right={isAuthMock() ? <InstitutionChip institution={MY_INSTITUTION} withName /> : null}
-      />
+    <div className="grid gap-5">
+      <header>
+        <p className="mb-1 text-[15px] text-muted">{today()}</p>
+        <h1 className="text-[clamp(24px,3.4vw,32px)] leading-[1.25] font-extrabold tracking-[-0.03em]">
+          {total ? `오늘 선생님 차례 ${total}건` : "오늘 선생님 차례가 없어요"}
+        </h1>
+      </header>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
-        <Card>
-          <PanelHead title="내 차례" />
+      <AiDay a={activity} />
 
-          {lead && (lead.count ?? 0) > 0 ? (
-            <Link
-              to={lead.href}
-              className="mb-2 flex flex-wrap items-center gap-4 rounded-[18px] bg-reviewsoft px-5 py-4 transition-colors hover:brightness-[0.98]"
-            >
-              <span
-                aria-hidden
-                className="flex size-12 shrink-0 items-center justify-center rounded-full bg-mark text-markink"
-              >
-                <lead.icon size={22} strokeWidth={2} />
-              </span>
-              <span className="min-w-0 flex-1 text-[19px] font-extrabold text-ink">
-                {lead.label} {lead.count}건
-              </span>
-              <span className="tap flex shrink-0 items-center gap-1.5 rounded-full bg-ink px-5 text-[15px] font-bold text-paper">
-                시작하기
-                <ArrowRight aria-hidden size={16} strokeWidth={2.2} />
-              </span>
-            </Link>
-          ) : null}
-
-          <ul className="flex flex-col">
-            {rest.map((t) => {
-              const Icon = t.icon;
-              return (
-                <li key={t.href} className="border-t border-line first:border-t-0">
-                  <Link
-                    to={t.href}
-                    className="flex items-center gap-4 rounded-[14px] px-3 py-3.5 transition-colors hover:bg-surface2"
-                  >
-                    <span
-                      aria-hidden
-                      className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface2 text-ink2"
-                    >
-                      <Icon size={19} strokeWidth={1.9} />
-                    </span>
-                    <span className="min-w-0 flex-1 text-[16px] font-bold text-ink">{t.label}</span>
-                    {t.count === null ? (
-                      <span className="shrink-0 text-[14px] text-muted">준비 중</span>
-                    ) : (
-                      <span
-                        className={`shrink-0 text-[22px] font-extrabold tabular-nums ${
-                          t.count === 0 ? "text-line2" : "text-ink"
-                        }`}
-                      >
-                        {t.count}
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-
-          {heldCount !== null && heldCount > 0 ? (
-            <p className="mt-3 border-t border-line pt-3.5 text-[14px] text-muted">
-              <Link to="/gate1?tab=hold" className="font-semibold text-ink2 hover:underline">
-                보류함 {heldCount}건
-              </Link>
-            </p>
-          ) : null}
-        </Card>
-
-        <Card>
-          <PanelHead
-            title="아직 아이가 안 정해진 기록"
-            right={
-              <Link
-                to="/upload"
-                className="tap flex shrink-0 items-center gap-1.5 rounded-full border border-line2 px-4 text-[15px] font-bold text-ink2 hover:bg-surface2"
-              >
-                <Upload aria-hidden size={15} strokeWidth={2} />
-                올리기
-              </Link>
-            }
-          />
-
-          {pending === null ? (
-            <p className="text-[14px] text-muted">준비 중입니다.</p>
-          ) : pending.inProgress === 0 && pending.needsReview === 0 ? (
-            <p className="rounded-[14px] bg-accentsoft px-4 py-5 text-[15px] leading-6 text-accentink">
-              올린 기록이 모두 아이에게 연결됐어요.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <div className="flex items-end justify-between gap-3 py-2.5">
-                <span className="text-[15px] text-ink2">AI 가 찾는 중</span>
-                <BigNum value={pending.inProgress} label="건" tone="accent" />
-              </div>
-              <div className="border-t border-line" />
-              <Link
-                to="/queue/matching"
-                className="flex items-end justify-between gap-3 rounded-[14px] py-2.5 transition-colors hover:bg-surface2"
-              >
-                <span className="text-[15px] font-bold text-ink">
-                  내가 고를 것
-                  <ArrowRight
-                    aria-hidden
-                    size={15}
-                    strokeWidth={2.2}
-                    className="ml-1 inline align-[-2px]"
-                  />
-                </span>
-                <BigNum value={pending.needsReview} label="건" tone="review" />
-              </Link>
-            </div>
-          )}
-        </Card>
+      <div className="grid grid-cols-1 gap-5 min-[821px]:grid-cols-2">
+        <Panel title="선생님 차례">
+          <TurnList turn={turn} />
+        </Panel>
+        <Panel title="기록 올리기">
+          <UploadBox files={files} onUploaded={refresh} />
+        </Panel>
       </div>
 
-      {/* 내 차례 "요약 대기"가 여기로 내려온다 */}
-      <Card id="groups" className="mt-5 scroll-mt-6">
-        {board === null ? (
-          <>
-            <PanelHead title="아이별 진행 현황" />
-            <p className="text-[14px] text-muted">준비 중입니다.</p>
-          </>
+      <ProgressBoard rows={pipeline.rows} />
+    </div>
+  );
+}
+
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-[22px] bg-surface p-5 shadow-[0_2px_14px_rgba(120,90,40,0.08)]">
+      <h2 className="mb-3 text-[19px] font-extrabold tracking-[-0.02em]">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+/* ── 오늘 AI가 한 일 ─────────────────────────── */
+
+function AiDay({ a }: { a: AiActivity }) {
+  const items: [string, number][] = [
+    ["기록 나누기", a.split],
+    ["아이 찾기", a.matched],
+    ["AI 확인", a.validated],
+    ["요약", a.summarized],
+    ["주간 분석", a.insights],
+  ];
+  const sum = items.reduce((n, [, v]) => n + v, 0);
+  return (
+    <section
+      aria-label="오늘 AI가 한 일"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[18px] bg-accentsoft px-5 py-3 text-[14px] text-accentink"
+    >
+      <span className="flex items-center gap-1.5 font-bold">
+        <Sparkles aria-hidden size={16} />
+        오늘 AI가 한 일 <b className="text-[16px] tabular-nums">{sum}</b>
+      </span>
+      {items.map(([label, n]) => (
+        <span key={label} className="flex items-baseline gap-1 text-ink2">
+          <b className="tabular-nums text-ink">{n}</b>
+          {label}
+        </span>
+      ))}
+    </section>
+  );
+}
+
+/* ── 선생님 차례 ─────────────────────────────── */
+
+const TURN: { key: keyof PipelineTurn; label: string; desc: string; icon: typeof Check; href: string }[] = [
+  { key: "confirm", label: "아이 확인", desc: "AI가 누구의 기록인지 정하지 못한 일지", icon: UserRound, href: "/check?open=confirm" },
+  { key: "blocked", label: "고쳐야 할 기록", desc: "AI 확인에서 막힌 문장", icon: PenLine, href: "/check?open=blocked" },
+  { key: "review", label: "검토", desc: "AI가 쓴 요약을 읽고 승인", icon: Check, href: "/gate1?open=first" },
+  { key: "approve", label: "분석 승인", desc: "주간 분석을 읽고 보호자에게 보내기", icon: Send, href: "/children?tab=approve&open=first" },
+  { key: "requests", label: "보호자 연결 요청", desc: "보호자가 기관 코드로 보낸 요청", icon: Link2, href: "/children?tab=req" },
+];
+
+function TurnList({ turn }: { turn: PipelineTurn }) {
+  return (
+    <ul className="grid">
+      {TURN.map((t) => {
+        const n = turn[t.key];
+        const Icon = t.icon;
+        return (
+          <li
+            key={t.key}
+            className={`grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 border-t border-line py-2.5 first:border-t-0 ${n ? "" : "text-muted"}`}
+          >
+            <span className={`grid size-9 place-items-center rounded-full ${n ? "bg-humansoft text-human" : "bg-surface2"}`}>
+              <Icon aria-hidden size={17} />
+            </span>
+            <span title={t.desc} className="truncate">
+              <b className={n ? "text-ink" : ""}>{t.label}</b>
+            </span>
+            <span className={`text-[15px] font-bold tabular-nums ${n ? "text-ink" : "text-[13px] text-line2"}`}>
+              {n ? `${n}건` : "없음"}
+            </span>
+            <span className="min-w-[96px] text-right">
+              {n ? (
+                <Link
+                  to={t.href}
+                  className="tap inline-flex items-center gap-0.5 rounded-full bg-ink px-3.5 text-[14px] font-bold text-paper hover:brightness-110"
+                >
+                  바로가기
+                  <ChevronRight aria-hidden size={15} />
+                </Link>
+              ) : null}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/* ── 기록 올리기 ─────────────────────────────── */
+
+type UploadFailure = Extract<UploadResult, { ok: false }>;
+const FAIL_TEXT = {
+  invalid: `올릴 수 없는 형식이에요 (${UPLOAD_EXTENSIONS.join(" · ")})`,
+  too_large: "20MB를 넘는 파일이에요",
+  temporary: "잠시 문제가 있어 저장하지 못했어요",
+} as const;
+
+function fileStatus(f: FileProgress): { label: string; tone: "ai" | "me" | "bad" | "ok"; count: string } {
+  const s = fileProgressOf(f.entries);
+  const count = s.total ? ` · 기록 ${s.total}건 중 ${s.resolved}건 아이 찾음` : "";
+  switch (s.tone) {
+    case "splitting":
+      return { label: "나누는 중", tone: "ai", count: "" };
+    case "running":
+      return { label: "아이 찾는 중", tone: "ai", count };
+    case "waiting":
+      return s.waiting
+        ? { label: `아이 확인 ${s.waiting}건`, tone: "me", count }
+        : { label: `고쳐야 할 기록 ${s.blocked}건`, tone: "me", count };
+    case "failed":
+      return { label: "실패", tone: "bad", count };
+    default:
+      return { label: "완료", tone: "ok", count: s.total ? ` · 기록 ${s.total}건` : "" };
+  }
+}
+
+const FS_TONE = {
+  ai: "bg-accentsoft text-accentink",
+  me: "bg-humansoft text-human",
+  bad: "bg-blocksoft text-block",
+  ok: "bg-passsoft text-pass",
+} as const;
+
+function uploadedAt(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: () => Promise<void> }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [failed, setFailed] = useState<UploadFailure[]>([]);
+
+  async function upload(list: FileList | null) {
+    const picked = Array.from(list ?? []);
+    if (!picked.length || uploading) return;
+    setUploading(true);
+    try {
+      const results = await uploadRawRecords(picked);
+      setFailed(results.filter((r): r is UploadFailure => !r.ok));
+      await onUploaded();
+    } finally {
+      setUploading(false);
+      if (input.current) input.current.value = "";
+    }
+  }
+
+  const states = files.map(fileStatus);
+  const working = states.filter((s) => s.tone === "ai").length;
+  const bad = states.filter((s) => s.tone === "bad").length;
+
+  return (
+    <div className="grid gap-3">
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          void upload(e.dataTransfer.files);
+        }}
+        className={`flex flex-wrap items-center gap-3 rounded-[18px] border-2 border-dashed px-4 py-4 ${
+          dragging ? "border-accent bg-accentsoft" : "border-line2 bg-paper"
+        }`}
+      >
+        <span className="grid size-11 flex-none place-items-center rounded-full bg-accentsoft text-accentink">
+          <Upload aria-hidden size={22} />
+        </span>
+        <span className="grid min-w-0 flex-1">
+          <b className="text-[15px]">관찰일지 파일을 끌어다 놓으세요</b>
+          <span className="text-[13px] text-muted">
+            {UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(" · ")} · 20MB까지 · 여러 개를 한 번에 올릴 수 있어요
+          </span>
+        </span>
+        <button
+          type="button"
+          disabled={uploading}
+          onClick={() => input.current?.click()}
+          className="tap rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110 disabled:opacity-60"
+        >
+          {uploading ? <Busy>올리는 중…</Busy> : "파일 고르기"}
+        </button>
+        <input
+          ref={input}
+          type="file"
+          multiple
+          hidden
+          accept={UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(",")}
+          onChange={(e) => void upload(e.target.files)}
+        />
+      </div>
+
+      {failed.length ? (
+        <div className="flex items-start gap-2 rounded-[14px] bg-blocksoft px-3.5 py-2.5 text-[14px] text-block">
+          <ul className="flex-1">
+            {failed.map((f, i) => (
+              <li key={i}>
+                <b>{f.file.name}</b> · {FAIL_TEXT[f.reason]}
+              </li>
+            ))}
+          </ul>
+          <button type="button" aria-label="닫기" onClick={() => setFailed([])} className="p-0.5">
+            <X aria-hidden size={16} />
+          </button>
+        </div>
+      ) : null}
+
+      <div className="flex items-center gap-2 text-[14px] text-ink2">
+        <span>올린 파일 {files.length}개</span>
+        {working ? <span className={`rounded-full px-2 py-px text-[13px] font-bold ${FS_TONE.ai}`}>처리 중 {working}</span> : null}
+        {bad ? <span className={`rounded-full px-2 py-px text-[13px] font-bold ${FS_TONE.bad}`}>실패 {bad}</span> : null}
+      </div>
+      <ul
+        tabIndex={0}
+        aria-label={`올린 파일 ${files.length}개`}
+        className="flex h-[252px] flex-col overflow-y-auto overscroll-contain rounded-[14px] border border-line"
+      >
+        {files.length === 0 ? (
+          <li className="m-auto px-4 text-[14px] text-muted">아직 올린 파일이 없어요</li>
         ) : (
-          <SummaryGroupBoardView initial={board} />
+          files.map((f, i) => (
+            <li key={f.rawRecordId} className="flex flex-none items-center gap-3 border-t border-line px-3.5 py-2.5 first:border-t-0">
+              <FileText aria-hidden size={17} className="flex-none text-muted" />
+              <span className="grid min-w-0 flex-1">
+                <b className="truncate text-[14px]" title={f.fileName}>
+                  {f.fileName}
+                </b>
+                <span className="truncate text-[13px] text-muted">
+                  {uploadedAt(f.uploadedAt)}
+                  {states[i].count}
+                </span>
+              </span>
+              <span className={`flex-none rounded-full px-2.5 py-0.5 text-[13px] font-bold ${FS_TONE[states[i].tone]}`}>
+                {states[i].label}
+              </span>
+            </li>
+          ))
         )}
-      </Card>
-    </>
+      </ul>
+    </div>
+  );
+}
+
+/* ── 진행 현황 ─────────────────────────────── */
+
+type Filter = "all" | "me" | "run" | "done";
+const isMe = (r: PipelineRow) => r.who === "me";
+const isRun = (r: PipelineRow) => r.who === "ai" || r.who === "wait" || r.who === "other";
+const isDone = (r: PipelineRow) => r.who === "done";
+
+function ProgressBoard({ rows }: { rows: PipelineRow[] }) {
+  const [stage, setStage] = useState<number | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [showDone, setShowDone] = useState(false);
+
+  const by = STEPS.map((_, i) => {
+    const at = rows.filter((r) => r.step === i);
+    return { me: at.filter(isMe).length, ai: at.filter((r) => r.who === "ai").length, wait: at.filter((r) => r.who === "wait" || r.who === "other").length };
+  });
+  const inStage = rows.filter((r) => stage === null || r.step === stage);
+  const tabs: [Filter, string, number][] = [
+    ["all", "전체", inStage.length],
+    ["me", "내 차례", inStage.filter(isMe).length],
+    ["run", "진행 중", inStage.filter(isRun).length],
+    ["done", "완료", inStage.filter(isDone).length],
+  ];
+  const list =
+    filter === "me" ? inStage.filter(isMe) : filter === "run" ? inStage.filter(isRun) : filter === "done" ? inStage.filter(isDone) : inStage.filter((r) => !isDone(r));
+  const doneTail = filter === "all" ? inStage.filter(isDone) : [];
+
+  return (
+    <section aria-labelledby="board-t" className="rounded-[22px] bg-surface p-5 shadow-[0_2px_14px_rgba(120,90,40,0.08)]">
+      <h2 id="board-t" className="mb-3 text-[19px] font-extrabold tracking-[-0.02em]">
+        진행 현황
+      </h2>
+
+      <div role="group" aria-label="단계 고르기" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 min-[1000px]:grid-cols-6">
+        {STEPS.map((name, i) => {
+          const c = by[i];
+          const on = stage === i;
+          return (
+            <button
+              key={name}
+              type="button"
+              title={STEP_DESC[i]}
+              aria-pressed={on}
+              onClick={() => setStage(on ? null : i)}
+              className={`grid gap-1.5 rounded-[16px] border px-3 py-2.5 text-left ${
+                on ? "border-ink bg-ink text-paper" : c.me ? "border-mark bg-surface" : "border-line bg-surface hover:bg-surface2"
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <span className={`grid size-5 place-items-center rounded-full text-[12px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
+                  {i + 1}
+                </span>
+                <b className="text-[14px]">{name}</b>
+              </span>
+              <span className="flex flex-wrap gap-1 text-[12px] font-bold">
+                {c.me ? <span className="rounded-full bg-mark px-1.5 text-markink">내 차례 {c.me}</span> : null}
+                {c.ai ? <span className="rounded-full bg-accentsoft px-1.5 text-accentink">진행 중 {c.ai}</span> : null}
+                {c.wait ? <span className="rounded-full bg-surface2 px-1.5 text-ink2">대기 {c.wait}</span> : null}
+                {!c.me && !c.ai && !c.wait ? <span className={on ? "text-paper/60" : "text-line2"}>없음</span> : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div role="tablist" aria-label="상태로 보기" className="flex rounded-full bg-surface2 p-1">
+          {tabs.map(([key, label, n]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={filter === key}
+              onClick={() => setFilter(key)}
+              className={`rounded-full px-3 py-1 text-[14px] font-bold ${filter === key ? "bg-surface text-ink shadow-sm" : "text-ink2"}`}
+            >
+              {label} <span className="tabular-nums text-muted">{n}</span>
+            </button>
+          ))}
+        </div>
+        {stage !== null ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-ink py-1 pr-1 pl-3 text-[13px] font-bold text-paper">
+            {STEPS[stage]} 단계
+            <button type="button" aria-label={`${STEPS[stage]} 단계 보기 해제`} onClick={() => setStage(null)} className="grid size-6 place-items-center rounded-full hover:bg-paper/20">
+              <X aria-hidden size={14} />
+            </button>
+          </span>
+        ) : null}
+      </div>
+
+      <div tabIndex={0} aria-label="진행 현황 목록" className="flex h-[470px] flex-col overflow-y-auto overscroll-contain rounded-[14px] border border-line max-[720px]:h-[70vh]">
+        {rows.length === 0 ? (
+          <p className="m-auto px-4 text-center text-[14px] text-muted">아직 올린 기록이 없어요. 관찰일지를 올리면 여기서 단계별로 볼 수 있어요</p>
+        ) : list.length === 0 && !doneTail.length ? (
+          <p className="m-auto text-[14px] text-muted">해당하는 기록이 없어요</p>
+        ) : null}
+        {list.length === 0 && doneTail.length ? <p className="px-4 py-6 text-center text-[14px] text-muted">지금 진행 중인 기록이 없어요</p> : null}
+        {list.map((r, i) => (
+          <JRow key={rowKey(r, i)} r={r} />
+        ))}
+        {doneTail.length ? (
+          <>
+            <button
+              type="button"
+              aria-expanded={showDone}
+              onClick={() => setShowDone((v) => !v)}
+              className="w-full flex-none border-t border-line bg-surface2 px-4 py-2.5 text-left text-[14px] font-bold text-ink2 hover:text-ink"
+            >
+              {showDone ? `완료 ${doneTail.length}건 접기` : `완료 ${doneTail.length}건 펼치기`}
+            </button>
+            {showDone ? doneTail.map((r, i) => <JRow key={rowKey(r, i)} r={r} />) : null}
+          </>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function rowKey(r: PipelineRow, i: number): string {
+  return `${r.kind}-${r.childId ?? "x"}-${r.date ?? r.week?.from}-${r.status}-${r.target?.id ?? i}`;
+}
+
+/** 서버 상태를 한 줄 문구와 바로가기로. 바로가기는 선생님 차례(target 있음)에만 */
+function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolean; go?: [string, string] } {
+  const id = r.target?.id ? `&id=${encodeURIComponent(r.target.id)}` : "";
+  const d = r.detail ?? {};
+  switch (r.status) {
+    case "matching":
+      return { text: `아이를 찾는 중이에요${d.count ? ` · 그날 일지 ${d.count}건` : ""}` };
+    case "match_review":
+      return { text: "AI가 아이를 정하지 못했어요", go: ["아이 고르기", `/check?open=confirm${id}`] };
+    case "validating":
+      return { text: "AI가 기록을 확인하는 중이에요" };
+    case "blocked":
+      return {
+        text: `막힘 · ${(d.kinds ?? []).join("·")}${d.reasons?.length ? ` — ${d.reasons.join(" / ")}` : ""}`,
+        go: ["고치기", `/check?open=blocked${id}`],
+      };
+    case "system_error":
+      return { text: "처리 중 멈췄어요 · 관리자가 확인하고 있어요" };
+    case "waiting_same_date":
+      return { text: "같은 날 기록이 모두 확인되면 요약해요" };
+    case "summarizing":
+      return { text: "AI가 요약하는 중이에요" };
+    case "summary_failed":
+      return {
+        text: "요약에 실패했어요 · 원문을 보고 정해 주세요",
+        go: ["확인하기", `/gate1?open=failed&child=${r.childId ?? ""}&date=${r.date ?? ""}`],
+      };
+    case "review":
+      return {
+        text: d.noContent ? "요약할 내용이 없대요 · 원문을 보고 확인해 주세요" : "요약이 왔어요 · 읽고 승인해 주세요",
+        go: ["검토하기", `/gate1?open=summary${id}`],
+      };
+    case "review_held":
+      return { text: "보류해 뒀어요", hold: true, go: ["다시 검토", `/gate1?tab=hold&open=summary${id}`] };
+    case "regenerating":
+      return { text: "기록이 더 들어와서 요약을 다시 만드는 중이에요" };
+    case "waiting_week_end":
+      return { text: r.week ? `이번 주가 끝나는 ${md(nextDay(r.week.to))}부터 분석해요` : "이번 주가 끝나면 분석해요" };
+    case "queued":
+      return { text: "곧 분석을 시작해요" };
+    case "running":
+      return { text: "AI가 되풀이되는 행동을 찾는 중이에요" };
+    case "retrying":
+      return { text: "분석을 다시 시도하는 중이에요" };
+    case "not_consented":
+      return { text: "보호자가 주간 분석 공유를 허락하지 않아 우리 기록은 쓰지 않아요" };
+    case "nothing_new":
+      return { text: "이번 주는 새로 알릴 내용이 없어요", skip: true };
+    case "review_here":
+      return { text: "분석이 왔어요 · 읽고 승인하면 보호자에게 가요", go: ["읽고 승인", `/children?tab=approve&open=insight${id}`] };
+    case "insight_held":
+      // Gate 2 보류는 되돌릴 수 없다 — 다시 읽을 화면이 없어 바로가기를 두지 않는다
+      return { text: "분석을 보류해 뒀어요", hold: true };
+    case "review_elsewhere":
+      return { text: `${d.approverName ?? "다른 기관"}에서 승인할 차례예요` };
+    case "approved":
+      return { text: "승인했어요 · 보호자가 볼 수 있어요" };
+    default:
+      // 서버가 새 상태를 먼저 보내도 화면이 깨지지 않게
+      return { text: "" };
+  }
+}
+
+function nextDay(d: string): string {
+  const x = new Date(`${d}T00:00:00`);
+  x.setDate(x.getDate() + 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
+}
+
+const DOT = {
+  d: "border-accent bg-accent text-white",
+  me: "border-mark bg-mark text-markink",
+  ai: "border-accent bg-accentsoft text-accentink",
+  wait: "border-dashed border-line2 text-ink2",
+  f: "border-line text-line2",
+  skip: "border-dashed border-line text-line2",
+} as const;
+
+function JRow({ r }: { r: PipelineRow }) {
+  const info = describe(r);
+  const sub = r.kind === "week" ? `${r.week?.label ?? ""} 분석` : r.date ? md(r.date) : "";
+  const tag = isMe(r) ? (
+    info.hold ? (
+      <span className="rounded-full bg-surface2 px-2 py-px text-[12px] font-bold text-ink2">보류</span>
+    ) : (
+      <span className="rounded-full bg-humansoft px-2 py-px text-[12px] font-bold text-human">내 차례</span>
+    )
+  ) : r.who === "ai" ? (
+    <span className="rounded-full bg-accentsoft px-2 py-px text-[12px] font-bold text-accentink">진행 중</span>
+  ) : (
+    <span className="rounded-full bg-surface2 px-2 py-px text-[12px] font-bold text-ink2">{isDone(r) ? "완료" : "대기"}</span>
+  );
+
+  return (
+    <article className="grid flex-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 border-t border-line px-4 py-3 first:border-t-0 min-[721px]:grid-cols-[minmax(120px,180px)_minmax(0,1fr)_auto]">
+      <div className="grid min-w-0">
+        <b className="truncate text-[15px]">{r.childName ?? "아이 미정"}</b>
+        <span className="truncate text-[13px] text-muted">{sub}</span>
+      </div>
+      <div className="col-span-full row-start-2 grid min-w-0 gap-1.5 min-[721px]:col-span-1 min-[721px]:row-start-auto">
+        <div role="img" aria-label={`6단계 중 ${r.step + 1}단계 ${STEPS[r.step]}`} className="flex items-center">
+          {STEPS.map((name, i) => {
+            const c =
+              i < r.step || (i === r.step && isDone(r) && !info.skip)
+                ? "d"
+                : i === r.step
+                  ? r.who === "me"
+                    ? "me"
+                    : r.who === "ai"
+                      ? "ai"
+                      : info.skip
+                        ? "skip"
+                        : "wait"
+                  : info.skip
+                    ? "skip"
+                    : "f";
+            return (
+              <span key={name} className="contents">
+                {i ? <span className={`h-0.5 min-w-1.5 flex-1 ${i <= r.step ? "bg-accent" : "bg-line"}`} /> : null}
+                <span title={name} className={`grid size-6 flex-none place-items-center rounded-full border-2 text-[11px] font-bold ${DOT[c]}`}>
+                  {c === "d" ? "✓" : i + 1}
+                </span>
+              </span>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px]">
+          {tag}
+          <b>{STEPS[r.step]}</b>
+          <span className="text-ink2">{info.text}</span>
+        </div>
+      </div>
+      {info.go && r.target ? (
+        <Link
+          to={info.go[1]}
+          className={`tap row-start-1 col-start-2 inline-flex items-center gap-0.5 justify-self-end rounded-full px-3.5 text-[14px] font-bold min-[721px]:col-start-3 ${
+            info.hold ? "border border-line2 text-ink2 hover:bg-surface2" : "bg-ink text-paper hover:brightness-110"
+          }`}
+        >
+          {info.go[0]}
+          <ChevronRight aria-hidden size={15} />
+        </Link>
+      ) : (
+        <span />
+      )}
+    </article>
   );
 }

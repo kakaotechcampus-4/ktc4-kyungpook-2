@@ -1,4 +1,6 @@
 import type {
+  AiActivity,
+  AiStatus,
   BlockedItem,
   Child,
   ChildGuardian,
@@ -17,8 +19,7 @@ import type {
   MatchingItem,
   ParentActivity,
   PendingLinkRequest,
-  SummaryGroup,
-  SummaryGroupBoard,
+  Pipeline,
   SummaryItem,
   TimelineEntry,
 } from "@/lib/types";
@@ -223,7 +224,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     id: "mq_03",
     status: "unmatched",
     matchedChildId: null,
-    unmatchedReason: "no_anchor",
     record: {
       id: "rrf_8c11",
       fileName: "0821_특이사항.txt",
@@ -239,7 +239,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     id: "mq_04",
     status: "unmatched",
     matchedChildId: null,
-    unmatchedReason: "not_in_roster",
     hintName: "정OO",
     record: {
       id: "rrf_8c24",
@@ -305,7 +304,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     id: "mq_09",
     status: "unmatched",
     matchedChildId: null,
-    unmatchedReason: "no_anchor",
     record: {
       id: "rrf_9d48",
       fileName: "0819_관찰일지.hwp",
@@ -420,13 +418,24 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
 
 /** 요약 본문은 문장(claims)을 이은 것이다 — mock 도 그렇게 만든다 */
 function gate1Mock(
-  item: Omit<SummaryItem, "content" | "claims"> & { sentences: string[] },
+  item: Omit<SummaryItem, "content" | "claims" | "entries"> & { sentences: string[] },
 ): SummaryItem {
   const { sentences, ...rest } = item;
+  // 원본 일지는 요약 문장을 조금 늘여 쓴 한 편 + 요약에 안 들어간 일지. 근거 인용은 문장에서 끝의 "다." 를 뺀 구절
+  const sourceId = `je_${item.id}`;
+  const quotes = sentences.map((t) => t.replace(/다\.$/, ""));
   return {
     ...rest,
     content: sentences.join(" "),
-    claims: sentences.map((text, index) => ({ index, text })),
+    claims: sentences.map((text, index) => ({
+      index,
+      text,
+      evidence: [{ journalEntryId: sourceId, quote: quotes[index] }],
+    })),
+    entries: [
+      { journalEntryId: sourceId, content: `오늘 하루 기록. ${quotes.map((q) => `${q}다.`).join(" ")} 특별한 일은 없었다.` },
+      ...item.uncoveredEntries,
+    ],
   };
 }
 
@@ -487,6 +496,7 @@ export const GATE1_QUEUE: SummaryItem[] = [
     processing: false,
     content: "오후 자유놀이 종료 안내 후 스스로 정리하고 다음 활동으로 이동함.",
     claims: [],
+    entries: [{ journalEntryId: "je_5150", content: "자유놀이가 끝났다고 알려 주자 장난감을 스스로 정리하고 책상으로 왔다." }],
     noContent: false,
     needsReview: false,
     reviewReasons: [],
@@ -512,6 +522,10 @@ export const GATE1_QUEUE: SummaryItem[] = [
       { journalEntryId: "je_5201", content: "특이사항 없음." },
       { journalEntryId: "je_5202", content: "오후 일정 평소와 같음." },
     ],
+    entries: [
+      { journalEntryId: "je_5201", content: "특이사항 없음." },
+      { journalEntryId: "je_5202", content: "오후 일정 평소와 같음." },
+    ],
     reviewFlags: [],
   },
   gate1Mock({
@@ -531,123 +545,6 @@ export const GATE1_QUEUE: SummaryItem[] = [
     reviewFlags: [],
   }),
 ];
-
-/* 오늘의 업무 묶음 카드 (O-34) ─────────────────────── */
-
-/** 라벨 다섯 가지와 버튼 세 갈래(강조 · 약하게 · 꺼짐)가 모두 보이게 골랐다. 오래된 날짜부터 */
-export const SUMMARY_GROUP_BOARD: SummaryGroupBoard = {
-  matching: { inProgress: 3, needsReview: 2 },
-  groups: [
-    {
-      childId: "child_2044",
-      childName: "최OO",
-      birthdate: "2021-05-30",
-      entryDate: "2026-08-18",
-      status: "admin_check",
-      counts: { validating: 0, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 1 },
-      canSummarize: false,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-    {
-      childId: "child_1077",
-      childName: "박OO",
-      birthdate: "2020-01-25",
-      entryDate: "2026-08-19",
-      status: "needs_fix",
-      counts: { validating: 0, needsFix: 1, ready: 0, summarizing: 0, adminCheck: 0 },
-      canSummarize: false,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-    {
-      childId: "child_1023",
-      childName: "김OO",
-      birthdate: "2019-03-12",
-      entryDate: "2026-08-20",
-      status: "needs_fix",
-      counts: { validating: 1, needsFix: 1, ready: 2, summarizing: 0, adminCheck: 0 },
-      canSummarize: true,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-    {
-      childId: "child_1041",
-      childName: "이OO",
-      birthdate: "2018-07-02",
-      entryDate: "2026-08-20",
-      status: "ready",
-      counts: { validating: 0, needsFix: 0, ready: 3, summarizing: 0, adminCheck: 0 },
-      canSummarize: true,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-    // 같은 이름 — 생년월일로 구분한다
-    {
-      childId: "child_1088",
-      childName: "김OO",
-      birthdate: "2021-09-02",
-      entryDate: "2026-08-21",
-      status: "ready",
-      counts: { validating: 0, needsFix: 0, ready: 2, summarizing: 0, adminCheck: 0 },
-      canSummarize: true,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: true,
-    },
-    {
-      childId: "child_1041",
-      childName: "이OO",
-      birthdate: "2018-07-02",
-      entryDate: "2026-08-21",
-      status: "summarizing",
-      counts: { validating: 2, needsFix: 0, ready: 1, summarizing: 0, adminCheck: 0 },
-      canSummarize: false,
-      summaryRequested: true,
-      waitingCount: 2,
-      previousSummaryInReview: false,
-    },
-    {
-      childId: "child_1023",
-      childName: "김OO",
-      birthdate: "2019-03-12",
-      entryDate: "2026-08-21",
-      status: "validating",
-      counts: { validating: 2, needsFix: 0, ready: 0, summarizing: 0, adminCheck: 0 },
-      canSummarize: false,
-      summaryRequested: false,
-      waitingCount: 0,
-      previousSummaryInReview: false,
-    },
-  ],
-};
-
-let gate1RunSeq = 0;
-
-/** mock 전용: [요약]을 마친 묶음이 요약 검토에 올리는 요약 한 건 */
-export function gate1FromRun(group: SummaryGroup): SummaryItem {
-  gate1RunSeq += 1;
-  return gate1Mock({
-    id: `sum_run_${gate1RunSeq}`,
-    childId: group.childId,
-    childName: group.childName,
-    entryDate: group.entryDate,
-    revision: group.previousSummaryInReview ? 2 : 1,
-    gate1Status: "pending",
-    version: `mock_v_run_${gate1RunSeq}`,
-    processing: false,
-    sentences: ["오전 활동 시간에 끝까지 자리에 앉아 참여했다.", "점심을 남기지 않고 먹었다."],
-    noContent: false,
-    needsReview: false,
-    reviewReasons: [],
-    uncoveredEntries: [],
-    reviewFlags: [],
-  });
-}
 
 /* Child Context 타임라인 (I-09) ───────────────────── */
 
@@ -1060,3 +957,43 @@ export const SENT_CHECKLISTS: SentChecklist[] = [
     ],
   },
 ];
+
+/* ── 대시보드 (O-80 ~ O-82) ──────────────────── */
+
+/** 진행 현황. 단계마다 한두 줄씩, 선생님 차례 줄은 위 큐의 id 를 가리킨다 */
+export const PIPELINE: Pipeline = {
+  turn: { confirm: 2, blocked: 2, review: 3, approve: 1, requests: 1 },
+  rows: [
+    { kind: "entry", childId: null, childName: null, date: "2026-11-05", week: null, step: 0, who: "me",
+      status: "match_review", detail: null, target: { type: "matching", id: "mq_01" } },
+    { kind: "entry", childId: "child_1041", childName: "이OO", date: "2026-11-05", week: null, step: 1, who: "me",
+      status: "blocked", detail: { kinds: ["진단명"], reasons: ["진단명이 들어 있어요"] },
+      target: { type: "validation", id: "bq_01" } },
+    { kind: "entry", childId: "child_1023", childName: "김OO", date: "2026-11-04", week: null, step: 3, who: "me",
+      status: "review", detail: { noContent: false }, target: { type: "summary", id: "sum_9012" } },
+    { kind: "entry", childId: "child_1077", childName: "박OO", date: "2026-11-04", week: null, step: 2, who: "me",
+      status: "summary_failed", detail: null, target: { type: "summary_failed" } },
+    { kind: "week", childId: "child_1023", childName: "김OO", date: null,
+      week: { from: "2026-10-26", to: "2026-11-01", label: "2026년 10월 4주차" }, step: 5, who: "me",
+      status: "review_here", detail: null, target: { type: "insight", id: "ins_5501" } },
+    { kind: "entry", childId: null, childName: null, date: "2026-11-06", week: null, step: 0, who: "ai",
+      status: "matching", detail: { count: 3 }, target: null },
+    { kind: "entry", childId: "child_1041", childName: "이OO", date: "2026-11-06", week: null, step: 1, who: "ai",
+      status: "validating", detail: null, target: null },
+    { kind: "entry", childId: "child_1023", childName: "김OO", date: "2026-11-06", week: null, step: 2, who: "ai",
+      status: "summarizing", detail: null, target: null },
+    { kind: "week", childId: "child_1077", childName: "박OO", date: null,
+      week: { from: "2026-11-02", to: "2026-11-08", label: "2026년 11월 1주차" }, step: 4, who: "wait",
+      status: "waiting_week_end", detail: null, target: null },
+    { kind: "week", childId: "child_1041", childName: "이OO", date: null,
+      week: { from: "2026-10-26", to: "2026-11-01", label: "2026년 10월 4주차" }, step: 5, who: "other",
+      status: "review_elsewhere", detail: { approverName: "OO초등학교" }, target: null },
+    { kind: "week", childId: "child_1023", childName: "김OO", date: null,
+      week: { from: "2026-10-19", to: "2026-10-25", label: "2026년 10월 3주차" }, step: 5, who: "done",
+      status: "approved", detail: null, target: null },
+  ],
+};
+
+export const AI_ACTIVITY: AiActivity = { split: 12, matched: 7, validated: 11, summarized: 3, insights: 1 };
+
+export const AI_STATUS: AiStatus = { available: true, since: null };

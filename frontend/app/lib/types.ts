@@ -18,9 +18,6 @@ export type MatchStatus = "auto" | "review" | "multi" | "unmatched" | "failed";
 /** multi 로 내려온 이유 — 둘은 교사가 할 일이 서로 다르다 */
 export type MultiReason = "co_mention" | "ambiguous_identity";
 
-/** unmatched 로 내려온 이유 — 미등록 아동이면 등록 화면으로 보내야 한다 */
-export type UnmatchedReason = "no_anchor" | "not_in_roster";
-
 /**
  * 본문에서 판정 근거가 된 구간.
  * 인덱스는 **유니코드 코드포인트** 기준이다(Python str 인덱스, `AI/matching/schemas.py`).
@@ -256,10 +253,13 @@ export interface MatchingItem {
   /** 본문에서 이 판정의 근거가 된 구간. 화면에서 하이라이트한다. */
   evidence: EvidenceSpan[];
   multiReason?: MultiReason | null;
-  unmatchedReason?: UnmatchedReason | null;
+  // unmatched 의 이유는 AI · 서버 어디에도 없다(O-22). 화면은 이유를 나누지 않는다 (#381)
   /** 표지에 적힌 이름과 본문 판정이 어긋남 */
   hintMismatch?: boolean;
-  /** 표지에 적혀 있던 이름 */
+  /**
+   * 표지 힌트 — 업로드 때 **파일 이름**에 명부 아이 이름이 한 명 들어 있으면 그 이름(O-22, #381).
+   * 일지 본문에서 찾은 이름이 아니다(그건 AI 판정의 `evidence`). 없으면 null — 화면은 파일 이름을 보인다
+   */
   hintName?: string | null;
 }
 
@@ -394,55 +394,13 @@ export interface SummaryItem {
   reviewReasons: string[];
   /** 요약에 안 들어간 일지. 승인하면 이 일지도 함께 끝난다 */
   uncoveredEntries: { journalEntryId: string; content: string }[];
+  /** 이 요약에 묶인 일지 원문 전체(요약에 든 것 + 안 든 것, id 순). 검토 팝업이 늘 펼쳐 둔다 (O-30 entries, #371) */
+  entries: { journalEntryId: string; content: string }[];
   /**
    * 요약에 들어간 원본 중 검증에서 REVIEW 를 받은 일지와 사유.
    * issueTypes 는 AI 코드 원본, reasons 는 선생님이 읽을 문장 — 화면은 reasons 를 보여 준다 (#351)
    */
   reviewFlags: { journalEntryId: string; issueTypes: string[]; reasons: string[] }[];
-}
-
-/**
- * 묶음 카드 라벨 (api-spec O-34). 위에서부터 처음 맞는 것이다 — 선생님이 할 일이 먼저다.
- * needs_fix 수정 요청 있음 · ready 요약 대기 · summarizing 요약 중이거나 [요약] 눌러 둠 ·
- * validating 검증 중만 · admin_check 시스템 오류만 남음
- */
-export type SummaryGroupStatus = "needs_fix" | "ready" | "summarizing" | "validating" | "admin_check";
-
-/**
- * 오늘의 업무 묶음 카드 한 장 = 아이 한 명의 하루치 기록 (BE SummaryGroupCard).
- * 요약 전 묶음만 온다 — 요약이 만들어지면 요약 검토(O-30)로 옮겨 가고 카드는 빠진다.
- */
-export interface SummaryGroup {
-  /** BE 는 숫자. lib/api.ts 가 문자열로 바꾼다 */
-  childId: string;
-  childName: string;
-  /** 같은 이름의 아이를 구분하려고 함께 보인다 */
-  birthdate: string | null;
-  /** 일지 날짜 YYYY-MM-DD. [요약](O-32)에 그대로 보낸다 */
-  entryDate: string;
-  status: SummaryGroupStatus;
-  counts: {
-    validating: number;
-    needsFix: number;
-    ready: number;
-    summarizing: number;
-    adminCheck: number;
-  };
-  /** [요약]을 누를 수 있음. 버튼은 늘 두고 false 면 막는다 */
-  canSummarize: boolean;
-  /** [요약]을 눌렀고 아직 요약이 끝나지 않음 */
-  summaryRequested: boolean;
-  /** 눌렀지만 시작 전일 때, 요약이 기다리는 같은 날 매칭·검증 중 기록 수 */
-  waitingCount: number;
-  /** 이전 요약이 요약 검토에 있음 — 다시 요약하면 그 요약이 새 판으로 바뀐다 */
-  previousSummaryInReview: boolean;
-}
-
-export interface SummaryGroupBoard {
-  /** 아이가 아직 정해지지 않아 카드에 넣을 수 없는 기록. 자동 매칭 중 · 확인 필요 큐 */
-  matching: { inProgress: number; needsReview: number };
-  /** 오래된 날짜부터 */
-  groups: SummaryGroup[];
 }
 
 /**
@@ -479,27 +437,6 @@ export interface EvidenceRef {
   label: string;
   /** 어느 기관 기록인지 — Gate 2 승인자가 확인해야 한다 */
   institution: Institution;
-}
-
-/** 인사이트 진행 현황 한 줄의 상태 (api-spec O-43). queued · running 이면 곧 Gate 2 에 글이 뜰 수 있다 */
-export type InsightProgressStatus =
-  | "not_consented"
-  | "waiting_week_end"
-  | "queued"
-  | "running"
-  | "retrying"
-  | "done"
-  | "nothing_new";
-
-/** 인사이트 진행 현황 한 줄 — 우리 기관이 최근 승인한 기록이 속한 (아이, 주) 하나 (api-spec O-43) */
-export interface InsightProgress {
-  childId: string;
-  childName: string;
-  periodFrom: string;
-  periodTo: string;
-  period: string;
-  status: InsightProgressStatus;
-  message: string;
 }
 
 export interface Insight {
@@ -670,4 +607,100 @@ export interface ChecklistItem {
   confirmedAt: string | null;
   /** 확인한 보호자의 카카오 닉네임. 없으면 null — 화면은 "다른 보호자" */
   confirmedByName: string | null;
+}
+
+/* ── 대시보드 (O-80 ~ O-82) ──────────────────── */
+
+/** 선생님 차례 5줄 건수 (O-80 `turn`) */
+export interface PipelineTurn {
+  /** 아이 확인 (O-22 건수) */
+  confirm: number;
+  /** 고쳐야 할 기록 (O-24 건수) */
+  blocked: number;
+  /** 검토 대기 요약 + 요약 실패 묶음 */
+  review: number;
+  /** 우리가 승인할 분석 (O-40 pending 건수) */
+  approve: number;
+  /** 보호자 연결 요청 (O-60 건수) */
+  requests: number;
+}
+
+/** 0 아이 찾기 · 1 AI 확인 · 2 요약 · 3 검토 · 4 주간 분석 · 5 분석 승인 */
+export type PipelineStep = 0 | 1 | 2 | 3 | 4 | 5;
+
+/** me 선생님 차례 · ai AI 가 하는 중 · wait 기다리는 중 · other 다른 사람 차례 · done 끝 */
+export type PipelineWho = "me" | "ai" | "wait" | "other" | "done";
+
+export type PipelineStatus =
+  | "matching"
+  | "match_review"
+  | "validating"
+  | "blocked"
+  | "system_error"
+  | "waiting_same_date"
+  | "summarizing"
+  | "summary_failed"
+  | "review"
+  | "review_held"
+  | "regenerating"
+  | "waiting_week_end"
+  | "queued"
+  | "running"
+  | "retrying"
+  | "not_consented"
+  | "nothing_new"
+  | "review_here"
+  | "insight_held"
+  | "review_elsewhere"
+  | "approved";
+
+/** 바로가기 대상. summary_failed 는 id 가 없다 — 줄의 childId · date 로 찾는다 */
+export interface PipelineTarget {
+  type: "matching" | "validation" | "summary" | "summary_failed" | "insight";
+  id?: string;
+}
+
+/** 진행 현황 한 줄 (O-80 `rows[]`). 검토 승인 전은 entry(아이×날짜), 뒤는 week(아이×주) */
+export interface PipelineRow {
+  kind: "entry" | "week";
+  /** 아이를 아직 못 찾은 줄은 null */
+  childId: string | null;
+  childName: string | null;
+  /** entry 줄만. YYYY-MM-DD */
+  date: string | null;
+  /** week 줄만 */
+  week: { from: string; to: string; label: string } | null;
+  step: PipelineStep;
+  who: PipelineWho;
+  status: PipelineStatus;
+  detail: {
+    count?: number;
+    kinds?: string[];
+    reasons?: string[];
+    noContent?: boolean;
+    approverName?: string;
+  } | null;
+  /** 선생님 차례가 아니면 null */
+  target: PipelineTarget | null;
+}
+
+export interface Pipeline {
+  turn: PipelineTurn;
+  rows: PipelineRow[];
+}
+
+/** 서울 기준 오늘 0시부터 우리 기관 기록에 AI 가 한 일 (O-81) */
+export interface AiActivity {
+  split: number;
+  matched: number;
+  validated: number;
+  /** 근사값 */
+  summarized: number;
+  insights: number;
+}
+
+/** AI 장애 배너용 (O-82). available 이 true 면 since 는 null */
+export interface AiStatus {
+  available: boolean;
+  since: string | null;
 }
