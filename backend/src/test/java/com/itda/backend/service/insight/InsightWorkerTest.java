@@ -14,6 +14,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -44,7 +45,7 @@ class InsightWorkerTest {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final InsightProperties PROPERTIES =
-            new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, false, List.of());
+            new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, false, List.of(), Duration.ofSeconds(210), 1);
 
     @Mock
     private InsightService insightService;
@@ -174,7 +175,7 @@ class InsightWorkerTest {
     @Test
     void 설정을_켜면_이번_주_기록도_본다() {
         worker = new InsightWorker(insightService, client, recorder, childContextRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, true, List.of()), availability);
+                new InsightProperties(new WorkerProperties(true, 5000, 10), 7, SEOUL, 14, true, List.of(), Duration.ofSeconds(210), 1), availability);
         agentUp();
         approved(new ApprovedEntryDay(8L, LocalDate.now(SEOUL)));
 
@@ -345,7 +346,7 @@ class InsightWorkerTest {
     @Test
     void 한_차례에_batch_size_만큼만_집는다() {
         worker = new InsightWorker(insightService, client, recorder, childContextRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 2), 7, SEOUL, 14, false, List.of()), availability);
+                new InsightProperties(new WorkerProperties(true, 5000, 2), 7, SEOUL, 14, false, List.of(), Duration.ofSeconds(210), 1), availability);
         agentUp();
         candidates(8L, 9L, 10L);
         ready(8L);
@@ -362,7 +363,7 @@ class InsightWorkerTest {
     @Test
     void 집지_못한_아이는_처리_수에_넣지_않는다() {
         worker = new InsightWorker(insightService, client, recorder, childContextRepository,
-                new InsightProperties(new WorkerProperties(true, 5000, 1), 7, SEOUL, 14, false, List.of()), availability);
+                new InsightProperties(new WorkerProperties(true, 5000, 1), 7, SEOUL, 14, false, List.of(), Duration.ofSeconds(210), 1), availability);
         agentUp();
         candidates(8L, 9L);
         given(insightService.prepare(anyLong(), any(), any()))
