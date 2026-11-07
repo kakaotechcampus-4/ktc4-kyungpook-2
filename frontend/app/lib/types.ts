@@ -552,6 +552,20 @@ export interface GuardianInsight {
   approvedAt: string;
   /** 처음 열어 본 시각 (ISO). 아직 안 봤으면 null — "새 글" 표시 */
   readAt: string | null;
+  /**
+   * 이 글의 근거가 된 일지, 관찰 날짜 오래된 순. 응답 시점에 일지 상세로 열 수 있는 것만 온다 —
+   * 동의를 끈 기관 · 명부에서 빠진 기관의 일지도 남는다(일지 탭과 같다). 없으면 빈 배열
+   */
+  evidence: GuardianInsightEvidence[];
+}
+
+/** 리포트 근거 일지 한 건. journalEntryId 로 일지 상세(`/parent/journal/:id`)를 연다 */
+export interface GuardianInsightEvidence {
+  journalEntryId: string;
+  /** 관찰 날짜 "2026-10-21" */
+  date: string;
+  /** 그 일지를 쓴 기관. 명부에서 빠진 기관일 수 있다 */
+  institution: Institution;
 }
 
 /**

@@ -793,6 +793,10 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     sharedWith: [CENTER],
     approvedAt: "2026-10-29T17:40:00",
     readAt: null,
+    evidence: [
+      { journalEntryId: "jrn_04", date: "2026-08-14", institution: SCHOOL },
+      { journalEntryId: "jrn_05", date: "2026-08-14", institution: CENTER },
+    ],
   },
   {
     id: "gi_02",
@@ -804,6 +808,7 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     sharedWith: [],
     approvedAt: "2026-10-29T17:20:00",
     readAt: "2026-10-29T20:05:00",
+    evidence: [],
   },
   {
     id: "gi_03",
@@ -815,6 +820,10 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     sharedWith: [CENTER],
     approvedAt: "2026-10-27T10:00:00",
     readAt: "2026-10-27T21:00:00",
+    evidence: [
+      { journalEntryId: "jrn_01", date: "2026-08-21", institution: SCHOOL },
+      { journalEntryId: "jrn_02", date: "2026-08-21", institution: CENTER },
+    ],
   },
   {
     id: "gi_04",
@@ -826,6 +835,7 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     sharedWith: [],
     approvedAt: "2026-10-28T09:00:00",
     readAt: null,
+    evidence: [],
   },
 ];
 

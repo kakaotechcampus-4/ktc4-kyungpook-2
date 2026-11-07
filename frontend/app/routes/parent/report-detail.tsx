@@ -1,10 +1,11 @@
+import { ChevronRight } from "lucide-react";
 import { Link, useLoaderData } from "react-router";
 import { InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { getGuardianInsight, isReady } from "@/lib/api";
-import { formatMonthDay } from "@/lib/datetime";
+import { formatDateMonthDay, formatMonthDay } from "@/lib/datetime";
 import { writeSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader({ params }: { params: { id: string } }) {
@@ -24,6 +25,8 @@ export default function ReportDetailPageRoute() {
 /**
  * 받은 리포트 한 편 (G-36). 누가 정리했고 지금 누가 함께 보는지를 글 바로 아래에서 알린다 — 글마다 기관을 고르는
  * 단계는 없고, 보호자는 기관별 공유 동의를 꺼서 막는다. 그 길이 설정이다.
+ *
+ * 본문 바로 아래에 근거 일지를 둔다 — 누르면 그 일지 상세로 가고, 뒤로 가면 이 글로 돌아온다. 근거가 없으면 절을 그리지 않는다.
  *
  * 상세를 여는 것만으로는 고른 아이를 바꾸지 않는다. 설정 링크를 누를 때 이 글의 아이를 고른다 — 다른 아이를 고른
  * 채 이 주소로 바로 들어와도 설정이 엉뚱한 아이의 동의를 보여 주지 않는다. 주소에 아이를 싣지 않는 이유는 설정에서
@@ -57,6 +60,30 @@ function ReportDetailPage() {
         <p className="mb-2 text-[13px] font-bold text-accentink">기관들이 함께 본 것</p>
         <p className="text-[16px] leading-7 whitespace-pre-line">{insight.content}</p>
       </section>
+
+      {insight.evidence.length > 0 ? (
+        <section>
+          <p className="mb-2 text-[13px] font-bold text-accentink">이 글의 근거</p>
+          <ul className="flex flex-col gap-2">
+            {insight.evidence.map((e) => (
+              <li key={e.journalEntryId}>
+                {/* `tap` 을 붙이면 parent.css 가 알약으로 바꾼다 — 일지 상세의 같은 날 목록과 같이 빼 둔다 */}
+                <Link
+                  to={`/parent/journal/${e.journalEntryId}`}
+                  className="flex items-center gap-3 rounded-2xl border border-line px-4 py-3 hover:bg-surface2"
+                >
+                  <InstitutionIcon type={e.institution.type} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-bold">{e.institution.name}</span>
+                    <span className="block text-[13px] text-muted">{formatDateMonthDay(e.date)} 일지</span>
+                  </span>
+                  <ChevronRight aria-hidden className="size-4 shrink-0 text-muted" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="rounded-2xl bg-surface2 px-4 py-4">
         <h2 className="mb-2 text-[15px] font-bold">함께 보는 기관</h2>
