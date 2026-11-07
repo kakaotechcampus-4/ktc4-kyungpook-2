@@ -15,6 +15,9 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
  * @param consentedInstitutions  보호자가 공유에 동의한 기관. 이 밖의 기관 claim 은 재료에서 뺀다
  *                               (AI/insight/CRITERIA.md §7). {@code sharing_consent} 가 ACTIVE 이고 아이가 지금
  *                               명부에 있는 기관이다 (DB 스키마 §5.5, {@code InsightService})
+ * @param historyClaims          같은 아이의 지난 기록 (#387). AI 가 한 기관 이야기뿐인 인사이트를 살릴 때 도구(find_claims)로
+ *                               <b>이 안에서만</b> 찾는다 — 찾는 범위는 모델이 아니라 BE 가 정한다. {@code claims} 와 같은
+ *                               모양이고 고르는 규칙도 같다(승인·동의). 비면 도구를 쓰지 않는다
  */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record InsightAgentRequest(
@@ -23,7 +26,8 @@ public record InsightAgentRequest(
         String periodFrom,
         String periodTo,
         List<Claim> claims,
-        List<Institution> consentedInstitutions) {
+        List<Institution> consentedInstitutions,
+        List<Claim> historyClaims) {
 
     /**
      * 목록은 비어 있더라도 {@code null} 로 보내지 않는다.
@@ -36,6 +40,7 @@ public record InsightAgentRequest(
     public InsightAgentRequest {
         claims = claims == null ? List.of() : claims;
         consentedInstitutions = consentedInstitutions == null ? List.of() : consentedInstitutions;
+        historyClaims = historyClaims == null ? List.of() : historyClaims;
     }
 
     /**

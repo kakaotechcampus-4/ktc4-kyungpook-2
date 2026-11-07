@@ -24,7 +24,7 @@ import {
 } from "@/lib/api";
 import { fileProgressOf } from "@/lib/pipeline";
 import type { AiActivity, FileProgress, Pipeline, PipelineRow, PipelineTurn, UploadResult } from "@/lib/types";
-import { TourButton } from "@/components/org/Tour";
+import { TourButton } from "@/components/Tour";
 import { usePolling } from "@/lib/usePolling";
 
 /**
@@ -425,6 +425,8 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           <span className="text-[13px] text-muted">
             {UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(" · ")} · 20MB까지 · 여러 개를 한 번에 올릴 수 있어요
           </span>
+          {/* 스캔 pdf 는 올라가도 기록이 안 생긴다(BE 가 글자를 못 뽑음) — 올리기 전에 알려 둔다 */}
+          <span className="text-[13px] text-muted">스캔하거나 사진으로 만든 PDF는 글자를 읽지 못해요. 워드·한글에서 PDF로 저장한 파일을 올려 주세요</span>
         </span>
         <button
           type="button"

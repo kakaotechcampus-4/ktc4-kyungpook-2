@@ -119,6 +119,12 @@ class InsightPipelineIntegrationTest {
         RestClient aiAgentRestClient(RestClient.Builder stubAgentBuilder, MockRestServiceServer agentServer) {
             return stubAgentBuilder.build();
         }
+
+        // 인사이트는 전용 RestClient(#386)를 써서 위 교체가 닿지 않는다. 같은 이름으로 덮어 같은 가짜 서버를 보게 한다.
+        @Bean
+        RestClient insightAgentRestClient(RestClient.Builder stubAgentBuilder, MockRestServiceServer agentServer) {
+            return stubAgentBuilder.build();
+        }
     }
 
     @Autowired private InsightWorker worker;

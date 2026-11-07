@@ -770,7 +770,7 @@ export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
   }
   return Promise.all(
     files.map(async (file): Promise<UploadResult> => {
-      // BE 는 pdf 도 받지만 아직 기록으로 나누지 못해 아무것도 생기지 않는다 — 보내기 전에 거절한다
+      // BE 도 400 으로 거절하지만, 보내기 전에 걸러 20MB 짜리 hwp 같은 걸 끝까지 올리지 않게 한다
       if (!hasUploadExtension(file)) return { ok: false, file, reason: "invalid" };
       try {
         return { ok: true, file, progress: await uploadOne(file) };
@@ -807,10 +807,10 @@ function uploadFailReasonOf(err: unknown): UploadFailReason {
 }
 
 /**
- * 올릴 수 있는 형식. BE 는 pdf 도 받지만 기록으로 나누는 단계가 pdf 를 건너뛰어,
- * 올려도 처리 현황에 아무것도 나오지 않는다. pdf 를 지원하면 여기에 다시 넣는다.
+ * 올릴 수 있는 형식. BE RawRecordService.ALLOWED_EXTENSIONS 와 같게 둔다 (docx · pdf 글자 뽑기 #383).
+ * 스캔하거나 사진으로 만든 pdf 는 글자가 없어 업로드는 되지만 기록이 나뉘지 않는다(entries: []).
  */
-export const UPLOAD_EXTENSIONS = ["csv", "txt"];
+export const UPLOAD_EXTENSIONS = ["csv", "txt", "docx", "pdf"];
 /** mock 도 BE 와 같은 용량 제한으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
 const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 

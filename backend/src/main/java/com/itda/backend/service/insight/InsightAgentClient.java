@@ -1,6 +1,11 @@
 package com.itda.backend.service.insight;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.itda.backend.dto.request.insight.InsightAgentRequest;
 import com.itda.backend.dto.response.insight.InsightAgentResponse;
@@ -8,30 +13,37 @@ import com.itda.backend.exception.agent.AiAgentRejectedException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.agent.AiAgentUnreadableResponseException;
 import com.itda.backend.service.agent.AiAgentClient;
-
-import lombok.RequiredArgsConstructor;
+import com.itda.backend.service.agent.AiAgentProperties;
 
 /**
  * 인사이트 에이전트({@code AI POST /insight}) 호출. 재시도·상태 확인은 {@link AiAgentClient} 가 한다.
  *
- * <p><b>요약과 달리 전용 RestClient 를 두지 않는다.</b> 요약이 {@code summaryAgentRestClient} 를 따로 쓰는 건
- * LLM 을 90초까지 기다려서인데(AI/summary/config.py LUNA_TIMEOUT), 인사이트는 60초라
- * (AI/insight/config.py LUNA_TIMEOUT) 매칭·검증과 같은 공통 {@code app.ai.read-timeout} 으로 충분하다.
- * LLM 호출도 한 번뿐이다 — {@code perceive → plan → act → reflect} 중 {@code act} 하나다.
+ * <p><b>전용 RestClient 를 쓴다 (#386).</b> 수정 루프(AI #362)와 도구 사용(AI #373)을 켜면 요청 하나에서 LLM 을
+ * 여러 번 부른다. 공통 값(70초)이면 느린 정상 응답을 끊고 다시 부르기만 반복한다. AI 가 요청 하나를
+ * 180초(INSIGHT_DEADLINE, AI #373) 안에 끝내므로 응답 대기는 그보다 조금 긴 {@code app.insight.read-timeout},
+ * 시간 초과 재시도는 {@code app.insight.timeout-retries} 번으로 줄인다. AI 에 호출이 더 붙어도 상한이 180초라
+ * 이 값은 다시 바꾸지 않는다.
  *
- * <p>⚠️ 다만 70초라는 값은 <b>일지 한 건을 처리하는 에이전트에 맞춰 정한 것을 물려받은 것</b>이고 인사이트로
- * 재 본 적은 없다. 인사이트는 기간치 claim 을 한 번에 다루므로 LLM 밖 처리 시간이 claim 수에 따라 늘어난다.
- * 운영에서 타임아웃 뒤 재시도가 보이면 {@code app.summary.read-timeout} 처럼 전용 값을 두는 게 다음 수다.
+ * <p>⚠️ 시간 초과로 다시 보내도 AI 는 앞 요청을 멈추지 않는다 — 그동안 같은 아이를 두 번 돌린다. 그래서 1번만 다시 보낸다.
  *
  * <p>AI 는 LLM 을 못 쓰면 503 을 준다. 5xx 라서 재시도하고, 그래도 실패하면
  * {@code AiAgentUnavailableException} 이 올라간다. 요약처럼 {@code detail.reason} 으로 갈라야 하는
  * 하위 예외가 인사이트에는 없다 — {@code LlmUnavailable} 하나뿐이다 (AI/insight/graph.py).
  */
 @Component
-@RequiredArgsConstructor
 public class InsightAgentClient {
 
     private final AiAgentClient agentClient;
+
+    @Autowired
+    public InsightAgentClient(@Qualifier("insightAgentRestClient") RestClient restClient, ObjectMapper objectMapper,
+            AiAgentProperties properties, InsightProperties insightProperties) {
+        this(new AiAgentClient(restClient, objectMapper, properties, insightProperties.timeoutRetries()));
+    }
+
+    InsightAgentClient(AiAgentClient agentClient) {
+        this.agentClient = agentClient;
+    }
 
     /**
      * 한 아이의 한 기간을 인사이트로 만든다.
