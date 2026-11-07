@@ -101,9 +101,18 @@ def run_one(case: dict) -> dict:
             claims=claims,
             covered_entry_ids=final["covered_entry_ids"],
             uncovered_entry_ids=final["uncovered_entry_ids"],
-            # 엔드포인트가 실제로 낼 상태. run_summary 와 같은 규칙이다 (graph.py) —
-            # 재료를 받았는데 근거가 남은 문장이 0 이면 빈 요약을 200 으로 주지 않는다.
-            status=503 if (payload.sources and not final["claims"]) else 200,
+            # 엔드포인트가 실제로 낼 상태. run_summary 와 **같은 규칙**이다 (graph.py) —
+            # 남은 문장이 0 인 경우는 둘이고 응답이 다르다 (CRITERIA.md §2).
+            #   모델이 처음부터 빈 claims 를 냈다      → 쓸 말이 없는 날 → 200 no_content
+            #   문장은 냈는데 ground 에서 다 버려졌다  → 다시 부르면 될 수 있다 → 503
+            # 둘을 합쳐 세면 "특이사항 없음" 인 날이 실패로 잡혀, 요약 성공률은 실제보다 낮게
+            # 버린 문장 비율은 실제보다 높게 나온다.
+            status=(
+                503
+                if (payload.sources and not final["claims"] and final.get("raw_claims"))
+                else 200
+            ),
+            no_content=bool(payload.sources) and not final.get("raw_claims"),
             needs_review=final.get("needs_review", False),
             review_reasons=final.get("review_reasons", []),
             llm_called=final.get("llm_called", False),
@@ -113,6 +122,9 @@ def run_one(case: dict) -> dict:
                 "dropped_evidence": final.get("dropped_evidence", 0),
                 #: 근거가 0 개가 되거나 숫자가 안 맞아 버린 문장들.
                 "dropped_claims": final.get("dropped_claims", []),
+                "dropped_detail": final.get("dropped_detail", []),
+                #: 버린 문장마다 {text, reason, evidence}. 왜 버렸는지는 dropped_claims 의
+                #: 글만으로는 알 수 없다 — 기준선을 읽을 때 이유별로 세려고 같이 남긴다.
                 "dropped_detail": final.get("dropped_detail", []),
                 "source_chars": sum(len(v) for v in by_id.values()),
                 "content_chars": len(final["content"]),
@@ -156,7 +168,17 @@ def main() -> None:
     out.write_text(
         json.dumps({"records": records}, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    # 한눈에 보는 요약. 자세한 채점은 score.py 가 한다.
+    drops = [d for r in records for d in r.get("diag", {}).get("dropped_detail", [])]
+    kept = sum(len(r.get("claims") or []) for r in records)
+    by_reason: dict[str, int] = {}
+    for d in drops:
+        by_reason[d["reason"]] = by_reason.get(d["reason"], 0) + 1
     print(f"완료 {len(records)}건 / {int(time.time() - started)}s → {out}")
+    print(f"  살아남은 문장  {kept}")
+    print(f"  버린 문장      {len(drops)}/{kept + len(drops)}  {by_reason or '{}'}")
+    print(f"  503 묶음       {sum(1 for r in records if r.get('status') == 503)}"
+          f"  · no_content {sum(1 for r in records if r.get('no_content'))}")
 
 
 if __name__ == "__main__":
