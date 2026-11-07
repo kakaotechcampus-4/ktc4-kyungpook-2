@@ -180,13 +180,32 @@ def _stem(fragment: str) -> str:
     return _TAIL.sub("", fragment.strip()) or fragment.strip()
 
 
-def _group(pieces) -> dict:
-    """어미만 다른 조각을 한 줄로 묶는다. 보여줄 때는 **가장 흔한 꼴** 그대로 쓴다."""
+#: 같은 일지를 여러 번 요약한 것은 `D-08#2` 처럼 번호가 붙는다 (solo.py).
+_AGAIN = re.compile(r"#\d+$")
+
+
+def _case(summary_id) -> str:
+    """같은 일지를 다시 요약한 것들을 한 기록으로 본다."""
+    return _AGAIN.sub("", str(summary_id))
+
+
+def _group(pairs) -> list[dict]:
+    """
+    어미만 다른 조각을 한 줄로 묶는다. 보여줄 때는 **가장 흔한 꼴** 그대로 쓴다.
+
+    **횟수가 아니라 기록 수로 센다.** 같은 일지를 세 판 요약하면 같은 군더더기가 세 번
+    나오는데, 그걸 "세 번 고쳤다" 로 읽으면 한 건짜리가 반복 오류로 둔갑한다
+    (#368 리뷰 1 · 11/06 시험에서 D-08 하나를 3번으로 셌다).
+    """
     forms: dict[str, Counter] = {}
-    for piece in pieces:
-        forms.setdefault(_stem(piece), Counter())[piece] += 1
-    out = sorted(forms.values(), key=lambda c: -sum(c.values()))
-    return {c.most_common(1)[0][0]: sum(c.values()) for c in out[:8]}
+    cases: dict[str, set] = {}
+    for piece, summary_id in pairs:
+        key = _stem(piece)
+        forms.setdefault(key, Counter())[piece] += 1
+        cases.setdefault(key, set()).add(_case(summary_id))
+    order = sorted(forms, key=lambda k: (-len(cases[k]), -sum(forms[k].values())))
+    return [{"말": forms[k].most_common(1)[0][0], "기록": len(cases[k]), "번": sum(forms[k].values())}
+            for k in order[:8]]
 
 
 def tally(rows: list[dict]) -> dict:
@@ -206,6 +225,10 @@ def tally(rows: list[dict]) -> dict:
         "수정량평균": round(sum(abs(r["chars"]) for r in edited) / len(edited), 1) if edited else None,
         #: **같은 문구를 여러 번 뺐다면** 그게 프롬프트에서 고칠 자리다.
         #: 종류("줄임")보다 이쪽이 훨씬 구체적이다 — 쓰다 보니 알게 됐다.
-        "자주뺀말": _group(f for r in edited for f in r.get("뺀말") or []),
-        "자주넣은말": _group(f for r in edited for f in r.get("넣은말") or []),
+        "자주뺀말": _group((f, r.get("summary_id")) for r in edited for f in r.get("뺀말") or []),
+        "자주넣은말": _group((f, r.get("summary_id")) for r in edited for f in r.get("넣은말") or []),
+        #: 손댄 **기록** 수. 같은 일지를 여러 판 요약한 것은 하나로 센다
+        "손댄기록": len({_case(r["summary_id"]) for r in rows
+                         if r["action"] != KEEP and r.get("summary_id") is not None}),
+        "기록": len({_case(r["summary_id"]) for r in rows if r.get("summary_id") is not None}),
     }

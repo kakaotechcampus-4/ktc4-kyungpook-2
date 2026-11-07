@@ -84,7 +84,10 @@ def main() -> None:
     n = t["문장"]
     summaries = len({r["summary_id"] for r in rows})
 
-    print(f"\n요약 {summaries}건 · 문장 {n}개\n")
+    again = summaries - t["기록"]
+    extra = f" (같은 일지를 다시 요약한 것 {again}건 포함)" if again else ""
+    print(f"\n서로 다른 기록 {t['기록']}건 · 요약 {summaries}건{extra} · 문장 {n}개")
+    print(f"손댄 기록 {t['손댄기록']} / {t['기록']}건\n")
 
     print("■ 교사가 무엇을 했나")
     for action in (KEEP, EDIT, DELETE, ADD):
@@ -102,15 +105,18 @@ def main() -> None:
         for kind, cnt in t["종류"].items():
             print(f"  {kind}  {_bar(cnt, worst)}  {cnt:>4}")
 
-    repeated = {w: n for w, n in t["자주뺀말"].items() if n >= 2}
+    # **기록 2건 이상**에서 지운 말만 "고칠 자리" 다. 같은 일지를 여러 판 요약하면
+    # 같은 군더더기가 여러 번 나오는데, 그건 한 건짜리다 (#368 리뷰 1).
+    repeated = [w for w in t["자주뺀말"] if w["기록"] >= 2]
     if repeated:
-        print("\n■ 교사가 **여러 번 지운 말** — 프롬프트에서 고칠 자리")
-        for word, cnt in repeated.items():
-            print(f"  {cnt}번  \"{word}\"")
-    elif t["자주뺀말"]:
-        print("\n■ 교사가 지운 말 (한 번씩)")
-        for word, cnt in list(t["자주뺀말"].items())[:5]:
-            print(f"        \"{word}\"")
+        print("\n■ 교사가 **여러 기록에서 지운 말** — 프롬프트에서 고칠 자리")
+        for w in repeated:
+            print(f"  기록 {w['기록']}건 · {w['번']}번  \"{w['말']}\"")
+    if t["자주뺀말"] and not repeated:
+        print("\n■ 교사가 지운 말 — **아직 고칠 자리는 아니다** (전부 기록 1건씩)")
+        for w in t["자주뺀말"][:5]:
+            tail = f"  (같은 기록 {w['번']}판)" if w["번"] > 1 else ""
+            print(f"        \"{w['말']}\"{tail}")
 
     if t["반복오류"]:
         print("\n■ 반복 오류 — 같은 종류로 두 번 이상. 다음에 고칠 곳")
