@@ -62,7 +62,12 @@ public record Gate1SummaryResponse(
      * @param issueTypes 검증 issue_types 원본 코드. 지금 화면은 쓰지 않는다 — O-24 {@code violationCode} 처럼 코드로
      *                   가를 일이 생길 때를 위해 남긴다
      * @param reasons    선생님이 읽을 문장 ("다른 아이의 이름이 함께 적혀 있어요"). 화면은 이것을 보여 준다
+     * @param claimIndexes 검증 구간과 근거 구간이 겹친 문장 카드 번호({@code claims[].index}), 오름차순 (#408).
+     *                   AI 문장만 든다. 검증 구간이 없거나(대상불명확 · 모델호출실패) 카드로 못 읽는 요약이면 빈
+     *                   목록이고, 경고는 그대로 나간다. 사유와 짝지어지지 않는다 — 사유가 여럿이면 어느 문장이 어느
+     *                   사유인지 모른다
      */
-    public record ReviewFlag(Long journalEntryId, List<String> issueTypes, List<String> reasons) {
+    public record ReviewFlag(Long journalEntryId, List<String> issueTypes, List<String> reasons,
+            List<Integer> claimIndexes) {
     }
 }
