@@ -89,6 +89,11 @@ class InsightInput(BaseModel):
     #: sharing_consent 가 구현되기 전까지 BE 는 아이가 등록된 기관 전부를 넣는다.
     consented_institutions: list[Institution] = Field(default_factory=list)
 
+    #: 같은 아이의 **지난** 승인된 claim (이번 기간보다 앞). 도구 사용(INSIGHT_TOOLS)에서
+    #: find_claims 가 이 안에서만 찾는다 — 조회 범위는 모델이 아니라 BE 가 넣은 이 목록이 정한다.
+    #: claims 와 같이 동의 밖 기관 것은 perceive 가 뺀다. 비어 있으면 도구를 쓰지 않는다.
+    history_claims: list[InsightClaim] = Field(default_factory=list)
+
 
 # ── 출력 ────────────────────────────────────────────────────────
 
@@ -119,6 +124,9 @@ class Insight(BaseModel):
     #: 검증을 거치지 않은 문장이라, 비어 있지 않으면 Gate 2 에서 "교사 작성 포함" 으로 표시한다 (#199).
     #: ⚠️ claim_ids 의 부분집합이 아니다 — 대처(supports) 근거 번호도 들어간다.
     teacher_claim_ids: list[str] = Field(default_factory=list)
+    #: 도구(find_claims)로 지난 기록에서 가져와 근거로 쓴 claim. 비어 있지 않으면 Gate 2 에서
+    #: "지난 기록을 찾아 씀" 으로 표시한다. claim_ids · supports 근거 안에 들어 있다.
+    looked_up_claim_ids: list[str] = Field(default_factory=list)
 
 
 class InsightOutput(BaseModel):

@@ -10,6 +10,8 @@ import os
 import re
 from dataclasses import dataclass, field
 
+import time
+
 import requests
 
 #: 503 으로 나가는 예외. 모든 에이전트가 **같은 클래스**를 쓴다 — 따로 두면
@@ -109,14 +111,29 @@ def _parse_json_block(text: str) -> dict:
         raise LlmError(f"JSON 파싱 실패: {text[:200]}", "bad_json") from exc
 
 
-def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResult:
+#: 마감까지 이보다 적게 남으면 부르지 않는다 — 부르자마자 시간 초과가 날 호출이다.
+MIN_CALL_SECONDS = 5.0
+
+
+def _budget(timeout: float, deadline: float | None) -> float:
+    """이번 호출의 제한시간 = min(timeout, 마감까지 남은 시간). 모자라면 LlmError(deadline)."""
+    if deadline is None:
+        return timeout
+    left = deadline - time.monotonic()
+    if left < MIN_CALL_SECONDS:
+        raise LlmError(f"시간 상한 (남은 {left:.0f}초)", "deadline")
+    return min(timeout, left)
+
+
+def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT,
+             deadline: float | None = None) -> LlmResult:
     """
     Luna에 물어보고 JSON 객체를 돌려받는다.
     response_format으로 JSON 출력을 강제한다.
     temperature는 보내지 않는다 — 이 모델은 기본값(1)만 허용한다.
     """
     url, key = _endpoint()
-    payload = _post(url, key, messages, timeout)
+    payload = _post(url, key, messages, _budget(timeout, deadline))
 
     # Luna 프록시는 출력(생각 + 답)을 2000 토큰까지만 준다. 입력이 길면 생각에 다 써서
     # 답이 빈 채로 온다 (finish_reason=length). 그때만 생각을 줄여 한 번 더 부른다.
@@ -126,7 +143,7 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
     retried = False
     if choice.get("finish_reason") == "length" and not (content or "").strip():
         print(f"[{AGENT}] 생각 한도 초과 → reasoning_effort={LUNA_REASONING_EFFORT_ON_OVERFLOW} 로 다시 부른다")
-        payload = _post(url, key, messages, timeout,
+        payload = _post(url, key, messages, _budget(timeout, deadline),
                         reasoning_effort=LUNA_REASONING_EFFORT_ON_OVERFLOW)
         retried = True
 
@@ -189,3 +206,86 @@ def spans_for_quotes(content: str, quotes: list) -> list[dict]:
         if span not in spans:
             spans.append(span)
     return spans
+
+
+# ── 도구 사용 (딥다이브 3) ──────────────────────────────────────
+
+#: Luna 는 /v1/chat/completions 에서 생각(reasoning)과 도구(tools)를 같이 받지 않는다 (11/06, 400).
+#: "/v1/responses 를 쓰거나 reasoning_effort 를 none 으로" 라고 답한다. 생각을 끄면 품질이
+#: 떨어지므로(실데이터 v3) 도구가 필요한 호출만 /v1/responses 로 부른다.
+RESPONSES_PATH = "/v1/responses"
+
+
+def _responses(url: str, key: str, body: dict, timeout: float) -> dict:
+    try:
+        response = requests.post(
+            url, json={"model": luna_model(), **body},
+            headers={"content-type": "application/json", "Authorization": f"Bearer {key}"},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.Timeout as exc:
+        raise LlmError(f"Luna 제한시간 초과 ({timeout}s): {exc}", "timeout") from exc
+    except requests.RequestException as exc:
+        raise LlmError(f"Luna 호출 실패: {exc}", "http_error") from exc
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise LlmError(f"응답 본문이 JSON 이 아닙니다: {response.text[:200]}", "bad_json") from exc
+
+
+def ask_with_tools(instructions: str, user_input: str, tools: list[dict], run_tool,
+                   *, max_calls: int = 2, timeout: float = LUNA_TIMEOUT,
+                   deadline: float | None = None) -> LlmResult:
+    """
+    도구를 쓸 수 있게 Luna 를 부르고, 마지막에 JSON 객체를 돌려받는다.
+
+    모델이 도구를 부르면 run_tool(이름, 인자) 결과를 돌려주고 다시 부른다. 도구 호출은
+    max_calls 번까지 — 넘으면 tool_choice="none" 으로 도구 없이 답하게 한다.
+    usage["tool_calls"] 에 실제로 실행한 도구 호출 수를 담는다.
+    """
+    chat_url, key = _endpoint()
+    url = chat_url[: -len(LUNA_CHAT_PATH)] + RESPONSES_PATH
+    body = {"instructions": instructions, "input": user_input, "tools": tools}
+    executed = 0
+    usage: dict = {}
+
+    for _ in range(max_calls + 1):
+        payload = _responses(url, key, body, _budget(timeout, deadline))
+        for k, v in (payload.get("usage") or {}).items():
+            if isinstance(v, int):
+                usage[k] = usage.get(k, 0) + v
+        if payload.get("status") == "incomplete":
+            raise LlmError(f"응답이 잘림: {payload.get('incomplete_details')}", "empty_response")
+
+        output = payload.get("output") or []
+        calls = [it for it in output if it.get("type") == "function_call"]
+        if not calls:
+            text = "".join(
+                c.get("text", "") for it in output if it.get("type") == "message"
+                for c in it.get("content") or []
+            )
+            if not text.strip():
+                raise LlmError("빈 응답 (message 가 없음)", "empty_response")
+            usage["tool_calls"] = executed
+            data = _parse_json_block(text)
+            if not data:
+                raise LlmError("빈 응답 ({})", "empty_response")
+            return LlmResult(data=data, usage=usage)
+
+        results = []
+        for call in calls:
+            try:
+                args = json.loads(call.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            executed += 1
+            out = run_tool(call.get("name"), args if isinstance(args, dict) else {})
+            results.append({"type": "function_call_output", "call_id": call.get("call_id"),
+                            "output": json.dumps(out, ensure_ascii=False)})
+        body = {"instructions": instructions, "previous_response_id": payload.get("id"),
+                "tools": tools, "input": results}
+        if executed >= max_calls:
+            body["tool_choice"] = "none"
+
+    raise LlmError("도구 호출 한도를 넘겼는데도 답이 없음", "empty_response")

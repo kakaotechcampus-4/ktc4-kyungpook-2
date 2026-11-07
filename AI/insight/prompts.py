@@ -125,3 +125,40 @@ def build_refine_messages(state: dict, raw: dict, reasons: list[dict], allowed_i
         "같은 JSON 형식으로 insights 에 인사이트 하나만 담아 답한다."
     )
     return [{"role": "system", "content": system_prompt()}, {"role": "user", "content": user}]
+
+
+def build_lookup_messages(state: dict, raw: dict, claim_ids: list[str],
+                          reasons: list[dict] | None = None) -> tuple[str, str]:
+    """
+    도구 사용 (nodes._lookup). 한 기관뿐인 인사이트를 지난 기록으로 보강하게 한다.
+
+    /v1/responses 형식이라 (instructions, input) 두 덩어리로 돌려준다. 쓰는 원칙은 처음 쓸 때와
+    같다. 기록은 이 인사이트의 근거 claim 만 넣는다. 인용은 넣지 않는다.
+    """
+    index = {c["claim_id"]: c for c in state["claims"]}
+    lines = [
+        f"[{i}] ({index[i]['entry_date']}, {index[i]['institution_type']}) {index[i]['text']}"
+        for i in claim_ids if i in index
+    ]
+    keep = {k: raw.get(k) for k in ("situation", "behavior", "supports", "claim_ids", "content")}
+    instructions = system_prompt() + (
+        "\n\n지금 할 일: 아래 인사이트는 근거가 한 기관뿐이고 대처도 없어서, 다른 기관이 쓸 정보가 없다. "
+        "find_claims 로 같은 아이의 지난 기록에서 같은 상황을 찾아본다. "
+        "다른 기관에서 같은 상황이 있었으면, 그 기록의 claim_id 를 근거에 더해 기관 간 비교로 다시 쓴다. "
+        "대처와 결과가 그 기록에 있으면 supports 에 쓴다. "
+        "같은 상황이 없으면 억지로 묶지 말고 insights 를 빈 배열로 둔다. "
+        "근거 claim_id 는 아래 기록과 find_claims 가 돌려준 것에서만 고른다."
+    )
+    user = (
+        f"아이: {state['child_name']}\n"
+        f"기간: {state['period_from']} ~ {state['period_to']}\n\n"
+        "기록 (이 인사이트의 근거):\n" + "\n".join(lines) + "\n\n"
+        "처음 쓴 인사이트:\n" + json.dumps(keep, ensure_ascii=False)
+    )
+    # 기록에없는말 이 같이 걸렸으면 그 문장도 빼게 한다 (build_refine_messages 와 같은 말)
+    fixes = [r for r in (reasons or []) if r.get("sentence")]
+    if fixes:
+        user += "\n\n같이 고칠 점:\n" + "\n".join(
+            f'- {r["field"]}: "{r["sentence"]}" → 기록이 없다는 말이다. 그 표현은 빼고 나머지는 남긴다.'
+            for r in fixes)
+    return instructions, user

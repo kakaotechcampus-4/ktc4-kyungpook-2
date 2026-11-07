@@ -91,11 +91,15 @@ def main():
     ap.add_argument("--answer", default="synthetic_school_answer.json", help="정답표 파일")
     ap.add_argument("--weak-mode", choices=["off", "drop", "refine"], default=None,
                     help="약한 인사이트 처리 (INSIGHT_WEAK_MODE). 안 주면 config 값")
+    ap.add_argument("--tools", action="store_true",
+                    help="도구 사용 켬 (INSIGHT_TOOLS). 앞 기간 claim 을 history_claims 로 넣는다. --weak-mode refine 과 같이")
     ap.add_argument("--window", type=int, default=30, help="인사이트 기간(일). 30 이면 월 단위")
     args = ap.parse_args()
     months = set(args.months.split(","))
     if args.weak_mode:
         insight_config.INSIGHT_WEAK_MODE = args.weak_mode
+    if args.tools:
+        insight_config.INSIGHT_TOOLS = True
 
     real = [e for e in load(args.real) if e["date"][:2] in months]
     school = [e for e in load(args.school) if e["date"][:2] in months]
@@ -113,7 +117,7 @@ def main():
     roster = [RosterEntry(child_id=child_id[n], name=n, birthdate=f"2015-01-{i + 1:02d}") for i, n in enumerate(names)]
     jid = {e["id"]: i + 1 for i, e in enumerate(entries)}
     log = {"args": vars(args), "entries": [], "summaries": [], "insights": [], "weak": [],
-           "weak_mode": insight_config.INSIGHT_WEAK_MODE}
+           "weak_mode": insight_config.INSIGHT_WEAK_MODE, "tools": insight_config.INSIGHT_TOOLS}
     calls = Counter()
     t0 = time.time()
 
@@ -185,12 +189,15 @@ def main():
             d = dt.date.fromisoformat(c["entry_date"])
             key = d.month if args.window >= 28 else d.isocalendar()[1]
             windows[key].append(c)
+        past = []  # 앞 기간의 claim — 도구(find_claims)가 찾을 지난 기록 (BE 의 history_claims 와 같은 역할)
         for key, cs in sorted(windows.items()):
             days = sorted(c["entry_date"] for c in cs)
+            history, past = list(past), past + cs
             if len(cs) < 2:
                 continue
             payload = InsightInput(child_id=child_id[child], child_name=child, period_from=days[0],
-                                   period_to=days[-1], claims=cs, consented_institutions=consented)
+                                   period_to=days[-1], claims=cs, consented_institutions=consented,
+                                   history_claims=history if insight_config.INSIGHT_TOOLS else [])
             trace = {}
             out, err = retry(lambda: run_insight(payload, trace=trace))
             calls["insight"] += 1
@@ -243,11 +250,16 @@ def main():
                            "mode": log["weak_mode"], "dropped": n_dropped}
     RF = log.get("refined", [])
     rescued = sum(r["outcome"] == "rescued" for r in RF)
+    LK = [r for r in RF if r.get("action") == "lookup"]
+    log["weak_summary"]["lookup"] = {"tried": len(LK), "rescued": sum(r["outcome"] == "rescued" for r in LK),
+                                     "tool_calls": sum(r.get("tool_calls", 0) for r in LK)}
     log["weak_summary"]["refined"] = {"tried": len(RF), "rescued": rescued}
     print(f"  약한 인사이트  {len(W)}/{n_written}  {by_kind}  · 모드 {log['weak_mode']} · 버림 {n_dropped}"
-          + (f" · 고치기 {rescued}/{len(RF)} 살림" if RF else ""))
+          + (f" · 고치기 {rescued}/{len(RF)} 살림" if RF else "")
+          + (f" (도구로 보강 {log['weak_summary']['lookup']['rescued']}/{len(LK)}, 도구 호출 {log['weak_summary']['lookup']['tool_calls']})" if LK else ""))
     for r in RF:
-        print(f"    ~ [{r['child']}] {r['outcome']} {r['why']}  {r['before'][:50]} → {(r['after'] or '')[:50]}")
+        tag = f"도구 {r.get('looked_up')}" if r.get("action") == "lookup" else "고치기"
+        print(f"    ~ [{r['child']}] {tag} {r['outcome']} {r['why']}  {r['before'][:50]} → {(r['after'] or '')[:50]}")
     for w in W:
         kinds = sorted({r["kind"] for r in w["reasons"]})
         print(f"    - [{w['child']}] {kinds} {'(버림) ' if w['dropped'] else ''}{w['content'][:60]}")
@@ -274,6 +286,8 @@ def main():
     prefix = "" if args.real == "dev.json" else Path(args.real).stem + "_"
     if log["weak_mode"] != "off":
         prefix += f"weak-{log['weak_mode']}_"
+    if log["tools"]:
+        prefix += "tools_"
     name = f"run_{prefix}{args.months.replace(',', '-')}_{args.child or 'all'}_{dt.datetime.now():%m%d_%H%M}.json"
     (out_dir / name).write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"저장: {out_dir / name}")
