@@ -65,22 +65,28 @@ export default function OrgTermsPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10 break-keep">
+    <div
+      className="flex min-h-screen items-center justify-center px-4 py-10 break-keep"
+      /*
+        회원가입(`signup.tsx`) · 보호자 약관과 같은 두 겹 바탕.
+
+        이 화면도 기관 묶음(`org/layout.tsx`) **밖**이라 `org.css` 의 캔버스가 닿지 않는다.
+        가입 → 이 화면 → 대시보드 순으로 보면 가운데 한 장만 맨 크림이었다.
+      */
+      style={{
+        background:
+          "radial-gradient(620px 380px at 100% 0%, #fff0b4 0%, rgb(255 240 180 / 0) 64%)," +
+          "radial-gradient(560px 460px at 0% 100%, #ddf2e3 0%, rgb(221 242 227 / 0) 64%)," +
+          "var(--color-paper)",
+      }}
+    >
       <div className="w-full max-w-[460px]">
-        <div className="mb-7 flex items-center gap-2.5">
-          <span
-            aria-hidden
-            className="flex size-10 items-center justify-center rounded bg-ink text-[17px] font-bold text-paper"
-          >
-            잇
-          </span>
-          <div>
-            <p className="text-[19px] font-bold tracking-tight">잇다 ITDA</p>
-            <p className="text-[14px] text-muted">약관 동의</p>
-          </div>
+        <div className="mb-7 flex flex-col items-center gap-1.5 text-center">
+          <img src="/img/logo.png" alt="잇다" width={600} height={220} className="h-auto w-[116px]" />
+          <p className="text-[14px] text-muted">약관 동의</p>
         </div>
 
-        <div className="flex flex-col gap-5 rounded border border-line bg-surface p-6">
+        <div className="flex flex-col gap-5 rounded-[22px] border border-line bg-surface p-6 shadow-[0_10px_30px_rgba(120,90,40,0.07)]">
           <div>
             <h1 className="mb-1.5 text-[20px] font-bold tracking-tight">기관 서비스 이용에 동의해 주세요</h1>
             <p className="text-[15px] leading-7 text-ink2">
@@ -95,8 +101,8 @@ export default function OrgTermsPage() {
             pending={pending}
             error={error}
             onSubmit={() => void submit()}
-            rounded="rounded"
-            buttonClassName="tap h-12 w-full rounded bg-ink px-4 text-[16px] font-semibold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted"
+            rounded="rounded-2xl"
+            buttonClassName="tap h-12 w-full rounded-full bg-ink px-4 text-[16px] font-semibold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted"
           />
         </div>
 

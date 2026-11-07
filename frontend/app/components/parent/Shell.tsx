@@ -66,6 +66,7 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
       {!isOnboarding ? (
         <nav
           aria-label="주 메뉴"
+          data-tour="tabs"
 className="fixed bottom-0 left-1/2 flex w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] -translate-x-1/2 border-t border-line bg-surface/92 backdrop-blur-sm"
         >
           {TABS.map((t) => {

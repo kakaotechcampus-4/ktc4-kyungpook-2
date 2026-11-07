@@ -24,7 +24,7 @@ import {
 } from "@/lib/api";
 import { fileProgressOf } from "@/lib/pipeline";
 import type { AiActivity, FileProgress, Pipeline, PipelineRow, PipelineTurn, UploadResult } from "@/lib/types";
-import { TourButton } from "@/components/org/Tour";
+import { TourButton } from "@/components/Tour";
 import { usePolling } from "@/lib/usePolling";
 
 /**

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Link } from "react-router";
-import { TourButton, type TourScreen } from "@/components/org/Tour";
+import { TourButton, type TourScreen } from "@/components/Tour";
 
 /** 대시보드가 아닌 화면의 제목 위 "‹ 대시보드". 화면마다 같은 자리 */
 export function BackHome() {

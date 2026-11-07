@@ -4,9 +4,12 @@ import { createPortal } from "react-dom";
 /**
  * 화면별 사용법(코치마크). 제목 옆 "?" 를 누르면 화면이 어두워지고 설명할 부분만 밝게 보인다.
  * 단계는 화면의 `data-tour="이름"` 표시를 가리킨다. 지금 화면에 없는 표시는 건너뛴다(목록이 비었을 때 등).
- * 대시보드만 처음 온 사람에게 한 번 자동으로 띄운다.
+ * 각 묶음의 첫 화면(기관 대시보드 · 보호자 홈)만 처음 온 사람에게 한 번 자동으로 띄운다.
+ *
+ * 기관·보호자가 함께 쓰므로 `components/org` 가 아니라 여기 둔다. react 말고는 아무것도 안 받아서
+ * 보호자 묶음에 들어가도 무게가 늘지 않는다 (보호자는 SMS 링크로 들어오는 첫 페인트가 중요하다).
  */
-export type TourScreen = "dash" | "check" | "review" | "kids" | "lists";
+export type TourScreen = "dash" | "check" | "review" | "kids" | "lists" | "home";
 
 interface Step {
   /** data-tour 이름. 없으면 화면 가운데에 띄운다 */
@@ -48,9 +51,17 @@ const TOURS: Record<TourScreen, Step[]> = {
     { at: "composer", title: "새로 보내기", text: "준비물이나 확인할 일을 보호자에게 보내요." },
     { at: "sent", title: "확인 현황", text: "보호자가 몇 명 확인했는지 보여요. 필요 없어진 안내는 [내리기]로 내려요." },
   ],
+  // 보호자는 한 달에 몇 번, 그것도 휴대폰으로 들어온다. 선생님 투어(6단계)와 같은 분량을 보지 않는다.
+  // 세 단계만 둔다 — 무엇이 오는지 · 어디서 모아 보는지 · 무엇을 내가 정하는지.
+  home: [
+    { at: "news", title: "새 소식", text: "기관에서 올린 그날의 기록이에요. 눌러서 전체를 읽을 수 있어요." },
+    { at: "orgs", title: "연결된 기관", text: "아이가 다니는 곳이에요. 기관마다 기록을 공유할지 보호자가 정해요." },
+    { at: "tabs", title: "아래 메뉴", text: "타임라인은 날짜별 기록, 리포트는 여러 기관 기록을 묶어 정리한 주간 글이에요. 설정에서 공유를 켜고 꺼요." },
+  ],
 };
 
-const SEEN_KEY = "itda.org.tour.dash.seen";
+/** 자동 재생은 화면마다 따로 센다 — 하나로 묶으면 기관 투어를 본 사람에게 보호자 투어가 안 뜬다 */
+const seenKey = (screen: TourScreen) => `itda.tour.${screen}.seen`;
 
 function target(at: string | null): HTMLElement | null {
   return at ? document.querySelector<HTMLElement>(`[data-tour="${at}"]`) : null;
@@ -70,7 +81,7 @@ export function TourButton({ screen, auto = false }: { screen: TourScreen; auto?
     if (!auto) return;
     let seen = true;
     try {
-      seen = localStorage.getItem(SEEN_KEY) === "1";
+      seen = localStorage.getItem(seenKey(screen)) === "1";
     } catch {
       // 저장소가 막힌 브라우저 — 매번 띄우지 않도록 본 것으로 친다
     }
@@ -78,9 +89,10 @@ export function TourButton({ screen, auto = false }: { screen: TourScreen; auto?
   }, [auto, start]);
 
   function end() {
-    if (screen === "dash") {
+    // 저절로 뜨는 화면만 "봤다"를 남긴다. 손으로 연 투어는 다음에 또 열 수 있어야 한다
+    if (auto) {
       try {
-        localStorage.setItem(SEEN_KEY, "1");
+        localStorage.setItem(seenKey(screen), "1");
       } catch {
         // 위와 같음
       }
