@@ -258,7 +258,13 @@ export default function ChildrenPage() {
                   who={i.childName}
                   sub={`${i.period} · 기록 ${i.evidence.length}건`}
                   text={i.content}
-                  tag={i.teacherWritten ? <Chip tone="human">교사 작성 포함</Chip> : <Chip tone="human">분석 도착</Chip>}
+                  tag={
+                    <span className="flex flex-wrap justify-end gap-1.5">
+                      {i.teacherWritten ? <Chip tone="human">교사 작성 포함</Chip> : <Chip tone="human">분석 도착</Chip>}
+                      {/* #388 지난 기록을 찾아 쓴 분석. 경고가 아니라 알아 둘 일이라 ai 색 */}
+                      {i.evidence.some((e) => e.lookedUp) ? <Chip tone="ai">지난 기록 포함</Chip> : null}
+                    </span>
+                  }
                   action="읽고 승인"
                   onOpen={() => walk.open(i.id)}
                   done={walk.isDone(i.id) ? (outcomes[i.id] ?? "처리했어요") : undefined}

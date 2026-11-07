@@ -273,23 +273,33 @@ function Paragraphs({ text }: { text: string }) {
   );
 }
 
-/** 분석 보고서 — 본문 · 근거 기록 · 볼 수 있는 곳 · 교사 작성 경고 (O-40 에 있는 것만) */
+/** 분석 보고서 — 본문 · 근거 기록 · 볼 수 있는 곳 · 지난 기록 안내 · 교사 작성 경고 (O-40 에 있는 것만) */
 function Report({ insight, kind }: { insight: Insight; kind: "review" | "approved" }) {
   const granted = insight.targets.filter((t) => t.consent === "granted");
+  const lookedUp = insight.evidence.some((e) => e.lookedUp);
   return (
     <>
       <p className="flex flex-wrap items-center gap-2 text-[14px] text-ink2">
         <Chip tone="idle">{insight.period}</Chip>
         {kind === "review" ? `기록 ${insight.evidence.length}건 · 승인 전` : "우리 기관이 승인"}
       </p>
+      {/* #388 정보 안내. 교사 작성 경고(아래, alert)와 달리 잘못이 아니라 알아 둘 일이라 차분한 색 · role 없이 둔다.
+          승인자가 "이번 주 기록끼리 엮은 글"로 읽지 않도록 본문보다 먼저 보인다 */}
+      {lookedUp ? (
+        <p className="rounded-[14px] bg-accentsoft px-3.5 py-3 text-[14px] leading-normal text-accentink">
+          <b>AI가 지난 기록도 찾아 봤어요.</b> 이번 기간 기록이 아닌 근거는 &lsquo;지난 기록&rsquo;으로 표시했어요. 날짜와 기관을
+          확인해 주세요.
+        </p>
+      ) : null}
       <PopSection title="분석 내용">
         <Paragraphs text={insight.content} />
       </PopSection>
       <PopSection title={`근거 기록 ${insight.evidence.length}건`}>
         <ul className="flex flex-col items-start gap-2">
           {insight.evidence.map((e) => (
-            <li key={e.childContextId}>
+            <li key={e.childContextId} className="flex flex-wrap items-center gap-2">
               <EvidenceChip date={e.date} label={e.label} institution={e.institution} />
+              {e.lookedUp ? <Chip tone="ai">지난 기록</Chip> : null}
             </li>
           ))}
         </ul>

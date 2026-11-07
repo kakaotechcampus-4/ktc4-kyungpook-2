@@ -624,6 +624,14 @@ export const INSIGHTS: Insight[] = [
         label: "등원 기록",
         institution: CENTER,
       },
+      // AI 가 지난 기록에서 찾아 쓴 근거 (#387 · #388) — "지난 기록" 표시를 mock 에서 보려고 둔다
+      {
+        childContextId: "cc_2914",
+        date: "2026-07-17",
+        label: "체육관 기록",
+        institution: SCHOOL,
+        lookedUp: true,
+      },
     ],
     targets: [
       { institution: SCHOOL, consent: "granted" },
