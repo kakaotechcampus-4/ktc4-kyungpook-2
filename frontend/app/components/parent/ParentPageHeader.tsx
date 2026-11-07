@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Bell, Check, ChevronDown } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useChildContext } from "@/components/parent/ChildContext";
+import { TourButton, type TourScreen } from "@/components/Tour";
 
 /**
  * 탭 화면들의 자체 헤더 — 프로토타입은 공용 브랜드 바 대신 화면마다
@@ -22,12 +23,15 @@ export function ParentPageHeader({
   showChildSwitch = false,
   back,
   alert = false,
+  help,
 }: {
   title: string;
   subtitle?: string;
   showChildSwitch?: boolean;
   back?: boolean;
   alert?: boolean;
+  /** 제목 옆 "?" 사용법. 보호자는 홈 한 곳만 둔다 — 한 달에 몇 번 쓰는 화면에 투어를 여럿 두면 길이 된다 */
+  help?: TourScreen;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -73,7 +77,10 @@ export function ParentPageHeader({
       ) : null}
 
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-[21px] font-extrabold tracking-tight">{title}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="truncate text-[21px] font-extrabold tracking-tight">{title}</h1>
+          {help ? <TourButton screen={help} auto /> : null}
+        </div>
         {subtitle ? <p className="truncate text-[14px] text-muted">{subtitle}</p> : null}
       </div>
 
