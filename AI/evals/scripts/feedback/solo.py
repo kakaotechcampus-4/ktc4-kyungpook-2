@@ -32,6 +32,9 @@ HOWTO = [
     "  새로 쓴다   → {\"text\": \"내가 쓴 문장.\"} 를 더함 (id 없이)",
     "",
     "`_초안` 은 비교 기준입니다. 손대지 마세요.",
+    "",
+    "다 봤는데 고칠 게 하나도 없었다면 `_다봤다` 를 true 로 바꿔 주세요.",
+    "  (고친 것이 0 이면 apply 가 멈춥니다 — 안 고치고 돌린 것과 구별이 안 되기 때문입니다)",
 ]
 
 
@@ -84,7 +87,7 @@ def cmd_draft(args) -> None:
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"_읽어주세요": HOWTO, "요약들": summaries},
+    out.write_text(json.dumps({"_읽어주세요": HOWTO, "_다봤다": False, "요약들": summaries},
                               ensure_ascii=False, indent=2), encoding="utf-8")
     total = sum(len(s["요약"]) for s in summaries)
     again = sum(n - 1 for n in seen.values() if n > 1)
@@ -139,10 +142,28 @@ def cmd_apply(args) -> None:
             "claims": json.dumps(final, ensure_ascii=False),
         })
 
+    # 고친 것이 하나도 없으면 멈춘다.
+    #
+    # **"다 괜찮았다" 와 "파일을 안 고치고 돌렸다" 가 똑같은 출력을 낸다.** 유지 100% ·
+    # 손댄 기록 0 — 글자 하나까지 같다. 숫자를 받는 쪽에서는 구별할 방법이 없고,
+    # 그대로 섞이면 "AI 초안을 그대로 쓸 수 있다" 는 잘못된 결론이 된다 (11/07 실제로 겪었다).
+    #
+    # 정말 고칠 게 없었다면 `_다봤다` 를 true 로 바꾸면 된다. 한 번 더 묻는 값은 싸다.
+    touched = sum(1 for r in rows for a, b in [(json.loads(r["raw_response"])["claims"],
+                                                json.loads(r["claims"]))]
+                  if [c["text"].strip() for c in a] != [c["text"].strip() for c in b])
+    if not touched and not book.get("_다봤다"):
+        sys.exit(
+            "\n고친 것이 하나도 없다.\n"
+            f"  {Path(args.src)} 를 편집기로 열어 고치고 저장했는지 보자.\n"
+            "  정말 61문장 모두 그대로 괜찮았다면 그 파일의 `_다봤다` 를 true 로 바꾸면 된다.\n"
+            "  (안 고치고 돌린 것과 출력이 똑같아서, 그대로 받으면 숫자가 섞인다)\n"
+        )
+
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n{len(rows)}건 → {out}")
+    print(f"\n{len(rows)}건 · 손댄 요약 {touched}건 → {out}")
     print(f"  python {Path(__file__).parent.name}/report.py {out} --rows\n")
 
 
