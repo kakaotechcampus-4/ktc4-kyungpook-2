@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { redirect, useNavigate } from "react-router";
-import { TermsForm, type TermItem } from "@/components/TermsForm";
+import { TERMS_CHANGED_MESSAGE, TermsForm, useTermsDocuments, type TermItem } from "@/components/TermsForm";
 import { ApiError } from "@/lib/api";
 import { agreeTerms, getSession, homePathFor, signOut, type TermKey } from "@/lib/auth";
 
@@ -10,7 +10,7 @@ import { agreeTerms, getSession, homePathFor, signOut, type TermKey } from "@/li
  * 기관 화면 묶음(`org/layout.tsx`) 밖에 둔다. 그 가드가 동의하지 않은 기관을 이리 보내므로 안에 두면 돈다.
  * 머리띠 · 메뉴 없이 회원가입 화면과 같은 모양이다. 동의하지 않으면 기관 화면을 하나도 쓸 수 없어서,
  * 잘못 가입했거나 그만두려는 사람이 나갈 수 있게 아래에 로그아웃을 둔다.
- * 약관 본문 · "보기"는 아직 없다(본문이 나오면 보호자 약관과 함께 붙인다).
+ * 화면이 열리면 기관 약관 본문을 받아 두고, 동의는 그 판으로 보낸다(줄마다 [보기]로 본문을 연다).
  */
 const TERMS: readonly TermItem[] = [
   { key: "org_tos", label: "기관 서비스 이용약관 동의", required: true },
@@ -34,17 +34,25 @@ export default function OrgTermsPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const terms = useTermsDocuments("org", TERMS);
 
   async function submit() {
-    if (pending) return;
+    const picked = terms.versionsOf(agreed);
+    if (pending || !picked) return;
     setError(null);
     setPending(true);
     try {
-      // 모두 필수라 체크한 목록이 아니라 이 목록 전체를 보낸다
-      await agreeTerms(TERMS.map((t) => t.key));
+      await agreeTerms(picked);
       navigate("/dashboard", { replace: true });
     } catch (err) {
       setPending(false);
+      if (err instanceof ApiError && err.code === "TERMS_VERSION_CHANGED") {
+        // 화면을 연 뒤 약관이 바뀌었다 — 바뀐 약관의 체크만 풀고 다시 보게 한다
+        const changed = await terms.reloadChanged();
+        setAgreed((prev) => prev.filter((k) => !changed.includes(k)));
+        setError(TERMS_CHANGED_MESSAGE);
+        return;
+      }
       if (err instanceof ApiError && err.status === 401) {
         navigate("/login", { replace: true });
         return;
@@ -90,6 +98,8 @@ export default function OrgTermsPage() {
 
           <TermsForm
             terms={TERMS}
+            docs={terms.docs}
+            onRetry={() => void terms.retry()}
             agreed={agreed}
             onChange={setAgreed}
             pending={pending}
