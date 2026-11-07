@@ -1,5 +1,5 @@
 import { ChevronDown, Plus, Trash2, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
 import { WorkHead } from "@/components/org/WorkList";
 import { Busy, Card, ConfirmDialog, EmptyState, PanelHead, ReloginButton } from "@/components/ui";
@@ -60,6 +60,8 @@ export default function ChecklistsPage() {
     setListError(null);
     try {
       const next = await getSentChecklists(cursor);
+      // 새로 받은 요청이 시작되는 쪽으로 넘긴다 — 지금 쪽에 머물면 눌러도 아무 일 없는 것처럼 보인다
+      if (next.checklists.length) jumpTo.current = sent.length;
       setMore((prev) => ({
         for: base,
         items: [...(prev?.for === base ? prev.items : []), ...next.checklists],
@@ -94,15 +96,25 @@ export default function ChecklistsPage() {
 
   // 받아 둔 목록을 10건씩 쪽으로 나눈다. 더 오래된 요청은 아래 [이전 요청 더 보기]로 서버에서 더 받는다
   const sentPage = usePage(sent);
+  /** 더 보기로 받은 첫 요청의 순번 — 목록이 늘어난 뒤 그 쪽으로 넘긴다 */
+  const jumpTo = useRef<number | null>(null);
+  useEffect(() => {
+    if (jumpTo.current == null || sent.length <= jumpTo.current) return;
+    sentPage.setPage(Math.floor(jumpTo.current / sentPage.size) + 1);
+    jumpTo.current = null;
+  }, [sent.length]);
 
   return (
     <>
-      <WorkHead title="준비물·확인사항" />
+      <WorkHead title="준비물·확인사항" tour="lists" />
 
       <div className="flex flex-col gap-5">
-        <Composer roster={roster} onSent={() => revalidator.revalidate()} />
+        <div data-tour="composer">
+          <Composer roster={roster} onSent={() => revalidator.revalidate()} />
+        </div>
 
-        <Card>
+        <div data-tour="sent">
+          <Card>
           <PanelHead title={`보낸 요청 ${sent.length}${cursor ? "+" : ""}건`} />
           {listError ? (
             <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded bg-blocksoft px-3 py-2">
@@ -124,7 +136,8 @@ export default function ChecklistsPage() {
               <Pager {...sentPage} onChange={sentPage.setPage} />
             </>
           )}
-          {cursor ? (
+          {/* 더 오래된 요청은 마지막 쪽에서만 더 받는다 */}
+          {cursor && sentPage.page === sentPage.pages ? (
             <button
               type="button"
               onClick={() => void loadMore()}
@@ -134,7 +147,8 @@ export default function ChecklistsPage() {
               {loadingMore ? <Busy>불러오는 중…</Busy> : "이전 요청 더 보기"}
             </button>
           ) : null}
-        </Card>
+          </Card>
+        </div>
       </div>
 
       {cancelling ? (
