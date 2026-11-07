@@ -169,7 +169,12 @@ interface SummaryItem {       // Gate 1 검토 대기 · 보류함 한 건 (BE G
   needsReview: boolean;       // 다른 아이 이름이 남았을 수 있음. 경고만
   reviewReasons: string[];    // ["다른아동이름"]
   uncoveredEntries: { journalEntryId: string; content: string }[];   // 승인하면 함께 끝남
-  reviewFlags: { journalEntryId: string; issueTypes: string[] }[];
+  reviewFlags: {               // 검증 REVIEW 를 받은 원본 일지. 화면은 reasons 를 보여 준다
+    journalEntryId: string;
+    issueTypes: string[];
+    reasons: string[];
+    claimIndexes: number[];    // 검증 구간과 근거가 겹친 문장 카드 번호. 비어도 경고는 그대로 (#408)
+  }[];
 }
 
 type Gate1Card =              // 승인 때 보내는 문장 카드. 원래 문장은 모두 한 번씩, 배열 순서 = 최종 순서
