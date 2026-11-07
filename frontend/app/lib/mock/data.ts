@@ -462,9 +462,16 @@ export const GATE1_QUEUE: SummaryItem[] = [
     uncoveredEntries: [{ journalEntryId: "je_5103", content: "내일 하원 시간이 오후 4시로 바뀝니다." }],
     reviewFlags: [
       {
+        journalEntryId: "je_sum_9012",
+        issueTypes: ["감정적표현", "추측성표현"],
+        reasons: ["감정이나 평가가 섞인 표현이 있어요", "관찰되지 않은 내용을 추측한 표현이 있어요"],
+        claimIndexes: [1],
+      },
+      {
         journalEntryId: "je_5101",
-        issueTypes: ["추측성표현"],
-        reasons: ["관찰되지 않은 내용을 추측한 표현이 있어요"],
+        issueTypes: ["대상불명확"],
+        reasons: ["어느 아이의 기록인지 분명하지 않아요"],
+        claimIndexes: [],
       },
     ],
   }),

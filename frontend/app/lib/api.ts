@@ -462,7 +462,8 @@ interface Gate1SummaryRaw {
   needsReview: boolean;
   reviewReasons: string[] | null;
   uncoveredEntries: { journalEntryId: number; content: string }[] | null;
-  reviewFlags: { journalEntryId: number; issueTypes: string[]; reasons?: string[] }[] | null;
+  /** claimIndexes 는 예전 서버가 주지 않는다 — 그때는 배너만 보인다 */
+  reviewFlags: { journalEntryId: number; issueTypes: string[]; reasons?: string[]; claimIndexes?: number[] | null }[] | null;
   /** 예전 서버는 주지 않는다 — 그때는 요약에 안 들어간 일지만 원본으로 보인다 */
   entries?: { journalEntryId: number; content: string }[] | null;
 }
@@ -499,6 +500,7 @@ function toSummaryItem(raw: Gate1SummaryRaw): SummaryItem {
       issueTypes: f.issueTypes ?? [],
       // reasons 가 없는 예전 서버면 코드라도 보여 준다 — 빈칸보다 낫다. 빈 값은 버린다(안내가 " · " 에서 끊기지 않게)
       reasons: (f.reasons ?? f.issueTypes ?? []).filter((r) => r.trim() !== ""),
+      claimIndexes: f.claimIndexes ?? [],
     })),
   };
 }

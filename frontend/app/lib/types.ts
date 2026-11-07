@@ -399,8 +399,10 @@ export interface SummaryItem {
   /**
    * 요약에 들어간 원본 중 검증에서 REVIEW 를 받은 일지와 사유.
    * issueTypes 는 AI 코드 원본, reasons 는 선생님이 읽을 문장 — 화면은 reasons 를 보여 준다 (#351)
+   * claimIndexes 는 검증 구간과 근거가 겹친 문장 카드 번호(claims[].index). 비어도 경고는 그대로다 —
+   * 어디가 문제인지 모르는 사유이거나 문장을 못 읽은 요약이다. 사유와 짝지어지지 않는다 (#408)
    */
-  reviewFlags: { journalEntryId: string; issueTypes: string[]; reasons: string[] }[];
+  reviewFlags: { journalEntryId: string; issueTypes: string[]; reasons: string[]; claimIndexes: number[] }[];
 }
 
 /**
