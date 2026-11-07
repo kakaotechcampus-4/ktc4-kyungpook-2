@@ -183,7 +183,8 @@ public class RawRecordService {
         }
 
         List<JournalEntrySplitter.SplitEntry> entries = withoutDocumentPreamble(
-                extension, journalEntrySplitter.split(text.get()));
+                extension, journalEntrySplitter.split(
+                        "pdf".equals(extension) ? journalEntrySplitter.joinWrappedLines(text.get()) : text.get()));
         LocalDate fallbackDate = resolveFallbackDate(saved, entries);
         try {
             int seq = 1;
