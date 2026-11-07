@@ -10,7 +10,7 @@ import { useWalk } from "@/components/ui/ListPopup";
 import { Pager, usePage } from "@/components/ui/Pager";
 import { getChildren, getInbox, getInsights, getLinkRequests, getMyInstitution, loadIfReady } from "@/lib/api";
 import { formatInviteCode } from "@/lib/invite";
-import type { ChildListItem, Insight } from "@/lib/types";
+import type { ChildListItem, ConsentState, Insight } from "@/lib/types";
 
 /**
  * 아동 목록 — 옛 인사이트 승인(O-40 · O-42) · 관찰·분석 결과 · 메시지(수신함 O-50 · O-51)를 모은 화면.
@@ -45,6 +45,14 @@ export async function clientLoader() {
 type Tab = "kids" | "approve" | "req";
 const idOf = (i: Insight) => i.id;
 
+/** 아이 칸 거르기 — 칩 문구(guardianChip)와 같은 말을 쓴다 */
+const CONSENT_FILTERS: { key: ConsentState | "all"; label: string }[] = [
+  { key: "all", label: "전체" },
+  { key: "granted", label: "동의함" },
+  { key: "not_granted", label: "보호자 동의 전" },
+  { key: "revoked", label: "동의 철회" },
+];
+
 export default function ChildrenPage() {
   const { children, institution, linkRequests, pending, approved, inbox } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
@@ -70,7 +78,17 @@ export default function ChildrenPage() {
       ),
     [children, pendingBy, unreadBy],
   );
-  const kidPage = usePage(kids);
+  const [query, setQuery] = useState("");
+  const [consentFilter, setConsentFilter] = useState<ConsentState | "all">("all");
+  const shownKids = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return kids.filter(
+      (c) =>
+        (consentFilter === "all" || c.consent === consentFilter) &&
+        (!q || c.name.toLowerCase().includes(q) || (c.externalId ?? "").toLowerCase().includes(q)),
+    );
+  }, [kids, query, consentFilter]);
+  const kidPage = usePage(shownKids);
   const apPage = usePage(walk.visible);
   const reqPage = usePage(linkRequests);
 
@@ -177,17 +195,55 @@ export default function ChildrenPage() {
           <EmptyLine>아직 등록한 아이가 없어요</EmptyLine>
         ) : (
           <>
-            <div data-tour="kids" className="grid gap-2.5">
-              {kidPage.items.map((c) => (
-                <KidCard
-                  key={c.id}
-                  child={c}
-                  unread={unreadBy[c.id] ?? 0}
-                  onOpen={(t, unread) => setOpenKid({ id: c.id, tab: t, unread })}
-                />
-              ))}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <input
+                id="kid-search"
+                type="search"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  kidPage.setPage(1);
+                }}
+                placeholder="이름 또는 관리번호"
+                aria-label="이름 또는 관리번호로 찾기"
+                className="tap w-full max-w-[280px] rounded-full border border-line2 bg-surface px-4 text-[15px] outline-none focus:border-accent"
+              />
+              <div role="group" aria-label="동의 상태로 거르기" className="flex flex-wrap gap-1.5">
+                {CONSENT_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    aria-pressed={consentFilter === f.key}
+                    onClick={() => {
+                      setConsentFilter(f.key);
+                      kidPage.setPage(1);
+                    }}
+                    className={`rounded-full px-3 py-1 text-[14px] font-bold ${
+                      consentFilter === f.key ? "bg-ink text-paper" : "bg-surface2 text-ink2 hover:brightness-95"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <Pager {...kidPage} unit="명" onChange={kidPage.setPage} />
+            {shownKids.length === 0 ? (
+              <EmptyLine>조건에 맞는 아이가 없어요</EmptyLine>
+            ) : (
+              <>
+                <div data-tour="kids" className="grid gap-2.5">
+                  {kidPage.items.map((c) => (
+                    <KidCard
+                      key={c.id}
+                      child={c}
+                      unread={unreadBy[c.id] ?? 0}
+                      onOpen={(t, unread) => setOpenKid({ id: c.id, tab: t, unread })}
+                    />
+                  ))}
+                </div>
+                <Pager {...kidPage} unit="명" onChange={kidPage.setPage} />
+              </>
+            )}
           </>
         )
       ) : tab === "approve" ? (
