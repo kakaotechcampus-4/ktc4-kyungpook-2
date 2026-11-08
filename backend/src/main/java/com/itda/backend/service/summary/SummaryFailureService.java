@@ -25,6 +25,7 @@ import com.itda.backend.repository.record.GroupKey;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.agent.AgentQueueGuard;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +52,7 @@ public class SummaryFailureService {
     private final SummaryRunRequests runRequests;
     private final SummaryProperties properties;
     private final Clock clock;
+    private final AgentQueueGuard agentQueueGuard;
 
     /** 요청 교사 기관의 요약 실패 묶음을 오래된 날짜부터. 같은 날짜는 아동 id 순이다. */
     @Transactional(readOnly = true)
@@ -96,6 +98,8 @@ public class SummaryFailureService {
     public void retry(String userId, Long childId, LocalDate entryDate) {
         Long organizationId = userService.getOrganizationIdOf(userId);
         List<JournalEntry> failed = lockFailedGroup(organizationId, childId, entryDate);
+        // 요약 대기로 다시 들어간다 — AI 처리 줄에 자리가 있는지 본다 (#424). 아이 · 일지 행 다음에 기관 행을 잠근다.
+        agentQueueGuard.requireRoom(organizationId, failed.size());
         failed.forEach(JournalEntry::retrySummary);
         if (!properties.autoRun()) {
             runRequests.request(new SummaryGroup(childId, entryDate, organizationId), LocalDateTime.now(clock));

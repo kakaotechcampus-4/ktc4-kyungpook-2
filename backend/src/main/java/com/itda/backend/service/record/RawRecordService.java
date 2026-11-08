@@ -19,12 +19,15 @@ import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.exception.agent.AgentQueueFullException;
+import com.itda.backend.exception.record.RawRecordEntryLimitException;
 import com.itda.backend.exception.record.RawRecordNotFoundException;
 import com.itda.backend.exception.record.RawRecordStorageException;
 import com.itda.backend.exception.record.RawRecordValidationException;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
+import com.itda.backend.service.agent.AgentQueueGuard;
 import com.itda.backend.service.storage.RawFileStorage;
 import com.itda.backend.service.user.UserService;
 
@@ -68,6 +71,9 @@ public class RawRecordService {
     private final JournalEntrySplitter journalEntrySplitter;
     private final ChildRepository childRepository;
     private final RawTextExtractor rawTextExtractor;
+    private final RawRecordUploadGate uploadGate;
+    private final AgentQueueGuard agentQueueGuard;
+    private final RawRecordProperties properties;
 
     /**
      * 인증된 사용자의 소속 기관을 찾는다.
@@ -110,17 +116,15 @@ public class RawRecordService {
             throw new RawRecordValidationException("unsupported content type");
         }
 
-        // rawFileStorage.store()보다 먼저 읽어둔다 — MultipartFile.transferTo()는 구현에 따라
-        // 파일을 "이동"시킬 수 있어서(Spring Javadoc), store() 이후에 다시 읽으면 실패할 수 있다.
-        // 여기서 실패해도 업로드 자체는 막지 않는다 — 못 읽으면 그냥 분리를 건너뛴다
-        // (store()가 곧이어 독자적으로 다시 읽는데, 정말 스트림이 깨졌다면 거기서도 실패해서
-        // 기존 RawRecordStorageException 경로로 자연스럽게 처리된다).
-        byte[] fileBytes = null;
-        try {
-            fileBytes = file.getBytes();
-        } catch (IOException e) {
-            log.warn("failed to pre-read raw file bytes for splitting institutionId={}", institutionId, e);
+        // 바이트 읽기 · 글자 뽑기 · 나누기는 서버 전체에서 동시에 몇 개까지만 한다 (#424) — 파일마다 최대 20MB 를 힙에 올리고
+        // docx 는 그보다 크게 풀린다. 바이트 배열은 이 블록 밖에서 쓰지 않는다.
+        List<JournalEntrySplitter.SplitEntry> entries;
+        try (RawRecordUploadGate.Slot slot = uploadGate.acquire()) {
+            entries = splitIntoEntries(extension, readBytes(file, institutionId));
         }
+        requireWithinEntryLimits(entries);
+        // 흔한 경우는 저장소에 올리기 전에 거절한다. 잠그지 않고 센 값이라 상한을 지키지는 않는다 — 아래 accept 가 다시 센다.
+        agentQueueGuard.peek(organizationId, entries.size());
 
         String storedPath;
         try {
@@ -144,11 +148,16 @@ public class RawRecordService {
 
         RawRecord saved;
         try {
-            saved = rawRecordRecorder.save(rawRecord);
+            saved = rawRecordRecorder.accept(rawRecord, organizationId, withEntryDates(rawRecord, entries));
+        } catch (AgentQueueFullException e) {
+            // 그사이 같은 기관의 다른 업로드가 자리를 채웠다. 받지 않은 파일이라 append-only 대상이 아니다 — 지운다.
+            rawFileStorage.delete(storedPath);
+            throw e;
         } catch (RuntimeException e) {
             // 원본은 append-only — DB 저장이 실패해도 이미 저장소에 올라간 파일은 지우지 않는다.
-            // 대신 FAILED 상태로 별도 기록을 남겨서, 나중에 추적/재처리할 수 있게 한다.
-            log.error("failed to persist raw record metadata for storedPath={}; raw file is kept", storedPath, e);
+            // 대신 FAILED 상태로 별도 기록을 남겨서, 나중에 추적/재처리할 수 있게 한다. 원본 행과 일지는 한 트랜잭션이라
+            // 일지 저장이 실패해도 여기로 온다(#424) — 일지 0건으로 성공시키던 예전과 다르다.
+            log.error("failed to persist raw record and journal entries for storedPath={}; raw file is kept", storedPath, e);
             try {
                 rawRecordRecorder.recordFailure(institutionId, displayFilename, storedPath, contentType, file.getSize());
             } catch (RuntimeException retryFailure) {
@@ -158,46 +167,78 @@ public class RawRecordService {
             throw new RawRecordStorageException("failed to persist raw record metadata", e);
         }
 
-        log.info("raw record intake recorded id={} institutionId={} status={}",
-                saved.getId(), institutionId, saved.getStatus());
-
-        splitIntoJournalEntries(saved, extension, fileBytes);
-
+        log.info("raw record intake recorded id={} institutionId={} status={} journalEntries={}",
+                saved.getId(), institutionId, saved.getStatus(), entries.size());
         return saved;
     }
 
     /**
-     * 업로드된 파일을 기록(JournalEntry) 단위로 쪼개서 저장한다. 응답(201)은 이미 위에서
-     * 확정된 값을 그대로 돌려주므로, 여기서 실패해도 업로드 자체는 성공으로 남는다 —
-     * 파일 저장에 실패하는 것과는 무게가 다르다(원본은 이미 안전하게 저장됨).
+     * 업로드 본문을 읽는다. 못 읽으면 분리만 건너뛴다 — 저장소 저장이 곧이어 따로 읽으므로, 정말 스트림이 깨졌다면 거기서
+     * 실패해 RawRecordStorageException 으로 끝난다.
+     *
+     * <p>rawFileStorage.store() 보다 먼저 읽는다 — MultipartFile.transferTo() 는 구현에 따라 파일을 "이동"시킬 수 있어서
+     * (Spring Javadoc) store() 뒤에 다시 읽으면 실패할 수 있다.
+     */
+    private static byte[] readBytes(MultipartFile file, String institutionId) {
+        try {
+            return file.getBytes();
+        } catch (IOException e) {
+            log.warn("failed to pre-read raw file bytes for splitting institutionId={}", institutionId, e);
+            return null;
+        }
+    }
+
+    /**
+     * 업로드된 파일을 기록(JournalEntry) 단위로 쪼갠다. 저장보다 먼저 한다 (#424) — 상한을 넘는 파일은 저장하지 않고 거절해야
+     * 해서다. 글자를 못 뽑은 파일(깨진 docx, 사진만 있는 pdf, 압축이 너무 크게 풀리는 docx)이나 사전 읽기가 실패한 경우는 빈
+     * 목록이다 — 업로드는 그대로 하고 entries 가 비어 있는 게 정상이다(O-26).
      *
      * <p>워커가 아니라 요청 안에서 동기로 처리한다 — AI 호출(매칭)은 여기서 하지 않는다,
      * 그건 별도 워커가 PENDING 상태의 JournalEntry를 긁어가서 한다(노션 "기록 분리 기능" 문서).
      */
-    private void splitIntoJournalEntries(RawRecord saved, String extension, byte[] fileBytes) {
+    private List<JournalEntrySplitter.SplitEntry> splitIntoEntries(String extension, byte[] fileBytes) {
         Optional<String> text = rawTextExtractor.extract(extension, fileBytes);
         if (text.isEmpty()) {
-            // 텍스트를 못 뽑은 파일(깨진 docx, 사진만 있는 pdf)이거나 사전 읽기가 실패한 경우 —
-            // entries가 계속 비어있는 게 정상이다(O-26).
-            return;
+            return List.of();
         }
-
-        List<JournalEntrySplitter.SplitEntry> entries = withoutDocumentPreamble(
+        // 상한을 넘는 순간 멈춘다 — 넘는 파일은 어차피 거절하고, 끝까지 나누면 날짜 줄이 아주 많은 파일 하나가 힙을 크게 쓴다.
+        // 한 건 더 여유를 둔다: 문서 머리말(첫 날짜 앞 한 건)을 빼고도 상한을 넘은 것이 보여야 잘린 채 받지 않는다.
+        return withoutDocumentPreamble(
                 extension, journalEntrySplitter.split(
-                        "pdf".equals(extension) ? journalEntrySplitter.joinWrappedLines(text.get()) : text.get()));
-        LocalDate fallbackDate = resolveFallbackDate(saved, entries);
-        try {
-            int seq = 1;
-            for (JournalEntrySplitter.SplitEntry entry : entries) {
-                LocalDate entryDate = entry.entryDate() == null ? fallbackDate : entry.entryDate();
-                journalEntryRepository.save(
-                        JournalEntry.of(saved.getId(), entryDate, entry.content(), seq++));
-            }
-            log.info("split raw record id={} into {} journal entries", saved.getId(), entries.size());
-        } catch (RuntimeException e) {
-            // 업로드는 이미 성공했다 — 기록 분리 실패로 업로드 응답까지 실패시키지 않는다.
-            log.error("failed to save journal entries for rawRecordId={}", saved.getId(), e);
+                        "pdf".equals(extension) ? journalEntrySplitter.joinWrappedLines(text.get()) : text.get(),
+                        properties.limits().maxEntriesPerFile() + 1));
+    }
+
+    /**
+     * 일지가 너무 많거나 하나가 너무 긴 파일은 받지 않는다 (#424). 일지마다 매칭 · 검증 AI 를 부르므로, 파일 하나로 일지를 수천 건
+     * 만들거나 한 건에 아주 긴 글을 실어 보내는 일을 막는다. 잘라서 받지 않는다 — 기록이 선생님 모르게 사라진다.
+     */
+    private void requireWithinEntryLimits(List<JournalEntrySplitter.SplitEntry> entries) {
+        int maxEntries = properties.limits().maxEntriesPerFile();
+        if (entries.size() > maxEntries) {
+            throw new RawRecordEntryLimitException(
+                    "too many journal entries in file: " + entries.size() + " > " + maxEntries);
         }
+        for (JournalEntrySplitter.SplitEntry entry : entries) {
+            if (entry.content().length() > JournalEntry.MAX_CONTENT_LENGTH) {
+                throw new RawRecordEntryLimitException("journal entry too long: " + entry.content().length()
+                        + " > " + JournalEntry.MAX_CONTENT_LENGTH);
+            }
+        }
+    }
+
+    /** 날짜를 확정하지 못한 일지에 같은 파일의 첫 날짜 → 파일명 → 업로드 날짜 순으로 날짜를 채운다 ({@link #resolveFallbackDate}). */
+    private List<JournalEntrySplitter.SplitEntry> withEntryDates(
+            RawRecord rawRecord, List<JournalEntrySplitter.SplitEntry> entries) {
+        if (entries.isEmpty()) {
+            return entries;
+        }
+        LocalDate fallbackDate = resolveFallbackDate(rawRecord, entries);
+        return entries.stream()
+                .map(entry -> entry.entryDate() != null
+                        ? entry
+                        : new JournalEntrySplitter.SplitEntry(fallbackDate, entry.content()))
+                .toList();
     }
 
     /**
@@ -240,7 +281,7 @@ public class RawRecordService {
      * 틀리면 그 기록이 엉뚱한 날짜 묶음에 들어가는데, 교사가 Gate 1 에서 요약을 볼 때 날짜가 안 맞는
      * 내용이 섞인 것으로 알아챌 수는 있다. 구분이 필요하다고 팀이 판단하면 그때 컬럼을 추가한다.
      */
-    private LocalDate resolveFallbackDate(RawRecord saved, List<JournalEntrySplitter.SplitEntry> entries) {
+    private LocalDate resolveFallbackDate(RawRecord rawRecord, List<JournalEntrySplitter.SplitEntry> entries) {
         LocalDate firstDateInFile = entries.stream()
                 .map(JournalEntrySplitter.SplitEntry::entryDate)
                 .filter(Objects::nonNull)
@@ -250,8 +291,9 @@ public class RawRecordService {
             return firstDateInFile;
         }
 
-        LocalDate uploadedOn = saved.getCreatedAt().toLocalDate();
-        return parseDateFromFilename(saved.getOriginalFilename(), uploadedOn).orElse(uploadedOn);
+        // 저장 전이지만 만든 시각은 생성자에서 정해진다 — 저장된 created_at 과 같다.
+        LocalDate uploadedOn = rawRecord.getCreatedAt().toLocalDate();
+        return parseDateFromFilename(rawRecord.getOriginalFilename(), uploadedOn).orElse(uploadedOn);
     }
 
     /**

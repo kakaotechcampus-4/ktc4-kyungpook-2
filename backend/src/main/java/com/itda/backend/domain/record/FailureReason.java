@@ -20,6 +20,11 @@ public enum FailureReason {
      * AI 장애일 수 있어서, AI 가 살아나면 이 원인만 골라 되돌린다.
      */
     AGENT_UNAVAILABLE,
+    /**
+     * 일지 본문이 AI 에 보낼 수 있는 길이({@link JournalEntry#MAX_CONTENT_LENGTH})를 넘는다 (#424). 원문을 잘라 보내지 않고 멈춘다.
+     * 상한이 생기기 전에 올라온 일지만 여기 온다 — 새 업로드와 본문 고치기는 그 길이에서 거절한다.
+     */
+    CONTENT_TOO_LONG,
 
     /** 위 어디에도 맞지 않는 BE 자체 오류다. 매칭된 아이가 없는 일지, DB 오류 등이다. */
     INTERNAL_ERROR

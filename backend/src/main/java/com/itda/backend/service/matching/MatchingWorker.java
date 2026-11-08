@@ -9,7 +9,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.dto.request.matching.MatchingAgentRequest;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.agent.AiAvailability;
@@ -138,9 +140,23 @@ public class MatchingWorker {
                 availability.reportCallGaveUp();
                 return releaseOrFail(journalEntryId);
             }
+            if (e instanceof AgentContentTooLongException) {
+                // 확인 필요 큐(FAILED)로 보내지 않는다 — 선생님이 아이를 골라도 검증에서 같은 이유로 다시 멈춘다 (#424).
+                log.warn("matching skipped, content too long journalEntryId={}", journalEntryId, e);
+                recordSystemError(journalEntryId, FailureReason.CONTENT_TOO_LONG);
+                return Outcome.DONE;
+            }
             log.warn("matching failed journalEntryId={}", journalEntryId, e);
             recordFailure(journalEntryId);
             return Outcome.DONE;
+        }
+    }
+
+    private void recordSystemError(Long journalEntryId, FailureReason reason) {
+        try {
+            recorder.recordSystemError(journalEntryId, reason);
+        } catch (RuntimeException recordError) {
+            log.error("could not record matching system error journalEntryId={}", journalEntryId, recordError);
         }
     }
 
