@@ -1363,7 +1363,7 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 [
   { "childId": "1", "childName": "김하늘",
     "periodFrom": "2026-08-17", "periodTo": "2026-08-23", "period": "2026년 8월 3주차",
-    "status": "done", "message": "분석이 끝나 발송 전 검토로 넘어갔어요" }
+    "status": "done", "message": "주간 리포트가 나와 승인 차례로 넘어갔어요" }
 ]
 ```
 
@@ -1371,12 +1371,12 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 
 | `status` | 언제 | `message` |
 | --- | --- | --- |
-| `not_consented` | 보호자가 우리 기관에 **주간 인사이트** 공유를 허락하지 않음 (#257). 우리 기록은 재료가 되지 않음 | 보호자가 주간 분석 공유를 허락하지 않아 우리 기관 기록은 분석에 쓰지 않아요 |
-| `waiting_week_end` | 끝나지 않은 이번 주. 운영은 주가 끝난 뒤 분석합니다 (`INSIGHT_INCLUDE_CURRENT_WEEK=false`) | 이번 주가 끝나면 분석해요 |
-| `queued` | 아직 분석 전이거나, 지난 분석 뒤 새로 승인된 기록이 있어 다시 분석할 차례. 서버가 실제로 분석할 재료가 있을 때만 | 곧 분석을 시작해요 |
-| `running` | 분석 중 | 분석하고 있어요 |
-| `retrying` | 마지막 분석이 실패함. 서버가 잠시 뒤 다시 시도합니다 | 분석이 잠시 실패해 다시 시도할 예정이에요 |
-| `done` | 끝났고 인사이트가 1건 이상. 승인 주체 기관의 Gate 2 로 넘어감 | 분석이 끝나 발송 전 검토로 넘어갔어요 |
+| `not_consented` | 보호자가 우리 기관에 **주간 인사이트** 공유를 허락하지 않음 (#257). 우리 기록은 재료가 되지 않음 | 보호자가 주간 리포트 공유를 허락하지 않아 우리 기관 기록은 주간 리포트에 쓰지 않아요 |
+| `waiting_week_end` | 끝나지 않은 이번 주. 운영은 주가 끝난 뒤 분석합니다 (`INSIGHT_INCLUDE_CURRENT_WEEK=false`) | 이번 주가 끝나면 주간 리포트를 만들어요 |
+| `queued` | 아직 분석 전이거나, 지난 분석 뒤 새로 승인된 기록이 있어 다시 분석할 차례. 서버가 실제로 분석할 재료가 있을 때만 | 곧 주간 리포트를 만들기 시작해요 |
+| `running` | 분석 중 | 주간 리포트를 만들고 있어요 |
+| `retrying` | 마지막 분석이 실패함. 서버가 잠시 뒤 다시 시도합니다 | 주간 리포트를 만들다 잠시 실패해 다시 시도할 예정이에요 |
+| `done` | 끝났고 인사이트가 1건 이상. 승인 주체 기관의 Gate 2 로 넘어감 | 주간 리포트가 나와 승인 차례로 넘어갔어요 |
 | `nothing_new` | 끝났지만 인사이트 0건(정상입니다, `AI/insight/CRITERIA.md` §3). 또는 동의한 기관의 분석 재료가 없어 분석하지 않는 주 | 이번 주는 새로 알릴 내용이 없어요 |
 
 > `done` 이어도 Gate 2 글은 **승인 주체 기관(O-40 `primarySource`)에만** 보입니다. 우리 기관이 승인 주체가 아니면
@@ -1551,7 +1551,7 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 | `turn` | 선생님 차례 5줄. `confirm` = 아이 확인(O-22 건수), `blocked` = 고쳐야 할 기록(O-24 건수), `review` = 검토 대기 요약(다시 만드는 중 제외) + 요약 실패 묶음, `approve` = 우리가 승인할 Gate 2 대기(O-40 `pending` 건수), `requests` = 보호자 연결 요청(O-60 건수) |
 | `rows[].kind` | 검토 승인 전에는 `entry`(아이×날짜), 승인 뒤에는 `week`(아이×주, 월~일). 승인한 기록은 `entry` 에서 빠지고 그 주 줄로 모입니다 |
 | `rows[].childId` · `childName` | 아이를 아직 못 찾은 줄은 `null` |
-| `rows[].step` | 0 아이 찾기 · 1 AI 확인 · 2 요약 · 3 검토 · 4 주간 분석 · 5 분석 승인 |
+| `rows[].step` | 0 아이 매칭 · 1 내용 검증 · 2 요약 · 3 검토 · 4 주간 리포트 · 5 리포트 승인 (화면 이름은 FE 가 정하고, 서버는 번호만 줍니다) |
 | `rows[].who` | `me` 선생님 차례 · `ai` AI 가 하는 중 · `wait` 기다리는 중 · `other` 다른 사람(관리자·다른 기관·보호자) 차례 · `done` 끝. 줄은 이 순서 → 단계 → 날짜(주 줄은 주 시작일) 순입니다 |
 | `rows[].detail` | 상태마다 덧붙이는 값. 없는 키는 빠집니다 (`matching` → `count`, `blocked` → `kinds`·`reasons`, `review`·`review_held` → `noContent`, `review_elsewhere` → `approverName`) |
 | `rows[].target` | 바로가기 대상. `matching`(O-28 항목 id) · `validation`(O-24 항목 id) · `summary`(요약 id) · `summary_failed`(`id` 없음 — 줄의 `childId`·`date` 로 O-35~37) · `insight`(인사이트 id). 선생님 차례가 아니면 `null` |
@@ -1568,8 +1568,8 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 | 2 | `summary_failed` | me | 요약 실패 (O-35~37) |
 | 3 | `review` · `review_held` | me | 검토 대기 · 보류해 둔 요약 |
 | 3 | `regenerating` | ai | 새 기록이 들어와 요약을 다시 만드는 중 (O-30 `processing`) |
-| 4 | `waiting_week_end` · `queued` · `running` · `retrying` | wait · ai · ai · ai | 주간 분석 (O-43 과 같은 판정) |
-| 4 | `not_consented` | other | 보호자가 주간 분석 공유를 허락하지 않아 우리 기록은 쓰지 않음 |
+| 4 | `waiting_week_end` · `queued` · `running` · `retrying` | wait · ai · ai · ai | 주간 리포트 (O-43 과 같은 판정) |
+| 4 | `not_consented` | other | 보호자가 주간 리포트 공유를 허락하지 않아 우리 기록은 쓰지 않음 |
 | 4 | `nothing_new` | done | 이번 주는 새로 알릴 내용이 없음 (분석은 됐지만 우리 기록이 쓰인 글이 없는 주 포함) |
 | 5 | `review_here` · `insight_held` | me | 우리가 승인 주체인 분석 — 승인 대기 · 보류 |
 | 5 | `review_elsewhere` | other | 다른 기관이 승인할 차례. `detail.approverName` = 그 기관 이름. 승인 주체는 Gate 2 와 같습니다(학교 > 센터 > 활동지원사, 같은 종류면 기관 id 가 작은 곳) |
