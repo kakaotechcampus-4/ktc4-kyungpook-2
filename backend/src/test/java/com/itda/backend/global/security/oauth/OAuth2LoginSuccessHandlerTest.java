@@ -62,7 +62,6 @@ class OAuth2LoginSuccessHandlerTest {
         User saved = userRepository.findByKakaoId("900001").orElseThrow();
         assertThat(saved.getRole()).isNull();
         assertThat(saved.getOrganizationId()).isNull();
-        assertThat(saved.getName()).isEqualTo("박지현");
         assertThat(response.getStatus()).isEqualTo(302);
     }
 
@@ -90,22 +89,12 @@ class OAuth2LoginSuccessHandlerTest {
                 .filter(u -> u.getKakaoId().equals("900003")).count()).isEqualTo(1);
     }
 
-    /** 닉네임 동의를 거부하면 properties 가 아예 오지 않는다. 로그인은 그대로 되어야 한다. */
+    /** 닉네임은 받지 않는다 — 카카오 응답에 properties 가 없어도 로그인이 된다. */
     @Test
-    void nicknameConsentRefusedStillLogsIn() throws Exception {
-        login(new MockHttpServletRequest(), 900004L, null);
+    void loginWorksWithOnlyTheKakaoId() throws Exception {
+        MockHttpServletResponse response = login(new MockHttpServletRequest(), 900004L, null);
 
-        User saved = userRepository.findByKakaoId("900004").orElseThrow();
-        assertThat(saved.getName()).isNull();
-    }
-
-    /** 나중에 동의를 철회해 닉네임이 빠져도, 이미 저장한 이름을 지우지 않는다. */
-    @Test
-    void laterLoginWithoutNicknameKeepsTheStoredName() throws Exception {
-        login(new MockHttpServletRequest(), 900005L, "최유나");
-
-        login(new MockHttpServletRequest(), 900005L, null);
-
-        assertThat(userRepository.findByKakaoId("900005").orElseThrow().getName()).isEqualTo("최유나");
+        assertThat(userRepository.findByKakaoId("900004")).isPresent();
+        assertThat(response.getStatus()).isEqualTo(302);
     }
 }

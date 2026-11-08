@@ -108,8 +108,8 @@ class InstitutionLinkConcurrencyIntegrationTest {
         center = organizationRepository.save(center);
         centerCode = center.getCode();
         child = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14)));
-        User mother = userRepository.save(UserFixture.parent("kakao-mother", "엄마"));
-        User staff = userRepository.save(UserFixture.organizationUser("kakao-staff", "센터선생", center.getId()));
+        User mother = userRepository.save(UserFixture.parent("kakao-mother"));
+        User staff = userRepository.save(UserFixture.organizationUser("kakao-staff", center.getId()));
         // 초대 코드 경로는 이 테스트의 관심이 아니다. 연결 행은 초대 id 만 있으면 된다.
         childGuardianRepository.save(ChildGuardian.link(child.getId(), mother.getId(), 1L));
         given(userService.getParentIdOf(MOTHER)).willReturn(mother.getId());

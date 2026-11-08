@@ -88,7 +88,7 @@ class JwtRenewalTest {
     void setUp() {
         clock.setTo(NOW);
         parent = TermsFixture.agreeAll(termsAgreementRepository,
-                userRepository.save(UserFixture.parent("kakao-renewal-parent", "김보호")));
+                userRepository.save(UserFixture.parent("kakao-renewal-parent")));
     }
 
     @AfterEach

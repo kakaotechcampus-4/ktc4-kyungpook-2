@@ -21,9 +21,8 @@ public record SentChecklistResponse(
     /**
      * @param onRoster        아이가 삭제되지 않았고 지금도 우리 기관 명부에 있다
      * @param confirmedAt     확인한 시각. 아직이면 {@code null}
-     * @param confirmedByName 확인한 보호자의 카카오 닉네임. 아직이거나 닉네임이 없으면 {@code null}
      */
-    public record Target(ChildRef child, boolean onRoster, LocalDateTime confirmedAt, String confirmedByName) {
+    public record Target(ChildRef child, boolean onRoster, LocalDateTime confirmedAt) {
     }
 
     public record ChildRef(String id, String name) {

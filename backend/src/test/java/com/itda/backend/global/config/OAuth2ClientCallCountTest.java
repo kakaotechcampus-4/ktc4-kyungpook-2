@@ -167,7 +167,6 @@ class OAuth2ClientCallCountTest {
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .redirectUri("http://localhost/login/oauth2/code/kakao")
-                .scope("profile_nickname")
                 .authorizationUri(baseUrl + "/oauth/authorize")
                 .tokenUri(baseUrl + "/oauth/token")
                 .userInfoUri(baseUrl + "/v2/user/me")

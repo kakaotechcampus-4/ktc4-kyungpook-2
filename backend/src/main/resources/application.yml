@@ -29,7 +29,8 @@ spring:
             authorization-grant-type: authorization_code
             # 카카오는 client_secret 을 헤더가 아니라 폼 파라미터로 받는다.
             client-authentication-method: client_secret_post
-            scope: profile_nickname
+            # scope 를 보내지 않는다 — 회원번호만 쓰고 닉네임 등 개인정보는 받지 않는다.
+            # 카카오 콘솔의 동의 항목에서도 닉네임을 꺼야 동의 화면에 닉네임이 뜨지 않는다.
             client-name: Kakao
         provider:
           kakao:

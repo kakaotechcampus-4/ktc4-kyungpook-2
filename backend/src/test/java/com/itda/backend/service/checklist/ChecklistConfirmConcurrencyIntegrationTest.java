@@ -114,9 +114,9 @@ class ChecklistConfirmConcurrencyIntegrationTest {
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-staff", "이선생", organization.getId())));
-        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
-        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad", "아빠")));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-staff", organization.getId())));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom")));
+        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad")));
         Child sky = childRepository.save(Child.of("하늘", LocalDate.of(2017, 3, 14)));
         childId = sky.getId();
         childOrganizationRepository.save(ChildOrganization.of(childId, organization.getId()));
@@ -148,9 +148,9 @@ class ChecklistConfirmConcurrencyIntegrationTest {
                 () -> guardianChecklistService.confirm(principal(mom), childId, checklistId),
                 () -> mockMvc.perform(withCsrf(post(confirmPath()), dad)).andReturn());
 
-        assertThat(held.first().confirmedByName()).isEqualTo("엄마");
+        assertThat(held.first().status()).isEqualTo("confirmed");
         assertThat(held.second().getResponse().getStatus()).isEqualTo(200);
-        assertThat(held.second().getResponse().getContentAsString()).contains("\"confirmedByName\":\"엄마\"");
+        assertThat(held.second().getResponse().getContentAsString()).contains("\"status\":\"confirmed\"");
         assertThat(target().getConfirmedBy()).isEqualTo(mom.getId());
     }
 
@@ -202,7 +202,7 @@ class ChecklistConfirmConcurrencyIntegrationTest {
                 () -> guardianChecklistService.confirm(principal(dad), childId, checklistId),
                 () -> mockMvc.perform(withCsrf(delete("/api/v1/guardians/me/children/" + childId), dad)).andReturn());
 
-        assertThat(held.first().confirmedByName()).isEqualTo("아빠");
+        assertThat(held.first().status()).isEqualTo("confirmed");
         assertThat(held.second().getResponse().getStatus()).isEqualTo(204);
         assertThat(target().getConfirmedBy()).isEqualTo(dad.getId());
         assertThat(childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, dad.getId())).isFalse();

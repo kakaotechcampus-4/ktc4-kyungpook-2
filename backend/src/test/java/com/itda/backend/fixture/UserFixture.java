@@ -12,14 +12,14 @@ public final class UserFixture {
     private UserFixture() {
     }
 
-    public static User organizationUser(String kakaoId, String name, Long organizationId) {
-        User user = User.pending(kakaoId, name);
+    public static User organizationUser(String kakaoId, Long organizationId) {
+        User user = User.pending(kakaoId);
         user.completeSignup(UserRole.ORGANIZATION, organizationId);
         return user;
     }
 
-    public static User parent(String kakaoId, String name) {
-        User user = User.pending(kakaoId, name);
+    public static User parent(String kakaoId) {
+        User user = User.pending(kakaoId);
         user.completeSignup(UserRole.PARENT, null);
         return user;
     }
