@@ -98,11 +98,11 @@ def test_map():
 SUMMARY_KEY = {"child_id": 7, "entry_date": "2026-11-08", "institution_id": 3}
 
 
-def _failed_run(clock, seconds, node="write", **ident):
+def _failed_run(clock, seconds):
     """503 으로 끝나는 한 번의 호출."""
     try:
-        with progress.begin("summary", **(ident or SUMMARY_KEY)):
-            progress.mark(node)
+        with progress.begin("summary", **SUMMARY_KEY):
+            progress.mark("write")
             clock.t += seconds
             raise RuntimeError("503")
     except RuntimeError:
@@ -110,7 +110,7 @@ def _failed_run(clock, seconds, node="write", **ident):
 
 
 def test_retry():
-    print("\n■ 실패한 일이 60초 안에 다시 오면 이어서 센다 (BE 재시도)")
+    print("\n■ 같은 일이 60초 안에 다시 오면 이어서 센다 (BE 재시도)")
     clock = fresh()
     _failed_run(clock, 20)
     clock.t += 59                                   # 503 뒤 59초 만에 재시도
@@ -126,14 +126,14 @@ def test_retry():
         ck("61초 뒤면 새로 센다", progress.snapshot()[0]["elapsed_sec"], 0, "metrics.GAP_SEC 와 같은 60초 기준")
 
     clock = fresh()
-    with progress.begin("summary", **SUMMARY_KEY):
-        progress.mark("write")
-        clock.t += 40
-    clock.t += 10                                   # 성공 뒤 새 일지로 같은 묶음이 다시 옴
-    with progress.begin("summary", **SUMMARY_KEY):
-        progress.mark("gather")
-        ck("성공 뒤엔 새로 센다", progress.snapshot()[0]["elapsed_sec"], 0,
-           "BE 는 실패했을 때만 재시도한다. 성공 뒤에 온 건 새 일이다")
+    with progress.begin("validation", journal_entry_id=3):
+        progress.mark("act")
+        clock.t += 71                               # BE 는 70초에 끊었지만 AI 는 71초에 200
+    clock.t += 2                                    # BE 재시도
+    with progress.begin("validation", journal_entry_id=3):
+        progress.mark("perceive")
+        ck("AI 쪽에서 성공했어도 이어서 센다", progress.snapshot()[0]["elapsed_sec"], 73,
+           "BE 타임아웃은 AI 에게는 성공이다. 0 으로 돌아가면 이미 기다린 사람에게 처음부터로 보인다")
 
     clock = fresh()
     _failed_run(clock, 20)
@@ -153,8 +153,16 @@ def test_retry():
             progress.mark("extract")
             ck("한 줄", [(r["node"], r["elapsed_sec"]) for r in progress.snapshot()], [("extract", 30)],
                "BE 가 기다리는 건 재시도 쪽이다. 두 줄이면 단계가 왔다 갔다 한다")
-        ck("재시도가 끝나면 앞선 호출이 다시 보인다", [r["node"] for r in progress.snapshot()], ["llm_judge"],
-           "AI 쪽 스레드는 취소되지 않아 아직 돌고 있다")
+        ck("재시도가 끝나면 앞선 호출도 내린다", progress.snapshot(), [],
+           "BE 는 이미 결과를 받았다. 앞선 호출이 다시 보이면 끝난 일이 '처리 중' 으로 돌아간다")
+    ck("앞선 호출이 나중에 끝나도 조용하다", progress.snapshot(), [], "")
+
+    clock = fresh()
+    with progress.begin("matching", journal_entry_id=5):
+        progress.mark("llm_judge")
+        with progress.begin("matching", journal_entry_id=6):
+            progress.mark("extract")
+        ck("다른 키는 내리지 않는다", [r["journal_entry_id"] for r in progress.snapshot()], [5], "")
 
 
 def test_stale():
@@ -379,6 +387,7 @@ def test_wrapper_shape():
     def node(state: dict, config=None) -> dict:
         return state
 
+    node.__signature__ = inspect.signature(node)   # 다른 데코레이터가 붙여 둔 경우
     wrapped = progress.tracked("node", node)
     ck("시그니처", list(inspect.signature(wrapped).parameters), ["state"],
        "원래 함수 시그니처를 보이면 LangGraph 가 config 를 넘겨 TypeError 가 난다")

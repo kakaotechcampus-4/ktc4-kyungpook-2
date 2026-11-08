@@ -45,8 +45,8 @@ _lock = threading.Lock()
 _tokens = itertools.count(1)
 #: 지금 도는 요청. token → {agent, ident, key, node, started, touched}
 _running: dict[int, dict] = {}
-#: 최근에 **실패로** 끝난 일. key → (started, ended_at). 재시도 때 시작 시각을 이어받는다.
-#: BE 는 실패(503·타임아웃)했을 때만 다시 보낸다 — 성공 뒤에 같은 키가 오면 새 일이다.
+#: 최근에 끝난 일. key → (started, ended_at). 재시도 때 시작 시각을 이어받는다.
+#: 성공·실패를 가리지 않는다 — BE 타임아웃은 AI 쪽에서는 늦게라도 200 으로 끝난다.
 _ended: dict[tuple, tuple[float, float]] = {}
 #: 지금 요청의 token. begin 밖이면 None.
 _current: ContextVar[int | None] = ContextVar("progress_token", default=None)
@@ -78,16 +78,25 @@ def _start(agent: str, ident: dict) -> int:
     return token
 
 
-def _finish(token: int, failed: bool) -> None:
+def _finish(token: int) -> None:
+    """
+    요청을 지도에서 내린다. 같은 키로 **먼저** 들어와 아직 도는 요청도 함께 내린다 —
+    BE 가 타임아웃으로 버리고 다시 보낸 호출이다. 남겨 두면 BE 가 결과를 받은 일이
+    다시 '처리 중' 으로 보인다. 그 호출이 나중에 끝나면 여기서 아무것도 찾지 못한다.
+    """
     now = _now()
     with _lock:
         entry = _running.pop(token, None)
         if entry is None:
             return
-        if failed:
-            _ended[entry["key"]] = (entry["started"], now)
-        else:
-            _ended.pop(entry["key"], None)
+        for older in [t for t, e in _running.items() if e["key"] == entry["key"] and t < token]:
+            del _running[older]
+        _ended[entry["key"]] = (entry["started"], now)
+
+
+def _discard(token: int) -> None:
+    with _lock:
+        _running.pop(token, None)
 
 
 @contextmanager
@@ -108,20 +117,16 @@ def begin(agent: str, **ident):
     except Exception:
         # 요청을 못 알아보면 mark 가 이 기록을 고칠 수 없다. 지도에서 내린다.
         if token is not None:
-            _quietly(_finish, token, False)
+            _quietly(_discard, token)
             token = None
 
-    failed = False
     try:
         yield
-    except BaseException:
-        failed = True
-        raise
     finally:
         if reset is not None:
             _quietly(_current.reset, reset)
         if token is not None:
-            _quietly(_finish, token, failed)
+            _quietly(_finish, token)
 
 
 def _quietly(fn, *args) -> None:
@@ -152,6 +157,7 @@ def tracked(name: str, fn):
     노드 함수를 감싼다: `graph.add_node("write", tracked("write", write))`.
 
     노드에 **들어갈 때** 기록한다. 노드 함수는 건드리지 않는다.
+    **state 하나만 받는 노드 전용이다** — config 등을 받는 노드를 감싸면 그 값은 넘어가지 않는다.
     """
     @functools.wraps(fn)
     def node(state):
@@ -162,6 +168,7 @@ def tracked(name: str, fn):
     # 원래 함수를 따라가, 노드가 config 를 받으면 LangGraph 가 이 감싸개에 config 를 넘긴다.
     # 감싸개는 state 하나만 받으므로 지운다 (타입 힌트는 남아 입력 스키마 추론은 같다).
     del node.__wrapped__
+    node.__dict__.pop("__signature__", None)   # fn 이 들고 있던 것도 wraps 가 옮겨 온다
     node.progress_node = name
     return node
 
