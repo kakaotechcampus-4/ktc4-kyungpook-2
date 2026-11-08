@@ -21,6 +21,7 @@ import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.insight.InsightResult;
+import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.sharing.ReceiverType;
 import com.itda.backend.domain.sharing.SharingHistory;
@@ -33,12 +34,14 @@ import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
+import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.service.child.ActivityLine;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.insight.InsightEvidenceReader;
 import com.itda.backend.service.insight.InsightEvidenceReader.Ref;
+import com.itda.backend.service.insight.QuietWeekReader;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -69,6 +72,8 @@ public class GuardianInsightService {
     private final SharingReadRecorder sharingReadRecorder;
     private final ApprovalRepository approvalRepository;
     private final InsightEvidenceReader insightEvidenceReader;
+    private final ChildGuardianRepository childGuardianRepository;
+    private final QuietWeekReader quietWeekReader;
 
     /**
      * 내게 열린 인사이트 전부, <b>승인 시각</b> 최근 순 (#287). 권한 행 순서가 아니다 — 늦게 연결된 보호자에게는 지난 글이
@@ -76,6 +81,9 @@ public class GuardianInsightService {
      * 승인 기록이 없는 예전 데이터는 열린 시각으로 대신한다. 같으면 id 큰 순.
      *
      * <p>받은 기관 · 아이 · 명부 · 동의는 모아서 한 번씩 읽는다 ({@link #toResponses}) — 글 수와 상관없이 조회 횟수가 같다.
+     *
+     * <p>리포트가 없는 지난 주는 {@code kind = "quiet"} 항목으로 섞는다 (#470, {@link QuietWeekReader}). 승인 시각이 없어
+     * 그 주가 끝난 다음 날(월요일) 0시 자리에 놓인다.
      */
     @Transactional(readOnly = true)
     public List<GuardianInsightResponse> getInsights(String userId) {
@@ -83,17 +91,34 @@ public class GuardianInsightService {
         List<SharingHistory> mine = sharingHistoryRepository
                 .findByReceiverTypeAndReceiverIdAndRevokedAtIsNullOrderByIdDesc(
                         ReceiverType.GUARDIAN, guardianId);
-        if (mine.isEmpty()) {
+        List<GuardianInsightResponse> reports = List.of();
+        if (!mine.isEmpty()) {
+            List<Long> insightIds = mine.stream().map(SharingHistory::getInsightResultId).toList();
+            Map<Long, InsightResult> insights = insightResultRepository.findAllById(insightIds)
+                    .stream().collect(Collectors.toMap(InsightResult::getId, insight -> insight));
+            reports = toResponses(mine, insights, approvedAtOf(insightIds));
+        }
+
+        return Stream.concat(reports.stream(), quietWeeksOf(guardianId).stream())
+                .sorted(Comparator.comparing(GuardianInsightResponse::approvedAt).reversed()
+                        .thenComparing(response -> GuardianInsightResponse.INSIGHT.equals(response.kind())
+                                ? Long.parseLong(response.id()) : -1L, Comparator.reverseOrder())
+                        .thenComparing(GuardianInsightResponse::id))
+                .toList();
+    }
+
+    /** 내게 연결된 아이들의 "특이사항 없음" 주 (#470). 삭제된 아이는 뺀다 — 이름 없는 카드를 띄우지 않는다. */
+    private List<GuardianInsightResponse> quietWeeksOf(Long guardianId) {
+        List<Long> childIds = childGuardianRepository.findByUserIdAndDeletedAtIsNullOrderByLinkedAtAscIdAsc(guardianId)
+                .stream().map(ChildGuardian::getChildId).distinct().toList();
+        if (childIds.isEmpty()) {
             return List.of();
         }
-        List<Long> insightIds = mine.stream().map(SharingHistory::getInsightResultId).toList();
-        Map<Long, InsightResult> insights = insightResultRepository.findAllById(insightIds)
-                .stream().collect(Collectors.toMap(InsightResult::getId, insight -> insight));
-        Map<Long, LocalDateTime> approvedAt = approvedAtOf(insightIds);
-
-        return toResponses(mine, insights, approvedAt).stream()
-                .sorted(Comparator.comparing(GuardianInsightResponse::approvedAt).reversed()
-                        .thenComparing(response -> Long.valueOf(response.id()), Comparator.reverseOrder()))
+        Map<Long, String> names = childRepository.findByIdInAndDeletedAtIsNull(childIds).stream()
+                .collect(Collectors.toMap(Child::getId, Child::getName));
+        return quietWeekReader.read(names.keySet()).stream()
+                .map(week -> GuardianInsightResponse.quiet(String.valueOf(week.childId()), names.get(week.childId()),
+                        periodLabel(week.periodFrom()), week.periodFrom(), week.periodTo(), week.reason().name()))
                 .toList();
     }
 
@@ -266,7 +291,9 @@ public class GuardianInsightService {
                             grant.getReadAt(),
                             child == null ? List.of() : evidenceOf(
                                     evidences.getOrDefault(insight.getId(), InsightEvidenceReader.Evidence.EMPTY),
-                                    organizations));
+                                    organizations),
+                            GuardianInsightResponse.INSIGHT,
+                            null);
                 })
                 .toList();
     }

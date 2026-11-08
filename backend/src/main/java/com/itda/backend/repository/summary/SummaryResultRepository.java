@@ -33,6 +33,9 @@ public interface SummaryResultRepository extends JpaRepository<SummaryResult, Lo
      */
     List<SummaryResult> findByChildIdAndEntryDateBetween(Long childId, LocalDate from, LocalDate to);
 
+    /** 아이들의 요약 전부. 보호자 리포트의 "특이사항 없음" 주를 고른다 (#470, {@code QuietWeekReader}). */
+    List<SummaryResult> findByChildIdIn(Collection<Long> childIds);
+
     /** 그 묶음에 이 판보다 새 판이 있는지. 워커는 최신 판만 덮어쓰므로, 새 판이 있으면 이 판은 더 바뀌지 않는다. */
     @Query("select count(s) > 0 from SummaryResult s "
             + "where s.childId = :childId and s.entryDate = :entryDate and s.institutionId = :institutionId "

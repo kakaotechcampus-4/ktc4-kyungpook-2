@@ -216,4 +216,8 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             + "order by e.entryDate, e.id")
     List<PipelineEntry> findPipelineEntries(@Param("institutionId") String institutionId,
             @Param("statuses") Collection<JournalEntryStatus> statuses);
+
+    /** 아이들의 일지 중 지우지 않았고 상태가 {@code statuses} 밖인 것. 아직 안 끝난 일지를 고른다 (#470, {@code QuietWeekReader}). */
+    List<JournalEntry> findByChildIdInAndDeletedAtIsNullAndStatusNotIn(Collection<Long> childIds,
+            Collection<JournalEntryStatus> statuses);
 }
