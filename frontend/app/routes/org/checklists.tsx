@@ -393,10 +393,17 @@ function SentRow({ checklist, onCancel }: { checklist: SentChecklist; onCancel: 
 
   return (
     <li className="rounded border border-line">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+      {/* 줄 아무 곳이나 눌러도 펼친다(키보드는 안쪽 버튼으로). 안쪽 버튼은 stopPropagation 으로 두 번 안 바뀌게 */}
+      <div
+        onClick={() => setOpen((o) => !o)}
+        className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
+      >
         <button
           type="button"
-          onClick={() => setOpen((o) => !o)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((o) => !o);
+          }}
           aria-expanded={open}
           className="group flex min-w-0 flex-1 items-center gap-3 text-left"
         >
@@ -424,7 +431,10 @@ function SentRow({ checklist, onCancel }: { checklist: SentChecklist; onCancel: 
         </span>
         <button
           type="button"
-          onClick={onCancel}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCancel();
+          }}
           className="tap shrink-0 rounded px-3 text-[14px] font-semibold text-block hover:bg-blocksoft"
         >
           내리기

@@ -14,7 +14,6 @@ Luna 실패 종류(timeout · empty_response …)가 끝까지 실려 가는지 
 import os
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 

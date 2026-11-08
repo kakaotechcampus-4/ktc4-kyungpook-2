@@ -96,7 +96,7 @@ class InsightProgressServiceTest {
         InsightProgressResponse progress = service.getProgress(TEACHER).get(0);
 
         assertThat(progress.status()).isEqualTo(Status.QUEUED);
-        assertThat(progress.message()).isEqualTo("곧 분석을 시작해요");
+        assertThat(progress.message()).isEqualTo("곧 주간 리포트를 만들기 시작해요");
         assertThat(progress.childName()).isEqualTo("김하늘");
         assertThat(progress.periodTo()).isEqualTo(properties.periodEndOf(LAST_WEEK).toString());
     }

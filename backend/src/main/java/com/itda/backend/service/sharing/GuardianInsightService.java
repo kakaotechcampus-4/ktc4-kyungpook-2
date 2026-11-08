@@ -287,7 +287,8 @@ public class GuardianInsightService {
                 .map(ref -> new GuardianInsightResponse.Evidence(
                         String.valueOf(ref.childContextId()),
                         ref.date().toString(),
-                        InstitutionResponse.from(organizations.get(ref.institutionId()))))
+                        InstitutionResponse.from(organizations.get(ref.institutionId())),
+                        ref.lookedUp()))
                 .toList();
     }
 

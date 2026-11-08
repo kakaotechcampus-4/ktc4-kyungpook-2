@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { skipSearchOnlyChange } from "@/lib/revalidate";
 import { Plus } from "lucide-react";
 import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { ChildPopup, guardianChip, type ChildTab } from "@/components/org/ChildPopup";
 import { LinkRequestCard } from "@/components/org/LinkRequestCard";
 import { RegisterChildPopup } from "@/components/org/RegisterChildPopup";
-import { Chip, EmptyLine, Toast, WorkHead, WorkRow } from "@/components/org/WorkList";
+import { CLICKABLE, Chip, EmptyLine, Toast, WorkHead, WorkRow } from "@/components/org/WorkList";
 import { useWalk } from "@/components/ui/ListPopup";
 import { Pager, usePage } from "@/components/ui/Pager";
 import { getChildren, getInbox, getInsights, getLinkRequests, getMyInstitution, loadIfReady } from "@/lib/api";
@@ -355,8 +355,17 @@ function KidCard({
   onOpen: (tab: ChildTab, unread: boolean) => void;
 }) {
   const chip = guardianChip(child.consent);
+  // 카드 아무 곳이나 눌러도 [열기]/[새 분석 읽기] 와 같게 연다. 키보드 사용자는 안쪽 버튼으로 연다.
+  // 안쪽 버튼은 stopPropagation 으로 카드 클릭과 겹쳐 두 번 열리지 않게 한다.
+  const stop = (open: () => void) => (e: MouseEvent) => {
+    e.stopPropagation();
+    open();
+  };
   return (
-    <article className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[18px] bg-surface px-[18px] py-3.5 shadow-[0_2px_14px_rgba(120,90,40,0.08)]">
+    <article
+      onClick={() => onOpen("analysis", unread > 0)}
+      className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[18px] bg-surface px-[18px] py-3.5 shadow-[0_2px_14px_rgba(120,90,40,0.08)] ${CLICKABLE}`}
+    >
       <span aria-hidden className="grid size-10 flex-none place-items-center rounded-full bg-surface2 text-[16px] font-bold text-ink2">
         {child.name.slice(0, 1)}
       </span>
@@ -370,7 +379,7 @@ function KidCard({
       <div className="flex flex-wrap items-center gap-1.5">
         {unread ? <Chip tone="human">새 리포트 {unread}</Chip> : null}
         {chip ? (
-          <button type="button" onClick={() => onOpen("guardian", false)} className="rounded-full">
+          <button type="button" onClick={stop(() => onOpen("guardian", false))} className="rounded-full">
             <Chip tone="idle">{chip}</Chip>
           </button>
         ) : null}
@@ -378,7 +387,7 @@ function KidCard({
       {unread ? (
         <button
           type="button"
-          onClick={() => onOpen("analysis", true)}
+          onClick={stop(() => onOpen("analysis", true))}
           className="tap rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110"
         >
           새 리포트 읽기
@@ -386,7 +395,7 @@ function KidCard({
       ) : (
         <button
           type="button"
-          onClick={() => onOpen("analysis", false)}
+          onClick={stop(() => onOpen("analysis", false))}
           className="tap rounded-full border border-line2 px-4 text-[14px] font-bold text-ink2 hover:bg-surface2"
         >
           열기
