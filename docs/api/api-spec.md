@@ -701,10 +701,23 @@ O-15 ~ O-19 공통 오류:
 > | --- | --- |
 > | 허용 확장자 | `csv` · `txt` · `pdf` · `docx` (`docx`는 #383에서 추가. 2026-09-29, 이슈 #67로 `jpg`·`jpeg`·`png`·`hwp` 제외 — jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려워 이번 학기 범위 밖) |
 > | 허용 Content-Type | `text/csv` · `application/vnd.ms-excel`(Windows가 csv에 흔히 붙이는 값, #113) · `text/plain` · `application/pdf` · `application/vnd.openxmlformats-officedocument.wordprocessingml.document`(docx) |
-> | 기록 분리(텍스트 추출) | 네 형식 모두 지원(#383). `docx`는 문단과 표 칸을 문서 순서대로 한 줄씩, `pdf`는 글자 위치 순서로 뽑고, 표 칸 끝에서 꺾인 줄은 다음 줄이 날짜로 시작하지 않으면 이어 붙입니다(#385). `docx`·`pdf`는 **첫 날짜 앞 머리말(제목·아동 이름·생년월일)을 기록으로 만들지 않습니다**(날짜가 하나도 없으면 전체를 한 건으로 둡니다). 텍스트를 못 뽑는 파일(깨진 docx, 암호 걸린 pdf, 사진만 있는 pdf)은 업로드는 성공하고 `entries: []`로 남습니다 |
+> | 기록 분리(텍스트 추출) | 네 형식 모두 지원(#383). `docx`는 문단과 표 칸을 문서 순서대로 한 줄씩, `pdf`는 글자 위치 순서로 뽑고, 표 칸 끝에서 꺾인 줄은 다음 줄이 날짜로 시작하지 않으면 이어 붙입니다(#385). `docx`·`pdf`는 **첫 날짜 앞 머리말(제목·아동 이름·생년월일)을 기록으로 만들지 않습니다**(날짜가 하나도 없으면 전체를 한 건으로 둡니다). 텍스트를 못 뽑는 파일(깨진 docx, 암호 걸린 pdf, 사진만 있는 pdf)은 업로드는 성공하고 `entries: []`로 남습니다. `docx`는 압축 안에서 XML로 읽힐 수 있는 파일의 합이 5MB, 전체가 30MB를 넘게 풀리면 같은 "못 읽은 파일"입니다(#424) |
 > | 최대 크기 | 20MB (Caddy는 25MiB에서 먼저 차단) |
+> | 기록 상한 (#424) | 파일 하나에서 나온 기록 **500건**(`app.raw-record.limits.max-entries-per-file`), 기록 하나 **5,000자**까지. 넘으면 파일을 저장하지 않고 거절합니다 — 나눠 올려 주세요 |
+> | AI 처리 줄 상한 (#424) | 그 기관에서 AI 처리를 기다리거나 처리 중인 기록(`PENDING · MATCHING · MATCHED · VALIDATING · VALIDATED · SUMMARIZING`)과 이 파일의 기록을 합쳐 **1,000건**(`app.agent-queue.max-awaiting-entries`)까지. 아래 "AI 처리 줄 상한" 참고 |
+> | 동시 처리 (#424) | 글자 뽑기 · 기록 나누기를 서버 전체에서 동시에 2건까지 하고, 4건까지 최대 10초 기다립니다. 화면은 파일을 2개씩 차례로 보냅니다 |
 > | 성공 | `201 Created` |
-> | 오류 | 확장자·형식·파일명 오류 `400 RAW_RECORD_INVALID_REQUEST`, 용량 초과 `413 RAW_RECORD_FILE_TOO_LARGE`, 저장 실패 `500 RAW_RECORD_STORAGE_FAILED` |
+> | 오류 | 확장자·형식·파일명 오류 `400 RAW_RECORD_INVALID_REQUEST`, 기록이 너무 많거나 긴 파일 `400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED`, 용량 초과 `413 RAW_RECORD_FILE_TOO_LARGE`, AI 처리 줄이 꽉 참 `429 AGENT_QUEUE_FULL`, 동시 업로드가 많음 `429 RAW_RECORD_UPLOAD_BUSY`, 저장 실패 `500 RAW_RECORD_STORAGE_FAILED`. 두 400 과 두 429 는 화면이 `code` 로 가릅니다. 기록 저장이 실패해도 업로드 전체가 `500` 입니다(원본 행과 기록을 한 번에 저장) |
+>
+> **AI 처리 줄 상한이 지키는 범위 (#424)** — **사람이 일으키는 새 유입을 막는 상한**입니다. 업로드와, 사람 확인에서 AI 처리로
+> 다시 들어가는 네 경로(O-23 아이 고르기 · O-25 본문 고치기 · O-36 다시 요약 · O-31 `revert`)가 들어오기 직전에 기관 행을 잠그고
+> 셉니다. 동시에 들어와도 함께 통과하지 않습니다. 요약 워커가 새 기록이 든 묶음을 다시 요약하며 그 묶음의 Gate 1 대기 기록을 함께
+> 담는 것은 막지 않습니다 — 막으면 줄이 꽉 찼을 때 워커가 묶음을 영영 집지 못합니다. 그래서 줄은 그 기관의 Gate 1 대기 기록 수만큼
+> 잠깐 상한을 넘을 수 있습니다. 하루 · 한 달 누적 AI 비용이나 기관 사이 처리 순서는 이 상한이 지키지 않습니다.
+>
+> **AI 에 보내는 기록 길이 (#424)** — 상한 전에 올라온 5,000자 넘는 기록은 매칭 · 검증 · 요약 요청을 만들기 전에 멈춥니다. 잘라
+> 보내지 않고 `SYSTEM_ERROR`(원인 `CONTENT_TOO_LONG`, DB 스키마 §6.2)로 남아 처리 현황(O-26)에 실패로 보입니다. 줄인 파일을 다시
+> 올려 정리합니다.
 >
 > 조회용으로 `GET /raw-records`(내 기관 목록)와 `GET /raw-records/{id}`(단건, 다른 기관 기록은 `404 RAW_RECORD_NOT_FOUND`)가 있습니다.
 
@@ -826,6 +839,7 @@ O-15 ~ O-19 공통 오류:
 | 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 회원이 아님 |
 | 403 | `FORBIDDEN` | `X-XSRF-TOKEN` 헤더 누락·불일치 (§1-2) |
 | 404 | `MATCHING_RESULT_NOT_FOUND` | 없는 항목이거나 다른 기관의 항목 |
+| 429 | `AGENT_QUEUE_FULL` | (`assign`) 그 기관 AI 처리 줄이 꽉 참 — 앞서 올린 기록 처리가 끝나면 다시 (#424, O-20 참고). `not_ours` 는 받지 않습니다 |
 
 **O-24 응답**
 
@@ -899,12 +913,13 @@ O-15 ~ O-19 공통 오류:
 >
 > | 상태 | 코드 | 설명 |
 > | --- | --- | --- |
-> | 400 | `INVALID_REQUEST` | (revise) `content` 누락·빈 문자열·100000자 초과 |
+> | 400 | `INVALID_REQUEST` | (revise) `content` 누락·빈 문자열·5000자 초과 (#424 — 고친 본문은 그대로 검증 AI 에 가므로 업로드한 기록 하나와 같은 길이까지) |
 > | 400 | `VALIDATION_RESULT_CONTENT_UNCHANGED` | (revise) 고치지 않은 본문 (앞뒤 공백만 다른 것 포함) |
 > | 400 | `VALIDATION_RESULT_CHILD_NOT_SHARED` | (revise) 아이가 삭제됐거나 우리 명부에서 빠졌거나 우리 기관 동의가 꺼짐 — 보류만 가능 |
 > | 400 | `VALIDATION_RESULT_OUTDATED` | (공통) 그 기록의 최신 판정이 아닌 카드 — 목록을 새로 받아 새 카드로 처리 |
 > | 400 | `VALIDATION_RESULT_INVALID_REQUEST` | (resolve) `action` 누락·오타·`reupload` · (공통) BLOCK이 아닌 결과, 이미 처리된 기록 |
 > | 404 | `VALIDATION_RESULT_NOT_FOUND` | 없는 항목이거나 다른 기관의 항목. 다른 기관 항목은 행을 잠그지 않고 거절합니다 |
+> | 429 | `AGENT_QUEUE_FULL` | (revise) 그 기관 AI 처리 줄이 꽉 참 — 앞서 올린 기록 처리가 끝나면 다시 (#424, O-20 참고) |
 >
 > 같은 기록을 두 번 처리하면(창 두 개·연타 등) 일지 행을 잠가 차례로 처리하고, 나중 요청은 "이미 처리된 기록"(400)이 됩니다.
 
@@ -1116,6 +1131,7 @@ AI 원문이 승인됩니다.
 | 보류된 요약을 승인·보류 (보류 해제 먼저) | 409 | `SUMMARY_HELD` |
 | 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
 | 목록에서 본 뒤 요약이 새 기록으로 바뀜 — 목록을 다시 불러오기 | 409 | `SUMMARY_CHANGED` |
+| (`revert`) 그 기관 AI 처리 줄이 꽉 참 — 앞서 올린 기록 처리가 끝나면 다시 (#424, O-20 참고) | 429 | `AGENT_QUEUE_FULL` |
 
 **O-33 보류 해제** · 본문 없음
 
@@ -1219,6 +1235,7 @@ AI 원문이 승인됩니다.
 | `childId`·`entryDate` 누락, 날짜 형식 오류 | 400 | `INVALID_REQUEST` |
 | 보호자가 우리 기관 동의를 하지 않았거나 철회한 아이, 없는 아이 | 404 | `SUMMARY_CHILD_NOT_FOUND` |
 | 그 묶음에 요약 실패 기록이 없음 — 이미 처리했거나 다른 기관 기록. 목록을 다시 불러와 주세요 | 404 | `SUMMARY_FAILED_NOT_FOUND` |
+| (O-36) 그 기관 AI 처리 줄이 꽉 참 — 앞서 올린 기록 처리가 끝나면 다시 (#424, O-20 참고) | 429 | `AGENT_QUEUE_FULL` |
 
 ### 4.5 Insight · Gate 2
 
@@ -2218,6 +2235,9 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | 코드 | 상태 | 설명 |
 | --- | --- | --- |
 | `FILE_TOO_LARGE` | 413 | 업로드 용량 초과 (현재 구현: `RAW_RECORD_FILE_TOO_LARGE`) |
+| `RAW_RECORD_ENTRY_LIMIT_EXCEEDED` | 400 | 파일에서 나온 기록이 500건을 넘거나 기록 하나가 5,000자를 넘음 — 파일을 저장하지 않음 (O-20, #424) |
+| `RAW_RECORD_UPLOAD_BUSY` | 429 | 서버 전체의 동시 업로드 처리 자리와 대기가 꽉 참 — 파일을 저장하지 않음 (O-20, #424) |
+| `AGENT_QUEUE_FULL` | 429 | 그 기관 AI 처리 줄이 꽉 참 (O-20 · O-23 `assign` · O-25 `revise` · O-31 `revert` · O-36, #424) |
 | `UNSUPPORTED_FILE_TYPE` | 400 | 허용되지 않은 확장자 (현재 구현: 입력 오류와 함께 `RAW_RECORD_INVALID_REQUEST`) |
 | `CHILD_NOT_FOUND` | 404 | 없는 아이 |
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |

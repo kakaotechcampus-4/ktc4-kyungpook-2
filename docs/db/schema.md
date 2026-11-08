@@ -545,9 +545,10 @@ UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변�
 | 기관 연결 요청 (G-44) | `child`. 잠근 뒤 보호자 연결·명부·이 보호자의 대기 요청을 본다 — 같은 보호자의 동시 요청이 대기 행을 둘 만들지 않는다 |
 | 연결 요청 수락 (O-61) | `child` → `child_organization` → `child_organization_request`. 요청 행은 잠그면서 처음 읽는다 — 그사이 연결 해제로 거둬진 요청을 옛 `PENDING` 으로 보지 않는다 |
 | 연결 요청 거절 (O-62) | `child` → `child_organization_request` |
-| 사람의 매칭 확정 (O-23 assign) | `child`. 잠근 뒤 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 새 확정이 성공하지 않는다 |
-| 막힌 일지 고쳐서 다시 검사 (O-25 revise) | `child` → `journal_entry`. 먼저 잠그지 않고 우리 기관 일지인지 본다 — 다른 기관 id 로는 그 기관 행을 잠그지 않는다. 판정의 아이 행을 한 번 잠근 뒤 일지 행을 잠가 상태·최신 판정·아이가 같은지 보고, 명부·그 기관 동의를 확인한다 — 철회·명부 제외가 커밋된 뒤에는 고치기가 성공하지 않는다(400, #357). 보류(O-25 hold)는 같은 소유 확인 뒤 `journal_entry` 만 잠근다. 막힌 일지 행을 잠그는 다른 작업은 없다 |
+| 사람의 매칭 확정 (O-23 assign) | `child` → `organization`. 아이 행을 잠근 뒤 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 새 확정이 성공하지 않는다. 기관 행은 AI 처리 줄 상한 확인이다(아래 "AI 처리 줄에 들어오기", #424) |
+| 막힌 일지 고쳐서 다시 검사 (O-25 revise) | `child` → `journal_entry`. 먼저 잠그지 않고 우리 기관 일지인지 본다 — 다른 기관 id 로는 그 기관 행을 잠그지 않는다. 판정의 아이 행을 한 번 잠근 뒤 일지 행을 잠가 상태·최신 판정·아이가 같은지 보고, 명부·그 기관 동의를 확인한다 — 철회·명부 제외가 커밋된 뒤에는 고치기가 성공하지 않는다(400, #357). 그다음 `organization` 을 잠가 AI 처리 줄 상한을 본다(#424). 보류(O-25 hold)는 같은 소유 확인 뒤 `journal_entry` 만 잠근다. 막힌 일지 행을 잠그는 다른 작업은 없다 |
 | Gate 1 결정 · 보류 해제 (O-31 · O-33) | `summary_result` → `child`. 요약 행을 잠가 결정끼리 줄을 세운 뒤 아이 행을 잠그고 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 승인·보류 해제가 성공하지 않는다(404, #332). Gate 2 승인(`insight_result` → `child`)과 같은 모양이고, `child` 를 먼저 잠그는 작업들은 요약 행을 잠그지 않아 교착이 없다 |
+| AI 처리 줄에 들어오기 (O-20 업로드 · O-23 assign · O-25 revise · O-31 `revert` · O-36, #424) | **`organization` 은 늘 마지막**. 위 작업들이 자기 행(`child` · `journal_entry` · `summary_result`)을 잠근 뒤 그 기관 행을 잠그고 AI 처리 중 · 대기 일지를 센다. 업로드는 저장소 전송을 잠금 밖에서 끝내고 기관 행만 잠근다. 기관 행을 먼저 잡고 다른 행을 기다리는 작업이 없어 교착이 없다. 요약 워커는 기관 행을 잠그지 않는다 |
 | 요약 결과 남기기 (요약 워커) | `summary_result`(그 묶음의 판, 최신 판부터) → `child`. 저장 · 요약 실패 · 시스템 오류를 남기기 전에 잠그고 그 기관 동의를 확인한다 — 철회가 먼저 커밋됐으면 아무것도 남기지 않고 요청을 닫는다(일지는 요약 전으로, #398). AI 를 부르는 동안에는 잠그지 않는다. Gate 1 결정과 같은 순서라 교착이 없다 — 아이 행을 먼저 잡으면 Gate 1 과 서로 기다린다 |
 | 인사이트 단건 열람 (G-36 · O-51) | `child` **FOR SHARE** → `sharing_history`(열람 시각 UPDATE 의 행 잠금). 잠글 아이는 `child_id` 값만 골라 알고, 권한 행은 잠근 뒤에 처음 읽는다. 철회·Gate 2 승인과는 줄을 서고 열람끼리는 `child` 에서 막지 않는다 — 같은 권한 행의 UPDATE 끼리만 기다린다 (§9.4) |
 | 돌봄 정보 저장 (G-13) | `child`. 잠근 뒤 보호자 연결·아이 삭제를 보고 덮어쓴다. 첫 저장이 겹쳐 행이 둘 생기지 않고, 연결 해제가 먼저 반영되면 403 이며 돌봄 정보는 생기지도 바뀌지도 않는다 |
@@ -1298,7 +1299,7 @@ S3 객체의 실제 파기는 개인정보 파기 절차(§3.2 마지막)에서 
 | `updated_at` | DATETIME | N |  |
 | `deleted_at` | DATETIME | Y | **삭제 표시.** 잘못 분리된 일지를 내릴 때 |
 | `agent_retry_count` | INT | Y | AI 다운으로 지금 단계(매칭·검증)를 되돌린 횟수 (#153). NULL 은 0. `PENDING` 으로 만들 때 0, 매칭이 확정돼 `MATCHED` 로 들어올 때 0 으로. **`MATCHING`·`VALIDATING`·되돌려진 대기 상태에서만 뜻이 있고**, 다른 상태에 남은 값은 지난 단계의 것이다 (실패 원인은 `failure_reason` 으로 읽는다) |
-| `failure_stage` | VARCHAR(30) | Y | `SYSTEM_ERROR` 로 멈춘 단계 — `VALIDATION`·`SUMMARY` (#180). 그 상태일 때만 채운다. 되돌릴 자리가 단계마다 달라서 둔다 |
+| `failure_stage` | VARCHAR(30) | Y | `SYSTEM_ERROR` 로 멈춘 단계 — `MATCHING`·`VALIDATION`·`SUMMARY` (#180, `MATCHING` 은 #424). 그 상태일 때만 채운다. 되돌릴 자리가 단계마다 달라서 둔다 |
 | `failure_reason` | VARCHAR(30) | Y | `SYSTEM_ERROR` 로 멈춘 원인 코드 (#180, 아래 "실패 상태와 원인 코드"). 그 상태일 때만 채운다 |
 | `revised_by` | VARCHAR(50) | Y | 검증에서 막힌 본문을 수정 요청 큐에서 **마지막으로** 고친 선생님 (`users.id`, #357). 고친 적 없으면 NULL |
 | `revised_at` | DATETIME | Y | 마지막으로 고친 시각 (#357) |
@@ -1365,7 +1366,7 @@ GATE1_PENDING      1차 검토 대기
 GATE1_HELD         이 일지가 든 요약을 교사가 보류함 — 보류 해제하면 GATE1_PENDING (BE 추가, #178)
 COMPLETED          완료 — 이 일지가 든 요약이 Gate 1 에서 승인됨 (요약할 내용 없음이면 확인됨, #244). 요약 실패를 요약 없이 마무리해도 여기 — summary_id 없음 (#369)
 SUMMARY_FAILED     근거가 남은 문장이 없어 요약하지 못함 — 검토에서 다시 요약(→ VALIDATED)·요약 없이 마무리(→ COMPLETED) (BE 추가, #180, #369)
-SYSTEM_ERROR       코드 버그·AI 계약 위반으로 검증·요약이 멈춤 — 관리자가 고친 뒤 되돌림 (BE 추가, #180)
+SYSTEM_ERROR       코드 버그·AI 계약 위반으로 검증·요약이 멈춤 — 관리자가 고친 뒤 되돌림 (BE 추가, #180). AI 에 보낼 수 없는 긴 본문은 매칭에서도 멈춤 (#424)
 FAILED             매칭 호출 실패 — 확인 필요 큐 (#180 전에는 검증·요약 실패도 이 값)
 ```
 
@@ -1376,6 +1377,7 @@ FAILED             매칭 호출 실패 — 확인 필요 큐 (#180 전에는 �
 | `auto` | `MATCHED` | 판정된 아동으로 채움 |
 | `review` · `multi` · `unmatched` | `MATCH_REVIEW` | NULL 유지 |
 | 호출 실패 (4xx, 응답 해석 실패, 원본·기관 이상) | `FAILED` (그 건만, 다음 건 계속) | NULL 유지 |
+| 본문이 5,000자를 넘음 — 요청을 만들기 전에 멈춤, AI 를 부르지 않음 (#424) | `SYSTEM_ERROR` + `failure_stage = MATCHING` + `CONTENT_TOO_LONG` (그 건만, 다음 건 계속). `matching_result` 행은 남기지 않음 — 확인 필요 큐에 뜨지 않는다 | NULL 유지 |
 | AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx·408·429 가 재시도 2회 후에도 계속) | `PENDING` 으로 되돌리고 `agent_retry_count` + 1. 나머지도 되돌리고 이번 차례 멈춤, 워커는 30초 쉼. **이미 2번 되돌린 일지면 `FAILED`** (확인 필요 큐), 다음 건 계속 | NULL 유지 |
 
 `MATCHED`는 초안에 없던 값이다. `VALIDATING`은 "검증 중"이라, 검증 워커가 집어 갈 "확정됐고 검증을 기다림" 상태가 따로 필요했다.
@@ -1400,6 +1402,7 @@ AI 자동 확정과 선생님 확정 둘 다 `MATCHED`로 들어오므로 구분
 | `PASS` · `REVIEW` | `VALIDATED` (요약 대기) | 행 추가 |
 | `BLOCK` | `VALIDATION_BLOCKED` (수정 요청 큐) | 행 추가 |
 | 호출 실패 (4xx, 응답 해석 실패, 판정 없음·계약에 없는 판정, 매칭된 아이 없음, 저장 오류) | `SYSTEM_ERROR` + `failure_stage = VALIDATION` + 원인 코드 (그 건만, 다음 건 계속, #180) | `verdict = FAILED` 로 행 추가 (#122) |
+| 본문이 5,000자를 넘음 — 요청을 만들기 전에 멈춤, AI 를 부르지 않음 (#424) | `SYSTEM_ERROR` + `failure_stage = VALIDATION` + `CONTENT_TOO_LONG` (그 건만, 다음 건 계속) | `verdict = FAILED` 로 행 추가 (호출 실패와 같은 경로) |
 | AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx·408·429 가 재시도 2회 후에도 계속. LLM 실패 503 포함) | `MATCHED` 로 되돌리고 `agent_retry_count` + 1. 나머지도 되돌리고 이번 차례 멈춤, 워커는 30초 쉼. **이미 2번 되돌린 일지면 `SYSTEM_ERROR` (`AGENT_UNAVAILABLE`)**, 다음 건 계속 (#153, #180) | 되돌리면 남기지 않음. 시스템 오류면 `verdict = FAILED` 로 행 추가 |
 
 **AI 다운으로 되돌리는 횟수에 상한(`app.ai.agent-down.max-releases`, 2)을 둔 이유** — AI 다운은 일지 잘못이 아니라
@@ -1470,6 +1473,7 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 | 200 인데 본문이 빔 | 처음 요약하던 일지는 `SYSTEM_ERROR` (`RESPONSE_UNREADABLE`) — AI 계약상 근거가 없으면 503 이라 나오면 안 되는 응답이다. 나머지는 위와 같음 | 남기지 않음 |
 | BE 근거 재검사에 걸림 (§8.2) | 처음 요약하던 일지는 `SYSTEM_ERROR` (`EVIDENCE_MISMATCH`). 나머지는 위와 같음 | 남기지 않음 |
 | 호출 실패 (4xx, 응답 해석 실패, 저장 오류) | 처음 요약하던 일지는 `SYSTEM_ERROR` (`REQUEST_REJECTED`·`RESPONSE_UNREADABLE`·`INTERNAL_ERROR`). 나머지는 위와 같음 | 남기지 않음 |
+| 묶음에 5,000자 넘는 일지가 있음 — 요청을 만들기 전에 묶음째 멈춤, AI 를 부르지 않음 (#424) | 처음 요약하던 일지는 `SYSTEM_ERROR` (`CONTENT_TOO_LONG`). 나머지는 위와 같음 | 남기지 않음 |
 | AI 를 쓸 수 없음 (연결 실패·타임아웃·5xx·408·429 가 재시도 2회 후에도 계속. LLM 실패 503 `llm_unavailable`, 사유를 읽을 수 없는 503 포함) | 실패로 남기지 않고 요약하기 전 상태로 되돌림 (그 묶음과 나머지 묶음 모두). 이번 차례 멈춤 | 남기지 않음 |
 
 교사가 Gate 1(API O-31)에서 결정하면 그 요약을 가리키는(`summary_id`) 일지가 함께 바뀐다 (#178).
@@ -1516,7 +1520,7 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 | `SUMMARY_FAILED` | 요약에 근거가 남은 문장이 없음. 주로 모델이 인용을 원문과 다르게 옮긴 경우 | 검토 화면의 요약 실패 목록(API O-35)에 아동 × 날짜 묶음으로 뜬다(묶음 카드에는 넣지 않는다). 교사가 [다시 요약](O-36) → `VALIDATED`(횟수 제한 없음, 자동 요약이 꺼져 있으면 요청 행도 남김) 하거나 [요약 없이 마무리](O-37) → `COMPLETED`(요약 행 없음, 아동 맥락·보호자·인사이트로 안 감) 한다 (#369) |
 | `SYSTEM_ERROR` | 코드 버그·AI 계약 위반. 다시 돌려도 같다 | 관리자가 고친 뒤 원인별로 골라 되돌린다 |
 
-`SYSTEM_ERROR` 일 때만 `failure_stage`·`failure_reason` 을 채운다. 세부(어느 문장·근거인지, 일지 id)는 로그에 남기고,
+`SYSTEM_ERROR` 일 때만 `failure_stage`·`failure_reason` 을 채운다. `MATCHING` 단계는 `CONTENT_TOO_LONG` 에만 쓴다 — 매칭 호출 실패는 지금처럼 `FAILED` 다. 세부(어느 문장·근거인지, 일지 id)는 로그에 남기고,
 아이 기록이라 본문은 DB 에 옮겨 적지 않는다. 예외를 원인으로 바꾸는 곳은 `AgentFailureReasons` 한 곳이다.
 
 | `failure_reason` | 단계 | 뜻 | 고칠 곳 |
@@ -1525,6 +1529,7 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 | `RESPONSE_UNREADABLE` | 검증 · 요약 | AI 응답을 못 읽음 (본문 없음, JSON 아님, 필수 값 빠짐, 검증 판정 없음·`FAILED`, `no_content` 표시 없이 요약 본문이 빈 200) | AI 응답 |
 | `EVIDENCE_MISMATCH` | 요약 | BE 근거 재검사에 걸림 (§8.2). 다른 묶음 응답·필수 값 빠짐, `no_content` 인데 문장·본문·반영된 일지가 있는 응답도 여기다. 요약하는 사이 교사가 일지를 지웠는데 AI 가 그 일지를 근거로 든 경우도 걸리는데, 이때는 고칠 것 없이 바로 되돌리면 된다 (로그의 `reason` 으로 구분) | AI 근거 계산 |
 | `AGENT_UNAVAILABLE` | 검증 | AI 다운으로 되돌린 횟수가 상한을 넘음 (#153) | 없음 — AI 가 살아나면 되돌린다 |
+| `CONTENT_TOO_LONG` | 매칭 · 검증 · 요약 | 본문이 AI 에 보낼 수 있는 길이(5,000자, `JournalEntry.MAX_CONTENT_LENGTH`)를 넘음 (#424). 상한 전에 올라온 일지만 온다 — 새 업로드는 그 파일을 거절하고 본문 고치기도 5,000자까지다. 요청을 만들기 전에 멈춰 AI 를 부르지 않는다. 매칭에서 멈추면 확인 필요 큐(`FAILED`)로 보내지 않는다 — 아이를 골라도 검증에서 다시 멈춘다. 요약은 묶음째 멈춘다(긴 일지만 빼고 요약하면 그 기록이 모르는 사이 빠진다) | 없음 — 되돌려도 다시 멈춘다. 줄인 파일을 다시 올린다. 되돌리기 스크립트는 이 원인을 받지 않는다 |
 | `INTERNAL_ERROR` | 검증 · 요약 | 위에 없는 BE 오류 (매칭된 아이 없음, DB 오류 등) | BE |
 
 "요약할 내용 없음"(멘토 A3, #244)은 실패가 아니라 정상 결과다. AI 가 `no_content: true` 를 붙여 빈 본문으로 보내면
@@ -2895,6 +2900,24 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 
 **준비물·확인사항 (#340)** — `checklist`·`checklist_target` 은 새 테이블이라 `ddl-auto: update` 가 UNIQUE · 인덱스까지 만든다. 배포 전 조치는 없다.
 
+**업로드 · AI 처리 줄 상한 (#424) 배포 절차** — `failure_stage` 에 `MATCHING`, `failure_reason` 에 `CONTENT_TOO_LONG` 이 는다.
+배포 DB 의 두 CHECK(아래 문단)는 옛 값만 허용하므로 **새 버전 배포 전에 지운다.** 지우지 않으면 긴 일지를 시스템 오류로 남기는
+저장이 CHECK 위반으로 실패하고, 그 일지는 처리 중(`MATCHING`·`VALIDATING`·`SUMMARIZING`) 상태로 남아 재시작 때마다 다시 집혀
+또 실패한다. 컬럼은 그대로다.
+
+1. 5,000자 넘는 살아 있는 일지가 있는지 본다. 0건이면 2로. 있으면 상태별로 목록을 뽑아 처리 방법을 정한 뒤 배포한다 —
+   특히 `GATE1_PENDING` 에 있으면 같은 묶음에 새 일지가 올 때마다 요약이 묶음째 멈춘다
+   ```sql
+   SELECT status, count(*) FROM journal_entry
+   WHERE deleted_at IS NULL AND length(content) > 5000 GROUP BY status;
+   ```
+2. CHECK 의 실제 이름을 확인하고 지운다
+   ```
+   \d journal_entry      failure_stage · failure_reason CHECK 이름 확인 (보통 journal_entry_failure_stage_check · journal_entry_failure_reason_check)
+   ALTER TABLE journal_entry DROP CONSTRAINT <확인한 이름>;   (둘 다)
+   ```
+3. 머지 → 백엔드 · 프론트 배포가 둘 다 성공했는지 확인한다
+
 새 컬럼 `failure_stage`·`failure_reason` 은 NULL 허용이라 `update` 가 기존 행이 있어도 더한다. **`update` 가 컬럼을
 더할 때도 enum 값으로 CHECK 제약(`journal_entry_failure_stage_check`·`journal_entry_failure_reason_check`)을 함께 건다**
 (10/16 PostgreSQL 16 에서 확인). 지금은 문제없지만, 나중에 원인 코드를 더하면 그 CHECK 를 DROP 해야 저장된다.
@@ -2964,3 +2987,4 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-11-07 | 약관 판 규칙 (§4.3) — 한 판 = 한 본문(판마다 문안 파일, 내보낸 파일은 고치지 않음). 본문이 생긴 첫 판 `2026-11-07`(초안)을 새로 내고, 본문 없던 판(`2026-11-03` · `2026-11-05`)은 라벨 판으로 남긴다. `version` 은 동의 화면이 읽은 판을 서버가 확인해 넣고, 판 없이 온 동의는 라벨 판을 넣는다. 다시 받는 약관은 통과 판(라벨 판 · 지금 판)으로 판정해 이미 동의한 회원은 다시 동의하지 않는다. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #390 |
 | 2026-11-07 | `insight_result` 에 `looked_up_claim_ids` 추가 (§9.3, NULL 허용) — AI 가 같은 아이의 지난 기록(이번 기간 앞 12주치 승인 요약, 동의 기관만, 최대 200개)에서 찾아 근거로 쓴 claim 이다 (#387). Gate 2 근거에 "지난 기록" 으로 표시한다. 저장할 때 BE 가 인용된 claim(`claim_ids`·`supports`·`looked_up_claim_ids`)의 기관을 `source_institution_ids` 에 직접 더한다 — 동의 확인과 철회 때 권한 거두기가 이 값만 보므로 AI 출력에 맡기지 않는다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #387 |
 | 2026-11-07 | 요약 결과를 남길 때(저장 · 요약 실패 · 시스템 오류) 그 묶음의 요약 행 → 아이 행을 잠근 뒤 동의를 본다 — 동의 철회가 먼저 커밋됐으면 요약을 저장하지 않는다(멘토 8차 리뷰 P2). 잠금 순서 표(§3.3)에 추가, Gate 1 결정과 같은 순서. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #398 |
+| 2026-11-08 | 업로드 · AI 처리 줄 상한. `journal_entry.failure_stage` 에 `MATCHING`, `failure_reason` 에 `CONTENT_TOO_LONG` 추가 (§6.2 "실패 상태와 원인 코드") — 상한(5,000자) 전에 올라온 긴 일지를 AI 에 보내지 않고 멈춘다. AI 처리 줄에 들어오는 작업(업로드 · O-23 assign · O-25 revise · O-31 `revert` · O-36)이 `organization` 행을 마지막에 잠그고 처리 중 · 대기 일지를 센다 (§3.3 잠금 순서). 업로드는 원본 행과 일지를 한 트랜잭션에 저장한다. 컬럼 · 제약 추가 없음. **enum 값 추가라 §11.4 수동 조치 필요** — 두 CHECK DROP | #424 |
