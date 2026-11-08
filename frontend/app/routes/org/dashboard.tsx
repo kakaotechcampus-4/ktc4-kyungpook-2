@@ -340,6 +340,9 @@ type UploadFailure = Extract<UploadResult, { ok: false }>;
 const FAIL_TEXT = {
   invalid: `올릴 수 없는 형식이에요 (${UPLOAD_EXTENSIONS.join(" · ")})`,
   too_large: "20MB를 넘는 파일이에요",
+  too_many_entries: "기록이 500건이 넘거나 한 기록이 5,000자를 넘어요. 나눠 올려 주세요",
+  queue_full: "앞서 올린 기록을 처리하고 있어요. 끝나면 다시 올려 주세요",
+  server_busy: "지금 올리는 파일이 많아요. 잠시 뒤 다시 올려 주세요",
   temporary: "잠시 문제가 있어 저장하지 못했어요",
 } as const;
 

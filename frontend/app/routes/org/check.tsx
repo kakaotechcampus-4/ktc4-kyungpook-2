@@ -14,10 +14,12 @@ import {
   WorkRow,
 } from "@/components/org/WorkList";
 import {
+  AGENT_QUEUE_FULL_TEXT,
   ApiError,
   getBlockedQueue,
   getChildren,
   getMatchingQueue,
+  isAgentQueueFull,
   MAX_REVISED_CONTENT,
   resolveBlockedItem,
   resolveMatchingItem,
@@ -299,6 +301,10 @@ function ConfirmPopup({
         onStale();
         return;
       }
+      if (isAgentQueueFull(err)) {
+        setError(AGENT_QUEUE_FULL_TEXT);
+        return;
+      }
       setError(
         err instanceof ApiError && err.status === 400
           ? "이 아이로는 연결할 수 없어요. 명부와 보호자 동의를 확인해 주세요."
@@ -422,6 +428,9 @@ function BlockedPopup({
   const [error, setError] = useState<string | null>(null);
   const [loginLost, setLoginLost] = useState(false);
   const changed = full != null && draft.trim() !== "" && draft.trim() !== original.trim();
+  // 고친 본문은 그대로 검증 AI 에 가므로 5,000자까지만 보낸다 (#424). 그보다 긴 옛 기록은 줄여야 보낼 수 있다.
+  // 칸에 maxLength 를 걸지 않는다 — 붙여 넣은 글이 말없이 잘리면 뒤쪽이 사라진 줄 모른다.
+  const tooLong = draft.length > MAX_REVISED_CONTENT;
 
   useEffect(() => {
     if (carriedDraft) onCarriedUsed(item.id);
@@ -483,7 +492,7 @@ function BlockedPopup({
                 {loginLost ? <ReloginButton role="org" returnTo="/check" /> : null}
               </span>
             ) : null}
-            <PopButton tone="dark" disabled={!changed || busy} onClick={() => run("revise")}>
+            <PopButton tone="dark" disabled={!changed || tooLong || busy} onClick={() => run("revise")}>
               {busy ? <Busy>보내는 중…</Busy> : "다시 보내기"}
             </PopButton>
           </>
@@ -506,10 +515,18 @@ function BlockedPopup({
             aria-label="고칠 문장"
             value={draft}
             readOnly={full == null}
-            maxLength={MAX_REVISED_CONTENT}
+            aria-invalid={tooLong}
+            aria-describedby="revise-length"
             onChange={(e) => setDraft(e.target.value)}
             className="min-h-[130px] w-full resize-y rounded-[14px] border border-line2 bg-surface px-3.5 py-3 text-[15px] leading-[1.6] text-ink focus:border-accent focus:outline-2 focus:outline-accent"
           />
+          <p
+            id="revise-length"
+            className={`mt-1 text-right text-[13px] ${tooLong ? "font-bold text-block" : "text-ink2"}`}
+          >
+            {tooLong ? "5,000자까지 보낼 수 있어요 · " : null}
+            {draft.length.toLocaleString("ko-KR")} / {MAX_REVISED_CONTENT.toLocaleString("ko-KR")}자
+          </p>
         </PopSection>
       </ListPopup>
       {asking ? (
@@ -531,6 +548,7 @@ function BlockedPopup({
 
 function failureOf(err: unknown): { text: string; stale: boolean } {
   if (!(err instanceof ApiError)) return { text: "네트워크 연결을 확인하고 다시 시도해 주세요.", stale: false };
+  if (isAgentQueueFull(err)) return { text: AGENT_QUEUE_FULL_TEXT, stale: false };
   if (err.status === 400) {
     switch (err.code) {
       case "INVALID_REQUEST":

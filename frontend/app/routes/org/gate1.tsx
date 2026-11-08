@@ -16,6 +16,7 @@ import {
   WorkRow,
 } from "@/components/org/WorkList";
 import {
+  AGENT_QUEUE_FULL_TEXT,
   ApiError,
   closeFailedSummary,
   decideGate1,
@@ -178,6 +179,9 @@ function messageOf(err: unknown): string {
       return "고친 문장이 지금 요약과 맞지 않아요. 목록을 새로 불러왔으니 다시 확인해 주세요.";
     case "INVALID_REQUEST":
       return "고친 문장을 보내지 못했어요. 빈 문장이나 1000자가 넘는 문장이 없는지 확인해 주세요.";
+    // "요약할 내용 없음" 되돌리기 · 요약 실패 [다시 요약]은 기록을 AI 로 다시 보낸다 (#424)
+    case "AGENT_QUEUE_FULL":
+      return AGENT_QUEUE_FULL_TEXT;
   }
   if (err.status === 404) return "더 이상 볼 수 없는 요약이에요. 목록을 새로 불러왔어요.";
   if (err.status === 401) return "로그인이 풀렸어요. 다시 로그인한 뒤 시도해 주세요.";

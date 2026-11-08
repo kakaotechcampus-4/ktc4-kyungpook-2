@@ -770,17 +770,35 @@ export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
     mock.FILE_PROGRESS.unshift(...created);
     return results;
   }
-  return Promise.all(
-    files.map(async (file): Promise<UploadResult> => {
-      // BE 도 400 으로 거절하지만, 보내기 전에 걸러 20MB 짜리 hwp 같은 걸 끝까지 올리지 않게 한다
-      if (!hasUploadExtension(file)) return { ok: false, file, reason: "invalid" };
-      try {
-        return { ok: true, file, progress: await uploadOne(file) };
-      } catch (err) {
-        return { ok: false, file, reason: uploadFailReasonOf(err) };
-      }
-    }),
-  );
+  return mapInBatches(files, UPLOAD_CONCURRENCY, async (file): Promise<UploadResult> => {
+    // BE 도 400 으로 거절하지만, 보내기 전에 걸러 20MB 짜리 hwp 같은 걸 끝까지 올리지 않게 한다
+    if (!hasUploadExtension(file)) return { ok: false, file, reason: "invalid" };
+    try {
+      return { ok: true, file, progress: await uploadOne(file) };
+    } catch (err) {
+      return { ok: false, file, reason: uploadFailReasonOf(err) };
+    }
+  });
+}
+
+/**
+ * 한 번에 보내는 파일 수. 서버가 업로드의 글자 뽑기를 서버 전체에서 동시에 몇 개까지만 하고(#424, 기본 2개 · 기다리는 4개),
+ * 넘치면 429 RAW_RECORD_UPLOAD_BUSY 로 거절한다. 한꺼번에 보내면 파일을 여러 개 고른 선생님이 그 상한에 걸린다.
+ */
+const UPLOAD_CONCURRENCY = 2;
+
+/** items 를 limit 개씩 동시에 처리한다. 결과는 items 순서 그대로다. */
+async function mapInBatches<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 async function uploadOne(file: File): Promise<FileProgress> {
@@ -799,10 +817,13 @@ async function uploadOne(file: File): Promise<FileProgress> {
 }
 
 /**
- * 상태 코드로만 가른다. nginx 가 25MB 에서 먼저 막으면 본문이 JSON 이 아니라 code 가 없다.
- * 네트워크 오류(fetch 의 TypeError)도 temporary 다.
+ * 서버가 이유를 코드로 준 거절(#424)을 먼저 가르고, 나머지는 상태 코드로 가른다. nginx 가 25MB 에서 먼저 막으면 본문이
+ * JSON 이 아니라 code 가 없다. 네트워크 오류(fetch 의 TypeError)도 temporary 다.
  */
 function uploadFailReasonOf(err: unknown): UploadFailReason {
+  if (err instanceof ApiError && err.code === "RAW_RECORD_ENTRY_LIMIT_EXCEEDED") return "too_many_entries";
+  if (isAgentQueueFull(err)) return "queue_full";
+  if (err instanceof ApiError && err.code === "RAW_RECORD_UPLOAD_BUSY") return "server_busy";
   if (err instanceof ApiError && err.status === 400) return "invalid";
   if (err instanceof ApiError && err.status === 413) return "too_large";
   return "temporary";
@@ -821,11 +842,26 @@ function hasUploadExtension(file: File): boolean {
   return UPLOAD_EXTENSIONS.includes(ext);
 }
 
+/** 파일명에 "많음" · "대기" · "혼잡" 이 들어가면 그 거절을 흉내낸다 — 실패 문구를 mock 에서 확인할 수 있게 (#424) */
 function mockRejectReason(file: File): UploadFailReason | null {
   if (!hasUploadExtension(file)) return "invalid";
   if (file.size > UPLOAD_MAX_BYTES) return "too_large";
+  if (file.name.includes("많음")) return "too_many_entries";
+  if (file.name.includes("대기")) return "queue_full";
+  if (file.name.includes("혼잡")) return "server_busy";
   return null;
 }
+
+/**
+ * 서버의 그 기관 AI 처리 줄이 꽉 찼다 (429 AGENT_QUEUE_FULL, #424). 업로드와, 기록을 AI 로 다시 보내는 선생님 처리
+ * (확인 필요 큐의 아이 고르기 · 막힌 본문 고치기 · 요약 실패 [다시 요약] · "요약할 내용 없음" 되돌리기)가 받는다.
+ */
+export function isAgentQueueFull(err: unknown): boolean {
+  return err instanceof ApiError && err.code === "AGENT_QUEUE_FULL";
+}
+
+/** isAgentQueueFull 일 때 선생님 처리 화면이 보이는 문구 */
+export const AGENT_QUEUE_FULL_TEXT = "앞서 올린 기록을 처리하고 있어요. 끝나면 다시 해 주세요.";
 
 /**
  * 파일별 처리 현황. 최근 업로드가 먼저 온다.
@@ -906,8 +942,11 @@ export async function resolveBlockedItem(id: string, action: "hold"): Promise<{ 
   });
 }
 
-/** 고친 본문 최대 길이. 서버 ReviseBlockedEntryRequest 와 같다 */
-export const MAX_REVISED_CONTENT = 100_000;
+/**
+ * 고친 본문 최대 길이. 서버 JournalEntry.MAX_CONTENT_LENGTH 와 같다 (#424) — 고친 본문은 그대로 검증 AI 에 가므로
+ * 업로드한 일지 하나와 같은 길이까지만 받는다.
+ */
+export const MAX_REVISED_CONTENT = 5_000;
 
 /**
  * POST /api/v1/validation-results/{id}/revise (api-spec O-25, #357)
@@ -915,12 +954,12 @@ export const MAX_REVISED_CONTENT = 100_000;
  * 막힌 일지의 본문을 고쳐 검증을 다시 받게 한다. 아이는 그대로다. 성공하면 큐에서 빠지고,
  * 통과하면 요약 대기, 또 막히면 큐에 최신 사유로 다시 뜬다.
  * 400 은 code 로 이유를 나눈다.
- * - INVALID_REQUEST: 빈 본문·100000자 초과
+ * - INVALID_REQUEST: 빈 본문·5000자 초과
  * - VALIDATION_RESULT_CONTENT_UNCHANGED: 앞뒤 공백 말고 고친 게 없다
  * - VALIDATION_RESULT_CHILD_NOT_SHARED: 아이가 삭제됐거나 명단에서 빠졌거나 우리 기관 동의가 꺼졌다 — 보류만 할 수 있다
  * - VALIDATION_RESULT_OUTDATED: 그 일지에 더 최근 판정이 있다(이미 고쳐 다시 검사했는데 또 막힘)
  * - VALIDATION_RESULT_INVALID_REQUEST: 이미 처리됐거나 BLOCK 판정이 아니다
- * 없는 건은 404 다.
+ * 없는 건은 404 다. 그 기관 AI 처리 줄이 꽉 찼으면 429 AGENT_QUEUE_FULL 이다(isAgentQueueFull).
  */
 export async function reviseBlockedItem(id: string, content: string): Promise<{ ok: true }> {
   if (mockFor("blockedQueue")) {
