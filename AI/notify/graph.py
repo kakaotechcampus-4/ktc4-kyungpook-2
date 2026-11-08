@@ -58,6 +58,7 @@ def run_notify(payload: NotifyInput) -> NotifyOutput:
         모델 호출 실패   → 503 llm_unavailable   BE 가 재시도한다
         발송 실패        → 503 delivery_failed   BE 가 재시도한다 (메일 서버 장애)
         근거 미달        → 200 blocked           교사 확인 큐로. 재시도해도 같다
+        받을 사람 없음   → 200 no_recipient      장애가 아니지만 메일도 안 나갔다
 
     셋을 섞으면 교사가 고칠 수 없는 것을 큐에서 보거나, 고쳐야 할 것이 조용히
     재시도만 돌다 끝난다.
@@ -84,6 +85,10 @@ def run_notify(payload: NotifyInput) -> NotifyOutput:
     blocked = result.get("blocked_lines") or []
     if blocked:
         status = "blocked"
+    elif result.get("no_recipient"):
+        # 글은 통과했는데 받을 사람이 없었다. sent 와 나눈다 — BE 가 SENT 로 적으면
+        # 교사는 "보냈다" 고 믿는데 실제로는 아무에게도 안 갔다 (리뷰 #430).
+        status = "no_recipient"
     elif result.get("passed"):
         status = "sent"
     else:

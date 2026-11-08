@@ -148,7 +148,7 @@ export function ChildPopup({
   return (
     <>
       <ListPopup
-        title={view ? `${child.name} · ${periodOf(view)} 분석` : child.name}
+        title={view ? `${child.name} · ${periodOf(view)} 리포트` : child.name}
         subtitle={`${child.birthDate}${chip ? ` · ${chip}` : ""}`}
         icon={<span className="text-[17px] font-bold">{child.name.slice(0, 1)}</span>}
         position={position}
@@ -160,7 +160,7 @@ export function ChildPopup({
           <div role="tablist" aria-label={`${child.name} 보기`} className="-mt-1 flex w-fit rounded-full bg-surface2 p-1">
             {(
               [
-                ["analysis", "분석"],
+                ["analysis", "리포트"],
                 ["records", "기록"],
                 ["guardian", "보호자"],
               ] as const
@@ -176,7 +176,7 @@ export function ChildPopup({
                 }`}
               >
                 {label}
-                {key === "analysis" && (review || unread) ? <span aria-label="새 분석" className="size-2 rounded-full bg-block" /> : null}
+                {key === "analysis" && (review || unread) ? <span aria-label="새 리포트" className="size-2 rounded-full bg-block" /> : null}
               </button>
             ))}
           </div>
@@ -198,7 +198,7 @@ export function ChildPopup({
             {past.length ? (
               <>
                 {review ? <hr className="border-line" /> : null}
-                <PopSection title={`지난 분석 ${past.length}건 · 주차별`}>
+                <PopSection title={`지난 리포트 ${past.length}건 · 주차별`}>
                   <div className="grid gap-3">
                     {byWeek(past).map((w) => (
                       <div key={w.period}>
@@ -217,9 +217,9 @@ export function ChildPopup({
                                   <Chip tone="idle">우리 기관 승인</Chip>
                                 )}
                                 <span className="min-w-0 flex-1 truncate text-[14px]">
-                                  {p.kind === "inbox" ? `${p.item.period} 분석` : firstSentence(p.insight.content)}
+                                  {p.kind === "inbox" ? `${p.item.period} 리포트` : firstSentence(p.insight.content)}
                                 </span>
-                                {p.kind === "inbox" && !p.item.readAt ? <Chip tone="human">새 분석</Chip> : null}
+                                {p.kind === "inbox" && !p.item.readAt ? <Chip tone="human">새 리포트</Chip> : null}
                                 <ChevronRight aria-hidden size={16} className="text-muted" />
                               </button>
                             </li>
@@ -231,7 +231,7 @@ export function ChildPopup({
                 </PopSection>
               </>
             ) : !review ? (
-              <p className="text-[15px] text-muted">아직 분석이 없어요</p>
+              <p className="text-[15px] text-muted">아직 리포트가 없어요</p>
             ) : null}
           </>
         )}
@@ -239,7 +239,7 @@ export function ChildPopup({
 
       {confirming && review ? (
         <ConfirmDialog
-          title={`${child.name} 분석을 ${confirming === "approve" ? "승인할까요?" : "보류할까요?"}`}
+          title={`${child.name} 리포트를 ${confirming === "approve" ? "승인할까요?" : "보류할까요?"}`}
           warning="되돌릴 수 없어요"
           confirmLabel={confirming === "approve" ? "승인하기" : "보류하기"}
           tone={confirming === "approve" ? "human" : "neutral"}
@@ -249,7 +249,7 @@ export function ChildPopup({
         >
           {confirming === "approve"
             ? `승인하면 ${viewers(review).join("·")}가 바로 볼 수 있어요.`
-            : "보류하면 이 분석은 보호자와 다른 기관에 보이지 않아요."}
+            : "보류하면 이 리포트는 보호자와 다른 기관에 보이지 않아요."}
         </ConfirmDialog>
       ) : null}
     </>
@@ -291,7 +291,7 @@ function Report({ insight, kind }: { insight: Insight; kind: "review" | "approve
           확인해 주세요.
         </p>
       ) : null}
-      <PopSection title="분석 내용">
+      <PopSection title="리포트 내용">
         <Paragraphs text={insight.content} />
       </PopSection>
       <PopSection title={`근거 기록 ${insight.evidence.length}건`}>
@@ -318,7 +318,7 @@ function Report({ insight, kind }: { insight: Insight; kind: "review" | "approve
       {/* CRITERIA §5 필수 경고. 기관 경계를 넘는 마지막 관문이라 승인자가 알아야 한다 */}
       {insight.teacherWritten ? (
         <div role="alert" className="rounded-[14px] bg-humansoft px-3.5 py-3 text-[14px] leading-normal text-human">
-          <b>선생님이 고쳐 쓴 문장이 근거에 들어 있어요.</b> AI 확인을 거치지 않은 문장이니 내용을 한 번 더 봐 주세요.
+          <b>선생님이 고쳐 쓴 문장이 근거에 들어 있어요.</b> 내용 검증을 거치지 않은 문장이니 내용을 한 번 더 봐 주세요.
         </div>
       ) : null}
     </>
@@ -346,7 +346,7 @@ function InboxReport({ item, onRead }: { item: InboxItem; onRead: () => void }) 
     // 글이 바뀔 때만 다시 연다
   }, [item.id]);
 
-  if (failed) return <p className="text-[15px] text-block">더 이상 볼 수 없는 분석이에요. 보호자가 공유를 껐을 수 있어요.</p>;
+  if (failed) return <p className="text-[15px] text-block">더 이상 볼 수 없는 리포트예요. 보호자가 공유를 껐을 수 있어요.</p>;
   if (!detail) {
     return (
       <p className="flex items-center gap-2 text-[15px] text-muted">
@@ -360,7 +360,7 @@ function InboxReport({ item, onRead }: { item: InboxItem; onRead: () => void }) 
         <Chip tone="idle">{detail.period}</Chip>
         {detail.from.name}가 보냄
       </p>
-      <PopSection title="분석 내용">
+      <PopSection title="리포트 내용">
         <Paragraphs text={detail.content} />
       </PopSection>
     </>
@@ -382,16 +382,16 @@ function messageOf(err: unknown): string {
   if (!(err instanceof ApiError)) return "네트워크 연결을 확인하고 다시 시도해 주세요.";
   switch (err.code) {
     case "INSIGHT_ALREADY_REVIEWED":
-      return "이미 승인 또는 보류된 분석이에요. 목록을 새로 불러왔어요.";
+      return "이미 승인 또는 보류된 리포트예요. 목록을 새로 불러왔어요.";
     case "INSIGHT_SUPERSEDED":
-      return "같은 기간의 더 새 분석이 만들어졌어요. 목록에서 새 분석을 읽어 주세요.";
+      return "같은 기간의 더 새 리포트가 만들어졌어요. 목록에서 새 리포트를 읽어 주세요.";
     case "INSIGHT_NOT_PRIMARY_SOURCE":
-      return "우리 기관이 승인하는 분석이 아니에요. 학교 > 센터 > 활동지원사 순으로 한 곳이 승인해요.";
+      return "우리 기관이 승인하는 리포트가 아니에요. 학교 > 센터 > 활동지원사 순으로 한 곳이 승인해요.";
     // 여러 기관 기록을 엮은 글이라 일부만 뺄 수 없다. 보류는 된다
     case "INSIGHT_MATERIAL_CONSENT_REVOKED":
       return "근거를 낸 기관 중 보호자가 공유를 끈 곳이 있어 승인할 수 없어요. 보류는 할 수 있어요.";
   }
-  if (err.status === 404) return "더 이상 볼 수 없는 분석이에요. 목록을 새로 불러왔어요.";
+  if (err.status === 404) return "더 이상 볼 수 없는 리포트예요. 목록을 새로 불러왔어요.";
   if (err.status === 403) return "보안 확인에 실패했어요. 새로고침한 뒤 다시 시도해 주세요.";
   return "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }

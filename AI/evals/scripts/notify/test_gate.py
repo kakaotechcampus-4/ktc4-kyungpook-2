@@ -23,13 +23,21 @@ from notify.graph import run_notify  # noqa: E402
 from notify.llm import LlmError, LlmUnavailable, NotifyDeliveryFailed  # noqa: E402
 from notify.mcp_client import McpUnavailable  # noqa: E402
 from notify.nodes import (  # noqa: E402
-    INSTITUTION_MISMATCH, NO_REFERENCE, NUMBER_MISMATCH, OTHER_CHILD_NAME,
+    INSTITUTION_MISMATCH, MISSING_INSIGHT, NO_REFERENCE, NUMBER_MISMATCH, OTHER_CHILD_NAME,
 )
 from notify.schemas import ApprovedInsight, NotifyInput  # noqa: E402
 
 #: 재료. 센터 기록 하나뿐이고 숫자는 3 뿐이다.
 INSIGHT = ApprovedInsight(
     content="김지후는 차량 탑승을 거부했다. 교사가 먼저 타는 것을 보여 주자 3분 뒤 탔다.",
+    institution_types=["센터"],
+    cross_institution=False,
+)
+
+
+#: 둘째 인사이트. "모델이 한 건을 통째로 빼먹었다" 를 재는 데만 쓴다.
+SECOND = ApprovedInsight(
+    content="김지후는 간식 시간에 새로운 음식을 밀어냈다. 교사가 한 입만 권하자 받아들였다.",
     institution_types=["센터"],
     cross_institution=False,
 )
@@ -162,10 +170,72 @@ def case_delivery_failure_is_503_not_blocked():
     return False
 
 
+def case_no_recipient_is_not_sent():
+    """
+    받을 사람이 없는 것은 장애가 아니지만 **메일도 안 나갔다**. sent 로 묶으면 BE 가 SENT 로 적고,
+    교사는 보냈다고 믿는다 (리뷰 #430).
+    """
+    _stub([{"text": "김지후는 차량 타기를 힘들어했어요.", "insight_index": 0}],
+          tool=lambda n, a: {"status": "no_recipient", "message_id": None, "duplicate": False})
+    out = run_notify(_payload())
+    return out.status == "no_recipient" and out.message_id is None and not out.blocked_lines
+
+
+def case_subject_with_other_child_name_is_blocked():
+    """제목은 받은편지함 목록에 제일 먼저 보인다 — 열지 않아도 샌다 (리뷰 #430)."""
+    calls = _Calls()
+    _stub([{"text": "김지후는 차량 타기를 힘들어했어요.", "insight_index": 0}],
+          subject="김지후와 박서연의 한 주", calls=calls)
+    out = run_notify(_payload())
+    return (out.status == "blocked" and not calls
+            and any(OTHER_CHILD_NAME in b.reasons for b in out.blocked_lines))
+
+
+def case_subject_with_invented_number_is_blocked():
+    calls = _Calls()
+    _stub([{"text": "김지후는 차량 타기를 힘들어했어요.", "insight_index": 0}],
+          subject="김지후 99번의 순간", calls=calls)
+    out = run_notify(_payload())
+    return (out.status == "blocked" and not calls
+            and any(NUMBER_MISMATCH in b.reasons for b in out.blocked_lines))
+
+
+def case_subject_may_use_period_dates():
+    """기간 날짜는 인사이트에 없어도 제목에 쓸 수 있다 — 기간을 적는 것이 정상이다."""
+    calls = _Calls()
+    _stub([{"text": "김지후는 차량 타기를 힘들어했어요.", "insight_index": 0}],
+          subject="김지후의 2026-04-01 ~ 2026-04-07 기록", calls=calls)
+    out = run_notify(_payload())
+    return out.status == "sent" and len(calls) == 1
+
+
+def case_missing_insight_is_blocked():
+    """한 줄이 빠지면 막으면서 한 건이 통째로 빠지는 것은 통과시킬 수 없다 (리뷰 #430)."""
+    calls = _Calls()
+    _stub([{"text": "김지후는 차량 타기를 힘들어했어요.", "insight_index": 0}], calls=calls)
+    out = run_notify(_payload(insights=(INSIGHT, SECOND)))
+    return (out.status == "blocked" and not calls
+            and any(MISSING_INSIGHT in b.reasons for b in out.blocked_lines))
+
+
+def case_all_insights_covered_is_sent():
+    calls = _Calls()
+    _stub([{"text": "김지후는 차량 타기를 힘들어했어요.", "insight_index": 0},
+           {"text": "새로운 음식을 밀어냈지만 한 입 권하자 받아들였어요.", "insight_index": 1}], calls=calls)
+    out = run_notify(_payload(insights=(INSIGHT, SECOND)))
+    return out.status == "sent" and len(calls) == 1
+
+
 CASES = [
     ("근거 있는 메일 → sent · 도구 인자에 주소 없음", case_grounded_mail_is_sent),
     ("승인된 인사이트 없음 → 모델을 안 부른다", case_no_insight_skips_model),
     ("같은 묶음 재시도 → duplicate", case_duplicate_is_not_resent),
+    ("받을 사람 없음 → no_recipient (sent 아님)", case_no_recipient_is_not_sent),
+    ("인사이트 둘 다 담김 → sent", case_all_insights_covered_is_sent),
+    ("제목에 기간 날짜 → 통과", case_subject_may_use_period_dates),
+    ("제목에 다른 아이 이름 → blocked", case_subject_with_other_child_name_is_blocked),
+    ("제목에 지어낸 숫자 → blocked", case_subject_with_invented_number_is_blocked),
+    ("인사이트 한 건 누락 → blocked", case_missing_insight_is_blocked),
     ("지어낸 숫자 → blocked · 발송 안 함", case_invented_number_is_blocked),
     ("없는 기관 → blocked · 발송 안 함", case_invented_institution_is_blocked),
     ("다른 아이 이름 → blocked · 발송 안 함", case_other_child_name_is_blocked),

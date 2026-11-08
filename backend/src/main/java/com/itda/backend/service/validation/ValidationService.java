@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.dto.request.validation.ValidationAgentRequest;
 import com.itda.backend.exception.validation.ValidationTargetException;
@@ -44,6 +45,10 @@ public class ValidationService {
     public ValidationTarget prepareRequest(Long journalEntryId) {
         JournalEntry entry = journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId)
                 .orElseThrow(() -> new ValidationTargetException("journal entry not found: " + journalEntryId));
+        if (!entry.isSendableToAgent()) {
+            // 상한(#424) 전에 올라온 긴 일지. 잘라 보내지 않는다 — 워커가 받아 CONTENT_TOO_LONG 시스템 오류로 남긴다.
+            throw new AgentContentTooLongException(journalEntryId, entry.getContent().length());
+        }
         Long childId = entry.getChildId();
         if (childId == null) {
             throw new ValidationTargetException("journal entry has no matched child: " + journalEntryId);

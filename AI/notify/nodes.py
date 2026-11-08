@@ -22,6 +22,8 @@ from .state import NotifyState
 # ── 걸린 이유 (CRITERIA.md §3) ─────────────────────────────────
 
 NO_REFERENCE = "근거없음"
+#: 승인된 인사이트가 메일에 통째로 빠졌다. 줄 단위가 아니라 메일 단위 사유다.
+MISSING_INSIGHT = "인사이트누락"
 NUMBER_MISMATCH = "숫자불일치"
 INSTITUTION_MISMATCH = "기관불일치"
 OTHER_CHILD_NAME = "다른아이이름"
@@ -94,15 +96,35 @@ def _line_reasons(line: dict, insights: list, other_names: list[str]) -> list[st
     return reasons
 
 
+def _subject_reasons(subject: str, insights: list, other_names: list[str], state: NotifyState) -> list[str]:
+    """
+    제목이 걸린 이유. 본문과 기준이 조금 다르다.
+
+    제목은 인사이트 하나를 가리키지 않으므로 숫자는 **승인된 내용 전부 + 기간 날짜**와 맞춘다.
+    "김지후의 2026-04-01 ~ 2026-04-07 기록" 처럼 기간을 쓰는 것이 정상이기 때문이다.
+    """
+    reasons: list[str] = []
+    if config.CHECK_OTHER_CHILD_NAMES and any(name and name in subject for name in other_names):
+        reasons.append(OTHER_CHILD_NAME)
+    if config.CHECK_NUMBERS:
+        allowed = set(_DIGITS.findall(" ".join(ins.content for ins in insights)))
+        allowed |= set(_DIGITS.findall(f"{state.get('period_from', '')} {state.get('period_to', '')}"))
+        if set(_DIGITS.findall(subject)) - allowed:
+            reasons.append(NUMBER_MISMATCH)
+    return reasons
+
+
 def check(state: NotifyState) -> dict:
     """
     쓴 글이 승인된 인사이트 안의 내용인지 대조한다. 여기가 메일을 막는 자리다.
 
-    통과 못 한 줄이 하나라도 있으면 passed=False 고, 그래프는 send 로 가지 않는다.
+    세 가지를 본다 — **줄마다**, **제목**, 그리고 **빠진 인사이트가 없는지**.
+    하나라도 걸리면 passed=False 고, 그래프는 send 로 가지 않는다.
     """
     lines = state.get("raw_lines") or []
     insights = state.get("insights") or []
     other_names = state.get("other_child_names") or []
+    subject = state.get("subject") or ""
 
     if not lines:
         # 모델이 아무 줄도 안 냈다. 보낼 것이 없는 것과 같다 — 막힌 것이 아니다.
@@ -114,8 +136,21 @@ def check(state: NotifyState) -> dict:
         if reasons:
             blocked.append({"text": str(line.get("text") or ""), "reasons": reasons})
 
+    # 제목 (리뷰 #430). 받은편지함 목록에 제일 먼저 보이는 글자라 여기로 새면 열지 않아도 샌다.
+    if config.CHECK_SUBJECT:
+        reasons = _subject_reasons(subject, insights, other_names, state)
+        if reasons:
+            blocked.append({"text": subject, "reasons": reasons})
+
+    # 빠진 인사이트 (리뷰 #430). 한 줄이 빠지면 막으면서 한 건이 통째로 빠지는 것은 통과시킬 수 없다.
+    if config.REQUIRE_ALL_INSIGHTS and insights:
+        covered = {ln.get("insight_index") for ln in lines}
+        missing = [i for i in range(len(insights)) if i not in covered]
+        if missing:
+            blocked.append({"text": f"인사이트 {missing} 가 메일에 없다", "reasons": [MISSING_INSIGHT]})
+
     if blocked and config.BLOCK_WHOLE_MAIL:
-        print(f"[notify] 발송 막음 — 걸린 줄 {len(blocked)}/{len(lines)}")
+        print(f"[notify] 발송 막음 — 걸린 곳 {len(blocked)} (줄 {len(lines)}건 중)")
         return {"passed": False, "blocked_lines": blocked, "body": ""}
 
     body = "\n".join(str(ln.get("text") or "") for ln in lines)
@@ -140,10 +175,13 @@ def send(state: NotifyState) -> dict:
         return {"send_error": str(exc), "message_id": None, "duplicate": False}
 
     # 받을 사람이 없는 것은 장애가 아니다. 보호자가 메일을 안 받기로 했거나 아직 안 넣었다.
+    # 그래도 **sent 로 묶지 않는다** — 메일은 안 나갔다 (리뷰 #430).
     if result.get("status") == "no_recipient":
-        return {"message_id": None, "duplicate": False}
+        print(f"[notify] 받을 보호자가 없다 child_id={state['child_id']}")
+        return {"message_id": None, "duplicate": False, "no_recipient": True}
 
     return {
         "message_id": result.get("message_id"),
         "duplicate": bool(result.get("duplicate")),
+        "no_recipient": False,
     }

@@ -12,7 +12,6 @@
 판정이 옳은지는 채점 스크립트가 본다.
 """
 
-import re
 import sys
 from pathlib import Path
 

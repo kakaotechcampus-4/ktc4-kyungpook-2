@@ -46,12 +46,18 @@ import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.exception.agent.AgentQueueFullException;
+import com.itda.backend.service.agent.AgentQueueGuard;
 
 /** Gate 1 — 교사가 요약을 승인·수정 후 승인·보류·제거하고, 보류함에서 보류를 해제한다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({SummaryGate1Service.class, ConsentStateReader.class})
 class SummaryGate1ServiceTest {
+
+    /** AI 처리 줄 상한은 AgentQueueGuardTest 가 본다. 여기서는 늘 자리가 있다. */
+    @MockitoBean
+    private AgentQueueGuard agentQueueGuard;
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
     private static final Long ORG = 3L;
@@ -516,6 +522,21 @@ class SummaryGate1ServiceTest {
         assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, empty.getId()))
                 .singleElement()
                 .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.REVERTED));
+    }
+
+    /** 되돌리면 요약 대기로 다시 들어간다 — AI 처리 줄이 꽉 찼으면 되돌리지 않는다 (#424). */
+    @Test
+    void AI_처리_줄이_꽉_찼으면_요약할_내용_없음을_되돌리지_않는다() {
+        SummaryResult empty = noContentSummaryWithEntries();
+        org.mockito.BDDMockito.willThrow(new AgentQueueFullException(ORG, 999, 2, 1000))
+                .given(agentQueueGuard).requireRoom(ORG, 2);
+
+        assertThatThrownBy(() -> service.decide(TEACHER, empty.getId(), Gate1Action.REVERT, null,
+                versionOf(empty.getId()))).isInstanceOf(AgentQueueFullException.class);
+
+        em.clear();
+        assertThat(journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(empty.getId())).hasSize(2)
+                .allSatisfy(e -> assertThat(e.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING));
     }
 
     @Test

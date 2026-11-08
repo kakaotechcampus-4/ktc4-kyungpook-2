@@ -57,12 +57,17 @@ class NotifyInput(BaseModel):
 # ── 출력 ────────────────────────────────────────────────────────
 
 #: sent            메일이 나갔다
+#: no_recipient    보낼 글은 통과했는데 **받을 사람이 없었다**
 #: blocked         근거 검사에 걸려 **보내지 않았다**. 교사 확인이 필요하다
 #: nothing_to_send 승인된 인사이트가 없어 보낼 것이 없었다
 #:
 #: 발송 자체가 실패한 경우는 여기 없다 — 503 으로 올린다 (llm.py NotifyDeliveryFailed).
 #: 근거 미달(200 blocked)과 메일 서버 장애(503)를 나눠야 BE 가 다르게 처리한다.
-NotifyStatus = Literal["sent", "blocked", "nothing_to_send"]
+#:
+#: **no_recipient 를 sent 로 묶으면 안 된다** (리뷰 #430). 장애는 아니지만 메일은 안 나갔다.
+#: 둘을 합치면 BE 가 SENT 로 적고, 교사는 "보냈다" 고 믿는다 — 보호자가 이메일을 아직 안 넣은
+#: 경우가 조용히 성공으로 쌓인다.
+NotifyStatus = Literal["sent", "no_recipient", "blocked", "nothing_to_send"]
 
 
 class BlockedLine(BaseModel):

@@ -33,6 +33,7 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.service.record.RawRecordService;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.agent.AgentQueueGuard;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +53,7 @@ public class MatchingResultService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final SharingConsentRepository sharingConsentRepository;
     private final UserService userService;
+    private final AgentQueueGuard agentQueueGuard;
 
     @Transactional(readOnly = true)
     public List<MatchingQueueItemResponse> getQueue(String userId) {
@@ -127,6 +129,8 @@ public class MatchingResultService {
                         childId, organizationId, SharingConsentStatus.ACTIVE)) {
                     throw new MatchingResultValidationException("child consent not completed: " + childId);
                 }
+                // 검증 대기로 다시 들어간다 — AI 처리 줄에 자리가 있는지 본다 (#424). 아동 행을 잠근 뒤에 기관 행을 잠근다.
+                agentQueueGuard.requireRoom(organizationId, 1);
                 matchingResult.resolveAsAssigned(childId, reviewerId);
                 ctx.entry().confirmMatchByReviewer(childId);
             }

@@ -31,6 +31,7 @@ import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentRejectedException;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.summary.SummaryNoGroundedClaimsException;
 import com.itda.backend.exception.summary.SummaryTargetException;
@@ -179,6 +180,22 @@ class SummaryWorkerTest {
         worker.run();
 
         verify(recorder).recordSystemError(first, FailureReason.INTERNAL_ERROR);
+        verify(client).summarize(requestFor(second));
+    }
+
+    /** 긴 일지가 든 묶음은 AI 에 보내지 않고 CONTENT_TOO_LONG 으로 남긴다 (#424). 다음 묶음은 계속한다. */
+    @Test
+    void 긴_일지가_든_묶음은_AI_를_부르지_않고_CONTENT_TOO_LONG으로_남긴다() {
+        ClaimedSummaryGroup first = group(8L, 1L);
+        ClaimedSummaryGroup second = group(9L, 2L);
+        given(summaryService.claimReadyGroups(10)).willReturn(List.of(first, second));
+        given(summaryService.prepareRequest(first)).willThrow(new AgentContentTooLongException(1L, 5001));
+        given(summaryService.prepareRequest(second)).willReturn(requestFor(second));
+
+        worker.run();
+
+        verify(recorder).recordSystemError(first, FailureReason.CONTENT_TOO_LONG);
+        verify(client, never()).summarize(requestFor(first));
         verify(client).summarize(requestFor(second));
     }
 

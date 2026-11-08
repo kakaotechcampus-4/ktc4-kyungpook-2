@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.itda.backend.domain.matching.MatchingResult;
+import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.dto.response.matching.MatchingAgentResponse;
 import com.itda.backend.repository.matching.MatchingResultRepository;
@@ -67,6 +68,20 @@ public class MatchingResultRecorder {
         }
         matchingResultRepository.save(MatchingResult.failed(journalEntryId));
         entry.failMatching();
+    }
+
+    /**
+     * 매칭 에이전트에 보내지 못한 일지를 시스템 오류로 멈춘다 (#424, 지금은 본문이 너무 길 때뿐). 매칭 결과 행은 남기지 않는다 —
+     * 확인 필요 큐가 결과 행으로 읽으므로, 남기면 고를 수 없는 일지가 큐에 뜬다. 원인은 일지에만 둔다.
+     */
+    @Transactional
+    public void recordSystemError(Long journalEntryId, FailureReason reason) {
+        JournalEntry entry = journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId).orElse(null);
+        if (entry == null) {
+            log.warn("journal entry deleted during matching, system error not recorded journalEntryId={}", journalEntryId);
+            return;
+        }
+        entry.failMatchingBySystemError(reason);
     }
 
     private static BigDecimal toDecimal(Double confidence) {

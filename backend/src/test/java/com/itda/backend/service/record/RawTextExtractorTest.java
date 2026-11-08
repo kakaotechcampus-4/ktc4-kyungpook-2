@@ -72,6 +72,178 @@ class RawTextExtractorTest {
         }
     }
 
+    // --- docx 압축 상한 (#424) -------------------------------------------------------
+    // 본문은 무작위 단어로 채워 압축률을 몇 배 수준으로 둔다 — POI 자체 압축률 검사(100배)는 통과하고 크기 상한만 넘는 파일이다.
+    // 기본 상한은 XML 합 5MB · 전체 30MB 다.
+
+    private static final long MB = 1024 * 1024;
+
+    /** 본문 파트가 6MB 로 풀리는 docx. POI 기본 설정이면 문제없이 읽는 파일이다. */
+    @Test
+    void docx_XML_이_상한을_넘게_풀리면_못_읽은_파일로_둔다() throws IOException {
+        byte[] docx = Docx.withBody("word/document.xml", bodyXml(6 * MB)).bytes();
+
+        assertThat(extractor.extract("docx", docx)).isEmpty();
+        // 상한만 올린 추출기는 같은 파일에서 글을 뽑는다 — POI 혼자서는 읽는 파일을 사전 검사가 막았다.
+        assertThat(new RawTextExtractor(20 * MB, 60 * MB).extract("docx", docx))
+                .hasValueSatisfying(text -> assertThat(text).startsWith("2026-09-15 첫 기록"));
+    }
+
+    /** 본문 이름을 .dat 로 바꿔도 POI 는 관계 정보를 따라 본문으로 읽는다. 사전 검사도 이름과 상관없이 막는다. */
+    @Test
+    void docx_본문_이름을_바꿔도_같은_상한에서_막는다() throws IOException {
+        byte[] docx = Docx.withBody("word/document.dat", bodyXml(MB + 1024)).bytes();
+
+        assertThat(new RawTextExtractor(MB, 60 * MB).extract("docx", docx)).isEmpty();
+        assertThat(new RawTextExtractor(2 * MB, 60 * MB).extract("docx", docx))
+                .hasValueSatisfying(text -> assertThat(text).startsWith("2026-09-15 첫 기록"));
+    }
+
+    @Test
+    void docx_관계_파일이_상한을_넘게_풀려도_막는다() throws IOException {
+        byte[] docx = Docx.withBody("word/document.xml", bodyXml(1024))
+                .rootRelsPadding(MB + 1024)
+                .bytes();
+
+        assertThat(new RawTextExtractor(MB, 60 * MB).extract("docx", docx)).isEmpty();
+        assertThat(new RawTextExtractor(2 * MB, 60 * MB).extract("docx", docx)).isPresent();
+    }
+
+    /** 이름이 그림이어도 내용이 그림 앞머리로 시작하지 않으면 XML 로 센다 — POI 가 관계를 따라 XML 로 읽을 수 있다. */
+    @Test
+    void docx_그림_이름이어도_내용이_그림이_아니면_XML_로_센다() throws IOException {
+        byte[] docx = Docx.withBody("word/document.xml", bodyXml(1024))
+                .extra("word/media/image1.png", randomWords(MB + 1024, 3).getBytes(StandardCharsets.UTF_8))
+                .bytes();
+
+        assertThat(new RawTextExtractor(MB, 60 * MB).extract("docx", docx)).isEmpty();
+    }
+
+    /** 그림은 XML 상한을 받지 않고 전체 상한만 받는다 — 압축만 풀리고 DOM 으로 올라가지 않는다. */
+    @Test
+    void docx_그림은_전체_상한만_받는다() throws IOException {
+        Docx docx = Docx.withBody("word/document.xml", bodyXml(1024));
+        for (int i = 0; i < 4; i++) {
+            docx.extra("word/media/image" + i + ".png", png(MB - 1024, i));
+        }
+        byte[] bytes = docx.bytes();
+
+        // 그림 합 약 4MB 는 XML 상한(1MB)과 상관없다.
+        assertThat(new RawTextExtractor(MB, 5 * MB).extract("docx", bytes)).isPresent();
+        // 전체 상한(3MB)은 넘는다.
+        assertThat(new RawTextExtractor(MB, 3 * MB).extract("docx", bytes)).isEmpty();
+    }
+
+    @Test
+    void 사전_검사는_정상_docx_를_통과시킨다() throws IOException {
+        extractor.checkZipBudget(docx(List.of("관찰일지"), List.of(List.of("2026-09-15", "센터", "블록을 쌓음"))));
+    }
+
+    /** 첫 문단은 날짜로 시작하고, 나머지는 무작위 단어 문단으로 채워 풀린 크기가 대략 {@code bytes} 가 되게 한다. */
+    private static String bodyXml(long bytes) {
+        StringBuilder xml = new StringBuilder(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                        + "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>"
+                        + "<w:p><w:r><w:t>2026-09-15 첫 기록</w:t></w:r></w:p>");
+        String filler = randomWords(1000, 42);
+        while (xml.length() < bytes) {
+            xml.append("<w:p><w:r><w:t>").append(filler, 0, 1000).append("</w:t></w:r></w:p>");
+            filler = filler.substring(7) + filler.substring(0, 7);
+        }
+        return xml.append("</w:body></w:document>").toString();
+    }
+
+    /** PNG 앞머리 뒤에 무작위 글을 붙인다 — 압축률은 글과 같고 앞머리만 그림이다. */
+    private static byte[] png(long length, long seed) {
+        byte[] head = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+        byte[] body = randomWords(length - head.length, seed).getBytes(StandardCharsets.UTF_8);
+        byte[] out = new byte[head.length + body.length];
+        System.arraycopy(head, 0, out, 0, head.length);
+        System.arraycopy(body, 0, out, head.length, body.length);
+        return out;
+    }
+
+    /** 압축이 몇 배 수준으로만 되는 글. 같은 줄을 되풀이하면 POI 압축률 검사에 먼저 걸려 사전 검사를 시험하지 못한다. */
+    private static String randomWords(long length, long seed) {
+        java.util.Random random = new java.util.Random(seed);
+        StringBuilder text = new StringBuilder();
+        while (text.length() < length) {
+            int wordLength = 2 + random.nextInt(7);
+            for (int i = 0; i < wordLength; i++) {
+                text.append((char) ('a' + random.nextInt(26)));
+            }
+            text.append(' ');
+        }
+        return text.substring(0, (int) length);
+    }
+
+    /** 이름과 관계를 손으로 정해 docx 를 만든다 — POI 로 만들면 본문 이름을 바꿀 수 없다. */
+    private static final class Docx {
+
+        private static final String MAIN = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+
+        private final String bodyName;
+        private final String body;
+        private final java.util.Map<String, byte[]> extras = new java.util.LinkedHashMap<>();
+        private long rootRelsPadding;
+
+        private Docx(String bodyName, String body) {
+            this.bodyName = bodyName;
+            this.body = body;
+        }
+
+        static Docx withBody(String name, String body) {
+            return new Docx(name, body);
+        }
+
+        Docx rootRelsPadding(long bytes) {
+            this.rootRelsPadding = bytes;
+            return this;
+        }
+
+        Docx extra(String name, byte[] content) {
+            extras.put(name, content);
+            return this;
+        }
+
+        byte[] bytes() throws IOException {
+            String contentTypes = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                    + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+                    + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+                    + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+                    + "<Default Extension=\"png\" ContentType=\"image/png\"/>"
+                    + "<Override PartName=\"/" + bodyName + "\" ContentType=\"" + MAIN + "\"/>"
+                    + "</Types>";
+            String rootRels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+                    + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+                    + (rootRelsPadding > 0 ? "<!-- " + randomWords(rootRelsPadding, 7) + " -->" : "")
+                    + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\""
+                    + " Target=\"" + bodyName + "\"/>"
+                    + "</Relationships>";
+            try (ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(out)) {
+                put(zip, "[Content_Types].xml", contentTypes);
+                put(zip, "_rels/.rels", rootRels);
+                put(zip, bodyName, body);
+                for (java.util.Map.Entry<String, byte[]> extra : extras.entrySet()) {
+                    put(zip, extra.getKey(), extra.getValue());
+                }
+                zip.finish();
+                return out.toByteArray();
+            }
+        }
+
+        private static void put(java.util.zip.ZipOutputStream zip, String name, String content) throws IOException {
+            put(zip, name, content.getBytes(StandardCharsets.UTF_8));
+        }
+
+        private static void put(java.util.zip.ZipOutputStream zip, String name, byte[] content) throws IOException {
+            zip.putNextEntry(new java.util.zip.ZipEntry(name));
+            zip.write(content);
+            zip.closeEntry();
+        }
+    }
+
     /** 문단 몇 줄과 표 하나로 docx 를 만든다. 표가 비어 있으면 표를 넣지 않는다. */
     static byte[] docx(List<String> paragraphs, List<List<String>> rows) throws IOException {
         try (XWPFDocument doc = new XWPFDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

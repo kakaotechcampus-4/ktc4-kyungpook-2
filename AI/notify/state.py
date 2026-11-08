@@ -43,6 +43,8 @@ class NotifyState(TypedDict, total=False):
 
     # ── send 가 채운다 ──
     message_id: str | None
+    #: 받을 보호자가 없었다. 장애가 아니지만 메일도 안 나갔다 — sent 와 나눈다.
+    no_recipient: bool
     #: 같은 notification_id 로 이미 보낸 적이 있다.
     duplicate: bool
     #: 발송 자체가 실패했다. 값이 있으면 503 으로 올린다 — 근거 미달(200)과 다르다.

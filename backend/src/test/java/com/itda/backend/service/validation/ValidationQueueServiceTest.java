@@ -44,6 +44,8 @@ import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.exception.agent.AgentQueueFullException;
+import com.itda.backend.service.agent.AgentQueueGuard;
 
 @ExtendWith(MockitoExtension.class)
 class ValidationQueueServiceTest {
@@ -70,6 +72,8 @@ class ValidationQueueServiceTest {
     private ChildOrganizationRepository childOrganizationRepository;
     @Mock
     private ConsentStateReader consentStateReader;
+    @Mock
+    private AgentQueueGuard agentQueueGuard;
 
     private ValidationQueueService validationQueueService;
 
@@ -77,7 +81,7 @@ class ValidationQueueServiceTest {
     void setUp() {
         validationQueueService = new ValidationQueueService(
                 validationResultRepository, journalEntryRepository, rawRecordRepository,
-                childRepository, userService, childOrganizationRepository, consentStateReader);
+                childRepository, userService, childOrganizationRepository, consentStateReader, agentQueueGuard);
     }
 
     /** 검증에서 BLOCK 으로 막힌 일지 — 수정 요청 큐에 뜨는 상태다. */
@@ -387,6 +391,37 @@ class ValidationQueueServiceTest {
         assertRejectedWith(() -> validationQueueService.revise(11L, "   ", OUR_USER_ID),
                 ValidationResultErrorCode.INVALID_REQUEST);
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+    }
+
+    /** 고친 본문은 그대로 검증 AI 에 가므로 업로드와 같은 길이까지만 받는다 (#424). */
+    @Test
+    void revise_contentLongerThanMax_throwsInvalidRequest() {
+        JournalEntry entry = blockedEntry();
+        givenRevisable(blockedResult("[\"진단명\"]"), entry);
+
+        assertRejectedWith(() -> validationQueueService.revise(
+                        11L, "가".repeat(JournalEntry.MAX_CONTENT_LENGTH + 1), OUR_USER_ID),
+                ValidationResultErrorCode.INVALID_REQUEST);
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+    }
+
+    /** 고치면 검증 대기로 다시 들어간다 — AI 처리 줄이 꽉 찼으면 고치지 않는다. 기관 행은 아동 · 일지 행 다음에 잠근다 (#424). */
+    @Test
+    void revise_agentQueueFull_leavesEntryBlocked() {
+        JournalEntry entry = blockedEntry();
+        givenRevisable(blockedResult("[\"진단명\"]"), entry);
+        org.mockito.BDDMockito.willThrow(new AgentQueueFullException(OUR_ORG_ID, 1000, 1, 1000))
+                .given(agentQueueGuard).requireRoom(OUR_ORG_ID, 1);
+
+        assertThatThrownBy(() -> validationQueueService.revise(11L, "고친 글", OUR_USER_ID))
+                .isInstanceOf(AgentQueueFullException.class);
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATION_BLOCKED);
+        assertThat(entry.getContent()).isEqualTo("점심시간에 식사를 잘함");
+        InOrder order = inOrder(childRepository, journalEntryRepository, agentQueueGuard);
+        order.verify(childRepository).findByIdForUpdate(CHILD_ID);
+        order.verify(journalEntryRepository).findByIdForUpdate(1L);
+        order.verify(agentQueueGuard).requireRoom(OUR_ORG_ID, 1);
     }
 
     @Test
