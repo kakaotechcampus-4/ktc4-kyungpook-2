@@ -20,6 +20,23 @@ import jakarta.persistence.LockModeType;
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long> {
 
     /**
+     * Gate 1 에서 반려(제거)한 지 {@code cutoff} 보다 오래된 일지, id 순 (#432). 일지에 삭제 표시를 하는 곳은 반려뿐이지만,
+     * 다른 삭제가 생겨도 섞이지 않게 요약이 {@code REMOVED} 인지도 본다.
+     */
+    @Query("""
+            select e from JournalEntry e
+            where e.deletedAt < :cutoff
+              and e.summaryId in (select s.id from SummaryResult s
+                                  where s.status = com.itda.backend.domain.summary.SummaryStatus.REMOVED)
+            order by e.id
+            """)
+    List<JournalEntry> findRemovedAtGate1Before(@Param("cutoff") LocalDateTime cutoff, Limit limit);
+
+    boolean existsBySummaryId(Long summaryId);
+
+    boolean existsByRawRecordId(Long rawRecordId);
+
+    /**
      * 그 파일들에서 나온 일지. 처리 현황(O-26)이 파일마다 따로 묻지 않고 한 번에 읽는 데 쓴다 —
      * 파일 수만큼 쿼리가 늘면 목록이 길어질수록 느려진다.
      */

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +14,11 @@ import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 
 public interface ValidationResultRepository extends JpaRepository<ValidationResult, Long> {
+
+    /** Gate 1 반려 데이터 정리(#432)용. 행을 읽지 않고 지운다. */
+    @Modifying(flushAutomatically = true)
+    @Query("delete from ValidationResult v where v.journalEntryId in :journalEntryIds")
+    int deleteByJournalEntryIds(@Param("journalEntryIds") Collection<Long> journalEntryIds);
 
     // 수정 요청 큐(O-24). 같은 일지를 다시 검증하면 행이 쌓이므로(§8.1) 최신 것이 먼저 오게 정렬한다.
     // 정렬만으로는 중복이 걸러지지 않는다 — 일지당 한 건으로 줄이는 것, 소속 기관 필터,
