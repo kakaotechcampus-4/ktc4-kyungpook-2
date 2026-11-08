@@ -33,7 +33,11 @@ import lombok.extern.slf4j.Slf4j;
  * 주체가 조회할 때마다 달라진다.
  */
 @Slf4j
-final class PrimarySource {
+/*
+ * public 이다. 보호자 메일도 "누가 정리했나" 를 화면과 같은 규칙으로 적어야 한다 (service.notify).
+ * 규칙이 갈리면 메일의 기관과 화면의 기관이 달라진다.
+ */
+public final class PrimarySource {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -48,7 +52,7 @@ final class PrimarySource {
     }
 
     /** 근거를 낸 기관 id. AI 가 쓴 JSON 이 깨져 있으면 빈 목록이다 — 그 인사이트는 아무에게도 보이지 않는다. */
-    static List<Long> sourceIdsOf(InsightResult insight) {
+    public static List<Long> sourceIdsOf(InsightResult insight) {
         List<Long> ids = new ArrayList<>();
         for (JsonNode node : readArray(insight)) {
             if (node.canConvertToLong()) {
@@ -62,7 +66,7 @@ final class PrimarySource {
      * 승인 주체. 근거 기관이 하나도 없거나 그 기관들이 모두 사라졌으면 {@code null} 이다 — 그러면 아무도
      * 승인할 수 없다. 조용히 아무나 승인하게 두는 것보다 낫다 (deny-by-default).
      */
-    static Organization of(List<Long> sourceIds, Map<Long, Organization> organizations) {
+    public static Organization of(List<Long> sourceIds, Map<Long, Organization> organizations) {
         return sourceIds.stream()
                 .map(organizations::get)
                 .filter(org -> org != null)

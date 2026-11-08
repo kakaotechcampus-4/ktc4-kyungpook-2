@@ -25,12 +25,20 @@ from notify.graph import run_notify  # noqa: E402
 from notify.llm import NotifyDeliveryFailed  # noqa: E402
 from notify.mcp_client import McpUnavailable  # noqa: E402
 from notify.nodes import OTHER_CHILD_NAME  # noqa: E402
-from notify.schemas import ApprovedInsight, NotifyInput  # noqa: E402
+from notify.schemas import (  # noqa: E402
+    ApprovedInsight, EvidenceEntry, EvidenceSentence, NotifyInput,
+)
 
 INSIGHT = ApprovedInsight(
     content="센터에서는 차량 타기를 힘들어했지만, 교사가 먼저 타는 모습을 보여 주자 3분 뒤에 탔어요.",
+    institution_name="센터1",
+    period_label="2026년 4월 1주차",
     institution_types=["센터"],
     cross_institution=False,
+    evidence=[EvidenceEntry(institution_name="센터1", date="2026-04-01", sentences=[
+        EvidenceSentence(text="차량 앞에서 멈춰 섰다.", role="상황"),
+        EvidenceSentence(text="교사가 먼저 타자 3분 뒤 탔다.", role="대처"),
+    ])],
 )
 SECOND = ApprovedInsight(
     content="간식 시간에 새로운 음식을 밀어냈지만, 한 입만 권하자 받아들였어요.",
@@ -40,8 +48,22 @@ SECOND = ApprovedInsight(
 #: 승인된 글에 다른 아이 이름이 섞인 경우. AI 는 이 검사를 못 한다 (InsightInput 에 목록이 없다).
 WITH_NAME = ApprovedInsight(
     content="자유놀이 시간에 박서연이 쌓은 블록을 무너뜨렸지만, 순서를 정해 주자 번갈아 쌓았어요.",
+    institution_name="센터1",
+    period_label="2026년 4월 1주차",
     institution_types=["센터"],
     cross_institution=False,
+)
+
+#: 본문은 깨끗한데 **근거 문장**에 이름이 섞인 경우. 근거도 메일에 나가므로 똑같이 막아야 한다.
+NAME_IN_EVIDENCE = ApprovedInsight(
+    content="자유놀이 시간에 블록을 쌓았어요.",
+    institution_name="센터1",
+    period_label="2026년 4월 1주차",
+    institution_types=["센터"],
+    cross_institution=False,
+    evidence=[EvidenceEntry(institution_name="센터1", date="2026-04-01", sentences=[
+        EvidenceSentence(text="박서연이 쌓은 블록을 무너뜨렸다.", role="상황"),
+    ])],
 )
 
 
@@ -75,6 +97,26 @@ def case_sends_approved_text_verbatim():
             and INSIGHT.content in body and SECOND.content in body
             # 수신자는 도구 인자에 없다 — child_id 로 서버가 찾는다
             and "to" not in calls[0][1] and "email" not in calls[0][1])
+
+
+def case_body_has_report_shape():
+    """메일이 보호자 리포트 화면과 같은 모양이어야 한다 — 기관·기간, 본문, 근거(상황·대처)."""
+    calls = _Calls()
+    nodes.call_tool = calls.tool
+    run_notify(_payload())
+    body = calls[0][1]["body"]
+    return all(x in body for x in (
+        "센터1 · 2026년 4월 1주차", "기관들이 함께 본 것", "이 글의 근거",
+        "4월 1일 일지", "(상황) 차량 앞에서 멈춰 섰다.", "(대처) 교사가 먼저 타자 3분 뒤 탔다."))
+
+
+def case_evidence_name_is_blocked():
+    """근거 문장에 다른 아이 이름이 있으면 본문이 깨끗해도 막는다."""
+    calls = _Calls()
+    nodes.call_tool = calls.tool
+    out = run_notify(_payload(insights=(NAME_IN_EVIDENCE,)))
+    return (out.status == "blocked" and not calls
+            and any(OTHER_CHILD_NAME in b.reasons for b in out.blocked_lines))
 
 
 def case_subject_has_child_and_period():
@@ -159,6 +201,8 @@ def case_delivery_failure_is_503_not_blocked():
 CASES = [
     ("승인된 글자가 그대로 나간다 · 도구 인자에 주소 없음", case_sends_approved_text_verbatim),
     ("제목에 아이 이름과 기간", case_subject_has_child_and_period),
+    ("메일이 리포트 모양이다 — 기관·본문·근거(상황/대처)", case_body_has_report_shape),
+    ("근거 문장에 다른 아이 이름 → blocked", case_evidence_name_is_blocked),
     ("승인된 인사이트 없음 → 아무것도 안 보낸다", case_no_insight_sends_nothing),
     ("받을 사람 없음 → no_recipient (sent 아님)", case_no_recipient_is_not_sent),
     ("같은 묶음 재시도 → duplicate", case_duplicate_is_not_resent),

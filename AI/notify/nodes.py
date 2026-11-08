@@ -45,8 +45,12 @@ def assemble(state: NotifyState) -> dict:
     """
     승인된 인사이트를 이어 메일을 만든다. **모델을 부르지 않는다.**
 
-    인사이트 본문은 손대지 않고 그대로 옮긴다 — 한 글자라도 고치면 교사가 승인한 글이 아니다.
-    인사말·맺음말은 코드가 쓴다. 아이 기록이 아니라 틀이라 승인 대상이 아니다.
+    **보호자 리포트 화면(G-36)과 같은 모양으로 적는다** — 기관·기간, "기관들이 함께 본 것",
+    "이 글의 근거"(상황·대처 문장)를 화면과 같은 순서로 둔다. 메일을 읽고 앱에 들어온 보호자가
+    같은 글을 다시 찾을 수 있어야 한다.
+
+    인사이트 본문과 근거 문장은 손대지 않고 그대로 옮긴다 — 한 글자라도 고치면 교사가 승인한
+    글이 아니다. 인사말·맺음말·구분선은 코드가 쓴다. 아이 기록이 아니라 틀이라 승인 대상이 아니다.
     """
     insights = state.get("insights") or []
     if not insights:
@@ -54,11 +58,38 @@ def assemble(state: NotifyState) -> dict:
 
     name = state["child_name"]
     period = f"{_date(state['period_from'])} ~ {_date(state['period_to'])}"
-    lines = [ins.content for ins in insights]
+
+    #: 검사(check)가 훑을 글자. 메일에 실제로 나가는 것만 담는다.
+    lines: list[str] = []
+    blocks: list[str] = []
+
+    for insight in insights:
+        head = " · ".join(x for x in (insight.institution_name, insight.period_label) if x)
+        part = [f"[{head}]"] if head else []
+        lines.extend(x for x in (insight.institution_name, insight.period_label) if x)
+
+        part.append("")
+        part.append("기관들이 함께 본 것")
+        part.append(insight.content)
+        lines.append(insight.content)
+
+        rows = [e for e in insight.evidence if e.sentences]
+        if rows:
+            part.append("")
+            part.append("이 글의 근거")
+            for entry in rows:
+                tail = " · 지난 기록" if entry.looked_up else ""
+                label = f"- {entry.institution_name} · {_date(entry.date)} 일지{tail}"
+                part.append(label)
+                lines.append(entry.institution_name)
+                for sentence in entry.sentences:
+                    part.append(f"  ({sentence.role}) {sentence.text}")
+                    lines.append(sentence.text)
+        blocks.append("\n".join(part))
 
     body = "\n\n".join([
         f"{name} 보호자님, 이번 주 소식입니다.",
-        *lines,
+        ("\n\n" + "—" * 24 + "\n\n").join(blocks),
         "이 글은 선생님이 확인하고 보낸 내용이에요.\n잇다 앱에서 근거가 된 일지도 함께 볼 수 있어요.",
     ])
     return {"subject": f"[잇다] {name} 이번 주 소식 ({period})", "body": body, "lines": lines}

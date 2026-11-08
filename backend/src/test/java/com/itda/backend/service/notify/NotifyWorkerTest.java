@@ -73,7 +73,8 @@ class NotifyWorkerTest {
 
     private PreparedNotify prepared(long lastInsightId) {
         NotifyAgentRequest request = new NotifyAgentRequest(CHILD, "김지후", FROM.toString(), TO.toString(),
-                List.of(new NotifyAgentRequest.ApprovedInsight("본문", List.of("센터"), false)),
+                List.of(new NotifyAgentRequest.ApprovedInsight("본문", "센터1", "2026년 4월 1주차",
+                        List.of("센터"), false, List.of())),
                 null, List.of());
         return new PreparedNotify(request, 1, lastInsightId);
     }
