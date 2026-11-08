@@ -8,7 +8,7 @@ import org.springframework.web.client.RestClient;
 import com.itda.backend.global.config.HttpClientRequestFactories;
 
 @Configuration
-@EnableConfigurationProperties({AiAgentProperties.class, AgentDownProperties.class})
+@EnableConfigurationProperties({AiAgentProperties.class, AgentDownProperties.class, AgentQueueProperties.class})
 public class AiAgentClientConfig {
 
     /**

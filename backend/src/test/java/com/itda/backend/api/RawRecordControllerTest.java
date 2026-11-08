@@ -24,7 +24,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.exception.agent.AgentQueueFullException;
+import com.itda.backend.exception.record.RawRecordEntryLimitException;
 import com.itda.backend.exception.record.RawRecordNotFoundException;
+import com.itda.backend.exception.record.RawRecordUploadBusyException;
 import com.itda.backend.exception.record.RawRecordValidationException;
 import com.itda.backend.service.record.RawRecordService;
 
@@ -87,6 +90,42 @@ class RawRecordControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.result").value("FAIL"))
                 .andExpect(jsonPath("$.code").value("RAW_RECORD_INVALID_REQUEST"));
+    }
+
+    @Test
+    void uploadTooManyEntries_returns400WithEntryLimitCode() throws Exception {
+        authenticateAs("kakao-1");
+        given(rawRecordService.ingest(anyString(), any()))
+                .willThrow(new RawRecordEntryLimitException("too many journal entries in file: 501 > 500"));
+
+        mockMvc.perform(multipart(BASE_URL).file(new MockMultipartFile("file", "note.txt", "text/plain", "x".getBytes())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result").value("FAIL"))
+                .andExpect(jsonPath("$.code").value("RAW_RECORD_ENTRY_LIMIT_EXCEEDED"));
+    }
+
+    @Test
+    void uploadWhileBusy_returns429WithUploadBusyCode() throws Exception {
+        authenticateAs("kakao-1");
+        given(rawRecordService.ingest(anyString(), any()))
+                .willThrow(new RawRecordUploadBusyException("upload slots and waiting queue are full"));
+
+        mockMvc.perform(multipart(BASE_URL).file(new MockMultipartFile("file", "note.txt", "text/plain", "x".getBytes())))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.result").value("FAIL"))
+                .andExpect(jsonPath("$.code").value("RAW_RECORD_UPLOAD_BUSY"));
+    }
+
+    @Test
+    void uploadWhenAgentQueueFull_returns429WithQueueFullCode() throws Exception {
+        authenticateAs("kakao-1");
+        given(rawRecordService.ingest(anyString(), any()))
+                .willThrow(new AgentQueueFullException(1L, 1000, 3, 1000));
+
+        mockMvc.perform(multipart(BASE_URL).file(new MockMultipartFile("file", "note.txt", "text/plain", "x".getBytes())))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.result").value("FAIL"))
+                .andExpect(jsonPath("$.code").value("AGENT_QUEUE_FULL"));
     }
 
     @Test

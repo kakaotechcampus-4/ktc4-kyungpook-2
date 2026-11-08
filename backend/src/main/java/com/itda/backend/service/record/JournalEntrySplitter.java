@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.MonthDay;
 import java.time.Year;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -34,21 +35,33 @@ public class JournalEntrySplitter {
     // 일이 12 를 넘으면(8/21 · 9/15) 분수로 쓰는 일이 없어 날짜로 확정할 수 있다.
     private static final int AMBIGUOUS_DAY_MAX = 12;
 
+    private static final Pattern LINE_BREAK = Pattern.compile("\\R");
+
     public record SplitEntry(LocalDate entryDate, String content) {
     }
 
     public List<SplitEntry> split(String text) {
+        return split(text, Integer.MAX_VALUE);
+    }
+
+    /**
+     * {@code maxEntries} 를 넘는 순간 멈추고 {@code maxEntries + 1} 건을 돌려준다 (#424). 상한을 넘는 파일은 어차피 거절하는데,
+     * 끝까지 나누면 날짜 줄이 백만 개인 20MB 파일 하나가 힙을 수백 MB 쓴다(-Xmx512m 실측). 줄도 한꺼번에 배열로 만들지 않고
+     * 하나씩 읽는다.
+     */
+    public List<SplitEntry> split(String text, int maxEntries) {
         List<SplitEntry> result = new ArrayList<>();
         if (text == null || text.isBlank()) {
             return result;
         }
 
-        String[] lines = text.split("\\R", -1);
+        Iterator<String> lines = LINE_BREAK.splitAsStream(text).iterator();
 
         LocalDate currentDate = null;
         StringBuilder buffer = new StringBuilder();
 
-        for (String line : lines) {
+        while (lines.hasNext() && result.size() <= maxEntries) {
+            String line = lines.next();
             Matcher m = dateHeaderOf(line);
             if (m != null) {
                 flush(result, currentDate, buffer);
