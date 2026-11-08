@@ -16,7 +16,11 @@ import com.itda.backend.domain.organization.OrganizationType;
  * 어휘다. enum 에 넣어 두면 AI 가 표현을 바꿀 때 도메인 클래스를 고치게 되고, 다른 에이전트가 다른 표기를
  * 요구할 때 갈 곳이 없어진다. 기관 <b>이름</b>은 보내지 않는다 — 비교는 종류로만 한다 (CRITERIA §5).
  */
-final class InstitutionTypeNames {
+/*
+ * public 이다. 알림 에이전트도 같은 어휘를 쓴다 (#419) — AI/notify 가 "학교에서는" 을 쓸 수 있는지
+ * 이 값으로 가른다. 표기가 갈리면 두 에이전트가 같은 기관을 다르게 본다.
+ */
+public final class InstitutionTypeNames {
 
     private static final Map<OrganizationType, String> NAMES = Map.of(
             OrganizationType.SCHOOL, "학교",
@@ -34,7 +38,7 @@ final class InstitutionTypeNames {
      * @throws IllegalStateException 새 기관 종류가 생겼는데 여기 매핑을 안 넣은 경우. 조용히 {@code null} 을
      *                               보내면 AI 가 422 로 거절하고, 422 는 재시도 없이 바로 실패한다
      */
-    static String of(OrganizationType type) {
+    public static String of(OrganizationType type) {
         String name = NAMES.get(type);
         if (name == null) {
             throw new IllegalStateException(
