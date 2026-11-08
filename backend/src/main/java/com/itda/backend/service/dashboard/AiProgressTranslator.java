@@ -86,10 +86,11 @@ public class AiProgressTranslator {
     }
 
     private static boolean isComplete(AiProgressItem item) {
-        if (item.agent() == null) {
+        // AGENTS 에 없는 에이전트는 먼저 버린다 — 고르는 순서(PREFERRED)가 AGENTS · NODES 를 그대로 읽는다.
+        // 새 에이전트를 붙이면 AGENTS · NODES · 아래 switch 를 함께 고친다.
+        if (item.agent() == null || !AGENTS.contains(item.agent())) {
             return false;
         }
-        // 여기 없는 에이전트는 버린다. 새 에이전트를 붙이면 AGENTS · NODES 와 함께 고친다.
         return switch (item.agent()) {
             case "matching", "validation" -> item.journalEntryId() != null;
             case "summary" -> item.childId() != null && item.entryDate() != null && item.institutionId() != null;

@@ -13,4 +13,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "app.ai-progress")
 public record AiProgressProperties(boolean enabled, Duration interval, Duration timeout) {
+
+    /** 값이 빠져도 꺼져 있을 때 기동이 깨지지 않게 기본값을 둔다 (보관함이 기동 때 간격을 읽는다). */
+    public AiProgressProperties {
+        interval = interval == null ? Duration.ofSeconds(1) : interval;
+        timeout = timeout == null ? Duration.ofMillis(500) : timeout;
+    }
 }

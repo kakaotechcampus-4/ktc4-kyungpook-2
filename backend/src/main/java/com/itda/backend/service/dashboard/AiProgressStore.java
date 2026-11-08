@@ -15,8 +15,8 @@ import com.itda.backend.service.agent.AiProgressProperties;
  * 폴러가 번역한 AI 진행 단계를 기관별로 들고 있는 메모리 보관함 (#453). BE 서버가 한 대라 메모리로 충분하다.
  *
  * <p>폴러가 쓰고 진행 API 가 읽는다. 통째로 바꿔 끼우는 불변 스냅샷이라 따로 잠그지 않는다.
- * 마지막으로 받은 지 3초(간격이 1초보다 길면 간격의 3배)가 넘으면 비어 있는 것으로 읽는다 — AI 조회가 계속 실패하거나
- * 폴러가 쉬다가 깨어났을 때 옛 문구가 남지 않게.
+ * 마지막으로 받은 지 3초(간격·대기를 늘리면 {@code 2 × (간격 + 대기)})가 넘으면 비어 있는 것으로 읽는다 — AI 조회나
+ * 번역이 계속 실패하거나 폴러가 쉬다가 깨어났을 때 옛 문구가 남지 않게.
  */
 @Component
 public class AiProgressStore {
@@ -28,15 +28,18 @@ public class AiProgressStore {
     static final Duration ASKED_WITHIN = Duration.ofSeconds(5);
 
     private final Clock clock;
-    /** 간격을 늘려도 정상 스냅샷이 다음 것을 받기 전에 비지 않게 간격에 맞춘다. */
+    /**
+     * 한 차례는 간격만큼 쉬고 최대 대기 시간만큼 묻는다. 두 차례 동안은 버텨야 실패 한 번에 화면이 비지 않는다.
+     * 기본값(1초 · 0.5초)이면 3초다.
+     */
     private final Duration stale;
     private volatile Snapshot snapshot = new Snapshot(Map.of(), Instant.MIN);
     private volatile Instant lastAskedAt = Instant.MIN;
 
     public AiProgressStore(Clock clock, AiProgressProperties properties) {
         this.clock = clock;
-        Duration threeTicks = properties.interval().multipliedBy(3);
-        this.stale = threeTicks.compareTo(MIN_STALE) > 0 ? threeTicks : MIN_STALE;
+        Duration twoTicks = properties.interval().plus(properties.timeout()).multipliedBy(2);
+        this.stale = twoTicks.compareTo(MIN_STALE) > 0 ? twoTicks : MIN_STALE;
     }
 
     public List<Item> read(Long organizationId) {

@@ -122,6 +122,29 @@ class AiProgressPollerTest {
     }
 
     @Test
+    void AI를_못_물은_것도_실패로_세고_성공해야_풀린다() {
+        store.markAsked();
+        given(client.fetch()).willReturn(Optional.empty(), Optional.of(List.of(RAW)));
+
+        poller.tick();
+        assertThat(poller.isFailing()).isTrue();
+
+        poller.tick();
+        assertThat(poller.isFailing()).isFalse();
+    }
+
+    @Test
+    void 번역이_실패하면_실패로_센다() {
+        store.markAsked();
+        given(client.fetch()).willReturn(Optional.of(List.of(RAW)));
+        given(translator.translate(any())).willThrow(new IllegalStateException("db down"));
+
+        poller.tick();
+
+        assertThat(poller.isFailing()).isTrue();
+    }
+
+    @Test
     void 켜져_있으면_전용_스레드_하나로_돈다() {
         poller.start();
 

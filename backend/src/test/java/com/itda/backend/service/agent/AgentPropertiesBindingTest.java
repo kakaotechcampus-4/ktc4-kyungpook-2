@@ -52,6 +52,14 @@ class AgentPropertiesBindingTest {
     }
 
     @Test
+    void AI_진행_단계_간격과_대기가_비어_있으면_기본값을_쓴다() {
+        AiProgressProperties progress = new AiProgressProperties(false, null, null);
+
+        assertThat(progress.interval()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(progress.timeout()).isEqualTo(Duration.ofMillis(500));
+    }
+
+    @Test
     void AI_다운_처리_설정을_읽는다() {
         runner.run(context -> {
             AgentDownProperties agentDown = context.getBean(AgentDownProperties.class);

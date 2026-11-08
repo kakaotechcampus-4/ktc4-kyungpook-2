@@ -20,8 +20,8 @@ import lombok.extern.slf4j.Slf4j;
  * <p><b>전용 스레드 하나로 돈다.</b> 공용 스케줄러 풀(5개)은 에이전트 워커가 AI 응답을 최대 210초씩 붙잡고 알림·정리
  * 작업도 쓰므로, 거기 끼우면 정작 오래 걸릴 때 묻지 못한다.
  *
- * <p>최근 5초 안에 진행 API 를 부른 화면이 있을 때만 묻는다. 실패하면 보관함을 그대로 두고, 3초 넘게 이어지면 보관함이
- * 알아서 비운다. 어떤 예외도 다음 차례를 막지 않는다.
+ * <p>최근 5초 안에 진행 API 를 부른 화면이 있을 때만 묻는다. 실패하면 보관함을 그대로 두고, 오래 이어지면 보관함이
+ * 알아서 비운다 ({@link AiProgressStore}).
  */
 @Slf4j
 @Component
@@ -32,8 +32,8 @@ public class AiProgressPoller {
     private final AiProgressTranslator translator;
     private final AiProgressStore store;
     private ScheduledExecutorService executor;
-    /** 실패가 이어지는 동안 1초마다 경고를 쌓지 않으려고 둔다. 폴러 스레드만 읽고 쓴다. */
-    private boolean failing;
+    /** 지금 이어지고 있는 실패의 종류. 실패가 아니면 {@code null}. 폴러 스레드만 읽고 쓴다. */
+    private String failure;
 
     public AiProgressPoller(AiProgressProperties properties, AiProgressClient client, AiProgressTranslator translator,
             AiProgressStore store) {
@@ -69,28 +69,50 @@ public class AiProgressPoller {
         return executor != null && !executor.isShutdown();
     }
 
+    boolean isFailing() {
+        return failure != null;
+    }
+
     /**
-     * 한 차례. {@link Throwable} 까지 잡는다 — 예약 작업은 무엇이든 한 번 새면 조용히 멈추고, 그러면 화면은 영영 빈 값이다.
-     * AI 를 못 물은 것(클라이언트가 이미 debug 로 남김)은 여기서 실패로 세지 않는다. 번역(DB) 실패는 이어지는 동안
-     * 처음 한 번만 warn 으로 남긴다.
+     * 한 차례. AI 를 못 물은 것과 번역(DB)이 실패한 것을 똑같이 실패로 센다 — 어느 쪽이든 보관함이 새로 채워지지 않는다.
+     *
+     * <p>{@link Exception} 과 함께 {@link LinkageError} · {@link StackOverflowError} 까지 잡는다. 예약 작업은 무엇이든 한 번
+     * 새면 조용히 멈추고 그러면 화면은 영영 빈 값이다. 메모리 부족 같은 다른 {@link Error} 는 잡지 않는다.
      */
     void tick() {
         try {
             if (!store.askedRecently()) {
                 return;
             }
-            client.fetch().ifPresent(items -> store.replace(translator.translate(items)));
-            if (failing) {
-                failing = false;
-                log.info("ai progress tick recovered");
+            var items = client.fetch();
+            if (items.isEmpty()) {
+                failed("ai unreachable", null);
+                return;
             }
-        } catch (Throwable e) {
-            if (failing) {
-                log.debug("ai progress tick still failing: {}", e.toString());
-            } else {
-                failing = true;
-                log.warn("ai progress tick failed: {}", e.toString(), e);
+            store.replace(translator.translate(items.get()));
+            if (failure != null) {
+                log.info("ai progress recovered after {}", failure);
+                failure = null;
             }
+        } catch (Exception | LinkageError | StackOverflowError e) {
+            if (executor != null && executor.isShutdown()) {
+                return;                     // 서버를 내리는 중에 끊긴 것이다
+            }
+            failed(e.getClass().getSimpleName(), e);
+        }
+    }
+
+    /** 실패가 시작되거나 종류가 바뀔 때만 warn 을 남긴다. 같은 실패가 이어지는 동안은 1초마다 쌓지 않는다. */
+    private void failed(String kind, Throwable cause) {
+        if (kind.equals(failure)) {
+            log.debug("ai progress still failing: {}", kind);
+            return;
+        }
+        failure = kind;
+        if (cause == null) {
+            log.warn("ai progress failed: {} (screens fall back to fixed text)", kind);
+        } else {
+            log.warn("ai progress failed: {}", kind, cause);
         }
     }
 }
