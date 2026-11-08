@@ -48,6 +48,7 @@ import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.insight.InsightEvidenceReader;
+import com.itda.backend.service.insight.QuietWeekReader;
 import com.itda.backend.service.sharing.GuardianInsightService;
 import com.itda.backend.service.sharing.SharingReadRecorder;
 import com.itda.backend.service.user.UserService;
@@ -77,6 +78,10 @@ class GuardianChildQueryServiceJpaTest {
 
     @MockitoBean
     private UserService userService;
+
+    /** 홈은 리포트 목록의 "특이사항 없음" 주(#470)를 쓰지 않는다. */
+    @MockitoBean
+    private QuietWeekReader quietWeekReader;
 
     private Long sea;
     private Long sky;
