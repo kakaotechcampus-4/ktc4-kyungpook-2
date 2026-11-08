@@ -374,11 +374,34 @@ Certbot이나 별도 갱신 cron은 필요하지 않습니다.
 실행 중인 Caddy와 주소가 다르면 중단합니다. GitHub 값은 `EXPECTED_PUBLIC_ORIGIN`으로만 전달해
 서버 `.env`를 덮어쓰지 않습니다. 주소 변경 후 GitHub의 `PUBLIC_ORIGIN`도 맞춥니다.
 
-운영 Swagger는 `https://iitda.duckdns.org/swagger-ui/index.html`입니다.
-OpenAPI JSON은 `/v3/api-docs`를 사용합니다. YAML 경로는 이번 외부 프록시에 포함하지 않습니다.
+운영 Swagger · OpenAPI(`/swagger-ui*` · `/v3/api-docs*`, JSON · YAML 모두)는 Caddy가 404로 막습니다(#442).
+운영 명세가 필요하면 서버의 백엔드(`127.0.0.1:8080`)에 SSH 터널로 붙어 봅니다.
+
+```bash
+ssh -L 8080:127.0.0.1:8080 ubuntu@<서버>
+# 브라우저에서 http://localhost:8080/swagger-ui/index.html
+```
+
 프론트 컨테이너 안의 정적 파일용 Nginx는 유지하며, 캐시 헤더도 이 컨테이너에서 정합니다.
 API 응답 헤더 대기와 응답 읽기 사이의 대기 시간은 각각 120초로 제한합니다.
-HTTP/3와 HSTS는 이번 구성에서 활성화하지 않습니다.
+HTTP/3는 이번 구성에서 활성화하지 않습니다.
+
+**보안 헤더 (#442)** — Caddy가 모든 응답에 붙입니다. 업스트림이 같은 이름으로 보낸 값(Spring 기본 헤더)은 응답을 받은 뒤
+덮어써 한 줄만 남깁니다. Caddy가 직접 만드는 오류(백엔드 연결 실패 502, 업로드 상한 413)에도 `handle_errors`로 같은 헤더를 붙입니다.
+
+| 헤더 | 값 |
+| --- | --- |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` — API 응답에 Spring이 보내던 값과 같습니다. preload는 하지 않습니다(공용 도메인 하위). HTTP 응답의 HSTS는 브라우저가 무시합니다 |
+| `X-Content-Type-Options` · `X-Frame-Options` | `nosniff` · `DENY` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
+| `Content-Security-Policy` | 화면: 같은 오리진만(`'self'`), 스크립트 · 스타일은 `'unsafe-inline'` 허용, `frame-ancestors 'none'`. API: `default-src 'none'; frame-ancestors 'none'` |
+| `Server` | 지웁니다 |
+
+화면 CSP는 React Router SPA 모드가 `index.html`에 넣는 인라인 스크립트 때문에 `'unsafe-inline'`을 허용합니다. 그래서 인라인 XSS는
+막지 못하고, 외부 리소스 로드와 일부 데이터 전송 경로(`fetch` · 이미지 · 폼)를 같은 오리진으로 제한하고 클릭재킹을 막습니다.
+페이지 이동(`location.href`)으로 내보내는 길은 막지 못합니다. 화면이 외부 스크립트 · 글꼴 · 이미지를 새로 쓰게 되면 Caddyfile의 CSP에
+그 주소를 더해야 합니다 — 더하지 않으면 브라우저가 막고 콘솔에 CSP 위반이 남습니다.
 
 ### 최초 EC2 전환
 
@@ -432,7 +455,7 @@ EXPECTED_PUBLIC_ORIGIN=https://iitda.duckdns.org bash infra/scripts/deploy-backe
   '<SHA>' 'ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:<digest>'
 ```
 
-5. HTTPS 인증서, HTTP 리다이렉트, Swagger, 외부 8080 접근 차단을 확인합니다.
+5. HTTPS 인증서, HTTP 리다이렉트, 외부 8080 접근 차단을 확인합니다.
    실제 카카오 로그인 후 `access_token`의 `Secure`·`HttpOnly`와 `/api/v1/auth/me`를 확인합니다.
    프론트가 `VITE_AUTH_MOCK=true`로 빌드돼 있으면 로그인 진입 URL로 직접 이동합니다.
    이 변경은 프론트 로그인 모드나 프론트 이미지를 바꾸지 않습니다.
