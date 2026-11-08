@@ -55,6 +55,36 @@ Luna 키가 없으면 배포가 실패합니다. 실패했을 때 다시 배포�
 | `POST` | `/matching` | 기록 한 줄을 받아 어느 아동의 것인지 판정합니다 |
 | `POST` | `/validation` | 그 기록을 저장해도 안전한지 판정합니다. Luna 호출이 실패하면 503 (정규식으로 개인정보가 잡힌 경우는 200 + `BLOCK`) |
 | `POST` | `/summary` | 같은 아이의 같은 날 일지 여러 건을 한 편으로 묶습니다. 쓸 관찰 사실이 없으면 200 `no_content: true`(빈 요약), Luna 호출이 실패하거나 근거가 전부 탈락하면 503 입니다 |
+| `GET` | `/progress` | 매칭·검증·요약·리포트가 지금 어느 노드에 있는지 돌려줍니다 (아래). 어떤 에러가 나도 200 `[]` 입니다 |
+
+### `GET /progress`
+
+대시보드 진행 현황에 "요약 문장을 쓰고 있어요" 같은 단계를 띄우려고 BE 가 1초마다 묻습니다 (#452).
+본 호출(`/matching` 등)은 그대로이고, 그래프 노드에 **들어갈 때** 메모리 지도에 적은 것을 돌려줍니다
+([common/progress.py](common/progress.py)).
+
+```json
+[
+  {"agent": "matching",   "journal_entry_id": 120, "node": "llm_judge", "elapsed_sec": 7},
+  {"agent": "validation", "journal_entry_id": 123, "node": "act", "elapsed_sec": 5},
+  {"agent": "summary",    "child_id": 7, "entry_date": "2026-11-08", "institution_id": 3, "node": "write", "elapsed_sec": 12},
+  {"agent": "insight",    "child_id": 7, "period_from": "2026-11-03", "period_to": "2026-11-09", "node": "find_claims", "elapsed_sec": 31}
+]
+```
+
+| agent | `node` 값 |
+| --- | --- |
+| `matching` | `extract` · `shortlist` · `llm_judge` · `decide` |
+| `validation` | `perceive` · `plan` · `act` · `reflect` |
+| `summary` | `gather` · `write` · `ground` · `assemble` |
+| `insight` | `perceive` · `plan` · `act` · `reflect` · `refine` · `find_claims` (refine 이 도구로 지난 기록을 찾는 동안) |
+
+- 요청이 끝나면(성공·503 모두) 그 줄은 사라집니다. 남아도 5분 동안 소식이 없으면 지웁니다
+- `elapsed_sec` 는 AI 가 직접 셉니다. 같은 일이 60초 안에 다시 오면(BE 재시도) 이어서 셉니다
+- 키는 해시하지 않습니다 — 외부에 열지 않고 BE 만 부릅니다
+- `/notify` 는 넣지 않습니다 (리포트 승인 뒤라 진행 현황 줄이 이미 끝나 있습니다)
+- 노드 이름을 바꾸면 BE 문구표도 같이 고칩니다. `evals/scripts/common/test_progress.py` 가 노드 목록을 고정합니다
+- uvicorn 프로세스가 하나라 메모리로 충분합니다. 프로세스를 늘리면 다시 봐야 합니다
 
 ---
 
