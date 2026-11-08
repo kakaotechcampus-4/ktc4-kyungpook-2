@@ -65,13 +65,6 @@ def by_body_first(case: dict) -> int | None:
     return body if body is not None else by_hint(case)
 
 
-PICKERS = {
-    "hint": by_hint,          # 표지만
-    "both": by_body,          # 표지가 없으면 본문에서도
-    "body-first": by_body_first,  # 본문이 표지와 어긋나면 본문을 따른다
-}
-
-
 def run_one(case: dict, mode: str) -> dict:
     record = {key: case.get(key) for key in PASSTHROUGH}
     record["expected_multi_reason"] = case.get("expected_multi_reason", "__skip__")

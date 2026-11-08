@@ -2,6 +2,8 @@
 
 테스트 데이터를 매칭 에이전트에 돌리고 채점한다.
 
+> `build_inputs.py` · `generate_edge_cases.py` 는 `AI/evals/manifests/` 의 가상 아동 데이터를 읽는다. 아이 데이터라 레포에 없으니 AI 담당(근찬)에게 받아 그 폴더에 넣는다.
+
 ```bash
 cd AI
 python evals/scripts/matching/run_eval.py ~/Downloads/matching_inputs.json /tmp/result.json
