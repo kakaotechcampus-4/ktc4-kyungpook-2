@@ -61,7 +61,8 @@ class NotifyInput(BaseModel):
 #: blocked         근거 검사에 걸려 **보내지 않았다**. 교사 확인이 필요하다
 #: nothing_to_send 승인된 인사이트가 없어 보낼 것이 없었다
 #:
-#: 발송 자체가 실패한 경우는 여기 없다 — 503 으로 올린다 (llm.py NotifyDeliveryFailed).
+#: 발송 실패는 여기 없다 — 503 으로 올린다 (llm.py NotifyDeliveryFailed).
+#: 모델 고장(llm_unavailable)도 없다 — 모델을 부르지 않는다 (#433).
 #: 근거 미달(200 blocked)과 메일 서버 장애(503)를 나눠야 BE 가 다르게 처리한다.
 #:
 #: **no_recipient 를 sent 로 묶으면 안 된다** (리뷰 #430). 장애는 아니지만 메일은 안 나갔다.
@@ -93,4 +94,3 @@ class NotifyOutput(BaseModel):
     #: status=blocked 일 때 왜 막혔는지. 비어 있지 않으면 교사에게 확인을 요청한다.
     blocked_lines: list[BlockedLine] = Field(default_factory=list)
 
-    llm_called: bool = False

@@ -22,24 +22,18 @@ class NotifyState(TypedDict, total=False):
     #: 본문에 남았는지 대조할 다른 아이 이름. 프롬프트에는 넣지 않는다.
     other_child_names: list[str]
 
-    # ── compose 가 채운다 ──
-    llm_called: bool
-    #: 값이 있으면 run_notify 가 503 으로 올린다.
-    llm_error: str | None
-    #: 실패 종류 (timeout · empty_response …). common/errors.py FAILURE_KINDS.
-    llm_failure: str
+    # ── assemble 이 채운다 (모델을 부르지 않는다, #433) ──
     subject: str
-    #: 모델이 쓴 줄들. 아직 아무것도 대조하지 않은 상태다.
-    #: [{"text": "...", "insight_index": 0}, ...]
-    raw_lines: list[dict]
+    #: 메일에 들어갈 인사이트 본문들. 승인된 글자 그대로다 — 한 글자도 고치지 않는다.
+    lines: list[str]
+    #: 실제로 나갈 본문. 인사말·맺음말은 코드가 쓴다.
+    body: str
 
     # ── check 가 채운다 ──
     #: 검사를 통과했나. **한 줄이라도 걸리면 False** — 걸린 줄만 빼지 않는다.
     passed: bool
     #: 걸린 줄과 이유. 교사 화면이 읽는다.
     blocked_lines: list[dict]
-    #: 통과했을 때 실제로 나갈 본문. 줄을 이어 만든다.
-    body: str
 
     # ── send 가 채운다 ──
     message_id: str | None
