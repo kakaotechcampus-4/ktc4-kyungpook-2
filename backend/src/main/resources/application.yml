@@ -6,9 +6,9 @@ spring:
   task:
     scheduling:
       pool:
-        # 에이전트 워커(매칭·검증·요약·인사이트) 하나에 스레드 하나. 기본값 1이면 워커들이 번갈아 돌아
-        # 단계별 속도가 나뉜다. 워커 수만큼 AI 를 동시에 부르므로 AI 동시 호출 한도(8)를 넘지 않게 둔다.
-        size: 5
+        # @Scheduled 작업 하나에 스레드 하나 — AI 를 부르는 워커 다섯(매칭·검증·요약·인사이트·알림)과 반려 데이터 정리(#432).
+        # 기본값 1이면 워커들이 번갈아 돌아 단계별 속도가 나뉜다. AI 동시 호출은 워커 수(5)라 한도(8)를 넘지 않는다.
+        size: 6
   servlet:
     multipart:
       max-file-size: 20MB
@@ -160,6 +160,11 @@ app:
     # 응답 대기 시간 초과 뒤 다시 보내는 횟수. 최악 210초 × 2번 ≈ 7분, 그 뒤는 위 failure-backoffs 가 받는다.
     # 연결 실패·5xx 는 금방 끝나서 app.ai.retry-backoffs 대로 다시 보낸다.
     timeout-retries: 1
+  purge:
+    worker:
+      # Gate 1 에서 반려한 지 30일이 지난 일지 데이터를 매일 새벽 4시(서울)에 지운다 (#432).
+      enabled: ${PURGE_WORKER_ENABLED:true}
+      cron: "0 0 4 * * *"
 
 jwt:
   # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.

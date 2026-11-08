@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +14,11 @@ import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.matching.MatchingStatus;
 
 public interface MatchingResultRepository extends JpaRepository<MatchingResult, Long> {
+
+    /** Gate 1 반려 데이터 정리(#432)용. 행을 읽지 않고 지운다. */
+    @Modifying(flushAutomatically = true)
+    @Query("delete from MatchingResult m where m.journalEntryId in :journalEntryIds")
+    int deleteByJournalEntryIds(@Param("journalEntryIds") Collection<Long> journalEntryIds);
 
     List<MatchingResult> findByStatusNot(MatchingStatus status);
 

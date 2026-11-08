@@ -42,6 +42,9 @@ app:
   insight:
     worker:
       enabled: false
+  purge:
+    worker:
+      enabled: false
 
 jwt:
   secret: test-secret-key-for-unit-tests-only
