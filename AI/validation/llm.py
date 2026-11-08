@@ -18,6 +18,7 @@ import requests
 #: 여기서 다시 내보내므로 from validation.llm import LlmUnavailable 이 그대로 된다.
 from common.errors import LlmUnavailable  # noqa: F401
 
+from common.luna import json_format
 from common.luna import model as luna_model
 
 from .config import LUNA_CHAT_PATH, LUNA_TIMEOUT
@@ -109,7 +110,7 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
             url,
             json={
                 "model": luna_model(),
-                "response_format": {"type": "json_object"},
+                **json_format(),  # 기본 JSON 강제, LUNA_JSON_MODE=off 면 뺀다
                 "messages": messages,
             },
             headers={

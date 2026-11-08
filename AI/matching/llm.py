@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 import requests
 
+from common.luna import json_format
 from common.luna import model as luna_model
 
 from .config import LUNA_CHAT_PATH, LUNA_TIMEOUT
@@ -100,7 +101,7 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
             url,
             json={
                 "model": luna_model(),
-                "response_format": {"type": "json_object"},
+                **json_format(),  # 기본 JSON 강제, LUNA_JSON_MODE=off 면 뺀다
                 "messages": messages,
             },
             headers={

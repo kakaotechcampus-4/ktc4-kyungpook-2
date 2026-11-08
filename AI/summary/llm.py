@@ -20,6 +20,7 @@ import requests
 #: 여기서 다시 내보내므로 from summary.llm import LlmUnavailable 이 그대로 된다.
 from common.errors import LlmUnavailable  # noqa: F401
 
+from common.luna import json_format
 from common.luna import model as luna_model
 
 from .config import LUNA_CHAT_PATH, LUNA_REASONING_EFFORT_ON_OVERFLOW, LUNA_TIMEOUT
@@ -128,7 +129,9 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
     choice = (payload.get("choices") or [{}])[0] if isinstance(payload, dict) else {}
     content = (choice.get("message") or {}).get("content")
     retried = False
-    if choice.get("finish_reason") == "length" and not (content or "").strip():
+    # 답이 반쯤 온 채로 잘리는 모델도 있다 (claude-opus-5-5, 2026-11-09: 2000 토큰에서 JSON 이 끊김).
+    # 빈 답만 보면 그 경우를 놓치므로, 잘렸으면(length) 답이 있어도 다시 부른다.
+    if choice.get("finish_reason") == "length":
         print(f"[{AGENT}] 생각 한도 초과 → reasoning_effort={LUNA_REASONING_EFFORT_ON_OVERFLOW} 로 다시 부른다")
         payload = _post(url, key, messages, timeout,
                         reasoning_effort=LUNA_REASONING_EFFORT_ON_OVERFLOW)
@@ -148,7 +151,7 @@ def _post(url: str, key: str, messages: list[dict], timeout: float,
     """Luna 를 한 번 부른다. reasoning_effort 를 주지 않으면 모델 기본값으로 생각한다."""
     body = {
         "model": luna_model(),
-        "response_format": {"type": "json_object"},
+        **json_format(),  # 기본 JSON 강제, LUNA_JSON_MODE=off 면 뺀다
         "messages": messages,
     }
     if reasoning_effort:
