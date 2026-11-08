@@ -3,6 +3,7 @@ Validation Agent 그래프 조립.
 인식 -> 계획 -> 행동(Luna 호출) -> 반영 순서로 고정.
 """
 from langgraph.graph import StateGraph, END
+from common.progress import tracked
 from validation.nodes import perceive, plan, act, reflect
 from .llm import LlmUnavailable
 from .schemas import ValidationInput, ValidationOutput, Evidence, Issue
@@ -10,10 +11,10 @@ from .schemas import ValidationInput, ValidationOutput, Evidence, Issue
 
 def build_graph():
     graph = StateGraph(dict)
-    graph.add_node("perceive", perceive)
-    graph.add_node("plan", plan)
-    graph.add_node("act", act)
-    graph.add_node("reflect", reflect)
+    graph.add_node("perceive", tracked("perceive", perceive))
+    graph.add_node("plan", tracked("plan", plan))
+    graph.add_node("act", tracked("act", act))
+    graph.add_node("reflect", tracked("reflect", reflect))
 
     graph.set_entry_point("perceive")
     graph.add_edge("perceive", "plan")

@@ -163,6 +163,118 @@ def test_broken():
     ck("자물쇠가 없어도 돈다", ran[-1], "자물쇠 없이", "어떤 에러도 노드 실행에 닿지 않는다")
 
 
+#: 이슈 #452 의 node 값. BE 문구표(#453)가 이 이름으로 번역한다 — 노드가 바뀌면 같이 고친다.
+NODES = {
+    "matching": ["extract", "shortlist", "llm_judge", "decide"],
+    "validation": ["perceive", "plan", "act", "reflect"],
+    "summary": ["gather", "write", "ground", "assemble"],
+    "insight": ["perceive", "plan", "act", "reflect", "refine"],
+}
+
+
+def _graphs():
+    from insight.graph import GRAPH as insight
+    from matching.graph import GRAPH as matching
+    from summary.graph import GRAPH as summary
+    from validation.graph import GRAPH as validation
+    return {"matching": matching, "validation": validation, "summary": summary, "insight": insight}
+
+
+def _exact_matching_input():
+    """이름이 그대로 적힌 아이 한 명 — 코드로 끝나고 모델을 부르지 않는다."""
+    from matching.schemas import MatchingInput
+    return MatchingInput(journal_entry_id=120, content="김민준이 블록을 높이 쌓았다.",
+                         roster=[{"child_id": 1, "name": "김민준", "birthdate": "2020-03-01"},
+                                 {"child_id": 2, "name": "이서연", "birthdate": "2020-05-02"}])
+
+
+def test_graphs():
+    from matching.graph import run_matching
+
+    print("\n■ 4개 그래프의 노드가 이슈의 node 값과 같다")
+    for agent, graph in _graphs().items():
+        names = [n for n in graph.get_graph().nodes if n not in ("__start__", "__end__")]
+        ck(f"{agent} 노드", names, NODES[agent], "늘어나면 BE 문구표(#453)도 같이 고친다")
+        wrapped = [n for n in names if getattr(graph.builder.nodes[n].runnable.func, "progress_node", None) == n]
+        ck(f"{agent} 감싸개", wrapped, names, "노드에 들어갈 때 기록하려면 전부 tracked 여야 한다")
+
+    print("\n■ 실제 매칭 그래프를 돌리면 노드 순서대로 기록된다")
+    fresh()
+    seen = []
+    original = progress.mark
+
+    def spy(node):
+        seen.append((node, progress._current.get() is not None))
+        original(node)
+
+    progress.mark = spy
+    try:
+        with progress.begin("matching", journal_entry_id=120):
+            out = run_matching(_exact_matching_input())
+    finally:
+        progress.mark = original
+    ck("모델 없이 끝났다", (out.status, out.llm_called), ("auto", False), "이 입력은 LLM 을 부르지 않는다")
+    ck("노드 순서", [n for n, _ in seen], ["extract", "shortlist", "decide"], "명확하면 llm_judge 를 건너뛴다")
+    ck("그래프 안에서도 요청이 보인다", all(ok for _, ok in seen), True,
+       "LangGraph 가 ContextVar 를 노드까지 넘긴다")
+    ck("끝나면 비어 있다", progress.snapshot(), [], "")
+
+    print("\n■ 기록이 고장 나도 결과가 같다")
+    fresh()
+    want = run_matching(_exact_matching_input()).model_dump()
+    progress._now = boom
+    with progress.begin("matching", journal_entry_id=120):
+        got = run_matching(_exact_matching_input()).model_dump()
+    ck("같은 결과", got == want, True, "진행 표시는 일지 처리에 닿지 않는다")
+
+    print("\n■ evals 처럼 run_* 을 직접 부르면 아무것도 남지 않는다")
+    fresh()
+    run_matching(_exact_matching_input())
+    ck("기록 없음", (progress.snapshot(), progress._ended), ([], {}), "begin 을 거치지 않았다")
+
+
+def test_find_claims():
+    import insight.nodes as nodes
+    from insight.llm import LlmError, LlmResult
+
+    print("\n■ 리포트 refine 이 지난 기록을 찾는 동안은 find_claims, 끝나면 refine")
+    state = {"history_index": {"h1": {"claim_id": "h1", "text": "점심을 남겼다", "entry_date": "2026-10-01",
+                                      "institution_type": "KINDERGARTEN"}},
+             "claim_index": {}, "period_from": "2026-11-03"}
+    item = {"raw": {"claim_ids": ["c1"]}, "reasons": []}
+
+    def run(fail: bool):
+        seen = {}
+
+        def fake_ask(instructions, user, tools, run_tool, **kw):
+            seen["before"] = progress.snapshot()[0]["node"]
+            run_tool("find_claims", {"situation": "점심"})
+            seen["during"] = progress.snapshot()[0]["node"]
+            if fail:
+                raise LlmError("시간 초과", "timeout")
+            return LlmResult(data={}, usage={"tool_calls": 1})
+
+        fresh()
+        saved = nodes.ask_with_tools, nodes.build_lookup_messages
+        nodes.ask_with_tools = fake_ask
+        nodes.build_lookup_messages = lambda *a, **k: ("지시", "입력")
+        try:
+            with progress.begin("insight", child_id=7, period_from="2026-11-03", period_to="2026-11-09"):
+                progress.mark("refine")
+                nodes._lookup(state, item, set())
+                seen["after"] = progress.snapshot()[0]["node"]
+        finally:
+            nodes.ask_with_tools, nodes.build_lookup_messages = saved
+        return seen
+
+    for fail in (False, True):
+        tag = "Luna 실패" if fail else "성공"
+        seen = run(fail)
+        ck(f"{tag}: 찾기 전", seen["before"], "refine", "도구를 부르기 전엔 refine")
+        ck(f"{tag}: 찾는 중", seen["during"], "find_claims", "\"지난 기록을 찾아보고 있어요\"")
+        ck(f"{tag}: 끝난 뒤", seen["after"], "refine", "실패해도 refine 으로 되돌린다")
+
+
 def _raises(fn) -> bool:
     try:
         fn()
@@ -176,6 +288,8 @@ def main():
     test_retry()
     test_stale()
     test_broken()
+    test_graphs()
+    test_find_claims()
     progress.reset()
     progress._now = progress.time.monotonic
 
