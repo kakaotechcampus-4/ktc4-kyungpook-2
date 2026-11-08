@@ -16,6 +16,8 @@ import java.util.List;
  * @param reviewReasons    왜 봐야 하는지 — ["다른아동이름"]
  * @param uncoveredEntries 요약에 안 들어간 일지와 원문. 승인하면 이 일지도 함께 끝난다.
  * @param reviewFlags      요약에 들어간 원본 중 검증에서 REVIEW 를 받은 일지와 그 사유
+ * @param entries          이 요약에 묶인 일지 원문 전체(요약에 든 것 + 안 든 것, id 순). 검토 화면이 원본 일지를 늘 보인다
+ *                         (#371). {@code claims[].evidence} 인용 강조는 이 원문 위에서 한다
  */
 public record Gate1SummaryResponse(
         Long id,
@@ -32,16 +34,40 @@ public record Gate1SummaryResponse(
         boolean needsReview,
         List<String> reviewReasons,
         List<UncoveredEntry> uncoveredEntries,
-        List<ReviewFlag> reviewFlags) {
+        List<ReviewFlag> reviewFlags,
+        List<SourceEntry> entries) {
 
-    /** 요약 문장 하나. {@code index} 는 {@code summary_result.claims} 배열 순서다. */
-    public record ClaimCard(int index, String text) {
+    /**
+     * 요약 문장 하나. {@code index} 는 {@code summary_result.claims} 배열 순서다.
+     *
+     * @param evidence AI 가 이 문장의 근거로 든 일지와 원문 인용. 선생님이 고치거나 새로 쓴 문장은 빈 목록이다.
+     */
+    public record ClaimCard(int index, String text, List<ClaimEvidence> evidence) {
+    }
+
+    /** 문장 근거 하나 — 어느 일지의 어떤 원문 구절인지. */
+    public record ClaimEvidence(Long journalEntryId, String quote) {
     }
 
     public record UncoveredEntry(Long journalEntryId, String content) {
     }
 
-    /** 검증 issue_types 원본. 사유 문장 변환은 화면 확정 뒤에 정한다. */
-    public record ReviewFlag(Long journalEntryId, List<String> issueTypes) {
+    /** 요약에 묶인 일지 원문 하나. */
+    public record SourceEntry(Long journalEntryId, String content) {
+    }
+
+    /**
+     * 검증이 확인을 요청한 원본 일지 하나.
+     *
+     * @param issueTypes 검증 issue_types 원본 코드. 지금 화면은 쓰지 않는다 — O-24 {@code violationCode} 처럼 코드로
+     *                   가를 일이 생길 때를 위해 남긴다
+     * @param reasons    선생님이 읽을 문장 ("다른 아이의 이름이 함께 적혀 있어요"). 화면은 이것을 보여 준다
+     * @param claimIndexes 검증 구간과 근거 구간이 겹친 문장 카드 번호({@code claims[].index}), 오름차순 (#408).
+     *                   AI 문장만 든다. 검증 구간이 없거나(대상불명확 · 모델호출실패) 카드로 못 읽는 요약이면 빈
+     *                   목록이고, 경고는 그대로 나간다. 사유와 짝지어지지 않는다 — 사유가 여럿이면 어느 문장이 어느
+     *                   사유인지 모른다
+     */
+    public record ReviewFlag(Long journalEntryId, List<String> issueTypes, List<String> reasons,
+            List<Integer> claimIndexes) {
     }
 }

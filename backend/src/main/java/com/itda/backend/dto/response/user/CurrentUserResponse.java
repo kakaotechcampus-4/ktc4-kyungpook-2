@@ -16,6 +16,10 @@ import com.itda.backend.domain.user.UserRole;
  *
  * <p>{@code institutionName} 은 사이드바에 기관명을 띄우려고 둔다(#236). {@code institutionId} 와 같이 기관 회원만 있다.
  *
+ * <p>{@code termsAgreed} 도 원시 boolean 이라 늘 나간다. 회원이 자기 역할의 서비스 약관에 동의했는지다 — false 면
+ * 프론트가 약관 화면(보호자 · 기관 따로)으로 보내고, 서버도 보호 API 를 403 TERMS_NOT_AGREED 로 막는다.
+ * 가입 미완료는 false 다.
+ *
  * <p>{@code @JsonInclude} 를 여기에 직접 붙여야 한다 — ApiResponse 에 붙은 설정은
  * 중첩된 타입까지 내려가지 않는다. 이게 없으면 보호자 응답에 {@code "institutionId": null} 이
  * 그대로 나가서 "role 이 org 일 때만 포함한다" 는 계약이 깨진다. {@code institutionName} 도 같다.
@@ -23,10 +27,13 @@ import com.itda.backend.domain.user.UserRole;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CurrentUserResponse(
         String role, String userId, String name, String institutionId, String institutionName,
-        boolean signupCompleted) {
+        boolean signupCompleted, boolean termsAgreed) {
 
-    /** @param organization 회원이 속한 기관. 기관 회원이 아니거나 찾지 못했으면 null 이고, 기관명이 응답에서 빠진다 */
-    public static CurrentUserResponse from(User user, Organization organization) {
+    /**
+     * @param organization 회원이 속한 기관. 기관 회원이 아니거나 찾지 못했으면 null 이고, 기관명이 응답에서 빠진다
+     * @param termsAgreed  {@code TermsService.isAgreed} 의 판정
+     */
+    public static CurrentUserResponse from(User user, Organization organization, boolean termsAgreed) {
         String institutionId = toApiInstitutionId(user);
         return new CurrentUserResponse(
                 toApiRole(user.getRole()),
@@ -34,7 +41,8 @@ public record CurrentUserResponse(
                 user.getName(),
                 institutionId,
                 institutionId == null || organization == null ? null : organization.getName(),
-                user.isSignupCompleted());
+                user.isSignupCompleted(),
+                termsAgreed);
     }
 
     /** 가입 미완료 회원은 역할이 없다. null 이면 NON_NULL 설정으로 응답에서 빠진다. */

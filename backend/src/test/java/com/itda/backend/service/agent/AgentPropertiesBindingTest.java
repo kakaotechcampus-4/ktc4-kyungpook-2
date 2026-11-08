@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import com.itda.backend.service.insight.InsightProperties;
 import com.itda.backend.service.matching.MatchingProperties;
 import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.validation.ValidationProperties;
@@ -21,7 +22,7 @@ import com.itda.backend.service.validation.ValidationProperties;
 class AgentPropertiesBindingTest {
 
     @EnableConfigurationProperties({AiAgentProperties.class, AgentDownProperties.class, MatchingProperties.class, ValidationProperties.class,
-            SummaryProperties.class})
+            SummaryProperties.class, InsightProperties.class})
     static class Config {
     }
 
@@ -68,6 +69,15 @@ class AgentPropertiesBindingTest {
         runner.run(context -> {
             SummaryProperties summary = context.getBean(SummaryProperties.class);
             assertThat(summary.readTimeout()).isEqualTo(Duration.ofSeconds(120));
+        });
+    }
+
+    @Test
+    void 인사이트_응답_대기_시간과_시간_초과_재시도_횟수를_읽는다() {
+        runner.run(context -> {
+            InsightProperties insight = context.getBean(InsightProperties.class);
+            assertThat(insight.readTimeout()).isEqualTo(Duration.ofSeconds(210));
+            assertThat(insight.timeoutRetries()).isEqualTo(1);
         });
     }
 }

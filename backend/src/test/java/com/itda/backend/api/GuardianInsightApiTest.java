@@ -29,6 +29,7 @@ import com.itda.backend.domain.sharing.ReceiverType;
 import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -37,6 +38,7 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
@@ -54,6 +56,7 @@ class GuardianInsightApiTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JwtProvider jwtProvider;
     @Autowired private UserRepository userRepository;
+    @Autowired private TermsAgreementRepository termsAgreementRepository;
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private ChildRepository childRepository;
     @Autowired private InsightResultRepository insightResultRepository;
@@ -75,8 +78,8 @@ class GuardianInsightApiTest {
     @BeforeEach
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
-        parent = userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호"));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
+        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
         Long childId = childRepository.save(Child.of("김하늘", LocalDate.of(2017, 3, 14))).getId();
 
         InsightResult insight = InsightResult.of(childId, LocalDate.of(2026, 8, 17), LocalDate.of(2026, 8, 23), 1,
@@ -99,7 +102,10 @@ class GuardianInsightApiTest {
                 .andExpect(jsonPath("$.data[0].id").value(String.valueOf(insightId)))
                 .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
                 .andExpect(jsonPath("$.data[0].approvedAt").value("2026-10-27T15:30:00"))
-                .andExpect(jsonPath("$.data[0].readAt").value(nullValue()));
+                .andExpect(jsonPath("$.data[0].readAt").value(nullValue()))
+                // 근거 번호가 없는 글도 근거 칸은 빈 배열로 온다 — 화면이 null 을 따로 보지 않게
+                .andExpect(jsonPath("$.data[0].evidence").isArray())
+                .andExpect(jsonPath("$.data[0].evidence.length()").value(0));
     }
 
     @Test

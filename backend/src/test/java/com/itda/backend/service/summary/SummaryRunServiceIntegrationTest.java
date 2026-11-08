@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -33,11 +34,14 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.summary.SummaryRunRequest;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
+import com.itda.backend.repository.consent.SharingConsentRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.summary.SummaryRunRequestRepository;
@@ -77,6 +81,7 @@ class SummaryRunServiceIntegrationTest {
     @Autowired private SummaryRunService summaryRunService;
     @Autowired private SummaryRunRequestRepository summaryRunRequestRepository;
     @Autowired private ChildOrganizationRepository childOrganizationRepository;
+    @Autowired private SharingConsentRepository sharingConsentRepository;
     @Autowired private RawRecordRepository rawRecordRepository;
     @Autowired private JournalEntryRepository journalEntryRepository;
     @Autowired private DataSource dataSource;
@@ -87,6 +92,7 @@ class SummaryRunServiceIntegrationTest {
     void setUp() {
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
         childOrganizationRepository.save(ChildOrganization.of(CHILD, ORG));
+        sharingConsentRepository.save(SharingConsent.grant(CHILD, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY)));
         Long rawRecordId = rawRecordRepository.save(new RawRecord(String.valueOf(ORG), "school.pdf",
                 "kept/school.pdf", "application/pdf", 12, RawRecordStatus.PENDING)).getId();
         JournalEntry entry = JournalEntry.of(rawRecordId, DATE, "블록 놀이를 했다.", 1);
@@ -104,6 +110,7 @@ class SummaryRunServiceIntegrationTest {
             statement.executeUpdate("DELETE FROM journal_entry");
             statement.executeUpdate("DELETE FROM raw_record");
             statement.executeUpdate("DELETE FROM child_organization");
+            statement.executeUpdate("DELETE FROM sharing_consent");
         }
     }
 

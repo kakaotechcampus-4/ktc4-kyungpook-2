@@ -11,6 +11,7 @@
  *          → GET /api/v1/auth/me
  *              signupCompleted: true  → 역할별 첫 화면
  *              signupCompleted: false → /signup → POST /api/v1/auth/signup
+ *              보호자 termsAgreed: false → /parent/invite 약관 단계 → POST /api/v1/auth/terms
  *
  * 출입증이 httpOnly 쿠키라 이 파일은 토큰을 읽지도 지우지도 못한다.
  *  - 요청에 붙이는 일: 브라우저가 자동으로 한다 (lib/api.ts 의 credentials 참고)
@@ -19,6 +20,9 @@
  */
 
 import { ApiError } from "@/lib/apiError";
+import { clearGate1Drafts } from "@/lib/gate1Draft";
+import { clearReinputDrafts } from "@/lib/reinputDraft";
+import { MOCK_TERMS } from "@/lib/mock/terms";
 
 /**
  * 인증만 실연동하고 나머지 데이터는 mock 으로 둘 수 있게 플래그를 분리했다
@@ -42,10 +46,13 @@ const ROLE_KEY = "itda_role";
 
 /**
  * 온보딩을 끝냈다는 표시. 역할과 따로 둔다 — 보호자는 가입 직후에 역할이 정해지는데,
- * 약관 동의와 첫 기관 연결이 아직 안 끝난 상태를 그것과 구분할 방법이 필요하다.
- * (BE 약관 API `/auth/terms` 가 아직 없어 로컬에 둔다.)
+ * 첫 기관 연결이 아직 안 끝난 상태를 그것과 구분할 방법이 필요하다.
+ * 약관 동의는 여기 두지 않는다 — 서버가 저장하고 `/auth/me` 의 termsAgreed 로 알려준다.
  */
 const ONBOARDED_KEY = "itda_parent_onboarded";
+
+/** mock 모드에서만 쓴다. 보호자가 약관에 동의했다는 표시. 실연동에서는 서버(`termsAgreed`)가 기준이다. */
+const TERMS_KEY = "itda_parent_terms";
 
 /**
  * 로그인 의도. 카카오로 떠나기 전에 적어두고 `/oauth/success` 가 읽는다.
@@ -61,6 +68,13 @@ const INTENT_KEY = "itda_login_intent";
  * P-01 에 직접 입력 칸을 따로 둔다.
  */
 const INVITE_CODE_KEY = "itda_invite_code";
+
+/**
+ * 로그인이 풀려 로그인 화면으로 보낼 때 가려던 주소와 그 화면의 역할(`{ role, path }`).
+ * 다시 로그인하면 `/oauth/success` 가 한 번 읽고 지운다. 로그인 의도와 같은 이유로 sessionStorage 다 —
+ * 카카오를 다녀오는 동안은 같은 탭이라 남고, 탭을 닫으면 사라진다.
+ */
+const RETURN_PATH_KEY = "itda_return_path";
 
 export type Role = "org" | "parent" | null;
 
@@ -78,9 +92,14 @@ export type Session = {
   name?: string;
   /** 가입 때 입력한 기관명. 기관 계정만 있고, 서버가 기관을 못 찾으면 없다. */
   institutionName?: string;
+  /**
+   * 보호자가 서비스 약관(지금 판)에 동의했는지. false 면 서버가 보호 API 를 403 TERMS_NOT_AGREED 로 막는다.
+   * 기관 계정은 약관이 없어 늘 true, 가입 미완료는 false.
+   */
+  termsAgreed: boolean;
 };
 
-const ANONYMOUS: Session = { loggedIn: false, signupCompleted: false, role: null };
+const ANONYMOUS: Session = { loggedIn: false, signupCompleted: false, role: null, termsAgreed: false };
 
 /**
  * GET /auth/me · POST /auth/signup 의 data.
@@ -94,6 +113,8 @@ type MeResponse = {
   institutionId?: string;
   /** role === "org" 일 때만 (#236) */
   institutionName?: string;
+  /** 늘 온다. 기관은 true, 가입 미완료는 false */
+  termsAgreed: boolean;
 };
 
 function toSession(me: MeResponse): Session {
@@ -104,6 +125,7 @@ function toSession(me: MeResponse): Session {
     role: me.signupCompleted ? (me.role ?? null) : null,
     name: me.name,
     institutionName: me.institutionName,
+    termsAgreed: me.signupCompleted && me.termsAgreed === true,
   };
 }
 
@@ -143,6 +165,7 @@ export function clearSession(): void {
   try {
     localStorage.removeItem(ROLE_KEY);
     localStorage.removeItem(ONBOARDED_KEY);
+    localStorage.removeItem(TERMS_KEY);
   } catch {
     // 무시
   }
@@ -150,7 +173,7 @@ export function clearSession(): void {
 
 /* ── 온보딩 ─────────────────────────────────────────── */
 
-/** 보호자가 약관 동의와 첫 기관 공유 동의까지 마쳤다는 표시. */
+/** 보호자가 첫 기관 공유 동의까지 마쳤다는 표시. 약관 동의는 따로 본다(Session.termsAgreed). */
 export function markOnboarded(): void {
   try {
     localStorage.setItem(ONBOARDED_KEY, "1");
@@ -182,7 +205,9 @@ export function isOnboarded(): boolean {
 export async function getSession(): Promise<Session> {
   if (USE_MOCK) {
     const role = readRole();
-    return role ? { loggedIn: true, signupCompleted: true, role } : ANONYMOUS;
+    return role
+      ? { loggedIn: true, signupCompleted: true, role, termsAgreed: role === "org" || readTermsMark() }
+      : ANONYMOUS;
   }
 
   const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
@@ -199,14 +224,90 @@ export async function getSession(): Promise<Session> {
 }
 
 /**
- * 가입을 마친 사람이 처음 볼 화면. 보호자는 약관·첫 연결이 남았거나, 초대 링크로 받아 둔
- * 코드가 있으면 온보딩(코드 수락)으로.
+ * 가입을 마친 사람이 처음 볼 화면. 보호자는 약관 · 첫 연결이 남았거나, 초대 링크로 받아 둔
+ * 코드가 있으면 온보딩(약관 또는 코드 수락)으로. 기관은 약관이 남았으면 기관 약관 화면으로.
  */
-export function homePathFor(role: "org" | "parent"): string {
+export function homePathFor(role: "org" | "parent", termsAgreed: boolean): string {
   if (role === "parent") {
-    return isOnboarded() && !readInviteCode() ? "/parent" : "/parent/invite";
+    return termsAgreed && isOnboarded() && !readInviteCode() ? "/parent" : "/parent/invite";
   }
-  return "/dashboard";
+  return termsAgreed ? "/dashboard" : "/org-terms";
+}
+
+/* ── 약관 동의 ──────────────────────────────────────── */
+
+/** BE TermKey 값 그대로. 보호자는 앞의 둘, 기관은 org_ 셋이 모두 필수다(다른 역할의 약관은 보낼 수 없다). */
+export type TermKey = "tos" | "privacy" | "org_tos" | "org_privacy" | "org_child_data";
+
+/** 약관 한 개의 지금 판 (GET /api/v1/terms 의 원소). */
+export interface TermsDocument {
+  key: TermKey;
+  title: string;
+  /** 동의할 때 `versions` 에 그대로 보낸다 */
+  version: string;
+  /** 시행일 YYYY-MM-DD */
+  effectiveDate: string;
+  /** 팀 검토 전 초안 — 화면은 본문 위에 초안 표시를 띄운다 */
+  draft: boolean;
+  /** 줄바꿈만 살리는 그냥 글 */
+  body: string;
+}
+
+/**
+ * GET /api/v1/terms?role= — 그 역할이 동의해야 하는 약관의 지금 판 본문. 로그인 없이 부른다.
+ *
+ * 동의 요청과 같은 인증 mock 스위치를 따른다 — 둘이 다르면 mock 판으로 실서버에 동의해 409 가 난다.
+ */
+export async function getTerms(role: "parent" | "org"): Promise<TermsDocument[]> {
+  if (USE_MOCK) return MOCK_TERMS.filter((t) => t.key.startsWith("org_") === (role === "org"));
+
+  const res = await fetch(`${API_BASE}/api/v1/terms?role=${role}`, { cache: "no-store" });
+  if (!res.ok) throw await toApiError(res);
+  const body = await res.json();
+  return body.data as TermsDocument[];
+}
+
+function readTermsMark(): boolean {
+  try {
+    return localStorage.getItem(TERMS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * POST /api/v1/auth/terms — 약관 동의(보호자 · 기관). 체크한 약관마다 화면이 받아 둔 판(사용자가 읽은 판)을 붙여 보낸다.
+ * 서버는 그 판으로 기록하고, 지금 판과 다르면 아무것도 기록하지 않고 409 TERMS_VERSION_CHANGED 를 준다.
+ *
+ * 인증 mock 스위치(`VITE_AUTH_MOCK`)를 따른다. 데이터 mock(`VITE_USE_MOCK`)을 따르면 "로그인만 실연동"
+ * 모드에서 저장한 척만 하고 다음 `/auth/me` 는 계속 termsAgreed: false 를 돌려준다.
+ *
+ * 실패는 ApiError 로 던진다 (INVALID_REQUEST · SIGNUP_NOT_COMPLETED · TERMS_VERSION_CHANGED · 401).
+ */
+export async function agreeTerms(agreed: { key: TermKey; version: string }[]): Promise<void> {
+  if (USE_MOCK) {
+    try {
+      localStorage.setItem(TERMS_KEY, "1");
+    } catch {
+      // 무시 — 약관 화면을 한 번 더 보게 될 뿐이다.
+    }
+    return;
+  }
+
+  const res = await fetch(`${API_BASE}/api/v1/auth/terms`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: { "content-type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({
+      agreed: agreed.map((t) => t.key),
+      versions: Object.fromEntries(agreed.map((t) => [t.key, t.version])),
+    }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) clearSession();
+    throw await toApiError(res);
+  }
 }
 
 /* ── 초대 코드 ──────────────────────────────────────── */
@@ -268,7 +369,12 @@ export type SignupInput =
 export async function signup(input: SignupInput): Promise<Session> {
   if (USE_MOCK) {
     grantRole(input.role);
-    return { loggedIn: true, signupCompleted: true, role: input.role };
+    return {
+      loggedIn: true,
+      signupCompleted: true,
+      role: input.role,
+      termsAgreed: input.role === "org" || readTermsMark(),
+    };
   }
 
   const body =
@@ -322,12 +428,56 @@ export function takeLoginIntent(): "org" | "parent" | null {
   }
 }
 
+/* ── 로그인 뒤 돌아갈 주소 ──────────────────────────── */
+
+/**
+ * 로그인이 풀려 로그인 화면으로 보내기 직전에 가려던 주소(경로 + `?` 뒤)를 남긴다. 가드 · 세션 확인 레이아웃 ·
+ * 최상위 오류 화면이 부른다. 역할도 함께 남겨, 같은 탭에서 다른 역할로 로그인하면 쓰지 않는다.
+ */
+export function rememberReturnPath(role: "org" | "parent", url: URL): void {
+  try {
+    sessionStorage.setItem(RETURN_PATH_KEY, JSON.stringify({ role, path: url.pathname + url.search }));
+  } catch {
+    // 무시 — 로그인 뒤 첫 화면으로 갈 뿐이다.
+  }
+}
+
+/** 로그인이 풀려서 왔는지. 로그인 화면의 만료 안내에만 쓴다 — 지우지 않는다. */
+export function hasReturnPath(): boolean {
+  try {
+    return sessionStorage.getItem(RETURN_PATH_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 남긴 주소를 **한 번만** 읽는다 — 읽고 지운다. 역할이 다르면 버린다(남의 화면 주소로 보내면 403 이다).
+ * 우리 앱 안의 경로(`/` 로 시작, `//` 는 아님)만 돌려준다. 역할이 없으면(가입 전) 지우기만 한다.
+ */
+export function takeReturnPath(role: Role): string | null {
+  try {
+    const raw = sessionStorage.getItem(RETURN_PATH_KEY);
+    sessionStorage.removeItem(RETURN_PATH_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as { role?: unknown; path?: unknown };
+    if (saved.role !== role || typeof saved.path !== "string") return null;
+    if (!saved.path.startsWith("/") || saved.path.startsWith("//")) return null;
+    return saved.path;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 로그아웃. 출입증이 httpOnly 쿠키라 **프론트가 스스로 지울 수 없다.**
  * 서버가 만료된 쿠키를 다시 심어줘야 한다.
  */
 export async function signOut(): Promise<void> {
   clearSession();
+  // 요약 검토 · 검증 수정 요청에서 로그인이 풀려 맡겨 둔 글 — 아이에 대한 글이라 남기지 않는다
+  clearGate1Drafts();
+  clearReinputDrafts();
   if (USE_MOCK) return;
 
   try {

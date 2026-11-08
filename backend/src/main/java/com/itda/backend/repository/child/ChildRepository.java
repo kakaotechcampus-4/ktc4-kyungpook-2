@@ -1,5 +1,6 @@
 package com.itda.backend.repository.child;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -45,6 +46,14 @@ public interface ChildRepository extends JpaRepository<Child, Long> {
             + "where co.childId = c.id and co.organizationId = :organizationId "
             + "and co.deletedAt is null and c.deletedAt is null")
     List<Child> findByOrganizationId(@Param("organizationId") Long organizationId);
+
+    /** 이 기관 명부(연결 해제 · 삭제 제외)에 이름 · 생년월일이 같은 아이가 있는지. 아이 등록(O-11) 중복 확인용. */
+    @Query("select count(c) > 0 from Child c, ChildOrganization co "
+            + "where co.childId = c.id and co.organizationId = :organizationId "
+            + "and co.deletedAt is null and c.deletedAt is null "
+            + "and c.name = :name and c.birthdate = :birthdate")
+    boolean existsInOrganization(@Param("organizationId") Long organizationId,
+            @Param("name") String name, @Param("birthdate") LocalDate birthdate);
 
     /**
      * AI 매칭 명부 전용. <b>이 기관에 대한</b> 살아 있는 동의가 있는 아이만 돌려준다 (DB 스키마 §5.1).

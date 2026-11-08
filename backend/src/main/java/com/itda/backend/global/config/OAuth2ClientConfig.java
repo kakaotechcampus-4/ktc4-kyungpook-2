@@ -1,7 +1,5 @@
 package com.itda.backend.global.config;
 
-import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
-import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.converter.FormHttpMessageConverter;
@@ -26,6 +24,8 @@ import java.time.Duration;
  * 장애가 로그인에서 끝나지 않고 서버 전체로 번진다. (PR #22 가 직접 구현 시절에 걸어둔
  * 타임아웃을 프레임워크 쪽으로 옮긴 것이다.)
  *
+ * <p>HTTP 클라이언트가 503·429 를 몰래 한 번 더 보내는 기본 동작도 끈다 ({@link HttpClientRequestFactories}, #193).
+ *
  * <p><b>주의 — 여기서 한 번 깨뜨렸던 부분.</b> 아래 토큰 교환용 RestClient 는 메시지
  * 컨버터를 직접 달아준다. {@code RestClient.builder()} 의 기본 컨버터로는 카카오의 토큰
  * 응답을 {@code OAuth2AccessTokenResponse} 로 해석하지 못해, 액세스 토큰이 비어 있는 채로
@@ -39,17 +39,11 @@ public class OAuth2ClientConfig {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 
-    private static ClientHttpRequestFactorySettings timeouts() {
-        return ClientHttpRequestFactorySettings.defaults()
-                .withConnectTimeout(CONNECT_TIMEOUT)
-                .withReadTimeout(READ_TIMEOUT);
-    }
-
     /** 인가 코드 → 액세스 토큰 교환 (카카오 token 엔드포인트). */
     @Bean
     public OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> accessTokenResponseClient() {
         RestClient restClient = RestClient.builder()
-                .requestFactory(ClientHttpRequestFactoryBuilder.detect().build(timeouts()))
+                .requestFactory(HttpClientRequestFactories.create(CONNECT_TIMEOUT, READ_TIMEOUT))
                 .messageConverters(converters -> {
                     converters.clear();
                     // 요청은 form 으로 나가고, 응답은 OAuth2 토큰 규격으로 읽는다.
@@ -71,7 +65,7 @@ public class OAuth2ClientConfig {
     public OAuth2UserService<OAuth2UserRequest, OAuth2User> oAuth2UserService() {
         DefaultOAuth2UserService service = new DefaultOAuth2UserService();
         service.setRestOperations(new RestTemplate(
-                ClientHttpRequestFactoryBuilder.detect().build(timeouts())));
+                HttpClientRequestFactories.create(CONNECT_TIMEOUT, READ_TIMEOUT)));
         return service;
     }
 }

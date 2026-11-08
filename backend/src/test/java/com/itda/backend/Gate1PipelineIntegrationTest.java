@@ -44,6 +44,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.ApprovalTargetType;
@@ -64,6 +65,7 @@ import com.itda.backend.dto.response.matching.MatchingAgentResponse;
 import com.itda.backend.dto.response.summary.SummaryAgentResponse;
 import com.itda.backend.dto.response.validation.ValidationAgentResponse;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -75,6 +77,7 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.approval.Gate1Version;
@@ -138,6 +141,7 @@ class Gate1PipelineIntegrationTest {
 
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private TermsAgreementRepository termsAgreementRepository;
     @Autowired private ChildRepository childRepository;
     @Autowired private ChildOrganizationRepository childOrganizationRepository;
     @Autowired private SharingConsentRepository sharingConsentRepository;
@@ -167,8 +171,8 @@ class Gate1PipelineIntegrationTest {
     @BeforeEach
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        teacher = userRepository.save(UserFixture.organizationUser(
-                "pipeline-" + UUID.randomUUID(), "이선생", organization.getId()));
+        teacher = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(
+                "pipeline-" + UUID.randomUUID(), "이선생", organization.getId())));
         junho = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1)));
         childOrganizationRepository.save(ChildOrganization.of(junho.getId(), organization.getId()));
         // 매칭 명부는 이 기관에 살아 있는 동의가 있는 아이만 받는다 (DB 스키마 §5.1).
@@ -177,11 +181,11 @@ class Gate1PipelineIntegrationTest {
                 List.of(ConsentField.DAILY_SUMMARY)));
 
         matchingWorker = new MatchingWorker(matchingService, fakeMatchingAgent(), matchingResultRecorder,
-                matchingProperties, agentDownProperties, clock);
+                matchingProperties, agentDownProperties, clock, new AiAvailability(clock));
         validationWorker = new ValidationWorker(validationService, fakeValidationAgent(), validationResultRecorder,
-                validationProperties, agentDownProperties, clock);
+                validationProperties, agentDownProperties, clock, new AiAvailability(clock));
         summaryWorker = new SummaryWorker(summaryService, fakeSummaryAgent(), summaryResultRecorder,
-                summaryProperties);
+                summaryProperties, new AiAvailability(clock));
     }
 
     @Test
@@ -203,6 +207,9 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(jsonPath("$.data[0].reviewFlags", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].journalEntryId").value(pushed))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].issueTypes[0]").value("위험행동표현"))
+                // 검증 구간이 짚은 일지를 근거로 든 문장은 두 번째 것뿐이다
+                .andExpect(jsonPath("$.data[0].reviewFlags[0].claimIndexes", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].reviewFlags[0].claimIndexes[0]").value(1))
                 .andReturn().getResponse().getContentAsString();
         Long id = ((Number) JsonPath.read(listed, "$.data[0].id")).longValue();
         String version = JsonPath.read(listed, "$.data[0].version");

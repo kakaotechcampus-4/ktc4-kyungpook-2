@@ -11,6 +11,7 @@ import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.summary.SummaryNoGroundedClaimsException;
 import com.itda.backend.service.agent.AgentFailureReasons;
+import com.itda.backend.service.agent.AiAvailability;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,6 +34,7 @@ public class SummaryWorker {
     private final SummaryAgentClient client;
     private final SummaryResultRecorder recorder;
     private final int batchSize;
+    private final AiAvailability availability;
 
     /** 앱이 켜진 뒤 첫 실행인지. 되돌리기를 여기서 하는 이유는 MatchingWorker 와 같다 (집기와 겹치지 않게). */
     private boolean released;
@@ -44,11 +46,13 @@ public class SummaryWorker {
             SummaryService summaryService,
             SummaryAgentClient client,
             SummaryResultRecorder recorder,
-            SummaryProperties properties) {
+            SummaryProperties properties,
+            AiAvailability availability) {
         this.summaryService = summaryService;
         this.client = client;
         this.recorder = recorder;
         this.batchSize = properties.worker().batchSize();
+        this.availability = availability;
     }
 
     @Scheduled(fixedDelayString = "${app.summary.worker.delay-ms}")
@@ -82,6 +86,7 @@ public class SummaryWorker {
 
     private boolean agentAvailable() {
         boolean available = client.isAvailable();
+        availability.reportHealth(available);
         if (available == agentDown) {
             if (available) {
                 log.info("summary agent is back");
@@ -95,8 +100,16 @@ public class SummaryWorker {
 
     private Outcome process(ClaimedSummaryGroup claimed) {
         try {
+            // 집은 뒤 그 기관 동의가 철회됐으면 AI 에 보내지 않는다 (#332). 앞 묶음을 요약하는 동안에도 철회될 수 있다.
+            // 아이 행은 잠그지 않는다 — AI 호출 내내 잠그면 그동안 동의 변경이 멈춘다. 그래서 이 확인 직후에 철회되면 원문은
+            // 보내질 수 있다. 결과를 남길 때는 요약 행 → 아이 행을 잠근 뒤 한 번 더 보므로, 철회가 먼저 커밋됐으면 저장하지
+            // 않는다 (#398).
+            if (recorder.closeIfConsentRevoked(claimed)) {
+                return Outcome.DONE;
+            }
             SummaryAgentRequest request = summaryService.prepareRequest(claimed);
             SummaryAgentReply reply = client.summarize(request);
+            availability.reportCallSucceeded();
             recorder.record(claimed, request, reply);
             return Outcome.DONE;
         } catch (RuntimeException e) {
@@ -107,6 +120,8 @@ public class SummaryWorker {
             if (e instanceof AiAgentUnavailableException) {
                 log.warn("summary agent unavailable, releasing group={} journalEntryIds={}",
                         claimed.group(), claimed.journalEntryIds(), e);
+                // /health 는 LLM 까지 보지 않으므로 여기서 멈춘 것을 AI 장애 배너에 따로 알린다 (#370).
+                availability.reportCallGaveUp();
                 return Outcome.AGENT_DOWN;
             }
             if (e instanceof SummaryNoGroundedClaimsException) {

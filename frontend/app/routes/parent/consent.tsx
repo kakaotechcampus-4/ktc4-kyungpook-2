@@ -42,7 +42,9 @@ export default function ParentConsentPage() {
   const { preview, from } = useLoaderData<typeof clientLoader>();
   // 설정·알림에서 왔거나 온보딩을 마친 보호자에게는 온보딩 단계 표시가 맞지 않는다
   const returnTo = from ? RETURN_TO[from] : null;
-  const showSteps = !returnTo && !isOnboarded();
+  const showSteps = !returnTo;
+  /** 처음 오는 사람은 3단계 중 3, 이미 쓰는 사람이 아이를 더하면 2단계 중 2 */
+  const stepTotal = isOnboarded() ? 2 : 3;
   const [consented, setConsented] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -143,7 +145,7 @@ export default function ParentConsentPage() {
 
   return (
     <div className="flex flex-col gap-5 pb-24">
-      {showSteps ? <StepProgress step={3} total={3} /> : null}
+      {showSteps ? <StepProgress step={stepTotal} total={stepTotal} /> : null}
 
       <p className="rounded-2xl bg-accentsoft px-4 py-3 text-[15px] leading-6 text-accentink">
         <b className="font-semibold">{institution.name}</b>에서 {child.name} 학생을
@@ -190,7 +192,7 @@ export default function ParentConsentPage() {
       </section>
 
       {/* 지금 동작으로 지킬 수 있는 것만 적는다. 항목별 공유는 거르는 코드가 없고, 진단명 · 개인정보
-          검사는 AI 판단이라 놓칠 수 있어 약속하지 않는다. 미리보기의 설명 목록(sharedFields)은 쓰지 않는다 */}
+          검사는 AI 판단이라 놓칠 수 있어 약속하지 않는다 */}
       <section className="rounded-2xl bg-surface2 px-4 py-4">
         <p className="mb-2 text-[13px] font-bold text-accentink">동의하면 이렇게 돼요</p>
         <ul className="flex list-disc flex-col gap-2 pl-5 text-[15px] leading-6">
@@ -233,7 +235,7 @@ export default function ParentConsentPage() {
         <button
           onClick={save}
           disabled={!consented || pending}
-          className="tap h-14 w-full rounded-2xl bg-accent px-4 text-[16px] font-bold text-white hover:bg-accentink disabled:bg-surface2 disabled:text-muted"
+          className="tap h-14 w-full rounded-2xl bg-ink px-4 text-[16px] font-bold text-paper hover:brightness-110 disabled:bg-surface2 disabled:text-muted"
         >
           {pending ? <Busy>확인 중…</Busy> : "동의하고 시작하기"}
         </button>
@@ -258,7 +260,7 @@ function saveErrorMessage(err: unknown): string {
   }
   if (err.status === 401) return "로그인이 풀렸어요. 다시 로그인한 뒤 시도해 주세요.";
   // 연결이 끊긴 아이이거나 CSRF 토큰 문제다. 둘 다 새로고침하면 미리보기부터 다시 확인한다.
-  if (err.status === 403) return "보안 확인에 실패했습니다. 새로고침한 뒤 다시 시도해 주세요.";
+  if (err.status === 403) return "보안 확인에 실패했어요. 새로고침한 뒤 다시 시도해 주세요.";
   return "일시적인 오류로 저장하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }
 

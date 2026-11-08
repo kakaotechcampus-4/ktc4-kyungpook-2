@@ -71,6 +71,31 @@ public class JournalEntrySplitter {
     }
 
     /**
+     * 칸 너비에서 꺾여 나온 줄을 원래 문장으로 잇는다 — pdf 용, {@link #split} 전에 부른다.
+     *
+     * <p>pdf 는 표 칸 끝에서 줄이 꺾인 채로 뽑힌다({@code 지속 시간까지 필⏎요 이상으로}). 다음 줄이
+     * 날짜로 시작하지 않으면 줄바꿈만 지운다. 공백에서 꺾인 자리는 pdf 가 줄 끝에 공백을 남기므로
+     * ({@code 보호자와 ⏎실랑이}) 띄어쓰기가 그대로 남는다 — split 은 줄마다 strip 해서 이 공백을 잃는다.
+     *
+     * <p>빈 줄(문단 구분)과 날짜만 있는 줄({@code 3/4⏎오늘 급식을…})은 잇지 않는다.
+     */
+    public String joinWrappedLines(String text) {
+        String[] lines = text.split("\\R", -1);
+        StringBuilder joined = new StringBuilder(lines[0]);
+        for (int i = 1; i < lines.length; i++) {
+            boolean wrapped = !lines[i].isBlank() && !lines[i - 1].isBlank()
+                    && dateHeaderOf(lines[i]) == null && !isDateOnly(lines[i - 1]);
+            joined.append(wrapped ? "" : "\n").append(lines[i]);
+        }
+        return joined.toString();
+    }
+
+    private boolean isDateOnly(String line) {
+        Matcher m = dateHeaderOf(line);
+        return m != null && m.group(7).isBlank();
+    }
+
+    /**
      * 이 줄이 날짜 헤더면 매칭 결과를, 아니면 {@code null} 을 돌려준다.
      *
      * <p>전에는 "헤더 후보가 두 줄 미만이면 아예 분리하지 않는" 식으로 막았는데(#71), 그러면

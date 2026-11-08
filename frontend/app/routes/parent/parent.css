@@ -1,0 +1,65 @@
+/* 보호자 화면 — 선생님 화면(디자인 캔버스)의 **바탕과 모양**만 옮긴다.
+   ─────────────────────────────────────────────────────────────
+   `org.css` 는 Paperlogy 네 벌(638KB)을 받는다. 보호자는 SMS 링크로 모바일에서
+   들어오고 첫 페인트가 동의 완료율을 좌우하므로 **같은 선택을 하지 않는다.**
+
+   그래서 여기서는
+     - 바탕 · 알약 버튼 · 카드 모양 → 그대로 옮긴다 (무게 0)
+     - 서체 → **800 한 벌만**, 그것도 제목에만 (155KB, swap)
+   본문은 기기 서체 그대로다. 캔버스의 목소리는 큰 글씨가 만든다. */
+
+@font-face {
+  font-family: "Paperlogy";
+  src: url("/font/paperlogy-800.woff2") format("woff2");
+  font-weight: 800;
+  font-display: swap;
+}
+
+.parent-ui {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 캔버스의 따뜻한 종이 바탕 — **창 전체**에 깐다.
+   ─────────────────────────────────────────────────────────────
+   `.parent-ui` 는 가운데 기둥(`Shell.tsx` 의 max-w-430/560/640)이라 거기에 직접 칠하면
+   넓은 화면에서 두 가지가 한꺼번에 어긋난다.
+
+     ① `background-attachment: fixed` 는 기준이 기둥이 아니라 **창**이다.
+        그래서 `at 100% 0%` 가 창 오른쪽 끝을 가리켜 기둥 안에는 색이 닿지 않는다.
+     ② 기둥 **바깥**은 아예 칠해지지 않아 맨 종이로 남는다.
+
+   휴대폰에서는 기둥 ≈ 창이라 둘 다 가려져 있었다. 데스크톱으로 열면 드러난다.
+
+   덩어리 크기도 px 로 고정하지 않는다. 고정하면 창이 넓어질수록 구석 얼룩이 된다 —
+   창에 비례해 커지되, 좁은 화면에서는 예전 크기 아래로 내려가지 않게 `max()` 로 바닥을 둔다. */
+.parent-ui::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(max(520px, 46vw) max(320px, 38vh) at 100% 0%, #fff0b4 0%, rgb(255 240 180 / 0) 64%),
+    radial-gradient(max(460px, 40vw) max(400px, 46vh) at 0% 100%, #ddf2e3 0%, rgb(221 242 227 / 0) 64%),
+    var(--color-paper);
+}
+
+/* 제목만 캔버스 서체로. 본문까지 바꾸면 세 벌을 더 받아야 한다 */
+.parent-ui :is(h1, h2) {
+  font-family:
+    "Paperlogy", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Noto Sans KR", system-ui, sans-serif;
+}
+
+/* 조작 요소는 알약 모양 — 캔버스의 버튼이 전부 그렇다.
+   카드(`rounded-2xl`)와 입력칸은 그대로 둔다. */
+.parent-ui button[class~="rounded-2xl"],
+.parent-ui :is(a, label)[class~="rounded-2xl"][class~="tap"] {
+  border-radius: 999px;
+}
+
+/* 알약으로 바꾸면 안 되는 것 — 고르는 카드와 펼침 목록은 네모를 지킨다 */
+.parent-ui label[class~="rounded-2xl"]:has(input[type="checkbox"]),
+.parent-ui label[class~="rounded-2xl"]:has(input[type="radio"]) {
+  border-radius: 18px;
+}

@@ -1,4 +1,4 @@
-# Insight Agent 판정 기준 (v0.9.4)
+# Insight Agent 판정 기준 (v0.9.5)
 
 > 원본은 레포의 `AI/insight/CRITERIA.md` 입니다. 기준을 바꿀 때는 이 문서를 먼저 고치고, 코드(`prompts.py`, `config.py`)가 따라갑니다.
 > 이 문서는 "어떤 인사이트가 성립하는가, 무엇을 쓰지 않는가, 무엇을 재료로 쓰는가"라는 원칙만 다룹니다.
@@ -527,5 +527,5 @@
 | v0.9.1 | 10/22 | 리뷰 반영. 대처에도 AI 원문 근거 1개 이상 규칙, `source_institution_ids`·`source_entry_ids`·`institution_types`에 대처 근거 포함(`cross_institution`은 본문 근거로만), 동의 철회 열쇠를 `source_institution_ids`로 바꾸고 BE 미구현 표시, `REQUIRE_SOURCE_CLAIM`의 조용한 실패를 할 일로 |
 | v0.9.2 | 10/26 | 수신 범위 변경: 보호자의 인사이트별 기관 선택을 없애고, Gate 2 승인 시 보호자와 공유 동의(`sharing_consent`)가 ACTIVE인 기관에 바로 열림. 같은 동의를 재료 거르기와 공유에 둘 다 씀. Gate 2의 "교사 작성 포함" 경고를 필수로. AI 계약은 그대로 |
 | v0.9.3 | 10/29 | 실데이터 v1 반영. 근거 수를 claim 개수가 아니라 서로 다른 기록 (날짜, 기관)으로 셈 (`COUNT_DISTINCT_RECORDS`, `COUNT_DISTINCT_DATES` 대체). 말투를 "~했다"로 통일 (`PLAIN_TONE`), §6 예시 말투도 맞춤 |
-| v0.9.4 | 10/30 | 실데이터 v2 반영. 건강 상태만으로 쓰지 않음 (`DROP_HEALTH_ONLY`). `NEED_DIFFERENCE`에 "두 기관에서 같은 대처가 같은 결과"를 쓰는 경우를 넣어 봤으나 P6 을 찾지 못해 되돌림 (v3) |
 | v0.9.4 | 10/30 | 수신 범위: 승인 뒤에 연결된 보호자도 초대 수락 때 지난 승인 글을 받음 (#287). 기관은 그대로 승인 순간의 동의로만. AI 계약은 그대로 |
+| v0.9.5 | 10/30 | 실데이터 v2 반영. 건강 상태만으로 쓰지 않음 (`DROP_HEALTH_ONLY`). `NEED_DIFFERENCE`에 "두 기관에서 같은 대처가 같은 결과"를 쓰는 경우를 넣어 봤으나 P6 을 찾지 못해 되돌림 (v3) |

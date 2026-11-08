@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.itda.backend.dto.request.invitation.AcceptInvitationRequest;
 import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
+import com.itda.backend.dto.response.guardian.InstitutionSharesResponse;
 import com.itda.backend.dto.response.invitation.AcceptedInvitationResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
@@ -25,6 +26,7 @@ import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.child.GuardianChildQueryService;
 import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
+import com.itda.backend.service.sharing.GuardianInstitutionShareService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -43,6 +45,7 @@ public class GuardianController {
     private final InvitationService invitationService;
     private final ChildGuardianService childGuardianService;
     private final GuardianChildQueryService guardianChildQueryService;
+    private final GuardianInstitutionShareService guardianInstitutionShareService;
 
     @PostMapping("/invitations/accept")
     @Operation(summary = "초대 코드 수락",
@@ -155,5 +158,37 @@ public class GuardianController {
     })
     public ApiResponse<GuardianHomeResponse> home(@AuthenticationPrincipal String userId, @RequestParam Long childId) {
         return ApiResponse.success(guardianChildQueryService.home(userId, childId));
+    }
+
+    @GetMapping("/children/{childId}/institution-shares")
+    @Operation(summary = "기관 공유 내역",
+            description = "이 아이의 주간 리포트가 어느 기관에 언제 열렸고 지금도 보이는지입니다(G-45). 기관별로 묶고, "
+                    + "기관은 이름순 · 묶음 안은 열린 순서 최신부터입니다. 거둔(가려진) 공유도 옵니다. "
+                    + "visible 은 그 기관이 지금 볼 수 있는지로, 기관 수신함과 같은 판정입니다(권한이 살아 있고 · 명부에 있고 · "
+                    + "그 기관 동의가 켜져 있음). hiddenAt 은 권한을 거둔 시각이고, 거둔 기록 없이 가려졌으면 null 입니다. "
+                    + "가려진 이유와 기관의 열람 여부는 주지 않습니다.")
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "childId 형식 오류 (INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아닌 사용자 (PARENT_REQUIRED), "
+                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<List<InstitutionSharesResponse>> institutionShares(
+            @AuthenticationPrincipal String userId, @PathVariable Long childId) {
+        return ApiResponse.success(guardianInstitutionShareService.getShares(userId, childId));
     }
 }

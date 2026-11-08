@@ -42,12 +42,14 @@ import com.itda.backend.dto.request.child.UpdateCareInfoRequest;
 import com.itda.backend.dto.request.child.UpdateCareInfoRequest.MedicationRequest;
 import com.itda.backend.fixture.LockContention;
 import com.itda.backend.fixture.LockContention.Held;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.child.ChildCareInfoRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.ChildGuardianService;
 
@@ -85,6 +87,7 @@ class ChildCareInfoConcurrencyIntegrationTest {
     @Autowired private ChildCareInfoService childCareInfoService;
     @Autowired private ChildGuardianService childGuardianService;
     @Autowired private UserRepository userRepository;
+    @Autowired private TermsAgreementRepository termsAgreementRepository;
     @Autowired private ChildRepository childRepository;
     @Autowired private ChildGuardianRepository childGuardianRepository;
     @Autowired private ChildCareInfoRepository childCareInfoRepository;
@@ -97,8 +100,8 @@ class ChildCareInfoConcurrencyIntegrationTest {
     @BeforeEach
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
-        mom = userRepository.save(UserFixture.parent("kakao-mom", "엄마"));
-        dad = userRepository.save(UserFixture.parent("kakao-dad", "아빠"));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
+        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad", "아빠")));
         childId = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14))).getId();
         // 초대 코드 경로는 이 테스트의 관심이 아니다. 연결 행은 초대 id 만 있으면 된다.
         childGuardianRepository.save(ChildGuardian.link(childId, mom.getId(), 1L));
@@ -113,6 +116,7 @@ class ChildCareInfoConcurrencyIntegrationTest {
             statement.executeUpdate("DELETE FROM sharing_consent");
             statement.executeUpdate("DELETE FROM child_guardian");
             statement.executeUpdate("DELETE FROM child");
+            statement.executeUpdate("DELETE FROM terms_agreement");
             statement.executeUpdate("DELETE FROM users");
         }
     }

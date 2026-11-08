@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.service.agent.AgentDownProperties;
+import com.itda.backend.service.agent.AiAvailability;
 import com.itda.backend.service.agent.AgentFailureReasons;
 
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,7 @@ public class ValidationWorker {
     private final int maxReleases;
     private final Duration pause;
     private final Clock clock;
+    private final AiAvailability availability;
 
     /** 앱이 켜진 뒤 첫 실행인지. 되돌리기를 여기서 하는 이유는 MatchingWorker 와 같다 (집기와 겹치지 않게). */
     private boolean released;
@@ -57,7 +59,8 @@ public class ValidationWorker {
             ValidationResultRecorder recorder,
             ValidationProperties properties,
             AgentDownProperties agentDown,
-            Clock clock) {
+            Clock clock,
+            AiAvailability availability) {
         this.validationService = validationService;
         this.client = client;
         this.recorder = recorder;
@@ -65,6 +68,7 @@ public class ValidationWorker {
         this.maxReleases = agentDown.maxReleases();
         this.pause = agentDown.pause();
         this.clock = clock;
+        this.availability = availability;
     }
 
     @Scheduled(fixedDelayString = "${app.validation.worker.delay-ms}")
@@ -99,6 +103,7 @@ public class ValidationWorker {
 
     private boolean agentAvailable() {
         boolean available = client.isAvailable();
+        availability.reportHealth(available);
         if (available == agentDown) {
             if (available) {
                 log.info("validation agent is back");
@@ -114,6 +119,7 @@ public class ValidationWorker {
         try {
             ValidationTarget target = validationService.prepareRequest(journalEntryId);
             ValidationAgentReply reply = client.validate(target.request());
+            availability.reportCallSucceeded();
             recorder.record(target, reply);
             return Outcome.DONE;
         } catch (RuntimeException e) {
@@ -123,6 +129,8 @@ public class ValidationWorker {
             }
             if (e instanceof AiAgentUnavailableException) {
                 log.warn("validation agent unavailable journalEntryId={}", journalEntryId, e);
+                // /health 는 LLM 까지 보지 않으므로 여기서 멈춘 것을 AI 장애 배너에 따로 알린다 (#370).
+                availability.reportCallGaveUp();
                 return releaseOrFail(journalEntryId);
             }
             FailureReason reason = AgentFailureReasons.of(e);

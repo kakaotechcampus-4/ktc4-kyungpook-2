@@ -65,6 +65,8 @@ def check_flags(text):
         ("ALLOW_AUTO_ON_HINT_ONLY", True, "표지만으로도 자동 확정을 허용한다"),
         ("IGNORE_UNGROUNDED_LLM_PICK", True, "근거 없는 모델 선택은 무시한다"),
         ("REQUIRE_WINNER_NAME_FOR_AUTO", True, "고른 아이 본인의 이름이 본문에 있어야 자동 확정한다"),
+        ("FUZZY_REQUIRE_SAME_SURNAME", True, "오타 후보는 성이 같아야 인정한다"),
+        ("CO_MENTION_NEEDS_TWO_NAMES", True, "모델은 대등 언급을 확인만 한다 (이름 2개 이상일 때)"),
     ]
     problems = []
     for name, expected, why in rules:

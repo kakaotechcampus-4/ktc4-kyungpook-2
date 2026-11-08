@@ -92,6 +92,8 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 
         // 출입증의 주인은 카카오 회원번호가 아니라 내부 userId 다.
         String token = jwtProvider.createToken(String.valueOf(user.getId()));
+        jwtCookie.expireRenewals(request).forEach(cookie ->
+                response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString()));
         response.addHeader(HttpHeaders.SET_COOKIE, jwtCookie.issue(token).toString());
 
         // 세션은 인가 요청(state)을 잠시 보관하려고 만들어진 것뿐이다. 역할이 끝났으니 버린다.

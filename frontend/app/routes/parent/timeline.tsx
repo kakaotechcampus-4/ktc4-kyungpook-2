@@ -10,6 +10,7 @@ import {
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
+  loadOpenChecklistCount,
 } from "@/lib/api";
 import { todayDate } from "@/lib/datetime";
 import { readSelectedChildId } from "@/lib/selectedChild";
@@ -20,12 +21,13 @@ export async function clientLoader() {
   if (!isReady("guardianJournal")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  const [{ child }, journal, pending] = await Promise.all([
+  const [{ child }, journal, pending, openChecklists] = await Promise.all([
     getParentHome(childId),
     getJournal(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
+    loadOpenChecklistCount(childId),
   ]);
-  return { child, journal, pending };
+  return { child, journal, pending, openChecklists: openChecklists ?? 0 };
 }
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -37,7 +39,7 @@ export default function TimelinePageRoute() {
 }
 
 function TimelinePage() {
-  const { child, journal, pending } = useLoaderData<typeof clientLoader>()!;
+  const { child, journal, pending, openChecklists } = useLoaderData<typeof clientLoader>()!;
   const [searchParams, setSearchParams] = useSearchParams();
   // 기관 유형이 아니라 "이 아이에 연결된 기관 하나하나"를 기준으로 거른다 —
   // 같은 유형(예: 센터) 기관이 여러 곳이어도 섞이지 않도록.
@@ -81,7 +83,7 @@ function TimelinePage() {
         title="오늘의 일지"
         subtitle={`${child.name} · ${dateLabel}`}
         showChildSwitch
-        alert={(pending ?? []).length > 0}
+        alert={(pending ?? []).length > 0 || openChecklists > 0}
       />
 
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4">
@@ -89,7 +91,7 @@ function TimelinePage() {
           onClick={() => setFilter("all")}
           className={`tap shrink-0 rounded-2xl px-4 text-[14px] font-semibold ${
             filter === "all"
-              ? "bg-accent text-white"
+              ? "bg-ink text-paper"
               : "border border-line2 text-ink2 hover:bg-surface2"
           }`}
         >
@@ -101,7 +103,7 @@ function TimelinePage() {
             onClick={() => setFilter(institution.id)}
             className={`tap shrink-0 rounded-2xl px-4 text-[14px] font-semibold ${
               filter === institution.id
-                ? "bg-accent text-white"
+                ? "bg-ink text-paper"
                 : "border border-line2 text-ink2 hover:bg-surface2"
             }`}
           >
@@ -111,7 +113,7 @@ function TimelinePage() {
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState icon="✉" title="아직 새로운 소식이 없습니다" description="기관에서 일지를 올리면 바로 알려드립니다." />
+        <EmptyState icon="mail" title="아직 새로운 소식이 없어요" description="기관에서 일지를 올리면 바로 알려드립니다." />
       ) : (
         Object.entries(groups).map(([label, entries]) => (
           <section key={label}>

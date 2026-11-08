@@ -26,6 +26,9 @@ import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.domain.approval.ApprovalReviewType;
 import com.itda.backend.domain.approval.ApprovalTargetType;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
@@ -41,12 +44,13 @@ import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 /** Gate 1 — 교사가 요약을 승인·수정 후 승인·보류·제거하고, 보류함에서 보류를 해제한다. */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(SummaryGate1Service.class)
+@Import({SummaryGate1Service.class, ConsentStateReader.class})
 class SummaryGate1ServiceTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
@@ -87,6 +91,7 @@ class SummaryGate1ServiceTest {
     private UserService userService;
 
     private Long rawRecordId;
+    private Long consentId;
     private SummaryResult summary;
     private JournalEntry covered;
     private JournalEntry uncovered;
@@ -96,6 +101,7 @@ class SummaryGate1ServiceTest {
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
         rawRecordId = em.persist(new RawRecord(String.valueOf(ORG), "school.pdf", "kept/school.pdf",
                 "application/pdf", 12, RawRecordStatus.PENDING)).getId();
+        consentId = em.persist(SharingConsent.grant(CHILD, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY))).getId();
         summary = summaryOf(ORG);
         covered = entryIn(summary);
         uncovered = entryIn(summary);
@@ -586,6 +592,76 @@ class SummaryGate1ServiceTest {
                 .isEqualTo(SummaryErrorCode.NOT_FOUND);
     }
 
+    /**
+     * 철회 전에 만들어진 요약이다 (#332). 목록(O-30)에서도 빠지므로 다른 기관 요약처럼 없는 것으로 응답한다 — 화면은
+     * 안내하고 목록을 다시 불러온다. 요약과 일지는 그대로 두어 다시 동의하면 이어서 검토한다.
+     */
+    @Test
+    void 동의를_철회한_아이의_요약은_없는_것으로_응답하고_그대로_둔다() {
+        em.find(SharingConsent.class, consentId)
+                .revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+        em.clear();
+
+        for (Gate1Action action : List.of(Gate1Action.APPROVE, Gate1Action.HOLD, Gate1Action.REMOVE)) {
+            assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), action, null,
+                    versionOf(summary.getId())))
+                    .isInstanceOf(SummaryException.class)
+                    .extracting(e -> ((SummaryException) e).getErrorCode())
+                    .isEqualTo(SummaryErrorCode.NOT_FOUND);
+        }
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
+        assertThat(reload(covered).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
+        assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).isEmpty();
+        assertThat(history()).isEmpty();
+    }
+
+    /** 승인을 다시 보낸 경우(더블클릭·재시도)다. 이미 처리됐다는 응답이 먼저다 — 없다고 하면 승인한 요약이 사라진 것처럼 보인다. */
+    @Test
+    void 이미_처리된_요약은_동의가_철회된_뒤에도_이미_처리됐다고_응답한다() {
+        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, versionOf(summary.getId()));
+        em.find(SharingConsent.class, consentId)
+                .revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null,
+                versionOf(summary.getId())))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.ALREADY_REVIEWED);
+    }
+
+    /** 보류함의 요약은 아직 끝나지 않았다. "보류 해제 먼저"(409) 라고 하면 그 해제가 다시 404 라 앞뒤가 안 맞는다. */
+    @Test
+    void 동의를_철회한_아이의_보류_요약은_승인해도_없는_것으로_응답한다() {
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
+        em.find(SharingConsent.class, consentId)
+                .revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null,
+                versionOf(summary.getId())))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    void 이미_처리된_요약의_보류_해제는_동의가_철회된_뒤에도_보류가_아니라고_응답한다() {
+        service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, versionOf(summary.getId()));
+        em.find(SharingConsent.class, consentId)
+                .revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.reopen(TEACHER, summary.getId()))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.NOT_HELD);
+    }
+
     @Test
     void 이미_처리된_요약은_다시_결정할_수_없다() {
         service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, versionOf(summary.getId()));
@@ -643,6 +719,23 @@ class SummaryGate1ServiceTest {
                 .extracting(e -> ((SummaryException) e).getErrorCode())
                 .isEqualTo(SummaryErrorCode.NOT_HELD);
         assertThat(history()).isEmpty();
+    }
+
+    /** 철회된 아이의 보류 요약은 보류함에서 빠진다. 직접 불러도 상태와 이력을 바꾸지 않는다 (#332). */
+    @Test
+    void 동의를_철회한_아이의_요약은_보류_해제할_수_없다() {
+        service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
+        em.find(SharingConsent.class, consentId)
+                .revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.reopen(TEACHER, summary.getId()))
+                .isInstanceOf(SummaryException.class)
+                .extracting(e -> ((SummaryException) e).getErrorCode())
+                .isEqualTo(SummaryErrorCode.NOT_FOUND);
+        assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
+        assertThat(history()).extracting(Approval::getDecision).containsExactly(ApprovalDecision.HOLD);
     }
 
     @Test

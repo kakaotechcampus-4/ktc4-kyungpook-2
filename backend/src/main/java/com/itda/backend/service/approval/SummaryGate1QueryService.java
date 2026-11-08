@@ -25,7 +25,9 @@ import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimCard;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ClaimEvidence;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.ReviewFlag;
+import com.itda.backend.dto.response.summary.Gate1SummaryResponse.SourceEntry;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse.UncoveredEntry;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
@@ -35,8 +37,11 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.summary.LatestRevision;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.validation.ValidationReasons;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,7 +67,7 @@ public class SummaryGate1QueryService {
     private static final Set<JournalEntryStatus> CHILD_UNKNOWN =
             Set.of(JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING);
 
-    /** 아동이 정해졌지만 아직 요약에 반영되지 않은 일지. 그 아이 묶음만 본다. [요약]을 눌러야 요약된다. */
+    /** 아동이 정해졌지만 아직 요약에 반영되지 않은 일지. 그 아이 묶음만 본다. 자동 요약이 꺼져 있으면 [요약]을 눌러야 요약된다. */
     private static final Set<JournalEntryStatus> NOT_YET_SUMMARIZED = Set.of(JournalEntryStatus.MATCHED,
             JournalEntryStatus.VALIDATING, JournalEntryStatus.VALIDATED);
 
@@ -72,14 +77,16 @@ public class SummaryGate1QueryService {
     private final ChildRepository childRepository;
     private final ValidationResultRepository validationResultRepository;
     private final SummaryRunRequests runRequests;
+    private final ConsentStateReader consentStateReader;
+    private final SummaryProperties summaryProperties;
 
     /** 요청 교사 기관의 검토 대기(pending) 또는 보류함(hold) 요약을 오래된 날짜부터. */
     @Transactional(readOnly = true)
     public List<Gate1SummaryResponse> getSummaries(String userId, String gate1Status) {
         SummaryStatus status = toSummaryStatus(gate1Status);
         Long organizationId = userService.getOrganizationIdOf(userId);
-        List<SummaryResult> summaries =
-                summaryResultRepository.findGate1List(organizationId, status);
+        List<SummaryResult> summaries = withConsent(organizationId,
+                summaryResultRepository.findGate1List(organizationId, status));
         if (summaries.isEmpty()) {
             return List.of();
         }
@@ -122,13 +129,28 @@ public class SummaryGate1QueryService {
                         parseStrings(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
                         uncoveredEntries(entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId())),
                         reviewFlags(s, entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId()),
-                                latestValidation)))
+                                latestValidation),
+                        sourceEntries(entriesBySummary.getOrDefault(s.getId(), List.of()))))
                 .toList();
     }
 
     /**
-     * 곧 바뀌는 요약들. 그 묶음을 지금 요약 중이거나, 교사가 [요약]을 눌러 뒀고 아직 요약에 반영되지 않은 일지가
-     * 있는 경우다. 누르지 않았으면 일지가 기다려도 요약은 바뀌지 않는다 — 자동 요약이 없다 (#181). 아동이 정해진
+     * 우리 기관 동의가 켜진 아이의 요약만 남긴다 (#332). 철회 전에 만들어진 요약을 두면 그대로 승인돼 아이 맥락에 올라간다.
+     * 상태를 바꾸지 않고 볼 때마다 거르므로 다시 동의하면 다시 보인다. 결정(O-31)도 같은 기준으로 거절한다.
+     */
+    private List<SummaryResult> withConsent(Long organizationId, List<SummaryResult> summaries) {
+        if (summaries.isEmpty()) {
+            return summaries;
+        }
+        Set<Long> granted = consentStateReader.grantedChildIds(
+                summaries.stream().map(SummaryResult::getChildId).collect(Collectors.toSet()), organizationId);
+        return summaries.stream().filter(s -> granted.contains(s.getChildId())).toList();
+    }
+
+    /**
+     * 곧 바뀌는 요약들. 그 묶음을 지금 요약 중이거나, 아직 요약에 반영되지 않은 일지가 있고 워커가 곧 집을 경우다.
+     * 자동 요약(#369)이 켜져 있으면 그런 일지만 있으면 되고, 꺼져 있으면 교사가 [요약]을 눌러 뒀어야 한다 — 누르지
+     * 않았으면 일지가 기다려도 요약은 바뀌지 않는다 (#181). 아동이 정해진
      * 일지(매칭 확정 뒤 검증·요약 대기)는 그 아이 묶음만 본다. 매칭 전·매칭 중 일지는 누구 것인지 몰라 기관·날짜로
      * 본다 — 다른 아이 일지 때문에 그날 모든 요약을 막지 않으려는 것이다. 워커는 최신 판이 대기일 때만 덮어쓰므로,
      * 보류된 판이나 옛 판은 바뀌지 않는다.
@@ -163,7 +185,7 @@ public class SummaryGate1QueryService {
         for (SummaryResult s : pending) {
             GroupKey group = new GroupKey(s.getChildId(), s.getEntryDate());
             boolean latest = s.getRevision().equals(latestRevision.get(group));
-            boolean willSummarize = requestedGroups.contains(group)
+            boolean willSummarize = (summaryProperties.autoRun() || requestedGroups.contains(group))
                     && (busyDates.contains(s.getEntryDate()) || waitingGroups.contains(group));
             if (latest && (summarizingGroups.contains(group) || willSummarize)) {
                 processing.add(s.getId());
@@ -190,9 +212,34 @@ public class SummaryGate1QueryService {
         JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
         List<ClaimCard> cards = new ArrayList<>();
         for (int index = 0; index < claims.size(); index++) {
-            cards.add(new ClaimCard(index, claims.get(index).path("text").asText("")));
+            JsonNode claim = claims.get(index);
+            cards.add(new ClaimCard(index, claim.path("text").asText(""), claimEvidence(claim)));
         }
         return cards;
+    }
+
+    /**
+     * AI 가 든 근거만 보여준다. 선생님이 고친 문장({@code EDITED})은 AI 근거가 남아 있어도 글이 달라 인용이 맞지 않고,
+     * 새로 쓴 문장({@code TEACHER})의 근거는 그 문장 자신이라 빈 목록으로 보낸다. 일지 번호를 못 읽는 근거는 뺀다.
+     */
+    private static List<ClaimEvidence> claimEvidence(JsonNode claim) {
+        String source = claim.path("source").asText("AI");
+        if (!"AI".equals(source)) {
+            return List.of();
+        }
+        List<ClaimEvidence> evidence = new ArrayList<>();
+        for (JsonNode item : claim.path("evidence")) {
+            JsonNode entryId = item.path("journal_entry_id");
+            if (entryId.canConvertToLong()) {
+                evidence.add(new ClaimEvidence(entryId.asLong(), item.path("quote").asText("")));
+            }
+        }
+        return evidence;
+    }
+
+    /** 요약에 묶인 일지 원문 전체. 조회가 id 순이라 그 순서 그대로다 */
+    private static List<SourceEntry> sourceEntries(List<JournalEntry> entries) {
+        return entries.stream().map(e -> new SourceEntry(e.getId(), e.getContent())).toList();
     }
 
     private static List<UncoveredEntry> uncoveredEntries(List<JournalEntry> entries, Set<Long> coveredIds) {
@@ -202,9 +249,15 @@ public class SummaryGate1QueryService {
                 .toList();
     }
 
+    /**
+     * 검증이 확인을 요청한 원본 일지. 경고를 낼지 · 사유는 {@link #parseClaimSpans} 구간으로 정하고, 그 경고에 겹친 문장
+     * 카드 번호({@code claimIndexes})는 {@link #cardSpans} 로 따로 붙인다 (#408). 번호용 읽기를 판정에 쓰면 카드로 못
+     * 읽는 요약 · 고친 문장의 남은 근거로만 겹치던 경고가 사라진다.
+     */
     private List<ReviewFlag> reviewFlags(SummaryResult summary, List<JournalEntry> entries, Set<Long> coveredIds,
             Map<Long, ValidationResult> latestValidation) {
         Map<Long, List<Span>> claimSpans = parseClaimSpans(summary);
+        Map<Long, List<CardSpan>> cardSpans = cardSpans(summary);
         List<ReviewFlag> flags = new ArrayList<>();
         for (JournalEntry entry : entries) {
             Long entryId = entry.getId();
@@ -216,8 +269,17 @@ public class SummaryGate1QueryService {
             List<Span> flagged = parseValidationSpans(validation);
             List<Span> cited = claimSpans.getOrDefault(entryId, List.of());
             if (flagged.isEmpty() || flagged.stream().anyMatch(f -> cited.stream().anyMatch(f::overlaps))) {
-                flags.add(new ReviewFlag(entryId,
-                        parseStrings(validation.getIssueTypes(), "validation_result.issue_types", validation.getId())));
+                List<String> issueTypes =
+                        parseStrings(validation.getIssueTypes(), "validation_result.issue_types", validation.getId());
+                // 검증 구간이 비면 겹칠 곳이 없어 번호도 비어 있다 — 어디가 문제인지 모른다
+                List<Integer> claimIndexes = cardSpans.getOrDefault(entryId, List.of()).stream()
+                        .filter(card -> flagged.stream().anyMatch(card.span()::overlaps))
+                        .map(CardSpan::index)
+                        .distinct()
+                        .sorted()
+                        .toList();
+                flags.add(new ReviewFlag(entryId, issueTypes, ValidationReasons.sentencesOf(issueTypes),
+                        claimIndexes));
             }
         }
         return flags;
@@ -255,6 +317,34 @@ public class SummaryGate1QueryService {
             }
         }
         return spans;
+    }
+
+    /**
+     * 문장 카드 번호가 붙은 근거 구간 — {@code claimIndexes} 에만 쓴다. 번호는 카드와 같은 읽기
+     * ({@link Gate1Cards#readClaims})의 순서이고, 카드가 근거를 보이는 AI 문장만 든다 ({@link #claimEvidence}).
+     * 카드로 못 읽는 요약은 비어 있다.
+     */
+    private static Map<Long, List<CardSpan>> cardSpans(SummaryResult summary) {
+        JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
+        Map<Long, List<CardSpan>> spans = new HashMap<>();
+        for (int index = 0; index < claims.size(); index++) {
+            JsonNode claim = claims.get(index);
+            if (!"AI".equals(claim.path("source").asText("AI"))) {
+                continue;
+            }
+            for (JsonNode evidence : claim.path("evidence")) {
+                JsonNode entryId = evidence.path("journal_entry_id");
+                Span span = toSpan(evidence.path("span"));
+                if (entryId.canConvertToLong() && span != null) {
+                    spans.computeIfAbsent(entryId.asLong(), k -> new ArrayList<>()).add(new CardSpan(index, span));
+                }
+            }
+        }
+        return spans;
+    }
+
+    /** 문장 카드 번호와 그 문장의 근거 구간 하나. */
+    private record CardSpan(int index, Span span) {
     }
 
     /** evidence: [{start, end}]. 못 읽은 구간은 버린다 — 모두 못 읽으면 비어 있는 것으로 보고 사유를 보여준다. */

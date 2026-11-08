@@ -88,6 +88,8 @@ class SignupApiTest {
                 .andExpect(jsonPath("$.data.role").value("parent"))
                 .andExpect(jsonPath("$.data.userId").value(String.valueOf(user.getId())))
                 .andExpect(jsonPath("$.data.signupCompleted").value(true))
+                // 막 가입한 보호자는 약관 동의 기록이 없다 — 프론트가 이 값을 보고 약관 단계로 간다
+                .andExpect(jsonPath("$.data.termsAgreed").value(false))
                 .andExpect(jsonPath("$.data.institutionId").doesNotExist())
                 .andExpect(jsonPath("$.data.institutionName").doesNotExist());
 
@@ -105,6 +107,8 @@ class SignupApiTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.role").value("org"))
                 .andExpect(jsonPath("$.data.signupCompleted").value(true))
+                // 막 가입한 기관 담당자도 약관 동의 기록이 없다 — 프론트가 기관 약관 화면으로 간다
+                .andExpect(jsonPath("$.data.termsAgreed").value(false))
                 .andExpect(jsonPath("$.data.institutionId").isString())
                 .andExpect(jsonPath("$.data.institutionName").value("햇살아동발달센터"));
 

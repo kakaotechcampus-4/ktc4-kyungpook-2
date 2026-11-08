@@ -1,4 +1,5 @@
 import { Link, useLoaderData } from "react-router";
+import { TourButton } from "@/components/Tour";
 import { ConsentStatus, InstitutionChip } from "@/components/ui";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentNotReadySection } from "@/components/parent/NotReady";
@@ -9,6 +10,7 @@ import {
   getParentHome,
   getPendingInstitutionRequests,
   loadIfReady,
+  loadOpenChecklistCount,
 } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 import type { ParentActivity } from "@/lib/types";
@@ -17,16 +19,24 @@ export async function clientLoader() {
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
   // 일지·기관 요청은 스위치가 꺼져 있으면 null 로 받아 mock 을 진짜 아이 옆에 띄우지 않는다 (loadIfReady).
-  const [{ child, activity }, journal, pending] = await Promise.all([
+  const [{ child, activity }, journal, pending, openChecklists] = await Promise.all([
     getParentHome(childId),
     loadIfReady("guardianJournal", () => getJournal(childId)),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
+    // 헤더 알림 점은 확인 안 한 준비물·확인사항도 본다. 못 받아도 홈은 그대로 연다 (loadOpenChecklistCount)
+    loadOpenChecklistCount(childId),
   ]);
-  return { child, activity, recent: journal?.slice(0, 2) ?? null, pending: pending ?? [] };
+  return {
+    child,
+    activity,
+    recent: journal?.slice(0, 2) ?? null,
+    pending: pending ?? [],
+    openChecklists: openChecklists ?? 0,
+  };
 }
 
 export default function ParentHomePage() {
-  const { child, activity, recent, pending } = useLoaderData<typeof clientLoader>();
+  const { child, activity, recent, pending, openChecklists } = useLoaderData<typeof clientLoader>();
   const pendingRequest = pending[0];
 
   return (
@@ -35,7 +45,8 @@ export default function ParentHomePage() {
         title="오늘의 기록"
         subtitle={child.name}
         showChildSwitch
-        alert={pending.length > 0}
+        help="home"
+        alert={pending.length > 0 || openChecklists > 0}
       />
 
       {pendingRequest ? (
@@ -69,7 +80,7 @@ export default function ParentHomePage() {
         </span>
       </section>
 
-      <section>
+      <section data-tour="news">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-[16px] font-bold">새 소식</h2>
           <Link to="/parent/timeline" className="text-[14px] font-semibold text-accentink">
@@ -80,7 +91,7 @@ export default function ParentHomePage() {
           <ParentNotReadySection />
         ) : recent.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-line2 px-4 py-6 text-center text-[14px] text-muted">
-            아직 새로운 소식이 없습니다.
+            아직 새로운 소식이 없어요.
           </p>
         ) : (
           <div className="flex flex-col gap-2.5">
@@ -103,7 +114,7 @@ export default function ParentHomePage() {
         )}
       </section>
 
-      <section>
+      <section data-tour="orgs">
         <h2 className="mb-2 text-[16px] font-bold">연결된 기관</h2>
         <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line">
           {child.institutions.map(({ institution, consent }) => (
@@ -130,7 +141,7 @@ export default function ParentHomePage() {
         <h2 className="mb-2 text-[16px] font-bold">최근 공유 활동</h2>
         {activity.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-line2 px-4 py-6 text-center text-[14px] text-muted">
-            아직 공유된 활동이 없습니다.
+            아직 공유된 활동이 없어요.
           </p>
         ) : (
           <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line">

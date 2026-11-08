@@ -13,17 +13,12 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.organization.Organization;
-import com.itda.backend.domain.summary.ChildContext;
-import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse.EvidenceRef;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse.Target;
@@ -34,13 +29,11 @@ import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
-import com.itda.backend.repository.summary.ChildContextRepository;
-import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.service.insight.InsightEvidenceReader.Evidence;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 /**
  * Gate 2 검토 목록과 단건 (api-spec O-40 · O-41). 교사가 발송을 승인하기 전에 봐야 할 것을 모아 준다.
@@ -52,26 +45,19 @@ import lombok.extern.slf4j.Slf4j;
  * 옛 회차 행을 그대로 둔다 (§9.3). 거르지 않으면 같은 주의 인사이트가 둘 보이고, 철 지난 쪽을 승인하면
  * 낡은 글이 다른 기관으로 나간다.
  *
- * <p>AI 가 쓴 JSON 이 깨져 있어도 한 건 때문에 목록 전체가 500 나지 않게 빈 값으로 읽는다
- * ({@code SummaryGate1QueryService} 와 같은 방식이다).
+ * <p>근거는 {@link InsightEvidenceReader} 가 읽는다 — 보호자 리포트(G-35 · G-36)가 받는 근거와 같은 범위다 (#405).
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class InsightGate2QueryService {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** 근거 한 건의 화면 문구. 아직 승인 요약 한 종류뿐이라 고정값이다. */
     private static final String EVIDENCE_LABEL = "관찰일지 요약";
 
     /**
-     * 지금은 모든 인사이트가 {@code true} 다. 본문에 <b>다른 아이 이름이 없다는 보장이 없고</b>
-     * ({@code AI/insight/CRITERIA.md} §5), Gate 1 에서 교사가 검증 없이 고치거나 새로 쓴 문장이 근거로
-     * 섞일 수 있다 (#199). 둘 다 걸러지는 지점이 없어서 모든 글이 "봐야 할 글" 이다.
-     *
-     * <p>AI 계약에 "교사 작성 포함" 표시가 들어오면 (#206 김근찬) 그때 건별로 갈린다. 그 전까지
-     * 상수로 두는 것은 화면이 경고를 띄울 자리를 미리 잡아 두기 위해서다 — 나중에 값만 바뀐다.
+     * 모든 인사이트가 {@code true} 다. 본문에 <b>다른 아이 이름이 없다는 보장이 없다</b>
+     * ({@code AI/insight/CRITERIA.md} §5). 걸러지는 지점이 없어서 모든 글이 "봐야 할 글" 이다.
+     * 교사가 쓴 문장이 섞였는지는 건별로 따로 알린다 ({@code teacherWritten}, #323).
      */
     private static final boolean NEEDS_REVIEW = true;
 
@@ -81,8 +67,7 @@ public class InsightGate2QueryService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
     private final ConsentStateReader consentStateReader;
-    private final SummaryResultRepository summaryResultRepository;
-    private final ChildContextRepository childContextRepository;
+    private final InsightEvidenceReader insightEvidenceReader;
 
     /** 우리 기관이 승인 주체인 인사이트를 최신 것부터. */
     @Transactional(readOnly = true)
@@ -120,7 +105,7 @@ public class InsightGate2QueryService {
      * 같은 아동·기간의 마지막 회차만 남긴다. 목록이 id 내림차순이라 같은 묶음에서 처음 본 것이 최신이지만,
      * 회차 번호로 가른다 — id 순서가 회차 순서와 어긋날 여지를 남기지 않는다.
      */
-    private static List<InsightResult> latestRevisionOnly(List<InsightResult> insights) {
+    static List<InsightResult> latestRevisionOnly(List<InsightResult> insights) {
         Map<PeriodKey, Integer> maxRevision = new HashMap<>();
         for (InsightResult insight : insights) {
             maxRevision.merge(PeriodKey.of(insight), insight.getRevision(), Math::max);
@@ -159,7 +144,7 @@ public class InsightGate2QueryService {
                         Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
         // 주간 인사이트 동의 기준이다 (#257). 수신 후보 표시와 재료 확인이 같은 값을 본다.
         Map<Long, Map<Long, ConsentState>> consents = consentStateReader.insightStatesOf(childIds);
-        Map<Long, Evidence> evidences = evidenceOf(insights);
+        Map<Long, Evidence> evidences = insightEvidenceReader.read(insights);
 
         Set<Long> organizationIds = new HashSet<>();
         insights.forEach(i -> organizationIds.addAll(PrimarySource.sourceIdsOf(i)));
@@ -241,8 +226,9 @@ public class InsightGate2QueryService {
         List<EvidenceRef> evidence = evidences.getOrDefault(insight.getId(), Evidence.EMPTY).refs().stream()
                 // 기관 행이 사라진 근거는 뺀다. 이름을 모르는 출처를 화면에 올리느니 그 줄을 안 보이는 쪽이 낫다.
                 .filter(ref -> organizations.containsKey(ref.institutionId()))
-                .map(ref -> new EvidenceRef(ref.childContextId(), ref.date(), EVIDENCE_LABEL,
-                        InstitutionResponse.from(organizations.get(ref.institutionId()))))
+                .map(ref -> new EvidenceRef(String.valueOf(ref.childContextId()), ref.date().toString(),
+                        EVIDENCE_LABEL, InstitutionResponse.from(organizations.get(ref.institutionId())),
+                        ref.lookedUp()))
                 .toList();
 
         return new Gate2InsightResponse(
@@ -252,6 +238,7 @@ public class InsightGate2QueryService {
                 periodLabel(insight.getPeriodFrom()),
                 insight.getContent(),
                 NEEDS_REVIEW,
+                evidences.getOrDefault(insight.getId(), Evidence.EMPTY).teacherWritten(),
                 InstitutionResponse.from(primary),
                 evidence,
                 targets,
@@ -267,104 +254,9 @@ public class InsightGate2QueryService {
      * {@code InsightWorker}). <b>그 설정을 7 이 아닌 값으로 바꾸면 "주차" 라는 말 자체가 안 맞는다</b> —
      * 기간 단위를 바꾸는 날 이 문구도 같이 정해야 한다.
      */
-    private static String periodLabel(LocalDate periodFrom) {
+    static String periodLabel(LocalDate periodFrom) {
         int weekOfMonth = (periodFrom.getDayOfMonth() - 1) / 7 + 1;
         return "%d년 %d월 %d주차".formatted(periodFrom.getYear(), periodFrom.getMonthValue(), weekOfMonth);
-    }
-
-    /**
-     * 인사이트별 근거. {@code claim_ids} 는 {@code "{summary_result.id}-{claims 배열 순서}"} 라 앞자리로
-     * 요약을 찾고, 그 요약의 승인본({@code child_context})·날짜·기관을 붙인다. 승인본이 없는 요약은 뺀다 —
-     * Gate 1 을 통과하지 않은 글은 근거가 아니다.
-     */
-    private Map<Long, Evidence> evidenceOf(List<InsightResult> insights) {
-        Map<Long, List<Long>> summaryIdsOf = new HashMap<>();
-        Set<Long> allSummaryIds = new HashSet<>();
-        for (InsightResult insight : insights) {
-            List<Long> ids = summaryIdsIn(insight);
-            summaryIdsOf.put(insight.getId(), ids);
-            allSummaryIds.addAll(ids);
-        }
-        if (allSummaryIds.isEmpty()) {
-            return Map.of();
-        }
-        Map<Long, SummaryResult> summaries = summaryResultRepository.findAllById(allSummaryIds).stream()
-                .collect(Collectors.toMap(SummaryResult::getId, s -> s));
-        Map<Long, Long> contextIdOf = childContextRepository.findBySummaryResultIdIn(allSummaryIds).stream()
-                .collect(Collectors.toMap(ChildContext::getSummaryResultId, ChildContext::getId));
-
-        Map<Long, Evidence> evidences = new HashMap<>();
-        for (InsightResult insight : insights) {
-            List<Ref> refs = new ArrayList<>();
-            for (Long summaryId : summaryIdsOf.getOrDefault(insight.getId(), List.of())) {
-                SummaryResult summary = summaries.get(summaryId);
-                Long contextId = contextIdOf.get(summaryId);
-                if (summary == null || contextId == null) {
-                    continue;
-                }
-                if (!summary.getChildId().equals(insight.getChildId())) {
-                    // claim_id 는 AI 가 쓴 글자다. 숫자 하나가 어긋나면 다른 아이의 요약을 가리키고, 그
-                    // 아이의 기관·날짜·승인본 id 가 아무 상관 없는 교사의 화면에 뜬다. 규칙으로 막는다
-                    // (CLAUDE.md: 접근 판단을 LLM 동작에 맡기지 않는다).
-                    log.warn("claim_id points at another child's summary, dropped insightId={} summaryId={}",
-                            insight.getId(), summaryId);
-                    continue;
-                }
-                refs.add(new Ref(String.valueOf(contextId), summary.getEntryDate().toString(),
-                        summary.getInstitutionId()));
-            }
-            evidences.put(insight.getId(), new Evidence(refs));
-        }
-        return evidences;
-    }
-
-    /** {@code ["31-0", "31-2", "34-1"]} → {@code [31, 34]}. 순서를 지키고 중복은 한 번만 센다. */
-    private List<Long> summaryIdsIn(InsightResult insight) {
-        List<Long> ids = new ArrayList<>();
-        for (JsonNode node : readArray(insight.getClaimIds(), insight.getId())) {
-            if (!node.isTextual()) {
-                continue;
-            }
-            String claimId = node.asText();
-            int dash = claimId.indexOf('-');
-            if (dash <= 0) {
-                continue;
-            }
-            try {
-                Long summaryId = Long.valueOf(claimId.substring(0, dash));
-                if (!ids.contains(summaryId)) {
-                    ids.add(summaryId);
-                }
-            } catch (NumberFormatException e) {
-                log.warn("unexpected claim_id format insightId={} claimId={}", insight.getId(), claimId);
-            }
-        }
-        return ids;
-    }
-
-    private static JsonNode readArray(String raw, Long insightId) {
-        if (raw == null || raw.isBlank()) {
-            return MAPPER.createArrayNode();
-        }
-        try {
-            JsonNode node = MAPPER.readTree(raw);
-            return node.isArray() ? node : MAPPER.createArrayNode();
-        } catch (JsonProcessingException e) {
-            log.warn("failed to parse insight_result.claim_ids id={}", insightId, e);
-            return MAPPER.createArrayNode();
-        }
-    }
-
-    private record Ref(String childContextId, String date, Long institutionId) {
-    }
-
-    private record Evidence(List<Ref> refs) {
-
-        static final Evidence EMPTY = new Evidence(List.of());
-
-        Set<Long> institutionIds() {
-            return refs.stream().map(Ref::institutionId).collect(Collectors.toSet());
-        }
     }
 
     private static InsightStatus toInsightStatus(String gate2Status) {

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentField;
+import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
@@ -28,18 +32,20 @@ import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse;
 import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse.Counts;
 import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse.MatchingCounts;
 import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse.SummaryGroupCard;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 /** 오늘의 업무 묶음 카드 — 요약 전 묶음만, 할 일 우선 라벨과 상태별 건수, 요약 요청·대기 표시. */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({SummaryGroupQueryService.class, SummaryRunRequests.class})
+@Import({SummaryGroupQueryService.class, SummaryRunRequests.class, ConsentStateReader.class})
 class SummaryGroupQueryServiceTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
     private static final Long ORG = 3L;
     private static final Long OTHER_ORG = 4L;
     private static final String TEACHER = "99";
+    private static final Long GUARDIAN = 100L;
 
     @Autowired
     private TestEntityManager em;
@@ -62,8 +68,20 @@ class SummaryGroupQueryServiceTest {
         seoa = em.persist(Child.of("한서아", LocalDate.of(2019, 7, 15))).getId();
         em.persist(ChildOrganization.of(junho, ORG));
         em.persist(ChildOrganization.of(seoa, ORG));
+        grant(junho, ORG);
+        grant(seoa, ORG);
         ourFile = file(ORG);
         otherFile = file(OTHER_ORG);
+    }
+
+    private SharingConsent grant(Long child, Long organizationId) {
+        return em.persistAndFlush(
+                SharingConsent.grant(child, GUARDIAN, organizationId, List.of(ConsentField.DAILY_SUMMARY)));
+    }
+
+    private void revoke(SharingConsent consent) {
+        consent.revoke(GUARDIAN, ConsentRevokeReason.GUARDIAN_REVOKED, LocalDateTime.of(2026, 10, 9, 9, 0));
+        em.flush();
     }
 
     private Long file(Long institutionId) {
@@ -158,6 +176,40 @@ class SummaryGroupQueryServiceTest {
 
         // [요약](O-32)은 기관에서 뺀 아이를 404 로 거절한다. 누를 수 없는 카드를 띄우지 않는다.
         assertThat(service.getBoard(TEACHER).groups()).isEmpty();
+    }
+
+    @Test
+    void 동의를_철회한_아이의_묶음은_보여주지_않는다() {
+        Long minjun = em.persist(Child.of("박민준", LocalDate.of(2020, 1, 1))).getId();
+        em.persist(ChildOrganization.of(minjun, ORG));
+        revoke(grant(minjun, ORG));
+        entry(minjun, DATE, JournalEntryStatus.VALIDATED);
+
+        // 철회 전에 매칭된 일지다. [요약](O-32)이 404 로 거절하므로 누를 수 없는 카드를 띄우지 않는다.
+        assertThat(service.getBoard(TEACHER).groups()).isEmpty();
+    }
+
+    @Test
+    void 다른_기관에만_동의한_아이의_묶음은_보여주지_않는다() {
+        Long minjun = em.persist(Child.of("박민준", LocalDate.of(2020, 1, 1))).getId();
+        em.persist(ChildOrganization.of(minjun, ORG));
+        revoke(grant(minjun, ORG));
+        grant(minjun, OTHER_ORG);
+        entry(minjun, DATE, JournalEntryStatus.VALIDATED);
+
+        // 다른 기관 동의로 child.status 가 ACTIVE 여도 우리 기관 동의는 꺼져 있다.
+        assertThat(service.getBoard(TEACHER).groups()).isEmpty();
+    }
+
+    @Test
+    void 다시_동의한_아이의_묶음은_다시_보여준다() {
+        Long minjun = em.persist(Child.of("박민준", LocalDate.of(2020, 1, 1))).getId();
+        em.persist(ChildOrganization.of(minjun, ORG));
+        revoke(grant(minjun, ORG));
+        grant(minjun, ORG);
+        entry(minjun, DATE, JournalEntryStatus.VALIDATED);
+
+        assertThat(onlyCard().childId()).isEqualTo(minjun);
     }
 
     @Test

@@ -11,8 +11,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.itda.backend.dto.request.summary.FailedSummaryGroupRequest;
 import com.itda.backend.dto.request.summary.Gate1DecisionRequest;
 import com.itda.backend.dto.request.summary.RunSummaryRequest;
+import com.itda.backend.dto.response.summary.FailedSummaryGroupResponse;
 import com.itda.backend.dto.response.summary.Gate1DecisionResponse;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse;
@@ -21,6 +23,7 @@ import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.approval.SummaryGate1QueryService;
 import com.itda.backend.service.approval.SummaryGate1Service;
+import com.itda.backend.service.summary.SummaryFailureService;
 import com.itda.backend.service.summary.SummaryGroupQueryService;
 import com.itda.backend.service.summary.SummaryRunService;
 
@@ -44,6 +47,7 @@ public class SummaryController {
     private final SummaryGate1Service summaryGate1Service;
     private final SummaryGate1QueryService summaryGate1QueryService;
     private final SummaryGroupQueryService summaryGroupQueryService;
+    private final SummaryFailureService summaryFailureService;
 
     @GetMapping
     @Operation(
@@ -52,7 +56,8 @@ public class SummaryController {
                     + "요약 본문과 문장 카드(claims — 결정할 때 쓰는 index·글), 다른 아이 이름 경고(needsReview·reviewReasons), "
                     + "요약에 안 들어간 일지와 원문, "
                     + "요약에 들어간 원본의 검증 REVIEW 사유를 함께 줍니다. processing 이 true 면 같은 묶음에 아직 요약에 "
-                    + "반영되지 않은 기록이 있어 곧 요약이 바뀝니다. 응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
+                    + "반영되지 않은 기록이 있어 곧 요약이 바뀝니다. 보호자가 우리 기관 동의를 철회한 아이의 요약은 빠집니다. "
+                    + "응답 모양은 화면 확정 뒤 바뀔 수 있습니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
@@ -87,7 +92,8 @@ public class SummaryController {
                     + "검토 목록으로 옮겨 가 여기에 없습니다. status 는 교사가 할 일을 먼저 보여주는 라벨이고, counts 는 상태별 "
                     + "일지 건수입니다. canSummarize 가 true 면 [요약](O-32)을 누를 수 있습니다. 이미 눌렀으면 "
                     + "summaryRequested 가 true 이고, 같은 날 매칭·검증 중인 일지를 기다리는 동안 waitingCount 에 그 건수가 "
-                    + "옵니다. matching 은 아이가 아직 정해지지 않아 카드에 넣을 수 없는 일지 건수입니다."
+                    + "옵니다. matching 은 아이가 아직 정해지지 않아 카드에 넣을 수 없는 일지 건수입니다. 기관에서 뺀 아이와 "
+                    + "보호자가 우리 기관 동의를 철회한 아이의 묶음은 빠집니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
@@ -110,8 +116,9 @@ public class SummaryController {
     @PostMapping("/run")
     @Operation(
             summary = "요약",
-            description = "그 아이·날짜의 일지를 요약하도록 요청합니다. 요약은 이 요청이 있는 묶음만 하며 자동으로는 하지 "
-                    + "않습니다. 워커가 곧이어 하고, 같은 날짜에 매칭·검증 중인 일지가 있으면 그것이 끝난 뒤에 합니다."
+            description = "그 아이·날짜의 일지를 요약하도록 요청합니다. 자동 요약(SUMMARY_AUTO_RUN, 기본 켜짐)이 켜져 있으면 "
+                    + "누르지 않아도 요약하므로 이 요청은 \"지금 요약\"과 같습니다. 꺼져 있으면 이 요청이 있는 묶음만 요약합니다. "
+                    + "워커가 곧이어 하고, 같은 날짜에 매칭·검증 중인 일지가 있으면 그것이 끝난 뒤에 합니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
@@ -129,7 +136,7 @@ public class SummaryController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 아동이거나 다른 기관 소속 (SUMMARY_CHILD_NOT_FOUND)",
+                    description = "없는 아동이거나 다른 기관 소속, 또는 우리 기관 동의가 철회된 아동 (SUMMARY_CHILD_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -142,6 +149,108 @@ public class SummaryController {
             @Valid @RequestBody RunSummaryRequest request,
             @AuthenticationPrincipal String userId) {
         summaryRunService.requestRun(userId, request.childId(), request.entryDateValue());
+        return ApiResponse.success(null);
+    }
+
+    @GetMapping("/failed")
+    @Operation(
+            summary = "요약 실패 목록",
+            description = "우리 기관에서 요약하지 못한 일지를 아동 × 날짜 묶음으로 오래된 날짜부터 반환합니다. 근거가 남은 "
+                    + "문장이 없어 재시도 뒤에도 요약하지 못한 일지(SUMMARY_FAILED)입니다. 검토 화면에 카드로 띄우고 "
+                    + "[다시 요약] 또는 [요약 없이 마무리]를 받습니다. reason 은 실패 원인 코드로 지금은 "
+                    + "NO_GROUNDED_CLAIMS 하나입니다. 보호자가 우리 기관 동의를 철회한 아이의 묶음은 빠집니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<List<FailedSummaryGroupResponse>> failed(@AuthenticationPrincipal String userId) {
+        return ApiResponse.success(summaryFailureService.getFailedGroups(userId));
+    }
+
+    @PostMapping("/failed/retry")
+    @Operation(
+            summary = "요약 실패 다시 요약",
+            description = "그 아이·날짜의 요약 실패 일지를 요약 대기로 돌립니다. 워커가 곧 다시 요약하고, 결과는 Gate 1 "
+                    + "검토 목록(O-30)에 옵니다. 횟수 제한은 없으며 또 실패하면 다시 요약 실패 목록에 뜹니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "요약 대기로 돌림"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "childId·entryDate 누락·형식 오류 (INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED), CSRF 토큰 누락 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "우리 기관 동의가 없는 아동 (SUMMARY_CHILD_NOT_FOUND), "
+                            + "그 묶음에 요약 실패 일지가 없음 — 이미 처리됨 (SUMMARY_FAILED_NOT_FOUND)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<Void> retryFailed(
+            @Valid @RequestBody FailedSummaryGroupRequest request,
+            @AuthenticationPrincipal String userId) {
+        summaryFailureService.retry(userId, request.childId(), request.entryDateValue());
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/failed/close")
+    @Operation(
+            summary = "요약 실패 요약 없이 마무리",
+            description = "그 아이·날짜의 요약 실패 일지를 요약 없이 끝냅니다. 요약할 내용 없음 확인과 같은 끝 상태로, "
+                    + "보호자·아동 맥락·인사이트로 가지 않습니다. 되돌릴 수 없습니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "마무리"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "childId·entryDate 누락·형식 오류 (INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED), CSRF 토큰 누락 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "우리 기관 동의가 없는 아동 (SUMMARY_CHILD_NOT_FOUND), "
+                            + "그 묶음에 요약 실패 일지가 없음 — 이미 처리됨 (SUMMARY_FAILED_NOT_FOUND)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<Void> closeFailed(
+            @Valid @RequestBody FailedSummaryGroupRequest request,
+            @AuthenticationPrincipal String userId) {
+        summaryFailureService.close(userId, request.childId(), request.entryDateValue());
         return ApiResponse.success(null);
     }
 
@@ -182,7 +291,7 @@ public class SummaryController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 요약이거나 다른 기관 요약 (SUMMARY_NOT_FOUND)",
+                    description = "없는 요약이거나 다른 기관 요약, 또는 우리 기관 동의가 철회된 아동의 검토 대기·보류 요약 (SUMMARY_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -223,7 +332,7 @@ public class SummaryController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 요약이거나 다른 기관 요약 (SUMMARY_NOT_FOUND)",
+                    description = "없는 요약이거나 다른 기관 요약, 또는 우리 기관 동의가 철회된 아동의 검토 대기·보류 요약 (SUMMARY_NOT_FOUND)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(

@@ -59,7 +59,7 @@ mock 으로 유지할 수 있습니다. 엔드포인트가 열리는 대로 하�
 아직 없는 API 때문에 대시보드 같은 화면이 통째로 에러가 나지 않습니다.
 백엔드가 기능을 열면 그 키만 `true`로 바꾸고 다시 빌드합니다. 목록과 그 처리 버튼은
 같은 키로 묶여 있어 함께 켜집니다. `VITE_USE_MOCK=true`면 표와 상관없이 전부 mock 입니다.
-보호자 일지(`guardianJournal`, 켬), 받은 인사이트(`guardianInsights`, 켬 — 리포트 탭 · 상세 · 탭 점)은 따로 켭니다. 활동 이력(`activityHistory`)은 화면과 함께 지웠습니다(10/30). 예전의 케어 리포트(`careReport`)는 화면과 함께 지웠습니다(#289).
+보호자 일지(`guardianJournal`, 켬), 받은 인사이트(`guardianInsights`, 켬 — 리포트 탭 · 상세 · 탭 점)은 따로 켭니다. 활동 이력(`activityHistory`)은 화면과 함께 지웠습니다(10/30) — 그 자리는 기관 공유 내역(`institutionShares`, 켬 — 설정 기관 줄 개수 · P-05)이 맡습니다(#317). 예전의 케어 리포트(`careReport`)는 화면과 함께 지웠습니다(#289).
 오늘 요약(`getTodaySummary`)과 "이 내용이 이상해요"(`flagJournalEntry`)는 뺐습니다(#280).
 
 `VITE_*`는 빌드 시점에 번들에 포함됩니다. 값이 바뀌면 재빌드가 필요합니다.
@@ -169,7 +169,12 @@ interface SummaryItem {       // Gate 1 검토 대기 · 보류함 한 건 (BE G
   needsReview: boolean;       // 다른 아이 이름이 남았을 수 있음. 경고만
   reviewReasons: string[];    // ["다른아동이름"]
   uncoveredEntries: { journalEntryId: string; content: string }[];   // 승인하면 함께 끝남
-  reviewFlags: { journalEntryId: string; issueTypes: string[] }[];
+  reviewFlags: {               // 검증 REVIEW 를 받은 원본 일지. 화면은 reasons 를 보여 준다
+    journalEntryId: string;
+    issueTypes: string[];
+    reasons: string[];
+    claimIndexes: number[];    // 검증 구간과 근거가 겹친 문장 카드 번호. 비어도 경고는 그대로 (#408)
+  }[];
 }
 
 type Gate1Card =              // 승인 때 보내는 문장 카드. 원래 문장은 모두 한 번씩, 배열 순서 = 최종 순서
@@ -258,16 +263,24 @@ interface GuardianInsight {
   period: string;             // "2026년 8월 3주차" — 어느 주의 이야기인지
   content: string;            // 교사·보호자가 읽을 한두 문장
   from: Institution | null;   // Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null → "기관 정보 없음"
-  sharedWith: Institution[];  // 지금 이 글을 볼 수 있는 다른 기관
+  sharedWith: Institution[];  // 지금 이 글을 볼 수 있는 다른 기관, 이름순. 기관 수신함 · 공유 내역(G-45)과 같은 판정
   approvedAt: string;         // 승인 시각 (ISO). 모든 보호자에게 같다
   readAt: string | null;      // 처음 열어 본 시각 (ISO). null 이면 "새 글"
+  evidence: {                 // 근거 일지, 관찰 날짜 오래된 순. 응답 시점에 일지 상세로 열 수 있는 것만. 없으면 [] (#405)
+    journalEntryId: string;   // 일지 상세(G-21) id → /parent/journal/:id
+    date: string;             // 관찰 날짜 "2026-10-21"
+    institution: Institution; // 명부에서 빠진 기관일 수 있다
+  }[];
 }
 
-interface InstitutionRequestItem {   // 설정 › 기관 요청사항
+interface ChecklistItem {   // P-12 준비물·확인사항 (G-50 · G-51)
   id: string;
   institution: Institution;
-  status: "confirmed" | "needs_check";
+  status: "confirmed" | "needs_check";  // 보호자 중 한 명이 확인하면 모두에게 confirmed
   items: string[];            // 준비물 · 확인사항
+  sentAt: string;             // 보낸 시각 (ISO)
+  confirmedAt: string | null;
+  confirmedByName: string | null;  // 확인한 보호자 닉네임. 없으면 "다른 보호자"
 }
 
 interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
@@ -301,7 +314,8 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `getMatchingQueue` | `() => Promise<MatchingItem[]>` | I-03, I-06, 사이드바 배지 |
 | `resolveMatchingItem` | `(id: string, resolution: { action: "assign"; childId: string } \| { action: "not_ours" }) => Promise<{ ok: true }>` | I-06 |
 | `getBlockedQueue` | `() => Promise<BlockedItem[]>` | I-03, I-07, 사이드바 배지 |
-| `resolveBlockedItem` | `(id: string, action: "reupload" \| "hold") => Promise<{ ok: true }>` | I-07 |
+| `resolveBlockedItem` | `(id: string, action: "hold") => Promise<{ ok: true }>` — O-25 보류. `reupload` 는 #357 부터 없음 | I-07 |
+| `reviseBlockedItem` | `(id: string, content: string) => Promise<{ ok: true }>` — O-25 고쳐서 다시 검사(#357). 400 은 `code` 로 이유를 나눈다 — 빈 본문·너무 긺 `INVALID_REQUEST`, 고치지 않음 `VALIDATION_RESULT_CONTENT_UNCHANGED`, 공유 끝난 아이 `VALIDATION_RESULT_CHILD_NOT_SHARED`(보류만 가능), 옛 카드 `VALIDATION_RESULT_OUTDATED`, 이미 처리됨 `VALIDATION_RESULT_INVALID_REQUEST`. 없는 건 404 | I-07 |
 | `getGate1Queue` | `(gate1Status?: "pending" \| "hold") => Promise<SummaryItem[]>` | I-03, I-08 |
 | `decideGate1` | `(summaryId: string, body: { decision: "approve" \| "hold" \| "remove" \| "confirm" \| "revert"; cards?: Gate1Card[]; version: string }) => Promise<{ summaryId: string }>` · `confirm` · `revert` 는 `noContent` 요약만 | I-08 |
 | `reopenGate1` | `(summaryId: string) => Promise<{ summaryId: string }>` | I-08 |
@@ -309,6 +323,7 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `runSummary` | `(childId: string, entryDate: string) => Promise<void>` — O-32. 409 `SUMMARY_IN_PROGRESS` · 400 `SUMMARY_INVALID_REQUEST` · 404 `SUMMARY_CHILD_NOT_FOUND` | I-03 |
 | `getInsights` | `(gate2Status?: Gate2Status) => Promise<Insight[]>` — 기본 `pending`. 우리 기관이 승인 주체인 것만 온다 | I-03, I-10, I-11 |
 | `getInsight` | `(id: string) => Promise<Insight \| undefined>` | I-10 |
+| `getInsightProgress` | `() => Promise<InsightProgress[]>` — O-43. 대시보드가 분석 중(`queued`·`running`)인 동안 다시 받아 인사이트 승인 건수를 새로고침 없이 띄운다(#359) | I-03 |
 | `decideGate2` | `(insightId: string, body: { decision: "approve" \| "hold" }) => Promise<{ insightId: string; gate2Status: Gate2Status; decision: string }>` — 받을 기관은 보내지 않는다. 409 `INSIGHT_ALREADY_REVIEWED` · `INSIGHT_SUPERSEDED` · `INSIGHT_MATERIAL_CONSENT_REVOKED`(승인만) | I-11 |
 | `registerChild` | `({ name, birthDate, externalId }) => Promise<{ child: RegisteredChild; invitation: IssuedInvitation }>` — O-11. 등록과 함께 서버가 첫 초대 코드를 발급. 503 `INVITE_CODE_ISSUE_FAILED`면 아이도 등록되지 않음 | I-04 |
 | `issueInvitation` | `(childId: string) => Promise<IssuedInvitation>` — O-15. 이전 코드는 그대로 살아 있음 | I-04, I-09-1 |
@@ -330,19 +345,21 @@ interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)
 | `getJournal` | `(childId: string) => Promise<JournalEntry[]>` — G-20. 관찰 날짜 최근 순, 같은 날은 승인 최근 순 | P-03, P-07, P-08 |
 | `getJournalEntry` | `(id: string) => Promise<JournalEntry \| undefined>` — G-21. 볼 수 없는 일지(`JOURNAL_NOT_FOUND`)는 `undefined` | P-08 |
 | `getGuardianInsights` | `() => Promise<GuardianInsight[]>` — G-35. 내 모든 아이 것, 승인 시각 최근 순. 화면이 고른 아이로 거른다 | P-09, 셸(리포트 탭 점) |
+| `getInstitutionShares` | `(childId: string) => Promise<InstitutionShares[]>` — G-45. 이 아이 리포트가 열린 기관별 묶음. 거둔(가려진) 공유 포함, `visible` 은 기관 수신함과 같은 판정 | P-04, P-05 |
 | `getGuardianInsight` | `(id: string) => Promise<GuardianInsight \| undefined>` — G-36. 처음 열면 본 시각이 남는다. 볼 수 없는 글(`SHARING_NOT_FOUND`)은 `undefined` | P-14 |
 | `getPendingInstitutionRequests` | `(childId: string) => Promise<{ institution: Institution }[]>` | P-03, P-04, P-07, P-09, P-11 |
 | `updateConsent` | `(childId: string, institutionId: string, body: { action: "grant" \| "revoke"; allowedFields?: ConsentField[] }) => Promise<ConsentResult>` | P-04(끄기), P-11 |
 | `lookupInstitutionByCode` | `(code: string) => Promise<Institution \| null>` | P-13 |
 | `addInstitutionByCode` | `(childId: string, code: string) => Promise<{ institution: Institution; status: "pending"; requestedAt: string }>` — 연결 **요청**. 실패는 `ApiError` | P-13 |
 | `updateChildCare` | `(childId: string, care: ChildCareInfo) => Promise<ChildCareInfo>` — G-13. 통째로 덮어쓰고 다듬은 값을 돌려준다. 400 · 403 은 `ApiError` 로 | P-06 |
-| `getInstitutionRequests` | `(childId: string) => Promise<InstitutionRequestItem[]>` | P-04, P-12 |
+| `getChecklists` | `(childId: string, { needsCheckOnly? }) => Promise<ChecklistItem[]>` | P-04, P-11, P-12, 헤더 알림 점 |
+| `confirmChecklist` | `(childId: string, checklistId: string) => Promise<ChecklistItem>` | P-12 |
 | `confirmInstitutionRequest` | `(id: string) => Promise<{ ok: true }>` | P-12 |
 
 ### 3.3 아이별 조회 규칙 (중요)
 
 학부모 화면의 모든 데이터 조회는 **반드시 `childId`를 인자로 받습니다.** 리포트,
-기관 요청사항, 타임라인, 알림 배지 어느 것도 "현재 선택된 아이"를 서버가 추측해서는
+준비물·확인사항, 타임라인, 알림 배지 어느 것도 "현재 선택된 아이"를 서버가 추측해서는
 안 됩니다. 다자녀 보호자에게 다른 아이의 데이터가 섞여 보이는 사고로 직결됩니다.
 
 `getPendingInstitutionRequests`는 알림 배지의 **단일 기준점**입니다. 홈 · 타임라인 ·
@@ -441,16 +458,11 @@ class ApiError extends Error {
 }
 ```
 
-`request()`는 `res.ok`가 false면 `ApiError`를 던집니다.
+`request()`는 [api-conventions.md](../api/api-conventions.md)의 공통 래퍼를 화면에서 감춥니다.
 
-> ⚠️ **현재 코드와 규약의 불일치 — 프론트가 고칠 부분**
->
-> - `request()`가 오류 바디에서 `body.error_code`를 읽고 있지만,
->   [api-conventions.md](../api/api-conventions.md)가 정한 필드명은 `code`입니다.
-> - 성공 응답의 `{ result, data }` 래퍼를 벗기지 않고 본문을 그대로 반환합니다.
->
-> 실제 API 연결 시 `request()` 안에서 `data` 언래핑과 `code` 파싱을 함께 처리합니다.
-> **백엔드는 규약대로 구현하면 되고, 이 수정은 프론트 몫입니다.**
+- 성공이면 `{ result, data, message }` 에서 `data` 만 돌려줍니다. 204 면 `undefined` 입니다.
+- 실패(`res.ok` 가 false)면 바디의 `code`(없으면 `UNKNOWN`) · `message` 로 `ApiError` 를 던집니다.
+- 401 이면 로컬 세션 표시도 지웁니다 — 로그인된 척하면서 요청마다 401 만 맞는 상태를 막습니다.
 
 ---
 

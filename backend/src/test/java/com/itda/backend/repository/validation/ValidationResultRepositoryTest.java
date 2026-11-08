@@ -38,4 +38,23 @@ class ValidationResultRepositoryTest {
         assertThat(found.getRawResponse()).isEqualTo("{\"verdict\":\"REVIEW\"}");
         assertThat(found.getCreatedAt()).isNotNull();
     }
+
+    /**
+     * 수정 요청 큐의 처리(#357)는 화면이 보던 판정이 그 일지의 최신 판정인지 본다. 다시 검증하면 판정 행이 쌓이므로
+     * 그 일지의 가장 큰 id 를 고른다. 다른 일지의 판정은 섞이지 않는다.
+     */
+    @Test
+    void 그_일지의_가장_최근_판정을_고른다() {
+        validationResultRepository.saveAndFlush(
+                ValidationResult.of(1L, null, 8L, ValidationVerdict.BLOCK, "[\"진단명\"]", null, null));
+        ValidationResult latest = validationResultRepository.saveAndFlush(
+                ValidationResult.of(1L, null, 8L, ValidationVerdict.BLOCK, "[\"개인정보표현\"]", null, null));
+        validationResultRepository.saveAndFlush(
+                ValidationResult.of(2L, null, 8L, ValidationVerdict.PASS, null, null, null));
+        entityManager.clear();
+
+        assertThat(validationResultRepository.findFirstByJournalEntryIdOrderByIdDesc(1L))
+                .map(ValidationResult::getId).contains(latest.getId());
+        assertThat(validationResultRepository.findFirstByJournalEntryIdOrderByIdDesc(3L)).isEmpty();
+    }
 }

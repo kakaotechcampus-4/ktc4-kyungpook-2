@@ -43,7 +43,8 @@ class InsightAgentClientTest {
                 "source_entry_ids": [1041, 1042],
                 "source_institution_ids": [3, 5],
                 "institution_types": ["센터", "학교"],
-                "cross_institution": true}],
+                "cross_institution": true,
+                "looked_up_claim_ids": ["34-1"]}],
              "llm_called": true,
              "added_later": "모르는 필드"}
             """;
@@ -71,7 +72,11 @@ class InsightAgentClientTest {
                                 5L, "센터", InsightAgentRequest.ClaimSource.TEACHER,
                                 List.of(new InsightAgentRequest.Evidence(null, "약 먹은 날 차분했다.")))),
                 List.of(new InsightAgentRequest.Institution(3L, "학교"),
-                        new InsightAgentRequest.Institution(5L, "센터")));
+                        new InsightAgentRequest.Institution(5L, "센터")),
+                // 지난 기록 (#387). claims 와 같은 모양이다.
+                List.of(new InsightAgentRequest.Claim("12-0", "급식실에서 귀를 막았다.", "2026-09-10",
+                        5L, "센터", InsightAgentRequest.ClaimSource.AI,
+                        List.of(new InsightAgentRequest.Evidence(900L, "급식실에서 귀를 막음")))));
     }
 
     @Test
@@ -90,7 +95,11 @@ class InsightAgentClientTest {
                             "evidence": [{"journal_entry_id": null, "quote": "약 먹은 날 차분했다."}]}],
                          "consented_institutions": [
                            {"institution_id": 3, "institution_type": "학교"},
-                           {"institution_id": 5, "institution_type": "센터"}]}
+                           {"institution_id": 5, "institution_type": "센터"}],
+                         "history_claims": [
+                           {"claim_id": "12-0", "text": "급식실에서 귀를 막았다.", "entry_date": "2026-09-10",
+                            "institution_id": 5, "institution_type": "센터", "source": "AI",
+                            "evidence": [{"journal_entry_id": 900, "quote": "급식실에서 귀를 막음"}]}]}
                         """, true))
                 .andRespond(withSuccess(RESPONSE, MediaType.APPLICATION_JSON));
 
@@ -118,6 +127,7 @@ class InsightAgentClientTest {
         assertThat(insight.sourceEntryIds().toString()).isEqualTo("[1041,1042]");
         assertThat(insight.sourceInstitutionIds().toString()).isEqualTo("[3,5]");
         assertThat(insight.supports().get(0).get("action").asText()).isEqualTo("손을 잡고 30까지 셈");
+        assertThat(insight.lookedUpClaimIds().toString()).isEqualTo("[\"34-1\"]");
 
         assertThat(reply.rawJson()).isEqualTo(RESPONSE);
     }
@@ -202,11 +212,11 @@ class InsightAgentClientTest {
     void 목록이_null이면_빈_배열로_보낸다() {
         server.expect(requestTo(AI + "/insight"))
                 .andExpect(content().json("""
-                        {"child_id": 8, "claims": [], "consented_institutions": []}
+                        {"child_id": 8, "claims": [], "consented_institutions": [], "history_claims": []}
                         """, false))
                 .andRespond(withSuccess(RESPONSE, MediaType.APPLICATION_JSON));
 
-        client.analyze(new InsightAgentRequest(8L, "김준호", "2026-10-01", "2026-10-07", null, null));
+        client.analyze(new InsightAgentRequest(8L, "김준호", "2026-10-01", "2026-10-07", null, null, null));
 
         server.verify();
     }

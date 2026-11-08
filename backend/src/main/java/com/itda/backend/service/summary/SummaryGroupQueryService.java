@@ -27,6 +27,7 @@ import com.itda.backend.repository.record.DateCount;
 import com.itda.backend.repository.record.GroupKey;
 import com.itda.backend.repository.record.GroupStatusCount;
 import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -35,8 +36,8 @@ import lombok.RequiredArgsConstructor;
  * 오늘의 업무 묶음 카드 (O-34). 요약 전 묶음(아동 × 날짜)마다 일지가 어디까지 왔는지와 교사가 할 일을 보여준다.
  *
  * <p>요약이 만들어지면 묶음은 1차 검토(O-30)로 옮겨 가고 카드는 없어진다. 그래서 남은 카드가 곧 밀린 일이라 날짜로
- * 자르지 않고 전부 준다. 아동이 아직 정해지지 않은 일지는 어느 카드인지 몰라 건수만 따로 준다. 기관에서 뺀 아이는
- * [요약](O-32)이 거절하므로 카드를 띄우지 않는다.
+ * 자르지 않고 전부 준다. 아동이 아직 정해지지 않은 일지는 어느 카드인지 몰라 건수만 따로 준다. 기관에서 뺀 아이와
+ * 우리 기관 동의를 철회한 아이는 [요약](O-32)이 거절하므로 카드를 띄우지 않는다.
  *
  * <p>라벨은 가장 덜 진행된 일지가 아니라 교사가 할 일을 먼저 보여준다 — 수정 요청, 요약 대기 순이다. 할 일이 없으면
  * 진행 중인 단계를 보여준다. 다른 상태의 일지가 섞여 있어도 요약 대기 일지가 있으면 [요약]을 누를 수 있다.
@@ -76,6 +77,7 @@ public class SummaryGroupQueryService {
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final SummaryRunRequests runRequests;
+    private final ConsentStateReader consentStateReader;
 
     /** 요청 교사 기관의 요약 전 묶음 카드를 오래된 날짜부터. */
     @Transactional(readOnly = true)
@@ -95,13 +97,16 @@ public class SummaryGroupQueryService {
         if (groups.isEmpty()) {
             return new SummaryGroupBoardResponse(matching, List.of());
         }
-        Set<Long> members = childOrganizationRepository
+        Set<Long> onRoster = childOrganizationRepository
                 .findByChildIdInAndDeletedAtIsNull(groups.keySet().stream().map(GroupKey::childId)
                         .collect(Collectors.toSet()))
                 .stream()
                 .filter(link -> link.getOrganizationId().equals(organizationId))
                 .map(ChildOrganization::getChildId)
                 .collect(Collectors.toSet());
+        // 철회 전에 매칭된 일지가 남아 있어도, 우리 기관 동의가 꺼진 아이는 [요약]이 거절하므로 카드를 띄우지 않는다 (#332).
+        // 명부로 먼저 좁혀 동의 행을 덜 읽는다.
+        Set<Long> members = consentStateReader.grantedChildIds(onRoster, organizationId);
         groups.keySet().removeIf(group -> !members.contains(group.childId()));
         if (groups.isEmpty()) {
             return new SummaryGroupBoardResponse(matching, List.of());

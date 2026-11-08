@@ -8,6 +8,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.SummaryRunRequest;
 import com.itda.backend.exception.summary.SummaryChildNotFoundException;
@@ -16,16 +17,19 @@ import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.exception.summary.SummaryRunValidationException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 
 /**
- * 교사의 [요약]. 그 묶음을 요약하도록 요청을 DB 에 남긴다 — 요약은 이 요청이 있는 묶음만 한다 (#181).
+ * 교사의 [요약]. 그 묶음을 요약하도록 요청을 DB 에 남긴다. 자동 요약(#369, 기본 켜짐)이 꺼져 있으면 요약은 이 요청이 있는
+ * 묶음만 하고(#181), 켜져 있으면 요청 없이도 하므로 "지금 요약" 과 같다.
  * 실제 요약은 워커가 다음 차례에 한다 — 같은 기관·날짜에 매칭·검증 중인 일지가 있으면 그것이 끝난 뒤다.
  * 그래서 업로드 직후(아직 매칭·검증 중)에 눌러도 받는다.
  *
- * <p>묶음의 기관은 요청한 교사의 기관이다. 다른 기관이 쓴 일지를 대신 요약시키지 않는다.
+ * <p>묶음의 기관은 요청한 교사의 기관이다. 다른 기관이 쓴 일지를 대신 요약시키지 않는다. 그 기관 동의가 꺼진 아이는
+ * 요약하지 않는다 — 워커와 결과 저장도 한 번 더 본다 ({@link SummaryResultRecorder}).
  */
 @Service
 @RequiredArgsConstructor
@@ -35,6 +39,7 @@ public class SummaryRunService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final SummaryRunRequests runRequests;
+    private final ConsentStateReader consentStateReader;
     private final Clock clock;
 
     /**
@@ -45,6 +50,11 @@ public class SummaryRunService {
     public void requestRun(String userId, Long childId, LocalDate entryDate) {
         Long organizationId = userService.getOrganizationIdOf(userId);
         if (!childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)) {
+            throw new SummaryChildNotFoundException(childId);
+        }
+        // 철회 전에 매칭된 일지가 남아 있어도 새 요약은 만들지 않는다 (#332). 명부에 없는 아이와 같은 404 라 화면은
+        // 안내하고 카드를 다시 불러온다 — 묶음 카드도 이 아이를 빼므로 다시 보이지 않는다.
+        if (consentStateReader.stateOf(childId, organizationId) != ConsentState.GRANTED) {
             throw new SummaryChildNotFoundException(childId);
         }
         String institutionId = String.valueOf(organizationId);

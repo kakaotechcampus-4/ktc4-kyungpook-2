@@ -31,13 +31,24 @@ JWT 쿠키 인증과 CSRF 보호, 회원가입이 구현되어 있습니다. 로
 
 시연용 기관 시드는 없습니다. 기관은 회원가입으로만 만들어집니다.
 
+#### 로그인 유지와 쿠키
+
+JWT 유효시간은 3시간이고, 남은 시간이 절반보다 짧은 API 요청에서 갱신합니다. 로그인 때 받은
+`access_token` 원본 쿠키는 현재 로그인 번호를 선택하도록 최대 12시간 보관하고, 갱신 JWT 는
+`access_token_renewal_{sid}` 쿠키에 따로 담습니다. 이전 로그인 응답이 늦게 와도 새 로그인 쿠키를 덮지 않습니다.
+두 쿠키 모두 httpOnly 이며 브라우저가 자동 전송합니다. 원본을 보관하는 시간과 인증 유효시간은 별개라,
+유효한 원본 또는 같은 로그인의 갱신 JWT 가 없으면 401 입니다. 계속 사용해도 처음 로그인부터 12시간에 끝납니다.
+로그아웃은 원본 쿠키를 지우고 로그인 번호를 취소합니다. 남아 있거나 늦게 온 갱신 쿠키만으로는 인증되지 않습니다.
+로그인·로그아웃 응답은 요청에 실린 이전 갱신 쿠키도 지워 계정 전환 때 쿠키가 쌓이지 않게 합니다.
+
 #### 카카오 계정 없이 테스트하기 (개발용 로그인)
 
 카카오 계정 하나는 회원 하나이고 역할도 바꿀 수 없어서, 기관과 보호자를 오가는 흐름(아이 등록 → 초대 →
 보호자 동의)을 카카오 계정 하나로는 테스트할 수 없습니다. 로컬에서는 개발용 로그인을 켜서 씁니다.
 
-1. 백엔드를 개발용 로그인을 켠 채 실행합니다. **`application-secret.yml`에는 넣지 마세요.** Docker 이미지가
-   `src`를 통째로 복사하므로, 거기 넣으면 배포 이미지에도 켜진 채로 들어갑니다.
+1. 백엔드를 개발용 로그인을 켠 채 실행합니다. 켜고 끄는 건 실행할 때 환경변수 `DEV_LOGIN_ENABLED`로 합니다.
+   `application-secret.yml` 같은 로컬 설정 파일은 jar·Docker 이미지에 들어가지 않으므로(`build.gradle`,
+   `backend/.dockerignore`) 거기 적어도 서버에는 적용되지 않습니다. 서버에서는 compose 의 `DEV_LOGIN_ENABLED`가 정합니다.
 
    ```bash
    DEV_LOGIN_ENABLED=true ./gradlew bootRun --args='--spring.profiles.active=local'
@@ -167,14 +178,14 @@ dbsql -v stage=VALIDATION -v reason=AGENT_UNAVAILABLE -v apply=true < ../../back
 - `stage`는 `VALIDATION`·`SUMMARY`, `reason`은 `REQUEST_REJECTED`·`RESPONSE_UNREADABLE`·`EVIDENCE_MISMATCH`·
   `AGENT_UNAVAILABLE`·`INTERNAL_ERROR` 중 하나입니다. 빠지거나 틀리면 아무것도 바꾸지 않고 멈춥니다.
 - 검증은 검증 대기(`MATCHED`), 요약은 요약 대기(`VALIDATED`)로 돌아가고 두 실패 컬럼이 비워집니다. 검증은 워커가 다시 집습니다.
-  요약은 자동으로 다시 돌지 않습니다 — 그 묶음에서 [요약](O-32)을 다시 눌러야 워커가 집습니다 (#181).
+  요약은 자동 요약(`SUMMARY_AUTO_RUN`, 기본 켜짐)이면 워커가 다시 집습니다. 꺼져 있으면 그 묶음에서 [요약](O-32)을 다시 눌러야 집습니다 (#181).
 - 아이가 정해지지 않은 일지는 검증 워커가 집지 않아 되돌리지 않고 `skipped_journal_entry_id_without_child`로 id만 보여줍니다.
 - 버그를 고치기 전에 되돌리면 같은 원인으로 다시 멈춥니다. 서버 시작 시 자동 실행되지 않습니다.
 
-**요약 실패(`SUMMARY_FAILED`)는 관리자가 되돌립니다.** 근거가 남은 문장이 없어 멈춘 일지라 다시 요약하면 될 수
-있습니다. 묶음 카드(#182)에는 넣지 않고, 1차 검토에 "근거 없는 요약"으로 띄우는 후속 이슈가 들어오기 전까지는 아래처럼
-요약 대기로 돌립니다. 같은 아이·날짜 묶음의 일지는 함께 돌려야 한 요약으로 묶입니다. 돌린 뒤 그 묶음에서 [요약](O-32)을 다시
-눌러야 요약됩니다 (#181).
+**요약 실패(`SUMMARY_FAILED`)는 선생님이 검토 화면에서 처리합니다** (#369). 근거가 남은 문장이 없어 멈춘 일지라
+요약 실패 목록(O-35)에 묶음으로 뜨고, 선생님이 [다시 요약](O-36) 하거나 [요약 없이 마무리](O-37) 합니다. 화면이 들어오기
+전에 관리자가 한꺼번에 되돌려야 하면 아래처럼 요약 대기로 돌립니다. 같은 아이·날짜 묶음의 일지는 함께 돌려야 한 요약으로
+묶입니다. 자동 요약이 꺼져 있으면 돌린 뒤 그 묶음에서 [요약](O-32)을 다시 눌러야 요약됩니다 (#181).
 
 ```bash
 dbsql -c "SELECT id, child_id, entry_date FROM journal_entry
@@ -193,7 +204,8 @@ dbsql -c "UPDATE journal_entry SET status = 'VALIDATED', updated_at = now() AT T
 | 인증 | Spring Security, OAuth2 Client(카카오), JJWT 0.12.6 |
 | 데이터 접근 | Spring Data JPA |
 | 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
-| AI 서버 호출 | Spring `RestClient` + Apache HttpClient 5. 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, HTTP 클라이언트는 연결이 끊긴 GET 만 1회 다시 보낸다 |
+| 일지 텍스트 추출 | Apache POI 5.4.1(docx), Apache PDFBox 3.0.5(pdf) — `RawTextExtractor` |
+| AI 서버·카카오 호출 | Spring `RestClient`·`RestTemplate` + Apache HttpClient 5 (`global.config.HttpClientRequestFactories`). HTTP 클라이언트는 503·429 를 다시 보내지 않고 연결이 끊긴 GET 만 1회 다시 보낸다. AI 호출의 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, 카카오 토큰 교환(POST)은 503·429·연결 끊김에 다시 보내지 않는다(인가 코드가 일회용) |
 | API 문서 | Springdoc OpenAPI 2.9.1, Swagger UI |
 | 운영 DB | PostgreSQL |
 | 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |
@@ -355,7 +367,8 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `MATCHING_WORKER_ENABLED` | `true` | 매칭 워커 사용 여부. 켜 두면 5초마다 대기(`PENDING`) 일지를 AI `POST /matching`에 보내 결과를 `matching_result`에 저장. 테스트 프로필은 끔 |
 | `VALIDATION_WORKER_ENABLED` | `true` | 검증 워커 사용 여부. 켜 두면 5초마다 매칭 확정(`MATCHED`) 일지를 AI `POST /validation`에 보내 결과를 `validation_result`에 저장하고 `VALIDATED`/`VALIDATION_BLOCKED`로 바꿈. 테스트 프로필은 끔 |
 | `INSIGHT_INCLUDE_CURRENT_WEEK` | `false` | **시연용.** 켜면 인사이트 워커가 끝나지 않은 이번 주 기록도 재료로 본다. 끄면 월~일이 끝난 주만 본다. 켜 두면 이번 주는 승인이 들어올 때마다 새 회차가 생겨 Gate 2 에 비슷한 글이 쌓이므로 운영에서는 끈다 (#239) |
-| `SUMMARY_WORKER_ENABLED` | `true` | 요약 워커 사용 여부. 켜 두면 5초마다 검증 통과(`VALIDATED`) 일지를 아동 × 날짜 × 기관 묶음으로 AI `POST /summary`에 보내 `summary_result`에 저장하고 `GATE1_PENDING`으로 바꿈. 교사가 [요약](O-32)을 누른 묶음만 요약한다(`summary_run_request`). 자동 요약은 없다. 테스트 프로필은 끔 |
+| `SUMMARY_WORKER_ENABLED` | `true` | 요약 워커 사용 여부. 켜 두면 5초마다 검증 통과(`VALIDATED`) 일지를 아동 × 날짜 × 기관 묶음으로 AI `POST /summary`에 보내 `summary_result`에 저장하고 `GATE1_PENDING`으로 바꿈. 어떤 묶음을 집는지는 `SUMMARY_AUTO_RUN`이 정한다. 테스트 프로필은 끔 |
+| `SUMMARY_AUTO_RUN` | `true` | 자동 요약 (#369). 켜 두면 같은 기관·날짜에 매칭·검증 중인 일지가 없을 때 [요약] 요청 없이 그 기관 동의가 켜진 아이 묶음을 요약한다. 끄면 교사가 [요약](O-32)을 누른 묶음만 요약한다(`summary_run_request`, #181) — 장애 때 되돌리는 스위치. 테스트 프로필은 끔 |
 
 ## 설정 프로필
 

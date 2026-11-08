@@ -11,6 +11,7 @@
 from .config import (
     ALLOW_AUTO_ON_HINT_ONLY,
     AUTO_GATE,
+    CO_MENTION_NEEDS_TWO_NAMES,
     GIVEN_NAME_SCORE,
     IGNORE_UNGROUNDED_LLM_PICK,
     REQUIRE_WINNER_NAME_FOR_AUTO,
@@ -355,9 +356,23 @@ def llm_judge(state: MatchingState) -> dict:
         and not isinstance(cid, bool)
         and int(cid) in roster_ids
     ]
-    mentioned.update(co_ids)
-
     co_mention = bool(answer.get("co_mention", False))
+    # 코드가 본문에서 서로 다른 이름을 2개 이상 찾았을 때만 받는다 (config 참고).
+    # shortlist 의 co_mention 이 바로 그 "의심" 이다 — 모델은 확인만 한다.
+    # 불리언만 막으면 모델이 준 ID 가 mentioned_child_ids 로 새서, 본문에 없던 아이가
+    # Validation·요약에 "이름 노출" 로 잡힌다 (#306 리뷰). 노출 표시는 글자로 확인한
+    # 이름만 쓴다 — 위 shortlist 의 "오타로 걸린 것은 넣지 않는다" 와 같은 원칙이다.
+    if CO_MENTION_NEEDS_TWO_NAMES:
+        if not state.get("co_mention"):
+            co_mention = False
+            co_ids = []
+        else:
+            # 이름이 2개 이상인 기록이어도, 모델이 준 ID 는 본문에서 이름을 글자로
+            # 확인한 아이만 받는다. 이름 수만 보면 본문에 없는 아이가 함께 끼어
+            # 후보와 노출 목록에 오른다 (#306 리뷰 2).
+            exact = set(state.get("exact_child_ids", []))
+            co_ids = [cid for cid in co_ids if cid in exact]
+    mentioned.update(co_ids)
 
     # 대등 언급이면 후보를 하나로 좁히면 안 된다.
     # "누가 주인공인지 모르겠다" 가 아니라 "둘 다 나온다" 는 상태라,

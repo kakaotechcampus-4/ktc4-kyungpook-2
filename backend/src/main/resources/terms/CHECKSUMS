@@ -1,0 +1,7 @@
+# 내보낸 약관 문안의 SHA-256. 한 판 = 한 본문 — 내보낸 파일은 고치지 않는다. 글을 바꾸려면 새 판 파일을 더하고 여기 한 줄을 더한다.
+# TermsDocumentServiceTest 가 모든 문안 파일과 이 목록이 맞는지 본다.
+f6daf41451fb7f2784254bc255c2383de919c1a99aeed6cb22f812bd6b2daaf8  org_child_data/2026-11-07.txt
+e0df674e09bdaf0b5582abba462ae75eb1659333bda5e4b1d272dcaeaa9ea641  org_privacy/2026-11-07.txt
+a425fa857eb8580fd1ee71e463e7523628733945637e1867f8213e50e841d375  org_tos/2026-11-07.txt
+1076a29733f075c0bac0470343cdc6ba1541eadeab162989994b3056b6d19462  privacy/2026-11-07.txt
+ea1bb0056eb8f3499f162022aa858a55957e7e2d1b000d0a81dfc018be6090af  tos/2026-11-07.txt

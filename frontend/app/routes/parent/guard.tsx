@@ -1,7 +1,7 @@
 import { Outlet, redirect, useLoaderData, type ShouldRevalidateFunctionArgs } from "react-router";
 import { ChildProvider } from "@/components/parent/ChildContext";
 import { ParentNotReady } from "@/components/parent/NotReady";
-import { getSession } from "@/lib/auth";
+import { getSession, rememberReturnPath } from "@/lib/auth";
 import { getGuardianInsights, getParentChildren, isReady, loadIfReady, restoreParentOnboarded } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
@@ -13,11 +13,18 @@ import { readSelectedChildId } from "@/lib/selectedChild";
  * localStorage 에 쓰고 revalidate() 하는 방식이라, 이 clientLoader 가
  * 그 값을 매번 다시 읽어오는 지점이 된다.
  */
-export async function clientLoader() {
-  const { loggedIn, signupCompleted, role } = await getSession();
+export async function clientLoader({ request }: { request: Request }) {
+  const { loggedIn, signupCompleted, role, termsAgreed } = await getSession();
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
+  // 로그인이 풀렸으면 다시 로그인한 뒤 이 화면으로 돌아오게 주소를 남긴다(보호자 로그인은 진입 화면에서 한다)
+  if (!loggedIn) {
+    rememberReturnPath("parent", new URL(request.url));
+    return redirect("/parent/invite");
+  }
   if (role !== "parent") return redirect("/parent/invite");
-  // 카카오 로그인만 하고 약관·첫 기관 동의를 안 끝낸 사람은 아직 본 화면에 들어올 수 없다.
+  // 약관에 동의하지 않은 보호자는 서버가 보호 API 를 모두 막는다 — 아이 목록을 묻기 전에 약관 단계로
+  if (!termsAgreed) return redirect("/parent/invite");
+  // 첫 기관 동의를 안 끝낸 사람은 아직 본 화면에 들어올 수 없다.
   // 이 브라우저에 표시가 없어도 서버에 연결된 아이가 있으면 마친 사람이다 (다른 브라우저 · 기기)
   if (!(await restoreParentOnboarded())) return redirect("/parent/invite");
   // 아이 목록(G-10)을 서버에서 못 받는 빌드면 mock 아이를 띄우지 않는다 — 남의 아이가 보인다

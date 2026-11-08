@@ -2,6 +2,7 @@ package com.itda.backend.service.insight;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
@@ -29,6 +30,7 @@ import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse;
+import com.itda.backend.dto.response.insight.Gate2InsightResponse.EvidenceRef;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse.Target;
 import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
@@ -38,7 +40,7 @@ import com.itda.backend.service.user.UserService;
 /** Gate 2 검토 목록·단건. 승인 주체인 기관에만, 최신 회차만 보인다. */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({InsightGate2QueryService.class, ConsentStateReader.class})
+@Import({InsightGate2QueryService.class, InsightEvidenceReader.class, ConsentStateReader.class})
 class InsightGate2QueryServiceTest {
 
     private static final LocalDate FROM = LocalDate.of(2026, 8, 17);
@@ -147,6 +149,59 @@ class InsightGate2QueryServiceTest {
                     assertThat(ref.institution().id()).isEqualTo(String.valueOf(centerId));
                     assertThat(ref.label()).isEqualTo("관찰일지 요약");
                 });
+    }
+
+    /** AI 가 지난 기록에서 찾아 쓴 근거는 이번 주 근거와 구분해 표시한다 (#387). */
+    @Test
+    void 지난_기록에서_찾아_쓴_근거는_lookedUp으로_표시한다() {
+        Long past = pastSummary();
+        em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "상황", "반응", "본문", null,
+                "[\"%d-0\",\"%d-0\"]".formatted(summaryId, past), "[]", "[%d]".formatted(centerId), false, null,
+                "[\"%d-0\"]".formatted(past)));
+        em.clear();
+
+        assertThat(service.getInsights(CENTER_TEACHER, "pending").get(0).evidence())
+                .extracting(EvidenceRef::date, EvidenceRef::lookedUp)
+                .containsExactly(tuple("2026-08-19", false), tuple("2026-07-01", true));
+    }
+
+    /** 지난 기록이 대처 근거에만 쓰였어도 근거 목록에 올린다 — 빠지면 화면이 "지난 기록을 찾아 씀" 을 모른다. */
+    @Test
+    void 대처_근거에만_쓴_지난_기록도_근거에_올린다() {
+        Long past = pastSummary();
+        em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "상황", "반응", "본문",
+                "[{\"action\": \"예고\", \"result\": \"진정\", \"claim_ids\": [\"%d-0\"]}]".formatted(past),
+                "[\"%d-0\"]".formatted(summaryId), "[]", "[%d]".formatted(centerId), false, null,
+                "[\"%d-0\"]".formatted(past)));
+        em.clear();
+
+        assertThat(service.getInsights(CENTER_TEACHER, "pending").get(0).evidence())
+                .extracting(EvidenceRef::date, EvidenceRef::lookedUp)
+                .containsExactly(tuple("2026-08-19", false), tuple("2026-07-01", true));
+    }
+
+    /**
+     * AI 가 준 표시를 그대로 믿지 않는다 (#387 코드리뷰). 근거로 인용하지 않은 번호는 근거 목록에 올리지 않고,
+     * 이번 기간 기록은 "지난 기록" 으로 표시하지 않는다.
+     */
+    @Test
+    void 인용하지_않았거나_이번_기간인_기록은_지난_기록으로_표시하지_않는다() {
+        Long notCited = pastSummary();
+        em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "상황", "반응", "본문", null,
+                "[\"%d-0\"]".formatted(summaryId), "[]", "[%d]".formatted(centerId), false, null,
+                "[\"%d-0\",\"%d-0\"]".formatted(summaryId, notCited)));
+        em.clear();
+
+        assertThat(service.getInsights(CENTER_TEACHER, "pending").get(0).evidence())
+                .extracting(EvidenceRef::date, EvidenceRef::lookedUp)
+                .containsExactly(tuple("2026-08-19", false));
+    }
+
+    private Long pastSummary() {
+        Long id = em.persistAndFlush(SummaryResult.of(
+                childId, LocalDate.of(2026, 7, 1), centerId, 1, "지난 기록", "[]", "[]", "[]", "{}")).getId();
+        em.persistAndFlush(ChildContext.of(childId, id, "지난 기록"));
+        return id;
     }
 
     /** Gate 1 을 통과하지 않은 요약은 근거가 아니다 — 승인본이 없으면 그 줄을 뺀다. */
@@ -352,6 +407,69 @@ class InsightGate2QueryServiceTest {
                 .singleElement()
                 .extracting(Target::consent)
                 .isEqualTo(ConsentState.NOT_GRANTED);
+    }
+
+    @Test
+    void AI_원문만_근거면_교사_작성이_아니다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\", \"source\": \"AI\"}, {\"text\": \"웃었다.\"}]");
+        insightCiting("[\"%d-0\", \"%d-1\"]".formatted(summary, summary), null);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isFalse();
+    }
+
+    @Test
+    void 교사가_고친_문장이_근거면_교사_작성이다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}, {\"text\": \"웃었다.\", \"source\": \"EDITED\"}]");
+        insightCiting("[\"%d-0\", \"%d-1\"]".formatted(summary, summary), null);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    /** {@code teacher_claim_ids} 처럼 대처 근거도 본다 — 대처 근거는 {@code claim_ids} 에 없다. */
+    @Test
+    void 교사가_새로_쓴_문장이_대처_근거에만_있어도_교사_작성이다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}, {\"text\": \"5분 전에 알려 주니 따라왔다.\", \"source\": \"TEACHER\"}]");
+        insightCiting("[\"%d-0\"]".formatted(summary),
+                "[{\"result\": \"따라옴\", \"claim_ids\": [\"%d-1\"]}]".formatted(summary));
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    /** 가리키는 문장을 찾지 못하면 AI 원문인지 알 수 없다. 경고를 띄운다. */
+    @Test
+    void 근거_문장을_찾지_못하면_교사_작성으로_본다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}]");
+        insightCiting("[\"%d-0\", \"%d-5\"]".formatted(summary, summary), null);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    @Test
+    void 근거_번호가_없는_대처가_있으면_교사_작성으로_본다() {
+        Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}]");
+        insightCiting("[\"%d-0\"]".formatted(summary), "[{\"result\": \"따라옴\"}]");
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    @Test
+    void 근거_번호가_없으면_교사_작성으로_본다() {
+        insightCiting("[]", null);
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
+    }
+
+    private Long summaryWithClaims(String claims) {
+        Long id = em.persistAndFlush(SummaryResult.of(
+                childId, LocalDate.of(2026, 8, 21), centerId, 1, "요약", claims, "[]", "[]", "{}")).getId();
+        em.persistAndFlush(ChildContext.of(childId, id, "요약"));
+        return id;
+    }
+
+    private void insightCiting(String claimIds, String supports) {
+        em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "상황", "반응", "본문", supports,
+                claimIds, "[]", "[%d,%d]".formatted(schoolId, centerId), true, null));
+        em.clear();
     }
 
     private void revokeConsentsTo(Long organizationId) {

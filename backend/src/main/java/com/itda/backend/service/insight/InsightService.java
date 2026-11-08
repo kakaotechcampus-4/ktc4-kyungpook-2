@@ -59,6 +59,11 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class InsightService {
 
+    /** 지난 기록을 얼마나 거슬러 볼지 (#387). AI 팀 요청값이다. */
+    static final int HISTORY_WEEKS = 12;
+    /** 지난 기록 최대 개수 (#387). 넘으면 최신 것만 보낸다. AI 팀 요청값이다. */
+    static final int HISTORY_LIMIT = 200;
+
     private final ChildContextRepository childContextRepository;
     private final SummaryResultRepository summaryResultRepository;
     private final ApprovalRepository approvalRepository;
@@ -98,9 +103,53 @@ public class InsightService {
             return Optional.empty();
         }
 
-        Map<Long, Organization> institutions = institutionsOf(approved);
+        List<InsightAgentRequest.Claim> claims = consentedClaimsOf(approved, consentedIds);
+        if (claims.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new PreparedInsight(
+                new InsightAgentRequest(childId, child.getName(), periodFrom.toString(), periodTo.toString(),
+                        claims, consented, historyClaimsOf(childId, periodFrom, consentedIds)),
+                // 눈금은 이번 기간 재료에서만 뽑는다. 지난 기록이 새로 승인돼도 이번 기간을 다시 돌리지 않는다.
+                material.lastContextId()));
+    }
+
+    /**
+     * 도구(find_claims)가 찾을 지난 기록 (#387). 이번 기간 바로 앞 {@link #HISTORY_WEEKS}주치를 이번 기간과 <b>같은 규칙</b>
+     * (Gate 1 승인 · 옛 방식 고친 요약 제외 · 동의 기관만)으로 고른다. 이번 기간 claim 은 기간이 겹치지 않아 들어오지 않는다.
+     *
+     * <p>{@link #HISTORY_LIMIT}개를 넘으면 최신 것만 남긴다 — 오래된 기록일수록 지금 상황과 멀다. <b>요약 단위로 자른다.</b>
+     * 한 요약의 문장 일부만 보내면 앞뒤 맥락(무엇이 계기였는지)이 빠진 조각을 AI 가 근거로 쓴다 (#387 코드리뷰).
+     */
+    private List<InsightAgentRequest.Claim> historyClaimsOf(Long childId, LocalDate periodFrom, Set<Long> consentedIds) {
+        List<SummaryResult> approved = approvedSummariesIn(
+                childId, periodFrom.minusWeeks(HISTORY_WEEKS), periodFrom.minusDays(1)).summaries();
+        List<InsightAgentRequest.Claim> history = consentedClaimsOf(approved, consentedIds);
+        if (history.size() <= HISTORY_LIMIT) {
+            return history;
+        }
+        // 관찰 날짜순으로 쌓였으니 뒤쪽이 최신이다. 자를 자리가 요약 한가운데면 그 요약까지 뺀다
+        // — claim_id 앞자리가 요약 id 다.
+        int start = history.size() - HISTORY_LIMIT;
+        String cutSummary = summaryPrefixOf(history.get(start));
+        while (start < history.size() && start > 0
+                && summaryPrefixOf(history.get(start - 1)).equals(cutSummary)
+                && summaryPrefixOf(history.get(start)).equals(cutSummary)) {
+            start++;
+        }
+        return history.subList(start, history.size());
+    }
+
+    private static String summaryPrefixOf(InsightAgentRequest.Claim claim) {
+        return claim.claimId().substring(0, claim.claimId().indexOf('-'));
+    }
+
+    /** 요약들을 claim 으로 편다. 동의 기관이 아니거나 기관 행이 없는 요약은 뺀다. */
+    private List<InsightAgentRequest.Claim> consentedClaimsOf(List<SummaryResult> summaries, Set<Long> consentedIds) {
+        Map<Long, Organization> institutions = institutionsOf(summaries);
         List<InsightAgentRequest.Claim> claims = new ArrayList<>();
-        for (SummaryResult summary : approved) {
+        for (SummaryResult summary : summaries) {
             if (!consentedIds.contains(summary.getInstitutionId())) {
                 // 동의가 없거나 철회된 기관의 기록이다. AI 도 거르지만 BE 가 먼저 막는다 (CRITERIA §7)
                 // — 받는 쪽만 막으면 그 기관의 원문 인용이 재료로 들어가 다른 기관으로 흘러간다.
@@ -115,14 +164,7 @@ public class InsightService {
             }
             claims.addAll(claimsOf(summary, institution));
         }
-        if (claims.isEmpty()) {
-            return Optional.empty();
-        }
-
-        return Optional.of(new PreparedInsight(
-                new InsightAgentRequest(childId, child.getName(), periodFrom.toString(), periodTo.toString(),
-                        claims, consented),
-                material.lastContextId()));
+        return claims;
     }
 
     /**

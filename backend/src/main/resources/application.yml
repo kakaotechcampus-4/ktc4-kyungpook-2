@@ -61,8 +61,8 @@ app:
     dev-login:
       # 개발·테스트 전용 로그인(GET /api/v1/dev/login). 기본은 꺼짐이다.
       # 로컬에서는 DEV_LOGIN_ENABLED=true 로 실행해 켜고, 배포 서버는 compose 가 켜 둔다(정식 오픈 전에 끈다).
-      # application-secret.yml 에 넣지 않는다 — Docker 이미지가 src 를 통째로 복사해서, 거기 넣으면
-      # compose 의 환경변수와 상관없이 이미지에 박힌다.
+      # 켜고 끄는 건 환경변수로 한다. application-secret.yml 같은 로컬 설정 파일은 jar·Docker 이미지에 들어가지
+      # 않아(build.gradle, backend/.dockerignore) 거기 적어도 서버에는 적용되지 않는다.
       enabled: ${DEV_LOGIN_ENABLED:false}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
@@ -98,6 +98,9 @@ app:
       delay-ms: 5000
       # 요약은 일지가 아니라 묶음(아동·날짜·기관) 단위로 집는다.
       batch-size: 10
+    # 자동 요약 (#369). 같은 기관·날짜에 매칭·검증 중인 일지가 없으면 [요약] 요청 없이 요약한다.
+    # 끄면 교사가 [요약](O-32)을 누른 묶음만 요약한다 (#181) — 장애 때 되돌리는 스위치.
+    auto-run: ${SUMMARY_AUTO_RUN:true}
     # 요약은 AI 가 LLM 을 90초(AI/summary/config.py LUNA_TIMEOUT)까지 기다린다. app.ai.read-timeout(70초)으로는
     # 느린 정상 응답을 먼저 끊고 다시 불러서 LLM 을 여러 번 부르게 된다.
     read-timeout: 120s
@@ -121,11 +124,21 @@ app:
     # 같은 아이·같은 기간이 연달아 실패하면 다시 집기까지 기다린다 (#266). n 번째 연속 실패 뒤 n 번째 값, 넘치면
     # 마지막 값. 기다리지 않으면 계속 실패하는 아이가 5초마다 맨 앞에 와서 뒤의 아이들이 차례를 못 받는다.
     failure-backoffs: 1m,5m,30m
-    # 접속 주소·타임아웃·재시도는 app.ai.* 를 그대로 쓴다. 인사이트는 LLM 을 60초까지 기다려
-    # (AI/insight/config.py LUNA_TIMEOUT) 매칭·검증과 같으므로 요약처럼 전용 설정이 필요 없다.
+    # 응답 대기 시간 (#386). 수정 루프·도구 사용을 켜면 요청 하나에서 LLM 을 여러 번 부르는데, AI 가 요청 하나를
+    # 180초(INSIGHT_DEADLINE, AI #373) 안에 끝낸다. 여유 30초를 더한다. AI 에 호출이 더 붙어도 이 값은 다시 바꾸지 않는다.
+    read-timeout: 210s
+    # 응답 대기 시간 초과 뒤 다시 보내는 횟수. 최악 210초 × 2번 ≈ 7분, 그 뒤는 위 failure-backoffs 가 받는다.
+    # 연결 실패·5xx 는 금방 끝나서 app.ai.retry-backoffs 대로 다시 보낸다.
+    timeout-retries: 1
 
 jwt:
   # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.
   # 기본값을 두지 않는다 — 값이 없거나 32바이트보다 짧으면 기동 단계에서 바로 실패한다.
   secret: ${JWT_SECRET}
-  access-token-expiration-ms: 3600000 # 1시간 / 출입증 쿠키 만료도 이 값을 따른다
+  # 3시간 / 출입증 쿠키 만료도 이 값을 따른다. 남은 시간이 이 값의 절반보다 적은 /api 요청에는 서버가 새 출입증을
+  # 내려줘(JwtAuthenticationFilter) 쓰는 동안은 끊기지 않고, 마지막 요청 뒤 1시간 반 ~ 3시간 가만히 두면 풀린다.
+  # 짧게 줄이지 않는다 — Gate 1 에서 문장을 고치는 동안에는 서버 요청이 없어 타이핑 중에 끊긴다(#351).
+  access-token-expiration-ms: 10800000
+  # 12시간 / 처음 로그인부터 이 시간이 지나면 쓰는 중이어도 더 연장하지 않는다. 새어 나간 출입증도 쓰는 동안
+  # 연장되므로 끝을 둔다. 하루 근무 단위.
+  max-session-ms: 43200000

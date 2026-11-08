@@ -52,6 +52,31 @@ public class MatchingQueueController {
         return ApiResponse.success(matchingResultService.getQueue(userId));
     }
 
+    @GetMapping("/{id}")
+    @Operation(
+            summary = "확인 필요 큐 항목 하나",
+            description = "목록 항목과 같은 모양입니다. 우리 기관의 처리 대기 항목만 돌려줍니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "없는 항목, 다른 기관 소속, 이미 처리된 항목 (MATCHING_RESULT_NOT_FOUND)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<MatchingQueueItemResponse> getItem(
+            @PathVariable Long id,
+            @AuthenticationPrincipal String userId) {
+        return ApiResponse.success(matchingResultService.getItem(id, userId));
+    }
+
     @PostMapping("/{id}/resolve")
     @Operation(
             summary = "아이 확정 또는 제외",

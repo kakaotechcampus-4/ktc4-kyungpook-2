@@ -27,12 +27,14 @@ import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.fixture.OrganizationFixture;
+import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
@@ -49,6 +51,7 @@ class OrganizationTimelineApiTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JwtProvider jwtProvider;
     @Autowired private UserRepository userRepository;
+    @Autowired private TermsAgreementRepository termsAgreementRepository;
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private SummaryResultRepository summaryResultRepository;
     @Autowired private ChildContextRepository childContextRepository;
@@ -82,9 +85,9 @@ class OrganizationTimelineApiTest {
     @BeforeEach
     void setUp() throws Exception {
         organization = organizationRepository.save(OrganizationFixture.center());
-        staff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId()));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
         Organization other = organizationRepository.save(OrganizationFixture.center());
-        otherStaff = userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "박선생", other.getId()));
+        otherStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "박선생", other.getId())));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -131,7 +134,7 @@ class OrganizationTimelineApiTest {
 
     @Test
     void 보호자는_403_ORGANIZATION_NOT_ASSIGNED() throws Exception {
-        User parent = userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호"));
+        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
 
         mockMvc.perform(get(timelinePath()).cookie(auth(parent)))
                 .andExpect(status().isForbidden())

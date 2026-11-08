@@ -88,6 +88,42 @@ class AiAgentClientTest {
         server.verify();
     }
 
+    /** 인사이트처럼 오래 기다리는 에이전트는 시간 초과만 덜 다시 보낸다 (#386). */
+    @Test
+    void 시간_초과_재시도_상한을_넘으면_남은_재시도가_있어도_멈춘다() {
+        RestClient.Builder builder = RestClient.builder().baseUrl(AI);
+        MockRestServiceServer insightServer = MockRestServiceServer.bindTo(builder).build();
+        AiAgentClient insightClient = new AiAgentClient(builder.build(), new ObjectMapper(),
+                new AiAgentProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(210),
+                        List.of(Duration.ZERO, Duration.ZERO)), 1);
+        for (int i = 0; i < 2; i++) {
+            insightServer.expect(requestTo(AI + "/insight")).andRespond(request -> {
+                throw new SocketTimeoutException("Read timed out");
+            });
+        }
+
+        assertThatThrownBy(() -> insightClient.post("/insight", Map.of(), "childId=8"))
+                .isInstanceOf(AiAgentUnavailableException.class);
+        insightServer.verify();
+    }
+
+    @Test
+    void 시간_초과_재시도_상한은_서버_오류_재시도를_줄이지_않는다() {
+        RestClient.Builder builder = RestClient.builder().baseUrl(AI);
+        MockRestServiceServer insightServer = MockRestServiceServer.bindTo(builder).build();
+        AiAgentClient insightClient = new AiAgentClient(builder.build(), new ObjectMapper(),
+                new AiAgentProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(210),
+                        List.of(Duration.ZERO, Duration.ZERO)), 1);
+        insightServer.expect(requestTo(AI + "/insight")).andRespond(request -> {
+            throw new SocketTimeoutException("Read timed out");
+        });
+        insightServer.expect(requestTo(AI + "/insight")).andRespond(withServerError());
+        insightServer.expect(requestTo(AI + "/insight")).andRespond(withSuccess(BODY, MediaType.APPLICATION_JSON));
+
+        assertThat(insightClient.post("/insight", Map.of(), "childId=8")).isEqualTo(BODY);
+        insightServer.verify();
+    }
+
     @Test
     void 세_번_모두_실패하면_AI를_쓸_수_없다는_예외를_던진다() {
         server.expect(requestTo(AI + "/validation")).andRespond(withServerError());

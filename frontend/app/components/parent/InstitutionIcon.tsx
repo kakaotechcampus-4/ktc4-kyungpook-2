@@ -1,24 +1,46 @@
-import { Accessibility, Building2, CircleHelp, Home } from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import type { InstitutionType } from "@/lib/types";
 
-const ICONS: Record<InstitutionType, typeof Home> = {
-  school: Home,
-  center: Building2,
-  assistant: Accessibility,
+/**
+ * 기관 유형 그림. 초대 화면(P-01)이 보내는 쪽을 보여줄 때와 같은 그림을 쓴다.
+ *
+ * 사람이 아니라 **유형**을 가리킨다 — 어느 학교인지, 어느 센터인지는 구분하지 않는다.
+ * 그래서 아이 얼굴(`ChildFace`)과 달리 같은 그림이 여러 기관에 겹쳐도 된다.
+ */
+const PICTURE: Record<InstitutionType, string> = {
+  school: "/img/school.png",
+  center: "/img/center.png",
+  assistant: "/img/adult-01.png",
 };
 
-/**
- * 기관 유형별 아이콘 사각형 — 학부모 앱 프로토타입의 기관 카드 왼쪽 아이콘을 재현한다.
- * 기관을 모르면(받은 리포트의 승인 기관 행이 사라진 경우) 물음표 원을 그린다.
- */
 export function InstitutionIcon({ type }: { type?: InstitutionType | null }) {
-  const Icon = type ? ICONS[type] : CircleHelp;
+  if (!type) {
+    return (
+      <span
+        aria-hidden
+        className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-surface2 text-ink2"
+      >
+        <CircleHelp size={20} strokeWidth={1.75} />
+      </span>
+    );
+  }
   return (
-    <span
+    <img
+      src={PICTURE[type]}
+      alt=""
       aria-hidden
-      className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-surface2 text-ink2"
-    >
-      <Icon size={20} strokeWidth={1.75} />
-    </span>
+      width={44}
+      height={44}
+      /*
+        lazy 로 두지 않는다. 이 그림은 홈 첫 화면의 **접히는 선 위**에 나온다
+        ("새 소식" 카드마다 하나). 늦게 뜨면 보호자가 처음 보는 화면에 빈 회색
+        네모가 줄줄이 남는다 — 디자인이 안 먹은 것처럼 보인다.
+        종류가 셋뿐이라(school · center · adult-01) 한 번 받으면 끝이다.
+      */
+      decoding="async"
+      /* 바탕도 모서리도 주지 않는다 — 그림이 이미 둥근 네모를 가지고 있다
+         (frontend/public/img/README.md). 씌우면 네모 안에 네모가 생긴다. */
+      className="size-11 shrink-0 object-contain"
+    />
   );
 }

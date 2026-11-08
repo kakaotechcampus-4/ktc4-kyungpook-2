@@ -6,6 +6,8 @@ CRITERIA.md 가 원본이고 이 파일이 따라간다. 플래그 이름은 CRI
 이름과 글자까지 같아야 한다 (test_criteria_sync.py 가 대조한다).
 """
 
+import os
+
 from common.luna import CHAT_PATH
 
 
@@ -63,7 +65,7 @@ DROP_ADVICE_TAIL = True        # 끝에 조언·활용 문장을 붙이지 않�
 RELATE_RECORDS = True          # 기록 하나를 다시 말하지 않는다. 묶거나 비교한다
 NEED_DIFFERENCE = True         # 같은 행동이 겹치기만 해서는 쓰지 않는다 (v0.8)
 PLAIN_TONE = True              # "~했다" 로 끝낸다. 실데이터 v1 에서 "~했습니다" 가 섞임 (v0.9.3)
-DROP_HEALTH_ONLY = True        # 건강 상태만으로 쓰지 않는다. 실데이터 v2 에서 코로나 증상 두 기록을 묶음 (v0.9.4)
+DROP_HEALTH_ONLY = True        # 건강 상태만으로 쓰지 않는다. 실데이터 v2 에서 코로나 증상 두 기록을 묶음 (v0.9.5)
 
 #: 동기화 테스트가 CRITERIA §5 표와 대조할 목록.
 WRITING_RULE_FLAGS = (
@@ -93,6 +95,40 @@ WRITING_RULE_FLAGS = (
 #: 동의 목록이 비어 있으면 아무 claim 도 쓰지 않는다 — 모르면 막는다.
 #: 수신 후보는 인사이트가 정하지 않는다. BE 가 Gate 2 시점의 동의로 계산한다.
 FILTER_UNCONSENTED_SOURCES = True
+
+
+# ── 약한 인사이트 (딥다이브 1, 수정 루프) ───────────────────────
+
+#: 성립 조건을 통과했지만 다음 사람이 쓰기 어려운 인사이트를 어떻게 할지 (quality.py).
+#:   "off"  검사만 하고 그대로 낸다 (기본, 지금까지와 같음)
+#:   "drop" 검사에 걸린 인사이트를 버린다
+#:   "refine" 한기관_대처없음 은 버리고, 기록에없는말 은 문제 문장을 짚어 Luna 로 한 번 고친다 (nodes.refine)
+#: 11/05 A·B 1회: drop 은 약한 것만 뺐지만, A 의 기록에없는말 하나가 정답 패턴(P12)이었다 → refine 을 만든 이유
+#: 실데이터 dev 65개 중 코드로 잡히는 8개를 모두 잡고, 블라인드 11개에서 오탐 0 (11/05).
+#: 서버에서는 AI/.env 의 INSIGHT_WEAK_MODE 로 켠다 (compose.yaml env_file). 모르는 값이면 off.
+INSIGHT_WEAK_MODE = os.environ.get("INSIGHT_WEAK_MODE", "off").strip().lower()
+if INSIGHT_WEAK_MODE not in ("off", "drop", "refine"):
+    INSIGHT_WEAK_MODE = "off"
+#: 한 요청에서 refine 으로 고치거나 보강할 최대 인사이트 수. 넘는 것은 버린다.
+#: 하나마다 Luna 를 더 부르므로(각 최대 LUNA_TIMEOUT) 요청 시간의 상한을 정한다 — BE read-timeout 과 맞춘다.
+INSIGHT_REFINE_MAX = 3
+#: 요청 하나의 시간 상한(초). 고치기·보강은 요청 시작부터 이 시간 안에서만 한다.
+#: 첫 호출(act)은 지금과 같고(최악 120초), 그 뒤 남은 시간이 모자라면 그 인사이트만 버린다.
+#: 호출 수를 늘려도(도구 추가 등) BE read-timeout 은 이 값 + 여유로 고정된다 (#373 리뷰).
+INSIGHT_DEADLINE = 180.0
+
+
+# ── 도구 사용 (딥다이브 3) ─────────────────────────────────────
+
+#: refine 모드에서 "한기관_대처없음" 을 버리기 전에, 같은 아이의 지난 기록(history_claims)을
+#: 도구 find_claims 로 찾아 기관 간 인사이트로 보강할지. 기본 꺼짐.
+#: Luna 는 /v1/chat/completions 에서 생각(reasoning)과 도구를 같이 못 쓴다 (11/06 확인).
+#: 그래서 도구 호출만 /v1/responses 로 부른다 (llm.ask_with_tools).
+INSIGHT_TOOLS = os.environ.get("INSIGHT_TOOLS", "").strip().lower() in ("1", "true", "yes", "on")
+#: 인사이트 하나에 도구를 부를 수 있는 최대 횟수. 넘으면 도구 없이 답하게 한다.
+INSIGHT_TOOL_MAX_CALLS = 2
+#: find_claims 가 돌려주는 최대 문장 수. 길면 출력 2000 토큰 상한에 걸린다.
+INSIGHT_TOOL_LIMIT = 5
 
 
 # ── 출력 크기 ───────────────────────────────────────────────────

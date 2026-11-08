@@ -5,10 +5,10 @@ import { EmptyState, PageHeader } from "@/components/ui";
  * (멘토 피드백: mock 메뉴를 실제 API 로 바꾸거나, 아직이면 그렇다고 알리기).
  * 전체 mock 모드에서는 원래 화면이 그대로 보인다 — 각 라우트가 isReady() 로 가른다.
  */
-export function NotReadyPage({ title, description }: { title: string; description?: string }) {
+export function NotReadyPage({ title }: { title: string }) {
   return (
     <>
-      <PageHeader title={title} description={description} />
+      <PageHeader title={title} />
       <NotReadyState />
     </>
   );
@@ -18,7 +18,7 @@ export function NotReadyPage({ title, description }: { title: string; descriptio
 export function NotReadyState() {
   return (
     <EmptyState
-      icon="◦"
+      icon="none"
       title="준비 중인 기능입니다"
       description="서버 연결을 준비하고 있습니다. 연결되면 이 화면에서 바로 쓸 수 있습니다."
     />
