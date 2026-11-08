@@ -1,0 +1,166 @@
+# AI/common/progress.py
+"""
+에이전트가 **지금 어느 노드에 있는지** 기억하는 진행 지도 (#452).
+
+대시보드 진행 현황에 "요약 문장을 쓰고 있어요" 를 띄우려 한다. 본 호출(`/matching` 등)은
+결과를 다 만든 뒤에 한 번만 응답하므로, 중간 단계는 BE 가 `GET /progress` 로 따로 묻는다.
+
+    엔드포인트  ── begin(agent, 키) ──┐   그 요청을 지도에 올리고, 끝나면(finally) 내린다
+    그래프 노드 ── tracked(이름, 함수) ┘   노드에 들어갈 때 mark(이름)
+    GET /progress ── snapshot()             지금 지도를 그대로 돌려준다
+
+어느 요청인지는 ContextVar 로 넘긴다. 노드 함수와 `run_*` 은 그대로 두려는 것이다.
+evals 는 `run_*` 을 직접 불러 begin 을 거치지 않으므로 아무것도 기록되지 않는다.
+
+**진행 표시가 어떻게 망가져도 노드 실행과 응답에는 닿으면 안 된다.** 그래서 기록 쪽
+(begin · mark)은 모든 예외를 삼킨다. 조회(snapshot)의 예외는 GET /progress 가 빈 목록으로 바꾼다.
+
+키는 해시하지 않는다 — AI 서버는 외부에 열려 있지 않고 BE 만 부른다. 해시하면 BE 가
+어느 일지인지 되돌릴 수 없다. (metrics.py 는 오래 남기는 집계라 해시한다)
+
+uvicorn 프로세스가 하나라 메모리 지도로 충분하다. 프로세스를 늘리면 다시 봐야 한다.
+"""
+
+import functools
+import itertools
+import threading
+import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+
+from .metrics import GAP_SEC
+
+#: 같은 일이 이 간격 안에 다시 오면 BE 재시도로 보고 시간을 이어서 센다.
+#: metrics.py 가 재시도를 한 묶음으로 세는 기준과 같다.
+RETRY_GAP_SEC = GAP_SEC
+
+#: finally 를 거치지 못하고 남은 기록을 지우는 기준(초). 마지막 mark 부터 잰다.
+#: LLM 한 번은 이보다 훨씬 짧다 — 그보다 오래 소식이 없으면 이미 끝난 일이다.
+STALE_SEC = 300.0
+
+#: 테스트에서 바꿔 끼운다.
+_now = time.monotonic
+
+_lock = threading.Lock()
+_tokens = itertools.count(1)
+#: 지금 도는 요청. token → {agent, ident, key, node, started, touched}
+_running: dict[int, dict] = {}
+#: 최근에 끝난 일. key → (started, ended_at). 재시도 때 시작 시각을 이어받는다.
+_ended: dict[tuple, tuple[float, float]] = {}
+#: 지금 요청의 token. begin 밖이면 None.
+_current: ContextVar[int | None] = ContextVar("progress_token", default=None)
+
+
+def _key(agent: str, ident: dict) -> tuple:
+    return (agent, *ident.values())
+
+
+def _prune(now: float) -> None:
+    """lock 안에서 부른다."""
+    for token in [t for t, e in _running.items() if now - e["touched"] > STALE_SEC]:
+        del _running[token]
+    for key in [k for k, (_, ended_at) in _ended.items() if now - ended_at > RETRY_GAP_SEC]:
+        del _ended[key]
+
+
+def _start(agent: str, ident: dict) -> int:
+    now = _now()
+    key = _key(agent, ident)
+    with _lock:
+        _prune(now)
+        started = [e["started"] for e in _running.values() if e["key"] == key]
+        if key in _ended:
+            started.append(_ended[key][0])
+        token = next(_tokens)
+        _running[token] = {"agent": agent, "ident": dict(ident), "key": key, "node": None,
+                           "started": min(started, default=now), "touched": now}
+    return token
+
+
+def _finish(token: int) -> None:
+    now = _now()
+    with _lock:
+        entry = _running.pop(token, None)
+        if entry is not None:
+            _ended[entry["key"]] = (entry["started"], now)
+
+
+@contextmanager
+def begin(agent: str, **ident):
+    """
+    한 요청을 지도에 올린다. 엔드포인트에서 run_* 을 이걸로 감싼다.
+
+    ident 는 BE 가 그 일을 알아보는 키다 (매칭·검증 journal_entry_id, 요약 아동·날짜·기관 등).
+    넘긴 순서대로 응답에 나간다.
+    """
+    token = None
+    try:
+        token = _start(agent, ident)
+    except Exception:
+        pass
+    reset = _current.set(token)
+    try:
+        yield
+    finally:
+        _current.reset(reset)
+        if token is not None:
+            try:
+                _finish(token)
+            except Exception:
+                pass
+
+
+def mark(node: str) -> None:
+    """지금 요청이 node 에 들어갔다고 적는다. begin 밖이면 아무것도 하지 않는다."""
+    try:
+        token = _current.get()
+        if token is None:
+            return
+        now = _now()
+        with _lock:
+            entry = _running.get(token)
+            if entry is not None:
+                entry["node"] = node
+                entry["touched"] = now
+    except Exception:
+        pass
+
+
+def tracked(name: str, fn):
+    """
+    노드 함수를 감싼다: `graph.add_node("write", tracked("write", write))`.
+
+    노드에 **들어갈 때** 기록한다. 노드 함수는 건드리지 않는다.
+    """
+    @functools.wraps(fn)
+    def node(state):
+        mark(name)
+        return fn(state)
+
+    node.progress_node = name
+    return node
+
+
+def snapshot() -> list[dict]:
+    """
+    지금 도는 일들. 시작한 순서대로.
+
+        [{"agent": "matching", "journal_entry_id": 120, "node": "llm_judge", "elapsed_sec": 7}, ...]
+
+    아직 노드에 들어가지 않은 일은 뺀다 — BE 가 번역할 문구가 없다.
+    """
+    now = _now()
+    with _lock:
+        _prune(now)
+        entries = sorted(_running.values(), key=lambda e: e["started"])
+        rows = [{"agent": e["agent"], **e["ident"], "node": e["node"],
+                 "elapsed_sec": int(now - e["started"])}
+                for e in entries if e["node"] is not None]
+    return rows
+
+
+def reset() -> None:
+    """테스트 전용. 운영에서는 부르지 않는다."""
+    with _lock:
+        _running.clear()
+        _ended.clear()
