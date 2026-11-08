@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  CalendarRange,
   Check,
   ChevronRight,
   FileCheck,
   FileText,
+  Layers,
   Link2,
   PenLine,
   ScrollText,
@@ -59,8 +59,8 @@ export async function clientLoader() {
 const POLL_MS = 10_000;
 
 const STEPS = ["아이 매칭", "내용 검증", "일지 요약", "요약 검토", "주간 리포트", "리포트 승인"] as const;
-/** 진행 현황 단계 칸에서 이름 앞에 붙는 아이콘. STEPS 와 같은 순서 */
-const STEP_ICONS = [UserSearch, ShieldCheck, ScrollText, FileCheck, CalendarRange, Send] as const;
+/** 진행 현황 단계 칸 오른쪽 끝에 붙는 아이콘. STEPS 와 같은 순서 */
+const STEP_ICONS = [UserSearch, ShieldCheck, ScrollText, FileCheck, Layers, Send] as const;
 const STEP_DESC = [
   "AI가 파일 이름과 일지 속 이름을 아동 명부와 맞춰 누구의 기록인지 찾아요",
   "AI가 개인정보·진단명이 있으면 막고, 다른 아이 이름 같은 표현은 표시해요",
@@ -550,16 +550,16 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
               title={STEP_DESC[i]}
               aria-pressed={on}
               onClick={() => setStage(on ? null : i)}
-              className={`grid min-w-0 content-start gap-1 rounded-[14px] border px-2 py-2 text-left ${
+              className={`grid min-w-0 content-start gap-1.5 rounded-[14px] border px-3 py-2.5 text-left ${
                 on ? "border-ink bg-ink text-paper" : c.me ? "border-mark bg-surface" : "border-line bg-surface hover:bg-surface2"
               }`}
             >
-              <span className="flex min-w-0 items-center gap-1">
-                <span className={`grid size-[18px] flex-none place-items-center rounded-full text-[11px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className={`grid size-6 flex-none place-items-center rounded-full text-[12px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
                   {i + 1}
                 </span>
-                <Icon aria-hidden size={15} className={`flex-none ${on ? "text-paper" : "text-ink2"}`} />
-                <b className="truncate text-[13px]">{name}</b>
+                <b className="truncate text-[13.5px]">{name}</b>
+                <Icon aria-hidden size={15} className={`ml-auto flex-none ${on ? "text-paper" : "text-ink2"}`} />
               </span>
               <span className="flex flex-wrap gap-1 text-[11px] leading-[18px] font-bold whitespace-nowrap">
                 {c.me ? <span className="rounded-full bg-mark px-1.5 text-markink">내 차례 {c.me}</span> : null}
