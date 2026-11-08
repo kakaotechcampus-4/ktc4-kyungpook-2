@@ -14,12 +14,14 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 import com.itda.backend.domain.child.ChildOrganization;
+import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.dto.response.agent.AiProgressItem;
 import com.itda.backend.dto.response.dashboard.DashboardAiProgressResponse.Item;
 import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse.Kind;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.ProgressEntryKey;
+import com.itda.backend.service.consent.ConsentStateReader;
 
 import lombok.RequiredArgsConstructor;
 
@@ -30,7 +32,8 @@ import lombok.RequiredArgsConstructor;
  *   <li>매칭 — 일지 → 기관·날짜. 진행 현황의 "아이 찾는 중" 줄은 날짜마다 한 줄이라 아이 없이 붙인다</li>
  *   <li>검증 — 일지 → 기관·아이·날짜</li>
  *   <li>요약 — AI 가 기관·아이·날짜를 그대로 준다</li>
- *   <li>리포트 — 아이 → 지금 연결된 기관 모두. 그 주 줄을 보는 기관 전부다. 줄이 없는 기관은 FE 가 붙이지 않는다</li>
+ *   <li>리포트 — 아이 → 지금 명부에 있고 공유 동의가 켜진 기관 모두. 진행 현황(O-80)이 주 줄을 보여 주는 기준과 같다 —
+ *       동의하지 않은 기관에는 화면에 안 그려지더라도 응답에 넣지 않는다</li>
  * </ul>
  * 같은 줄에 일이 여럿이면 하나만 남긴다.
  * <ul>
@@ -41,7 +44,7 @@ import lombok.RequiredArgsConstructor;
  *   <li>그래도 같으면 더 오래 걸린 것</li>
  * </ul>
  *
- * <p>DB 는 한 번에 최대 두 번 읽는다(일지 묶음 · 아이-기관 연결 묶음). 그 에이전트가 안 돌면 읽지 않는다.
+ * <p>DB 는 한 번에 최대 세 번 읽는다(일지 묶음 · 아이-기관 연결 묶음 · 동의 묶음). 그 에이전트가 안 돌면 읽지 않는다.
  * 키가 빠졌거나 모르는 에이전트·찾지 못한 일지는 버린다 — 붙일 줄이 없다.
  */
 @Component
@@ -66,6 +69,7 @@ public class AiProgressTranslator {
 
     private final JournalEntryRepository journalEntryRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
+    private final ConsentStateReader consentStateReader;
 
     /** 기관 id → 그 기관 진행 현황에 붙일 줄. AI 가 준 순서(시작한 순서)를 지킨다. */
     public Map<Long, List<Item>> translate(List<AiProgressItem> items) {
@@ -115,7 +119,10 @@ public class AiProgressTranslator {
         if (children.isEmpty()) {
             return Map.of();
         }
+        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(children);
         return childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(children).stream()
+                .filter(link -> consents.getOrDefault(link.getChildId(), Map.of())
+                        .getOrDefault(link.getOrganizationId(), ConsentState.NOT_GRANTED) == ConsentState.GRANTED)
                 .collect(Collectors.groupingBy(ChildOrganization::getChildId,
                         Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
     }
