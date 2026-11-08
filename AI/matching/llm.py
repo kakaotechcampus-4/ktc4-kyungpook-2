@@ -12,10 +12,12 @@ from dataclasses import dataclass, field
 
 import requests
 
-from common.luna import json_format
+from common.luna import endpoint, json_format, not_configured
 from common.luna import model as luna_model
 
-from .config import LUNA_CHAT_PATH, LUNA_TIMEOUT
+from .config import LUNA_TIMEOUT
+
+AGENT = "matching"
 
 
 class LlmError(RuntimeError):
@@ -32,14 +34,11 @@ class LlmResult:
 
 
 def _endpoint() -> tuple[str, str]:
-    url = os.environ.get("LUNA_API_URL")
-    key = os.environ.get("LUNA_API_KEY")
-    if not (url and key):
-        raise LlmError("LUNA_API_URL / LUNA_API_KEY 가 설정되지 않았습니다")
-    # .env 에는 base 만 둔다. 경로가 이미 붙어 있으면 그대로 쓴다.
-    if not url.rstrip("/").endswith(LUNA_CHAT_PATH):
-        url = url.rstrip("/") + LUNA_CHAT_PATH
-    return url, key
+    # .env 의 MATCHING_API_URL · API_KEY (common/luna.py endpoint)
+    found = endpoint(AGENT)
+    if not found:
+        raise LlmError(not_configured(AGENT))
+    return found
 
 
 def _extract_text(payload: dict) -> str:
@@ -100,8 +99,8 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT) -> LlmResul
         response = requests.post(
             url,
             json={
-                "model": luna_model(),
-                **json_format(),  # 기본 JSON 강제, LUNA_JSON_MODE=off 면 뺀다
+                "model": luna_model(AGENT),
+                **json_format(AGENT),  # 기본 JSON 강제, MATCHING_JSON_MODE=off 면 뺀다
                 "messages": messages,
             },
             headers={

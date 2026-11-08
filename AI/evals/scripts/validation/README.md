@@ -17,7 +17,7 @@ python3 evals/scripts/validation/score.py            # dev 채점
 
 옵션: `run_dev.py N` (앞에서 N 건만, 예: `run_dev.py 30`). 동시 호출 수는
 `run_dev.py` 의 `MAX_WORKERS` (기본 6).
-`AI/.env` 에 `LUNA_API_URL` 과 `LUNA_API_KEY` 가 있어야 한다. 독립 실행
+`AI/.env` 에 `VALIDATION_API_URL` 과 `API_KEY` 가 있어야 한다. 독립 실행
 스크립트라 `main.py` 를 거치지 않으므로, 각 스크립트가 `.env` 를 직접 읽는다.
 
 **항상 `AI` 폴더에서 실행한다.** 스크립트 안의 경로가 파일 위치 기준이긴 하지만,

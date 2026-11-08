@@ -18,8 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from insight import llm as insight_llm  # noqa: E402
 from summary import llm as summary_llm  # noqa: E402
 
-os.environ.setdefault("LUNA_API_URL", "http://luna.test")
-os.environ.setdefault("LUNA_API_KEY", "test-key")
+for _agent in ("MATCHING", "VALIDATION", "SUMMARY", "INSIGHT"):
+    os.environ.setdefault(f"{_agent}_API_URL", "http://luna.test")
+os.environ.setdefault("API_KEY", "test-key")
 
 
 class FakeResponse:

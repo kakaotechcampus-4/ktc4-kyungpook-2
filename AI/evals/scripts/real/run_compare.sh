@@ -5,7 +5,7 @@
 #   bash evals/scripts/real/run_compare.sh <모델> full    # 본실행: 딥다이브 전 3 + 후 3 동시 (약 45분)
 #
 # <모델> = .env 의 COMPARE_<이름> 칸 이름 (luna · opus · sonnet · gemini · sol 등).
-# 주소·모델·JSON 강제는 AI/.env 의 COMPARE_<이름>_URL · _MODEL · _JSON 에서 읽는다. 키는 LUNA_API_KEY 하나를 같이 쓴다.
+# 주소·모델·JSON 강제는 AI/.env 의 COMPARE_<이름>_URL · _MODEL · _JSON 에서 읽는다. 네 에이전트 모두 이 모델로 돌린다. 키는 API_KEY 하나를 같이 쓴다.
 # 결과 파일 이름 시각이 분 단위라, 같은 설정이 같은 분에 시작하면 덮어쓴다 → 본실행은 65초 간격으로 띄운다.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."          # AI/
@@ -13,11 +13,12 @@ NAME=$1; MODE=${2:-smoke}
 set -a; source .env; set +a
 UP=$(echo "$NAME" | tr '[:lower:]' '[:upper:]')
 url_var="COMPARE_${UP}_URL"; model_var="COMPARE_${UP}_MODEL"; json_var="COMPARE_${UP}_JSON"
-export LUNA_API_URL="${!url_var:?.env 에 $url_var 가 없습니다}"
-export LUNA_MODEL="${!model_var:?.env 에 $model_var 가 없습니다}"
-export LUNA_JSON_MODE="${!json_var:-on}"
-: "${LUNA_API_KEY:?.env 에 LUNA_API_KEY 가 없습니다}"
-echo "[$NAME] 모델 $LUNA_MODEL · JSON 강제 $LUNA_JSON_MODE · $MODE"
+URL="${!url_var:?.env 에 $url_var 가 없습니다}"; MODEL="${!model_var:?.env 에 $model_var 가 없습니다}"; JSON="${!json_var:-on}"
+for AGENT in MATCHING VALIDATION SUMMARY INSIGHT; do
+  export "${AGENT}_API_URL=$URL" "${AGENT}_MODEL=$MODEL" "${AGENT}_JSON_MODE=$JSON"
+done
+: "${API_KEY:?.env 에 API_KEY 가 없습니다}"
+echo "[$NAME] 모델 $MODEL · JSON 강제 $JSON · $MODE"
 
 LOGDIR=evals/generated/real/runs/logs_${NAME}_$(date +%m%d_%H%M); mkdir -p "$LOGDIR"
 if [ "$MODE" = smoke ]; then

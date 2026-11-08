@@ -20,6 +20,8 @@ import unittest
 SCRIPTS = Path(__file__).resolve().parents[1]
 WORKFLOW = SCRIPTS.parents[1] / ".github/workflows/ai-ci-cd.yml"
 IMAGE = "ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-ai@sha256:" + "b" * 64
+AI_ENV = "API_KEY=llm-secret\n" + "".join(
+    f"{agent}_API_URL=https://llm.invalid\n" for agent in ("MATCHING", "VALIDATION", "SUMMARY", "INSIGHT"))
 spec = importlib.util.spec_from_file_location("sender", SCRIPTS / "send-deploy.py")
 sender = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sender)
@@ -110,7 +112,7 @@ class DeployScriptTests(unittest.TestCase):
         self.env_file.write_text(self.original_env)
         self.env_file.chmod(0o600)
         self.ai_env_file = self.root / "AI/.env"
-        self.ai_env_file.write_text("LUNA_API_URL=https://luna.invalid\nLUNA_API_KEY=luna-secret\n")
+        self.ai_env_file.write_text(AI_ENV)
         self.state_file = self.base / "docker.json"
         self.set_state("success")
         self.bin = self.base / "bin"
@@ -287,9 +289,14 @@ class DeployScriptTests(unittest.TestCase):
         rollback_up = [entry for entry in self.state()["commands"] if "up" in entry["args"]][-1]
         self.assertEqual(rollback_up["checkout"], "old")
 
-    def test_missing_luna_key_stops_before_changes(self):
-        self.ai_env_file.write_text("LUNA_API_URL=https://luna.invalid\nLUNA_API_KEY=\n")
-        self.assert_unchanged(self.deploy(), "LUNA_API_KEY")
+    def test_missing_api_key_stops_before_changes(self):
+        self.ai_env_file.write_text(AI_ENV.replace("API_KEY=llm-secret", "API_KEY="))
+        self.assert_unchanged(self.deploy(), "API_KEY")
+        self.assert_checkout_restored()
+
+    def test_missing_agent_url_stops_before_changes(self):
+        self.ai_env_file.write_text(AI_ENV.replace("INSIGHT_API_URL=https://llm.invalid", "INSIGHT_API_URL="))
+        self.assert_unchanged(self.deploy(), "INSIGHT_API_URL")
         self.assert_checkout_restored()
 
     def test_dirty_checkout_is_preserved(self):

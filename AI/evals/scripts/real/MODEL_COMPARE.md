@@ -8,7 +8,7 @@
 - 매칭 → 검증 → 요약 → 인사이트를 한 번에 (`run_real.py --months 04,05,06 --school synthetic_school_dev.json`)
 - **딥다이브 전** `--weak-mode off` · **딥다이브 후** `--weak-mode refine` (약한 인사이트를 고치거나 버림). 각 3회
 - 다섯 모델 모두 **같은 코드** (11/9). 도구 사용(`find_claims`)은 실데이터에 기관 간 겹침이 없어 동작 0회라 제외
-- Claude 2종은 엘리스 프록시가 `response_format` 을 거절해 `LUNA_JSON_MODE=off`. 나머지는 on
+- Claude 2종은 엘리스 프록시가 `response_format` 을 거절해 `<에이전트>_JSON_MODE=off`. 나머지는 on
 - 약한 인사이트는 결과의 인사이트에 `insight/quality.weak_reasons` 를 다시 돌려 셈
 
 ## 결과
@@ -36,6 +36,6 @@
 ## 실험 중 고친 것
 
 - **잘린 답 재시도** (`summary/llm.py`, `insight/llm.py`): 엘리스 프록시는 스트리밍이 아닌 응답의 출력(생각 + 답)을 2000 토큰에서 자른다. 루나는 빈 답을 줘서 기존 규칙(빈 답이면 `reasoning_effort=low` 로 재시도)에 걸렸지만, opus 는 반쯤 쓴 JSON 을 줘서 빠져나갔다 → 요약 10~15건 실패. `finish_reason=length` 면 답이 있어도 재시도하게 바꾼 뒤 66/66
-- **JSON 강제 끄기** (`common/luna.py json_format`, `LUNA_JSON_MODE`)
+- **JSON 강제 끄기** (`common/luna.py json_format`, `<에이전트>_JSON_MODE`)
 - **결과에 모델 기록** (`run_real.py`): 파일 이름과 본문에 `model` · `json_mode`
 - **검증 재시도** (`run_real.py`): 느린 모델이 검증 한 건에서 60초를 넘기면 회차 전체가 멈췄다 → 요약처럼 3번까지 재시도

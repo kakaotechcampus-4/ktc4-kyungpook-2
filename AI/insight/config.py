@@ -140,7 +140,7 @@ MAX_INSIGHTS = None
 # ── Luna (OpenAI 호환) — 판정 기준이 아니라 접속 설정 ──────────
 
 #: 접속 경로와 모델은 네 에이전트가 같이 쓴다 (common/luna.py).
-#: 모델은 .env 의 LUNA_MODEL 로 바꾼다.
+#: 모델은 .env 의 INSIGHT_MODEL 로 바꾼다.
 LUNA_CHAT_PATH = CHAT_PATH
 
 #: 호출 제한시간만 에이전트마다 다르다.

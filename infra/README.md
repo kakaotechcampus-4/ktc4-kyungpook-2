@@ -219,7 +219,7 @@ SSM은 [`scripts/deploy-ai.sh`](scripts/deploy-ai.sh)를 `ubuntu` 계정으로 �
 
 1. 서버 잠금을 기다리고(최대 5분), 서버 파일이 수정됐거나 브랜치가 `develop`이 아니면 중단합니다.
 2. 복구에 쓸 기존 `ai` 컨테이너가 있어야 합니다. [서버 checkout 갱신 규칙](#서버-checkout-갱신-규칙)대로 checkout을 갱신합니다.
-3. 서버 `AI/.env`의 `LUNA_API_URL`·`LUNA_API_KEY`가 비어 있으면 컨테이너를 건드리기 전에 중단합니다. 값은 출력하지 않습니다.
+3. 서버 `AI/.env`의 `API_KEY`·에이전트별 `*_API_URL`(매칭·검증·요약·인사이트)이 비어 있으면 컨테이너를 건드리기 전에 중단합니다. 값은 출력하지 않습니다.
 4. 기존 이미지를 `ktc-ai:rollback-<id>`로 보관하고 새 digest를 받습니다. 다운로드에 실패해도 실행 중인 AI는 그대로입니다.
 5. `--no-deps --no-build --pull never`로 AI만 교체하고 확인을 최대 60초 기다립니다.
 6. 성공하면 서버 `infra/docker/.env`의 `AI_IMAGE`만 원자적으로 갱신합니다.
