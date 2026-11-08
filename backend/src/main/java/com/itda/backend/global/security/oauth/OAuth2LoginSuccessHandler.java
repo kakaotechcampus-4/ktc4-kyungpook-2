@@ -17,7 +17,6 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationSu
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.Map;
 
 /**
  * Spring Security 가 카카오 인증(state 검증 · 토큰 교환 · 사용자 조회)을 끝낸 뒤 불린다.
@@ -31,10 +30,6 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 
     /** 카카오 사용자 정보 응답의 최상위 식별자. application.yml 의 user-name-attribute 와 같다. */
     private static final String KAKAO_ID = "id";
-
-    /** 닉네임은 properties.nickname 에 들어온다 (scope: profile_nickname). */
-    private static final String KAKAO_PROPERTIES = "properties";
-    private static final String KAKAO_NICKNAME = "nickname";
 
     private final JwtProvider jwtProvider;
     private final JwtCookie jwtCookie;
@@ -80,8 +75,8 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 
         User user;
         try {
-            user = userService.findOrCreateByKakaoId(
-                    String.valueOf(kakaoId), extractNickname(oAuth2User));
+            // 회원번호 말고는 저장하지 않는다. 닉네임이 응답에 들어 있어도 쓰지 않는다.
+            user = userService.findOrCreateByKakaoId(String.valueOf(kakaoId));
         } catch (RuntimeException e) {
             // DB 장애나 동시 첫 로그인 충돌. 여기서도 예외를 던지면 톰캣 기본 오류 화면이 뜬다.
             log.error("로그인 사용자 등록에 실패했습니다.", e);
@@ -106,17 +101,5 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
         // 카카오 회원번호는 남기지 않는다.
         log.info("카카오 로그인 성공: userId={} role={}", user.getId(), user.getRole());
         getRedirectStrategy().sendRedirect(request, response, redirectUri);
-    }
-
-    /**
-     * 닉네임은 사용자가 동의를 거부할 수 있다. 그러면 properties 자체가 없거나 비어 있으므로
-     * 방어적으로 읽고 null 을 돌려준다.
-     */
-    private String extractNickname(OAuth2User oAuth2User) {
-        if (!(oAuth2User.getAttributes().get(KAKAO_PROPERTIES) instanceof Map<?, ?> properties)) {
-            return null;
-        }
-        Object nickname = properties.get(KAKAO_NICKNAME);
-        return nickname == null ? null : String.valueOf(nickname);
     }
 }

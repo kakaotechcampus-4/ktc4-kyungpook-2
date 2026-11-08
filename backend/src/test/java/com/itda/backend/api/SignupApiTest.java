@@ -53,7 +53,7 @@ class SignupApiTest {
     private OrganizationRepository organizationRepository;
 
     private User pendingUser(String kakaoId) {
-        return userRepository.save(User.pending(kakaoId, "박지현"));
+        return userRepository.save(User.pending(kakaoId));
     }
 
     private Cookie cookieFor(User user) {

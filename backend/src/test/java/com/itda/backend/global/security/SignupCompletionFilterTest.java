@@ -78,7 +78,7 @@ class SignupCompletionFilterTest {
 
     @Test
     void userBeforeSignupIsForbiddenFromProtectedApi() throws Exception {
-        User user = userRepository.save(User.pending("filter-pending-1", "박지현"));
+        User user = userRepository.save(User.pending("filter-pending-1"));
 
         mockMvc.perform(get(PROTECTED).cookie(cookieFor(user)))
                 .andExpect(status().isForbidden())
@@ -89,7 +89,7 @@ class SignupCompletionFilterTest {
     /** 가입 화면을 띄우려면 /auth/me 로 상태를 알아야 한다. */
     @Test
     void userBeforeSignupCanReadSession() throws Exception {
-        User user = userRepository.save(User.pending("filter-pending-2", "박지현"));
+        User user = userRepository.save(User.pending("filter-pending-2"));
 
         mockMvc.perform(get("/api/v1/auth/me").cookie(cookieFor(user)))
                 .andExpect(status().isOk())
@@ -99,7 +99,7 @@ class SignupCompletionFilterTest {
     /** 가입을 그만두고 나갈 수도 있어야 한다. */
     @Test
     void userBeforeSignupCanLogOut() throws Exception {
-        User user = userRepository.save(User.pending("filter-pending-3", "박지현"));
+        User user = userRepository.save(User.pending("filter-pending-3"));
         Cookie csrf = mockMvc.perform(get("/api/health")).andReturn().getResponse().getCookie("XSRF-TOKEN");
 
         mockMvc.perform(post("/api/v1/auth/logout")
@@ -110,7 +110,7 @@ class SignupCompletionFilterTest {
 
     @Test
     void userBeforeSignupCanReachHealthCheck() throws Exception {
-        User user = userRepository.save(User.pending("filter-pending-4", "박지현"));
+        User user = userRepository.save(User.pending("filter-pending-4"));
 
         mockMvc.perform(get("/api/health").cookie(cookieFor(user)))
                 .andExpect(status().isOk());
@@ -119,8 +119,8 @@ class SignupCompletionFilterTest {
     /** 약관 본문은 동의하기 전에 읽어야 한다 — 가입 미완료 · 약관 미동의 회원도 읽는다. 인코딩된 주소는 SignupCompletionFilterHttpTest. */
     @Test
     void userBeforeSignupOrTermsCanReadTermsDocuments() throws Exception {
-        User pending = userRepository.save(User.pending("filter-pending-terms-doc", "박지현"));
-        User parent = userRepository.save(UserFixture.parent("filter-parent-terms-doc", "김보호"));
+        User pending = userRepository.save(User.pending("filter-pending-terms-doc"));
+        User parent = userRepository.save(UserFixture.parent("filter-parent-terms-doc"));
 
         for (User user : new User[]{pending, parent}) {
             mockMvc.perform(get("/api/v1/terms").param("role", "parent").cookie(cookieFor(user)))
@@ -131,7 +131,7 @@ class SignupCompletionFilterTest {
     /** 약관 본문 아래 경로는 열리지 않는다 — 정확히 /api/v1/terms 만 통과한다. */
     @Test
     void pathsBelowTermsDocumentsAreNotOpened() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("filter-parent-terms-sub", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("filter-parent-terms-sub"));
 
         mockMvc.perform(get("/api/v1/terms/tos").cookie(cookieFor(parent)))
                 .andExpect(status().isForbidden())
@@ -142,7 +142,7 @@ class SignupCompletionFilterTest {
     void signedUpUserPassesThrough() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(
-                UserFixture.organizationUser("filter-org-1", "박지현", organization.getId())));
+                UserFixture.organizationUser("filter-org-1", organization.getId())));
 
         mockMvc.perform(get(PROTECTED).cookie(cookieFor(user)))
                 .andExpect(status().isOk());
@@ -152,7 +152,7 @@ class SignupCompletionFilterTest {
 
     @Test
     void parentBeforeTermsIsForbiddenFromProtectedApi() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("filter-terms-1", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("filter-terms-1"));
 
         mockMvc.perform(get(PROTECTED).cookie(cookieFor(parent)))
                 .andExpect(status().isForbidden())
@@ -166,7 +166,7 @@ class SignupCompletionFilterTest {
     /** 약관 화면을 띄우려면 세션을 읽어야 하고, 동의를 보내야 하고, 그만두고 나갈 수도 있어야 한다. */
     @Test
     void parentBeforeTermsCanReadSessionAgreeAndLogOut() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("filter-terms-2", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("filter-terms-2"));
         Cookie csrf = mockMvc.perform(get("/api/health")).andReturn().getResponse().getCookie("XSRF-TOKEN");
 
         mockMvc.perform(get("/api/v1/auth/me").cookie(cookieFor(parent)))
@@ -191,7 +191,7 @@ class SignupCompletionFilterTest {
     @Test
     void parentWhoAgreedPassesThrough() throws Exception {
         User parent = TermsFixture.agreeAll(termsAgreementRepository,
-                userRepository.save(UserFixture.parent("filter-terms-3", "김보호")));
+                userRepository.save(UserFixture.parent("filter-terms-3")));
 
         mockMvc.perform(get(PROTECTED).cookie(cookieFor(parent)))
                 .andExpect(status().isOk());
@@ -200,7 +200,7 @@ class SignupCompletionFilterTest {
     /** 개인정보 수집 약관의 판이 올라가면 옛 판 동의로는 다시 막힌다. */
     @Test
     void parentWithOnlyOldPrivacyVersionIsForbiddenAgain() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("filter-terms-4", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("filter-terms-4"));
         termsAgreementRepository.save(TermsAgreement.agree(
                 parent.getId(), TermKey.TOS, TermsCatalog.currentVersion(TermKey.TOS)));
         termsAgreementRepository.save(TermsAgreement.agree(parent.getId(), TermKey.PRIVACY, "2000-01-01"));
@@ -213,7 +213,7 @@ class SignupCompletionFilterTest {
     /** 이용약관은 판이 올라가도 다시 받지 않는다 — 옛 판 동의로 통과한다. */
     @Test
     void parentWithOnlyOldTosVersionPasses() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("filter-terms-5", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("filter-terms-5"));
         termsAgreementRepository.save(TermsAgreement.agree(parent.getId(), TermKey.TOS, "2000-01-01"));
         termsAgreementRepository.save(TermsAgreement.agree(
                 parent.getId(), TermKey.PRIVACY, TermsCatalog.currentVersion(TermKey.PRIVACY)));
@@ -284,7 +284,7 @@ class SignupCompletionFilterTest {
 
     private User staff(String kakaoId) {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        return userRepository.save(UserFixture.organizationUser(kakaoId, "박지현", organization.getId()));
+        return userRepository.save(UserFixture.organizationUser(kakaoId, organization.getId()));
     }
 
     private void agreeOrgWithOld(User staff, TermKey oldKey) {
@@ -297,7 +297,7 @@ class SignupCompletionFilterTest {
     /** 가입하지 않은 회원은 약관보다 가입이 먼저다 — /auth/terms 도 가입 미완료로 막는다. */
     @Test
     void userBeforeSignupGetsSignupErrorEvenOnTermsPath() throws Exception {
-        User user = userRepository.save(User.pending("filter-pending-terms", "박지현"));
+        User user = userRepository.save(User.pending("filter-pending-terms"));
         Cookie csrf = mockMvc.perform(get("/api/health")).andReturn().getResponse().getCookie("XSRF-TOKEN");
 
         mockMvc.perform(post("/api/v1/auth/terms")
@@ -329,7 +329,7 @@ class SignupCompletionFilterTest {
 
     @Test
     void tokenForDeletedUserIsUnauthorizedBeforeController() throws Exception {
-        User user = UserFixture.parent("filter-deleted", "탈퇴회원");
+        User user = UserFixture.parent("filter-deleted");
         user.delete();
         userRepository.saveAndFlush(user);
 

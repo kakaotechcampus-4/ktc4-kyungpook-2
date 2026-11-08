@@ -6,7 +6,6 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -19,7 +18,6 @@ import com.itda.backend.domain.checklist.Checklist;
 import com.itda.backend.domain.checklist.ChecklistTarget;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
-import com.itda.backend.domain.user.User;
 import com.itda.backend.dto.response.checklist.SentChecklistPageResponse;
 import com.itda.backend.dto.response.checklist.SentChecklistResponse;
 import com.itda.backend.exception.checklist.ChecklistErrorCode;
@@ -28,7 +26,6 @@ import com.itda.backend.repository.checklist.ChecklistRepository;
 import com.itda.backend.repository.checklist.ChecklistTargetRepository;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
-import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -52,7 +49,6 @@ public class ChecklistService {
     private final ChecklistTargetRepository checklistTargetRepository;
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
-    private final UserRepository userRepository;
     private final Clock clock;
 
     /**
@@ -74,7 +70,7 @@ public class ChecklistService {
         List<ChecklistTarget> targets = checklistTargetRepository.saveAll(childIds.stream()
                 .map(childId -> ChecklistTarget.of(checklist.getId(), childId, now))
                 .toList());
-        return toResponse(checklist, targets, children, onRoster, Map.of());
+        return toResponse(checklist, targets, children, onRoster);
     }
 
     /**
@@ -100,12 +96,10 @@ public class ChecklistService {
         List<ChecklistTarget> allTargets = targetsByChecklist.values().stream().flatMap(List::stream).toList();
         Map<Long, Child> children = childrenById(allTargets.stream().map(ChecklistTarget::getChildId).toList());
         Set<Long> onRoster = onRoster(organizationId, children);
-        Map<Long, String> confirmerNames = namesOf(allTargets.stream()
-                .map(ChecklistTarget::getConfirmedBy).filter(Objects::nonNull).toList());
 
         List<SentChecklistResponse> responses = checklists.stream()
                 .map(checklist -> toResponse(checklist, targetsByChecklist.getOrDefault(checklist.getId(), List.of()),
-                        children, onRoster, confirmerNames))
+                        children, onRoster))
                 .toList();
         String nextBefore = hasMore ? String.valueOf(checklists.get(checklists.size() - 1).getId()) : null;
         return new SentChecklistPageResponse(responses, nextBefore);
@@ -149,17 +143,8 @@ public class ChecklistService {
                 .collect(Collectors.toSet());
     }
 
-    private Map<Long, String> namesOf(Collection<Long> userIds) {
-        if (userIds.isEmpty()) {
-            return Map.of();
-        }
-        return userRepository.findAllById(Set.copyOf(userIds)).stream()
-                .filter(user -> user.getName() != null)
-                .collect(Collectors.toMap(User::getId, User::getName));
-    }
-
     private static SentChecklistResponse toResponse(Checklist checklist, List<ChecklistTarget> targets,
-            Map<Long, Child> children, Set<Long> onRoster, Map<Long, String> confirmerNames) {
+            Map<Long, Child> children, Set<Long> onRoster) {
         List<SentChecklistResponse.Target> rows = targets.stream()
                 .sorted(Comparator.comparing(ChecklistTarget::getChildId))
                 .map(target -> {
@@ -168,8 +153,7 @@ public class ChecklistService {
                             new SentChecklistResponse.ChildRef(String.valueOf(target.getChildId()),
                                     child == null ? null : child.getName()),
                             onRoster.contains(target.getChildId()),
-                            target.getConfirmedAt(),
-                            target.getConfirmedBy() == null ? null : confirmerNames.get(target.getConfirmedBy()));
+                            target.getConfirmedAt());
                 })
                 .toList();
         int total = (int) rows.stream().filter(SentChecklistResponse.Target::onRoster).count();

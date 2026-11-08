@@ -102,8 +102,8 @@ class ConsentApiTest {
     void setUp() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         organizationId = String.valueOf(organization.getId());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
-        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
+        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -235,7 +235,7 @@ class ConsentApiTest {
 
     @Test
     void 가입을_마치지_않으면_403() throws Exception {
-        User pending = userRepository.save(User.pending(uniqueKakaoId(), "가입중"));
+        User pending = userRepository.save(User.pending(uniqueKakaoId()));
 
         mockMvc.perform(get(previewPath()).cookie(auth(pending)))
                 .andExpect(status().isForbidden())
@@ -254,7 +254,7 @@ class ConsentApiTest {
 
     @Test
     void 연결되지_않은_아이면_403_FORBIDDEN() throws Exception {
-        User stranger = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "남")));
+        User stranger = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         mockMvc.perform(get(previewPath()).cookie(auth(stranger)))
                 .andExpect(status().isForbidden())

@@ -1503,7 +1503,6 @@ export async function confirmChecklist(childId: string, checklistId: string): Pr
     if (item.status === "needs_check") {
       item.status = "confirmed";
       item.confirmedAt = new Date().toISOString();
-      item.confirmedByName = mock.ME.name;
     }
     return item;
   }
@@ -1546,7 +1545,6 @@ export async function sendChecklist(input: { items: string[]; childIds: string[]
         child: { id, name: roster.find((c) => c.id === id)?.name ?? null },
         onRoster: true,
         confirmedAt: null,
-        confirmedByName: null,
       })),
     };
     mock.SENT_CHECKLISTS.unshift(sent);

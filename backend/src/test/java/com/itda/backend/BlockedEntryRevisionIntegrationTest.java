@@ -147,10 +147,10 @@ class BlockedEntryRevisionIntegrationTest {
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         teacher = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(
-                "revision-" + UUID.randomUUID(), "이선생", organization.getId())));
+                "revision-" + UUID.randomUUID(), organization.getId())));
         junho = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1)));
         childOrganizationRepository.save(ChildOrganization.of(junho.getId(), organization.getId()));
-        User guardian = userRepository.save(UserFixture.parent("parent-" + UUID.randomUUID(), "김보호"));
+        User guardian = userRepository.save(UserFixture.parent("parent-" + UUID.randomUUID()));
         sharingConsentRepository.save(SharingConsent.grant(junho.getId(), guardian.getId(), organization.getId(),
                 List.of(ConsentField.DAILY_SUMMARY)));
 

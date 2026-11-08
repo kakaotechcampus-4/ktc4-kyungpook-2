@@ -59,7 +59,7 @@ class JwtCookieAuthTest {
     private String tokenForOrganizationUser(String kakaoId) {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(
-                UserFixture.organizationUser(kakaoId, "테스트", organization.getId())));
+                UserFixture.organizationUser(kakaoId, organization.getId())));
         return jwtProvider.createToken(String.valueOf(user.getId()));
     }
 

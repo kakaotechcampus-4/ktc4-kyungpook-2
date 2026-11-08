@@ -17,7 +17,11 @@ export function LinkRequestCard({ request }: { request: PendingLinkRequest }) {
   const [busy, setBusy] = useState(false);
   const [confirmingReject, setConfirmingReject] = useState(false);
 
-  const requesters = request.requesters.map((r) => r.name ?? "이름 없는 보호자").join(", ");
+  // 보호자 이름은 저장하지 않는다 — 아이 이름으로 부르고, 여럿이면 수를 붙인다
+  const requesters =
+    request.requesterCount > 1
+      ? `${request.child.name} 보호자 ${request.requesterCount}명`
+      : `${request.child.name} 보호자`;
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);

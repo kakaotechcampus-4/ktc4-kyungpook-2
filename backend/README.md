@@ -79,7 +79,7 @@ JWT 유효시간은 3시간이고, 남은 시간이 절반보다 짧은 API 요�
 인증 쿠키를 만료시키지 않습니다. 비로그인 API GET 요청은 RequestCache에 저장하지 않아 세션을
 생성하지 않고, 카카오 인가 요청의 state를 보관할 때는 세션을 사용합니다.
 동시 최초 로그인은 카카오 ID 중복 경합 후 새 트랜잭션에서 먼저 생성된 회원을 조회하므로 두 요청이
-같은 회원 ID를 사용합니다. 로그인 시 복구·닉네임 갱신과 회원가입은 회원 행의 잠금으로 조율합니다.
+같은 회원 ID를 사용합니다. 로그인 시 복구와 회원가입은 회원 행의 잠금으로 조율합니다.
 
 > **기존 배포 데이터를 보존할 때 테이블을 삭제하지 마세요.** `docker` 프로필의 `ddl-auto: update`는
 > 이전 실험 스키마의 `users.role` NOT NULL이나 `organization.name` UNIQUE 제약을 제거하지 못합니다.
@@ -144,7 +144,7 @@ psql "$DATABASE_URL" -v apply=true -f /absolute/path/to/backend/scripts/migrate-
 
 ```bash
 dbsql() { docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@"; }
-dbsql -c "SELECT u.name, o.id, o.name FROM users u JOIN organization o ON o.id = u.organization_id;"   # 기관 id
+dbsql -c "SELECT o.id, o.name FROM organization o ORDER BY o.id;"   # 기관 id
 dbsql -v action=seed -v org_id=5 < ../../backend/scripts/test-children.sql               # 확인만 (ROLLBACK)
 dbsql -v action=seed -v org_id=5 -v apply=true < ../../backend/scripts/test-children.sql # 저장
 ```

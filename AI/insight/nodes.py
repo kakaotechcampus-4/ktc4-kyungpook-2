@@ -10,6 +10,8 @@ Insight Agent 의 4단계 노드 — 인식/계획/행동/반영.
 import re
 import time
 
+from common import progress
+
 from . import config
 from .quality import NOT_IN_RECORD, SINGLE_NO_SUPPORT, weak_reasons
 from .tools import TOOL_SPECS, find_claims
@@ -385,6 +387,9 @@ def _lookup(state: dict, item: dict, known_types: set[str],
     def run_tool(name: str, args: dict) -> list[dict]:
         if name != "find_claims":
             return []
+        # 진행 현황 "지난 기록을 찾아보고 있어요" (#452). 찾은 기록으로 답을 다시 쓰는 호출까지
+        # 이어서 보이고, ask_with_tools 가 끝나면 refine 으로 되돌린다.
+        progress.mark("find_claims")
         found = find_claims(list(history.values()), args.get("situation", ""),
                             weeks_back=args.get("weeks_back"), before=state.get("period_from"),
                             limit=config.INSIGHT_TOOL_LIMIT, scores=scores)
@@ -402,6 +407,8 @@ def _lookup(state: dict, item: dict, known_types: set[str],
     except LlmError as exc:
         return None, {"after": None, "outcome": "dropped", "why": exc.kind, "action": "lookup",
                       "tool_calls": 0, "looked_up": [], "scores": scores}
+    finally:
+        progress.mark("refine")
 
     calls = result.usage.get("tool_calls", 0)
     got = result.data.get("insights")

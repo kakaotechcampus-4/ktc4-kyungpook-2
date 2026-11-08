@@ -54,7 +54,7 @@ class TermsServiceJpaTest {
 
     @BeforeEach
     void setUp() {
-        parent = em.persist(UserFixture.parent("terms-parent", "김보호"));
+        parent = em.persist(UserFixture.parent("terms-parent"));
         em.flush();
     }
 
@@ -238,7 +238,7 @@ class TermsServiceJpaTest {
 
     @Test
     void 가입_미완료_회원은_동의하지_않은_것이다() {
-        User pending = em.persist(User.pending("terms-pending", "박지현"));
+        User pending = em.persist(User.pending("terms-pending"));
 
         assertThat(termsService.isAgreed(pending)).isFalse();
     }
@@ -282,7 +282,7 @@ class TermsServiceJpaTest {
     }
 
     private User staff(String kakaoId) {
-        User staff = em.persist(UserFixture.organizationUser(kakaoId, "박지현", 1L));
+        User staff = em.persist(UserFixture.organizationUser(kakaoId, 1L));
         em.flush();
         return staff;
     }
