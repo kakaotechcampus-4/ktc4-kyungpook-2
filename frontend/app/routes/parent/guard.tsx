@@ -36,7 +36,10 @@ export async function clientLoader({ request }: { request: Request }) {
   // 아직 열어 보지 않은 리포트가 있는 아이. 두 점이 이 값 하나에서 나온다 — 하단 리포트 탭(고른 아이, 셸이 아이
   // Context 밖이라 이 loader 를 직접 읽는다)과 헤더의 아이 전환(다른 아이, Context 로 받는다)
   const insights = await loadIfReady("guardianInsights", getGuardianInsights);
-  const unreadInsightChildIds = [...new Set((insights ?? []).filter((i) => !i.readAt).map((i) => i.childId))];
+  // "특이사항 없음" 주(quiet)는 열어 볼 상세가 없어 readAt 이 영영 비어 있다 — 세면 점이 꺼지지 않는다 (#470)
+  const unreadInsightChildIds = [
+    ...new Set((insights ?? []).filter((i) => i.kind !== "quiet" && !i.readAt).map((i) => i.childId)),
+  ];
   return { kids, selectedId, unreadInsightChildIds };
 }
 

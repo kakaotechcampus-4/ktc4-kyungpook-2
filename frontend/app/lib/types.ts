@@ -567,8 +567,8 @@ export interface GuardianInsight {
    */
   periodFrom: string;
   periodTo: string;
-  /** 교사·보호자가 읽을 한두 문장 */
-  content: string;
+  /** 교사·보호자가 읽을 한두 문장. quiet 이면 null */
+  content: string | null;
   /** Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null — 화면은 "기관 정보 없음" */
   from: Institution | null;
   /** 지금 이 글을 볼 수 있는 다른 기관. 기관 동의를 끄면 빠진다 */
@@ -582,6 +582,15 @@ export interface GuardianInsight {
    * 동의를 끈 기관 · 명부에서 빠진 기관의 일지도 남는다(일지 탭과 같다). 없으면 빈 배열
    */
   evidence: GuardianInsightEvidence[];
+  /**
+   * "insight" 는 리포트, "quiet" 은 리포트가 없는 지난 주를 "특이사항 없음" 으로 보이는 항목이다 (#470).
+   * quiet 은 아이 · 주만 담는다 — 본문 · 기관 · 근거가 없고, 열어 볼 상세도 없다(누를 수 없다). approvedAt 은
+   * 그 주가 끝난 다음 날 0시라 정렬에만 쓰고, readAt 은 늘 null 이라 "새 글"·안 읽은 점에서 뺀다.
+   * 없으면(BE 배포 전) 리포트다.
+   */
+  kind?: "insight" | "quiet";
+  /** quiet 일 때만. ① NOTHING_NOTABLE 기록이 모두 "특이사항 없음" · ② NOTHING_NEW 기록은 있었지만 되풀이되는 모습이 없음 */
+  quietReason?: "NOTHING_NOTABLE" | "NOTHING_NEW" | null;
 }
 
 /** 리포트 근거 일지 한 건. journalEntryId 로 일지 상세(`/parent/journal/:id`)를 연다 */
