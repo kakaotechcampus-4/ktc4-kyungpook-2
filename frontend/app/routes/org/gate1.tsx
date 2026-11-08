@@ -626,7 +626,7 @@ function Gate1Page() {
                   r.f
                     ? (r.f.entries[0]?.content ?? "")
                     : r.s!.noContent
-                      ? "요약할 내용을 찾지 못했어요"
+                      ? "특이사항이 없어요"
                       : (r.s!.claims[0]?.text ?? r.s!.content)
                 }
                 tag={r.f ? <Chip tone="bad">요약 실패</Chip> : rowTag(r.s!, tab)}
@@ -731,7 +731,7 @@ function rowTag(s: SummaryItem, tab: Tab): React.ReactNode {
     );
   }
   if (tab === "hold") return <Chip tone="idle">보류</Chip>;
-  if (s.noContent) return <Chip tone="idle">요약할 내용 없음</Chip>;
+  if (s.noContent) return <Chip tone="idle">특이사항 없음</Chip>;
   if (s.needsReview || s.reviewFlags.length > 0) return <Chip tone="human">확인 필요</Chip>;
   return null;
 }
@@ -1160,7 +1160,7 @@ function NoContentPopup({
     <>
       <ListPopup
         title={popTitle(item)}
-        subtitle="AI가 요약할 내용을 찾지 못했어요"
+        subtitle="AI가 특이사항을 찾지 못했어요"
         icon={<Check aria-hidden size={20} />}
         position={position}
         busy={busy}
@@ -1180,7 +1180,7 @@ function NoContentPopup({
       >
         <CarriedNote text={carriedNote} />
         <div className="rounded-[14px] bg-surface2/60 px-4 py-3.5">
-          <b className="text-[16px]">이날 기록에서 요약할 내용을 찾지 못했어요</b>
+          <b className="text-[16px]">이날 기록에는 특이사항이 없어요</b>
           <p className="mt-1 text-[14px] leading-6 text-ink2">
             AI가 내용을 지어내지 않도록 요약을 비워 뒀어요. 원문을 읽고 [확인]으로 마무리하거나, [다시 요약]으로 다시 요약할 수 있게
             해 주세요.
@@ -1199,7 +1199,7 @@ function NoContentPopup({
           onCancel={() => setConfirming(null)}
           onConfirm={() => decide("confirm")}
         >
-          이날 기록{count > 0 ? ` ${count}건` : ""}은 "요약할 내용 없음"으로 끝나고, 아동 타임라인에는 올라가지 않아요.
+          이날 기록{count > 0 ? ` ${count}건` : ""}은 "특이사항 없음"으로 끝나고, 아동 타임라인에는 올라가지 않아요.
         </ConfirmDialog>
       ) : confirming === "revert" ? (
         <ConfirmDialog
