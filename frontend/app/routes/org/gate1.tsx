@@ -1182,8 +1182,7 @@ function NoContentPopup({
         <div className="rounded-[14px] bg-surface2/60 px-4 py-3.5">
           <b className="text-[16px]">이날 기록에는 특이사항이 없어요</b>
           <p className="mt-1 text-[14px] leading-6 text-ink2">
-            AI가 내용을 지어내지 않도록 요약을 비워 뒀어요. 원문을 읽고 [확인]으로 마무리하거나, [다시 요약]으로 다시 요약할 수 있게
-            해 주세요.
+            기록에 따로 알릴 관찰이 없어 요약을 비워 뒀어요. 아래 원문을 읽고 [확인]으로 마무리해 주세요.
           </p>
         </div>
         <SourceEntries item={item} />

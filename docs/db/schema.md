@@ -1540,6 +1540,10 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 `RESPONSE_UNREADABLE` 로 보내지 않고 빈 요약으로 저장해 Gate 1 에서 교사가 확인하게 한다 (§8.2 "요약할 내용 없음").
 이 BE 보다 AI 가 먼저 배포되면 그 응답이 시스템 오류로 쌓이므로 BE 쪽이 먼저 배포돼야 한다.
 
+일지가 "특이사항 없음" 뿐인 묶음(모든 일지가 `특이사항 · 특이점 · 이상` + `없음 · 없습니다 · 무` 류)은 **AI 를 부르지 않고** BE 가 같은 모양의
+빈 요약을 만든다 (#448, `NothingNotable`). AI 에 보내면 그 말을 문장으로 옮겼다가 근거 검사에서 버려 `no_grounded_claims` → 요약 실패로
+가기 때문이다. 이 요약의 `raw_response` 는 `{"no_content":true,"decided_by":"backend_rule"}` 이다. 하나라도 다른 내용이 있는 묶음은 AI 에 보낸다.
+
 **되돌리기** — 고친 뒤 [`backend/scripts/recover-system-errors.sql`](../../backend/scripts/recover-system-errors.sql)로 단계와
 원인을 골라 되돌린다. 검증은 `MATCHED`(`agent_retry_count = 0`), 요약은 `VALIDATED` 로 돌리고 두 실패 컬럼을 비운다.
 아이가 정해지지 않은 일지는 검증 워커가 집지 않으므로 되돌리지 않고 id 만 보여준다. 사용법은 `backend/README.md`.
@@ -3007,4 +3011,5 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-11-07 | `insight_result` 에 `looked_up_claim_ids` 추가 (§9.3, NULL 허용) — AI 가 같은 아이의 지난 기록(이번 기간 앞 12주치 승인 요약, 동의 기관만, 최대 200개)에서 찾아 근거로 쓴 claim 이다 (#387). Gate 2 근거에 "지난 기록" 으로 표시한다. 저장할 때 BE 가 인용된 claim(`claim_ids`·`supports`·`looked_up_claim_ids`)의 기관을 `source_institution_ids` 에 직접 더한다 — 동의 확인과 철회 때 권한 거두기가 이 값만 보므로 AI 출력에 맡기지 않는다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #387 |
 | 2026-11-07 | 요약 결과를 남길 때(저장 · 요약 실패 · 시스템 오류) 그 묶음의 요약 행 → 아이 행을 잠근 뒤 동의를 본다 — 동의 철회가 먼저 커밋됐으면 요약을 저장하지 않는다(멘토 8차 리뷰 P2). 잠금 순서 표(§3.3)에 추가, Gate 1 결정과 같은 순서. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #398 |
 | 2026-11-08 | 업로드 · AI 처리 줄 상한. `journal_entry.failure_stage` 에 `MATCHING`, `failure_reason` 에 `CONTENT_TOO_LONG` 추가 (§6.2 "실패 상태와 원인 코드") — 상한(5,000자) 전에 올라온 긴 일지를 AI 에 보내지 않고 멈춘다. AI 처리 줄에 들어오는 작업(업로드 · O-23 assign · O-25 revise · O-31 `revert` · O-36)이 `organization` 행을 마지막에 잠그고 처리 중 · 대기 일지를 센다 (§3.3 잠금 순서). 업로드는 원본 행과 일지를 한 트랜잭션에 저장한다. 컬럼 · 제약 추가 없음. **enum 값 추가라 §11.4 수동 조치 필요** — 두 CHECK DROP | #424 |
+| 2026-11-09 | "특이사항 없음" 뿐인 요약 묶음은 AI 를 부르지 않고 요약할 내용 없음 빈 요약으로 저장해 Gate 1 에 올린다 (§6.2 "실패 상태와 원인 코드" 아래). 요약 실패(`no_grounded_claims`)로 가던 것을 막는다. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #448 |
 | 2026-11-09 | `users.name`(카카오 닉네임) 삭제 (§4.1) — 사람 이름을 저장하지 않는다. 카카오에는 동의 항목 없이 회원번호만 받고, 화면은 보호자를 "아이 이름 + 보호자", 기관 담당자를 기관명으로 부른다. **컬럼 삭제라 §11.4 수동 조치 필요** — 배포 뒤 `ALTER TABLE users DROP COLUMN name` 과 `VACUUM FULL users`(지운 값이 디스크에 남지 않게). 개인정보 수집 약관(`PRIVACY` · `ORG_PRIVACY`)을 닉네임을 뺀 `2026-11-09` 판으로 올리고, 11-07 판 동의도 통과로 쳐서 다시 받지 않는다 (§4.3) | #449 |
