@@ -257,6 +257,8 @@ public class GuardianInsightService {
                             String.valueOf(childId),
                             child == null ? null : child.getName(),
                             periodLabel(insight.getPeriodFrom()),
+                            insight.getPeriodFrom().toString(),
+                            insight.getPeriodTo().toString(),
                             insight.getContent(),
                             sender == null ? null : InstitutionResponse.from(sender),
                             sharedWith,
@@ -287,7 +289,10 @@ public class GuardianInsightService {
                 .map(ref -> new GuardianInsightResponse.Evidence(
                         String.valueOf(ref.childContextId()),
                         ref.date().toString(),
-                        InstitutionResponse.from(organizations.get(ref.institutionId()))))
+                        InstitutionResponse.from(organizations.get(ref.institutionId())),
+                        ref.sentences().stream()
+                                .map(s -> new GuardianInsightResponse.Sentence(s.text(), s.role()))
+                                .toList()))
                 .toList();
     }
 

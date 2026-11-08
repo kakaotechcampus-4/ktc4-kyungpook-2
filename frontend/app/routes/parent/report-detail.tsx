@@ -70,14 +70,33 @@ function ReportDetailPage() {
                 {/* `tap` 을 붙이면 parent.css 가 알약으로 바꾼다 — 일지 상세의 같은 날 목록과 같이 빼 둔다 */}
                 <Link
                   to={`/parent/journal/${e.journalEntryId}`}
-                  className="flex items-center gap-3 rounded-2xl border border-line px-4 py-3 hover:bg-surface2"
+                  className="flex items-start gap-3 rounded-2xl border border-line px-4 py-3 hover:bg-surface2"
                 >
                   <InstitutionIcon type={e.institution.type} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-bold">{e.institution.name}</span>
                     <span className="block text-[13px] text-muted">{formatDateMonthDay(e.date)} 일지</span>
+                    {/* 이 글이 그 일지에서 실제로 인용한 문장 (#438). 없으면 줄만 보인다 */}
+                    {e.sentences.length > 0 ? (
+                      <span className="mt-2 flex flex-col gap-1.5">
+                        {e.sentences.map((sentence, index) => (
+                          <span key={index} className="flex gap-1.5 text-[14px] leading-6 text-ink2">
+                            <span
+                              className={`mt-0.5 h-fit shrink-0 rounded-full px-2 py-0.5 text-[12px] font-bold ${
+                                sentence.role === "대처"
+                                  ? "bg-accentsoft text-accentink"
+                                  : "bg-surface2 text-ink2"
+                              }`}
+                            >
+                              {sentence.role}
+                            </span>
+                            <span className="min-w-0">{sentence.text}</span>
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
                   </span>
-                  <ChevronRight aria-hidden className="size-4 shrink-0 text-muted" />
+                  <ChevronRight aria-hidden className="mt-1 size-4 shrink-0 text-muted" />
                 </Link>
               </li>
             ))}

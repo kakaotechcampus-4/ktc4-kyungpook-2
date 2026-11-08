@@ -550,6 +550,14 @@ export interface GuardianInsight {
   childName: string | null;
   /** "2026년 8월 3주차" — 어느 주의 이야기인지 */
   period: string;
+  /**
+   * 이 글이 다룬 주의 시작·끝 "2026-10-19". 화면이 **달로 묶을 때** 쓴다 (#438).
+   *
+   * period 글자를 잘라 달을 구하면 깨진다 — 9/29~10/5 처럼 달에 걸친 주가 있고, 문구가 바뀌면
+   * 같이 깨진다. 달은 periodFrom 기준이다 (BE periodLabel 과 같은 기준).
+   */
+  periodFrom: string;
+  periodTo: string;
   /** 교사·보호자가 읽을 한두 문장 */
   content: string;
   /** Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null — 화면은 "기관 정보 없음" */
@@ -574,6 +582,19 @@ export interface GuardianInsightEvidence {
   date: string;
   /** 그 일지를 쓴 기관. 명부에서 빠진 기관일 수 있다 */
   institution: Institution;
+  /**
+   * 이 글이 그 일지에서 **실제로 인용한 문장** (#438). 없으면 빈 배열이고 근거 줄은 그대로 보인다.
+   *
+   * Gate 1 에서 교사가 승인한 요약 문장이다 — 원본 일지 인용이 아니다. 원본에는 다른 아이 이름이
+   * 남아 있어 밖으로 내보내지 않는다 (`AI/insight/CRITERIA.md §2`).
+   */
+  sentences: GuardianInsightSentence[];
+}
+
+/** 근거 문장 하나. 역할은 "상황"(본문 근거) 또는 "대처"(대처 근거) 다 */
+export interface GuardianInsightSentence {
+  text: string;
+  role: "상황" | "대처";
 }
 
 /**

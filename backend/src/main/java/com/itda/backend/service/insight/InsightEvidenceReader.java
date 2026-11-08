@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -94,11 +95,51 @@ public class InsightEvidenceReader {
                 }
                 // 지난 기록 표시는 날짜로 한 번 더 본다 — AI 가 이번 기간 기록을 잘못 넣어도 "지난 기록" 으로 나가지 않게.
                 boolean past = lookedUp.contains(summaryId) && summary.getEntryDate().isBefore(insight.getPeriodFrom());
-                refs.add(new Ref(contextId, summary.getEntryDate(), summary.getInstitutionId(), past));
+                refs.add(new Ref(contextId, summary.getEntryDate(), summary.getInstitutionId(), past,
+                        sentencesOf(insight, summary)));
             }
             evidences.put(insight.getId(), new Evidence(refs, hasTeacherClaim(insight, summaries)));
         }
         return evidences;
+    }
+
+    /**
+     * 그 요약에서 인사이트가 실제로 인용한 문장들 (#438). 인용 순서대로, 같은 문장은 한 번만.
+     *
+     * <p>{@code claim_ids} 에서 온 것이 {@code "상황"}, {@code supports[].claim_ids} 에서 온 것이
+     * {@code "대처"} 다. <b>같은 문장이 둘 다에 있으면 "대처" 가 이긴다</b> — 보호자에게는 "무엇을 했더니
+     * 어떻게 됐다" 가 더 쓸모 있는 정보다.
+     *
+     * <p>문장을 못 찾으면 건너뛴다. 근거 줄 자체는 그대로 둔다 — 날짜와 기관은 맞고 문장만 없는 것이다.
+     */
+    private static List<Sentence> sentencesOf(InsightResult insight, SummaryResult summary) {
+        JsonNode claims = readArray(summary.getClaims(), "summary_result.claims", summary.getId());
+
+        // 순서를 지키려고 LinkedHashMap. 값은 역할이고, 대처가 나중에 덮어쓴다.
+        Map<Integer, String> roleOf = new LinkedHashMap<>();
+        for (JsonNode node : readArray(insight.getClaimIds(), "insight_result.claim_ids", insight.getId())) {
+            ClaimRef ref = ClaimRef.parse(node.asText());
+            if (ref != ClaimRef.UNKNOWN && ref.summaryId().equals(summary.getId())) {
+                roleOf.putIfAbsent(ref.order(), Sentence.SITUATION);
+            }
+        }
+        for (JsonNode support : readArray(insight.getSupports(), "insight_result.supports", insight.getId())) {
+            for (JsonNode node : support.path("claim_ids")) {
+                ClaimRef ref = ClaimRef.parse(node.asText());
+                if (ref != ClaimRef.UNKNOWN && ref.summaryId().equals(summary.getId())) {
+                    roleOf.put(ref.order(), Sentence.SUPPORT);  // 둘 다면 대처가 이긴다
+                }
+            }
+        }
+
+        List<Sentence> sentences = new ArrayList<>();
+        roleOf.forEach((order, role) -> {
+            String text = claims.path(order).path("text").asText("");
+            if (!text.isBlank()) {
+                sentences.add(new Sentence(text, role));
+            }
+        });
+        return sentences;
     }
 
     /**
@@ -225,7 +266,27 @@ public class InsightEvidenceReader {
      * @param institutionId  그 요약을 쓴 기관. 기관 행이 남아 있는지는 보지 않았다
      * @param lookedUp       이번 기간이 아니라 AI 가 지난 기록에서 찾아 인용한 근거인지 (#387)
      */
-    public record Ref(Long childContextId, LocalDate date, Long institutionId, boolean lookedUp) {
+    public record Ref(Long childContextId, LocalDate date, Long institutionId, boolean lookedUp,
+            List<Sentence> sentences) {
+    }
+
+    /**
+     * 인사이트가 실제로 인용한 요약 문장 하나 (#438).
+     *
+     * <p><b>원본 일지 인용이 아니라 Gate 1 에서 교사가 승인한 요약 문장이다.</b> 원본 인용
+     * ({@code evidence.quote})에는 다른 아이 이름이 남아 있어 밖으로 내보내지 않는다
+     * ({@code AI/insight/CRITERIA.md §2}). 요약 문장은 그 검사를 거쳤다.
+     *
+     * <p>{@code summary_result.claims} 를 읽는다 — 교사가 <b>고쳐 승인한</b> 문장이다
+     * ({@code approveWithClaims}). AI 원문({@code content})이 아니다.
+     *
+     * @param role {@code "상황"} = 인사이트 본문 근거({@code claim_ids}),
+     *             {@code "대처"} = 대처 근거({@code supports[].claim_ids}). 둘 다면 "대처" 다
+     */
+    public record Sentence(String text, String role) {
+
+        public static final String SITUATION = "상황";
+        public static final String SUPPORT = "대처";
     }
 
     /** {@link #EMPTY} 는 근거 번호가 하나도 없는 인사이트다 — 확인할 수 없으니 교사 작성으로 본다. */
