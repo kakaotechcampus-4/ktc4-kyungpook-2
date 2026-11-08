@@ -1539,14 +1539,15 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 
 ### 4.8 대시보드 (#370)
 
-기관 첫 화면(대시보드)이 쓰는 조회입니다. 대시보드는 10초마다 부릅니다 — 세 API 모두 요청마다 쿼리 수가 아이·일지 수와
-상관없이 같습니다. 셋 다 기관 사용자만 볼 수 있고 아니면 `403 ORGANIZATION_NOT_ASSIGNED` 입니다.
+기관 첫 화면(대시보드)이 쓰는 조회입니다. 대시보드는 10초마다 부릅니다(O-83 만 1초) — 모든 API 가 요청마다 쿼리 수가
+아이·일지 수와 상관없이 같습니다. 모두 기관 사용자만 볼 수 있고 아니면 `403 ORGANIZATION_NOT_ASSIGNED` 입니다.
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
 | O-80 | GET | `/dashboard/pipeline` | 선생님 차례 건수와 진행 현황 줄 · **구현됨** | I-03 |
 | O-81 | GET | `/dashboard/ai-activity` | 오늘 AI가 한 일 · **구현됨** | I-03 |
 | O-82 | GET | `/system/ai-status` | AI 상태 (AI 장애 배너) · **구현됨** | 기관 화면 전체 |
+| O-83 | GET | `/dashboard/ai-progress` | 진행 현황 줄의 AI 진행 단계 (#453) · **구현됨** | I-03 |
 
 **O-80 응답** · 단계 판정은 서버가 합니다. 화면은 받은 그대로 그리고, 여러 목록 API 를 맞춰 보지 않습니다.
 
@@ -1603,6 +1604,37 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 - 주 줄은 **최근 14일 안에 검토를 승인한 주**만 나옵니다(O-43 과 같음). 그래서 `done` 줄도 최근 것만 남습니다.
 - 자동 요약(#369)을 끈 비상 모드에서도 검증을 마친 묶음은 `summarizing` 으로 보입니다.
 - O-43 은 기존 화면용으로 그대로 둡니다.
+
+**O-83 응답** · 진행 현황(O-80)의 `ai` 줄에 "요약 문장을 쓰고 있어요"처럼 지금 단계를 띄우려고 씁니다(#453). 화면이 1초마다
+부릅니다. 서버가 AI 에 1초마다(`app.ai-progress.interval`) 물어 기관별로 둔 값을 꺼내 주므로 진행 현황을 다시 계산하지 않습니다(DB 는 기관 사용자인지만 봅니다).
+
+```json
+{ "enabled": true,
+  "items": [
+    { "kind": "entry", "childId": null, "date": "2026-11-09", "weekFrom": null,
+      "agent": "matching", "node": "llm_judge", "elapsedSec": 7 },
+    { "kind": "entry", "childId": "7", "date": "2026-11-08", "weekFrom": null,
+      "agent": "summary", "node": "write", "elapsedSec": 12 },
+    { "kind": "week", "childId": "7", "date": null, "weekFrom": "2026-11-03",
+      "agent": "insight", "node": "find_claims", "elapsedSec": 31 } ] }
+```
+
+| 필드 | 뜻 |
+| --- | --- |
+| `enabled` | 서버 설정(`AI_PROGRESS_ENABLED`)으로 켜 두었는지. `false` 면 `items` 는 늘 비어 있습니다 |
+| `items[].kind` · `childId` · `date` / `weekFrom` | O-80 줄과 같은 값입니다. `entry` 줄은 `date`, `week` 줄은 주 시작일 `weekFrom`(= `rows[].week.from`)으로 이어 붙이고, 해당 없는 쪽은 `null` 입니다(키는 빠지지 않습니다). 아이 매칭 줄은 아이가 아직 없어 `childId: null` 이고 날짜로만 붙습니다 |
+| `items[].agent` | `matching` · `validation` · `summary` · `insight` |
+| `items[].node` | AI 가 지금 들어가 있는 단계. 매칭 `extract`·`shortlist`·`llm_judge`·`decide` / 검증 `perceive`·`plan`·`act`·`reflect` / 요약 `gather`·`write`·`ground`·`assemble` / 리포트 `perceive`·`plan`·`act`·`reflect`·`refine`·`find_claims`(지난 기록을 찾는 중) |
+| `items[].elapsedSec` | 그 일을 시작한 뒤 지난 초. 같은 일을 60초 안에 다시 보내면(재시도) 이어서 셉니다 |
+
+- 같은 줄에 일이 여럿이면 하나만 줍니다. 같은 에이전트끼리(같은 아이·날짜의 일지 여러 건)는 **가장 앞선 단계** — `node` 가
+  위 목록에서 뒤에 있을수록 앞선 것입니다. 다른 에이전트끼리(검증 중인 새 일지와 요약이 겹칠 때)는 O-80 줄 상태처럼 **더 이른
+  에이전트**(검증)를 줍니다.
+- 주간 리포트는 그 아이가 명부에 있고 **주간 리포트 공유 동의가 켜진 기관 모두**에 나옵니다. 하루 요약만 허락한 기관은 O-80 주
+  줄이 `not_consented` 이므로 나오지 않습니다. O-80 에 그 주 줄이 없으면 붙일 곳이 없으니 무시하면 됩니다.
+- 서버가 AI 에 묻거나 번역하는 데 실패한 지 3초가 넘으면(간격·대기를 늘리면 `2 × (간격 + 대기)`), 또는 붙일 줄이 없으면
+  비어 있습니다. 이때 화면은 기존 고정 문구를 띄웁니다. 값은 묻는 간격만큼(기본 1초) 늦을 수 있습니다.
+- 알림 발송(`/notify`)과 보호자 화면은 범위 밖입니다.
 
 **O-81 응답** · 서울 기준 오늘 0시부터, 우리 기관 기록에 AI 가 한 일입니다. 선생님이 처리한 횟수는 넣지 않습니다.
 

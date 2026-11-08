@@ -99,6 +99,14 @@ app:
       max-releases: 2
       # AI 다운 뒤 그 워커가 쉬는 시간. 짧은 장애에 상한을 바로 채우지 않게 한다 (서킷 브레이커가 보통 30초~1분 쉰다)
       pause: 30s
+  # 대시보드 진행 현황의 AI 진행 단계 (#453). 전용 스레드 하나가 AI GET /progress 를 묻고 기관별 메모리에 둔다.
+  # 일지 처리(워커·app.ai.*)와는 따로 돈다. 문제가 생기면 서버 .env 에 AI_PROGRESS_ENABLED=false 를 넣고 BE 를
+  # 다시 띄운다 — 화면은 기존 고정 문구로 돌아간다. 코드 기본값은 꺼짐, 배포 compose 가 켠다.
+  ai-progress:
+    enabled: ${AI_PROGRESS_ENABLED:false}
+    interval: 1s
+    # 1초마다 묻는데 늦은 답을 기다릴 이유가 없다. 넘으면 이번 차례는 실패로 보고, 3초 넘게 이어지면 화면을 비운다.
+    timeout: 500ms
   matching:
     worker:
       enabled: ${MATCHING_WORKER_ENABLED:true}

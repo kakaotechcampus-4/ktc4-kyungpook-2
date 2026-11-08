@@ -59,6 +59,9 @@ services:
       AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
       # 시연용. 켜면 이번 주 기록도 바로 인사이트 재료가 된다 (#239). 운영에서는 끈다.
       INSIGHT_INCLUDE_CURRENT_WEEK: ${INSIGHT_INCLUDE_CURRENT_WEEK:-false}
+      # 대시보드 진행 현황의 AI 진행 단계 (#453). 문제가 생기면 .env 에 AI_PROGRESS_ENABLED=false 를 넣고 backend 만
+      # 다시 띄운다 — 화면은 기존 고정 문구로 돌아가고 일지 처리에는 영향이 없다.
+      AI_PROGRESS_ENABLED: ${AI_PROGRESS_ENABLED:-true}
       JAVA_TOOL_OPTIONS: -Xms128m -Xmx512m
     ports:
       # 배포 상태 검사와 로컬 개발용. 외부 API·Swagger는 Caddy로 접근한다.

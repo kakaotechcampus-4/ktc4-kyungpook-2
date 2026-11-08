@@ -21,7 +21,7 @@ import com.itda.backend.service.validation.ValidationProperties;
  */
 class AgentPropertiesBindingTest {
 
-    @EnableConfigurationProperties({AiAgentProperties.class, AgentDownProperties.class, MatchingProperties.class, ValidationProperties.class,
+    @EnableConfigurationProperties({AiAgentProperties.class, AgentDownProperties.class, AiProgressProperties.class, MatchingProperties.class, ValidationProperties.class,
             SummaryProperties.class, InsightProperties.class})
     static class Config {
     }
@@ -39,6 +39,24 @@ class AgentPropertiesBindingTest {
             assertThat(ai.readTimeout()).isEqualTo(Duration.ofSeconds(70));
             assertThat(ai.retryBackoffs()).containsExactly(Duration.ofSeconds(2), Duration.ofSeconds(5));
         });
+    }
+
+    @Test
+    void AI_진행_단계_설정을_읽고_기본은_꺼져_있다() {
+        runner.run(context -> {
+            AiProgressProperties progress = context.getBean(AiProgressProperties.class);
+            assertThat(progress.enabled()).isFalse();
+            assertThat(progress.interval()).isEqualTo(Duration.ofSeconds(1));
+            assertThat(progress.timeout()).isEqualTo(Duration.ofMillis(500));
+        });
+    }
+
+    @Test
+    void AI_진행_단계_간격과_대기가_비어_있으면_기본값을_쓴다() {
+        AiProgressProperties progress = new AiProgressProperties(false, null, null);
+
+        assertThat(progress.interval()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(progress.timeout()).isEqualTo(Duration.ofMillis(500));
     }
 
     @Test

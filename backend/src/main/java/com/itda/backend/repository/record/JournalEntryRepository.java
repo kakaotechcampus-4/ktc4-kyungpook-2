@@ -208,6 +208,16 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             + "where r.institutionId = :institutionId and e.createdAt >= :since")
     long countCreatedSince(@Param("institutionId") String institutionId, @Param("since") LocalDateTime since);
 
+    /**
+     * 대시보드 AI 진행 단계(#453). AI 가 지금 처리 중이라고 알려 준 일지들의 기관·아이·날짜 — 폴러가 1초에 한 번 읽는다.
+     * 진행 현황(#370)과 같이 원본 파일이 있는 살아 있는 일지만 본다. 거기 없는 일지는 붙일 줄도 없다.
+     */
+    @Query("select new com.itda.backend.repository.record.ProgressEntryKey("
+            + "e.id, e.childId, e.entryDate, r.institutionId) "
+            + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
+            + "where e.id in :ids and e.deletedAt is null")
+    List<ProgressEntryKey> findProgressKeys(@Param("ids") Collection<Long> ids);
+
     /** 대시보드 진행 현황(#370). 한 기관의 살아 있는 일지 중 주어진 상태인 것을 날짜·id 순으로 — 요청마다 한 번 읽는다. */
     @Query("select new com.itda.backend.repository.record.PipelineEntry("
             + "e.id, e.childId, e.entryDate, e.status, e.failureStage) "
