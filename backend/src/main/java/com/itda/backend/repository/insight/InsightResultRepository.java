@@ -55,4 +55,19 @@ public interface InsightResultRepository extends JpaRepository<InsightResult, Lo
 
     /** 그 아이들의 {@code since} 뒤로 만든 인사이트. 근거 기관이 JSON 글이라 기관으로는 자바에서 거른다 (#370). */
     List<InsightResult> findByChildIdInAndCreatedAtGreaterThanEqual(Collection<Long> childIds, LocalDateTime since);
+
+    /**
+     * 그때 이후 Gate 2 를 통과한 인사이트들의 (아이, 기간). 알림 워커가 <b>어느 기간을 보낼지</b> 고른다 (#419).
+     *
+     * <p>기간이 아니라 <b>승인 시각</b>으로 고른다. 교사가 밀린 인사이트를 늦게 승인해도 그 기간을 보내려고다 —
+     * {@code ChildContextRepository.findApprovedEntryDaysSince} 와 같은 이유다.
+     *
+     * <p>{@code updatedAt} 을 본다. 인사이트는 워커가 만들 때 {@code createdAt} 이 찍히고, 교사가 승인할 때
+     * {@code updatedAt} 이 갱신된다 — 만든 시각으로 고르면 늦은 승인을 놓친다.
+     */
+    @Query("select distinct new com.itda.backend.repository.insight.ApprovedInsightPeriod("
+            + "i.childId, i.periodFrom, i.periodTo) "
+            + "from InsightResult i where i.status = :status and i.updatedAt >= :since")
+    List<ApprovedInsightPeriod> findApprovedPeriodsSince(@Param("status") InsightStatus status,
+            @Param("since") LocalDateTime since);
 }

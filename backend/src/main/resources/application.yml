@@ -120,6 +120,19 @@ app:
     # 요약은 AI 가 LLM 을 90초(AI/summary/config.py LUNA_TIMEOUT)까지 기다린다. app.ai.read-timeout(70초)으로는
     # 느린 정상 응답을 먼저 끊고 다시 불러서 LLM 을 여러 번 부르게 된다.
     read-timeout: 120s
+  notify:
+    worker:
+      enabled: ${NOTIFY_WORKER_ENABLED:true}
+      delay-ms: 5000
+      # 알림도 인사이트처럼 아동 × 기간 단위로 집는다.
+      batch-size: 10
+    # 같은 아이·같은 기간의 발송이 연달아 실패하면 다시 집기까지 기다린다. 인사이트와 같은 장치다 (#266).
+    failure-backoffs: 1m,5m,30m
+    # 응답 대기. 모델 호출 한 번 + SMTP 왕복이라 인사이트(210s)보다 짧다.
+    read-timeout: 90s
+    # 응답 대기 시간 초과 뒤 다시 보내는 횟수. 0 이다 — 다시 보내도 AI 는 앞 요청을 멈추지 않고,
+    # 앞 요청이 메일을 이미 보냈을 수 있다. 중복은 AI 쪽 notification_id 가 막지만 일부러 두 번 보낼 이유는 없다.
+    timeout-retries: 0
   insight:
     worker:
       enabled: ${INSIGHT_WORKER_ENABLED:true}
