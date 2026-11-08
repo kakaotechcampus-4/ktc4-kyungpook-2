@@ -79,6 +79,7 @@ import type {
   AcceptedInvitation,
   FailedSummary,
   AiActivity,
+  AiProgress,
   AiStatus,
   BlockedItem,
   Child,
@@ -636,6 +637,19 @@ export async function getAiActivity(): Promise<AiActivity> {
 export async function getAiStatus(): Promise<AiStatus> {
   if (mockFor("dashboard")) return { ...mock.AI_STATUS };
   return request<AiStatus>("/api/v1/system/ai-status");
+}
+
+/**
+ * 진행 현황 AI 줄의 지금 단계 (O-83, #454). 화면이 1초마다 부른다.
+ * 실패(404 · 5xx)는 던진다 — 부르는 쪽(lib/aiProgress)이 enabled: false 와 똑같이 다룬다
+ */
+export async function getAiProgress(): Promise<AiProgress> {
+  if (mockFor("dashboard")) return mock.mockAiProgress();
+  const raw = await request<AiProgress>("/api/v1/dashboard/ai-progress");
+  return {
+    enabled: raw.enabled === true,
+    items: (raw.items ?? []).map((i) => ({ ...i, childId: i.childId == null ? null : String(i.childId) })),
+  };
 }
 
 /* ── 요약 실패 (O-35 ~ O-37) ──────────────────── */

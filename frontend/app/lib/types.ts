@@ -755,6 +755,26 @@ export interface AiStatus {
   since: string | null;
 }
 
+/**
+ * 진행 현황 줄의 AI 진행 단계 (O-83, #454). 줄과는 kind · childId · date(entry) / weekFrom(week = rows[].week.from)로 붙인다.
+ * agent · node 는 서버가 먼저 새 값을 보내도 깨지지 않게 string 으로 둔다 — 모르는 값이면 화면은 기존 문구를 쓴다
+ */
+export interface AiProgressItem {
+  kind: "entry" | "week";
+  childId: string | null;
+  date: string | null;
+  weekFrom: string | null;
+  agent: string;
+  node: string;
+  elapsedSec: number;
+}
+
+/** enabled 가 false 면 items 는 늘 비어 있다 */
+export interface AiProgress {
+  enabled: boolean;
+  items: AiProgressItem[];
+}
+
 /** 요약에 실패한 묶음(아이 × 날짜, O-35). 요약 행이 없어 O-30 에 섞이지 않는다 (#369) */
 export interface FailedSummary {
   childId: string;

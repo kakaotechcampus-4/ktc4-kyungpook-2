@@ -1,6 +1,7 @@
 import type {
   AiActivity,
   FailedSummary,
+  AiProgress,
   AiStatus,
   BlockedItem,
   Child,
@@ -1113,6 +1114,39 @@ export const PIPELINE: Pipeline = {
 export const AI_ACTIVITY: AiActivity = { split: 12, matched: 7, validated: 11, summarized: 3, insights: 1 };
 
 export const AI_STATUS: AiStatus = { available: true, since: null };
+
+/**
+ * 진행 정보 (O-83). 위 PIPELINE 의 AI 줄 셋(매칭 · 검증 · 요약, 11/6)에 붙는다. 시각에 따라 단계가 돌아가서
+ * 로컬에서 문구 전환 · 걸린 초를 볼 수 있다. 요약은 한 바퀴가 길어 60초 넘는 문구("조금 오래")까지 보인다
+ */
+const MOCK_PROGRESS_PLAN: { item: Omit<AiProgress["items"][number], "node" | "elapsedSec">; plan: [string, number][] }[] = [
+  { item: { kind: "entry", childId: null, date: "2026-11-06", weekFrom: null, agent: "matching" },
+    plan: [["extract", 2], ["shortlist", 2], ["llm_judge", 6], ["decide", 1]] },
+  { item: { kind: "entry", childId: "child_1041", date: "2026-11-06", weekFrom: null, agent: "validation" },
+    plan: [["perceive", 2], ["act", 8], ["reflect", 2]] },
+  { item: { kind: "entry", childId: "child_1023", date: "2026-11-06", weekFrom: null, agent: "summary" },
+    plan: [["gather", 2], ["write", 60], ["ground", 4], ["assemble", 1]] },
+];
+
+export function mockAiProgress(nowSec = Math.floor(Date.now() / 1000)): AiProgress {
+  return {
+    enabled: true,
+    items: MOCK_PROGRESS_PLAN.map(({ item, plan }) => {
+      const total = plan.reduce((s, [, d]) => s + d, 0);
+      const t = nowSec % total;
+      let x = t;
+      let node = plan[plan.length - 1][0];
+      for (const [n, d] of plan) {
+        if (x < d) {
+          node = n;
+          break;
+        }
+        x -= d;
+      }
+      return { ...item, node, elapsedSec: t };
+    }),
+  };
+}
 
 /** 요약 실패 (O-35). 진행 현황 mock 의 summary_failed 줄(박OO 11/4)과 같은 묶음 */
 export const FAILED_SUMMARIES: FailedSummary[] = [
