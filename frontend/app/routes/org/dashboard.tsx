@@ -2,13 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronRight,
+  FileCheck,
   FileText,
+  Layers,
   Link2,
   PenLine,
+  ScrollText,
   Send,
+  ShieldCheck,
   Sparkles,
   Upload,
   UserRound,
+  UserSearch,
   X,
 } from "lucide-react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
@@ -53,14 +58,16 @@ export async function clientLoader() {
 
 const POLL_MS = 10_000;
 
-const STEPS = ["아이 찾기", "AI 확인", "요약", "검토", "주간 분석", "분석 승인"] as const;
+const STEPS = ["아이 매칭", "내용 검증", "일지 요약", "요약 검토", "주간 리포트", "리포트 승인"] as const;
+/** 진행 현황 단계 칸 오른쪽 끝에 붙는 아이콘. STEPS 와 같은 순서 */
+const STEP_ICONS = [UserSearch, ShieldCheck, ScrollText, FileCheck, Layers, Send] as const;
 const STEP_DESC = [
   "AI가 파일 이름과 일지 속 이름을 아동 명부와 맞춰 누구의 기록인지 찾아요",
   "AI가 개인정보·진단명이 있으면 막고, 다른 아이 이름 같은 표현은 표시해요",
-  "AI 확인이 끝나면 AI가 그날 기록을 바로 요약해요",
+  "내용 검증이 끝나면 AI가 그날 기록을 바로 요약해요",
   "선생님이 요약 문장을 읽고 고친 뒤 승인해요",
   "한 주(월~일) 동안 승인한 기록을 모아 AI가 되풀이되는 행동을 찾아요",
-  "선생님이 AI 분석을 읽고 승인하면 보호자와 동의한 기관이 봐요",
+  "선생님이 AI가 쓴 주간 리포트를 읽고 승인하면 보호자와 동의한 기관이 봐요",
 ];
 
 const WD = "일월화수목금토";
@@ -260,10 +267,10 @@ function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardia
 function AiDay({ a }: { a: AiActivity }) {
   const items: [string, number][] = [
     ["기록 나누기", a.split],
-    ["아이 찾기", a.matched],
-    ["AI 확인", a.validated],
-    ["요약", a.summarized],
-    ["주간 분석", a.insights],
+    ["아이 매칭", a.matched],
+    ["내용 검증", a.validated],
+    ["일지 요약", a.summarized],
+    ["주간 리포트", a.insights],
   ];
   const sum = items.reduce((n, [, v]) => n + v, 0);
   return (
@@ -290,9 +297,9 @@ function AiDay({ a }: { a: AiActivity }) {
 
 const TURN: { key: keyof PipelineTurn; label: string; desc: string; icon: typeof Check; href: string }[] = [
   { key: "confirm", label: "아이 확인", desc: "AI가 누구의 기록인지 정하지 못한 일지", icon: UserRound, href: "/check?open=confirm" },
-  { key: "blocked", label: "고쳐야 할 기록", desc: "AI 확인에서 막힌 문장", icon: PenLine, href: "/check?open=blocked" },
-  { key: "review", label: "검토", desc: "AI가 쓴 요약을 읽고 승인", icon: Check, href: "/gate1?open=first" },
-  { key: "approve", label: "분석 승인", desc: "주간 분석을 읽고 보호자에게 보내기", icon: Send, href: "/children?tab=approve&open=first" },
+  { key: "blocked", label: "고쳐야 할 기록", desc: "내용 검증에서 막힌 문장", icon: PenLine, href: "/check?open=blocked" },
+  { key: "review", label: "요약 검토", desc: "AI가 쓴 요약을 읽고 승인", icon: Check, href: "/gate1?open=first" },
+  { key: "approve", label: "리포트 승인", desc: "주간 리포트를 읽고 보호자에게 보내기", icon: Send, href: "/children?tab=approve&open=first" },
   { key: "requests", label: "보호자 연결 요청", desc: "보호자가 기관 코드로 보낸 요청", icon: Link2, href: "/children?tab=req" },
 ];
 
@@ -340,6 +347,9 @@ type UploadFailure = Extract<UploadResult, { ok: false }>;
 const FAIL_TEXT = {
   invalid: `올릴 수 없는 형식이에요 (${UPLOAD_EXTENSIONS.join(" · ")})`,
   too_large: "20MB를 넘는 파일이에요",
+  too_many_entries: "기록이 500건이 넘거나 한 기록이 5,000자를 넘어요. 나눠 올려 주세요",
+  queue_full: "앞서 올린 기록을 처리하고 있어요. 끝나면 다시 올려 주세요",
+  server_busy: "지금 올리는 파일이 많아요. 잠시 뒤 다시 올려 주세요",
   temporary: "잠시 문제가 있어 저장하지 못했어요",
 } as const;
 
@@ -535,6 +545,7 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
         {STEPS.map((name, i) => {
           const c = by[i];
           const on = stage === i;
+          const Icon = STEP_ICONS[i];
           return (
             <button
               key={name}
@@ -542,15 +553,16 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
               title={STEP_DESC[i]}
               aria-pressed={on}
               onClick={() => setStage(on ? null : i)}
-              className={`grid min-w-0 content-start gap-1 rounded-[14px] border px-2 py-2 text-left ${
+              className={`grid min-w-0 content-start gap-1.5 rounded-[14px] border px-3 py-2.5 text-left ${
                 on ? "border-ink bg-ink text-paper" : c.me ? "border-mark bg-surface" : "border-line bg-surface hover:bg-surface2"
               }`}
             >
-              <span className="flex min-w-0 items-center gap-1">
-                <span className={`grid size-[18px] flex-none place-items-center rounded-full text-[11px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className={`grid size-6 flex-none place-items-center rounded-full text-[12px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
                   {i + 1}
                 </span>
-                <b className="truncate text-[13px]">{name}</b>
+                <b className="truncate text-[13.5px]">{name}</b>
+                <Icon aria-hidden size={15} className={`ml-auto flex-none ${on ? "text-paper" : "text-ink2"}`} />
               </span>
               <span className="flex flex-wrap gap-1 text-[11px] leading-[18px] font-bold whitespace-nowrap">
                 {c.me ? <span className="rounded-full bg-mark px-1.5 text-markink">내 차례 {c.me}</span> : null}
@@ -663,22 +675,22 @@ function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolea
     case "regenerating":
       return { text: "기록이 더 들어와서 요약을 다시 만드는 중이에요" };
     case "waiting_week_end":
-      return { text: r.week ? `이번 주가 끝나는 ${md(nextDay(r.week.to))}부터 분석해요` : "이번 주가 끝나면 분석해요" };
+      return { text: r.week ? `이번 주가 끝나는 ${md(nextDay(r.week.to))}부터 리포트를 만들어요` : "이번 주가 끝나면 리포트를 만들어요" };
     case "queued":
-      return { text: "곧 분석을 시작해요" };
+      return { text: "곧 리포트를 만들기 시작해요" };
     case "running":
       return { text: "AI가 되풀이되는 행동을 찾는 중이에요" };
     case "retrying":
-      return { text: "분석을 다시 시도하는 중이에요" };
+      return { text: "리포트 만들기를 다시 시도하는 중이에요" };
     case "not_consented":
-      return { text: "보호자가 주간 분석 공유를 허락하지 않아 우리 기록은 쓰지 않아요" };
+      return { text: "보호자가 주간 리포트 공유를 허락하지 않아 우리 기록은 쓰지 않아요" };
     case "nothing_new":
       return { text: "이번 주는 새로 알릴 내용이 없어요", skip: true };
     case "review_here":
-      return { text: "분석이 왔어요 · 읽고 승인하면 보호자에게 가요", go: ["읽고 승인", `/children?tab=approve&open=insight${id}`] };
+      return { text: "리포트가 왔어요 · 읽고 승인하면 보호자에게 가요", go: ["읽고 승인", `/children?tab=approve&open=insight${id}`] };
     case "insight_held":
       // Gate 2 보류는 되돌릴 수 없다 — 다시 읽을 화면이 없어 바로가기를 두지 않는다
-      return { text: "분석을 보류해 뒀어요", hold: true };
+      return { text: "리포트를 보류해 뒀어요", hold: true };
     case "review_elsewhere":
       return { text: `${d.approverName ?? "다른 기관"}에서 승인할 차례예요` };
     case "approved":
@@ -708,7 +720,7 @@ const DOT = {
 function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
   const paused = aiDown && r.who === "ai";
   const info = paused ? { ...describe(r), text: "AI 점검 중이라 잠시 멈췄어요 · 돌아오면 이어서 해요" } : describe(r);
-  const sub = r.kind === "week" ? `${r.week?.label ?? ""} 분석` : r.date ? md(r.date) : "";
+  const sub = r.kind === "week" ? `${r.week?.label ?? ""} 리포트` : r.date ? md(r.date) : "";
   const tag = isMe(r) ? (
     info.hold ? (
       <span className="rounded-full bg-surface2 px-2 py-px text-[12px] font-bold text-ink2">보류</span>

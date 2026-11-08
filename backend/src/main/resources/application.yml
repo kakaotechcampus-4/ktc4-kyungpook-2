@@ -50,6 +50,22 @@ server:
 app:
   raw-storage:
     base-dir: ${RAW_STORAGE_DIR:./data/raw-storage}
+  # 업로드 상한 (#424). 파일 하나로 일지를 수천 건 만들거나, 큰 docx 여럿으로 힙을 채우는 일을 막는다.
+  raw-record:
+    limits:
+      # 파일 하나에서 나오는 일지 수. 넘으면 파일을 받지 않는다(400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED).
+      # 일지 하나의 길이 상한(5,000자)은 화면과 맞춰야 해서 코드 상수다(JournalEntry.MAX_CONTENT_LENGTH).
+      max-entries-per-file: ${RAW_RECORD_MAX_ENTRIES_PER_FILE:500}
+    upload:
+      # 바이트 읽기 · 글자 뽑기 · 나누기를 서버 전체에서 동시에 하는 수. 넘는 업로드는 자리를 기다리고,
+      # 기다리는 수나 시간도 넘으면 429 RAW_RECORD_UPLOAD_BUSY. 값은 -Xmx512m 메모리 측정으로 정했다(#424 PR).
+      max-concurrent: ${RAW_RECORD_UPLOAD_MAX_CONCURRENT:2}
+      max-waiting: ${RAW_RECORD_UPLOAD_MAX_WAITING:4}
+      max-wait: 10s
+  # 기관마다 AI 처리 줄(매칭 · 검증 · 요약 대기와 처리 중)에 세워 둘 수 있는 일지 수 (#424). 업로드와 선생님 처리로 새로
+  # 들어올 때만 지킨다 — 요약 워커가 승인 대기 일지를 함께 다시 담으면 잠깐 넘을 수 있다. 넘으면 429 AGENT_QUEUE_FULL.
+  agent-queue:
+    max-awaiting-entries: ${AGENT_QUEUE_MAX_AWAITING_ENTRIES:1000}
   auth:
     cookie:
       # 로컬 HTTP는 false, 운영 HTTPS는 true로 설정한다.

@@ -137,7 +137,13 @@ public class RecordProgressService {
             // 요약 실패를 요약 없이 마무리한 기록은 가리키는 요약이 없다 — 요약 단계에서 끝났다 (#369).
             case COMPLETED -> entry.getSummaryId() == null ? STAGE_SUMMARIZING : STAGE_GATE1;
             case SUMMARY_FAILED -> STAGE_SUMMARIZING;
-            case SYSTEM_ERROR -> entry.getFailureStage() == FailureStage.SUMMARY ? STAGE_SUMMARIZING : STAGE_VALIDATING;
+            case SYSTEM_ERROR -> switch (entry.getFailureStage()) {
+                case SUMMARY -> STAGE_SUMMARIZING;
+                case MATCHING -> STAGE_MATCHING;
+                case VALIDATION -> STAGE_VALIDATING;
+                // 단계가 비어 있는 옛 행은 지금까지처럼 검증으로 본다
+                case null -> STAGE_VALIDATING;
+            };
             case FAILED -> failedStageOf(entry, validatedIds);
         };
     }

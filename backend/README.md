@@ -360,6 +360,10 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | 허용 오리진(쉼표 구분). Compose는 미지정 시 `PUBLIC_ORIGIN`을 전달하고, `docker` 프로필에서는 필수 |
 | `PUBLIC_ORIGIN` | `http://localhost` (Compose) | Caddy 사이트 주소 및 CORS·로그인 완료 주소의 기준. 운영은 `https://iitda.duckdns.org` |
 | `RAW_STORAGE_DIR` | `./data/raw-storage` | 기본 프로필의 원본 파일 저장 경로 |
+| `RAW_RECORD_MAX_ENTRIES_PER_FILE` | `500` | 업로드 파일 하나에서 나온 기록 수 상한 (#424). 넘으면 파일을 저장하지 않고 `400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED`. 기록 하나의 길이 상한(5,000자)은 화면과 맞춰야 해서 코드 상수(`JournalEntry.MAX_CONTENT_LENGTH`) |
+| `RAW_RECORD_UPLOAD_MAX_CONCURRENT` | `2` | 업로드의 글자 뽑기 · 기록 나누기를 서버 전체에서 동시에 하는 수 (#424). `-Xmx512m` 실측으로 가장 큰 docx(XML 5MB) 두 개가 약 160MB. 화면도 2개씩 보낸다 |
+| `RAW_RECORD_UPLOAD_MAX_WAITING` | `4` | 위 자리를 기다릴 수 있는 업로드 수(최대 10초). 넘으면 `429 RAW_RECORD_UPLOAD_BUSY` |
+| `AGENT_QUEUE_MAX_AWAITING_ENTRIES` | `1000` | 기관마다 AI 처리 줄(매칭 · 검증 · 요약 대기와 처리 중)에 세워 둘 수 있는 기록 수 (#424). 업로드와 선생님 처리(아이 고르기 · 본문 고치기 · 다시 요약 · 내용 없음 되돌리기)가 들어올 때 지킨다. 넘으면 `429 AGENT_QUEUE_FULL`. 요약 워커가 승인 대기 기록을 함께 다시 담으면 잠깐 넘을 수 있다 |
 | `RAW_STORAGE_S3_BUCKET` | 없음 (`docker` 필수) | `docker` 프로필의 원본 파일 버킷 |
 | `AWS_REGION` | `ap-northeast-2` | S3 리전 |
 | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | 없음 (`docker` 필수) | `docker` 프로필의 PostgreSQL 연결 정보 |

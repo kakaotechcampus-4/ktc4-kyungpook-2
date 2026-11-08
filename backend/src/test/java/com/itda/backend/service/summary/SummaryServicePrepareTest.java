@@ -21,9 +21,11 @@ import com.itda.backend.domain.matching.MatchingStatus;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.exception.summary.SummaryTargetException;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.consent.SharingConsentRepository;
@@ -161,6 +163,22 @@ class SummaryServicePrepareTest {
         em.persistAndFlush(matchingResult(entry.getId(), junho.getId(), seojun.getId()));
 
         assertThat(summaryService.prepareRequest(group(entry)).otherChildNames()).containsExactly("서준호");
+    }
+
+    /**
+     * 상한(#424) 전에 올라온 긴 일지가 묶음에 있으면 묶음째 요청을 만들지 않는다. 긴 일지만 빼고 요약하면 선생님이 모르는 사이
+     * 그 기록이 요약에서 빠진다. 상태는 바꾸지 않는다 — 워커가 받아 쓰기 트랜잭션에서 남긴다.
+     */
+    @Test
+    void 묶음에_긴_일지가_있으면_요청을_만들지_않고_상태도_바꾸지_않는다() {
+        JournalEntry ok = summarizing("김준호가 블록을 쌓았다.", 1, junho.getId());
+        JournalEntry tooLong = summarizing("가".repeat(JournalEntry.MAX_CONTENT_LENGTH + 1), 2, junho.getId());
+
+        assertThatThrownBy(() -> summaryService.prepareRequest(group(ok, tooLong)))
+                .isInstanceOf(AgentContentTooLongException.class);
+
+        em.clear();
+        assertThat(em.find(JournalEntry.class, tooLong.getId()).getStatus()).isEqualTo(JournalEntryStatus.SUMMARIZING);
     }
 
     @Test

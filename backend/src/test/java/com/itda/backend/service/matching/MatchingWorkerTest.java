@@ -34,6 +34,8 @@ import com.itda.backend.exception.matching.MatchingTargetException;
 import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.agent.WorkerProperties;
+import com.itda.backend.domain.record.FailureReason;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 
 @ExtendWith(MockitoExtension.class)
 class MatchingWorkerTest {
@@ -99,6 +101,23 @@ class MatchingWorkerTest {
         verify(recorder, never()).record(eq(1L), any());
         verify(recorder).record(2L, reply2);
         verify(recorder, never()).recordFailure(2L);
+    }
+
+    /** 긴 일지는 확인 필요 큐(FAILED)로 보내지 않고 시스템 오류로 남긴다 — 아이를 골라도 검증에서 다시 멈춘다 (#424). */
+    @Test
+    void 긴_일지는_AI_를_부르지_않고_시스템_오류로_남기고_다음_건을_계속_처리한다() {
+        MatchingAgentReply reply2 = new MatchingAgentReply(null, "{}");
+        given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L));
+        given(matchingService.prepareRequest(1L)).willThrow(new AgentContentTooLongException(1L, 5001));
+        given(matchingService.prepareRequest(2L)).willReturn(requestFor(2L));
+        given(client.match(requestFor(2L))).willReturn(reply2);
+
+        worker.run();
+
+        verify(recorder).recordSystemError(1L, FailureReason.CONTENT_TOO_LONG);
+        verify(recorder, never()).recordFailure(1L);
+        verify(client).match(requestFor(2L));
+        verify(recorder).record(2L, reply2);
     }
 
     @Test

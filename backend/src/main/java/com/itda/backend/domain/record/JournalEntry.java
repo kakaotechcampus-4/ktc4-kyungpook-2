@@ -32,6 +32,13 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class JournalEntry {
 
+    /**
+     * AI 에 보낼 수 있는 일지 본문의 최대 글자 수 (#424). 업로드는 이보다 긴 일지가 든 파일을 거절하고, 본문 고치기도 이 길이까지만
+     * 받는다. 상한이 생기기 전에 올라온 긴 일지는 각 에이전트 요청을 만들기 전에 시스템 오류({@link FailureReason#CONTENT_TOO_LONG})로
+     * 멈춘다 — 잘라 보내지 않는다. 화면(frontend {@code MAX_REVISED_CONTENT})과 같은 값이어야 해서 설정이 아니라 상수다.
+     */
+    public static final int MAX_CONTENT_LENGTH = 5_000;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -132,6 +139,20 @@ public class JournalEntry {
         this.status = JournalEntryStatus.MATCH_REVIEW;
     }
 
+    /**
+     * 매칭 에이전트에 보낼 수 없는 일지다 (#424, 지금은 본문이 너무 길 때뿐). 확인 필요 큐({@code FAILED})로 보내지 않는다 — 선생님이
+     * 아이를 골라도 검증에서 같은 이유로 다시 멈춘다. 시스템 오류로 멈추고 원인을 남긴다.
+     */
+    public void failMatchingBySystemError(FailureReason reason) {
+        requireStatus(JournalEntryStatus.MATCHING);
+        stopBySystemError(FailureStage.MATCHING, reason);
+    }
+
+    /** AI 에 보낼 수 있는 길이인지 ({@link #MAX_CONTENT_LENGTH}). */
+    public boolean isSendableToAgent() {
+        return this.content.length() <= MAX_CONTENT_LENGTH;
+    }
+
     /** AI 호출 자체가 실패했다. */
     public void failMatching() {
         requireStatus(JournalEntryStatus.MATCHING);
@@ -209,6 +230,10 @@ public class JournalEntry {
         }
         if (newContent == null || newContent.isBlank()) {
             throw new IllegalArgumentException("고친 본문은 필수입니다.");
+        }
+        if (newContent.length() > MAX_CONTENT_LENGTH) {
+            // 요청 검증(@Size)을 거치지 않은 호출도 막는다 — 고친 본문은 그대로 검증 AI 에 간다 (#424).
+            throw new IllegalArgumentException("고친 본문은 " + MAX_CONTENT_LENGTH + "자까지입니다.");
         }
         if (hasSameContent(newContent)) {
             throw new IllegalArgumentException("본문이 고쳐지지 않았습니다.");

@@ -66,6 +66,18 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     boolean existsOwnedBy(@Param("id") Long id, @Param("institutionId") String institutionId);
 
     /**
+     * 그 기관이 올린 원본 파일에서 나온 살아 있는 일지 중 이 상태인 것의 수 (#424, AI 처리 줄 상한). 기관은 원본 파일로만 안다 —
+     * {@link #existsOwnedBy} 와 같은 기준이다.
+     */
+    @Query("""
+            select count(e) from JournalEntry e, RawRecord r
+            where r.id = e.rawRecordId and r.institutionId = :institutionId and r.deletedAt is null
+              and e.deletedAt is null and e.status in :statuses
+            """)
+    long countByInstitutionAndStatusIn(@Param("institutionId") String institutionId,
+            @Param("statuses") Collection<JournalEntryStatus> statuses);
+
+    /**
      * 매칭 워커가 처리할 일지. 원본 파일이 없는 직접 입력은 매칭 단계를 건너뛰므로 뺀다 (DB 스키마 §6.2).
      * 오래된 것부터 처리하도록 id 순으로 가져온다.
      */

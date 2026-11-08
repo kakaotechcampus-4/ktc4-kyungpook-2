@@ -23,6 +23,7 @@ import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
@@ -194,6 +195,13 @@ public class SummaryService {
                 .toList();
         if (entries.isEmpty()) {
             throw new SummaryTargetException("no journal entry left in summary group: " + group);
+        }
+        // 상한(#424) 전에 올라온 긴 일지가 묶음에 있으면 묶음째 보내지 않는다. 긴 일지만 빼고 요약하면 선생님이 모르는 사이
+        // 그 기록이 요약에서 빠진다 — 워커가 받아 CONTENT_TOO_LONG 시스템 오류로 남긴다.
+        for (JournalEntry entry : entries) {
+            if (!entry.isSendableToAgent()) {
+                throw new AgentContentTooLongException(entry.getId(), entry.getContent().length());
+            }
         }
         // 일지가 묶인 뒤에 아동·기관이 삭제 표시돼도 이 요약의 주인공·작성 기관은 그대로라 이름을 싣는다.
         String childName = childRepository.findById(group.childId()).map(Child::getName).orElse(null);
