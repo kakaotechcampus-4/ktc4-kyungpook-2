@@ -29,7 +29,7 @@ public record AgreeTermsRequest(
 
         @Schema(description = "약관마다 동의 화면이 읽은 판(GET /api/v1/terms 의 version). 키는 agreed 와 같아야 한다. "
                 + "하나라도 지금 판과 다르면 409 TERMS_VERSION_CHANGED. 곧 필수가 된다",
-                example = "{\"tos\": \"2026-11-07\", \"privacy\": \"2026-11-07\"}")
+                example = "{\"tos\": \"2026-11-07\", \"privacy\": \"2026-11-09\"}")
         Map<@NotNull TermKey, @NotNull String> versions
 ) {
 }

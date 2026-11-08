@@ -3,7 +3,6 @@ package com.itda.backend.service.child;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,12 +19,10 @@ import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.child.ChildOrganizationRequest;
 import com.itda.backend.domain.child.ChildOrganizationRequestStatus;
 import com.itda.backend.domain.organization.Organization;
-import com.itda.backend.domain.user.User;
 import com.itda.backend.dto.response.child.ChildRosterResponse;
 import com.itda.backend.dto.response.child.InstitutionLinkRequestResponse;
 import com.itda.backend.dto.response.child.PendingLinkRequestResponse;
 import com.itda.backend.dto.response.child.PendingLinkRequestResponse.RequestedChild;
-import com.itda.backend.dto.response.child.PendingLinkRequestResponse.Requester;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
@@ -36,7 +33,6 @@ import com.itda.backend.repository.child.ChildOrganizationRequestRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
-import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InviteCodeGenerator;
 import com.itda.backend.service.user.UserService;
@@ -63,7 +59,6 @@ public class InstitutionLinkService {
     private final ChildOrganizationRequestRepository childOrganizationRequestRepository;
     private final ChildGuardianRepository childGuardianRepository;
     private final OrganizationRepository organizationRepository;
-    private final UserRepository userRepository;
     private final ConsentStateReader consentStateReader;
     private final Clock clock;
 
@@ -119,14 +114,6 @@ public class InstitutionLinkService {
         }
         Map<Long, Child> children = childRepository.findByIdInAndDeletedAtIsNull(byChild.keySet()).stream()
                 .collect(Collectors.toMap(Child::getId, Function.identity()));
-        Map<Long, String> names = new HashMap<>();
-        for (User user : userRepository.findAllById(byChild.values().stream()
-                .flatMap(List::stream)
-                .map(ChildOrganizationRequest::getRequestedBy)
-                .distinct()
-                .toList())) {
-            names.put(user.getId(), user.getName());
-        }
         return byChild.entrySet().stream()
                 .filter(entry -> children.containsKey(entry.getKey()))
                 .map(entry -> {
@@ -135,8 +122,7 @@ public class InstitutionLinkService {
                     return new PendingLinkRequestResponse(
                             new RequestedChild(String.valueOf(child.getId()), child.getName(),
                                     child.getBirthdate().toString()),
-                            requests.stream().map(request -> new Requester(names.get(request.getRequestedBy())))
-                                    .toList(),
+                            (int) requests.stream().map(ChildOrganizationRequest::getRequestedBy).distinct().count(),
                             toOffset(requests.get(0).getCreatedAt()));
                 })
                 .toList();

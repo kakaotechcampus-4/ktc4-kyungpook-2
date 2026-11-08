@@ -26,7 +26,7 @@ import com.itda.backend.domain.user.UserRole;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CurrentUserResponse(
-        String role, String userId, String name, String institutionId, String institutionName,
+        String role, String userId, String institutionId, String institutionName,
         boolean signupCompleted, boolean termsAgreed) {
 
     /**
@@ -38,7 +38,6 @@ public record CurrentUserResponse(
         return new CurrentUserResponse(
                 toApiRole(user.getRole()),
                 String.valueOf(user.getId()),
-                user.getName(),
                 institutionId,
                 institutionId == null || organization == null ? null : organization.getName(),
                 user.isSignupCompleted(),

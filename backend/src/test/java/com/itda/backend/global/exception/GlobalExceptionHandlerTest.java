@@ -61,7 +61,7 @@ class GlobalExceptionHandlerTest {
     void setUp() throws Exception {
         User member = userRepository.findByKakaoId("exception-handler-test")
                 .orElseGet(() -> TermsFixture.agreeAll(termsAgreementRepository,
-                        userRepository.saveAndFlush(UserFixture.parent("exception-handler-test", "테스트회원"))));
+                        userRepository.saveAndFlush(UserFixture.parent("exception-handler-test"))));
         authCookie = new Cookie(JwtCookie.NAME, jwtProvider.createToken(String.valueOf(member.getId())));
         csrfCookie = mockMvc.perform(get("/api/health"))
                 .andReturn().getResponse().getCookie("XSRF-TOKEN");

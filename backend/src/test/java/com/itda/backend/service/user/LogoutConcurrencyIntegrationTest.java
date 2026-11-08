@@ -82,7 +82,7 @@ class LogoutConcurrencyIntegrationTest {
     @BeforeEach
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
-        parent = userRepository.save(UserFixture.parent("kakao-logout-parent", "김보호"));
+        parent = userRepository.save(UserFixture.parent("kakao-logout-parent"));
     }
 
     @AfterEach

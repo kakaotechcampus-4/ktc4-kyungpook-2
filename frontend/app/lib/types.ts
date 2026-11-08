@@ -124,8 +124,8 @@ export interface MyInstitution extends Institution {
 /** 기관이 보는 연결 요청 하나 (O-60). 같은 아이에 보호자 여럿이 요청했으면 한 항목이다 */
 export interface PendingLinkRequest {
   child: { id: string; name: string; birthDate: string };
-  /** 요청한 보호자들. 먼저 요청한 순서. 이름은 카카오 닉네임이라 없을 수 있다 */
-  requesters: { name: string | null }[];
+  /** 요청한 보호자 수. 보호자 이름은 저장하지 않아 화면은 "아이 이름 + 보호자" 로 부른다 */
+  requesterCount: number;
   /** 가장 먼저 요청한 시각 (ISO 8601) */
   requestedAt: string;
 }
@@ -155,11 +155,11 @@ export interface LiveInvitation extends IssuedInvitation {
 /** 아이와 연결된 보호자 (api-spec O-18) */
 export interface ChildGuardian {
   userId: string;
-  /** 카카오 닉네임. 동의하지 않았으면 null */
-  name: string | null;
   linkedAt: string;
   /** true 인 보호자만 우리 기관이 연결을 끊을 수 있다 (O-19) */
   linkedByThisOrganization: boolean;
+  /** 이 보호자가 연결할 때 쓴 우리 기관의 초대 코드. 이름이 없어 이 코드와 연결 시각으로 보호자를 구별한다. 다른 기관 코드로 연결됐으면 null */
+  invitationCode: string | null;
 }
 
 /**
@@ -559,6 +559,14 @@ export interface GuardianInsight {
   childName: string | null;
   /** "2026년 8월 3주차" — 어느 주의 이야기인지 */
   period: string;
+  /**
+   * 이 글이 다룬 주의 시작·끝 "2026-10-19". 화면이 **달로 묶을 때** 쓴다.
+   *
+   * period 글자를 잘라 달을 구하면 깨진다 — 9/29~10/5 처럼 달에 걸친 주가 있고, 문구가 바뀌면
+   * 같이 깨진다. 달은 periodFrom 기준이다 (BE periodLabel 과 같은 기준).
+   */
+  periodFrom: string;
+  periodTo: string;
   /** 교사·보호자가 읽을 한두 문장 */
   content: string;
   /** Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null — 화면은 "기관 정보 없음" */
@@ -585,6 +593,19 @@ export interface GuardianInsightEvidence {
   institution: Institution;
   /** 이번 기간이 아니라 지난 기록에서 찾아 쓴 근거인지 (#387 · #422). 화면은 "지난 기록" 으로 구분한다 */
   lookedUp: boolean;
+  /**
+   * 이 글이 그 일지에서 **실제로 인용한 문장**. 없으면 빈 배열이고 근거 줄은 그대로 보인다.
+   *
+   * Gate 1 에서 교사가 승인한 요약 문장이다 — 원본 일지 인용이 아니다. 원본에는 다른 아이 이름이
+   * 남아 있어 밖으로 내보내지 않는다 (`AI/insight/CRITERIA.md §2`).
+   */
+  sentences: GuardianInsightSentence[];
+}
+
+/** 근거 문장 하나. 역할은 "상황"(본문 근거) 또는 "대처"(대처 근거) 다 */
+export interface GuardianInsightSentence {
+  text: string;
+  role: "상황" | "대처";
 }
 
 /**
@@ -609,8 +630,6 @@ export interface SentChecklistTarget {
   /** 아이가 삭제되지 않았고 지금도 우리 명부에 있다. false 면 "명부에서 빠짐" 이고 숫자에서 빠진다 */
   onRoster: boolean;
   confirmedAt: string | null;
-  /** 확인한 보호자의 카카오 닉네임. 없으면 null */
-  confirmedByName: string | null;
 }
 
 /** 기관 › 준비물·확인사항 — 보낸 요청 한 건 (O-70 · O-71) */
@@ -638,8 +657,6 @@ export interface ChecklistItem {
   items: string[];
   sentAt: string;
   confirmedAt: string | null;
-  /** 확인한 보호자의 카카오 닉네임. 없으면 null — 화면은 "다른 보호자" */
-  confirmedByName: string | null;
 }
 
 /* ── 대시보드 (O-80 ~ O-82) ──────────────────── */

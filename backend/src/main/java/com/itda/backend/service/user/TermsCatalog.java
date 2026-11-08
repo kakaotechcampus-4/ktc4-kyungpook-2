@@ -2,6 +2,7 @@ package com.itda.backend.service.user;
 
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.Set;
 
 import com.itda.backend.domain.user.TermKey;
@@ -34,7 +35,21 @@ public final class TermsCatalog {
     /** 지금 보여 주는 본문의 판. 동의 화면이 이 판을 받아 두었다가 동의할 때 보낸다. */
     public static String currentVersion(TermKey key) {
         return switch (key) {
-            case TOS, PRIVACY, ORG_TOS, ORG_PRIVACY, ORG_CHILD_DATA -> "2026-11-07";
+            case TOS, ORG_TOS, ORG_CHILD_DATA -> "2026-11-07";
+            // 11-09: 수집 항목에서 카카오 닉네임을 뺐다 — 서버가 회원번호만 받는다
+            case PRIVACY, ORG_PRIVACY -> "2026-11-09";
+        };
+    }
+
+    /**
+     * 지금 판 전에 낸 본문 판 중 지금도 통과로 치는 판. 수집 항목이 줄기만 한 개정이면 옛 판 동의로 지금 판도 덮인다고 보고
+     * 다시 받지 않는다. 수집 항목이 늘거나 이용 목적이 바뀌면 여기에 넣지 않는다.
+     */
+    private static Set<String> stillAcceptedVersions(TermKey key) {
+        return switch (key) {
+            case TOS, ORG_TOS, ORG_CHILD_DATA -> Set.of();
+            // 11-07 판과 다른 점은 카카오 닉네임을 더 모으지 않는다는 것뿐이다
+            case PRIVACY, ORG_PRIVACY -> Set.of("2026-11-07");
         };
     }
 
@@ -51,11 +66,14 @@ public final class TermsCatalog {
 
     /**
      * 다시 받는 약관에서 통과로 칠 판. 지금 판은 늘 든다. 라벨 판은 <b>판 없는 동의를 받는 호환 기간 동안</b> 든다 —
-     * 빼면 판 없이 동의한 사람이 통과하지 못해 같은 요청을 되풀이한다. 초안을 확정할 때는 판을 필수로 바꾼 뒤
-     * 확정 판 하나로 줄여 다시 받는다.
+     * 빼면 판 없이 동의한 사람이 통과하지 못해 같은 요청을 되풀이한다. 수집이 줄기만 한 옛 판({@link #stillAcceptedVersions})도 든다.
+     * 초안을 확정할 때는 판을 필수로 바꾼 뒤 확정 판 하나로 줄여 다시 받는다.
      */
     public static Set<String> acceptedVersions(TermKey key) {
-        return Set.of(labelOnlyVersion(key), currentVersion(key));
+        Set<String> accepted = new HashSet<>(stillAcceptedVersions(key));
+        accepted.add(labelOnlyVersion(key));
+        accepted.add(currentVersion(key));
+        return Set.copyOf(accepted);
     }
 
     /** 팀 검토 전 초안인지. 화면이 본문 위에 초안 띠를 띄운다. 확정하면 판을 올리며 끈다. */

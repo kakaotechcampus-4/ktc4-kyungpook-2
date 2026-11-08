@@ -79,8 +79,8 @@ class ChecklistServiceJpaTest {
         em.persist(ChildOrganization.of(sky.getId(), ours.getId()));
         em.persist(ChildOrganization.of(sea.getId(), ours.getId()));
         em.persist(ChildOrganization.of(star.getId(), other.getId()));
-        User staff = em.persist(UserFixture.organizationUser("cl-staff", "이선생", ours.getId()));
-        mom = em.persist(UserFixture.parent("cl-mom", "김엄마"));
+        User staff = em.persist(UserFixture.organizationUser("cl-staff", ours.getId()));
+        mom = em.persist(UserFixture.parent("cl-mom"));
         em.flush();
         em.clear();
         given(userService.getOrganizationIdOf(STAFF)).willReturn(ours.getId());
@@ -162,7 +162,7 @@ class ChecklistServiceJpaTest {
         assertThat(older.targets()).extracting(t -> t.child().name(), SentChecklistResponse.Target::onRoster)
                 .containsExactly(tuple("하늘", false),
                         tuple("바다", true));
-        assertThat(older.targets().get(1).confirmedByName()).isEqualTo("김엄마");
+        assertThat(older.targets().get(1).confirmedAt()).isNotNull();
 
         Child deleted = em.find(Child.class, sea.getId());
         deleted.delete();

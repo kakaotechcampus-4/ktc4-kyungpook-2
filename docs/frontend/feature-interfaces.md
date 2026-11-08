@@ -279,8 +279,7 @@ interface ChecklistItem {   // P-12 준비물·확인사항 (G-50 · G-51)
   status: "confirmed" | "needs_check";  // 보호자 중 한 명이 확인하면 모두에게 confirmed
   items: string[];            // 준비물 · 확인사항
   sentAt: string;             // 보낸 시각 (ISO)
-  confirmedAt: string | null;
-  confirmedByName: string | null;  // 확인한 보호자 닉네임. 없으면 "다른 보호자"
+  confirmedAt: string | null;  // 확인한 사람은 내려가지 않는다 — 화면은 "아이 이름 + 보호자"
 }
 
 interface ParentActivity {   // 홈 최근 공유 활동 한 줄 (G-11)

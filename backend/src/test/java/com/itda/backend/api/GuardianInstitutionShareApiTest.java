@@ -89,8 +89,8 @@ class GuardianInstitutionShareApiTest {
         Organization receiver = organizationRepository.save(OrganizationFixture.center());
         senderId = sender.getId();
         receiverId = receiver.getId();
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", senderId)));
-        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), senderId)));
+        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
         childId = childRepository.save(Child.of("김하늘", LocalDate.of(2017, 3, 14))).getId();
         childGuardianRepository.save(ChildGuardian.link(childId, parent.getId(), 1L));
         childOrganizationRepository.save(ChildOrganization.of(childId, receiverId, "R-1"));
@@ -121,7 +121,7 @@ class GuardianInstitutionShareApiTest {
 
     @Test
     void 연결되지_않은_보호자는_403_FORBIDDEN() throws Exception {
-        User stranger = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "남보호")));
+        User stranger = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         mockMvc.perform(get(path()).cookie(auth(stranger)))
                 .andExpect(status().isForbidden())

@@ -10,6 +10,8 @@ matching/graph.py · validation/graph.py 와 같은 모양이다. 분기가 없�
 
 from langgraph.graph import END, StateGraph
 
+from common.progress import tracked
+
 from .llm import LlmUnavailable, NoGroundedClaims
 from .nodes import assemble, gather, ground, write
 from .schemas import Claim, Evidence, EvidenceSpan, SummaryInput, SummaryOutput
@@ -18,10 +20,10 @@ from .state import SummaryState
 
 def build_graph():
     graph = StateGraph(SummaryState)
-    graph.add_node("gather", gather)
-    graph.add_node("write", write)
-    graph.add_node("ground", ground)
-    graph.add_node("assemble", assemble)
+    graph.add_node("gather", tracked("gather", gather))
+    graph.add_node("write", tracked("write", write))
+    graph.add_node("ground", tracked("ground", ground))
+    graph.add_node("assemble", tracked("assemble", assemble))
 
     graph.set_entry_point("gather")
     graph.add_edge("gather", "write")
