@@ -656,7 +656,7 @@ export interface PipelineTurn {
   requests: number;
 }
 
-/** 0 아이 찾기 · 1 AI 확인 · 2 요약 · 3 검토 · 4 주간 분석 · 5 분석 승인 */
+/** 0 아이 매칭 · 1 내용 검증 · 2 일지 요약 · 3 요약 검토 · 4 주간 리포트 · 5 리포트 승인 */
 export type PipelineStep = 0 | 1 | 2 | 3 | 4 | 5;
 
 /** me 선생님 차례 · ai AI 가 하는 중 · wait 기다리는 중 · other 다른 사람 차례 · done 끝 */
