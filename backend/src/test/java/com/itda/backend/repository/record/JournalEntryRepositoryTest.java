@@ -90,6 +90,29 @@ class JournalEntryRepositoryTest {
         assertThat(journalEntryRepository.existsOwnedBy(9999L, "1")).isFalse();
     }
 
+    /** 대시보드 AI 진행 단계(#453)가 AI 가 알려 준 일지 번호를 진행 현황 줄(기관·아이·날짜)로 바꾼다. */
+    @Test
+    void 진행_단계_번역용으로_일지의_기관_아이_날짜를_한_번에_읽는다() {
+        Long ours = rawRecordOf("1");
+        Long theirs = rawRecordOf("2");
+        JournalEntry matching = journalEntryRepository.saveAndFlush(
+                JournalEntry.of(ours, LocalDate.of(2026, 11, 9), "기록", 1));
+        JournalEntry validating = JournalEntry.of(theirs, LocalDate.of(2026, 11, 8), "기록", 1);
+        validating.assignChild(7L);
+        journalEntryRepository.saveAndFlush(validating);
+        JournalEntry deleted = JournalEntry.of(ours, LocalDate.of(2026, 11, 9), "기록", 2);
+        deleted.delete();
+        journalEntryRepository.saveAndFlush(deleted);
+        entityManager.clear();
+
+        List<ProgressEntryKey> keys = journalEntryRepository.findProgressKeys(
+                List.of(matching.getId(), validating.getId(), deleted.getId(), 9999L));
+
+        assertThat(keys).containsExactlyInAnyOrder(
+                new ProgressEntryKey(matching.getId(), null, LocalDate.of(2026, 11, 9), "1"),
+                new ProgressEntryKey(validating.getId(), 7L, LocalDate.of(2026, 11, 8), "2"));
+    }
+
     @Test
     void 원본_파일_없이_직접_입력한_일지도_저장된다() {
         JournalEntry saved = journalEntryRepository.saveAndFlush(
