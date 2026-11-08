@@ -809,8 +809,8 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     approvedAt: "2026-10-29T17:40:00",
     readAt: null,
     evidence: [
-      { journalEntryId: "jrn_04", date: "2026-08-14", institution: SCHOOL },
-      { journalEntryId: "jrn_05", date: "2026-08-14", institution: CENTER },
+      { journalEntryId: "jrn_04", date: "2026-08-14", institution: SCHOOL, lookedUp: false },
+      { journalEntryId: "jrn_05", date: "2026-08-14", institution: CENTER, lookedUp: false },
     ],
   },
   {
@@ -836,8 +836,10 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     approvedAt: "2026-10-27T10:00:00",
     readAt: "2026-10-27T21:00:00",
     evidence: [
-      { journalEntryId: "jrn_01", date: "2026-08-21", institution: SCHOOL },
-      { journalEntryId: "jrn_02", date: "2026-08-21", institution: CENTER },
+      // 지난 기록에서 찾아 쓴 근거 (#388) — "지난 기록" 표시를 mock 에서 보려고 둔다
+      { journalEntryId: "jrn_04", date: "2026-08-14", institution: SCHOOL, lookedUp: true },
+      { journalEntryId: "jrn_01", date: "2026-08-21", institution: SCHOOL, lookedUp: false },
+      { journalEntryId: "jrn_02", date: "2026-08-21", institution: CENTER, lookedUp: false },
     ],
   },
   {
