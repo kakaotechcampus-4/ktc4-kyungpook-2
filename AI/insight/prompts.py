@@ -29,7 +29,7 @@ WRITING_RULES = {
     "DROP_ADVICE_TAIL": "끝에 조언이나 활용 문장을 붙이지 않는다",
     "RELATE_RECORDS": "기록 하나를 다시 말하지 않는다. 여러 기록을 묶거나 비교한 결과를 쓴다",
     "NEED_DIFFERENCE": "같은 행동이 겹치기만 해서는 쓰지 않는다. 기관·대처·시점에 따라 반응이 달랐거나, 다음 사람이 알아야 할 어려움이 반복될 때만 쓴다",
-    "PLAIN_TONE": '문장은 "~했다", "~이다"로 끝낸다. "~했습니다", "~함"은 쓰지 않는다',
+    "PLAIN_TONE": '문장은 "~했어요", "~예요"로 끝낸다. "~했다", "~함", "~했습니다"는 쓰지 않는다',
     "DROP_HEALTH_ONLY": "질병·약·증상 같은 건강 상태만으로는 쓰지 않는다. 건강 기록은 다른 상황을 설명하는 맥락으로만 쓴다",
 }
 
@@ -66,7 +66,7 @@ def system_prompt() -> str:
 JSON 으로만 답한다.
 {{"insights": [{{"situation": "언제, 어떤 맥락에서", "behavior": "그 상황에서 관찰된 반응",
   "supports": [{{"action": "누가 어떻게 했는지", "result": "어떻게 됐는지", "claim_ids": ["12-0"]}}],
-  "claim_ids": ["12-0", "15-1"], "content": "교사가 읽을 한두 문장"}}]}}"""
+  "claim_ids": ["12-0", "15-1"], "content": "한두 문장"}}]}}"""
 
 
 def user_prompt(state: dict) -> str:
