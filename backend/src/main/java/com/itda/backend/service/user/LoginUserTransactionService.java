@@ -19,22 +19,21 @@ public class LoginUserTransactionService {
     private final UserRepository userRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public User findOrCreate(String kakaoId, String nickname) {
-        return findAndRefresh(kakaoId, nickname)
-                .orElseGet(() -> userRepository.saveAndFlush(User.pending(kakaoId, nickname)));
+    public User findOrCreate(String kakaoId) {
+        return findAndRestore(kakaoId)
+                .orElseGet(() -> userRepository.saveAndFlush(User.pending(kakaoId)));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Optional<User> findExisting(String kakaoId, String nickname) {
-        return findAndRefresh(kakaoId, nickname);
+    public Optional<User> findExisting(String kakaoId) {
+        return findAndRestore(kakaoId);
     }
 
-    private Optional<User> findAndRefresh(String kakaoId, String nickname) {
+    private Optional<User> findAndRestore(String kakaoId) {
         return userRepository.findByKakaoIdForUpdate(kakaoId).map(user -> {
             if (user.isDeleted()) {
                 user.restore();
             }
-            user.updateName(nickname);
             return user;
         });
     }

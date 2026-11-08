@@ -42,6 +42,23 @@ class TermsCatalogTest {
         assertThat(new ClassPathResource(path(key, TermsCatalog.currentVersion(key))).exists()).isTrue();
     }
 
+    /** 통과 판 중 라벨 판이 아닌 판은 본문이 있어야 한다 — 동의한 글이 무엇인지 남아 있게. */
+    @ParameterizedTest
+    @EnumSource(TermKey.class)
+    void 라벨_판이_아닌_통과_판에는_모두_문안이_있다(TermKey key) {
+        assertThat(TermsCatalog.acceptedVersions(key))
+                .filteredOn(version -> !version.equals(TermsCatalog.labelOnlyVersion(key)))
+                .allSatisfy(version -> assertThat(new ClassPathResource(path(key, version)).exists()).isTrue());
+    }
+
+    /** 11-09 판은 카카오 닉네임을 수집 항목에서 뺐을 뿐이라, 11-07 판에 동의한 사람에게 다시 받지 않는다. */
+    @ParameterizedTest
+    @EnumSource(value = TermKey.class, names = {"PRIVACY", "ORG_PRIVACY"})
+    void 닉네임만_뺀_개인정보_판은_옛_판_동의도_통과한다(TermKey key) {
+        assertThat(TermsCatalog.currentVersion(key)).isEqualTo("2026-11-09");
+        assertThat(TermsCatalog.acceptedVersions(key)).contains("2026-11-07");
+    }
+
     private static String path(TermKey key, String version) {
         return "terms/" + key.toJson() + "/" + version + ".txt";
     }

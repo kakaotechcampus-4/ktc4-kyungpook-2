@@ -85,9 +85,9 @@ class OrganizationTimelineApiTest {
     @BeforeEach
     void setUp() throws Exception {
         organization = organizationRepository.save(OrganizationFixture.center());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
         Organization other = organizationRepository.save(OrganizationFixture.center());
-        otherStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "박선생", other.getId())));
+        otherStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), other.getId())));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -134,7 +134,7 @@ class OrganizationTimelineApiTest {
 
     @Test
     void 보호자는_403_ORGANIZATION_NOT_ASSIGNED() throws Exception {
-        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
+        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         mockMvc.perform(get(timelinePath()).cookie(auth(parent)))
                 .andExpect(status().isForbidden())

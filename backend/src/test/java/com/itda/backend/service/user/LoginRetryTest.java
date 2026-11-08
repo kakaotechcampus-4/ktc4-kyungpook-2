@@ -29,30 +29,30 @@ class LoginRetryTest {
 
     @Test
     void duplicateKakaoIdLooksUpTheWinner() {
-        User winner = User.pending("same", "이름");
-        when(transactions.findOrCreate("same", "이름")).thenThrow(violation("uk_users_kakao_id"));
-        when(transactions.findExisting("same", "이름")).thenReturn(Optional.of(winner));
+        User winner = User.pending("same");
+        when(transactions.findOrCreate("same")).thenThrow(violation("uk_users_kakao_id"));
+        when(transactions.findExisting("same")).thenReturn(Optional.of(winner));
 
-        assertThat(service.findOrCreateByKakaoId("same", "이름")).isSameAs(winner);
-        verify(transactions).findExisting("same", "이름");
+        assertThat(service.findOrCreateByKakaoId("same")).isSameAs(winner);
+        verify(transactions).findExisting("same");
     }
 
     @Test
     void unrelatedConstraintIsNotRetried() {
         DataIntegrityViolationException failure = violation("other_constraint");
-        when(transactions.findOrCreate("same", "이름")).thenThrow(failure);
+        when(transactions.findOrCreate("same")).thenThrow(failure);
 
-        assertThatThrownBy(() -> service.findOrCreateByKakaoId("same", "이름")).isSameAs(failure);
-        verify(transactions, never()).findExisting(anyString(), anyString());
+        assertThatThrownBy(() -> service.findOrCreateByKakaoId("same")).isSameAs(failure);
+        verify(transactions, never()).findExisting(anyString());
     }
 
     @Test
     void missingWinnerPropagatesTheOriginalFailureWithoutAnotherInsert() {
         DataIntegrityViolationException failure = violation("uk_users_kakao_id");
-        when(transactions.findOrCreate("same", "이름")).thenThrow(failure);
-        when(transactions.findExisting("same", "이름")).thenReturn(Optional.empty());
+        when(transactions.findOrCreate("same")).thenThrow(failure);
+        when(transactions.findExisting("same")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.findOrCreateByKakaoId("same", "이름")).isSameAs(failure);
-        verify(transactions, times(1)).findOrCreate("same", "이름");
+        assertThatThrownBy(() -> service.findOrCreateByKakaoId("same")).isSameAs(failure);
+        verify(transactions, times(1)).findOrCreate("same");
     }
 }

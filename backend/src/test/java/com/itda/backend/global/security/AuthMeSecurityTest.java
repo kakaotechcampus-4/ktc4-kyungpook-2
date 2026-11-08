@@ -60,14 +60,14 @@ class AuthMeSecurityTest {
     void organizationUserGetsRoleAndInstitutionId() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
-                UserFixture.organizationUser("me-org-1", "박지현", organization.getId()));
+                UserFixture.organizationUser("me-org-1", organization.getId()));
 
         mockMvc.perform(get(ME).cookie(cookieFor(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.role").value("org"))
                 .andExpect(jsonPath("$.data.userId").value(String.valueOf(user.getId())))
-                .andExpect(jsonPath("$.data.name").value("박지현"))
+                .andExpect(jsonPath("$.data.name").doesNotExist())
                 .andExpect(jsonPath("$.data.institutionId").value(String.valueOf(organization.getId())))
                 .andExpect(jsonPath("$.data.signupCompleted").value(true));
     }
@@ -78,13 +78,13 @@ class AuthMeSecurityTest {
      */
     @Test
     void userBeforeSignupGetsSignupNotCompletedWithoutRole() throws Exception {
-        User user = userRepository.save(User.pending("me-pending-1", "박지현"));
+        User user = userRepository.save(User.pending("me-pending-1"));
 
         mockMvc.perform(get(ME).cookie(cookieFor(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.signupCompleted").value(false))
                 .andExpect(jsonPath("$.data.userId").value(String.valueOf(user.getId())))
-                .andExpect(jsonPath("$.data.name").value("박지현"))
+                .andExpect(jsonPath("$.data.name").doesNotExist())
                 .andExpect(jsonPath("$.data.role").doesNotExist())
                 .andExpect(jsonPath("$.data.institutionId").doesNotExist());
     }
@@ -92,7 +92,7 @@ class AuthMeSecurityTest {
     /** institutionId 는 role 이 org 일 때만 나간다. 보호자 응답에는 아예 없어야 한다. */
     @Test
     void parentResponseOmitsInstitutionId() throws Exception {
-        User user = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("me-parent-1", "김보호")));
+        User user = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("me-parent-1")));
 
         mockMvc.perform(get(ME).cookie(cookieFor(user)))
                 .andExpect(status().isOk())
@@ -105,7 +105,7 @@ class AuthMeSecurityTest {
     void userWithoutNicknameOmitsName() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
-                UserFixture.organizationUser("me-org-2", null, organization.getId()));
+                UserFixture.organizationUser("me-org-2", organization.getId()));
 
         mockMvc.perform(get(ME).cookie(cookieFor(user)))
                 .andExpect(status().isOk())
@@ -153,7 +153,7 @@ class AuthMeSecurityTest {
     /** 탈퇴한 사용자의 출입증은 아직 만료 전이어도 인정하지 않는다. */
     @Test
     void withdrawnUserIsUnauthorized() throws Exception {
-        User user = UserFixture.parent("me-withdrawn-1", "탈퇴자");
+        User user = UserFixture.parent("me-withdrawn-1");
         user.delete();
         user = userRepository.save(user);
 
@@ -173,7 +173,7 @@ class AuthMeSecurityTest {
     void authenticatedRequestDoesNotLeaveLoginInSession() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
-                UserFixture.organizationUser("me-session-1", "세션", organization.getId()));
+                UserFixture.organizationUser("me-session-1", organization.getId()));
 
         var result = mockMvc.perform(get(ME).cookie(cookieFor(user)))
                 .andExpect(status().isOk())
@@ -197,7 +197,7 @@ class AuthMeSecurityTest {
     void authenticatedRequestDoesNotExpireCsrfCookie() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
-                UserFixture.organizationUser("me-csrf-1", "토큰", organization.getId()));
+                UserFixture.organizationUser("me-csrf-1", organization.getId()));
         jakarta.servlet.http.Cookie csrf = mockMvc.perform(get("/api/health"))
                 .andReturn().getResponse().getCookie("XSRF-TOKEN");
 
@@ -217,7 +217,7 @@ class AuthMeSecurityTest {
     void sessionAloneDoesNotAuthenticateAfterLogout() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         User user = userRepository.save(
-                UserFixture.organizationUser("me-session-2", "세션", organization.getId()));
+                UserFixture.organizationUser("me-session-2", organization.getId()));
         org.springframework.mock.web.MockHttpSession session = new org.springframework.mock.web.MockHttpSession();
 
         mockMvc.perform(get(ME).cookie(cookieFor(user)).session(session))
@@ -231,7 +231,7 @@ class AuthMeSecurityTest {
     /** 기관 소속이 아닌 사용자는 기관 전용 API 에서 403 으로 막힌다. */
     @Test
     void parentIsForbiddenFromOrganizationOnlyApi() throws Exception {
-        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("me-parent-2", "김보호")));
+        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("me-parent-2")));
 
         mockMvc.perform(get("/api/v1/raw-records").cookie(cookieFor(parent)))
                 .andExpect(status().isForbidden())

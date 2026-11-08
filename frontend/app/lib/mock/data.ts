@@ -63,7 +63,6 @@ export const ART_ACADEMY: Institution = {
 export const MY_INSTITUTION = CENTER;
 /** 우리 기관 코드 — 보호자에게 알려 주면 보호자가 이 코드로 아이 연결을 요청한다 */
 export const MY_INSTITUTION_CODE = "K7P3QX9M";
-export const ME = { name: "박지현", role: "선생님" };
 
 /* 아동 ─────────────────────────────────────────────── */
 
@@ -137,7 +136,7 @@ export const CHILDREN: Child[] = [
 export const LINK_REQUESTS: PendingLinkRequest[] = [
   {
     child: { id: "child_3011", name: "정OO", birthDate: "2018-11-26" },
-    requesters: [{ name: "정OO 어머니" }],
+    requesterCount: 1,
     requestedAt: "2026-10-29T09:20:00+09:00",
   },
 ];
@@ -957,11 +956,11 @@ export const INVITATIONS: Record<string, LiveInvitation[]> = {};
 /** 아이별 연결된 보호자 (O-18, O-19 mock) */
 export const CHILD_GUARDIANS: Record<string, ChildGuardian[]> = {
   child_1023: [
-    { userId: "41", name: "김보호", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true },
-    { userId: "52", name: null, linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false },
+    { userId: "41", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true, invitationCode: "H4QZ8M2R" },
+    { userId: "52", linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false, invitationCode: null },
   ],
   child_1041: [
-    { userId: "63", name: "이보호", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true },
+    { userId: "63", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true, invitationCode: "T7KD3WNP" },
   ],
 };
 
@@ -1039,7 +1038,6 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
       items: ["하원 동행 시간을 10분 늦춰도 될까요."],
       sentAt: "2026-11-04T08:40:00",
       confirmedAt: null,
-      confirmedByName: null,
     },
     {
       id: "req_02",
@@ -1048,7 +1046,6 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
       items: ["간식 알레르기 정보를 확인해주세요."],
       sentAt: "2026-11-03T17:10:00",
       confirmedAt: null,
-      confirmedByName: null,
     },
     {
       id: "req_01",
@@ -1057,7 +1054,6 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
       items: ["다음 주 현장학습 동의서를 확인해주세요.", "실내화를 새로 준비해주세요."],
       sentAt: "2026-11-03T15:20:00",
       confirmedAt: "2026-11-03T19:02:00",
-      confirmedByName: "김아빠",
     },
   ],
   child_2044: [],
@@ -1072,8 +1068,8 @@ export const SENT_CHECKLISTS: SentChecklist[] = [
     total: 2,
     confirmed: 1,
     targets: [
-      { child: { id: "child_1023", name: "김OO" }, onRoster: true, confirmedAt: "2026-11-03T19:02:00", confirmedByName: "김보호" },
-      { child: { id: "child_1041", name: "이OO" }, onRoster: true, confirmedAt: null, confirmedByName: null },
+      { child: { id: "child_1023", name: "김OO" }, onRoster: true, confirmedAt: "2026-11-03T19:02:00" },
+      { child: { id: "child_1041", name: "이OO" }, onRoster: true, confirmedAt: null },
     ],
   },
 ];

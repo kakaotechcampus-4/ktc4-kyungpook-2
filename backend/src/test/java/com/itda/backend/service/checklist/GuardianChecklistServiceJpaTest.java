@@ -75,10 +75,10 @@ class GuardianChecklistServiceJpaTest {
         ours = em.persist(OrganizationFixture.center());
         sky = em.persist(Child.of("하늘", LocalDate.of(2017, 3, 14)));
         em.persist(ChildOrganization.of(sky.getId(), ours.getId()));
-        User staff = em.persist(UserFixture.organizationUser("gcl-staff", "이선생", ours.getId()));
-        mom = em.persist(UserFixture.parent("gcl-mom", "김엄마"));
-        dad = em.persist(UserFixture.parent("gcl-dad", "김아빠"));
-        User stranger = em.persist(UserFixture.parent("gcl-stranger", "남"));
+        User staff = em.persist(UserFixture.organizationUser("gcl-staff", ours.getId()));
+        mom = em.persist(UserFixture.parent("gcl-mom"));
+        dad = em.persist(UserFixture.parent("gcl-dad"));
+        User stranger = em.persist(UserFixture.parent("gcl-stranger"));
         em.persist(ChildGuardian.link(sky.getId(), mom.getId(), 1L));
         em.persist(ChildGuardian.link(sky.getId(), dad.getId(), 1L));
         em.flush();
@@ -182,7 +182,7 @@ class GuardianChecklistServiceJpaTest {
     @Test
     void 보낸_뒤에_연결된_보호자도_본다() {
         Long id = send("실내화");
-        User aunt = em.persist(UserFixture.parent("gcl-aunt", "이모"));
+        User aunt = em.persist(UserFixture.parent("gcl-aunt"));
         em.persist(ChildGuardian.link(sky.getId(), aunt.getId(), 1L));
         flushClear();
         given(userService.getParentIdOf("u-aunt")).willReturn(aunt.getId());
@@ -203,12 +203,11 @@ class GuardianChecklistServiceJpaTest {
 
         assertThat(confirmed.status()).isEqualTo("confirmed");
         assertThat(confirmed.confirmedAt()).isEqualTo(NOW.plusHours(1));
-        assertThat(confirmed.confirmedByName()).isEqualTo("김엄마");
         assertThat(confirmed.institution().id()).isEqualTo(String.valueOf(ours.getId()));
         flushClear();
         GuardianChecklistResponse seenByDad = guardianChecklistService.list(DAD, sky.getId(), false).get(0);
         assertThat(seenByDad.status()).isEqualTo("confirmed");
-        assertThat(seenByDad.confirmedByName()).isEqualTo("김엄마");
+        assertThat(seenByDad.confirmedAt()).isEqualTo(NOW.plusHours(1));
         assertThat(guardianChecklistService.list(DAD, sky.getId(), true)).isEmpty();
     }
 
@@ -224,7 +223,6 @@ class GuardianChecklistServiceJpaTest {
         GuardianChecklistResponse second = guardianChecklistService.confirm(DAD, sky.getId(), id);
 
         assertThat(second.status()).isEqualTo("confirmed");
-        assertThat(second.confirmedByName()).isEqualTo("김엄마");
         assertThat(second.confirmedAt()).isEqualTo(NOW.plusHours(1));
     }
 

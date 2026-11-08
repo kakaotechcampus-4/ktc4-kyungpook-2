@@ -76,7 +76,7 @@ class InvitationApiTest {
 
     private User organizationUser() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        return TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
+        return TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
     }
 
     private Cookie auth(User user) {
@@ -111,7 +111,7 @@ class InvitationApiTest {
     void setUp() throws Exception {
         staff = organizationUser();
         otherStaff = organizationUser();
-        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
+        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -235,9 +235,10 @@ class InvitationApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].userId").value(String.valueOf(parent.getId())))
-                .andExpect(jsonPath("$.data[0].name").value("김보호"))
+                .andExpect(jsonPath("$.data[0].name").doesNotExist())
                 .andExpect(jsonPath("$.data[0].linkedAt").isString())
-                .andExpect(jsonPath("$.data[0].linkedByThisOrganization").value(true));
+                .andExpect(jsonPath("$.data[0].linkedByThisOrganization").value(true))
+                .andExpect(jsonPath("$.data[0].invitationCode").value(registeredCode));
 
         mockMvc.perform(withCsrf(delete(guardians() + "/" + parent.getId()), auth(staff)))
                 .andExpect(status().isNoContent());
