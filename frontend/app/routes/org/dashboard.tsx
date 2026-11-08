@@ -19,9 +19,9 @@ import {
 } from "lucide-react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
 import { Busy } from "@/components/ui";
+import { useOrgLive } from "@/components/org/Shell";
 import {
   getAiActivity,
-  getAiStatus,
   getChildren,
   getFileProgress,
   getPipeline,
@@ -39,11 +39,12 @@ import { usePolling } from "@/lib/usePolling";
  * 요약은 자동으로 시작하므로(#369) [요약] 버튼이 없다.
  */
 export async function clientLoader() {
-  const [pipeline, activity, files, ai, children] = await Promise.all([
+  const [pipeline, activity, files, children] = await Promise.all([
+    // 진행 현황 · AI 멈춤은 셸(components/org/Shell)이 받아 10초마다 다시 받는다. 이 값은 셸이 진행 현황을
+    // 한 번도 못 받았을 때 쓰고, 여기서 실패하면 지금처럼 오류 화면이다. AI 멈춤은 셸 값만 쓴다
     getPipeline(),
     getAiActivity(),
     getFileProgress(),
-    getAiStatus().catch(() => null),
     // 시작하기 체크리스트용. 이미 닫은 기관은 받지 않는다. 못 받아도 대시보드는 띄운다
     readClosed() ? Promise.resolve(null) : getChildren().catch(() => null),
   ]);
@@ -51,7 +52,6 @@ export async function clientLoader() {
     pipeline,
     activity,
     files,
-    aiDown: ai?.available === false,
     kids: children ? children.length : null,
     guardians: children ? children.filter((c) => c.consent === "granted").length : null,
   };
@@ -83,33 +83,31 @@ function today(): string {
 
 export default function DashboardPage() {
   const initial = useLoaderData<typeof clientLoader>();
-  const [pipeline, setPipeline] = useState<Pipeline>(initial.pipeline);
+  // 진행 현황 · AI 멈춤(O-82, AI 차례 줄을 "멈춤" 으로)은 셸이 10초마다 받는 값을 같이 쓴다 — 같은 요청을 두 번 보내지 않게
+  const live = useOrgLive();
+  const pipeline: Pipeline = live.pipeline ?? initial.pipeline;
+  const aiDown = live.aiDown;
   const [activity, setActivity] = useState<AiActivity>(initial.activity);
   const [files, setFiles] = useState<FileProgress[]>(initial.files);
-  /** AI 가 멈췄으면 AI 차례 줄을 "멈춤" 으로 보인다 (O-82) */
-  const [aiDown, setAiDown] = useState(initial.aiDown);
 
   // loader 가 다시 돌면(다른 화면에서 처리하고 돌아옴 · revalidate) 새 값으로 바꾼다 — 다음 폴링까지 옛 숫자가 남지 않게
   useEffect(() => {
-    setPipeline(initial.pipeline);
     setActivity(initial.activity);
     setFiles(initial.files);
-    setAiDown(initial.aiDown);
   }, [initial]);
 
-  async function refresh() {
-    const [p, a, f, ai] = await Promise.all([
-      getPipeline(),
-      getAiActivity(),
-      getFileProgress(),
-      getAiStatus().catch(() => null),
-    ]);
-    setPipeline(p);
+  /** 이 화면에만 있는 값. 10초마다 */
+  async function refreshOwn() {
+    const [a, f] = await Promise.all([getAiActivity(), getFileProgress()]);
     setActivity(a);
     setFiles(f);
-    setAiDown(ai?.available === false);
   }
-  usePolling(refresh, POLL_MS, true, false);
+  usePolling(refreshOwn, POLL_MS, true, false);
+
+  /** 기록을 올린 뒤 — 진행 현황(셸)과 이 화면 값을 함께 바로 다시 받는다 */
+  async function refreshAll() {
+    await Promise.all([live.refresh(), refreshOwn()]);
+  }
 
   const turn = pipeline.turn;
   const total = turn.confirm + turn.blocked + turn.review + turn.approve + turn.requests;
@@ -135,7 +133,7 @@ export default function DashboardPage() {
           <TurnList turn={turn} />
         </Panel>
         <Panel title="기록 올리기">
-          <UploadBox files={files} onUploaded={refresh} />
+          <UploadBox files={files} onUploaded={refreshAll} />
         </Panel>
       </div>
 

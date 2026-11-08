@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Busy, ReloginButton } from "@/components/ui";
 import { useLoaderData, useNavigate } from "react-router";
-import { getParentChildren, getParentHome, isReady, updateChildCare } from "@/lib/api";
+import { getParentChildren, isReady, updateChildCare } from "@/lib/api";
 import { ApiError, shownError, type ShownError } from "@/lib/apiError";
 import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
-import { readSelectedChildId } from "@/lib/selectedChild";
+import { selectedChildOrInvite } from "@/lib/selectedChild";
 import type { ChildCareInfo } from "@/lib/types";
 
 const EMPTY_CARE: ChildCareInfo = {
@@ -22,8 +22,7 @@ const MAX_LENGTH = 30;
 export async function clientLoader() {
   // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
   if (!isReady("careInfo")) return null;
-  const kids = await getParentChildren();
-  const { child } = await getParentHome(readSelectedChildId(kids));
+  const child = selectedChildOrInvite(await getParentChildren());
   return { childId: child.id, childName: child.name, care: child.care ?? EMPTY_CARE };
 }
 

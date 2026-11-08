@@ -6,23 +6,21 @@ import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import {
   getJournal,
   getParentChildren,
-  getParentHome,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
   loadOpenChecklistCount,
 } from "@/lib/api";
 import { todayDate } from "@/lib/datetime";
-import { readSelectedChildId } from "@/lib/selectedChild";
+import { selectedChildOrInvite } from "@/lib/selectedChild";
 import type { Institution } from "@/lib/types";
 
 export async function clientLoader() {
   // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
   if (!isReady("guardianJournal")) return null;
-  const kids = await getParentChildren();
-  const childId = readSelectedChildId(kids);
-  const [{ child }, journal, pending, openChecklists] = await Promise.all([
-    getParentHome(childId),
+  const child = selectedChildOrInvite(await getParentChildren());
+  const childId = child.id;
+  const [journal, pending, openChecklists] = await Promise.all([
     getJournal(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
     loadOpenChecklistCount(childId),

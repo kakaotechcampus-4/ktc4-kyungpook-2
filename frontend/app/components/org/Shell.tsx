@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, FileText, LogOut, TriangleAlert, User } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useNavigating } from "@/components/ui/Loading";
@@ -7,6 +7,7 @@ import { Toast } from "@/components/org/WorkList";
 import { getAiStatus, getInbox, getPipeline, loadIfReady } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { onNotice } from "@/lib/notice";
+import type { Pipeline } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
 
 /** 머리띠 오른쪽의 내 정보. 사람 이름은 저장하지 않아 기관명만 보여 준다. null 은 서버가 주지 않은 값 */
@@ -31,8 +32,15 @@ export interface OrgShellCounts {
   unread: number | null;
 }
 
+/** 셸이 받아 두는 값. 진행 현황(O-80)은 배지를 세고 남은 원본도 대시보드에 그대로 내려준다 */
+export interface OrgShellLive {
+  counts: OrgShellCounts;
+  /** 못 받았으면 null */
+  pipeline: Pipeline | null;
+}
+
 /** 메뉴 배지 숫자를 센다. 진행 현황(O-80)의 선생님 차례와 수신함(O-50) 안 읽은 글 */
-export async function loadOrgCounts(): Promise<OrgShellCounts> {
+export async function loadOrgLive(): Promise<OrgShellLive> {
   // 배지는 덤이다 — 하나가 실패해도 기관 화면 전체(이 값을 쓰는 layout loader)가 깨지지 않게 각각 null 로 둔다.
   // AI 상태를 못 받았다고 배너를 띄우지도 않는다 — 서버가 "멈췄다" 고 할 때만
   const [pipeline, inbox, ai] = await Promise.all([
@@ -43,14 +51,35 @@ export async function loadOrgCounts(): Promise<OrgShellCounts> {
   const t = pipeline?.turn;
   const unread = inbox?.filter((i) => !i.readAt).length ?? 0;
   return {
-    check: t ? t.confirm + t.blocked : null,
-    review: t ? t.review : null,
-    children: t ? t.approve + t.requests + unread : null,
-    turnTotal: t ? t.confirm + t.blocked + t.review + t.approve + t.requests : null,
-    aiDown: ai?.available === false,
-    approve: t ? t.approve : null,
-    unread: inbox ? unread : null,
+    counts: {
+      check: t ? t.confirm + t.blocked : null,
+      review: t ? t.review : null,
+      children: t ? t.approve + t.requests + unread : null,
+      turnTotal: t ? t.confirm + t.blocked + t.review + t.approve + t.requests : null,
+      aiDown: ai?.available === false,
+      approve: t ? t.approve : null,
+      unread: inbox ? unread : null,
+    },
+    pipeline,
   };
+}
+
+/**
+ * 셸이 10초마다 받는 진행 현황 · AI 멈춤을 화면(대시보드)이 같이 쓴다 — 같은 요청을 화면이 따로 또 보내지 않게.
+ * pipeline 은 마지막으로 받은 값이다(한 번도 못 받았으면 null). refresh 는 지금 바로 다시 받고 끝나면 풀린다.
+ */
+export interface OrgLive {
+  pipeline: Pipeline | null;
+  aiDown: boolean;
+  refresh: () => Promise<void>;
+}
+
+const OrgLiveContext = createContext<OrgLive | null>(null);
+
+export function useOrgLive(): OrgLive {
+  const live = useContext(OrgLiveContext);
+  if (!live) throw new Error("useOrgLive 는 OrgShell 안에서만 쓴다");
+  return live;
 }
 
 /** 이전 폴링보다 늘었으면 새로 도착한 분석이 있다. 숫자를 모르면(준비 중) 비교하지 않는다 */
@@ -94,26 +123,32 @@ function isHere(href: string, pathname: string): boolean {
 export function OrgShell({
   children,
   me,
-  counts,
+  live: loaded,
 }: {
   children: React.ReactNode;
   me: OrgShellMe;
-  counts: OrgShellCounts;
+  live: OrgShellLive;
 }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   // 다음 화면을 기다리는 동안 지금 화면을 살짝 흐린다 — 맨 위 막대(NavigationProgress)와 함께
   const navigating = useNavigating();
 
-  // 처음 숫자는 layout 의 clientLoader 가 준다. 화면을 옮기거나 처리 뒤 revalidate 되면 그 값으로 바뀌고,
-  // 그 사이에는 10초마다 직접 다시 센다(탭이 숨으면 멈춤)
-  const [live, setLive] = useState(counts);
-  /** loader 가 다시 센 값이 들어올 때마다 올린다 — 그 전에 떠난 폴링 응답은 버린다(늦게 와서 최신 값을 덮지 않게) */
+  // 처음 값은 layout 의 clientLoader 가 준다. 화면을 옮기거나 처리 뒤 revalidate 되면 그 값으로 바뀌고,
+  // 그 사이에는 10초마다 직접 다시 받는다(탭이 숨으면 멈춤)
+  const [live, setLive] = useState(loaded.counts);
+  /** 진행 현황 원본. 못 받은 차례에는 마지막 값을 둔다 — 대시보드가 더 옛 값으로 되돌아가지 않게 */
+  const [pipeline, setPipeline] = useState(loaded.pipeline);
+  /**
+   * 새로 받기 시작할 때마다 올린다(loader · 폴링 · 바로 다시 받기). 그보다 먼저 떠난 응답은 버린다 —
+   * 늦게 와서 최신 값을 덮지 않게
+   */
   const generation = useRef(0);
   useEffect(() => {
     generation.current += 1;
-    setLive(counts);
-  }, [counts]);
+    setLive(loaded.counts);
+    if (loaded.pipeline) setPipeline(loaded.pipeline);
+  }, [loaded]);
   /**
    * 분석 도착 알림: 10초 폴링이 이전 값보다 늘었을 때만 띄운다. 첫 로드 · 새로고침 · 선생님이 처리해 다시 센 값(loader)은
    * 비교 기준만 바꾸고 알리지 않는다.
@@ -124,21 +159,19 @@ export function OrgShell({
   const [notice, setNotice] = useState<string | null>(null);
   const clearNotice = useCallback(() => setNotice(null), []);
   useEffect(() => onNotice(setNotice), []);
-  usePolling(
-    async () => {
-      const started = generation.current;
-      const next = await loadOrgCounts();
-      if (started !== generation.current) return;
-      setLive((prev) => {
-        const kind = arrived(prev, next);
-        if (kind) setArrival(kind);
-        return next;
-      });
-    },
-    POLL_MS,
-    true,
-    false,
-  );
+  const refresh = useCallback(async () => {
+    const started = ++generation.current;
+    const next = await loadOrgLive();
+    if (started !== generation.current) return;
+    if (next.pipeline) setPipeline(next.pipeline);
+    setLive((prev) => {
+      const kind = arrived(prev, next.counts);
+      if (kind) setArrival(kind);
+      return next.counts;
+    });
+  }, []);
+  usePolling(refresh, POLL_MS, true, false);
+  const orgLive = useMemo(() => ({ pipeline, aiDown: live.aiDown, refresh }), [pipeline, live.aiDown, refresh]);
   const ITEMS = nav(live);
 
   // 탭 제목 "(N) 잇다 ITDA" — 다른 탭에 있어도 선생님 차례가 생긴 걸 알 수 있게
@@ -203,7 +236,7 @@ export function OrgShell({
         aria-busy={navigating}
         className={`mx-auto min-w-0 max-w-[1240px] px-6 pt-4 pb-20 transition-opacity duration-200 ${navigating ? "opacity-60" : ""}`}
       >
-        {children}
+        <OrgLiveContext.Provider value={orgLive}>{children}</OrgLiveContext.Provider>
       </main>
 
       <Toast slot={2} message={notice} onGone={clearNotice} ms={8000} />

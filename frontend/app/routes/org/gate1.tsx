@@ -642,7 +642,7 @@ function Gate1Page() {
 
       {/* 검토할 요약을 다 처리하면 다음 단계(리포트 승인)로 안내한다 — 빈 목록만 보고는 다음에 뭘 할지 모른다.
           AI 가 다시 만드는 중인 요약은 선생님이 할 일이 없으므로 남아 있어도 띄운다 */}
-      {tab === "pending" && pendingLeft === remaking ? <NextStep approve={orgCounts?.counts.approve ?? null} remaking={remaking} /> : null}
+      {tab === "pending" && pendingLeft === remaking ? <NextStep approve={orgCounts?.live.counts.approve ?? null} remaking={remaking} /> : null}
 
       {current?.f ? (
         <FailedPopup key={current.id} rowId={current.id} item={current.f} {...popupProps} />
