@@ -12,6 +12,8 @@ from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
+from common.progress import tracked
+
 from .config import EXACT_SCORE
 from .nodes import decide, extract, llm_judge, shortlist
 from .schemas import Candidate, EvidenceSpan, MatchingInput, MatchingOutput
@@ -42,10 +44,10 @@ def route_after_shortlist(state: MatchingState) -> Literal["llm_judge", "decide"
 def build_graph():
     builder = StateGraph(MatchingState)
 
-    builder.add_node("extract", extract)
-    builder.add_node("shortlist", shortlist)
-    builder.add_node("llm_judge", llm_judge)
-    builder.add_node("decide", decide)
+    builder.add_node("extract", tracked("extract", extract))
+    builder.add_node("shortlist", tracked("shortlist", shortlist))
+    builder.add_node("llm_judge", tracked("llm_judge", llm_judge))
+    builder.add_node("decide", tracked("decide", decide))
 
     builder.add_edge(START, "extract")
     builder.add_edge("extract", "shortlist")
