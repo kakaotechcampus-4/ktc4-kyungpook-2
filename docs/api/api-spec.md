@@ -571,10 +571,14 @@ POST /api/v1/auth/signup   → 201 Created
 
 **O-18 응답** · 이 아이와 연결된 보호자 전원입니다. 다른 기관을 통해 연결된 보호자도 나오지만,
 `linkedByThisOrganization`이 `true`인 보호자만 O-19로 해제할 수 있습니다. 보호자 이름은 저장하지 않으므로 내려가지 않습니다 — 화면은 "아이 이름 + 보호자"로 부릅니다.
+같은 아이의 보호자가 여럿이면 이름으로 구별할 수 없으니, 해제할 사람을 잘못 고르지 않게 `invitationCode`(그 보호자가 쓴 우리 기관
+초대 코드)와 `linkedAt`(분까지)을 함께 보여 줍니다. 기관은 어떤 코드를 누구에게 줬는지로 대조합니다. 다른 기관 코드로 연결된
+보호자는 `invitationCode`가 `null`입니다 — 남의 기관 코드는 내려가지 않고, 그 보호자는 해제할 수도 없습니다.
 
 ```json
 [
-  { "userId": "41", "linkedAt": "2026-10-12T10:03:00+09:00", "linkedByThisOrganization": true }
+  { "userId": "41", "linkedAt": "2026-10-12T10:03:00+09:00", "linkedByThisOrganization": true, "invitationCode": "K7P3QX9M" },
+  { "userId": "52", "linkedAt": "2026-10-12T18:20:00+09:00", "linkedByThisOrganization": false, "invitationCode": null }
 ]
 ```
 
