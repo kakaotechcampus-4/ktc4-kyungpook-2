@@ -65,7 +65,7 @@ class ChecklistApiTest {
     @BeforeEach
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("cl-api-" + UUID.randomUUID(), "이선생", organization.getId())));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("cl-api-" + UUID.randomUUID(), organization.getId())));
         sky = childRepository.save(Child.of("하늘", LocalDate.of(2017, 3, 14)));
         childOrganizationRepository.save(ChildOrganization.of(sky.getId(), organization.getId()));
     }
@@ -154,7 +154,7 @@ class ChecklistApiTest {
     @Test
     void 보호자는_403_ORGANIZATION_NOT_ASSIGNED다() throws Exception {
         User parent = TermsFixture.agreeAll(termsAgreementRepository,
-                userRepository.save(UserFixture.parent("cl-api-parent-" + UUID.randomUUID(), "김엄마")));
+                userRepository.save(UserFixture.parent("cl-api-parent-" + UUID.randomUUID())));
 
         send(parent, body("[\"실내화\"]"))
                 .andExpect(status().isForbidden())

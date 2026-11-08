@@ -93,7 +93,7 @@ public class DevLoginController {
             @Parameter(description = "테스트 회원 이름. 영문 소문자·숫자·하이픈 1~20자", example = "parent1")
             @RequestParam("as") @Pattern(regexp = "^[a-z0-9-]{1,20}$") String account
     ) {
-        User user = userService.findOrCreateByKakaoId(KAKAO_ID_PREFIX + account, account);
+        User user = userService.findOrCreateByKakaoId(KAKAO_ID_PREFIX + account);
         String token = jwtProvider.createToken(String.valueOf(user.getId()));
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(redirectUri)

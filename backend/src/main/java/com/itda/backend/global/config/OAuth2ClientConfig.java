@@ -3,6 +3,8 @@ package com.itda.backend.global.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.converter.FormHttpMessageConverter;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCodeGrantRequest;
 import org.springframework.security.oauth2.client.endpoint.RestClientAuthorizationCodeTokenResponseClient;
@@ -12,8 +14,12 @@ import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.core.http.converter.OAuth2AccessTokenResponseHttpMessageConverter;
 import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestTemplate;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import java.time.Duration;
 
@@ -25,6 +31,7 @@ import java.time.Duration;
  * 타임아웃을 프레임워크 쪽으로 옮긴 것이다.)
  *
  * <p>HTTP 클라이언트가 503·429 를 몰래 한 번 더 보내는 기본 동작도 끈다 ({@link HttpClientRequestFactories}, #193).
+ * 로그인으로 받은 카카오 토큰은 서버에 남기지 않는다 ({@link #authorizedClientRepository}).
  *
  * <p><b>주의 — 여기서 한 번 깨뜨렸던 부분.</b> 아래 토큰 교환용 RestClient 는 메시지
  * 컨버터를 직접 달아준다. {@code RestClient.builder()} 의 기본 컨버터로는 카카오의 토큰
@@ -58,6 +65,37 @@ public class OAuth2ClientConfig {
                 new RestClientAuthorizationCodeTokenResponseClient();
         client.setRestClient(restClient);
         return client;
+    }
+
+    /**
+     * 로그인으로 받은 카카오 토큰을 어디에도 남기지 않는다.
+     *
+     * <p>Spring Boot 기본값은 카카오 액세스 · 리프레시 토큰을 메모리 저장소({@code InMemoryOAuth2AuthorizedClientService})에
+     * 회원번호별로 넣어 두고 재시작할 때까지 지우지 않는다. 우리는 로그인 뒤 카카오 API 를 다시 부르지 않고(신원 확인은
+     * 사용자 정보 조회 한 번으로 끝난다) 자체 출입증만 쓰므로, 쓰지 않는 남의 토큰을 들고 있을 이유가 없다.
+     * 나중에 카카오 API 를 다시 부를 일이 생기면 그때 저장소를 정해 이 빈을 바꾼다.
+     */
+    @Bean
+    public OAuth2AuthorizedClientRepository authorizedClientRepository() {
+        return new OAuth2AuthorizedClientRepository() {
+            @Override
+            public <T extends OAuth2AuthorizedClient> T loadAuthorizedClient(
+                    String clientRegistrationId, Authentication principal, HttpServletRequest request) {
+                return null;
+            }
+
+            @Override
+            public void saveAuthorizedClient(OAuth2AuthorizedClient authorizedClient, Authentication principal,
+                    HttpServletRequest request, HttpServletResponse response) {
+                // 남기지 않는다
+            }
+
+            @Override
+            public void removeAuthorizedClient(String clientRegistrationId, Authentication principal,
+                    HttpServletRequest request, HttpServletResponse response) {
+                // 남긴 것이 없다
+            }
+        };
     }
 
     /** 액세스 토큰 → 사용자 정보 조회 (카카오 user-info 엔드포인트). */

@@ -462,7 +462,7 @@ function SentRow({ checklist, onCancel }: { checklist: SentChecklist; onCancel: 
                     <span className="text-muted">명부에서 빠짐</span>
                   ) : t.confirmedAt ? (
                     <span className="text-pass">
-                      확인 · {t.confirmedByName ?? "보호자"} · {formatDateTime(t.confirmedAt)}
+                      확인 · {t.child.name ? `${t.child.name} 보호자` : "보호자"} · {formatDateTime(t.confirmedAt)}
                     </span>
                   ) : (
                     <span className="text-muted">확인 전</span>

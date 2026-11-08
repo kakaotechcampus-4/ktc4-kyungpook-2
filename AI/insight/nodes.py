@@ -7,7 +7,10 @@ Insight Agent 의 4단계 노드 — 인식/계획/행동/반영.
 수신 기관은 정하지 않는다. BE 가 Gate 2 시점의 동의로 정한다 (§7).
 """
 
+import re
 import time
+
+from common import progress
 
 from . import config
 from .quality import NOT_IN_RECORD, SINGLE_NO_SUPPORT, weak_reasons
@@ -149,6 +152,31 @@ def _clean_supports(raw, index: dict, known_types: set[str]) -> list[Support]:
     return kept
 
 
+#: 교사 말투가 남은 자리. **막지 않고 센다** — 아래 _tone_violations 참고.
+#:
+#: 어간을 열거하지 않는다. 처음에 (했|이|한|된|…)다 로 썼더니 "지냈다" 를 놓쳤다 — 한국어
+#: 어간은 끝이 없어서 목록으로는 못 덮는다. **문장 끝의 "다" 를 전부 본다.**
+#:
+#: 문장 끝은 **문장부호나 글 끝**으로만 본다. 공백까지 끝으로 보면 "기관마다 반응이" 의
+#: "마다 " 가 걸린다 — 한국어에는 "다" 로 끝나는 조사·부사가 흔하다 (마다 · 보다 · 모두 다).
+#: 뒤에 글자가 더 붙은 "다" 도 안 걸린다 ("기다려", "탔다가").
+#: 해요체 문장은 "요" 로 끝나므로 여기 걸릴 일이 없다.
+_TEACHER_TONE = re.compile(r"[가-힣]다(?:[.!?]|$)|[가-힣](?:함|됨|음)(?:[.!?]|$)")
+
+
+def _tone_violations(insights: list) -> int:
+    """
+    해요체가 아닌 인사이트 수.
+
+    **버리지 않는다.** 말투는 글의 값어치를 바꾸지 않지만 숫자·기관·이름은 사실을 바꾼다 —
+    막는 기준이 다르다. 말투 하나 때문에 패턴을 잃으면 손해가 더 크다.
+
+    대신 센다. 보호자가 교사 말투 글을 받는 비율이라 재야 한다 (CRITERIA §5).
+    요약이 '~니다' 말투를 막지 않고 재는 것과 같은 방식이다.
+    """
+    return sum(1 for i in insights if _TEACHER_TONE.search(i.content))
+
+
 def _build(raw, index: dict, known_types: set[str]) -> Insight | None:
     """
     모델이 쓴 인사이트 하나를 성립 조건(§4)으로 검사하고, 통과하면 출처를 채워 만든다.
@@ -257,8 +285,9 @@ def reflect(state: dict) -> dict:
 
     if config.MAX_INSIGHTS is not None and not to_refine:
         insights = insights[: config.MAX_INSIGHTS]
-    return {**state, "insights": insights, "weak_found": weak_found,
-            "weak_dropped": weak_dropped, "to_refine": to_refine, "weak_refined": []}
+    # 교사 말투가 남은 인사이트 수 (#433). 막지 않고 센다 — 보호자가 교사 말투 글을 받는 비율이다.
+    return {**state, "insights": insights, "weak_found": weak_found, "weak_dropped": weak_dropped,
+            "to_refine": to_refine, "weak_refined": [], "tone_violations": _tone_violations(insights)}
 
 
 def refine(state: dict) -> dict:
@@ -358,6 +387,9 @@ def _lookup(state: dict, item: dict, known_types: set[str],
     def run_tool(name: str, args: dict) -> list[dict]:
         if name != "find_claims":
             return []
+        # 진행 현황 "지난 기록을 찾아보고 있어요" (#452). 찾은 기록으로 답을 다시 쓰는 호출까지
+        # 이어서 보이고, ask_with_tools 가 끝나면 refine 으로 되돌린다.
+        progress.mark("find_claims")
         found = find_claims(list(history.values()), args.get("situation", ""),
                             weeks_back=args.get("weeks_back"), before=state.get("period_from"),
                             limit=config.INSIGHT_TOOL_LIMIT, scores=scores)
@@ -375,6 +407,8 @@ def _lookup(state: dict, item: dict, known_types: set[str],
     except LlmError as exc:
         return None, {"after": None, "outcome": "dropped", "why": exc.kind, "action": "lookup",
                       "tool_calls": 0, "looked_up": [], "scores": scores}
+    finally:
+        progress.mark("refine")
 
     calls = result.usage.get("tool_calls", 0)
     got = result.data.get("insights")

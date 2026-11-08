@@ -172,11 +172,11 @@ class Gate1PipelineIntegrationTest {
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         teacher = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(
-                "pipeline-" + UUID.randomUUID(), "이선생", organization.getId())));
+                "pipeline-" + UUID.randomUUID(), organization.getId())));
         junho = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1)));
         childOrganizationRepository.save(ChildOrganization.of(junho.getId(), organization.getId()));
         // 매칭 명부는 이 기관에 살아 있는 동의가 있는 아이만 받는다 (DB 스키마 §5.1).
-        User guardian = userRepository.save(UserFixture.parent("parent-" + UUID.randomUUID(), "김보호"));
+        User guardian = userRepository.save(UserFixture.parent("parent-" + UUID.randomUUID()));
         sharingConsentRepository.save(SharingConsent.grant(junho.getId(), guardian.getId(), organization.getId(),
                 List.of(ConsentField.DAILY_SUMMARY)));
 

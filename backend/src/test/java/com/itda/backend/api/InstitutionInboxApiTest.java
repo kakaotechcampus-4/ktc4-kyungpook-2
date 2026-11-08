@@ -122,9 +122,9 @@ class InstitutionInboxApiTest {
         school = organizationRepository.save(
                 Organization.of("햇살특수학교", OrganizationType.SCHOOL, OrganizationFixture.nextBusinessNumber()));
         center = organizationRepository.save(OrganizationFixture.center());
-        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "학교선생", school.getId())));
-        centerStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "센터선생", center.getId())));
-        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "엄마")));
+        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), school.getId())));
+        centerStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), center.getId())));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         childId = json(mockMvc.perform(withCsrf(post(ROSTER), auth(schoolStaff))
                         .contentType(MediaType.APPLICATION_JSON)

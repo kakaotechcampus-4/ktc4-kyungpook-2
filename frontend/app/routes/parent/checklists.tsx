@@ -15,7 +15,8 @@ export async function clientLoader() {
   if (!isReady("checklists")) return null;
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
-  return { childId, checklists: await getChecklists(childId) };
+  const childName = kids.find((kid) => kid.id === childId)?.name ?? null;
+  return { childId, childName, checklists: await getChecklists(childId) };
 }
 
 /** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
@@ -30,13 +31,23 @@ export default function ChecklistsPageRoute() {
  * (확인 필요 전부 → 확인 완료 최근 20개).
  */
 function ChecklistsPage() {
-  const { childId, checklists } = useLoaderData<typeof clientLoader>()!;
+  const { childId, childName, checklists } = useLoaderData<typeof clientLoader>()!;
   // 아이가 바뀌면(다른 탭에서 고른 아이가 바뀐 뒤 다시 읽는 등) 확인 응답 · 진행 · 오류를 새로 시작한다. 같은 요청을 두 아이가
   // 받으면 id 가 같아서, 그대로 두면 한 아이의 확인이 다른 아이 카드에 보인다
-  return <ChecklistsContent key={childId} childId={childId} checklists={checklists} />;
+  return <ChecklistsContent key={childId} childId={childId} childName={childName} checklists={checklists} />;
 }
 
-function ChecklistsContent({ childId, checklists }: { childId: string; checklists: ChecklistItem[] }) {
+function ChecklistsContent({
+  childId,
+  childName,
+  checklists,
+}: {
+  childId: string;
+  childName: string | null;
+  checklists: ChecklistItem[];
+}) {
+  // 보호자 이름은 저장하지 않는다 — 누가 확인했든 아이 이름으로 부른다
+  const confirmerLabel = childName ? `${childName} 보호자` : "보호자";
   const revalidator = useRevalidator();
   // 확인 응답은 다시 읽기 전까지만 덧씌운다 — for 가 지금 목록이 아니면(다시 읽은 목록이 오면) 서버 값을 쓴다
   const [confirmed, setConfirmed] = useState<{ for: ChecklistItem[]; items: Record<string, ChecklistItem> }>({
@@ -140,7 +151,7 @@ function ChecklistsContent({ childId, checklists }: { childId: string; checklist
                 </ul>
                 {done ? (
                   <p className="text-[13px] text-muted tabular-nums">
-                    {req.confirmedByName ?? "다른 보호자"}
+                    {confirmerLabel}
                     {req.confirmedAt ? ` · ${formatDateTime(req.confirmedAt)}` : ""} 확인
                   </p>
                 ) : (

@@ -98,9 +98,9 @@ class ChildGuardianServiceJpaTest {
         child = em.persist(Child.of("김하늘", LocalDate.of(2017, 3, 14)));
         em.persist(ChildOrganization.of(child.getId(), ours.getId()));
         em.persist(ChildOrganization.of(child.getId(), other.getId()));
-        mother = em.persist(UserFixture.parent("kakao-mother", "김엄마"));
-        father = em.persist(UserFixture.parent("kakao-father", "김아빠"));
-        User stranger = em.persist(UserFixture.parent("kakao-stranger", "남"));
+        mother = em.persist(UserFixture.parent("kakao-mother"));
+        father = em.persist(UserFixture.parent("kakao-father"));
+        User stranger = em.persist(UserFixture.parent("kakao-stranger"));
         link(mother, ours);
         link(father, other);
         em.flush();
@@ -133,10 +133,13 @@ class ChildGuardianServiceJpaTest {
     }
 
     private void link(User guardian, Organization through) {
-        Invitation invitation = Invitation.issue(child.getId(), through.getId(),
-                "CD%06d".formatted(guardian.getId() % 1_000_000), NOW.plusMinutes(10));
+        Invitation invitation = Invitation.issue(child.getId(), through.getId(), codeOf(guardian), NOW.plusMinutes(10));
         em.persist(invitation);
         em.persist(ChildGuardian.link(child.getId(), guardian.getId(), invitation.getId()));
+    }
+
+    private static String codeOf(User guardian) {
+        return "CD%06d".formatted(guardian.getId() % 1_000_000);
     }
 
     private ChildGuardian linkOf(User guardian) {
@@ -153,11 +156,21 @@ class ChildGuardianServiceJpaTest {
     @Test
     void 연결된_보호자를_모두_보여주고_우리_코드로_들어온_사람만_표시한다() {
         assertThat(childGuardianService.listGuardians(OUR_USER, child.getId()))
-                .extracting(ChildGuardianResponse::userId, ChildGuardianResponse::name,
+                .extracting(ChildGuardianResponse::userId,
                         ChildGuardianResponse::linkedByThisOrganization)
                 .containsExactlyInAnyOrder(
-                        org.assertj.core.groups.Tuple.tuple(String.valueOf(mother.getId()), "김엄마", true),
-                        org.assertj.core.groups.Tuple.tuple(String.valueOf(father.getId()), "김아빠", false));
+                        org.assertj.core.groups.Tuple.tuple(String.valueOf(mother.getId()), true),
+                        org.assertj.core.groups.Tuple.tuple(String.valueOf(father.getId()), false));
+    }
+
+    /** 이름이 없어 보호자들이 모두 "아이 이름 + 보호자" 다. 해제할 사람을 고를 수 있게 우리 코드는 보여 주고, 남의 기관 코드는 숨긴다. */
+    @Test
+    void 우리_코드로_들어온_보호자만_그때_쓴_초대_코드를_보여준다() {
+        assertThat(childGuardianService.listGuardians(OUR_USER, child.getId()))
+                .extracting(ChildGuardianResponse::userId, ChildGuardianResponse::invitationCode)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(String.valueOf(mother.getId()), codeOf(mother)),
+                        org.assertj.core.groups.Tuple.tuple(String.valueOf(father.getId()), null));
     }
 
     @Test

@@ -43,7 +43,11 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p><b>승인하면 보호자와 동의한 기관에 함께 열람 권한이 생긴다</b> (#233). 보호자가 미리 해 둔 기관별
  * 공유 동의를 그대로 쓴다 — 글마다 기관을 고르는 단계는 10/26 기획 변경으로 없앴다. 받는 기관 규칙은
- * {@link Gate2Recipients} 와 {@code consentedRecipients} 에 있다. 보내는 행위가 없으므로 전송 실패도 없다.
+ * {@link Gate2Recipients} 와 {@code consentedRecipients} 에 있다.
+ *
+ * <p><b>여기서 메일을 보내지 않는다</b> (#419). 승인은 열람 권한을 여는 일이고, 보호자 메일은
+ * {@code NotifyWorker} 가 따로 보낸다. 승인 트랜잭션 안에서 보내면 메일 서버가 느리거나 죽었을 때
+ * 교사 화면이 멈추고, 발송 실패가 승인까지 되돌린다 — <b>승인은 실패하지 않아야 한다.</b>
  *
  * <p>동시에 두 결정이 와도 한쪽만 반영되도록 인사이트 행을 잠그고 상태를 본다. 열람 권한은
  * {@code (insight_result_id, receiver_type, receiver_id)} UNIQUE 가 마지막으로 한 번 더 막는다.

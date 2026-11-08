@@ -7,7 +7,7 @@
 > Spring Security(JWT 쿠키 인증 + CORS + CSRF + 401/403 JSON 응답), 그리고 회원 DB 연결과
 > `PARENT`/`ORGANIZATION` 역할 구분까지 반영돼 있다(`ADMIN`은 아직 없다). Swagger UI는
 > `/swagger-ui/index.html`, OpenAPI 명세는 `/v3/api-docs`와 `/v3/api-docs.yaml`에서
-> 확인할 수 있으며, 외부 API 변경 시 해당 명세를 같은 변경에서 갱신한다.
+> 확인할 수 있으며(로컬 백엔드, 운영은 Caddy가 막아 SSH 터널로 서버의 `127.0.0.1:8080`에서 — #442), 외부 API 변경 시 해당 명세를 같은 변경에서 갱신한다.
 
 관련 문서:
 

@@ -95,7 +95,7 @@ class InvitationServiceJpaTest {
         other = em.persist(OrganizationFixture.center());
         child = em.persist(Child.of("김하늘", LocalDate.of(2017, 3, 14)));
         em.persist(ChildOrganization.of(child.getId(), ours.getId()));
-        parent = em.persist(UserFixture.parent("kakao-parent", "김보호"));
+        parent = em.persist(UserFixture.parent("kakao-parent"));
 
         given(userService.getOrganizationIdOf(OUR_USER)).willReturn(ours.getId());
         given(userService.getOrganizationIdOf(OTHER_USER)).willReturn(other.getId());
@@ -318,7 +318,7 @@ class InvitationServiceJpaTest {
     @Test
     void 한_번_쓴_코드는_다시_쓸_수_없다() {
         IssuedInvitationResponse issued = issue();
-        User otherParent = em.persist(UserFixture.parent("kakao-other-parent", "이보호"));
+        User otherParent = em.persist(UserFixture.parent("kakao-other-parent"));
         given(userService.getParentIdOf("u-other-parent")).willReturn(otherParent.getId());
         invitationService.accept(PARENT, issued.code());
 

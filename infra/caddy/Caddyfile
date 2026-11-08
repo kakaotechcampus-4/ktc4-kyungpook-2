@@ -4,13 +4,37 @@
 	}
 }
 
+# 모든 응답에 붙이는 보안 헤더 (#442). `>` 는 응답을 받은 뒤 덮어쓴다 — Spring 이 같은 이름으로 보낸 값과 두 줄이 되지 않게 한다.
+# 덮어쓰는 헤더는 Caddy 가 직접 만드는 오류(백엔드 연결 실패 502, 업로드 상한 413)에는 붙지 않아 handle_errors 에서도 부른다.
+# HSTS 는 API 응답에 Spring 이 이미 보내던 값과 같다. HTTP 응답의 HSTS 는 브라우저가 무시하므로 로컬 HTTP 에는 해가 없다.
+(security_headers) {
+	header {
+		>Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		>X-Content-Type-Options nosniff
+		>X-Frame-Options DENY
+		>Referrer-Policy strict-origin-when-cross-origin
+		>Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+}
+
 {$PUBLIC_ORIGIN:http://localhost} {
 	request_body {
 		max_size 25MiB
 	}
 
+	import security_headers
+
+	# 운영 Swagger · OpenAPI(JSON · YAML) 는 닫는다 (#442). 서버에서는 SSH 터널로 127.0.0.1:8080 에 붙어 본다.
+	# 접두사로 막는다 — /v3/api-docs.yaml 은 /v3/api-docs/* 에 맞지 않아 프론트로 넘어가 200 이 됐다.
+	@apidocs path /swagger-ui* /v3/api-docs*
+	handle @apidocs {
+		respond 404
+	}
+
 	# /api 접두사와 OAuth 콜백 경로를 그대로 전달한다.
 	handle /api/* {
+		header >Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
 		reverse_proxy backend:8080 {
 			transport http {
 				response_header_timeout 120s
@@ -19,13 +43,21 @@
 		}
 	}
 
-	@backend path /oauth2/* /login/oauth2/* /swagger-ui /swagger-ui/* /swagger-ui.html /v3/api-docs /v3/api-docs/*
+	@backend path /oauth2/* /login/oauth2/*
 	handle @backend {
 		reverse_proxy backend:8080
 	}
 
 	# 정적 자산의 캐시 헤더는 frontend가 정한다.
+	# CSP: React Router SPA 모드가 index.html 에 인라인 스크립트를 넣어 'unsafe-inline' 이 필요하다. 그래서 인라인 XSS 는 막지 못하고,
+	# 외부 리소스 로드와 일부 데이터 전송 경로(fetch · 이미지 · 폼)를 같은 오리진으로 제한하고 클릭재킹을 막는다. 페이지 이동은 막지 못한다.
 	handle {
+		header >Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		reverse_proxy frontend:3000
+	}
+
+	handle_errors {
+		import security_headers
+		respond {err.status_code}
 	}
 }

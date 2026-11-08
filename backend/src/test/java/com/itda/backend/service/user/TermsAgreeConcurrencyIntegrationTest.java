@@ -84,7 +84,7 @@ class TermsAgreeConcurrencyIntegrationTest {
     @BeforeEach
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
-        parent = userRepository.save(UserFixture.parent("kakao-terms-parent", "김보호"));
+        parent = userRepository.save(UserFixture.parent("kakao-terms-parent"));
     }
 
     @AfterEach

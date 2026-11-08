@@ -60,17 +60,18 @@ class AuthControllerTest {
     }
 
     @Test
-    void meReturnsRoleUserIdNameAndInstitutionIdForOrganization() throws Exception {
+    void meReturnsRoleUserIdAndInstitutionIdForOrganization() throws Exception {
         authenticateAs("1");
         given(userService.getCurrentUser("1"))
-                .willReturn(new CurrentUserResponse("org", "1", "박지현", "1", "햇살아동발달센터", true, true));
+                .willReturn(new CurrentUserResponse("org", "1", "1", "햇살아동발달센터", true, true));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.role").value("org"))
                 .andExpect(jsonPath("$.data.userId").value("1"))
-                .andExpect(jsonPath("$.data.name").value("박지현"))
+                // 카카오 닉네임을 저장하지 않으므로 이름은 내려가지 않는다
+                .andExpect(jsonPath("$.data.name").doesNotExist())
                 .andExpect(jsonPath("$.data.institutionId").value("1"))
                 .andExpect(jsonPath("$.data.institutionName").value("햇살아동발달센터"))
                 .andExpect(jsonPath("$.data.signupCompleted").value(true));
@@ -81,7 +82,7 @@ class AuthControllerTest {
     void meReportsSignupNotCompletedWithoutRole() throws Exception {
         authenticateAs("3");
         given(userService.getCurrentUser("3"))
-                .willReturn(new CurrentUserResponse(null, "3", "박지현", null, null, false, false));
+                .willReturn(new CurrentUserResponse(null, "3", null, null, false, false));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
@@ -95,7 +96,7 @@ class AuthControllerTest {
     void meOmitsInstitutionIdForParent() throws Exception {
         authenticateAs("2");
         given(userService.getCurrentUser("2"))
-                .willReturn(new CurrentUserResponse("parent", "2", "김보호", null, null, true, false));
+                .willReturn(new CurrentUserResponse("parent", "2", null, null, true, false));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())

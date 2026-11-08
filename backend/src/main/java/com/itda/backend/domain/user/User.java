@@ -52,10 +52,6 @@ public class User {
     @Column(name = "kakao_id", nullable = false, length = 50)
     private String kakaoId;
 
-    /** 카카오 닉네임. 사용자가 동의를 거부할 수 있어 nullable 이다. */
-    @Column(length = 100)
-    private String name;
-
     /**
      * null 이면 가입 미완료다. 카카오 로그인은 신원 확인만 하고, 역할은 가입 API 에서
      * {@link #completeSignup} 으로 정해진다. 한 번 정해지면 바뀌지 않는다.
@@ -83,14 +79,17 @@ public class User {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
-    private User(String kakaoId, String name) {
+    private User(String kakaoId) {
         this.kakaoId = kakaoId;
-        this.name = name;
     }
 
-    /** 카카오 로그인 직후의 회원. 역할과 소속은 아직 없다. */
-    public static User pending(String kakaoId, String name) {
-        return new User(kakaoId, name);
+    /**
+     * 카카오 로그인 직후의 회원. 역할과 소속은 아직 없다.
+     *
+     * <p>카카오 닉네임 같은 개인정보는 받지 않는다. 화면은 사람 이름 대신 "아이 이름 + 보호자" 나 기관명을 쓴다.
+     */
+    public static User pending(String kakaoId) {
+        return new User(kakaoId);
     }
 
     /**
@@ -115,19 +114,6 @@ public class User {
         }
         this.role = role;
         this.organizationId = organizationId;
-    }
-
-    /**
-     * 카카오 닉네임을 최신값으로 맞춘다.
-     *
-     * <p>비어 있는 값으로는 덮어쓰지 않는다 — 처음엔 동의했다가 나중에 동의를 철회하고
-     * 다시 로그인하면 응답에 닉네임이 빠지는데, 그때 이미 저장해 둔 이름까지 지우면 안 된다.
-     */
-    public void updateName(String name) {
-        if (name == null || name.isBlank() || name.equals(this.name)) {
-            return;
-        }
-        this.name = name;
     }
 
     public void delete() {

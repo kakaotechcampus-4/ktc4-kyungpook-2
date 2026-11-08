@@ -24,7 +24,7 @@ HTTP 상태)을 **전제**로 합니다. 아래 예시의 `data` 안 내용만 �
 
 | # | 항목 | 현황 | 프론트 의견 |
 | --- | --- | --- | --- |
-| 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`(로컬 Compose의 Caddy를 거치면 `http://localhost/login/oauth2/code/kakao`), 운영 `https://iitda.duckdns.org/login/oauth2/code/kakao`. 동의 항목은 현재 `profile_nickname`만 요청합니다(§2.4) | 보호자 연결은 초대 코드 방식으로 확정돼(§5.1) 전화번호 동의 항목은 필요 없습니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
+| 1 | **카카오 로그인 설정** | **확정·구현됨** — 백엔드가 카카오 리다이렉트를 직접 받습니다(Spring Security `oauth2Login`). Redirect URI는 로컬 `http://localhost:8080/login/oauth2/code/kakao`(로컬 Compose의 Caddy를 거치면 `http://localhost/login/oauth2/code/kakao`), 운영 `https://iitda.duckdns.org/login/oauth2/code/kakao`. 동의 항목은 요청하지 않고 카카오 회원번호만 받습니다(닉네임 등 사람 이름은 저장하지 않음, §2.4) | 보호자 연결은 초대 코드 방식으로 확정돼(§5.1) 전화번호 동의 항목은 필요 없습니다. 기관 로그인(I-01)과 보호자 진입(P-01) 화면은 프론트가 재작업합니다 |
 | 2 | **세션 전달 방식** | **확정·구현됨** — JWT 유효시간은 3시간입니다. 로그인 때만 설정하는 `access_token` 원본 쿠키는 현재 로그인 번호를 선택하도록 최대 12시간 보관합니다. **쓰는 동안 자동으로 연장됩니다** — 남은 시간이 절반(1시간 30분)보다 적은 `/api` 요청에는 `access_token_renewal_{sid}` httpOnly 쿠키로 갱신 JWT 를 전달합니다. 두 쿠키는 브라우저가 자동 전송하므로 프론트 변경은 없습니다. 이전 로그인의 늦은 갱신 응답은 새 로그인의 쿠키를 덮지 못합니다. 원본 또는 같은 로그인의 갱신 JWT 가 유효해야 인증되며, 처음 로그인부터 최대 12시간입니다. 로그아웃은 §2.3, 쓰기 요청은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보냅니다. refresh token은 없습니다 | - |
 | 3 | **필드 네이밍** | **확정·구현됨** — 프론트↔백엔드 JSON API 는 요청·응답 모두 camelCase입니다(Jackson 기본값). 백엔드↔AI 통신은 별도로 snake_case 입니다 | - |
 | 4 | **보호자–아이 연결 방식** | **확정·구현됨 (10.12 변경)** — **초대 코드** 방식입니다. 기관이 아이를 등록하면 10분짜리 일회용 코드가 나오고, 기관이 카톡 등으로 직접 보냅니다. 보호자는 가입한 뒤 코드를 입력해 연결됩니다(§5.1). SMS·전화번호 대조는 쓰지 않습니다. 이전의 "대기 중 연결 요청" 방식은 매칭 키를 정할 수 없어 폐기했습니다. (이것은 **보호자 ↔ 아이** 연결 이야기입니다. 이미 연결된 아이를 **다른 기관**에 붙이는 기관 코드 요청(G-44, O-60~O-62)은 아이와 기관이 이미 정해져 있어 매칭 키 문제가 없습니다) | 링크(`/parent/invite?code=…`)로 보내면 로그인·가입 동안 코드를 sessionStorage에 들고 있다가 가입 뒤 G-04를 부르면 됩니다. 링크가 안 열리는 경우를 위해 코드 입력 칸도 남겨 주세요 |
@@ -60,7 +60,7 @@ GET /api/v1/auth/me
 ```json
 {
   "result": "SUCCESS",
-  "data": { "userId": "5", "name": "박지현", "signupCompleted": false, "termsAgreed": false }
+  "data": { "userId": "5", "signupCompleted": false, "termsAgreed": false }
 }
 ```
 
@@ -69,7 +69,7 @@ GET /api/v1/auth/me
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true, "termsAgreed": true }
+  "data": { "role": "org", "userId": "5", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true, "termsAgreed": true }
 }
 ```
 
@@ -78,7 +78,7 @@ GET /api/v1/auth/me
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "parent", "userId": "5", "name": "박지현", "signupCompleted": true, "termsAgreed": true }
+  "data": { "role": "parent", "userId": "5", "signupCompleted": true, "termsAgreed": true }
 }
 ```
 
@@ -86,7 +86,6 @@ GET /api/v1/auth/me
 | --- | --- | --- | --- |
 | `signupCompleted` | boolean | 예 | `false`면 가입 미완료. 프론트는 역할 선택 화면으로 보냅니다 |
 | `userId` | string | 예 | 내부 PK를 문자열로 직렬화한 값입니다 (`"u_1"` 같은 접두사는 붙지 않습니다) |
-| `name` | string | 아니오 | 카카오 닉네임. 동의를 거부하면 **이 필드가 빠집니다** |
 | `role` | `"org"` \| `"parent"` | 아니오 | `signupCompleted: true`일 때만. `admin`은 아직 없습니다 |
 | `institutionId` | string | 아니오 | `role === "org"`일 때만 |
 | `institutionName` | string | 아니오 | `role === "org"`일 때만. 가입 때 입력한 기관명입니다 (#236) |
@@ -160,7 +159,7 @@ GET /api/v1/dev/login?as=parent1       ← 브라우저 주소창으로 연다 (
 
 | 결과 | 동작 |
 | --- | --- |
-| 성공 | `dev:{as}`를 카카오 회원번호처럼 써서 회원을 찾거나 만들고(닉네임은 `as`), `access_token` 쿠키를 심은 뒤 `302`로 `AUTH_SUCCESS_REDIRECT`(기본 `/oauth/success`)로 보냄. 바디 없음 |
+| 성공 | `dev:{as}`를 카카오 회원번호처럼 써서 회원을 찾거나 만들고`access_token` 쿠키를 심은 뒤 `302`로 `AUTH_SUCCESS_REDIRECT`(기본 `/oauth/success`)로 보냄. 바디 없음 |
 | `as` 누락·형식 오류 | `400 INVALID_REQUEST`. `as`는 영문 소문자·숫자·하이픈 1~20자 |
 
 그 뒤는 카카오 로그인과 같습니다. 처음 쓰는 이름은 가입 미완료 회원이라 [§2.6 회원가입](#26-회원가입)을
@@ -174,9 +173,9 @@ GET /api/v1/dev/login?as=parent1       ← 브라우저 주소창으로 연다 (
 ```http
 POST /api/v1/auth/terms   → 200 OK
 { "agreed": ["tos", "privacy"],
-  "versions": { "tos": "2026-11-07", "privacy": "2026-11-07" } }               보호자
+  "versions": { "tos": "2026-11-07", "privacy": "2026-11-09" } }               보호자
 { "agreed": ["org_tos", "org_privacy", "org_child_data"],
-  "versions": { "org_tos": "2026-11-07", "org_privacy": "2026-11-07", "org_child_data": "2026-11-07" } }   기관 담당자
+  "versions": { "org_tos": "2026-11-07", "org_privacy": "2026-11-09", "org_child_data": "2026-11-07" } }   기관 담당자
 ```
 
 출입증 쿠키와 `X-XSRF-TOKEN` 헤더가 필요합니다.
@@ -211,7 +210,8 @@ POST /api/v1/auth/terms   → 200 OK
 3. 기록은 쌓기만 합니다. 판이 바뀐 뒤 다시 동의하면 새 판 기록이 더해지고 옛 기록은 남습니다. 철회 API 는 없습니다(필수 약관 철회는 회원 탈퇴).
 4. **한 판 = 한 본문.** 내보낸 판의 글은 고치지 않고, 글을 바꾸면(초안 수정 포함) 새 판입니다. 본문 판과 "다시 동의를 요구하는가"는 따로 정합니다 —
    개인정보 수집(`privacy` · `org_privacy`)과 아동 정보 보호 서약(`org_child_data`)은 **통과로 치는 판**에 동의해야 통과합니다.
-   지금 통과 판은 본문이 없던 판과 지금 판(`2026-11-07`) 둘이라, 이미 동의한 사람은 다시 동의하지 않습니다. 초안을 확정할 때는
+   지금 통과 판은 본문이 없던 판과 지금 판(이용약관 · 아동 정보 보호 서약 `2026-11-07`, 개인정보 수집 `2026-11-09`)이라, 이미 동의한 사람은 다시 동의하지 않습니다.
+   개인정보 수집의 옛 판 `2026-11-07` 도 통과 판입니다 — `2026-11-09` 는 수집 항목에서 카카오 닉네임만 뺀 판이라 다시 받지 않습니다. 초안을 확정할 때는
    `versions` 를 필수로 바꾼 뒤 통과 판을 확정 판 하나로 줄여 다시 받습니다.
    이용약관(`tos` · `org_tos`)은 한 번 동의했으면 다시 받지 않습니다(바뀐 내용은 공지로 알립니다 — 공지 기능은 아직 없습니다).
 
@@ -241,7 +241,7 @@ GET /api/v1/terms?role=parent   → 200 OK      (role: parent | org)
 { "result": "SUCCESS", "data": [
   { "key": "tos", "title": "서비스 이용약관", "version": "2026-11-07", "effectiveDate": "2026-11-07",
     "draft": true, "body": "제1조(목적)\n이 약관은 …" },
-  { "key": "privacy", "title": "개인정보와 민감정보 수집 · 이용", "version": "2026-11-07", … }
+  { "key": "privacy", "title": "개인정보와 민감정보 수집 · 이용", "version": "2026-11-09", … }
 ] }
 ```
 
@@ -309,7 +309,7 @@ POST /api/v1/auth/signup   → 201 Created
 ```json
 {
   "result": "SUCCESS",
-  "data": { "role": "org", "userId": "5", "name": "박지현", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true, "termsAgreed": false }
+  "data": { "role": "org", "userId": "5", "institutionId": "3", "institutionName": "햇살아동발달센터", "signupCompleted": true, "termsAgreed": false }
 }
 ```
 
@@ -570,11 +570,15 @@ POST /api/v1/auth/signup   → 201 Created
 **O-17** · `204 No Content` · 아직 쓸 수 있는 코드를 거둬들입니다. 이미 수락·취소·만료된 코드는 `404 INVITATION_NOT_FOUND`입니다.
 
 **O-18 응답** · 이 아이와 연결된 보호자 전원입니다. 다른 기관을 통해 연결된 보호자도 나오지만,
-`linkedByThisOrganization`이 `true`인 보호자만 O-19로 해제할 수 있습니다. `name`은 카카오 닉네임이라 없으면 `null`입니다.
+`linkedByThisOrganization`이 `true`인 보호자만 O-19로 해제할 수 있습니다. 보호자 이름은 저장하지 않으므로 내려가지 않습니다 — 화면은 "아이 이름 + 보호자"로 부릅니다.
+같은 아이의 보호자가 여럿이면 이름으로 구별할 수 없으니, 해제할 사람을 잘못 고르지 않게 `invitationCode`(그 보호자가 쓴 우리 기관
+초대 코드)와 `linkedAt`(분까지)을 함께 보여 줍니다. 기관은 어떤 코드를 누구에게 줬는지로 대조합니다. 다른 기관 코드로 연결된
+보호자는 `invitationCode`가 `null`입니다 — 남의 기관 코드는 내려가지 않고, 그 보호자는 해제할 수도 없습니다.
 
 ```json
 [
-  { "userId": "41", "name": "김보호", "linkedAt": "2026-10-12T10:03:00+09:00", "linkedByThisOrganization": true }
+  { "userId": "41", "linkedAt": "2026-10-12T10:03:00+09:00", "linkedByThisOrganization": true, "invitationCode": "K7P3QX9M" },
+  { "userId": "52", "linkedAt": "2026-10-12T18:20:00+09:00", "linkedByThisOrganization": false, "invitationCode": null }
 ]
 ```
 
@@ -643,11 +647,11 @@ O-15 ~ O-19 공통 오류:
 
 ```json
 [ { "child": { "id": "10", "name": "임유진", "birthDate": "2019-11-26" },
-    "requesters": [ { "name": "엄마" }, { "name": "아빠" } ],
+    "requesterCount": 2,
     "requestedAt": "2026-10-29T10:00:00+09:00" } ]
 ```
 
-- `requesters[].name`: 카카오 닉네임입니다. 제공에 동의하지 않은 보호자는 `null`입니다.
+- `requesterCount`: 요청한 보호자 수입니다. 보호자 이름은 저장하지 않아 수만 줍니다 — 화면은 "아이 이름 + 보호자"로 부릅니다.
 - `requestedAt`: 가장 먼저 요청한 시각입니다.
 
 **O-61 요청** · `{ "externalId": "2026-0042" }` — 아이 등록(O-11)과 같은 규칙입니다(필수, 앞뒤 공백 제거, 1–50자, 같은 기관 안 중복 409).
@@ -1518,9 +1522,9 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
       "total": 2, "confirmed": 1,
       "targets": [
         { "child": { "id": "1", "name": "김하늘" }, "onRoster": true,
-          "confirmedAt": "2026-11-04T19:02:00", "confirmedByName": "김보호" },
+          "confirmedAt": "2026-11-04T19:02:00" },
         { "child": { "id": "2", "name": "이바다" }, "onRoster": true,
-          "confirmedAt": null, "confirmedByName": null } ] } ],
+          "confirmedAt": null } ] } ],
   "nextBefore": null }
 ```
 
@@ -1528,7 +1532,6 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 | --- | --- |
 | `total` · `confirmed` | **지금 명부에 있는** 받은 아이 수와 그중 확인된 수. 명부에서 빠진 아이는 세지 않습니다 |
 | `targets[].onRoster` | 아이가 삭제되지 않았고 지금도 우리 명부에 있음. `false` 면 "명부에서 빠짐" |
-| `confirmedByName` | 확인한 보호자의 카카오 닉네임. 없으면 `null` |
 | `nextBefore` | 더 오래된 요청이 있으면 그 값을 `?before=` 로 넣어 다음 50개를 봅니다. 기준 요청을 내렸어도 이어 볼 수 있습니다. 다른 기관 요청 id 를 넣으면 `400 INVALID_REQUEST` |
 
 **O-72 → 204** · 받은 아이 모두에게서 통째로 내립니다. 이미 내렸으면 아무것도 바꾸지 않고 같은 204 입니다(처음 내린 시각이 남습니다).
@@ -1959,7 +1962,8 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 [
   { "id": "1", "childId": "1", "childName": "김하늘",
     "period": "2026년 8월 3주차",
-    "content": "이동 전 5분 예고가 효과적이었습니다.",
+    "periodFrom": "2026-08-17", "periodTo": "2026-08-23",
+    "content": "이동 전 5분 예고가 도움이 됐어요.",
     "from": { "id": "2", "name": "○○초등학교", "type": "school", "verified": false },
     "sharedWith": [
       { "id": "3", "name": "햇살아동발달센터", "type": "center", "verified": false }
@@ -1969,10 +1973,17 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
     "evidence": [
       { "journalEntryId": "41", "date": "2026-08-18",
         "institution": { "id": "3", "name": "햇살아동발달센터", "type": "center", "verified": false },
-        "lookedUp": false },
+        "lookedUp": false,
+        "sentences": [
+          { "text": "간식 시간으로 바뀔 때 울음이 없었다.", "role": "상황" }
+        ] },
       { "journalEntryId": "44", "date": "2026-08-20",
         "institution": { "id": "2", "name": "○○초등학교", "type": "school", "verified": false },
-        "lookedUp": false }
+        "lookedUp": false,
+        "sentences": [
+          { "text": "국어 시간이 시작되자 책상 아래로 들어갔다.", "role": "상황" },
+          { "text": "'공부' 카드를 쥐여 주자 5분 뒤 자리에 앉았다.", "role": "대처" }
+        ] }
     ] }
 ]
 ```
@@ -1980,10 +1991,13 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | 필드 | 뜻 |
 | --- | --- |
 | `from` | 이 글을 Gate 2 에서 승인한 기관 |
+| `periodFrom` · `periodTo` | 이 글이 다룬 주의 시작·끝 `yyyy-MM-dd`. 화면이 **달로 묶을 때** 씁니다 — `period` 글자를 잘라 달을 구하면 깨집니다(9/29~10/5 처럼 달에 걸친 주가 있고, 문구가 바뀌면 같이 깨집니다). 달은 `periodFrom` 기준입니다 |
 | `approvedAt` | 담당자가 Gate 2 에서 승인한 시각. **모든 보호자에게 같습니다** — 늦게 연결돼 나중에 열린 글도 이 시각이라 엄마·아빠 화면에서 같은 자리·같은 날짜에 놓입니다. 기간(`period`)은 "어느 주의 이야기인지", 이 값은 "언제 받았는지" 입니다 |
 | `sharedWith` | **지금 이 글을 볼 수 있는 다른 기관**, 기관 이름순. **기관 수신함(O-50 · O-51) · 공유 내역(G-45)과 같은 판정**입니다 — 권한이 살아 있고, 아이가 그 기관 명부에 있고, 그 기관 동의가 켜져 있어야 합니다(#319). 동의를 끄거나 명부에서 빠지면 빠집니다. 보호자가 "내 아이 글이 어디까지 갔나" 를 보고 동의를 끌지 판단하는 데 씁니다 |
 | `readAt` | 처음 열어 본 시각. G-36 이 **처음 한 번만** 찍고 다시 열어도 덮지 않습니다. 동시에 열어도 처음 시각이 남습니다. 연결 해제와 겹치면 먼저 반영된 쪽을 따릅니다 — 해제가 먼저면 404, 열람이 먼저면 200 뒤 해제 (기관 수신함 O-51 과 같은 경로). 열람 방식이라 "언제 봤나" 를 안 남기면 아무 흔적이 없습니다 (`docs/db/schema.md` §9.4) |
 | `evidence` | 이 글의 근거가 된 일지, **관찰 날짜 오래된 순**, 같은 날은 기관 이름순. 같은 일지는 한 번만 옵니다. `journalEntryId` 는 일지 상세(G-21)의 id, `date` 는 관찰 날짜(`yyyy-MM-dd`), `institution` 은 그 일지를 쓴 기관, `lookedUp` 은 이번 기간이 아니라 AI 가 지난 기록에서 찾아 쓴 근거인지입니다(Gate 2 근거의 `lookedUp` 과 같은 값, #387). 범위는 Gate 2 근거(O-40)와 같습니다 — 본문 근거(`claim_ids`)와, AI 가 찾아 본 지난 기록 중 본문이나 대처에서 실제로 인용한 것입니다. 그중 **응답 시점에 이 보호자가 일지 상세로 열 수 있는 것만** 옵니다 — 다른 아이 요약 · 1차 검토 전 요약 · 기관 행이 없는 요약은 빠지고, 아이가 삭제됐으면 빈 배열입니다. **동의로 거르지 않습니다.** 동의를 끈 기관 · 명부에서 빠진 기관의 일지도 일지 탭(G-20)에서 계속 보이므로 근거에도 남습니다. 남는 근거가 없으면 빈 배열이고 글은 그대로 보입니다 |
+| `evidence[].sentences` | 그 일지에서 이 글이 **실제로 인용한 문장**. `role` 은 `"상황"`(본문 근거 `claim_ids`) 또는 `"대처"`(대처 근거 `supports[].claim_ids`)이고, 같은 문장이 둘 다면 `"대처"` 입니다. 인용 순서대로, 같은 문장은 한 번만. **Gate 1 에서 교사가 고쳐 승인한 요약 문장**(`summary_result.claims`)이지 원본 일지 인용이 아닙니다 — 원본 인용에는 다른 아이 이름이 남아 있어 내보내지 않습니다(`AI/insight/CRITERIA.md §2`). 문장을 못 찾으면 **빈 배열**이고 근거 줄은 그대로 보입니다 |
+
 
 **실패**
 
@@ -2174,8 +2188,7 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
     "items": ["실내화를 새로 준비해주세요."],
     "sentAt": "2026-11-04T09:10:00",
     "status": "needs_check",
-    "confirmedAt": null,
-    "confirmedByName": null } ]
+    "confirmedAt": null } ]
 ```
 
 | 규칙 | 내용 |
@@ -2184,7 +2197,7 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | 보이는 요청 | 기관이 내리지 않았고 아이가 보낸 기관 명부에 **지금** 있는 것. 보낸 뒤에 연결된 보호자도 봅니다 |
 | 순서 · 개수 | **확인 안 한 것 전부**(최신순) 뒤에 **확인한 것 최근 20개**(최신순). 확인 안 한 것은 잘리지 않아 개수가 곧 전체 수입니다 |
 | `status=needs_check` | 확인 안 한 것만. 헤더 알림 점 · 설정 "N건 남음" · 알림 화면이 화면마다 부릅니다 |
-| 확인 | 이 아이 몫으로 한 번. 보호자 중 한 명이 확인하면 모두에게 `confirmed` 이고 되돌리지 않습니다. 이미 다른 보호자가 확인했으면 그 확인(`confirmedByName` · `confirmedAt`)을 그대로 200 으로 돌려줍니다 |
+| 확인 | 이 아이 몫으로 한 번. 보호자 중 한 명이 확인하면 모두에게 `confirmed` 이고 되돌리지 않습니다. 이미 다른 보호자가 확인했으면 그 확인(`confirmedAt`)을 그대로 200 으로 돌려줍니다 |
 | 내리기 · 연결 해제와 겹치면 | 줄을 섭니다. 기관이 먼저 내렸으면 `404 CHECKLIST_NOT_FOUND`, 보호자 연결이 먼저 끊겼으면 `403 FORBIDDEN` 이고 확인은 남지 않습니다. 확인이 먼저면 확인이 남고 내리기 · 해제는 그 뒤에 진행됩니다 |
 | 404 | 이 아이가 받지 않았거나, 기관이 내렸거나, 명부에서 빠진 요청은 모두 같은 `404 CHECKLIST_NOT_FOUND` 입니다. 화면은 원인을 단정하지 않고 "이 요청을 더 이상 확인할 수 없어요" 뒤 목록을 다시 읽습니다 |
 

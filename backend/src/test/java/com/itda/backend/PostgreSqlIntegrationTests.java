@@ -103,7 +103,7 @@ class PostgreSqlIntegrationTests {
 	 */
 	@Test
 	void userTableIsCreatedAndEnumsAreStoredAsStrings() {
-		User saved = userRepository.save(UserFixture.parent("pg-1", "박지현"));
+		User saved = userRepository.save(UserFixture.parent("pg-1"));
 
 		assertThat(userRepository.findByKakaoId("pg-1")).isPresent();
 		assertThat(saved.getRole()).isEqualTo(UserRole.PARENT);
@@ -153,10 +153,10 @@ class PostgreSqlIntegrationTests {
 	/** 유니크 제약은 엔티티를 만들 때 넣지 않으면 ddl-auto: update 가 나중에 붙여주지 않는다. */
 	@Test
 	void duplicateKakaoIdIsRejectedByTheUniqueConstraint() {
-		userRepository.saveAndFlush(User.pending("pg-dup", "첫번째"));
+		userRepository.saveAndFlush(User.pending("pg-dup"));
 
 		assertThatThrownBy(() -> userRepository.saveAndFlush(
-				User.pending("pg-dup", "두번째")))
+				User.pending("pg-dup")))
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
@@ -216,7 +216,7 @@ class PostgreSqlIntegrationTests {
 	 */
 	@Test
 	void sameUserSigningUpTwiceAtOnceCreatesOnlyOneOrganization() throws Exception {
-		User user = userRepository.save(User.pending("pg-race-same", "박지현"));
+		User user = userRepository.save(User.pending("pg-race-same"));
 		String principal = String.valueOf(user.getId());
 
 		List<Throwable> results = runAtOnce(List.of(
@@ -238,8 +238,8 @@ class PostgreSqlIntegrationTests {
 	 */
 	@Test
 	void sameBusinessNumberAtOnceLetsOnlyOneOrganizationIn() throws Exception {
-		User first = userRepository.save(User.pending("pg-race-bn-1", "첫번째"));
-		User second = userRepository.save(User.pending("pg-race-bn-2", "두번째"));
+		User first = userRepository.save(User.pending("pg-race-bn-1"));
+		User second = userRepository.save(User.pending("pg-race-bn-2"));
 
 		List<Throwable> results = runAtOnce(List.of(
 				() -> userService.completeSignup(String.valueOf(first.getId()), organizationSignup("2000000003")),
@@ -271,8 +271,8 @@ class PostgreSqlIntegrationTests {
 		List<Long> ids = new java.util.concurrent.CopyOnWriteArrayList<>();
 		try {
 			List<Throwable> results = runAtOnce(List.of(
-					() -> ids.add(userService.findOrCreateByKakaoId("pg-login-first", "첫번째").getId()),
-					() -> ids.add(userService.findOrCreateByKakaoId("pg-login-first", "두번째").getId())));
+					() -> ids.add(userService.findOrCreateByKakaoId("pg-login-first").getId()),
+					() -> ids.add(userService.findOrCreateByKakaoId("pg-login-first").getId())));
 			assertThat(results).containsOnlyNulls();
 			assertThat(ids).hasSize(2);
 			assertThat(ids.get(0)).isEqualTo(ids.get(1));
@@ -285,7 +285,7 @@ class PostgreSqlIntegrationTests {
 
 	@Test
 	void loginWaitsForSignupAndKeepsItsRoleAndOrganization() throws Exception {
-		User pending = userRepository.saveAndFlush(User.pending("pg-login-signup", "옛이름"));
+		User pending = userRepository.saveAndFlush(User.pending("pg-login-signup"));
 		CountDownLatch signupLocked = new CountDownLatch(1);
 		CountDownLatch finishSignup = new CountDownLatch(1);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -307,7 +307,7 @@ class PostgreSqlIntegrationTests {
 			CountDownLatch loginStarted = new CountDownLatch(1);
 			Future<User> login = executor.submit(() -> {
 				loginStarted.countDown();
-				return userService.findOrCreateByKakaoId("pg-login-signup", "새이름");
+				return userService.findOrCreateByKakaoId("pg-login-signup");
 			});
 			assertThat(loginStarted.await(10, TimeUnit.SECONDS)).isTrue();
 			assertThatThrownBy(() -> login.get(200, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
@@ -319,7 +319,6 @@ class PostgreSqlIntegrationTests {
 			User persisted = userRepository.findById(pending.getId()).orElseThrow();
 			assertThat(persisted.getOrganizationId()).isEqualTo(found.getOrganizationId());
 			assertThat(persisted.getRole()).isEqualTo(UserRole.ORGANIZATION);
-			assertThat(persisted.getName()).isEqualTo("새이름");
 		} finally {
 			finishSignup.countDown();
 			executor.shutdownNow();
