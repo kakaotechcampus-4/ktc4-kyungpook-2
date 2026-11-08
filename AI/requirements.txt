@@ -4,3 +4,4 @@ requests
 python-dotenv
 langgraph
 pydantic
+mcp>=2
