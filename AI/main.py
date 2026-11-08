@@ -1,11 +1,8 @@
-import os
-
 from dotenv import load_dotenv
 
 # import 보다 먼저 부른다 — 모듈이 읽히는 동안 .env 가 보여야 한다.
 load_dotenv()
 
-import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -22,12 +19,6 @@ from validation.llm import is_configured
 from validation.schemas import ValidationInput, ValidationOutput
 
 app = FastAPI(title="ITDA AI")
-
-# 모듈을 읽는 시점에 키가 없다고 죽지 않게 한다.
-# 매칭 그래프는 Luna 없이도 돌아야 트랙 A 가 키 없이 채점 스크립트를 붙일 수 있다.
-LUNA_API_URL = os.environ.get("LUNA_API_URL")
-LUNA_API_KEY = os.environ.get("LUNA_API_KEY")
-
 
 @app.exception_handler(LlmUnavailable)
 def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
@@ -105,23 +96,3 @@ def insight(payload: InsightInput) -> InsightOutput:
     key = metrics.key_of(payload.child_id, payload.period_from, payload.period_to)
     with metrics.track("/insight", key):
         return run_insight(payload)
-
-
-@app.get("/llm-test")
-def llm_test():
-    """Luna 응답 형태를 확인하기 위한 임시 엔드포인트."""
-    if not (LUNA_API_URL and LUNA_API_KEY):
-        return {"error": "LUNA_API_URL / LUNA_API_KEY 가 설정되지 않았습니다"}
-
-    response = requests.post(
-        LUNA_API_URL,
-        json={"messages": [{"role": "user", "content": "안녕하세요, 한 문장으로 자기소개 해주세요."}]},
-        headers={
-            "accept": "application/json",
-            "content-type": "application/json",
-            "Authorization": f"Bearer {LUNA_API_KEY}",
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()

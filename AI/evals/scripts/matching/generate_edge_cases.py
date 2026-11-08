@@ -164,8 +164,6 @@ for i, (trap_given, trap_sentence) in enumerate(TRAP_WORDS):
     })
     jid += 1
 
-all_cases = homonym_cases + trap_cases
-
 OUT_DIR = Path(__file__).parent.parent.parent / "generated" / "matching"
 with open(OUT_DIR / "matching_동명이인_10건.json", "w", encoding="utf-8") as f:
     json.dump(homonym_cases, f, ensure_ascii=False, indent=2)
