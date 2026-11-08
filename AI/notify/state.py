@@ -26,8 +26,10 @@ class NotifyState(TypedDict, total=False):
     subject: str
     #: 메일에 들어갈 인사이트 본문들. 승인된 글자 그대로다 — 한 글자도 고치지 않는다.
     lines: list[str]
-    #: 실제로 나갈 본문. 인사말·맺음말은 코드가 쓴다.
+    #: 실제로 나갈 본문(글자만). HTML 을 못 그리는 클라이언트가 이걸 본다.
     body: str
+    #: 같은 내용의 HTML. 보는 쪽이 HTML 을 그리면 이게 보인다 (template.py).
+    html: str
 
     # ── check 가 채운다 ──
     #: 검사를 통과했나. **한 줄이라도 걸리면 False** — 걸린 줄만 빼지 않는다.

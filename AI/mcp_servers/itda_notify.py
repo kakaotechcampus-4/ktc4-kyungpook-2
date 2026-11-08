@@ -98,7 +98,7 @@ def _recipients(child_id: int) -> list[str]:
 OUTBOX_DIR = os.environ.get("NOTIFY_OUTBOX", "evals/generated/notify/outbox")
 
 
-def _fake_deliver(addresses: list[str], subject: str, body: str) -> None:
+def _fake_deliver(addresses: list[str], subject: str, body: str, html: str = "") -> None:
     """
     SMTP 설정이 없을 때. 보내지 않고 파일로 적는다.
 
@@ -106,14 +106,18 @@ def _fake_deliver(addresses: list[str], subject: str, body: str) -> None:
     파일에는 적는다. 시연에서 "누구에게 무엇이 갔나" 를 확인해야 하고,
     그 파일은 gitignore 된 자리에만 생긴다.
     """
-    path = Path(OUTBOX_DIR) / f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}.txt"
+    stem = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
+    path = Path(OUTBOX_DIR) / f"{stem}.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"To: {', '.join(addresses)}\nSubject: {subject}\n\n{body}\n", encoding="utf-8")
+    if html:
+        # 브라우저로 열어 모양을 보려고 따로 남긴다.
+        (path.with_suffix(".html")).write_text(html, encoding="utf-8")
     _log(f"[가짜 발송] 수신 {len(addresses)}명 · 제목 {subject!r} · {path}")
 
 
-def _smtp_deliver(addresses: list[str], subject: str, body: str) -> None:
+def _smtp_deliver(addresses: list[str], subject: str, body: str, html: str = "") -> None:
     """
     실제 발송 (#419 5단계).
 
@@ -145,21 +149,26 @@ def _smtp_deliver(addresses: list[str], subject: str, body: str) -> None:
             message["Subject"] = subject
             message["From"] = sender
             message["To"] = address
+            # 글자본을 먼저 넣고 HTML 을 대안으로 단다 (multipart/alternative). 받는 쪽이
+            # HTML 을 못 그리거나 꺼 두었으면 글자본이 보인다 — 내용은 같다.
             message.set_content(body)
+            if html:
+                message.add_alternative(html, subtype="html")
             smtp.send_message(message)
     _log(f"[발송] 수신 {len(addresses)}명 · 제목 {subject!r}")
 
 
-def _deliver(addresses: list[str], subject: str, body: str) -> None:
+def _deliver(addresses: list[str], subject: str, body: str, html: str = "") -> None:
     """SMTP 설정이 있으면 진짜로, 없으면 파일로. 시연과 운영이 같은 길을 탄다."""
     if os.environ.get("NOTIFY_SMTP_HOST"):
-        _smtp_deliver(addresses, subject, body)
+        _smtp_deliver(addresses, subject, body, html)
     else:
-        _fake_deliver(addresses, subject, body)
+        _fake_deliver(addresses, subject, body, html)
 
 
 @mcp.tool()
-def send_email(child_id: int, notification_id: str, subject: str, body: str) -> dict:
+def send_email(child_id: int, notification_id: str, subject: str, body: str,
+               html: str = "") -> dict:
     """
     승인된 주간 인사이트를 그 아이의 보호자에게 메일로 보낸다.
 
@@ -170,7 +179,8 @@ def send_email(child_id: int, notification_id: str, subject: str, body: str) -> 
         child_id: 아이 번호. 수신자는 이 값으로 서버가 찾는다 (주소를 넘기지 않는다).
         notification_id: 이 승인 묶음을 가리키는 BE 의 키. 멱등성 기준이다.
         subject: 메일 제목.
-        body: 메일 본문. 발송 전 검사를 통과한 글만 온다.
+        body: 메일 본문(글자). 발송 전 검사를 통과한 글만 온다.
+        html: 같은 내용의 HTML. 비우면 글자본만 보낸다.
     """
     with _lock():
         sent = _load(SENT_LOG_PATH)
@@ -204,7 +214,7 @@ def send_email(child_id: int, notification_id: str, subject: str, body: str) -> 
     # 이미 받은 보호자는 건너뛴다 — 예전에는 기록 없이 503 이 되어 첫 보호자가 두 통을 받았다.
     remaining = [a for a in addresses if a not in record.get("delivered", [])]
     for address in remaining:
-        _deliver([address], subject, body)
+        _deliver([address], subject, body, html)
         with _lock():
             sent = _load(SENT_LOG_PATH)
             current = sent.get(notification_id, record)
