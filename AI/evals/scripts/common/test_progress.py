@@ -136,6 +136,16 @@ def test_retry():
            "BE 타임아웃은 AI 에게는 성공이다. 0 으로 돌아가면 이미 기다린 사람에게 처음부터로 보인다")
 
     clock = fresh()
+    with progress.begin("summary", **SUMMARY_KEY):
+        progress.mark("write")
+        clock.t += 40
+    clock.t += 10                                   # 성공 뒤 새 일지로 같은 묶음이 다시 옴
+    with progress.begin("summary", **SUMMARY_KEY):
+        progress.mark("gather")
+        ck("[한계] 성공 뒤 60초 안 새 일도 이어 센다", progress.snapshot()[0]["elapsed_sec"], 50,
+           "AI 는 재시도와 새 일을 구분하지 못한다. 이슈 결정대로 metrics 처럼 60초로만 묶는다")
+
+    clock = fresh()
     _failed_run(clock, 20)
     clock.t += 5
     with progress.begin("summary", child_id=8, entry_date="2026-11-08", institution_id=3):
@@ -156,6 +166,19 @@ def test_retry():
         ck("재시도가 끝나면 앞선 호출도 내린다", progress.snapshot(), [],
            "BE 는 이미 결과를 받았다. 앞선 호출이 다시 보이면 끝난 일이 '처리 중' 으로 돌아간다")
     ck("앞선 호출이 나중에 끝나도 조용하다", progress.snapshot(), [], "")
+
+    print("\n■ 재시도가 실패로 끝나면 앞선 호출은 남긴다")
+    clock = fresh()
+    with progress.begin("matching", journal_entry_id=5):
+        progress.mark("llm_judge")
+        try:
+            with progress.begin("matching", journal_entry_id=5):
+                progress.mark("extract")
+                raise RuntimeError("503")
+        except RuntimeError:
+            pass
+        ck("앞선 호출이 보인다", [r["node"] for r in progress.snapshot()], ["llm_judge"],
+           "BE 가 또 보낸다. 다음 시도가 노드에 들어가기 전까지 줄이 비면 고정 문구로 깜빡인다")
 
     clock = fresh()
     with progress.begin("matching", journal_entry_id=5):
@@ -393,6 +416,15 @@ def test_wrapper_shape():
        "원래 함수 시그니처를 보이면 LangGraph 가 config 를 넘겨 TypeError 가 난다")
     ck("타입 힌트는 그대로", get_type_hints(wrapped).get("state"), dict,
        "LangGraph 가 첫 인자 타입으로 입력 스키마를 정한다")
+
+    def needs_config(state, config):
+        return state
+
+    ck("config 가 꼭 필요한 노드는 감쌀 때 막는다", _raises(lambda: progress.tracked("x", needs_config)), True,
+       "조용히 config 가 빠지느니 서버가 뜰 때 터진다")
+    node.marker = "다른 데코레이터 표식"
+    ck("원래 함수 속성은 옮기지 않는다", hasattr(progress.tracked("node", node), "marker"), False,
+       "옮겨 온 속성이 LangGraph 판단을 바꾸지 않게")
 
     print("\n■ ContextVar 가 고장 나도 본문 결과는 그대로다")
 

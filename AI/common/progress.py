@@ -22,6 +22,7 @@ uvicorn 프로세스가 하나라 메모리 지도로 충분하다. 프로세스
 """
 
 import functools
+import inspect
 import itertools
 import threading
 import time
@@ -47,6 +48,8 @@ _tokens = itertools.count(1)
 _running: dict[int, dict] = {}
 #: 최근에 끝난 일. key → (started, ended_at). 재시도 때 시작 시각을 이어받는다.
 #: 성공·실패를 가리지 않는다 — BE 타임아웃은 AI 쪽에서는 늦게라도 200 으로 끝난다.
+#: [한계] AI 는 재시도와 새 일을 구분하지 못한다. 성공 뒤 60초 안에 같은 키로 온 새 일도
+#: 이어 센다 (metrics.py 와 같은 기준, #452 결정). 정확히 하려면 BE 가 시도 ID 를 보내야 한다.
 _ended: dict[tuple, tuple[float, float]] = {}
 #: 지금 요청의 token. begin 밖이면 None.
 _current: ContextVar[int | None] = ContextVar("progress_token", default=None)
@@ -78,19 +81,22 @@ def _start(agent: str, ident: dict) -> int:
     return token
 
 
-def _finish(token: int) -> None:
+def _finish(token: int, failed: bool) -> None:
     """
-    요청을 지도에서 내린다. 같은 키로 **먼저** 들어와 아직 도는 요청도 함께 내린다 —
-    BE 가 타임아웃으로 버리고 다시 보낸 호출이다. 남겨 두면 BE 가 결과를 받은 일이
-    다시 '처리 중' 으로 보인다. 그 호출이 나중에 끝나면 여기서 아무것도 찾지 못한다.
+    요청을 지도에서 내린다.
+
+    **성공했으면** 같은 키로 먼저 들어와 아직 도는 요청도 함께 내린다 — BE 가 타임아웃으로
+    버리고 다시 보낸 호출이다. 남겨 두면 BE 가 결과를 받은 일이 다시 '처리 중' 으로 보인다.
+    실패했으면 BE 가 또 보내므로 남겨 둔다. 다음 시도가 노드에 들어가기 전까지 줄이 비지 않게.
     """
     now = _now()
     with _lock:
         entry = _running.pop(token, None)
         if entry is None:
             return
-        for older in [t for t, e in _running.items() if e["key"] == entry["key"] and t < token]:
-            del _running[older]
+        if not failed:
+            for older in [t for t, e in _running.items() if e["key"] == entry["key"] and t < token]:
+                del _running[older]
         _ended[entry["key"]] = (entry["started"], now)
 
 
@@ -120,13 +126,17 @@ def begin(agent: str, **ident):
             _quietly(_discard, token)
             token = None
 
+    failed = False
     try:
         yield
+    except BaseException:
+        failed = True
+        raise
     finally:
         if reset is not None:
             _quietly(_current.reset, reset)
         if token is not None:
-            _quietly(_finish, token)
+            _quietly(_finish, token, failed)
 
 
 def _quietly(fn, *args) -> None:
@@ -157,18 +167,24 @@ def tracked(name: str, fn):
     노드 함수를 감싼다: `graph.add_node("write", tracked("write", write))`.
 
     노드에 **들어갈 때** 기록한다. 노드 함수는 건드리지 않는다.
-    **state 하나만 받는 노드 전용이다** — config 등을 받는 노드를 감싸면 그 값은 넘어가지 않는다.
+    **state 하나만 받는 노드 전용이다.** config 등을 꼭 받아야 하는 노드는 감쌀 때 TypeError —
+    조용히 값이 빠지느니 서버가 뜰 때(그래프를 만들 때) 터지는 편이 낫다.
     """
-    @functools.wraps(fn)
+    required = [p for p in inspect.signature(fn).parameters.values()
+                if p.default is p.empty and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    if len(required) > 1:
+        raise TypeError(f"tracked 는 state 하나만 받는 노드만 감싼다: {name}{inspect.signature(fn)}")
+
+    # updated=() — 이름·문서·타입 힌트만 옮기고 fn.__dict__ 는 옮기지 않는다.
+    @functools.wraps(fn, updated=())
     def node(state):
         mark(name)
         return fn(state)
 
-    # wraps 는 이름·타입 힌트를 옮기면서 __wrapped__ 도 남긴다. 그러면 inspect.signature 가
-    # 원래 함수를 따라가, 노드가 config 를 받으면 LangGraph 가 이 감싸개에 config 를 넘긴다.
-    # 감싸개는 state 하나만 받으므로 지운다 (타입 힌트는 남아 입력 스키마 추론은 같다).
+    # wraps 는 __wrapped__ 를 남긴다. 그러면 inspect.signature 가 원래 함수를 따라가, 노드가
+    # config 를 받으면 LangGraph 가 이 감싸개에 config 를 넘긴다. 감싸개는 state 하나만 받으므로
+    # 지운다 (타입 힌트는 남아 입력 스키마 추론은 같다).
     del node.__wrapped__
-    node.__dict__.pop("__signature__", None)   # fn 이 들고 있던 것도 wraps 가 옮겨 온다
     node.progress_node = name
     return node
 
