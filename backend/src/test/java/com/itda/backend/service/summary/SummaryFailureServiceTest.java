@@ -31,12 +31,18 @@ import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.exception.agent.AgentQueueFullException;
+import com.itda.backend.service.agent.AgentQueueGuard;
 
 /** 요약 실패 묶음을 검토에 올리고 교사가 다시 요약하거나 요약 없이 마무리한다 (#369). */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({SummaryFailureService.class, SummaryRunRequests.class, ConsentStateReader.class, ClockConfig.class})
 class SummaryFailureServiceTest {
+
+    /** AI 처리 줄 상한은 AgentQueueGuardTest 가 본다. 여기서는 늘 자리가 있다. */
+    @MockitoBean
+    private AgentQueueGuard agentQueueGuard;
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
     private static final Long ORG = 3L;
@@ -160,6 +166,20 @@ class SummaryFailureServiceTest {
 
         assertThat(statusOf(target)).isEqualTo(JournalEntryStatus.VALIDATED);
         assertThat(statusOf(otherDay)).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
+    }
+
+    /** 다시 요약하면 요약 대기로 다시 들어간다 — AI 처리 줄이 꽉 찼으면 그대로 둔다 (#424). */
+    @Test
+    void AI_처리_줄이_꽉_찼으면_다시_요약하지_않는다() {
+        JournalEntry target = failed(school, junho, DATE, "블록 놀이를 했다.");
+        JournalEntry sameGroup = failed(school, junho, DATE, "점심을 먹었다.");
+        org.mockito.BDDMockito.willThrow(new AgentQueueFullException(ORG, 999, 2, 1000))
+                .given(agentQueueGuard).requireRoom(ORG, 2);
+
+        assertThatThrownBy(() -> service.retry(TEACHER, junho, DATE)).isInstanceOf(AgentQueueFullException.class);
+
+        assertThat(statusOf(target)).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
+        assertThat(statusOf(sameGroup)).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
     }
 
     @Test

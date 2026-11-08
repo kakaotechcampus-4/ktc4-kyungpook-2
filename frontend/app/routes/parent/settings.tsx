@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FileText, LogOut } from "lucide-react";
 import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { Busy, InstitutionChip } from "@/components/ui";
+import { useChildContext } from "@/components/parent/ChildContext";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { Toggle } from "@/components/parent/Toggle";
@@ -53,6 +54,7 @@ function ParentSettingsContent({
   myName,
 }: Awaited<ReturnType<typeof clientLoader>>) {
   const guardianLabel = myName ? `보호자 ${myName}` : "보호자";
+  const { kids, selectChild } = useChildContext();
   const [institutions, setInstitutions] = useState(child.institutions);
   // 같은 아이에서 다시 불러오면(권한 끄기 뒤 등) 서버 목록으로 맞춘다. 처음 값만 잡아 두면 명부에서 빠진 기관이
   // 토글과 함께 남아 아래 "지금은 연결되지 않은 기관" 과 겹친다. 끄기 직후의 즉시 표시(setLocal)는 이 값이 오면 덮인다
@@ -151,31 +153,50 @@ function ParentSettingsContent({
         alert={(pendingRequests ?? []).length > 0 || (needsCheck ?? 0) > 0}
       />
 
-      <div className="flex items-center gap-3 rounded-2xl border border-line px-4 py-4">
-        <span
-          aria-hidden
-          className="flex size-12 items-center justify-center rounded-full bg-surface2 text-[18px] font-bold text-ink2"
-        >
-          {child.name.slice(0, 1)}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-bold">{child.name}</span>
-          <span className="block truncate text-[13px] text-muted">
-            {guardianLabel}, 기관 {institutions.length}곳 연결
-          </span>
-        </span>
-        <button className="tap shrink-0 rounded-2xl border border-line2 px-3 text-[13px] font-semibold text-ink2">
-          수정
-        </button>
-        <button
-          onClick={() => {
-            setUnlinkError(null);
-            setUnlinking(true);
-          }}
-          className="tap shrink-0 rounded-2xl border border-line2 px-3 text-[13px] font-semibold text-block"
-        >
-          연결 해제
-        </button>
+      {/* 연결된 아이 모두. 아래 기관 권한·아이 정보는 고른 아이 것이라, 다른 아이는 [설정 보기]로 바꿔 본다.
+          아이 이름·생년월일은 기관이 등록한 값이라 보호자가 고칠 곳은 없다 */}
+      <div className="flex flex-col gap-2.5">
+        {kids.map((kid) => {
+          const current = kid.id === child.id;
+          return (
+            <div
+              key={kid.id}
+              className={`flex items-center gap-3 rounded-2xl border px-4 py-4 ${current ? "border-accent" : "border-line"}`}
+            >
+              <span
+                aria-hidden
+                className="flex size-12 items-center justify-center rounded-full bg-surface2 text-[18px] font-bold text-ink2"
+              >
+                {kid.name.slice(0, 1)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-bold">{kid.name}</span>
+                <span className="block truncate text-[13px] text-muted">
+                  {current ? "지금 보는 중 · " : ""}기관{" "}
+                  {current ? institutions.length : kid.institutions.length}곳 연결
+                </span>
+              </span>
+              {current ? (
+                <button
+                  onClick={() => {
+                    setUnlinkError(null);
+                    setUnlinking(true);
+                  }}
+                  className="tap shrink-0 rounded-2xl border border-line2 px-3 text-[13px] font-semibold text-block"
+                >
+                  연결 해제
+                </button>
+              ) : (
+                <button
+                  onClick={() => selectChild(kid.id)}
+                  className="tap shrink-0 rounded-2xl border border-line2 px-3 text-[13px] font-semibold text-ink2"
+                >
+                  설정 보기
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <Link

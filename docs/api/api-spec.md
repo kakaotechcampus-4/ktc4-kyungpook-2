@@ -701,10 +701,23 @@ O-15 ~ O-19 공통 오류:
 > | --- | --- |
 > | 허용 확장자 | `csv` · `txt` · `pdf` · `docx` (`docx`는 #383에서 추가. 2026-09-29, 이슈 #67로 `jpg`·`jpeg`·`png`·`hwp` 제외 — jpg/png는 OCR 필요, hwp는 자바 파싱이 매우 어려워 이번 학기 범위 밖) |
 > | 허용 Content-Type | `text/csv` · `application/vnd.ms-excel`(Windows가 csv에 흔히 붙이는 값, #113) · `text/plain` · `application/pdf` · `application/vnd.openxmlformats-officedocument.wordprocessingml.document`(docx) |
-> | 기록 분리(텍스트 추출) | 네 형식 모두 지원(#383). `docx`는 문단과 표 칸을 문서 순서대로 한 줄씩, `pdf`는 글자 위치 순서로 뽑고, 표 칸 끝에서 꺾인 줄은 다음 줄이 날짜로 시작하지 않으면 이어 붙입니다(#385). `docx`·`pdf`는 **첫 날짜 앞 머리말(제목·아동 이름·생년월일)을 기록으로 만들지 않습니다**(날짜가 하나도 없으면 전체를 한 건으로 둡니다). 텍스트를 못 뽑는 파일(깨진 docx, 암호 걸린 pdf, 사진만 있는 pdf)은 업로드는 성공하고 `entries: []`로 남습니다 |
+> | 기록 분리(텍스트 추출) | 네 형식 모두 지원(#383). `docx`는 문단과 표 칸을 문서 순서대로 한 줄씩, `pdf`는 글자 위치 순서로 뽑고, 표 칸 끝에서 꺾인 줄은 다음 줄이 날짜로 시작하지 않으면 이어 붙입니다(#385). `docx`·`pdf`는 **첫 날짜 앞 머리말(제목·아동 이름·생년월일)을 기록으로 만들지 않습니다**(날짜가 하나도 없으면 전체를 한 건으로 둡니다). 텍스트를 못 뽑는 파일(깨진 docx, 암호 걸린 pdf, 사진만 있는 pdf)은 업로드는 성공하고 `entries: []`로 남습니다. `docx`는 압축 안에서 XML로 읽힐 수 있는 파일의 합이 5MB, 전체가 30MB를 넘게 풀리면 같은 "못 읽은 파일"입니다(#424) |
 > | 최대 크기 | 20MB (Caddy는 25MiB에서 먼저 차단) |
+> | 기록 상한 (#424) | 파일 하나에서 나온 기록 **500건**(`app.raw-record.limits.max-entries-per-file`), 기록 하나 **5,000자**까지. 넘으면 파일을 저장하지 않고 거절합니다 — 나눠 올려 주세요 |
+> | AI 처리 줄 상한 (#424) | 그 기관에서 AI 처리를 기다리거나 처리 중인 기록(`PENDING · MATCHING · MATCHED · VALIDATING · VALIDATED · SUMMARIZING`)과 이 파일의 기록을 합쳐 **1,000건**(`app.agent-queue.max-awaiting-entries`)까지. 아래 "AI 처리 줄 상한" 참고 |
+> | 동시 처리 (#424) | 글자 뽑기 · 기록 나누기를 서버 전체에서 동시에 2건까지 하고, 4건까지 최대 10초 기다립니다. 화면은 파일을 2개씩 차례로 보냅니다 |
 > | 성공 | `201 Created` |
-> | 오류 | 확장자·형식·파일명 오류 `400 RAW_RECORD_INVALID_REQUEST`, 용량 초과 `413 RAW_RECORD_FILE_TOO_LARGE`, 저장 실패 `500 RAW_RECORD_STORAGE_FAILED` |
+> | 오류 | 확장자·형식·파일명 오류 `400 RAW_RECORD_INVALID_REQUEST`, 기록이 너무 많거나 긴 파일 `400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED`, 용량 초과 `413 RAW_RECORD_FILE_TOO_LARGE`, AI 처리 줄이 꽉 참 `429 AGENT_QUEUE_FULL`, 동시 업로드가 많음 `429 RAW_RECORD_UPLOAD_BUSY`, 저장 실패 `500 RAW_RECORD_STORAGE_FAILED`. 두 400 과 두 429 는 화면이 `code` 로 가릅니다. 기록 저장이 실패해도 업로드 전체가 `500` 입니다(원본 행과 기록을 한 번에 저장) |
+>
+> **AI 처리 줄 상한이 지키는 범위 (#424)** — **사람이 일으키는 새 유입을 막는 상한**입니다. 업로드와, 사람 확인에서 AI 처리로
+> 다시 들어가는 네 경로(O-23 아이 고르기 · O-25 본문 고치기 · O-36 다시 요약 · O-31 `revert`)가 들어오기 직전에 기관 행을 잠그고
+> 셉니다. 동시에 들어와도 함께 통과하지 않습니다. 요약 워커가 새 기록이 든 묶음을 다시 요약하며 그 묶음의 Gate 1 대기 기록을 함께
+> 담는 것은 막지 않습니다 — 막으면 줄이 꽉 찼을 때 워커가 묶음을 영영 집지 못합니다. 그래서 줄은 그 기관의 Gate 1 대기 기록 수만큼
+> 잠깐 상한을 넘을 수 있습니다. 하루 · 한 달 누적 AI 비용이나 기관 사이 처리 순서는 이 상한이 지키지 않습니다.
+>
+> **AI 에 보내는 기록 길이 (#424)** — 상한 전에 올라온 5,000자 넘는 기록은 매칭 · 검증 · 요약 요청을 만들기 전에 멈춥니다. 잘라
+> 보내지 않고 `SYSTEM_ERROR`(원인 `CONTENT_TOO_LONG`, DB 스키마 §6.2)로 남아 처리 현황(O-26)에 실패로 보입니다. 줄인 파일을 다시
+> 올려 정리합니다.
 >
 > 조회용으로 `GET /raw-records`(내 기관 목록)와 `GET /raw-records/{id}`(단건, 다른 기관 기록은 `404 RAW_RECORD_NOT_FOUND`)가 있습니다.
 
@@ -826,6 +839,7 @@ O-15 ~ O-19 공통 오류:
 | 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 회원이 아님 |
 | 403 | `FORBIDDEN` | `X-XSRF-TOKEN` 헤더 누락·불일치 (§1-2) |
 | 404 | `MATCHING_RESULT_NOT_FOUND` | 없는 항목이거나 다른 기관의 항목 |
+| 429 | `AGENT_QUEUE_FULL` | (`assign`) 그 기관 AI 처리 줄이 꽉 참 — 앞서 올린 기록 처리가 끝나면 다시 (#424, O-20 참고). `not_ours` 는 받지 않습니다 |
 
 **O-24 응답**
 
@@ -899,12 +913,13 @@ O-15 ~ O-19 공통 오류:
 >
 > | 상태 | 코드 | 설명 |
 > | --- | --- | --- |
-> | 400 | `INVALID_REQUEST` | (revise) `content` 누락·빈 문자열·100000자 초과 |
+> | 400 | `INVALID_REQUEST` | (revise) `content` 누락·빈 문자열·5000자 초과 (#424 — 고친 본문은 그대로 검증 AI 에 가므로 업로드한 기록 하나와 같은 길이까지) |
 > | 400 | `VALIDATION_RESULT_CONTENT_UNCHANGED` | (revise) 고치지 않은 본문 (앞뒤 공백만 다른 것 포함) |
 > | 400 | `VALIDATION_RESULT_CHILD_NOT_SHARED` | (revise) 아이가 삭제됐거나 우리 명부에서 빠졌거나 우리 기관 동의가 꺼짐 — 보류만 가능 |
 > | 400 | `VALIDATION_RESULT_OUTDATED` | (공통) 그 기록의 최신 판정이 아닌 카드 — 목록을 새로 받아 새 카드로 처리 |
 > | 400 | `VALIDATION_RESULT_INVALID_REQUEST` | (resolve) `action` 누락·오타·`reupload` · (공통) BLOCK이 아닌 결과, 이미 처리된 기록 |
 > | 404 | `VALIDATION_RESULT_NOT_FOUND` | 없는 항목이거나 다른 기관의 항목. 다른 기관 항목은 행을 잠그지 않고 거절합니다 |
+> | 429 | `AGENT_QUEUE_FULL` | (revise) 그 기관 AI 처리 줄이 꽉 참 — 앞서 올린 기록 처리가 끝나면 다시 (#424, O-20 참고) |
 >
 > 같은 기록을 두 번 처리하면(창 두 개·연타 등) 일지 행을 잠가 차례로 처리하고, 나중 요청은 "이미 처리된 기록"(400)이 됩니다.
 
@@ -1116,6 +1131,7 @@ AI 원문이 승인됩니다.
 | 보류된 요약을 승인·보류 (보류 해제 먼저) | 409 | `SUMMARY_HELD` |
 | 같은 날 새 기록을 반영해 요약을 다시 만드는 중 — 잠시 뒤 다시 시도 | 409 | `SUMMARY_REGENERATING` |
 | 목록에서 본 뒤 요약이 새 기록으로 바뀜 — 목록을 다시 불러오기 | 409 | `SUMMARY_CHANGED` |
+| (`revert`) 그 기관 AI 처리 줄이 꽉 참 — 앞서 올린 기록 처리가 끝나면 다시 (#424, O-20 참고) | 429 | `AGENT_QUEUE_FULL` |
 
 **O-33 보류 해제** · 본문 없음
 
@@ -1219,6 +1235,7 @@ AI 원문이 승인됩니다.
 | `childId`·`entryDate` 누락, 날짜 형식 오류 | 400 | `INVALID_REQUEST` |
 | 보호자가 우리 기관 동의를 하지 않았거나 철회한 아이, 없는 아이 | 404 | `SUMMARY_CHILD_NOT_FOUND` |
 | 그 묶음에 요약 실패 기록이 없음 — 이미 처리했거나 다른 기관 기록. 목록을 다시 불러와 주세요 | 404 | `SUMMARY_FAILED_NOT_FOUND` |
+| (O-36) 그 기관 AI 처리 줄이 꽉 참 — 앞서 올린 기록 처리가 끝나면 다시 (#424, O-20 참고) | 429 | `AGENT_QUEUE_FULL` |
 
 ### 4.5 Insight · Gate 2
 
@@ -1363,7 +1380,7 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 [
   { "childId": "1", "childName": "김하늘",
     "periodFrom": "2026-08-17", "periodTo": "2026-08-23", "period": "2026년 8월 3주차",
-    "status": "done", "message": "분석이 끝나 발송 전 검토로 넘어갔어요" }
+    "status": "done", "message": "주간 리포트가 나와 승인 차례로 넘어갔어요" }
 ]
 ```
 
@@ -1371,12 +1388,12 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 
 | `status` | 언제 | `message` |
 | --- | --- | --- |
-| `not_consented` | 보호자가 우리 기관에 **주간 인사이트** 공유를 허락하지 않음 (#257). 우리 기록은 재료가 되지 않음 | 보호자가 주간 분석 공유를 허락하지 않아 우리 기관 기록은 분석에 쓰지 않아요 |
-| `waiting_week_end` | 끝나지 않은 이번 주. 운영은 주가 끝난 뒤 분석합니다 (`INSIGHT_INCLUDE_CURRENT_WEEK=false`) | 이번 주가 끝나면 분석해요 |
-| `queued` | 아직 분석 전이거나, 지난 분석 뒤 새로 승인된 기록이 있어 다시 분석할 차례. 서버가 실제로 분석할 재료가 있을 때만 | 곧 분석을 시작해요 |
-| `running` | 분석 중 | 분석하고 있어요 |
-| `retrying` | 마지막 분석이 실패함. 서버가 잠시 뒤 다시 시도합니다 | 분석이 잠시 실패해 다시 시도할 예정이에요 |
-| `done` | 끝났고 인사이트가 1건 이상. 승인 주체 기관의 Gate 2 로 넘어감 | 분석이 끝나 발송 전 검토로 넘어갔어요 |
+| `not_consented` | 보호자가 우리 기관에 **주간 인사이트** 공유를 허락하지 않음 (#257). 우리 기록은 재료가 되지 않음 | 보호자가 주간 리포트 공유를 허락하지 않아 우리 기관 기록은 주간 리포트에 쓰지 않아요 |
+| `waiting_week_end` | 끝나지 않은 이번 주. 운영은 주가 끝난 뒤 분석합니다 (`INSIGHT_INCLUDE_CURRENT_WEEK=false`) | 이번 주가 끝나면 주간 리포트를 만들어요 |
+| `queued` | 아직 분석 전이거나, 지난 분석 뒤 새로 승인된 기록이 있어 다시 분석할 차례. 서버가 실제로 분석할 재료가 있을 때만 | 곧 주간 리포트를 만들기 시작해요 |
+| `running` | 분석 중 | 주간 리포트를 만들고 있어요 |
+| `retrying` | 마지막 분석이 실패함. 서버가 잠시 뒤 다시 시도합니다 | 주간 리포트를 만들다 잠시 실패해 다시 시도할 예정이에요 |
+| `done` | 끝났고 인사이트가 1건 이상. 승인 주체 기관의 Gate 2 로 넘어감 | 주간 리포트가 나와 승인 차례로 넘어갔어요 |
 | `nothing_new` | 끝났지만 인사이트 0건(정상입니다, `AI/insight/CRITERIA.md` §3). 또는 동의한 기관의 분석 재료가 없어 분석하지 않는 주 | 이번 주는 새로 알릴 내용이 없어요 |
 
 > `done` 이어도 Gate 2 글은 **승인 주체 기관(O-40 `primarySource`)에만** 보입니다. 우리 기관이 승인 주체가 아니면
@@ -1551,7 +1568,7 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 | `turn` | 선생님 차례 5줄. `confirm` = 아이 확인(O-22 건수), `blocked` = 고쳐야 할 기록(O-24 건수), `review` = 검토 대기 요약(다시 만드는 중 제외) + 요약 실패 묶음, `approve` = 우리가 승인할 Gate 2 대기(O-40 `pending` 건수), `requests` = 보호자 연결 요청(O-60 건수) |
 | `rows[].kind` | 검토 승인 전에는 `entry`(아이×날짜), 승인 뒤에는 `week`(아이×주, 월~일). 승인한 기록은 `entry` 에서 빠지고 그 주 줄로 모입니다 |
 | `rows[].childId` · `childName` | 아이를 아직 못 찾은 줄은 `null` |
-| `rows[].step` | 0 아이 찾기 · 1 AI 확인 · 2 요약 · 3 검토 · 4 주간 분석 · 5 분석 승인 |
+| `rows[].step` | 0 아이 매칭 · 1 내용 검증 · 2 요약 · 3 검토 · 4 주간 리포트 · 5 리포트 승인 (화면 이름은 FE 가 정하고, 서버는 번호만 줍니다) |
 | `rows[].who` | `me` 선생님 차례 · `ai` AI 가 하는 중 · `wait` 기다리는 중 · `other` 다른 사람(관리자·다른 기관·보호자) 차례 · `done` 끝. 줄은 이 순서 → 단계 → 날짜(주 줄은 주 시작일) 순입니다 |
 | `rows[].detail` | 상태마다 덧붙이는 값. 없는 키는 빠집니다 (`matching` → `count`, `blocked` → `kinds`·`reasons`, `review`·`review_held` → `noContent`, `review_elsewhere` → `approverName`) |
 | `rows[].target` | 바로가기 대상. `matching`(O-28 항목 id) · `validation`(O-24 항목 id) · `summary`(요약 id) · `summary_failed`(`id` 없음 — 줄의 `childId`·`date` 로 O-35~37) · `insight`(인사이트 id). 선생님 차례가 아니면 `null` |
@@ -1568,8 +1585,8 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 | 2 | `summary_failed` | me | 요약 실패 (O-35~37) |
 | 3 | `review` · `review_held` | me | 검토 대기 · 보류해 둔 요약 |
 | 3 | `regenerating` | ai | 새 기록이 들어와 요약을 다시 만드는 중 (O-30 `processing`) |
-| 4 | `waiting_week_end` · `queued` · `running` · `retrying` | wait · ai · ai · ai | 주간 분석 (O-43 과 같은 판정) |
-| 4 | `not_consented` | other | 보호자가 주간 분석 공유를 허락하지 않아 우리 기록은 쓰지 않음 |
+| 4 | `waiting_week_end` · `queued` · `running` · `retrying` | wait · ai · ai · ai | 주간 리포트 (O-43 과 같은 판정) |
+| 4 | `not_consented` | other | 보호자가 주간 리포트 공유를 허락하지 않아 우리 기록은 쓰지 않음 |
 | 4 | `nothing_new` | done | 이번 주는 새로 알릴 내용이 없음 (분석은 됐지만 우리 기록이 쓰인 글이 없는 주 포함) |
 | 5 | `review_here` · `insight_held` | me | 우리가 승인 주체인 분석 — 승인 대기 · 보류 |
 | 5 | `review_elsewhere` | other | 다른 기관이 승인할 차례. `detail.approverName` = 그 기관 이름. 승인 주체는 Gate 2 와 같습니다(학교 > 센터 > 활동지원사, 같은 종류면 기관 id 가 작은 곳) |
@@ -1951,9 +1968,11 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
     "readAt": null,
     "evidence": [
       { "journalEntryId": "41", "date": "2026-08-18",
-        "institution": { "id": "3", "name": "햇살아동발달센터", "type": "center", "verified": false } },
+        "institution": { "id": "3", "name": "햇살아동발달센터", "type": "center", "verified": false },
+        "lookedUp": false },
       { "journalEntryId": "44", "date": "2026-08-20",
-        "institution": { "id": "2", "name": "○○초등학교", "type": "school", "verified": false } }
+        "institution": { "id": "2", "name": "○○초등학교", "type": "school", "verified": false },
+        "lookedUp": false }
     ] }
 ]
 ```
@@ -1964,7 +1983,7 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | `approvedAt` | 담당자가 Gate 2 에서 승인한 시각. **모든 보호자에게 같습니다** — 늦게 연결돼 나중에 열린 글도 이 시각이라 엄마·아빠 화면에서 같은 자리·같은 날짜에 놓입니다. 기간(`period`)은 "어느 주의 이야기인지", 이 값은 "언제 받았는지" 입니다 |
 | `sharedWith` | **지금 이 글을 볼 수 있는 다른 기관**, 기관 이름순. **기관 수신함(O-50 · O-51) · 공유 내역(G-45)과 같은 판정**입니다 — 권한이 살아 있고, 아이가 그 기관 명부에 있고, 그 기관 동의가 켜져 있어야 합니다(#319). 동의를 끄거나 명부에서 빠지면 빠집니다. 보호자가 "내 아이 글이 어디까지 갔나" 를 보고 동의를 끌지 판단하는 데 씁니다 |
 | `readAt` | 처음 열어 본 시각. G-36 이 **처음 한 번만** 찍고 다시 열어도 덮지 않습니다. 동시에 열어도 처음 시각이 남습니다. 연결 해제와 겹치면 먼저 반영된 쪽을 따릅니다 — 해제가 먼저면 404, 열람이 먼저면 200 뒤 해제 (기관 수신함 O-51 과 같은 경로). 열람 방식이라 "언제 봤나" 를 안 남기면 아무 흔적이 없습니다 (`docs/db/schema.md` §9.4) |
-| `evidence` | 이 글의 근거가 된 일지, **관찰 날짜 오래된 순**, 같은 날은 기관 이름순. 같은 일지는 한 번만 옵니다. `journalEntryId` 는 일지 상세(G-21)의 id, `date` 는 관찰 날짜(`yyyy-MM-dd`), `institution` 은 그 일지를 쓴 기관입니다. 범위는 Gate 2 근거(O-40)와 같습니다 — 본문 근거(`claim_ids`)와, AI 가 찾아 본 지난 기록 중 본문이나 대처에서 실제로 인용한 것입니다. 그중 **응답 시점에 이 보호자가 일지 상세로 열 수 있는 것만** 옵니다 — 다른 아이 요약 · 1차 검토 전 요약 · 기관 행이 없는 요약은 빠지고, 아이가 삭제됐으면 빈 배열입니다. **동의로 거르지 않습니다.** 동의를 끈 기관 · 명부에서 빠진 기관의 일지도 일지 탭(G-20)에서 계속 보이므로 근거에도 남습니다. 남는 근거가 없으면 빈 배열이고 글은 그대로 보입니다 |
+| `evidence` | 이 글의 근거가 된 일지, **관찰 날짜 오래된 순**, 같은 날은 기관 이름순. 같은 일지는 한 번만 옵니다. `journalEntryId` 는 일지 상세(G-21)의 id, `date` 는 관찰 날짜(`yyyy-MM-dd`), `institution` 은 그 일지를 쓴 기관, `lookedUp` 은 이번 기간이 아니라 AI 가 지난 기록에서 찾아 쓴 근거인지입니다(Gate 2 근거의 `lookedUp` 과 같은 값, #387). 범위는 Gate 2 근거(O-40)와 같습니다 — 본문 근거(`claim_ids`)와, AI 가 찾아 본 지난 기록 중 본문이나 대처에서 실제로 인용한 것입니다. 그중 **응답 시점에 이 보호자가 일지 상세로 열 수 있는 것만** 옵니다 — 다른 아이 요약 · 1차 검토 전 요약 · 기관 행이 없는 요약은 빠지고, 아이가 삭제됐으면 빈 배열입니다. **동의로 거르지 않습니다.** 동의를 끈 기관 · 명부에서 빠진 기관의 일지도 일지 탭(G-20)에서 계속 보이므로 근거에도 남습니다. 남는 근거가 없으면 빈 배열이고 글은 그대로 보입니다 |
 
 **실패**
 
@@ -2218,6 +2237,9 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | 코드 | 상태 | 설명 |
 | --- | --- | --- |
 | `FILE_TOO_LARGE` | 413 | 업로드 용량 초과 (현재 구현: `RAW_RECORD_FILE_TOO_LARGE`) |
+| `RAW_RECORD_ENTRY_LIMIT_EXCEEDED` | 400 | 파일에서 나온 기록이 500건을 넘거나 기록 하나가 5,000자를 넘음 — 파일을 저장하지 않음 (O-20, #424) |
+| `RAW_RECORD_UPLOAD_BUSY` | 429 | 서버 전체의 동시 업로드 처리 자리와 대기가 꽉 참 — 파일을 저장하지 않음 (O-20, #424) |
+| `AGENT_QUEUE_FULL` | 429 | 그 기관 AI 처리 줄이 꽉 참 (O-20 · O-23 `assign` · O-25 `revise` · O-31 `revert` · O-36, #424) |
 | `UNSUPPORTED_FILE_TYPE` | 400 | 허용되지 않은 확장자 (현재 구현: 입력 오류와 함께 `RAW_RECORD_INVALID_REQUEST`) |
 | `CHILD_NOT_FOUND` | 404 | 없는 아이 |
 | `RECORD_NOT_FOUND` | 404 | 없는 기록 (현재 구현: `RAW_RECORD_NOT_FOUND`) |

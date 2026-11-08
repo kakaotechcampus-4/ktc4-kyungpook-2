@@ -25,6 +25,7 @@ import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.agent.AgentQueueGuard;
 
 import lombok.RequiredArgsConstructor;
 
@@ -46,6 +47,7 @@ public class SummaryGate1Service {
     private final ApprovalRepository approvalRepository;
     private final ChildRepository childRepository;
     private final ConsentStateReader consentStateReader;
+    private final AgentQueueGuard agentQueueGuard;
 
     /**
      * Gate 1 결정을 반영한다. 승인하면 그 요약의 일지가 요약에 안 들어간 것까지 모두 끝나고, 보류하면 함께 보류되고,
@@ -150,8 +152,11 @@ public class SummaryGate1Service {
      * 요약된다 — [다시 요약]을 따로 두지 않는다. 요약은 기록으로 남고 Gate 1 에서 빠진다 (#244).
      */
     private ApprovalDecision revert(SummaryResult summary, List<JournalEntry> entries) {
+        List<JournalEntry> pending = pendingOf(entries);
+        // 요약 대기로 다시 들어간다 — AI 처리 줄에 자리가 있는지 본다 (#424). 요약 행 다음에 기관 행을 잠근다.
+        agentQueueGuard.requireRoom(summary.getInstitutionId(), pending.size());
         summary.revertNoContent();
-        pendingOf(entries).forEach(JournalEntry::revertToSummaryWait);
+        pending.forEach(JournalEntry::revertToSummaryWait);
         return ApprovalDecision.REVERTED;
     }
 

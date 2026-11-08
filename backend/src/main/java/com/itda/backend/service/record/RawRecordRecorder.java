@@ -1,12 +1,17 @@
 package com.itda.backend.service.record;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
+import com.itda.backend.service.agent.AgentQueueGuard;
 import com.itda.backend.service.user.LoginUserTransactionService;
 
 import lombok.RequiredArgsConstructor;
@@ -21,12 +26,31 @@ import lombok.RequiredArgsConstructor;
 public class RawRecordRecorder {
 
     private final RawRecordRepository rawRecordRepository;
+    private final JournalEntryRepository journalEntryRepository;
+    private final AgentQueueGuard agentQueueGuard;
 
-    // REQUIRES_NEW — 이 클래스를 분리한 목적 자체가 ingest()의 외부 I/O와 무관한 독립 트랜잭션
-    // 경계다. 호출자가 이미 트랜잭션 안에 있어도(지금은 없지만) 거기에 조용히 합류하면 안 된다.
+    /**
+     * 받은 파일의 원본 행과 거기서 나온 일지를 한 트랜잭션에 저장한다 (#424).
+     *
+     * <p>먼저 기관 행을 잠그고 AI 처리 줄에 자리가 있는지 다시 센다({@link AgentQueueGuard#requireRoom}). 같은 기관이 동시에 올린
+     * 파일은 여기서 한 줄로 서고, 뒤 요청은 앞 요청이 커밋한 일지까지 센다. 그래서 센 수와 실제로 들어간 일지가 같도록 원본 행과
+     * 일지를 함께 저장한다 — 일지 저장이 실패하면 원본 행도 남기지 않고, 부르는 쪽이 FAILED 행으로 따로 추적한다.
+     *
+     * <p>REQUIRES_NEW — 이 클래스를 분리한 목적 자체가 ingest()의 외부 I/O와 무관한 독립 트랜잭션 경계다. 호출자가 이미
+     * 트랜잭션 안에 있어도(지금은 없지만) 거기에 조용히 합류하면 안 된다.
+     *
+     * @param entries 날짜를 다 채운 일지. 비어 있으면(글자를 못 뽑은 파일) 자리를 보지 않고 원본 행만 저장한다
+     * @throws com.itda.backend.exception.agent.AgentQueueFullException 자리가 없다. 아무것도 저장하지 않는다
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public RawRecord save(RawRecord rawRecord) {
-        return rawRecordRepository.save(rawRecord);
+    public RawRecord accept(RawRecord rawRecord, Long organizationId, List<JournalEntrySplitter.SplitEntry> entries) {
+        agentQueueGuard.requireRoom(organizationId, entries.size());
+        RawRecord saved = rawRecordRepository.save(rawRecord);
+        int seq = 1;
+        for (JournalEntrySplitter.SplitEntry entry : entries) {
+            journalEntryRepository.save(JournalEntry.of(saved.getId(), entry.entryDate(), entry.content(), seq++));
+        }
+        return saved;
     }
 
     /**

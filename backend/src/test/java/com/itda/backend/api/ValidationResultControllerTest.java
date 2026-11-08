@@ -29,6 +29,8 @@ import com.itda.backend.exception.validation.ValidationResultErrorCode;
 import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
 import com.itda.backend.service.validation.ValidationQueueService;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.exception.agent.AgentQueueFullException;
 
 @WebMvcTest(ValidationResultController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -143,9 +145,10 @@ class ValidationResultControllerTest {
         verify(validationQueueService, never()).revise(any(), any(), any());
     }
 
+    /** 고친 본문은 그대로 검증 AI 에 가므로 업로드와 같은 길이까지만 받는다 (#424). */
     @Test
     void revise_tooLongContent_returns400WithoutCallingService() throws Exception {
-        String tooLong = "가".repeat(100_001);
+        String tooLong = "가".repeat(JournalEntry.MAX_CONTENT_LENGTH + 1);
 
         mockMvc.perform(post(BASE_URL + "/11/revise")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -153,6 +156,28 @@ class ValidationResultControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(validationQueueService, never()).revise(any(), any(), any());
+    }
+
+    @Test
+    void revise_contentAtMaxLength_callsService() throws Exception {
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"" + "가".repeat(JournalEntry.MAX_CONTENT_LENGTH) + "\"}"))
+                .andExpect(status().isOk());
+
+        verify(validationQueueService).revise(eq(11L), any(), any());
+    }
+
+    @Test
+    void revise_agentQueueFull_returns429() throws Exception {
+        willThrow(new AgentQueueFullException(1L, 1000, 1, 1000))
+                .given(validationQueueService).revise(any(), any(), any());
+
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"고친 글\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("AGENT_QUEUE_FULL"));
     }
 
     /** 화면이 거절 이유마다 다른 안내를 하므로 코드를 나눈다 — 고칠 게 없는지, 옛 카드인지, 아이 공유가 끝났는지. */

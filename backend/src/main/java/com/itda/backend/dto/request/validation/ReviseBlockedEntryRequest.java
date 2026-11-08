@@ -1,17 +1,17 @@
 package com.itda.backend.dto.request.validation;
 
+import com.itda.backend.domain.record.JournalEntry;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 /**
  * 검증에서 막힌 일지의 고친 본문 (#357, docs/api/api-spec.md O-25). 고치지 않은 본문인지는 서비스가 확인한다.
  *
- * @param content 고친 본문 전체. 일지 본문에는 상한이 없어(파일이 잘 안 쪼개지면 한 일지가 길다) 넉넉하게 둔다
+ * @param content 고친 본문 전체. 고친 본문은 그대로 검증 AI 에 가므로 업로드와 같은 길이({@link JournalEntry#MAX_CONTENT_LENGTH})까지만 받는다 (#424)
  */
 public record ReviseBlockedEntryRequest(
         @NotBlank
-        @Size(max = MAX_CONTENT_LENGTH)
+        @Size(max = JournalEntry.MAX_CONTENT_LENGTH)
         String content) {
-
-    public static final int MAX_CONTENT_LENGTH = 100_000;
 }

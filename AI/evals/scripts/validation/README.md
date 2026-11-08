@@ -2,6 +2,8 @@
 
 테스트 데이터를 검증(Validation) 에이전트에 돌리고 채점한다.
 
+> `build_inputs.py` 는 `AI/evals/manifests/` 의 가상 아동 데이터를 읽는다. 아이 데이터라 레포에 없으니 AI 담당(근찬)에게 받아 그 폴더에 넣는다.
+
 ```bash
 cd AI
 python3 evals/scripts/validation/build_inputs.py     # 매니페스트 → 입력 변환

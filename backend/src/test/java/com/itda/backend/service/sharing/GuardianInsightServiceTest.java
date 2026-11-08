@@ -289,10 +289,10 @@ class GuardianInsightServiceTest {
 
         assertThat(service.getInsight(MOTHER, id).evidence())
                 .extracting(GuardianInsightResponse.Evidence::journalEntryId, GuardianInsightResponse.Evidence::date,
-                        e -> e.institution().name())
+                        e -> e.institution().name(), GuardianInsightResponse.Evidence::lookedUp)
                 .containsExactly(
-                        tuple(String.valueOf(center), "2026-08-18", "햇살센터"),
-                        tuple(String.valueOf(school), "2026-08-20", "○○초등학교"));
+                        tuple(String.valueOf(center), "2026-08-18", "햇살센터", false),
+                        tuple(String.valueOf(school), "2026-08-20", "○○초등학교", false));
     }
 
     @Test
@@ -317,8 +317,8 @@ class GuardianInsightServiceTest {
                 "[\"%d-0\",\"%d-0\"]".formatted(summaryOf(past), summaryOf(notCited)));
 
         assertThat(service.getInsight(MOTHER, id).evidence())
-                .extracting(GuardianInsightResponse.Evidence::journalEntryId)
-                .containsExactly(String.valueOf(past));
+                .extracting(GuardianInsightResponse.Evidence::journalEntryId, GuardianInsightResponse.Evidence::lookedUp)
+                .containsExactly(tuple(String.valueOf(past), true));
     }
 
     /** 다른 아이 요약 · 1차 검토 전 요약 · 없는 요약 · 기관 행이 없는 요약은 일지 상세가 열지 않는다. 그 줄만 뺀다. */
