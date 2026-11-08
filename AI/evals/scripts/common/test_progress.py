@@ -95,36 +95,66 @@ def test_map():
     ck("기록 없음", progress.snapshot(), [], "요청이 아니면 지도에 올리지 않는다")
 
 
+SUMMARY_KEY = {"child_id": 7, "entry_date": "2026-11-08", "institution_id": 3}
+
+
+def _failed_run(clock, seconds, node="write", **ident):
+    """503 으로 끝나는 한 번의 호출."""
+    try:
+        with progress.begin("summary", **(ident or SUMMARY_KEY)):
+            progress.mark(node)
+            clock.t += seconds
+            raise RuntimeError("503")
+    except RuntimeError:
+        pass
+
+
 def test_retry():
-    print("\n■ 같은 일이 60초 안에 다시 오면 이어서 센다 (BE 재시도)")
+    print("\n■ 실패한 일이 60초 안에 다시 오면 이어서 센다 (BE 재시도)")
     clock = fresh()
-    with progress.begin("summary", child_id=7, entry_date="2026-11-08", institution_id=3):
-        progress.mark("write")
-        clock.t += 20
+    _failed_run(clock, 20)
     clock.t += 59                                   # 503 뒤 59초 만에 재시도
-    with progress.begin("summary", child_id=7, entry_date="2026-11-08", institution_id=3):
+    with progress.begin("summary", **SUMMARY_KEY):
         progress.mark("gather")
         ck("이어서 센다", progress.snapshot()[0]["elapsed_sec"], 79, "처음 시작부터 20 + 59 초")
 
+    clock = fresh()
+    _failed_run(clock, 20)
     clock.t += 61                                   # 61초 뒤면 새 일
-    with progress.begin("summary", child_id=7, entry_date="2026-11-08", institution_id=3):
+    with progress.begin("summary", **SUMMARY_KEY):
         progress.mark("gather")
-        ck("새로 센다", progress.snapshot()[0]["elapsed_sec"], 0, "metrics.GAP_SEC 와 같은 60초 기준")
+        ck("61초 뒤면 새로 센다", progress.snapshot()[0]["elapsed_sec"], 0, "metrics.GAP_SEC 와 같은 60초 기준")
 
+    clock = fresh()
+    with progress.begin("summary", **SUMMARY_KEY):
+        progress.mark("write")
+        clock.t += 40
+    clock.t += 10                                   # 성공 뒤 새 일지로 같은 묶음이 다시 옴
+    with progress.begin("summary", **SUMMARY_KEY):
+        progress.mark("gather")
+        ck("성공 뒤엔 새로 센다", progress.snapshot()[0]["elapsed_sec"], 0,
+           "BE 는 실패했을 때만 재시도한다. 성공 뒤에 온 건 새 일이다")
+
+    clock = fresh()
+    _failed_run(clock, 20)
     clock.t += 5
     with progress.begin("summary", child_id=8, entry_date="2026-11-08", institution_id=3):
         progress.mark("gather")
         ck("다른 아이는 묶지 않는다", progress.snapshot()[0]["elapsed_sec"], 0, "키가 다르면 다른 일")
 
-    print("\n■ 앞선 호출이 아직 도는데 재시도가 오면 같은 시작 시각을 쓴다")
+    print("\n■ 앞선 호출이 아직 도는데 재시도가 오면 나중 요청 한 줄만, 처음 시작 시각으로")
     clock = fresh()
     with progress.begin("matching", journal_entry_id=5):
         progress.mark("llm_judge")
         clock.t += 30                               # BE 가 타임아웃 뒤 다시 보냄
         with progress.begin("matching", journal_entry_id=5):
+            ck("재시도가 노드에 들어가기 전엔 앞선 호출", [r["node"] for r in progress.snapshot()], ["llm_judge"],
+               "그 사이 줄이 사라지면 BE 가 고정 문구로 깜빡인다")
             progress.mark("extract")
-            ck("둘 다 30초", [r["elapsed_sec"] for r in progress.snapshot()], [30, 30],
-               "AI 쪽 스레드는 취소되지 않아 둘이 겹칠 수 있다")
+            ck("한 줄", [(r["node"], r["elapsed_sec"]) for r in progress.snapshot()], [("extract", 30)],
+               "BE 가 기다리는 건 재시도 쪽이다. 두 줄이면 단계가 왔다 갔다 한다")
+        ck("재시도가 끝나면 앞선 호출이 다시 보인다", [r["node"] for r in progress.snapshot()], ["llm_judge"],
+           "AI 쪽 스레드는 취소되지 않아 아직 돌고 있다")
 
 
 def test_stale():
@@ -340,6 +370,48 @@ def test_endpoints():
     ck("고장 나면 200 []", (res.status_code, res.json()), (200, []), "BE 는 빈 목록이면 기존 고정 문구를 띄운다")
 
 
+def test_wrapper_shape():
+    import inspect
+    from typing import get_type_hints
+
+    print("\n■ 감싸개는 (state) 하나만 받는 것으로 보인다")
+
+    def node(state: dict, config=None) -> dict:
+        return state
+
+    wrapped = progress.tracked("node", node)
+    ck("시그니처", list(inspect.signature(wrapped).parameters), ["state"],
+       "원래 함수 시그니처를 보이면 LangGraph 가 config 를 넘겨 TypeError 가 난다")
+    ck("타입 힌트는 그대로", get_type_hints(wrapped).get("state"), dict,
+       "LangGraph 가 첫 인자 타입으로 입력 스키마를 정한다")
+
+    print("\n■ ContextVar 가 고장 나도 본문 결과는 그대로다")
+
+    class BrokenVar:
+        def set(self, value):
+            raise RuntimeError("set 실패")
+
+        def get(self):
+            raise RuntimeError("get 실패")
+
+        def reset(self, token):
+            raise ValueError("다른 Context")
+
+    fresh()
+    saved = progress._current
+    progress._current = BrokenVar()
+    try:
+        with progress.begin("matching", journal_entry_id=1):
+            progress.mark("extract")
+            got = "결과"
+    except Exception as exc:
+        got = f"예외 {exc!r}"
+    finally:
+        progress._current = saved
+    ck("결과가 나온다", got, "결과", "진행 표시는 응답에 닿지 않는다")
+    ck("기록도 남지 않는다", progress.snapshot(), [], "set 이 실패했으면 그 요청은 지도에서 내린다")
+
+
 def _raises(fn) -> bool:
     try:
         fn()
@@ -352,6 +424,7 @@ def main():
     test_map()
     test_retry()
     test_stale()
+    test_wrapper_shape()
     test_broken()
     test_graphs()
     test_find_claims()

@@ -45,7 +45,8 @@ _lock = threading.Lock()
 _tokens = itertools.count(1)
 #: 지금 도는 요청. token → {agent, ident, key, node, started, touched}
 _running: dict[int, dict] = {}
-#: 최근에 끝난 일. key → (started, ended_at). 재시도 때 시작 시각을 이어받는다.
+#: 최근에 **실패로** 끝난 일. key → (started, ended_at). 재시도 때 시작 시각을 이어받는다.
+#: BE 는 실패(503·타임아웃)했을 때만 다시 보낸다 — 성공 뒤에 같은 키가 오면 새 일이다.
 _ended: dict[tuple, tuple[float, float]] = {}
 #: 지금 요청의 token. begin 밖이면 None.
 _current: ContextVar[int | None] = ContextVar("progress_token", default=None)
@@ -77,12 +78,16 @@ def _start(agent: str, ident: dict) -> int:
     return token
 
 
-def _finish(token: int) -> None:
+def _finish(token: int, failed: bool) -> None:
     now = _now()
     with _lock:
         entry = _running.pop(token, None)
-        if entry is not None:
+        if entry is None:
+            return
+        if failed:
             _ended[entry["key"]] = (entry["started"], now)
+        else:
+            _ended.pop(entry["key"], None)
 
 
 @contextmanager
@@ -93,21 +98,37 @@ def begin(agent: str, **ident):
     ident 는 BE 가 그 일을 알아보는 키다 (매칭·검증 journal_entry_id, 요약 아동·날짜·기관 등).
     넘긴 순서대로 응답에 나간다.
     """
-    token = None
+    token = reset = None
     try:
         token = _start(agent, ident)
     except Exception:
         pass
-    reset = _current.set(token)
+    try:
+        reset = _current.set(token)          # 등록에 실패했어도 None 으로 덮어 바깥 요청에 적지 않는다
+    except Exception:
+        # 요청을 못 알아보면 mark 가 이 기록을 고칠 수 없다. 지도에서 내린다.
+        if token is not None:
+            _quietly(_finish, token, False)
+            token = None
+
+    failed = False
     try:
         yield
+    except BaseException:
+        failed = True
+        raise
     finally:
-        _current.reset(reset)
+        if reset is not None:
+            _quietly(_current.reset, reset)
         if token is not None:
-            try:
-                _finish(token)
-            except Exception:
-                pass
+            _quietly(_finish, token, failed)
+
+
+def _quietly(fn, *args) -> None:
+    try:
+        fn(*args)
+    except Exception:
+        pass
 
 
 def mark(node: str) -> None:
@@ -137,6 +158,10 @@ def tracked(name: str, fn):
         mark(name)
         return fn(state)
 
+    # wraps 는 이름·타입 힌트를 옮기면서 __wrapped__ 도 남긴다. 그러면 inspect.signature 가
+    # 원래 함수를 따라가, 노드가 config 를 받으면 LangGraph 가 이 감싸개에 config 를 넘긴다.
+    # 감싸개는 state 하나만 받으므로 지운다 (타입 힌트는 남아 입력 스키마 추론은 같다).
+    del node.__wrapped__
     node.progress_node = name
     return node
 
@@ -145,6 +170,9 @@ def snapshot() -> list[dict]:
     """
     지금 도는 일들. 시작한 순서대로.
 
+    같은 일이 둘 겹치면(BE 가 타임아웃 뒤 다시 보냈는데 앞선 호출이 아직 도는 경우)
+    **나중에 들어온 요청 한 줄만** 낸다 — BE 가 기다리는 것은 그쪽이다. 시작 시각은 처음 것이다.
+
         [{"agent": "matching", "journal_entry_id": 120, "node": "llm_judge", "elapsed_sec": 7}, ...]
 
     아직 노드에 들어가지 않은 일은 뺀다 — BE 가 번역할 문구가 없다.
@@ -152,10 +180,12 @@ def snapshot() -> list[dict]:
     now = _now()
     with _lock:
         _prune(now)
-        entries = sorted(_running.values(), key=lambda e: e["started"])
+        # token 이 클수록 나중 요청. 노드에 아직 안 들어간 재시도는 앞선 호출을 가리지 않는다.
+        latest = {e["key"]: e for _, e in sorted(_running.items()) if e["node"] is not None}
+        entries = sorted(latest.values(), key=lambda e: e["started"])
         rows = [{"agent": e["agent"], **e["ident"], "node": e["node"],
                  "elapsed_sec": int(now - e["started"])}
-                for e in entries if e["node"] is not None]
+                for e in entries]
     return rows
 
 
