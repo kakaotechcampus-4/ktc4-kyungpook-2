@@ -80,6 +80,8 @@ export function Chip({ tone, children }: { tone: keyof typeof CHIP; children: Re
 }
 
 const CARD = "rounded-[18px] bg-surface shadow-[0_2px_14px_rgba(120,90,40,0.08)]";
+/** 카드 전체를 눌러 여는 줄의 표시 — 손가락 커서와 hover 그림자 */
+export const CLICKABLE = "cursor-pointer transition-shadow hover:shadow-[0_4px_20px_rgba(120,90,40,0.16)]";
 
 /**
  * 목록 한 줄 카드: 누구 · 미리보기 · 표시 · 버튼. 누르면 처리 팝업이 뜬다.
@@ -119,9 +121,11 @@ export function WorkRow({
       </article>
     );
   }
+  // 버튼이 있는 줄은 카드 아무 곳이나 눌러도 연다(키보드 사용자는 버튼으로). 버튼은 stopPropagation 으로 두 번 안 열리게.
   return (
     <article
-      className={`${CARD} grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-[18px] py-3.5 sm:grid-cols-[minmax(110px,160px)_minmax(0,1fr)_auto_auto]`}
+      onClick={action ? onOpen : undefined}
+      className={`${CARD} grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-[18px] py-3.5 sm:grid-cols-[minmax(110px,160px)_minmax(0,1fr)_auto_auto] ${action ? CLICKABLE : ""}`}
     >
       <div className="grid min-w-0">
         <b className="truncate text-[15px]">{who}</b>
@@ -134,7 +138,10 @@ export function WorkRow({
       {action ? (
         <button
           type="button"
-          onClick={onOpen}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
           className="tap justify-self-end rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110"
         >
           {action}

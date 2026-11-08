@@ -5,7 +5,7 @@ import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { ChildPopup, guardianChip, type ChildTab } from "@/components/org/ChildPopup";
 import { LinkRequestCard } from "@/components/org/LinkRequestCard";
 import { RegisterChildPopup } from "@/components/org/RegisterChildPopup";
-import { Chip, EmptyLine, Toast, WorkHead, WorkRow } from "@/components/org/WorkList";
+import { CLICKABLE, Chip, EmptyLine, Toast, WorkHead, WorkRow } from "@/components/org/WorkList";
 import { useWalk } from "@/components/ui/ListPopup";
 import { Pager, usePage } from "@/components/ui/Pager";
 import { getChildren, getInbox, getInsights, getLinkRequests, getMyInstitution, loadIfReady } from "@/lib/api";
@@ -364,7 +364,7 @@ function KidCard({
   return (
     <article
       onClick={() => onOpen("analysis", unread > 0)}
-      className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 rounded-[18px] bg-surface px-[18px] py-3.5 shadow-[0_2px_14px_rgba(120,90,40,0.08)] transition-shadow hover:shadow-[0_4px_20px_rgba(120,90,40,0.16)]"
+      className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[18px] bg-surface px-[18px] py-3.5 shadow-[0_2px_14px_rgba(120,90,40,0.08)] ${CLICKABLE}`}
     >
       <span aria-hidden className="grid size-10 flex-none place-items-center rounded-full bg-surface2 text-[16px] font-bold text-ink2">
         {child.name.slice(0, 1)}
