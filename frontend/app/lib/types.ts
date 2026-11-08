@@ -301,11 +301,20 @@ export type UploadResult =
   | { ok: false; file: File; reason: UploadFailReason };
 
 /**
- * invalid   → 허용되지 않는 형식 (400)
- * too_large → 용량 초과 (413)
- * temporary → 저장 실패 · 네트워크 오류 등. 같은 파일을 다시 올리면 될 수 있다
+ * invalid          → 허용되지 않는 형식 (400)
+ * too_large        → 용량 초과 (413)
+ * too_many_entries → 기록이 500건을 넘거나 한 기록이 5,000자를 넘는다 (400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED, #424). 나눠 올린다
+ * queue_full       → 그 기관이 앞서 올린 기록을 AI 가 아직 처리 중이다 (429 AGENT_QUEUE_FULL). 끝나면 다시 올린다
+ * server_busy      → 지금 서버가 다른 업로드를 처리 중이다 (429 RAW_RECORD_UPLOAD_BUSY). 잠시 뒤 다시 올린다
+ * temporary        → 저장 실패 · 네트워크 오류 등. 같은 파일을 다시 올리면 될 수 있다
  */
-export type UploadFailReason = "invalid" | "too_large" | "temporary";
+export type UploadFailReason =
+  | "invalid"
+  | "too_large"
+  | "too_many_entries"
+  | "queue_full"
+  | "server_busy"
+  | "temporary";
 
 export interface EntryProgress {
   id: string;
