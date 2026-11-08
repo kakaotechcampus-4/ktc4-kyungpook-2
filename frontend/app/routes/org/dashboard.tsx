@@ -679,7 +679,7 @@ function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolea
       };
     case "review":
       return {
-        text: d.noContent ? "요약할 내용이 없대요 · 원문을 보고 확인해 주세요" : "요약이 왔어요 · 읽고 승인해 주세요",
+        text: d.noContent ? "특이사항이 없어요 · 원문을 보고 확인해 주세요" : "요약이 왔어요 · 읽고 승인해 주세요",
         go: ["검토하기", `/gate1?open=summary${id}`],
       };
     case "review_held":
