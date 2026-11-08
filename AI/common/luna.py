@@ -33,3 +33,19 @@ def model() -> str:
     평가 스크립트는 반대 순서라 됐고 서버만 안 됐다.
     """
     return os.environ.get("LUNA_MODEL") or DEFAULT_MODEL
+
+
+def json_format() -> dict:
+    """
+    요청 본문에 넣을 JSON 강제 설정. **부를 때마다 읽는다** (model() 과 같은 이유).
+
+    기본은 response_format=json_object 로 JSON 출력을 강제한다. 루나와 서버는 이 값 그대로다.
+    다른 모델 비교 테스트에서 그 모델이 response_format 을 받지 않으면 .env 에
+    LUNA_JSON_MODE=off 를 넣는다. 그때는 강제 없이 프롬프트의 형식 지시와
+    응답에서 JSON 만 골라내는 파서(_parse_json_block)에 맡긴다.
+
+    예: claude-opus-5-5 는 "response_format is not supported" 로 400 을 낸다 (2026-11-08).
+    """
+    if os.environ.get("LUNA_JSON_MODE", "on").strip().lower() in ("off", "0", "false", "no"):
+        return {}
+    return {"response_format": {"type": "json_object"}}

@@ -108,8 +108,14 @@ public class SummaryWorker {
                 return Outcome.DONE;
             }
             SummaryAgentRequest request = summaryService.prepareRequest(claimed);
-            SummaryAgentReply reply = client.summarize(request);
-            availability.reportCallSucceeded();
+            SummaryAgentReply reply;
+            if (NothingNotable.matches(request)) {
+                // "특이사항 없음" 뿐인 묶음은 AI 를 부르지 않고 요약할 내용 없음으로 Gate 1 에 올린다 (#448).
+                reply = NothingNotable.reply(request);
+            } else {
+                reply = client.summarize(request);
+                availability.reportCallSucceeded();
+            }
             recorder.record(claimed, request, reply);
             return Outcome.DONE;
         } catch (RuntimeException e) {

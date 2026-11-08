@@ -301,7 +301,7 @@ public class GuardianInsightService {
      * Gate 2 목록과 같은 문구 규칙이다 ({@code InsightGate2QueryService.periodLabel}). 기관 수신함
      * ({@link InstitutionInboxService})도 이것을 쓴다 — 보호자와 기관이 같은 글을 다른 기간 이름으로 부르지 않게.
      */
-    static String periodLabel(LocalDate periodFrom) {
+    public static String periodLabel(LocalDate periodFrom) {
         return "%d년 %s".formatted(periodFrom.getYear(), weekLabel(periodFrom));
     }
 

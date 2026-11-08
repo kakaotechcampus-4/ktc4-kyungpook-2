@@ -18,17 +18,51 @@ from pydantic import BaseModel, Field
 # ── 입력 ────────────────────────────────────────────────────────
 
 
-class ApprovedInsight(BaseModel):
-    """Gate 2 에서 승인된 인사이트 하나. insight.schemas.Insight 에서 메일에 필요한 칸만 받는다."""
+class EvidenceSentence(BaseModel):
+    """근거 일지에서 이 글이 실제로 인용한 문장 하나. 보호자 리포트 화면과 같은 값이다."""
 
-    #: 보호자에게 나갈 글의 재료. 이 안에 없는 내용은 메일에 못 쓴다 (check 노드).
+    text: str
+    #: "상황" 또는 "대처". 메일에서도 화면과 같은 꼬리표로 보인다.
+    role: str
+
+
+class EvidenceEntry(BaseModel):
+    """근거 일지 한 건. 화면의 "이 글의 근거" 한 줄과 같다."""
+
+    #: 그 일지를 쓴 기관 이름. 보호자는 화면에서도 기관 이름을 본다.
+    institution_name: str
+    #: 관찰 날짜 "2026-10-19"
+    date: str
+    #: 이번 기간이 아니라 지난 기록에서 찾아 쓴 근거인지. 화면과 같이 "지난 기록" 으로 적는다.
+    looked_up: bool = False
+    sentences: list[EvidenceSentence] = Field(default_factory=list)
+
+
+class ApprovedInsight(BaseModel):
+    """
+    Gate 2 에서 승인된 인사이트 하나.
+
+    **보호자 리포트 화면(G-36)과 같은 값을 받는다.** 메일과 화면이 다른 글이면 보호자가
+    둘을 견주다 헷갈린다 — 같은 것을 두 곳에서 보여 주는 것이다.
+    """
+
+    #: 보호자에게 나갈 글. 화면의 "기관들이 함께 본 것" 과 같다.
     content: str
 
-    #: 근거를 낸 기관 종류 (학교 / 센터 / 활동지원사). "학교에서는" 을 쓸 수 있는지 가른다.
+    #: Gate 2 에서 승인한 기관 이름. 화면 맨 위에 뜨는 그 기관이다. 없으면 비운다.
+    institution_name: str = ""
+
+    #: "2026년 10월 3주차". 화면 부제와 같은 문구다 — BE 가 만든 값을 그대로 쓴다.
+    period_label: str = ""
+
+    #: 근거를 낸 기관 종류 (학교 / 센터 / 활동지원사).
     institution_types: list[str] = Field(default_factory=list)
 
-    #: 여러 기관 기록이 재료인가. 메일에서 기관을 나눠 쓸지 정하는 데만 쓴다.
+    #: 여러 기관 기록이 재료인가.
     cross_institution: bool = False
+
+    #: 이 글의 근거. 화면의 "이 글의 근거" 절과 같은 목록이고 순서도 같다.
+    evidence: list[EvidenceEntry] = Field(default_factory=list)
 
 
 class NotifyInput(BaseModel):

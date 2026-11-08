@@ -24,7 +24,10 @@ import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
+import com.itda.backend.service.insight.InsightEvidenceReader;
 import com.itda.backend.service.insight.InstitutionTypeNames;
+import com.itda.backend.service.insight.PrimarySource;
+import com.itda.backend.service.sharing.GuardianInsightService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +49,7 @@ public class NotifyService {
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
+    private final InsightEvidenceReader insightEvidenceReader;
     private final ObjectMapper objectMapper;
 
     /**
@@ -72,12 +76,18 @@ public class NotifyService {
             return Optional.empty();
         }
 
-        Map<Long, Organization> institutions = institutionsOf(approved);
+        // 근거는 보호자 리포트 화면(G-36)과 **같은 곳에서** 읽는다. 갈리면 메일과 화면이 다른 근거를 댄다.
+        Map<Long, InsightEvidenceReader.Evidence> evidences = insightEvidenceReader.read(approved);
+        Map<Long, Organization> institutions = institutionsOf(approved, evidences);
         List<NotifyAgentRequest.ApprovedInsight> insights = approved.stream()
                 .map(insight -> new NotifyAgentRequest.ApprovedInsight(
                         insight.getContent(),
+                        primaryNameOf(insight, institutions),
+                        GuardianInsightService.periodLabel(insight.getPeriodFrom()),
                         institutionTypesOf(insight, institutions),
-                        insight.isCrossInstitution()))
+                        insight.isCrossInstitution(),
+                        evidenceOf(evidences.getOrDefault(insight.getId(),
+                                InsightEvidenceReader.Evidence.EMPTY), institutions)))
                 .toList();
 
         long lastInsightId = approved.get(approved.size() - 1).getId();
@@ -88,13 +98,59 @@ public class NotifyService {
         return Optional.of(new PreparedNotify(request, insights.size(), lastInsightId));
     }
 
-    /** 인사이트들의 근거 기관을 한 번에 가져온다. 기관마다 묻지 않는다. */
-    private Map<Long, Organization> institutionsOf(List<InsightResult> approved) {
+    /**
+     * 인사이트들의 기관을 한 번에 가져온다. 기관마다 묻지 않는다.
+     *
+     * <p>근거 줄의 기관도 함께 담는다 — AI 가 쓴 {@code source_institution_ids} 와 요약이 가진
+     * 기관이 어긋날 수 있어서, 둘 중 하나만 보면 근거 줄의 기관 이름이 비는 수가 있다.
+     */
+    private Map<Long, Organization> institutionsOf(List<InsightResult> approved,
+            Map<Long, InsightEvidenceReader.Evidence> evidences) {
         Set<Long> ids = approved.stream()
                 .flatMap(insight -> parseIds(insight.getSourceInstitutionIds()).stream())
-                .collect(Collectors.toSet());
+                .collect(Collectors.toCollection(java.util.HashSet::new));
+        evidences.values().forEach(evidence -> ids.addAll(evidence.institutionIds()));
         return organizationRepository.findAllById(ids).stream()
                 .collect(Collectors.toMap(Organization::getId, organization -> organization));
+    }
+
+    /**
+     * "누가 정리했나". Gate 2 승인 주체이고, 보호자 리포트 화면의 {@code from} 과 같은 기관이다
+     * ({@link PrimarySource}). 기관 행이 없으면 빈 문자열 — 메일에서 그 줄만 빠진다.
+     */
+    private String primaryNameOf(InsightResult insight, Map<Long, Organization> institutions) {
+        try {
+            Organization primary = PrimarySource.of(parseIds(insight.getSourceInstitutionIds()), institutions);
+            return primary == null ? "" : primary.getName();
+        } catch (RuntimeException e) {
+            // 승인 주체를 못 고르는 인사이트가 있어도 메일 전체를 실패시키지 않는다. 그 줄만 비운다.
+            log.warn("could not pick the primary institution insightId={}", insight.getId(), e);
+            return "";
+        }
+    }
+
+    /**
+     * 그 글의 근거. <b>화면(G-36)과 같은 순서</b>다 — 관찰 날짜 오래된 순, 같은 날은 기관 이름순.
+     *
+     * <p>기관 행이 없는 줄은 뺀다. 화면이 그렇게 하므로 메일도 같아야 한다.
+     * 인용 문장이 없는 줄도 뺀다 — 메일에서는 날짜만 있는 줄이 읽을 거리가 없다.
+     */
+    private List<NotifyAgentRequest.EvidenceEntry> evidenceOf(InsightEvidenceReader.Evidence evidence,
+            Map<Long, Organization> institutions) {
+        return evidence.refs().stream()
+                .filter(ref -> institutions.containsKey(ref.institutionId()))
+                .filter(ref -> !ref.sentences().isEmpty())
+                .sorted(Comparator
+                        .comparing(InsightEvidenceReader.Ref::date)
+                        .thenComparing(ref -> institutions.get(ref.institutionId()).getName()))
+                .map(ref -> new NotifyAgentRequest.EvidenceEntry(
+                        institutions.get(ref.institutionId()).getName(),
+                        ref.date().toString(),
+                        ref.lookedUp(),
+                        ref.sentences().stream()
+                                .map(s -> new NotifyAgentRequest.EvidenceSentence(s.text(), s.role()))
+                                .toList()))
+                .toList();
     }
 
     /**

@@ -76,6 +76,11 @@ def check(module) -> list[str]:
     elif not result.usage["reasoning_retry"]:
         fails.append("한도 초과: usage 에 reasoning_retry 표시가 없다")
 
+    # ②-b 답이 반쯤 온 채로 잘림(length): 답이 있어도 low 로 다시 불러 성공 (claude-opus-5-5, 2026-11-09)
+    result, sent = run(module, [_reply('{"claims": [{"text": "잘린', "length"), _reply('{"ok": 1}', "stop")])
+    if len(sent) != 2 or sent[1].get("reasoning_effort") != "low" or not result or result.data != {"ok": 1}:
+        fails.append(f"잘린 답: 호출 {len(sent)}번, 결과 {result}")
+
     # ③ 빈 답이지만 length 가 아님: 다시 부르지 않는다 (다른 원인이라 low 로 풀리지 않는다)
     result, sent = run(module, [_reply("", "stop")])
     if len(sent) != 1 or result is not None:
