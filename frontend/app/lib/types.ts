@@ -124,8 +124,8 @@ export interface MyInstitution extends Institution {
 /** 기관이 보는 연결 요청 하나 (O-60). 같은 아이에 보호자 여럿이 요청했으면 한 항목이다 */
 export interface PendingLinkRequest {
   child: { id: string; name: string; birthDate: string };
-  /** 요청한 보호자들. 먼저 요청한 순서. 이름은 카카오 닉네임이라 없을 수 있다 */
-  requesters: { name: string | null }[];
+  /** 요청한 보호자 수. 보호자 이름은 저장하지 않아 화면은 "아이 이름 + 보호자" 로 부른다 */
+  requesterCount: number;
   /** 가장 먼저 요청한 시각 (ISO 8601) */
   requestedAt: string;
 }
@@ -155,8 +155,6 @@ export interface LiveInvitation extends IssuedInvitation {
 /** 아이와 연결된 보호자 (api-spec O-18) */
 export interface ChildGuardian {
   userId: string;
-  /** 카카오 닉네임. 동의하지 않았으면 null */
-  name: string | null;
   linkedAt: string;
   /** true 인 보호자만 우리 기관이 연결을 끊을 수 있다 (O-19) */
   linkedByThisOrganization: boolean;
@@ -609,8 +607,6 @@ export interface SentChecklistTarget {
   /** 아이가 삭제되지 않았고 지금도 우리 명부에 있다. false 면 "명부에서 빠짐" 이고 숫자에서 빠진다 */
   onRoster: boolean;
   confirmedAt: string | null;
-  /** 확인한 보호자의 카카오 닉네임. 없으면 null */
-  confirmedByName: string | null;
 }
 
 /** 기관 › 준비물·확인사항 — 보낸 요청 한 건 (O-70 · O-71) */
@@ -638,8 +634,6 @@ export interface ChecklistItem {
   items: string[];
   sentAt: string;
   confirmedAt: string | null;
-  /** 확인한 보호자의 카카오 닉네임. 없으면 null — 화면은 "다른 보호자" */
-  confirmedByName: string | null;
 }
 
 /* ── 대시보드 (O-80 ~ O-82) ──────────────────── */

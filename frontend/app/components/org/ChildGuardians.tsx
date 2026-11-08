@@ -16,7 +16,9 @@ import type { ChildGuardian, LiveInvitation } from "@/lib/types";
  * 아이 팝업 [보호자] 탭 — 연결된 보호자(O-18 · O-19)와 쓸 수 있는 초대 코드(O-15 ~ O-17).
  * 탭을 열 때 불러오고, 처리할 때마다 서버 목록을 다시 받는다. 만료된 코드는 서버가 빼고 준다.
  */
-export function ChildGuardians({ childId }: { childId: string }) {
+export function ChildGuardians({ childId, childName }: { childId: string; childName: string }) {
+  // 보호자 이름은 저장하지 않는다 — 아이 이름으로 부른다
+  const guardianLabel = `${childName} 보호자`;
   const [data, setData] = useState<{ guardians: ChildGuardian[]; invitations: LiveInvitation[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<ChildGuardian | null>(null);
@@ -70,7 +72,7 @@ export function ChildGuardians({ childId }: { childId: string }) {
             {data.guardians.map((g) => (
               <li key={g.userId} className="flex flex-wrap items-center gap-3 border-t border-line py-2.5 first:border-t-0">
                 <span className="min-w-0 flex-1">
-                  <b className="block text-[15px]">{g.name ?? "이름 없음"}</b>
+                  <b className="block text-[15px]">{guardianLabel}</b>
                   <span className="block text-[13px] tabular-nums text-muted">
                     {g.linkedAt.slice(0, 10).replaceAll("-", ".")} 연결
                     {g.linkedByThisOrganization ? "" : " · 다른 기관 코드로 연결"}
@@ -118,7 +120,7 @@ export function ChildGuardians({ childId }: { childId: string }) {
 
       {confirming ? (
         <ConfirmDialog
-          title={`${confirming.name ?? "이 보호자"}와의 연결을 해제할까요?`}
+          title={`${guardianLabel}와의 연결을 해제할까요?`}
           warning="해제하면 모든 기관에서 이 아이와의 연결이 끊겨요"
           confirmLabel="연결 해제"
           tone="block"

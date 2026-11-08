@@ -191,7 +191,7 @@ export function ChildPopup({
         ) : tab === "records" ? (
           <ChildTimeline childId={child.id} />
         ) : tab === "guardian" ? (
-          <ChildGuardians childId={child.id} />
+          <ChildGuardians childId={child.id} childName={child.name} />
         ) : (
           <>
             {review ? <Report insight={review} kind="review" /> : null}

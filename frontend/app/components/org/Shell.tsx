@@ -9,10 +9,8 @@ import { signOut } from "@/lib/auth";
 import { onNotice } from "@/lib/notice";
 import { usePolling } from "@/lib/usePolling";
 
-/** 머리띠 오른쪽의 내 정보. null 은 서버가 주지 않은 값 — 그 칸을 비운다 */
+/** 머리띠 오른쪽의 내 정보. 사람 이름은 저장하지 않아 기관명만 보여 준다. null 은 서버가 주지 않은 값 */
 export interface OrgShellMe {
-  /** 카카오 닉네임. 동의를 거부하면 없다 */
-  name: string | null;
   institutionName: string | null;
 }
 
@@ -186,11 +184,6 @@ export function OrgShell({
         </nav>
 
         <span className="ml-auto flex shrink-0 items-center gap-2">
-          {me.institutionName ? (
-            <span className="hidden rounded-full bg-surface/90 px-4 py-2 text-[14px] text-ink2 shadow-[0_2px_14px_rgba(120,90,40,0.1)] lg:inline">
-              {me.institutionName}
-            </span>
-          ) : null}
           <AccountMenu me={me} />
         </span>
       </header>
@@ -277,10 +270,10 @@ function AccountMenu({ me }: { me: OrgShellMe }) {
           aria-hidden
           className="flex size-9 items-center justify-center rounded-full bg-accentsoft text-[15px] font-bold text-accentink"
         >
-          {me.name ? me.name.slice(0, 1) : <User size={18} strokeWidth={1.75} />}
+          {me.institutionName ? me.institutionName.slice(0, 1) : <User size={18} strokeWidth={1.75} />}
         </span>
-        <span className="text-[14px] font-semibold whitespace-nowrap text-ink2">
-          {me.name ? `${me.name} 선생님` : "이름 없음"}
+        <span className="max-w-[16rem] truncate text-[14px] font-semibold whitespace-nowrap text-ink2">
+          {me.institutionName ?? "내 기관"}
         </span>
         <ChevronDown
           aria-hidden
@@ -295,11 +288,6 @@ function AccountMenu({ me }: { me: OrgShellMe }) {
           role="menu"
           className="absolute top-[calc(100%+8px)] right-0 z-40 block w-56 rounded-[18px] border border-line bg-surface p-2 shadow-[0_12px_34px_rgba(120,90,40,0.18)]"
         >
-          {me.institutionName ? (
-            <span className="block truncate px-3 py-1.5 text-[13px] text-muted">
-              {me.institutionName}
-            </span>
-          ) : null}
           <Link
             to="/terms/org_tos"
             role="menuitem"
