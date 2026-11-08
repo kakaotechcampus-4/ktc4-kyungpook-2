@@ -13,11 +13,17 @@ import threading
 import time
 import unittest
 import uuid
+import email.parser
 
 ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location("proxy", ROOT / "infra/scripts/verify-proxy.py")
 proxy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(proxy)
+
+FRONTEND_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; "
+                "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
+                "frame-ancestors 'none'")
+API_CSP = "default-src 'none'; frame-ancestors 'none'"
 
 ECHO = '''import http.server, json, os
 from urllib.parse import urlencode
@@ -42,6 +48,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "public, max-age=60")
+        # Like Spring Security defaults: Caddy must replace these instead of adding a second line.
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Strict-Transport-Security", "max-age=1")
+        self.send_header("Server", "upstream")
         self.end_headers()
         result = {"status": "ok"} if self.path == "/api/health" else {"service": os.environ["ROLE"], "instance": os.uname().nodename, "path": self.path, "headers": dict(self.headers)}
         self.wfile.write(json.dumps(result).encode())
@@ -142,9 +153,7 @@ class CaddyProxyTests(unittest.TestCase):
         self.assertEqual(json.loads(active), json.loads(candidate))
 
     def test_routes_preserve_path_and_query(self):
-        for path in ["/api/example?a=1", "/login/oauth2/code/kakao?code=test",
-                     "/swagger-ui", "/swagger-ui/index.html", "/swagger-ui.html",
-                     "/v3/api-docs", "/v3/api-docs/swagger-config"]:
+        for path in ["/api/example?a=1", "/login/oauth2/code/kakao?code=test"]:
             with self.subTest(path=path):
                 status, _, body = self.get(path)
                 self.assertEqual(status, 200)
@@ -152,6 +161,58 @@ class CaddyProxyTests(unittest.TestCase):
                 self.assertEqual(json.loads(body)["path"], path)
         for path in ["/", "/assets/app.js", "/parent/home"]:
             self.assertEqual(json.loads(self.get(path)[2])["service"], "frontend")
+
+    def test_api_docs_are_closed(self):
+        # Production Swagger is reached through an SSH tunnel to 127.0.0.1:8080 (#442). The echo upstreams always
+        # answer 200 with JSON, so an empty 404 proves Caddy kept these paths from both of them.
+        for path in ["/swagger-ui", "/swagger-ui/index.html", "/swagger-ui.html",
+                     "/v3/api-docs", "/v3/api-docs/swagger-config", "/v3/api-docs.yaml"]:
+            with self.subTest(path=path):
+                status, headers, body = self.get(path)
+                self.assertEqual(status, 404)
+                self.assertEqual(body, "")
+                self.assert_security_headers(headers)
+
+    def assert_security_headers(self, headers, csp=None):
+        expected = {
+            "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+        }
+        if csp is not None:
+            expected["Content-Security-Policy"] = csp
+        for name, value in expected.items():
+            self.assertEqual(headers.get_all(name), [value], name)
+        self.assertIsNone(headers.get("Server"))
+
+    def test_security_headers_replace_upstream_values(self):
+        cases = [
+            ("/", FRONTEND_CSP),
+            ("/parent/home", FRONTEND_CSP),
+            ("/assets/app.js", FRONTEND_CSP),
+            ("/api/example", API_CSP),
+            ("/login/oauth2/code/kakao?code=test", None),
+            ("/oauth2/authorization/kakao", None),
+        ]
+        for path, csp in cases:
+            with self.subTest(path=path):
+                _, headers, _ = self.get(path)
+                self.assert_security_headers(headers, csp)
+
+    def test_caddy_error_responses_keep_status_and_security_headers(self):
+        # Deferred header operations skip errors Caddy creates itself; handle_errors adds them back (#442).
+        self.compose("stop", "backend")
+        try:
+            status, headers, _ = self.get("/api/example")
+            self.assertEqual(status, 502)
+            self.assert_security_headers(headers)
+        finally:
+            self.compose("start", "backend")
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and self.get("/api/example")[0] != 200:
+                time.sleep(0.5)
 
     def test_forwarded_headers_cannot_be_spoofed(self):
         _, _, body = self.get("/api/example", headers={"X-Forwarded-Proto": "http", "X-Forwarded-Host": "evil.test"})
@@ -230,6 +291,7 @@ class CaddyProxyTests(unittest.TestCase):
 
     def test_upload_limit(self):
         payload = self.directory / "payload.bin"
+        header_dump = self.directory / "upload-headers.txt"
         for size, expected in [(25 * 1024 * 1024, 200), (25 * 1024 * 1024 + 1, 413)]:
             with payload.open("wb") as output:
                 output.truncate(size)
@@ -237,9 +299,15 @@ class CaddyProxyTests(unittest.TestCase):
                                      "--max-time", "30", "--cacert", str(self.ca),
                                      "--connect-to", f"localhost:443:127.0.0.1:{self.https_port}",
                                      "--data-binary", "@" + str(payload), "--output", os.devnull,
+                                     "--dump-header", str(header_dump),
                                      "--write-out", "%{http_code}", "https://localhost/api/upload"],
                                     capture_output=True, text=True, check=True)
             self.assertEqual(int(result.stdout), expected)
+            # The 413 is created by Caddy, not the upstream: handle_errors must still add the headers (#442).
+            # Same parsing as verify-proxy.request: read_text turns CRLF into LF, and the last block is the final response.
+            block = header_dump.read_text().strip().split("\n\n")[-1]
+            headers = email.parser.Parser().parsestr(block.split("\n", 1)[1])
+            self.assert_security_headers(headers, API_CSP if expected == 200 else None)
 
 
 if __name__ == "__main__":

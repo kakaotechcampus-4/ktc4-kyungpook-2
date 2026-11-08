@@ -326,8 +326,9 @@ Compose 환경에서는 `docker` 프로필이 활성화되고, `DB_URL`, `DB_USE
 
 외부 진입점은 Caddy입니다. 기본값 `PUBLIC_ORIGIN=http://localhost`에서는 HTTP,
 운영 HTTPS 주소를 설정하면 인증서 발급·갱신과 HTTP 리다이렉트를 자동 처리합니다.
-백엔드 8080은 `127.0.0.1`에만 연결됩니다. Swagger는 같은 오리진의
-`/swagger-ui/index.html`, OpenAPI JSON은 `/v3/api-docs`로 접근합니다.
+백엔드 8080은 `127.0.0.1`에만 연결됩니다. Swagger · OpenAPI는 Caddy가 외부에서 막습니다(#442) —
+서버에서는 SSH 터널(`ssh -L 8080:127.0.0.1:8080 …`)로 `http://localhost:8080/swagger-ui/index.html`에 붙습니다
+(`infra/README.md` "Caddy와 HTTPS").
 Compose는 CORS·로그인 완료 주소를 `PUBLIC_ORIGIN`에서 생성합니다.
 
 ### 백엔드 CI/CD
