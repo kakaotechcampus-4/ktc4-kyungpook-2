@@ -2931,10 +2931,13 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 `name` 을 쓰다가 실패한다. 새 버전은 이 컬럼을 읽지도 쓰지도 않는다(NULL 허용이라 새 회원 저장도 문제없다).
 
 1. 머지 → 백엔드 · 프론트 배포가 둘 다 성공했는지 확인한다
-2. 컬럼을 지운다 — 저장돼 있던 닉네임도 함께 사라진다
+2. 컬럼을 지우고 표를 새로 쓴다. `DROP COLUMN` 은 컬럼을 안 보이게만 하고 값은 행이 다시 쓰일 때까지 디스크에 남긴다.
+   `VACUUM FULL` 이 표 전체를 새로 써서 남은 닉네임을 지운다. 그동안 `users` 를 잠그지만 회원 표가 작아 금방 끝난다
    ```sql
    ALTER TABLE users DROP COLUMN IF EXISTS name;
+   VACUUM FULL users;
    ```
+   예전 데이터 이전 때 만든 `pg_dump` 백업처럼 서버에 남은 DB 백업 파일이 있으면 그 안에도 닉네임이 있다. 필요 없으면 지운다
 3. 카카오 개발자 콘솔 › 카카오 로그인 › 동의항목에서 닉네임을 "사용 안 함"으로 바꾼다. 서버는 scope 를 보내지 않으므로,
    콘솔에 켜져 있으면 동의 화면에 닉네임이 계속 뜬다(받아도 저장하지 않는다)
 
@@ -3004,4 +3007,4 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-11-07 | `insight_result` 에 `looked_up_claim_ids` 추가 (§9.3, NULL 허용) — AI 가 같은 아이의 지난 기록(이번 기간 앞 12주치 승인 요약, 동의 기관만, 최대 200개)에서 찾아 근거로 쓴 claim 이다 (#387). Gate 2 근거에 "지난 기록" 으로 표시한다. 저장할 때 BE 가 인용된 claim(`claim_ids`·`supports`·`looked_up_claim_ids`)의 기관을 `source_institution_ids` 에 직접 더한다 — 동의 확인과 철회 때 권한 거두기가 이 값만 보므로 AI 출력에 맡기지 않는다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #387 |
 | 2026-11-07 | 요약 결과를 남길 때(저장 · 요약 실패 · 시스템 오류) 그 묶음의 요약 행 → 아이 행을 잠근 뒤 동의를 본다 — 동의 철회가 먼저 커밋됐으면 요약을 저장하지 않는다(멘토 8차 리뷰 P2). 잠금 순서 표(§3.3)에 추가, Gate 1 결정과 같은 순서. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #398 |
 | 2026-11-08 | 업로드 · AI 처리 줄 상한. `journal_entry.failure_stage` 에 `MATCHING`, `failure_reason` 에 `CONTENT_TOO_LONG` 추가 (§6.2 "실패 상태와 원인 코드") — 상한(5,000자) 전에 올라온 긴 일지를 AI 에 보내지 않고 멈춘다. AI 처리 줄에 들어오는 작업(업로드 · O-23 assign · O-25 revise · O-31 `revert` · O-36)이 `organization` 행을 마지막에 잠그고 처리 중 · 대기 일지를 센다 (§3.3 잠금 순서). 업로드는 원본 행과 일지를 한 트랜잭션에 저장한다. 컬럼 · 제약 추가 없음. **enum 값 추가라 §11.4 수동 조치 필요** — 두 CHECK DROP | #424 |
-| 2026-11-09 | `users.name`(카카오 닉네임) 삭제 (§4.1) — 사람 이름을 저장하지 않는다. 카카오에는 동의 항목 없이 회원번호만 받고, 화면은 보호자를 "아이 이름 + 보호자", 기관 담당자를 기관명으로 부른다. **컬럼 삭제라 §11.4 수동 조치 필요** — 배포 뒤 `ALTER TABLE users DROP COLUMN name`. 개인정보 수집 약관(`PRIVACY` · `ORG_PRIVACY`)을 닉네임을 뺀 `2026-11-09` 판으로 올리고, 11-07 판 동의도 통과로 쳐서 다시 받지 않는다 (§4.3) | 미생성 |
+| 2026-11-09 | `users.name`(카카오 닉네임) 삭제 (§4.1) — 사람 이름을 저장하지 않는다. 카카오에는 동의 항목 없이 회원번호만 받고, 화면은 보호자를 "아이 이름 + 보호자", 기관 담당자를 기관명으로 부른다. **컬럼 삭제라 §11.4 수동 조치 필요** — 배포 뒤 `ALTER TABLE users DROP COLUMN name` 과 `VACUUM FULL users`(지운 값이 디스크에 남지 않게). 개인정보 수집 약관(`PRIVACY` · `ORG_PRIVACY`)을 닉네임을 뺀 `2026-11-09` 판으로 올리고, 11-07 판 동의도 통과로 쳐서 다시 받지 않는다 (§4.3) | #449 |
