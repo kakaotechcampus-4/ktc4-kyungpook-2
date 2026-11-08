@@ -144,7 +144,7 @@ psql "$DATABASE_URL" -v apply=true -f /absolute/path/to/backend/scripts/migrate-
 
 ```bash
 dbsql() { docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@"; }
-dbsql -c "SELECT u.name, o.id, o.name FROM users u JOIN organization o ON o.id = u.organization_id;"   # 기관 id
+dbsql -c "SELECT o.id, o.name FROM organization o ORDER BY o.id;"   # 기관 id
 dbsql -v action=seed -v org_id=5 < ../../backend/scripts/test-children.sql               # 확인만 (ROLLBACK)
 dbsql -v action=seed -v org_id=5 -v apply=true < ../../backend/scripts/test-children.sql # 저장
 ```
