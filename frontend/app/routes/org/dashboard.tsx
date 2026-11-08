@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FileCheck,
   FileText,
+  Info,
   Layers,
   Link2,
   PenLine,
@@ -580,6 +581,17 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
           );
         })}
       </div>
+
+      {/* 툴팁(title)만으로는 처음 쓰는 사람이 설명을 못 본다. 단계를 고르면 그 단계가 하는 일을 칸 아래에 한 줄로 보인다 */}
+      {stage !== null ? (
+        <p role="status" className="mb-3 flex items-start gap-1.5 rounded-[12px] border border-line px-3 py-2.5 text-[14px] leading-normal text-ink2">
+          <Info aria-hidden size={15} className="mt-[3px] flex-none" />
+          <span>
+            <b className="mr-1 text-ink">{STEPS[stage]}</b>
+            {STEP_DESC[stage]}
+          </span>
+        </p>
+      ) : null}
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <div role="tablist" aria-label="상태로 보기" className="flex rounded-full bg-surface2 p-1">
