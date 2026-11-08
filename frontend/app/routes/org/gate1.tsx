@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { skipSearchOnlyChange } from "@/lib/revalidate";
-import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
-import { Check, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Link, useLoaderData, useRevalidator, useRouteLoaderData, useSearchParams } from "react-router";
+import { Check, ChevronRight, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { NotReadyPage } from "@/components/org/NotReady";
 import { Busy, ConfirmDialog, ReloginButton, Spinner } from "@/components/ui";
 import { ListPopup, useWalk } from "@/components/ui/ListPopup";
@@ -33,6 +33,7 @@ import { locateEvidence, markSegments } from "@/lib/evidence";
 import { forgetGate1Drafts, readGate1Drafts, saveGate1Draft, type Gate1Draft } from "@/lib/gate1Draft";
 import { notify } from "@/lib/notice";
 import type { FailedSummary, Gate1Card, SummaryClaim, SummaryItem } from "@/lib/types";
+import type { clientLoader as orgLayoutLoader } from "./layout";
 
 /**
  * 검토 — 요약을 읽고 승인한다 (O-30 · O-31 · O-33).
@@ -568,6 +569,10 @@ function Gate1Page() {
   }
 
   const pendingLeft = pw.visible.filter((r) => !pw.isDone(r.id)).length;
+  /** 남은 건 중 AI 가 요약을 다시 만드는 중이라 선생님이 열 수 없는 건 */
+  const remaking = pw.visible.filter((r) => !pw.isDone(r.id) && isProcessing(r)).length;
+  // 메뉴 배지와 같은 숫자(기관 layout loader). 이 화면이 다시 불러올 때 함께 다시 센다
+  const orgCounts = useRouteLoaderData<typeof orgLayoutLoader>("routes/org/layout");
   const heldLeft = hw.visible.filter((r) => !hw.isDone(r.id)).length;
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: "pending", label: "전체", count: pendingLeft },
@@ -635,6 +640,10 @@ function Gate1Page() {
         </>
       )}
 
+      {/* 검토할 요약을 다 처리하면 다음 단계(리포트 승인)로 안내한다 — 빈 목록만 보고는 다음에 뭘 할지 모른다.
+          AI 가 다시 만드는 중인 요약은 선생님이 할 일이 없으므로 남아 있어도 띄운다 */}
+      {tab === "pending" && pendingLeft === remaking ? <NextStep approve={orgCounts?.counts.approve ?? null} remaking={remaking} /> : null}
+
       {current?.f ? (
         <FailedPopup key={current.id} rowId={current.id} item={current.f} {...popupProps} />
       ) : current?.s ? (
@@ -680,6 +689,37 @@ function Gate1Page() {
 }
 
 const noop = () => {};
+
+/**
+ * 요약 검토 다음 단계 안내. approve 는 승인할 리포트 수 — 모르면(null) 숫자 없이 안내한다.
+ * remaking 은 AI 가 다시 만드는 중인 요약 수 — 끝나면 이 목록에 다시 검토할 거리로 올라온다
+ */
+function NextStep({ approve, remaking }: { approve: number | null; remaking: number }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[18px] border border-line px-5 py-4">
+      <p className="min-w-0 flex-1 text-[15px] leading-normal text-ink2">
+        <b className="text-ink">요약 검토를 다 마쳤어요.</b>{" "}
+        {approve == null
+          ? "다음은 주간 리포트를 읽고 승인하는 단계예요."
+          : approve > 0
+            ? `승인을 기다리는 주간 리포트가 ${approve}건 있어요.`
+            : "아직 승인할 주간 리포트는 없어요. 한 주가 끝나면 AI가 리포트를 만들어요."}
+        {remaking > 0 ? (
+          <span className="mt-0.5 block text-[14px] text-muted">AI가 다시 만드는 요약 {remaking}건은 끝나면 여기서 검토할 수 있어요.</span>
+        ) : null}
+      </p>
+      <Link
+        to="/children?tab=approve"
+        className={`tap inline-flex flex-none items-center gap-0.5 rounded-full px-4 text-[14px] font-bold ${
+          approve === 0 ? "border border-line2 text-ink2 hover:bg-surface2" : "bg-ink text-paper hover:brightness-110"
+        }`}
+      >
+        주간 리포트 보러 가기
+        <ChevronRight aria-hidden size={15} />
+      </Link>
+    </div>
+  );
+}
 
 function rowTag(s: SummaryItem, tab: Tab): React.ReactNode {
   if (s.processing) {
