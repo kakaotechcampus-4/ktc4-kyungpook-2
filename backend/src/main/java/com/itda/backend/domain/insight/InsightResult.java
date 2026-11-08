@@ -67,9 +67,22 @@ public class InsightResult {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String behavior;
 
-    /** 교사·보호자가 읽을 본문. */
+    /** 교사·다른 기관 담당자가 읽을 본문. 말투는 {@code ~했다} 다. */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
+
+    /**
+     * 보호자가 읽을 같은 내용 (#433). 말투는 {@code ~했어요} 다. AI 가 {@code content} 와 함께 쓴다.
+     *
+     * <p><b>비어 있을 수 있다.</b> 모델이 안 썼거나 AI 쪽 검사(숫자·기관·말투)에 걸려 버린 경우다.
+     * 그때 보호자 화면은 {@code content} 로 떨어진다 — 교사 말투지만 글이 사라지는 것보다 낫다.
+     * 옛 행도 모두 비어 있다.
+     *
+     * <p><b>Gate 2 에서 이 문장까지 승인한다.</b> 승인 뒤에 누구도 다시 쓰지 않는다 — 다시 쓰면
+     * 교사가 승인한 문장과 보호자가 받는 문장이 달라진다 (#430 리뷰).
+     */
+    @Column(name = "guardian_message", columnDefinition = "TEXT")
+    private String guardianMessage;
 
     /** 대처와 결과 JSON 문자열. 결과가 기록에 없는 대처는 AI 쪽 코드가 이미 버린다. */
     @Column(columnDefinition = "TEXT")
@@ -156,6 +169,26 @@ public class InsightResult {
                 supports, claimIds, sourceEntryIds, sourceInstitutionIds, crossInstitution, rawResponse);
         result.lookedUpClaimIds = lookedUpClaimIds;
         return result;
+    }
+
+    /**
+     * 보호자용 문장을 붙인다 (#433). 생성 직후에만 부른다 — 승인 뒤에는 바뀌면 안 된다.
+     *
+     * <p>{@code of()} 에 칸을 더하지 않는다. 이미 인자가 14개라, 하나 더 끼우면 호출부에서
+     * 자리를 잘못 맞춰도 컴파일이 통과한다 ({@code String} 끼리 붙어 있다).
+     */
+    public InsightResult withGuardianMessage(String guardianMessage) {
+        this.guardianMessage = guardianMessage == null || guardianMessage.isBlank() ? null : guardianMessage;
+        return this;
+    }
+
+    /**
+     * 보호자에게 보일 본문. 보호자용 문장이 없으면 {@code content} 로 떨어진다 (#433).
+     *
+     * <p>옛 행과 검사에 걸린 행이 <b>빈 글</b>이 되면 안 된다. 말투가 교사 것인 편이 낫다.
+     */
+    public String guardianContent() {
+        return guardianMessage == null || guardianMessage.isBlank() ? content : guardianMessage;
     }
 
     /** Gate 2 승인. 허용된 수신자가 볼 수 있게 된다 — 되돌리는 경로는 없다. */

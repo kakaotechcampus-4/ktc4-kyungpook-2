@@ -51,6 +51,8 @@ public record InsightAgentResponse(
             String situation,
             String behavior,
             String content,
+            /** 보호자가 읽을 같은 내용, 해요체 (#433). AI 검사에 걸리면 빈 문자열로 온다. */
+            String guardianMessage,
             JsonNode supports,
             JsonNode claimIds,
             JsonNode sourceEntryIds,
