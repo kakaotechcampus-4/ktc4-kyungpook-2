@@ -232,9 +232,7 @@ public class InsightResultRecorder {
                 insight.situation(), insight.behavior(), insight.content(),
                 json(insight.supports()), json(insight.claimIds()),
                 json(insight.sourceEntryIds()), sourceInstitutionsOf(insight, institutionOfClaim),
-                Boolean.TRUE.equals(insight.crossInstitution()), rawJson, json(insight.lookedUpClaimIds()))
-                // 보호자용 문장 (#433). AI 검사에 걸리면 비어서 오고, 그때 보호자 화면은 content 로 떨어진다.
-                .withGuardianMessage(insight.guardianMessage());
+                Boolean.TRUE.equals(insight.crossInstitution()), rawJson, json(insight.lookedUpClaimIds()));
     }
 
     /**

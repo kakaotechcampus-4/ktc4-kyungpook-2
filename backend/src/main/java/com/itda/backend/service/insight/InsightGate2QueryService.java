@@ -237,9 +237,6 @@ public class InsightGate2QueryService {
                 childNames.get(childId),
                 periodLabel(insight.getPeriodFrom()),
                 insight.getContent(),
-                // 보호자에게 이렇게 나간다 (#433). 교사가 이 문장까지 보고 승인한다 —
-                // 승인 뒤에는 누구도 다시 쓰지 않는다.
-                insight.getGuardianMessage(),
                 NEEDS_REVIEW,
                 evidences.getOrDefault(insight.getId(), Evidence.EMPTY).teacherWritten(),
                 InstitutionResponse.from(primary),

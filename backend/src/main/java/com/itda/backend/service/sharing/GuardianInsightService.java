@@ -257,9 +257,7 @@ public class GuardianInsightService {
                             String.valueOf(childId),
                             child == null ? null : child.getName(),
                             periodLabel(insight.getPeriodFrom()),
-                            // 보호자가 보는 글은 보호자용 문장이다 (#433). 없으면 content 로 떨어진다 —
-                            // 옛 행과 AI 검사에 걸린 행이 빈 글이 되면 안 된다.
-                            insight.guardianContent(),
+                            insight.getContent(),
                             sender == null ? null : InstitutionResponse.from(sender),
                             sharedWith,
                             approvedAt.getOrDefault(insight.getId(), grant.getGrantedAt()),

@@ -26,14 +26,6 @@ public record Gate2InsightResponse(
         String childName,
         String period,
         String content,
-        /**
-         * 보호자에게 이렇게 나간다 (#433). 해요체다. <b>교사가 이 문장까지 보고 승인한다</b> —
-         * 승인 뒤에는 누구도 다시 쓰지 않는다.
-         *
-         * <p>{@code null} 이면 AI 가 못 썼거나 검사에 걸려 버린 것이다. 그때 보호자 화면은
-         * {@code content} 를 본다 — 화면이 "보호자에게는 위 글이 그대로 나갑니다" 로 알려 주면 된다.
-         */
-        String guardianMessage,
         boolean needsReview,
         boolean teacherWritten,
         InstitutionResponse primarySource,

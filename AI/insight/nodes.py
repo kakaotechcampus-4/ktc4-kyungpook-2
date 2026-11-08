@@ -150,32 +150,29 @@ def _clean_supports(raw, index: dict, known_types: set[str]) -> list[Support]:
     return kept
 
 
-#: 보호자 문장에서 금지하는 어미. **허용 어미를 열거하지 않는다** — 그러면 멀쩡한 문장을 버린다.
-#: 요약의 TONE_RULE 과 반대 방향이다 (요약은 기록이라 "~했다", 이건 건네는 말이라 해요체).
-_TEACHER_TONE = re.compile(r"(?:했|이|한|된|있|없|같)다[.!?]?(?:\s|$)|(?:함|됨|음)[.!?]?(?:\s|$)|습니다")
+#: 교사 말투가 남은 자리. **막지 않고 센다** — 아래 _tone_violations 참고.
+#:
+#: 어간을 열거하지 않는다. 처음에 (했|이|한|된|…)다 로 썼더니 "지냈다" 를 놓쳤다 — 한국어
+#: 어간은 끝이 없어서 목록으로는 못 덮는다. **문장 끝의 "다" 를 전부 본다.**
+#:
+#: 문장 끝은 **문장부호나 글 끝**으로만 본다. 공백까지 끝으로 보면 "기관마다 반응이" 의
+#: "마다 " 가 걸린다 — 한국어에는 "다" 로 끝나는 조사·부사가 흔하다 (마다 · 보다 · 모두 다).
+#: 뒤에 글자가 더 붙은 "다" 도 안 걸린다 ("기다려", "탔다가").
+#: 해요체 문장은 "요" 로 끝나므로 여기 걸릴 일이 없다.
+_TEACHER_TONE = re.compile(r"[가-힣]다(?:[.!?]|$)|[가-힣](?:함|됨|음)(?:[.!?]|$)")
 
-#: 문장에 쓰인 아라비아 숫자. content 에 없는 숫자가 보호자 문장에만 있으면 지어낸 것이다.
-_DIGITS = re.compile(r"\d+")
 
-
-def _guardian_reason(message: str, content: str, cited_types: set[str],
-                     known_types: set[str]) -> str | None:
+def _tone_violations(insights: list) -> int:
     """
-    보호자 문장이 걸린 이유. 통과하면 None.
+    해요체가 아닌 인사이트 수.
 
-    **content 와 대조한다.** 같은 근거에서 나온 같은 내용이어야 한다 — 교사는 이 문장까지 보고
-    Gate 2 에서 승인하므로, 승인한 적 없는 말이 섞이면 안 된다 (#433).
+    **버리지 않는다.** 말투는 글의 값어치를 바꾸지 않지만 숫자·기관·이름은 사실을 바꾼다 —
+    막는 기준이 다르다. 말투 하나 때문에 패턴을 잃으면 손해가 더 크다.
 
-    버려도 인사이트는 남긴다. 교사용 글은 멀쩡한데 보호자용 표현 하나 때문에 패턴을 통째로
-    잃을 이유가 없다 — 그때 보호자 화면은 content 로 떨어진다.
+    대신 센다. 보호자가 교사 말투 글을 받는 비율이라 재야 한다 (CRITERIA §5).
+    요약이 '~니다' 말투를 막지 않고 재는 것과 같은 방식이다.
     """
-    if config.CHECK_GUARDIAN_NUMBERS and set(_DIGITS.findall(message)) - set(_DIGITS.findall(content)):
-        return "숫자불일치"
-    if config.CHECK_GUARDIAN_INSTITUTIONS and not _institutions_grounded([message], cited_types, known_types):
-        return "기관불일치"
-    if config.CHECK_GUARDIAN_TONE and _TEACHER_TONE.search(message):
-        return "교사말투"
-    return None
+    return sum(1 for i in insights if _TEACHER_TONE.search(i.content))
 
 
 def _build(raw, index: dict, known_types: set[str]) -> Insight | None:
@@ -212,14 +209,6 @@ def _build(raw, index: dict, known_types: set[str]) -> Insight | None:
     if not _institutions_grounded(list(texts.values()), cited_types, known_types):
         return None
 
-    # 보호자 문장 (#433). 걸리면 그 문장만 비우고 인사이트는 살린다.
-    guardian = (raw.get("guardian_message") or "").strip() if config.GUARDIAN_MESSAGE else ""
-    if guardian:
-        reason = _guardian_reason(guardian, texts["content"], cited_types, known_types)
-        if reason:
-            print(f"[insight] 보호자 문장 버림 ({reason}): {guardian[:40]}")
-            guardian = ""
-
     supports = _clean_supports(raw.get("supports"), index, known_types)
     support_ids = [i for s in supports for i in s.claim_ids]
     # 출처는 대처 근거까지 — 철회 시 그 기관을 찾고, Gate 2 가 "근거를 낸 기관" 으로 보여준다
@@ -228,7 +217,6 @@ def _build(raw, index: dict, known_types: set[str]) -> Insight | None:
 
     return Insight(
         **texts,
-        guardian_message=guardian,
         supports=supports,
         claim_ids=ids,
         source_entry_ids=sorted({
@@ -295,11 +283,9 @@ def reflect(state: dict) -> dict:
 
     if config.MAX_INSIGHTS is not None and not to_refine:
         insights = insights[: config.MAX_INSIGHTS]
-    # 보호자 문장이 없는 인사이트 수 (#433). 모델이 안 썼거나 검사에 걸려 버린 것이다 —
-    # 둘의 구분은 로그에만 있다. 보호자 화면이 content 로 떨어지는 비율이라 재야 한다.
-    guardian_missing = sum(1 for i in insights if not i.guardian_message)
+    # 교사 말투가 남은 인사이트 수 (#433). 막지 않고 센다 — 보호자가 교사 말투 글을 받는 비율이다.
     return {**state, "insights": insights, "weak_found": weak_found, "weak_dropped": weak_dropped,
-            "to_refine": to_refine, "weak_refined": [], "guardian_missing": guardian_missing}
+            "to_refine": to_refine, "weak_refined": [], "tone_violations": _tone_violations(insights)}
 
 
 def refine(state: dict) -> dict:

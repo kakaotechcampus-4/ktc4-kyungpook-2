@@ -114,15 +114,6 @@ class Insight(BaseModel):
     claim_ids: list[str]
     content: str
 
-    #: 보호자가 읽을 같은 내용 (#433). 해요체다.
-    #:
-    #: **비어 있을 수 있다.** 모델이 안 썼거나, 코드 검사(숫자·기관·말투)에 걸려 버린 경우다.
-    #: 그때 보호자 화면은 content 로 떨어진다 — 교사 말투지만 글이 사라지는 것보다 낫다.
-    #:
-    #: content 와 **같은 근거**에서 나온다. 새 사실을 더하면 버린다 — 교사는 이 문장까지 보고
-    #: Gate 2 에서 승인하므로, 승인한 적 없는 말이 섞이면 안 된다.
-    guardian_message: str = ""
-
     # ── 코드가 채우는 것 (모델 응답을 받을 때는 비어 있다) ──
     source_entry_ids: list[int] = Field(default_factory=list)
     #: 근거를 낸 기관 (대처 근거 포함). 동의 철회 시 BE 가 이 값으로 인사이트를 찾는다.
