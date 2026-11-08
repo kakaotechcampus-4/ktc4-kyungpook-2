@@ -21,7 +21,10 @@ public class AiProgressClientConfig {
     @Bean
     public RestClient aiProgressRestClient(RestClient.Builder builder, AiAgentProperties aiProperties,
             AiProgressProperties properties) {
-        return builder
+        // 받은 Builder 를 고치지 않고 복제해서 쓴다. 테스트가 가짜 AI 서버를 붙인 Builder 를 빈으로 바꿔 끼우면 그 하나를
+        // 모든 AI 클라이언트가 나눠 받는데, 여기서 요청 팩토리를 덮으면 가짜 서버가 풀려 실제 네트워크로 나간다
+        // (InsightPipelineIntegrationTest 가 CI 에서 실제로 깨졌다).
+        return builder.clone()
                 .baseUrl(aiProperties.baseUrl())
                 .requestFactory(HttpClientRequestFactories.create(properties.timeout(), properties.timeout()))
                 .build();
