@@ -49,6 +49,7 @@ from summary.graph import run_summary  # noqa: E402
 from insight.schemas import InsightInput  # noqa: E402
 from insight.graph import run_insight  # noqa: E402
 from insight import config as insight_config  # noqa: E402
+from common.luna import json_format, model as luna_model  # noqa: E402
 
 YEAR = 2025  # 날짜 계산용. 데이터에는 연도를 쓰지 않는다.
 INST = {"센터1": (1, "센터"), "학교1": (2, "학교")}
@@ -118,6 +119,7 @@ def main():
     jid = {e["id"]: i + 1 for i, e in enumerate(entries)}
     log = {"args": vars(args), "entries": [], "summaries": [], "insights": [], "weak": [],
            "weak_mode": insight_config.INSIGHT_WEAK_MODE, "tools": insight_config.INSIGHT_TOOLS}
+    print(f"모델 {luna_model()} · JSON 강제 {'켬' if json_format() else '끔'} · 약한 인사이트 {log['weak_mode']}")
     calls = Counter()
     t0 = time.time()
 
@@ -130,8 +132,11 @@ def main():
         expect = child_id[e["child"]]
         got = m.matched_child_id if m.status in ("auto", "review") else None
         subject = got or expect
-        v = run_validation(ValidationInput(journal_entry_id=jid[e["id"]], content=content,
-                                           subject_child_id=subject, subject_name=names[subject - 1]))
+        # 느린 모델(gemini·sonnet)은 검증 60초를 가끔 넘긴다. 한 건 때문에 회차 전체가 멈추지 않게 요약처럼 다시 부른다
+        v, verr = retry(lambda: run_validation(ValidationInput(journal_entry_id=jid[e["id"]], content=content,
+                                                               subject_child_id=subject, subject_name=names[subject - 1])))
+        if verr:
+            raise RuntimeError(f"검증 3번 모두 실패: {verr}")
         calls["validation"] += 1
         mentioned = [names[i - 1] for i in m.mentioned_child_ids if i != expect]
         log["entries"].append({
@@ -281,6 +286,7 @@ def main():
         log["answer"] = {"hit": hit, "total": [p["id"] for p in pats], "distractor_used": bad}
 
     print(f"호출 {dict(calls)} · {time.time() - t0:.0f}초")
+    print(f"모델 {luna_model()} · JSON 강제 {'켬' if json_format() else '끔'}")
     out_dir = HERE / "runs"
     out_dir.mkdir(exist_ok=True)
     prefix = "" if args.real == "dev.json" else Path(args.real).stem + "_"
@@ -288,7 +294,11 @@ def main():
         prefix += f"weak-{log['weak_mode']}_"
     if log["tools"]:
         prefix += "tools_"
-    name = f"run_{prefix}{args.months.replace(',', '-')}_{args.child or 'all'}_{dt.datetime.now():%m%d_%H%M}.json"
+    # 모델 비교 실험(11/08): 어떤 모델로 돌렸는지 파일 이름과 본문에 남긴다. 이름을 손으로 바꾸면 섞인다
+    log["model"] = luna_model()
+    log["json_mode"] = bool(json_format())
+    model_tag = log["model"].replace("/", "-")
+    name = f"run_{model_tag}_{prefix}{args.months.replace(',', '-')}_{args.child or 'all'}_{dt.datetime.now():%m%d_%H%M}.json"
     (out_dir / name).write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"저장: {out_dir / name}")
     html_path = (out_dir / name).with_suffix(".html")
