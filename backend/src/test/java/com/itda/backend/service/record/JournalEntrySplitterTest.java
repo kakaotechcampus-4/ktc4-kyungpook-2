@@ -225,4 +225,26 @@ class JournalEntrySplitterTest {
                 "학교 손을 잡고 이동함.",
                 "오늘 급식을 잘 먹었다.");
     }
+
+    /** 상한을 넘는 순간 멈춘다 — 넘는 파일은 거절하므로 끝까지 나누지 않는다 (#424). */
+    @Test
+    void 상한을_넘으면_한_건_넘긴_데서_멈춘다() {
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            text.append(LocalDate.of(2026, 1, 1).plusDays(i)).append(" 관찰 ").append(i).append('\n');
+        }
+
+        List<SplitEntry> entries = new JournalEntrySplitter().split(text.toString(), 3);
+
+        assertThat(entries).hasSizeBetween(4, 5);
+        assertThat(entries.get(0).content()).isEqualTo("관찰 0");
+    }
+
+    @Test
+    void 상한_안이면_상한_없이_나눈_것과_같다() {
+        String text = "9/15 블록을 쌓음\n이어진 문장\n\n9/16 점심을 먹음\r\n9/17 낮잠";
+
+        assertThat(new JournalEntrySplitter().split(text, 3)).isEqualTo(new JournalEntrySplitter().split(text));
+        assertThat(new JournalEntrySplitter().split(text)).hasSize(3);
+    }
 }

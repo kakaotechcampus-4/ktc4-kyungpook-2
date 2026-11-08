@@ -69,7 +69,7 @@ class InsightControllerTest {
                 .andExpect(jsonPath("$.data[0].childId").value("1"))
                 .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
                 .andExpect(jsonPath("$.data[0].status").value("waiting_week_end"))
-                .andExpect(jsonPath("$.data[0].message").value("이번 주가 끝나면 분석해요"));
+                .andExpect(jsonPath("$.data[0].message").value("이번 주가 끝나면 주간 리포트를 만들어요"));
         verify(insightGate2QueryService, never()).getInsight(any(), any());
     }
 

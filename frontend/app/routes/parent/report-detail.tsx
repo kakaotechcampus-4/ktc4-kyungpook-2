@@ -27,6 +27,8 @@ export default function ReportDetailPageRoute() {
  * 단계는 없고, 보호자는 기관별 공유 동의를 꺼서 막는다. 그 길이 설정이다.
  *
  * 본문 바로 아래에 근거 일지를 둔다 — 누르면 그 일지 상세로 가고, 뒤로 가면 이 글로 돌아온다. 근거가 없으면 절을 그리지 않는다.
+ * 지난 기록에서 찾아 쓴 근거(`lookedUp`, #388)는 날짜 줄에 "지난 기록" 을 붙이고 절 머리에 한 줄 안내를 둔다.
+ * 보호자는 AI 가 도구를 쓴다는 걸 모르므로 "AI 가 찾아 씀" 이 아니라 "지난 기록도 살펴봤어요" 로 말한다.
  *
  * 상세를 여는 것만으로는 고른 아이를 바꾸지 않는다. 설정 링크를 누를 때 이 글의 아이를 고른다 — 다른 아이를 고른
  * 채 이 주소로 바로 들어와도 설정이 엉뚱한 아이의 동의를 보여 주지 않는다. 주소에 아이를 싣지 않는 이유는 설정에서
@@ -36,6 +38,7 @@ function ReportDetailPage() {
   const { insight } = useLoaderData<typeof clientLoader>()!;
   const from = insight.from?.name ?? "기관 정보 없음";
   const approved = formatMonthDay(insight.approvedAt);
+  const lookedUp = insight.evidence.some((e) => e.lookedUp);
 
   return (
     <div className="flex flex-col gap-5">
@@ -64,6 +67,9 @@ function ReportDetailPage() {
       {insight.evidence.length > 0 ? (
         <section>
           <p className="mb-2 text-[13px] font-bold text-accentink">이 글의 근거</p>
+          {lookedUp ? (
+            <p className="mb-2 text-[14px] leading-6 text-ink2">이번 기록과 비슷한 일이 있었던 지난 기록도 함께 살펴봤어요.</p>
+          ) : null}
           <ul className="flex flex-col gap-2">
             {insight.evidence.map((e) => (
               <li key={e.journalEntryId}>
@@ -75,7 +81,10 @@ function ReportDetailPage() {
                   <InstitutionIcon type={e.institution.type} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-bold">{e.institution.name}</span>
-                    <span className="block text-[13px] text-muted">{formatDateMonthDay(e.date)} 일지</span>
+                    <span className="block text-[13px] text-muted">
+                      {formatDateMonthDay(e.date)} 일지
+                      {e.lookedUp ? <b className="font-semibold text-accentink"> · 지난 기록</b> : null}
+                    </span>
                     {/* 이 글이 그 일지에서 실제로 인용한 문장. 없으면 줄만 보인다 */}
                     {e.sentences.length > 0 ? (
                       <span className="mt-2 flex flex-col gap-1.5">

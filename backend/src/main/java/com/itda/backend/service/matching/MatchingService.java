@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.dto.request.matching.MatchingAgentRequest;
@@ -43,6 +44,10 @@ public class MatchingService {
     public MatchingAgentRequest prepareRequest(Long journalEntryId) {
         JournalEntry entry = journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId)
                 .orElseThrow(() -> new MatchingTargetException("journal entry not found: " + journalEntryId));
+        if (!entry.isSendableToAgent()) {
+            // 상한(#424) 전에 올라온 긴 일지. 잘라 보내지 않는다 — 워커가 받아 시스템 오류로 남긴다.
+            throw new AgentContentTooLongException(journalEntryId, entry.getContent().length());
+        }
         RawRecord rawRecord = rawRecordRepository.findByIdAndDeletedAtIsNull(entry.getRawRecordId())
                 .orElseThrow(() -> new MatchingTargetException("raw record not found: " + entry.getRawRecordId()));
         Long organizationId = organizationIdOf(rawRecord);

@@ -29,6 +29,20 @@ public class RawRecordExceptionHandler {
                 .body(ErrorResponse.of(RawRecordErrorCode.INVALID_REQUEST));
     }
 
+    @ExceptionHandler(RawRecordEntryLimitException.class)
+    public ResponseEntity<ErrorResponse> handleEntryLimit(RawRecordEntryLimitException e) {
+        log.info("raw record rejected: {}", e.getMessage());
+        return ResponseEntity.status(RawRecordErrorCode.ENTRY_LIMIT_EXCEEDED.getStatus())
+                .body(ErrorResponse.of(RawRecordErrorCode.ENTRY_LIMIT_EXCEEDED));
+    }
+
+    @ExceptionHandler(RawRecordUploadBusyException.class)
+    public ResponseEntity<ErrorResponse> handleUploadBusy(RawRecordUploadBusyException e) {
+        log.info("raw record rejected: {}", e.getMessage());
+        return ResponseEntity.status(RawRecordErrorCode.UPLOAD_BUSY.getStatus())
+                .body(ErrorResponse.of(RawRecordErrorCode.UPLOAD_BUSY));
+    }
+
     @ExceptionHandler(RawRecordNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(RawRecordNotFoundException e) {
         return ResponseEntity.status(RawRecordErrorCode.NOT_FOUND.getStatus())

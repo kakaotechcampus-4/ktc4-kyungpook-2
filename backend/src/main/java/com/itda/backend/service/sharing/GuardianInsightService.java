@@ -290,6 +290,7 @@ public class GuardianInsightService {
                         String.valueOf(ref.childContextId()),
                         ref.date().toString(),
                         InstitutionResponse.from(organizations.get(ref.institutionId())),
+                        ref.lookedUp(),
                         ref.sentences().stream()
                                 .map(s -> new GuardianInsightResponse.Sentence(s.text(), s.role()))
                                 .toList()))

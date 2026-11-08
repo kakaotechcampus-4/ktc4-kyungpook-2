@@ -38,6 +38,8 @@ import com.itda.backend.repository.matching.MatchingResultRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.exception.agent.AgentQueueFullException;
+import com.itda.backend.service.agent.AgentQueueGuard;
 
 @ExtendWith(MockitoExtension.class)
 class MatchingResultServiceTest {
@@ -64,6 +66,8 @@ class MatchingResultServiceTest {
     private SharingConsentRepository sharingConsentRepository;
     @Mock
     private UserService userService;
+    @Mock
+    private AgentQueueGuard agentQueueGuard;
 
     private MatchingResultService matchingResultService;
 
@@ -71,7 +75,7 @@ class MatchingResultServiceTest {
     void setUp() {
         matchingResultService = new MatchingResultService(
                 matchingResultRepository, journalEntryRepository, rawRecordRepository,
-                childRepository, childOrganizationRepository, sharingConsentRepository, userService);
+                childRepository, childOrganizationRepository, sharingConsentRepository, userService, agentQueueGuard);
     }
 
     // 확인 필요 큐에 뜨는 일지 — 워커가 AI 에 물어봤는데 확정하지 못한 상태.
@@ -284,6 +288,48 @@ class MatchingResultServiceTest {
         // 일지도 AI 자동 확정과 같은 상태가 돼야 검증 단계가 이어서 가져간다.
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCHED);
         assertThat(entry.getChildId()).isEqualTo(2L);
+    }
+
+    /** 아이를 고르면 검증 대기로 다시 들어간다 — AI 처리 줄이 꽉 찼으면 고르지 않는다 (#424). */
+    @Test
+    void resolveAssign_agentQueueFull_leavesEntryAwaitingReview() {
+        MatchingResult matchingResult = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        JournalEntry entry = ourJournalEntry();
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(childRepository.findByIdForUpdate(2L)).willReturn(Optional.of(child()));
+        given(childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(2L, OUR_ORG_ID))
+                .willReturn(true);
+        consentedToOurOrganization(true);
+        org.mockito.BDDMockito.willThrow(new AgentQueueFullException(OUR_ORG_ID, 1000, 1, 1000))
+                .given(agentQueueGuard).requireRoom(OUR_ORG_ID, 1);
+
+        assertThatThrownBy(() -> matchingResultService.resolve(1L, "assign", 2L, "kakao-teacher-1", OUR_USER_ID))
+                .isInstanceOf(AgentQueueFullException.class);
+
+        assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.MATCH_REVIEW);
+        assertThat(matchingResult.getStatus()).isEqualTo(MatchingStatus.REVIEW);
+    }
+
+    /** 제외는 AI 로 다시 보내지 않으므로 줄이 꽉 차도 된다. */
+    @Test
+    void resolveNotOurs_doesNotAskForRoom() {
+        MatchingResult matchingResult = new MatchingResult(
+                1L, 5L, new BigDecimal("0.3"), MatchingStatus.MULTI, null, null, null, null, null, null, "v1");
+        JournalEntry entry = ourJournalEntry();
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(entry));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+        given(matchingResultRepository.save(any(MatchingResult.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+
+        matchingResultService.resolve(1L, "not_ours", null, "kakao-teacher-1", OUR_USER_ID);
+
+        org.mockito.Mockito.verifyNoInteractions(agentQueueGuard);
     }
 
     @Test

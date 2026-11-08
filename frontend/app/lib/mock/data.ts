@@ -815,6 +815,7 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
         journalEntryId: "jrn_04",
         date: "2026-08-14",
         institution: SCHOOL,
+        lookedUp: false,
         sentences: [
           { text: "국어 시간이 시작되자 책상 아래로 들어갔다.", role: "상황" },
           { text: "'공부' 카드를 쥐여 주자 5분 뒤 자리에 앉았다.", role: "대처" },
@@ -824,6 +825,7 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
         journalEntryId: "jrn_05",
         date: "2026-08-14",
         institution: CENTER,
+        lookedUp: false,
         sentences: [{ text: "간식 시간으로 바뀔 때 울음이 없었다.", role: "상황" }],
       },
     ],
@@ -855,16 +857,26 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     approvedAt: "2026-10-27T10:00:00",
     readAt: "2026-10-27T21:00:00",
     evidence: [
+      // 지난 기록에서 찾아 쓴 근거 (#388) — "지난 기록" 표시를 mock 에서 보려고 둔다
+      {
+        journalEntryId: "jrn_04",
+        date: "2026-08-14",
+        institution: SCHOOL,
+        lookedUp: true,
+        sentences: [{ text: "'공부' 카드를 쥐여 주자 5분 뒤 자리에 앉았다.", role: "대처" }],
+      },
       {
         journalEntryId: "jrn_01",
         date: "2026-08-21",
         institution: SCHOOL,
+        lookedUp: false,
         sentences: [{ text: "차례를 기다려 순서대로 발표했다.", role: "상황" }],
       },
       {
         journalEntryId: "jrn_02",
         date: "2026-08-21",
         institution: CENTER,
+        lookedUp: false,
         sentences: [],
       },
     ],
@@ -886,6 +898,7 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
       {
         journalEntryId: "jrn_06",
         date: "2026-09-30",
+        lookedUp: false,
         institution: CENTER,
         sentences: [{ text: "차량 앞에서 움직이지 않았다.", role: "상황" }],
       },

@@ -19,6 +19,10 @@ random.seed(21)
 
 SRC_PATH = Path(__file__).parent.parent.parent / "manifests" / "잇다_synthetic_100.json"
 
+# 매니페스트는 git 에 없다. 모듈 최상단에서 바로 열기 때문에 여기서 먼저 확인한다
+if not SRC_PATH.exists():
+    raise SystemExit(f"{SRC_PATH} 가 없습니다. 가상 아동 데이터라 레포에 없습니다 — AI 담당(근찬)에게 받아 AI/evals/manifests/ 에 넣으세요.")
+
 with open(SRC_PATH, encoding="utf-8") as f:
     data = json.load(f)
 all_children = data["dev"] + data["holdout"]
@@ -163,8 +167,6 @@ for i, (trap_given, trap_sentence) in enumerate(TRAP_WORDS):
         "_note": f"본문에 '{trap_given}'({trap_child['이름']})이 우연히 포함되지만, 진짜 주인공은 {true_subject['이름']}",
     })
     jid += 1
-
-all_cases = homonym_cases + trap_cases
 
 OUT_DIR = Path(__file__).parent.parent.parent / "generated" / "matching"
 with open(OUT_DIR / "matching_동명이인_10건.json", "w", encoding="utf-8") as f:

@@ -45,9 +45,11 @@ public record GuardianInsightResponse(
      * @param journalEntryId 보호자 일지 id(G-21) — 승인본({@code child_context}) id 다
      * @param date           관찰 날짜 {@code yyyy-MM-dd}
      * @param institution    그 일지를 쓴 기관. 명부에서 빠진 기관일 수 있어 이름까지 준다
+     * @param lookedUp       이번 기간이 아니라 AI 가 지난 기록에서 찾아 쓴 근거인지 (Gate 2 근거와 같은 값, #387)
+ * @param sentences      그 일지에서 이 글이 실제로 인용한 문장. 못 찾으면 빈 배열이다
      */
     public record Evidence(String journalEntryId, String date, InstitutionResponse institution,
-            List<Sentence> sentences) {
+            boolean lookedUp, List<Sentence> sentences) {
     }
 
     /**
