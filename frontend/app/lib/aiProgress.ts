@@ -49,7 +49,7 @@ const HOLD_MS = 15_000;
 const REFRESH_GAP_MS = 3_000;
 /** 이만큼 잇달아 실패하면 PAUSE_MS 동안 묻지 않고 기존 문구를 쓴다. 한 번 끊긴 것(배포 중 502 · 와이파이)으로 끄지 않고, 돌아오면 다시 켜진다 */
 const MAX_FAILS = 3;
-const PAUSE_MS = 30_000;
+const PAUSE_MS = 5_000;
 
 export function phaseText(agent: string, node: string): string | null {
   const nodes = Object.hasOwn(PHASE, agent) ? PHASE[agent] : null;
