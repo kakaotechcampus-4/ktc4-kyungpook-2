@@ -21,7 +21,7 @@ import lombok.extern.slf4j.Slf4j;
  * 작업도 쓰므로, 거기 끼우면 정작 오래 걸릴 때 묻지 못한다.
  *
  * <p>최근 5초 안에 진행 API 를 부른 화면이 있을 때만 묻는다. 실패하면 보관함을 그대로 두고, 3초 넘게 이어지면 보관함이
- * 알아서 비운다. 어떤 예외도 다음 차례를 막지 않는다 — 예약 작업은 예외가 한 번 새면 다시 돌지 않는다.
+ * 알아서 비운다. 어떤 예외도 다음 차례를 막지 않는다.
  */
 @Slf4j
 @Component
@@ -32,6 +32,8 @@ public class AiProgressPoller {
     private final AiProgressTranslator translator;
     private final AiProgressStore store;
     private ScheduledExecutorService executor;
+    /** 실패가 이어지는 동안 1초마다 경고를 쌓지 않으려고 둔다. 폴러 스레드만 읽고 쓴다. */
+    private boolean failing;
 
     public AiProgressPoller(AiProgressProperties properties, AiProgressClient client, AiProgressTranslator translator,
             AiProgressStore store) {
@@ -67,14 +69,28 @@ public class AiProgressPoller {
         return executor != null && !executor.isShutdown();
     }
 
+    /**
+     * 한 차례. {@link Throwable} 까지 잡는다 — 예약 작업은 무엇이든 한 번 새면 조용히 멈추고, 그러면 화면은 영영 빈 값이다.
+     * AI 를 못 물은 것(클라이언트가 이미 debug 로 남김)은 여기서 실패로 세지 않는다. 번역(DB) 실패는 이어지는 동안
+     * 처음 한 번만 warn 으로 남긴다.
+     */
     void tick() {
         try {
             if (!store.askedRecently()) {
                 return;
             }
             client.fetch().ifPresent(items -> store.replace(translator.translate(items)));
-        } catch (Exception e) {
-            log.warn("ai progress tick failed: {}", e.toString());
+            if (failing) {
+                failing = false;
+                log.info("ai progress tick recovered");
+            }
+        } catch (Throwable e) {
+            if (failing) {
+                log.debug("ai progress tick still failing: {}", e.toString());
+            } else {
+                failing = true;
+                log.warn("ai progress tick failed: {}", e.toString(), e);
+            }
         }
     }
 }

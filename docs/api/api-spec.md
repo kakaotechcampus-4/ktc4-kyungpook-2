@@ -1611,22 +1611,27 @@ Gate 1 에서 교사가 **검증을 거치지 않고 고치거나 새로 쓴 문
 ```json
 { "enabled": true,
   "items": [
-    { "kind": "entry", "childId": null, "date": "2026-11-09", "agent": "matching", "node": "llm_judge", "elapsedSec": 7 },
-    { "kind": "entry", "childId": "7", "date": "2026-11-08", "agent": "summary", "node": "write", "elapsedSec": 12 },
-    { "kind": "week", "childId": "7", "weekFrom": "2026-11-03", "agent": "insight", "node": "find_claims", "elapsedSec": 31 } ] }
+    { "kind": "entry", "childId": null, "date": "2026-11-09", "weekFrom": null,
+      "agent": "matching", "node": "llm_judge", "elapsedSec": 7 },
+    { "kind": "entry", "childId": "7", "date": "2026-11-08", "weekFrom": null,
+      "agent": "summary", "node": "write", "elapsedSec": 12 },
+    { "kind": "week", "childId": "7", "date": null, "weekFrom": "2026-11-03",
+      "agent": "insight", "node": "find_claims", "elapsedSec": 31 } ] }
 ```
 
 | 필드 | 뜻 |
 | --- | --- |
 | `enabled` | 서버 설정(`AI_PROGRESS_ENABLED`)으로 켜 두었는지. `false` 면 `items` 는 늘 비어 있습니다 |
-| `items[].kind` · `childId` · `date` / `weekFrom` | O-80 줄과 같은 값입니다. `entry` 줄은 `date`, `week` 줄은 주 시작일 `weekFrom`(= `rows[].week.from`)으로 이어 붙입니다. 아이 매칭 줄은 아이가 아직 없어 `childId: null` 이고 날짜로만 붙습니다 |
+| `items[].kind` · `childId` · `date` / `weekFrom` | O-80 줄과 같은 값입니다. `entry` 줄은 `date`, `week` 줄은 주 시작일 `weekFrom`(= `rows[].week.from`)으로 이어 붙이고, 해당 없는 쪽은 `null` 입니다(키는 빠지지 않습니다). 아이 매칭 줄은 아이가 아직 없어 `childId: null` 이고 날짜로만 붙습니다 |
 | `items[].agent` | `matching` · `validation` · `summary` · `insight` |
 | `items[].node` | AI 가 지금 들어가 있는 단계. 매칭 `extract`·`shortlist`·`llm_judge`·`decide` / 검증 `perceive`·`plan`·`act`·`reflect` / 요약 `gather`·`write`·`ground`·`assemble` / 리포트 `perceive`·`plan`·`act`·`reflect`·`refine`·`find_claims`(지난 기록을 찾는 중) |
 | `items[].elapsedSec` | 그 일을 시작한 뒤 지난 초. 같은 일을 60초 안에 다시 보내면(재시도) 이어서 셉니다 |
 
-- 같은 줄에 일이 여럿이면(같은 아이·날짜의 일지 여러 건) **가장 앞선 단계** 하나만 줍니다 — `node` 가 위 목록에서 뒤에 있을수록 앞선 것입니다.
+- 같은 줄에 일이 여럿이면 하나만 줍니다. 같은 에이전트끼리(같은 아이·날짜의 일지 여러 건)는 **가장 앞선 단계** — `node` 가
+  위 목록에서 뒤에 있을수록 앞선 것입니다. 다른 에이전트끼리(검증 중인 새 일지와 요약이 겹칠 때)는 O-80 줄 상태처럼 **더 이른
+  에이전트**(검증)를 줍니다.
 - 주간 리포트는 그 아이와 연결된 기관 **모두**에 나옵니다. O-80 에 그 주 줄이 없는 기관은 붙일 곳이 없으니 무시하면 됩니다.
-- AI 에 묻지 못한 지 3초가 넘거나, 붙일 줄이 없으면 비어 있습니다. 이때 화면은 기존 고정 문구를 띄웁니다. 값은 최대 1~2초 늦을 수 있습니다.
+- AI 에 묻지 못한 지 3초가 넘거나(묻는 간격을 늘리면 간격의 3배), 붙일 줄이 없으면 비어 있습니다. 이때 화면은 기존 고정 문구를 띄웁니다. 값은 최대 1~2초 늦을 수 있습니다.
 - 알림 발송(`/notify`)과 보호자 화면은 범위 밖입니다.
 
 **O-81 응답** · 서울 기준 오늘 0시부터, 우리 기관 기록에 AI 가 한 일입니다. 선생님이 처리한 횟수는 넣지 않습니다.

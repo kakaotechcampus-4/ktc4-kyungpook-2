@@ -135,6 +135,20 @@ class AiProgressTranslatorTest {
                 new Item(Kind.ENTRY, "7", NOV_8, null, "validation", "reflect", 4));
     }
 
+    /** 진행 현황(O-80)은 묶음에 검증 중인 일지가 하나라도 있으면 그 줄을 "AI 확인"으로 둔다 — 단계 문구도 그쪽을 따른다. */
+    @Test
+    void 같은_줄에_다른_에이전트가_겹치면_줄_상태처럼_더_이른_에이전트를_고른다() {
+        given(journalEntryRepository.findProgressKeys(any()))
+                .willReturn(List.of(new ProgressEntryKey(123L, 7L, NOV_8, "3")));
+
+        Map<Long, List<Item>> result = translator.translate(List.of(
+                summary(7L, NOV_8, 3L, "assemble", 40),
+                entry("validation", 123L, "perceive", 1)));
+
+        assertThat(result.get(3L)).containsExactly(
+                new Item(Kind.ENTRY, "7", NOV_8, null, "validation", "perceive", 1));
+    }
+
     @Test
     void 같은_단계면_더_오래_걸린_것을_고른다() {
         given(journalEntryRepository.findProgressKeys(any())).willReturn(List.of(

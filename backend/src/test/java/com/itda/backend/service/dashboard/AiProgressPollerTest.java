@@ -34,7 +34,7 @@ class AiProgressPollerTest {
             Duration.ofMillis(500));
 
     private final MutableClock clock = new MutableClock(LocalDateTime.of(2026, 11, 9, 10, 0));
-    private final AiProgressStore store = new AiProgressStore(clock);
+    private final AiProgressStore store = new AiProgressStore(clock, ON);
     private final AiProgressClient client = mock(AiProgressClient.class);
     private final AiProgressTranslator translator = mock(AiProgressTranslator.class);
     private AiProgressPoller poller;
@@ -105,6 +105,19 @@ class AiProgressPollerTest {
         assertThat(store.read(3L)).isEmpty();
 
         poller.tick();
+        assertThat(store.read(3L)).containsExactly(ROW);
+    }
+
+    @Test
+    void Error가_나도_다음_차례를_이어_간다() {
+        store.markAsked();
+        given(client.fetch()).willReturn(Optional.of(List.of(RAW)));
+        given(translator.translate(any())).willThrow(new StackOverflowError())
+                .willReturn(Map.of(3L, List.of(ROW)));
+
+        poller.tick();
+        poller.tick();
+
         assertThat(store.read(3L)).containsExactly(ROW);
     }
 

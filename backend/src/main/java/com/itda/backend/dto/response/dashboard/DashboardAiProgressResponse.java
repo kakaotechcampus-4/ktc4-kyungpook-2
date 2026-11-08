@@ -3,7 +3,6 @@ package com.itda.backend.dto.response.dashboard;
 import java.time.LocalDate;
 import java.util.List;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse.Kind;
 
 /**
@@ -24,8 +23,8 @@ public record DashboardAiProgressResponse(boolean enabled, List<Item> items) {
      *
      * @param kind       {@code entry}(아이×날짜) · {@code week}(아이×주) — 진행 현황 줄과 같은 값
      * @param childId    아이 id. 매칭 줄은 아직 아이가 없어 {@code null}
-     * @param date       {@code entry} 줄의 일지 날짜
-     * @param weekFrom   {@code week} 줄의 주 시작일(월요일)
+     * @param date       {@code entry} 줄의 일지 날짜. {@code week} 줄은 {@code null}
+     * @param weekFrom   {@code week} 줄의 주 시작일(월요일). {@code entry} 줄은 {@code null} — O-80 줄처럼 키를 빼지 않는다
      * @param agent      {@code matching} · {@code validation} · {@code summary} · {@code insight}
      * @param node       AI 가 지금 들어가 있는 단계 (#452)
      * @param elapsedSec 그 일을 시작한 뒤 지난 초
@@ -33,8 +32,8 @@ public record DashboardAiProgressResponse(boolean enabled, List<Item> items) {
     public record Item(
             Kind kind,
             String childId,
-            @JsonInclude(JsonInclude.Include.NON_NULL) LocalDate date,
-            @JsonInclude(JsonInclude.Include.NON_NULL) LocalDate weekFrom,
+            LocalDate date,
+            LocalDate weekFrom,
             String agent,
             String node,
             int elapsedSec) {

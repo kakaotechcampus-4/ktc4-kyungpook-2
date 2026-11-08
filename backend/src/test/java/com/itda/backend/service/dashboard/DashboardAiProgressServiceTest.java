@@ -29,7 +29,8 @@ class DashboardAiProgressServiceTest {
             "extract", 1);
 
     private final MutableClock clock = new MutableClock(LocalDateTime.of(2026, 11, 9, 10, 0));
-    private final AiProgressStore store = new AiProgressStore(clock);
+    private final AiProgressStore store = new AiProgressStore(clock,
+            new AiProgressProperties(true, Duration.ofSeconds(1), Duration.ofMillis(500)));
     private final UserService userService = mock(UserService.class);
 
     private DashboardAiProgressService serviceWith(boolean enabled) {

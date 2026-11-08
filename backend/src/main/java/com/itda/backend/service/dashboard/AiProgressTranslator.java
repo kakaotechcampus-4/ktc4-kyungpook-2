@@ -32,8 +32,14 @@ import lombok.RequiredArgsConstructor;
  *   <li>요약 — AI 가 기관·아이·날짜를 그대로 준다</li>
  *   <li>리포트 — 아이 → 지금 연결된 기관 모두. 그 주 줄을 보는 기관 전부다. 줄이 없는 기관은 FE 가 붙이지 않는다</li>
  * </ul>
- * 같은 줄에 일이 여럿이면 <b>가장 앞선 단계</b> 하나만 남긴다 — 에이전트 순서, 그다음 #452 의 노드 순서(뒤일수록
- * 앞선 것), 그래도 같으면 더 오래 걸린 것.
+ * 같은 줄에 일이 여럿이면 하나만 남긴다.
+ * <ul>
+ *   <li>다른 에이전트끼리는 <b>더 이른 에이전트</b> — 진행 현황(O-80)이 묶음에 검증 중인 일지가 하나라도 있으면 그 줄을
+ *       "AI 확인"으로 두므로({@code DashboardPipelineService#mainStatusOf}) 문구도 그 단계를 따른다</li>
+ *   <li>같은 에이전트끼리는 <b>가장 앞선 노드</b> — #452 의 노드 순서에서 뒤일수록 앞선 것. 모르는 노드는 가장 뒤처진
+ *       것으로 본다</li>
+ *   <li>그래도 같으면 더 오래 걸린 것</li>
+ * </ul>
  *
  * <p>DB 는 한 번에 최대 두 번 읽는다(일지 묶음 · 아이-기관 연결 묶음). 그 에이전트가 안 돌면 읽지 않는다.
  * 키가 빠졌거나 모르는 에이전트·찾지 못한 일지는 버린다 — 붙일 줄이 없다.
@@ -42,7 +48,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class AiProgressTranslator {
 
-    /** 에이전트 순서. 뒤일수록 앞선 단계다. 알림(notify)은 진행 현황 줄이 이미 끝난 뒤라 넣지 않는다. */
+    /** 에이전트 순서. 알림(notify)은 진행 현황 줄이 이미 끝난 뒤라 넣지 않는다. */
     private static final List<String> AGENTS = List.of("matching", "validation", "summary", "insight");
 
     /** 에이전트마다 노드 순서 (#452). 리포트의 {@code find_claims} 는 {@code refine} 안에서 도구를 부르는 동안이다. */
@@ -52,8 +58,9 @@ public class AiProgressTranslator {
             "summary", List.of("gather", "write", "ground", "assemble"),
             "insight", List.of("perceive", "plan", "act", "reflect", "refine", "find_claims"));
 
-    private static final Comparator<Item> AHEAD = Comparator
-            .comparingInt((Item item) -> AGENTS.indexOf(item.agent()))
+    /** 클수록 남긴다. 에이전트는 이른 쪽이 크다. */
+    private static final Comparator<Item> PREFERRED = Comparator
+            .comparingInt((Item item) -> -AGENTS.indexOf(item.agent()))
             .thenComparingInt(item -> NODES.get(item.agent()).indexOf(item.node()))
             .thenComparingInt(Item::elapsedSec);
 
@@ -69,7 +76,7 @@ public class AiProgressTranslator {
         Map<RowKey, Item> rows = new LinkedHashMap<>();
         for (AiProgressItem item : known) {
             for (Placed placed : place(item, entries, organizationsByChild)) {
-                rows.merge(placed.key(), placed.item(), (a, b) -> AHEAD.compare(a, b) >= 0 ? a : b);
+                rows.merge(placed.key(), placed.item(), (a, b) -> PREFERRED.compare(a, b) >= 0 ? a : b);
             }
         }
         Map<Long, List<Item>> byOrganization = new LinkedHashMap<>();
@@ -79,9 +86,10 @@ public class AiProgressTranslator {
     }
 
     private static boolean isComplete(AiProgressItem item) {
-        if (item.agent() == null || !AGENTS.contains(item.agent())) {
+        if (item.agent() == null) {
             return false;
         }
+        // 여기 없는 에이전트는 버린다. 새 에이전트를 붙이면 AGENTS · NODES 와 함께 고친다.
         return switch (item.agent()) {
             case "matching", "validation" -> item.journalEntryId() != null;
             case "summary" -> item.childId() != null && item.entryDate() != null && item.institutionId() != null;

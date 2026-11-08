@@ -137,14 +137,14 @@ class DashboardControllerTest {
                 .andExpect(jsonPath("$.data.items[0].kind").value("entry"))
                 .andExpect(jsonPath("$.data.items[0].childId").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.data.items[0].date").value("2026-11-09"))
-                .andExpect(jsonPath("$.data.items[0].weekFrom").doesNotExist())
+                .andExpect(jsonPath("$.data.items[0].weekFrom").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.data.items[0].agent").value("matching"))
                 .andExpect(jsonPath("$.data.items[0].node").value("llm_judge"))
                 .andExpect(jsonPath("$.data.items[0].elapsedSec").value(7))
                 .andExpect(jsonPath("$.data.items[1].kind").value("week"))
                 .andExpect(jsonPath("$.data.items[1].childId").value("7"))
                 .andExpect(jsonPath("$.data.items[1].weekFrom").value("2026-11-03"))
-                .andExpect(jsonPath("$.data.items[1].date").doesNotExist())
+                .andExpect(jsonPath("$.data.items[1].date").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.data.items[1].node").value("find_claims"));
     }
 
