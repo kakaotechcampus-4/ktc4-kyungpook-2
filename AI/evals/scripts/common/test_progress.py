@@ -275,6 +275,71 @@ def test_find_claims():
         ck(f"{tag}: 끝난 뒤", seen["after"], "refine", "실패해도 refine 으로 되돌린다")
 
 
+def test_endpoints():
+    import asyncio
+    import inspect
+
+    import main
+    from common.errors import LlmUnavailable
+    from fastapi.testclient import TestClient
+    from insight.schemas import InsightInput
+    from summary.schemas import SummaryInput
+    from validation.schemas import ValidationInput
+
+    cases = [
+        ("matching", main.matching, "run_matching", _exact_matching_input(),
+         {"journal_entry_id": 120}),
+        ("validation", main.validation, "run_validation",
+         ValidationInput.model_construct(journal_entry_id=123), {"journal_entry_id": 123}),
+        ("summary", main.summary, "run_summary",
+         SummaryInput.model_construct(child_id=7, entry_date="2026-11-08", institution_id=3),
+         {"child_id": 7, "entry_date": "2026-11-08", "institution_id": 3}),
+        ("insight", main.insight, "run_insight",
+         InsightInput.model_construct(child_id=7, period_from="2026-11-03", period_to="2026-11-09"),
+         {"child_id": 7, "period_from": "2026-11-03", "period_to": "2026-11-09"}),
+    ]
+
+    print("\n■ 엔드포인트가 도는 동안 GET /progress 에 그 일이 보이고, 끝나면 사라진다")
+    for agent, endpoint, run_name, payload, ident in cases:
+        for fail in (False, True):
+            fresh()
+            seen = []
+
+            def fake(_payload, fail=fail):
+                progress.mark("act")
+                seen.extend(asyncio.run(main.read_progress()))
+                if fail:
+                    raise LlmUnavailable("Luna 호출 실패")
+                return "결과"
+
+            saved = getattr(main, run_name)
+            setattr(main, run_name, fake)
+            try:
+                got = endpoint(payload)
+            except LlmUnavailable:
+                got = "503"
+            finally:
+                setattr(main, run_name, saved)
+            tag = f"{agent}{' (503)' if fail else ''}"
+            ck(f"{tag} 도는 중", seen, [{"agent": agent, **ident, "node": "act", "elapsed_sec": 0}],
+               "BE 가 이 키로 진행 현황 줄을 찾는다")
+            ck(f"{tag} 끝난 뒤", (got, asyncio.run(main.read_progress())), ("503" if fail else "결과", []),
+               "응답은 그대로, 기록은 finally 에서 지운다")
+
+    print("\n■ GET /progress 는 async 이고, 조회가 고장 나도 빈 목록이다")
+    ck("async def", inspect.iscoroutinefunction(main.read_progress), True,
+       "LLM 호출이 붙잡은 작업 스레드 풀을 기다리지 않는다")
+    fresh()
+    with progress.begin("validation", journal_entry_id=123):
+        progress.mark("act")
+        body = TestClient(main.app).get("/progress").json()
+    ck("HTTP 응답 모양", body, [{"agent": "validation", "journal_entry_id": 123, "node": "act", "elapsed_sec": 0}],
+       "이슈 #452 응답 모양")
+    progress._now = boom
+    res = TestClient(main.app).get("/progress")
+    ck("고장 나면 200 []", (res.status_code, res.json()), (200, []), "BE 는 빈 목록이면 기존 고정 문구를 띄운다")
+
+
 def _raises(fn) -> bool:
     try:
         fn()
@@ -290,6 +355,7 @@ def main():
     test_broken()
     test_graphs()
     test_find_claims()
+    test_endpoints()
     progress.reset()
     progress._now = progress.time.monotonic
 
