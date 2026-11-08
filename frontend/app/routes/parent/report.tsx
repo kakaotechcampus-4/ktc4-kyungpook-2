@@ -47,7 +47,7 @@ type Week = { period: string; from: string; to: string; items: GuardianInsight[]
 type Month = { key: string; label: string; weeks: Week[]; count: number; unread: number; institutions: Institution[] };
 
 /**
- * 달 → 주 → 글로 묶는다 (#438).
+ * 달 → 주 → 글로 묶는다.
  *
  * **달은 `periodFrom` 으로 정한다.** `period` 글자("2026년 10월 3주차")를 잘라 쓰면 깨진다 —
  * 9/29~10/5 처럼 달에 걸친 주가 있고, BE 가 문구를 바꾸면 같이 깨진다. BE 의 `periodLabel` 도
@@ -95,7 +95,7 @@ function weekLabel(week: Week): string {
  * 리포트 탭 — 담당자가 Gate 2 에서 승인해 보호자에게 열린 인사이트 (G-35). 기관들이 일주일 기록을 겹쳐 보고
  * 정리한 글이다.
  *
- * **달로 묶고 이번 달만 펼친다** (#438). 주 단위로 쭉 나열하면 몇 달 치가 쌓였을 때 지난주를 찾기 어렵다.
+ * **달로 묶고 이번 달만 펼친다**. 주 단위로 쭉 나열하면 몇 달 치가 쌓였을 때 지난주를 찾기 어렵다.
  * 지난 달은 한 줄로 접고, 누르면 그 자리에서 펼친다 — 화면을 옮기지 않는다.
  *
  * 아직 열어 보지 않은 글(readAt 없음)에 "새 글"을 붙인다 — 상세를 열어야 본 시각이 남는다.

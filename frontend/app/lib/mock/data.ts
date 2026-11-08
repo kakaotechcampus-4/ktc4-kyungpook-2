@@ -870,7 +870,7 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     ],
   },
   {
-    // 달에 걸친 주 — periodFrom 이 9월이라 9월로 묶인다 (#438)
+    // 달에 걸친 주 — periodFrom 이 9월이라 9월로 묶인다
     id: "gi_05",
     childId: "child_1023",
     childName: "김OO",

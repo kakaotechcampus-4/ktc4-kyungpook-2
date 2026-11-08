@@ -76,7 +76,7 @@ function ReportDetailPage() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-bold">{e.institution.name}</span>
                     <span className="block text-[13px] text-muted">{formatDateMonthDay(e.date)} 일지</span>
-                    {/* 이 글이 그 일지에서 실제로 인용한 문장 (#438). 없으면 줄만 보인다 */}
+                    {/* 이 글이 그 일지에서 실제로 인용한 문장. 없으면 줄만 보인다 */}
                     {e.sentences.length > 0 ? (
                       <span className="mt-2 flex flex-col gap-1.5">
                         {e.sentences.map((sentence, index) => (
