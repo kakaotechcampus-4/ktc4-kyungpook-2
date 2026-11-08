@@ -32,8 +32,9 @@ import lombok.RequiredArgsConstructor;
  *   <li>매칭 — 일지 → 기관·날짜. 진행 현황의 "아이 찾는 중" 줄은 날짜마다 한 줄이라 아이 없이 붙인다</li>
  *   <li>검증 — 일지 → 기관·아이·날짜</li>
  *   <li>요약 — AI 가 기관·아이·날짜를 그대로 준다</li>
- *   <li>리포트 — 아이 → 지금 명부에 있고 공유 동의가 켜진 기관 모두. 진행 현황(O-80)이 주 줄을 보여 주는 기준과 같다 —
- *       동의하지 않은 기관에는 화면에 안 그려지더라도 응답에 넣지 않는다</li>
+ *   <li>리포트 — 아이 → 지금 명부에 있고 <b>주간 리포트 공유 동의</b>가 켜진 기관 모두. 하루 요약만 허락한 기관은 O-80 주
+ *       줄이 {@code not_consented} 라 "분석 중"을 주지 않는다. 동의하지 않은 기관에는 화면에 안 그려지더라도 응답에 넣지
+ *       않는다</li>
  * </ul>
  * 같은 줄에 일이 여럿이면 하나만 남긴다.
  * <ul>
@@ -119,8 +120,14 @@ public class AiProgressTranslator {
         if (children.isEmpty()) {
             return Map.of();
         }
-        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(children);
-        return childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(children).stream()
+        // 명부로 먼저 좁힌다 — 어느 기관에도 없는 아이는 동의를 읽지 않는다.
+        List<ChildOrganization> links = childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(children);
+        if (links.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.insightStatesOf(
+                links.stream().map(ChildOrganization::getChildId).collect(Collectors.toSet()));
+        return links.stream()
                 .filter(link -> consents.getOrDefault(link.getChildId(), Map.of())
                         .getOrDefault(link.getOrganizationId(), ConsentState.NOT_GRANTED) == ConsentState.GRANTED)
                 .collect(Collectors.groupingBy(ChildOrganization::getChildId,

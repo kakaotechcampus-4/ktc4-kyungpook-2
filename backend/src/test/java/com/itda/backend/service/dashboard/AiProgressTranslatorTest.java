@@ -92,14 +92,14 @@ class AiProgressTranslatorTest {
         assertThat(result.get(3L)).containsExactly(new Item(Kind.ENTRY, "7", NOV_8, null, "summary", "write", 12));
         verify(journalEntryRepository, never()).findProgressKeys(any());
         verify(childOrganizationRepository, never()).findByChildIdInAndDeletedAtIsNull(any());
-        verify(consentStateReader, never()).statesOf(any());
+        verify(consentStateReader, never()).insightStatesOf(any());
     }
 
     @Test
-    void 리포트는_그_아이와_연결되고_공유_동의가_켜진_기관_모두에_주_줄로_붙인다() {
+    void 리포트는_그_아이와_연결되고_주간_리포트_동의가_켜진_기관_모두에_주_줄로_붙인다() {
         given(childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(Set.of(7L)))
                 .willReturn(List.of(ChildOrganization.of(7L, 3L), ChildOrganization.of(7L, 4L)));
-        given(consentStateReader.statesOf(Set.of(7L)))
+        given(consentStateReader.insightStatesOf(Set.of(7L)))
                 .willReturn(Map.of(7L, Map.of(3L, ConsentState.GRANTED, 4L, ConsentState.GRANTED)));
 
         Map<Long, List<Item>> result = translator.translate(List.of(insight(7L, WEEK, "find_claims", 31)));
@@ -111,18 +111,30 @@ class AiProgressTranslatorTest {
         verify(journalEntryRepository, never()).findProgressKeys(any());
     }
 
-    /** 진행 현황(O-80)의 주 줄과 같은 기준이다 — 동의를 끄거나 받지 않은 기관에는 응답에도 넣지 않는다. */
+    /**
+     * 하루 요약만 허락한 기관(주간 리포트 동의 없음)은 O-80 주 줄이 {@code not_consented} 다 — "분석 중"을 주지 않는다.
+     * 꺼졌거나 동의가 없는 기관도 마찬가지다. insightStatesOf 는 하루 요약만 허락한 기관을 NOT_GRANTED 로 준다.
+     */
     @Test
-    void 리포트는_공유_동의가_꺼졌거나_없는_기관에는_붙이지_않는다() {
+    void 리포트는_주간_리포트_동의가_없거나_꺼진_기관에는_붙이지_않는다() {
         given(childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(Set.of(7L)))
                 .willReturn(List.of(ChildOrganization.of(7L, 3L), ChildOrganization.of(7L, 4L),
-                        ChildOrganization.of(7L, 5L)));
-        given(consentStateReader.statesOf(Set.of(7L)))
-                .willReturn(Map.of(7L, Map.of(3L, ConsentState.GRANTED, 4L, ConsentState.REVOKED)));
+                        ChildOrganization.of(7L, 5L), ChildOrganization.of(7L, 6L)));
+        given(consentStateReader.insightStatesOf(Set.of(7L)))
+                .willReturn(Map.of(7L, Map.of(3L, ConsentState.GRANTED, 4L, ConsentState.REVOKED,
+                        5L, ConsentState.NOT_GRANTED)));
 
         Map<Long, List<Item>> result = translator.translate(List.of(insight(7L, WEEK, "plan", 3)));
 
         assertThat(result).containsOnlyKeys(3L);
+    }
+
+    @Test
+    void 리포트_아이가_어느_명부에도_없으면_동의를_읽지_않는다() {
+        given(childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(Set.of(7L))).willReturn(List.of());
+
+        assertThat(translator.translate(List.of(insight(7L, WEEK, "plan", 3)))).isEmpty();
+        verify(consentStateReader, never()).insightStatesOf(any());
     }
 
     @Test
@@ -187,7 +199,7 @@ class AiProgressTranslatorTest {
     void 리포트의_도구_사용은_refine보다_앞선_단계다() {
         given(childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(Set.of(7L)))
                 .willReturn(List.of(ChildOrganization.of(7L, 3L)));
-        given(consentStateReader.statesOf(Set.of(7L))).willReturn(Map.of(7L, Map.of(3L, ConsentState.GRANTED)));
+        given(consentStateReader.insightStatesOf(Set.of(7L))).willReturn(Map.of(7L, Map.of(3L, ConsentState.GRANTED)));
 
         Map<Long, List<Item>> result = translator.translate(List.of(
                 insight(7L, WEEK, "refine", 40),
@@ -217,7 +229,7 @@ class AiProgressTranslatorTest {
         assertThat(result).isEmpty();
         verify(journalEntryRepository, never()).findProgressKeys(any());
         verify(childOrganizationRepository, never()).findByChildIdInAndDeletedAtIsNull(any());
-        verify(consentStateReader, never()).statesOf(any());
+        verify(consentStateReader, never()).insightStatesOf(any());
     }
 
     @Test
@@ -225,6 +237,6 @@ class AiProgressTranslatorTest {
         assertThat(translator.translate(List.of())).isEmpty();
         verify(journalEntryRepository, never()).findProgressKeys(any());
         verify(childOrganizationRepository, never()).findByChildIdInAndDeletedAtIsNull(any());
-        verify(consentStateReader, never()).statesOf(any());
+        verify(consentStateReader, never()).insightStatesOf(any());
     }
 }
