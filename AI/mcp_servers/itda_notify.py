@@ -21,11 +21,13 @@ stdio MCP 는 stdout 이 프로토콜 채널이다. print() 한 줄이 JSON-RPC 
 클라이언트는 "서버가 응답을 안 준다" 로만 본다. 로그는 전부 stderr 로 간다.
 """
 
+import fcntl
 import json
 import os
 import smtplib
 import sys
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -47,6 +49,25 @@ SENT_LOG_PATH = os.environ.get("NOTIFY_SENT_LOG", "evals/generated/notify/sent.j
 def _log(message: str) -> None:
     """stdout 은 프로토콜 채널이라 쓰면 안 된다 (모듈 머리말)."""
     print(f"[itda-notify] {message}", file=sys.stderr, flush=True)
+
+
+@contextmanager
+def _lock():
+    """
+    발송 기록을 읽고 쓰는 동안 잠근다 (리뷰 #430).
+
+    서버는 호출마다 새 프로세스로 뜨므로 프로세스 안의 락으로는 모자란다. 파일 락을 쓴다.
+    없으면 같은 {@code notification_id} 가 동시에 두 번 왔을 때 둘 다 "기록이 없다" 를 보고
+    각자 보낸다 — 보호자가 같은 메일을 두 통 받는다.
+    """
+    path = Path(SENT_LOG_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_suffix(".lock"), "w", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def _load(path: str) -> dict:
@@ -151,30 +172,56 @@ def send_email(child_id: int, notification_id: str, subject: str, body: str) -> 
         subject: 메일 제목.
         body: 메일 본문. 발송 전 검사를 통과한 글만 온다.
     """
-    sent = _load(SENT_LOG_PATH)
-    if notification_id in sent:
-        _log(f"이미 보낸 묶음이다 notification_id={notification_id} — 다시 보내지 않는다")
-        return {**sent[notification_id], "duplicate": True}
+    with _lock():
+        sent = _load(SENT_LOG_PATH)
+        done = sent.get(notification_id)
+        if done and not done.get("pending"):
+            _log(f"이미 보낸 묶음이다 notification_id={notification_id} — 다시 보내지 않는다")
+            return {**{k: v for k, v in done.items() if k != "delivered"}, "duplicate": True}
 
-    addresses = _recipients(child_id)
-    if not addresses:
-        # 주소가 없는 것은 장애가 아니다. 보호자가 메일을 안 받기로 했거나 아직 안 넣었다.
-        _log(f"받을 사람이 없다 child_id={child_id}")
-        return {"status": "no_recipient", "message_id": None, "duplicate": False}
+        addresses = _recipients(child_id)
+        if not addresses:
+            # 주소가 없는 것은 장애가 아니다. 보호자가 메일을 안 받기로 했거나 아직 안 넣었다.
+            _log(f"받을 사람이 없다 child_id={child_id}")
+            return {"status": "no_recipient", "message_id": None, "duplicate": False}
 
-    _deliver(addresses, subject, body)
+        # 자리를 먼저 잡는다. 같은 묶음이 동시에 두 번 와도 뒤의 호출은 이 행을 보고 비켜난다.
+        # 이 자리를 잡기 전에 보내면 두 호출이 각자 보낸다 (리뷰 #430).
+        record = done or {
+            "status": "sent",
+            "message_id": f"itda-{uuid.uuid4().hex[:16]}",
+            "child_id": child_id,
+            "recipient_count": len(addresses),
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+            "delivered": [],
+            "pending": True,
+        }
+        record["pending"] = True
+        sent[notification_id] = record
+        _save(SENT_LOG_PATH, sent)
 
-    record = {
-        "status": "sent",
-        "message_id": f"itda-{uuid.uuid4().hex[:16]}",
-        "child_id": child_id,
-        "recipient_count": len(addresses),
-        "sent_at": datetime.now(timezone.utc).isoformat(),
-    }
-    sent[notification_id] = record
-    _save(SENT_LOG_PATH, sent)
-    _log(f"보냈다 notification_id={notification_id} message_id={record['message_id']}")
-    return {**record, "duplicate": False}
+    # 보호자별로 보내고 한 명 끝날 때마다 적는다. 중간에 SMTP 가 끊겨도, 다시 부르면
+    # 이미 받은 보호자는 건너뛴다 — 예전에는 기록 없이 503 이 되어 첫 보호자가 두 통을 받았다.
+    remaining = [a for a in addresses if a not in record.get("delivered", [])]
+    for address in remaining:
+        _deliver([address], subject, body)
+        with _lock():
+            sent = _load(SENT_LOG_PATH)
+            current = sent.get(notification_id, record)
+            current.setdefault("delivered", []).append(address)
+            sent[notification_id] = current
+            _save(SENT_LOG_PATH, sent)
+            record = current
+
+    with _lock():
+        sent = _load(SENT_LOG_PATH)
+        current = sent.get(notification_id, record)
+        current["pending"] = False
+        sent[notification_id] = current
+        _save(SENT_LOG_PATH, sent)
+    _log(f"보냈다 notification_id={notification_id} message_id={current['message_id']} "
+         f"수신 {len(current.get('delivered', []))}/{len(addresses)}명")
+    return {**{k: v for k, v in current.items() if k != "delivered"}, "duplicate": False}
 
 
 @mcp.tool()
@@ -187,7 +234,9 @@ def check_delivery(message_id: str) -> dict:
     """
     for notification_id, record in _load(SENT_LOG_PATH).items():
         if record.get("message_id") == message_id:
-            return {**record, "notification_id": notification_id}
+            # delivered 에는 주소가 들어 있다. 돌려주지 않는다 — 모델 문맥에 주소가 들어가면 안 된다.
+            visible = {k: v for k, v in record.items() if k != "delivered"}
+            return {**visible, "notification_id": notification_id}
     return {"status": "unknown", "message_id": message_id}
 
 
