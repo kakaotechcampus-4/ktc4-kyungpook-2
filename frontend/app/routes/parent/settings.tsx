@@ -10,7 +10,6 @@ import {
   loadOpenChecklistCount,
   getInstitutionShares,
   getParentChildren,
-  getParentHome,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
@@ -18,14 +17,13 @@ import {
   updateConsent,
 } from "@/lib/api";
 import { signOut } from "@/lib/auth";
-import { readSelectedChildId } from "@/lib/selectedChild";
+import { selectedChildOrInvite } from "@/lib/selectedChild";
 import type { ConsentState, InstitutionShares } from "@/lib/types";
 
 export async function clientLoader() {
-  const kids = await getParentChildren();
-  const childId = readSelectedChildId(kids);
-  const [{ child }, openChecklists, pendingRequests, shares] = await Promise.all([
-    getParentHome(childId),
+  const child = selectedChildOrInvite(await getParentChildren());
+  const childId = child.id;
+  const [openChecklists, pendingRequests, shares] = await Promise.all([
     // 확인 안 한 준비물·확인사항 수. 못 받으면 null — 개수만 숨기고 설정은 그대로 연다
     loadOpenChecklistCount(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),

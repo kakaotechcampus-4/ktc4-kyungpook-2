@@ -1,6 +1,6 @@
 import { Outlet, redirect, useLoaderData } from "react-router";
 import { skipSearchOnlyChange } from "@/lib/revalidate";
-import { loadOrgCounts, OrgShell } from "@/components/org/Shell";
+import { loadOrgLive, OrgShell } from "@/components/org/Shell";
 import { getSession, isAuthMock, rememberReturnPath } from "@/lib/auth";
 import { MY_INSTITUTION } from "@/lib/mock/data";
 import "./org.css";
@@ -30,7 +30,7 @@ export async function clientLoader({ request }: { request: Request }) {
   if (!termsAgreed) return redirect("/org-terms");
 
   // 메뉴 배지. 백엔드에 아직 없는 기능은 null → 배지를 띄우지 않는다 (loadIfReady 참고)
-  const counts = await loadOrgCounts();
+  const live = await loadOrgLive();
 
   // 머리띠의 내 정보. 사람 이름은 저장하지 않으므로 /auth/me 의 기관명(#236)만 쓴다.
   // 서버가 기관명을 안 주면 비워 둔다 — mock 기관명을 띄우면 로그인한 사람과 다른 기관이 보인다.
@@ -38,14 +38,14 @@ export async function clientLoader({ request }: { request: Request }) {
 
   return {
     me,
-    counts,
+    live,
   };
 }
 
 export default function OrgLayoutRoute() {
-  const { me, counts } = useLoaderData<typeof clientLoader>();
+  const { me, live } = useLoaderData<typeof clientLoader>();
   return (
-    <OrgShell me={me} counts={counts}>
+    <OrgShell me={me} live={live}>
       <Outlet />
     </OrgShell>
   );

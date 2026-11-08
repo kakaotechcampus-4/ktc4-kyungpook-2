@@ -23,6 +23,7 @@ import { ApiError } from "@/lib/apiError";
 import { clearGate1Drafts } from "@/lib/gate1Draft";
 import { clearReinputDrafts } from "@/lib/reinputDraft";
 import { MOCK_TERMS } from "@/lib/mock/terms";
+import { forgetParentChildren } from "@/lib/parentChildrenCache";
 
 /**
  * 인증만 실연동하고 나머지 데이터는 mock 으로 둘 수 있게 플래그를 분리했다
@@ -158,6 +159,8 @@ export function grantRole(role: "org" | "parent"): void {
 
 /** 서버가 401 을 주면 쿠키가 만료·무효라는 뜻이다. 로컬 표시도 함께 지운다. */
 export function clearSession(): void {
+  // 로그아웃 · 로그인 풀림 — 다음 사람이 이 탭에서 로그인해도 앞사람 아이 목록을 같이 쓰지 않게
+  forgetParentChildren();
   try {
     localStorage.removeItem(ROLE_KEY);
     localStorage.removeItem(ONBOARDED_KEY);
