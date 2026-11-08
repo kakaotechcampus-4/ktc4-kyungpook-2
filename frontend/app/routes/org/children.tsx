@@ -118,7 +118,7 @@ export default function ChildrenPage() {
   }
 
   function decided(insight: Insight, decision: "approve" | "hold", fromWalk: boolean) {
-    const text = `${insight.childName} ${insight.period} 분석을 ${decision === "approve" ? "승인했어요" : "보류했어요"}`;
+    const text = `${insight.childName} ${insight.period} 리포트를 ${decision === "approve" ? "승인했어요" : "보류했어요"}`;
     if (fromWalk) {
       setOutcomes((o) => ({ ...o, [insight.id]: text }));
       walk.done(insight.id);
@@ -141,7 +141,7 @@ export default function ChildrenPage() {
   const approveLeft = walk.visible.filter((i) => !walk.isDone(i.id)).length;
   const tabs: { key: Tab; label: string; count: number; hot: boolean; dot?: boolean }[] = [
     { key: "kids", label: "아이", count: children.length, hot: false, dot: unreadAll > 0 },
-    { key: "approve", label: "분석 승인", count: approveLeft, hot: approveLeft > 0 },
+    { key: "approve", label: "리포트 승인", count: approveLeft, hot: approveLeft > 0 },
     { key: "req", label: "연결 요청", count: linkRequests.length, hot: linkRequests.length > 0 },
   ];
 
@@ -185,7 +185,7 @@ export default function ChildrenPage() {
             {t.key === "kids" || t.count ? (
               <span className={`rounded-full px-1.5 text-[13px] tabular-nums ${t.hot ? "bg-mark text-markink" : "text-muted"}`}>{t.count}</span>
             ) : null}
-            {t.dot ? <span aria-label="안 읽은 분석 있음" className="size-2 rounded-full bg-block" /> : null}
+            {t.dot ? <span aria-label="안 읽은 리포트 있음" className="size-2 rounded-full bg-block" /> : null}
           </button>
         ))}
       </div>
@@ -248,7 +248,7 @@ export default function ChildrenPage() {
         )
       ) : tab === "approve" ? (
         walk.visible.length === 0 ? (
-          <EmptyLine>승인할 분석이 없어요</EmptyLine>
+          <EmptyLine>승인할 리포트가 없어요</EmptyLine>
         ) : (
           <>
             <div className="grid gap-2.5">
@@ -260,7 +260,7 @@ export default function ChildrenPage() {
                   text={i.content}
                   tag={
                     <span className="flex flex-wrap justify-end gap-1.5">
-                      {i.teacherWritten ? <Chip tone="human">교사 작성 포함</Chip> : <Chip tone="human">분석 도착</Chip>}
+                      {i.teacherWritten ? <Chip tone="human">교사 작성 포함</Chip> : <Chip tone="human">리포트 도착</Chip>}
                       {/* #388 지난 기록을 찾아 쓴 분석. 경고가 아니라 알아 둘 일이라 ai 색 */}
                       {i.evidence.some((e) => e.lookedUp) ? <Chip tone="ai">지난 기록 포함</Chip> : null}
                     </span>
@@ -368,7 +368,7 @@ function KidCard({
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        {unread ? <Chip tone="human">새 분석 {unread}</Chip> : null}
+        {unread ? <Chip tone="human">새 리포트 {unread}</Chip> : null}
         {chip ? (
           <button type="button" onClick={() => onOpen("guardian", false)} className="rounded-full">
             <Chip tone="idle">{chip}</Chip>
@@ -381,7 +381,7 @@ function KidCard({
           onClick={() => onOpen("analysis", true)}
           className="tap rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110"
         >
-          새 분석 읽기
+          새 리포트 읽기
         </button>
       ) : (
         <button

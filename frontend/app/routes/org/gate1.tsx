@@ -70,7 +70,7 @@ function restoredOf(item: SummaryItem, draft: Gate1Draft | undefined): { lines: 
   };
 }
 
-const TITLE = "검토";
+const TITLE = "요약 검토";
 
 type Tab = "pending" | "hold";
 type Decision = "approve" | "hold" | "remove";
@@ -1340,7 +1340,7 @@ function FailedPopup({
           onCancel={() => setConfirming(false)}
           onConfirm={() => run("close")}
         >
-          이날 기록 {item.entries.length}건은 보호자·아동 기록·주간 분석으로 가지 않아요.
+          이날 기록 {item.entries.length}건은 보호자·아동 기록·주간 리포트로 가지 않아요.
         </ConfirmDialog>
       ) : null}
     </>

@@ -74,7 +74,7 @@ function nav(counts: OrgShellCounts): NavItem[] {
   return [
     { href: "/dashboard", label: "대시보드" },
     { href: "/check", label: "기록 확인", badge: counts.check },
-    { href: "/gate1", label: "검토", badge: counts.review },
+    { href: "/gate1", label: "요약 검토", badge: counts.review },
     { href: "/children", label: "아동 목록", badge: counts.children },
     { href: "/checklists", label: "준비물·확인사항" },
   ];
@@ -216,7 +216,7 @@ export function OrgShell({
       <Toast slot={2} message={notice} onGone={clearNotice} ms={8000} />
       <Toast
         slot={3}
-        message={arrival ? "새 분석이 도착했어요" : null}
+        message={arrival ? "새 리포트가 도착했어요" : null}
         onGone={clearArrival}
         action={{
           label: "보기",

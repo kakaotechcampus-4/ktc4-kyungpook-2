@@ -64,10 +64,10 @@ const STEP_ICONS = [UserSearch, ShieldCheck, ScrollText, FileCheck, Layers, Send
 const STEP_DESC = [
   "AI가 파일 이름과 일지 속 이름을 아동 명부와 맞춰 누구의 기록인지 찾아요",
   "AI가 개인정보·진단명이 있으면 막고, 다른 아이 이름 같은 표현은 표시해요",
-  "AI 확인이 끝나면 AI가 그날 기록을 바로 요약해요",
+  "내용 검증이 끝나면 AI가 그날 기록을 바로 요약해요",
   "선생님이 요약 문장을 읽고 고친 뒤 승인해요",
   "한 주(월~일) 동안 승인한 기록을 모아 AI가 되풀이되는 행동을 찾아요",
-  "선생님이 AI 분석을 읽고 승인하면 보호자와 동의한 기관이 봐요",
+  "선생님이 AI가 쓴 주간 리포트를 읽고 승인하면 보호자와 동의한 기관이 봐요",
 ];
 
 const WD = "일월화수목금토";
@@ -267,10 +267,10 @@ function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardia
 function AiDay({ a }: { a: AiActivity }) {
   const items: [string, number][] = [
     ["기록 나누기", a.split],
-    ["아이 찾기", a.matched],
-    ["AI 확인", a.validated],
-    ["요약", a.summarized],
-    ["주간 분석", a.insights],
+    ["아이 매칭", a.matched],
+    ["내용 검증", a.validated],
+    ["일지 요약", a.summarized],
+    ["주간 리포트", a.insights],
   ];
   const sum = items.reduce((n, [, v]) => n + v, 0);
   return (
@@ -297,9 +297,9 @@ function AiDay({ a }: { a: AiActivity }) {
 
 const TURN: { key: keyof PipelineTurn; label: string; desc: string; icon: typeof Check; href: string }[] = [
   { key: "confirm", label: "아이 확인", desc: "AI가 누구의 기록인지 정하지 못한 일지", icon: UserRound, href: "/check?open=confirm" },
-  { key: "blocked", label: "고쳐야 할 기록", desc: "AI 확인에서 막힌 문장", icon: PenLine, href: "/check?open=blocked" },
-  { key: "review", label: "검토", desc: "AI가 쓴 요약을 읽고 승인", icon: Check, href: "/gate1?open=first" },
-  { key: "approve", label: "분석 승인", desc: "주간 분석을 읽고 보호자에게 보내기", icon: Send, href: "/children?tab=approve&open=first" },
+  { key: "blocked", label: "고쳐야 할 기록", desc: "내용 검증에서 막힌 문장", icon: PenLine, href: "/check?open=blocked" },
+  { key: "review", label: "요약 검토", desc: "AI가 쓴 요약을 읽고 승인", icon: Check, href: "/gate1?open=first" },
+  { key: "approve", label: "리포트 승인", desc: "주간 리포트를 읽고 보호자에게 보내기", icon: Send, href: "/children?tab=approve&open=first" },
   { key: "requests", label: "보호자 연결 요청", desc: "보호자가 기관 코드로 보낸 요청", icon: Link2, href: "/children?tab=req" },
 ];
 
@@ -672,22 +672,22 @@ function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolea
     case "regenerating":
       return { text: "기록이 더 들어와서 요약을 다시 만드는 중이에요" };
     case "waiting_week_end":
-      return { text: r.week ? `이번 주가 끝나는 ${md(nextDay(r.week.to))}부터 분석해요` : "이번 주가 끝나면 분석해요" };
+      return { text: r.week ? `이번 주가 끝나는 ${md(nextDay(r.week.to))}부터 리포트를 만들어요` : "이번 주가 끝나면 리포트를 만들어요" };
     case "queued":
-      return { text: "곧 분석을 시작해요" };
+      return { text: "곧 리포트를 만들기 시작해요" };
     case "running":
       return { text: "AI가 되풀이되는 행동을 찾는 중이에요" };
     case "retrying":
-      return { text: "분석을 다시 시도하는 중이에요" };
+      return { text: "리포트 만들기를 다시 시도하는 중이에요" };
     case "not_consented":
-      return { text: "보호자가 주간 분석 공유를 허락하지 않아 우리 기록은 쓰지 않아요" };
+      return { text: "보호자가 주간 리포트 공유를 허락하지 않아 우리 기록은 쓰지 않아요" };
     case "nothing_new":
       return { text: "이번 주는 새로 알릴 내용이 없어요", skip: true };
     case "review_here":
-      return { text: "분석이 왔어요 · 읽고 승인하면 보호자에게 가요", go: ["읽고 승인", `/children?tab=approve&open=insight${id}`] };
+      return { text: "리포트가 왔어요 · 읽고 승인하면 보호자에게 가요", go: ["읽고 승인", `/children?tab=approve&open=insight${id}`] };
     case "insight_held":
       // Gate 2 보류는 되돌릴 수 없다 — 다시 읽을 화면이 없어 바로가기를 두지 않는다
-      return { text: "분석을 보류해 뒀어요", hold: true };
+      return { text: "리포트를 보류해 뒀어요", hold: true };
     case "review_elsewhere":
       return { text: `${d.approverName ?? "다른 기관"}에서 승인할 차례예요` };
     case "approved":
@@ -717,7 +717,7 @@ const DOT = {
 function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
   const paused = aiDown && r.who === "ai";
   const info = paused ? { ...describe(r), text: "AI 점검 중이라 잠시 멈췄어요 · 돌아오면 이어서 해요" } : describe(r);
-  const sub = r.kind === "week" ? `${r.week?.label ?? ""} 분석` : r.date ? md(r.date) : "";
+  const sub = r.kind === "week" ? `${r.week?.label ?? ""} 리포트` : r.date ? md(r.date) : "";
   const tag = isMe(r) ? (
     info.hold ? (
       <span className="rounded-full bg-surface2 px-2 py-px text-[12px] font-bold text-ink2">보류</span>

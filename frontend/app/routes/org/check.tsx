@@ -522,7 +522,7 @@ function BlockedPopup({
           onCancel={() => setAsking(false)}
           onConfirm={() => run("drop")}
         >
-          요약과 분석에 쓰지 않아요.
+          요약과 리포트에 쓰지 않아요.
         </ConfirmDialog>
       ) : null}
     </>
