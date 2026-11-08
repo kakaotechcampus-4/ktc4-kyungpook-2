@@ -864,11 +864,11 @@ export const INVITATIONS: Record<string, LiveInvitation[]> = {};
 /** 아이별 연결된 보호자 (O-18, O-19 mock) */
 export const CHILD_GUARDIANS: Record<string, ChildGuardian[]> = {
   child_1023: [
-    { userId: "41", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true },
-    { userId: "52", linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false },
+    { userId: "41", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true, invitationCode: "H4QZ8M2R" },
+    { userId: "52", linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false, invitationCode: null },
   ],
   child_1041: [
-    { userId: "63", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true },
+    { userId: "63", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true, invitationCode: "T7KD3WNP" },
   ],
 };
 

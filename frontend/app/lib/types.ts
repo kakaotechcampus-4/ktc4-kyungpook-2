@@ -158,6 +158,8 @@ export interface ChildGuardian {
   linkedAt: string;
   /** true 인 보호자만 우리 기관이 연결을 끊을 수 있다 (O-19) */
   linkedByThisOrganization: boolean;
+  /** 이 보호자가 연결할 때 쓴 우리 기관의 초대 코드. 이름이 없어 이 코드와 연결 시각으로 보호자를 구별한다. 다른 기관 코드로 연결됐으면 null */
+  invitationCode: string | null;
 }
 
 /**

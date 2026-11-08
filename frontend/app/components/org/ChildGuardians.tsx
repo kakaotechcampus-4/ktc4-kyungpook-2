@@ -10,6 +10,7 @@ import {
   issueInvitation,
   unlinkGuardian,
 } from "@/lib/api";
+import { formatInviteCode } from "@/lib/invite";
 import type { ChildGuardian, LiveInvitation } from "@/lib/types";
 
 /**
@@ -73,10 +74,7 @@ export function ChildGuardians({ childId, childName }: { childId: string; childN
               <li key={g.userId} className="flex flex-wrap items-center gap-3 border-t border-line py-2.5 first:border-t-0">
                 <span className="min-w-0 flex-1">
                   <b className="block text-[15px]">{guardianLabel}</b>
-                  <span className="block text-[13px] tabular-nums text-muted">
-                    {g.linkedAt.slice(0, 10).replaceAll("-", ".")} 연결
-                    {g.linkedByThisOrganization ? "" : " · 다른 기관 코드로 연결"}
-                  </span>
+                  <span className="block text-[13px] tabular-nums text-muted">{linkedLine(g)}</span>
                 </span>
                 {g.linkedByThisOrganization ? (
                   <PopButton tone="text" disabled={busy !== null} onClick={() => setConfirming(g)}>
@@ -131,11 +129,24 @@ export function ChildGuardians({ childId, childName }: { childId: string; childN
             if (ok) setConfirming(null);
           }}
         >
+          <b className="block tabular-nums">{linkedLine(confirming)}</b>
           잘못된 사람이 코드로 들어왔을 때 쓰세요. 다시 연결하려면 새 코드를 보내야 해요.
         </ConfirmDialog>
       ) : null}
     </>
   );
+}
+
+/**
+ * 보호자 이름은 저장하지 않아 같은 아이의 보호자들이 모두 "OO 보호자" 다. 해제할 사람을 잘못 고르지 않게
+ * 그 보호자가 쓴 우리 기관 초대 코드와 연결 시각(분까지)으로 구별한다. 기관은 어떤 코드를 누구에게 줬는지로 대조한다.
+ */
+function linkedLine(g: ChildGuardian): string {
+  // "2026-11-03T14:05:00+09:00" → "2026.11.03 14:05". 서버가 한국 시각으로 준다
+  const linkedAt = `${g.linkedAt.slice(0, 10).replaceAll("-", ".")} ${g.linkedAt.slice(11, 16)}`;
+  return g.invitationCode
+    ? `${formatInviteCode(g.invitationCode)} 코드로 · ${linkedAt} 연결`
+    : `다른 기관 코드로 · ${linkedAt} 연결`;
 }
 
 function messageOf(err: unknown): string {
