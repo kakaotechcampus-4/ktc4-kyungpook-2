@@ -583,6 +583,8 @@ export interface GuardianInsightEvidence {
   date: string;
   /** 그 일지를 쓴 기관. 명부에서 빠진 기관일 수 있다 */
   institution: Institution;
+  /** 이번 기간이 아니라 지난 기록에서 찾아 쓴 근거인지 (#387 · #422). 화면은 "지난 기록" 으로 구분한다 */
+  lookedUp: boolean;
 }
 
 /**
