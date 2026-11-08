@@ -369,6 +369,7 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `AWS_REGION` | `ap-northeast-2` | S3 리전 |
 | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | 없음 (`docker` 필수) | `docker` 프로필의 PostgreSQL 연결 정보 |
 | `AI_BASE_URL` | `http://localhost:8000` | AI 서버 주소 (매칭·검증·요약 에이전트 공통). Compose는 서비스 이름으로 `http://ai:8000`을 전달 |
+| `AI_PROGRESS_ENABLED` | `false` (Compose는 `true`) | 대시보드 진행 현황의 AI 진행 단계(O-83, #453). 켜면 전용 스레드 하나가 1초마다 AI `GET /progress`를 묻는다(최근 5초 안에 화면이 O-83을 불렀을 때만, 대기 0.5초). 문제가 생기면 서버 `.env`에서 `false`로 끄고 backend만 다시 띄움 — 화면은 기존 문구로 돌아가고 일지 처리에는 영향 없음 |
 | `MATCHING_WORKER_ENABLED` | `true` | 매칭 워커 사용 여부. 켜 두면 5초마다 대기(`PENDING`) 일지를 AI `POST /matching`에 보내 결과를 `matching_result`에 저장. 테스트 프로필은 끔 |
 | `VALIDATION_WORKER_ENABLED` | `true` | 검증 워커 사용 여부. 켜 두면 5초마다 매칭 확정(`MATCHED`) 일지를 AI `POST /validation`에 보내 결과를 `validation_result`에 저장하고 `VALIDATED`/`VALIDATION_BLOCKED`로 바꿈. 테스트 프로필은 끔 |
 | `INSIGHT_INCLUDE_CURRENT_WEEK` | `false` | **시연용.** 켜면 인사이트 워커가 끝나지 않은 이번 주 기록도 재료로 본다. 끄면 월~일이 끝난 주만 본다. 켜 두면 이번 주는 승인이 들어올 때마다 새 회차가 생겨 Gate 2 에 비슷한 글이 쌓이므로 운영에서는 끈다 (#239) |
