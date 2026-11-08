@@ -1,11 +1,11 @@
 # AI/evals/scripts/common/test_json_mode.py
 """
-LUNA_JSON_MODE 로 response_format(JSON 강제)을 켜고 끄는지 네 에이전트 모두 검사한다. Luna 를 부르지 않는다.
+<에이전트>_JSON_MODE 로 response_format(JSON 강제)을 켜고 끄는지 네 에이전트 모두 검사한다. Luna 를 부르지 않는다.
 
     python evals/scripts/common/test_json_mode.py
 
 기본은 켜짐 — 루나와 서버는 지금처럼 JSON 을 강제한다. 다른 모델 비교에서 그 모델이
-response_format 을 받지 않으면(claude-opus-5-5, 400) LUNA_JSON_MODE=off 로 끈다.
+response_format 을 받지 않으면(claude-opus-5-5, 400) <에이전트>_JSON_MODE=off 로 끈다.
 끈 상태에서도 응답 앞뒤에 말이 붙은 JSON 을 골라내는지 같이 본다.
 """
 
@@ -20,8 +20,9 @@ from matching import llm as matching_llm  # noqa: E402
 from summary import llm as summary_llm  # noqa: E402
 from validation import llm as validation_llm  # noqa: E402
 
-os.environ.setdefault("LUNA_API_URL", "http://luna.test")
-os.environ.setdefault("LUNA_API_KEY", "test-key")
+for _agent in ("MATCHING", "VALIDATION", "SUMMARY", "INSIGHT"):
+    os.environ.setdefault(f"{_agent}_API_URL", "http://luna.test")
+os.environ.setdefault("API_KEY", "test-key")
 
 MODULES = {"매칭": matching_llm, "검증": validation_llm, "요약": summary_llm, "인사이트": insight_llm}
 
@@ -55,10 +56,11 @@ def send(module, content='{"ok": 1}'):
 
 
 def with_mode(value):
-    if value is None:
-        os.environ.pop("LUNA_JSON_MODE", None)
-    else:
-        os.environ["LUNA_JSON_MODE"] = value
+    for agent in ("MATCHING", "VALIDATION", "SUMMARY", "INSIGHT"):
+        if value is None:
+            os.environ.pop(f"{agent}_JSON_MODE", None)
+        else:
+            os.environ[f"{agent}_JSON_MODE"] = value
 
 
 def main() -> int:

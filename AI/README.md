@@ -21,7 +21,7 @@ Local Record → ①매칭 → ②검증 → ③요약 → [Gate 1] → ④인�
 `.env` 를 만들고 Luna 키를 채웁니다. 형식은 [.env.example](.env.example) 참고.
 
 ```bash
-cp .env.example .env     # LUNA_API_URL, LUNA_API_KEY 채우기
+cp .env.example .env     # API_KEY, 에이전트별 *_API_URL 채우기
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```

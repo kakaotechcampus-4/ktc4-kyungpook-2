@@ -30,8 +30,9 @@ from summary import nodes as summary_nodes  # noqa: E402
 from summary.graph import run_summary  # noqa: E402
 from summary.schemas import SourceEntry, SummaryInput  # noqa: E402
 
-os.environ.setdefault("LUNA_API_URL", "http://luna.test")
-os.environ.setdefault("LUNA_API_KEY", "test-key")
+for _agent in ("MATCHING", "VALIDATION", "SUMMARY", "INSIGHT"):
+    os.environ.setdefault(f"{_agent}_API_URL", "http://luna.test")
+os.environ.setdefault("API_KEY", "test-key")
 
 
 class FakeResponse:
@@ -95,14 +96,15 @@ def check_llm_kinds(module) -> list[str]:
 
 
 def check_not_configured(module) -> list[str]:
-    saved = os.environ.pop("LUNA_API_URL")
+    name = f"{module.AGENT.upper()}_API_URL"
+    saved = os.environ.pop(name)
     try:
         module.ask_json([])
         return ["URL 없음: 예외가 안 났다"]
     except module.LlmError as exc:
         return [] if exc.kind == "not_configured" else [f"URL 없음: kind={exc.kind}"]
     finally:
-        os.environ["LUNA_API_URL"] = saved
+        os.environ[name] = saved
 
 
 def _fail_with(nodes_module, llm_module, kind):

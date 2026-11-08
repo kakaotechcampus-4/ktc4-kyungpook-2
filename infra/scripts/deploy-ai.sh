@@ -105,7 +105,8 @@ for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
     match = re.match(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$", line)
     if match:
         values[match.group(1)] = match.group(2).strip().strip("\"'")
-missing = [key for key in ("LUNA_API_URL", "LUNA_API_KEY") if not values.get(key)]
+required = ["API_KEY"] + [f"{agent}_API_URL" for agent in ("MATCHING", "VALIDATION", "SUMMARY", "INSIGHT")]
+missing = [key for key in required if not values.get(key)]
 if missing:
     sys.exit("Set " + ", ".join(missing) + " in AI/.env on the server")
 PY
