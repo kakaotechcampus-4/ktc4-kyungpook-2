@@ -228,7 +228,9 @@ def _responses(url: str, key: str, body: dict, timeout: float) -> dict:
     except requests.Timeout as exc:
         raise LlmError(f"Luna 제한시간 초과 ({timeout}s): {exc}", "timeout") from exc
     except requests.RequestException as exc:
-        raise LlmError(f"Luna 호출 실패: {exc}", "http_error") from exc
+        # 서버가 돌려준 에러 문구를 남긴다 — 없으면 원인이 http_error 로만 보인다 (11/09 sonnet 400)
+        detail = getattr(getattr(exc, "response", None), "text", "") or ""
+        raise LlmError(f"Luna 호출 실패: {exc} {detail[:300]}".strip(), "http_error") from exc
     try:
         return response.json()
     except ValueError as exc:
@@ -250,9 +252,22 @@ def ask_with_tools(instructions: str, user_input: str, tools: list[dict], run_to
     body = {"instructions": instructions, "input": user_input, "tools": tools}
     executed = 0
     usage: dict = {}
+    #: 지금까지 오간 대화. 프록시가 previous_response_id 를 거절하면 이것을 통째로 다시 보낸다.
+    #: claude 계열은 엘리스 프록시에서 "Unsupported parameter(s) ... previous_response_id" 로 400 (11/09).
+    #: 루나는 previous_response_id 로 3/3 을 확인했으므로 거절될 때만 바꾼다.
+    history: list[dict] = [{"role": "user", "content": user_input}]
+    replay = False
 
     for _ in range(max_calls + 1):
-        payload = _responses(url, key, body, _budget(timeout, deadline))
+        try:
+            payload = _responses(url, key, body, _budget(timeout, deadline))
+        except LlmError as exc:
+            if replay or "previous_response_id" not in body or "previous_response_id" not in str(exc):
+                raise
+            replay = True
+            body = {k: v for k, v in body.items() if k not in ("previous_response_id", "input")}
+            body["input"] = list(history)
+            payload = _responses(url, key, body, _budget(timeout, deadline))
         for k, v in (payload.get("usage") or {}).items():
             if isinstance(v, int):
                 usage[k] = usage.get(k, 0) + v
@@ -274,6 +289,7 @@ def ask_with_tools(instructions: str, user_input: str, tools: list[dict], run_to
                 raise LlmError("빈 응답 ({})", "empty_response")
             return LlmResult(data=data, usage=usage)
 
+        history += [{k: call.get(k) for k in ("type", "call_id", "name", "arguments")} for call in calls]
         results = []
         for call in calls:
             try:
@@ -284,8 +300,12 @@ def ask_with_tools(instructions: str, user_input: str, tools: list[dict], run_to
             out = run_tool(call.get("name"), args if isinstance(args, dict) else {})
             results.append({"type": "function_call_output", "call_id": call.get("call_id"),
                             "output": json.dumps(out, ensure_ascii=False)})
-        body = {"instructions": instructions, "previous_response_id": payload.get("id"),
-                "tools": tools, "input": results}
+        history += results
+        body = {"instructions": instructions, "tools": tools}
+        if replay:
+            body["input"] = list(history)
+        else:
+            body.update(previous_response_id=payload.get("id"), input=results)
         if executed >= max_calls:
             body["tool_choice"] = "none"
 

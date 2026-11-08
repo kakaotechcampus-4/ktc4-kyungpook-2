@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from common.luna import DEFAULT_MODEL, json_format, model  # noqa: E402
+from common.luna import AGENTS as COMMON_AGENTS, DEFAULT_MODEL, json_format, model  # noqa: E402
 from insight import llm as insight_llm  # noqa: E402
 from matching import llm as matching_llm  # noqa: E402
 from summary import llm as summary_llm  # noqa: E402
@@ -71,10 +71,20 @@ def main() -> int:
     except summary_llm.LlmError:
         pass
 
+    # ④ 배포 스크립트도 같은 에이전트 목록을 검사한다 (한쪽만 늘어나는 것 막기)
+    deploy = Path(__file__).resolve().parents[4] / "infra/scripts/deploy-ai.sh"
+    if deploy.exists():
+        text = deploy.read_text(encoding="utf-8")
+        missing = [a for a in COMMON_AGENTS if f'"{a.upper()}"' not in text]
+        if missing or '"API_KEY"' not in text:
+            fails.append(f"deploy-ai.sh 검사에 빠진 에이전트: {missing}")
+    else:
+        print("SKIP deploy-ai.sh 를 못 찾음 (AI 폴더만 있는 환경)")
+
     reset()
     for f in fails:
         print("FAIL", f)
-    print("\n전부 통과 (3/3)" if not fails else f"\n실패 {len(fails)}건")
+    print("\n전부 통과 (4/4)" if not fails else f"\n실패 {len(fails)}건")
     return 1 if fails else 0
 
 

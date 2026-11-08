@@ -65,12 +65,12 @@ def execute(cases_path: Path, runs: int, limit: int, workers: int, name: str) ->
     if limit:
         cases = cases[:limit]
     jobs = [(c, r) for r in range(1, runs + 1) for c in cases]
-    print(f"실행: {len(cases)}건 × {runs}회 = {len(jobs)}회 호출 (모델 {luna_model()})")
+    print(f"실행: {len(cases)}건 × {runs}회 = {len(jobs)}회 호출 (모델 {luna_model('insight')})")
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         records = list(pool.map(lambda job: run_one(*job), jobs))
 
-    result = {"model": luna_model(), "cases": str(Path(cases_path).resolve()),
+    result = {"model": luna_model("insight"), "cases": str(Path(cases_path).resolve()),
               "runs": runs, "records": records}
     RUNS.mkdir(parents=True, exist_ok=True)
     path = RUNS / f"{name}.json"
