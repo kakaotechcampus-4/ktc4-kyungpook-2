@@ -10,6 +10,8 @@ from common import metrics
 from common.errors import LlmUnavailable
 from insight.graph import run_insight
 from insight.schemas import InsightInput, InsightOutput
+from notify.graph import run_notify
+from notify.schemas import NotifyInput, NotifyOutput
 from matching.graph import run_matching
 from matching.schemas import MatchingInput, MatchingOutput
 from summary.graph import run_summary
@@ -96,3 +98,20 @@ def insight(payload: InsightInput) -> InsightOutput:
     key = metrics.key_of(payload.child_id, payload.period_from, payload.period_to)
     with metrics.track("/insight", key):
         return run_insight(payload)
+
+
+@app.post("/notify", response_model=NotifyOutput)
+def notify(payload: NotifyInput) -> NotifyOutput:
+    """
+    Gate 2 에서 승인된 인사이트를 보호자에게 메일로 내보낸다 (#419).
+
+    셋 중 하나로 끝난다.
+      200 sent            나갔다
+      200 blocked         근거 검사에 걸려 **보내지 않았다**. 교사 확인이 필요하다
+      503 delivery_failed 메일 서버 장애. BE 가 재시도한다
+
+    근거 미달을 503 으로 올리면 BE 가 영원히 재시도한다 — 재시도해도 같은 글이 나온다.
+    """
+    key = metrics.key_of(payload.child_id, payload.notification_id)
+    with metrics.track("/notify", key):
+        return run_notify(payload)
