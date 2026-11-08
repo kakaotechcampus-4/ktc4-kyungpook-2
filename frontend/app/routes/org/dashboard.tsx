@@ -110,9 +110,6 @@ export default function DashboardPage() {
     await Promise.all([live.refresh(), refreshOwn()]);
   }
 
-  // 진행 현황 AI 줄의 지금 단계 (O-83). 못 받으면 줄마다 null → 기존 문구
-  const progressOf = useAiProgress(pipeline.rows, aiDown, live.refresh);
-
   const turn = pipeline.turn;
   const total = turn.confirm + turn.blocked + turn.review + turn.approve + turn.requests;
 
@@ -141,7 +138,7 @@ export default function DashboardPage() {
         </Panel>
       </div>
 
-      <ProgressBoard rows={pipeline.rows} aiDown={aiDown} progressOf={progressOf} />
+      <ProgressBoard rows={pipeline.rows} aiDown={aiDown} refresh={live.refresh} />
     </div>
   );
 }
@@ -518,9 +515,9 @@ const isMe = (r: PipelineRow) => r.who === "me";
 const isRun = (r: PipelineRow) => r.who === "ai" || r.who === "wait" || r.who === "other";
 const isDone = (r: PipelineRow) => r.who === "done";
 
-type ProgressOf = (r: PipelineRow) => AiPhase | null;
-
-function ProgressBoard({ rows, aiDown, progressOf }: { rows: PipelineRow[]; aiDown: boolean; progressOf: ProgressOf }) {
+function ProgressBoard({ rows, aiDown, refresh }: { rows: PipelineRow[]; aiDown: boolean; refresh: () => Promise<void> }) {
+  // AI 줄의 지금 단계 (O-83). 1초마다 바뀌므로 이 보드 안에 둔다 — 대시보드 전체가 다시 그려지지 않게. 못 받으면 줄마다 null → 기존 문구
+  const progressOf = useAiProgress(rows, aiDown, refresh);
   const [stage, setStage] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [showDone, setShowDone] = useState(false);

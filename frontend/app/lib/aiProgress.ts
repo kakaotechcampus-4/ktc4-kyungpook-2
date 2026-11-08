@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getAiProgress } from "@/lib/api";
+import { ApiError, getAiProgress } from "@/lib/api";
 import type { PipelineRow } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
 
@@ -36,7 +36,16 @@ const PHASE: Record<string, Record<string, string>> = {
   },
 };
 
+/** 에이전트가 일하는 진행 현황 단계(O-80 step). 줄은 10초마다 받아서 1초 진행 정보보다 늦을 수 있다 — 단계가 맞을 때만 붙인다 */
+const AGENT_STEP: Record<string, number> = { matching: 0, validation: 1, summary: 2, insight: 4 };
+
 const POLL_MS = 1_000;
+/** 진행 정보에서 빠진 뒤 마지막 문구를 붙잡아 두는 최대 시간. 빠지면 진행 현황을 바로 다시 받으니 보통 1~2초면 줄 상태가 바뀐다 */
+const HOLD_MS = 15_000;
+/** 빠진 줄 때문에 진행 현황을 다시 받는 최소 간격 — 진행 정보가 잠깐씩 비어도 셸 요청이 몰리지 않게 */
+const REFRESH_GAP_MS = 3_000;
+/** 이만큼 잇달아 실패하면 이 화면에서는 더 묻지 않는다. 한 번 끊긴 것(배포 중 502 · 와이파이)으로 끄지 않게 */
+const MAX_FAILS = 3;
 
 export function phaseText(agent: string, node: string): string | null {
   const nodes = Object.hasOwn(PHASE, agent) ? PHASE[agent] : null;
@@ -58,16 +67,18 @@ export interface AiPhase {
   sec: number;
 }
 
-/** 붙잡아 둔 문구. 받았을 때의 줄 상태가 그대로인 동안만 쓴다 */
+/** 붙잡아 둔 문구. 받았을 때의 줄 상태가 그대로인 동안만, 빠진 뒤 HOLD_MS 까지만 쓴다 */
 interface Held extends AiPhase {
   status: string;
+  /** 진행 정보에 마지막으로 있었던 시각(ms) */
+  seenAt: number;
 }
 
 /**
  * AI 차례 줄이 있고 AI 가 멀쩡한 동안 1초마다 진행 정보를 받아, 줄마다 보일 문구를 돌려준다.
- * - 서버가 꺼 두었거나(enabled: false) 요청이 실패하면(404 · 5xx) 이 화면에 있는 동안 더 묻지 않는다 → 기존 문구
- * - AI 가 일을 끝내 진행 정보에서 줄이 빠져도, 줄 상태가 바뀔 때까지 마지막 문구를 붙잡아 둔다(고정 문구로 되돌아가 보이지 않게).
- *   빠진 줄이 보이면 진행 현황(refresh)을 바로 한 번 다시 받는다 — 10초 폴링을 기다리지 않게
+ * - 서버가 꺼 두었거나(enabled: false) 진행 API 가 없거나(404), 잇달아 실패하면(MAX_FAILS) 이 화면에 있는 동안 더 묻지 않는다 → 기존 문구
+ * - AI 가 일을 끝내 진행 정보에서 줄이 빠져도, 줄 상태가 바뀔 때까지(최대 HOLD_MS) 마지막 문구를 붙잡아 둔다 — 고정 문구로
+ *   되돌아가 보이지 않게. 빠진 줄이 보이면 진행 현황(refresh)을 바로 한 번 다시 받는다 — 10초 폴링을 기다리지 않게
  */
 export function useAiProgress(
   rows: PipelineRow[],
@@ -80,24 +91,39 @@ export function useAiProgress(
   rowsRef.current = rows;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const aiDownRef = useRef(aiDown);
+  aiDownRef.current = aiDown;
   /** 지난 응답에 있던 열쇠 — 이번에 빠진 줄을 찾는 데 쓴다 */
   const lastKeys = useRef<Set<string>>(new Set());
+  const fails = useRef(0);
+  const lastRefreshAt = useRef(0);
 
-  const hasAi = rows.some((r) => r.who === "ai");
+  const active = on && !aiDown && rows.some((r) => r.who === "ai");
+
+  function stop() {
+    setOn(false);
+    setHeld(new Map());
+    lastKeys.current = new Set();
+  }
 
   async function tick() {
     let res;
     try {
       res = await getAiProgress();
-    } catch {
-      res = null;
-    }
-    if (!res?.enabled) {
-      setOn(false);
-      setHeld(new Map());
-      lastKeys.current = new Set();
+    } catch (e) {
+      fails.current += 1;
+      if ((e instanceof ApiError && e.status === 404) || fails.current >= MAX_FAILS) stop();
       return;
     }
+    fails.current = 0;
+    if (!res.enabled) {
+      stop();
+      return;
+    }
+    // 기다리는 사이 점검 중이 됐으면 버린다 — 점검 문구가 우선이고, 돌아오면 새로 받는다
+    if (aiDownRef.current) return;
+
+    const now = Date.now();
     const aiRows = new Map(rowsRef.current.filter((r) => r.who === "ai").map((r) => [rowKeyOf(r), r]));
     const fresh = new Map<string, Held>();
     const keys = new Set<string>();
@@ -106,31 +132,30 @@ export function useAiProgress(
       keys.add(key);
       const row = aiRows.get(key);
       const text = phaseText(i.agent, i.node);
-      if (row && text) fresh.set(key, { text, sec: Math.max(0, Math.floor(i.elapsedSec)), status: row.status });
+      if (row && text && AGENT_STEP[i.agent] === row.step) {
+        fresh.set(key, { text, sec: Math.max(0, Math.floor(i.elapsedSec)), status: row.status, seenAt: now });
+      }
     }
     const gone = [...lastKeys.current].some((k) => !keys.has(k));
     lastKeys.current = keys;
-    if (fresh.size) setHeld((prev) => new Map([...prev, ...fresh]));
-    if (gone) void refreshRef.current().catch(() => {});
-  }
-  usePolling(tick, POLL_MS, on && !aiDown && hasAi, true);
-
-  // 줄 상태가 바뀌었거나 줄이 사라졌으면 붙잡아 둔 문구를 버린다
-  useEffect(() => {
     setHeld((prev) => {
-      if (!prev.size) return prev;
-      const status = new Map(rows.filter((r) => r.who === "ai").map((r) => [rowKeyOf(r), r.status as string]));
-      const next = new Map([...prev].filter(([k, h]) => status.get(k) === h.status));
-      return next.size === prev.size ? prev : next;
+      const next = new Map([...prev].filter(([, h]) => now - h.seenAt <= HOLD_MS));
+      for (const [k, h] of fresh) next.set(k, h);
+      return next.size === 0 && prev.size === 0 ? prev : next;
     });
-  }, [rows]);
+    if (gone && now - lastRefreshAt.current >= REFRESH_GAP_MS) {
+      lastRefreshAt.current = now;
+      void refreshRef.current().catch(() => {});
+    }
+  }
+  usePolling(tick, POLL_MS, active, true);
 
-  // AI 점검 중에는 점검 문구가 우선이다. 돌아오면 새로 받는다
+  // 폴링을 멈추면(AI 줄이 없음 · 점검 중 · 꺼짐) 붙잡은 문구와 지난 열쇠를 비운다 — 다시 켜질 때 옛 값으로 그리거나 다시 받지 않게
   useEffect(() => {
-    if (!aiDown) return;
-    setHeld(new Map());
+    if (active) return;
+    setHeld((prev) => (prev.size ? new Map() : prev));
     lastKeys.current = new Set();
-  }, [aiDown]);
+  }, [active]);
 
   return useCallback(
     (r: PipelineRow) => {
