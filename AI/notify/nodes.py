@@ -24,7 +24,7 @@
 ⚠️ 메일만 지킨다. 같은 글이 보호자 앱 화면에는 이 검사 없이 그대로 뜬다 (CRITERIA §3).
 """
 
-from . import config
+from . import config, template
 from .mcp_client import McpUnavailable, call_tool
 from .state import NotifyState
 
@@ -92,7 +92,14 @@ def assemble(state: NotifyState) -> dict:
         ("\n\n" + "—" * 24 + "\n\n").join(blocks),
         "이 글은 선생님이 확인하고 보낸 내용이에요.\n잇다 앱에서 근거가 된 일지도 함께 볼 수 있어요.",
     ])
-    return {"subject": f"[잇다] {name} 이번 주 소식 ({period})", "body": body, "lines": lines}
+    # 글자가 같은 두 벌을 만든다. HTML 은 보기 좋은 쪽, text 는 HTML 을 못 그리는 클라이언트용이다.
+    # 둘 다 승인된 글자만 담으므로 check 는 lines 하나만 훑으면 된다.
+    return {
+        "subject": f"[잇다] {name} 이번 주 소식 ({period})",
+        "body": body,
+        "html": template.render(name, state["period_from"], state["period_to"], insights),
+        "lines": lines,
+    }
 
 
 def check(state: NotifyState) -> dict:
@@ -139,6 +146,7 @@ def send(state: NotifyState) -> dict:
             "notification_id": state["notification_id"],
             "subject": state.get("subject") or "",
             "body": state.get("body") or "",
+            "html": state.get("html") or "",
         })
     except McpUnavailable as exc:
         print(f"[notify] 발송 실패 ({exc.kind}): {exc}")

@@ -110,6 +110,31 @@ def case_body_has_report_shape():
         "4월 1일 일지", "(상황) 차량 앞에서 멈춰 섰다.", "(대처) 교사가 먼저 타자 3분 뒤 탔다."))
 
 
+def case_html_is_built_and_escaped():
+    """HTML 본문도 같이 나간다. 승인된 글자가 들어 있고, <·& 는 이스케이프돼야 한다."""
+    calls = _Calls()
+    nodes.call_tool = calls.tool
+    run_notify(_payload())
+    html = calls[0][1]["html"]
+    return (html.startswith("<!DOCTYPE html>")
+            and "센터1" in html and "2026년 4월 1주차" in html
+            and "차량 앞에서 멈춰 섰다." in html
+            and "img/logo.png" in html and "parent/report" in html)
+
+
+def case_html_escapes_markup():
+    """아이 기록에 <, & 가 있어도 태그로 새지 않는다."""
+    calls = _Calls()
+    nodes.call_tool = calls.tool
+    risky = ApprovedInsight(
+        content="<b>굵게</b> & 기호가 들어간 기록이에요.",
+        institution_name="센터1", period_label="2026년 4월 1주차",
+        institution_types=["센터"], cross_institution=False)
+    run_notify(_payload(insights=(risky,)))
+    html = calls[0][1]["html"]
+    return "&lt;b&gt;굵게&lt;/b&gt;" in html and "&amp;" in html
+
+
 def case_evidence_name_is_blocked():
     """근거 문장에 다른 아이 이름이 있으면 본문이 깨끗해도 막는다."""
     calls = _Calls()
@@ -202,6 +227,8 @@ CASES = [
     ("승인된 글자가 그대로 나간다 · 도구 인자에 주소 없음", case_sends_approved_text_verbatim),
     ("제목에 아이 이름과 기간", case_subject_has_child_and_period),
     ("메일이 리포트 모양이다 — 기관·본문·근거(상황/대처)", case_body_has_report_shape),
+    ("HTML 본문이 함께 만들어진다", case_html_is_built_and_escaped),
+    ("HTML 이 기록 속 태그·기호를 이스케이프한다", case_html_escapes_markup),
     ("근거 문장에 다른 아이 이름 → blocked", case_evidence_name_is_blocked),
     ("승인된 인사이트 없음 → 아무것도 안 보낸다", case_no_insight_sends_nothing),
     ("받을 사람 없음 → no_recipient (sent 아님)", case_no_recipient_is_not_sent),
