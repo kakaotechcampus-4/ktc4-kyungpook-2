@@ -164,9 +164,6 @@ function ParentSettingsContent({
             {guardianLabel}, 기관 {institutions.length}곳 연결
           </span>
         </span>
-        <button className="tap shrink-0 rounded-2xl border border-line2 px-3 text-[13px] font-semibold text-ink2">
-          수정
-        </button>
         <button
           onClick={() => {
             setUnlinkError(null);
