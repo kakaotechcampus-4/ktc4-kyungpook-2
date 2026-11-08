@@ -60,17 +60,22 @@ public class ChildGuardianService {
         Long organizationId = organizationChildGuard.requireRosterChild(userId, childId);
         List<ChildGuardian> guardians = childGuardianRepository.findByChildIdAndDeletedAtIsNullOrderByLinkedAtAsc(childId);
 
-        Map<Long, Long> linkingOrganizations = new HashMap<>();
+        Map<Long, Invitation> invitations = new HashMap<>();
         for (Invitation invitation : invitationRepository.findAllById(
                 guardians.stream().map(ChildGuardian::getInvitationId).toList())) {
-            linkingOrganizations.put(invitation.getId(), invitation.getOrganizationId());
+            invitations.put(invitation.getId(), invitation);
         }
 
         return guardians.stream()
-                .map(guardian -> new ChildGuardianResponse(
-                        String.valueOf(guardian.getUserId()),
-                        toOffset(guardian.getLinkedAt()),
-                        organizationId.equals(linkingOrganizations.get(guardian.getInvitationId()))))
+                .map(guardian -> {
+                    Invitation invitation = invitations.get(guardian.getInvitationId());
+                    boolean ours = invitation != null && organizationId.equals(invitation.getOrganizationId());
+                    return new ChildGuardianResponse(
+                            String.valueOf(guardian.getUserId()),
+                            toOffset(guardian.getLinkedAt()),
+                            ours,
+                            ours ? invitation.getCode() : null);
+                })
                 .toList();
     }
 

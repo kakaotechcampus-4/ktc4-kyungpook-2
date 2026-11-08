@@ -237,7 +237,8 @@ class InvitationApiTest {
                 .andExpect(jsonPath("$.data[0].userId").value(String.valueOf(parent.getId())))
                 .andExpect(jsonPath("$.data[0].name").doesNotExist())
                 .andExpect(jsonPath("$.data[0].linkedAt").isString())
-                .andExpect(jsonPath("$.data[0].linkedByThisOrganization").value(true));
+                .andExpect(jsonPath("$.data[0].linkedByThisOrganization").value(true))
+                .andExpect(jsonPath("$.data[0].invitationCode").value(registeredCode));
 
         mockMvc.perform(withCsrf(delete(guardians() + "/" + parent.getId()), auth(staff)))
                 .andExpect(status().isNoContent());
