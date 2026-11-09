@@ -21,7 +21,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.itda.backend.dto.response.user.CurrentUserResponse;
 import com.itda.backend.global.jwt.JwtCookie;
@@ -129,7 +132,7 @@ class AuthControllerTest {
 
     /**
      * 탈퇴를 마쳤으면 본문 없는 204. 쿠키는 지우지 않는다 — 기다리는 사이 다른 탭에서 로그인했으면 늦게 온 이 응답이 그 사람의
-     * 새 쿠키를 지운다. 탈퇴한 계정의 출입증은 서버가 늘 401 로 막는다.
+     * 새 쿠키를 지운다. 로그아웃으로 기록하지도 않는다 — 204 를 놓친 화면이 같은 쿠키로 탈퇴 완료(401 ACCOUNT_WITHDRAWN)를 봐야 한다.
      */
     @Test
     void withdrawCompletedReturnsNoContentWithoutTouchingCookies() throws Exception {
@@ -140,6 +143,7 @@ class AuthControllerTest {
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""))
                 .andExpect(header().doesNotExist("Set-Cookie"));
+        verify(revokedSessionService, never()).revoke(any(), any());
     }
 
     /** 아직 처리 중이면 202 와 withdrawal = in_progress. 쿠키는 지우지 않는다. */

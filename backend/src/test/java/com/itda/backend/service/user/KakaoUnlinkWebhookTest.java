@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -193,8 +194,12 @@ class KakaoUnlinkWebhookTest {
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), kakaoId))
                 .andExpect(status().isOk());
 
-        waitUntilReportResolved(again);
+        // 알림이 회원에 옮겨지기 전에도 "알림 없음" 이다. 카카오에 연결 상태를 묻고 그 작업이 끝날 때까지 기다린 뒤 본다
+        waitUntilInboxEmpty();
+        verify(kakaoUnlinkClient, timeout(5000)).linkStatus(Long.parseLong(kakaoId));
+        waitUntilExecutorIdle(again);
         User after = reload(again);
+        assertThat(after.hasKakaoUnlinkReport()).isFalse();
         assertThat(after.isDeleted()).isFalse();
         assertThat(after.isWithdrawing()).isFalse();
         verify(kakaoUnlinkClient, never()).unlink(anyLong());
@@ -336,6 +341,51 @@ class KakaoUnlinkWebhookTest {
         waitUntilDeleted(mother);
     }
 
+    /**
+     * 한 회원 행이 잠겨 있어도 뒤에 받은 다른 회원의 웹훅은 그대로 처리된다. 운영(PostgreSQL)은 기다리지 않고(NOWAIT) 바로
+     * 넘어간다({@code WithdrawalConcurrencyIntegrationTest}). H2 는 NOWAIT 를 따르지 않아 자기 잠금 대기 상한까지 기다린 뒤 넘어간다.
+     */
+    @Test
+    void 한_회원_행이_잠겨_있어도_다른_회원의_웹훅은_처리한다() throws Exception {
+        User locked = persist(UserFixture.parent(nextKakaoId()));
+        User other = persist(UserFixture.parent(nextKakaoId()));
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService holder = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> held = holder.submit(() -> transactionTemplate.executeWithoutResult(status -> {
+                userRepository.findByIdForUpdate(locked.getId());
+                holding.countDown();
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            assertThat(holding.await(5, TimeUnit.SECONDS)).isTrue();
+
+            mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), locked.getKakaoId()))
+                    .andExpect(status().isOk());
+            mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), other.getKakaoId()))
+                    .andExpect(status().isOk());
+
+            // 잠긴 회원의 줄은 남겨 둔 채, 다른 회원은 탈퇴까지 끝난다
+            inbox.drain();
+            waitUntilDeleted(other);
+            assertThat(reload(locked).isDeleted()).isFalse();
+
+            release.countDown();
+            held.get(5, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            holder.shutdownNow();
+        }
+
+        // 잠금이 풀리면 남은 줄을 옮겨 처리한다
+        inbox.drain();
+        waitUntilDeleted(locked);
+    }
+
     // ── 준비 ──────────────────────────────────────────────
 
     private void waitUntilInboxEmpty() throws InterruptedException {
@@ -357,15 +407,12 @@ class KakaoUnlinkWebhookTest {
                 .param("referrer_type", "UNLINK_FROM_APPS");
     }
 
-    private void waitUntilReportResolved(User user) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            if (!reload(user).hasKakaoUnlinkReport()) {
-                return;
-            }
-            Thread.sleep(50);
-        }
-        fail("웹훅 알림을 확인하지 않았습니다.");
+    /**
+     * 실행기가 이 회원에 대해 앞서 받은 작업을 마칠 때까지 기다린다. 실행기는 스레드 하나라, 새로 세운 작업이 끝났으면 그 앞의
+     * 작업도 끝났다(아직 시작하지 않은 작업이 서 있으면 그 작업을 돌려받아 기다린다).
+     */
+    private void waitUntilExecutorIdle(User user) throws Exception {
+        executor.submit(user.getId()).get(5, TimeUnit.SECONDS);
     }
 
     private void waitUntilDeleted(User user) throws InterruptedException {

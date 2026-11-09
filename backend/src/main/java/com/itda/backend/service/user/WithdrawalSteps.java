@@ -115,6 +115,8 @@ public class WithdrawalSteps {
      * 수신함에 남긴 웹훅 하나를 회원 행으로 옮긴다({@link KakaoUnlinkInbox}). 회원 행을 먼저 잠그고(잠금 순서) 수신함 줄을 지운다 —
      * 지운 줄이 없으면 다른 실행이 먼저 옮긴 것이라 아무것도 바꾸지 않는다. 알림 시각은 웹훅을 받은 시각이다.
      *
+     * <p>회원 행은 기다리지 않고 잠근다. 잠겨 있으면 잠금 예외로 끝나고 줄은 남는다 — 한 회원 행 때문에 뒤의 웹훅이 밀리지 않는다.
+     *
      * @return 실행기에 세울 회원 id
      */
     @Transactional
@@ -123,7 +125,7 @@ public class WithdrawalSteps {
         if (webhook == null) {
             return Optional.empty();
         }
-        User user = userRepository.findByKakaoIdForUpdate(webhook.getKakaoId()).orElse(null);
+        User user = userRepository.findByKakaoIdForUpdateNoWait(webhook.getKakaoId()).orElse(null);
         if (webhookRepository.deleteOne(webhookId) == 0) {
             return Optional.empty();
         }

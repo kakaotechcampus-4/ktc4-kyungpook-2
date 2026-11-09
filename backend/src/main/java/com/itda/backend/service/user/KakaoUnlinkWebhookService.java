@@ -16,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>카카오 규칙: 헤더 {@code Authorization: KakaoAK ${대표 어드민 키}} 로 카카오가 보낸 것인지 본다. 3초 안에 {@code 200} 으로
  * 답해야 하고, 회원이 없거나 오류가 나도 {@code 200} 이다. 다시 보내 주지 않는다 — 그래서 여기서는 수신함에 한 줄만 남기고
- * 답한다({@link KakaoUnlinkInbox}). 회원 행 잠금은 기다리지 않는다 — 다른 트랜잭션이 그 행을 오래 잠가도 기한을 넘기지 않는다.
+ * 답한다({@link KakaoUnlinkInbox}). 회원 행 잠금은 기다리지 않고, 남기기(커넥션 대기 포함)도 2초까지만 기다린다.
  * 회원 행으로 옮기고 확인 · 정리하는 일은 답한 뒤 따로 한다. 남기기가 실패하면 그 이벤트는 잃으므로 오류 로그를 남긴다.
  *
  * <p>받는 즉시 탈퇴로 넘기지 않는다. 웹훅에는 해제 시각이 없어, 옛 연결의 늦은 웹훅이 같은 카카오 계정으로 다시 가입한 새 계정에
@@ -60,15 +60,10 @@ public class KakaoUnlinkWebhookService {
             log.warn("회원번호가 없거나 숫자가 아닌 연결 해제 웹훅이라 무시합니다: referrerType={}", referrerType);
             return;
         }
-        try {
-            inbox.receive(kakaoUserId);
-        } catch (RuntimeException e) {
-            // 카카오는 다시 보내지 않는다. 200 으로 답하되 잃은 이벤트를 찾을 수 있게 남긴다(회원번호는 남기지 않는다)
-            log.error("연결 해제 웹훅을 남기지 못했습니다: referrerType={}", referrerType, e);
-            return;
+        // 기한 안에 남기지 못해도 200 으로 답한다. 저장 스레드가 이어서 남기고, 잃은 경우는 수신함이 오류 로그를 남긴다
+        if (inbox.receive(kakaoUserId)) {
+            log.info("연결 해제 웹훅을 받아 수신함에 남겼습니다: referrerType={}", referrerType);
         }
-        log.info("연결 해제 웹훅을 받아 수신함에 남겼습니다: referrerType={}", referrerType);
-        inbox.drainLater();
     }
 
     private void verify(String authorization) {

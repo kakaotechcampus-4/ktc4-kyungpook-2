@@ -287,21 +287,24 @@ class WithdrawalServiceTest {
 
     /**
      * API 로 부르면 요청 동안 영속성 컨텍스트가 열려 있다(open-in-view). 그래도 실행기가 커밋한 결과를 읽어 204 로 끝내야
-     * 한다 — 접수 때 읽은 옛 회원을 다시 보면 늘 202 가 된다. 출입증 쿠키는 지우지 않고, 그 출입증은 401 로 막힌다.
+     * 한다 — 접수 때 읽은 옛 회원을 다시 보면 늘 202 가 된다. 출입증 쿠키는 지우지 않는다. 204 를 놓쳤거나 같은 로그인의 다른
+     * 탭이어도 <b>탈퇴에 쓴 그 쿠키로</b> {@code /auth/me} 를 물으면 탈퇴 완료(401 ACCOUNT_WITHDRAWN)를 알 수 있다.
      */
     @Test
     void API_로_탈퇴하면_실행기가_마친_결과를_읽어_204_로_끝낸다() throws Exception {
         User mother = parent();
+        Cookie login = cookieFor(mother);
 
         mockMvc.perform(withCsrf(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .delete("/api/v1/auth/me").param("userId", principal(mother)), cookieFor(mother)))
+                        .delete("/api/v1/auth/me").param("userId", principal(mother)), login))
                 .andExpect(status().isNoContent())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                         .stringValues("Set-Cookie", org.hamcrest.Matchers.everyItem(
                                 org.hamcrest.Matchers.not(org.hamcrest.Matchers.startsWith(JwtCookie.NAME + "=")))));
         assertThat(reload(mother).isDeleted()).isTrue();
-        mockMvc.perform(get("/api/v1/auth/me").cookie(cookieFor(mother)))
-                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/auth/me").cookie(login))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_WITHDRAWN"));
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder withCsrf(

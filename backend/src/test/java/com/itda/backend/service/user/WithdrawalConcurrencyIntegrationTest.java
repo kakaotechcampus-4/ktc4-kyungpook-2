@@ -1,6 +1,7 @@
 package com.itda.backend.service.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -56,6 +58,7 @@ import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.invitation.Invitation;
 import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.domain.user.KakaoUnlinkWebhook;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.fixture.LockContention;
@@ -64,6 +67,7 @@ import com.itda.backend.fixture.TermsFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
+import com.itda.backend.repository.user.KakaoUnlinkWebhookRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.InvitationService;
@@ -104,6 +108,7 @@ class WithdrawalConcurrencyIntegrationTest {
     @Autowired private UserService userService;
     @Autowired private WithdrawalSteps steps;
     @Autowired private WithdrawalExecutor withdrawalExecutor;
+    @Autowired private KakaoUnlinkWebhookRepository webhookRepository;
     // 기본값 auto 가 PostgreSQL 을 보고 운영과 같은 세션 advisory lock 을 고른다 (잠금 연결 테스트가 그것을 전제한다)
     @Autowired private WithdrawalLocks locks;
 
@@ -129,7 +134,7 @@ class WithdrawalConcurrencyIntegrationTest {
     void cleanUp() throws SQLException {
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             statement.executeUpdate("TRUNCATE sharing_consent, child_organization_request, child_guardian, invitation,"
-                    + " child_organization, child, terms_agreement, revoked_session, organization, users CASCADE");
+                    + " child_organization, child, terms_agreement, revoked_session, organization, kakao_unlink_webhook, users CASCADE");
         }
     }
 
@@ -339,6 +344,37 @@ class WithdrawalConcurrencyIntegrationTest {
             resultSet.next();
             assertThat(resultSet.getInt(1)).isNotEqualTo(pid);
         }
+    }
+
+    // ── 웹훅 수신함 ────────────────────────────────────────
+
+    /**
+     * 웹훅을 회원 행으로 옮길 때는 그 행을 기다리지 않는다(NOWAIT). 다른 트랜잭션이 행을 잠그고 있으면 바로 잠금 예외로 끝나고 줄은
+     * 남는다 — 한 회원 행 때문에 뒤의 웹훅 · 주기 작업이 밀리지 않는다. 잠금이 풀리면 옮겨진다.
+     */
+    @Test
+    void 잠긴_회원의_웹훅은_기다리지_않고_실패해_줄에_남는다() throws Exception {
+        User mother = parent();
+        KakaoUnlinkWebhook webhook = persist(KakaoUnlinkWebhook.received(mother.getKakaoId(), LocalDateTime.now()));
+
+        try (Connection holder = dataSource.getConnection()) {
+            holder.setAutoCommit(false);
+            try (PreparedStatement lock = holder.prepareStatement("select id from users where id = ? for update")) {
+                lock.setLong(1, mother.getId());
+                lock.executeQuery();
+            }
+
+            long started = System.nanoTime();
+            assertThatThrownBy(() -> steps.absorbWebhook(webhook.getId()))
+                    .isInstanceOf(PessimisticLockingFailureException.class);
+            assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(500);
+            assertThat(webhookRepository.existsById(webhook.getId())).isTrue();
+            holder.rollback();
+        }
+
+        assertThat(steps.absorbWebhook(webhook.getId())).contains(mother.getId());
+        assertThat(webhookRepository.existsById(webhook.getId())).isFalse();
+        assertThat(reload(mother).hasKakaoUnlinkReport()).isTrue();
     }
 
     // ── 준비 ──────────────────────────────────────────────

@@ -20,8 +20,8 @@ public class WithdrawalSweeper {
 
     @Scheduled(fixedDelayString = "${app.withdrawal.worker.delay-ms}")
     public void run() {
-        // 수신함에 남은(옮기지 못한) 연결 해제 웹훅을 먼저 회원 행으로 옮긴다
-        kakaoUnlinkInbox.drain();
+        // 수신함에 남은(옮기지 못한) 연결 해제 웹훅은 수신함 스레드에 맡긴다 — 여기서 옮기면 한 회원 행의 잠금이 아래 탈퇴 재시도를 늦춘다
+        kakaoUnlinkInbox.drainLater();
         withdrawalService.resumeAll();
     }
 }

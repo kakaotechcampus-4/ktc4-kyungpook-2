@@ -4,10 +4,12 @@ import java.util.List;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
 import com.itda.backend.domain.user.User;
@@ -24,6 +26,15 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.kakaoId = :kakaoId")
     Optional<User> findByKakaoIdForUpdate(@Param("kakaoId") String kakaoId);
+
+    /**
+     * {@link #findByKakaoIdForUpdate} 와 같되 잠겨 있으면 기다리지 않고 바로 실패한다(NOWAIT). 연결 해제 웹훅을 회원 행으로 옮길 때
+     * 쓴다 — 한 회원 행이 오래 잠겨도 뒤에 받은 다른 회원의 웹훅을 막지 않는다. 실패한 웹훅은 다음에 다시 옮긴다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
+    @Query("select u from User u where u.kakaoId = :kakaoId")
+    Optional<User> findByKakaoIdForUpdateNoWait(@Param("kakaoId") String kakaoId);
 
     /** 로그인·세션 조회용. 탈퇴한 사용자는 인정하지 않는다. */
     Optional<User> findByIdAndDeletedAtIsNull(Long id);
