@@ -12,7 +12,7 @@ import {
 import type { Route } from "./+types/root";
 import { FullPageLoading, NavigationProgress } from "@/components/ui/Loading";
 import { ApiError } from "@/lib/apiError";
-import { rememberReturnPath } from "@/lib/auth";
+import { reloadOnLoginElsewhere, rememberReturnPath } from "@/lib/auth";
 import "./app.css";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -39,6 +39,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  // 다른 탭에서 (다른 계정으로) 로그인하면 이 탭을 새로 고친다 — 예전 계정의 화면으로 새 계정의 요청을 보내지 않게
+  useEffect(() => reloadOnLoginElsewhere(), []);
   // 화면을 옮기는 동안 맨 위 막대 — 기관 · 보호자 · 로그인 화면이 함께 쓴다
   return (
     <>

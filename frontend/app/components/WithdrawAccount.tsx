@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Busy } from "@/components/ui";
 import { ApiError } from "@/lib/apiError";
-import { withdraw, type WithdrawTarget } from "@/lib/auth";
+import { getSession, withdraw, type WithdrawTarget } from "@/lib/auth";
 
 /**
  * 회원 탈퇴 버튼과 확인창. 보호자 설정 · 가입 화면 · 보호자 진입(약관 · 코드 단계)에 둔다 — 가드가 약관 동의 전이거나
@@ -14,7 +14,9 @@ import { withdraw, type WithdrawTarget } from "@/lib/auth";
  *
  * **이 계정만 지운다.** 이 버튼이 처음 그려질 때(화면이 그 계정의 내용을 보여 줄 때)의 계정을 고정해 요청에 싣는다.
  * 그 뒤 화면 데이터가 다시 읽혀 `account` 가 다른 계정(다른 탭에서 로그인한 사람)으로 바뀌어도 대상은 바뀌지 않는다 —
- * 바뀐 것을 알아채면 요청을 보내지 않고 새로 고치라고 알린다. 서버도 지금 로그인한 계정과 다르면 409 로 막는다.
+ * 바뀐 것을 알아채면 요청을 보내지 않고 새로 고치라고 알린다. 확인 창을 열 때도 서버에 지금 로그인한 계정을 다시 물어 본다.
+ * 서버도 지금 로그인한 계정과 다르면 409 로 막는다. 다른 탭에서 로그인하면 앱이 이 탭을 새로 고치므로(reloadOnLoginElsewhere)
+ * 화면 데이터와 이 계정은 같은 로그인에서 온다.
  * 처음 그려질 때 `account` 가 없으면(서버가 탈퇴를 열지 않았거나 비로그인) 아무것도 그리지 않는다.
  *
  * @param audience 보호자면 아이 연결 · 공유 동의 안내를 함께 보인다. 가입 전이면 가입 정보가 지워진다는 것만 보인다
@@ -36,10 +38,24 @@ export function WithdrawAccount({
   const [error, setError] = useState<string | null>(null);
   // 처음 그려질 때의 계정으로 고정한다. 화면 데이터가 다시 읽혀도 바뀌지 않는다
   const [pinned] = useState<WithdrawTarget | null>(account);
+  // 확인 창을 열 때 서버에 물어 본 지금 계정이 고정한 계정과 다른지
+  const [changedOnOpen, setChangedOnOpen] = useState(false);
 
   if (!pinned) return null;
   const target = pinned;
-  const accountChanged = account?.userId !== target.userId;
+  const accountChanged = account?.userId !== target.userId || changedOnOpen;
+
+  async function openDialog() {
+    setOpen(true);
+    setError(null);
+    setChangedOnOpen(false);
+    try {
+      const now = await getSession();
+      if (now.userId !== target.userId) setChangedOnOpen(true);
+    } catch {
+      // 묻지 못했으면 서버의 409 검사에 맡긴다
+    }
+  }
 
   async function confirm() {
     if (accountChanged) {
@@ -63,7 +79,7 @@ export function WithdrawAccount({
       {trigger === "row" ? (
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => void openDialog()}
           className="tap flex w-full items-center justify-between px-4 py-3.5"
         >
           <span className="text-[15px] text-block">회원 탈퇴</span>
@@ -71,7 +87,7 @@ export function WithdrawAccount({
       ) : (
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => void openDialog()}
           className="tap mx-auto block px-3 py-2 text-[13px] text-muted underline underline-offset-4"
         >
           회원 탈퇴

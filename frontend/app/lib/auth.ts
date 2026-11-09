@@ -533,6 +533,55 @@ export async function signOut(): Promise<void> {
   }
 }
 
+/* ── 다른 탭의 로그인 ───────────────────────────────── */
+
+/**
+ * 로그인이 끝날 때마다 바꾸는 표시. 같은 브라우저의 탭들은 출입증 쿠키를 함께 쓰므로, 한 탭에서 다른 계정으로 로그인하면 다른
+ * 탭은 예전 계정의 화면을 보여 주는 채로 새 계정의 쿠키로 요청하게 된다(예: A 의 설정 화면에서 탈퇴를 누르면 B 가 지워진다).
+ * 표시가 바뀌면 다른 탭이 화면을 새로 고쳐, 화면 데이터와 요청이 늘 같은 계정을 가리키게 한다.
+ */
+const LOGIN_MARK_KEY = "itda_login_mark";
+
+function readLoginMark(): string | null {
+  try {
+    return localStorage.getItem(LOGIN_MARK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** 로그인이 끝났다고 다른 탭에 알린다. 로그인 착지(`/oauth/success`)가 부른다. */
+export function announceLogin(): void {
+  try {
+    localStorage.setItem(LOGIN_MARK_KEY, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  } catch {
+    // 저장소를 못 쓰면 알리지 못한다. 그래도 탈퇴는 서버가 확인 창의 계정과 로그인한 계정을 맞춰 본다
+  }
+}
+
+/**
+ * 다른 탭에서 로그인하면 이 탭을 새로 고친다. 화면을 연 뒤 표시가 바뀌었는지를 저장소 이벤트와, 숨었다 다시 보일 때(멈춘 탭은
+ * 이벤트를 놓칠 수 있다) 함께 본다. 앱 최상위가 한 번 부르고, 돌려준 함수로 그만 본다.
+ */
+export function reloadOnLoginElsewhere(): () => void {
+  const seen = readLoginMark();
+  const check = () => {
+    if (readLoginMark() !== seen) window.location.reload();
+  };
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === LOGIN_MARK_KEY) check();
+  };
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") check();
+  };
+  window.addEventListener("storage", onStorage);
+  document.addEventListener("visibilitychange", onVisibility);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    document.removeEventListener("visibilitychange", onVisibility);
+  };
+}
+
 /* ── 회원 탈퇴 ──────────────────────────────────────── */
 
 /** 탈퇴 확인 창을 연 계정. 이 계정만 지운다. */
@@ -547,13 +596,13 @@ export function withdrawTargetOf(session: Session): WithdrawTarget | null {
   return { userId: session.userId };
 }
 
-/** 탈퇴 요청의 결과. `completed` 는 서버가 끝까지 마치고 쿠키를 지운 것, `in_progress` 는 서버가 이어서 처리한다. */
+/** 탈퇴 요청의 결과. `completed` 는 서버가 끝까지 마친 것, `in_progress` 는 서버가 이어서 처리한다. */
 export type WithdrawResult = "completed" | "in_progress";
 
 /**
  * DELETE /api/v1/auth/me — 회원 탈퇴. 보호자와 가입을 마치지 않은 사람만 할 수 있다.
  *
- *  - 204: 끝났다. 서버가 출입증 쿠키를 지웠다 → `completed`
+ *  - 204: 끝났다 → `completed`. 서버는 쿠키를 지우지 않는다(늦게 온 응답이 다른 탭의 새 로그인 쿠키를 지우지 않게) — 이 브라우저 표시만 지운다
  *  - 202: 접수했고 서버가 처리 중이다 → `in_progress` (탈퇴 안내 화면이 `/auth/me` 로 결과를 본다)
  *  - 409 WITHDRAWAL_IN_PROGRESS: 이미 처리 중이다 → `in_progress`
  *  - 그 밖(502 KAKAO_UNLINK_FAILED · 409 WITHDRAWAL_ACCOUNT_MISMATCH · 404 · 403 · 401 · 네트워크)은 ApiError 로
