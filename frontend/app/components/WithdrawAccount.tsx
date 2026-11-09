@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import { Busy } from "@/components/ui";
 import { ApiError } from "@/lib/apiError";
@@ -19,6 +19,10 @@ import { getSession, withdraw, type WithdrawTarget } from "@/lib/auth";
  * 화면 데이터와 이 계정은 같은 로그인에서 온다.
  * 처음 그려질 때 `account` 가 없으면(서버가 탈퇴를 열지 않았거나 비로그인) 아무것도 그리지 않는다.
  *
+ * 확인창은 약관 본문 창(`TermsSheet`)처럼 네이티브 `<dialog>` 의 `showModal()` 로 띄운다 — 창이 떠 있는 동안 뒤 화면을 누르거나
+ * Tab 으로 닿을 수 없어야 한다. 처음 포커스는 [취소]에 둔다(엔터 한 번에 탈퇴가 나가지 않게). 닫으면 [회원 탈퇴] 버튼으로
+ * 포커스를 돌려준다.
+ *
  * @param audience 보호자면 아이 연결 · 공유 동의 안내를 함께 보인다. 가입 전이면 가입 정보가 지워진다는 것만 보인다
  * @param trigger  `row` 는 설정 목록의 한 줄, `link` 는 화면 아래 작은 글자 버튼
  * @param account  화면 데이터의 계정. 처음 값만 대상으로 쓰고, 이후 값은 바뀌었는지 보는 데만 쓴다
@@ -33,6 +37,7 @@ export function WithdrawAccount({
   account: WithdrawTarget | null;
 }) {
   const navigate = useNavigate();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +60,12 @@ export function WithdrawAccount({
     } catch {
       // 묻지 못했으면 서버의 409 검사에 맡긴다
     }
+  }
+
+  function closeDialog() {
+    if (pending) return;
+    setOpen(false);
+    setError(null);
   }
 
   async function confirm() {
@@ -82,6 +93,7 @@ export function WithdrawAccount({
     <>
       {trigger === "row" ? (
         <button
+          ref={triggerRef}
           type="button"
           onClick={() => void openDialog()}
           className="tap flex w-full items-center justify-between px-4 py-3.5"
@@ -90,6 +102,7 @@ export function WithdrawAccount({
         </button>
       ) : (
         <button
+          ref={triggerRef}
           type="button"
           onClick={() => void openDialog()}
           className="tap mx-auto block px-3 py-2 text-[13px] text-muted underline underline-offset-4"
@@ -99,70 +112,151 @@ export function WithdrawAccount({
       )}
 
       {open ? (
-        <div
-          role="dialog"
-          aria-modal
-          aria-labelledby="withdraw-title"
-          aria-describedby="withdraw-desc"
-          className="fixed inset-0 z-20 flex items-end justify-center bg-ink/40"
-        >
-          <div className="flex max-h-[90dvh] w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] flex-col rounded-t-3xl bg-surface p-5 pb-7">
-            <div className="min-h-0 overflow-y-auto">
-              <p id="withdraw-title" className="mb-2 text-[18px] font-extrabold">
-                정말 탈퇴할까요?
-              </p>
-              <ul
-                id="withdraw-desc"
-                className="mb-5 flex list-disc flex-col gap-1.5 pl-5 text-[15px] leading-7 text-ink2"
-              >
-                {audience === "parent" ? (
-                  <>
-                    <li>
-                      <b className="font-semibold">연결된 아이와의 연결이 모두 끊겨요.</b>
-                    </li>
-                    <li>
-                      내 공유 동의는 철회돼요. 같은 기관에 다른 보호자의 동의가 남아 있으면 그 기관
-                      공유는 계속돼요.
-                    </li>
-                  </>
-                ) : null}
-                <li>카카오 연결이 끊기고, 카카오 회원번호가 지워져요.</li>
-                <li>
-                  같은 카카오 계정으로 다시 들어와도 새로 가입하는 거예요.
-                  {audience === "parent" ? " 아이를 다시 연결하려면 기관에서 초대 코드를 새로 받아야 해요." : ""}
-                </li>
-              </ul>
-            </div>
-            {error || accountChanged ? (
-              <p role="alert" className="mb-3 rounded-2xl bg-blocksoft px-4 py-3 text-[14px] text-block">
-                {error ?? ACCOUNT_CHANGED}
-              </p>
-            ) : null}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  setOpen(false);
-                  setError(null);
-                }}
-                className="tap h-14 flex-1 rounded-2xl border border-line2 text-[16px] font-bold text-ink2 disabled:opacity-50"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                disabled={pending || accountChanged}
-                onClick={confirm}
-                className="tap h-14 flex-1 rounded-2xl bg-block text-[16px] font-bold text-white disabled:opacity-50"
-              >
-                {pending ? <Busy>탈퇴하는 중…</Busy> : "탈퇴하기"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <WithdrawDialog
+          audience={audience}
+          message={error ?? (accountChanged ? ACCOUNT_CHANGED : null)}
+          pending={pending}
+          confirmDisabled={pending || accountChanged}
+          returnFocusTo={triggerRef}
+          onCancel={closeDialog}
+          onConfirm={() => void confirm()}
+        />
       ) : null}
     </>
+  );
+}
+
+const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+
+/** 탈퇴 확인창. 띄울 때만 그린다(닫으면 부르는 쪽이 지운다). */
+function WithdrawDialog({
+  audience,
+  message,
+  pending,
+  confirmDisabled,
+  returnFocusTo,
+  onCancel,
+  onConfirm,
+}: {
+  audience: "parent" | "pending";
+  message: string | null;
+  pending: boolean;
+  confirmDisabled: boolean;
+  returnFocusTo: RefObject<HTMLButtonElement | null>;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const descId = useId();
+
+  // 레이아웃 효과라 지울 때 dialog 가 문서에서 빠지기 전에 닫힌다
+  useLayoutEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    const trigger = returnFocusTo.current;
+    dialog.showModal();
+    cancelRef.current?.focus();
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+      if (dialog.open) dialog.close();
+      // 탈퇴를 마쳐 다른 화면으로 옮겨 가면 버튼도 함께 사라진다. 남아 있을 때만 돌려준다
+      if (trigger?.isConnected) trigger.focus();
+    };
+  }, [returnFocusTo]);
+
+  // 네이티브 모달은 Tab 이 브라우저 주소창으로도 나가므로 첫 · 끝 요소에서 감싸 돈다
+  function trapTab(e: React.KeyboardEvent<HTMLDialogElement>) {
+    if (e.key !== "Tab" || !ref.current) return;
+    const items = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  return (
+    <dialog
+      ref={ref}
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+      onCancel={(e) => {
+        // Esc. 탈퇴를 보내는 중에는 닫지 않는다
+        e.preventDefault();
+        onCancel();
+      }}
+      // Esc 를 잇달아 누르면 브라우저가 cancel 없이 닫기도 한다. close 이벤트는 늦게 오므로 그사이 다시 열렸으면
+      // (개발 모드는 효과를 두 번 돌려 닫고 다시 연다) 무시한다. 탈퇴를 보내는 중이면 결과를 보여 줄 수 있게 다시 띄운다
+      onClose={() => {
+        const dialog = ref.current;
+        if (!dialog || dialog.open) return;
+        if (pending) dialog.showModal();
+        else onCancel();
+      }}
+      onKeyDown={trapTab}
+      onClick={(e) => {
+        // 창 바깥(배경막)을 누르면 이벤트 대상이 dialog 자신이다
+        if (e.target === e.currentTarget) onCancel();
+      }}
+      className="mx-auto mt-auto mb-0 max-h-[90dvh] w-full max-w-[430px] flex-col rounded-t-3xl bg-surface p-5 pb-7 text-ink backdrop:bg-ink/40 open:flex md:max-w-[560px] lg:max-w-[640px]"
+    >
+      <div className="min-h-0 overflow-y-auto">
+        <p id={titleId} className="mb-2 text-[18px] font-extrabold">
+          정말 탈퇴할까요?
+        </p>
+        <ul id={descId} className="mb-5 flex list-disc flex-col gap-1.5 pl-5 text-[15px] leading-7 text-ink2">
+          {audience === "parent" ? (
+            <>
+              <li>
+                <b className="font-semibold">연결된 아이와의 연결이 모두 끊겨요.</b>
+              </li>
+              <li>
+                내 공유 동의는 철회돼요. 같은 기관에 다른 보호자의 동의가 남아 있으면 그 기관
+                공유는 계속돼요.
+              </li>
+            </>
+          ) : null}
+          <li>카카오 연결이 끊기고, 카카오 회원번호가 지워져요.</li>
+          <li>
+            같은 카카오 계정으로 다시 들어와도 새로 가입하는 거예요.
+            {audience === "parent" ? " 아이를 다시 연결하려면 기관에서 초대 코드를 새로 받아야 해요." : ""}
+          </li>
+        </ul>
+      </div>
+      {message ? (
+        <p role="alert" className="mb-3 rounded-2xl bg-blocksoft px-4 py-3 text-[14px] text-block">
+          {message}
+        </p>
+      ) : null}
+      <div className="flex gap-2">
+        <button
+          ref={cancelRef}
+          type="button"
+          disabled={pending}
+          onClick={onCancel}
+          className="tap h-14 flex-1 rounded-2xl border border-line2 text-[16px] font-bold text-ink2 disabled:opacity-50"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          disabled={confirmDisabled}
+          onClick={onConfirm}
+          className="tap h-14 flex-1 rounded-2xl bg-block text-[16px] font-bold text-white disabled:opacity-50"
+        >
+          {pending ? <Busy>탈퇴하는 중…</Busy> : "탈퇴하기"}
+        </button>
+      </div>
+    </dialog>
   );
 }
 

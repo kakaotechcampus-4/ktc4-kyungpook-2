@@ -79,6 +79,14 @@ const INVITE_CODE_KEY = "itda_invite_code";
  */
 const RETURN_PATH_KEY = "itda_return_path";
 
+/**
+ * 이 탭에서 카카오 로그인을 시작한 시각. 카카오로 떠나기 직전에 적고 `/oauth/success` 가 한 번 읽고 지운다. 이 표시가 있을 때만
+ * 실제 로그인으로 보고 다른 탭에 알린다 — 이미 로그인한 사람이 주소를 직접 열면 표시가 없다. 로그인 의도와 같은 이유로
+ * sessionStorage 다. 카카오에서 그만두고 돌아온 표시가 오래 남지 않게 LOGIN_STARTED_TTL_MS 가 지나면 버린다.
+ */
+const LOGIN_STARTED_KEY = "itda_login_started";
+const LOGIN_STARTED_TTL_MS = 30 * 60 * 1000;
+
 export type Role = "org" | "parent" | null;
 
 /**
@@ -456,6 +464,11 @@ export function startKakaoLogin(intent: "org" | "parent"): void {
   } catch {
     // 무시 — 회원가입 화면에서 역할을 미리 골라두지 못할 뿐이다.
   }
+  try {
+    sessionStorage.setItem(LOGIN_STARTED_KEY, String(Date.now()));
+  } catch {
+    // 무시 — 로그인이 끝나도 다른 탭에 알리지 못할 뿐이다. 탈퇴는 서버가 계정을 맞춰 본다
+  }
   window.location.href = `${AUTH_ORIGIN}/oauth2/authorization/kakao`;
 }
 
@@ -550,24 +563,40 @@ function readLoginMark(): string | null {
   }
 }
 
+/** 이 탭에서 시작한 카카오 로그인 표시를 읽고 지운다. 시작한 지 오래됐으면 없는 것으로 본다. */
+function takeLoginStarted(): boolean {
+  try {
+    const raw = sessionStorage.getItem(LOGIN_STARTED_KEY);
+    sessionStorage.removeItem(LOGIN_STARTED_KEY);
+    const startedAt = Number(raw);
+    return raw !== null && Number.isFinite(startedAt) && Date.now() - startedAt < LOGIN_STARTED_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
 /** 이 문서에서 로그인 알림을 이미 판단했는지. 문서(페이지 로드)마다 한 번만 판단한다. */
 let loginLandingChecked = false;
 
 /**
- * 실제 로그인으로 들어왔을 때만 다른 탭에 알린다. 로그인이 끝나면 백엔드가 브라우저를 `/oauth/success` 로 **새로 불러온다** —
- * 이 문서의 첫 주소가 `/oauth/success` 일 때만 알린다. 앱 안에서 `/oauth/success` 로 옮겨 가는 것(예: 탈퇴 안내의 [돌아가기])은
- * 로그인이 아니라 알리지 않는다 — 알리면 다른 탭이 새로 고쳐져 쓰던 내용이 사라진다.
+ * 실제 로그인으로 들어왔을 때만 다른 탭에 알린다 — 알리면 다른 탭이 새로 고쳐져 쓰던 내용이 사라지므로, 세션이 정말 바뀐 경우로
+ * 좁힌다. 둘 다 맞아야 한다.
+ *  - 이 탭에서 카카오 로그인을 시작했다(`startKakaoLogin` 의 표시). 이미 로그인한 사람이 `/oauth/success` 주소를 직접 열면 없다
+ *  - 백엔드가 로그인을 마치고 브라우저를 `/oauth/success` 로 **새로 불러왔다**(이 문서의 첫 주소). 앱 안에서 옮겨 가는 것
+ *    (예: 탈퇴 안내의 [돌아가기])은 아니다
+ * 표시는 판단할 때 지운다. 남겨 두면 같은 탭에서 나중에 주소를 직접 열 때 알리게 된다.
  */
 export function announceLoginIfLanded(): void {
   if (loginLandingChecked) return;
   loginLandingChecked = true;
+  const started = takeLoginStarted();
   try {
     const entry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     if (!entry || new URL(entry.name).pathname !== "/oauth/success") return;
   } catch {
     return;
   }
-  announceLogin();
+  if (started) announceLogin();
 }
 
 /** 로그인이 끝났다고 다른 탭에 알린다. */
