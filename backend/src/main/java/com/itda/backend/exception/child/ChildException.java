@@ -1,15 +1,10 @@
 package com.itda.backend.exception.child;
 
-public class ChildException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
 
-    private final ChildErrorCode errorCode;
+public class ChildException extends BusinessException {
 
     public ChildException(ChildErrorCode errorCode) {
-        super(errorCode.getMessage());
-        this.errorCode = errorCode;
-    }
-
-    public ChildErrorCode getErrorCode() {
-        return errorCode;
+        super(errorCode);
     }
 }

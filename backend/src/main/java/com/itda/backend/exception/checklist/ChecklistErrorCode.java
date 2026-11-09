@@ -3,10 +3,14 @@ package com.itda.backend.exception.checklist;
 import org.springframework.http.HttpStatus;
 
 import com.itda.backend.global.exception.ErrorCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * docs/api/api-spec.md §4.7 · §5.6 — 준비물·확인사항 오류 코드.
  */
+@Getter
+@RequiredArgsConstructor
 public enum ChecklistErrorCode implements ErrorCode {
 
     /**
@@ -27,25 +31,4 @@ public enum ChecklistErrorCode implements ErrorCode {
     private final HttpStatus status;
     private final String code;
     private final String message;
-
-    ChecklistErrorCode(HttpStatus status, String code, String message) {
-        this.status = status;
-        this.code = code;
-        this.message = message;
-    }
-
-    @Override
-    public HttpStatus getStatus() {
-        return status;
-    }
-
-    @Override
-    public String getCode() {
-        return code;
-    }
-
-    @Override
-    public String getMessage() {
-        return message;
-    }
 }

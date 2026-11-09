@@ -13,4 +13,7 @@ public interface ErrorCode {
     String getCode();
 
     String getMessage();
+
+    /** enum 상수 이름. 구현체가 enum 이라 따로 구현하지 않는다. */
+    String name();
 }

@@ -125,9 +125,9 @@ class MatchingQueueControllerTest {
                 .andExpect(jsonPath("$.code").value("MATCHING_RESULT_INVALID_REQUEST"));
     }
 
-    /** 없는 아이와 다른 기관 아이는 서비스가 같은 문구를 던진다. 그 문구가 응답 본문에 그대로 나가는지 본다. */
+    /** 내부 사유(아이 id 가 든 영어 문장)는 응답에 나가지 않고 오류 코드의 고정 문구가 나간다. 없는 아이와 다른 기관 아이가 같은 응답이다. */
     @Test
-    void resolveAssignUnavailableChild_returns400WithSameMessage() throws Exception {
+    void resolveAssignUnavailableChild_returns400WithFixedMessage() throws Exception {
         given(matchingResultService.resolve(eq(1L), eq("assign"), eq(2L), any(), any()))
                 .willThrow(new MatchingResultValidationException("child not available: 2"));
 
@@ -136,6 +136,6 @@ class MatchingQueueControllerTest {
                         .content("{\"action\":\"assign\",\"childId\":2}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("MATCHING_RESULT_INVALID_REQUEST"))
-                .andExpect(jsonPath("$.message").value("child not available: 2"));
+                .andExpect(jsonPath("$.message").value("요청이 올바르지 않습니다."));
     }
 }

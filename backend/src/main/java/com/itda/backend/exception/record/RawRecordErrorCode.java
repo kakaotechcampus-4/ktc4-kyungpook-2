@@ -3,10 +3,14 @@ package com.itda.backend.exception.record;
 import org.springframework.http.HttpStatus;
 
 import com.itda.backend.global.exception.ErrorCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * docs/api/api-conventions.md — RawRecord 도메인 오류 코드.
  */
+@Getter
+@RequiredArgsConstructor
 public enum RawRecordErrorCode implements ErrorCode {
 
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "RAW_RECORD_INVALID_REQUEST", "요청이 올바르지 않습니다."),
@@ -25,25 +29,4 @@ public enum RawRecordErrorCode implements ErrorCode {
     private final HttpStatus status;
     private final String code;
     private final String message;
-
-    RawRecordErrorCode(HttpStatus status, String code, String message) {
-        this.status = status;
-        this.code = code;
-        this.message = message;
-    }
-
-    @Override
-    public HttpStatus getStatus() {
-        return status;
-    }
-
-    @Override
-    public String getCode() {
-        return code;
-    }
-
-    @Override
-    public String getMessage() {
-        return message;
-    }
 }

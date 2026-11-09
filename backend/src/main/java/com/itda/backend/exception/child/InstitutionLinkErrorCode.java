@@ -3,10 +3,14 @@ package com.itda.backend.exception.child;
 import org.springframework.http.HttpStatus;
 
 import com.itda.backend.global.exception.ErrorCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * docs/api/api-conventions.md — 이미 있는 아이를 다른 기관 명부에 붙이는 연결 요청의 오류 코드.
  */
+@Getter
+@RequiredArgsConstructor
 public enum InstitutionLinkErrorCode implements ErrorCode {
 
     /** 형식이 틀렸거나 이 코드를 쓰는 기관이 없다. 둘을 나누지 않는다. */
@@ -24,25 +28,4 @@ public enum InstitutionLinkErrorCode implements ErrorCode {
     private final HttpStatus status;
     private final String code;
     private final String message;
-
-    InstitutionLinkErrorCode(HttpStatus status, String code, String message) {
-        this.status = status;
-        this.code = code;
-        this.message = message;
-    }
-
-    @Override
-    public HttpStatus getStatus() {
-        return status;
-    }
-
-    @Override
-    public String getCode() {
-        return code;
-    }
-
-    @Override
-    public String getMessage() {
-        return message;
-    }
 }

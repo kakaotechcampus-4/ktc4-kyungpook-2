@@ -1,8 +1,10 @@
 package com.itda.backend.exception.record;
 
-public class RawRecordValidationException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
+
+public class RawRecordValidationException extends BusinessException {
 
     public RawRecordValidationException(String message) {
-        super(message);
+        super(RawRecordErrorCode.INVALID_REQUEST, message);
     }
 }

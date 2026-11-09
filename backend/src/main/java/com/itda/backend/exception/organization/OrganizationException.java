@@ -1,15 +1,10 @@
 package com.itda.backend.exception.organization;
 
-public class OrganizationException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
 
-    private final OrganizationErrorCode errorCode;
+public class OrganizationException extends BusinessException {
 
     public OrganizationException(OrganizationErrorCode errorCode) {
-        super(errorCode.getMessage());
-        this.errorCode = errorCode;
-    }
-
-    public OrganizationErrorCode getErrorCode() {
-        return errorCode;
+        super(errorCode);
     }
 }

@@ -32,13 +32,13 @@ import com.itda.backend.dto.response.insight.InsightProgressResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
-import com.itda.backend.exception.insight.InsightExceptionHandler;
+import com.itda.backend.global.exception.GlobalExceptionHandler;
 import com.itda.backend.service.insight.InsightGate2QueryService;
 import com.itda.backend.service.insight.InsightGate2Service;
 import com.itda.backend.service.insight.InsightProgressService;
 
 @WebMvcTest(InsightController.class)
-@Import(InsightExceptionHandler.class)
+@Import(GlobalExceptionHandler.class)
 @AutoConfigureMockMvc(addFilters = false)
 class InsightControllerTest {
 

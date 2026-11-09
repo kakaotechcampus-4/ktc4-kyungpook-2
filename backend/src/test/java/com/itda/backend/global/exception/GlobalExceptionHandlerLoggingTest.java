@@ -117,6 +117,6 @@ class GlobalExceptionHandlerLoggingTest {
                 .andExpect(status().isBadRequest());
 
         assertThat(output).doesNotContain(SECRET);
-        assertThat(output).contains("초대 처리 실패");
+        assertThat(output).contains("요청 처리 실패", "INVALID_INVITE_CODE");
     }
 }

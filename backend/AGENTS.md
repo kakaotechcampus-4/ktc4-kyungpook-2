@@ -60,7 +60,7 @@ com.itda.backend
 │   ├── request/<기능>
 │   └── response/<기능>
 ├── exception
-│   ├── <기능>          # 기능별 예외·오류 코드·예외 처리기
+│   ├── <기능>          # 기능별 예외·오류 코드
 │   ├── agent           # 여러 기능이 쓰는 AI 호출 예외
 │   └── auth            # 로그인·토큰 인증 예외
 └── global              # 설정, 보안, JWT, 공통 응답·예외, 외부 호출 HTTP 요청 팩토리 등 횡단 관심사
@@ -162,8 +162,11 @@ Mapper를 사용하는 경우에도 데이터 변환만 담당하게 하고 조�
 - `ErrorCode`는 HTTP 상태, 안정적인 오류 코드, 사용자에게 노출 가능한 메시지와 오류 타입 정보를 제공한다.
 - 공통 오류는 `CommonErrorCode`, 도메인 오류는 `{Domain}ErrorCode` 형태의 enum으로 분리한다.
 - 오류 코드는 `UPPER_SNAKE_CASE`를 사용한다.
-- 도메인 예외는 해당 `ErrorCode`를 보관하고, 비즈니스 실패를 표현한다.
-- `@RestControllerAdvice` 전역 예외 처리기는 예외를 API 규약의 실패 응답과 적절한 HTTP 상태 코드로 변환한다.
+- 오류 코드 enum 은 Lombok `@Getter`·`@RequiredArgsConstructor` 로 `status`·`code`·`message` 를 채운다.
+- 도메인 예외는 `global.exception.BusinessException` 을 상속하고 생성자에서 자기 `ErrorCode` 를 넘긴다. 예외 메시지에는
+  로그용 내부 사유(id 등)를 담는다.
+- `GlobalExceptionHandler` 의 `BusinessException` 처리기 하나가 모든 도메인 예외를 오류 코드의 상태와 고정 문구로 응답한다.
+  새 예외도 상속만 하면 이 처리기로 응답한다.
 - 실패 응답을 `200 OK`로 반환하지 않는다.
 - 내부 예외 메시지, SQL, 비밀번호, 토큰, 스택 트레이스를 API 응답에 노출하지 않는다.
 

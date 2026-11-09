@@ -3,10 +3,14 @@ package com.itda.backend.exception.user;
 import org.springframework.http.HttpStatus;
 
 import com.itda.backend.global.exception.ErrorCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * docs/api/api-conventions.md — 사용자 도메인 오류 코드.
  */
+@Getter
+@RequiredArgsConstructor
 public enum UserErrorCode implements ErrorCode {
 
     /**
@@ -74,25 +78,4 @@ public enum UserErrorCode implements ErrorCode {
     private final HttpStatus status;
     private final String code;
     private final String message;
-
-    UserErrorCode(HttpStatus status, String code, String message) {
-        this.status = status;
-        this.code = code;
-        this.message = message;
-    }
-
-    @Override
-    public HttpStatus getStatus() {
-        return status;
-    }
-
-    @Override
-    public String getCode() {
-        return code;
-    }
-
-    @Override
-    public String getMessage() {
-        return message;
-    }
 }

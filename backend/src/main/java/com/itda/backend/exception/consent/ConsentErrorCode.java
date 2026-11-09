@@ -3,10 +3,14 @@ package com.itda.backend.exception.consent;
 import org.springframework.http.HttpStatus;
 
 import com.itda.backend.global.exception.ErrorCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * docs/api/api-spec.md §5.1 G-02 · §5.5 G-41 — 보호자 동의 오류 코드.
  */
+@Getter
+@RequiredArgsConstructor
 public enum ConsentErrorCode implements ErrorCode {
 
     /**
@@ -28,25 +32,4 @@ public enum ConsentErrorCode implements ErrorCode {
     private final HttpStatus status;
     private final String code;
     private final String message;
-
-    ConsentErrorCode(HttpStatus status, String code, String message) {
-        this.status = status;
-        this.code = code;
-        this.message = message;
-    }
-
-    @Override
-    public HttpStatus getStatus() {
-        return status;
-    }
-
-    @Override
-    public String getCode() {
-        return code;
-    }
-
-    @Override
-    public String getMessage() {
-        return message;
-    }
 }

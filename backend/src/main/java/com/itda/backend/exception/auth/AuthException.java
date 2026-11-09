@@ -1,15 +1,10 @@
 package com.itda.backend.exception.auth;
 
-public class AuthException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
 
-    private final AuthErrorCode errorCode;
+public class AuthException extends BusinessException {
 
     public AuthException(AuthErrorCode errorCode) {
-        super(errorCode.getMessage());
-        this.errorCode = errorCode;
-    }
-
-    public AuthErrorCode getErrorCode() {
-        return errorCode;
+        super(errorCode);
     }
 }

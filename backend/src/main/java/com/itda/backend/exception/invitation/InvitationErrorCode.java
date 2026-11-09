@@ -3,10 +3,14 @@ package com.itda.backend.exception.invitation;
 import org.springframework.http.HttpStatus;
 
 import com.itda.backend.global.exception.ErrorCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
 /**
  * docs/api/api-spec.md §6 — 초대 코드·보호자 연결 오류 코드.
  */
+@Getter
+@RequiredArgsConstructor
 public enum InvitationErrorCode implements ErrorCode {
 
     /**
@@ -43,25 +47,4 @@ public enum InvitationErrorCode implements ErrorCode {
     private final HttpStatus status;
     private final String code;
     private final String message;
-
-    InvitationErrorCode(HttpStatus status, String code, String message) {
-        this.status = status;
-        this.code = code;
-        this.message = message;
-    }
-
-    @Override
-    public HttpStatus getStatus() {
-        return status;
-    }
-
-    @Override
-    public String getCode() {
-        return code;
-    }
-
-    @Override
-    public String getMessage() {
-        return message;
-    }
 }
