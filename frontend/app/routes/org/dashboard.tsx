@@ -461,7 +461,6 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
       await onUploaded();
     } finally {
       setUploading(false);
-      if (input.current) input.current.value = "";
     }
   }
 
@@ -534,8 +533,8 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         <UploadConfirm
           files={pending}
           // 전체 목록을 받았으면 그것만 본다(서버가 저장에 실패한 FAILED 는 빠져 있다). 받기 전 · 실패면 최근 50개로 —
-          // 처리 현황에는 FAILED 가 섞여 있어 일지가 하나라도 생긴 파일만 쓴다(저장에 실패한 파일은 일지가 없다)
-          uploaded={check.status === "done" ? check.list : files.filter((f) => f.entries.length > 0)}
+          // 여기엔 FAILED 가 섞여 다시 올리는 파일에도 경고가 뜰 수 있지만 그대로 둔다. 경고만 하므로 놓치는 것보다 낫다
+          uploaded={check.status === "done" ? check.list : files}
           fullCheck={check.status}
           onCancel={() => setPending(null)}
           onConfirm={() => {
@@ -544,7 +543,7 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
             const sending: File[] = [];
             const skipped: UploadFailure[] = [];
             for (const file of pending) {
-              const reason = skipReason(file);
+              const reason = uploadPrecheck(file);
               if (reason) skipped.push({ ok: false, file, reason });
               else sending.push(file);
             }
@@ -607,11 +606,11 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
 /** 기관이 올린 파일 전체를 받았는지. 받기 전 · 실패면 최근 50개(files)로만 맞춰 본 것이다 */
 type FullCheck = { status: "loading" } | { status: "failed" } | { status: "done"; list: UploadedFile[] };
 
-/** 전체 목록을 이만큼 기다려도 안 오면 최근 파일과만 맞춰 본 채로 [올리기] 를 풀어 준다 */
-const FULL_CHECK_WAIT_MS = 5_000;
-
-/** 보내기 전에 빼는 파일과 그 이유 — 확인 창의 줄 표시 · 제목 숫자 · 실제로 보내는 파일 · 실패 안내가 모두 이것 하나를 본다 */
-const skipReason = uploadPrecheck;
+/**
+ * 전체 목록을 이만큼 기다려도 안 오면 최근 파일과만 맞춰 본 채로 [올리기] 를 풀어 준다. 끝까지 막으면 목록 API 가 느린 날
+ * 업로드 자체를 못 한다. 대신 창에 빨간 글씨로 "최근 파일과만 맞춰 봤어요" 를 띄운다
+ */
+const FULL_CHECK_WAIT_MS = 10_000;
 
 const SKIP_NOTE = { invalid: "올릴 수 없는 형식이라 빠져요", too_large: "20MB를 넘어 빠져요" } as const;
 
@@ -662,13 +661,14 @@ function UploadConfirm({
   // 함께 고른 파일끼리의 같은 이름은 실제로 보낼 파일끼리만 센다
   const pickedCount = new Map<string, number>();
   for (const f of files) {
-    if (skipReason(f)) continue;
+    if (uploadPrecheck(f)) continue;
     const key = nameKey(f.name);
     pickedCount.set(key, (pickedCount.get(key) ?? 0) + 1);
   }
 
   const rows = files.map((file) => {
-    const skip = skipReason(file);
+    // 확인 창의 줄 표시 · 제목 숫자 · 실제로 보내는 파일 · 실패 안내가 모두 uploadPrecheck 하나를 본다
+    const skip = uploadPrecheck(file);
     if (skip) return { file, note: SKIP_NOTE[skip], same: false, skip: true };
     const key = nameKey(file.name);
     const at = lastUploaded.get(key);
@@ -697,13 +697,14 @@ function UploadConfirm({
           같은 이름 파일이 {same}개 있어요. 같은 파일이면 취소해 주세요
         </p>
       ) : null}
-      {fullCheck === "done" ? null : (
-        <p className="mb-2 text-[13px] text-muted">
-          {fullCheck === "loading"
-            ? "전에 올린 파일과 이름을 맞춰 보는 중이에요…"
-            : "전에 올린 파일 목록을 다 받지 못해 최근 파일과만 맞춰 봤어요"}
+      {fullCheck === "loading" ? (
+        <p className="mb-2 text-[13px] text-muted">전에 올린 파일과 이름을 맞춰 보는 중이에요…</p>
+      ) : fullCheck === "failed" ? (
+        // 오래된 같은 이름 파일은 못 잡았을 수 있다 — 경고가 없다고 안심하지 않게 눈에 띄게
+        <p className="mb-2 text-[13px] font-bold text-block">
+          전에 올린 파일 목록을 다 받지 못해 최근 파일과만 맞춰 봤어요. 오래전에 올린 파일인지 한 번 더 확인해 주세요
         </p>
-      )}
+      ) : null}
       <ul className="grid max-h-[240px] gap-1.5 overflow-y-auto">
         {rows.map(({ file, note }, i) => (
           <li key={i} className={`grid rounded px-3 py-2 ${note ? "bg-blocksoft text-block" : "bg-surface2"}`}>
