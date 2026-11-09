@@ -63,6 +63,11 @@ configurations.configureEach {
 	}
 }
 
+// Spring 테스트 컨텍스트가 캐시에 쌓여 기본 512MB 로는 CI 에서 OutOfMemoryError 가 난다 (#487).
+tasks.withType(Test).configureEach {
+	maxHeapSize = '1g'
+}
+
 tasks.named('test') {
 	useJUnitPlatform {
 		excludeTags 'integration'
