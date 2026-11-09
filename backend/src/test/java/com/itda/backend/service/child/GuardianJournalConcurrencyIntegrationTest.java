@@ -40,7 +40,7 @@ import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.user.User;
-import com.itda.backend.dto.response.child.GuardianJournalResponse;
+import com.itda.backend.dto.response.child.GuardianJournalDetailResponse;
 import com.itda.backend.fixture.LockContention;
 import com.itda.backend.fixture.LockContention.Held;
 import com.itda.backend.fixture.OrganizationFixture;
@@ -159,7 +159,7 @@ class GuardianJournalConcurrencyIntegrationTest {
 
     @Test
     void 일지_상세가_먼저면_200_뒤에_연결이_끊긴다() throws Exception {
-        Held<GuardianJournalResponse> held = contention.firstHoldsThen(
+        Held<GuardianJournalDetailResponse> held = contention.firstHoldsThen(
                 () -> guardianJournalQueryService.entry(principal(mom), journalId),
                 () -> mockMvc.perform(withCsrf(delete("/api/v1/guardians/me/children/" + childId), auth(mom)))
                         .andReturn());
