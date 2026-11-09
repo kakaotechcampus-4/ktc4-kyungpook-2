@@ -5,8 +5,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.willThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -237,6 +241,26 @@ class ChildControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.result").value("FAIL"))
                 .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_ASSIGNED"));
+    }
+
+    @Test
+    void removeFromRoster_returnsNoContentWithoutBody() throws Exception {
+        mockMvc.perform(delete(BASE_URL + "/9"))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        verify(childService).removeFromRoster(any(), eq(9L));
+    }
+
+    @Test
+    void removeFromRoster_returnsNotFoundWhenChildIsNotOnOurRoster() throws Exception {
+        willThrow(new ChildException(ChildErrorCode.CHILD_NOT_FOUND))
+                .given(childService).removeFromRoster(any(), eq(9L));
+
+        mockMvc.perform(delete(BASE_URL + "/9"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.result").value("FAIL"))
+                .andExpect(jsonPath("$.code").value("CHILD_NOT_FOUND"));
     }
 
     private void expectInvalidRequest(String body) throws Exception {
