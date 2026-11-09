@@ -908,14 +908,16 @@ export function isUploadTooLarge(file: File): boolean {
 
 /** 올릴 수 있는 확장자인지. 업로드 확인 창(#489)도 같은 기준으로 미리 알린다 */
 export function hasUploadExtension(file: File): boolean {
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  // 서버(RawRecordService.extractExtension)처럼 마지막 점 뒤만 본다 — 점이 없는 `txt` 같은 이름은 확장자가 없다
+  const dot = file.name.lastIndexOf(".");
+  const ext = dot < 0 ? "" : file.name.slice(dot + 1).toLowerCase();
   return UPLOAD_EXTENSIONS.includes(ext);
 }
 
 /** 파일명에 "많음" · "대기" · "혼잡" 이 들어가면 그 거절을 흉내낸다 — 실패 문구를 mock 에서 확인할 수 있게 (#424) */
 function mockRejectReason(file: File): UploadFailReason | null {
   if (!hasUploadExtension(file)) return "invalid";
-  if (file.size > UPLOAD_MAX_BYTES) return "too_large";
+  if (isUploadTooLarge(file)) return "too_large";
   if (file.name.includes("많음")) return "too_many_entries";
   if (file.name.includes("대기")) return "queue_full";
   if (file.name.includes("혼잡")) return "server_busy";

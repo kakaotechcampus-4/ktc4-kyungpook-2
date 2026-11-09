@@ -500,7 +500,8 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           multiple
           hidden
           id="upload-input"
-          // 올리는 중에는 막는다 — 시작하기 카드의 [파일 고르기] 도 이 input 을 누르므로 함께 막힌다 (#489)
+          // 올리는 중에는 막는다 (#489). 시작하기 카드의 [파일 고르기] 도 이 input 을 눌러 그동안은 눌러도 창이 안 열린다 —
+          // 그 카드는 첫 업로드 전에만 보이고 막히는 건 몇 초라 버튼 모양까지 바꾸지는 않는다
           disabled={uploading}
           accept={UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(",")}
           onChange={(e) => pick(e.target.files)}
@@ -525,14 +526,14 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
             onConfirm={() => {
               setPending(null);
               // 창에서 "빠져요" 로 알린 파일은 보내지 않는다 — 20MB 넘는 파일을 끝까지 올렸다가 거절당하지 않게
-              const skipped = pending.flatMap((file): UploadFailure[] => {
+              const sending: File[] = [];
+              const skipped: UploadFailure[] = [];
+              for (const file of pending) {
                 const reason = skipReason(file);
-                return reason ? [{ ok: false, file, reason }] : [];
-              });
-              void upload(
-                pending.filter((file) => !skipReason(file)),
-                skipped,
-              );
+                if (reason) skipped.push({ ok: false, file, reason });
+                else sending.push(file);
+              }
+              void upload(sending, skipped);
             }}
           />
         </div>
@@ -614,7 +615,9 @@ const timeOf = (iso: string) => Date.parse(iso) || 0;
  * 파일 이름을 맞춰 볼 때 쓰는 키. 서버가 저장하는 이름(RawRecordService.sanitizeDisplayName — 마지막 `/` · `\` 뒤만)과
  * 같은 기준으로 자르고, macOS 가 한글 이름을 자모로 풀어(NFD) 넘길 때가 있어 NFC 로 모은다
  */
-const nameKey = (name: string) => (name.replace(/\\/g, "/").split("/").pop() ?? name).normalize("NFC");
+const nameKey = (name: string) =>
+  // 대소문자도 맞춘다 — Windows · macOS 는 `일지.TXT` 와 `일지.txt` 를 같은 파일로 본다. 경고만 하니 더 잡는 쪽이 낫다
+  (name.replace(/\\/g, "/").split("/").pop() ?? name).normalize("NFC").toLowerCase();
 
 /** 같은 이름 경고 문구. 올해가 아니면 연도를 붙인다 — 작년 파일이 오늘 올린 것처럼 읽히지 않게. 시각을 못 읽으면 빼고 말한다 */
 function sameNameNote(iso: string): string {
@@ -691,7 +694,7 @@ function UploadConfirm({
         <p className="mb-2 text-[13px] text-muted">
           {fullCheck === "loading"
             ? "전에 올린 파일과 이름을 맞춰 보는 중이에요…"
-            : "전에 올린 파일 목록을 못 불러와 최근 파일과만 맞춰 봤어요"}
+            : "전에 올린 파일 목록을 다 받지 못해 최근 파일과만 맞춰 봤어요"}
         </p>
       )}
       <ul className="grid max-h-[240px] gap-1.5 overflow-y-auto">
