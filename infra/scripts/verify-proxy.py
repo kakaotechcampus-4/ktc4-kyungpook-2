@@ -49,11 +49,14 @@ def check_settings(config, expected, running_origin):
     return origin
 
 
-def request(origin, path, *, method="GET", headers=None, local=False, port=None, ca_bundle=None):
+def request(origin, path, *, method="GET", headers=None, local=False, port=None, ca_bundle=None, compressed=False):
     parsed, public_port = parse_origin(origin)
     command = ["curl", "--silent", "--show-error", "--noproxy", "*",
                "--connect-timeout", "2", "--max-time", "10",
                "--proto", "=" + parsed.scheme, "--request", method]
+    if compressed:
+        # Advertise the encodings this curl can decode and save the decoded body; headers keep Content-Encoding.
+        command += ["--compressed"]
     if local:
         command += ["--resolve", f"{parsed.hostname}:{public_port}:127.0.0.1"]
         if port:

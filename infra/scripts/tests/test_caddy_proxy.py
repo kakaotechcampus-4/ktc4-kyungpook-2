@@ -24,9 +24,13 @@ FRONTEND_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-sr
                 "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
                 "frame-ancestors 'none'")
 API_CSP = "default-src 'none'; frame-ancestors 'none'"
+# Same body whatever the request headers are, and over Caddy's 512-byte minimum, so compressed and plain
+# responses can be compared byte for byte (#477). The echo JSON reflects request headers and cannot be.
+COMPRESSION_BODY = "console.log('compression check');\n" * 40
 
 ECHO = '''import http.server, json, os
 from urllib.parse import urlencode
+COMPRESSION_BODY = __COMPRESSION_BODY__.encode()
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_): pass
     def do_OPTIONS(self):
@@ -39,6 +43,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header("Location", "https://kauth.kakao.com/oauth/authorize?" + urlencode({"redirect_uri": "https://localhost/login/oauth2/code/kakao"}))
             self.end_headers()
+            return
+        if self.path.split("?")[0].endswith("/compression-check.js"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript")
+            self.send_header("Content-Length", str(len(COMPRESSION_BODY)))
+            self.end_headers()
+            self.wfile.write(COMPRESSION_BODY)
             return
         self.respond()
     def do_POST(self):
@@ -97,7 +108,7 @@ class CaddyProxyTests(unittest.TestCase):
                             "-v", str(ROOT / "infra/caddy") + ":/etc/caddy:ro", cls.image,
                             "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"],
                            capture_output=True, text=True, check=True, timeout=180)
-        (cls.directory / "echo.py").write_text(ECHO)
+        (cls.directory / "echo.py").write_text(ECHO.replace("__COMPRESSION_BODY__", repr(COMPRESSION_BODY)))
         services = {}
         for role, port in [("backend", 8080), ("frontend", 3000)]:
             services[role] = {"image": "python:3.13-alpine", "command": ["python", "/echo.py"],
@@ -230,6 +241,32 @@ class CaddyProxyTests(unittest.TestCase):
         _, headers, _ = self.get("/assets/app.js")
         self.assertEqual(headers.get_all("Cache-Control"), ["public, max-age=60"])
         self.assertIsNone(headers.get("Alt-Svc"))
+
+    def test_frontend_responses_are_compressed(self):
+        # Only the frontend handle encodes (#477). curl --compressed saves the decoded body, so it must equal the original.
+        for path in ["/compression-check.js", "/assets/compression-check.js"]:
+            with self.subTest(path=path, compressed=True):
+                status, headers, body = self.get(path, compressed=True)
+                self.assertEqual(status, 200)
+                self.assertIn(headers.get("Content-Encoding"), {"zstd", "gzip"})
+                self.assertIn("accept-encoding", headers.get("Vary", "").lower())
+                self.assertEqual(body, COMPRESSION_BODY)
+                self.assert_security_headers(headers, FRONTEND_CSP)
+            with self.subTest(path=path, compressed=False):
+                status, headers, body = self.get(path)
+                self.assertEqual(status, 200)
+                self.assertIsNone(headers.get("Content-Encoding"))
+                self.assertEqual(body, COMPRESSION_BODY)
+
+    def test_api_and_oauth_responses_are_not_compressed(self):
+        # API bodies hold secrets such as invitation and institution codes; keep them out until reviewed for BREACH (#477).
+        for path in ["/api/compression-check.js", "/login/oauth2/compression-check.js",
+                     "/oauth2/compression-check.js"]:
+            with self.subTest(path=path):
+                status, headers, body = self.get(path, compressed=True)
+                self.assertEqual(status, 200)
+                self.assertIsNone(headers.get("Content-Encoding"))
+                self.assertEqual(body, COMPRESSION_BODY)
 
     def test_tls_rejects_untrusted_certificate(self):
         with self.assertRaises(proxy.ProxyConnectionError) as error:
