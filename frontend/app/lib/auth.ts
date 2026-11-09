@@ -550,8 +550,28 @@ function readLoginMark(): string | null {
   }
 }
 
-/** 로그인이 끝났다고 다른 탭에 알린다. 로그인 착지(`/oauth/success`)가 부른다. */
-export function announceLogin(): void {
+/** 이 문서에서 로그인 알림을 이미 판단했는지. 문서(페이지 로드)마다 한 번만 판단한다. */
+let loginLandingChecked = false;
+
+/**
+ * 실제 로그인으로 들어왔을 때만 다른 탭에 알린다. 로그인이 끝나면 백엔드가 브라우저를 `/oauth/success` 로 **새로 불러온다** —
+ * 이 문서의 첫 주소가 `/oauth/success` 일 때만 알린다. 앱 안에서 `/oauth/success` 로 옮겨 가는 것(예: 탈퇴 안내의 [돌아가기])은
+ * 로그인이 아니라 알리지 않는다 — 알리면 다른 탭이 새로 고쳐져 쓰던 내용이 사라진다.
+ */
+export function announceLoginIfLanded(): void {
+  if (loginLandingChecked) return;
+  loginLandingChecked = true;
+  try {
+    const entry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    if (!entry || new URL(entry.name).pathname !== "/oauth/success") return;
+  } catch {
+    return;
+  }
+  announceLogin();
+}
+
+/** 로그인이 끝났다고 다른 탭에 알린다. */
+function announceLogin(): void {
   try {
     localStorage.setItem(LOGIN_MARK_KEY, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
   } catch {

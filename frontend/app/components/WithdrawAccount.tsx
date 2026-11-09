@@ -67,7 +67,11 @@ export function WithdrawAccount({
     try {
       const result = await withdraw(target);
       // 완료는 주소가 아니라 이동 상태로 넘긴다 — 주소로 두면 아무나 열어 "탈퇴가 끝났어요" 를 볼 수 있다
-      navigate("/withdrawal", { replace: true, state: { completed: result === "completed" } });
+      // 탈퇴를 요청한 계정도 넘긴다 — 안내 화면이 결과를 물을 때 그 사이 다른 계정으로 바뀌었는지 본다
+      navigate("/withdrawal", {
+        replace: true,
+        state: { completed: result === "completed", userId: target.userId },
+      });
     } catch (e) {
       setError(messageFor(e));
       setPending(false);

@@ -252,6 +252,11 @@ export function isReady(feature: Feature): boolean {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await requestWithHeaders<T>(path, init)).data;
+}
+
+/** 응답 헤더까지 돌려준다. 아이 목록의 `X-Itda-User-Id`(그 목록을 가져온 계정)를 읽을 때 쓴다. */
+async function requestWithHeaders<T>(path: string, init?: RequestInit): Promise<{ data: T; headers: Headers }> {
   /*
    * 출입증은 httpOnly 쿠키라 **브라우저가 자동으로** 붙인다. 헤더를 직접 만들지 않는다.
    * credentials 를 명시하는 이유는 VITE_API_BASE_URL 로 다른 오리진을 볼 때도 쿠키가
@@ -286,13 +291,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   // 204 No Content 에는 래퍼가 없다(api-conventions.md). 백엔드에 아직 204 를 주는
   // 곳은 없지만 규약이라 미리 받아둔다.
-  if (res.status === 204) return undefined as T;
+  if (res.status === 204) return { data: undefined as T, headers: res.headers };
 
   // 성공 응답은 { result, data, message } 로 감싸여 온다. 화면이 쓰는 건 data 뿐이라
   // 여기서 벗겨서 돌려준다 — 화면 코드는 래퍼를 모른다.
   // 데이터가 없는 정상 처리는 data 가 생략될 수 있어 undefined 가 된다.
   const body = await res.json();
-  return body.data as T;
+  return { data: body.data as T, headers: res.headers };
 }
 
 export { ApiError };
@@ -1232,8 +1237,22 @@ export async function getConsentPreview(
  * 입구와 화면 loader 가 함께 물으면 응답 하나를 같이 쓴다 (lib/parentChildrenCache)
  */
 export async function getParentChildren(): Promise<Child[]> {
-  if (mockFor("guardianChildren")) return mock.PARENT_CHILDREN;
-  return shareParentChildren(() => request<Child[]>("/api/v1/guardians/me/children"));
+  return (await getParentChildrenWithOwner()).children;
+}
+
+/** 아이 목록과, 그 목록을 가져온 계정의 userId(응답 헤더 `X-Itda-User-Id`). 헤더가 없으면 null. */
+export type ParentChildrenWithOwner = { children: Child[]; ownerUserId: string | null };
+
+/**
+ * 아이 목록을 그 목록을 가져온 계정과 함께 받는다. 설정 화면이 탈퇴 대상을 화면에 보이는 목록과 **같은 응답**에서 정한다 —
+ * `/auth/me` 를 따로 물으면 다른 탭에서 계정이 바뀐 직후 목록은 A, 계정은 B 가 될 수 있다.
+ */
+export async function getParentChildrenWithOwner(): Promise<ParentChildrenWithOwner> {
+  if (mockFor("guardianChildren")) return { children: mock.PARENT_CHILDREN, ownerUserId: "mock" };
+  return shareParentChildren(async () => {
+    const { data, headers } = await requestWithHeaders<Child[]>("/api/v1/guardians/me/children");
+    return { children: data, ownerUserId: headers.get("X-Itda-User-Id") };
+  });
 }
 
 /**
