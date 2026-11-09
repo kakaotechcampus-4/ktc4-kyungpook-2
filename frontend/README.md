@@ -50,6 +50,39 @@ cd infra/docker && docker compose up -d --build
 포트를 붙이지 않습니다. `/api/`는 Caddy가 backend로 넘깁니다.
 운영 HTTPS 설정은 [인프라 문서](../infra/README.md#caddy와-https)를 참고하세요.
 
+### E2E 테스트 (Playwright)
+
+핵심 흐름을 실제 프론트 + 실제 백엔드에 대고 브라우저(Chromium)로 눌러 봅니다. 테스트는 `e2e/`, 설정은
+`playwright.config.ts` 에 있습니다.
+
+| 시나리오 | 확인하는 것 |
+|---|---|
+| `org-login` | 기관 담당자가 개발용 로그인 → 가입 → 기관 약관 동의 → 대시보드에 기관명이 보인다 |
+| `child-register` | 아이를 등록하면 보호자 초대 코드(`XXXX-XXXX`)가 발급된다 |
+| `parent-connect` | 보호자가 그 코드로 연결 → 공유 동의 → 보호자 홈에 그 아이가 보인다 |
+| `ai-down` | AI 서버가 꺼져 있으면 기관 화면에 "AI 서버를 점검하고 있어요" 안내가 보인다 |
+
+```bash
+npx playwright install chromium   # 처음 한 번
+npm run e2e                       # E2E 전용 백엔드(:18080) · 프론트(:13000)를 띄우고 돌린 뒤 끈다
+```
+
+- `npm run e2e` 가 백엔드를 `./gradlew bootRun` 으로 직접 띄웁니다. DB 는 H2 메모리, 개발용 로그인은 켜고,
+  출입증 비밀값 · 카카오 값은 테스트 전용 더미를 환경변수로 넘깁니다. 백엔드 설정 파일은 필요 없습니다.
+  AI 주소는 아무것도 듣지 않는 포트로 넘겨, 로컬에 AI 를 띄워 둬도 "AI 꺼짐" 상태로 돌립니다.
+- 프론트는 dev 서버가 아니라 mock 을 끈 빌드 번들(`npm run build` → `vite preview`)로 띄웁니다. 배포되는
+  번들과 같고, dev 서버가 처음 보는 화면에서 페이지를 새로 고치는 일이 없습니다. `build/` 를 덮어씁니다.
+- 포트는 개발 서버(3000 · 8080)와 다른 E2E 전용(13000 · 18080)이라, 개발 서버를 띄워 둔 채 돌려도
+  서로 건드리지 않습니다. 개발용 로그인 이름은 실행마다 새로 짓고 사업자등록번호는 무작위 10자리입니다.
+- 실패하면 `playwright-report/` 와 `test-results/`(스크린샷 · trace)가 남습니다.
+  `npx playwright show-report` 로 엽니다.
+- CI: 별도 워크플로(`.github/workflows/e2e.yml`)가 `frontend/` 나 `backend/` 가 바뀐 PR 마다 돌립니다.
+  배포 워크플로와 따로라 E2E 가 실패해도 배포를 막지 않고, 두 CI 시간도 늘지 않습니다. 실패하면 리포트를
+  아티팩트(`e2e-report`)로 올립니다.
+- `e2e/` · `playwright.config.ts` 는 번들에 들어가지 않아 프론트 배포 대상에서 뺐습니다
+  (`frontend-ci.yml` paths · `deploy-frontend.sh` service_paths). 테스트만 고친 머지는 프론트를 다시 배포하지 않습니다.
+- 범위 밖: 매칭 → 요약 → 승인처럼 AI 응답이 필요한 흐름(가짜 AI 서버가 필요합니다).
+
 ## 화면
 
 기관 대시보드는 데스크톱(1440), 학부모 웹앱은 모바일(375, `md`/`lg` 에서 카드

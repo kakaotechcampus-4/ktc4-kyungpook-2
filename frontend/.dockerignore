@@ -3,3 +3,7 @@ build
 .react-router
 .env
 .env.*
+# Playwright E2E 결과 — 로컬에서 테스트가 남긴 trace · 스크린샷이 이미지 빌드 컨텍스트에 실리지 않게
+test-results
+playwright-report
+blob-report

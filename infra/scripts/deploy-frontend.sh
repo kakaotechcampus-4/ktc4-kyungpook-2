@@ -36,6 +36,8 @@ service_paths=(
   'infra/scripts/tests/test_frontend_deploy.py'
   '.github/workflows/frontend-ci.yml'
   '!frontend/**/*.md'
+  '!frontend/e2e/**'
+  '!frontend/playwright.config.ts'
 )
 
 compose() {
