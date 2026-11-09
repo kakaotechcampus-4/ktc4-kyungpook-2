@@ -1347,7 +1347,12 @@ export async function getParentChildrenWithOwner(): Promise<ParentChildrenWithOw
   // 모의 목록에는 실제 소유 계정이 없다. 로그인도 모의일 때만 모의 계정("mock")을 싣는다 — 실제 로그인과 섞으면 탈퇴 대상이 실제
   // 계정과 맞지 않아 버튼이 늘 막히므로, 비워 두어 탈퇴 버튼을 숨긴다
   if (mockFor("guardianChildren")) {
-    return { children: mock.PARENT_CHILDREN, ownerUserId: isAuthMock() ? "mock" : null };
+    // 안 읽은 리포트 표시는 서버처럼 mock 리포트에서 정한다 — "특이사항 없음" 주는 열 수 없어 세지 않는다
+    const children = mock.PARENT_CHILDREN.map((child) => ({
+      ...child,
+      hasUnreadInsight: mock.GUARDIAN_INSIGHTS.some((i) => i.childId === child.id && i.kind !== "quiet" && !i.readAt),
+    }));
+    return { children, ownerUserId: isAuthMock() ? "mock" : null };
   }
   return shareParentChildren(async () => {
     const { data, headers } = await requestWithHeaders<Child[]>("/api/v1/guardians/me/children");
@@ -1585,10 +1590,15 @@ export async function getJournalEntry(id: string): Promise<JournalEntry | undefi
   }
 }
 
-/** GET /api/v1/guardians/me/insights — 내 모든 아이의 받은 인사이트, 승인 시각 최근 순 (서버가 정렬한다) */
-export async function getGuardianInsights(): Promise<GuardianInsight[]> {
-  if (mockFor("guardianInsights")) return mock.GUARDIAN_INSIGHTS.map((insight) => ({ ...insight }));
-  return request("/api/v1/guardians/me/insights");
+/**
+ * GET /api/v1/guardians/me/insights?childId= — 이 아이의 받은 인사이트, 승인 시각 최근 순 (서버가 정렬한다, #457).
+ * 연결되지 않은 아이면 403 을 그대로 던진다
+ */
+export async function getGuardianInsights(childId: string): Promise<GuardianInsight[]> {
+  if (mockFor("guardianInsights")) {
+    return mock.GUARDIAN_INSIGHTS.filter((i) => i.childId === childId).map((insight) => ({ ...insight }));
+  }
+  return request(`/api/v1/guardians/me/insights?childId=${encodeURIComponent(childId)}`);
 }
 
 /**
@@ -1603,6 +1613,9 @@ export async function getInstitutionShares(childId: string): Promise<Institution
 /**
  * GET /api/v1/guardians/me/insights/{insightId} — 처음 열면 열람 시각이 남는다.
  * 볼 수 없는 글(없음 · 남의 아이 · 연결 해제로 거둬짐 → SHARING_NOT_FOUND)은 undefined. 일지 상세와 같은 약속이다
+ *
+ * 열면 같이 쓰던 아이 목록을 버린다 — 목록의 안 읽음 표시(hasUnreadInsight)가 바뀌었을 수 있다. 상세에서 바로 나가도
+ * 점이 남지 않게 한다 (#457)
  */
 export async function getGuardianInsight(id: string): Promise<GuardianInsight | undefined> {
   if (mockFor("guardianInsights")) {
@@ -1612,7 +1625,9 @@ export async function getGuardianInsight(id: string): Promise<GuardianInsight | 
     return { ...insight };
   }
   try {
-    return await request<GuardianInsight>(`/api/v1/guardians/me/insights/${encodeURIComponent(id)}`);
+    const insight = await request<GuardianInsight>(`/api/v1/guardians/me/insights/${encodeURIComponent(id)}`);
+    forgetParentChildren();
+    return insight;
   } catch (err) {
     if (err instanceof ApiError && err.code === "SHARING_NOT_FOUND") return undefined;
     throw err;

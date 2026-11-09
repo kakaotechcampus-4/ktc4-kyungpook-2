@@ -18,6 +18,7 @@ import com.itda.backend.dto.response.organization.InstitutionResponse;
  * @param linkRequests 보호자가 기관 코드로 연결을 요청했고 기관의 수락을 기다리는 기관. 먼저 요청한 순서다.
  *                     누구의 요청이든 아이의 보호자 모두에게 보인다
  * @param care         보호자가 적어 둔 알레르기·복용약(G-13). 늘 싣고, 저장한 적이 없으면 빈 배열 둘이다
+ * @param hasUnreadInsight 이 보호자에게 열렸는데 아직 안 연 리포트가 있는지 (#457). 열람은 보호자마다 따로다
  */
 public record GuardianChildResponse(
         String id,
@@ -26,7 +27,8 @@ public record GuardianChildResponse(
         ChildStatus status,
         List<ChildInstitution> institutions,
         List<LinkRequest> linkRequests,
-        ChildCareInfoResponse care) {
+        ChildCareInfoResponse care,
+        boolean hasUnreadInsight) {
 
     /** @param consent 아이 기준 동의 상태. 어느 보호자의 동의든 살아 있으면 granted 다 */
     public record ChildInstitution(InstitutionResponse institution, ConsentState consent) {

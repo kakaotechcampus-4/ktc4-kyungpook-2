@@ -23,14 +23,15 @@ export async function clientLoader() {
   const kids = await getParentChildren();
   const childId = readSelectedChildId(kids);
   const [insights, pending, openChecklists] = await Promise.all([
-    getGuardianInsights(),
+    getGuardianInsights(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
     loadOpenChecklistCount(childId),
   ]);
-  // 서버는 내 모든 아이 것을 준다. 헤더에서 고른 아이 것만 보인다
   const child = kids.find((k) => k.id === childId);
   return {
     childName: child?.name ?? "",
+    // 서버가 이미 이 아이 것만 준다(#457). 그래도 한 번 더 거른다 — FE 가 먼저 배포되면 그 사이 예전 서버는 childId 를
+    // 모르고 모든 아이 것을 준다. 서버가 거른 뒤에는 그대로다
     insights: insights.filter((i) => i.childId === childId),
     pending,
     openChecklists: openChecklists ?? 0,

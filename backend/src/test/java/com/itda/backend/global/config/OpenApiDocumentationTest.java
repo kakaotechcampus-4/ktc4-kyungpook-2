@@ -359,6 +359,8 @@ class OpenApiDocumentationTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath(list + ".get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath(list + ".get.description").value(containsString("approvedAt")))
+				.andExpect(jsonPath(list + ".get.parameters[?(@.name == 'childId')].required", hasItems(false)))
+				.andExpect(jsonPath(list + ".get.responses.403.description").value(containsString("FORBIDDEN")))
 				.andExpect(jsonPath(schema + ".properties.approvedAt.format").value("date-time"))
 				.andExpect(jsonPath(schema + ".properties.readAt.format").value("date-time"));
 	}
@@ -486,6 +488,7 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(home + ".get.responses.401").exists())
 				.andExpect(jsonPath(home + ".get.responses.403.description").value(containsString("FORBIDDEN")))
 				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.institutions").exists())
+				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.hasUnreadInsight.type").value("boolean"))
 				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.school").doesNotHaveJsonPath())
 				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.care['$ref']")
 						.value(containsString("ChildCareInfoResponse")))

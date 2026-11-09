@@ -33,6 +33,16 @@ public interface SharingHistoryRepository extends JpaRepository<SharingHistory, 
             Long childId, ReceiverType receiverType, Long receiverId);
 
     /**
+     * 그 아이들 중 이 수신자에게 열렸는데 아직 안 연 글이 있는 아이. 보호자 아이 목록의 안 읽음 표시(#457)가 쓴다 —
+     * 글 수와 상관없이 질의 하나다. "특이사항 없음" 주는 권한 행이 없어 여기 오지 않는다.
+     */
+    @Query("select distinct s.childId from SharingHistory s where s.childId in :childIds "
+            + "and s.receiverType = :receiverType and s.receiverId = :receiverId "
+            + "and s.revokedAt is null and s.readAt is null")
+    List<Long> findChildIdsWithUnread(@Param("childIds") Collection<Long> childIds,
+            @Param("receiverType") ReceiverType receiverType, @Param("receiverId") Long receiverId);
+
+    /**
      * 그 수신자가 아직 볼 수 있는 것 전부, 열린 순. 보호자 인사이트 목록(#233)이 쓴다 —
      * 보호자는 자기에게 열린 글만 본다. 화면 순서는 서비스가 승인 시각으로 다시 정한다 (#287).
      */

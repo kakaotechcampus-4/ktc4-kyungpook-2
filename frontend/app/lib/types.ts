@@ -89,6 +89,11 @@ export interface Child {
    */
   linkRequests?: LinkRequest[];
   care?: ChildCareInfo;
+  /**
+   * 나에게 열렸는데 아직 열어 보지 않은 리포트가 있는지 (G-10·G-11, #457). 리포트 탭 · 아이 전환의 점이 이 값 하나로
+   * 그려진다. 열람은 보호자마다 따로라 엄마가 열어도 아빠 점은 남는다. 기관 화면 mock 에는 없다.
+   */
+  hasUnreadInsight?: boolean;
 }
 
 /** 수락 대기 중인 기관 하나. requestedAt 은 가장 먼저 요청한 시각 (ISO 8601) */
