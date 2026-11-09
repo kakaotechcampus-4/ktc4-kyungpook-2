@@ -143,7 +143,7 @@ class WithdrawalConcurrencyIntegrationTest {
 
         LockContention.Held<Object> held = contention.firstHoldsThen(
                 () -> invitationService.accept(principal(mother), code),
-                () -> mockMvc.perform(withCsrf(delete("/api/v1/auth/me"), auth(mother))).andReturn());
+                () -> mockMvc.perform(withCsrf(delete("/api/v1/auth/me").param("userId", principal(mother)), auth(mother))).andReturn());
 
         assertThat(held.second().getResponse().getStatus()).isEqualTo(204);
         assertThat(reload(mother).isDeleted()).isTrue();
@@ -192,7 +192,7 @@ class WithdrawalConcurrencyIntegrationTest {
                 () -> userService.completeSignup(principal(pending), new com.itda.backend.dto.request.user.SignupRequest(
                         "org", "새싹센터", com.itda.backend.domain.organization.OrganizationType.CENTER,
                         OrganizationFixture.nextBusinessNumber())),
-                () -> mockMvc.perform(withCsrf(delete("/api/v1/auth/me"), auth(pending))).andReturn());
+                () -> mockMvc.perform(withCsrf(delete("/api/v1/auth/me").param("userId", principal(pending)), auth(pending))).andReturn());
 
         assertThat(held.second().getResponse().getStatus()).isEqualTo(403);
         assertThat(held.second().getResponse().getContentAsString()).contains("ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED");

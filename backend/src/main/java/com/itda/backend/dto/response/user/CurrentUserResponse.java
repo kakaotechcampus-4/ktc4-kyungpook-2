@@ -26,12 +26,12 @@ import com.itda.backend.domain.user.UserRole;
  *
  * <p>{@code withdrawal} 은 늘 나간다. {@code none} 이면 진행 중인 탈퇴가 없고 {@code in_progress} 면 탈퇴를 처리하는
  * 중이다 — 프론트는 가입 · 약관 · 아이 목록보다 먼저 이 값을 보고 탈퇴 안내 화면으로 보낸다. 탈퇴를 마친 회원은 이 응답 대신
- * 401 ACCOUNT_WITHDRAWN 이다.
+ * 401 ACCOUNT_WITHDRAWN 이다. {@code withdrawalEnabled} 도 늘 나간다 — 서버가 탈퇴를 열었는지라, false 면 화면이 탈퇴 버튼을 숨긴다.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CurrentUserResponse(
         String role, String userId, String name, String institutionId, String institutionName,
-        boolean signupCompleted, boolean termsAgreed, String withdrawal) {
+        boolean signupCompleted, boolean termsAgreed, String withdrawal, boolean withdrawalEnabled) {
 
     public static final String WITHDRAWAL_NONE = "none";
     public static final String WITHDRAWAL_IN_PROGRESS = "in_progress";
@@ -50,7 +50,14 @@ public record CurrentUserResponse(
                 institutionId == null || organization == null ? null : organization.getName(),
                 user.isSignupCompleted(),
                 termsAgreed,
-                user.isWithdrawing() ? WITHDRAWAL_IN_PROGRESS : WITHDRAWAL_NONE);
+                user.isWithdrawing() ? WITHDRAWAL_IN_PROGRESS : WITHDRAWAL_NONE,
+                false);
+    }
+
+    /** 탈퇴를 열었는지 담는다. 회원이 아니라 서버 설정의 값이라 서비스가 따로 채운다(WithdrawalService.isEnabled). */
+    public CurrentUserResponse withWithdrawalEnabled(boolean enabled) {
+        return new CurrentUserResponse(role, userId, name, institutionId, institutionName, signupCompleted, termsAgreed,
+                withdrawal, enabled);
     }
 
     /** 가입 미완료 회원은 역할이 없다. null 이면 NON_NULL 설정으로 응답에서 빠진다. */

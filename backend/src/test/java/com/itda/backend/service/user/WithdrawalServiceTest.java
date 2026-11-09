@@ -75,6 +75,7 @@ class WithdrawalServiceTest {
 
     @Autowired private WithdrawalService withdrawalService;
     @Autowired private WithdrawalExecutor withdrawalExecutor;
+    @Autowired private WithdrawalSteps withdrawalSteps;
     @Autowired private UserService userService;
     @Autowired private UserRepository userRepository;
     @Autowired private TransactionTemplate transactionTemplate;
@@ -109,7 +110,7 @@ class WithdrawalServiceTest {
         consent(child, mother);
         consent(child, father);
 
-        WithdrawalSteps.Outcome outcome = withdrawalService.withdraw(principal(mother));
+        WithdrawalSteps.Outcome outcome = withdrawalService.withdraw(principal(mother), principal(mother));
 
         assertThat(outcome).isEqualTo(WithdrawalSteps.Outcome.COMPLETED);
         verify(kakaoUnlinkClient).unlink(Long.parseLong(mother.getKakaoId()));
@@ -141,7 +142,7 @@ class WithdrawalServiceTest {
                         org.mockito.ArgumentMatchers.argThat(child -> child.getId().equals(second.getId())),
                         eq(mother.getId()), eq(mother.getId()));
 
-        WithdrawalSteps.Outcome outcome = withdrawalService.withdraw(principal(mother));
+        WithdrawalSteps.Outcome outcome = withdrawalService.withdraw(principal(mother), principal(mother));
 
         assertThat(outcome).isEqualTo(WithdrawalSteps.Outcome.IN_PROGRESS);
         assertThat(reload(mother).getWithdrawalStatus()).isEqualTo(WithdrawalStatus.KAKAO_UNLINKED);
@@ -165,7 +166,7 @@ class WithdrawalServiceTest {
         link(child, mother);
         Cookie oldLogin = cookieFor(mother);
 
-        withdrawalService.withdraw(principal(mother));
+        withdrawalService.withdraw(principal(mother), principal(mother));
         User again = userService.findOrCreateByKakaoId(mother.getKakaoId(), "김엄마");
         userService.completeSignup(principal(again), new SignupRequest("parent", null, null, null));
         link(child, again);
@@ -184,7 +185,7 @@ class WithdrawalServiceTest {
     void 가입하지_않은_사람도_탈퇴할_수_있다() {
         User pending = persist(User.pending(nextKakaoId(), "가입전"));
 
-        assertThat(withdrawalService.withdraw(principal(pending))).isEqualTo(WithdrawalSteps.Outcome.COMPLETED);
+        assertThat(withdrawalService.withdraw(principal(pending), principal(pending))).isEqualTo(WithdrawalSteps.Outcome.COMPLETED);
         assertThat(reload(pending).isDeleted()).isTrue();
     }
 
@@ -192,7 +193,7 @@ class WithdrawalServiceTest {
     void 기관_담당자는_카카오를_부르기_전에_403이다() {
         User staff = persist(UserFixture.organizationUser(nextKakaoId(), "선생님", organization.getId()));
 
-        assertThatThrownBy(() -> withdrawalService.withdraw(principal(staff)))
+        assertThatThrownBy(() -> withdrawalService.withdraw(principal(staff), principal(staff)))
                 .isInstanceOf(UserException.class)
                 .extracting(e -> ((UserException) e).getErrorCode())
                 .isEqualTo(UserErrorCode.ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED);
@@ -204,9 +205,9 @@ class WithdrawalServiceTest {
     void 이미_접수한_탈퇴를_다시_신청하면_409다() {
         User mother = parent();
         given(kakaoUnlinkClient.unlink(anyLong())).willReturn(KakaoUnlinkResult.UNKNOWN);
-        withdrawalService.withdraw(principal(mother));
+        withdrawalService.withdraw(principal(mother), principal(mother));
 
-        assertThatThrownBy(() -> withdrawalService.withdraw(principal(mother)))
+        assertThatThrownBy(() -> withdrawalService.withdraw(principal(mother), principal(mother)))
                 .isInstanceOf(UserException.class)
                 .extracting(e -> ((UserException) e).getErrorCode())
                 .isEqualTo(UserErrorCode.WITHDRAWAL_IN_PROGRESS);
@@ -216,7 +217,7 @@ class WithdrawalServiceTest {
     void 개발용_로그인_회원은_카카오를_부르지_않는다() {
         User dev = persist(UserFixture.parent("dev:withdrawal-" + nextKakaoId(), "개발"));
 
-        assertThat(withdrawalService.withdraw(principal(dev))).isEqualTo(WithdrawalSteps.Outcome.COMPLETED);
+        assertThat(withdrawalService.withdraw(principal(dev), principal(dev))).isEqualTo(WithdrawalSteps.Outcome.COMPLETED);
         verify(kakaoUnlinkClient, never()).unlink(anyLong());
     }
 
@@ -225,7 +226,7 @@ class WithdrawalServiceTest {
         User mother = parent();
         given(kakaoUnlinkClient.unlink(anyLong())).willReturn(KakaoUnlinkResult.FAILED);
 
-        assertThat(withdrawalService.withdraw(principal(mother))).isEqualTo(WithdrawalSteps.Outcome.CANCELED);
+        assertThat(withdrawalService.withdraw(principal(mother), principal(mother))).isEqualTo(WithdrawalSteps.Outcome.CANCELED);
 
         User after = reload(mother);
         assertThat(after.isDeleted()).isFalse();
@@ -239,8 +240,8 @@ class WithdrawalServiceTest {
         User mother = parent();
         given(kakaoUnlinkClient.unlink(anyLong())).willReturn(KakaoUnlinkResult.FAILED);
 
-        assertThat(withdrawalService.withdraw(principal(mother))).isEqualTo(WithdrawalSteps.Outcome.CANCELED);
-        assertThat(withdrawalService.withdraw(principal(mother))).isEqualTo(WithdrawalSteps.Outcome.CANCELED);
+        assertThat(withdrawalService.withdraw(principal(mother), principal(mother))).isEqualTo(WithdrawalSteps.Outcome.CANCELED);
+        assertThat(withdrawalService.withdraw(principal(mother), principal(mother))).isEqualTo(WithdrawalSteps.Outcome.CANCELED);
         assertThat(reload(mother).isWithdrawing()).isFalse();
     }
 
@@ -249,7 +250,7 @@ class WithdrawalServiceTest {
         User mother = parent();
         given(kakaoUnlinkClient.unlink(anyLong())).willReturn(KakaoUnlinkResult.UNKNOWN);
 
-        assertThat(withdrawalService.withdraw(principal(mother))).isEqualTo(WithdrawalSteps.Outcome.IN_PROGRESS);
+        assertThat(withdrawalService.withdraw(principal(mother), principal(mother))).isEqualTo(WithdrawalSteps.Outcome.IN_PROGRESS);
         User afterUnknown = reload(mother);
         assertThat(afterUnknown.getWithdrawalStatus()).isEqualTo(WithdrawalStatus.REQUESTED);
         assertThat(afterUnknown.getKakaoUnlinkAttemptedAt()).isNotNull();
@@ -268,7 +269,7 @@ class WithdrawalServiceTest {
     void 처리_중에는_다른_보호_API_를_막고_auth_me_로_진행을_알린다() throws Exception {
         User mother = parent();
         given(kakaoUnlinkClient.unlink(anyLong())).willReturn(KakaoUnlinkResult.UNKNOWN);
-        withdrawalService.withdraw(principal(mother));
+        withdrawalService.withdraw(principal(mother), principal(mother));
 
         mockMvc.perform(get("/api/v1/auth/me").cookie(cookieFor(mother)))
                 .andExpect(status().isOk())
@@ -291,7 +292,7 @@ class WithdrawalServiceTest {
         User mother = parent();
 
         mockMvc.perform(withCsrf(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .delete("/api/v1/auth/me"), cookieFor(mother)))
+                        .delete("/api/v1/auth/me").param("userId", principal(mother)), cookieFor(mother)))
                 .andExpect(status().isNoContent())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                         .stringValues("Set-Cookie", org.hamcrest.Matchers.hasItem(
@@ -304,6 +305,56 @@ class WithdrawalServiceTest {
             throws Exception {
         Cookie csrf = mockMvc.perform(get("/api/health")).andReturn().getResponse().getCookie("XSRF-TOKEN");
         return request.cookie(login, csrf).header("X-XSRF-TOKEN", csrf.getValue());
+    }
+
+    /** 확인 화면을 연 뒤 다른 탭에서 계정을 바꿨다. 화면이 보여 준 계정과 로그인한 계정이 다르면 아무 계정도 지우지 않는다. */
+    @Test
+    void 확인_화면의_계정과_로그인한_계정이_다르면_409이고_아무것도_바꾸지_않는다() {
+        User shown = parent();
+        User loggedIn = parent();
+
+        assertThatThrownBy(() -> withdrawalService.withdraw(principal(loggedIn), principal(shown)))
+                .isInstanceOf(UserException.class)
+                .extracting(e -> ((UserException) e).getErrorCode())
+                .isEqualTo(UserErrorCode.WITHDRAWAL_ACCOUNT_MISMATCH);
+        assertThatThrownBy(() -> withdrawalService.withdraw(principal(loggedIn), null))
+                .isInstanceOf(UserException.class);
+        assertThat(reload(shown).isWithdrawing()).isFalse();
+        assertThat(reload(loggedIn).isWithdrawing()).isFalse();
+        verify(kakaoUnlinkClient, never()).unlink(anyLong());
+    }
+
+    @Test
+    void 탈퇴를_열지_않았으면_404이고_접수하지_않는다() {
+        User mother = parent();
+        WithdrawalService closed = new WithdrawalService(withdrawalSteps, withdrawalExecutor, new WithdrawalProperties(
+                false, java.time.Duration.ofSeconds(1), "local", null, null));
+
+        assertThatThrownBy(() -> closed.withdraw(principal(mother), principal(mother)))
+                .isInstanceOf(UserException.class)
+                .extracting(e -> ((UserException) e).getErrorCode())
+                .isEqualTo(UserErrorCode.WITHDRAWAL_NOT_AVAILABLE);
+        assertThat(reload(mother).isWithdrawing()).isFalse();
+    }
+
+    /**
+     * 실행기가 카카오를 부르는 동안 연결 해제 웹훅이 와서 해제를 확정했다. 그 뒤 실행기가 받은 분명한 오류(첫 호출)로 접수를
+     * 취소하면 안 된다 — 카카오가 이미 끊었다고 알려 줬다.
+     */
+    @Test
+    void 카카오_호출_중에_웹훅이_해제를_확정하면_이번_호출의_오류로_취소하지_않는다() throws Exception {
+        User mother = parent();
+        withdrawalSteps.accept(mother.getId());
+        WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
+        assertThat(plan.firstAttempt()).isTrue();
+
+        withdrawalSteps.acceptUnlinkedByKakao(mother.getKakaoId());
+        boolean proceed = withdrawalSteps.record(mother.getId(), KakaoUnlinkResult.FAILED, plan.firstAttempt());
+
+        assertThat(proceed).isTrue();
+        assertThat(reload(mother).getWithdrawalStatus()).isEqualTo(WithdrawalStatus.KAKAO_UNLINKED);
+        withdrawalSteps.cleanup(mother.getId());
+        assertThat(reload(mother).isDeleted()).isTrue();
     }
 
     // ── 준비 ──────────────────────────────────────────────

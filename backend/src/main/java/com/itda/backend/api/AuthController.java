@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -81,7 +82,8 @@ public class AuthController {
                     + "termsAgreed 도 항상 포함되며 자기 역할의 서비스 약관(보호자 · 기관 따로)에 동의했는지입니다. "
                     + "가입 미완료는 false 입니다. withdrawal 도 항상 포함되며 none 이면 진행 중인 탈퇴가 없고, "
                     + "in_progress 면 탈퇴를 처리하는 중입니다(이때 다른 보호 API 는 409 WITHDRAWAL_IN_PROGRESS). "
-                    + "탈퇴를 마친 회원의 출입증이면 401 ACCOUNT_WITHDRAWN 입니다."
+                    + "탈퇴를 마친 회원의 출입증이면 401 ACCOUNT_WITHDRAWN 입니다. withdrawalEnabled 는 서버가 탈퇴를 열었는지이며 "
+                    + "false 면 화면이 탈퇴 버튼을 숨깁니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @ApiResponses({
@@ -94,7 +96,8 @@ public class AuthController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ApiResponse<CurrentUserResponse> me(@AuthenticationPrincipal String userId) {
-        return ApiResponse.success(userService.getCurrentUser(userId));
+        return ApiResponse.success(
+                userService.getCurrentUser(userId).withWithdrawalEnabled(withdrawalService.isEnabled()));
     }
 
     @PostMapping("/signup")
@@ -132,7 +135,8 @@ public class AuthController {
     public ResponseEntity<ApiResponse<CurrentUserResponse>> signup(
             @AuthenticationPrincipal String userId, @Valid @RequestBody SignupRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(userService.completeSignup(userId, request)));
+                .body(ApiResponse.success(userService.completeSignup(userId, request)
+                        .withWithdrawalEnabled(withdrawalService.isEnabled())));
     }
 
     @PostMapping("/terms")
@@ -213,12 +217,20 @@ public class AuthController {
                     + "그 기관 공유는 계속됩니다. 같은 카카오 계정으로 다시 로그인하면 새 회원으로 가입부터 합니다. "
                     + "몇 초 안에 끝나면 204 와 함께 access_token 쿠키를 지우고, 아니면 202 로 접수만 알립니다 — 이때는 "
                     + "/auth/me 의 withdrawal 로 진행을 보고, 끝나면 /auth/me 가 401 ACCOUNT_WITHDRAWN 입니다. "
+                    + "userId 에는 확인 화면이 보여 준 계정의 userId(/auth/me)를 넣습니다 — 지금 로그인한 계정과 다르면 409 입니다. "
+                    + "서버가 탈퇴를 열지 않았으면(withdrawalEnabled false) 404 입니다. "
                     + "요청 전에 받은 XSRF-TOKEN 쿠키 값을 X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "204", description = "탈퇴 완료. 본문 없음. 쿠키를 지움"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "userId 누락 (INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404", description = "탈퇴를 아직 열지 않음 (WITHDRAWAL_NOT_AVAILABLE)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "202", description = "접수했고 처리 중 (withdrawal = in_progress)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -230,15 +242,20 @@ public class AuthController {
                     description = "기관 담당자 (ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED) 또는 CSRF 토큰 누락 · 불일치 (FORBIDDEN)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "409", description = "이미 탈퇴를 처리하는 중 (WITHDRAWAL_IN_PROGRESS)",
+                    responseCode = "409",
+                    description = "이미 탈퇴를 처리하는 중 (WITHDRAWAL_IN_PROGRESS) 또는 확인 화면의 계정과 로그인한 계정이 다름 "
+                            + "(WITHDRAWAL_ACCOUNT_MISMATCH)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "502",
                     description = "카카오 연결 해제 첫 호출이 실패해 탈퇴를 취소함. 회원은 그대로 (KAKAO_UNLINK_FAILED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
-    public ResponseEntity<?> withdraw(@AuthenticationPrincipal String userId, HttpServletRequest request) {
-        WithdrawalSteps.Outcome outcome = withdrawalService.withdraw(userId);
+    public ResponseEntity<?> withdraw(
+            @AuthenticationPrincipal String userId,
+            @RequestParam("userId") String expectedUserId,
+            HttpServletRequest request) {
+        WithdrawalSteps.Outcome outcome = withdrawalService.withdraw(userId, expectedUserId);
         return switch (outcome) {
             case COMPLETED -> endLogin(request);
             case IN_PROGRESS -> ResponseEntity.status(HttpStatus.ACCEPTED)

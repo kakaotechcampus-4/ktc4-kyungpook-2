@@ -62,6 +62,8 @@ class KakaoUnlinkWebhookTest {
     @Autowired private UserRepository userRepository;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private EntityManager entityManager;
+    @Autowired private WithdrawalSteps steps;
+    @Autowired private WithdrawalExecutor executor;
 
     @MockitoBean private KakaoUnlinkClient kakaoUnlinkClient;
 
@@ -160,8 +162,24 @@ class KakaoUnlinkWebhookTest {
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
                 .andExpect(status().isOk());
 
-        // 이미 끊겼으므로 카카오는 -101 로 답하고, 클라이언트는 그것을 끊김으로 본다
+        // 카카오가 해제를 확인해 줬으므로 해제 확정으로 바꾸고 정리만 한다 — 카카오를 다시 부르지 않는다
         waitUntilDeleted(mother);
+        verify(kakaoUnlinkClient, never()).unlink(anyLong());
+    }
+
+    @Test
+    void 탈퇴를_열지_않았으면_검증만_하고_무시한다() {
+        User mother = persist(UserFixture.parent(nextKakaoId(), "김엄마"));
+        KakaoUnlinkWebhookService closed = new KakaoUnlinkWebhookService(steps, executor, new WithdrawalProperties(
+                false, java.time.Duration.ofSeconds(1), "local",
+                new WithdrawalProperties.Kakao("http://unused", "test-admin-key", APP_ID, null, null), null));
+
+        closed.handle(AUTH, APP_ID, mother.getKakaoId(), "UNLINK_FROM_APPS");
+
+        assertThat(reload(mother).isWithdrawing()).isFalse();
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> closed.handle("KakaoAK wrong", APP_ID, mother.getKakaoId(), "UNLINK_FROM_APPS"))
+                .isInstanceOf(com.itda.backend.exception.auth.AuthException.class);
     }
 
     @Test

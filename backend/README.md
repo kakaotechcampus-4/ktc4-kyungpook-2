@@ -355,6 +355,7 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `JWT_SECRET` | 없음 (필수) | JWT 서명 키. 32바이트 이상이어야 하며, 없으면 기동하지 않음 |
 | `KAKAO_CLIENT_ID` · `KAKAO_CLIENT_SECRET` | 없음 (필수) | 카카오 REST API 키와 클라이언트 시크릿 |
 | `KAKAO_ADMIN_KEY` | 없음 | 회원 탈퇴의 카카오 연결 해제(`POST /v1/user/unlink`)와 연결 해제 웹훅 검증에 쓰는 **대표** 어드민 키. 카카오 콘솔 [앱] > [웹훅] > [연결 해제 웹훅]에 `https://{도메인}/api/v1/webhooks/kakao/unlink` 를 등록한다(HTTPS 만 받는다). 서버 밖으로 내보내지 않는다. 없으면 카카오 계정 회원의 탈퇴는 `502 KAKAO_UNLINK_FAILED`로 취소된다(개발용 로그인 회원은 카카오를 부르지 않음). 실서비스에서 탈퇴를 열기 전에 꼭 넣는다 |
+| `WITHDRAWAL_ENABLED` | `false` | 회원 탈퇴를 열지. 꺼져 있으면 `DELETE /api/v1/auth/me` 는 `404 WITHDRAWAL_NOT_AVAILABLE`, 화면은 탈퇴 버튼을 숨기고(`/auth/me` 의 `withdrawalEnabled`), 연결 해제 웹훅은 검증만 하고 무시한다. 탈퇴 뒤 기록 보관 근거 확인 · `KAKAO_ADMIN_KEY` · 웹훅 등록이 끝난 뒤 켠다. 이미 접수된 탈퇴는 꺼도 끝까지 처리한다. 테스트 프로필은 켬 |
 | `KAKAO_APP_ID` | 없음 | 카카오 앱 ID(숫자, 콘솔 > 앱 > 앱 키). 있으면 연결 해제 웹훅의 `app_id`가 같은지도 본다. 없으면 어드민 키만 본다 |
 | `WITHDRAWAL_WORKER_ENABLED` | `true` | 탈퇴 주기 작업 사용 여부. 켜 두면 1분마다 결과를 몰랐거나 정리가 실패한 탈퇴를 다시 실행기에 세운다. 꺼도 탈퇴 API 가 실행기를 바로 깨우므로 접수한 탈퇴는 한 번은 처리된다. 테스트 프로필은 끔 |
 | `AUTH_SUCCESS_REDIRECT` | `http://localhost:3000/oauth/success` | 로그인 성공 후 보낼 프론트 주소 (`docker` 프로필은 배포 주소) |

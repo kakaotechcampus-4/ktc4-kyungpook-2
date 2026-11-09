@@ -45,6 +45,8 @@ services:
       KAKAO_ADMIN_KEY: ${KAKAO_ADMIN_KEY:-}
       # 연결 해제 웹훅의 app_id 확인용 카카오 앱 ID(숫자). 비워 두면 어드민 키만 본다.
       KAKAO_APP_ID: ${KAKAO_APP_ID:-}
+      # 회원 탈퇴를 열지. 보관 근거 확인 · 어드민 키 · 웹훅 등록이 끝나기 전에는 켜지 않는다.
+      WITHDRAWAL_ENABLED: ${WITHDRAWAL_ENABLED:-false}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-${PUBLIC_ORIGIN:-http://localhost}}
       AUTH_SUCCESS_REDIRECT: ${PUBLIC_ORIGIN:-http://localhost}/oauth/success
       AUTH_FAILURE_REDIRECT: ${PUBLIC_ORIGIN:-http://localhost}/login

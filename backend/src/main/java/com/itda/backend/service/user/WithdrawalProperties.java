@@ -7,6 +7,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * {@code app.withdrawal.*} 설정 — 회원 탈퇴.
  *
+ * @param enabled           탈퇴를 열지. 꺼져 있으면 탈퇴 API 는 404 WITHDRAWAL_NOT_AVAILABLE, 화면은 탈퇴 버튼을 숨기고
+ *                          (/auth/me 의 withdrawalEnabled), 연결 해제 웹훅은 검증만 하고 무시한다. 보관 근거 확인 · 카카오
+ *                          키 · 웹훅 등록이 끝나기 전에 운영에서 탈퇴가 일어나지 않게 하는 스위치다. 이미 접수된 탈퇴는 끝까지 처리한다
  * @param waitForCompletion 탈퇴 API 가 실행기 결과를 기다리는 시간. 그 안에 끝나면 204, 아니면 202 다
  * @param lock              실행기 잠금. {@code auto}(기본, DB 를 보고 고름) · {@code advisory}(PostgreSQL 세션 잠금) ·
  *                          {@code local}(한 프로세스 안, H2 전용 — advisory lock 함수가 없다). {@link WithdrawalLocksConfig}
@@ -14,7 +17,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param worker            진행 중인 탈퇴를 다시 보는 주기 작업
  */
 @ConfigurationProperties(prefix = "app.withdrawal")
-public record WithdrawalProperties(Duration waitForCompletion, String lock, Kakao kakao, Worker worker) {
+public record WithdrawalProperties(boolean enabled, Duration waitForCompletion, String lock, Kakao kakao, Worker worker) {
 
     /**
      * @param baseUrl        카카오 API 주소

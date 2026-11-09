@@ -8,6 +8,8 @@ import java.util.concurrent.TimeoutException;
 
 import org.springframework.stereotype.Service;
 
+import com.itda.backend.exception.user.UserErrorCode;
+import com.itda.backend.exception.user.UserException;
 import com.itda.backend.service.user.WithdrawalSteps.Outcome;
 
 import lombok.extern.slf4j.Slf4j;
@@ -27,15 +29,33 @@ public class WithdrawalService {
     private final WithdrawalSteps steps;
     private final WithdrawalExecutor executor;
     private final long waitMillis;
+    private final boolean enabled;
 
     public WithdrawalService(WithdrawalSteps steps, WithdrawalExecutor executor, WithdrawalProperties properties) {
         this.steps = steps;
         this.executor = executor;
         this.waitMillis = properties.waitForCompletion().toMillis();
+        this.enabled = properties.enabled();
     }
 
-    public Outcome withdraw(String principal) {
-        long userId = steps.accept(UserService.parseUserId(principal));
+    /** 탈퇴를 열었는지. 화면이 탈퇴 버튼을 보일지 정한다 (/auth/me 의 withdrawalEnabled). */
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    /**
+     * @param expectedUserId 확인 화면이 보여 준 계정. 지금 로그인한 계정과 다르면 409 — 다른 탭에서 계정을 바꾼 뒤 옛 확인 창으로
+     *                       누르면, 사용자가 확인하지 않은 계정이 지워진다
+     */
+    public Outcome withdraw(String principal, String expectedUserId) {
+        if (!enabled) {
+            throw new UserException(UserErrorCode.WITHDRAWAL_NOT_AVAILABLE);
+        }
+        long authenticated = UserService.parseUserId(principal);
+        if (expectedUserId == null || !expectedUserId.trim().equals(String.valueOf(authenticated))) {
+            throw new UserException(UserErrorCode.WITHDRAWAL_ACCOUNT_MISMATCH);
+        }
+        long userId = steps.accept(authenticated);
         Future<Void> running = executor.submit(userId);
         try {
             running.get(waitMillis, TimeUnit.MILLISECONDS);

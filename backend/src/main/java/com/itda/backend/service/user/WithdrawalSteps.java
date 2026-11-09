@@ -96,7 +96,8 @@ public class WithdrawalSteps {
      * <ul>
      *   <li>없는 회원 · 탈퇴를 마친 회원 → 할 일 없음. 옛 방식 탈퇴 행이면 남은 식별정보를 지운다</li>
      *   <li>기관 담당자 → 할 일 없음. 기관 탈퇴는 지원하지 않는다 — 계정은 남고, 다시 카카오로 로그인하면 연결된다</li>
-     *   <li>이미 탈퇴를 처리하는 중 → 실행기에 다시 세운다(카카오를 부르면 이미 끊김 {@code -101} 로 성공한다)</li>
+     *   <li>이미 탈퇴를 처리하는 중({@code REQUESTED}) → {@code KAKAO_UNLINKED} 로 바꾸고 실행기에 다시 세운다. 카카오가 해제를
+     *       확인해 줬으므로, 그 뒤 실행기가 받은 카카오 오류로 접수가 취소되지 않는다({@link #record} 가 이 상태를 덮어쓰지 않는다)</li>
      *   <li>그 밖(보호자 · 가입 전) → 접수와 함께 {@code KAKAO_UNLINKED}</li>
      * </ul>
      *
@@ -119,6 +120,8 @@ public class WithdrawalSteps {
         }
         if (!user.isWithdrawing()) {
             user.requestWithdrawal(now());
+        }
+        if (user.getWithdrawalStatus() == WithdrawalStatus.REQUESTED) {
             user.markKakaoUnlinked();
         }
         return Optional.of(user.getId());
@@ -162,6 +165,10 @@ public class WithdrawalSteps {
     @Transactional
     public boolean record(long userId, KakaoUnlinkResult result, boolean firstAttempt) {
         User user = userRepository.findByIdForUpdate(userId).orElse(null);
+        if (user != null && user.getWithdrawalStatus() == WithdrawalStatus.KAKAO_UNLINKED) {
+            // 카카오 호출 중에 연결 해제 웹훅이 와서 해제를 확정했다. 이번 결과가 무엇이든 덮어쓰지 않고 정리로 넘어간다
+            return true;
+        }
         if (user == null || user.getWithdrawalStatus() != WithdrawalStatus.REQUESTED) {
             // 탈퇴 잠금 안이라 생기지 않아야 한다. 생겼다면 남이 바꾼 상태를 덮어쓰지 않는다
             log.error("카카오 결과를 남길 탈퇴 접수가 없습니다: userId={} status={}",

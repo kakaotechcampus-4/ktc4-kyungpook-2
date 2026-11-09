@@ -27,6 +27,16 @@ public enum UserErrorCode implements ErrorCode {
     /** 탈퇴를 처리하는 중이다. 세션 조회(/auth/me) · 로그아웃 외에는 막힌다. 탈퇴를 다시 신청해도 이 코드다. */
     WITHDRAWAL_IN_PROGRESS(HttpStatus.CONFLICT, "WITHDRAWAL_IN_PROGRESS", "탈퇴를 처리하고 있습니다."),
 
+    /** 탈퇴를 아직 열지 않았다(app.withdrawal.enabled 꺼짐). 운영 출시 조건이 갖춰지기 전이다. */
+    WITHDRAWAL_NOT_AVAILABLE(HttpStatus.NOT_FOUND, "WITHDRAWAL_NOT_AVAILABLE", "지금은 탈퇴할 수 없습니다."),
+
+    /**
+     * 탈퇴 확인 화면이 보여 준 계정과 지금 로그인한 계정이 다르다. 다른 탭에서 다른 계정으로 로그인한 경우다 — 사용자가 확인하지
+     * 않은 계정을 지우지 않는다. 화면을 새로 열어 다시 확인하게 한다.
+     */
+    WITHDRAWAL_ACCOUNT_MISMATCH(HttpStatus.CONFLICT, "WITHDRAWAL_ACCOUNT_MISMATCH",
+            "로그인한 계정이 바뀌었습니다. 화면을 새로 열어 다시 확인해주세요."),
+
     /** 기관 담당자 탈퇴는 아직 지원하지 않는다. 카카오를 부르기 전에 막는다. */
     ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED(HttpStatus.FORBIDDEN, "ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED",
             "기관 담당자는 탈퇴할 수 없습니다."),

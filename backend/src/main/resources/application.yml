@@ -85,6 +85,9 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   # 회원 탈퇴 (DELETE /api/v1/auth/me). 카카오 연결 해제는 탈퇴 실행기 하나만 부른다 (WithdrawalExecutor).
   withdrawal:
+    # 탈퇴를 열지. 꺼져 있으면 탈퇴 API 는 404, 화면은 탈퇴 버튼을 숨기고, 연결 해제 웹훅은 무시한다.
+    # 탈퇴 뒤 기록 보관 근거 확인 · KAKAO_ADMIN_KEY · 연결 해제 웹훅 등록이 끝난 뒤에 켠다. 이미 접수된 탈퇴는 꺼도 끝까지 처리한다.
+    enabled: ${WITHDRAWAL_ENABLED:false}
     # 탈퇴 API 가 실행기 결과를 기다리는 시간. 그 안에 끝나면 204, 아니면 202 로 접수만 알린다.
     wait-for-completion: 4s
     # auto = PostgreSQL 이면 세션 advisory lock(운영), H2 면 한 프로세스 안 잠금(로컬 개발 · 테스트).

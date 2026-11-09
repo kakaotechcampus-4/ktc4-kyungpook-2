@@ -33,25 +33,25 @@ class KakaoUnlinkClientTest {
 
     @Test
     void 성공과_이미_끊긴_사용자는_끊긴_것이다() {
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(200), null)).isEqualTo(KakaoUnlinkResult.UNLINKED);
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), -101)).isEqualTo(KakaoUnlinkResult.UNLINKED);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(200), KakaoUnlinkClient.Body.code(null))).isEqualTo(KakaoUnlinkResult.UNLINKED);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), KakaoUnlinkClient.Body.code(-101))).isEqualTo(KakaoUnlinkResult.UNLINKED);
     }
 
     @Test
     void 카카오가_분명히_거절하면_실패다() {
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(401), -401)).isEqualTo(KakaoUnlinkResult.FAILED);
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(403), -3)).isEqualTo(KakaoUnlinkResult.FAILED);
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), -2)).isEqualTo(KakaoUnlinkResult.FAILED);
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), null)).isEqualTo(KakaoUnlinkResult.FAILED);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(401), KakaoUnlinkClient.Body.code(-401))).isEqualTo(KakaoUnlinkResult.FAILED);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(403), KakaoUnlinkClient.Body.code(-3))).isEqualTo(KakaoUnlinkResult.FAILED);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), KakaoUnlinkClient.Body.code(-2))).isEqualTo(KakaoUnlinkResult.FAILED);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), KakaoUnlinkClient.Body.code(null))).isEqualTo(KakaoUnlinkResult.FAILED);
     }
 
     @Test
     void 일시_오류는_결과를_모르는_것이다() {
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), -1)).isEqualTo(KakaoUnlinkResult.UNKNOWN);
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), -7)).isEqualTo(KakaoUnlinkResult.UNKNOWN);
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(429), -10)).isEqualTo(KakaoUnlinkResult.UNKNOWN);
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), -10)).isEqualTo(KakaoUnlinkResult.UNKNOWN);
-        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(502), null)).isEqualTo(KakaoUnlinkResult.UNKNOWN);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), KakaoUnlinkClient.Body.code(-1))).isEqualTo(KakaoUnlinkResult.UNKNOWN);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), KakaoUnlinkClient.Body.code(-7))).isEqualTo(KakaoUnlinkResult.UNKNOWN);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(429), KakaoUnlinkClient.Body.code(-10))).isEqualTo(KakaoUnlinkResult.UNKNOWN);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), KakaoUnlinkClient.Body.code(-10))).isEqualTo(KakaoUnlinkResult.UNKNOWN);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(502), KakaoUnlinkClient.Body.code(null))).isEqualTo(KakaoUnlinkResult.UNKNOWN);
     }
 
     @Test
@@ -93,6 +93,28 @@ class KakaoUnlinkClientTest {
     }
 
     @Test
+    void 오류_상태를_받고_본문을_끝까지_받지_못하면_결과를_모르는_것이다() throws IOException {
+        // 400 헤더를 보내고 본문 앞부분만 보낸 뒤 멈춘다. 받지 못한 본문이 "이미 끊김(-101)" 이었을 수 있다
+        start(exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(400, 200);
+            OutputStream out = exchange.getResponseBody();
+            out.write("{\"code\":".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            try {
+                Thread.sleep(1_500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            out.close();
+        });
+
+        assertThat(client("admin-key", Duration.ofMillis(300)).unlink(1L)).isEqualTo(KakaoUnlinkResult.UNKNOWN);
+        assertThat(KakaoUnlinkClient.classify(HttpStatusCode.valueOf(400), KakaoUnlinkClient.Body.unreadable()))
+                .isEqualTo(KakaoUnlinkResult.UNKNOWN);
+    }
+
+    @Test
     void 어드민_키가_없으면_부르지_않고_실패다() {
         assertThat(client("", Duration.ofSeconds(1)).unlink(1L)).isEqualTo(KakaoUnlinkResult.FAILED);
     }
@@ -105,7 +127,7 @@ class KakaoUnlinkClientTest {
 
     private KakaoUnlinkClient client(String adminKey, Duration readTimeout) {
         String baseUrl = server == null ? "http://127.0.0.1:9" : "http://127.0.0.1:" + server.getAddress().getPort();
-        WithdrawalProperties properties = new WithdrawalProperties(Duration.ofSeconds(1), "local",
+        WithdrawalProperties properties = new WithdrawalProperties(true, Duration.ofSeconds(1), "local",
                 new WithdrawalProperties.Kakao(baseUrl, adminKey, null, Duration.ofSeconds(1), readTimeout),
                 new WithdrawalProperties.Worker(false, 60_000));
         return new KakaoUnlinkClient(RestClient.builder(), properties, new ObjectMapper());

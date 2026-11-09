@@ -26,6 +26,7 @@ public class KakaoUnlinkWebhookService {
     private final WithdrawalExecutor executor;
     private final byte[] expectedAuthorization;
     private final String appId;
+    private final boolean enabled;
 
     public KakaoUnlinkWebhookService(WithdrawalSteps steps, WithdrawalExecutor executor, WithdrawalProperties properties) {
         this.steps = steps;
@@ -36,6 +37,7 @@ public class KakaoUnlinkWebhookService {
                 : ("KakaoAK " + adminKey).getBytes(StandardCharsets.UTF_8);
         String configuredAppId = properties.kakao().appId();
         this.appId = configuredAppId == null || configuredAppId.isBlank() ? null : configuredAppId.trim();
+        this.enabled = properties.enabled();
     }
 
     /**
@@ -45,6 +47,11 @@ public class KakaoUnlinkWebhookService {
         verify(authorization);
         if (appId != null && !appId.equals(requestAppId)) {
             log.warn("다른 앱의 연결 해제 웹훅이라 무시합니다: appId={}", requestAppId);
+            return;
+        }
+        if (!enabled) {
+            // 탈퇴를 아직 열지 않았다(보관 근거 · 출시 조건 전). 카카오가 다시 보내지 않으므로 이 이벤트는 남지 않는다
+            log.warn("탈퇴를 열지 않아 연결 해제 웹훅을 무시합니다: referrerType={}", referrerType);
             return;
         }
         if (kakaoUserId == null || kakaoUserId.isBlank() || !kakaoUserId.chars().allMatch(c -> c >= '0' && c <= '9')) {

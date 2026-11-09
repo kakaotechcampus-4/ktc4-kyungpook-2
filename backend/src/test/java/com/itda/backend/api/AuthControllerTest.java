@@ -69,8 +69,9 @@ class AuthControllerTest {
     @Test
     void meReturnsRoleUserIdNameAndInstitutionIdForOrganization() throws Exception {
         authenticateAs("1");
+        given(withdrawalService.isEnabled()).willReturn(true);
         given(userService.getCurrentUser("1"))
-                .willReturn(new CurrentUserResponse("org", "1", "박지현", "1", "햇살아동발달센터", true, true, "none"));
+                .willReturn(new CurrentUserResponse("org", "1", "박지현", "1", "햇살아동발달센터", true, true, "none", true));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
@@ -80,7 +81,8 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.name").value("박지현"))
                 .andExpect(jsonPath("$.data.institutionId").value("1"))
                 .andExpect(jsonPath("$.data.institutionName").value("햇살아동발달센터"))
-                .andExpect(jsonPath("$.data.signupCompleted").value(true));
+                .andExpect(jsonPath("$.data.signupCompleted").value(true))
+                .andExpect(jsonPath("$.data.withdrawalEnabled").value(true));
     }
 
     /** 가입 미완료 — signupCompleted 는 false 로 반드시 나가고, role 은 빠진다. */
@@ -88,7 +90,7 @@ class AuthControllerTest {
     void meReportsSignupNotCompletedWithoutRole() throws Exception {
         authenticateAs("3");
         given(userService.getCurrentUser("3"))
-                .willReturn(new CurrentUserResponse(null, "3", "박지현", null, null, false, false, "none"));
+                .willReturn(new CurrentUserResponse(null, "3", "박지현", null, null, false, false, "none", true));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
@@ -102,7 +104,7 @@ class AuthControllerTest {
     void meOmitsInstitutionIdForParent() throws Exception {
         authenticateAs("2");
         given(userService.getCurrentUser("2"))
-                .willReturn(new CurrentUserResponse("parent", "2", "김보호", null, null, true, false, "none"));
+                .willReturn(new CurrentUserResponse("parent", "2", "김보호", null, null, true, false, "none", true));
 
         mockMvc.perform(get("/api/v1/auth/me"))
                 .andExpect(status().isOk())
@@ -128,11 +130,11 @@ class AuthControllerTest {
     @Test
     void withdrawCompletedReturnsNoContentAndExpiresCookie() throws Exception {
         authenticateAs("2");
-        given(withdrawalService.withdraw("2")).willReturn(WithdrawalSteps.Outcome.COMPLETED);
+        given(withdrawalService.withdraw("2", "2")).willReturn(WithdrawalSteps.Outcome.COMPLETED);
         given(jwtCookie.expire()).willReturn(
                 ResponseCookie.from(JwtCookie.NAME, "").maxAge(0).path("/").httpOnly(true).build());
 
-        mockMvc.perform(delete("/api/v1/auth/me"))
+        mockMvc.perform(delete("/api/v1/auth/me").param("userId", "2"))
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""))
                 .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
@@ -142,21 +144,30 @@ class AuthControllerTest {
     @Test
     void withdrawInProgressReturnsAccepted() throws Exception {
         authenticateAs("2");
-        given(withdrawalService.withdraw("2")).willReturn(WithdrawalSteps.Outcome.IN_PROGRESS);
+        given(withdrawalService.withdraw("2", "2")).willReturn(WithdrawalSteps.Outcome.IN_PROGRESS);
 
-        mockMvc.perform(delete("/api/v1/auth/me"))
+        mockMvc.perform(delete("/api/v1/auth/me").param("userId", "2"))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.withdrawal").value("in_progress"))
                 .andExpect(header().doesNotExist("Set-Cookie"));
+    }
+
+    /** 확인 화면의 계정(userId)이 없으면 400 이다 — 어느 계정을 지울지 확인하지 않은 요청이다. */
+    @Test
+    void withdrawWithoutShownAccountIsBadRequest() throws Exception {
+        authenticateAs("2");
+
+        mockMvc.perform(delete("/api/v1/auth/me"))
+                .andExpect(status().isBadRequest());
     }
 
     /** 첫 카카오 호출이 분명히 실패해 접수가 취소됐으면 502 KAKAO_UNLINK_FAILED. */
     @Test
     void withdrawCanceledReturnsBadGateway() throws Exception {
         authenticateAs("2");
-        given(withdrawalService.withdraw("2")).willReturn(WithdrawalSteps.Outcome.CANCELED);
+        given(withdrawalService.withdraw("2", "2")).willReturn(WithdrawalSteps.Outcome.CANCELED);
 
-        mockMvc.perform(delete("/api/v1/auth/me"))
+        mockMvc.perform(delete("/api/v1/auth/me").param("userId", "2"))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("KAKAO_UNLINK_FAILED"));
     }

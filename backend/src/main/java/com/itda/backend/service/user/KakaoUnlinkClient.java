@@ -64,7 +64,7 @@ public class KakaoUnlinkClient {
                     .header(HttpHeaders.AUTHORIZATION, "KakaoAK " + adminKey)
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .body(form)
-                    .exchange((request, response) -> classify(response.getStatusCode(), errorCodeOf(response.getBody())));
+                    .exchange((request, response) -> classify(response.getStatusCode(), readBody(response.getBody())));
         } catch (RestClientException e) {
             // 타임아웃 · 연결 끊김. 카카오가 요청을 받아 처리했는지 알 수 없다
             log.warn("카카오 연결 해제 응답을 받지 못했습니다: {}", e.getMessage());
@@ -72,10 +72,28 @@ public class KakaoUnlinkClient {
         }
     }
 
-    static KakaoUnlinkResult classify(HttpStatusCode status, Integer code) {
+    /** 응답 본문. {@code readable} 이 false 면 본문을 끝까지 받지 못했다(읽는 중 타임아웃 · 연결 끊김). */
+    record Body(boolean readable, Integer code) {
+
+        static Body code(Integer code) {
+            return new Body(true, code);
+        }
+
+        static Body unreadable() {
+            return new Body(false, null);
+        }
+    }
+
+    static KakaoUnlinkResult classify(HttpStatusCode status, Body body) {
         if (status.is2xxSuccessful()) {
             return KakaoUnlinkResult.UNLINKED;
         }
+        if (!body.readable()) {
+            // 오류 상태는 받았지만 본문을 끝까지 받지 못했다. 그 본문이 "이미 끊김(-101)" 이었을 수 있으니 실패로 단정하지 않는다
+            log.warn("카카오 연결 해제 오류 응답의 본문을 받지 못했습니다: status={}", status.value());
+            return KakaoUnlinkResult.UNKNOWN;
+        }
+        Integer code = body.code();
         if (code != null && code == NOT_REGISTERED_USER) {
             return KakaoUnlinkResult.UNLINKED;
         }
@@ -91,13 +109,22 @@ public class KakaoUnlinkClient {
         return KakaoUnlinkResult.UNKNOWN;
     }
 
-    /** 오류 본문 {@code {"code": -101, "msg": "..."}} 의 code. 읽지 못하면 null. */
-    private Integer errorCodeOf(InputStream body) {
-        try (body) {
-            JsonNode code = objectMapper.readTree(body).get("code");
-            return code != null && code.canConvertToInt() ? code.intValue() : null;
+    /**
+     * 오류 본문 {@code {"code": -101, "msg": "..."}} 를 읽는다. 받는 단계와 해석 단계를 나눈다 — 끝까지 받지 못하면(타임아웃 ·
+     * 연결 끊김) 결과를 모르는 것이고, 다 받았는데 JSON 이 아니거나 code 가 없으면 code 없는 오류다.
+     */
+    private Body readBody(InputStream stream) {
+        byte[] bytes;
+        try (stream) {
+            bytes = stream.readAllBytes();
         } catch (IOException | RuntimeException e) {
-            return null;
+            return Body.unreadable();
+        }
+        try {
+            JsonNode code = objectMapper.readTree(bytes).get("code");
+            return Body.code(code != null && code.canConvertToInt() ? code.intValue() : null);
+        } catch (IOException | RuntimeException e) {
+            return Body.code(null);
         }
     }
 }
