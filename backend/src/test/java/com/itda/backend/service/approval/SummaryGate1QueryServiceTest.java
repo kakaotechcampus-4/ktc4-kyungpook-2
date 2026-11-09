@@ -29,6 +29,7 @@ import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.domain.summary.SummaryRunRequest;
+import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.domain.validation.ValidationVerdict;
 import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
@@ -641,5 +642,82 @@ class SummaryGate1QueryServiceTest {
 
         // 요약마다 묶음 상태를 따로 물으면 요약 수에 비례해 늘어난다(N+1).
         assertThat(twenty).as("요약 1개: %d번, 요약 20개: %d번", one, twenty).isEqualTo(one);
+    }
+
+    // ── 대시보드 보드 (getBoardItems) — 목록과 같은 요약 · 같은 판정을 보드가 쓰는 칸만으로 준다 ──
+
+    /** 같은 데이터에서 검토 대기 · 보류함 목록을 합친 것. 보드와 비교하려고 보드 칸만 뽑는다. */
+    private List<Gate1BoardItem> fromLists() {
+        return java.util.stream.Stream.concat(service.getSummaries(TEACHER, "pending").stream(),
+                        service.getSummaries(TEACHER, "hold").stream())
+                .map(s -> new Gate1BoardItem(s.id(), s.childId(), s.childName(), s.entryDate(),
+                        SummaryStatus.valueOf(s.status()), s.processing(), s.noContent()))
+                .toList();
+    }
+
+    @Test
+    void 보드는_검토_대기와_보류함_목록과_같은_요약을_같은_판정으로_날짜순에_준다() {
+        SummaryResult processing = summary(ORG, DATE, "[]", List.of(), List.of());
+        requestRun(DATE);
+        validatedInSameGroup();
+        SummaryResult empty = em.persistAndFlush(SummaryResult.noContent(junho, DATE.plusDays(1), ORG, 1, "[]", "{}"));
+        SummaryResult held = summary(ORG, DATE.minusDays(1), "[]", List.of(), List.of());
+        held.hold();
+        summary(ORG, DATE.minusDays(2), "[]", List.of(), List.of()).approve();
+        summary(4L, DATE, "[]", List.of(), List.of());
+        em.flush();
+
+        List<Gate1BoardItem> board = service.getBoardItems(ORG);
+
+        assertThat(board).extracting(Gate1BoardItem::id)
+                .containsExactly(held.getId(), processing.getId(), empty.getId());
+        assertThat(board).containsExactlyInAnyOrderElementsOf(fromLists());
+        assertThat(board).extracting(Gate1BoardItem::childName, Gate1BoardItem::status, Gate1BoardItem::processing,
+                        Gate1BoardItem::noContent)
+                .containsExactly(
+                        tuple("김준호", SummaryStatus.HOLD, false, false),
+                        tuple("김준호", SummaryStatus.GATE1_PENDING, true, false),
+                        tuple("김준호", SummaryStatus.GATE1_PENDING, false, true));
+    }
+
+    @Test
+    void 보드도_동의를_철회한_아이의_요약을_뺀다() {
+        summary(ORG, DATE, "[]", List.of(), List.of());
+        summary(ORG, DATE.plusDays(1), "[]", List.of(), List.of()).hold();
+        consent.revoke(100L, ConsentRevokeReason.GUARDIAN_REVOKED, DATE.atTime(18, 0));
+        em.flush();
+
+        assertThat(service.getBoardItems(ORG)).isEmpty();
+    }
+
+    @Test
+    void 보드도_최신_판이_아닌_요약은_처리_중으로_표시하지_않는다() {
+        SummaryResult older = summary(ORG, DATE, "[]", List.of(), List.of());
+        SummaryResult newer = em.persistAndFlush(SummaryResult.of(junho, DATE, ORG, 2, "2판", "[]", "[]", "[]", "{}"));
+        requestRun(DATE);
+        validatedInSameGroup();
+
+        assertThat(service.getBoardItems(ORG))
+                .extracting(Gate1BoardItem::id, Gate1BoardItem::processing)
+                .containsExactly(tuple(older.getId(), false), tuple(newer.getId(), true));
+        assertThat(service.getBoardItems(ORG)).containsExactlyInAnyOrderElementsOf(fromLists());
+    }
+
+    @Test
+    void 보드는_요약_본문_일지_원문_검증_결과를_읽지_않는다() {
+        queriesForPendingList(3);
+        em.clear();
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+
+        List<Gate1BoardItem> board = service.getBoardItems(ORG);
+
+        long summaries = statistics.getEntityStatistics(SummaryResult.class.getName()).getLoadCount();
+        long entries = statistics.getEntityStatistics(JournalEntry.class.getName()).getLoadCount();
+        long validations = statistics.getEntityStatistics(ValidationResult.class.getName()).getLoadCount();
+        statistics.setStatisticsEnabled(false);
+        assertThat(board).hasSize(3).allSatisfy(item -> assertThat(item.processing()).isTrue());
+        assertThat(List.of(summaries, entries, validations)).containsOnly(0L);
     }
 }

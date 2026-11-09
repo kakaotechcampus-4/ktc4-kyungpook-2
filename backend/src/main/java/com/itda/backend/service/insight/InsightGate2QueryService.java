@@ -27,6 +27,7 @@ import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.repository.insight.InsightKey;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
@@ -74,19 +75,46 @@ public class InsightGate2QueryService {
     public List<Gate2InsightResponse> getInsights(String userId, String gate2Status) {
         InsightStatus status = toInsightStatus(gate2Status);
         Long organizationId = userService.getOrganizationIdOf(userId);
-
-        // 읽을 범위를 좁히는 것일 뿐 울타리가 아니다 — 남의 아이를 막는 것은 requireStillOurs 다.
-        // 여기가 느슨해져도 결과는 같고, 대신 읽을 행이 늘어난다.
-        List<Long> childIds = childOrganizationRepository.findByOrganizationIdAndDeletedAtIsNull(organizationId)
-                .stream().map(ChildOrganization::getChildId).distinct().toList();
+        List<Long> childIds = rosterOf(organizationId);
         if (childIds.isEmpty()) {
             return List.of();
         }
+        // 마지막 회차를 고른 뒤 상태를 건다 — 최신 회차가 이미 승인됐으면 옛 회차의 대기 행이 최신으로 보인다.
+        // 회차 고르기와 본문 읽기는 한 SQL 이다 — 나눠 읽으면 그 사이 커밋된 승인이 대기 목록에 섞인다.
+        return assemble(organizationId, insightResultRepository.findLatestByChildIdInAndStatus(childIds, status), false);
+    }
 
-        // 상태로 먼저 좁히지 않는다 — 최신 회차가 이미 승인됐으면 옛 회차의 대기 행이 최신으로 보인다.
-        List<InsightResult> latest = latestRevisionOnly(insightResultRepository.findByChildIdInOrderByIdDesc(childIds));
-        List<InsightResult> mine = latest.stream().filter(i -> i.getStatus() == status).toList();
-        return assemble(organizationId, mine, false);
+    /**
+     * 대시보드 "분석 승인" 칸. {@link #getInsights} 의 건수와 같다 — 같은 회차 고르기 · 같은 {@link #authorize} 를 지난다.
+     * 대시보드가 10초마다 부르므로 판정에 쓰는 칸만 읽고, 본문 · 근거는 읽지 않는다.
+     */
+    @Transactional(readOnly = true)
+    public int countInsights(Long organizationId, InsightStatus status) {
+        List<Long> childIds = rosterOf(organizationId);
+        if (childIds.isEmpty()) {
+            return 0;
+        }
+        List<InsightKey> keys = insightResultRepository.findLatestKeysByChildIdInAndStatus(childIds, status);
+        if (keys.isEmpty()) {
+            return 0;
+        }
+        Map<Long, List<Long>> sourceIds = new HashMap<>();
+        keys.forEach(k -> sourceIds.put(k.id(), PrimarySource.sourceIdsOf(k.id(), k.sourceInstitutionIds())));
+        // 승인 주체는 근거 기관 중에서만 고르므로, 근거 기관만 읽어도 목록과 같은 답이 나온다.
+        Set<Long> organizationIds = new HashSet<>();
+        sourceIds.values().forEach(organizationIds::addAll);
+        Judgment judgment = judgmentOf(keys.stream().map(InsightKey::childId).collect(Collectors.toSet()),
+                organizationIds);
+        int count = 0;
+        for (InsightKey key : keys) {
+            try {
+                authorize(key.id(), key.childId(), sourceIds.get(key.id()), organizationId, judgment);
+                count++;
+            } catch (InsightException e) {
+                // 목록에서 조용히 빠지는 글이다
+            }
+        }
+        return count;
     }
 
     /**
@@ -102,24 +130,12 @@ public class InsightGate2QueryService {
     }
 
     /**
-     * 같은 아동·기간의 마지막 회차만 남긴다. 목록이 id 내림차순이라 같은 묶음에서 처음 본 것이 최신이지만,
-     * 회차 번호로 가른다 — id 순서가 회차 순서와 어긋날 여지를 남기지 않는다.
+     * 우리 명부의 아이. 읽을 범위를 좁히는 것일 뿐 울타리가 아니다 — 남의 아이를 막는 것은 {@link #requireStillOurs} 다.
+     * 여기가 느슨해져도 결과는 같고, 대신 읽을 행이 늘어난다.
      */
-    static List<InsightResult> latestRevisionOnly(List<InsightResult> insights) {
-        Map<PeriodKey, Integer> maxRevision = new HashMap<>();
-        for (InsightResult insight : insights) {
-            maxRevision.merge(PeriodKey.of(insight), insight.getRevision(), Math::max);
-        }
-        return insights.stream()
-                .filter(i -> i.getRevision().equals(maxRevision.get(PeriodKey.of(i))))
-                .toList();
-    }
-
-    private record PeriodKey(Long childId, LocalDate periodFrom, LocalDate periodTo) {
-
-        static PeriodKey of(InsightResult insight) {
-            return new PeriodKey(insight.getChildId(), insight.getPeriodFrom(), insight.getPeriodTo());
-        }
+    private List<Long> rosterOf(Long organizationId) {
+        return childOrganizationRepository.findByOrganizationIdAndDeletedAtIsNull(organizationId)
+                .stream().map(ChildOrganization::getChildId).distinct().toList();
     }
 
     /**
@@ -133,44 +149,71 @@ public class InsightGate2QueryService {
             return List.of();
         }
         Set<Long> childIds = insights.stream().map(InsightResult::getChildId).collect(Collectors.toSet());
-        // 목록에서 뺀 아이는 이름도 인사이트도 더 보이지 않는다 — 인사이트 재료를 모을 때와 같은 기준이다
-        // (InsightService.prepare).
-        Map<Long, String> childNames = childRepository.findAllById(childIds).stream()
-                .filter(child -> child.getDeletedAt() == null)
-                .collect(Collectors.toMap(Child::getId, Child::getName));
-
-        Map<Long, List<Long>> enrolled = childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(childIds)
-                .stream().collect(Collectors.groupingBy(ChildOrganization::getChildId,
-                        Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
-        // 주간 인사이트 동의 기준이다 (#257). 수신 후보 표시와 재료 확인이 같은 값을 본다.
-        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.insightStatesOf(childIds);
         Map<Long, Evidence> evidences = insightEvidenceReader.read(insights);
 
+        // 근거 기관 · 명부 기관 · 근거 줄이 가리키는 기관을 한 번에 읽는다. 근거 줄의 기관을 빼면 그 줄이 응답에서 빠진다.
         Set<Long> organizationIds = new HashSet<>();
         insights.forEach(i -> organizationIds.addAll(PrimarySource.sourceIdsOf(i)));
-        enrolled.values().forEach(organizationIds::addAll);
         evidences.values().forEach(e -> organizationIds.addAll(e.institutionIds()));
-        Map<Long, Organization> organizations = organizationRepository.findAllById(organizationIds).stream()
-                .collect(Collectors.toMap(Organization::getId, org -> org));
+        Judgment judgment = judgmentOf(childIds, organizationIds);
 
         List<Gate2InsightResponse> responses = new ArrayList<>();
         for (InsightResult insight : insights) {
             Organization primary;
             try {
-                // 명부를 먼저 본다. source_institution_ids 는 만들 때 굳은 값이라 그 뒤에 아이가 우리
-                // 기관을 떠났어도 그대로 남는다 — 그것만 보면 연결이 끊긴 기관이 계속 읽는다.
-                requireStillOurs(insight, organizationId, childNames, enrolled);
-                requireMaterialConsented(insight, consents);
-                primary = PrimarySource.requireApprover(insight, organizationId, organizations);
+                primary = authorize(insight.getId(), insight.getChildId(), PrimarySource.sourceIdsOf(insight),
+                        organizationId, judgment);
             } catch (InsightException e) {
                 if (strict) {
                     throw e;
                 }
                 continue;
             }
-            responses.add(toResponse(insight, primary, childNames, enrolled, consents, evidences, organizations));
+            responses.add(toResponse(insight, primary, judgment.childNames(), judgment.enrolled(),
+                    judgment.consents(), evidences, judgment.organizations()));
         }
         return responses;
+    }
+
+    /**
+     * 인가 판정에 쓰는 값. 목록 · 단건 · 건수가 같은 방법으로 만든다.
+     *
+     * @param childNames    지금 살아 있는 아이 이름 — 목록에서 뺀 아이는 이름도 인사이트도 더 보이지 않는다
+     *                      (인사이트 재료를 모을 때와 같은 기준, {@code InsightService.prepare})
+     * @param enrolled      아이마다 지금 다니는 기관
+     * @param consents      주간 인사이트 동의 (#257). 수신 후보 표시와 재료 확인이 같은 값을 본다
+     * @param organizations {@code organizationIds} 와 명부 기관
+     */
+    private record Judgment(Map<Long, String> childNames, Map<Long, List<Long>> enrolled,
+            Map<Long, Map<Long, ConsentState>> consents, Map<Long, Organization> organizations) {
+    }
+
+    private Judgment judgmentOf(Set<Long> childIds, Set<Long> organizationIds) {
+        Map<Long, String> childNames = childRepository.findAllById(childIds).stream()
+                .filter(child -> child.getDeletedAt() == null)
+                .collect(Collectors.toMap(Child::getId, Child::getName));
+        Map<Long, List<Long>> enrolled = childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(childIds)
+                .stream().collect(Collectors.groupingBy(ChildOrganization::getChildId,
+                        Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
+        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.insightStatesOf(childIds);
+        Set<Long> toRead = new HashSet<>(organizationIds);
+        enrolled.values().forEach(toRead::addAll);
+        Map<Long, Organization> organizations = organizationRepository.findAllById(toRead).stream()
+                .collect(Collectors.toMap(Organization::getId, org -> org));
+        return new Judgment(childNames, enrolled, consents, organizations);
+    }
+
+    /**
+     * 우리 기관이 이 인사이트를 보고 승인할 수 있는지. 승인 주체를 돌려주고, 아니면 {@link InsightException} — 단건은 그대로
+     * 응답(404 · 403)이 되고 목록 · 건수는 그 글을 뺀다.
+     */
+    private static Organization authorize(Long insightId, Long childId, List<Long> sourceIds, Long organizationId,
+            Judgment judgment) {
+        // 명부를 먼저 본다. source_institution_ids 는 만들 때 굳은 값이라 그 뒤에 아이가 우리
+        // 기관을 떠났어도 그대로 남는다 — 그것만 보면 연결이 끊긴 기관이 계속 읽는다.
+        requireStillOurs(insightId, childId, organizationId, judgment.childNames(), judgment.enrolled());
+        requireMaterialConsented(insightId, childId, sourceIds, judgment.consents());
+        return PrimarySource.requireApprover(insightId, sourceIds, organizationId, judgment.organizations());
     }
 
     /**
@@ -184,12 +227,12 @@ public class InsightGate2QueryService {
      * 켜면 그대로 다시 보여 승인할 수 있다. 상태를 바꾸려면 값을 더해야 해서 §11.4 수동 조치 대상이 된다 (#213 과 같은
      * 이유). 그래서 id 로 직접 결정(O-42)을 보내면 승인은 409 {@code INSIGHT_MATERIAL_CONSENT_REVOKED}, 보류는 된다.
      */
-    private static void requireMaterialConsented(InsightResult insight,
+    private static void requireMaterialConsented(Long insightId, Long childId, List<Long> sourceIds,
             Map<Long, Map<Long, ConsentState>> consents) {
-        Map<Long, ConsentState> ofChild = consents.getOrDefault(insight.getChildId(), Map.of());
-        for (Long organizationId : PrimarySource.sourceIdsOf(insight)) {
+        Map<Long, ConsentState> ofChild = consents.getOrDefault(childId, Map.of());
+        for (Long organizationId : sourceIds) {
             if (ofChild.getOrDefault(organizationId, ConsentState.NOT_GRANTED) != ConsentState.GRANTED) {
-                throw new InsightException(InsightErrorCode.NOT_FOUND, insight.getId());
+                throw new InsightException(InsightErrorCode.NOT_FOUND, insightId);
             }
         }
     }
@@ -199,12 +242,11 @@ public class InsightGate2QueryService {
      * <b>"없음"</b> 으로 답한다 — 연결이 끊긴 뒤에도 본문·아이 이름·그 아이가 지금 다니는 기관 목록이
      * 보이면 안 된다 (CLAUDE.md: 동의가 사라지면 막는다).
      */
-    private static void requireStillOurs(InsightResult insight, Long organizationId,
+    private static void requireStillOurs(Long insightId, Long childId, Long organizationId,
             Map<Long, String> liveChildNames, Map<Long, List<Long>> enrolled) {
-        Long childId = insight.getChildId();
         if (!liveChildNames.containsKey(childId)
                 || !enrolled.getOrDefault(childId, List.of()).contains(organizationId)) {
-            throw new InsightException(InsightErrorCode.NOT_FOUND, insight.getId());
+            throw new InsightException(InsightErrorCode.NOT_FOUND, insightId);
         }
     }
 
