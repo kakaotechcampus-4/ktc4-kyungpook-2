@@ -45,7 +45,7 @@ public class InsightWeekStageReader {
         Set<Long> childIds = weeks.stream().map(Week::childId).collect(Collectors.toSet());
         Map<Week, List<InsightResult>> byWeek = InsightGate2QueryService
                 .latestRevisionOnly(insightResultRepository.findByChildIdInOrderByIdDesc(childIds)).stream()
-                .filter(insight -> PrimarySource.sourceIdsOf(insight).contains(organizationId))
+                .filter(insight -> PrimarySource.isFedBy(insight, organizationId))
                 .filter(insight -> wanted.contains(Week.of(insight)))
                 .collect(Collectors.groupingBy(Week::of, LinkedHashMap::new, Collectors.toList()));
         if (byWeek.isEmpty()) {

@@ -110,8 +110,8 @@ public class InsightAccessRevoker {
      */
     private List<Long> insightsFedBy(Long childId, Long organizationId) {
         return insightResultRepository.findByChildIdInOrderByIdDesc(Set.of(childId)).stream()
-                .filter(insight -> PrimarySource.sourceIdsOf(insight).contains(organizationId))
+                .filter(insight -> PrimarySource.isFedBy(insight, organizationId))
                 .map(InsightResult::getId)
-                .collect(Collectors.toList());
+                .toList();
     }
 }

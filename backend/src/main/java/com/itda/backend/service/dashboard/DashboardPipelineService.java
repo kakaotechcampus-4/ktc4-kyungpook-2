@@ -17,9 +17,6 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.matching.MatchingResult;
@@ -52,6 +49,7 @@ import com.itda.backend.service.insight.InsightWeekStageReader;
 import com.itda.backend.service.insight.InsightWeekStageReader.WeekStage;
 import com.itda.backend.service.user.UserService;
 import com.itda.backend.service.validation.ValidationReasons;
+import com.itda.backend.global.json.JsonColumns;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -114,7 +112,6 @@ public class DashboardPipelineService {
     private final InsightWeekStageReader insightWeekStageReader;
     private final InsightGate2QueryService insightGate2QueryService;
     private final InstitutionLinkService institutionLinkService;
-    private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
     public DashboardPipelineResponse getPipeline(String userId) {
@@ -195,7 +192,9 @@ public class DashboardPipelineService {
                 .toList()).forEach(v -> latest.putIfAbsent(v.getJournalEntryId(), v));
         return blocked.stream().map(e -> {
             ValidationResult validation = latest.get(e.id());
-            List<String> kinds = validation == null ? List.of() : issueTypesOf(validation);
+            List<String> kinds = validation == null ? List.of()
+                    : JsonColumns.readTexts(validation.getIssueTypes(), "validation_result.issue_types",
+                            validation.getId());
             return entryRow(e.childId(), nameOf(names, e.childId()), e.entryDate(), Status.BLOCKED,
                     new Detail(null, kinds, ValidationReasons.sentencesOf(kinds), null, null),
                     validation == null ? null : target("validation", validation.getId()));
@@ -352,20 +351,5 @@ public class DashboardPipelineService {
 
     private static int count(Collection<Row> rows, Status status) {
         return (int) rows.stream().filter(row -> row.status() == status).count();
-    }
-
-    private List<String> issueTypesOf(ValidationResult validation) {
-        String raw = validation.getIssueTypes();
-        if (raw == null || raw.isBlank()) {
-            return List.of();
-        }
-        try {
-            List<String> kinds = objectMapper.readValue(raw, new TypeReference<List<String>>() {
-            });
-            return kinds == null ? List.of() : kinds;
-        } catch (JsonProcessingException e) {
-            log.warn("failed to parse validation_result.issue_types id={}", validation.getId(), e);
-            return List.of();
-        }
     }
 }

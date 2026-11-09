@@ -14,7 +14,6 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.test.context.ActiveProfiles;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.ApprovalReviewType;
@@ -82,7 +81,7 @@ class InsightServiceTest {
     void setUp() {
         insightService = new InsightService(childContextRepository, summaryResultRepository, approvalRepository,
                 childOrganizationRepository, organizationRepository, childRepository,
-                new ConsentStateReader(sharingConsentRepository), new ObjectMapper());
+                new ConsentStateReader(sharingConsentRepository));
         junho = em.persist(Child.of("김준호", LocalDate.of(2019, 3, 1)));
         school = em.persist(Organization.of("햇살초등학교", OrganizationType.SCHOOL, "1234567890"));
         center = em.persist(Organization.of("햇살아동발달센터", OrganizationType.CENTER, "1234567891"));

@@ -11,9 +11,6 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.ApprovalTargetType;
@@ -23,6 +20,7 @@ import com.itda.backend.dto.response.child.OrganizationTimelineEntryResponse;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.global.json.JsonColumns;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,8 +49,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class OrganizationTimelineQueryService {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final OrganizationChildGuard organizationChildGuard;
     private final ChildContextRepository childContextRepository;
@@ -106,25 +102,7 @@ public class OrganizationTimelineQueryService {
      * 배열이 아니면 0, 깨졌으면 0 과 경고 로그. 한 건 때문에 목록 전체를 500 내지 않는다.
      */
     private static int sourceCountOf(SummaryResult summary) {
-        String raw = summary.getCoveredEntryIds();
-        if (raw == null || raw.isBlank()) {
-            return 0;
-        }
-        try {
-            JsonNode node = MAPPER.readTree(raw);
-            if (!node.isArray()) {
-                return 0;
-            }
-            int count = 0;
-            for (JsonNode id : node) {
-                if (id.canConvertToLong()) {
-                    count++;
-                }
-            }
-            return count;
-        } catch (JsonProcessingException e) {
-            log.warn("failed to parse summary_result.covered_entry_ids id={}", summary.getId(), e);
-            return 0;
-        }
+        return JsonColumns.readLongs(summary.getCoveredEntryIds(), "summary_result.covered_entry_ids", summary.getId())
+                .size();
     }
 }

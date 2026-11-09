@@ -12,9 +12,6 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
@@ -50,7 +47,6 @@ public class NotifyService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final OrganizationRepository organizationRepository;
     private final InsightEvidenceReader insightEvidenceReader;
-    private final ObjectMapper objectMapper;
 
     /**
      * 그 아이·그 기간에 보낼 거리. 승인된 인사이트가 없으면 {@link Optional#empty()} 다.
@@ -107,7 +103,7 @@ public class NotifyService {
     private Map<Long, Organization> institutionsOf(List<InsightResult> approved,
             Map<Long, InsightEvidenceReader.Evidence> evidences) {
         Set<Long> ids = approved.stream()
-                .flatMap(insight -> parseIds(insight.getSourceInstitutionIds()).stream())
+                .flatMap(insight -> PrimarySource.sourceIdsOf(insight).stream())
                 .collect(Collectors.toCollection(java.util.HashSet::new));
         evidences.values().forEach(evidence -> ids.addAll(evidence.institutionIds()));
         return organizationRepository.findAllById(ids).stream()
@@ -120,7 +116,7 @@ public class NotifyService {
      */
     private String primaryNameOf(InsightResult insight, Map<Long, Organization> institutions) {
         try {
-            Organization primary = PrimarySource.of(parseIds(insight.getSourceInstitutionIds()), institutions);
+            Organization primary = PrimarySource.of(PrimarySource.sourceIdsOf(insight), institutions);
             return primary == null ? "" : primary.getName();
         } catch (RuntimeException e) {
             // 승인 주체를 못 고르는 인사이트가 있어도 메일 전체를 실패시키지 않는다. 그 줄만 비운다.
@@ -160,7 +156,7 @@ public class NotifyService {
      * 다른 기관 이름이 보호자 메일에 나가면 기관 경계가 새는 것이고, 보호자는 기관마다 따로 동의했을 뿐이다.
      */
     private List<String> institutionTypesOf(InsightResult insight, Map<Long, Organization> institutions) {
-        return parseIds(insight.getSourceInstitutionIds()).stream()
+        return PrimarySource.sourceIdsOf(insight).stream()
                 .map(institutions::get)
                 .filter(organization -> organization != null)
                 .map(organization -> InstitutionTypeNames.of(organization.getType()))
@@ -195,18 +191,5 @@ public class NotifyService {
                 .filter(name -> name != null && !name.isBlank())
                 .distinct()
                 .toList();
-    }
-
-    private List<Long> parseIds(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<List<Long>>() {});
-        } catch (Exception e) {
-            // 저장된 JSON 이 깨졌다. 기관을 모르면 "학교에서는" 을 못 쓰게 되는 쪽으로 기운다 — 안전한 방향이다.
-            log.warn("could not read institution ids: {}", json, e);
-            return List.of();
-        }
     }
 }

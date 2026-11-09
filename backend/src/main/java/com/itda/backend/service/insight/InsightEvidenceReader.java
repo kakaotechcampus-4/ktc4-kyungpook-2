@@ -13,14 +13,13 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
+import com.itda.backend.global.json.JsonColumns;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,8 +38,6 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @RequiredArgsConstructor
 public class InsightEvidenceReader {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final SummaryResultRepository summaryResultRepository;
     private final ChildContextRepository childContextRepository;
@@ -113,17 +110,19 @@ public class InsightEvidenceReader {
      * <p>문장을 못 찾으면 건너뛴다. 근거 줄 자체는 그대로 둔다 — 날짜와 기관은 맞고 문장만 없는 것이다.
      */
     private static List<Sentence> sentencesOf(InsightResult insight, SummaryResult summary) {
-        JsonNode claims = readArray(summary.getClaims(), "summary_result.claims", summary.getId());
+        JsonNode claims = JsonColumns.readArray(summary.getClaims(), "summary_result.claims", summary.getId());
 
         // 순서를 지키려고 LinkedHashMap. 값은 역할이고, 대처가 나중에 덮어쓴다.
         Map<Integer, String> roleOf = new LinkedHashMap<>();
-        for (JsonNode node : readArray(insight.getClaimIds(), "insight_result.claim_ids", insight.getId())) {
+        for (JsonNode node : JsonColumns.readArray(insight.getClaimIds(),
+                "insight_result.claim_ids", insight.getId())) {
             ClaimRef ref = ClaimRef.parse(node.asText());
             if (ref != ClaimRef.UNKNOWN && ref.summaryId().equals(summary.getId())) {
                 roleOf.putIfAbsent(ref.order(), Sentence.SITUATION);
             }
         }
-        for (JsonNode support : readArray(insight.getSupports(), "insight_result.supports", insight.getId())) {
+        for (JsonNode support : JsonColumns.readArray(insight.getSupports(),
+                "insight_result.supports", insight.getId())) {
             for (JsonNode node : support.path("claim_ids")) {
                 ClaimRef ref = ClaimRef.parse(node.asText());
                 if (ref != ClaimRef.UNKNOWN && ref.summaryId().equals(summary.getId())) {
@@ -160,7 +159,7 @@ public class InsightEvidenceReader {
             if (summary == null || !summary.getChildId().equals(insight.getChildId())) {
                 return true;
             }
-            JsonNode claim = readArray(summary.getClaims(), "summary_result.claims", summary.getId())
+            JsonNode claim = JsonColumns.readArray(summary.getClaims(), "summary_result.claims", summary.getId())
                     .path(ref.order());
             JsonNode source = claim.path("source");
             boolean ai = source.isMissingNode() || source.isNull() || "AI".equals(source.asText());
@@ -177,9 +176,10 @@ public class InsightEvidenceReader {
      */
     private static List<ClaimRef> allClaimRefs(InsightResult insight) {
         List<ClaimRef> refs = new ArrayList<>();
-        readArray(insight.getClaimIds(), "insight_result.claim_ids", insight.getId())
+        JsonColumns.readArray(insight.getClaimIds(), "insight_result.claim_ids", insight.getId())
                 .forEach(node -> refs.add(ClaimRef.parse(node.asText())));
-        for (JsonNode support : readArray(insight.getSupports(), "insight_result.supports", insight.getId())) {
+        for (JsonNode support : JsonColumns.readArray(insight.getSupports(),
+                "insight_result.supports", insight.getId())) {
             JsonNode claimIds = support.path("claim_ids");
             if (!claimIds.isArray() || claimIds.isEmpty()) {
                 refs.add(ClaimRef.UNKNOWN);
@@ -193,7 +193,8 @@ public class InsightEvidenceReader {
     /** {@code ["31-0", "31-2", "34-1"]} → {@code [31, 34]}. 순서를 지키고 중복은 한 번만 센다. */
     private static List<Long> summaryIdsIn(InsightResult insight) {
         List<Long> ids = new ArrayList<>();
-        for (JsonNode node : readArray(insight.getClaimIds(), "insight_result.claim_ids", insight.getId())) {
+        for (JsonNode node : JsonColumns.readArray(insight.getClaimIds(),
+                "insight_result.claim_ids", insight.getId())) {
             if (!node.isTextual()) {
                 continue;
             }
@@ -215,7 +216,7 @@ public class InsightEvidenceReader {
     private static Set<Long> lookedUpSummaryIdsOf(InsightResult insight) {
         Set<Long> cited = allClaimRefs(insight).stream().map(ClaimRef::summaryId).collect(Collectors.toSet());
         Set<Long> ids = new LinkedHashSet<>();
-        for (JsonNode node : readArray(insight.getLookedUpClaimIds(), "insight_result.looked_up_claim_ids",
+        for (JsonNode node : JsonColumns.readArray(insight.getLookedUpClaimIds(), "insight_result.looked_up_claim_ids",
                 insight.getId())) {
             ClaimRef ref = ClaimRef.parse(node.asText());
             if (ref == ClaimRef.UNKNOWN || !cited.contains(ref.summaryId())) {
@@ -225,19 +226,6 @@ public class InsightEvidenceReader {
             ids.add(ref.summaryId());
         }
         return ids;
-    }
-
-    private static JsonNode readArray(String raw, String column, Long rowId) {
-        if (raw == null || raw.isBlank()) {
-            return MAPPER.createArrayNode();
-        }
-        try {
-            JsonNode node = MAPPER.readTree(raw);
-            return node.isArray() ? node : MAPPER.createArrayNode();
-        } catch (JsonProcessingException e) {
-            log.warn("failed to parse {} id={}", column, rowId, e);
-            return MAPPER.createArrayNode();
-        }
     }
 
     /** {@code "31-2"} → 요약 31 의 claims[2]. 읽을 수 없으면 {@link #UNKNOWN} — 어떤 요약도 가리키지 않는다. */

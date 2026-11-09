@@ -5,7 +5,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -15,6 +14,7 @@ import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.request.summary.Gate1DecisionRequest.Card;
 import com.itda.backend.exception.summary.SummaryErrorCode;
 import com.itda.backend.exception.summary.SummaryException;
+import com.itda.backend.global.json.JsonColumns;
 
 /**
  * 교사가 Gate 1 에서 고른 문장 카드로 승인할 claims 와 본문을 만든다 (#221).
@@ -55,7 +55,7 @@ final class Gate1Cards {
         if (cards == null) {
             return unchanged(summary);
         }
-        ArrayNode original = readClaims(summary.getClaims());
+        ArrayNode original = readClaims(summary);
         // 문장을 못 읽으면 카드가 원래 문장을 가리킬 수 없다. ADD 만으로 통과시키면 교사가 읽은 AI 원문이 통째로 사라진다.
         if (original.isEmpty()) {
             throw new SummaryException(SummaryErrorCode.INVALID_REQUEST,
@@ -156,23 +156,13 @@ final class Gate1Cards {
      * 카드를 보낸 승인은 400 이 되고, 그런 요약은 카드 없이 승인하거나 제거한다. Gate 1 목록의 카드도
      * 이것으로 읽어, 목록에 보인 카드와 결정 때 검사하는 문장이 같게 한다.
      */
-    static ArrayNode readClaims(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return MAPPER.createArrayNode();
-        }
-        try {
-            JsonNode node = MAPPER.readTree(raw);
-            if (node.isArray()) {
-                for (JsonNode claim : node) {
-                    if (!claim.isObject()) {
-                        return MAPPER.createArrayNode();
-                    }
-                }
-                return (ArrayNode) node;
+    static ArrayNode readClaims(SummaryResult summary) {
+        JsonNode node = JsonColumns.readArray(summary.getClaims(), "summary_result.claims", summary.getId());
+        for (JsonNode claim : node) {
+            if (!claim.isObject()) {
+                return MAPPER.createArrayNode();
             }
-        } catch (JsonProcessingException e) {
-            // 아래에서 빈 배열로 돌린다.
         }
-        return MAPPER.createArrayNode();
+        return (ArrayNode) node;
     }
 }

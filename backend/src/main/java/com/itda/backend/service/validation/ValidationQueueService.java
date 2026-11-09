@@ -1,6 +1,5 @@
 package com.itda.backend.service.validation;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
@@ -9,9 +8,6 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.record.JournalEntry;
@@ -32,6 +28,7 @@ import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.matching.MatchingResultService;
 import com.itda.backend.service.user.UserService;
 import com.itda.backend.service.agent.AgentQueueGuard;
+import com.itda.backend.global.json.JsonColumns;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,8 +43,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class ValidationQueueService {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ValidationResultRepository validationResultRepository;
     private final JournalEntryRepository journalEntryRepository;
@@ -222,7 +217,8 @@ public class ValidationQueueService {
                 ctx.entry().getContent(),
                 ctx.entry().getEntryDate() == null ? null : ctx.entry().getEntryDate().toString());
 
-        List<String> issueTypes = parseIssueTypes(result.getIssueTypes(), result.getId());
+        List<String> issueTypes = JsonColumns.readTexts(
+                result.getIssueTypes(), "validation_result.issue_types", result.getId());
         // 매칭 뒤에 아동이 삭제 표시돼도 이름은 보여준다 — 선생님이 어느 기록인지 알아야 한다.
         String childName = result.getChildId() == null ? null
                 : childRepository.findById(result.getChildId()).map(Child::getName).orElse(null);
@@ -239,28 +235,5 @@ public class ValidationQueueService {
     private static String describeViolation(List<String> issueTypes) {
         // 유형 → 문장 표와 유형이 없을 때의 문장은 Gate 1 확인 표시와 같이 쓴다 (ValidationReasons)
         return String.join(" / ", ValidationReasons.sentencesOf(issueTypes));
-    }
-
-    private static List<String> parseIssueTypes(String raw, Long validationResultId) {
-        if (raw == null || raw.isBlank()) {
-            return List.of();
-        }
-        try {
-            JsonNode node = MAPPER.readTree(raw);
-            if (!node.isArray()) {
-                return List.of();
-            }
-            List<String> types = new ArrayList<>();
-            for (JsonNode element : node) {
-                if (element.isTextual()) {
-                    types.add(element.asText());
-                }
-            }
-            return types;
-        } catch (JsonProcessingException e) {
-            // AI가 쓴 값이 깨진 것 — 한 건 때문에 큐 조회 전체가 500 나면 안 된다 (MatchingResultService와 같은 원칙).
-            log.warn("failed to parse validation_result.issue_types id={}", validationResultId, e);
-            return List.of();
-        }
     }
 }

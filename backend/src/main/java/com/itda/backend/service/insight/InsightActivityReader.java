@@ -32,7 +32,7 @@ public class InsightActivityReader {
             return 0;
         }
         return insightResultRepository.findByChildIdInAndCreatedAtGreaterThanEqual(childIds, since).stream()
-                .filter(insight -> PrimarySource.sourceIdsOf(insight).contains(organizationId))
+                .filter(insight -> PrimarySource.isFedBy(insight, organizationId))
                 .count();
     }
 }

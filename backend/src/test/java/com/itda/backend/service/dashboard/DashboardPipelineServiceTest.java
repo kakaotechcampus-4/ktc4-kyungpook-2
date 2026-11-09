@@ -24,7 +24,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.matching.MatchingResult;
@@ -106,7 +105,7 @@ class DashboardPipelineServiceTest {
         service = new DashboardPipelineService(userService, journalEntryRepository, matchingResultRepository,
                 validationResultRepository, childOrganizationRepository, consentStateReader, childRepository,
                 summaryGate1QueryService, insightProgressService, insightWeekStageReader, insightGate2QueryService,
-                institutionLinkService, new ObjectMapper());
+                institutionLinkService);
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(ORG);
         given(journalEntryRepository.findPipelineEntries(eq("3"), anyCollection())).willReturn(entries);
         lenient().when(childOrganizationRepository.findByOrganizationIdAndDeletedAtIsNull(ORG))

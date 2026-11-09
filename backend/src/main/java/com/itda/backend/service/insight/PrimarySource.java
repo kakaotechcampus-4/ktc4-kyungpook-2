@@ -1,18 +1,15 @@
 package com.itda.backend.service.insight;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
+import com.itda.backend.global.json.JsonColumns;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,8 +36,6 @@ import lombok.extern.slf4j.Slf4j;
  */
 public final class PrimarySource {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     /**
      * enum 선언 순서에 기대지 않는다. 순서를 바꾸는 것만으로 승인 주체가 조용히 달라지면 안 된다.
      * 여기 없는 종류가 생기면 맨 뒤로 보낸다 — 새 종류가 모르는 사이에 승인권을 가져가지 않게 한다.
@@ -53,13 +48,13 @@ public final class PrimarySource {
 
     /** 근거를 낸 기관 id. AI 가 쓴 JSON 이 깨져 있으면 빈 목록이다 — 그 인사이트는 아무에게도 보이지 않는다. */
     public static List<Long> sourceIdsOf(InsightResult insight) {
-        List<Long> ids = new ArrayList<>();
-        for (JsonNode node : readArray(insight)) {
-            if (node.canConvertToLong()) {
-                ids.add(node.asLong());
-            }
-        }
-        return ids;
+        return JsonColumns.readLongs(insight.getSourceInstitutionIds(), "insight_result.source_institution_ids",
+                insight.getId());
+    }
+
+    /** 그 기관 기록이 근거로 들어간 인사이트인지. */
+    public static boolean isFedBy(InsightResult insight, Long organizationId) {
+        return sourceIdsOf(insight).contains(organizationId);
     }
 
     /**
@@ -98,19 +93,5 @@ public final class PrimarySource {
     private static int rankOf(Organization organization) {
         int rank = PRIORITY.indexOf(organization.getType());
         return rank < 0 ? Integer.MAX_VALUE : rank;
-    }
-
-    private static JsonNode readArray(InsightResult insight) {
-        String raw = insight.getSourceInstitutionIds();
-        if (raw == null || raw.isBlank()) {
-            return MAPPER.createArrayNode();
-        }
-        try {
-            JsonNode node = MAPPER.readTree(raw);
-            return node.isArray() ? node : MAPPER.createArrayNode();
-        } catch (JsonProcessingException e) {
-            log.warn("failed to parse insight_result.source_institution_ids id={}", insight.getId(), e);
-            return MAPPER.createArrayNode();
-        }
     }
 }

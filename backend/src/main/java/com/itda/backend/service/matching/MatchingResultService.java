@@ -10,9 +10,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.consent.SharingConsentStatus;
@@ -34,6 +32,7 @@ import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.service.record.RawRecordService;
 import com.itda.backend.service.user.UserService;
 import com.itda.backend.service.agent.AgentQueueGuard;
+import com.itda.backend.global.json.JsonColumns;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,8 +42,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class MatchingResultService {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final MatchingResultRepository matchingResultRepository;
     private final JournalEntryRepository journalEntryRepository;
@@ -182,18 +179,18 @@ public class MatchingResultService {
                 ctx.rawRecord().getHintName(),
                 record,
                 buildCandidates(mr.getCandidates(), mr.getId(), organizationId),
-                parseJson(mr.getEvidence(), mr.getId()));
+                JsonColumns.readTree(mr.getEvidence(), "matching_result.evidence", mr.getId()));
     }
 
     private List<CandidateResponse> buildCandidates(String candidatesJson, Long matchingResultId, Long organizationId) {
-        JsonNode node = parseJson(candidatesJson, matchingResultId);
+        JsonNode node = JsonColumns.readTree(candidatesJson, "matching_result.candidates", matchingResultId);
         if (node == null || !node.isArray() || node.isEmpty()) {
             return List.of();
         }
 
         // AI가 쓴 원문이라 "child_id"/"confidence" 중 하나라도 빠지거나 배열 원소가 객체가
         // 아닐 수 있다 — 그런 항목은 건너뛴다(로그만 남김). 한 건 깨졌다고 큐 조회 전체가
-        // 500 나면 안 된다는 원칙은 parseJson()과 같다.
+        // 500 나면 안 된다는 원칙은 JsonColumns 와 같다.
         List<Long> childIds = new ArrayList<>();
         for (JsonNode c : node) {
             JsonNode childIdNode = c.get("child_id");
@@ -231,19 +228,5 @@ public class MatchingResultService {
                     String.valueOf(childId), child.getName(), child.getBirthdate().toString(), confidence));
         }
         return result;
-    }
-
-    private static JsonNode parseJson(String raw, Long matchingResultId) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            return MAPPER.readTree(raw);
-        } catch (JsonProcessingException e) {
-            // AI가 쓴 값이 깨진 것 — 조용히 숨기지 않고 로그로 남긴다. 큐 조회 자체는 계속되게
-            // null로만 내려준다(한 건 깨졌다고 전체 큐 조회가 500 나면 더 큰 문제가 된다).
-            log.warn("failed to parse matching_result json id={}", matchingResultId, e);
-            return null;
-        }
     }
 }

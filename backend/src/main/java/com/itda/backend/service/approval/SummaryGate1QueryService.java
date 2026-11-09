@@ -13,9 +13,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
@@ -42,6 +40,7 @@ import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
 import com.itda.backend.service.validation.ValidationReasons;
+import com.itda.backend.global.json.JsonColumns;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -60,8 +59,6 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class SummaryGate1QueryService {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** 아직 아동을 모르는 일지. 이 아이 일지일 수 있어 기관·날짜로 본다. */
     private static final Set<JournalEntryStatus> CHILD_UNKNOWN =
@@ -103,7 +100,8 @@ public class SummaryGate1QueryService {
         Map<Long, Set<Long>> covered = new HashMap<>();
         Set<Long> coveredIds = new HashSet<>();
         for (SummaryResult s : summaries) {
-            Set<Long> ids = new HashSet<>(parseIds(s.getCoveredEntryIds(), s.getId()));
+            Set<Long> ids = new HashSet<>(JsonColumns.readLongs(s.getCoveredEntryIds(),
+                    "summary_result.covered_entry_ids", s.getId()));
             ids.retainAll(entriesBySummary.getOrDefault(s.getId(), List.of()).stream()
                     .map(JournalEntry::getId).toList());
             covered.put(s.getId(), ids);
@@ -126,7 +124,7 @@ public class SummaryGate1QueryService {
                         claimCards(s),
                         s.isNoContent(),
                         s.isNeedsReview(),
-                        parseStrings(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
+                        JsonColumns.readTexts(s.getReviewReasons(), "summary_result.review_reasons", s.getId()),
                         uncoveredEntries(entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId())),
                         reviewFlags(s, entriesBySummary.getOrDefault(s.getId(), List.of()), covered.get(s.getId()),
                                 latestValidation),
@@ -209,7 +207,7 @@ public class SummaryGate1QueryService {
      * 읽는다 ({@link Gate1Cards#readClaims}) — 목록에 보인 카드를 그대로 보냈는데 400 이 나면 안 된다.
      */
     private static List<ClaimCard> claimCards(SummaryResult summary) {
-        JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
+        JsonNode claims = Gate1Cards.readClaims(summary);
         List<ClaimCard> cards = new ArrayList<>();
         for (int index = 0; index < claims.size(); index++) {
             JsonNode claim = claims.get(index);
@@ -270,7 +268,8 @@ public class SummaryGate1QueryService {
             List<Span> cited = claimSpans.getOrDefault(entryId, List.of());
             if (flagged.isEmpty() || flagged.stream().anyMatch(f -> cited.stream().anyMatch(f::overlaps))) {
                 List<String> issueTypes =
-                        parseStrings(validation.getIssueTypes(), "validation_result.issue_types", validation.getId());
+                        JsonColumns.readTexts(validation.getIssueTypes(),
+                                "validation_result.issue_types", validation.getId());
                 // 검증 구간이 비면 겹칠 곳이 없어 번호도 비어 있다 — 어디가 문제인지 모른다
                 List<Integer> claimIndexes = cardSpans.getOrDefault(entryId, List.of()).stream()
                         .filter(card -> flagged.stream().anyMatch(card.span()::overlaps))
@@ -307,7 +306,7 @@ public class SummaryGate1QueryService {
     /** claims: [{text, evidence: [{journal_entry_id, quote, span: {start, end}}]}] → 일지별 근거 구간. */
     private static Map<Long, List<Span>> parseClaimSpans(SummaryResult summary) {
         Map<Long, List<Span>> spans = new HashMap<>();
-        for (JsonNode claim : readArray(summary.getClaims(), "summary_result.claims", summary.getId())) {
+        for (JsonNode claim : JsonColumns.readArray(summary.getClaims(), "summary_result.claims", summary.getId())) {
             for (JsonNode evidence : claim.path("evidence")) {
                 JsonNode entryId = evidence.path("journal_entry_id");
                 Span span = toSpan(evidence.path("span"));
@@ -325,7 +324,7 @@ public class SummaryGate1QueryService {
      * 카드로 못 읽는 요약은 비어 있다.
      */
     private static Map<Long, List<CardSpan>> cardSpans(SummaryResult summary) {
-        JsonNode claims = Gate1Cards.readClaims(summary.getClaims());
+        JsonNode claims = Gate1Cards.readClaims(summary);
         Map<Long, List<CardSpan>> spans = new HashMap<>();
         for (int index = 0; index < claims.size(); index++) {
             JsonNode claim = claims.get(index);
@@ -350,7 +349,8 @@ public class SummaryGate1QueryService {
     /** evidence: [{start, end}]. 못 읽은 구간은 버린다 — 모두 못 읽으면 비어 있는 것으로 보고 사유를 보여준다. */
     private static List<Span> parseValidationSpans(ValidationResult validation) {
         List<Span> spans = new ArrayList<>();
-        for (JsonNode node : readArray(validation.getEvidence(), "validation_result.evidence", validation.getId())) {
+        for (JsonNode node : JsonColumns.readArray(validation.getEvidence(),
+                "validation_result.evidence", validation.getId())) {
             Span span = toSpan(node);
             if (span != null) {
                 spans.add(span);
@@ -366,38 +366,5 @@ public class SummaryGate1QueryService {
             return null;
         }
         return new Span(start.asInt(), end.asInt());
-    }
-
-    private static List<Long> parseIds(String raw, Long summaryId) {
-        List<Long> ids = new ArrayList<>();
-        for (JsonNode node : readArray(raw, "summary_result.covered_entry_ids", summaryId)) {
-            if (node.canConvertToLong()) {
-                ids.add(node.asLong());
-            }
-        }
-        return ids;
-    }
-
-    private static List<String> parseStrings(String raw, String column, Long rowId) {
-        List<String> values = new ArrayList<>();
-        for (JsonNode node : readArray(raw, column, rowId)) {
-            if (node.isTextual()) {
-                values.add(node.asText());
-            }
-        }
-        return values;
-    }
-
-    private static JsonNode readArray(String raw, String column, Long rowId) {
-        if (raw == null || raw.isBlank()) {
-            return MAPPER.createArrayNode();
-        }
-        try {
-            JsonNode node = MAPPER.readTree(raw);
-            return node.isArray() ? node : MAPPER.createArrayNode();
-        } catch (JsonProcessingException e) {
-            log.warn("failed to parse {} id={}", column, rowId, e);
-            return MAPPER.createArrayNode();
-        }
     }
 }

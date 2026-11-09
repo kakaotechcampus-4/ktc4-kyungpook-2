@@ -17,8 +17,6 @@ import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.organization.Organization;
@@ -36,6 +34,7 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.SummaryCandidate;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.global.json.JsonColumns;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,8 +49,6 @@ public class SummaryService {
     static final Set<JournalEntryStatus> IN_PROGRESS = Set.of(
             JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING,
             JournalEntryStatus.MATCHED, JournalEntryStatus.VALIDATING);
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final JournalEntryRepository journalEntryRepository;
     private final MatchingResultRepository matchingResultRepository;
@@ -228,7 +225,8 @@ public class SummaryService {
             latest.merge(result.getJournalEntryId(), result, (a, b) -> a.getId() > b.getId() ? a : b);
         }
         Set<Long> others = new TreeSet<>();
-        latest.values().forEach(result -> others.addAll(parseIds(result.getMentionedChildIds())));
+        latest.values().forEach(result -> others.addAll(JsonColumns.readLongs(
+                result.getMentionedChildIds(), "matching_result.mentioned_child_ids", result.getId())));
         others.remove(childId);
         if (others.isEmpty()) {
             return List.of();
@@ -238,20 +236,6 @@ public class SummaryService {
                 .map(Child::getName)
                 .distinct()
                 .toList();
-    }
-
-    private List<Long> parseIds(String json) {
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
-        try {
-            List<Long> ids = new ArrayList<>();
-            MAPPER.readTree(json).forEach(node -> ids.add(node.asLong()));
-            return ids;
-        } catch (JsonProcessingException e) {
-            log.warn("mentioned_child_ids is not a JSON array: {}", json);
-            return List.of();
-        }
     }
 
     /** 집어 갔지만 처리하지 않은 묶음을 요약하기 전 상태로 돌려놓는다. 이미 다른 상태로 바뀐 일지는 건드리지 않는다. */

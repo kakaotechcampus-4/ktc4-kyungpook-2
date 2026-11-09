@@ -13,9 +13,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.approval.ApprovalTargetType;
@@ -33,6 +31,7 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
+import com.itda.backend.global.json.JsonColumns;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -71,7 +70,6 @@ public class InsightService {
     private final OrganizationRepository organizationRepository;
     private final ChildRepository childRepository;
     private final ConsentStateReader consentStateReader;
-    private final ObjectMapper objectMapper;
 
     /**
      * 한 아이의 한 기간치를 요청으로 만든다. 재료가 없으면 {@link Optional#empty()} 다 —
@@ -388,17 +386,8 @@ public class InsightService {
         return prepared;
     }
 
-    private JsonNode readClaims(SummaryResult summary) {
-        String raw = summary.getClaims();
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            return objectMapper.readTree(raw);
-        } catch (JsonProcessingException e) {
-            // AI 가 쓴 값이 깨진 것 — 그 요약만 빼고 나머지로 간다. 한 건 때문에 기간 전체를 버리지 않는다.
-            log.warn("failed to parse summary claims, summary skipped summaryId={}", summary.getId(), e);
-            return null;
-        }
+    /** 깨졌으면 {@code null} — 그 요약만 빼고 나머지로 간다. 한 건 때문에 기간 전체를 버리지 않는다. */
+    private static JsonNode readClaims(SummaryResult summary) {
+        return JsonColumns.readTree(summary.getClaims(), "summary_result.claims", summary.getId());
     }
 }
