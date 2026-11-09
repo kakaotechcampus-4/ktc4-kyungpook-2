@@ -26,7 +26,7 @@
 | 🟡 **초안** | 구조는 유지, **컬럼은 바뀔 수 있음** | 프론트 화면에서 역산. AI 계약이 아직 없음 |
 | ⛔ **추정** | **근거 없음.** 예시일 뿐 | 누구도 확정한 적 없는 값 |
 
-### 0.2 테이블 25개 현황
+### 0.2 테이블 26개 현황
 
 | # | 테이블 | 설계 | 구현 (엔티티) | 삭제 방식 |
 | --- | --- | --- | --- | --- |
@@ -55,12 +55,13 @@
 | 23 | `checklist_target` | ✅ 확정 | ✅ `ChecklistTarget` | 삭제 없음 (확인만 찍는다) |
 | 24 | `revoked_session` | ✅ 확정 | ✅ `RevokedSession` | 삭제 없음 (쌓기만) |
 | 25 | `kakao_unlink_webhook` | ✅ 확정 | ✅ `KakaoUnlinkWebhook` | 행 삭제 (회원에 옮기면 지운다, 수신함) |
+| 26 | `organization_handover` | ✅ 확정 | ✅ `OrganizationHandover` | `status` 로 대체 |
 
-**25개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
+**26개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
 `insight_result`·`sharing_history` 는 Insight 에이전트 계약(`AI/insight/schemas.py`)과 Gate 2 공유 정책이
 정해져서 확정으로 올렸다. `human_review` 는 Gate 1 결정값이 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 정해지며 확정됐다.
 
-**25개 모두 엔티티가 있다** (카카오 연결 해제 웹훅 수신함 `kakao_unlink_webhook` 이 마지막으로 들어왔다).
+**26개 모두 엔티티가 있다** (기관 담당자 인계 코드 `organization_handover` 가 마지막으로 들어왔다, #478).
 `human_review` 는 Gate 1 결정 API(#178)와 Gate 2 결정 API(#206)가 함께 쓴다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
@@ -101,6 +102,7 @@ erDiagram
     users ||--o{ sharing_consent : "동의한 보호자"
     organization ||--o{ sharing_consent : "동의 대상 기관"
     child ||--o| child_care_info : "돌봄 정보"
+    organization ||--o{ organization_handover : "담당자 넘기기"
 
     organization {
         bigint id PK
@@ -497,6 +499,7 @@ users.kakao_id                                UNIQUE
 organization.business_number                  UNIQUE
 organization.code                             UNIQUE   (나중에 더해 배포 DB 에는 손으로 건다, §11.4)
 invitation.code                               UNIQUE
+organization_handover.code                    UNIQUE   (새 테이블이라 ddl-auto: update 가 함께 만든다, #478)
 child_organization(child_id, organization_id) UNIQUE
 child_organization(organization_id, external_id) UNIQUE
 child_guardian(child_id, user_id)             UNIQUE
@@ -575,6 +578,8 @@ UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변�
 | 초대 코드 수락 (G-04) | `users` **FOR SHARE** → `child` → `child_organization` → `invitation` → `child_guardian`. 회원 행을 잠근 뒤 탈퇴 여부 · 진행 여부를 본다 — 탈퇴 정리(`users` FOR UPDATE)와 줄을 서고 같은 회원의 수락끼리는 막지 않는다. 수락이 먼저면 탈퇴가 새 연결까지 끊고, 탈퇴 접수가 먼저면 수락은 `409 WITHDRAWAL_IN_PROGRESS` 다. 연결한 뒤 그 아이의 **승인된 인사이트 권한**(`sharing_history`)을 이 보호자에게 열거나 되살린다(§9.4). Gate 2 승인도 `child` 를 잠근 뒤 보호자 목록을 읽으므로 둘이 겹쳐도 어느 쪽이 먼저든 한 번만, 빠짐없이 열린다 |
 | 준비물·확인사항 확인 (G-51) | `child` **FOR SHARE** → `checklist` **FOR SHARE** → `checklist_target`(확인 UPDATE 의 행 잠금). 아이 · 요청 행은 잠그면서 처음 읽는다. 아이 행을 잡은 뒤 삭제 · 보호자 연결을 본다 — 연결 해제(G-05 · O-19, `child` FOR UPDATE)가 먼저면 403 이고 확인은 남지 않으며, 확인이 먼저면 해제는 확인이 커밋된 뒤 진행된다. 내리기(O-72)는 `checklist` 하나를 조건부 UPDATE 로 바꾸므로 요청 행의 공유 잠금과 줄을 선다 — 내리기가 먼저면 확인은 404, 확인이 먼저면 내리기는 확인이 커밋된 뒤 내린다 (§5.9) |
 | 회원 탈퇴 접수 · 정리 (§4.1) | 접수는 `users` 하나. 웹훅 옮기기는 `users` → `kakao_unlink_webhook`(옮긴 줄 삭제) — 웹훅 요청 자체는 수신함에 새 줄만 넣고 아무 행도 잠그지 않는다(§4.5). 정리는 `users` → 연결된 아이마다 **아이 id 순서로** 보호자 연결 해제(`child` → `child_organization_request` → `child_guardian`). 연결 목록은 `users` 를 잠근 **뒤에** 읽는다 — 그 뒤 초대 수락이 새 연결을 만들지 못한다. 목록은 아이 id 만 읽고 연결 행은 아이를 잠근 뒤에 처음 읽으며, 그사이 기관 · 본인이 먼저 끊었으면 건너뛴다 — 미리 읽어 둔 연결 엔티티로 그쪽이 남긴 `deleted_at` · `updated_at` 을 덮어쓰지 않는다. 아이 id 순서라 같은 아이들을 둔 두 보호자가 동시에 탈퇴해도 서로 기다리다 멈추지 않는다 |
+| 담당자 넘기기 — 인계 코드 발급 · 취소 (O-84 · O-85, #478) | `users`(담당자) → `organization_handover`(그 기관의 쓸 수 있는 코드). 담당자 행을 잠근 뒤 탈퇴 진행 여부 · 소속을 보고, 살아 있던 코드를 취소한 뒤 새 코드를 넣는다 — 살아 있는 코드는 기관마다 하나 |
+| 인계 코드로 가입 (§2.6 `handoverCode`, #478) | `users`(새 회원) → `users`(코드를 발급한 담당자) → `organization_handover`. 코드는 잠그지 않고 id 만 읽고(`HandoverTarget`) 담당자 행을 잠근 뒤 인계 행을 잠그며 처음 읽는다. 잠근 뒤 시각을 다시 읽어 만료를 본다. 발급 · 취소도 `users` → `organization_handover` 라 교착이 없다. 같은 코드로 두 사람이 동시에 가입하면 인계 행에서 줄을 서고 뒤 사람은 `400 INVALID_HANDOVER_CODE` 다 |
 | 보호자 일지 상세 (G-21) | `child` **FOR SHARE**. 잠근 뒤 보호자 연결·아이 삭제를 본다. 승인본(`child_context`)은 고치지 않는 테이블이라 잠그기 전에 읽어 아이 id 를 안다. 연결 해제와 줄을 서고(해제가 먼저면 404, 열람이 먼저면 200 뒤 해제) 열람끼리는 막지 않는다. 일지 목록(G-20)은 잠그지 않는다 |
 
 **회원 탈퇴 실행은 PostgreSQL 세션 advisory lock 으로 한 줄로 세운다.** 행 잠금이 아니라 카카오 호출까지 감싸는
@@ -690,8 +695,14 @@ PARENT
 
 #### 탈퇴 — ✅ 구현 (`WithdrawalService` · `WithdrawalExecutor`)
 
-보호자와 가입을 마치지 않은 사람만 탈퇴할 수 있다(`DELETE /api/v1/auth/me?userId=`). 기관 담당자는 기관에 남은 명부 · 일지를
-어떻게 할지 정하지 않아 막는다(`403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED`). 요청에는 확인 화면이 보여 준 계정을 싣고, 지금
+보호자와 가입을 마치지 않은 사람만 직접 탈퇴할 수 있다(`DELETE /api/v1/auth/me?userId=`). 기관 담당자는 직접 신청하면
+막는다(`403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED`) — 기관이 주인 없이 남기 때문이다. 기관 담당자는 **담당자 넘기기로만**
+탈퇴한다(§4.6): 후임이 인계 코드로 가입하는 트랜잭션에서 이전 담당자의 탈퇴가 접수되고(`REQUESTED`), 커밋 뒤 실행기가 아래와
+같은 흐름으로 끝낸다. 기관 담당자에게는 `child_guardian` 행이 없어 정리는 카카오 회원번호 지우기와 `deleted_at` 뿐이고, 명부 ·
+일지 · 승인은 `organization_id` 에 붙어 있어 그대로 후임에게 이어진다. 승인자 같은 이력(`human_review.reviewer_id` 등)은 이전
+담당자 행을 계속 가리킨다. **기관 담당자의 탈퇴는 카카오 첫 호출이 분명히 실패해도 접수를 취소하지 않고** 재시도 간격을 늘려
+다시 부른다 — 후임이 이미 기관을 받았으므로 취소하면 한 기관에 계정이 둘이 된다. 연결 해제 웹훅이 기관 담당자를 알려도 계정은
+남긴다(웹훅으로 탈퇴를 시작하지 않는다). 요청에는 확인 화면이 보여 준 계정을 싣고, 지금
 로그인한 계정과 다르면 `409 WITHDRAWAL_ACCOUNT_MISMATCH` 다 — 다른 탭에서 계정을 바꾼 뒤 옛 확인 창으로 누른 경우다.
 
 **탈퇴는 스위치로 연다(`app.withdrawal.enabled`, 기본 꺼짐).** 꺼져 있으면 탈퇴 API 는 `404 WITHDRAWAL_NOT_AVAILABLE`, 화면은
@@ -929,6 +940,33 @@ API 에는 소문자(`tos` · `org_child_data` …)로 오간다. **역할마다
 - 남길 때마다 옮기는 스레드(`KakaoUnlinkInbox`)를 깨우고, 옮기지 못한 줄은 탈퇴 주기 작업이 그 스레드를 다시 깨워 옮긴다. 주기
   작업은 옮기기를 기다리지 않는다 — 기다리면 회원 행 잠금이 다른 탈퇴의 재시도를 늦춘다
 - 탈퇴를 열지 않았거나(`app.withdrawal.enabled`) 다른 앱 · 숫자가 아닌 회원번호의 웹훅은 남기지 않는다
+
+### 4.6 `organization_handover` ✅ — ✅ 구현 (`OrganizationHandover`, 담당자 넘기기 #478)
+
+> **근거** — 사업자등록번호는 공개 정보라, "같은 사업자번호로 다시 가입하면 이어받기"를 열면 담당자가 나간 기관을 아무나 가져갈
+> 수 있다. 그래서 주인 없는 기관을 만들지 않는다 — 지금 담당자가 로그인한 상태에서 코드를 발급해 넘겨야만 이어진다.
+
+기관 담당자가 후임에게 건네는 일회용 인계 코드. 후임이 회원가입(§2.6 `handoverCode`)에서 이 코드를 넣으면 같은 기관의 담당자가
+되고, 발급한 담당자는 탈퇴로 정리된다(§4.1 "탈퇴"). 회원 탈퇴 스위치(`app.withdrawal.enabled`)가 꺼져 있으면 발급하지 않는다.
+
+| Column | Type | NULL | 설명 |
+| --- | --- | --- | --- |
+| `id` | BIGINT | N | PK |
+| `organization_id` | BIGINT | N | 넘길 기관 |
+| `code` | VARCHAR(8) | N | UNIQUE. 초대 코드와 같은 8자 규칙(`0 O 1 I L` 제외, `InviteCodeGenerator`) |
+| `issued_by` | BIGINT | N | 발급한 담당자(`users.id`). 후임이 받으면 이 계정을 탈퇴시킨다 |
+| `status` | VARCHAR(20) | N | `PENDING` · `ACCEPTED` · `CANCELLED`. 만료는 상태로 두지 않고 `expires_at` 으로 본다 |
+| `accepted_user_id` | BIGINT | Y | 코드로 가입한 후임 |
+| `accepted_at` | DATETIME | Y | 받은 시각 |
+| `expires_at` | DATETIME | N | 발급 + 12시간 |
+| `created_at` · `updated_at` | DATETIME | N | |
+
+- **행을 지우지 않는다.** 받아도 취소해도 남는다 — 같은 코드가 다시 발급되지 않게 유니크 제약을 차지하고, 누가 누구에게
+  넘겼는지 이력이 남는다(`invitation` 과 같다)
+- 기관마다 쓸 수 있는 코드는 하나다. 다시 발급하면 이전 코드는 `CANCELLED` 가 된다
+- 쓸 수 없는 이유(형식 · 없음 · 만료 · 받음 · 취소 · 발급한 담당자가 이미 탈퇴 · 자기 코드)는 모두 같은 `400 INVALID_HANDOVER_CODE`
+- 잠금 순서는 §3.3 의 "담당자 넘기기" 두 줄
+- 새 테이블이라 `ddl-auto: update` 가 유니크 제약까지 만든다 — §11.4 수동 조치는 필요 없다
 
 ---
 
@@ -3178,3 +3216,4 @@ SELECT count(*) FROM users WHERE deleted_at IS NOT NULL AND kakao_id NOT LIKE 'w
 | 2026-11-09 | `kakao_unlink_webhook` 추가 (§4.5, 수신함) — 연결 해제 웹훅은 회원 행을 잠그지 않고 이 테이블에 한 줄만 남긴 뒤 답하고, 회원 행으로 옮기는 일은 따로 한다(카카오 3초 응답 기한). 새 테이블이라 `ddl-auto: update` 가 만든다 | #473 |
 | 2026-11-09 | 웹훅 수신함 처리 보강 (§4.1 "탈퇴" · §4.5) — 남기기는 저장 스레드에 맡겨 웹훅 요청이 커넥션 대기까지 2초 안에 답하고, 옮기기는 회원 행을 기다리지 않고(NOWAIT) 잠그며, 주기 작업은 옮기기를 기다리지 않는다. 스키마 변경 없음 | #473 |
 | 2026-11-09 | 탈퇴 보강 (§3.3 잠금 순서 · §4.1 "탈퇴") — 정리만 남은 직접 신청 탈퇴에 카카오 로그인이 오면 `REQUESTED` 로 되돌려 연결 해제를 다시 부른다. 탈퇴 정리는 아이 id 만 읽고 아이를 잠근 뒤 이미 끊긴 연결은 건너뛴다. 스키마 변경 없음 | #473 |
+| 2026-11-09 | `organization_handover` 추가 (§4.6) — 기관 담당자 넘기기. 후임이 인계 코드로 가입하면 같은 기관에 소속되고 이전 담당자는 탈퇴로 정리된다(§4.1 "탈퇴"). 기관 담당자의 탈퇴는 카카오 첫 호출이 실패해도 취소하지 않는다. 잠금 순서 두 줄 추가(§3.3). 새 테이블이라 `ddl-auto: update` 가 만든다 | #478 |

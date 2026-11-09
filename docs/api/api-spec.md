@@ -301,7 +301,18 @@ POST /api/v1/auth/signup   → 201 Created
 | `organizationType` | `"SCHOOL"` \| `"CENTER"` \| `"ACTIVITY_SUPPORT"` | `role === "org"`일 때 | 백엔드 enum 값 그대로. 화면 표시용 변환은 프론트 몫입니다 |
 | `businessNumber` | string (`^\d{10}$`) | `role === "org"`일 때 | 사업자등록번호. 하이픈 없이 숫자 10자리. **형식만 검사하고 진위·체크섬은 검증하지 않습니다** |
 
-보호자는 `role`**만** 보냅니다. 기관 필드가 하나라도 섞이면(값이 맞든 틀리든) `400`입니다.
+**요청 — 기관 이어받기 (담당자 넘기기, #478)**
+
+```json
+{ "role": "org", "handoverCode": "K7P3-QX9M" }
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `handoverCode` | string (최대 20자) | 이어받을 때 | 이전 담당자가 O-84 로 받은 인계 코드. 공백 · 하이픈 · 소문자는 서버가 맞춥니다. 보내면 기관 필드 3개는 **보내지 않습니다** |
+
+보호자는 `role`**만** 보냅니다. 기관 필드나 `handoverCode`가 하나라도 섞이면(값이 맞든 틀리든) `400`입니다.
+기관은 기관 필드 3개 **또는** `handoverCode` 하나입니다. 섞이면 `400`입니다.
 기관 필드는 **아예 빼거나 `null`로** 보내 주세요. 빈 문자열 `""`도 보낸 값으로 보고 `400`입니다 —
 가입 화면에서 기관 입력란에 쓰다가 보호자로 바꿨다면, 폼의 `""` 값을 그대로 싣지 말고 필드를 빼 주세요.
 아이 연결은 가입과 별개입니다.
@@ -322,6 +333,11 @@ POST /api/v1/auth/signup   → 201 Created
 2. 이미 가입을 마친 회원이 다시 호출하면 `409 ALREADY_SIGNED_UP`이고 역할은 바뀌지 않습니다.
    멱등하지 않으므로 성공 후 재시도 버튼을 두지 않습니다.
 3. 이미 등록된 사업자등록번호면 `409 DUPLICATE_BUSINESS_NUMBER`입니다.
+4. `handoverCode`가 있으면 기관을 새로 만들지 않고 **코드를 발급한 담당자의 기관**에 소속시킵니다. 같은 요청 안에서 코드를
+   받음으로 바꾸고 이전 담당자의 탈퇴를 접수합니다(§2.7 과 같은 흐름, 커밋 뒤 실행기). 아동 명부 · 기록 · 승인은 기관에 붙어
+   있어 그대로 이어집니다. 사업자등록번호로 이어받게 하지 않는 이유는 사업자번호가 공개 정보라서입니다.
+5. 쓸 수 없는 인계 코드(형식 오류 · 없음 · 만료 · 이미 씀 · 취소됨 · 이전 담당자가 이미 탈퇴)는 모두 `400 INVALID_HANDOVER_CODE`
+   입니다. 이유를 나누지 않습니다. 같은 코드로 두 사람이 동시에 가입하면 한 사람만 성공합니다.
 
 | 상태 | 코드 | 조건 | 프론트 동작 |
 | --- | --- | --- | --- |
@@ -330,6 +346,7 @@ POST /api/v1/auth/signup   → 201 Created
 | 403 | `FORBIDDEN` | CSRF 토큰 누락 또는 불일치 | |
 | 409 | `ALREADY_SIGNED_UP` | 이미 가입 완료 | `/auth/me`를 다시 불러 역할별 홈으로 |
 | 409 | `DUPLICATE_BUSINESS_NUMBER` | 이미 등록된 사업자등록번호 | "이미 등록된 사업자등록번호입니다" 표시, 재입력 유도 |
+| 400 | `INVALID_HANDOVER_CODE` | 쓸 수 없는 인계 코드 | "코드가 맞지 않거나 시간이 지났어요. 이전 담당자에게 새 코드를 받아 주세요" |
 
 ---
 
@@ -344,7 +361,9 @@ DELETE /api/v1/auth/me?userId={확인 화면의 userId}   → 204 No Content | 2
 > `userId` 에는 확인 화면이 보여 준 계정(`/auth/me` 의 `userId`)을 넣습니다. 확인 창을 연 뒤 다른 탭에서 다른 계정으로 로그인했으면
 > 지금 로그인한 계정과 달라 `409` 로 막힙니다 — 사용자가 확인하지 않은 계정을 지우지 않습니다.
 
-보호자와 가입을 마치지 않은 사람만 탈퇴할 수 있습니다. 서버가 카카오 연결을 끊고, 연결된 아이와의 연결 · 내 공유 동의 ·
+보호자와 가입을 마치지 않은 사람만 직접 탈퇴할 수 있습니다. 기관 담당자는 **담당자 넘기기(O-84)로만** 탈퇴합니다 — 후임이
+인계 코드로 가입하는 순간 이전 담당자의 탈퇴가 접수되고, 아래와 같은 흐름(카카오 연결 해제 → 식별정보 삭제)으로 끝납니다.
+기관 담당자의 탈퇴는 카카오 첫 호출이 분명히 실패해도 접수를 취소하지 않고 다시 시도합니다(취소하면 한 기관에 계정이 둘이 된다). 서버가 카카오 연결을 끊고, 연결된 아이와의 연결 · 내 공유 동의 ·
 인사이트 열람 권한 · 기다리던 기관 연결 요청을 거둔 뒤, 카카오 회원번호를 지우고 탈퇴 표시를 합니다. 같은 기관에 다른
 보호자의 동의가 남아 있으면 그 기관 공유는 계속됩니다. 같은 카카오 계정으로 다시 로그인하면 새 회원으로 가입부터 합니다.
 
@@ -356,7 +375,7 @@ DELETE /api/v1/auth/me?userId={확인 화면의 userId}   → 204 No Content | 2
 | `409 WITHDRAWAL_ACCOUNT_MISMATCH` | `userId` 가 지금 로그인한 계정과 다름 (다른 탭에서 계정이 바뀜). 아무것도 바꾸지 않음 |
 | `404 WITHDRAWAL_NOT_AVAILABLE` | 서버가 탈퇴를 열지 않음 |
 | `400 INVALID_REQUEST` | `userId` 누락 |
-| `403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED` | 기관 담당자 |
+| `403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED` | 기관 담당자 (담당자 넘기기 O-84 로 탈퇴) |
 | `401 ACCOUNT_WITHDRAWN` | 이미 탈퇴함 |
 | `502 KAKAO_UNLINK_FAILED` | 카카오 연결 해제 첫 호출이 분명히 실패해 접수를 취소함. 회원은 그대로 |
 
@@ -499,6 +518,8 @@ Authorization: KakaoAK {대표 어드민 키}
 | O-01 | GET | `/institutions/me` | 내 기관 정보 · **구현됨** | I-02, I-09 |
 | O-02 | PATCH | `/institutions/me` | 기관명 · 유형 수정 | I-02 |
 | O-03 | POST | `/institutions/me/documents` | 증빙서류 업로드 (multipart) | I-02 |
+| O-84 | POST | `/institutions/me/handover` | 담당자 넘기기 — 인계 코드 발급 (#478) · **구현됨** | 기관 셸 계정 메뉴 |
+| O-85 | DELETE | `/institutions/me/handover` | 담당자 넘기기 — 인계 코드 취소 (#478) · **구현됨** | 기관 셸 계정 메뉴 |
 
 **O-01 응답** · `Institution`(§3)에 기관 코드를 더했습니다.
 
@@ -517,6 +538,27 @@ Authorization: KakaoAK {대표 어드민 키}
 | 403 | `SIGNUP_NOT_COMPLETED` | 회원가입을 끝내지 않음 |
 | 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 소속이 아닌 회원(보호자) |
 | 503 | `INSTITUTION_CODE_ISSUE_FAILED` | 동시에 만든 코드와 겹침. 다시 요청 |
+
+**O-84 응답 — `201 Created`** · 후임 담당자에게 건넬 일회용 인계 코드입니다.
+
+```json
+{ "code": "K7P3QX9M", "expiresAt": "2026-11-10T06:30:00+09:00" }
+```
+
+- `code`: 기관 코드와 같은 8자 규칙(`0 O 1 I L` 제외)입니다. 화면은 `K7P3-QX9M`로 보여 주세요. **12시간**, 한 번만 쓸 수 있습니다.
+- 다시 발급하면 이전 코드는 취소됩니다(살아 있는 코드는 기관마다 하나).
+- 후임이 카카오로 로그인해 회원가입(§2.6)에서 이 코드를 넣으면 같은 기관의 담당자가 되고, **이 계정은 탈퇴**됩니다(§2.7).
+- 회원 탈퇴 스위치(`WITHDRAWAL_ENABLED`)를 따릅니다. 꺼져 있으면 `404` 이고, 화면은 `/auth/me` 의 `withdrawalEnabled` 로 메뉴를 숨깁니다.
+
+**O-85** · 살아 있는 코드를 거둬들입니다. 없어도 `204` 입니다.
+
+| 상태 | `code` | 상황 |
+| --- | --- | --- |
+| 401 | `UNAUTHORIZED` | 로그인하지 않음 |
+| 403 | `ORGANIZATION_NOT_ASSIGNED` | 기관 소속이 아닌 회원(보호자) |
+| 404 | `WITHDRAWAL_NOT_AVAILABLE` | 회원 탈퇴가 꺼져 있음 (O-84) |
+| 409 | `WITHDRAWAL_IN_PROGRESS` | 이 계정이 이미 탈퇴 처리 중 |
+| 503 | `HANDOVER_CODE_ISSUE_FAILED` | 코드를 겹치지 않게 만들지 못함. 다시 요청 (O-84) |
 
 **O-03 요청** · `multipart/form-data`, 필드 `file`
 **O-03 응답** · `{ "fileName": "인가증_2026.pdf", "status": "reviewing" }`
@@ -2355,7 +2397,9 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | `TERMS_NOT_AGREED` | 403 | 자기 역할의 약관에 동의하지 않은 회원(보호자 · 기관 담당자)이 `/auth/me` · `/auth/terms` · `/auth/logout` · 약관 본문 외 API 호출 → 그 역할의 약관 화면으로 이동 (§2.5) |
 | `ACCOUNT_WITHDRAWN` | 401 | 탈퇴를 마친 회원의 출입증. 탈퇴 안내 화면은 "탈퇴가 끝났어요", 다른 화면은 일반 401 처럼 로그인 화면으로 (§2.2 · §2.7) |
 | `WITHDRAWAL_IN_PROGRESS` | 409 | 탈퇴를 처리하는 중 — `/auth/me` · 로그아웃 외 API, 탈퇴 재신청 → 탈퇴 안내 화면으로 (§2.7) |
-| `ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED` | 403 | "기관 계정은 아직 탈퇴할 수 없어요." (§2.7) |
+| `ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED` | 403 | "기관 계정은 아직 탈퇴할 수 없어요." 기관은 담당자 넘기기(O-84)로만 탈퇴 (§2.7) |
+| `INVALID_HANDOVER_CODE` | 400 | "코드가 맞지 않거나 시간이 지났어요. 이전 담당자에게 새 코드를 받아 주세요" (§2.6) |
+| `HANDOVER_CODE_ISSUE_FAILED` | 503 | "코드를 만들지 못했어요. 한 번 더 눌러 주세요." (O-84) |
 | `WITHDRAWAL_ACCOUNT_MISMATCH` | 409 | "다른 계정으로 로그인이 바뀌었어요. 화면을 새로 고친 뒤 다시 확인해 주세요." (§2.7) |
 | `WITHDRAWAL_NOT_AVAILABLE` | 404 | 서버가 탈퇴를 열지 않음. 화면은 탈퇴 버튼을 숨기므로 보통 보이지 않음 (§2.7) |
 | `KAKAO_WEBHOOK_UNAUTHORIZED` | 401 | 카카오 연결 해제 웹훅의 어드민 키가 맞지 않음 — 카카오가 보낸 요청이 아님 (§2.7.1) |
