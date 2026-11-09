@@ -350,7 +350,7 @@ DELETE /api/v1/auth/me?userId={확인 화면의 userId}   → 204 No Content | 2
 
 | 응답 | 언제 |
 | --- | --- |
-| `204` + 쿠키 삭제 | 몇 초 안에 끝까지 마쳤음 (서버가 `deleted_at`을 확인한 경우만) |
+| `204` | 몇 초 안에 끝까지 마쳤음 (서버가 `deleted_at`을 확인한 경우만). 이 로그인은 로그아웃으로 기록하지만 **쿠키는 지우지 않습니다** — 기다리는 사이 다른 탭에서 로그인했으면 늦게 온 응답이 그 사람의 새 쿠키를 지우게 됩니다. 탈퇴한 계정의 출입증은 늘 `401 ACCOUNT_WITHDRAWN` 입니다 |
 | `202` `{ "withdrawal": "in_progress" }` | 접수했고 처리 중. 서버가 이어서 끝냅니다 — `/auth/me`의 `withdrawal`로 진행을 보고, 끝나면 `/auth/me`가 `401 ACCOUNT_WITHDRAWN` |
 | `409 WITHDRAWAL_IN_PROGRESS` | 이미 접수돼 있음 |
 | `409 WITHDRAWAL_ACCOUNT_MISMATCH` | `userId` 가 지금 로그인한 계정과 다름 (다른 탭에서 계정이 바뀜). 아무것도 바꾸지 않음 |
