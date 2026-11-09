@@ -54,14 +54,14 @@ public class UserService {
      * <p>동시 최초 로그인에서 카카오 ID 중복이 발생하면 롤백 후 새 트랜잭션에서
      * 먼저 등록된 회원을 다시 찾는다. 다른 제약 위반은 숨기지 않는다.
      */
-    public User findOrCreateByKakaoId(String kakaoId, String nickname) {
+    public User findOrCreateByKakaoId(String kakaoId) {
         try {
-            return loginUserTransactionService.findOrCreate(kakaoId, nickname);
+            return loginUserTransactionService.findOrCreate(kakaoId);
         } catch (DataIntegrityViolationException e) {
             if (!isDuplicateKakaoId(e)) {
                 throw e;
             }
-            return loginUserTransactionService.findExisting(kakaoId, nickname)
+            return loginUserTransactionService.findExisting(kakaoId)
                     .orElseThrow(() -> e);
         }
     }

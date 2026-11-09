@@ -79,7 +79,7 @@ JWT 유효시간은 3시간이고, 남은 시간이 절반보다 짧은 API 요�
 인증 쿠키를 만료시키지 않습니다. 비로그인 API GET 요청은 RequestCache에 저장하지 않아 세션을
 생성하지 않고, 카카오 인가 요청의 state를 보관할 때는 세션을 사용합니다.
 동시 최초 로그인은 카카오 ID 중복 경합 후 새 트랜잭션에서 먼저 생성된 회원을 조회하므로 두 요청이
-같은 회원 ID를 사용합니다. 로그인 시 복구·닉네임 갱신과 회원가입은 회원 행의 잠금으로 조율합니다.
+같은 회원 ID를 사용합니다. 로그인 시 복구와 회원가입은 회원 행의 잠금으로 조율합니다.
 
 > **기존 배포 데이터를 보존할 때 테이블을 삭제하지 마세요.** `docker` 프로필의 `ddl-auto: update`는
 > 이전 실험 스키마의 `users.role` NOT NULL이나 `organization.name` UNIQUE 제약을 제거하지 못합니다.
@@ -144,7 +144,7 @@ psql "$DATABASE_URL" -v apply=true -f /absolute/path/to/backend/scripts/migrate-
 
 ```bash
 dbsql() { docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@"; }
-dbsql -c "SELECT u.name, o.id, o.name FROM users u JOIN organization o ON o.id = u.organization_id;"   # 기관 id
+dbsql -c "SELECT o.id, o.name FROM organization o ORDER BY o.id;"   # 기관 id
 dbsql -v action=seed -v org_id=5 < ../../backend/scripts/test-children.sql               # 확인만 (ROLLBACK)
 dbsql -v action=seed -v org_id=5 -v apply=true < ../../backend/scripts/test-children.sql # 저장
 ```
@@ -373,6 +373,7 @@ GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 | `AWS_REGION` | `ap-northeast-2` | S3 리전 |
 | `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | 없음 (`docker` 필수) | `docker` 프로필의 PostgreSQL 연결 정보 |
 | `AI_BASE_URL` | `http://localhost:8000` | AI 서버 주소 (매칭·검증·요약 에이전트 공통). Compose는 서비스 이름으로 `http://ai:8000`을 전달 |
+| `AI_PROGRESS_ENABLED` | `false` (Compose는 `true`) | 대시보드 진행 현황의 AI 진행 단계(O-83, #453). 켜면 전용 스레드 하나가 1초마다 AI `GET /progress`를 묻는다(최근 5초 안에 화면이 O-83을 불렀을 때만, 대기 0.5초). 문제가 생기면 서버 `.env`에서 `false`로 끄고 backend만 다시 띄움 — 화면은 기존 문구로 돌아가고 일지 처리에는 영향 없음 |
 | `MATCHING_WORKER_ENABLED` | `true` | 매칭 워커 사용 여부. 켜 두면 5초마다 대기(`PENDING`) 일지를 AI `POST /matching`에 보내 결과를 `matching_result`에 저장. 테스트 프로필은 끔 |
 | `VALIDATION_WORKER_ENABLED` | `true` | 검증 워커 사용 여부. 켜 두면 5초마다 매칭 확정(`MATCHED`) 일지를 AI `POST /validation`에 보내 결과를 `validation_result`에 저장하고 `VALIDATED`/`VALIDATION_BLOCKED`로 바꿈. 테스트 프로필은 끔 |
 | `INSIGHT_INCLUDE_CURRENT_WEEK` | `false` | **시연용.** 켜면 인사이트 워커가 끝나지 않은 이번 주 기록도 재료로 본다. 끄면 월~일이 끝난 주만 본다. 켜 두면 이번 주는 승인이 들어올 때마다 새 회차가 생겨 Gate 2 에 비슷한 글이 쌓이므로 운영에서는 끈다 (#239) |

@@ -118,7 +118,6 @@ class WithdrawalServiceTest {
         assertThat(withdrawn.isDeleted()).isTrue();
         assertThat(withdrawn.isWithdrawing()).isFalse();
         assertThat(withdrawn.getKakaoId()).isEqualTo("withdrawn:" + mother.getId());
-        assertThat(withdrawn.getName()).isEqualTo(User.WITHDRAWN_NAME);
         assertThat(guardianLink(child, mother).isDeleted()).isTrue();
         assertThat(guardianLink(child, father).isDeleted()).isFalse();
         SharingConsent motherConsent = consentOf(child, mother);
@@ -167,7 +166,7 @@ class WithdrawalServiceTest {
         Cookie oldLogin = cookieFor(mother);
 
         withdrawalService.withdraw(principal(mother), principal(mother));
-        User again = userService.findOrCreateByKakaoId(mother.getKakaoId(), "김엄마");
+        User again = userService.findOrCreateByKakaoId(mother.getKakaoId());
         userService.completeSignup(principal(again), new SignupRequest("parent", null, null, null));
         link(child, again);
 
@@ -183,7 +182,7 @@ class WithdrawalServiceTest {
 
     @Test
     void 가입하지_않은_사람도_탈퇴할_수_있다() {
-        User pending = persist(User.pending(nextKakaoId(), "가입전"));
+        User pending = persist(User.pending(nextKakaoId()));
 
         assertThat(withdrawalService.withdraw(principal(pending), principal(pending))).isEqualTo(WithdrawalSteps.Outcome.COMPLETED);
         assertThat(reload(pending).isDeleted()).isTrue();
@@ -191,7 +190,7 @@ class WithdrawalServiceTest {
 
     @Test
     void 기관_담당자는_카카오를_부르기_전에_403이다() {
-        User staff = persist(UserFixture.organizationUser(nextKakaoId(), "선생님", organization.getId()));
+        User staff = persist(UserFixture.organizationUser(nextKakaoId(), organization.getId()));
 
         assertThatThrownBy(() -> withdrawalService.withdraw(principal(staff), principal(staff)))
                 .isInstanceOf(UserException.class)
@@ -215,7 +214,7 @@ class WithdrawalServiceTest {
 
     @Test
     void 개발용_로그인_회원은_카카오를_부르지_않는다() {
-        User dev = persist(UserFixture.parent("dev:withdrawal-" + nextKakaoId(), "개발"));
+        User dev = persist(UserFixture.parent("dev:withdrawal-" + nextKakaoId()));
 
         assertThat(withdrawalService.withdraw(principal(dev), principal(dev))).isEqualTo(WithdrawalSteps.Outcome.COMPLETED);
         verify(kakaoUnlinkClient, never()).unlink(anyLong());
@@ -278,9 +277,8 @@ class WithdrawalServiceTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WITHDRAWAL_IN_PROGRESS"));
 
-        User relogin = userService.findOrCreateByKakaoId(mother.getKakaoId(), "새이름");
+        User relogin = userService.findOrCreateByKakaoId(mother.getKakaoId());
         assertThat(relogin.getId()).isEqualTo(mother.getId());
-        assertThat(reload(mother).getName()).isEqualTo(mother.getName());
     }
 
     /**
@@ -360,7 +358,7 @@ class WithdrawalServiceTest {
     // ── 준비 ──────────────────────────────────────────────
 
     private User parent() {
-        User user = persist(UserFixture.parent(nextKakaoId(), "김보호"));
+        User user = persist(UserFixture.parent(nextKakaoId()));
         // 보호 API 를 MockMvc 로 부르는 테스트가 약관 확인 필터에 막히지 않게 한다
         TermsFixture.agreeAll(termsAgreementRepository, user);
         return user;

@@ -79,12 +79,11 @@ class DevLoginApiTest {
         assertThat(response.body()).isEmpty();
         assertThat(userRepository.findByKakaoId("dev:parent1")).hasValueSatisfying(user -> {
             assertThat(user.isSignupCompleted()).isFalse();
-            assertThat(user.getName()).isEqualTo("parent1");
         });
 
         JsonNode me = me(accessTokenOf(response));
         assertThat(me.get("signupCompleted").asBoolean()).isFalse();
-        assertThat(me.get("name").asText()).isEqualTo("parent1");
+        assertThat(me.has("name")).isFalse();
     }
 
     @Test

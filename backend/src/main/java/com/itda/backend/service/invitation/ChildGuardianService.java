@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.invitation.Invitation;
-import com.itda.backend.domain.user.User;
 import com.itda.backend.dto.response.invitation.ChildGuardianResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
@@ -24,7 +23,6 @@ import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.invitation.InvitationRepository;
-import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.child.InstitutionLinkService;
 import com.itda.backend.service.child.OrganizationChildGuard;
 import com.itda.backend.service.consent.ConsentService;
@@ -48,7 +46,6 @@ public class ChildGuardianService {
 
     private final ChildGuardianRepository childGuardianRepository;
     private final InvitationRepository invitationRepository;
-    private final UserRepository userRepository;
     private final OrganizationChildGuard organizationChildGuard;
     private final UserService userService;
     private final ChildRepository childRepository;
@@ -63,22 +60,22 @@ public class ChildGuardianService {
         Long organizationId = organizationChildGuard.requireRosterChild(userId, childId);
         List<ChildGuardian> guardians = childGuardianRepository.findByChildIdAndDeletedAtIsNullOrderByLinkedAtAsc(childId);
 
-        Map<Long, String> names = new HashMap<>();
-        for (User user : userRepository.findAllById(guardians.stream().map(ChildGuardian::getUserId).toList())) {
-            names.put(user.getId(), user.getName());
-        }
-        Map<Long, Long> linkingOrganizations = new HashMap<>();
+        Map<Long, Invitation> invitations = new HashMap<>();
         for (Invitation invitation : invitationRepository.findAllById(
                 guardians.stream().map(ChildGuardian::getInvitationId).toList())) {
-            linkingOrganizations.put(invitation.getId(), invitation.getOrganizationId());
+            invitations.put(invitation.getId(), invitation);
         }
 
         return guardians.stream()
-                .map(guardian -> new ChildGuardianResponse(
-                        String.valueOf(guardian.getUserId()),
-                        names.get(guardian.getUserId()),
-                        toOffset(guardian.getLinkedAt()),
-                        organizationId.equals(linkingOrganizations.get(guardian.getInvitationId()))))
+                .map(guardian -> {
+                    Invitation invitation = invitations.get(guardian.getInvitationId());
+                    boolean ours = invitation != null && organizationId.equals(invitation.getOrganizationId());
+                    return new ChildGuardianResponse(
+                            String.valueOf(guardian.getUserId()),
+                            toOffset(guardian.getLinkedAt()),
+                            ours,
+                            ours ? invitation.getCode() : null);
+                })
                 .toList();
     }
 

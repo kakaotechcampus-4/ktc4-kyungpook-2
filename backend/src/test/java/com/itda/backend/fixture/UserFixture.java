@@ -16,14 +16,14 @@ public final class UserFixture {
     private UserFixture() {
     }
 
-    public static User organizationUser(String kakaoId, String name, Long organizationId) {
-        User user = User.pending(kakaoId, name);
+    public static User organizationUser(String kakaoId, Long organizationId) {
+        User user = User.pending(kakaoId);
         user.completeSignup(UserRole.ORGANIZATION, organizationId);
         return user;
     }
 
-    public static User parent(String kakaoId, String name) {
-        User user = User.pending(kakaoId, name);
+    public static User parent(String kakaoId) {
+        User user = User.pending(kakaoId);
         user.completeSignup(UserRole.PARENT, null);
         return user;
     }
@@ -40,7 +40,7 @@ public final class UserFixture {
         return saved;
     }
 
-    /** 옛 방식 탈퇴 행 — 카카오 회원번호와 이름을 남긴 채 탈퇴 표시만 했다. 지금 코드로는 만들 수 없어 필드를 직접 채운다. */
+    /** 옛 방식 탈퇴 행 — 카카오 회원번호를 남긴 채 탈퇴 표시만 했다. 지금 코드로는 만들 수 없어 필드를 직접 채운다. */
     public static User legacyDeleted(User user) {
         ReflectionTestUtils.setField(user, "deletedAt", LocalDateTime.now());
         return user;

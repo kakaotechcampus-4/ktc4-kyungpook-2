@@ -103,9 +103,9 @@ class ConsentServiceJpaTest {
         child = em.persist(Child.of("김하늘", LocalDate.of(2017, 3, 14)));
         em.persist(ChildOrganization.of(child.getId(), ours.getId()));
         em.persist(ChildOrganization.of(child.getId(), school.getId()));
-        mother = em.persist(UserFixture.parent("kakao-mother", "김엄마"));
-        father = em.persist(UserFixture.parent("kakao-father", "김아빠"));
-        User stranger = em.persist(UserFixture.parent("kakao-stranger", "남"));
+        mother = em.persist(UserFixture.parent("kakao-mother"));
+        father = em.persist(UserFixture.parent("kakao-father"));
+        User stranger = em.persist(UserFixture.parent("kakao-stranger"));
         link(mother);
         link(father);
         em.flush();

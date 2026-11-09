@@ -171,7 +171,7 @@ class WithdrawalConcurrencyIntegrationTest {
 
     @Test
     void 가입_전_탈퇴가_먼저면_기관_가입은_409다() throws Exception {
-        User pending = persist(User.pending(String.valueOf(nextKakaoId++), "가입전"));
+        User pending = persist(User.pending(String.valueOf(nextKakaoId++)));
 
         LockContention.Held<Long> held = contention.firstHoldsThen(
                 () -> steps.accept(pending.getId()),
@@ -186,7 +186,7 @@ class WithdrawalConcurrencyIntegrationTest {
 
     @Test
     void 기관_가입이_먼저면_탈퇴는_403이고_카카오를_부르지_않는다() throws Exception {
-        User pending = persist(User.pending(String.valueOf(nextKakaoId++), "가입전"));
+        User pending = persist(User.pending(String.valueOf(nextKakaoId++)));
 
         LockContention.Held<Object> held = contention.firstHoldsThen(
                 () -> userService.completeSignup(principal(pending), new com.itda.backend.dto.request.user.SignupRequest(
@@ -344,7 +344,7 @@ class WithdrawalConcurrencyIntegrationTest {
     // ── 준비 ──────────────────────────────────────────────
 
     private User parent() {
-        User user = persist(UserFixture.parent(String.valueOf(nextKakaoId++), "보호자"));
+        User user = persist(UserFixture.parent(String.valueOf(nextKakaoId++)));
         TermsFixture.agreeAll(termsAgreementRepository, user);
         return user;
     }

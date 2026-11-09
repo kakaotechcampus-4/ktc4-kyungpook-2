@@ -6,10 +6,10 @@ spring:
   task:
     scheduling:
       pool:
-        # 에이전트 워커(매칭·검증·요약·인사이트)와 탈퇴 주기 작업 하나에 스레드 하나. 기본값 1이면 워커들이 번갈아 돌아
-        # 단계별 속도가 나뉜다. 에이전트 워커 수만큼 AI 를 동시에 부르므로 AI 동시 호출 한도(8)를 넘지 않게 둔다.
-        # 탈퇴 주기 작업은 AI 를 부르지 않는다(실행기 줄에 세우기만 한다).
-        size: 6
+        # @Scheduled 작업 하나에 스레드 하나 — AI 를 부르는 워커 다섯(매칭·검증·요약·인사이트·알림)과 반려 데이터 정리(#432),
+        # 탈퇴 주기 작업(실행기 줄에 세우기만 하고 AI 를 부르지 않는다). 기본값 1이면 워커들이 번갈아 돌아 단계별 속도가 나뉜다.
+        # AI 동시 호출은 워커 수(5)라 한도(8)를 넘지 않는다.
+        size: 7
   servlet:
     multipart:
       max-file-size: 20MB
@@ -30,7 +30,8 @@ spring:
             authorization-grant-type: authorization_code
             # 카카오는 client_secret 을 헤더가 아니라 폼 파라미터로 받는다.
             client-authentication-method: client_secret_post
-            scope: profile_nickname
+            # scope 를 보내지 않는다 — 회원번호만 쓰고 닉네임 등 개인정보는 받지 않는다.
+            # 카카오 콘솔의 동의 항목에서도 닉네임을 꺼야 동의 화면에 닉네임이 뜨지 않는다.
             client-name: Kakao
         provider:
           kakao:
@@ -124,6 +125,14 @@ app:
       max-releases: 2
       # AI 다운 뒤 그 워커가 쉬는 시간. 짧은 장애에 상한을 바로 채우지 않게 한다 (서킷 브레이커가 보통 30초~1분 쉰다)
       pause: 30s
+  # 대시보드 진행 현황의 AI 진행 단계 (#453). 전용 스레드 하나가 AI GET /progress 를 묻고 기관별 메모리에 둔다.
+  # 일지 처리(워커·app.ai.*)와는 따로 돈다. 문제가 생기면 서버 .env 에 AI_PROGRESS_ENABLED=false 를 넣고 BE 를
+  # 다시 띄운다 — 화면은 기존 고정 문구로 돌아간다. 코드 기본값은 꺼짐, 배포 compose 가 켠다.
+  ai-progress:
+    enabled: ${AI_PROGRESS_ENABLED:false}
+    interval: 1s
+    # 1초마다 묻는데 늦은 답을 기다릴 이유가 없다. 넘으면 이번 차례는 실패로 보고, 3초 넘게 이어지면 화면을 비운다.
+    timeout: 500ms
   matching:
     worker:
       enabled: ${MATCHING_WORKER_ENABLED:true}
@@ -146,6 +155,19 @@ app:
     # 요약은 AI 가 LLM 을 90초(AI/summary/config.py LUNA_TIMEOUT)까지 기다린다. app.ai.read-timeout(70초)으로는
     # 느린 정상 응답을 먼저 끊고 다시 불러서 LLM 을 여러 번 부르게 된다.
     read-timeout: 120s
+  notify:
+    worker:
+      enabled: ${NOTIFY_WORKER_ENABLED:true}
+      delay-ms: 5000
+      # 알림도 인사이트처럼 아동 × 기간 단위로 집는다.
+      batch-size: 10
+    # 같은 아이·같은 기간의 발송이 연달아 실패하면 다시 집기까지 기다린다. 인사이트와 같은 장치다 (#266).
+    failure-backoffs: 1m,5m,30m
+    # 응답 대기. 모델 호출 한 번 + SMTP 왕복이라 인사이트(210s)보다 짧다.
+    read-timeout: 90s
+    # 응답 대기 시간 초과 뒤 다시 보내는 횟수. 0 이다 — 다시 보내도 AI 는 앞 요청을 멈추지 않고,
+    # 앞 요청이 메일을 이미 보냈을 수 있다. 중복은 AI 쪽 notification_id 가 막지만 일부러 두 번 보낼 이유는 없다.
+    timeout-retries: 0
   insight:
     worker:
       enabled: ${INSIGHT_WORKER_ENABLED:true}
@@ -172,6 +194,11 @@ app:
     # 응답 대기 시간 초과 뒤 다시 보내는 횟수. 최악 210초 × 2번 ≈ 7분, 그 뒤는 위 failure-backoffs 가 받는다.
     # 연결 실패·5xx 는 금방 끝나서 app.ai.retry-backoffs 대로 다시 보낸다.
     timeout-retries: 1
+  purge:
+    worker:
+      # Gate 1 에서 반려한 지 30일이 지난 일지 데이터를 매일 새벽 4시(서울)에 지운다 (#432).
+      enabled: ${PURGE_WORKER_ENABLED:true}
+      cron: "0 0 4 * * *"
 
 jwt:
   # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FileText, LogOut } from "lucide-react";
-import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
+import { Link, useLoaderData, useNavigate, useRevalidator, useRouteLoaderData } from "react-router";
 import { Busy, InstitutionChip } from "@/components/ui";
 import { WithdrawAccount } from "@/components/WithdrawAccount";
 import { useChildContext } from "@/components/parent/ChildContext";
@@ -11,33 +11,28 @@ import {
   loadOpenChecklistCount,
   getInstitutionShares,
   getParentChildren,
-  getParentHome,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
   unlinkChild,
   updateConsent,
 } from "@/lib/api";
-import { getSession, isAuthMock, signOut, withdrawTargetOf } from "@/lib/auth";
-import { ME } from "@/lib/mock/data";
-import { readSelectedChildId } from "@/lib/selectedChild";
+import { signOut } from "@/lib/auth";
+import { selectedChildOrInvite } from "@/lib/selectedChild";
 import type { ConsentState, InstitutionShares } from "@/lib/types";
+import type { clientLoader as parentSessionLoader } from "./session";
 
 export async function clientLoader() {
-  const kids = await getParentChildren();
-  const childId = readSelectedChildId(kids);
-  const [{ child }, openChecklists, pendingRequests, shares, session] = await Promise.all([
-    getParentHome(childId),
+  const child = selectedChildOrInvite(await getParentChildren());
+  const childId = child.id;
+  const [openChecklists, pendingRequests, shares] = await Promise.all([
     // 확인 안 한 준비물·확인사항 수. 못 받으면 null — 개수만 숨기고 설정은 그대로 연다
     loadOpenChecklistCount(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
     // 기관 줄의 "받은 리포트 N편". 서버에 없으면 null — 줄에 아무것도 붙이지 않는다
     loadIfReady("institutionShares", () => getInstitutionShares(childId)),
-    getSession(),
   ]);
-  // 실연동에서는 /auth/me 의 카카오 닉네임. 동의를 거부해 없으면 이름을 빼고 "보호자"만 쓴다
-  const myName = isAuthMock() ? ME.name : (session.name ?? null);
-  return { child, openChecklists, pendingRequests, shares, myName, withdrawTarget: withdrawTargetOf(session) };
+  return { child, openChecklists, pendingRequests, shares };
 }
 
 export default function ParentSettingsPage() {
@@ -52,10 +47,11 @@ function ParentSettingsContent({
   openChecklists,
   pendingRequests,
   shares,
-  myName,
-  withdrawTarget,
 }: Awaited<ReturnType<typeof clientLoader>>) {
-  const guardianLabel = myName ? `보호자 ${myName}` : "보호자";
+  // 탈퇴 대상 계정은 바깥 세션 확인 레이아웃이 이미 읽은 세션에서 꺼낸다 — 이 화면에서 /auth/me 를 한 번 더 부르지 않는다
+  const withdrawTarget = useRouteLoaderData<typeof parentSessionLoader>("routes/parent/session")?.withdrawTarget ?? null;
+  // 보호자 이름은 저장하지 않는다 — 지금 고른 아이의 보호자로 부른다
+  const guardianLabel = `${child.name} 보호자`;
   const { kids, selectChild } = useChildContext();
   const [institutions, setInstitutions] = useState(child.institutions);
   // 같은 아이에서 다시 불러오면(권한 끄기 뒤 등) 서버 목록으로 맞춘다. 처음 값만 잡아 두면 명부에서 빠진 기관이

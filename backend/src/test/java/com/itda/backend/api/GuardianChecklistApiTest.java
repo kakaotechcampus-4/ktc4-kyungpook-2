@@ -64,10 +64,10 @@ class GuardianChecklistApiTest {
     @BeforeEach
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("gcl-o-" + UUID.randomUUID(), "이선생",
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("gcl-o-" + UUID.randomUUID(),
                 organization.getId())));
         mom = TermsFixture.agreeAll(termsAgreementRepository,
-                userRepository.save(UserFixture.parent("gcl-m-" + UUID.randomUUID(), "김엄마")));
+                userRepository.save(UserFixture.parent("gcl-m-" + UUID.randomUUID())));
         sky = childRepository.save(Child.of("하늘", LocalDate.of(2017, 3, 14)));
         childOrganizationRepository.save(ChildOrganization.of(sky.getId(), organization.getId()));
         childGuardianRepository.save(ChildGuardian.link(sky.getId(), mom.getId(), 1L));
@@ -105,7 +105,7 @@ class GuardianChecklistApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("confirmed"))
                 .andExpect(jsonPath("$.data.confirmedAt").isString())
-                .andExpect(jsonPath("$.data.confirmedByName").value("김엄마"));
+                .andExpect(jsonPath("$.data.confirmedByName").doesNotExist());
 
         mockMvc.perform(get(list()).param("status", "needs_check").cookie(auth(mom)))
                 .andExpect(jsonPath("$.data.length()").value(0));
@@ -121,7 +121,7 @@ class GuardianChecklistApiTest {
     @Test
     void 연결되지_않은_보호자는_403이다() throws Exception {
         User stranger = TermsFixture.agreeAll(termsAgreementRepository,
-                userRepository.save(UserFixture.parent("gcl-s-" + UUID.randomUUID(), "남")));
+                userRepository.save(UserFixture.parent("gcl-s-" + UUID.randomUUID())));
 
         mockMvc.perform(get(list()).cookie(auth(stranger)))
                 .andExpect(status().isForbidden())

@@ -32,7 +32,7 @@ export async function clientLoader({ request }: { request: Request }) {
   const hint = new URL(request.url).searchParams.get("role");
   const initialRole: "org" | "parent" | null =
     hint === "org" || hint === "parent" ? hint : null;
-  return { name: session.name, initialRole, withdrawTarget: withdrawTargetOf(session) };
+  return { initialRole, withdrawTarget: withdrawTargetOf(session) };
 }
 
 const ORG_TYPES: { value: OrganizationType; label: string }[] = [
@@ -49,7 +49,7 @@ const ROLES = [
 type Errors = { organizationName?: string; businessNumber?: string; form?: string };
 
 export default function SignupPage() {
-  const { name, initialRole, withdrawTarget } = useLoaderData<typeof clientLoader>();
+  const { initialRole, withdrawTarget } = useLoaderData<typeof clientLoader>();
   const navigate = useNavigate();
 
   const [role, setRole] = useState<"org" | "parent" | null>(initialRole);
@@ -164,7 +164,7 @@ export default function SignupPage() {
         >
           <div>
             <h1 className="mb-1.5 text-[20px] font-bold tracking-tight">
-              {name ? `${name}님, 어떤 분이신가요?` : "어떤 분이신가요?"}
+              어떤 분이신가요?
             </h1>
             <p className="text-[15px] leading-7 text-ink2">
               고른 역할에 따라 보이는 화면이 달라져요. 가입한 뒤에는 바꿀 수 없어요.

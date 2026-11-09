@@ -115,7 +115,7 @@ class GuardianJournalConcurrencyIntegrationTest {
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
         Organization center = organizationRepository.save(OrganizationFixture.center());
-        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom")));
 
         childId = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14))).getId();
         childOrganizationRepository.save(ChildOrganization.of(childId, center.getId(), "C-7"));

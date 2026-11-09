@@ -3,6 +3,7 @@ package com.itda.backend.service.summary;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
@@ -92,6 +93,24 @@ class SummaryWorkerTest {
         order.verify(recorder).record(first, requestFor(first), reply1);
         order.verify(client).summarize(requestFor(second));
         order.verify(recorder).record(second, requestFor(second), reply2);
+    }
+
+    /** "특이사항 없음" 뿐인 묶음은 AI 를 부르지 않고 요약할 내용 없음으로 남긴다 (#448). */
+    @Test
+    void 특이사항_없음뿐인_묶음은_AI를_부르지_않고_요약할_내용_없음으로_남긴다() {
+        ClaimedSummaryGroup claimed = group(8L, 1L, 2L);
+        SummaryAgentRequest request = new SummaryAgentRequest(8L, "아이", "2026-10-08", 3L, "학교",
+                List.of(new SummaryAgentRequest.Source(1L, "특이사항 없음", "2026-10-08"),
+                        new SummaryAgentRequest.Source(2L, "오늘은 특이사항 없었습니다.", "2026-10-08")),
+                List.of());
+        given(summaryService.claimReadyGroups(10)).willReturn(List.of(claimed));
+        given(summaryService.prepareRequest(claimed)).willReturn(request);
+
+        worker.run();
+
+        verify(client, never()).summarize(any());
+        verify(recorder).record(eq(claimed), eq(request),
+                argThat(reply -> reply.response().isNoContent()));
     }
 
     /** 집은 뒤 그 기관 동의가 철회된 묶음은 AI 에 보내지 않는다 (#332). 닫는 일은 레코더가 한다. */

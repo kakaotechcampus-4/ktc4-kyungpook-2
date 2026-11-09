@@ -15,7 +15,7 @@ python evals/scripts/matching/score.py /tmp/result.json
 채점할 때 매번 다시 부르지 않기 위해서다.
 
 옵션: `--limit N` (앞에서 N 건만), `--workers N` (동시 호출 수, 기본 8).
-`AI/.env` 에 `LUNA_API_URL` 과 `LUNA_API_KEY` 가 있어야 한다.
+`AI/.env` 에 `MATCHING_API_URL` 과 `API_KEY` 가 있어야 한다.
 
 ## 입력 형식
 

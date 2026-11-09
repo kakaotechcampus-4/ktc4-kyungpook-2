@@ -20,6 +20,7 @@ import requests
 #: 여기서 다시 내보내므로 from insight.llm import LlmUnavailable 이 그대로 된다.
 from common.errors import LlmUnavailable  # noqa: F401
 
+from common.luna import endpoint, json_format, not_configured
 from common.luna import model as luna_model
 
 from .config import LUNA_CHAT_PATH, LUNA_REASONING_EFFORT_ON_OVERFLOW, LUNA_TIMEOUT
@@ -51,13 +52,11 @@ class LlmResult:
 
 
 def _endpoint() -> tuple[str, str]:
-    url = os.environ.get("LUNA_API_URL")
-    key = os.environ.get("LUNA_API_KEY")
-    if not (url and key):
-        raise LlmError("LUNA_API_URL / LUNA_API_KEY 가 설정되지 않았습니다", "not_configured")
-    if not url.rstrip("/").endswith(LUNA_CHAT_PATH):
-        url = url.rstrip("/") + LUNA_CHAT_PATH
-    return url, key
+    # .env 의 INSIGHT_API_URL · API_KEY (common/luna.py endpoint)
+    found = endpoint(AGENT)
+    if not found:
+        raise LlmError(not_configured(AGENT), "not_configured")
+    return found
 
 
 def is_configured() -> bool:
@@ -141,7 +140,9 @@ def ask_json(messages: list[dict], *, timeout: float = LUNA_TIMEOUT,
     choice = (payload.get("choices") or [{}])[0] if isinstance(payload, dict) else {}
     content = (choice.get("message") or {}).get("content")
     retried = False
-    if choice.get("finish_reason") == "length" and not (content or "").strip():
+    # 답이 반쯤 온 채로 잘리는 모델도 있다 (claude-opus-5-5, 2026-11-09: 2000 토큰에서 JSON 이 끊김).
+    # 빈 답만 보면 그 경우를 놓치므로, 잘렸으면(length) 답이 있어도 다시 부른다.
+    if choice.get("finish_reason") == "length":
         print(f"[{AGENT}] 생각 한도 초과 → reasoning_effort={LUNA_REASONING_EFFORT_ON_OVERFLOW} 로 다시 부른다")
         payload = _post(url, key, messages, _budget(timeout, deadline),
                         reasoning_effort=LUNA_REASONING_EFFORT_ON_OVERFLOW)
@@ -160,8 +161,8 @@ def _post(url: str, key: str, messages: list[dict], timeout: float,
           reasoning_effort: str | None = None) -> dict:
     """Luna 를 한 번 부른다. reasoning_effort 를 주지 않으면 모델 기본값으로 생각한다."""
     body = {
-        "model": luna_model(),
-        "response_format": {"type": "json_object"},
+        "model": luna_model(AGENT),
+        **json_format(AGENT),  # 기본 JSON 강제, INSIGHT_JSON_MODE=off 면 뺀다
         "messages": messages,
     }
     if reasoning_effort:
@@ -219,7 +220,7 @@ RESPONSES_PATH = "/v1/responses"
 def _responses(url: str, key: str, body: dict, timeout: float) -> dict:
     try:
         response = requests.post(
-            url, json={"model": luna_model(), **body},
+            url, json={"model": luna_model(AGENT), **body},
             headers={"content-type": "application/json", "Authorization": f"Bearer {key}"},
             timeout=timeout,
         )
@@ -227,7 +228,9 @@ def _responses(url: str, key: str, body: dict, timeout: float) -> dict:
     except requests.Timeout as exc:
         raise LlmError(f"Luna 제한시간 초과 ({timeout}s): {exc}", "timeout") from exc
     except requests.RequestException as exc:
-        raise LlmError(f"Luna 호출 실패: {exc}", "http_error") from exc
+        # 서버가 돌려준 에러 문구를 남긴다 — 없으면 원인이 http_error 로만 보인다 (11/09 sonnet 400)
+        detail = getattr(getattr(exc, "response", None), "text", "") or ""
+        raise LlmError(f"Luna 호출 실패: {exc} {detail[:300]}".strip(), "http_error") from exc
     try:
         return response.json()
     except ValueError as exc:
@@ -249,9 +252,22 @@ def ask_with_tools(instructions: str, user_input: str, tools: list[dict], run_to
     body = {"instructions": instructions, "input": user_input, "tools": tools}
     executed = 0
     usage: dict = {}
+    #: 지금까지 오간 대화. 프록시가 previous_response_id 를 거절하면 이것을 통째로 다시 보낸다.
+    #: claude 계열은 엘리스 프록시에서 "Unsupported parameter(s) ... previous_response_id" 로 400 (11/09).
+    #: 루나는 previous_response_id 로 3/3 을 확인했으므로 거절될 때만 바꾼다.
+    history: list[dict] = [{"role": "user", "content": user_input}]
+    replay = False
 
     for _ in range(max_calls + 1):
-        payload = _responses(url, key, body, _budget(timeout, deadline))
+        try:
+            payload = _responses(url, key, body, _budget(timeout, deadline))
+        except LlmError as exc:
+            if replay or "previous_response_id" not in body or "previous_response_id" not in str(exc):
+                raise
+            replay = True
+            body = {k: v for k, v in body.items() if k not in ("previous_response_id", "input")}
+            body["input"] = list(history)
+            payload = _responses(url, key, body, _budget(timeout, deadline))
         for k, v in (payload.get("usage") or {}).items():
             if isinstance(v, int):
                 usage[k] = usage.get(k, 0) + v
@@ -273,6 +289,7 @@ def ask_with_tools(instructions: str, user_input: str, tools: list[dict], run_to
                 raise LlmError("빈 응답 ({})", "empty_response")
             return LlmResult(data=data, usage=usage)
 
+        history += [{k: call.get(k) for k in ("type", "call_id", "name", "arguments")} for call in calls]
         results = []
         for call in calls:
             try:
@@ -283,8 +300,12 @@ def ask_with_tools(instructions: str, user_input: str, tools: list[dict], run_to
             out = run_tool(call.get("name"), args if isinstance(args, dict) else {})
             results.append({"type": "function_call_output", "call_id": call.get("call_id"),
                             "output": json.dumps(out, ensure_ascii=False)})
-        body = {"instructions": instructions, "previous_response_id": payload.get("id"),
-                "tools": tools, "input": results}
+        history += results
+        body = {"instructions": instructions, "tools": tools}
+        if replay:
+            body["input"] = list(history)
+        else:
+            body.update(previous_response_id=payload.get("id"), input=results)
         if executed >= max_calls:
             body["tool_choice"] = "none"
 

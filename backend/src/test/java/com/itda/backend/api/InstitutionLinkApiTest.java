@@ -166,10 +166,10 @@ class InstitutionLinkApiTest {
         school = organizationRepository.save(
                 Organization.of("햇살특수학교", OrganizationType.SCHOOL, OrganizationFixture.nextBusinessNumber()));
         center = organizationRepository.save(OrganizationFixture.center());
-        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "학교선생", school.getId())));
-        centerStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "센터선생", center.getId())));
-        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "엄마")));
-        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "아빠")));
+        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), school.getId())));
+        centerStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), center.getId())));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
+        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         childId = json(mockMvc.perform(withCsrf(post(ROSTER), auth(schoolStaff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -279,8 +279,8 @@ class InstitutionLinkApiTest {
                 .andExpect(jsonPath("$.data[0].child.id").value(childId))
                 .andExpect(jsonPath("$.data[0].child.name").value("임유진"))
                 .andExpect(jsonPath("$.data[0].child.birthDate").value("2017-03-14"))
-                .andExpect(jsonPath("$.data[0].requesters[0].name").value("엄마"))
-                .andExpect(jsonPath("$.data[0].requesters[1].name").value("아빠"));
+                .andExpect(jsonPath("$.data[0].requesterCount").value(2))
+                .andExpect(jsonPath("$.data[0].requesters").doesNotExist());
         mockMvc.perform(get(LINK_REQUESTS).cookie(auth(schoolStaff)))
                 .andExpect(jsonPath("$.data.length()").value(0));
     }
@@ -376,7 +376,7 @@ class InstitutionLinkApiTest {
     @Test
     void 다른_기관에_낸_요청은_수락할_수_없다() throws Exception {
         Organization other = organizationRepository.save(OrganizationFixture.center());
-        User otherStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "다른선생", other.getId())));
+        User otherStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), other.getId())));
         requestLink(mom, centerCode);
 
         accept(otherStaff, "X-1").andExpect(status().isNotFound());
@@ -423,8 +423,7 @@ class InstitutionLinkApiTest {
                         org.assertj.core.groups.Tuple.tuple(mom.getId(), ChildOrganizationRequestStatus.CANCELLED),
                         org.assertj.core.groups.Tuple.tuple(dad.getId(), ChildOrganizationRequestStatus.PENDING));
         mockMvc.perform(get(LINK_REQUESTS).cookie(auth(centerStaff)))
-                .andExpect(jsonPath("$.data[0].requesters.length()").value(1))
-                .andExpect(jsonPath("$.data[0].requesters[0].name").value("아빠"));
+                .andExpect(jsonPath("$.data[0].requesterCount").value(1));
         accept(centerStaff, "C-4").andExpect(status().isOk());
     }
 

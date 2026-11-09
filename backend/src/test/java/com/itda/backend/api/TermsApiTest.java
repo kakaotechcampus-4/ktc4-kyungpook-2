@@ -78,7 +78,7 @@ class TermsApiTest {
 
     @Test
     void 보호자가_동의하면_저장하고_세션에_동의가_보인다() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("terms-api-1", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("terms-api-1"));
         mockMvc.perform(get("/api/v1/auth/me").cookie(cookieFor(parent)))
                 .andExpect(jsonPath("$.data.termsAgreed").value(false));
 
@@ -94,7 +94,7 @@ class TermsApiTest {
 
     @Test
     void 같은_판에_다시_동의해도_같은_응답이고_줄이_늘지_않는다() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("terms-api-2", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("terms-api-2"));
         agree(parent, BOTH).andExpect(status().isOk());
 
         agree(parent, BOTH)
@@ -113,7 +113,7 @@ class TermsApiTest {
             "{}"
     })
     void 잘못된_요청은_400이다(String body) throws Exception {
-        User parent = userRepository.save(UserFixture.parent("terms-api-bad-" + Math.abs(body.hashCode()), "김보호"));
+        User parent = userRepository.save(UserFixture.parent("terms-api-bad-" + Math.abs(body.hashCode())));
 
         agree(parent, body)
                 .andExpect(status().isBadRequest())
@@ -154,7 +154,7 @@ class TermsApiTest {
 
     @Test
     void 보호자가_기관_약관을_섞으면_400이다() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("terms-api-mixed", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("terms-api-mixed"));
 
         agree(parent, "{\"agreed\": [\"tos\", \"privacy\", \"org_child_data\"]}")
                 .andExpect(status().isBadRequest())
@@ -165,7 +165,7 @@ class TermsApiTest {
     /** 가입 전에는 약관보다 가입이 먼저다 — 가입 미완료 차단이 그대로 막는다. */
     @Test
     void 가입_미완료_회원은_403_SIGNUP_NOT_COMPLETED다() throws Exception {
-        User pending = userRepository.save(User.pending("terms-api-pending", "박지현"));
+        User pending = userRepository.save(User.pending("terms-api-pending"));
 
         agree(pending, BOTH)
                 .andExpect(status().isForbidden())
@@ -174,7 +174,7 @@ class TermsApiTest {
 
     @Test
     void 읽은_판을_보내면_그_판으로_기록한다() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("terms-api-read", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("terms-api-read"));
         String body = "{\"agreed\": [\"tos\", \"privacy\"], \"versions\": {\"tos\": \"%s\", \"privacy\": \"%s\"}}"
                 .formatted(TermsCatalog.currentVersion(TermKey.TOS), TermsCatalog.currentVersion(TermKey.PRIVACY));
 
@@ -182,14 +182,16 @@ class TermsApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.termsAgreed").value(true));
         assertThat(termsAgreementRepository.findByUserId(parent.getId()))
-                .extracting(TermsAgreement::getVersion)
-                .containsOnly(TermsCatalog.currentVersion(TermKey.TOS));
+                .extracting(TermsAgreement::getTermKey, TermsAgreement::getVersion)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(TermKey.TOS, TermsCatalog.currentVersion(TermKey.TOS)),
+                        org.assertj.core.groups.Tuple.tuple(TermKey.PRIVACY, TermsCatalog.currentVersion(TermKey.PRIVACY)));
     }
 
     /** 판 없이 오는 지금 화면은 본문을 보여 주지 못한다 — 라벨 판으로 남는다. */
     @Test
     void 판_없이_동의하면_라벨_판으로_기록한다() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("terms-api-label", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("terms-api-label"));
 
         agree(parent, BOTH).andExpect(status().isOk());
         assertThat(termsAgreementRepository.findByUserId(parent.getId()))
@@ -199,7 +201,7 @@ class TermsApiTest {
 
     @Test
     void 읽은_판이_지금_판과_다르면_409_TERMS_VERSION_CHANGED다() throws Exception {
-        User parent = userRepository.save(UserFixture.parent("terms-api-stale", "김보호"));
+        User parent = userRepository.save(UserFixture.parent("terms-api-stale"));
 
         agree(parent, "{\"agreed\": [\"tos\", \"privacy\"], \"versions\": {\"tos\": \"2000-01-01\", \"privacy\": \"%s\"}}"
                 .formatted(TermsCatalog.currentVersion(TermKey.PRIVACY)))
@@ -216,7 +218,7 @@ class TermsApiTest {
             "{\"agreed\": [\"tos\", \"privacy\"], \"versions\": {\"tos\": \"2026-11-07\", \"privacy\": null}}"
     })
     void 판의_약관이_동의한_약관과_다르면_400이다(String body) throws Exception {
-        User parent = userRepository.save(UserFixture.parent("terms-api-vkeys-" + body.hashCode(), "김보호"));
+        User parent = userRepository.save(UserFixture.parent("terms-api-vkeys-" + body.hashCode()));
 
         agree(parent, body)
                 .andExpect(status().isBadRequest())
@@ -226,6 +228,6 @@ class TermsApiTest {
 
     private User staff(String kakaoId) {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        return userRepository.save(UserFixture.organizationUser(kakaoId, "박지현", organization.getId()));
+        return userRepository.save(UserFixture.organizationUser(kakaoId, organization.getId()));
     }
 }

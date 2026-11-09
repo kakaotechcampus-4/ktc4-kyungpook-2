@@ -73,11 +73,13 @@
 import { ApiError } from "@/lib/apiError";
 import { clearSession, csrfHeader, getSession, isOnboarded, markOnboarded } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
+import { forgetParentChildren, shareParentChildren } from "@/lib/parentChildrenCache";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
 import type {
   AcceptedInvitation,
   FailedSummary,
   AiActivity,
+  AiProgress,
   AiStatus,
   BlockedItem,
   Child,
@@ -637,6 +639,19 @@ export async function getAiStatus(): Promise<AiStatus> {
   return request<AiStatus>("/api/v1/system/ai-status");
 }
 
+/**
+ * 진행 현황 AI 줄의 지금 단계 (O-83, #454). 화면이 1초마다 부른다.
+ * 실패(404 · 5xx)는 던진다 — 부르는 쪽(lib/aiProgress)이 enabled: false 와 똑같이 다룬다
+ */
+export async function getAiProgress(): Promise<AiProgress> {
+  if (mockFor("dashboard")) return mock.mockAiProgress();
+  const raw = await request<AiProgress>("/api/v1/dashboard/ai-progress");
+  return {
+    enabled: raw.enabled === true,
+    items: (raw.items ?? []).map((i) => ({ ...i, childId: i.childId == null ? null : String(i.childId) })),
+  };
+}
+
 /* ── 요약 실패 (O-35 ~ O-37) ──────────────────── */
 
 interface FailedSummaryRaw {
@@ -1151,10 +1166,12 @@ export async function acceptInvitation(code: string): Promise<AcceptedInvitation
       childStatus: child.status,
     };
   }
-  return request("/api/v1/guardians/me/invitations/accept", {
-    method: "POST",
-    body: JSON.stringify({ code }),
-  });
+  return changesParentChildren(
+    request("/api/v1/guardians/me/invitations/accept", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+  );
 }
 
 /**
@@ -1168,9 +1185,11 @@ export async function unlinkChild(childId: string): Promise<void> {
     mock.PARENT_CHILDREN.splice(idx, 1);
     return;
   }
-  return request(`/api/v1/guardians/me/children/${encodeURIComponent(childId)}`, {
-    method: "DELETE",
-  });
+  return changesParentChildren(
+    request(`/api/v1/guardians/me/children/${encodeURIComponent(childId)}`, {
+      method: "DELETE",
+    }),
+  );
 }
 
 /**
@@ -1208,10 +1227,25 @@ export async function getConsentPreview(
   }
 }
 
-/** GET /api/v1/guardians/me/children — 이 보호자에게 연결된 아이 전체 */
+/**
+ * GET /api/v1/guardians/me/children — 이 보호자에게 연결된 아이 전체.
+ * 입구와 화면 loader 가 함께 물으면 응답 하나를 같이 쓴다 (lib/parentChildrenCache)
+ */
 export async function getParentChildren(): Promise<Child[]> {
   if (mockFor("guardianChildren")) return mock.PARENT_CHILDREN;
-  return request("/api/v1/guardians/me/children");
+  return shareParentChildren(() => request<Child[]>("/api/v1/guardians/me/children"));
+}
+
+/**
+ * 아이 목록에 담긴 값(아이 · 기관별 동의 · 연결 요청 · 돌봄 정보)을 바꾸는 요청. 끝나면 같이 쓰던 목록을 버린다 —
+ * 바로 뒤의 다시 불러오기가 바뀌기 전 목록을 받지 않게. 실패해도 버린다(그 사이 서버 상태가 달라졌을 수 있다)
+ */
+async function changesParentChildren<T>(send: Promise<T>): Promise<T> {
+  try {
+    return await send;
+  } finally {
+    forgetParentChildren();
+  }
 }
 
 /**
@@ -1293,12 +1327,14 @@ export async function grantConsent(
     child.status = "active";
     return { childStatus: "active", consent: "granted", allowedFields };
   }
-  return request(
-    `/api/v1/children/${encodeURIComponent(childId)}/consent-scopes/${encodeURIComponent(institutionId)}`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ action: "grant", allowedFields }),
-    },
+  return changesParentChildren(
+    request(
+      `/api/v1/children/${encodeURIComponent(childId)}/consent-scopes/${encodeURIComponent(institutionId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ action: "grant", allowedFields }),
+      },
+    ),
   );
 }
 
@@ -1328,10 +1364,12 @@ export async function updateConsent(
       allowedFields: rec.consent === "granted" ? (body.allowedFields ?? []) : [],
     };
   }
-  return request(`/api/v1/children/${childId}/consent-scopes/${institutionId}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
+  return changesParentChildren(
+    request(`/api/v1/children/${childId}/consent-scopes/${institutionId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  );
 }
 
 /**
@@ -1375,10 +1413,12 @@ export async function addInstitutionByCode(
     }
     return { ...pending, status: "pending" };
   }
-  return request(`/api/v1/children/${encodeURIComponent(childId)}/institutions`, {
-    method: "POST",
-    body: JSON.stringify({ code }),
-  });
+  return changesParentChildren(
+    request(`/api/v1/children/${encodeURIComponent(childId)}/institutions`, {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+  );
 }
 
 /**
@@ -1391,10 +1431,12 @@ export async function updateChildCare(childId: string, care: ChildCareInfo): Pro
     if (child) child.care = care;
     return care;
   }
-  return request<ChildCareInfo>(`/api/v1/children/${encodeURIComponent(childId)}/care-info`, {
-    method: "PUT",
-    body: JSON.stringify(care),
-  });
+  return changesParentChildren(
+    request<ChildCareInfo>(`/api/v1/children/${encodeURIComponent(childId)}/care-info`, {
+      method: "PUT",
+      body: JSON.stringify(care),
+    }),
+  );
 }
 
 /**
@@ -1503,7 +1545,6 @@ export async function confirmChecklist(childId: string, checklistId: string): Pr
     if (item.status === "needs_check") {
       item.status = "confirmed";
       item.confirmedAt = new Date().toISOString();
-      item.confirmedByName = mock.ME.name;
     }
     return item;
   }
@@ -1546,7 +1587,6 @@ export async function sendChecklist(input: { items: string[]; childIds: string[]
         child: { id, name: roster.find((c) => c.id === id)?.name ?? null },
         onRoster: true,
         confirmedAt: null,
-        confirmedByName: null,
       })),
     };
     mock.SENT_CHECKLISTS.unshift(sent);

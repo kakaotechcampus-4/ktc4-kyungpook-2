@@ -1,6 +1,7 @@
 import type {
   AiActivity,
   FailedSummary,
+  AiProgress,
   AiStatus,
   BlockedItem,
   Child,
@@ -63,7 +64,6 @@ export const ART_ACADEMY: Institution = {
 export const MY_INSTITUTION = CENTER;
 /** 우리 기관 코드 — 보호자에게 알려 주면 보호자가 이 코드로 아이 연결을 요청한다 */
 export const MY_INSTITUTION_CODE = "K7P3QX9M";
-export const ME = { name: "박지현", role: "선생님" };
 
 /* 아동 ─────────────────────────────────────────────── */
 
@@ -137,7 +137,7 @@ export const CHILDREN: Child[] = [
 export const LINK_REQUESTS: PendingLinkRequest[] = [
   {
     child: { id: "child_3011", name: "정OO", birthDate: "2018-11-26" },
-    requesters: [{ name: "정OO 어머니" }],
+    requesterCount: 1,
     requestedAt: "2026-10-29T09:20:00+09:00",
   },
 ];
@@ -803,14 +803,31 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     childId: "child_1023",
     childName: "김OO",
     period: "2026년 10월 4주차",
-    content: "활동이 바뀌기 5분 전에 그림 카드로 예고하면, 학교와 센터 모두에서 울음 없이 다음 활동으로 옮겨 갔습니다.",
+    periodFrom: "2026-10-19",
+    periodTo: "2026-10-25",
+    content: "활동이 바뀌기 5분 전에 그림 카드로 예고하면, 학교와 센터 모두에서 울음 없이 다음 활동으로 옮겨 갔어요.",
     from: SCHOOL,
     sharedWith: [CENTER],
     approvedAt: "2026-10-29T17:40:00",
     readAt: null,
     evidence: [
-      { journalEntryId: "jrn_04", date: "2026-08-14", institution: SCHOOL, lookedUp: false },
-      { journalEntryId: "jrn_05", date: "2026-08-14", institution: CENTER, lookedUp: false },
+      {
+        journalEntryId: "jrn_04",
+        date: "2026-08-14",
+        institution: SCHOOL,
+        lookedUp: false,
+        sentences: [
+          { text: "국어 시간이 시작되자 책상 아래로 들어갔다.", role: "상황" },
+          { text: "'공부' 카드를 쥐여 주자 5분 뒤 자리에 앉았다.", role: "대처" },
+        ],
+      },
+      {
+        journalEntryId: "jrn_05",
+        date: "2026-08-14",
+        institution: CENTER,
+        lookedUp: false,
+        sentences: [{ text: "간식 시간으로 바뀔 때 울음이 없었다.", role: "상황" }],
+      },
     ],
   },
   {
@@ -818,7 +835,9 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     childId: "child_1023",
     childName: "김OO",
     period: "2026년 10월 4주차",
-    content: "점심 직후에는 소리에 예민해져, 조용한 자리를 먼저 마련하면 오후 활동 참여가 늘었습니다.",
+    periodFrom: "2026-10-19",
+    periodTo: "2026-10-25",
+    content: "점심 직후에는 소리에 예민해져서, 조용한 자리를 먼저 마련하면 오후 활동 참여가 늘었어요.",
     from: SCHOOL,
     sharedWith: [],
     approvedAt: "2026-10-29T17:20:00",
@@ -830,24 +849,97 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     childId: "child_1023",
     childName: "김OO",
     period: "2026년 10월 3주차",
-    content: "학교에서는 차례를 기다렸지만 센터에서는 끼어드는 일이 잦았습니다. 센터에서도 순서 카드를 쓰면 도움이 될 수 있습니다.",
+    periodFrom: "2026-10-12",
+    periodTo: "2026-10-18",
+    content: "학교에서는 차례를 기다렸지만 센터에서는 끼어드는 일이 잦았어요. 센터에서도 순서 카드를 쓰면 도움이 될 수 있어요.",
     from: SCHOOL,
     sharedWith: [CENTER],
     approvedAt: "2026-10-27T10:00:00",
     readAt: "2026-10-27T21:00:00",
     evidence: [
       // 지난 기록에서 찾아 쓴 근거 (#388) — "지난 기록" 표시를 mock 에서 보려고 둔다
-      { journalEntryId: "jrn_04", date: "2026-08-14", institution: SCHOOL, lookedUp: true },
-      { journalEntryId: "jrn_01", date: "2026-08-21", institution: SCHOOL, lookedUp: false },
-      { journalEntryId: "jrn_02", date: "2026-08-21", institution: CENTER, lookedUp: false },
+      {
+        journalEntryId: "jrn_04",
+        date: "2026-08-14",
+        institution: SCHOOL,
+        lookedUp: true,
+        sentences: [{ text: "'공부' 카드를 쥐여 주자 5분 뒤 자리에 앉았다.", role: "대처" }],
+      },
+      {
+        journalEntryId: "jrn_01",
+        date: "2026-08-21",
+        institution: SCHOOL,
+        lookedUp: false,
+        sentences: [{ text: "차례를 기다려 순서대로 발표했다.", role: "상황" }],
+      },
+      {
+        journalEntryId: "jrn_02",
+        date: "2026-08-21",
+        institution: CENTER,
+        lookedUp: false,
+        sentences: [],
+      },
     ],
+  },
+  {
+    // 달에 걸친 주 — periodFrom 이 9월이라 9월로 묶인다
+    id: "gi_05",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 9월 5주차",
+    periodFrom: "2026-09-29",
+    periodTo: "2026-10-05",
+    content: "등원 차량 앞에서 멈춰 서는 날이 이어졌지만, 좋아하는 노래를 틀면 바로 탔어요.",
+    from: CENTER,
+    sharedWith: [],
+    approvedAt: "2026-10-06T09:30:00",
+    readAt: "2026-10-06T19:00:00",
+    evidence: [
+      {
+        journalEntryId: "jrn_06",
+        date: "2026-09-30",
+        lookedUp: false,
+        institution: CENTER,
+        sentences: [{ text: "차량 앞에서 움직이지 않았다.", role: "상황" }],
+      },
+    ],
+  },
+  {
+    id: "gi_06",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 9월 2주차",
+    periodFrom: "2026-09-07",
+    periodTo: "2026-09-13",
+    content: "새로운 음식을 밀어내는 일이 있었지만, 한 입만 권하면 받아들였어요.",
+    from: CENTER,
+    sharedWith: [],
+    approvedAt: "2026-09-14T11:00:00",
+    readAt: "2026-09-14T18:00:00",
+    evidence: [],
+  },
+  {
+    id: "gi_07",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 8월 3주차",
+    periodFrom: "2026-08-17",
+    periodTo: "2026-08-23",
+    content: "큰 소리가 나는 활동에서는 귀를 막았지만, 미리 알려 주면 그대로 참여했어요.",
+    from: SCHOOL,
+    sharedWith: [],
+    approvedAt: "2026-08-24T10:00:00",
+    readAt: "2026-08-24T20:00:00",
+    evidence: [],
   },
   {
     id: "gi_04",
     childId: "child_2044",
     childName: "최OO",
     period: "2026년 10월 4주차",
-    content: "첫 주에는 미술 활동을 거부했지만, 넷째 주에는 스스로 붓을 들었습니다.",
+    periodFrom: "2026-10-19",
+    periodTo: "2026-10-25",
+    content: "첫 주에는 미술 활동을 거부했지만, 넷째 주에는 스스로 붓을 들었어요.",
     from: null,
     sharedWith: [],
     approvedAt: "2026-10-28T09:00:00",
@@ -865,11 +957,11 @@ export const INVITATIONS: Record<string, LiveInvitation[]> = {};
 /** 아이별 연결된 보호자 (O-18, O-19 mock) */
 export const CHILD_GUARDIANS: Record<string, ChildGuardian[]> = {
   child_1023: [
-    { userId: "41", name: "김보호", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true },
-    { userId: "52", name: null, linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false },
+    { userId: "41", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true, invitationCode: "H4QZ8M2R" },
+    { userId: "52", linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false, invitationCode: null },
   ],
   child_1041: [
-    { userId: "63", name: "이보호", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true },
+    { userId: "63", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true, invitationCode: "T7KD3WNP" },
   ],
 };
 
@@ -947,7 +1039,6 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
       items: ["하원 동행 시간을 10분 늦춰도 될까요."],
       sentAt: "2026-11-04T08:40:00",
       confirmedAt: null,
-      confirmedByName: null,
     },
     {
       id: "req_02",
@@ -956,7 +1047,6 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
       items: ["간식 알레르기 정보를 확인해주세요."],
       sentAt: "2026-11-03T17:10:00",
       confirmedAt: null,
-      confirmedByName: null,
     },
     {
       id: "req_01",
@@ -965,7 +1055,6 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
       items: ["다음 주 현장학습 동의서를 확인해주세요.", "실내화를 새로 준비해주세요."],
       sentAt: "2026-11-03T15:20:00",
       confirmedAt: "2026-11-03T19:02:00",
-      confirmedByName: "김아빠",
     },
   ],
   child_2044: [],
@@ -980,8 +1069,8 @@ export const SENT_CHECKLISTS: SentChecklist[] = [
     total: 2,
     confirmed: 1,
     targets: [
-      { child: { id: "child_1023", name: "김OO" }, onRoster: true, confirmedAt: "2026-11-03T19:02:00", confirmedByName: "김보호" },
-      { child: { id: "child_1041", name: "이OO" }, onRoster: true, confirmedAt: null, confirmedByName: null },
+      { child: { id: "child_1023", name: "김OO" }, onRoster: true, confirmedAt: "2026-11-03T19:02:00" },
+      { child: { id: "child_1041", name: "이OO" }, onRoster: true, confirmedAt: null },
     ],
   },
 ];
@@ -1025,6 +1114,39 @@ export const PIPELINE: Pipeline = {
 export const AI_ACTIVITY: AiActivity = { split: 12, matched: 7, validated: 11, summarized: 3, insights: 1 };
 
 export const AI_STATUS: AiStatus = { available: true, since: null };
+
+/**
+ * 진행 정보 (O-83). 위 PIPELINE 의 AI 줄 셋(매칭 · 검증 · 요약, 11/6)에 붙는다. 시각에 따라 단계가 돌아가서
+ * 로컬에서 문구 전환 · 걸린 초를 볼 수 있다. 요약은 한 바퀴가 길어 60초 넘는 문구("조금 오래")까지 보인다
+ */
+const MOCK_PROGRESS_PLAN: { item: Omit<AiProgress["items"][number], "node" | "elapsedSec">; plan: [string, number][] }[] = [
+  { item: { kind: "entry", childId: null, date: "2026-11-06", weekFrom: null, agent: "matching" },
+    plan: [["extract", 2], ["shortlist", 2], ["llm_judge", 6], ["decide", 1]] },
+  { item: { kind: "entry", childId: "child_1041", date: "2026-11-06", weekFrom: null, agent: "validation" },
+    plan: [["perceive", 2], ["act", 8], ["reflect", 2]] },
+  { item: { kind: "entry", childId: "child_1023", date: "2026-11-06", weekFrom: null, agent: "summary" },
+    plan: [["gather", 2], ["write", 60], ["ground", 4], ["assemble", 1]] },
+];
+
+export function mockAiProgress(nowSec = Math.floor(Date.now() / 1000)): AiProgress {
+  return {
+    enabled: true,
+    items: MOCK_PROGRESS_PLAN.map(({ item, plan }) => {
+      const total = plan.reduce((s, [, d]) => s + d, 0);
+      const t = nowSec % total;
+      let x = t;
+      let node = plan[plan.length - 1][0];
+      for (const [n, d] of plan) {
+        if (x < d) {
+          node = n;
+          break;
+        }
+        x -= d;
+      }
+      return { ...item, node, elapsedSec: t };
+    }),
+  };
+}
 
 /** 요약 실패 (O-35). 진행 현황 mock 의 summary_failed 줄(박OO 11/4)과 같은 묶음 */
 export const FAILED_SUMMARIES: FailedSummary[] = [

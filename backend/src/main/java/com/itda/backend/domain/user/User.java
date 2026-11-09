@@ -42,9 +42,6 @@ public class User {
     /** 탈퇴를 마친 행의 {@code kakao_id}. 원래 값과 관계없어 되찾을 수 없다. 뒤에 내부 id 를 붙여 유니크를 지킨다. */
     public static final String WITHDRAWN_KAKAO_ID_PREFIX = "withdrawn:";
 
-    /** 탈퇴를 마친 행의 이름. */
-    public static final String WITHDRAWN_NAME = "탈퇴한 회원";
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -58,10 +55,6 @@ public class User {
      */
     @Column(name = "kakao_id", nullable = false, length = 50)
     private String kakaoId;
-
-    /** 카카오 닉네임. 사용자가 동의를 거부할 수 있어 nullable 이다. */
-    @Column(length = 100)
-    private String name;
 
     /**
      * null 이면 가입 미완료다. 카카오 로그인은 신원 확인만 하고, 역할은 가입 API 에서
@@ -86,7 +79,7 @@ public class User {
      *
      * <p>행을 지우지 않는 이유: FK 제약이 없어서, 지우면 이 사용자를 가리키는 child_guardian ·
      * sharing_consent · human_review.reviewer_id 가 존재하지 않는 id 를 가리킨 채 남는다.
-     * 대신 탈퇴를 마칠 때 카카오 회원번호와 이름을 지운다({@link #completeWithdrawal}).
+     * 대신 탈퇴를 마칠 때 카카오 회원번호를 지운다({@link #completeWithdrawal}). 이름 같은 개인정보는 처음부터 저장하지 않는다.
      */
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
@@ -106,14 +99,17 @@ public class User {
     @Column(name = "kakao_unlink_attempted_at")
     private LocalDateTime kakaoUnlinkAttemptedAt;
 
-    private User(String kakaoId, String name) {
+    private User(String kakaoId) {
         this.kakaoId = kakaoId;
-        this.name = name;
     }
 
-    /** 카카오 로그인 직후의 회원. 역할과 소속은 아직 없다. */
-    public static User pending(String kakaoId, String name) {
-        return new User(kakaoId, name);
+    /**
+     * 카카오 로그인 직후의 회원. 역할과 소속은 아직 없다.
+     *
+     * <p>카카오 닉네임 같은 개인정보는 받지 않는다. 화면은 사람 이름 대신 "아이 이름 + 보호자" 나 기관명을 쓴다.
+     */
+    public static User pending(String kakaoId) {
+        return new User(kakaoId);
     }
 
     /**
@@ -138,19 +134,6 @@ public class User {
         }
         this.role = role;
         this.organizationId = organizationId;
-    }
-
-    /**
-     * 카카오 닉네임을 최신값으로 맞춘다.
-     *
-     * <p>비어 있는 값으로는 덮어쓰지 않는다 — 처음엔 동의했다가 나중에 동의를 철회하고
-     * 다시 로그인하면 응답에 닉네임이 빠지는데, 그때 이미 저장해 둔 이름까지 지우면 안 된다.
-     */
-    public void updateName(String name) {
-        if (name == null || name.isBlank() || name.equals(this.name)) {
-            return;
-        }
-        this.name = name;
     }
 
     /**
@@ -197,7 +180,7 @@ public class User {
     }
 
     /**
-     * 탈퇴를 마친다. 행은 남기고 카카오 회원번호와 이름을 지운다 (카카오 정책: 회원번호도 파기 대상이다).
+     * 탈퇴를 마친다. 행은 남기고 카카오 회원번호를 지운다 (카카오 정책: 회원번호도 파기 대상이다).
      * 같은 카카오 계정으로 다시 오면 이 행을 찾지 못하므로 새 회원으로 가입한다.
      */
     public void completeWithdrawal(LocalDateTime now) {
@@ -223,7 +206,6 @@ public class User {
             throw new IllegalStateException("저장된 회원만 탈퇴할 수 있습니다.");
         }
         this.kakaoId = WITHDRAWN_KAKAO_ID_PREFIX + this.id;
-        this.name = WITHDRAWN_NAME;
     }
 
     private void clearWithdrawal() {

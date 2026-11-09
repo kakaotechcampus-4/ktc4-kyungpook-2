@@ -100,8 +100,8 @@ class ChildCareInfoConcurrencyIntegrationTest {
     @BeforeEach
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
-        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
-        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad", "아빠")));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom")));
+        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad")));
         childId = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14))).getId();
         // 초대 코드 경로는 이 테스트의 관심이 아니다. 연결 행은 초대 id 만 있으면 된다.
         childGuardianRepository.save(ChildGuardian.link(childId, mom.getId(), 1L));

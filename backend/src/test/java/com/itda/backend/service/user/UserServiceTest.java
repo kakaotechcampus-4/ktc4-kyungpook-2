@@ -72,11 +72,10 @@ class UserServiceTest {
         given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.empty());
         given(userRepository.saveAndFlush(any(User.class))).willAnswer(i -> i.getArgument(0));
 
-        userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
+        userService.findOrCreateByKakaoId(KAKAO_ID);
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).saveAndFlush(captor.capture());
-        assertThat(captor.getValue().getName()).isEqualTo("박지현");
         assertThat(captor.getValue().getRole()).isNull();
         assertThat(captor.getValue().getOrganizationId()).isNull();
         assertThat(captor.getValue().isSignupCompleted()).isFalse();
@@ -84,10 +83,10 @@ class UserServiceTest {
 
     @Test
     void existingUserIsReusedInsteadOfCreatingAnother() {
-        User existing = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
+        User existing = UserFixture.organizationUser(KAKAO_ID, 7L);
         given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(existing));
 
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID);
 
         assertThat(found).isSameAs(existing);
         verify(userRepository, never()).saveAndFlush(any(User.class));
@@ -96,24 +95,13 @@ class UserServiceTest {
     /** 가입을 마친 회원이 다시 로그인해도 역할과 소속은 그대로다. */
     @Test
     void loggingInAgainKeepsTheCompletedSignup() {
-        User existing = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
+        User existing = UserFixture.organizationUser(KAKAO_ID, 7L);
         given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(existing));
 
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID);
 
         assertThat(found.getRole()).isEqualTo(UserRole.ORGANIZATION);
         assertThat(found.getOrganizationId()).isEqualTo(7L);
-    }
-
-    /** 동의를 철회해 닉네임이 빠져도 이미 저장한 이름을 지우지 않는다. */
-    @Test
-    void nullNicknameDoesNotWipeTheStoredName() {
-        User existing = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
-        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(existing));
-
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, null);
-
-        assertThat(found.getName()).isEqualTo("박지현");
     }
 
     /**
@@ -122,49 +110,38 @@ class UserServiceTest {
      */
     @Test
     void legacyWithdrawnRowIsErasedAndANewMemberIsCreated() {
-        User legacy = UserFixture.legacyDeleted(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L));
+        User legacy = UserFixture.legacyDeleted(UserFixture.organizationUser(KAKAO_ID, 7L));
         org.springframework.test.util.ReflectionTestUtils.setField(legacy, "id", 5L);
         given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(legacy));
         given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> invocation.getArgument(0));
 
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID);
 
         assertThat(found).isNotSameAs(legacy);
         assertThat(found.getKakaoId()).isEqualTo(KAKAO_ID);
         assertThat(found.isSignupCompleted()).isFalse();
         assertThat(legacy.getKakaoId()).isEqualTo("withdrawn:5");
-        assertThat(legacy.getName()).isEqualTo(User.WITHDRAWN_NAME);
         verify(userRepository).flush();
     }
 
-    /** 탈퇴를 처리하는 중이면 새로 만들지도, 이름을 바꾸지도 않는다. */
+    /** 탈퇴를 처리하는 중이면 새로 만들지 않고 그 회원을 돌려준다(출입증을 받아 진행 상태를 본다). */
     @Test
     void withdrawingUserIsReturnedUnchanged() {
-        User withdrawing = UserFixture.parent(KAKAO_ID, "옛이름");
+        User withdrawing = UserFixture.parent(KAKAO_ID);
         withdrawing.requestWithdrawal(java.time.LocalDateTime.now());
         given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(withdrawing));
 
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "새이름");
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID);
 
         assertThat(found).isSameAs(withdrawing);
-        assertThat(found.getName()).isEqualTo("옛이름");
+        assertThat(found.isWithdrawing()).isTrue();
         verify(userRepository, never()).saveAndFlush(any(User.class));
-    }
-
-    @Test
-    void changedNicknameIsRefreshed() {
-        User existing = UserFixture.organizationUser(KAKAO_ID, "옛이름", 7L);
-        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(existing));
-
-        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "새이름");
-
-        assertThat(found.getName()).isEqualTo("새이름");
     }
 
     @Test
     void currentUserOfOrganizationCarriesLowercaseRoleAndStringIds() {
         given(userRepository.findByIdAndDeletedAtIsNull(1L))
-                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, 7L)));
         given(organizationRepository.findById(7L)).willReturn(Optional.of(
                 Organization.of("햇살아동발달센터", OrganizationType.CENTER, "1234567890")));
 
@@ -180,7 +157,7 @@ class UserServiceTest {
     @Test
     void currentUserOfOrganizationWithoutOrganizationRowOmitsOnlyTheName() {
         given(userRepository.findByIdAndDeletedAtIsNull(1L))
-                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, 7L)));
         given(organizationRepository.findById(7L)).willReturn(Optional.empty());
 
         CurrentUserResponse response = userService.getCurrentUser("1");
@@ -193,20 +170,19 @@ class UserServiceTest {
     @Test
     void currentUserBeforeSignupHasNoRole() {
         given(userRepository.findByIdAndDeletedAtIsNull(3L))
-                .willReturn(Optional.of(User.pending(KAKAO_ID, "박지현")));
+                .willReturn(Optional.of(User.pending(KAKAO_ID)));
 
         CurrentUserResponse response = userService.getCurrentUser("3");
 
         assertThat(response.signupCompleted()).isFalse();
         assertThat(response.role()).isNull();
         assertThat(response.institutionId()).isNull();
-        assertThat(response.name()).isEqualTo("박지현");
     }
 
     @Test
     void currentUserOfParentHasNoInstitutionId() {
         given(userRepository.findByIdAndDeletedAtIsNull(2L))
-                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID, "김보호")));
+                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID)));
 
         CurrentUserResponse response = userService.getCurrentUser("2");
 
@@ -244,7 +220,7 @@ class UserServiceTest {
     @Test
     void parentHasNoOrganizationToActOnBehalfOf() {
         given(userRepository.findByIdAndDeletedAtIsNull(2L))
-                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID, "김보호")));
+                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID)));
 
         assertThatThrownBy(() -> userService.getOrganizationIdOf("2"))
                 .isInstanceOf(UserException.class)
@@ -255,7 +231,7 @@ class UserServiceTest {
     @Test
     void organizationUserResolvesToItsOrganizationId() {
         given(userRepository.findByIdAndDeletedAtIsNull(1L))
-                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, 7L)));
 
         assertThat(userService.getOrganizationIdOf("1")).isEqualTo(7L);
     }
@@ -268,7 +244,7 @@ class UserServiceTest {
             new SignupRequest("org", "햇살아동발달센터", OrganizationType.CENTER, "1234567890");
 
     private User pendingUserWithId(long id) {
-        User user = User.pending(KAKAO_ID, "박지현");
+        User user = User.pending(KAKAO_ID);
         ReflectionTestUtils.setField(user, "id", id);
         given(userRepository.findActiveByIdForUpdate(id)).willReturn(Optional.of(user));
         return user;
@@ -406,7 +382,7 @@ class UserServiceTest {
     @Test
     void pendingUserIsNotSignedUp() {
         given(userRepository.findByIdAndDeletedAtIsNull(3L))
-                .willReturn(Optional.of(User.pending(KAKAO_ID, "박지현")));
+                .willReturn(Optional.of(User.pending(KAKAO_ID)));
 
         assertThat(userService.accessOf("3")).isEqualTo(AccountAccess.SIGNUP_NOT_COMPLETED);
         verify(termsAgreementRepository, never()).findByUserId(any());
@@ -415,7 +391,7 @@ class UserServiceTest {
     @Test
     void parentWithoutTermsAgreementIsBlockedByTerms() {
         given(userRepository.findByIdAndDeletedAtIsNull(2L))
-                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID, "김보호")));
+                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID)));
 
         assertThat(userService.accessOf("2")).isEqualTo(AccountAccess.TERMS_NOT_AGREED);
     }
@@ -423,7 +399,7 @@ class UserServiceTest {
     @Test
     void parentWithCurrentTermsAgreementPasses() {
         given(userRepository.findByIdAndDeletedAtIsNull(2L))
-                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID, "김보호")));
+                .willReturn(Optional.of(UserFixture.parent(KAKAO_ID)));
         given(termsAgreementRepository.findByUserId(any())).willReturn(List.of(
                 TermsAgreement.agree(2L, TermKey.TOS, TermsCatalog.currentVersion(TermKey.TOS)),
                 TermsAgreement.agree(2L, TermKey.PRIVACY, TermsCatalog.currentVersion(TermKey.PRIVACY))));
@@ -435,7 +411,7 @@ class UserServiceTest {
     @Test
     void organizationUserWithoutOrganizationTermsIsTermsNotAgreed() {
         given(userRepository.findByIdAndDeletedAtIsNull(4L))
-                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, 7L)));
         given(termsAgreementRepository.findByUserId(any())).willReturn(List.of(
                 TermsAgreement.agree(4L, TermKey.TOS, TermsCatalog.currentVersion(TermKey.TOS)),
                 TermsAgreement.agree(4L, TermKey.PRIVACY, TermsCatalog.currentVersion(TermKey.PRIVACY))));
@@ -446,7 +422,7 @@ class UserServiceTest {
     @Test
     void organizationUserWithCurrentOrganizationTermsPasses() {
         given(userRepository.findByIdAndDeletedAtIsNull(4L))
-                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L)));
+                .willReturn(Optional.of(UserFixture.organizationUser(KAKAO_ID, 7L)));
         given(termsAgreementRepository.findByUserId(any())).willReturn(List.of(
                 TermsAgreement.agree(4L, TermKey.ORG_TOS, TermsCatalog.currentVersion(TermKey.ORG_TOS)),
                 TermsAgreement.agree(4L, TermKey.ORG_PRIVACY, TermsCatalog.currentVersion(TermKey.ORG_PRIVACY)),

@@ -17,7 +17,7 @@ import { withdraw, type WithdrawTarget } from "@/lib/auth";
  *
  * @param audience 보호자면 아이 연결 · 공유 동의 안내를 함께 보인다. 가입 전이면 가입 정보가 지워진다는 것만 보인다
  * @param trigger  `row` 는 설정 목록의 한 줄, `link` 는 화면 아래 작은 글자 버튼
- * @param account  화면을 열 때 읽은 계정. 확인 창에 이름을 보이고 요청에 싣는다
+ * @param account  화면을 열 때 읽은 계정. 요청에 싣는다
  */
 export function WithdrawAccount({
   audience,
@@ -80,7 +80,7 @@ export function WithdrawAccount({
           <div className="flex max-h-[90dvh] w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] flex-col rounded-t-3xl bg-surface p-5 pb-7">
             <div className="min-h-0 overflow-y-auto">
               <p id="withdraw-title" className="mb-2 text-[18px] font-extrabold">
-                {target.name ? `${target.name}님 계정을 정말 탈퇴할까요?` : "정말 탈퇴할까요?"}
+                정말 탈퇴할까요?
               </p>
               <ul
                 id="withdraw-desc"
@@ -97,7 +97,7 @@ export function WithdrawAccount({
                     </li>
                   </>
                 ) : null}
-                <li>카카오 연결이 끊기고, 카카오 회원번호와 이름이 지워져요.</li>
+                <li>카카오 연결이 끊기고, 카카오 회원번호가 지워져요.</li>
                 <li>
                   같은 카카오 계정으로 다시 들어와도 새로 가입하는 거예요.
                   {audience === "parent" ? " 아이를 다시 연결하려면 기관에서 초대 코드를 새로 받아야 해요." : ""}

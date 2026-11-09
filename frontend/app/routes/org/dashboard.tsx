@@ -19,9 +19,9 @@ import {
 } from "lucide-react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
 import { Busy } from "@/components/ui";
+import { useOrgLive } from "@/components/org/Shell";
 import {
   getAiActivity,
-  getAiStatus,
   getChildren,
   getFileProgress,
   getPipeline,
@@ -32,6 +32,7 @@ import { fileProgressOf } from "@/lib/pipeline";
 import type { AiActivity, FileProgress, Pipeline, PipelineRow, PipelineTurn, UploadResult } from "@/lib/types";
 import { TourButton } from "@/components/Tour";
 import { usePolling } from "@/lib/usePolling";
+import { useAiProgress, type AiPhase } from "@/lib/aiProgress";
 
 /**
  * 대시보드 — 선생님 차례 · 기록 올리기 · 진행 현황 · 오늘 AI가 한 일 (시안 screenDash).
@@ -39,11 +40,12 @@ import { usePolling } from "@/lib/usePolling";
  * 요약은 자동으로 시작하므로(#369) [요약] 버튼이 없다.
  */
 export async function clientLoader() {
-  const [pipeline, activity, files, ai, children] = await Promise.all([
+  const [pipeline, activity, files, children] = await Promise.all([
+    // 진행 현황 · AI 멈춤은 셸(components/org/Shell)이 받아 10초마다 다시 받는다. 이 값은 셸이 진행 현황을
+    // 한 번도 못 받았을 때 쓰고, 여기서 실패하면 지금처럼 오류 화면이다. AI 멈춤은 셸 값만 쓴다
     getPipeline(),
     getAiActivity(),
     getFileProgress(),
-    getAiStatus().catch(() => null),
     // 시작하기 체크리스트용. 이미 닫은 기관은 받지 않는다. 못 받아도 대시보드는 띄운다
     readClosed() ? Promise.resolve(null) : getChildren().catch(() => null),
   ]);
@@ -51,7 +53,6 @@ export async function clientLoader() {
     pipeline,
     activity,
     files,
-    aiDown: ai?.available === false,
     kids: children ? children.length : null,
     guardians: children ? children.filter((c) => c.consent === "granted").length : null,
   };
@@ -83,33 +84,31 @@ function today(): string {
 
 export default function DashboardPage() {
   const initial = useLoaderData<typeof clientLoader>();
-  const [pipeline, setPipeline] = useState<Pipeline>(initial.pipeline);
+  // 진행 현황 · AI 멈춤(O-82, AI 차례 줄을 "멈춤" 으로)은 셸이 10초마다 받는 값을 같이 쓴다 — 같은 요청을 두 번 보내지 않게
+  const live = useOrgLive();
+  const pipeline: Pipeline = live.pipeline ?? initial.pipeline;
+  const aiDown = live.aiDown;
   const [activity, setActivity] = useState<AiActivity>(initial.activity);
   const [files, setFiles] = useState<FileProgress[]>(initial.files);
-  /** AI 가 멈췄으면 AI 차례 줄을 "멈춤" 으로 보인다 (O-82) */
-  const [aiDown, setAiDown] = useState(initial.aiDown);
 
   // loader 가 다시 돌면(다른 화면에서 처리하고 돌아옴 · revalidate) 새 값으로 바꾼다 — 다음 폴링까지 옛 숫자가 남지 않게
   useEffect(() => {
-    setPipeline(initial.pipeline);
     setActivity(initial.activity);
     setFiles(initial.files);
-    setAiDown(initial.aiDown);
   }, [initial]);
 
-  async function refresh() {
-    const [p, a, f, ai] = await Promise.all([
-      getPipeline(),
-      getAiActivity(),
-      getFileProgress(),
-      getAiStatus().catch(() => null),
-    ]);
-    setPipeline(p);
+  /** 이 화면에만 있는 값. 10초마다 */
+  async function refreshOwn() {
+    const [a, f] = await Promise.all([getAiActivity(), getFileProgress()]);
     setActivity(a);
     setFiles(f);
-    setAiDown(ai?.available === false);
   }
-  usePolling(refresh, POLL_MS, true, false);
+  usePolling(refreshOwn, POLL_MS, true, false);
+
+  /** 기록을 올린 뒤 — 진행 현황(셸)과 이 화면 값을 함께 바로 다시 받는다 */
+  async function refreshAll() {
+    await Promise.all([live.refresh(), refreshOwn()]);
+  }
 
   const turn = pipeline.turn;
   const total = turn.confirm + turn.blocked + turn.review + turn.approve + turn.requests;
@@ -135,11 +134,11 @@ export default function DashboardPage() {
           <TurnList turn={turn} />
         </Panel>
         <Panel title="기록 올리기">
-          <UploadBox files={files} onUploaded={refresh} />
+          <UploadBox files={files} onUploaded={refreshAll} />
         </Panel>
       </div>
 
-      <ProgressBoard rows={pipeline.rows} aiDown={aiDown} />
+      <ProgressBoard rows={pipeline.rows} aiDown={aiDown} refresh={live.refresh} />
     </div>
   );
 }
@@ -516,7 +515,9 @@ const isMe = (r: PipelineRow) => r.who === "me";
 const isRun = (r: PipelineRow) => r.who === "ai" || r.who === "wait" || r.who === "other";
 const isDone = (r: PipelineRow) => r.who === "done";
 
-function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean }) {
+function ProgressBoard({ rows, aiDown, refresh }: { rows: PipelineRow[]; aiDown: boolean; refresh: () => Promise<void> }) {
+  // AI 줄의 지금 단계 (O-83). 1초마다 바뀌므로 이 보드 안에 둔다 — 대시보드 전체가 다시 그려지지 않게. 못 받으면 줄마다 null → 기존 문구
+  const progressOf = useAiProgress(rows, aiDown, refresh);
   const [stage, setStage] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [showDone, setShowDone] = useState(false);
@@ -547,6 +548,8 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
           const c = by[i];
           const on = stage === i;
           const Icon = STEP_ICONS[i];
+          // AI 가 일하는 단계는 아이콘에 펄스 링 (점검 중이면 멈춤이라 끈다)
+          const run = c.ai > 0 && !aiDown;
           return (
             <button
               key={name}
@@ -563,7 +566,17 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
                   {i + 1}
                 </span>
                 <b className="truncate text-[13.5px]">{name}</b>
-                <Icon aria-hidden size={15} className={`ml-auto flex-none ${on ? "text-paper" : "text-ink2"}`} />
+                <span
+                  className={`relative ml-auto grid size-[22px] flex-none place-items-center rounded-full ${
+                    run
+                      ? "bg-accentsoft text-accentink after:absolute after:inset-0 after:animate-ring after:rounded-full after:border-2 after:border-accent motion-reduce:after:animate-none"
+                      : on
+                        ? "text-paper"
+                        : "text-ink2"
+                  }`}
+                >
+                  <Icon aria-hidden size={15} />
+                </span>
               </span>
               <span className="flex flex-wrap gap-1 text-[11px] leading-[18px] font-bold whitespace-nowrap">
                 {c.me ? <span className="rounded-full bg-mark px-1.5 text-markink">내 차례 {c.me}</span> : null}
@@ -626,7 +639,7 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
         ) : null}
         {list.length === 0 && doneTail.length ? <p className="px-4 py-6 text-center text-[14px] text-muted">지금 진행 중인 기록이 없어요</p> : null}
         {list.map((r, i) => (
-          <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} />
+          <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} phase={progressOf(r)} />
         ))}
         {doneTail.length ? (
           <>
@@ -638,7 +651,7 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
             >
               {showDone ? `완료 ${doneTail.length}건 접기` : `완료 ${doneTail.length}건 펼치기`}
             </button>
-            {showDone ? doneTail.map((r, i) => <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} />) : null}
+            {showDone ? doneTail.map((r, i) => <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} phase={null} />) : null}
           </>
         ) : null}
       </div>
@@ -679,7 +692,7 @@ function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolea
       };
     case "review":
       return {
-        text: d.noContent ? "요약할 내용이 없대요 · 원문을 보고 확인해 주세요" : "요약이 왔어요 · 읽고 승인해 주세요",
+        text: d.noContent ? "특이사항이 없대요 · 원문을 보고 확인해 주세요" : "요약이 왔어요 · 읽고 승인해 주세요",
         go: ["검토하기", `/gate1?open=summary${id}`],
       };
     case "review_held":
@@ -729,8 +742,13 @@ const DOT = {
   skip: "border-dashed border-line text-line2",
 } as const;
 
-function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
+/** AI 단계 문구의 걸린 시간. 60초가 넘으면 초 대신 안내 문구 */
+const SLOW_SEC = 60;
+
+function JRow({ r, aiDown, phase: got }: { r: PipelineRow; aiDown: boolean; phase: AiPhase | null }) {
   const paused = aiDown && r.who === "ai";
+  // 점검 중이면 점검 문구가 우선이다
+  const phase = paused ? null : got;
   const info = paused ? { ...describe(r), text: "AI 점검 중이라 잠시 멈췄어요 · 돌아오면 이어서 해요" } : describe(r);
   const sub = r.kind === "week" ? `${r.week?.label ?? ""} 리포트` : r.date ? md(r.date) : "";
   const tag = isMe(r) ? (
@@ -773,7 +791,14 @@ function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
             return (
               <span key={name} className="contents">
                 {i ? <span className={`h-0.5 min-w-1.5 flex-1 ${i <= r.step ? "bg-accent" : "bg-line"}`} /> : null}
-                <span title={name} className={`grid size-6 flex-none place-items-center rounded-full border-2 text-[11px] font-bold ${DOT[c]}`}>
+                <span
+                  title={name}
+                  className={`grid size-6 flex-none place-items-center rounded-full border-2 text-[11px] font-bold ${DOT[c]} ${
+                    c === "ai" && phase
+                      ? "relative after:absolute after:-inset-0.5 after:animate-ring after:rounded-full after:border-2 after:border-accent motion-reduce:after:animate-none"
+                      : ""
+                  }`}
+                >
                   {c === "d" ? "✓" : i + 1}
                 </span>
               </span>
@@ -783,7 +808,25 @@ function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px]">
           {tag}
           <b>{STEPS[r.step]}</b>
-          <span className="text-ink2">{info.text}</span>
+          {phase ? (
+            <>
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <Sparkles aria-hidden size={15} className="flex-none animate-ai-spin text-accent motion-reduce:animate-none" />
+                {/* 문구가 바뀌면 다시 붙어서 아래에서 올라온다. 반짝임은 안쪽에 둔다 — animation 이 겹치지 않게 */}
+                <span key={phase.text} className="inline-block animate-rise motion-reduce:animate-none">
+                  <span className="ai-shimmer">
+                    {phase.text}
+                    {r.status === "matching" && r.detail?.count ? ` · 그날 일지 ${r.detail.count}건` : ""}
+                  </span>
+                </span>
+              </span>
+              <span className="text-[13px] text-muted tabular-nums">
+                · {phase.sec > SLOW_SEC ? "조금 오래 걸리고 있어요" : `${phase.sec}초`}
+              </span>
+            </>
+          ) : (
+            <span className="text-ink2">{info.text}</span>
+          )}
         </div>
       </div>
       {info.go && r.target ? (

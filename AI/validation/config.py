@@ -51,7 +51,7 @@ STRUCTURAL_PII_PATTERNS = [
 # 쓰지만, 폴더는 독립적으로 유지한다(트랙 B의 matching 작업과 안 얽히게).
 
 #: 접속 경로와 모델은 네 에이전트가 같이 쓴다 (common/luna.py).
-#: 모델은 .env 의 LUNA_MODEL 로 바꾼다.
+#: 모델은 .env 의 VALIDATION_MODEL 로 바꾼다.
 LUNA_CHAT_PATH = CHAT_PATH
 
 #: 호출 제한시간만 에이전트마다 다르다.

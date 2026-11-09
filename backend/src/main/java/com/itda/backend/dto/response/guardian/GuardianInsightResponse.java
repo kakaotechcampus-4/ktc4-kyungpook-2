@@ -23,6 +23,15 @@ public record GuardianInsightResponse(
         String childId,
         String childName,
         String period,
+        /**
+         * 이 글이 다룬 주의 시작·끝 {@code yyyy-MM-dd}. 화면이 <b>달로 묶을 때</b> 쓴다.
+         *
+         * <p>{@code period} 글자("2026년 8월 3주차")를 잘라 달을 구하면 깨진다 — 9/29~10/5 처럼
+         * 달에 걸친 주가 있고, 문구가 바뀌면 같이 깨진다. 달은 {@code periodFrom} 기준이다
+         * ({@code periodLabel} 과 같은 기준).
+         */
+        String periodFrom,
+        String periodTo,
         String content,
         InstitutionResponse from,
         List<InstitutionResponse> sharedWith,
@@ -37,7 +46,20 @@ public record GuardianInsightResponse(
      * @param date           관찰 날짜 {@code yyyy-MM-dd}
      * @param institution    그 일지를 쓴 기관. 명부에서 빠진 기관일 수 있어 이름까지 준다
      * @param lookedUp       이번 기간이 아니라 AI 가 지난 기록에서 찾아 쓴 근거인지 (Gate 2 근거와 같은 값, #387)
+ * @param sentences      그 일지에서 이 글이 실제로 인용한 문장. 못 찾으면 빈 배열이다
      */
-    public record Evidence(String journalEntryId, String date, InstitutionResponse institution, boolean lookedUp) {
+    public record Evidence(String journalEntryId, String date, InstitutionResponse institution,
+            boolean lookedUp, List<Sentence> sentences) {
+    }
+
+    /**
+     * 그 일지에서 이 글이 실제로 인용한 문장. 없으면 빈 배열이고, 근거 줄은 그대로 보인다.
+     *
+     * <p><b>Gate 1 에서 교사가 승인한 요약 문장이다.</b> 원본 일지 인용이 아니다 — 원본에는 다른 아이
+     * 이름이 남아 있어 밖으로 내보내지 않는다 ({@code AI/insight/CRITERIA.md §2}).
+     *
+     * @param role {@code "상황"} 또는 {@code "대처"}
+     */
+    public record Sentence(String text, String role) {
     }
 }

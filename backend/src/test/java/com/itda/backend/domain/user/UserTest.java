@@ -10,7 +10,7 @@ class UserTest {
     /** 카카오 로그인 직후의 회원. 역할은 가입 API 에서 정해진다. */
     @Test
     void pendingUserHasNoRoleYet() {
-        User user = User.pending("k-1", "박지현");
+        User user = User.pending("k-1");
 
         assertThat(user.getRole()).isNull();
         assertThat(user.getOrganizationId()).isNull();
@@ -20,7 +20,7 @@ class UserTest {
 
     @Test
     void organizationSignupFixesRoleAndOrganization() {
-        User user = User.pending("k-1", "박지현");
+        User user = User.pending("k-1");
 
         user.completeSignup(UserRole.ORGANIZATION, 7L);
 
@@ -31,7 +31,7 @@ class UserTest {
 
     @Test
     void parentSignupHasNoOrganization() {
-        User user = User.pending("k-1", "김보호");
+        User user = User.pending("k-1");
 
         user.completeSignup(UserRole.PARENT, null);
 
@@ -42,7 +42,7 @@ class UserTest {
     /** 역할은 한 번 정해지면 바뀌지 않는다. 서비스가 409 로 먼저 막지만 엔티티도 스스로 지킨다. */
     @Test
     void signupCannotBeCompletedTwice() {
-        User user = User.pending("k-1", "박지현");
+        User user = User.pending("k-1");
         user.completeSignup(UserRole.PARENT, null);
 
         assertThatThrownBy(() -> user.completeSignup(UserRole.ORGANIZATION, 7L))
@@ -52,7 +52,7 @@ class UserTest {
 
     @Test
     void roleIsRequired() {
-        User user = User.pending("k-1", "박지현");
+        User user = User.pending("k-1");
 
         assertThatThrownBy(() -> user.completeSignup(null, null))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -60,7 +60,7 @@ class UserTest {
 
     @Test
     void parentCannotBelongToAnOrganization() {
-        User user = User.pending("k-1", "김보호");
+        User user = User.pending("k-1");
 
         assertThatThrownBy(() -> user.completeSignup(UserRole.PARENT, 7L))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -69,7 +69,7 @@ class UserTest {
     /** 소속 없는 기관 담당자가 생기면 /auth/me 가 institutionId 없는 org 응답을 내보낸다. */
     @Test
     void organizationUserMustBelongToAnOrganization() {
-        User user = User.pending("k-1", "박지현");
+        User user = User.pending("k-1");
 
         assertThatThrownBy(() -> user.completeSignup(UserRole.ORGANIZATION, null))
                 .isInstanceOf(IllegalArgumentException.class);

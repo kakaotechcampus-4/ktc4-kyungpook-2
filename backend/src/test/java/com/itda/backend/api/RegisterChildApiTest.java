@@ -70,7 +70,7 @@ class RegisterChildApiTest {
 
     private User organizationUser() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        return TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
+        return TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
     }
 
     private Cookie authCookie(User user) {
@@ -170,7 +170,7 @@ class RegisterChildApiTest {
 
     @Test
     void pendingUserWithValidCsrfIsForbiddenUntilSignupCompletes() throws Exception {
-        User pending = userRepository.save(User.pending(uniqueKakaoId(), "박지현"));
+        User pending = userRepository.save(User.pending(uniqueKakaoId()));
 
         mockMvc.perform(registerWithCsrf(authCookie(pending)))
                 .andExpect(status().isForbidden())
@@ -179,7 +179,7 @@ class RegisterChildApiTest {
 
     @Test
     void parentWithValidCsrfIsForbiddenBecauseNoOrganization() throws Exception {
-        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
+        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         mockMvc.perform(registerWithCsrf(authCookie(parent)))
                 .andExpect(status().isForbidden())

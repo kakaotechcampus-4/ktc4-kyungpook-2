@@ -2,11 +2,8 @@ package com.itda.backend.service.checklist;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -16,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.checklist.Checklist;
 import com.itda.backend.domain.checklist.ChecklistTarget;
 import com.itda.backend.domain.organization.Organization;
-import com.itda.backend.domain.user.User;
 import com.itda.backend.dto.response.checklist.GuardianChecklistResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.checklist.ChecklistErrorCode;
@@ -30,7 +26,6 @@ import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
-import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -57,7 +52,6 @@ public class GuardianChecklistService {
     private final ChecklistRepository checklistRepository;
     private final ChecklistTargetRepository checklistTargetRepository;
     private final OrganizationRepository organizationRepository;
-    private final UserRepository userRepository;
     private final Clock clock;
 
     /**
@@ -120,7 +114,7 @@ public class GuardianChecklistService {
         }
     }
 
-    /** 기관 · 확인한 보호자를 한 번씩 모아 읽는다. */
+    /** 기관을 한 번씩 모아 읽는다. */
     private List<GuardianChecklistResponse> assemble(List<GuardianChecklistRow> rows) {
         if (rows.isEmpty()) {
             return List.of();
@@ -129,8 +123,6 @@ public class GuardianChecklistService {
                 .findAllById(rows.stream().map(row -> row.checklist().getOrganizationId()).collect(Collectors.toSet()))
                 .stream()
                 .collect(Collectors.toMap(Organization::getId, InstitutionResponse::from));
-        Map<Long, String> names = namesOf(rows.stream()
-                .map(row -> row.target().getConfirmedBy()).filter(Objects::nonNull).toList());
         return rows.stream()
                 .map(row -> {
                     ChecklistTarget target = row.target();
@@ -141,18 +133,8 @@ public class GuardianChecklistService {
                             checklist.getItems(),
                             checklist.getCreatedAt(),
                             target.isConfirmed() ? "confirmed" : "needs_check",
-                            target.getConfirmedAt(),
-                            target.getConfirmedBy() == null ? null : names.get(target.getConfirmedBy()));
+                            target.getConfirmedAt());
                 })
                 .toList();
-    }
-
-    private Map<Long, String> namesOf(Collection<Long> userIds) {
-        if (userIds.isEmpty()) {
-            return Map.of();
-        }
-        return userRepository.findAllById(Set.copyOf(userIds)).stream()
-                .filter(user -> user.getName() != null)
-                .collect(Collectors.toMap(User::getId, User::getName, (a, b) -> a));
     }
 }

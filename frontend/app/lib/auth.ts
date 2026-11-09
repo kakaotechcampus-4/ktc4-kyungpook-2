@@ -25,6 +25,7 @@ import { ApiError } from "@/lib/apiError";
 import { clearGate1Drafts } from "@/lib/gate1Draft";
 import { clearReinputDrafts } from "@/lib/reinputDraft";
 import { MOCK_TERMS } from "@/lib/mock/terms";
+import { forgetParentChildren } from "@/lib/parentChildrenCache";
 
 /**
  * 인증만 실연동하고 나머지 데이터는 mock 으로 둘 수 있게 플래그를 분리했다
@@ -92,8 +93,6 @@ export type Session = {
   role: Role;
   /** 내부 회원 id. 로그인했을 때만 있다. 탈퇴 확인 창이 "이 계정" 을 서버에 알려 줄 때 쓴다. */
   userId?: string;
-  /** 카카오 닉네임. 동의를 거부하면 없다. */
-  name?: string;
   /** 가입 때 입력한 기관명. 기관 계정만 있고, 서버가 기관을 못 찾으면 없다. */
   institutionName?: string;
   /**
@@ -132,7 +131,6 @@ const ANONYMOUS: Session = {
 type MeResponse = {
   signupCompleted: boolean;
   userId: string;
-  name?: string;
   role?: "org" | "parent";
   institutionId?: string;
   /** role === "org" 일 때만 (#236) */
@@ -152,7 +150,6 @@ function toSession(me: MeResponse): Session {
     // signupCompleted 만 보고 분기한다. role 은 가입을 마쳤을 때만 믿는다.
     role: me.signupCompleted ? (me.role ?? null) : null,
     userId: me.userId,
-    name: me.name,
     institutionName: me.institutionName,
     termsAgreed: me.signupCompleted && me.termsAgreed === true,
     withdrawing: me.withdrawal === "in_progress",
@@ -194,6 +191,8 @@ export function grantRole(role: "org" | "parent"): void {
 
 /** 서버가 401 을 주면 쿠키가 만료·무효라는 뜻이다. 로컬 표시도 함께 지운다. */
 export function clearSession(): void {
+  // 로그아웃 · 로그인 풀림 — 다음 사람이 이 탭에서 로그인해도 앞사람 아이 목록을 같이 쓰지 않게
+  forgetParentChildren();
   try {
     localStorage.removeItem(ROLE_KEY);
     localStorage.removeItem(ONBOARDED_KEY);
@@ -536,8 +535,8 @@ export async function signOut(): Promise<void> {
 
 /* ── 회원 탈퇴 ──────────────────────────────────────── */
 
-/** 탈퇴 확인 창이 보여 주는 계정. 이 계정만 지운다. */
-export type WithdrawTarget = { userId: string; name?: string };
+/** 탈퇴 확인 창을 연 계정. 이 계정만 지운다. */
+export type WithdrawTarget = { userId: string };
 
 /**
  * 탈퇴 버튼을 보일 계정. 서버가 탈퇴를 열지 않았거나(withdrawalEnabled) 로그인하지 않았으면 null — 버튼을 숨긴다.
@@ -545,7 +544,7 @@ export type WithdrawTarget = { userId: string; name?: string };
  */
 export function withdrawTargetOf(session: Session): WithdrawTarget | null {
   if (!session.loggedIn || !session.withdrawalEnabled || !session.userId) return null;
-  return { userId: session.userId, name: session.name };
+  return { userId: session.userId };
 }
 
 /** 탈퇴 요청의 결과. `completed` 는 서버가 끝까지 마치고 쿠키를 지운 것, `in_progress` 는 서버가 이어서 처리한다. */

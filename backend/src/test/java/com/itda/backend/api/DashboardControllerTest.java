@@ -17,6 +17,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.itda.backend.dto.response.dashboard.AiActivityResponse;
+import com.itda.backend.dto.response.dashboard.DashboardAiProgressResponse;
 import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse;
 import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse.Detail;
 import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse.Kind;
@@ -30,6 +31,7 @@ import com.itda.backend.exception.user.UserException;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.dashboard.DashboardActivityService;
+import com.itda.backend.service.dashboard.DashboardAiProgressService;
 import com.itda.backend.service.dashboard.DashboardPipelineService;
 
 @WebMvcTest(DashboardController.class)
@@ -44,6 +46,9 @@ class DashboardControllerTest {
 
     @MockitoBean
     private DashboardPipelineService dashboardPipelineService;
+
+    @MockitoBean
+    private DashboardAiProgressService dashboardAiProgressService;
 
     @Test
     void 선생님_차례와_진행_현황_줄을_소문자_값으로_보여준다() throws Exception {
@@ -115,6 +120,50 @@ class DashboardControllerTest {
                 .willThrow(new UserException(UserErrorCode.ORGANIZATION_NOT_ASSIGNED));
 
         mockMvc.perform(get("/api/v1/dashboard/ai-activity"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void AI_진행_단계를_진행_현황_줄_키와_함께_보여준다() throws Exception {
+        given(dashboardAiProgressService.getProgress(any())).willReturn(new DashboardAiProgressResponse(true, List.of(
+                new DashboardAiProgressResponse.Item(Kind.ENTRY, null, LocalDate.of(2026, 11, 9), null, "matching",
+                        "llm_judge", 7),
+                new DashboardAiProgressResponse.Item(Kind.WEEK, "7", null, LocalDate.of(2026, 11, 3), "insight",
+                        "find_claims", 31))));
+
+        mockMvc.perform(get("/api/v1/dashboard/ai-progress"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(true))
+                .andExpect(jsonPath("$.data.items[0].kind").value("entry"))
+                .andExpect(jsonPath("$.data.items[0].childId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.items[0].date").value("2026-11-09"))
+                .andExpect(jsonPath("$.data.items[0].weekFrom").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.items[0].agent").value("matching"))
+                .andExpect(jsonPath("$.data.items[0].node").value("llm_judge"))
+                .andExpect(jsonPath("$.data.items[0].elapsedSec").value(7))
+                .andExpect(jsonPath("$.data.items[1].kind").value("week"))
+                .andExpect(jsonPath("$.data.items[1].childId").value("7"))
+                .andExpect(jsonPath("$.data.items[1].weekFrom").value("2026-11-03"))
+                .andExpect(jsonPath("$.data.items[1].date").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.items[1].node").value("find_claims"));
+    }
+
+    @Test
+    void AI_진행_단계가_꺼져_있으면_꺼짐과_빈_목록을_준다() throws Exception {
+        given(dashboardAiProgressService.getProgress(any())).willReturn(DashboardAiProgressResponse.disabled());
+
+        mockMvc.perform(get("/api/v1/dashboard/ai-progress"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(false))
+                .andExpect(jsonPath("$.data.items").isEmpty());
+    }
+
+    @Test
+    void 기관_사용자가_아니면_AI_진행_단계를_볼_수_없다() throws Exception {
+        given(dashboardAiProgressService.getProgress(any()))
+                .willThrow(new UserException(UserErrorCode.ORGANIZATION_NOT_ASSIGNED));
+
+        mockMvc.perform(get("/api/v1/dashboard/ai-progress"))
                 .andExpect(status().isForbidden());
     }
 }

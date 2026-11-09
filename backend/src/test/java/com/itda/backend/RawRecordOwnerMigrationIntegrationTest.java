@@ -77,8 +77,8 @@ class RawRecordOwnerMigrationIntegrationTest {
         otherOrganization = organizations.saveAndFlush(OrganizationFixture.center());
         // 다른 기관 ID와 같은 숫자인 카카오 ID도 기록별 매핑으로 이전한다.
         legacyId = String.valueOf(otherOrganization.getId());
-        owner = users.saveAndFlush(UserFixture.organizationUser(legacyId, "소유자", ownerOrganization.getId()));
-        otherUser = users.saveAndFlush(UserFixture.organizationUser("other", "다른 기관", otherOrganization.getId()));
+        owner = users.saveAndFlush(UserFixture.organizationUser(legacyId, ownerOrganization.getId()));
+        otherUser = users.saveAndFlush(UserFixture.organizationUser("other", otherOrganization.getId()));
         first = records.saveAndFlush(record("one.pdf"));
         second = records.saveAndFlush(record("two.pdf"));
         first = records.findById(first.getId()).orElseThrow();

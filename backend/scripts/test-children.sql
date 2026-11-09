@@ -21,7 +21,7 @@
 -- seed 는 다시 돌려도 빠진 것만 채운다. 테스트 보호자와 이미 연결된 아이에게는 초대 행을 새로 만들지 않는다.
 -- 동의 철회는 앱과 같이 REVOKED 로 남긴다(revoke_reason = ROSTER_REMOVED, revoked_by 는 비움). 삭제는 deleted_at 만 채운다.
 -- matching_result·validation_result 가 child_id 를 FK 없이 들고 있어서, 행을 지우면 그 결과들이 없는 아이를 가리키게 된다.
--- 기관 id 는 SELECT u.name, o.id, o.name FROM users u JOIN organization o ON o.id = u.organization_id;
+-- 기관 id 는 SELECT o.id, o.name FROM organization o ORDER BY o.id;
 -- 실행했으면 #130 에 기관과 action 을 댓글로 남긴다.
 \set ON_ERROR_STOP on
 \if :{?apply}
@@ -239,13 +239,14 @@ FROM test_params \gset
 \if :is_seed
 -- 테스트 보호자. 탈퇴한 회원은 되살리지 않는다(앱과 같다) — 탈퇴를 마친 행은 kakao_id 를 지웠으므로 새 행이 생긴다.
 -- 옛 방식으로 탈퇴 표시만 되고 kakao_id 가 남은 행은 앱 로그인처럼 식별정보를 먼저 지운다(kakao_id 는 UNIQUE).
+-- 이름은 넣지 않는다 — users 에 이름 칸이 없다(카카오 닉네임 삭제, DB 스키마 §4.1)
 UPDATE users u
-SET kakao_id = 'withdrawn:' || u.id, name = '탈퇴한 회원', updated_at = now()
+SET kakao_id = 'withdrawn:' || u.id, updated_at = now()
 FROM test_params p
 WHERE u.kakao_id = p.guardian_kakao_id AND u.deleted_at IS NOT NULL;
 
-INSERT INTO users (kakao_id, name, role, created_at, updated_at)
-SELECT p.guardian_kakao_id, '테스트 보호자', 'PARENT', now(), now()
+INSERT INTO users (kakao_id, role, created_at, updated_at)
+SELECT p.guardian_kakao_id, 'PARENT', now(), now()
 FROM test_params p
 ON CONFLICT (kakao_id) DO NOTHING;
 

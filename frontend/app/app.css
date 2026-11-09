@@ -147,6 +147,33 @@
       transform: translateY(12px);
     }
   }
+
+  /* 진행 현황 AI 단계 문구 (#454, 시안 그대로) — 도는 별 · 단계 아이콘/점의 펄스 링 · 문구가 바뀔 때 올라오는 전환 */
+  --animate-ai-spin: ai-spin 3s linear infinite;
+  @keyframes ai-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  --animate-ring: ring 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  @keyframes ring {
+    0% {
+      transform: scale(0.85);
+      opacity: 0.7;
+    }
+    80%,
+    100% {
+      transform: scale(1.7);
+      opacity: 0;
+    }
+  }
+  --animate-rise: rise 0.35s ease-out;
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
 }
 
 html {
@@ -192,6 +219,40 @@ body {
   );
   background-size: 28px 28px;
   animation: progress-stripes 0.9s linear infinite;
+}
+
+/* 진행 현황 AI 단계 문구 — 글자 위로 빛이 지나간다 (#454).
+   움직임 줄이기면 그라데이션을 빼고 원래 글자색으로 둔다 — 아래 전역 규칙은 길이만 줄여서, 무한 반복하는 반짝임이 깜빡이거나
+   투명 글자로 남을 수 있다 */
+@keyframes ai-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@utility ai-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-ink2) 0%,
+    var(--color-ink2) 40%,
+    var(--color-accent) 50%,
+    var(--color-ink2) 60%,
+    var(--color-ink2) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-shimmer 2.2s linear infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    background-image: none;
+    color: var(--color-ink2);
+    animation: none;
+  }
 }
 
 /* 클릭 타깃 44px 최소 보장용 유틸 */

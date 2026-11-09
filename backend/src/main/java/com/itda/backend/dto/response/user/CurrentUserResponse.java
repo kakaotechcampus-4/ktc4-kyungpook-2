@@ -30,7 +30,7 @@ import com.itda.backend.domain.user.UserRole;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CurrentUserResponse(
-        String role, String userId, String name, String institutionId, String institutionName,
+        String role, String userId, String institutionId, String institutionName,
         boolean signupCompleted, boolean termsAgreed, String withdrawal, boolean withdrawalEnabled) {
 
     public static final String WITHDRAWAL_NONE = "none";
@@ -45,7 +45,6 @@ public record CurrentUserResponse(
         return new CurrentUserResponse(
                 toApiRole(user.getRole()),
                 String.valueOf(user.getId()),
-                user.getName(),
                 institutionId,
                 institutionId == null || organization == null ? null : organization.getName(),
                 user.isSignupCompleted(),
@@ -56,7 +55,7 @@ public record CurrentUserResponse(
 
     /** 탈퇴를 열었는지 담는다. 회원이 아니라 서버 설정의 값이라 서비스가 따로 채운다(WithdrawalService.isEnabled). */
     public CurrentUserResponse withWithdrawalEnabled(boolean enabled) {
-        return new CurrentUserResponse(role, userId, name, institutionId, institutionName, signupCompleted, termsAgreed,
+        return new CurrentUserResponse(role, userId, institutionId, institutionName, signupCompleted, termsAgreed,
                 withdrawal, enabled);
     }
 

@@ -77,7 +77,7 @@ class KakaoUnlinkWebhookTest {
 
     @Test
     void 어드민_키가_없거나_다르면_401이고_아무것도_바꾸지_않는다() throws Exception {
-        User mother = persist(UserFixture.parent(nextKakaoId(), "김엄마"));
+        User mother = persist(UserFixture.parent(nextKakaoId()));
 
         mockMvc.perform(post(ApiPaths.KAKAO_UNLINK_WEBHOOK).contentType(MediaType.APPLICATION_FORM_URLENCODED)
                         .param("app_id", APP_ID).param("user_id", mother.getKakaoId())
@@ -94,7 +94,7 @@ class KakaoUnlinkWebhookTest {
 
     @Test
     void 보호자는_카카오를_다시_부르지_않고_아이_연결을_정리해_탈퇴한다() throws Exception {
-        User mother = persist(UserFixture.parent(nextKakaoId(), "김엄마"));
+        User mother = persist(UserFixture.parent(nextKakaoId()));
         Child child = enrolledChild();
         link(child, mother);
 
@@ -112,7 +112,7 @@ class KakaoUnlinkWebhookTest {
 
     @Test
     void GET_쿼리로_와도_처리한다() throws Exception {
-        User pending = persist(User.pending(nextKakaoId(), "가입전"));
+        User pending = persist(User.pending(nextKakaoId()));
 
         mockMvc.perform(get(ApiPaths.KAKAO_UNLINK_WEBHOOK).header("Authorization", AUTH)
                         .queryParam("app_id", APP_ID).queryParam("user_id", pending.getKakaoId())
@@ -130,7 +130,7 @@ class KakaoUnlinkWebhookTest {
 
     @Test
     void 다른_앱의_웹훅은_무시한다() throws Exception {
-        User mother = persist(UserFixture.parent(nextKakaoId(), "김엄마"));
+        User mother = persist(UserFixture.parent(nextKakaoId()));
 
         mockMvc.perform(post(ApiPaths.KAKAO_UNLINK_WEBHOOK).header("Authorization", AUTH)
                         .contentType(MediaType.APPLICATION_FORM_URLENCODED)
@@ -143,7 +143,7 @@ class KakaoUnlinkWebhookTest {
 
     @Test
     void 기관_담당자는_계정을_남긴다() throws Exception {
-        User staff = persist(UserFixture.organizationUser(nextKakaoId(), "선생님", organization.getId()));
+        User staff = persist(UserFixture.organizationUser(nextKakaoId(), organization.getId()));
 
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), staff.getKakaoId()))
                 .andExpect(status().isOk());
@@ -155,7 +155,7 @@ class KakaoUnlinkWebhookTest {
 
     @Test
     void 이미_탈퇴를_처리하는_중이면_실행기가_이어서_끝낸다() throws Exception {
-        User mother = persist(UserFixture.parent(nextKakaoId(), "김엄마"));
+        User mother = persist(UserFixture.parent(nextKakaoId()));
         transactionTemplate.executeWithoutResult(status ->
                 entityManager.find(User.class, mother.getId()).requestWithdrawal(LocalDateTime.now()));
 
@@ -169,7 +169,7 @@ class KakaoUnlinkWebhookTest {
 
     @Test
     void 탈퇴를_열지_않았으면_검증만_하고_무시한다() {
-        User mother = persist(UserFixture.parent(nextKakaoId(), "김엄마"));
+        User mother = persist(UserFixture.parent(nextKakaoId()));
         KakaoUnlinkWebhookService closed = new KakaoUnlinkWebhookService(steps, executor, new WithdrawalProperties(
                 false, java.time.Duration.ofSeconds(1), "local",
                 new WithdrawalProperties.Kakao("http://unused", "test-admin-key", APP_ID, null, null), null));
@@ -184,7 +184,7 @@ class KakaoUnlinkWebhookTest {
 
     @Test
     void 같은_웹훅이_두_번_와도_한_번만_탈퇴한다() throws Exception {
-        User mother = persist(UserFixture.parent(nextKakaoId(), "김엄마"));
+        User mother = persist(UserFixture.parent(nextKakaoId()));
 
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
                 .andExpect(status().isOk());
@@ -200,7 +200,7 @@ class KakaoUnlinkWebhookTest {
 
     @Test
     void 옛_방식_탈퇴_행이면_남은_식별정보를_지운다() throws Exception {
-        User legacy = persist(UserFixture.legacyDeleted(UserFixture.parent(nextKakaoId(), "옛탈퇴")));
+        User legacy = persist(UserFixture.legacyDeleted(UserFixture.parent(nextKakaoId())));
 
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), legacy.getKakaoId()))
                 .andExpect(status().isOk());
