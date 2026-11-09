@@ -13,6 +13,7 @@ import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserServ
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.core.http.converter.OAuth2AccessTokenResponseHttpMessageConverter;
+import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.web.client.RestClient;
@@ -21,7 +22,11 @@ import org.springframework.web.client.RestTemplate;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Spring Security 가 카카오를 호출할 때 쓰는 두 통로에 타임아웃을 건다.
@@ -98,12 +103,28 @@ public class OAuth2ClientConfig {
         };
     }
 
+    /**
+     * 사용자 정보 속성에 더하는 값 — 카카오에 사용자 정보를 묻기 <b>직전</b> 시각. 사용자 정보가 오면 카카오는 그 뒤 어느 순간 이
+     * 회원이 앱과 연결돼 있음을 확인한 것이다. 로그인이 연결 해제 웹훅 알림을 지울지 정할 때 쓴다 — 이 시각보다 먼저 받은 알림만
+     * 지운다(그 뒤 끊긴 것을 알리는 웹훅은 남긴다). 묻기 전 시각이라 늦게 잡지 않는다.
+     */
+    public static final String KAKAO_VERIFIED_AT = "itda_kakao_verified_at";
+
     /** 액세스 토큰 → 사용자 정보 조회 (카카오 user-info 엔드포인트). */
     @Bean
-    public OAuth2UserService<OAuth2UserRequest, OAuth2User> oAuth2UserService() {
+    public OAuth2UserService<OAuth2UserRequest, OAuth2User> oAuth2UserService(Clock clock) {
         DefaultOAuth2UserService service = new DefaultOAuth2UserService();
         service.setRestOperations(new RestTemplate(
                 HttpClientRequestFactories.create(CONNECT_TIMEOUT, READ_TIMEOUT)));
-        return service;
+        return request -> {
+            LocalDateTime askedAt = LocalDateTime.now(clock);
+            OAuth2User user = service.loadUser(request);
+            Map<String, Object> attributes = new LinkedHashMap<>(user.getAttributes());
+            attributes.put(KAKAO_VERIFIED_AT, askedAt);
+            String nameKey = request.getClientRegistration().getProviderDetails()
+                    .getUserInfoEndpoint().getUserNameAttributeName();
+            return new DefaultOAuth2User(
+                    user.getAuthorities(), attributes, nameKey);
+        };
     }
 }

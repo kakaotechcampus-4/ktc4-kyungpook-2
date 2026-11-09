@@ -263,12 +263,16 @@ public class WithdrawalSteps {
                     user.cancelWithdrawal();
                     log.warn("카카오 연결 해제 첫 호출이 실패해 탈퇴 접수를 취소했습니다: userId={}", userId);
                 } else {
-                    log.error("이전 호출 결과를 모르는 탈퇴에서 카카오가 거절했습니다. 다시 시도합니다: userId={}", userId);
+                    user.countKakaoUnlinkFailure();
+                    log.error("이전 호출 결과를 모르는 탈퇴에서 카카오가 거절했습니다. 간격을 늘려 다시 시도합니다: userId={} 횟수={}",
+                            userId, user.kakaoUnlinkFailureCount());
                 }
                 return false;
             }
             default -> {
-                log.warn("카카오 연결 해제 결과를 몰라 다시 시도합니다: userId={}", userId);
+                user.countKakaoUnlinkFailure();
+                log.warn("카카오 연결 해제 결과를 몰라 간격을 늘려 다시 시도합니다: userId={} 횟수={}",
+                        userId, user.kakaoUnlinkFailureCount());
                 return false;
             }
         }
@@ -305,6 +309,17 @@ public class WithdrawalSteps {
     @Transactional(readOnly = true)
     public List<Long> withdrawingIds() {
         return userRepository.findWithdrawingIds();
+    }
+
+    /** 주기 작업이 지금 다시 세울 회원 — 진행 중인 탈퇴 · 웹훅 알림 가운데 재시도 간격이 지난 것 ({@link User#isDueForRetry}). */
+    @Transactional(readOnly = true)
+    public List<Long> dueIds() {
+        LocalDateTime now = now();
+        return userRepository.findAllById(userRepository.findWithdrawingIds()).stream()
+                .filter(user -> user.isDueForRetry(now))
+                .map(User::getId)
+                .sorted()
+                .toList();
     }
 
     private LocalDateTime now() {

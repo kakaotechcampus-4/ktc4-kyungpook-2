@@ -4,6 +4,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -55,13 +56,21 @@ public class UserService {
      * 먼저 등록된 회원을 다시 찾는다. 다른 제약 위반은 숨기지 않는다.
      */
     public User findOrCreateByKakaoId(String kakaoId) {
+        return findOrCreateByKakaoId(kakaoId, null);
+    }
+
+    /**
+     * @param kakaoVerifiedAt 카카오가 이 회원의 연결을 확인하기 전 시각(사용자 정보를 묻기 직전). 이보다 먼저 받은 연결 해제
+     *                        웹훅 알림은 지운다 — 그 뒤 다시 연결된 것이다. null 이면(개발용 로그인) 알림을 건드리지 않는다
+     */
+    public User findOrCreateByKakaoId(String kakaoId, LocalDateTime kakaoVerifiedAt) {
         try {
-            return loginUserTransactionService.findOrCreate(kakaoId);
+            return loginUserTransactionService.findOrCreate(kakaoId, kakaoVerifiedAt);
         } catch (DataIntegrityViolationException e) {
             if (!isDuplicateKakaoId(e)) {
                 throw e;
             }
-            return loginUserTransactionService.findExisting(kakaoId)
+            return loginUserTransactionService.findExisting(kakaoId, kakaoVerifiedAt)
                     .orElseThrow(() -> e);
         }
     }

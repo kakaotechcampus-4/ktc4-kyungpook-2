@@ -30,29 +30,29 @@ class LoginRetryTest {
     @Test
     void duplicateKakaoIdLooksUpTheWinner() {
         User winner = User.pending("same");
-        when(transactions.findOrCreate("same")).thenThrow(violation("uk_users_kakao_id"));
-        when(transactions.findExisting("same")).thenReturn(Optional.of(winner));
+        when(transactions.findOrCreate("same", null)).thenThrow(violation("uk_users_kakao_id"));
+        when(transactions.findExisting("same", null)).thenReturn(Optional.of(winner));
 
         assertThat(service.findOrCreateByKakaoId("same")).isSameAs(winner);
-        verify(transactions).findExisting("same");
+        verify(transactions).findExisting("same", null);
     }
 
     @Test
     void unrelatedConstraintIsNotRetried() {
         DataIntegrityViolationException failure = violation("other_constraint");
-        when(transactions.findOrCreate("same")).thenThrow(failure);
+        when(transactions.findOrCreate("same", null)).thenThrow(failure);
 
         assertThatThrownBy(() -> service.findOrCreateByKakaoId("same")).isSameAs(failure);
-        verify(transactions, never()).findExisting(anyString());
+        verify(transactions, never()).findExisting(anyString(), any());
     }
 
     @Test
     void missingWinnerPropagatesTheOriginalFailureWithoutAnotherInsert() {
         DataIntegrityViolationException failure = violation("uk_users_kakao_id");
-        when(transactions.findOrCreate("same")).thenThrow(failure);
-        when(transactions.findExisting("same")).thenReturn(Optional.empty());
+        when(transactions.findOrCreate("same", null)).thenThrow(failure);
+        when(transactions.findExisting("same", null)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.findOrCreateByKakaoId("same")).isSameAs(failure);
-        verify(transactions, times(1)).findOrCreate("same");
+        verify(transactions, times(1)).findOrCreate("same", null);
     }
 }

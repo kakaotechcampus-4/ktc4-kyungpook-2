@@ -370,7 +370,8 @@ class WithdrawalServiceTest {
         WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
         assertThat(plan.kind()).isEqualTo(WithdrawalSteps.Plan.Kind.VERIFY_REPORT);
 
-        userService.findOrCreateByKakaoId(mother.getKakaoId());
+        // 카카오가 이 회원의 연결을 확인한 것은 알림을 받은 뒤다 — 다시 연결된 것이다
+        userService.findOrCreateByKakaoId(mother.getKakaoId(), plan.reportedAt().plusSeconds(1));
         WithdrawalSteps.ReportResolution resolution =
                 withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED, plan.reportedAt());
 
@@ -378,6 +379,55 @@ class WithdrawalServiceTest {
         User after = reload(mother);
         assertThat(after.isWithdrawing()).isFalse();
         assertThat(after.hasKakaoUnlinkReport()).isFalse();
+    }
+
+    /**
+     * 카카오가 연결을 확인한 뒤에 사용자가 끊었다(로그인 콜백 처리가 늦어지는 사이 웹훅이 먼저 저장됨). 그 로그인은 알림을 지우지
+     * 않는다 — 지우면 끊김 결과도 버려지고 탈퇴할 기록이 사라진다.
+     */
+    @Test
+    void 연결_확인_뒤에_받은_알림은_늦게_끝난_로그인이_지우지_않는다() {
+        User mother = parent();
+        LocalDateTime verifiedAt = LocalDateTime.now().minusSeconds(5);
+        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+
+        userService.findOrCreateByKakaoId(mother.getKakaoId(), verifiedAt);
+
+        assertThat(reload(mother).hasKakaoUnlinkReport()).isTrue();
+        WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
+        assertThat(withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED, plan.reportedAt()))
+                .isEqualTo(WithdrawalSteps.ReportResolution.PROCEED);
+        assertThat(reload(mother).getWithdrawalStatus()).isEqualTo(WithdrawalStatus.KAKAO_UNLINKED);
+    }
+
+    /** 개발용 로그인처럼 카카오 확인 시각이 없는 로그인은 알림을 건드리지 않는다. */
+    @Test
+    void 카카오_확인_시각이_없는_로그인은_알림을_지우지_않는다() {
+        User mother = parent();
+        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+
+        userService.findOrCreateByKakaoId(mother.getKakaoId());
+
+        assertThat(reload(mother).hasKakaoUnlinkReport()).isTrue();
+    }
+
+    /** 결과를 모르거나 이전 호출 뒤 거절되면 횟수를 세고, 주기 작업은 늘어난 간격이 지나야 다시 세운다. */
+    @Test
+    void 카카오가_계속_실패하면_주기_작업의_재시도_간격이_늘어난다() {
+        User mother = parent();
+        withdrawalSteps.accept(mother.getId());
+        WithdrawalSteps.Plan first = withdrawalSteps.prepare(mother.getId());
+        withdrawalSteps.record(mother.getId(), KakaoUnlinkResult.UNKNOWN, first.firstAttempt());
+        WithdrawalSteps.Plan second = withdrawalSteps.prepare(mother.getId());
+        withdrawalSteps.record(mother.getId(), KakaoUnlinkResult.FAILED, second.firstAttempt());
+
+        User after = reload(mother);
+        assertThat(after.getWithdrawalStatus()).isEqualTo(WithdrawalStatus.REQUESTED);
+        assertThat(after.kakaoUnlinkFailureCount()).isEqualTo(2);
+        // 두 번 실패 → 마지막 호출 뒤 2분
+        assertThat(after.isDueForRetry(after.getKakaoUnlinkAttemptedAt().plusSeconds(90))).isFalse();
+        assertThat(after.isDueForRetry(after.getKakaoUnlinkAttemptedAt().plusMinutes(2))).isTrue();
+        assertThat(withdrawalSteps.dueIds()).doesNotContain(mother.getId());
     }
 
     /** 확인하는 사이 새 웹훅이 왔다. 이전 조회 결과(연결됨)로 새 알림을 지우지 않는다. */

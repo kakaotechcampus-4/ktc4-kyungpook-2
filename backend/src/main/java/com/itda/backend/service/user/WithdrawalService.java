@@ -69,9 +69,9 @@ public class WithdrawalService {
         return steps.outcomeOf(userId);
     }
 
-    /** 주기 작업이 진행 중인 탈퇴를 모두 실행기 줄에 다시 세운다. */
+    /** 주기 작업이 진행 중인 탈퇴 가운데 다시 할 차례가 된 것을 실행기 줄에 다시 세운다(재시도 간격은 점점 늘어난다). */
     public void resumeAll() {
-        List<Long> ids = steps.withdrawingIds();
+        List<Long> ids = steps.dueIds();
         ids.forEach(executor::submit);
     }
 }

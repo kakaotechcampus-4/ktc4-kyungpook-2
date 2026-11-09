@@ -178,6 +178,8 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(allowedOrigins));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
+        // 다른 오리진에서 볼 때도 프론트가 읽을 수 있게 (같은 오리진이면 필요 없다)
+        configuration.setExposedHeaders(List.of(ApiPaths.USER_ID_HEADER));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

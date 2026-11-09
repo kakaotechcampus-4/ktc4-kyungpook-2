@@ -1,5 +1,6 @@
 package com.itda.backend.global.security.oauth;
 
+import com.itda.backend.global.config.OAuth2ClientConfig;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -17,6 +18,7 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationSu
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 
 /**
  * Spring Security 가 카카오 인증(state 검증 · 토큰 교환 · 사용자 조회)을 끝낸 뒤 불린다.
@@ -76,7 +78,10 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
         User user;
         try {
             // 회원번호 말고는 저장하지 않는다. 닉네임이 응답에 들어 있어도 쓰지 않는다.
-            user = userService.findOrCreateByKakaoId(String.valueOf(kakaoId));
+            // 카카오에 사용자 정보를 묻기 직전 시각. 그보다 먼저 받은 연결 해제 웹훅 알림만 로그인이 지운다
+            LocalDateTime verifiedAt = oAuth2User.getAttributes().get(OAuth2ClientConfig.KAKAO_VERIFIED_AT)
+                    instanceof LocalDateTime at ? at : null;
+            user = userService.findOrCreateByKakaoId(String.valueOf(kakaoId), verifiedAt);
         } catch (RuntimeException e) {
             // DB 장애나 동시 첫 로그인 충돌. 여기서도 예외를 던지면 톰캣 기본 오류 화면이 뜬다.
             log.error("로그인 사용자 등록에 실패했습니다.", e);

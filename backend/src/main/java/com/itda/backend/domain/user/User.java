@@ -100,6 +100,13 @@ public class User {
     private LocalDateTime kakaoUnlinkAttemptedAt;
 
     /**
+     * 이 접수에서 카카오 연결 해제가 결과를 모르거나(타임아웃 등) 이전 호출 뒤 분명한 오류로 끝난 횟수. 주기 작업이 다시 부를
+     * 간격을 늘리는 데 쓴다({@link #isDueForRetry}). null 은 0 이다 — 기존 행이 있는 테이블에 컬럼을 더하려고 NULL 을 허용한다.
+     */
+    @Column(name = "kakao_unlink_failures")
+    private Integer kakaoUnlinkFailures;
+
+    /**
      * 카카오 연결 해제 웹훅을 받은 시각. 값이 있으면 실행기가 카카오에 지금 연결 상태를 물어 본다 — 정말 끊겨 있을 때만 탈퇴로
      * 넘기고, 연결돼 있으면(사용자가 다시 로그인했거나, 옛 연결의 늦은 웹훅이 재가입 계정에 닿았다) 알림만 지운다.
      * 웹훅에는 해제 시각이 없어 받는 순간에는 어느 연결의 이벤트인지 알 수 없다.
@@ -161,6 +168,35 @@ public class User {
         this.withdrawalStatus = WithdrawalStatus.REQUESTED;
         this.withdrawalRequestedAt = now;
         this.kakaoUnlinkAttemptedAt = null;
+        this.kakaoUnlinkFailures = null;
+    }
+
+    /** 카카오 연결 해제가 이번에도 끝나지 않았다(결과 모름, 또는 이전 호출 뒤 분명한 오류). 다음 시도 간격이 늘어난다. */
+    public void countKakaoUnlinkFailure() {
+        requireStatus(WithdrawalStatus.REQUESTED);
+        this.kakaoUnlinkFailures = kakaoUnlinkFailureCount() + 1;
+    }
+
+    public int kakaoUnlinkFailureCount() {
+        return this.kakaoUnlinkFailures == null ? 0 : this.kakaoUnlinkFailures;
+    }
+
+    /**
+     * 주기 작업이 지금 다시 처리할 차례인지. 카카오 연결 해제가 끝나지 않은 횟수만큼 마지막 호출 뒤 1분 · 2분 · 5분 · 10분 · 30분 ·
+     * 60분(이후 60분)을 기다린다 — 키 오류처럼 오래 가는 문제에서 카카오 호출과 실행기 시간을 매분 쓰지 않게 한다. 그 밖(정리만
+     * 남음, 웹훅 알림 확인)은 늘 차례다.
+     */
+    public boolean isDueForRetry(LocalDateTime now) {
+        if (this.withdrawalStatus != WithdrawalStatus.REQUESTED || this.kakaoUnlinkAttemptedAt == null) {
+            return true;
+        }
+        int failures = kakaoUnlinkFailureCount();
+        if (failures == 0) {
+            return true;
+        }
+        long[] minutes = {1, 2, 5, 10, 30, 60};
+        long wait = minutes[Math.min(failures, minutes.length) - 1];
+        return !now.isBefore(this.kakaoUnlinkAttemptedAt.plusMinutes(wait));
     }
 
     /** 카카오가 연결 해제를 알렸다(웹훅). 확인은 실행기가 한다 — {@link #confirmKakaoUnlinkReport}. */
@@ -257,6 +293,7 @@ public class User {
         this.withdrawalStatus = null;
         this.withdrawalRequestedAt = null;
         this.kakaoUnlinkAttemptedAt = null;
+        this.kakaoUnlinkFailures = null;
     }
 
     /** 탈퇴를 마치면 남은 웹훅 알림도 지운다. */

@@ -141,6 +141,9 @@ class GuardianChildApiTest {
     void 동의_전_아이도_목록에_나온다() throws Exception {
         mockMvc.perform(get(MY_CHILDREN).cookie(auth(parent)))
                 .andExpect(status().isOk())
+                // 이 목록을 가져온 계정 — 설정 화면이 탈퇴 대상을 이 목록과 같은 계정으로 정한다
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("X-Itda-User-Id", String.valueOf(parent.getId())))
                 .andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].id").value(childId))
                 .andExpect(jsonPath("$.data[0].name").value("김하늘"))

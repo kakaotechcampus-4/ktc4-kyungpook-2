@@ -99,12 +99,31 @@ class OAuth2ClientCallCountTest {
     @ValueSource(ints = {503, 429})
     void 사용자_정보_조회는_503_429_이어도_한_번만_보낸다(int status) {
         this.status = status;
-        var service = new OAuth2ClientConfig().oAuth2UserService();
+        var service = new OAuth2ClientConfig().oAuth2UserService(java.time.Clock.systemDefaultZone());
 
         assertThatThrownBy(() -> service.loadUser(userRequest(ACCESS_TOKEN)))
                 .isInstanceOf(OAuth2AuthenticationException.class);
 
         assertThat(calls.get()).isEqualTo(1);
+    }
+
+    /**
+     * 사용자 정보에 "카카오에 묻기 직전 시각" 을 더한다. 로그인이 연결 해제 웹훅 알림을 지울지 정할 때 쓴다 — 그 시각보다 먼저 받은
+     * 알림만 지운다. 묻기 전 시각이라 응답을 받은 뒤보다 늦지 않다.
+     */
+    @org.junit.jupiter.api.Test
+    void 사용자_정보에_카카오에_묻기_직전_시각을_더한다() {
+        this.status = 200;
+        this.body = "{\"id\":123456789}";
+        java.time.LocalDateTime fixed = java.time.LocalDateTime.of(2026, 11, 9, 10, 0);
+        var clock = java.time.Clock.fixed(fixed.atZone(java.time.ZoneId.systemDefault()).toInstant(),
+                java.time.ZoneId.systemDefault());
+
+        var user = new OAuth2ClientConfig().oAuth2UserService(clock).loadUser(userRequest(ACCESS_TOKEN));
+
+        assertThat(user.getAttributes().get("id")).isEqualTo(123456789);
+        assertThat(user.getAttributes().get(OAuth2ClientConfig.KAKAO_VERIFIED_AT)).isEqualTo(fixed);
+        assertThat(user.getName()).isEqualTo("123456789");
     }
 
     /*
@@ -132,7 +151,7 @@ class OAuth2ClientCallCountTest {
     void 사용자_정보_조회_실패_메시지에_액세스_토큰이_없다(int status) {
         this.status = status;
         this.body = "{\"msg\":\"this access token does not exist\",\"code\":-401}";
-        var service = new OAuth2ClientConfig().oAuth2UserService();
+        var service = new OAuth2ClientConfig().oAuth2UserService(java.time.Clock.systemDefaultZone());
 
         assertThatThrownBy(() -> service.loadUser(userRequest(ACCESS_TOKEN)))
                 .isInstanceOf(OAuth2AuthenticationException.class)
@@ -147,7 +166,7 @@ class OAuth2ClientCallCountTest {
                 + AUTHORIZATION_CODE + "\",\"error_code\":\"KOE320\"}";
         OAuth2ClientConfig config = new OAuth2ClientConfig();
         // 운영과 같은 부품으로 로그인 처리 → 실패 핸들러까지 잇는다.
-        var provider = new OAuth2LoginAuthenticationProvider(config.accessTokenResponseClient(), config.oAuth2UserService());
+        var provider = new OAuth2LoginAuthenticationProvider(config.accessTokenResponseClient(), config.oAuth2UserService(java.time.Clock.systemDefaultZone()));
         OAuth2AuthorizationExchange exchange = authorizationCodeGrant(AUTHORIZATION_CODE).getAuthorizationExchange();
 
         AuthenticationException failure = catchThrowableOfType(AuthenticationException.class,
