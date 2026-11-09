@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -28,6 +29,8 @@ import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.dto.response.child.ParentActivityResponse;
 import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
+import com.itda.backend.exception.child.ChildErrorCode;
+import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.exception.sharing.SharingErrorCode;
 import com.itda.backend.exception.sharing.SharingException;
 import com.itda.backend.repository.approval.ApprovalRepository;
@@ -87,10 +90,27 @@ public class GuardianInsightService {
      */
     @Transactional(readOnly = true)
     public List<GuardianInsightResponse> getInsights(String userId) {
+        return getInsights(userId, null);
+    }
+
+    /**
+     * {@link #getInsights(String)} 를 아이 하나로 좁힌 것 (#457). 리포트 탭은 헤더에서 고른 아이 것만 보인다 — 전부 받아
+     * 화면에서 거르지 않게 한다. 연결되지 않았거나 삭제된 아이면 홈 · 일지와 같은 403 이다.
+     *
+     * @param childId 없으면 내 모든 아이
+     */
+    @Transactional(readOnly = true)
+    public List<GuardianInsightResponse> getInsights(String userId, Long childId) {
         Long guardianId = userService.getParentIdOf(userId);
-        List<SharingHistory> mine = sharingHistoryRepository
-                .findByReceiverTypeAndReceiverIdAndRevokedAtIsNullOrderByIdDesc(
-                        ReceiverType.GUARDIAN, guardianId);
+        if (childId != null && (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, guardianId)
+                || childRepository.findByIdAndDeletedAtIsNull(childId).isEmpty())) {
+            throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
+        }
+        List<SharingHistory> mine = childId == null
+                ? sharingHistoryRepository.findByReceiverTypeAndReceiverIdAndRevokedAtIsNullOrderByIdDesc(
+                        ReceiverType.GUARDIAN, guardianId)
+                : sharingHistoryRepository.findByChildIdAndReceiverTypeAndReceiverIdAndRevokedAtIsNull(
+                        childId, ReceiverType.GUARDIAN, guardianId);
         List<GuardianInsightResponse> reports = List.of();
         if (!mine.isEmpty()) {
             List<Long> insightIds = mine.stream().map(SharingHistory::getInsightResultId).toList();
@@ -99,7 +119,7 @@ public class GuardianInsightService {
             reports = toResponses(mine, insights, approvedAtOf(insightIds));
         }
 
-        return Stream.concat(reports.stream(), quietWeeksOf(guardianId).stream())
+        return Stream.concat(reports.stream(), quietWeeksOf(guardianId, childId).stream())
                 .sorted(Comparator.comparing(GuardianInsightResponse::approvedAt).reversed()
                         .thenComparing(response -> GuardianInsightResponse.INSIGHT.equals(response.kind())
                                 ? Long.parseLong(response.id()) : -1L, Comparator.reverseOrder())
@@ -107,10 +127,15 @@ public class GuardianInsightService {
                 .toList();
     }
 
-    /** 내게 연결된 아이들의 "특이사항 없음" 주 (#470). 삭제된 아이는 뺀다 — 이름 없는 카드를 띄우지 않는다. */
-    private List<GuardianInsightResponse> quietWeeksOf(Long guardianId) {
-        List<Long> childIds = childGuardianRepository.findByUserIdAndDeletedAtIsNullOrderByLinkedAtAscIdAsc(guardianId)
-                .stream().map(ChildGuardian::getChildId).distinct().toList();
+    /**
+     * 내게 연결된 아이들의 "특이사항 없음" 주 (#470). 삭제된 아이는 뺀다 — 이름 없는 카드를 띄우지 않는다.
+     *
+     * @param onlyChildId 있으면 그 아이 것만. 연결 확인은 부르는 쪽이 마쳤다
+     */
+    private List<GuardianInsightResponse> quietWeeksOf(Long guardianId, Long onlyChildId) {
+        List<Long> childIds = onlyChildId != null ? List.of(onlyChildId)
+                : childGuardianRepository.findByUserIdAndDeletedAtIsNullOrderByLinkedAtAscIdAsc(guardianId)
+                        .stream().map(ChildGuardian::getChildId).distinct().toList();
         if (childIds.isEmpty()) {
             return List.of();
         }
@@ -120,6 +145,19 @@ public class GuardianInsightService {
                 .map(week -> GuardianInsightResponse.quiet(String.valueOf(week.childId()), names.get(week.childId()),
                         periodLabel(week.periodFrom()), week.periodFrom(), week.periodTo(), week.reason().name()))
                 .toList();
+    }
+
+    /**
+     * 그 아이들 중 이 보호자에게 열렸는데 아직 안 연 리포트가 있는 아이 (#457). 보호자 아이 목록이 아이마다 안 읽음 점을
+     * 그리는 데 쓴다 — 리포트 전부를 받지 않고 점을 그린다. 열람 시각은 받는 사람마다 따로라 엄마가 열어도 아빠 점은
+     * 남는다. "특이사항 없음" 주는 열 수 없는 글이라 세지 않는다.
+     */
+    @Transactional(readOnly = true)
+    public Set<Long> childIdsWithUnread(Long guardianId, Collection<Long> childIds) {
+        if (childIds.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(sharingHistoryRepository.findChildIdsWithUnread(childIds, ReceiverType.GUARDIAN, guardianId));
     }
 
     /**

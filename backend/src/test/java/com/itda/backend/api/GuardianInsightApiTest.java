@@ -24,6 +24,7 @@ import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.insight.InsightResult;
+import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.sharing.ReceiverType;
 import com.itda.backend.domain.sharing.SharingHistory;
@@ -36,6 +37,7 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
+import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
@@ -62,10 +64,12 @@ class GuardianInsightApiTest {
     @Autowired private InsightResultRepository insightResultRepository;
     @Autowired private ApprovalRepository approvalRepository;
     @Autowired private SharingHistoryRepository sharingHistoryRepository;
+    @Autowired private ChildGuardianRepository childGuardianRepository;
 
     private User staff;
     private User parent;
     private Long insightId;
+    private Long childId;
 
     private static String uniqueKakaoId() {
         return "gi-" + UUID.randomUUID();
@@ -80,7 +84,7 @@ class GuardianInsightApiTest {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
         parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
-        Long childId = childRepository.save(Child.of("김하늘", LocalDate.of(2017, 3, 14))).getId();
+        childId = childRepository.save(Child.of("김하늘", LocalDate.of(2017, 3, 14))).getId();
 
         InsightResult insight = InsightResult.of(childId, LocalDate.of(2026, 8, 17), LocalDate.of(2026, 8, 23), 1,
                 "급식실 입장 직후", "소리를 지름", "이동 전 5분 예고가 효과적이었습니다.", null, "[]", "[]",
@@ -114,6 +118,33 @@ class GuardianInsightApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.approvedAt").value("2026-10-27T15:30:00"))
                 .andExpect(jsonPath("$.data.readAt").isNotEmpty());
+    }
+
+    // --- 아이 하나로 좁히기 (#457) ---
+
+    @Test
+    void 연결된_아이를_고르면_그_아이_것만_온다() throws Exception {
+        childGuardianRepository.save(ChildGuardian.link(childId, parent.getId(), 1L));
+
+        mockMvc.perform(get(INSIGHTS + "?childId=" + childId).cookie(auth(parent)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].childId").value(String.valueOf(childId)));
+    }
+
+    /** 홈 · 일지와 같다. 연결되지 않은 아이는 리포트가 있는지조차 알려주지 않는다. */
+    @Test
+    void 연결되지_않은_아이를_고르면_403() throws Exception {
+        mockMvc.perform(get(INSIGHTS + "?childId=" + childId).cookie(auth(parent)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void childId_가_숫자가_아니면_400() throws Exception {
+        mockMvc.perform(get(INSIGHTS + "?childId=abc").cookie(auth(parent)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
     @Test

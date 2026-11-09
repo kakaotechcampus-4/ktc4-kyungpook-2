@@ -160,7 +160,9 @@ class GuardianChildApiTest {
                 .andExpect(jsonPath("$.data[0].care.allergies").isArray())
                 .andExpect(jsonPath("$.data[0].care.allergies").isEmpty())
                 .andExpect(jsonPath("$.data[0].care.medications").isArray())
-                .andExpect(jsonPath("$.data[0].care.medications").isEmpty());
+                .andExpect(jsonPath("$.data[0].care.medications").isEmpty())
+                // 받은 리포트가 없으면 안 읽음 표시는 false 로 온다 — 키가 빠지면 입구 점이 꺼진 채로 보인다 (#457)
+                .andExpect(jsonPath("$.data[0].hasUnreadInsight").value(false));
     }
 
     @Test

@@ -8,7 +8,9 @@ import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,6 +39,8 @@ import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
 import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
+import com.itda.backend.exception.child.ChildErrorCode;
+import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.exception.sharing.SharingErrorCode;
 import com.itda.backend.exception.sharing.SharingException;
 import com.itda.backend.global.config.ClockConfig;
@@ -138,6 +142,83 @@ class GuardianInsightServiceTest {
         assertThat(quiet.evidence()).isEmpty();
         assertThat(quiet.approvedAt()).isEqualTo(quietFrom.plusDays(7).atStartOfDay());
         assertThat(service.getInsights(STRANGER)).isEmpty();
+    }
+
+    // --- 아이 하나로 좁히기 (#457) ---
+
+    /** 리포트 탭은 헤더에서 고른 아이 것만 받는다. 형제의 리포트도 "특이사항 없음" 주도 섞이지 않는다. */
+    @Test
+    void 아이를_고르면_그_아이의_리포트와_특이사항_없음_주만_보인다() {
+        Long sea = em.persistAndFlush(Child.of("이바다", LocalDate.of(2019, 5, 1))).getId();
+        em.persistAndFlush(ChildGuardian.link(childId, guardianId, 1L));
+        em.persistAndFlush(ChildGuardian.link(sea, guardianId, 1L));
+        Long seaInsight = em.persistAndFlush(InsightResult.of(sea, FROM, TO, 1, "상황", "반응", "본문", null, "[]",
+                "[]", "[%d]".formatted(schoolId), false, null)).getId();
+        em.persistAndFlush(SharingHistory.grant(sea, seaInsight, schoolId, ReceiverType.GUARDIAN, guardianId));
+        em.clear();
+        LocalDate quietFrom = FROM.minusWeeks(1);
+        // 진짜 reader 처럼 받은 아이 것만 돌려준다
+        given(quietWeekReader.read(any())).willAnswer(call -> {
+            Collection<Long> ids = call.getArgument(0);
+            return Stream.of(childId, sea).filter(ids::contains)
+                    .map(id -> new QuietWeek(id, quietFrom, quietFrom.plusDays(6), Reason.NOTHING_NOTABLE))
+                    .toList();
+        });
+
+        assertThat(service.getInsights(MOTHER, childId))
+                .extracting(GuardianInsightResponse::kind, GuardianInsightResponse::id)
+                .containsExactly(tuple("insight", String.valueOf(insightId)),
+                        tuple("quiet", "quiet-%d-%s".formatted(childId, quietFrom)));
+        assertThat(service.getInsights(MOTHER, sea))
+                .extracting(GuardianInsightResponse::kind, GuardianInsightResponse::id)
+                .containsExactly(tuple("insight", String.valueOf(seaInsight)),
+                        tuple("quiet", "quiet-%d-%s".formatted(sea, quietFrom)));
+        // 고르지 않으면 지금처럼 전부다
+        assertThat(service.getInsights(MOTHER)).hasSize(4);
+    }
+
+    /** 홈 · 일지와 같다 — 연결되지 않은 아이와 삭제된 아이를 나누지 않고 403 이다. */
+    @Test
+    void 연결되지_않았거나_삭제된_아이를_고르면_403() {
+        assertThatThrownBy(() -> service.getInsights(MOTHER, childId))
+                .isInstanceOf(ChildException.class)
+                .extracting(e -> ((ChildException) e).getErrorCode())
+                .isEqualTo(ChildErrorCode.CHILD_NOT_LINKED);
+
+        em.persistAndFlush(ChildGuardian.link(childId, guardianId, 1L));
+        em.find(Child.class, childId).delete();
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> service.getInsights(MOTHER, childId))
+                .isInstanceOf(ChildException.class)
+                .extracting(e -> ((ChildException) e).getErrorCode())
+                .isEqualTo(ChildErrorCode.CHILD_NOT_LINKED);
+    }
+
+    // --- 안 읽은 리포트가 있는 아이 (#457) ---
+
+    @Test
+    void 열어_보면_안_읽은_아이에서_빠진다() {
+        Long sea = em.persistAndFlush(Child.of("이바다", LocalDate.of(2019, 5, 1))).getId();
+        em.clear();
+
+        assertThat(service.childIdsWithUnread(guardianId, List.of(childId, sea))).containsExactly(childId);
+
+        service.getInsight(MOTHER, insightId);
+
+        assertThat(service.childIdsWithUnread(guardianId, List.of(childId, sea))).isEmpty();
+    }
+
+    /** 열람은 받는 사람마다 따로다 — 남의 권한 · 거둔 권한은 점을 켜지 않는다. */
+    @Test
+    void 남의_권한과_거둔_권한은_안_읽음이_아니다() {
+        assertThat(service.childIdsWithUnread(8L, List.of(childId))).isEmpty();
+
+        revoke(mineId, ConsentRevokeReason.GUARDIAN_UNLINKED);
+
+        assertThat(service.childIdsWithUnread(guardianId, List.of(childId))).isEmpty();
+        assertThat(service.childIdsWithUnread(guardianId, List.of())).isEmpty();
     }
 
     /** 보호자는 내 아이 글이 어느 기관에 열려 있는지 알아야 한다. 그래야 동의를 끌지 판단한다. */

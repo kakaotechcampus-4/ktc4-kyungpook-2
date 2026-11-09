@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -49,7 +50,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>동의 전·동의를 모두 끈 아이도 넣는다. 설정 화면에서 기관을 다시 켜거나 연결을 끊으려면 목록에 보여야 한다.
  *
- * <p>아이가 몇 명이든 조회 횟수가 같다. 연결 → 아이 → 명부 → 연결 요청 → 기관 → 동의 → 돌봄 정보 순서로 한 번씩
+ * <p>아이가 몇 명이든 조회 횟수가 같다. 연결 → 아이 → 명부 → 연결 요청 → 기관 → 동의 → 안 읽은 리포트 → 돌봄 정보 순서로 한 번씩
  * {@code IN} 조회한다. 돌봄 정보는 저장한 적이 없으면 빈 배열로 싣는다.
  *
  * <p>기관 코드로 연결을 요청해 기관의 수락을 기다리는 기관은 {@code linkRequests} 로 따로 싣는다. 아직 명부에 없어
@@ -86,7 +87,7 @@ public class GuardianChildQueryService {
                 .map(ChildGuardian::getChildId)
                 .distinct()
                 .toList();
-        return assemble(childIds);
+        return assemble(parentId, childIds);
     }
 
     /**
@@ -130,13 +131,13 @@ public class GuardianChildQueryService {
         if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
             throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
         }
-        return assemble(List.of(childId)).stream()
+        return assemble(parentId, List.of(childId)).stream()
                 .findFirst()
                 .orElseThrow(() -> new ChildException(ChildErrorCode.CHILD_NOT_LINKED));
     }
 
-    /** {@code childIds} 순서대로. 삭제된 아이는 빠진다. */
-    private List<GuardianChildResponse> assemble(List<Long> childIds) {
+    /** {@code childIds} 순서대로. 삭제된 아이는 빠진다. 안 읽은 리포트 표시는 {@code parentId} 기준이다. */
+    private List<GuardianChildResponse> assemble(Long parentId, List<Long> childIds) {
         if (childIds.isEmpty()) {
             return List.of();
         }
@@ -152,6 +153,7 @@ public class GuardianChildQueryService {
                 .collect(Collectors.groupingBy(ChildOrganizationRequest::getChildId));
         Map<Long, Organization> organizations = organizationsOf(enrolled, requested);
         Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
+        Set<Long> unread = guardianInsightService.childIdsWithUnread(parentId, childIds);
         Map<Long, ChildCareInfo> careInfos = childCareInfoRepository.findByChildIdIn(childIds).stream()
                 .collect(Collectors.toMap(ChildCareInfo::getChildId, Function.identity()));
 
@@ -163,7 +165,8 @@ public class GuardianChildQueryService {
                         requested.getOrDefault(child.getId(), List.of()),
                         organizations,
                         consents.getOrDefault(child.getId(), Map.of()),
-                        careInfos.get(child.getId())))
+                        careInfos.get(child.getId()),
+                        unread.contains(child.getId())))
                 .toList();
     }
 
@@ -183,7 +186,7 @@ public class GuardianChildQueryService {
 
     private GuardianChildResponse toResponse(Child child, List<Long> organizationIds,
             List<ChildOrganizationRequest> requests, Map<Long, Organization> organizations,
-            Map<Long, ConsentState> consentOfChild, ChildCareInfo careInfo) {
+            Map<Long, ConsentState> consentOfChild, ChildCareInfo careInfo, boolean hasUnreadInsight) {
         List<ChildInstitution> institutions = organizationIds.stream()
                 .distinct()
                 // 기관 행이 사라진 명부 항목은 뺀다. 이름을 모르는 기관을 화면에 올리지 않는다 (Gate 2 공유 대상과 같다).
@@ -200,7 +203,8 @@ public class GuardianChildQueryService {
                 child.getStatus(),
                 institutions,
                 linkRequestsOf(requests, organizations),
-                careInfo == null ? ChildCareInfoResponse.empty() : ChildCareInfoResponse.from(careInfo));
+                careInfo == null ? ChildCareInfoResponse.empty() : ChildCareInfoResponse.from(careInfo),
+                hasUnreadInsight);
     }
 
     /** 기관마다 가장 먼저 요청한 시각 하나. 엄마·아빠가 같은 기관에 요청했어도 한 줄이다. 요청은 먼저 낸 순서로 온다. */

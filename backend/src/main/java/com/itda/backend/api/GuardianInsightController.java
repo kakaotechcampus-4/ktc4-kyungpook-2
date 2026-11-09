@@ -6,6 +6,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
@@ -15,6 +16,7 @@ import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.sharing.GuardianInsightService;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -38,11 +40,17 @@ public class GuardianInsightController {
                     + "sharedWith 는 지금 이 글을 볼 수 있는 다른 기관입니다 — 기관 수신함 · 공유 내역(G-45)과 같은 판정"
                     + "(권한이 살아 있고 · 아이가 그 기관 명부에 있고 · 그 기관 동의가 켜져 있음)이고, 기관 이름순입니다. "
                     + "리포트가 없는 지난 주는 kind=quiet 항목(\"특이사항 없음\")으로 섞여 옵니다 — 본문 · 기관 · 근거가 없고 "
-                    + "G-36 으로 열 수 없으며, approvedAt 은 그 주가 끝난 다음 날 0시입니다 (#470)."
+                    + "G-36 으로 열 수 없으며, approvedAt 은 그 주가 끝난 다음 날 0시입니다 (#470). "
+                    + "childId 를 주면 그 아이 것만 반환합니다 (#457)."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "childId 형식 오류 (INVALID_REQUEST)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
                     description = "인증 필요",
@@ -50,12 +58,15 @@ public class GuardianInsightController {
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "보호자 계정이 아님 (PARENT_REQUIRED)",
+                    description = "보호자 계정이 아님 (PARENT_REQUIRED), "
+                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
-    public ApiResponse<List<GuardianInsightResponse>> list(@AuthenticationPrincipal String userId) {
-        return ApiResponse.success(guardianInsightService.getInsights(userId));
+    public ApiResponse<List<GuardianInsightResponse>> list(
+            @AuthenticationPrincipal String userId,
+            @Parameter(description = "이 아이 것만. 없으면 내 모든 아이") @RequestParam(required = false) Long childId) {
+        return ApiResponse.success(guardianInsightService.getInsights(userId, childId));
     }
 
     @GetMapping("/{insightId}")

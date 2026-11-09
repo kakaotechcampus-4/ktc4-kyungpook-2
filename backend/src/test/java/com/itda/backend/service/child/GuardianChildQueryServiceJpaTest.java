@@ -257,6 +257,20 @@ class GuardianChildQueryServiceJpaTest {
         assertThat(service.home(MOM_PRINCIPAL, sea).child().care().allergies()).containsExactly("계란");
     }
 
+    // --- 안 읽은 리포트 (#457) ---
+
+    /** 입구가 리포트 전부를 받지 않고 점을 그린다. 열람은 보호자마다 따로라 엄마 것만 켜진다. */
+    @Test
+    void 안_읽은_리포트가_있는_아이에_표시가_붙는다() {
+        insightFor(MOM, sky, AUG_17, schoolId, at(21));
+
+        List<GuardianChildResponse> mom = service.children(MOM_PRINCIPAL);
+        assertThat(childOf(mom, sky).hasUnreadInsight()).isTrue();
+        assertThat(childOf(mom, sea).hasUnreadInsight()).isFalse();
+        assertThat(childOf(service.children(DAD_PRINCIPAL), sky).hasUnreadInsight()).isFalse();
+        assertThat(service.home(MOM_PRINCIPAL, sky).child().hasUnreadInsight()).isTrue();
+    }
+
     // --- 홈 ---
 
     @Test
