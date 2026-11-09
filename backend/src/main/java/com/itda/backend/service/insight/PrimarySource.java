@@ -53,8 +53,13 @@ public final class PrimarySource {
 
     /** 근거를 낸 기관 id. AI 가 쓴 JSON 이 깨져 있으면 빈 목록이다 — 그 인사이트는 아무에게도 보이지 않는다. */
     public static List<Long> sourceIdsOf(InsightResult insight) {
+        return sourceIdsOf(insight.getId(), insight.getSourceInstitutionIds());
+    }
+
+    /** {@link #sourceIdsOf(InsightResult)} 를 엔티티 없이 — 판정 칸만 읽은 경우({@code InsightKey}). */
+    public static List<Long> sourceIdsOf(Long insightId, String sourceInstitutionIds) {
         List<Long> ids = new ArrayList<>();
-        for (JsonNode node : readArray(insight)) {
+        for (JsonNode node : readArray(insightId, sourceInstitutionIds)) {
             if (node.canConvertToLong()) {
                 ids.add(node.asLong());
             }
@@ -84,13 +89,18 @@ public final class PrimarySource {
      */
     static Organization requireApprover(InsightResult insight, Long organizationId,
             Map<Long, Organization> organizations) {
-        List<Long> sourceIds = sourceIdsOf(insight);
+        return requireApprover(insight.getId(), sourceIdsOf(insight), organizationId, organizations);
+    }
+
+    /** {@link #requireApprover(InsightResult, Long, Map)} 를 근거 기관 id 로 — 같은 404 · 403 이다. */
+    static Organization requireApprover(Long insightId, List<Long> sourceIds, Long organizationId,
+            Map<Long, Organization> organizations) {
         if (!sourceIds.contains(organizationId)) {
-            throw new InsightException(InsightErrorCode.NOT_FOUND, insight.getId());
+            throw new InsightException(InsightErrorCode.NOT_FOUND, insightId);
         }
         Organization primary = of(sourceIds, organizations);
         if (primary == null || !primary.getId().equals(organizationId)) {
-            throw new InsightException(InsightErrorCode.NOT_PRIMARY_SOURCE, insight.getId());
+            throw new InsightException(InsightErrorCode.NOT_PRIMARY_SOURCE, insightId);
         }
         return primary;
     }
@@ -100,8 +110,7 @@ public final class PrimarySource {
         return rank < 0 ? Integer.MAX_VALUE : rank;
     }
 
-    private static JsonNode readArray(InsightResult insight) {
-        String raw = insight.getSourceInstitutionIds();
+    private static JsonNode readArray(Long insightId, String raw) {
         if (raw == null || raw.isBlank()) {
             return MAPPER.createArrayNode();
         }
@@ -109,7 +118,7 @@ public final class PrimarySource {
             JsonNode node = MAPPER.readTree(raw);
             return node.isArray() ? node : MAPPER.createArrayNode();
         } catch (JsonProcessingException e) {
-            log.warn("failed to parse insight_result.source_institution_ids id={}", insight.getId(), e);
+            log.warn("failed to parse insight_result.source_institution_ids id={}", insightId, e);
             return MAPPER.createArrayNode();
         }
     }

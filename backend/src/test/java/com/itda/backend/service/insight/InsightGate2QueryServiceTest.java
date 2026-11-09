@@ -12,6 +12,8 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
@@ -25,6 +27,7 @@ import com.itda.backend.domain.consent.ConsentRevokeReason;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.insight.InsightResult;
+import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.summary.ChildContext;
@@ -36,6 +39,8 @@ import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+
+import jakarta.persistence.EntityManagerFactory;
 
 /** Gate 2 검토 목록·단건. 승인 주체인 기관에만, 최신 회차만 보인다. */
 @DataJpaTest
@@ -53,6 +58,9 @@ class InsightGate2QueryServiceTest {
 
     @Autowired
     private InsightGate2QueryService service;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @MockitoBean
     private UserService userService;
@@ -492,5 +500,109 @@ class InsightGate2QueryServiceTest {
                 "[\"%d-0\"]".formatted(summaryId), "[1041]", json, sourceInstitutionIds.length > 1, null));
         em.clear();
         return saved;
+    }
+
+    // ── 대시보드 대기 수 (countInsights) — 목록과 같은 회차 고르기 · 같은 판정을 지난다 ──
+
+    /** 그 기관의 대기 수가 대기 목록 건수와 같은지 보고, 그 수를 돌려준다. */
+    private int pendingCount(Long organizationId, String teacher) {
+        int count = service.countInsights(organizationId, InsightStatus.GATE2_PENDING);
+        assertThat(count).as("대기 수와 대기 목록 건수").isEqualTo(service.getInsights(teacher, "pending").size());
+        return count;
+    }
+
+    @Test
+    void 대기_수는_마지막_회차에_든_글을_모두_센다() {
+        insight(1, schoolId);
+        insight(2, schoolId);
+        insight(2, schoolId);
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isEqualTo(2);
+    }
+
+    @Test
+    void 대기_수도_마지막_회차가_승인됐으면_옛_회차를_세지_않는다() {
+        insight(1, schoolId);
+        Long latestId = insight(2, schoolId).getId();
+        em.find(InsightResult.class, latestId).approveGate2();
+        em.flush();
+        em.clear();
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수는_승인_주체인_기관만_센다() {
+        insight(1, schoolId, centerId);
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isEqualTo(1);
+        assertThat(pendingCount(centerId, CENTER_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수도_재료_기관이_동의를_철회하면_세지_않는다() {
+        insight(1, schoolId, centerId);
+        revokeConsentsTo(centerId);
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수도_명부에서_빠진_아이는_세지_않는다() {
+        insight(1, schoolId);
+        em.find(ChildOrganization.class, schoolLinkId).delete();
+        em.flush();
+        em.clear();
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수도_삭제된_아이는_세지_않는다() {
+        insight(1, schoolId);
+        em.find(Child.class, childId).delete();
+        em.flush();
+        em.clear();
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수는_인사이트_본문을_읽지_않는다() {
+        insight(1, schoolId);
+        insight(1, schoolId);
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+
+        int count = service.countInsights(schoolId, InsightStatus.GATE2_PENDING);
+
+        long loaded = statistics.getEntityStatistics(InsightResult.class.getName()).getLoadCount();
+        statistics.setStatisticsEnabled(false);
+        assertThat(count).isEqualTo(2);
+        assertThat(loaded).isZero();
+    }
+
+    /**
+     * 근거 줄의 기관은 승인 주체 · 수신 후보와 따로 읽는다. 판정과 응답 조립을 나눌 때 판정에 쓰는 기관만 읽으면 근거에만 나오는
+     * 기관의 줄이 빠진다 (#493).
+     */
+    @Test
+    void 근거에만_나오는_기관의_근거_줄도_목록과_단건에_남는다() {
+        Long outsideId = em.persistAndFlush(Organization.of("바깥센터", OrganizationType.CENTER, "1000000009")).getId();
+        Long outsideSummary = em.persistAndFlush(SummaryResult.of(
+                childId, LocalDate.of(2026, 8, 20), outsideId, 1, "바깥 기록", "[]", "[]", "[]", "{}")).getId();
+        Long outsideContext = em.persistAndFlush(ChildContext.of(childId, outsideSummary, "바깥 기록")).getId();
+        InsightResult insight = em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "상황", "반응", "본문", null,
+                "[\"%d-0\"]".formatted(outsideSummary), "[]", "[%d]".formatted(schoolId), false, null));
+        em.clear();
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).evidence())
+                .singleElement().satisfies(ref -> {
+                    assertThat(ref.childContextId()).isEqualTo(String.valueOf(outsideContext));
+                    assertThat(ref.institution().id()).isEqualTo(String.valueOf(outsideId));
+                });
+        assertThat(service.getInsight(SCHOOL_TEACHER, insight.getId()).evidence())
+                .extracting(ref -> ref.institution().id()).containsExactly(String.valueOf(outsideId));
     }
 }

@@ -112,8 +112,44 @@ class InsightWeekStageReaderTest {
         assertThat(reader.stagesOf(center, List.of(WEEK))).isEmpty();
     }
 
+    /**
+     * (아이 8, 이번 주) · (아이 9, 다음 주)를 물으면 묻지 않은 (아이 8, 다음 주)도 조회 후보에 든다 (#493). 답에는 물은 조합만
+     * 남아야 한다.
+     */
+    @Test
+    void 물은_아이와_주의_조합만_답한다() {
+        Week other = new Week(9L, FROM.plusWeeks(1), TO.plusWeeks(1));
+        Week notAsked = new Week(CHILD, FROM.plusWeeks(1), TO.plusWeeks(1));
+        InsightResult mine = insight(1, "[" + center + "]");
+        InsightResult others = insight(other, 1, "[" + center + "]");
+        insight(notAsked, 1, "[" + center + "]");
+
+        assertThat(reader.stagesOf(center, List.of(WEEK, other))).containsOnly(
+                Map.entry(WEEK, new WeekStage(Stage.REVIEW_HERE, mine.getId(), null)),
+                Map.entry(other, new WeekStage(Stage.REVIEW_HERE, others.getId(), null)));
+    }
+
+    @Test
+    void 물은_주_밖의_회차는_답에_영향을_주지_않는다() {
+        Week next = new Week(CHILD, FROM.plusWeeks(1), TO.plusWeeks(1));
+        InsightResult mine = insight(1, "[" + center + "]");
+        // 다음 주에는 회차가 더 많고 모두 승인됐다. 이번 주의 마지막 회차(1)를 가리면 안 된다
+        for (int revision = 1; revision <= 3; revision++) {
+            InsightResult later = insight(next, revision, "[" + center + "]");
+            later.approveGate2();
+            em.persistAndFlush(later);
+        }
+
+        assertThat(reader.stagesOf(center, List.of(WEEK)))
+                .containsExactly(Map.entry(WEEK, new WeekStage(Stage.REVIEW_HERE, mine.getId(), null)));
+    }
+
     private InsightResult insight(int revision, String sourceInstitutionIds) {
-        return em.persistAndFlush(InsightResult.of(CHILD, FROM, TO, revision, "상황", "반응", "본문", "[]", "[]",
-                "[]", sourceInstitutionIds, sourceInstitutionIds.contains(","), "{}"));
+        return insight(WEEK, revision, sourceInstitutionIds);
+    }
+
+    private InsightResult insight(Week week, int revision, String sourceInstitutionIds) {
+        return em.persistAndFlush(InsightResult.of(week.childId(), week.from(), week.to(), revision, "상황", "반응",
+                "본문", "[]", "[]", "[]", sourceInstitutionIds, sourceInstitutionIds.contains(","), "{}"));
     }
 }
