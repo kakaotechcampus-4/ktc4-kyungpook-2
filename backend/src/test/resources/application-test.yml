@@ -45,6 +45,10 @@ app:
   purge:
     worker:
       enabled: false
+  raw-record:
+    direct-upload:
+      sweeper:
+        enabled: false
   # H2 단위 테스트는 한 프로세스 안 잠금, PostgreSQL 통합 테스트는 advisory lock 을 auto 가 고른다.
   withdrawal:
     enabled: true

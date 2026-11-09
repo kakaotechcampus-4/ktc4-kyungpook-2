@@ -90,16 +90,28 @@ public class RawRecordService {
         return String.valueOf(userService.getOrganizationIdOf(userId));
     }
 
-    public RawRecord ingest(String userId, MultipartFile file) {
-        // 기관 식별자는 이제 사용자의 소속 기관 id(숫자)라, 비어 있거나 컬럼 길이를 넘을 수 없다.
-        // 예전에 있던 두 검사는 클라이언트가 보낸 값을 믿던 시절의 것이라 지웠다.
-        Long organizationId = userService.getOrganizationIdOf(userId);
-        String institutionId = String.valueOf(organizationId);
-        if (file == null || file.isEmpty()) {
-            throw new RawRecordValidationException("file is required");
-        }
+    /**
+     * 검사를 통과한 파일 이름 · 확장자 · 형식 (#450). 한 번에 올리는 업로드와 저장소로 바로 올리는 업로드가 같은 기준을 쓴다.
+     *
+     * @param displayName 경로를 떼어 낸 화면용 이름
+     * @param extension   소문자 확장자. 허용 목록 안이다
+     */
+    public record ValidatedFile(String displayName, String extension, String contentType) {
+    }
 
-        String displayFilename = sanitizeDisplayName(file.getOriginalFilename());
+    /** 바이트를 읽는 방법. 업로드 자리를 잡은 뒤에 부른다. */
+    @FunctionalInterface
+    public interface BytesSource {
+        byte[] read() throws IOException;
+    }
+
+    /**
+     * 파일 이름 · 확장자 · 형식을 지금 업로드와 같은 기준으로 본다. 매직바이트는 보지 않는다(위 허용 목록 주석).
+     *
+     * @throws RawRecordValidationException 이름이 너무 길거나 확장자 · 형식이 허용되지 않는다
+     */
+    public ValidatedFile validate(String originalFilename, String contentType) {
+        String displayFilename = sanitizeDisplayName(originalFilename);
         if (displayFilename.length() > RawRecord.MAX_TEXT_FIELD_LENGTH) {
             throw new RawRecordValidationException("file name is too long");
         }
@@ -109,20 +121,70 @@ public class RawRecordService {
             throw new RawRecordValidationException("unsupported file extension");
         }
 
-        String contentType = file.getContentType();
         // Office 가 없는 PC·일부 모바일 브라우저는 docx 를 application/octet-stream 으로 보낸다(#113 과 같은 종류).
         boolean docxAsOctetStream = "docx".equals(extension) && "application/octet-stream".equals(contentType);
         if (contentType == null || !(ALLOWED_CONTENT_TYPES.contains(contentType) || docxAsOctetStream)) {
             throw new RawRecordValidationException("unsupported content type");
         }
+        return new ValidatedFile(displayFilename, extension, contentType);
+    }
 
-        // 바이트 읽기 · 글자 뽑기 · 나누기는 서버 전체에서 동시에 몇 개까지만 한다 (#424) — 파일마다 최대 20MB 를 힙에 올리고
-        // docx 는 그보다 크게 풀린다. 바이트 배열은 이 블록 밖에서 쓰지 않는다.
+    /**
+     * 바이트를 읽어 일지로 나누고 상한을 본다. 바이트 읽기 · 글자 뽑기 · 나누기는 서버 전체에서 동시에 몇 개까지만 한다 (#424) —
+     * 파일마다 최대 20MB 를 힙에 올리고 docx 는 그보다 크게 풀린다. 바이트 배열은 이 블록 밖에서 쓰지 않는다.
+     *
+     * @param bytes {@code null} 을 돌려주면 글자를 못 뽑은 파일처럼 빈 목록이다. 읽기 오류를 던지면 저장 실패(500)다
+     * @throws RawRecordUploadBusyException 자리와 기다리는 줄이 꽉 찼다
+     * @throws RawRecordEntryLimitException 일지가 너무 많거나 하나가 너무 길다
+     */
+    public List<JournalEntrySplitter.SplitEntry> splitWithinLimits(String extension, BytesSource bytes) {
         List<JournalEntrySplitter.SplitEntry> entries;
         try (RawRecordUploadGate.Slot slot = uploadGate.acquire()) {
-            entries = splitIntoEntries(extension, readBytes(file, institutionId));
+            entries = splitIntoEntries(extension, bytes.read());
+        } catch (IOException e) {
+            throw new RawRecordStorageException("failed to read raw file", e);
         }
         requireWithinEntryLimits(entries);
+        return entries;
+    }
+
+    /**
+     * 받을 원본 기록. 처리 대기 상태이고, 파일 이름에 명부 아동 이름이 있으면 힌트를 채운다. 아직 저장하지 않는다.
+     */
+    public RawRecord draft(Long organizationId, ValidatedFile file, String storedPath, long sizeBytes) {
+        RawRecord rawRecord = new RawRecord(
+                String.valueOf(organizationId),
+                file.displayName(),
+                storedPath,
+                file.contentType(),
+                sizeBytes,
+                RawRecordStatus.PENDING);
+        applyHintFromFilename(rawRecord, organizationId, file.displayName());
+        return rawRecord;
+    }
+
+    /** 날짜를 확정하지 못한 일지에 같은 파일의 첫 날짜 → 파일명 → 업로드 날짜 순으로 날짜를 채운다. */
+    public List<JournalEntrySplitter.SplitEntry> dated(
+            RawRecord rawRecord, List<JournalEntrySplitter.SplitEntry> entries) {
+        return withEntryDates(rawRecord, entries);
+    }
+
+    public RawRecord ingest(String userId, MultipartFile file) {
+        // 기관 식별자는 이제 사용자의 소속 기관 id(숫자)라, 비어 있거나 컬럼 길이를 넘을 수 없다.
+        // 예전에 있던 두 검사는 클라이언트가 보낸 값을 믿던 시절의 것이라 지웠다.
+        Long organizationId = userService.getOrganizationIdOf(userId);
+        String institutionId = String.valueOf(organizationId);
+        if (file == null || file.isEmpty()) {
+            throw new RawRecordValidationException("file is required");
+        }
+
+        ValidatedFile validated = validate(file.getOriginalFilename(), file.getContentType());
+        String displayFilename = validated.displayName();
+        String extension = validated.extension();
+        String contentType = validated.contentType();
+
+        List<JournalEntrySplitter.SplitEntry> entries =
+                splitWithinLimits(extension, () -> readBytes(file, institutionId));
         // 흔한 경우는 저장소에 올리기 전에 거절한다. 잠그지 않고 센 값이라 상한을 지키지는 않는다 — 아래 accept 가 다시 센다.
         agentQueueGuard.peek(organizationId, entries.size());
 
@@ -137,14 +199,7 @@ public class RawRecordService {
             throw new RawRecordStorageException("failed to store raw file", e);
         }
 
-        RawRecord rawRecord = new RawRecord(
-                institutionId,
-                displayFilename,
-                storedPath,
-                contentType,
-                file.getSize(),
-                RawRecordStatus.PENDING);
-        applyHintFromFilename(rawRecord, organizationId, displayFilename);
+        RawRecord rawRecord = draft(organizationId, validated, storedPath, file.getSize());
 
         RawRecord saved;
         try {

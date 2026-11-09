@@ -51,6 +51,19 @@ class OpenApiDocumentationTest {
 						.value(containsString("INTERNAL_SERVER_ERROR")))
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.404").exists())
+				// 저장소로 바로 올리는 업로드 (#450). 어느 단계에서 어떤 오류가 나는지 명세에 드러나야 한다.
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/upload-url'].post.security[0].cookieAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/upload-url'].post.responses.201").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/upload-url'].post.responses.413.description")
+						.value(containsString("RAW_RECORD_FILE_TOO_LARGE")))
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/uploads/{uploadId}/complete'].post.responses.409.description")
+						.value(containsString("RAW_RECORD_UPLOAD_NOT_READY")))
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/uploads/{uploadId}/complete'].post.responses.429.description")
+						.value(containsString("AGENT_QUEUE_FULL")))
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/uploads/{uploadId}/complete'].post.responses.404.description")
+						.value(containsString("RAW_RECORD_UPLOAD_NOT_FOUND")))
+				// 로컬 전용 본문 경로는 운영 문서에 싣지 않는다
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records/uploads/{uploadId}/content']").doesNotExist())
 				// 세션 조회는 보호 API 다 — 쿠키 인증 요구와 401 이 명세에 드러나야 한다.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.responses.200").exists())

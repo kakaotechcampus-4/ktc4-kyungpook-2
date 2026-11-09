@@ -9,8 +9,11 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
+import com.itda.backend.domain.record.RawRecordUpload;
+import com.itda.backend.exception.record.RawRecordUploadNotFoundException;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
+import com.itda.backend.repository.record.RawRecordUploadRepository;
 import com.itda.backend.service.agent.AgentQueueGuard;
 import com.itda.backend.service.user.LoginUserTransactionService;
 
@@ -28,6 +31,7 @@ public class RawRecordRecorder {
     private final RawRecordRepository rawRecordRepository;
     private final JournalEntryRepository journalEntryRepository;
     private final AgentQueueGuard agentQueueGuard;
+    private final RawRecordUploadRepository rawRecordUploadRepository;
 
     /**
      * 받은 파일의 원본 행과 거기서 나온 일지를 한 트랜잭션에 저장한다 (#424).
@@ -50,6 +54,29 @@ public class RawRecordRecorder {
         for (JournalEntrySplitter.SplitEntry entry : entries) {
             journalEntryRepository.save(JournalEntry.of(saved.getId(), entry.entryDate(), entry.content(), seq++));
         }
+        return saved;
+    }
+
+    /**
+     * 저장소로 바로 올린 파일을 받는다 (#450). {@link #accept} 와 같은 저장에 접수 완료 표시를 더한 것이다.
+     *
+     * <p>접수 행을 먼저 잠근다 — 같은 접수의 완료가 동시에 두 번 오면 뒤 요청은 여기서 기다렸다가 앞 요청이 만든 원본 기록을 그대로
+     * 돌려받는다. 원본 기록이 두 개 생기지 않는다. 잠그는 순서는 접수 → 기관이다(기관은 {@link AgentQueueGuard#requireRoom}).
+     *
+     * @throws RawRecordUploadNotFoundException 그사이 접수가 지워졌다
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public RawRecord acceptUpload(Long uploadId, RawRecord rawRecord, Long organizationId,
+            List<JournalEntrySplitter.SplitEntry> entries) {
+        RawRecordUpload upload = rawRecordUploadRepository.findByIdForUpdate(uploadId)
+                .orElseThrow(() -> new RawRecordUploadNotFoundException(uploadId));
+        if (upload.isCompleted()) {
+            return rawRecordRepository.findById(upload.getRawRecordId())
+                    .orElseThrow(() -> new RawRecordUploadNotFoundException(uploadId));
+        }
+        // 같은 트랜잭션 안에서 부른다 — 프록시를 거치지 않아 REQUIRES_NEW 가 새로 열리지 않는다
+        RawRecord saved = accept(rawRecord, organizationId, entries);
+        upload.complete(saved.getId());
         return saved;
     }
 

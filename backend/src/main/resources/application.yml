@@ -64,6 +64,14 @@ app:
       max-concurrent: ${RAW_RECORD_UPLOAD_MAX_CONCURRENT:2}
       max-waiting: ${RAW_RECORD_UPLOAD_MAX_WAITING:4}
       max-wait: 10s
+    # 브라우저가 저장소(S3)로 바로 올리는 업로드 (#450). 주소는 10분 쓸 수 있고, 하루가 지나도 완료되지 않은 접수는
+    # 버린 것으로 보고 매일 새벽 4시 30분(서울)에 저장소 파일과 함께 지운다. 완료된 접수는 행만 지운다.
+    direct-upload:
+      url-ttl: 10m
+      abandon-after: 1d
+      sweeper:
+        enabled: ${UPLOAD_SWEEPER_ENABLED:true}
+        cron: "0 30 4 * * *"
   # 기관마다 AI 처리 줄(매칭 · 검증 · 요약 대기와 처리 중)에 세워 둘 수 있는 일지 수 (#424). 업로드와 선생님 처리로 새로
   # 들어올 때만 지킨다 — 요약 워커가 승인 대기 일지를 함께 다시 담으면 잠깐 넘을 수 있다. 넘으면 429 AGENT_QUEUE_FULL.
   agent-queue:
