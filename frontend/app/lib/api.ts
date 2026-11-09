@@ -906,8 +906,9 @@ const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
  * 보내기 전에 거르는 이유. 없으면 null. 실제 업로드 · mock · 업로드 확인 창(#489)이 모두 이 하나를 본다 —
  * 서버 상한이 늘면 여기만 고친다. 끌어다 놓기는 input 의 accept 를 거치지 않아 형식이 틀린 파일도 들어온다
  */
-export function uploadPrecheck(file: File): "invalid" | "too_large" | null {
+export function uploadPrecheck(file: File): "invalid" | "empty" | "too_large" | null {
   if (!hasUploadExtension(file)) return "invalid";
+  if (file.size === 0) return "empty";
   if (file.size > UPLOAD_MAX_BYTES) return "too_large";
   return null;
 }

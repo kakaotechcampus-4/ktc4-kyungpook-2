@@ -351,6 +351,7 @@ function TurnList({ turn }: { turn: PipelineTurn }) {
 type UploadFailure = Extract<UploadResult, { ok: false }>;
 const FAIL_TEXT = {
   invalid: `올릴 수 없는 형식이에요 (${UPLOAD_EXTENSIONS.join(" · ")})`,
+  empty: "빈 파일이에요",
   too_large: "20MB를 넘는 파일이에요",
   too_many_entries: "기록이 500건이 넘거나 한 기록이 5,000자를 넘어요. 나눠 올려 주세요",
   queue_full: "앞서 올린 기록을 처리하고 있어요. 끝나면 다시 올려 주세요",
@@ -514,7 +515,8 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         </span>
         <button
           type="button"
-          disabled={uploading}
+          // 확인 창이 떠 있어도 Tab 으로 여기 올 수 있다. 그때 고른 파일은 받을 수 없어 함께 막는다
+          disabled={uploading || pending !== null}
           onClick={() => input.current?.click()}
           className="tap rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110 disabled:opacity-60"
         >
@@ -526,9 +528,9 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           multiple
           hidden
           id="upload-input"
-          // 올리는 중에는 막는다 (#489). 시작하기 카드의 [파일 고르기] 도 이 input 을 눌러 그동안은 눌러도 창이 안 열린다 —
-          // 그 카드는 첫 업로드 전에만 보이고 막히는 건 몇 초라 버튼 모양까지 바꾸지는 않는다
-          disabled={uploading}
+          // 확인 창이 떠 있거나 올리는 중에는 막는다 (#489). 시작하기 카드의 [파일 고르기] 도 이 input 을 눌러 그동안은 눌러도
+          // 창이 안 열린다 — 그 카드는 첫 업로드 전에만 보이고 막히는 건 잠깐이라 버튼 모양까지 바꾸지는 않는다
+          disabled={uploading || pending !== null}
           accept={UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(",")}
           onChange={(e) => pick(e.target.files)}
         />
@@ -612,7 +614,11 @@ type FullCheck = { status: "loading" } | { status: "failed" } | { status: "done"
  */
 const FULL_CHECK_WAIT_MS = 10_000;
 
-const SKIP_NOTE = { invalid: "올릴 수 없는 형식이라 빠져요", too_large: "20MB를 넘어 빠져요" } as const;
+const SKIP_NOTE = {
+  invalid: "올릴 수 없는 형식이라 빠져요",
+  empty: "빈 파일이라 빠져요",
+  too_large: "20MB를 넘어 빠져요",
+} as const;
 
 /** 시각 문자열을 비교용 숫자로. 못 읽으면 가장 옛날(0)로 둔다 */
 const timeOf = (iso: string) => Date.parse(iso) || 0;
