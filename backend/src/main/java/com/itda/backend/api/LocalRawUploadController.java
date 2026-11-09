@@ -12,9 +12,11 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.itda.backend.domain.record.RawRecordUpload;
+import com.itda.backend.exception.record.RawRecordUploadNotFoundException;
 import com.itda.backend.exception.record.RawRecordValidationException;
 import com.itda.backend.service.record.RawRecordUploadService;
 import com.itda.backend.service.storage.LocalDiskRawFileStorage;
+import com.itda.backend.service.storage.RawFileStorage;
 
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.RequiredArgsConstructor;
@@ -34,11 +36,18 @@ import lombok.extern.slf4j.Slf4j;
 public class LocalRawUploadController {
 
     private final RawRecordUploadService rawRecordUploadService;
-    private final LocalDiskRawFileStorage localDiskRawFileStorage;
+    /**
+     * 인터페이스로 받는다 — 테스트가 저장소를 mock 으로 바꿔도 이 컨트롤러 때문에 앱이 뜨지 못하는 일이 없게. 로컬 디스크 저장소일 때만
+     * 본문을 받는다.
+     */
+    private final RawFileStorage rawFileStorage;
 
     @PutMapping("/api/v1/raw-records/uploads/{uploadId}/content")
     public ResponseEntity<Void> content(@AuthenticationPrincipal String userId, @PathVariable Long uploadId,
             HttpServletRequest request) {
+        if (!(rawFileStorage instanceof LocalDiskRawFileStorage localDiskRawFileStorage)) {
+            throw new RawRecordUploadNotFoundException(uploadId);
+        }
         RawRecordUpload upload = rawRecordUploadService.ownedUpload(userId, uploadId);
         if (upload.isCompleted()) {
             throw new RawRecordValidationException("upload is already completed");
