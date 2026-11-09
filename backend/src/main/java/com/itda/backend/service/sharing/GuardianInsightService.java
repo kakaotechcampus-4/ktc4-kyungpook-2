@@ -29,8 +29,6 @@ import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.dto.response.child.ParentActivityResponse;
 import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
-import com.itda.backend.exception.child.ChildErrorCode;
-import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.exception.sharing.SharingErrorCode;
 import com.itda.backend.exception.sharing.SharingException;
 import com.itda.backend.repository.approval.ApprovalRepository;
@@ -46,6 +44,7 @@ import com.itda.backend.service.insight.InsightEvidenceReader;
 import com.itda.backend.service.insight.InsightEvidenceReader.Ref;
 import com.itda.backend.service.insight.QuietWeekReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.child.GuardianChildGuard;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,6 +65,7 @@ import lombok.extern.slf4j.Slf4j;
 public class GuardianInsightService {
 
     private final UserService userService;
+    private final GuardianChildGuard guardianChildGuard;
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final ConsentStateReader consentStateReader;
@@ -102,9 +102,8 @@ public class GuardianInsightService {
     @Transactional(readOnly = true)
     public List<GuardianInsightResponse> getInsights(String userId, Long childId) {
         Long guardianId = userService.getParentIdOf(userId);
-        if (childId != null && (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, guardianId)
-                || childRepository.findByIdAndDeletedAtIsNull(childId).isEmpty())) {
-            throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
+        if (childId != null) {
+            guardianChildGuard.requireLinkedChild(guardianId, childId);
         }
         List<SharingHistory> mine = childId == null
                 ? sharingHistoryRepository.findByReceiverTypeAndReceiverIdAndRevokedAtIsNullOrderByIdDesc(

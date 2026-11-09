@@ -34,7 +34,7 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(ChildCareInfoService.class)
+@Import({ChildCareInfoService.class, GuardianChildGuard.class})
 class ChildCareInfoServiceJpaTest {
 
     private static final String MOM_PRINCIPAL = "41";

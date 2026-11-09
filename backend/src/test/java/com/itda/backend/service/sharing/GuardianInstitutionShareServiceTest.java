@@ -35,6 +35,7 @@ import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.child.GuardianChildGuard;
 
 /**
  * 보호자의 기관 공유 내역 (G-45). 거둔 공유도 보여 주고, "지금 볼 수 있음" 은 기관 수신함과 같은 판정이다.
@@ -43,7 +44,7 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianInstitutionShareService.class, ConsentStateReader.class, ClockConfig.class})
+@Import({GuardianInstitutionShareService.class, GuardianChildGuard.class, ConsentStateReader.class, ClockConfig.class})
 class GuardianInstitutionShareServiceTest {
 
     private static final String MOM = "u-mom";

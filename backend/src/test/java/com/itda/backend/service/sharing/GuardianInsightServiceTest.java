@@ -51,11 +51,12 @@ import com.itda.backend.service.insight.QuietWeekReader;
 import com.itda.backend.service.insight.QuietWeekReader.QuietWeek;
 import com.itda.backend.service.insight.QuietWeekReader.Reason;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.child.GuardianChildGuard;
 
 /** 보호자가 Gate 2 를 지나 받은 인사이트를 읽는다 (#233). */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianInsightService.class, InsightEvidenceReader.class, GuardianJournalQueryService.class,
+@Import({GuardianInsightService.class, GuardianChildGuard.class, InsightEvidenceReader.class, GuardianJournalQueryService.class,
         SharingReadRecorder.class, ConsentStateReader.class, ClockConfig.class})
 class GuardianInsightServiceTest {
 

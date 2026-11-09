@@ -64,7 +64,7 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({ChildService.class, OrganizationChildGuard.class, ConsentService.class, ConsentStateReader.class,
+@Import({ChildService.class, OrganizationChildGuard.class, GuardianChildGuard.class, ConsentService.class, ConsentStateReader.class,
         InsightAccessRevoker.class, InvitationService.class, InstitutionLinkService.class,
         InstitutionInboxService.class, SharingReadRecorder.class, InsightGate2QueryService.class,
         InsightEvidenceReader.class, ChildRosterRemovalJpaTest.ClockConfig.class})

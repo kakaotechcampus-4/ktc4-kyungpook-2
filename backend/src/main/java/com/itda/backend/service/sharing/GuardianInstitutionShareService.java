@@ -22,16 +22,13 @@ import com.itda.backend.domain.sharing.ReceiverType;
 import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.dto.response.guardian.InstitutionSharesResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
-import com.itda.backend.exception.child.ChildErrorCode;
-import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
-import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
-import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.child.GuardianChildGuard;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,8 +51,7 @@ import lombok.extern.slf4j.Slf4j;
 public class GuardianInstitutionShareService {
 
     private final UserService userService;
-    private final ChildGuardianRepository childGuardianRepository;
-    private final ChildRepository childRepository;
+    private final GuardianChildGuard guardianChildGuard;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final SharingHistoryRepository sharingHistoryRepository;
     private final InsightResultRepository insightResultRepository;
@@ -69,11 +65,7 @@ public class GuardianInstitutionShareService {
     @Transactional(readOnly = true)
     public List<InstitutionSharesResponse> getShares(String userId, Long childId) {
         Long parentId = userService.getParentIdOf(userId);
-        if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
-            throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
-        }
-        Child child = childRepository.findByIdAndDeletedAtIsNull(childId)
-                .orElseThrow(() -> new ChildException(ChildErrorCode.CHILD_NOT_LINKED));
+        Child child = guardianChildGuard.requireLinkedChild(parentId, childId);
 
         List<SharingHistory> grants = sharingHistoryRepository.findByChildIdAndReceiverType(
                 childId, ReceiverType.ORGANIZATION);

@@ -34,6 +34,7 @@ import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.child.GuardianChildGuard;
 
 /**
  * 보호자에게 보이는 요청과 확인이 실제 행에서 어떻게 정해지는지 본다. 하늘에게 엄마 · 아빠가 연결돼 있고, 하늘은 우리 기관
@@ -41,7 +42,7 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianChecklistService.class, ChecklistService.class, GuardianChecklistServiceJpaTest.ClockConfig.class})
+@Import({GuardianChecklistService.class, GuardianChildGuard.class, ChecklistService.class, GuardianChecklistServiceJpaTest.ClockConfig.class})
 class GuardianChecklistServiceJpaTest {
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 4, 9, 0);

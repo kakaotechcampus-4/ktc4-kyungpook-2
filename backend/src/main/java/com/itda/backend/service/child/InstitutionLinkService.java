@@ -31,7 +31,6 @@ import com.itda.backend.exception.child.InstitutionLinkException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildOrganizationRequestRepository;
 import com.itda.backend.repository.child.ChildRepository;
-import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InviteCodeGenerator;
@@ -54,10 +53,10 @@ import lombok.RequiredArgsConstructor;
 public class InstitutionLinkService {
 
     private final UserService userService;
+    private final GuardianChildGuard guardianChildGuard;
     private final ChildRepository childRepository;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final ChildOrganizationRequestRepository childOrganizationRequestRepository;
-    private final ChildGuardianRepository childGuardianRepository;
     private final OrganizationRepository organizationRepository;
     private final ConsentStateReader consentStateReader;
     private final Clock clock;
@@ -80,12 +79,7 @@ public class InstitutionLinkService {
         Long parentId = userService.getParentIdOf(userId);
         Organization organization = organizationByCode(rawCode);
 
-        childRepository.findByIdForUpdate(childId)
-                .filter(child -> !child.isDeleted())
-                .orElseThrow(() -> new ChildException(ChildErrorCode.CHILD_NOT_LINKED));
-        if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
-            throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
-        }
+        guardianChildGuard.lockLinkedChild(parentId, childId);
         if (childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(
                 childId, organization.getId())) {
             throw new InstitutionLinkException(InstitutionLinkErrorCode.INSTITUTION_ALREADY_LINKED);

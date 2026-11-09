@@ -51,7 +51,7 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianJournalQueryService.class, ClockConfig.class})
+@Import({GuardianJournalQueryService.class, GuardianChildGuard.class, ClockConfig.class})
 class GuardianJournalQueryServiceJpaTest {
 
     private static final String MOM_PRINCIPAL = "41";
@@ -427,7 +427,8 @@ class GuardianJournalQueryServiceJpaTest {
 
     private boolean isNewAt(LocalDateTime now) {
         Clock clock = Clock.fixed(now.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
-        GuardianJournalQueryService at = new GuardianJournalQueryService(userService, childGuardianRepository,
+        GuardianJournalQueryService at = new GuardianJournalQueryService(userService,
+                new GuardianChildGuard(childRepository, childGuardianRepository), childGuardianRepository,
                 childRepository, childContextRepository, summaryResultRepository, organizationRepository, clock);
         return at.journal(MOM_PRINCIPAL, sky).getFirst().isNew();
     }

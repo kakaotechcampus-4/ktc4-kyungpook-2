@@ -10,11 +10,7 @@ import com.itda.backend.domain.child.ChildCareInfo;
 import com.itda.backend.domain.child.ChildCareInfo.Medication;
 import com.itda.backend.dto.request.child.UpdateCareInfoRequest;
 import com.itda.backend.dto.response.child.ChildCareInfoResponse;
-import com.itda.backend.exception.child.ChildErrorCode;
-import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.repository.child.ChildCareInfoRepository;
-import com.itda.backend.repository.child.ChildRepository;
-import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -35,19 +31,13 @@ import lombok.RequiredArgsConstructor;
 public class ChildCareInfoService {
 
     private final UserService userService;
-    private final ChildRepository childRepository;
-    private final ChildGuardianRepository childGuardianRepository;
+    private final GuardianChildGuard guardianChildGuard;
     private final ChildCareInfoRepository childCareInfoRepository;
 
     @Transactional
     public ChildCareInfoResponse save(String userId, Long childId, UpdateCareInfoRequest request) {
         Long parentId = userService.getParentIdOf(userId);
-        Child child = childRepository.findByIdForUpdate(childId)
-                .orElseThrow(() -> new ChildException(ChildErrorCode.CHILD_NOT_LINKED));
-        if (child.isDeleted()
-                || !childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
-            throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
-        }
+        Child child = guardianChildGuard.lockLinkedChild(parentId, childId);
 
         List<String> allergies = request.allergies();
         List<Medication> medications = request.medications().stream()

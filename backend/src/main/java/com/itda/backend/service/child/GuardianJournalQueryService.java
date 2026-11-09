@@ -55,6 +55,7 @@ public class GuardianJournalQueryService {
     private static final Duration NEW_FOR = Duration.ofHours(24);
 
     private final UserService userService;
+    private final GuardianChildGuard guardianChildGuard;
     private final ChildGuardianRepository childGuardianRepository;
     private final ChildRepository childRepository;
     private final ChildContextRepository childContextRepository;
@@ -80,10 +81,7 @@ public class GuardianJournalQueryService {
     @Transactional(readOnly = true)
     public List<GuardianJournalResponse> journal(String userId, Long childId, Integer limit) {
         Long parentId = userService.getParentIdOf(userId);
-        if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)
-                || childRepository.findByIdAndDeletedAtIsNull(childId).isEmpty()) {
-            throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
-        }
+        guardianChildGuard.requireLinkedChild(parentId, childId);
         LocalDateTime now = LocalDateTime.now(clock);
         return ordered(childId).stream()
                 .limit(limit == null ? Long.MAX_VALUE : limit)

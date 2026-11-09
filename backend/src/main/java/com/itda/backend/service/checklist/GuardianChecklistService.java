@@ -15,18 +15,13 @@ import com.itda.backend.domain.checklist.ChecklistTarget;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.dto.response.checklist.GuardianChecklistResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
-import com.itda.backend.exception.checklist.ChecklistErrorCode;
-import com.itda.backend.exception.checklist.ChecklistException;
-import com.itda.backend.exception.child.ChildErrorCode;
-import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.repository.checklist.ChecklistRepository;
 import com.itda.backend.repository.checklist.ChecklistTargetRepository;
 import com.itda.backend.repository.checklist.GuardianChecklistRow;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
-import com.itda.backend.repository.child.ChildRepository;
-import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.child.GuardianChildGuard;
 
 import lombok.RequiredArgsConstructor;
 
@@ -46,8 +41,7 @@ public class GuardianChecklistService {
     static final int CONFIRMED_LIMIT = 20;
 
     private final UserService userService;
-    private final ChildRepository childRepository;
-    private final ChildGuardianRepository childGuardianRepository;
+    private final GuardianChildGuard guardianChildGuard;
     private final ChildOrganizationRepository childOrganizationRepository;
     private final ChecklistRepository checklistRepository;
     private final ChecklistTargetRepository checklistTargetRepository;
@@ -60,7 +54,7 @@ public class GuardianChecklistService {
      */
     @Transactional(readOnly = true)
     public List<GuardianChecklistResponse> list(String userId, Long childId, boolean needsCheckOnly) {
-        requireLinkedChild(userId, childId);
+        guardianChildGuard.requireLinkedChild(userService.getParentIdOf(userId), childId);
         if (needsCheckOnly) {
             return assemble(checklistTargetRepository.findUnconfirmedForChild(childId));
         }
@@ -87,10 +81,7 @@ public class GuardianChecklistService {
     @Transactional
     public GuardianChecklistResponse confirm(String userId, Long childId, Long checklistId) {
         Long parentId = userService.getParentIdOf(userId);
-        boolean alive = childRepository.findByIdForShare(childId).filter(child -> !child.isDeleted()).isPresent();
-        if (!alive || !childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
-            throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
-        }
+        guardianChildGuard.lockLinkedChildForShare(parentId, childId);
         Long targetId = checklistTargetRepository.findIdByChecklistIdAndChildId(checklistId, childId)
                 .orElseThrow(ChecklistService::notFound);
         Checklist checklist = checklistRepository.findByIdForShare(checklistId).orElseThrow(ChecklistService::notFound);
@@ -103,15 +94,6 @@ public class GuardianChecklistService {
         // UPDATE 가 영속성 컨텍스트를 비웠다. 1행이든 0행이든 다시 읽은 값으로 답한다
         ChecklistTarget target = checklistTargetRepository.findById(targetId).orElseThrow(ChecklistService::notFound);
         return assemble(List.of(new GuardianChecklistRow(target, checklist))).get(0);
-    }
-
-    /** 목록용 — 읽기만 하므로 잠그지 않는다. 확인은 {@link #confirm} 이 아이 행을 잠근 뒤 같은 조건을 본다. */
-    private void requireLinkedChild(String userId, Long childId) {
-        Long parentId = userService.getParentIdOf(userId);
-        if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)
-                || childRepository.findByIdAndDeletedAtIsNull(childId).isEmpty()) {
-            throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
-        }
     }
 
     /** 기관을 한 번씩 모아 읽는다. */

@@ -40,6 +40,7 @@ import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.service.child.InstitutionLinkService;
+import com.itda.backend.service.child.GuardianChildGuard;
 import com.itda.backend.service.child.OrganizationChildGuard;
 import com.itda.backend.service.consent.ConsentService;
 import com.itda.backend.service.consent.ConsentStateReader;
@@ -54,7 +55,7 @@ import com.itda.backend.service.user.UserService;
 @ActiveProfiles("test")
 // InsightAccessRevoker 는 진짜를 넣는다 — 연결 해제가 그 보호자의 열람 권한까지 거두는지(#213)
 // 이 테스트가 같이 지켜준다.
-@Import({ChildGuardianService.class, OrganizationChildGuard.class, ConsentService.class,
+@Import({ChildGuardianService.class, OrganizationChildGuard.class, GuardianChildGuard.class, ConsentService.class,
         ConsentStateReader.class, InsightAccessRevoker.class, InstitutionLinkService.class,
         ChildGuardianServiceJpaTest.ClockConfig.class})
 class ChildGuardianServiceJpaTest {

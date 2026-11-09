@@ -59,7 +59,7 @@ import com.itda.backend.service.user.UserService;
  */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianChildQueryService.class, GuardianJournalQueryService.class, GuardianInsightService.class,
+@Import({GuardianChildQueryService.class, GuardianChildGuard.class, GuardianJournalQueryService.class, GuardianInsightService.class,
         InsightEvidenceReader.class, SharingReadRecorder.class, ConsentStateReader.class, ClockConfig.class})
 class GuardianChildQueryServiceJpaTest {
 
