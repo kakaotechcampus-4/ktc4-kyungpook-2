@@ -176,7 +176,7 @@ class PostgreSqlIntegrationTests {
 	 */
 
 	private static SignupRequest organizationSignup(String businessNumber) {
-		return new SignupRequest("org", "햇살센터", OrganizationType.CENTER, businessNumber);
+		return new SignupRequest("org", "햇살센터", OrganizationType.CENTER, businessNumber, null);
 	}
 
 	/** 작업들을 동시에 출발시키고, 각 작업이 던진 예외(성공이면 null)를 순서대로 돌려준다. */

@@ -23,6 +23,7 @@ import com.itda.backend.global.exception.ConstraintViolations;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.organization.OrganizationCodeIssuer;
+import com.itda.backend.service.organization.OrganizationHandoverService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -41,6 +42,7 @@ public class UserService {
     private final OrganizationCodeIssuer organizationCodeIssuer;
     private final LoginUserTransactionService loginUserTransactionService;
     private final TermsService termsService;
+    private final OrganizationHandoverService organizationHandoverService;
 
     /**
      * 카카오 로그인 성공 시 회원을 찾거나 만든다.
@@ -88,7 +90,8 @@ public class UserService {
     /**
      * 회원가입 — 카카오 로그인만 한 회원의 역할(과 기관이면 소속 기관)을 확정한다.
      *
-     * <p>기관 담당자는 입력한 정보로 기관을 새로 만들고 거기에 소속된다(1기관 1계정).
+     * <p>기관 담당자는 입력한 정보로 기관을 새로 만들고 거기에 소속된다(1기관 1계정). 인계 코드를 보냈으면 기관을 새로
+     * 만들지 않고 코드를 발급한 담당자의 기관에 소속되며, 그 담당자는 탈퇴로 정리된다 (#478).
      * 보호자는 역할만 정한다. 아이 연결은 별도 도메인이다.
      *
      * <p>회원 행을 잠그고 시작한다. 같은 회원의 요청이 겹쳐도 두 번째 요청은 첫 번째가 끝난 뒤
@@ -102,6 +105,13 @@ public class UserService {
         }
 
         // 막 가입한 회원은 동의 기록이 없어 termsAgreed 가 false 다. 프론트가 이 값을 보고 약관 화면으로 간다.
+        if (request.isHandoverSignup()) {
+            // 이전 담당자가 넘겨준 기관에 붙는다. 이전 담당자는 탈퇴로 정리된다 (#478)
+            Long organizationId = organizationHandoverService.accept(user, request.handoverCode());
+            user.completeSignup(UserRole.ORGANIZATION, organizationId);
+            Organization organization = organizationRepository.findById(organizationId).orElse(null);
+            return CurrentUserResponse.from(user, organization, termsService.isAgreed(user));
+        }
         if (request.isOrganizationSignup()) {
             Organization organization = createOrganization(request);
             user.completeSignup(UserRole.ORGANIZATION, organization.getId());

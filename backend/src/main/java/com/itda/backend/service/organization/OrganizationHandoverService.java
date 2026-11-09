@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +17,7 @@ import com.itda.backend.exception.organization.OrganizationException;
 import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
 import com.itda.backend.global.exception.ConstraintViolations;
+import com.itda.backend.repository.organization.HandoverTarget;
 import com.itda.backend.repository.organization.OrganizationHandoverRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.InviteCodeGenerator;
@@ -40,14 +42,17 @@ public class OrganizationHandoverService {
     private final UserRepository userRepository;
     private final InviteCodeGenerator inviteCodeGenerator;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
     private final boolean enabled;
 
     public OrganizationHandoverService(OrganizationHandoverRepository handoverRepository, UserRepository userRepository,
-            InviteCodeGenerator inviteCodeGenerator, Clock clock, WithdrawalProperties withdrawalProperties) {
+            InviteCodeGenerator inviteCodeGenerator, Clock clock, ApplicationEventPublisher events,
+            WithdrawalProperties withdrawalProperties) {
         this.handoverRepository = handoverRepository;
         this.userRepository = userRepository;
         this.inviteCodeGenerator = inviteCodeGenerator;
         this.clock = clock;
+        this.events = events;
         this.enabled = withdrawalProperties.enabled();
     }
 
@@ -83,6 +88,48 @@ public class OrganizationHandoverService {
     public void cancel(String principal) {
         User staff = lockStaff(principal);
         cancelLive(staff.getOrganizationId(), now());
+    }
+
+    /**
+     * 후임이 가입하면서 인계 코드를 썼다. 코드를 발급한 담당자의 기관 id 를 돌려주고, 그 담당자의 탈퇴를 접수한다.
+     * 가입 트랜잭션 안에서 부른다 — 새 회원 행은 부르는 쪽이 이미 잠갔다.
+     *
+     * <p>잠금 순서: (새 회원 행) → 발급한 담당자 행 → 인계 행. 발급 · 취소도 담당자 행 → 인계 행이라 서로 물리지 않는다.
+     * 잠근 뒤 시각을 다시 읽는다 — 잠금을 기다리는 사이 만료된 코드는 받지 않는다.
+     *
+     * <p>쓸 수 없는 이유(형식 · 없음 · 만료 · 이미 씀 · 취소 · 발급한 담당자가 이미 탈퇴 · 자기 코드)는 모두 같은 400 이다.
+     * 탈퇴 스위치는 보지 않는다 — 발급할 때 이미 봤고, 이미 접수된 탈퇴는 스위치를 꺼도 끝까지 가는 것과 같은 원칙이다.
+     */
+    @Transactional
+    public Long accept(User successor, String rawCode) {
+        String code = InviteCodeGenerator.normalize(rawCode);
+        if (code == null) {
+            throw invalidCode();
+        }
+        HandoverTarget target = handoverRepository.findTargetByCode(code).orElseThrow(OrganizationHandoverService::invalidCode);
+        if (target.issuedBy().equals(successor.getId())) {
+            throw invalidCode();
+        }
+        User former = userRepository.findByIdForUpdate(target.issuedBy()).orElseThrow(OrganizationHandoverService::invalidCode);
+        if (former.isDeleted() || former.isWithdrawing() || !former.isOrganization()
+                || !target.organizationId().equals(former.getOrganizationId())) {
+            throw invalidCode();
+        }
+        OrganizationHandover handover = handoverRepository.findByIdForUpdate(target.id())
+                .orElseThrow(OrganizationHandoverService::invalidCode);
+        LocalDateTime now = now();
+        if (!handover.isUsable(now)) {
+            throw invalidCode();
+        }
+
+        handover.accept(successor.getId(), now);
+        former.requestHandoverWithdrawal(now);
+        events.publishEvent(new OrganizationHandoverAccepted(former.getId()));
+        return handover.getOrganizationId();
+    }
+
+    private static OrganizationException invalidCode() {
+        return new OrganizationException(OrganizationErrorCode.INVALID_HANDOVER_CODE);
     }
 
     private void cancelLive(Long organizationId, LocalDateTime now) {

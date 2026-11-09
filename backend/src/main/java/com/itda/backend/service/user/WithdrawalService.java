@@ -7,9 +7,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
+import com.itda.backend.service.organization.OrganizationHandoverAccepted;
 import com.itda.backend.service.user.WithdrawalSteps.Outcome;
 
 import lombok.extern.slf4j.Slf4j;
@@ -67,6 +70,15 @@ public class WithdrawalService {
             log.error("탈퇴 실행을 기다리다 오류가 났습니다: userId={}", userId, e);
         }
         return steps.outcomeOf(userId);
+    }
+
+    /**
+     * 후임이 인계 코드로 가입해 이전 기관 담당자의 탈퇴를 접수했다 (#478). 커밋된 뒤에 실행기를 깨운다 — 커밋 전에 깨우면 실행기가
+     * 아직 접수 전 상태를 읽는다. 놓쳐도 주기 작업이 다시 세운다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onHandoverAccepted(OrganizationHandoverAccepted event) {
+        executor.submit(event.userId());
     }
 
     /** 주기 작업이 진행 중인 탈퇴 가운데 다시 할 차례가 된 것을 실행기 줄에 다시 세운다(재시도 간격은 점점 늘어난다). */

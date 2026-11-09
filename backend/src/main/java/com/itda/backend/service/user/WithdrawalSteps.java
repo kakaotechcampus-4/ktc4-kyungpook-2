@@ -298,7 +298,8 @@ public class WithdrawalSteps {
                 return true;
             }
             case FAILED -> {
-                if (firstAttempt) {
+                // 기관 담당자는 인계로만 탈퇴한다(#478). 후임이 이미 기관을 받았으므로 접수를 되돌리면 한 기관에 계정이 둘이 된다
+                if (firstAttempt && !user.isOrganization()) {
                     user.cancelWithdrawal();
                     log.warn("카카오 연결 해제 첫 호출이 실패해 탈퇴 접수를 취소했습니다: userId={}", userId);
                 } else {

@@ -60,7 +60,8 @@ class UserServiceTest {
     void setUp() {
         userService = new UserService(userRepository, organizationRepository,
                 new OrganizationCodeIssuer(organizationRepository, new InviteCodeGenerator()),
-                new LoginUserTransactionService(userRepository, java.time.Clock.systemDefaultZone()), new TermsService(termsAgreementRepository));
+                new LoginUserTransactionService(userRepository, java.time.Clock.systemDefaultZone()), new TermsService(termsAgreementRepository),
+                org.mockito.Mockito.mock(com.itda.backend.service.organization.OrganizationHandoverService.class));
     }
 
     /**
@@ -238,10 +239,10 @@ class UserServiceTest {
 
     /* ── 회원가입 ───────────────────────────────────────── */
 
-    private static final SignupRequest PARENT_SIGNUP = new SignupRequest("parent", null, null, null);
+    private static final SignupRequest PARENT_SIGNUP = new SignupRequest("parent", null, null, null, null);
 
     private static final SignupRequest ORGANIZATION_SIGNUP =
-            new SignupRequest("org", "햇살아동발달센터", OrganizationType.CENTER, "1234567890");
+            new SignupRequest("org", "햇살아동발달센터", OrganizationType.CENTER, "1234567890", null);
 
     private User pendingUserWithId(long id) {
         User user = User.pending(KAKAO_ID);

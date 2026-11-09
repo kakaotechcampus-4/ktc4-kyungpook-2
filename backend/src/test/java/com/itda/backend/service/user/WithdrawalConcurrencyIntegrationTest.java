@@ -198,7 +198,7 @@ class WithdrawalConcurrencyIntegrationTest {
         LockContention.Held<Object> held = contention.firstHoldsThen(
                 () -> userService.completeSignup(principal(pending), new com.itda.backend.dto.request.user.SignupRequest(
                         "org", "새싹센터", com.itda.backend.domain.organization.OrganizationType.CENTER,
-                        OrganizationFixture.nextBusinessNumber())),
+                        OrganizationFixture.nextBusinessNumber(), null)),
                 () -> mockMvc.perform(withCsrf(delete("/api/v1/auth/me").param("userId", principal(pending)), auth(pending))).andReturn());
 
         assertThat(held.second().getResponse().getStatus()).isEqualTo(403);
