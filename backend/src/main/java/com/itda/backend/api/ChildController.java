@@ -7,7 +7,9 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -99,5 +101,37 @@ public class ChildController {
             @AuthenticationPrincipal String userId, @Valid @RequestBody RegisterChildRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(childService.register(userId, request)));
+    }
+
+    /** 본문 없는 204 라 {@code ApiResponse} 로 감싸지 않는다 (backend/AGENTS.md). */
+    @DeleteMapping("/{childId}")
+    @Operation(summary = "명부에서 빼기",
+            description = "아이를 우리 기관 명부에서 뺍니다. 아이 자체와 보호자 연결은 그대로입니다. "
+                    + "우리 기관에 대한 공유 동의가 꺼지고(ROSTER_REMOVED), 우리 기관이 받았거나 재료를 낸 인사이트의 "
+                    + "기관 열람 권한을 거두며, 아직 쓸 수 있는 초대 코드를 취소합니다. 관리번호는 비워져 다시 쓸 수 있습니다. "
+                    + "이미 AI 가 처리 중인 일은 멈추지 않을 수 있습니다.")
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "204", description = "뺐음. 본문 없음"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 기관 소속이 아닌 사용자 "
+                            + "(ORGANIZATION_NOT_ASSIGNED), CSRF 토큰 누락·불일치 (FORBIDDEN)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "없거나 삭제됐거나 우리 기관 명부에 없는 아이. 이미 뺀 아이도 같음 (CHILD_NOT_FOUND)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ResponseEntity<Void> removeFromRoster(@AuthenticationPrincipal String userId, @PathVariable Long childId) {
+        childService.removeFromRoster(userId, childId);
+        return ResponseEntity.noContent().build();
     }
 }

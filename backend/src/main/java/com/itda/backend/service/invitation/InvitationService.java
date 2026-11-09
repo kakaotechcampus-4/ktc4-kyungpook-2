@@ -90,6 +90,20 @@ public class InvitationService {
         return issue(organizationId, childId);
     }
 
+    /**
+     * 명부 제외가 같은 트랜잭션에서 부른다. 이 기관이 이 아이에게 발급한, 아직 쓸 수 있는 코드를 모두 취소한다.
+     * 호출하는 쪽이 child → child_organization 을 이미 잠갔다는 전제다.
+     *
+     * <p>기준 시각은 한 번만 구해 조회와 취소에 같이 쓴다. 잠금을 기다리는 사이 만료된 코드를 새 시각으로 취소하면
+     * {@link Invitation#cancel} 이 예외를 던져 명부 제외 전체가 롤백된다.
+     */
+    @Transactional
+    public void cancelLiveForRosterRemoval(Long childId, Long organizationId) {
+        LocalDateTime now = now();
+        invitationRepository.findLiveForUpdate(childId, organizationId, now)
+                .forEach(invitation -> invitation.cancel(now));
+    }
+
     /** O-16 아직 쓸 수 있는 코드 목록. 수락·취소·만료된 코드는 빠진다. */
     @Transactional(readOnly = true)
     public List<LiveInvitationResponse> listLive(String userId, Long childId) {

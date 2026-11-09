@@ -28,6 +28,7 @@ import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.consent.ConsentService;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.user.UserService;
@@ -58,6 +59,9 @@ class ChildServiceJpaTest {
 
     @MockitoBean
     private InvitationService invitationService;
+
+    @MockitoBean
+    private ConsentService consentService;
 
     private Organization ours;
     private Organization other;

@@ -98,7 +98,8 @@ class GlobalExceptionHandlerLoggingTest {
     /** 없는 경로(404) 메시지에는 요청 경로가 그대로 들어간다("No static resource ..."). 경로도 사용자 입력이다. */
     @Test
     void unknownPathLogsExceptionKindButNotRequestedPath(CapturedOutput output) throws Exception {
-        mockMvc.perform(get(CHILDREN + "/" + SECRET)).andExpect(status().isNotFound());
+        // /children/{childId} 는 DELETE(명부에서 빼기)가 있어 GET 이 405 가 된다. 어떤 메서드도 없는 경로를 쓴다.
+        mockMvc.perform(get(CHILDREN + "/" + SECRET + "/nothing")).andExpect(status().isNotFound());
 
         assertThat(output).doesNotContain(SECRET);
         assertThat(output).contains("NoResourceFoundException", "404");
