@@ -18,10 +18,11 @@ test("업로드는 확인 창에서 [올리기] 를 눌러야 올라가고, 같�
   };
   const picker = page.locator("#upload-input");
   const dialog = page.getByRole("dialog", { name: "파일 1개를 올릴까요?" });
-  // 업로드 요청을 직접 센다 — 목록이 비어 보이는 것만으로는 "보내지 않았다" 가 증명되지 않는다
+  // 업로드 요청을 직접 센다 — 목록이 비어 보이는 것만으로는 "보내지 않았다" 가 증명되지 않는다.
+  // 업로드는 파일마다 업로드 주소 받기로 시작한다(S3 로 바로 올리는 3단계, #451)
   let uploads = 0;
   page.on("request", (req) => {
-    if (req.method() === "POST" && new URL(req.url()).pathname === "/api/v1/raw-records") uploads++;
+    if (req.method() === "POST" && new URL(req.url()).pathname === "/api/v1/raw-records/upload-url") uploads++;
   });
 
   // 취소하면 아무것도 보내지 않는다

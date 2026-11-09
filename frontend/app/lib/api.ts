@@ -14,7 +14,8 @@
  *    따른 추정이므로, 백엔드가 만들 때 실제 경로를 확인하고 맞춰야 한다.
  *
  *    구현된 것 (2026-10-26 기준. BE_READY 가 false 인 기능도 있다 — 각 키의 설명 참고)
- *      POST /api/v1/raw-records       multipart: file → 201
+ *      POST /api/v1/raw-records/upload-url                  → 업로드 주소 (S3 로 바로 올린다, #451)
+ *      POST /api/v1/raw-records/uploads/{uploadId}/complete → 원본 기록 (200)
  *      GET  /api/v1/raw-records/{id}
  *      GET  /api/v1/raw-records
  *      GET  /api/v1/raw-records/progress
@@ -168,7 +169,7 @@ const BE_READY = {
   summaryFailures: true,
   /** 인사이트 조회 · 2차 공유 (O-40 ~ O-42) */
   insights: true,
-  /** 원본 업로드 (POST /raw-records) */
+  /** 원본 업로드 (upload-url → S3 PUT → complete, #451) */
   upload: true,
   /** 파일별 처리 현황 (O-26) */
   fileProgress: true,
@@ -802,10 +803,11 @@ export async function resolveMatchingItem(
 /* ── 업로드 · 처리 현황 ─────────────────────────────── */
 
 /**
- * POST /api/v1/raw-records — **구현됨** (multipart: file → 201)
+ * 원본 기록 업로드 — 파일 본문을 **저장소(S3)로 바로** 보낸다 (#451, BE #450). 파일마다 세 단계다 ({@link uploadOne}).
  *
- * 즉시 응답하고 매칭 · 검증 · 요약은 백그라운드에서 돈다. 파일마다 한 번씩 부른다.
- * 응답은 RawRecordResponse(backend/.../dto/RawRecordResponse.java) 다.
+ *   1. POST /api/v1/raw-records/upload-url                  이름 · 형식 · 크기 → 접수 id · 업로드 주소
+ *   2. PUT  {uploadUrl}                                      파일 본문 (BE 를 거치지 않는다)
+ *   3. POST /api/v1/raw-records/uploads/{uploadId}/complete  → RawRecordResponse. 매칭 · 검증 · 요약은 백그라운드에서 돈다
  *
  * 한 파일이 실패해도 나머지는 이미 서버에 저장됐다. 그래서 전체를 실패로 던지지 않고
  * 파일마다 결과를 돌려준다 — 화면이 실패한 것만 다시 올리게 해야 원본이 중복되지 않는다.
@@ -849,6 +851,7 @@ export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
 /**
  * 한 번에 보내는 파일 수. 서버가 업로드의 글자 뽑기를 서버 전체에서 동시에 몇 개까지만 하고(#424, 기본 2개 · 기다리는 4개),
  * 넘치면 429 RAW_RECORD_UPLOAD_BUSY 로 거절한다. 한꺼번에 보내면 파일을 여러 개 고른 선생님이 그 상한에 걸린다.
+ * S3 로 바로 올려도(#451) 글자 뽑기는 완료 요청(3단계)에서 그대로 하므로 수를 늘리지 않는다.
  */
 const UPLOAD_CONCURRENCY = 2;
 
@@ -866,24 +869,116 @@ async function mapInBatches<T, R>(items: T[], limit: number, fn: (item: T) => Pr
   return results;
 }
 
+/** POST /api/v1/raw-records/upload-url 응답 (#450) */
+interface UploadTarget {
+  /** 접수 id. 원본 기록 id 와 다른 번호다 */
+  uploadId: number;
+  /** 운영은 서명된 S3 주소, 로컬(S3 없음)은 `/api` 로 시작하는 BE 주소 */
+  uploadUrl: string;
+  method: string;
+  /** 서명에 들어간 헤더. 그대로 붙인다 */
+  headers: Record<string, string>;
+  expiresAt: string;
+}
+
+/** 저장소(S3)가 본문을 받지 않았다 — 주소 만료 · 서명 불일치 · 네트워크 끊김. 처음부터 다시 하면 될 수 있다 */
+class StorageUploadError extends Error {
+  constructor(readonly status: number) {
+    super(`storage did not accept the upload (${status})`);
+  }
+}
+
+/** 완료를 다시 부르기 전에 기다리는 시간. 파일은 이미 올라가 있어 완료만 다시 부른다 */
+const COMPLETE_RETRY_DELAYS_MS = [1000, 3000];
+
+/**
+ * 파일 하나를 세 단계로 올린다. 원본이 두 번 생기지 않게 실패한 단계만 다시 한다.
+ *
+ * - 완료(3단계)가 네트워크 오류 · 5xx · 혼잡(429 RAW_RECORD_UPLOAD_BUSY) · 아직 안 올라옴(409)이면 **완료만** 다시 부른다
+ *   ({@link completeUpload}). 서버는 같은 접수의 완료를 여러 번 받아도 원본 기록을 하나만 만든다.
+ * - 저장소가 본문을 받지 않았거나(주소 만료 등) 완료가 끝내 409 면 **처음부터 한 번** 더 한다. 앞의 접수는 서버가 하루 뒤 지운다.
+ * - AI 처리 줄이 꽉 참(429 AGENT_QUEUE_FULL) · 상한 초과(400 · 413)는 다시 해도 같아 그대로 화면에 알린다.
+ */
 async function uploadOne(file: File): Promise<FileProgress> {
-  const form = new FormData();
-  form.append("file", file);
-  const saved = await request<{ id: number; originalFilename: string; createdAt: string }>(
-    "/api/v1/raw-records",
-    { method: "POST", body: form },
-  );
-  return {
-    rawRecordId: String(saved.id),
-    fileName: saved.originalFilename,
-    uploadedAt: saved.createdAt,
-    entries: [],
-  };
+  for (let attempt = 1; ; attempt++) {
+    const target = await request<UploadTarget>("/api/v1/raw-records/upload-url", {
+      method: "POST",
+      body: JSON.stringify({
+        filename: file.name,
+        // 형식을 모르는 파일(Office 없는 PC 의 docx 등)은 multipart 업로드 때 브라우저가 붙이던 값과 같게 보낸다 — BE 판단이 같다
+        contentType: file.type || "application/octet-stream",
+        size: file.size,
+      }),
+    });
+    try {
+      await putToStorage(target, file);
+      const saved = await completeUpload(target.uploadId);
+      return {
+        rawRecordId: String(saved.id),
+        fileName: saved.originalFilename,
+        uploadedAt: saved.createdAt,
+        entries: [],
+      };
+    } catch (err) {
+      const startOver =
+        err instanceof StorageUploadError || (err instanceof ApiError && err.code === "RAW_RECORD_UPLOAD_NOT_READY");
+      if (attempt < 2 && startOver) continue;
+      throw err;
+    }
+  }
 }
 
 /**
- * 서버가 이유를 코드로 준 거절(#424)을 먼저 가르고, 나머지는 상태 코드로 가른다. nginx 가 25MB 에서 먼저 막으면 본문이
- * JSON 이 아니라 code 가 없다. 네트워크 오류(fetch 의 TypeError)도 temporary 다.
+ * 2단계 — 파일 본문을 업로드 주소로 보낸다. 공통 {@link request} 를 쓰지 않는다: S3 에 쿠키(`credentials`) · CSRF 헤더를
+ * 붙이면 CORS · 서명 검사에서 실패하고, request 가 붙이는 JSON 형식 헤더는 서명한 형식과 다르다.
+ *
+ * 로컬(S3 없음)은 주소가 BE 의 `/api/...` 라 다른 API 처럼 쿠키 · CSRF 를 붙인다. 그때 거절은 BE 오류 형식으로 온다.
+ */
+async function putToStorage(target: UploadTarget, file: File): Promise<void> {
+  const toBackend = target.uploadUrl.startsWith("/");
+  let res: Response;
+  try {
+    res = await fetch(toBackend ? `${BASE}${target.uploadUrl}` : target.uploadUrl, {
+      method: target.method,
+      body: file,
+      headers: { ...target.headers, ...(toBackend ? csrfHeader() : {}) },
+      credentials: toBackend ? "include" : "omit",
+      cache: "no-store",
+    });
+  } catch {
+    throw new StorageUploadError(0);
+  }
+  if (res.ok) return;
+  if (toBackend) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body.code ?? "UNKNOWN", body.message);
+  }
+  throw new StorageUploadError(res.status);
+}
+
+/** 3단계 — 다 올렸다고 알린다. 다시 해 볼 만한 실패면 파일은 다시 올리지 않고 이 요청만 잠시 뒤 다시 부른다. */
+async function completeUpload(uploadId: number): Promise<{ id: number; originalFilename: string; createdAt: string }> {
+  for (let retry = 0; ; retry++) {
+    try {
+      return await request(`/api/v1/raw-records/uploads/${uploadId}/complete`, { method: "POST" });
+    } catch (err) {
+      if (retry >= COMPLETE_RETRY_DELAYS_MS.length || !isRetryableComplete(err)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, COMPLETE_RETRY_DELAYS_MS[retry]));
+    }
+  }
+}
+
+function isRetryableComplete(err: unknown): boolean {
+  if (err instanceof ApiError) {
+    return err.status >= 500 || err.code === "RAW_RECORD_UPLOAD_BUSY" || err.code === "RAW_RECORD_UPLOAD_NOT_READY";
+  }
+  // fetch 의 네트워크 오류
+  return err instanceof TypeError;
+}
+
+/**
+ * 서버가 이유를 코드로 준 거절(#424)을 먼저 가르고, 나머지는 상태 코드로 가른다. 큰 파일은 업로드 주소를 받을 때 413 으로
+ * 거절된다(#450 — S3 로 바로 가서 Caddy 상한은 더 이상 걸리지 않는다). 저장소 거절 · 접수 없음 · 네트워크 오류는 temporary 다.
  */
 function uploadFailReasonOf(err: unknown): UploadFailReason {
   if (err instanceof ApiError && err.code === "RAW_RECORD_ENTRY_LIMIT_EXCEEDED") return "too_many_entries";
