@@ -46,7 +46,15 @@ const ROLES = [
   { value: "parent", label: "보호자", description: "아이의 기록을 모아 보고 공유를 허락해요" },
 ] as const;
 
-type Errors = { organizationName?: string; businessNumber?: string; form?: string };
+type Errors = { organizationName?: string; businessNumber?: string; handoverCode?: string; form?: string };
+
+/** 기관 담당자는 기관을 새로 등록하거나, 이전 담당자가 준 인계 코드로 그 기관을 이어받는다(#478) */
+type OrgMode = "new" | "handover";
+
+/** 공백·하이픈을 빼고 대문자로. 화면에는 XXXX-XXXX 로 보이고 사람이 소문자로 칠 수도 있다 */
+function normalizeCode(raw: string): string {
+  return raw.replace(/[\s-]/g, "").toUpperCase();
+}
 
 export default function SignupPage() {
   const { initialRole, withdrawTarget } = useLoaderData<typeof clientLoader>();
@@ -56,12 +64,18 @@ export default function SignupPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationType, setOrganizationType] = useState<OrganizationType>("CENTER");
   const [businessNumber, setBusinessNumber] = useState("");
+  const [orgMode, setOrgMode] = useState<OrgMode>("new");
+  const [handoverCode, setHandoverCode] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [pending, setPending] = useState(false);
 
   function validate(): Errors {
     if (role !== "org") return {};
     const next: Errors = {};
+    if (orgMode === "handover") {
+      if (normalizeCode(handoverCode).length !== 8) next.handoverCode = "인계 코드 8자리를 입력해 주세요";
+      return next;
+    }
     const trimmed = organizationName.trim();
     if (!trimmed) next.organizationName = "기관명을 입력해 주세요";
     else if (trimmed.length > 100) next.organizationName = "기관명은 100자 이내로 입력해 주세요";
@@ -78,15 +92,18 @@ export default function SignupPage() {
     if (Object.keys(invalid).length > 0) return;
 
     // 보호자는 role 만 보낸다 — 기관 칸에 쓰다 만 값이 있어도 싣지 않는다(실으면 400).
+    // 인계 코드로 이어받을 때는 기관 정보를 싣지 않는다(섞으면 400).
     const input: SignupInput =
       role === "parent"
         ? { role: "parent" }
-        : {
-            role: "org",
-            organizationName: organizationName.trim(),
-            organizationType,
-            businessNumber,
-          };
+        : orgMode === "handover"
+          ? { role: "org", handoverCode: normalizeCode(handoverCode) }
+          : {
+              role: "org",
+              organizationName: organizationName.trim(),
+              organizationType,
+              businessNumber,
+            };
 
     setPending(true);
     try {
@@ -110,6 +127,9 @@ export default function SignupPage() {
     switch (err.code) {
       case "DUPLICATE_BUSINESS_NUMBER":
         setErrors({ businessNumber: "이미 등록된 사업자등록번호입니다" });
+        return;
+      case "INVALID_HANDOVER_CODE":
+        setErrors({ handoverCode: "코드가 맞지 않거나 시간이 지났어요. 이전 담당자에게 새 코드를 받아 주세요" });
         return;
       case "ALREADY_SIGNED_UP": {
         // 다른 탭에서 먼저 끝낸 경우 등. 역할은 서버에 이미 정해져 있으니 그쪽으로 보낸다.
@@ -198,6 +218,59 @@ export default function SignupPage() {
           </fieldset>
 
           {role === "org" ? (
+            <div role="radiogroup" aria-label="기관 가입 방법" className="grid grid-cols-2 gap-1 rounded-[14px] bg-surface2 p-1">
+              {(
+                [
+                  ["new", "새 기관 등록"],
+                  ["handover", "인계 코드로 가입"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={orgMode === value}
+                  onClick={() => {
+                    setOrgMode(value);
+                    setErrors({});
+                  }}
+                  className={`tap rounded-[11px] px-3 text-[15px] font-semibold ${
+                    orgMode === value ? "bg-surface text-ink shadow-[0_1px_4px_rgba(120,90,40,0.12)]" : "text-muted"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {role === "org" && orgMode === "handover" ? (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[15px] font-semibold">인계 코드</span>
+              <span className="text-[14px] leading-6 text-muted">
+                이전 담당자가 [담당자 넘기기]에서 받은 코드예요. 가입하면 그 기관의 아동 명부와 기록을 그대로 이어받고, 이전
+                담당자 계정은 탈퇴돼요.
+              </span>
+              <input
+                value={handoverCode}
+                onChange={(e) => setHandoverCode(e.target.value.slice(0, 9))}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                placeholder="XXXX-XXXX"
+                aria-invalid={errors.handoverCode ? true : undefined}
+                aria-describedby={errors.handoverCode ? "handover-code-error" : undefined}
+                className={`${inputClass} font-mono tracking-[0.12em] uppercase`}
+              />
+              {errors.handoverCode ? (
+                <span id="handover-code-error" className="text-[14px] text-block">
+                  {errors.handoverCode}
+                </span>
+              ) : null}
+            </label>
+          ) : null}
+
+          {role === "org" && orgMode === "new" ? (
             <div className="flex flex-col gap-4">
               <label className="flex flex-col gap-1.5">
                 <span className="text-[15px] font-semibold">기관명</span>

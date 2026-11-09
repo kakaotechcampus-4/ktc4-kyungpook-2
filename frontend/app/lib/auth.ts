@@ -413,6 +413,11 @@ export type SignupInput =
       organizationType: OrganizationType;
       /** 하이픈 없이 숫자 10자리 */
       businessNumber: string;
+    }
+  | {
+      role: "org";
+      /** 이전 담당자가 발급한 인계 코드(#478). 기관을 새로 만들지 않고 그 기관을 이어받는다 */
+      handoverCode: string;
     };
 
 /**
@@ -421,8 +426,10 @@ export type SignupInput =
  * 보호자는 role **만** 보낸다. 기관 필드가 `""` 로라도 섞이면 BE 가 400 을 준다.
  * 그래서 폼 상태를 그대로 싣지 않고 역할별로 본문을 새로 만든다.
  *
+ * 담당자가 바뀌는 기관은 기관 정보 대신 인계 코드 하나만 보낸다(#478) — 둘을 섞으면 400 이다.
+ *
  * 실패는 ApiError 로 던진다. 화면이 code 로 나눠 처리한다
- * (ALREADY_SIGNED_UP · DUPLICATE_BUSINESS_NUMBER · INVALID_REQUEST).
+ * (ALREADY_SIGNED_UP · DUPLICATE_BUSINESS_NUMBER · INVALID_HANDOVER_CODE · INVALID_REQUEST).
  */
 export async function signup(input: SignupInput): Promise<Session> {
   if (USE_MOCK) {
@@ -439,12 +446,14 @@ export async function signup(input: SignupInput): Promise<Session> {
   const body =
     input.role === "parent"
       ? { role: "parent" }
-      : {
-          role: "org",
-          organizationName: input.organizationName,
-          organizationType: input.organizationType,
-          businessNumber: input.businessNumber,
-        };
+      : "handoverCode" in input
+        ? { role: "org", handoverCode: input.handoverCode }
+        : {
+            role: "org",
+            organizationName: input.organizationName,
+            organizationType: input.organizationType,
+            businessNumber: input.businessNumber,
+          };
 
   const res = await fetch(`${API_BASE}/api/v1/auth/signup`, {
     method: "POST",

@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FileText, LogOut, TriangleAlert, User } from "lucide-react";
+import { ChevronDown, FileText, LogOut, TriangleAlert, User, UserRoundCog } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useNavigating } from "@/components/ui/Loading";
 import { Busy } from "@/components/ui";
+import { HandoverDialog } from "@/components/org/HandoverDialog";
 import { Toast } from "@/components/org/WorkList";
 import { getAiStatus, getInboxUnreadCount, getPipeline, loadIfReady } from "@/lib/api";
 import { signOut } from "@/lib/auth";
@@ -13,6 +14,8 @@ import { usePolling } from "@/lib/usePolling";
 /** 머리띠 오른쪽의 내 정보. 사람 이름은 저장하지 않아 기관명만 보여 준다. null 은 서버가 주지 않은 값 */
 export interface OrgShellMe {
   institutionName: string | null;
+  /** 서버가 회원 탈퇴를 열었는지. 담당자 넘기기는 끝에 이 계정을 탈퇴시키므로 같은 스위치를 따른다(#478) */
+  withdrawalEnabled: boolean;
 }
 
 /** 메뉴 배지. null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다 */
@@ -265,6 +268,7 @@ export function OrgShell({
 function AccountMenu({ me }: { me: OrgShellMe }) {
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [handover, setHandover] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
   const navigate = useNavigate();
 
@@ -329,6 +333,20 @@ function AccountMenu({ me }: { me: OrgShellMe }) {
             <FileText aria-hidden size={17} strokeWidth={1.9} className="shrink-0" />
             약관
           </Link>
+          {me.withdrawalEnabled ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                setHandover(true);
+              }}
+              className="tap flex w-full items-center gap-2.5 rounded-[14px] px-3 text-[15px] font-semibold text-ink2 hover:bg-surface2"
+            >
+              <UserRoundCog aria-hidden size={17} strokeWidth={1.9} className="shrink-0" />
+              담당자 넘기기
+            </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"
@@ -341,6 +359,7 @@ function AccountMenu({ me }: { me: OrgShellMe }) {
           </button>
         </span>
       ) : null}
+      {handover ? <HandoverDialog onClose={() => setHandover(false)} /> : null}
     </span>
   );
 }

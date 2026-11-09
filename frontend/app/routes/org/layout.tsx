@@ -17,7 +17,10 @@ import "./org.css";
 export const shouldRevalidate = skipSearchOnlyChange;
 
 export async function clientLoader({ request }: { request: Request }) {
-  const { loggedIn, signupCompleted, role, institutionName, termsAgreed } = await getSession();
+  const { loggedIn, signupCompleted, role, institutionName, termsAgreed, withdrawing, withdrawn, withdrawalEnabled } =
+    await getSession();
+  // 후임이 인계 코드로 가입하면 이 계정은 탈퇴된다(#478). 처리 중이거나 끝났으면 탈퇴 안내 화면으로 보낸다
+  if (withdrawing || withdrawn) return redirect("/withdrawal");
   // 카카오 로그인만 하고 역할을 안 고른 사람 — 보호 API 가 403 SIGNUP_NOT_COMPLETED 를 준다.
   if (loggedIn && !signupCompleted) return redirect("/signup?role=org");
   // 로그인이 풀렸으면 다시 로그인한 뒤 이 화면으로 돌아오게 주소를 남긴다. 다른 역할이 들어온 경우는 남기지 않는다
@@ -34,7 +37,7 @@ export async function clientLoader({ request }: { request: Request }) {
 
   // 머리띠의 내 정보. 사람 이름은 저장하지 않으므로 /auth/me 의 기관명(#236)만 쓴다.
   // 서버가 기관명을 안 주면 비워 둔다 — mock 기관명을 띄우면 로그인한 사람과 다른 기관이 보인다.
-  const me = { institutionName: isAuthMock() ? MY_INSTITUTION.name : (institutionName ?? null) };
+  const me = { institutionName: isAuthMock() ? MY_INSTITUTION.name : (institutionName ?? null), withdrawalEnabled };
 
   return {
     me,
