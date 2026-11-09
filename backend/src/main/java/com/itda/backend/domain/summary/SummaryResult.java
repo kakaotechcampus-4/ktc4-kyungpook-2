@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -33,7 +34,9 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(name = "summary_result", uniqueConstraints = @UniqueConstraint(
         name = "uk_summary_result_group_revision",
-        columnNames = {"child_id", "entry_date", "institution_id", "revision"}))
+        columnNames = {"child_id", "entry_date", "institution_id", "revision"}),
+        // Gate 1 목록. UNIQUE 키는 child_id 로 시작해 기관 · 상태 조회에 쓰지 못한다 (#479)
+        indexes = @Index(name = "idx_summary_result_institution_id_status", columnList = "institution_id, status"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SummaryResult {

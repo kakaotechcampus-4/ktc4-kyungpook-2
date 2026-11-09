@@ -1174,6 +1174,8 @@ CANCELLED   기관이 취소했다
 | `updated_at` | DATETIME | N |  |
 | `deleted_at` | DATETIME | Y | **연결 해제 표시** |
 
+인덱스 `idx_child_guardian_user_id (user_id)` — 보호자의 아이 목록. UNIQUE 키 `(child_id, user_id)` 는 `child_id` 로 시작해 `user_id` 로 찾을 때 쓰지 못한다 (#479).
+
 `(child_id, user_id)` UNIQUE. 재연결은 §3.3 의 복구 규칙을 따르고, 행을 잠근 뒤 다시 확인한다.
 
 보호자가 여러 명일 수 있고(부·모), 한 보호자가 여러 아이를 가질 수 있어 N:M이다.
@@ -1427,6 +1429,8 @@ UNIQUE (child_id)
 | `updated_at` | DATETIME | **Y** | DB만 NULL 허용. 새 행·수정 행은 항상 채워짐 (§3.1 예외) |
 | `deleted_at` | DATETIME | Y | **삭제 표시.** 잘못 올린 파일을 목록에서 내릴 때 |
 
+인덱스 `idx_raw_record_institution_id (institution_id)` — 처리 현황 · 대시보드 · 요약 묶음 · AI 처리 줄 상한처럼 기관 화면 대부분이 기관으로 원본 파일을 거른다 (#479).
+
 **`institution_id`가 문자열인 이유** ⚠️
 
 처음(9.9)엔 기관 도메인이 없어서 요청 파라미터·카카오 회원번호 문자열을 그대로 기관 식별자로 썼다.
@@ -1489,6 +1493,13 @@ S3 객체의 실제 파기는 개인정보 파기 절차(§3.2 마지막)에서 
 | `failure_reason` | VARCHAR(30) | Y | `SYSTEM_ERROR` 로 멈춘 원인 코드 (#180, 아래 "실패 상태와 원인 코드"). 그 상태일 때만 채운다 |
 | `revised_by` | VARCHAR(50) | Y | 검증에서 막힌 본문을 수정 요청 큐에서 **마지막으로** 고친 선생님 (`users.id`, #357). 고친 적 없으면 NULL |
 | `revised_at` | DATETIME | Y | 마지막으로 고친 시각 (#357) |
+
+인덱스 (#479)
+
+- `idx_journal_entry_status_id (status, id)` — 매칭 · 검증 · 요약 워커가 5초마다 상태로 오래된 것부터 찾는다
+- `idx_journal_entry_raw_record_id (raw_record_id)` — 처리 현황, 그리고 `raw_record` 를 거쳐 기관을 찾는 모든 조인
+- `idx_journal_entry_summary_id (summary_id)` — Gate 1 목록, 요약 결과 저장
+- `idx_journal_entry_child_id_entry_date (child_id, entry_date)` — 요약 묶음(아동 · 날짜)
 
 기관 컬럼이 없다 — 어느 기관의 일지인지는 `raw_record_id`로 `raw_record`를 거쳐 찾는다.
 
@@ -1796,6 +1807,8 @@ AI 다운으로 되돌린 횟수는 `agent_retry_count` 가 센다 (#153).
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N | 사람이 처리할 때 갱신 |
 
+인덱스 `idx_matching_result_journal_entry_id (journal_entry_id)` — 일지별 최신 매칭 결과 (#479).
+
 설계상 실행 이력이라 삭제하지 않는다. `deleted_at`을 두지 않는다.
 
 > ⚠️ **현재 코드는 이 행을 수정한다.** 교사가 확인 필요 큐에서 아이를 확정하거나 "우리 기관 아님"으로
@@ -1914,6 +1927,8 @@ CO_MENTION           두 아이가 함께 나옵니다. 누구 기록으로 저�
 | `raw_response` | TEXT | Y | AI 응답 원본 JSON 문자열 |
 | `created_at` | DATETIME | N |  |
 
+인덱스 `idx_validation_result_journal_entry_id (journal_entry_id)` — 막힌 일지의 사유, 처리 현황의 검증 결과 (#479).
+
 설계상 실행 이력이라 삭제하지 않는다. `deleted_at` 을 두지 않는다.
 
 **`verdict`** — AI 계약과 1:1. API(JSON)로는 대문자 그대로 내보낸다
@@ -2018,6 +2033,8 @@ FAILED   AI 호출 자체가 실패 — AI 계약에 없는 BE 전용 값 (#122)
 | `model_version` | VARCHAR(100) | Y | 응답을 낸 모델 버전 |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
+
+인덱스 `idx_summary_result_institution_id_status (institution_id, status)` — Gate 1 목록. 아래 UNIQUE 키는 `child_id` 로 시작해 기관 · 상태로 찾을 때 쓰지 못한다 (#479).
 
 ```
 UNIQUE (child_id, entry_date, institution_id, revision)
@@ -2525,6 +2542,8 @@ child_context.content        = 교사가 승인한 최종본 — 그 기관 담�
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N | Gate 2 에서 상태가 바뀐다 |
 
+인덱스 `idx_insight_result_child_id (child_id)` — 인사이트 목록 · 대시보드가 명부 아이들의 인사이트를 읽는다 (#479).
+
 **`status`**
 
 ```
@@ -2641,6 +2660,8 @@ INSIGHT_MATERIAL_CONSENT_REVOKED` 다 (O-42).
 | `revoked_at` | DATETIME | Y | 권한을 거둔 시각. NULL 이면 살아 있다 |
 | `revoke_reason` | VARCHAR(30) | Y | 왜 거뒀나. `sharing_consent` 의 철회 사유를 그대로 쓴다 |
 | `created_at` | DATETIME | N |  |
+
+인덱스 `idx_sharing_history_receiver_type_receiver_id (receiver_type, receiver_id)` — 기관 수신함과 안 읽은 수(화면이 10초마다 부른다). UNIQUE 키는 `insight_result_id` 로 시작해 수신자로 찾을 때 쓰지 못한다 (#479).
 
 ```
 receiver_type   ORGANIZATION | GUARDIAN
@@ -3027,6 +3048,11 @@ repository.findByChildIdAndOrganizationId(childId, organizationId)   // deleted_
 배포는 `ddl-auto: update`라 **컬럼·테이블 추가만 자동**이다. 아래는 자동으로 되지 않으므로
 PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처리한다.
 
+**인덱스는 자동이지만 쓰기를 막는다.** `update` 는 기존 테이블에도 엔티티의 `@Index` 중 **이름이 없는 것**을 기동하면서
+일반 `CREATE INDEX` 로 만든다(`CONCURRENTLY` 아님). 만드는 동안 그 테이블의 쓰기가 막히므로, 행이 쌓인 테이블에 인덱스를 더할 때는
+배포 전에 같은 이름으로 `CREATE INDEX CONCURRENTLY` 를 먼저 실행한다. 같은 이름이 있으면 `update` 는 정의를 보지 않고 건너뛴다
+(2026-11-09 PostgreSQL 16 에서 확인 — 아래 #479 절차).
+
 - 컬럼 삭제, 컬럼 이름 변경 (새 컬럼이 추가되고 옛 컬럼은 남는다)
 - 타입 변경, NOT NULL ↔ NULL 변경
 - UNIQUE 등 제약 추가·제거
@@ -3139,6 +3165,62 @@ SELECT count(*) FROM users WHERE deleted_at IS NOT NULL AND kakao_id NOT LIKE 'w
 3. 카카오 개발자 콘솔 › 카카오 로그인 › 동의항목에서 닉네임을 "사용 안 함"으로 바꾼다. 서버는 scope 를 보내지 않으므로,
    콘솔에 켜져 있으면 동의 화면에 닉네임이 계속 뜬다(받아도 저장하지 않는다)
 
+**자주 읽는 테이블 인덱스 (#479) 배포 절차** — 인덱스 11개(§5.4 · §6.1 · §6.2 · §7.1 · §8.1 · §8.2 · §9.3 · §9.4)를 더한다.
+**아래 2 의 검증 쿼리에서 11줄이 모두 `true` 여야 머지한다.** 머지하면 자동 배포되고, 빠진 인덱스는 Hibernate 가 기동하면서
+쓰기를 막으며 만든다. 컬럼 · 테이블 · 제약 변경은 없다.
+
+1. SSH 터널로 붙어 한 줄씩 실행한다. `CONCURRENTLY` 는 트랜잭션 안에서 못 쓰므로 psql 자동 커밋 상태로 둔다
+   ```sql
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_journal_entry_status_id ON journal_entry (status, id);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_journal_entry_raw_record_id ON journal_entry (raw_record_id);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_journal_entry_summary_id ON journal_entry (summary_id);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_journal_entry_child_id_entry_date ON journal_entry (child_id, entry_date);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_raw_record_institution_id ON raw_record (institution_id);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_matching_result_journal_entry_id ON matching_result (journal_entry_id);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_validation_result_journal_entry_id ON validation_result (journal_entry_id);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_summary_result_institution_id_status ON summary_result (institution_id, status);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_insight_result_child_id ON insight_result (child_id);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_child_guardian_user_id ON child_guardian (user_id);
+   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sharing_history_receiver_type_receiver_id ON sharing_history (receiver_type, receiver_id);
+   ```
+2. 이번 11개만 이름 · 테이블 · 컬럼 순서 · 유효성까지 확인한다. 같은 비교를 `QueryIndexIntegrationTest` 가 엔티티 쪽에서 한다
+   ```sql
+   WITH expected(name, tbl, cols) AS (VALUES
+     ('idx_journal_entry_status_id',                  'journal_entry',     '(status, id)'),
+     ('idx_journal_entry_raw_record_id',              'journal_entry',     '(raw_record_id)'),
+     ('idx_journal_entry_summary_id',                 'journal_entry',     '(summary_id)'),
+     ('idx_journal_entry_child_id_entry_date',        'journal_entry',     '(child_id, entry_date)'),
+     ('idx_raw_record_institution_id',                'raw_record',        '(institution_id)'),
+     ('idx_matching_result_journal_entry_id',         'matching_result',   '(journal_entry_id)'),
+     ('idx_validation_result_journal_entry_id',       'validation_result', '(journal_entry_id)'),
+     ('idx_summary_result_institution_id_status',     'summary_result',    '(institution_id, status)'),
+     ('idx_insight_result_child_id',                  'insight_result',    '(child_id)'),
+     ('idx_child_guardian_user_id',                   'child_guardian',    '(user_id)'),
+     ('idx_sharing_history_receiver_type_receiver_id','sharing_history',   '(receiver_type, receiver_id)')
+   )
+   SELECT e.name,
+          c.oid IS NOT NULL AS exists,
+          pg_get_indexdef(c.oid) =
+            format('CREATE INDEX %s ON public.%s USING btree %s', e.name, e.tbl, e.cols) AS definition_ok,
+          coalesce(x.indisvalid AND x.indisready, false) AS valid
+   FROM expected e
+   LEFT JOIN pg_class c ON c.relname = e.name AND c.relkind = 'i'
+                       AND c.relnamespace = 'public'::regnamespace
+   LEFT JOIN pg_index x ON x.indexrelid = c.oid
+   ORDER BY e.name;
+   ```
+3. `true` 가 아닌 줄은 경우에 따라 다르게 고친 뒤 2 를 다시 돌린다
+
+   | 결과 | 뜻 | 할 일 |
+   | --- | --- | --- |
+   | `exists = false` | 만들어지지 않았다 | 그 한 줄을 다시 실행한다 |
+   | `valid = false`, `definition_ok = true` | 이번 `CONCURRENTLY` 가 중간에 실패해 남긴 무효 인덱스 (`IF NOT EXISTS` 는 이것도 있는 것으로 보고 넘어간다) | `DROP INDEX CONCURRENTLY <이름>` 후 다시 만든다 |
+   | `definition_ok = false` | 같은 이름의 다른 인덱스가 이미 있다 | 지우지 않는다. 어느 테이블 · 어떤 정의인지, 쓰이고 있는지(`pg_stat_user_indexes`) 확인한 뒤 교체 여부를 정한다. 정할 때까지 머지하지 않는다 |
+4. 머지 → 백엔드 배포가 성공했는지 확인한다. 기동 때 Hibernate 는 같은 이름을 보고 건너뛴다
+
+**되돌리기** — `@Index` 를 뺀 버전을 **먼저** 배포하고, 그다음 필요하면 `DROP INDEX CONCURRENTLY`. 순서가 거꾸로면 다음 기동 때
+Hibernate 가 쓰기를 막으며 다시 만든다.
+
 ---
 
 ## 변경 이력
@@ -3218,3 +3300,4 @@ SELECT count(*) FROM users WHERE deleted_at IS NOT NULL AND kakao_id NOT LIKE 'w
 | 2026-11-09 | 웹훅 수신함 처리 보강 (§4.1 "탈퇴" · §4.5) — 남기기는 저장 스레드에 맡겨 웹훅 요청이 커넥션 대기까지 2초 안에 답하고, 옮기기는 회원 행을 기다리지 않고(NOWAIT) 잠그며, 주기 작업은 옮기기를 기다리지 않는다. 스키마 변경 없음 | #473 |
 | 2026-11-09 | 탈퇴 보강 (§3.3 잠금 순서 · §4.1 "탈퇴") — 정리만 남은 직접 신청 탈퇴에 카카오 로그인이 오면 `REQUESTED` 로 되돌려 연결 해제를 다시 부른다. 탈퇴 정리는 아이 id 만 읽고 아이를 잠근 뒤 이미 끊긴 연결은 건너뛴다. 스키마 변경 없음 | #473 |
 | 2026-11-09 | `organization_handover` 추가 (§4.6) — 기관 담당자 넘기기. 후임이 인계 코드로 가입하면 같은 기관에 소속되고 이전 담당자는 탈퇴로 정리된다(§4.1 "탈퇴"). 기관 담당자의 탈퇴는 카카오 첫 호출이 실패해도 취소하지 않는다. 잠금 순서 두 줄 추가(§3.3). 새 테이블이라 `ddl-auto: update` 가 만든다 | #478 |
+| 2026-11-09 | 자주 읽는 테이블 인덱스 11개 추가 — `journal_entry` 4개 · `raw_record` · `matching_result` · `validation_result` · `summary_result` · `insight_result` · `child_guardian` · `sharing_history` 각 1개 (§5.4 · §6.1 · §6.2 · §7.1 · §8.1 · §8.2 · §9.3 · §9.4). 컬럼 · 제약 변경 없음. `update` 가 기존 테이블에도 없는 인덱스를 쓰기를 막으며 만들어, 배포 전에 운영 DB 에 `CONCURRENTLY` 로 먼저 만들고 검증한다 (§11.4) | #479 |

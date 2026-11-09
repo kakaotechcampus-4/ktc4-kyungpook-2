@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
@@ -18,7 +19,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "raw_record")
+@Table(name = "raw_record",
+        // 거의 모든 기관 화면이 기관으로 원본 파일을 거른다 (#479)
+        indexes = @Index(name = "idx_raw_record_institution_id", columnList = "institution_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RawRecord {
