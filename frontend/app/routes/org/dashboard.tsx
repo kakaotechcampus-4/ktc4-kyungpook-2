@@ -401,6 +401,9 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   const [check, setCheck] = useState<FullCheck>({ status: "loading" });
   const fetchSeq = useRef(0);
   const waitTimer = useRef<number | undefined>(undefined);
+  // 창을 연 때부터 취소하거나 업로드가 끝날 때까지 잠근다. state 는 다시 그려져야 바뀌어서, 같은 순간에 두 번 놓으면
+  // 둘 다 통과해 첫 선택이 말없이 바뀐다 — ref 는 바로 바뀐다
+  const locked = useRef(false);
 
   // 화면을 떠나면 남은 기다림을 정리한다
   useEffect(() => () => window.clearTimeout(waitTimer.current), []);
@@ -426,7 +429,8 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
     const picked = Array.from(list ?? []);
     // 취소한 뒤 같은 파일을 다시 골라도 onChange 가 오게 바로 비운다
     if (input.current) input.current.value = "";
-    if (!picked.length || uploading || pending) return;
+    if (!picked.length || locked.current) return;
+    locked.current = true;
     setPending(picked);
     // 받기 전에는 files 로만 맞춰 보고, 창에 "맞춰 보는 중" 을 띄운다. 실패해도 창 · 업로드는 그대로다 —
     // 대신 최근 파일과만 맞춰 봤다고 알린다 (경고가 없다고 같은 파일이 없는 건 아니라서)
@@ -451,16 +455,17 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
       });
   }
 
-  /** skipped: 확인 창에서 빼고 보내지 않은 파일. 끝난 뒤 실패 안내에 함께 남긴다 — 창이 닫히면 빠진 걸 다시 볼 곳이 없어서 */
-  async function upload(picked: File[], skipped: UploadFailure[] = []) {
-    if (!picked.length || uploading) return;
+  async function upload(picked: File[]) {
     setUploading(true);
     try {
+      // 창에서 "빠져요" 로 알린 파일(형식 · 20MB)은 uploadRawRecords 가 보내지 않고 실패로 돌려준다 — 같은 uploadPrecheck 를 본다.
+      // 그래서 창이 닫힌 뒤에도 실패 안내에 남는다
       const results = await uploadRawRecords(picked);
-      setFailed([...skipped, ...results.filter((r): r is UploadFailure => !r.ok)]);
+      setFailed(results.filter((r): r is UploadFailure => !r.ok));
       await onUploaded();
     } finally {
       setUploading(false);
+      locked.current = false;
     }
   }
 
@@ -536,18 +541,13 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           // 여기엔 FAILED 가 섞여 다시 올리는 파일에도 경고가 뜰 수 있지만 그대로 둔다. 경고만 하므로 놓치는 것보다 낫다
           uploaded={check.status === "done" ? check.list : files}
           fullCheck={check.status}
-          onCancel={() => setPending(null)}
+          onCancel={() => {
+            setPending(null);
+            locked.current = false;
+          }}
           onConfirm={() => {
             setPending(null);
-            // 창에서 "빠져요" 로 알린 파일은 보내지 않는다 — 20MB 넘는 파일을 끝까지 올렸다가 거절당하지 않게
-            const sending: File[] = [];
-            const skipped: UploadFailure[] = [];
-            for (const file of pending) {
-              const reason = uploadPrecheck(file);
-              if (reason) skipped.push({ ok: false, file, reason });
-              else sending.push(file);
-            }
-            void upload(sending, skipped);
+            void upload(pending);
           }}
         />
       ) : null}
@@ -684,7 +684,7 @@ function UploadConfirm({
   return (
     <ConfirmDialog
       title={sending ? `파일 ${sending}개를 올릴까요?` : "올릴 수 있는 파일이 없어요"}
-      warning="올린 뒤에는 취소할 수 없어요"
+      warning={sending ? "올린 뒤에는 취소할 수 없어요" : undefined}
       confirmLabel="올리기"
       // 전체 목록과 이름을 맞춰 보기 전에는 막는다. 오래된 같은 이름 파일을 경고 없이 올리지 않게
       confirmDisabled={!sending || fullCheck === "loading"}
