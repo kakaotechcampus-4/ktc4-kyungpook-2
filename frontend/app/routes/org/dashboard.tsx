@@ -28,9 +28,8 @@ import {
   getFileProgress,
   getPipeline,
   getUploadedFiles,
-  hasUploadExtension,
-  isUploadTooLarge,
   UPLOAD_EXTENSIONS,
+  uploadPrecheck,
   uploadRawRecords,
   type UploadedFile,
 } from "@/lib/api";
@@ -398,10 +397,30 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   const [failed, setFailed] = useState<UploadFailure[]>([]);
   // 고른 뒤 확인 창에서 [올리기] 를 기다리는 파일 (#489). 올린 기록은 취소 · 삭제가 없어 한 번 묻는다
   const [pending, setPending] = useState<File[] | null>(null);
-  // 기관이 올린 파일 전체. files(최근 50개)보다 오래된 파일과도 이름을 맞춰 보려고 창을 열 때 받는다
-  const [allUploaded, setAllUploaded] = useState<UploadedFile[]>([]);
-  const [fullCheck, setFullCheck] = useState<FullCheck>("loading");
+  // 기관이 올린 파일 전체를 받았는지와 그 목록. files(최근 50개)보다 오래된 파일과도 이름을 맞춰 보려고 창을 열 때 받는다
+  const [check, setCheck] = useState<FullCheck>({ status: "loading" });
   const fetchSeq = useRef(0);
+  const waitTimer = useRef<number | undefined>(undefined);
+
+  // 화면을 떠나면 남은 기다림을 정리한다
+  useEffect(() => () => window.clearTimeout(waitTimer.current), []);
+
+  // 확인 창이 떠 있거나 올리는 중에는 페이지 어디에 파일을 놓아도 브라우저가 그 파일을 열며 대시보드를 떠나지 않게 막는다.
+  // 떠나면 고른 파일 · 남은 업로드가 사라진다. 업로드 칸은 자기 핸들러가 먼저 받는다
+  const guardDrop = uploading || pending !== null;
+  useEffect(() => {
+    if (!guardDrop) return;
+    const block = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "none";
+    };
+    window.addEventListener("dragover", block);
+    window.addEventListener("drop", block);
+    return () => {
+      window.removeEventListener("dragover", block);
+      window.removeEventListener("drop", block);
+    };
+  }, [guardDrop]);
 
   function pick(list: FileList | null) {
     const picked = Array.from(list ?? []);
@@ -412,21 +431,24 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
     // 받기 전에는 files 로만 맞춰 보고, 창에 "맞춰 보는 중" 을 띄운다. 실패해도 창 · 업로드는 그대로다 —
     // 대신 최근 파일과만 맞춰 봤다고 알린다 (경고가 없다고 같은 파일이 없는 건 아니라서)
     const seq = ++fetchSeq.current;
-    setAllUploaded([]);
-    setFullCheck("loading");
+    setCheck({ status: "loading" });
+    window.clearTimeout(waitTimer.current);
+    // 받는 동안은 [올리기] 를 막으므로, 서버가 늦으면 기다리게만 하지 않고 최근 파일과만 맞춰 본 채로 풀어 준다.
+    // 그 뒤에라도 목록이 오면 창이 열려 있는 동안 경고를 더한다
+    waitTimer.current = window.setTimeout(() => {
+      if (fetchSeq.current === seq) setCheck((c) => (c.status === "loading" ? { status: "failed" } : c));
+    }, FULL_CHECK_WAIT_MS);
     getUploadedFiles()
       .then((list) => {
         if (fetchSeq.current !== seq) return;
-        setAllUploaded(list);
-        setFullCheck("done");
+        window.clearTimeout(waitTimer.current);
+        setCheck({ status: "done", list });
       })
       .catch(() => {
-        if (fetchSeq.current === seq) setFullCheck("failed");
+        if (fetchSeq.current !== seq) return;
+        window.clearTimeout(waitTimer.current);
+        setCheck({ status: "failed" });
       });
-    // 받는 동안은 [올리기] 를 막으므로, 서버가 늦으면 기다리게만 하지 않고 최근 파일과만 맞춰 본 채로 풀어 준다
-    window.setTimeout(() => {
-      if (fetchSeq.current === seq) setFullCheck((s) => (s === "loading" ? "failed" : s));
-    }, FULL_CHECK_WAIT_MS);
   }
 
   /** skipped: 확인 창에서 빼고 보내지 않은 파일. 끝난 뒤 실패 안내에 함께 남긴다 — 창이 닫히면 빠진 걸 다시 볼 곳이 없어서 */
@@ -509,34 +531,26 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
       </div>
 
       {pending ? (
-        // 창이 화면을 덮는 동안 그 위에 파일을 놓으면 브라우저가 파일을 열며 대시보드를 떠난다. 여기서 받아 막는다
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "none";
+        <UploadConfirm
+          files={pending}
+          // 전체 목록을 받았으면 그것만 본다(서버가 저장에 실패한 FAILED 는 빠져 있다). 받기 전 · 실패면 최근 50개로 —
+          // 처리 현황에는 FAILED 가 섞여 있어 일지가 하나라도 생긴 파일만 쓴다(저장에 실패한 파일은 일지가 없다)
+          uploaded={check.status === "done" ? check.list : files.filter((f) => f.entries.length > 0)}
+          fullCheck={check.status}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            setPending(null);
+            // 창에서 "빠져요" 로 알린 파일은 보내지 않는다 — 20MB 넘는 파일을 끝까지 올렸다가 거절당하지 않게
+            const sending: File[] = [];
+            const skipped: UploadFailure[] = [];
+            for (const file of pending) {
+              const reason = skipReason(file);
+              if (reason) skipped.push({ ok: false, file, reason });
+              else sending.push(file);
+            }
+            void upload(sending, skipped);
           }}
-          onDrop={(e) => e.preventDefault()}
-        >
-          <UploadConfirm
-            files={pending}
-            // 전체 목록을 받았으면 그것만 본다(서버가 저장에 실패한 파일은 빠져 있다). 받기 전 · 실패면 최근 50개로
-            uploaded={fullCheck === "done" ? allUploaded : [...files, ...allUploaded]}
-            fullCheck={fullCheck}
-            onCancel={() => setPending(null)}
-            onConfirm={() => {
-              setPending(null);
-              // 창에서 "빠져요" 로 알린 파일은 보내지 않는다 — 20MB 넘는 파일을 끝까지 올렸다가 거절당하지 않게
-              const sending: File[] = [];
-              const skipped: UploadFailure[] = [];
-              for (const file of pending) {
-                const reason = skipReason(file);
-                if (reason) skipped.push({ ok: false, file, reason });
-                else sending.push(file);
-              }
-              void upload(sending, skipped);
-            }}
-          />
-        </div>
+        />
       ) : null}
 
       {failed.length ? (
@@ -591,20 +605,13 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
 }
 
 /** 기관이 올린 파일 전체를 받았는지. 받기 전 · 실패면 최근 50개(files)로만 맞춰 본 것이다 */
-type FullCheck = "loading" | "done" | "failed";
+type FullCheck = { status: "loading" } | { status: "failed" } | { status: "done"; list: UploadedFile[] };
 
 /** 전체 목록을 이만큼 기다려도 안 오면 최근 파일과만 맞춰 본 채로 [올리기] 를 풀어 준다 */
 const FULL_CHECK_WAIT_MS = 5_000;
 
-/**
- * 보내기 전에 빼는 파일과 그 이유. 확인 창의 줄 표시 · 제목 숫자 · 실제로 보내는 파일 · 실패 안내가 모두 이것 하나를 본다.
- * 끌어다 놓기는 input 의 accept 를 거치지 않아 형식이 틀린 파일도 들어온다
- */
-function skipReason(file: File): "invalid" | "too_large" | null {
-  if (!hasUploadExtension(file)) return "invalid";
-  if (isUploadTooLarge(file)) return "too_large";
-  return null;
-}
+/** 보내기 전에 빼는 파일과 그 이유 — 확인 창의 줄 표시 · 제목 숫자 · 실제로 보내는 파일 · 실패 안내가 모두 이것 하나를 본다 */
+const skipReason = uploadPrecheck;
 
 const SKIP_NOTE = { invalid: "올릴 수 없는 형식이라 빠져요", too_large: "20MB를 넘어 빠져요" } as const;
 
@@ -641,7 +648,7 @@ function UploadConfirm({
 }: {
   files: File[];
   uploaded: UploadedFile[];
-  fullCheck: FullCheck;
+  fullCheck: FullCheck["status"];
   onCancel: () => void;
   onConfirm: () => void;
 }) {

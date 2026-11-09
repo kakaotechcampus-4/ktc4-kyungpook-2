@@ -835,8 +835,9 @@ export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
     return results;
   }
   return mapInBatches(files, UPLOAD_CONCURRENCY, async (file): Promise<UploadResult> => {
-    // BE 도 400 으로 거절하지만, 보내기 전에 걸러 20MB 짜리 hwp 같은 걸 끝까지 올리지 않게 한다
-    if (!hasUploadExtension(file)) return { ok: false, file, reason: "invalid" };
+    // BE 도 400 · 413 으로 거절하지만, 보내기 전에 걸러 20MB 짜리 hwp 같은 걸 끝까지 올리지 않게 한다
+    const skip = uploadPrecheck(file);
+    if (skip) return { ok: false, file, reason: skip };
     try {
       return { ok: true, file, progress: await uploadOne(file) };
     } catch (err) {
@@ -901,13 +902,17 @@ export const UPLOAD_EXTENSIONS = ["csv", "txt", "docx", "pdf"];
 /** mock 도 BE 와 같은 용량 제한으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
 const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
-/** 서버 상한(20MB)을 넘는지. 업로드 확인 창(#489)이 미리 알린다 */
-export function isUploadTooLarge(file: File): boolean {
-  return file.size > UPLOAD_MAX_BYTES;
+/**
+ * 보내기 전에 거르는 이유. 없으면 null. 실제 업로드 · mock · 업로드 확인 창(#489)이 모두 이 하나를 본다 —
+ * 서버 상한이 늘면 여기만 고친다. 끌어다 놓기는 input 의 accept 를 거치지 않아 형식이 틀린 파일도 들어온다
+ */
+export function uploadPrecheck(file: File): "invalid" | "too_large" | null {
+  if (!hasUploadExtension(file)) return "invalid";
+  if (file.size > UPLOAD_MAX_BYTES) return "too_large";
+  return null;
 }
 
-/** 올릴 수 있는 확장자인지. 업로드 확인 창(#489)도 같은 기준으로 미리 알린다 */
-export function hasUploadExtension(file: File): boolean {
+function hasUploadExtension(file: File): boolean {
   // 서버(RawRecordService.extractExtension)처럼 마지막 점 뒤만 본다 — 점이 없는 `txt` 같은 이름은 확장자가 없다
   const dot = file.name.lastIndexOf(".");
   const ext = dot < 0 ? "" : file.name.slice(dot + 1).toLowerCase();
@@ -916,8 +921,8 @@ export function hasUploadExtension(file: File): boolean {
 
 /** 파일명에 "많음" · "대기" · "혼잡" 이 들어가면 그 거절을 흉내낸다 — 실패 문구를 mock 에서 확인할 수 있게 (#424) */
 function mockRejectReason(file: File): UploadFailReason | null {
-  if (!hasUploadExtension(file)) return "invalid";
-  if (isUploadTooLarge(file)) return "too_large";
+  const skip = uploadPrecheck(file);
+  if (skip) return skip;
   if (file.name.includes("많음")) return "too_many_entries";
   if (file.name.includes("대기")) return "queue_full";
   if (file.name.includes("혼잡")) return "server_busy";

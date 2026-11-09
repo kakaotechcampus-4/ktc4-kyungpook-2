@@ -28,6 +28,8 @@ test("업로드는 확인 창에서 [올리기] 를 눌러야 올라가고, 같�
   await picker.setInputFiles(file);
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(file.name)).toBeVisible();
+  // 전체 목록과 맞춰 본 뒤에야 [올리기] 가 풀린다. 그다음에 경고가 없는지 본다
+  await expect(dialog.getByRole("button", { name: "올리기" })).toBeEnabled();
   await expect(dialog.getByText(/같은 이름 파일/)).toHaveCount(0);
   await dialog.getByRole("button", { name: "취소" }).click();
   await expect(dialog).toBeHidden();
