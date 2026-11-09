@@ -9,6 +9,7 @@ test("기관이 아이를 등록하면 보호자 초대 코드가 발급된다",
   const { inviteCode } = await registerChild(page);
 
   expect(inviteCode).toMatch(INVITE_CODE);
-  await expect(page.getByText("남은 시간 9:5", { exact: false })).toBeVisible();
+  // 남은 시간은 매초 줄어드니 숫자는 보지 않고, 시간 제한 · 1회용 안내가 함께 보이는지만 본다
+  await expect(page.getByText(/남은 시간 \d+:\d{2} · 1회용/)).toBeVisible();
   await context.close();
 });

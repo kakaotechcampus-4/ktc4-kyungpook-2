@@ -12,16 +12,20 @@ export const INVITE_CODE = /^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/;
 
 let seq = 0;
 
-/** 실행·호출마다 다른 꼬리. 개발용 로그인 이름 규칙(영문 소문자·숫자·하이픈 1~20자)에 맞춘다 */
+/**
+ * 실행·호출마다 다른 꼬리, 항상 8자. 개발용 로그인 이름 규칙(영문 소문자·숫자·하이픈 1~20자)에 맞춘다 —
+ * 가장 긴 'e2e-parent-' 를 붙여도 19자다. 시각(36진수 뒤 6자 ≈ 25일 주기) + 호출 순번(2자).
+ */
 export function uniqueSuffix(): string {
   seq += 1;
-  return `${Date.now().toString(36)}${seq.toString(36)}`;
+  const time = Date.now().toString(36).slice(-6);
+  const n = (seq % 36 ** 2).toString(36).padStart(2, "0");
+  return `${time}${n}`;
 }
 
-/** 숫자 10자리. 사업자등록번호는 기관마다 달라야 한다(체크섬은 검사하지 않는다) */
+/** 무작위 숫자 10자리. 사업자등록번호는 기관마다 달라야 한다(체크섬은 검사하지 않는다) */
 function uniqueBusinessNumber(): string {
-  const n = Date.now() * 10 + (seq % 10);
-  return String(n).slice(-10).padStart(10, "0");
+  return Array.from({ length: 10 }, () => Math.floor(Math.random() * 10)).join("");
 }
 
 /**

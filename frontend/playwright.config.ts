@@ -1,10 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * 핵심 흐름 E2E (#482). 실제 프론트(dev 서버) + 실제 백엔드(H2 메모리 DB)에 대고 브라우저로 눌러 본다.
+ * 핵심 흐름 E2E (#482). 실제 프론트(빌드 번들) + 실제 백엔드(H2 메모리 DB)에 대고 브라우저로 눌러 본다.
  *
  * `npm run e2e` 하나로 백엔드·프론트를 띄운다. 이미 3000·8080 에 떠 있으면(로컬) 그 서버를 그대로 쓴다 —
- * 그때 백엔드는 개발용 로그인(DEV_LOGIN_ENABLED=true)이 켜져 있어야 한다.
+ * 그때 백엔드는 개발용 로그인(DEV_LOGIN_ENABLED=true)이 켜져 있고 AI 서버에 닿지 않아야 한다(ai-down 시나리오).
  *
  * 백엔드 설정 파일은 하나도 더하지 않는다. application-local.yml · application-secret.yml 은 gitignore 라 CI 에
  * 없으므로, H2 · 출입증 비밀값 · 카카오 값을 모두 환경변수로 넘긴다. 카카오 값은 기동만 통과하면 되는 더미다
@@ -35,7 +35,8 @@ export default defineConfig({
       // 처음엔 Gradle 이 컴파일부터 한다
       timeout: 240_000,
       reuseExistingServer: !CI,
-      stdout: "ignore",
+      // Spring 로그는 stdout 으로 나온다. CI 에서 기동이 실패하면 원인이 이 로그에만 있으니 남긴다
+      stdout: CI ? "pipe" : "ignore",
       stderr: "pipe",
       env: {
         DEV_LOGIN_ENABLED: "true",
@@ -47,17 +48,20 @@ export default defineConfig({
         JWT_SECRET: "e2e-only-secret-not-used-anywhere-else-0123456789",
         KAKAO_CLIENT_ID: "e2e-dummy-client-id",
         KAKAO_CLIENT_SECRET: "e2e-dummy-client-secret",
-        AI_BASE_URL: "http://localhost:8000",
+        // 아무것도 듣지 않는 포트. 실제 AI 기본 포트(8000)로 두면 로컬에 AI 를 띄워 둔 날 ai-down 시나리오가 깨진다
+        AI_BASE_URL: "http://127.0.0.1:9",
       },
     },
     {
-      command: "npm run dev",
+      // dev 서버가 아니라 배포와 같은 빌드 번들을 띄운다. dev 서버는 처음 보는 화면에서 의존성을 다시 묶으며
+      // 페이지를 새로 고쳐 입력이 날아갈 수 있다. preview 는 dev 서버의 /api 프록시(vite.config.ts)를 그대로 쓴다
+      command: "npm run build && npx vite preview --port 3000 --strictPort",
       url: "http://localhost:3000",
-      timeout: 60_000,
+      timeout: 120_000,
       reuseExistingServer: !CI,
-      stdout: "ignore",
+      stdout: CI ? "pipe" : "ignore",
       stderr: "pipe",
-      // frontend/.env 가 mock 을 켜 둬도 프로세스 환경변수가 이긴다 (Vite 규칙)
+      // 번들에 박히는 값이라 빌드 때 넘긴다. frontend/.env 가 mock 을 켜 둬도 프로세스 환경변수가 이긴다 (Vite 규칙)
       env: {
         VITE_AUTH_MOCK: "false",
         VITE_USE_MOCK: "false",
