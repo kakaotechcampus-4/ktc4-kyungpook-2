@@ -1059,8 +1059,6 @@ export async function registerChild(input: {
   });
 }
 
-/** 초대 코드 유효 시간. 서버(Invitation)와 같은 10분 — mock 에서만 쓴다 */
-const INVITE_TTL_MS = 10 * 60 * 1000;
 /** 서버(InviteCodeGenerator)와 같은 글자. 헷갈리는 0 O 1 I L 은 뺐다 */
 const INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -1074,7 +1072,7 @@ function issueMockInvitation(childId: string): IssuedInvitation {
     id: `inv_${Math.random().toString(36).slice(2, 8)}`,
     code,
     issuedAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + INVITE_TTL_MS).toISOString(),
+    expiresAt: new Date(now + mock.INVITE_TTL_MS).toISOString(),
   };
   (mock.INVITATIONS[childId] ??= []).unshift(invitation);
   const { id, expiresAt } = invitation;
@@ -1118,7 +1116,10 @@ export async function removeChildFromRoster(childId: string): Promise<void> {
  * 이전 코드는 그대로 살아 있다. 엄마·아빠에게 따로 보낼 수 있게 여러 개를 허용한다.
  */
 export async function issueInvitation(childId: string): Promise<IssuedInvitation> {
-  if (mockFor("invitations")) return issueMockInvitation(childId);
+  if (mockFor("invitations")) {
+    if (!onMyRoster(childId)) throw new ApiError(404, "CHILD_NOT_FOUND");
+    return issueMockInvitation(childId);
+  }
   return request(`${childPath(childId)}/invitations`, { method: "POST" });
 }
 
@@ -1209,15 +1210,19 @@ export async function getInboxItem(insightId: string): Promise<InboxDetail> {
 export async function acceptInvitation(code: string): Promise<AcceptedInvitation> {
   if (mockFor("guardianInvite")) {
     const normalized = code.replace(/[\s-]/g, "").toUpperCase();
-    const valid =
-      normalized.length === 8 && [...normalized].every((c) => INVITE_ALPHABET.includes(c));
-    if (!valid) throw new ApiError(400, "INVALID_INVITE_CODE");
-    // mock 은 형식만 맞으면 데모 아이 하나에 우리 기관 코드로 연결한다. 목록을 바꾸기 전에 다 확인한다 —
-    // 서버처럼 초대한 기관 명부에서 빠진 아이면 코드가 없는 것과 같은 400 이다 (명부에서 빼면 코드도 취소된다)
-    const child = mock.CHILDREN.find((c) => c.id === mock.INVITED_CHILD_ID);
+    const now = Date.now();
+    const issued = Object.entries(mock.INVITATIONS).find(([, invitations]) =>
+      invitations.some((invitation) => invitation.code === normalized && Date.parse(invitation.expiresAt) > now),
+    );
+    if (!issued) throw new ApiError(400, "INVALID_INVITE_CODE");
+
+    const [childId, invitations] = issued;
+    const child = mock.CHILDREN.find((c) => c.id === childId);
     const mine = child?.institutions.find((i) => i.institution.id === mock.MY_INSTITUTION.id);
     if (!child || !mine) throw new ApiError(400, "INVALID_INVITE_CODE");
     if (mock.PARENT_CHILDREN.includes(child)) throw new ApiError(409, "LINK_ALREADY_EXISTS");
+
+    mock.INVITATIONS[childId] = invitations.filter((invitation) => invitation.code !== normalized);
     mock.PARENT_CHILDREN.push(child);
     const institution = mine.institution;
     return {

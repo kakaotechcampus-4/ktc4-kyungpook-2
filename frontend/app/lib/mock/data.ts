@@ -948,11 +948,21 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
   },
 ];
 
-/**
- * 아이별 초대 코드 (O-15~O-17 mock). 만료 여부는 조회할 때 expiresAt 으로 거른다.
- * 10분짜리라 미리 넣어 두면 화면을 열 때쯤 이미 만료돼 있어 비워 둔다.
- */
-export const INVITATIONS: Record<string, LiveInvitation[]> = {};
+/** 서버(Invitation)와 같은 10분 */
+export const INVITE_TTL_MS = 10 * 60 * 1000;
+const demoInvitationIssuedAt = Date.now();
+
+/** 아이별 초대 코드 (O-15~O-17, G-04 mock). 데모 초대는 수락 뒤 동의 화면까지 이어진다. */
+export const INVITATIONS: Record<string, LiveInvitation[]> = {
+  child_1077: [
+    {
+      id: "inv_demo",
+      code: "K7P3QX9M",
+      issuedAt: new Date(demoInvitationIssuedAt).toISOString(),
+      expiresAt: new Date(demoInvitationIssuedAt + INVITE_TTL_MS).toISOString(),
+    },
+  ],
+};
 
 /**
  * 명부에서 빼면서 꺼진 기관 동의 (O-63 mock). 서버처럼 다시 연결돼도 꺼진 채 남고, 보호자가 그 기관 주간 리포트
@@ -970,12 +980,6 @@ export const CHILD_GUARDIANS: Record<string, ChildGuardian[]> = {
     { userId: "63", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true, invitationCode: "T7KD3WNP" },
   ],
 };
-
-/**
- * 보호자가 초대 코드를 수락하면 연결되는 아이 (G-04 mock). 아직 이 보호자의 아이가 아니고
- * 우리 기관 동의가 남은 아이라, 수락 뒤 동의 미리보기(G-02 mock)까지 이어서 볼 수 있다.
- */
-export const INVITED_CHILD_ID = "child_1077";
 
 /** 학부모를 초대한 기관 (P-02 확인·동의 화면) */
 export const INVITING_INSTITUTION = SCHOOL;

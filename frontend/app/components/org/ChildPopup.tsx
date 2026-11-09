@@ -133,25 +133,6 @@ export function ChildPopup({
         닫기
       </PopButton>
     </>
-  ) : reviewing ? (
-    <>
-      <PopButton onClick={onClose} disabled={busy}>
-        닫기
-      </PopButton>
-      <span className="flex-1" />
-      <span className="text-[13px] text-muted max-[520px]:order-first max-[520px]:basis-full">승인은 되돌릴 수 없어요</span>
-      <PopButton onClick={() => setConfirming("hold")} disabled={busy}>
-        보류
-      </PopButton>
-      <PopButton tone="dark" onClick={() => setConfirming("approve")} disabled={busy}>
-        {busy ? <Busy>보내는 중…</Busy> : "승인"}
-      </PopButton>
-      {error ? (
-        <span role="alert" className="basis-full text-[14px] font-bold text-block">
-          {error}
-        </span>
-      ) : null}
-    </>
   ) : (
     <>
       {onRemoved ? (
@@ -160,9 +141,20 @@ export function ChildPopup({
         </PopButton>
       ) : null}
       <span className="flex-1" />
-      <PopButton tone="dark" onClick={onClose} disabled={busy}>
+      <PopButton tone={reviewing ? "line" : "dark"} onClick={onClose} disabled={busy}>
         닫기
       </PopButton>
+      {reviewing ? (
+        <>
+          <span className="text-[13px] text-muted max-[520px]:order-first max-[520px]:basis-full">승인은 되돌릴 수 없어요</span>
+          <PopButton onClick={() => setConfirming("hold")} disabled={busy}>
+            보류
+          </PopButton>
+          <PopButton tone="dark" onClick={() => setConfirming("approve")} disabled={busy}>
+            {busy && confirming ? <Busy>보내는 중…</Busy> : "승인"}
+          </PopButton>
+        </>
+      ) : null}
       {error ? (
         <span role="alert" className="basis-full text-[14px] font-bold text-block">
           {error}
