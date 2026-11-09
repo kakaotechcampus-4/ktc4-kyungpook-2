@@ -78,10 +78,15 @@ public class InvitationService {
                 String.valueOf(invitation.getId()), invitation.getCode(), toOffset(invitation.getExpiresAt()));
     }
 
-    /** O-15 추가 발급. 엄마·아빠에게 따로 보내도록 한 아이에 쓸 수 있는 코드가 여러 개 있어도 된다. */
+    /**
+     * O-15 추가 발급. 엄마·아빠에게 따로 보내도록 한 아이에 쓸 수 있는 코드가 여러 개 있어도 된다.
+     *
+     * <p>명부를 잠근 뒤 확인한다. 잠그지 않으면 "명부 확인 → 명부 제외·코드 취소 → 새 코드 저장" 순서가 생겨
+     * 제외된 아이에게 쓸 수 있는 코드가 남고, 다시 명부에 올리면 그 코드가 살아난다.
+     */
     @Transactional
     public IssuedInvitationResponse issueFor(String userId, Long childId) {
-        Long organizationId = organizationChildGuard.requireRosterChild(userId, childId);
+        Long organizationId = organizationChildGuard.lockRosterChild(userId, childId);
         return issue(organizationId, childId);
     }
 

@@ -39,4 +39,25 @@ public class OrganizationChildGuard {
         }
         return organizationId;
     }
+
+    /**
+     * {@link #requireRosterChild} 와 같은 검사를 잠근 뒤에 한다. 잠금 순서는 child(공유) → child_organization(쓰기)다.
+     *
+     * <p>명부에 기대어 새 행을 만드는 쓰기(O-15 초대 코드 추가 발급)가 쓴다. 명부 제외는 child 를 쓰기 잠금으로
+     * 먼저 잡으므로 둘이 줄을 선다 — 제외가 먼저 커밋되면 여기서 404 이고, 이쪽이 먼저면 제외가 그 결과까지 정리한다.
+     * 이 검사끼리는 child 에서 서로 막지 않고 child_organization 행에서만 줄을 선다.
+     *
+     * @return 요청자의 기관 id
+     */
+    public Long lockRosterChild(String userId, Long childId) {
+        Long organizationId = userService.getOrganizationIdOf(userId);
+        boolean onRoster = childRepository.findByIdForShare(childId).filter(child -> !child.isDeleted()).isPresent()
+                && childOrganizationRepository.findByChildIdAndOrganizationIdForUpdate(childId, organizationId)
+                        .filter(link -> !link.isDeleted())
+                        .isPresent();
+        if (!onRoster) {
+            throw new ChildException(ChildErrorCode.CHILD_NOT_FOUND);
+        }
+        return organizationId;
+    }
 }
