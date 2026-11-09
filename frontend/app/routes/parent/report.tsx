@@ -233,7 +233,7 @@ function QuietCard({ insight }: { insight: GuardianInsight }) {
   return (
     <div className="rounded-2xl bg-surface2 px-4 py-4">
       <p className="text-[15px] font-bold">
-        {nothingNew ? "이번 주는 따로 알릴 내용이 없었어요" : "이번 주는 특이사항이 없어요"}
+        {nothingNew ? "이 주는 따로 알릴 내용이 없었어요" : "이 주는 특이사항이 없었어요"}
       </p>
       <p className="mt-1 text-[14px] leading-6 text-muted">
         {nothingNew
