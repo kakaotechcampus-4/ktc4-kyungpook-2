@@ -395,13 +395,20 @@ HTTP/3는 이번 구성에서 활성화하지 않습니다.
 | `X-Content-Type-Options` · `X-Frame-Options` | `nosniff` · `DENY` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
-| `Content-Security-Policy` | 화면: 같은 오리진만(`'self'`), 스크립트 · 스타일은 `'unsafe-inline'` 허용, `frame-ancestors 'none'`. API: `default-src 'none'; frame-ancestors 'none'` |
+| `Content-Security-Policy` | 화면: 같은 오리진만(`'self'`), 스크립트 · 스타일은 `'unsafe-inline'` 허용, `connect-src` 에만 원본 기록 S3 버킷 주소를 더함(#450), `frame-ancestors 'none'`. API: `default-src 'none'; frame-ancestors 'none'` |
 | `Server` | 지웁니다 |
 
 화면 CSP는 React Router SPA 모드가 `index.html`에 넣는 인라인 스크립트 때문에 `'unsafe-inline'`을 허용합니다. 그래서 인라인 XSS는
 막지 못하고, 외부 리소스 로드와 일부 데이터 전송 경로(`fetch` · 이미지 · 폼)를 같은 오리진으로 제한하고 클릭재킹을 막습니다.
 페이지 이동(`location.href`)으로 내보내는 길은 막지 못합니다. 화면이 외부 스크립트 · 글꼴 · 이미지를 새로 쓰게 되면 Caddyfile의 CSP에
 그 주소를 더해야 합니다 — 더하지 않으면 브라우저가 막고 콘솔에 CSP 위반이 남습니다.
+
+**S3 주소를 `connect-src` 에 더한 이유 (#450)** — 원본 기록 업로드는 브라우저가 파일 본문을 S3 로 바로 `PUT` 합니다
+(`POST /api/v1/raw-records/upload-url` 이 준 서명 주소). `connect-src 'self'` 만 두면 브라우저가 이 요청을 막습니다. 더한 것은 원본
+기록 버킷 하나(`https://itda-raw-records-dev.s3.ap-northeast-2.amazonaws.com`, 운영도 이 버킷을 씁니다)뿐입니다. 버킷이 하나라 주소를
+Caddyfile 에 직접 적었습니다 — 환경변수(`{$RAW_STORAGE_S3_BUCKET}`)로 받으면 Caddy 컨테이너에 값을 넘겨 다시 만들어야 하는데, 배포는
+Caddy 설정을 다시 읽기만 합니다. 버킷을 바꾸면 이 주소와 `infra/scripts/tests/test_caddy_proxy.py` 의 `FRONTEND_CSP` 를 함께 고칩니다.
+버킷 쪽에서는 CORS 로 운영 주소(`https://iitda.duckdns.org`)의 `PUT` 만 허용합니다 — AWS 콘솔에서 설정하며 저장소에는 없습니다.
 
 **응답 압축 (#477)** — Caddy가 **화면 응답에만** `zstd` · `gzip` 압축을 겁니다(Caddyfile의 마지막 `handle`). 프론트 Nginx는 압축하지
 않습니다. Caddy 기본값대로 압축이 잘 되는 형식(HTML · JS · CSS · JSON · SVG)을 512바이트 이상일 때만 압축하고, png · woff2처럼 이미

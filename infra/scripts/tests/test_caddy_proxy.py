@@ -21,7 +21,8 @@ proxy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(proxy)
 
 FRONTEND_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; "
-                "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
+                "font-src 'self'; connect-src 'self' https://itda-raw-records-dev.s3.ap-northeast-2.amazonaws.com; object-src 'none'; "
+                "base-uri 'self'; form-action 'self'; "
                 "frame-ancestors 'none'")
 API_CSP = "default-src 'none'; frame-ancestors 'none'"
 # Same body whatever the request headers are, and over Caddy's 512-byte minimum, so compressed and plain
