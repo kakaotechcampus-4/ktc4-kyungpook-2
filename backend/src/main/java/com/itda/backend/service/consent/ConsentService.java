@@ -184,6 +184,27 @@ public class ConsentService {
     }
 
     /**
+     * 아이가 이 기관 명부에서 빠졌다. 이 기관에 대한 살아 있는 동의를 모두 {@code ROSTER_REMOVED} 로 끄고, 이 기관이
+     * 받았거나 재료를 낸 인사이트의 기관 열람 권한을 거둔다. 보호자 열람 권한과 다른 기관 동의는 그대로다.
+     *
+     * <p>호출하는 쪽이 이미 {@code child} 행을 잠갔다는 전제다 — 명부 제외가 child → child_organization 순서로 잠근 뒤
+     * 같은 트랜잭션에서 부른다. 다시 명부에 올라와도 이 동의는 꺼진 채 남는다 (DB 스키마 §5.6 알려진 빈틈).
+     *
+     * @param actorId 명부에서 뺀 기관 담당자
+     */
+    @Transactional
+    public void revokeForRosterRemoval(Child lockedChild, Long organizationId, Long actorId) {
+        LocalDateTime now = now();
+        sharingConsentRepository.findByChildIdAndOrganizationIdAndStatus(
+                        lockedChild.getId(), organizationId, SharingConsentStatus.ACTIVE)
+                .forEach(consent -> consent.revoke(actorId, ConsentRevokeReason.ROSTER_REMOVED, now));
+        // 동의가 없던 기관이어도 거둔다 — 재료를 낸 인사이트가 다른 기관에 열려 있을 수 있다. 거둘 것이 없으면 아무 일도 없다.
+        insightAccessRevoker.revokeForInstitution(
+                lockedChild.getId(), organizationId, ConsentRevokeReason.ROSTER_REMOVED, now);
+        refreshStatus(lockedChild);
+    }
+
+    /**
      * 기관별 동의를 아이 전체 요약으로 옮긴다. 살아 있는 동의가 있으면 ACTIVE, 동의 행은 있지만 모두 꺼졌으면 SUSPENDED.
      * 동의 행이 하나도 없으면 PENDING_CONSENT 그대로다 — 동의 행은 지우지 않으므로 한 번 생기면 다시 없어지지 않는다.
      *

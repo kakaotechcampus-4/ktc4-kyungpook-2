@@ -63,7 +63,10 @@ public class SharingConsent {
     @Column(nullable = false, length = 20)
     private SharingConsentStatus status;
 
-    /** 철회한 사용자. 보호자 본인이 아닐 수 있다 — 다른 보호자, 연결을 끊은 기관 담당자. 스크립트가 끄면 비어 있다. */
+    /**
+     * 철회한 사용자. 보호자 본인이 아닐 수 있다 — 다른 보호자, 연결을 끊거나 아이를 명부에서 뺀 기관 담당자.
+     * 스크립트가 끄면 비어 있다.
+     */
     @Column(name = "revoked_by")
     private Long revokedBy;
 

@@ -42,4 +42,16 @@ public interface InvitationRepository extends JpaRepository<Invitation, Long> {
             + "order by i.createdAt desc, i.id desc")
     List<Invitation> findLive(
             @Param("childId") Long childId, @Param("organizationId") Long organizationId, @Param("now") LocalDateTime now);
+
+    /**
+     * 명부 제외용. {@link #findLive} 와 같은 조건으로 잠근다. 잠금을 기다리는 사이 수락·취소된 코드는 PostgreSQL 이
+     * 잠근 뒤 조건을 다시 보므로 결과에서 빠진다. 만료는 넘긴 {@code now} 로만 판단한다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from Invitation i "
+            + "where i.childId = :childId and i.organizationId = :organizationId "
+            + "and i.status = com.itda.backend.domain.invitation.InvitationStatus.PENDING and i.expiresAt > :now "
+            + "order by i.id")
+    List<Invitation> findLiveForUpdate(
+            @Param("childId") Long childId, @Param("organizationId") Long organizationId, @Param("now") LocalDateTime now);
 }

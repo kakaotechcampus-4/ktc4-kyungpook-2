@@ -20,6 +20,7 @@ import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.global.exception.ConstraintViolations;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.consent.ConsentService;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.user.UserService;
@@ -35,6 +36,7 @@ public class ChildService {
     private final UserService userService;
     private final InvitationService invitationService;
     private final ConsentStateReader consentStateReader;
+    private final ConsentService consentService;
 
     @Transactional(readOnly = true)
     public List<ChildRosterResponse> getRoster(String userId) {
@@ -106,6 +108,39 @@ public class ChildService {
                         externalId,
                         child.getStatus()),
                 invitationService.issue(organizationId, child.getId()));
+    }
+
+    /**
+     * O-63 아이를 우리 기관 명부에서 뺀다. 아이 자체와 보호자 연결은 그대로 두고, 이 기관과의 연결만 끊는다.
+     *
+     * <p>한 트랜잭션에서 하는 일
+     * <ul>
+     *   <li>명부 연결 행에 삭제 시각을 찍고 관리번호를 비운다 — 같은 번호를 다른 아이에게 다시 쓸 수 있다.</li>
+     *   <li>이 기관이 이 아이에게 발급한, 아직 쓸 수 있는 초대 코드를 취소한다.</li>
+     *   <li>이 기관에 대한 동의를 {@code ROSTER_REMOVED} 로 끄고 인사이트 기관 열람 권한을 거둔 뒤 아이 상태를 다시 계산한다.</li>
+     * </ul>
+     *
+     * <p>잠금 순서는 child → child_organization → invitation → sharing_consent 다 (DB 스키마 §3.3).
+     * {@link OrganizationChildGuard#requireRosterChild} 를 쓰지 않는다 — 잠그기 전에 아이를 읽어 두면 그 낡은
+     * 엔티티의 상태를 바꾸면서 그사이 커밋된 아이 삭제를 덮어쓴다.
+     *
+     * <p>이미 AI 가 처리 중인 일지·매칭은 멈추지 않을 수 있다. 검증 요청 조립과 매칭 결과 저장은 명부를 다시 보지 않는다.
+     */
+    @Transactional
+    public void removeFromRoster(String userId, Long childId) {
+        Long organizationId = userService.getOrganizationIdOf(userId);
+        Long actorId = userService.getUserIdOf(userId);
+        Child child = childRepository.findByIdForUpdate(childId)
+                .filter(found -> !found.isDeleted())
+                .orElseThrow(() -> new ChildException(ChildErrorCode.CHILD_NOT_FOUND));
+        ChildOrganization link = childOrganizationRepository
+                .findByChildIdAndOrganizationIdForUpdate(childId, organizationId)
+                .filter(found -> !found.isDeleted())
+                .orElseThrow(() -> new ChildException(ChildErrorCode.CHILD_NOT_FOUND));
+
+        link.delete();
+        invitationService.cancelLiveForRosterRemoval(childId, organizationId);
+        consentService.revokeForRosterRemoval(child, organizationId, actorId);
     }
 
     /** 명부 한 줄. {@code consent} 는 이 기관에 대한 동의라 아이 전체 요약인 {@code status} 와 다를 수 있다. */

@@ -37,6 +37,7 @@ import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.consent.ConsentService;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.user.UserService;
@@ -57,13 +58,15 @@ class ChildServiceTest {
     private InvitationService invitationService;
     @Mock
     private ConsentStateReader consentStateReader;
+    @Mock
+    private ConsentService consentService;
 
     private ChildService childService;
 
     @BeforeEach
     void setUp() {
         childService = new ChildService(childRepository, childOrganizationRepository, userService, invitationService,
-                consentStateReader);
+                consentStateReader, consentService);
     }
 
     private static Child childWithId(String name, LocalDate birthdate, Long id) {

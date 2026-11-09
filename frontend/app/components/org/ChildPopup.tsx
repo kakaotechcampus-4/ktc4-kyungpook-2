@@ -5,7 +5,7 @@ import { ChildTimeline } from "@/components/org/ChildTimeline";
 import { Chip, PopButton, PopSection } from "@/components/org/WorkList";
 import { Busy, ConfirmDialog, EvidenceChip, InstitutionChip, Spinner } from "@/components/ui";
 import { ListPopup } from "@/components/ui/ListPopup";
-import { ApiError, decideGate2, getInboxItem } from "@/lib/api";
+import { ApiError, decideGate2, getInboxItem, removeChildFromRoster } from "@/lib/api";
 import type { ChildListItem, InboxDetail, InboxItem, Insight } from "@/lib/types";
 
 export type ChildTab = "analysis" | "records" | "guardian";
@@ -56,6 +56,7 @@ export function ChildPopup({
   onDecided,
   onStale,
   onRead,
+  onRemoved,
 }: {
   child: ChildListItem;
   /** 우리 기관이 승인할 차례인 분석(O-40 pending). 있으면 분석 탭 맨 위에 보고서와 보류·승인을 둔다 */
@@ -71,11 +72,14 @@ export function ChildPopup({
   onStale: (message: string) => void;
   /** 받은 분석을 처음 열었다 — 배지를 줄이려 목록을 새로 받는다 */
   onRead: () => void;
+  /** 있으면 "명부에서 빼기" 를 보인다(O-63). 뺀 뒤 부른다 — 팝업을 닫고 목록을 새로 받는다 */
+  onRemoved?: (child: ChildListItem) => void;
 }) {
   const [tab, setTab] = useState<ChildTab>(initialTab);
   const firstUnread = openUnread ? inbox.find((m) => !m.readAt) : undefined;
   const [view, setView] = useState<Past | null>(firstUnread ? { kind: "inbox", item: firstUnread } : null);
   const [confirming, setConfirming] = useState<"approve" | "hold" | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const unread = inbox.filter((m) => !m.readAt).length;
@@ -98,6 +102,23 @@ export function ChildPopup({
     }
   }
 
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      await removeChildFromRoster(child.id);
+      setRemoving(false);
+      onRemoved?.(child);
+    } catch (err) {
+      setRemoving(false);
+      // 이미 빠졌다(다른 담당자가 먼저 뺐다) — 다시 눌러도 같으니 목록을 새로 받는다
+      if (err instanceof ApiError && err.status === 404) onStale(`${child.name}은(는) 이미 명부에서 빠졌어요. 목록을 새로 불러왔어요.`);
+      else setError(removeMessageOf(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const reviewing = tab === "analysis" && !view && review;
   const footer = view ? (
     <>
@@ -112,31 +133,33 @@ export function ChildPopup({
         닫기
       </PopButton>
     </>
-  ) : reviewing ? (
+  ) : (
     <>
-      <PopButton onClick={onClose} disabled={busy}>
+      {onRemoved ? (
+        <PopButton tone="text" onClick={() => setRemoving(true)} disabled={busy}>
+          명부에서 빼기
+        </PopButton>
+      ) : null}
+      <span className="flex-1" />
+      <PopButton tone={reviewing ? "line" : "dark"} onClick={onClose} disabled={busy}>
         닫기
       </PopButton>
-      <span className="flex-1" />
-      <span className="text-[13px] text-muted max-[520px]:order-first max-[520px]:basis-full">승인은 되돌릴 수 없어요</span>
-      <PopButton onClick={() => setConfirming("hold")} disabled={busy}>
-        보류
-      </PopButton>
-      <PopButton tone="dark" onClick={() => setConfirming("approve")} disabled={busy}>
-        {busy ? <Busy>보내는 중…</Busy> : "승인"}
-      </PopButton>
+      {reviewing ? (
+        <>
+          <span className="text-[13px] text-muted max-[520px]:order-first max-[520px]:basis-full">승인은 되돌릴 수 없어요</span>
+          <PopButton onClick={() => setConfirming("hold")} disabled={busy}>
+            보류
+          </PopButton>
+          <PopButton tone="dark" onClick={() => setConfirming("approve")} disabled={busy}>
+            {busy && confirming ? <Busy>보내는 중…</Busy> : "승인"}
+          </PopButton>
+        </>
+      ) : null}
       {error ? (
         <span role="alert" className="basis-full text-[14px] font-bold text-block">
           {error}
         </span>
       ) : null}
-    </>
-  ) : (
-    <>
-      <span className="flex-1" />
-      <PopButton tone="dark" onClick={onClose}>
-        닫기
-      </PopButton>
     </>
   );
 
@@ -252,6 +275,21 @@ export function ChildPopup({
             : "보류하면 이 리포트는 보호자와 다른 기관에 보이지 않아요."}
         </ConfirmDialog>
       ) : null}
+
+      {removing ? (
+        <ConfirmDialog
+          title={`${child.name}을(를) 우리 기관 명부에서 뺄까요?`}
+          warning="다시 넣으려면 보호자가 연결 요청을 보내야 해요"
+          confirmLabel="명부에서 빼기"
+          tone="block"
+          busy={busy}
+          onCancel={() => setRemoving(false)}
+          onConfirm={remove}
+        >
+          우리 기관에 준 공유 동의가 꺼지고 쓰지 않은 초대 코드도 취소돼요. 받은 리포트도 더 볼 수 없어요. 보호자 연결과
+          지난 기록은 그대로 남아요.
+        </ConfirmDialog>
+      ) : null}
     </>
   );
 }
@@ -365,6 +403,12 @@ function InboxReport({ item, onRead }: { item: InboxItem; onRead: () => void }) 
       </PopSection>
     </>
   );
+}
+
+function removeMessageOf(err: unknown): string {
+  if (!(err instanceof ApiError)) return "네트워크 연결을 확인하고 다시 시도해 주세요.";
+  if (err.status === 403) return "보안 확인에 실패했어요. 새로고침한 뒤 다시 시도해 주세요.";
+  return "명부에서 빼지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }
 
 /** 다시 눌러도 결과가 같은 오류 — 팝업을 닫고 목록을 새로 받는다 */

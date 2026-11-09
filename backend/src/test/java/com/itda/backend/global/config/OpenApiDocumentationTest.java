@@ -349,9 +349,10 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(schema + ".properties.readAt.format").value("date-time"));
 	}
 
-	/** 초대 코드·보호자 연결 API(O-15~O-19, G-04·G-05). 모두 쿠키 인증을 요구하고, 권한·소속 오류가 명세에 드러나야 한다. */
+	/** 명부에서 빼기(O-63)와 초대 코드·보호자 연결 API(O-15~O-19, G-04·G-05). 모두 쿠키 인증을 요구하고, 권한·소속 오류가 명세에 드러나야 한다. */
 	@Test
 	void invitationAndGuardianLinkApisAreDocumented() throws Exception {
+		String rosterChild = "$.paths['/api/v1/institutions/me/children/{childId}']";
 		String invitations = "$.paths['/api/v1/institutions/me/children/{childId}/invitations']";
 		String invitation = "$.paths['/api/v1/institutions/me/children/{childId}/invitations/{invitationId}']";
 		String guardians = "$.paths['/api/v1/institutions/me/children/{childId}/guardians']";
@@ -370,6 +371,11 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(invitations + ".get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath(invitations + ".get.responses.200").exists())
 				.andExpect(jsonPath(invitations + ".get.responses.404").exists())
+				.andExpect(jsonPath(rosterChild + ".delete.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(rosterChild + ".delete.responses.204").exists())
+				.andExpect(jsonPath(rosterChild + ".delete.responses.403.description")
+						.value(containsString("ORGANIZATION_NOT_ASSIGNED")))
+				.andExpect(jsonPath(rosterChild + ".delete.responses.404.description").value(containsString("CHILD_NOT_FOUND")))
 				.andExpect(jsonPath(invitation + ".delete.security[0].cookieAuth").exists())
 				.andExpect(jsonPath(invitation + ".delete.responses.204").exists())
 				.andExpect(jsonPath(invitation + ".delete.responses.404.description").value(containsString("INVITATION_NOT_FOUND")))
