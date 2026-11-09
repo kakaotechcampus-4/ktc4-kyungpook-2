@@ -5,7 +5,8 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * `npm run e2e` 하나로 백엔드·프론트를 띄우고 끝나면 끈다. 개발 서버(3000 · 8080)와 겹치지 않게 E2E 전용 포트
  * (프론트 13000 · 백엔드 18080)를 쓴다 — 띄워 둔 개발 서버(개발용 로그인 꺼짐 · mock 켜짐 · 실제 AI)를 잘못
- * 집어 쓰는 일이 없다. 로컬에서 이 포트에 이미 떠 있으면(앞선 E2E 를 붙잡아 둔 경우) 그대로 쓴다.
+ * 집어 쓰는 일이 없다. 이미 떠 있는 서버는 다시 쓰지 않는다 — 남아 있던 옛 서버로 고치기 전 코드를 시험하지 않게.
+ * 포트가 막혀 있으면 바로 실패하니, 남은 프로세스를 끄고 다시 돌린다.
  *
  * 백엔드 설정 파일은 하나도 더하지 않는다. application-local.yml · application-secret.yml 은 gitignore 라 CI 에
  * 없으므로, H2 · 출입증 비밀값 · 카카오 값을 모두 환경변수로 넘긴다. 카카오 값은 기동만 통과하면 되는 더미다
@@ -25,7 +26,8 @@ export default defineConfig({
   forbidOnly: CI,
   retries: CI ? 1 : 0,
   timeout: 90_000,
-  reporter: CI ? [["list"], ["html", { open: "never" }]] : "list",
+  // 실패 때 `npx playwright show-report` 로 연다(README). CI 는 이 폴더를 아티팩트로 올린다
+  reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: FRONT,
     screenshot: "only-on-failure",
@@ -39,7 +41,7 @@ export default defineConfig({
       url: `${BACK}/api/health`,
       // 처음엔 Gradle 이 컴파일부터 한다
       timeout: 240_000,
-      reuseExistingServer: !CI,
+      reuseExistingServer: false,
       // Spring 로그는 stdout 으로 나온다. CI 에서 기동이 실패하면 원인이 이 로그에만 있으니 남긴다
       stdout: CI ? "pipe" : "ignore",
       stderr: "pipe",
@@ -68,7 +70,7 @@ export default defineConfig({
       command: `npm run build && npx vite preview --port ${FRONT_PORT} --strictPort`,
       url: FRONT,
       timeout: 120_000,
-      reuseExistingServer: !CI,
+      reuseExistingServer: false,
       stdout: CI ? "pipe" : "ignore",
       stderr: "pipe",
       // 번들에 박히는 값이라 빌드 때 넘긴다. frontend/.env 가 mock 을 켜 둬도 프로세스 환경변수가 이긴다 (Vite 규칙)
