@@ -64,7 +64,7 @@ cd infra/docker && docker compose up -d --build
 
 ```bash
 npx playwright install chromium   # 처음 한 번
-npm run e2e                       # 백엔드(:8080) · 프론트(:3000)를 띄우고 돌린 뒤 끈다
+npm run e2e                       # E2E 전용 백엔드(:18080) · 프론트(:13000)를 띄우고 돌린 뒤 끈다
 ```
 
 - `npm run e2e` 가 백엔드를 `./gradlew bootRun` 으로 직접 띄웁니다. DB 는 H2 메모리, 개발용 로그인은 켜고,
@@ -72,13 +72,15 @@ npm run e2e                       # 백엔드(:8080) · 프론트(:3000)를 띄�
   AI 주소는 아무것도 듣지 않는 포트로 넘겨, 로컬에 AI 를 띄워 둬도 "AI 꺼짐" 상태로 돌립니다.
 - 프론트는 dev 서버가 아니라 mock 을 끈 빌드 번들(`npm run build` → `vite preview`)로 띄웁니다. 배포되는
   번들과 같고, dev 서버가 처음 보는 화면에서 페이지를 새로 고치는 일이 없습니다. `build/` 를 덮어씁니다.
-- 3000 · 8080 이 이미 떠 있으면 그 서버를 그대로 씁니다. 이때 백엔드는 `DEV_LOGIN_ENABLED=true` 로
-  떠 있고 AI 에 닿지 않아야 하며(`ai-down`), 프론트는 mock 이 꺼져 있어야 합니다(`VITE_USE_MOCK=false`).
-  개발용 로그인 이름은 실행마다 새로 짓고 사업자등록번호는 무작위 10자리라, 이미 쓰던 DB 에 대고 다시 돌려도 됩니다.
+- 포트는 개발 서버(3000 · 8080)와 다른 E2E 전용(13000 · 18080)이라, 개발 서버를 띄워 둔 채 돌려도
+  서로 건드리지 않습니다. 개발용 로그인 이름은 실행마다 새로 짓고 사업자등록번호는 무작위 10자리입니다.
 - 실패하면 `playwright-report/` 와 `test-results/`(스크린샷 · trace)가 남습니다.
   `npx playwright show-report` 로 엽니다.
-- CI: 프론트 CI(`.github/workflows/frontend-ci.yml`)의 `e2e` 잡이 PR 마다 돌립니다. 배포 잡과는 따로라
-  E2E 가 실패해도 develop 배포를 막지 않습니다. 실패하면 리포트를 아티팩트(`frontend-e2e-report`)로 올립니다.
+- CI: 별도 워크플로(`.github/workflows/e2e.yml`)가 `frontend/` 나 `backend/` 가 바뀐 PR 마다 돌립니다.
+  배포 워크플로와 따로라 E2E 가 실패해도 배포를 막지 않고, 두 CI 시간도 늘지 않습니다. 실패하면 리포트를
+  아티팩트(`e2e-report`)로 올립니다.
+- `e2e/` · `playwright.config.ts` 는 번들에 들어가지 않아 프론트 배포 대상에서 뺐습니다
+  (`frontend-ci.yml` paths · `deploy-frontend.sh` service_paths). 테스트만 고친 머지는 프론트를 다시 배포하지 않습니다.
 - 범위 밖: 매칭 → 요약 → 승인처럼 AI 응답이 필요한 흐름(가짜 AI 서버가 필요합니다).
 
 ## 화면
