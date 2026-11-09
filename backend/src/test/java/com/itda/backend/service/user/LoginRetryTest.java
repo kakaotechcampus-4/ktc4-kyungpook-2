@@ -20,7 +20,8 @@ class LoginRetryTest {
     private final LoginUserTransactionService transactions = mock(LoginUserTransactionService.class);
     private final UserService service = new UserService(
             mock(UserRepository.class), mock(OrganizationRepository.class), mock(OrganizationCodeIssuer.class),
-            transactions, mock(TermsService.class));
+            transactions, mock(TermsService.class),
+            mock(com.itda.backend.service.organization.OrganizationHandoverService.class));
 
     private DataIntegrityViolationException violation(String constraint) {
         return new DataIntegrityViolationException("constraint",

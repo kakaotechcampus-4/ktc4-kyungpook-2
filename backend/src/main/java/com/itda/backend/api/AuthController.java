@@ -105,7 +105,9 @@ public class AuthController {
             summary = "회원가입",
             description = "카카오 로그인만 한 사용자의 역할을 확정합니다. 보호자는 role 만, 기관은 "
                     + "organizationName·organizationType·businessNumber(숫자 10자리, 진위 검증 없음)를 함께 "
-                    + "보냅니다. 기관이면 기관을 새로 만들고 소속시킵니다. 응답은 /auth/me 의 가입 완료 응답과 "
+                    + "보냅니다. 기관이면 기관을 새로 만들고 소속시킵니다. 담당자가 바뀌는 기관은 기관 정보 대신 "
+                    + "handoverCode(이전 담당자가 O-84 로 받은 인계 코드)만 보냅니다 — 그 기관에 소속되고 이전 담당자는 "
+                    + "탈퇴로 정리됩니다. 응답은 /auth/me 의 가입 완료 응답과 "
                     + "같습니다(막 가입하면 보호자 · 기관 모두 termsAgreed 가 false). 요청 전에 받은 XSRF-TOKEN "
                     + "쿠키 값을 X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
@@ -116,7 +118,9 @@ public class AuthController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
                     description = "role 누락·잘못된 값, 기관인데 기관 필드 누락, 보호자인데 기관 필드 포함, "
-                            + "사업자등록번호 형식 오류 (INVALID_REQUEST)",
+                            + "기관 정보와 handoverCode 를 함께 보냄, 사업자등록번호 형식 오류 (INVALID_REQUEST). "
+                            + "쓸 수 없는 인계 코드 — 형식 오류 · 없음 · 만료 · 이미 씀 · 취소됨 · 회원 탈퇴가 꺼짐 "
+                            + "(INVALID_HANDOVER_CODE)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",

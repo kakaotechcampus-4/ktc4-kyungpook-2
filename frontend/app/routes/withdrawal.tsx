@@ -174,7 +174,7 @@ function Content({ state }: { state: State }) {
     <>
       <h1 className="text-[20px] font-bold">탈퇴를 처리하고 있어요</h1>
       <p className="text-[15px] leading-7 text-ink2">
-        카카오 연결을 끊고 아이 연결과 공유 동의를 정리하고 있어요. 이 화면을 닫아도 처리는 이어져요.
+        카카오 연결을 끊고 계정 정보를 정리하고 있어요(보호자는 아이 연결과 공유 동의도 함께). 이 화면을 닫아도 처리는 이어져요.
         끝나기 전까지는 다른 화면을 쓸 수 없어요.
       </p>
     </>
