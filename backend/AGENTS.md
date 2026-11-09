@@ -176,8 +176,9 @@ API 계약을 변경하면 `docs/api/api-conventions.md`와 Springdoc으로 생�
 
 - 새 외부 API를 추가하거나 기존 API의 경로·요청·응답·오류 응답을 변경할 때는 `@Tag`,
   `@Operation`, 성공·오류 응답 annotation을 함께 갱신한다.
-- 보호 API와 공개 API의 OpenAPI 보안 요구 사항은 `SecurityConfig`와 `OpenApiConfig`의 현재
-  인증 방식·보안 스킴에 맞춘다. 인증 방식을 변경하면 두 구성과 관련 endpoint의 명세를 함께 갱신한다.
+- 쿠키 인증 자물쇠, `401 인증 필요`, 4xx·5xx 응답의 `ErrorResponse` 본문은 `OpenApiConfig` 가 모든 엔드포인트에 붙인다.
+  컨트롤러 annotation 에는 엔드포인트마다 다른 응답(성공, 400·403·404·409 등의 사유, 사유가 특별한 401)만 적는다.
+- 로그인 없이 여는 경로는 `SecurityConfig.PUBLIC_PATHS` 한 곳에 추가한다. 보안 설정과 API 문서가 같은 목록을 따른다.
 - API 문서 관련 변경 후에는 `/v3/api-docs`와 Swagger UI가 정상 생성되는 테스트를 추가하거나
   기존 테스트를 보완한다.
 

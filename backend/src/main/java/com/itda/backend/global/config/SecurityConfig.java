@@ -35,6 +35,29 @@ import java.util.List;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    /**
+     * 로그인 없이 여는 경로. 그 밖은 모두 인증이 필요하다. API 문서도 이 목록으로 자물쇠 표시와 401 응답을 정한다
+     * ({@link OpenApiConfig}).
+     */
+    public static final String[] PUBLIC_PATHS = {
+            "/oauth2/**",
+            "/login/oauth2/**",
+            // 메서드로 좁히지 않는다. POST 만 열면 익명 GET 요청이
+            // DispatcherServlet 에 닿기 전에 401 로 끝나서, 405 로 응답해야 할
+            // 잘못된 메서드 호출이 인증 오류로 둔갑한다.
+            "/api/v1/auth/logout",
+            // 개발용 로그인. app.auth.dev-login.enabled 가 꺼져 있으면 컨트롤러가 없어 404 다.
+            "/api/v1/dev/login",
+            "/api/health",
+            // 카카오 연결 해제 웹훅. 로그인 대신 어드민 키 헤더로 검증한다
+            ApiPaths.KAKAO_UNLINK_WEBHOOK,
+            // 약관 본문. 동의하기 전에 읽어야 하는 공개 문서다. 정확히 이 경로만 — 아래에 새 API 가 생겨도 열리지 않게
+            "/api/v1/terms",
+            "/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html"
+    };
+
     private final JwtProvider jwtProvider;
     private final JwtCookie jwtCookie;
     private final RevokedSessionService revokedSessionService;
@@ -131,24 +154,7 @@ public class SecurityConfig {
                  * 비로그인 요청은 JsonAuthenticationEntryPoint 가 401 JSON 으로 응답한다.
                  */
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/oauth2/**",
-                                "/login/oauth2/**",
-                                // 메서드로 좁히지 않는다. POST 만 열면 익명 GET 요청이
-                                // DispatcherServlet 에 닿기 전에 401 로 끝나서, 405 로 응답해야 할
-                                // 잘못된 메서드 호출이 인증 오류로 둔갑한다.
-                                "/api/v1/auth/logout",
-                                // 개발용 로그인. app.auth.dev-login.enabled 가 꺼져 있으면 컨트롤러가 없어 404 다.
-                                "/api/v1/dev/login",
-                                "/api/health",
-                                // 카카오 연결 해제 웹훅. 로그인 대신 어드민 키 헤더로 검증한다
-                                ApiPaths.KAKAO_UNLINK_WEBHOOK,
-                                // 약관 본문. 동의하기 전에 읽어야 하는 공개 문서다. 정확히 이 경로만 — 아래에 새 API 가 생겨도 열리지 않게
-                                "/api/v1/terms",
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html"
-                        ).permitAll()
+                        .requestMatchers(PUBLIC_PATHS).permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2

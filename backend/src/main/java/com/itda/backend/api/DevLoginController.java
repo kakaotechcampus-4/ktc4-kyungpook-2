@@ -1,15 +1,12 @@
 package com.itda.backend.api;
 
 import com.itda.backend.domain.user.User;
-import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.service.user.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Pattern;
@@ -85,8 +82,8 @@ public class DevLoginController {
                     }),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "as 누락 또는 형식 오류 — 영문 소문자·숫자·하이픈 1~20자 (INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+                    description = "as 누락 또는 형식 오류 — 영문 소문자·숫자·하이픈 1~20자 (INVALID_REQUEST)"
+            )
     })
     public ResponseEntity<Void> login(
             HttpServletRequest request,

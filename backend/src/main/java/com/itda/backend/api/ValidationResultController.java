@@ -15,15 +15,10 @@ import com.itda.backend.dto.request.validation.ReviseBlockedEntryRequest;
 import com.itda.backend.dto.request.validation.ValidationResolveRequest;
 import com.itda.backend.dto.response.validation.ValidationQueueItemResponse;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
-import com.itda.backend.global.config.OpenApiConfig;
-import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.validation.ValidationQueueService;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -44,18 +39,11 @@ public class ValidationResultController {
             summary = "수정 요청 큐 조회",
             description = "인증된 기관 소속의 BLOCK 판정 기록만 반환합니다. 지금은 status=BLOCK만 지원합니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "지원하지 않는 status (VALIDATION_RESULT_INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "지원하지 않는 status (VALIDATION_RESULT_INVALID_REQUEST)"
             )
     })
     public ApiResponse<List<ValidationQueueItemResponse>> getQueue(
@@ -75,24 +63,16 @@ public class ValidationResultController {
             description = "action=hold 만 받습니다. 이 일지의 파이프라인을 여기서 끝냅니다. "
                     + "reupload(수정한 원본 다시 올리기)는 받지 않습니다 — 본문을 고치려면 revise 를 씁니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "처리 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
                     description = "action 누락·오타·reupload, BLOCK이 아닌 결과, 이미 처리된 기록 "
-                            + "(VALIDATION_RESULT_INVALID_REQUEST) · 최신이 아닌 판정 (VALIDATION_RESULT_OUTDATED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "(VALIDATION_RESULT_INVALID_REQUEST) · 최신이 아닌 판정 (VALIDATION_RESULT_OUTDATED)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 검증 결과이거나 다른 기관 소속 (VALIDATION_RESULT_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "없는 검증 결과이거나 다른 기관 소속 (VALIDATION_RESULT_NOT_FOUND)"
             )
     })
     public ApiResponse<Void> resolve(
@@ -109,7 +89,6 @@ public class ValidationResultController {
             description = "막힌 일지의 본문을 고친 본문으로 바꾸고 검증을 다시 받게 합니다. 아이는 그대로입니다. "
                     + "통과하면 요약 대기가 되고, 또 막히면 수정 요청 큐에 최신 사유로 다시 뜹니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "고침 — 다시 검증 대기"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -117,18 +96,11 @@ public class ValidationResultController {
                     description = "본문 누락·빈 본문·100000자 초과 (INVALID_REQUEST) · 고치지 않은 본문 "
                             + "(VALIDATION_RESULT_CONTENT_UNCHANGED) · 삭제됐거나 명부에서 빠졌거나 동의가 꺼진 아이 "
                             + "(VALIDATION_RESULT_CHILD_NOT_SHARED) · 최신이 아닌 판정 (VALIDATION_RESULT_OUTDATED) · "
-                            + "BLOCK이 아닌 결과·이미 처리된 기록 (VALIDATION_RESULT_INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "BLOCK이 아닌 결과·이미 처리된 기록 (VALIDATION_RESULT_INVALID_REQUEST)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 검증 결과이거나 다른 기관 소속 (VALIDATION_RESULT_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "없는 검증 결과이거나 다른 기관 소속 (VALIDATION_RESULT_NOT_FOUND)"
             )
     })
     public ApiResponse<Void> revise(

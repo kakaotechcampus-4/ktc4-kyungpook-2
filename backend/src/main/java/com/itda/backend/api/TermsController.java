@@ -4,12 +4,10 @@ import java.util.List;
 
 import com.itda.backend.domain.user.UserRole;
 import com.itda.backend.dto.response.user.TermsDocumentResponse;
-import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.user.TermsDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,8 +43,8 @@ public class TermsController {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "role 누락 또는 parent · org 가 아님 (INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+                    description = "role 누락 또는 parent · org 가 아님 (INVALID_REQUEST)"
+            )
     })
     public ResponseEntity<ApiResponse<List<TermsDocumentResponse>>> terms(
             @Parameter(description = "역할", schema = @Schema(allowableValues = {"parent", "org"}))
