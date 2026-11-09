@@ -1,19 +1,17 @@
 package com.itda.backend.domain.summary;
 
-import java.time.LocalDateTime;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.CreatedAtEntity;
 
 /**
  * Gate 1 을 통과한 요약을 아동별로 쌓아 둔 한 건 (DB 스키마 §9.2).
@@ -41,7 +39,7 @@ import lombok.NoArgsConstructor;
                 name = "uk_child_context_summary_result", columnNames = "summary_result_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ChildContext {
+public class ChildContext extends CreatedAtEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -61,9 +59,6 @@ public class ChildContext {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
     private ChildContext(Long childId, Long summaryResultId, String content) {
         this.childId = childId;
         this.summaryResultId = summaryResultId;
@@ -81,10 +76,5 @@ public class ChildContext {
             throw new IllegalArgumentException("승인된 요약 본문은 필수입니다.");
         }
         return new ChildContext(childId, summaryResultId, content);
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
     }
 }

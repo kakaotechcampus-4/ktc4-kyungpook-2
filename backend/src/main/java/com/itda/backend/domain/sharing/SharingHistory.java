@@ -10,11 +10,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import com.itda.backend.domain.consent.ConsentRevokeReason;
+import com.itda.backend.global.jpa.CreatedAtEntity;
 
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -48,7 +48,7 @@ import lombok.NoArgsConstructor;
         indexes = @Index(name = "idx_sharing_history_receiver_type_receiver_id", columnList = "receiver_type, receiver_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class SharingHistory {
+public class SharingHistory extends CreatedAtEntity {
 
     /** 한 수신자당 한 행. Gate 2 승인 API 를 두 번 불러도 권한이 두 번 생기지 않는다. */
     public static final String UK_SHARING_HISTORY = "uk_sharing_history_insight_receiver";
@@ -93,9 +93,6 @@ public class SharingHistory {
     @Enumerated(EnumType.STRING)
     @Column(name = "revoke_reason", length = 30)
     private ConsentRevokeReason revokeReason;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
 
     private SharingHistory(Long childId, Long insightResultId, Long senderOrganizationId,
             ReceiverType receiverType, Long receiverId) {
@@ -159,10 +156,5 @@ public class SharingHistory {
     /** 지금 볼 수 있는 권한인지. */
     public boolean isActive() {
         return this.revokedAt == null;
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
     }
 }

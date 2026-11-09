@@ -1,7 +1,6 @@
 package com.itda.backend.domain.child;
 
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,13 +10,12 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 보호자가 기관 코드로 "이 아이를 이 기관 명부에 올려 달라" 고 낸 요청. 기관이 관리번호를 넣어 수락하면
@@ -41,7 +39,7 @@ import lombok.NoArgsConstructor;
                         columnList = "child_id, organization_id")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ChildOrganizationRequest {
+public class ChildOrganizationRequest extends TimestampedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -67,12 +65,6 @@ public class ChildOrganizationRequest {
 
     @Column(name = "decided_at")
     private LocalDateTime decidedAt;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     private ChildOrganizationRequest(Long childId, Long organizationId, Long requestedBy) {
         this.childId = childId;
@@ -112,20 +104,5 @@ public class ChildOrganizationRequest {
         this.status = status;
         this.decidedBy = userId;
         this.decidedAt = now;
-    }
-
-    /**
-     * 같은 보호자가 다시 요청하면 DB 에서 읽은 {@code createdAt} 을 돌려준다. 리눅스 시계는 나노초까지 주는데
-     * DB 는 마이크로초까지만 저장하므로, 처음 응답과 재요청 응답의 {@code requestedAt} 이 같도록 미리 자른다.
-     */
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
     }
 }

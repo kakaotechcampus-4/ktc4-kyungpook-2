@@ -1,7 +1,5 @@
 package com.itda.backend.domain.validation;
 
-import java.time.LocalDateTime;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,12 +8,12 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.CreatedAtEntity;
 
 /**
  * 검증 에이전트 실행 결과 한 건 (DB 스키마 §8.1).
@@ -28,7 +26,7 @@ import lombok.NoArgsConstructor;
         indexes = @Index(name = "idx_validation_result_journal_entry_id", columnList = "journal_entry_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ValidationResult {
+public class ValidationResult extends CreatedAtEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -60,9 +58,6 @@ public class ValidationResult {
     @Column(columnDefinition = "TEXT")
     private String rawResponse;
 
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
     private ValidationResult(Long journalEntryId, Long matchingResultId, Long childId, ValidationVerdict verdict,
             String issueTypes, String evidence, String rawResponse) {
         this.journalEntryId = journalEntryId;
@@ -84,10 +79,5 @@ public class ValidationResult {
         }
         return new ValidationResult(journalEntryId, matchingResultId, childId, verdict, issueTypes, evidence,
                 rawResponse);
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
     }
 }

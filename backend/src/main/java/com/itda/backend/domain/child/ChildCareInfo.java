@@ -1,7 +1,5 @@
 package com.itda.backend.domain.child;
 
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import jakarta.persistence.Column;
@@ -10,14 +8,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 보호자가 적어 두는 아이의 돌봄 정보 — 알레르기와 복용약 (DB 스키마 §5.7, api-spec G-13).
@@ -36,7 +33,7 @@ import lombok.NoArgsConstructor;
         uniqueConstraints = @UniqueConstraint(name = "uk_child_care_info_child", columnNames = "child_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ChildCareInfo {
+public class ChildCareInfo extends TimestampedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -56,12 +53,6 @@ public class ChildCareInfo {
     /** 마지막으로 고친 보호자 {@code users.id} */
     @Column(name = "updated_by", nullable = false)
     private Long updatedBy;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     private ChildCareInfo(Long childId, List<String> allergies, List<Medication> medications, Long updatedBy) {
         this.childId = childId;
@@ -94,17 +85,6 @@ public class ChildCareInfo {
         if (updatedBy == null) {
             throw new IllegalArgumentException("고친 보호자 ID는 필수입니다.");
         }
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
     }
 
     /**

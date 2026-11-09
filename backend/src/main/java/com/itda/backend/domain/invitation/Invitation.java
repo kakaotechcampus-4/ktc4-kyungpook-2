@@ -9,14 +9,13 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 기관이 보호자에게 건네는 일회용 초대 코드. 코드는 본인 확인이 아니라 "이 아이와 연결해도 된다"는 권한이다.
@@ -33,7 +32,7 @@ import lombok.NoArgsConstructor;
         uniqueConstraints = @UniqueConstraint(name = Invitation.UK_INVITATION_CODE, columnNames = "code"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Invitation {
+public class Invitation extends TimestampedEntity {
 
     public static final String UK_INVITATION_CODE = "uk_invitation_code";
     public static final int CODE_LENGTH = 8;
@@ -60,12 +59,6 @@ public class Invitation {
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     private Invitation(Long childId, Long organizationId, String code, LocalDateTime expiresAt) {
         this.childId = childId;
@@ -114,16 +107,5 @@ public class Invitation {
             throw new IllegalStateException("쓸 수 없는 초대 코드입니다.");
         }
         this.status = InvitationStatus.CANCELLED;
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

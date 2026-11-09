@@ -10,14 +10,13 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 서비스 회원. 카카오는 신원 확인 수단일 뿐이고, 역할·소속의 기준은 이 테이블이다.
@@ -37,7 +36,7 @@ import lombok.NoArgsConstructor;
         uniqueConstraints = @UniqueConstraint(name = "uk_users_kakao_id", columnNames = "kakao_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class User {
+public class User extends TimestampedEntity {
 
     /** 탈퇴를 마친 행의 {@code kakao_id}. 원래 값과 관계없어 되찾을 수 없다. 뒤에 내부 id 를 붙여 유니크를 지킨다. */
     public static final String WITHDRAWN_KAKAO_ID_PREFIX = "withdrawn:";
@@ -67,12 +66,6 @@ public class User {
     /** 기관 담당자만 가진다. 보호자와 가입 미완료 회원은 null 이다. FK 제약 없음. */
     @Column(name = "organization_id")
     private Long organizationId;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     /**
      * 탈퇴 표시. null 이면 활성 계정이다 (DB 스키마 §3.2 soft delete).
@@ -430,16 +423,5 @@ public class User {
 
     public boolean isParent() {
         return this.role == UserRole.PARENT;
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

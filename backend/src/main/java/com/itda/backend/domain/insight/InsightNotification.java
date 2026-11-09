@@ -1,7 +1,6 @@
 package com.itda.backend.domain.insight;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -10,14 +9,13 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 알림 워커가 "이 아이의 이 기간은 보호자에게 보냈다" 를 남기는 자리 (#419).
@@ -42,7 +40,7 @@ import lombok.NoArgsConstructor;
                 columnNames = {"child_id", "period_from", "period_to", "revision"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class InsightNotification {
+public class InsightNotification extends TimestampedEntity {
 
     private static final int FAILURE_REASON_LENGTH = 60;
     private static final int MESSAGE_ID_LENGTH = 100;
@@ -101,12 +99,6 @@ public class InsightNotification {
      */
     @Column(name = "failure_reason", length = FAILURE_REASON_LENGTH)
     private String failureReason;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     private InsightNotification(Long childId, LocalDate periodFrom, LocalDate periodTo, int revision) {
         this.childId = childId;
@@ -174,17 +166,5 @@ public class InsightNotification {
     /** 낯선 긴 값이 와도 저장이 터지지 않게 자른다. 터지면 그 판이 RUNNING 으로 남아 다시 켤 때까지 안 집힌다. */
     private static String truncate(String value, int max) {
         return value == null || value.length() <= max ? value : value.substring(0, max);
-    }
-
-    @PrePersist
-    void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
-        this.createdAt = now;
-        this.updatedAt = now;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

@@ -1,7 +1,6 @@
 package com.itda.backend.domain.summary;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,8 +10,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -21,6 +18,7 @@ import org.hibernate.annotations.ColumnDefault;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 요약 에이전트가 쓴 요약 한 편 (DB 스키마 §8.2).
@@ -39,7 +37,7 @@ import lombok.NoArgsConstructor;
         indexes = @Index(name = "idx_summary_result_institution_id_status", columnList = "institution_id, status"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class SummaryResult {
+public class SummaryResult extends TimestampedEntity {
 
     private static final String EMPTY_ARRAY = "[]";
 
@@ -101,12 +99,6 @@ public class SummaryResult {
     // AI 응답(SummaryOutput)에 아직 모델 버전이 없어 비워 둔다.
     @Column(length = 100)
     private String modelVersion;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     private SummaryResult(Long childId, LocalDate entryDate, Long institutionId, Integer revision, String content,
             String claims, String coveredEntryIds, String uncoveredEntryIds, String rawResponse) {
@@ -285,16 +277,5 @@ public class SummaryResult {
         if (content == null || content.isBlank()) {
             throw new IllegalArgumentException("요약 본문은 필수입니다.");
         }
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

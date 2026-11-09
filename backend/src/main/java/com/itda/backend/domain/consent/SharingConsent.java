@@ -15,13 +15,12 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 보호자 한 명이 아이 한 명의 정보를 기관 한 곳에 공유해도 된다고 한 동의 (DB 스키마 §5.5).
@@ -39,7 +38,7 @@ import lombok.NoArgsConstructor;
         indexes = @Index(name = "idx_sharing_consent_child_id_organization_id", columnList = "child_id, organization_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class SharingConsent {
+public class SharingConsent extends TimestampedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -76,12 +75,6 @@ public class SharingConsent {
     @Enumerated(EnumType.STRING)
     @Column(name = "revoke_reason", length = 30)
     private ConsentRevokeReason revokeReason;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     private SharingConsent(Long childId, Long guardianId, Long organizationId, List<ConsentField> scope) {
         this.childId = childId;
@@ -149,16 +142,5 @@ public class SharingConsent {
         if (!isActive()) {
             throw new IllegalStateException("이미 철회된 동의입니다.");
         }
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

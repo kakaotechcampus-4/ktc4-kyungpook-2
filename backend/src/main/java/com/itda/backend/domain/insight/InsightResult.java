@@ -1,7 +1,6 @@
 package com.itda.backend.domain.insight;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,13 +10,12 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 인사이트 한 건 (DB 스키마 §9.3). 승인된 요약들을 겹쳐 찾아낸 "상황 → 반응 → 대처와 결과" 묶음이다.
@@ -42,7 +40,7 @@ import lombok.NoArgsConstructor;
         indexes = @Index(name = "idx_insight_result_child_id", columnList = "child_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class InsightResult {
+public class InsightResult extends TimestampedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -107,12 +105,6 @@ public class InsightResult {
 
     @Column(name = "model_version", length = 100)
     private String modelVersion;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     private InsightResult(Long childId, LocalDate periodFrom, LocalDate periodTo, int revision,
             String situation, String behavior, String content, String supports, String claimIds,
@@ -187,17 +179,5 @@ public class InsightResult {
             // 빈 글이 Gate 2 에 올라가면 교사가 판단할 수 없고, 승인되면 빈 글이 다른 기관으로 나간다.
             throw new IllegalArgumentException("인사이트 " + name + "은 필수입니다.");
         }
-    }
-
-    @PrePersist
-    void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
-        this.createdAt = now;
-        this.updatedAt = now;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

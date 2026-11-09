@@ -1,6 +1,5 @@
 package com.itda.backend.domain.organization;
 
-import java.time.LocalDateTime;
 import java.util.regex.Pattern;
 
 import jakarta.persistence.Column;
@@ -10,14 +9,13 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 아이를 돌보는 기관. 학교·센터·활동지원기관을 한 테이블로 다룬다.
@@ -39,7 +37,7 @@ import lombok.NoArgsConstructor;
                 @UniqueConstraint(name = Organization.UK_CODE, columnNames = "code")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Organization {
+public class Organization extends TimestampedEntity {
 
     public static final String UK_BUSINESS_NUMBER = "uk_organization_business_number";
     public static final String UK_CODE = "uk_organization_code";
@@ -72,12 +70,6 @@ public class Organization {
     @Column(length = CODE_LENGTH)
     private String code;
 
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
-
     private Organization(String name, OrganizationType type, String businessNumber) {
         this.name = name;
         this.type = type;
@@ -106,16 +98,5 @@ public class Organization {
             throw new IllegalArgumentException("기관 코드는 8자리여야 합니다.");
         }
         this.code = code;
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

@@ -7,14 +7,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 아동과 기관의 연결(N:M). 기관별 매칭 명부와 "이 아이가 우리 기관 소속인가" 판단이 여기서 나온다.
@@ -37,7 +36,7 @@ import lombok.NoArgsConstructor;
                         columnNames = {"organization_id", "external_id"})})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ChildOrganization {
+public class ChildOrganization extends TimestampedEntity {
 
     public static final String UK_ORGANIZATION_EXTERNAL_ID = "uk_child_organization_organization_id_external_id";
     public static final int EXTERNAL_ID_MAX_LENGTH = 50;
@@ -54,12 +53,6 @@ public class ChildOrganization {
 
     @Column(name = "external_id", length = EXTERNAL_ID_MAX_LENGTH)
     private String externalId;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
@@ -113,16 +106,5 @@ public class ChildOrganization {
 
     public boolean isDeleted() {
         return this.deletedAt != null;
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

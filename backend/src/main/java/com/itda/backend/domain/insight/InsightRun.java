@@ -1,7 +1,6 @@
 package com.itda.backend.domain.insight;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -10,14 +9,13 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 인사이트 워커가 "이 아이의 이 기간은 처리했다" 를 남기는 자리 (DB 스키마 §9.5).
@@ -44,7 +42,7 @@ import lombok.NoArgsConstructor;
                 columnNames = {"child_id", "period_from", "period_to", "revision"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class InsightRun {
+public class InsightRun extends TimestampedEntity {
 
     private static final int FAILURE_REASON_LENGTH = 60;
 
@@ -96,12 +94,6 @@ public class InsightRun {
     @Column(name = "failure_reason", length = FAILURE_REASON_LENGTH)
     private String failureReason;
 
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
-
     private InsightRun(Long childId, LocalDate periodFrom, LocalDate periodTo, int revision) {
         this.childId = childId;
         this.periodFrom = periodFrom;
@@ -145,17 +137,5 @@ public class InsightRun {
         // AI 가 낯선 긴 값을 보내도 저장이 터지지 않게 자른다. 터지면 그 실행이 RUNNING 으로 남아 다시 켤 때까지 안 집힌다.
         this.failureReason = reason == null || reason.length() <= FAILURE_REASON_LENGTH
                 ? reason : reason.substring(0, FAILURE_REASON_LENGTH);
-    }
-
-    @PrePersist
-    void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
-        this.createdAt = now;
-        this.updatedAt = now;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

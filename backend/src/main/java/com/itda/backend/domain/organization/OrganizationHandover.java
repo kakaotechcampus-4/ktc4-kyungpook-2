@@ -11,8 +11,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -21,6 +19,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import com.itda.backend.domain.invitation.Invitation;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 기관 담당자가 후임에게 건네는 일회용 인계 코드 (#478).
@@ -39,7 +38,7 @@ import com.itda.backend.domain.invitation.Invitation;
         indexes = @Index(name = "idx_organization_handover_organization", columnList = "organization_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class OrganizationHandover {
+public class OrganizationHandover extends TimestampedEntity {
 
     public static final String UK_CODE = "uk_organization_handover_code";
     /** 코드는 초대 코드 생성기({@code InviteCodeGenerator})로 만든다 — 길이도 같이 따라간다. */
@@ -71,12 +70,6 @@ public class OrganizationHandover {
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     private OrganizationHandover(Long organizationId, Long issuedBy, String code, LocalDateTime expiresAt) {
         this.organizationId = organizationId;
@@ -129,16 +122,5 @@ public class OrganizationHandover {
             throw new IllegalStateException("쓸 수 없는 인계 코드입니다.");
         }
         this.status = OrganizationHandoverStatus.CANCELLED;
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

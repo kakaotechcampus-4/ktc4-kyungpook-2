@@ -1,19 +1,17 @@
 package com.itda.backend.domain.user;
 
-import java.time.LocalDateTime;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.CreatedAtEntity;
 
 /**
  * "이 로그인은 로그아웃했다" 는 기록 한 줄 (DB 스키마 §4.4). 이 로그인 번호를 가진 출입증은 더 받지 않는다.
@@ -36,7 +34,7 @@ import lombok.NoArgsConstructor;
                 columnNames = "session_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class RevokedSession {
+public class RevokedSession extends CreatedAtEntity {
 
     /** 같은 로그인을 두 번 로그아웃해도 줄은 하나다. */
     public static final String UK_REVOKED_SESSION = "uk_revoked_session_session_id";
@@ -53,10 +51,6 @@ public class RevokedSession {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    /** 로그아웃한 시각. */
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
     private RevokedSession(String sessionId, Long userId) {
         this.sessionId = sessionId;
         this.userId = userId;
@@ -67,10 +61,5 @@ public class RevokedSession {
             throw new IllegalArgumentException("로그아웃 기록의 로그인 번호·회원은 필수입니다.");
         }
         return new RevokedSession(sessionId, userId);
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
     }
 }

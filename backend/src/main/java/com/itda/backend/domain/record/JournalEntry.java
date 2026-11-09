@@ -11,13 +11,12 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
 /**
  * 원본 파일 안의 관찰 기록 한 건. 매칭·검증의 처리 단위다.
@@ -38,7 +37,7 @@ import lombok.NoArgsConstructor;
         @Index(name = "idx_journal_entry_child_id_entry_date", columnList = "child_id, entry_date")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class JournalEntry {
+public class JournalEntry extends TimestampedEntity {
 
     /**
      * AI 에 보낼 수 있는 일지 본문의 최대 글자 수 (#424). 업로드는 이보다 긴 일지가 든 파일을 거절하고, 본문 고치기도 이 길이까지만
@@ -71,12 +70,6 @@ public class JournalEntry {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private JournalEntryStatus status;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
@@ -438,16 +431,5 @@ public class JournalEntry {
 
     public boolean isDeleted() {
         return this.deletedAt != null;
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }
