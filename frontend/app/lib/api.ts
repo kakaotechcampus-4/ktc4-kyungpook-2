@@ -71,7 +71,7 @@
  */
 
 import { ApiError } from "@/lib/apiError";
-import { clearSession, csrfHeader, getSession, isOnboarded, markOnboarded } from "@/lib/auth";
+import { clearSession, csrfHeader, getSession, isAuthMock, isOnboarded, markOnboarded } from "@/lib/auth";
 import * as mock from "@/lib/mock/data";
 import { forgetParentChildren, shareParentChildren } from "@/lib/parentChildrenCache";
 import { GATE1_INDEX, MATCHING_INDEX } from "@/lib/pipeline";
@@ -1248,7 +1248,11 @@ export type ParentChildrenWithOwner = { children: Child[]; ownerUserId: string |
  * `/auth/me` 를 따로 물으면 다른 탭에서 계정이 바뀐 직후 목록은 A, 계정은 B 가 될 수 있다.
  */
 export async function getParentChildrenWithOwner(): Promise<ParentChildrenWithOwner> {
-  if (mockFor("guardianChildren")) return { children: mock.PARENT_CHILDREN, ownerUserId: "mock" };
+  // 모의 목록에는 실제 소유 계정이 없다. 로그인도 모의일 때만 모의 계정("mock")을 싣는다 — 실제 로그인과 섞으면 탈퇴 대상이 실제
+  // 계정과 맞지 않아 버튼이 늘 막히므로, 비워 두어 탈퇴 버튼을 숨긴다
+  if (mockFor("guardianChildren")) {
+    return { children: mock.PARENT_CHILDREN, ownerUserId: isAuthMock() ? "mock" : null };
+  }
   return shareParentChildren(async () => {
     const { data, headers } = await requestWithHeaders<Child[]>("/api/v1/guardians/me/children");
     return { children: data, ownerUserId: headers.get("X-Itda-User-Id") };

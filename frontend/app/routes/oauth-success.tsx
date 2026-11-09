@@ -25,7 +25,7 @@ export async function clientLoader() {
 
   if (!session.loggedIn) return redirect("/login");
   // 실제 로그인으로 들어왔으면 이 브라우저의 다른 탭들에 알린다 — 그 탭들은 화면을 새로 고친다
-  announceLoginIfLanded();
+  announceLoginIfLanded(session.userId);
   // 탈퇴를 처리하는 중이면 서버가 다른 API 를 막는다 — 가입 · 약관보다 먼저 본다
   if (session.withdrawing) return redirect("/withdrawal");
   // 로그인이 풀려서 남겨 둔 주소는 여기서 한 번 읽고 지운다 — 쓰지 않는 경우에도 남겨 두면 다음 로그인 화면에 만료 안내가 뜬다
