@@ -363,6 +363,10 @@ DELETE /api/v1/auth/me?userId={확인 화면의 userId}   → 204 No Content | 2
 탈퇴를 처리하는 동안은 `/auth/me` · 로그아웃 외의 보호 API가 `409 WITHDRAWAL_IN_PROGRESS`입니다. 처리 흐름과 동시성 규칙은
 [DB 스키마 §4.1 "탈퇴"](../db/schema.md#41-users-)를 봅니다.
 
+**탈퇴 대상 계정과 화면.** 보호자 설정 화면은 탈퇴 대상(`userId`)을 `/auth/me` 가 아니라 아이 목록 응답(`GET /api/v1/guardians/me/children`)의
+헤더 `X-Itda-User-Id` 에서 꺼냅니다. 화면에 보이는 아이 목록과 탈퇴 대상이 같은 응답에서 나오므로, 다른 탭에서 계정이 바뀐 직후에도 둘이
+다른 계정을 가리키지 않습니다. 그 사이 쿠키가 다른 계정으로 바뀌었으면 서버가 `409 WITHDRAWAL_ACCOUNT_MISMATCH` 로 막습니다.
+
 #### 2.7.1 카카오 연결 해제 웹훅 — 카카오가 부름
 
 ```http
