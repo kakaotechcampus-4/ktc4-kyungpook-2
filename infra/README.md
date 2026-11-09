@@ -403,6 +403,24 @@ HTTP/3는 이번 구성에서 활성화하지 않습니다.
 페이지 이동(`location.href`)으로 내보내는 길은 막지 못합니다. 화면이 외부 스크립트 · 글꼴 · 이미지를 새로 쓰게 되면 Caddyfile의 CSP에
 그 주소를 더해야 합니다 — 더하지 않으면 브라우저가 막고 콘솔에 CSP 위반이 남습니다.
 
+**응답 압축 (#477)** — Caddy가 **화면 응답에만** `zstd` · `gzip` 압축을 겁니다(Caddyfile의 마지막 `handle`). 프론트 Nginx는 압축하지
+않습니다. Caddy 기본값대로 압축이 잘 되는 형식(HTML · JS · CSS · JSON · SVG)을 512바이트 이상일 때만 압축하고, png · woff2처럼 이미
+압축된 파일은 그대로 보냅니다. 압축한 응답에는 `Vary: Accept-Encoding`이 붙고, `/assets/`의 캐시 헤더는 그대로입니다.
+압축하기 전 첫 화면 HTML · JS · CSS 14개는 449KB였고, 같은 파일을 Caddy 기본 수준으로 압축하면 약 135KB입니다(2026-11-09 측정).
+
+API(`/api/*`)와 OAuth(`/oauth2/*` · `/login/oauth2/*`) 응답은 압축하지 않습니다. 초대 코드 · 기관 코드처럼 비밀값이 본문에 있는 응답에
+요청자가 조작할 수 있는 값이 함께 담기면, 압축된 크기로 비밀값을 추측하는 공격(BREACH)이 성립할 수 있습니다. 출입증 쿠키가
+`SameSite=Lax`라 위험은 낮지만, API 응답을 확인하기 전까지는 넣지 않습니다. 넣을 때는 그 확인과 함께 Caddyfile과
+`test_caddy_proxy.py`의 압축 범위 시험을 바꿉니다.
+
+배포 뒤에는 첫 화면 JS를 압축 요청 / 요청 없음으로 받아, 둘 다 `200`인지와 압축 요청에만 `Content-Encoding`이 붙는지 확인합니다.
+
+```bash
+ORIGIN=https://iitda.duckdns.org; JS=$(curl -s "$ORIGIN/" | grep -o '/assets/[^"]*\.js' | head -1)
+curl -s -o /dev/null -w '%{http_code} %header{content-encoding} %{size_download}\n' "$ORIGIN$JS"
+curl -s -o /dev/null -w '%{http_code} %header{content-encoding} %{size_download}\n' --compressed "$ORIGIN$JS"
+```
+
 ### 최초 EC2 전환
 
 이 절차는 운영자가 별도로 실행합니다. 먼저 GitHub의 `CADDY_READY`를 `false`로 설정하고
