@@ -2,7 +2,7 @@ import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentNotReadyPage } from "@/components/parent/NotReady";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { Link, useLoaderData } from "react-router";
-import { getJournal, getJournalEntry, isReady } from "@/lib/api";
+import { getJournalEntry, isReady } from "@/lib/api";
 
 export async function clientLoader({ params }: { params: { id: string } }) {
   // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
@@ -11,20 +11,11 @@ export async function clientLoader({ params }: { params: { id: string } }) {
   const entry = await getJournalEntry(params.id);
   if (!entry) throw new Response("Not Found", { status: 404 });
 
-  // "이전 일지"/"다음 일지" — 서버 목록 순서(최근 순) 그대로. 일지에는 시각이 없어 화면이 다시 정렬하지 않는다.
-  // 앞 칸이 더 최근(다음), 뒤 칸이 더 예전(이전)이다.
-  const journal = await getJournal(entry.childId);
-  const idx = journal.findIndex((j) => j.id === entry.id);
-  const nextId = idx > 0 ? journal[idx - 1].id : null;
-  const prevId = idx !== -1 && idx < journal.length - 1 ? journal[idx + 1].id : null;
-
-  // 같은 날 **다른 기관**이 쓴 일지. 이 화면까지 와서 한 기관 이야기만 읽고 나가면,
-  // 기관을 잇는다는 말이 화면에서는 한 번도 보이지 않는다. 목록은 이미 받아 둔 것이라 더 묻지 않는다.
-  const sameDay = journal.filter(
-    (j) => j.date === entry.date && j.id !== entry.id && j.institution.name !== entry.institution.name,
-  );
-
-  return { entry, prevId, nextId, sameDay };
+  // 옆 일지는 상세 응답에 같이 온다 — 목록 전체를 또 받지 않는다 (#458). 서버가 목록과 같은 순서로 정한다:
+  // 앞 칸이 더 최근(다음), 뒤 칸이 더 예전(이전). "같은 날 다른 곳" 은 같은 날 **다른 기관**이 쓴 일지다 —
+  // 이 화면까지 와서 한 기관 이야기만 읽고 나가면, 기관을 잇는다는 말이 화면에서는 한 번도 보이지 않는다.
+  // FE 가 먼저 배포되면 그 사이 예전 서버는 이 값들을 주지 않는다. 없음으로 그린다 — 버튼이 잠깐 막힐 뿐 틀리지 않는다
+  return { entry, prevId: entry.prevId ?? null, nextId: entry.nextId ?? null, sameDay: entry.sameDay ?? [] };
 }
 
 /** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */

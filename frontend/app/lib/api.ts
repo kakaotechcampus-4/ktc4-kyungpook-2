@@ -105,6 +105,7 @@ import type {
   SentChecklistPage,
   IssuedInvitation,
   JournalEntry,
+  JournalEntryDetail,
   LiveInvitation,
   MatchingItem,
   MatchResolution,
@@ -1569,21 +1570,37 @@ export async function updateChildCare(childId: string, care: ChildCareInfo): Pro
  * GET /api/v1/children/{childId}/journal — 타임라인/홈에 쓰는 일지 목록. 관찰 날짜 최근 순, 같은 날은 승인
  * 최근 순이다 (서버가 정렬한다)
  */
-export async function getJournal(childId: string): Promise<JournalEntry[]> {
+export async function getJournal(childId: string, { limit }: { limit?: number } = {}): Promise<JournalEntry[]> {
   if (mockFor("guardianJournal")) {
     // 같은 날 안에서는 mock 배열 순서가 승인 순서다 (sort 는 안정적이다)
-    return mock.JOURNAL.filter((j) => j.childId === childId).sort((a, b) =>
-      b.date.localeCompare(a.date),
-    );
+    const all = mock.JOURNAL.filter((j) => j.childId === childId).sort((a, b) => b.date.localeCompare(a.date));
+    return limit === undefined ? all : all.slice(0, limit);
   }
-  return request(`/api/v1/children/${childId}/journal`);
+  // limit 은 서버가 같은 순서로 앞에서 자른다 (#458). 없으면 전부
+  const query = limit === undefined ? "" : `?limit=${limit}`;
+  return request(`/api/v1/children/${encodeURIComponent(childId)}/journal${query}`);
 }
 
-/** GET /api/v1/journal/{id} — 볼 수 없는 일지(JOURNAL_NOT_FOUND)는 undefined. mock 과 같은 약속이다 */
-export async function getJournalEntry(id: string): Promise<JournalEntry | undefined> {
-  if (mockFor("guardianJournal")) return mock.JOURNAL.find((j) => j.id === id);
+/**
+ * GET /api/v1/journal/{id} — 일지 하나와 옆 일지(이전 · 다음 · 같은 날 다른 기관, #458).
+ * 볼 수 없는 일지(JOURNAL_NOT_FOUND)는 undefined. mock 과 같은 약속이다
+ */
+export async function getJournalEntry(id: string): Promise<JournalEntryDetail | undefined> {
+  if (mockFor("guardianJournal")) {
+    const entry = mock.JOURNAL.find((j) => j.id === id);
+    if (!entry) return undefined;
+    // 서버와 같은 기준 — 목록 순서(최근 순)에서 앞 칸이 다음, 뒤 칸이 이전. 같은 날 다른 기관은 기관 id 로 가른다
+    const journal = await getJournal(entry.childId);
+    const idx = journal.findIndex((j) => j.id === id);
+    return {
+      ...entry,
+      nextId: idx > 0 ? journal[idx - 1].id : null,
+      prevId: idx < journal.length - 1 ? journal[idx + 1].id : null,
+      sameDay: journal.filter((j) => j.date === entry.date && j.institution.id !== entry.institution.id),
+    };
+  }
   try {
-    return await request<JournalEntry>(`/api/v1/journal/${encodeURIComponent(id)}`);
+    return await request<JournalEntryDetail>(`/api/v1/journal/${encodeURIComponent(id)}`);
   } catch (err) {
     if (err instanceof ApiError && err.code === "JOURNAL_NOT_FOUND") return undefined;
     throw err;
