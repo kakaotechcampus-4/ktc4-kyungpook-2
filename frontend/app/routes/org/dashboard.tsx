@@ -27,6 +27,7 @@ import {
   getFileProgress,
   getPipeline,
   getUploadedFiles,
+  hasUploadExtension,
   UPLOAD_EXTENSIONS,
   uploadRawRecords,
   type UploadedFile,
@@ -397,6 +398,7 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   const [pending, setPending] = useState<File[] | null>(null);
   // 기관이 올린 파일 전체. files(최근 50개)보다 오래된 파일과도 이름을 맞춰 보려고 창을 열 때 받는다
   const [allUploaded, setAllUploaded] = useState<UploadedFile[]>([]);
+  const [fullCheck, setFullCheck] = useState<FullCheck>("loading");
   const fetchSeq = useRef(0);
 
   function pick(list: FileList | null) {
@@ -405,14 +407,20 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
     if (input.current) input.current.value = "";
     if (!picked.length || uploading || pending) return;
     setPending(picked);
-    // 받기 전에는 files 로만 맞춰 본다. 실패해도 창 · 업로드는 그대로다 (경고만 덜 잡힌다)
+    // 받기 전에는 files 로만 맞춰 보고, 창에 "맞춰 보는 중" 을 띄운다. 실패해도 창 · 업로드는 그대로다 —
+    // 대신 최근 파일과만 맞춰 봤다고 알린다 (경고가 없다고 같은 파일이 없는 건 아니라서)
     const seq = ++fetchSeq.current;
     setAllUploaded([]);
+    setFullCheck("loading");
     getUploadedFiles()
       .then((list) => {
-        if (fetchSeq.current === seq) setAllUploaded(list);
+        if (fetchSeq.current !== seq) return;
+        setAllUploaded(list);
+        setFullCheck("done");
       })
-      .catch(() => {});
+      .catch(() => {
+        if (fetchSeq.current === seq) setFullCheck("failed");
+      });
   }
 
   async function upload(picked: File[]) {
@@ -484,6 +492,7 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         <UploadConfirm
           files={pending}
           uploaded={[...files, ...allUploaded]}
+          fullCheck={fullCheck}
           onCancel={() => setPending(null)}
           onConfirm={() => {
             setPending(null);
@@ -543,8 +552,20 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   );
 }
 
-/** 파일 이름을 맞춰 볼 때 쓰는 키. macOS 는 한글 파일 이름을 자모로 풀어(NFD) 넘길 때가 있어 NFC 로 모은다 */
-const nameKey = (name: string) => name.normalize("NFC");
+/** 기관이 올린 파일 전체를 받았는지. 받기 전 · 실패면 최근 50개(files)로만 맞춰 본 것이다 */
+type FullCheck = "loading" | "done" | "failed";
+
+/**
+ * 파일 이름을 맞춰 볼 때 쓰는 키. 서버가 저장하는 이름(RawRecordService.sanitizeDisplayName — 마지막 `/` · `\` 뒤만)과
+ * 같은 기준으로 자르고, macOS 가 한글 이름을 자모로 풀어(NFD) 넘길 때가 있어 NFC 로 모은다
+ */
+const nameKey = (name: string) => (name.replace(/\\/g, "/").split("/").pop() ?? name).normalize("NFC");
+
+/** 경고에 쓰는 올린 시각. 올해가 아니면 연도를 붙인다 — 작년 파일이 오늘 올린 것처럼 읽히지 않게 */
+function uploadedWhen(iso: string): string {
+  const year = new Date(iso).getFullYear();
+  return year === new Date().getFullYear() ? uploadedAt(iso) : `${year}년 ${uploadedAt(iso)}`;
+}
 
 /**
  * 올리기 전 확인 창 (#489). 이미 올린 파일이나 함께 고른 파일과 이름이 같으면 그 줄을 빨갛게 알린다.
@@ -554,35 +575,39 @@ const nameKey = (name: string) => name.normalize("NFC");
 function UploadConfirm({
   files,
   uploaded,
+  fullCheck,
   onCancel,
   onConfirm,
 }: {
   files: File[];
   uploaded: UploadedFile[];
+  fullCheck: FullCheck;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  // 이름마다 가장 최근에 올린 시각. 서버 시각 문자열은 형식이 같아 글자 비교로 순서가 맞다
+  // 이름마다 가장 최근에 올린 시각. 시각 문자열 형식이 출처마다 다를 수 있어(시간대 · 소수 초) 날짜로 바꿔 비교한다
   const lastUploaded = new Map<string, string>();
   for (const f of uploaded) {
     const key = nameKey(f.fileName);
     const prev = lastUploaded.get(key);
-    if (!prev || prev < f.uploadedAt) lastUploaded.set(key, f.uploadedAt);
+    if (!prev || Date.parse(prev) < Date.parse(f.uploadedAt)) lastUploaded.set(key, f.uploadedAt);
   }
   const pickedCount = new Map<string, number>();
-  for (const f of files) pickedCount.set(nameKey(f.name), (pickedCount.get(nameKey(f.name)) ?? 0) + 1);
+  for (const f of files) {
+    const key = nameKey(f.name);
+    pickedCount.set(key, (pickedCount.get(key) ?? 0) + 1);
+  }
 
   const rows = files.map((file) => {
+    // 끌어다 놓기는 input 의 accept 를 거치지 않는다. 올릴 때 빠질 파일을 미리 알린다
+    if (!hasUploadExtension(file)) return { file, note: "올릴 수 없는 형식이라 빠져요", same: false };
     const key = nameKey(file.name);
     const at = lastUploaded.get(key);
-    const note = at
-      ? `${uploadedAt(at)}에 같은 이름 파일을 올렸어요`
-      : (pickedCount.get(key) ?? 0) > 1
-        ? "같이 고른 파일 중에 이름이 같은 게 있어요"
-        : null;
-    return { file, note };
+    if (at) return { file, note: `${uploadedWhen(at)}에 같은 이름 파일을 올렸어요`, same: true };
+    if ((pickedCount.get(key) ?? 0) > 1) return { file, note: "같이 고른 파일 중에 이름이 같은 게 있어요", same: true };
+    return { file, note: null, same: false };
   });
-  const same = rows.filter((r) => r.note).length;
+  const same = rows.filter((r) => r.same).length;
 
   return (
     <ConfirmDialog
@@ -598,6 +623,13 @@ function UploadConfirm({
           같은 이름 파일이 {same}개 있어요. 같은 파일이면 취소해 주세요
         </p>
       ) : null}
+      {fullCheck === "done" ? null : (
+        <p className="mb-2 text-[13px] text-muted">
+          {fullCheck === "loading"
+            ? "전에 올린 파일과 이름을 맞춰 보는 중이에요…"
+            : "전에 올린 파일 목록을 못 불러와 최근 파일과만 맞춰 봤어요"}
+        </p>
+      )}
       <ul className="grid max-h-[240px] gap-1.5 overflow-y-auto">
         {rows.map(({ file, note }, i) => (
           <li key={i} className={`grid rounded px-3 py-2 ${note ? "bg-blocksoft text-block" : "bg-surface2"}`}>
