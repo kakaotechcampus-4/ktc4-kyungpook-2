@@ -835,8 +835,9 @@ export async function uploadRawRecords(files: File[]): Promise<UploadResult[]> {
     return results;
   }
   return mapInBatches(files, UPLOAD_CONCURRENCY, async (file): Promise<UploadResult> => {
-    // BE 도 400 으로 거절하지만, 보내기 전에 걸러 20MB 짜리 hwp 같은 걸 끝까지 올리지 않게 한다
-    if (!hasUploadExtension(file)) return { ok: false, file, reason: "invalid" };
+    // BE 도 400 · 413 으로 거절하지만, 보내기 전에 걸러 20MB 짜리 hwp 같은 걸 끝까지 올리지 않게 한다
+    const skip = uploadPrecheck(file);
+    if (skip) return { ok: false, file, reason: skip };
     try {
       return { ok: true, file, progress: await uploadOne(file) };
     } catch (err) {
@@ -901,15 +902,28 @@ export const UPLOAD_EXTENSIONS = ["csv", "txt", "docx", "pdf"];
 /** mock 도 BE 와 같은 용량 제한으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
 const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
+/**
+ * 보내기 전에 거르는 이유. 없으면 null. 실제 업로드 · mock · 업로드 확인 창(#489)이 모두 이 하나를 본다 —
+ * 서버 상한이 늘면 여기만 고친다. 끌어다 놓기는 input 의 accept 를 거치지 않아 형식이 틀린 파일도 들어온다
+ */
+export function uploadPrecheck(file: File): "invalid" | "empty" | "too_large" | null {
+  if (!hasUploadExtension(file)) return "invalid";
+  if (file.size === 0) return "empty";
+  if (file.size > UPLOAD_MAX_BYTES) return "too_large";
+  return null;
+}
+
 function hasUploadExtension(file: File): boolean {
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  // 서버(RawRecordService.extractExtension)처럼 마지막 점 뒤만 본다 — 점이 없는 `txt` 같은 이름은 확장자가 없다
+  const dot = file.name.lastIndexOf(".");
+  const ext = dot < 0 ? "" : file.name.slice(dot + 1).toLowerCase();
   return UPLOAD_EXTENSIONS.includes(ext);
 }
 
 /** 파일명에 "많음" · "대기" · "혼잡" 이 들어가면 그 거절을 흉내낸다 — 실패 문구를 mock 에서 확인할 수 있게 (#424) */
 function mockRejectReason(file: File): UploadFailReason | null {
-  if (!hasUploadExtension(file)) return "invalid";
-  if (file.size > UPLOAD_MAX_BYTES) return "too_large";
+  const skip = uploadPrecheck(file);
+  if (skip) return skip;
   if (file.name.includes("많음")) return "too_many_entries";
   if (file.name.includes("대기")) return "queue_full";
   if (file.name.includes("혼잡")) return "server_busy";
@@ -939,6 +953,31 @@ export async function getFileProgress(): Promise<FileProgress[]> {
     return mock.FILE_PROGRESS;
   }
   return request("/api/v1/raw-records/progress");
+}
+
+/** 우리 기관이 이미 올린 파일의 이름과 올린 시각. 업로드 확인 창의 "같은 이름" 경고에만 쓴다 (#489) */
+export interface UploadedFile {
+  fileName: string;
+  uploadedAt: string;
+}
+
+/**
+ * 우리 기관이 올린 파일 전체 (#489).
+ *
+ * GET /api/v1/raw-records — 구현됨. 서버가 로그인한 기관 파일만 내려준다(다른 기관 · 내린 파일 제외).
+ * 처리 현황(O-26)은 최근 50개뿐이라, 그보다 오래된 파일과도 이름을 맞춰 보려고 따로 받는다.
+ */
+export async function getUploadedFiles(): Promise<UploadedFile[]> {
+  if (mockFor("fileProgress")) {
+    return mock.FILE_PROGRESS.map((f) => ({ fileName: f.fileName, uploadedAt: f.uploadedAt }));
+  }
+  const rows = await request<{ originalFilename: string; createdAt: string; status: string }[]>(
+    "/api/v1/raw-records",
+  );
+  // FAILED 는 서버가 저장하다 실패해 남긴 흔적이다(RawRecordService.ingest). 다시 올리는 게 맞으니 "이미 올린 파일" 로 치지 않는다
+  return rows
+    .filter((r) => r.status !== "FAILED")
+    .map((r) => ({ fileName: r.originalFilename, uploadedAt: r.createdAt }));
 }
 
 /**

@@ -61,6 +61,7 @@ cd infra/docker && docker compose up -d --build
 | `child-register` | 아이를 등록하면 보호자 초대 코드(`XXXX-XXXX`)가 발급된다 |
 | `parent-connect` | 보호자가 그 코드로 연결 → 공유 동의 → 보호자 홈에 그 아이가 보인다 |
 | `ai-down` | AI 서버가 꺼져 있으면 기관 화면에 "AI 서버를 점검하고 있어요" 안내가 보인다 |
+| `upload-confirm` | 파일을 고르면 확인 창이 뜨고, 취소하면 안 올라가고, 같은 이름 파일을 다시 고르면 경고가 보인다 |
 
 ```bash
 npx playwright install chromium   # 처음 한 번

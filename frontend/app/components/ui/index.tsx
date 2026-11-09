@@ -335,6 +335,7 @@ export function ConfirmDialog({
   confirmLabel,
   tone = "human",
   busy = false,
+  confirmDisabled = false,
   onCancel,
   onConfirm,
 }: {
@@ -345,6 +346,8 @@ export function ConfirmDialog({
   confirmLabel: string;
   tone?: keyof typeof CONFIRM_TONE;
   busy?: boolean;
+  /** 확인 버튼만 잠시 막는다. 취소 · Esc 는 그대로 된다 (업로드 확인 창이 이름을 다 맞춰 보기 전, #489) */
+  confirmDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -385,7 +388,7 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             className={`tap rounded px-5 text-[15px] font-bold hover:brightness-95 disabled:opacity-60 ${CONFIRM_TONE[tone]}`}
           >
             {busy ? <Busy>처리 중…</Busy> : confirmLabel}
