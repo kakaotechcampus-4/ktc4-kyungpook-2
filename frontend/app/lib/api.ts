@@ -901,6 +901,11 @@ export const UPLOAD_EXTENSIONS = ["csv", "txt", "docx", "pdf"];
 /** mock 도 BE 와 같은 용량 제한으로 거절한다 — 실패 화면을 mock 에서 확인할 수 있게 */
 const UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
+/** 서버 상한(20MB)을 넘는지. 업로드 확인 창(#489)이 미리 알린다 */
+export function isUploadTooLarge(file: File): boolean {
+  return file.size > UPLOAD_MAX_BYTES;
+}
+
 /** 올릴 수 있는 확장자인지. 업로드 확인 창(#489)도 같은 기준으로 미리 알린다 */
 export function hasUploadExtension(file: File): boolean {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";

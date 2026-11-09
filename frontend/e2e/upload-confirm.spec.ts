@@ -18,6 +18,11 @@ test("업로드는 확인 창에서 [올리기] 를 눌러야 올라가고, 같�
   };
   const picker = page.locator("#upload-input");
   const dialog = page.getByRole("dialog", { name: "파일 1개를 올릴까요?" });
+  // 업로드 요청을 직접 센다 — 목록이 비어 보이는 것만으로는 "보내지 않았다" 가 증명되지 않는다
+  let uploads = 0;
+  page.on("request", (req) => {
+    if (req.method() === "POST" && new URL(req.url()).pathname === "/api/v1/raw-records") uploads++;
+  });
 
   // 취소하면 아무것도 보내지 않는다
   await picker.setInputFiles(file);
@@ -27,14 +32,17 @@ test("업로드는 확인 창에서 [올리기] 를 눌러야 올라가고, 같�
   await dialog.getByRole("button", { name: "취소" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByText("아직 올린 파일이 없어요")).toBeVisible();
+  expect(uploads).toBe(0);
 
-  // [올리기] 를 누르면 올라가 목록에 보인다
+  // [올리기] 를 누르면 올라가 목록에 보인다. 전체 목록과 이름을 맞춰 본 뒤에야 눌린다
   await picker.setInputFiles(file);
   await dialog.getByRole("button", { name: "올리기" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("list", { name: /올린 파일/ }).getByText(file.name)).toBeVisible();
+  expect(uploads).toBe(1);
 
-  // 같은 이름을 다시 고르면 경고한다. 막지는 않는다
+  // 같은 이름을 다시 고르면 경고한다. 막지는 않는다. 올리는 중에는 고를 수 없어 끝나기를 기다린다
+  await expect(picker).toBeEnabled();
   await picker.setInputFiles(file);
   await expect(dialog.getByText("같은 이름 파일을 올렸어요", { exact: false })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "올리기" })).toBeEnabled();
