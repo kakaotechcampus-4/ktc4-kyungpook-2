@@ -99,6 +99,14 @@ public class User {
     @Column(name = "kakao_unlink_attempted_at")
     private LocalDateTime kakaoUnlinkAttemptedAt;
 
+    /**
+     * 카카오 연결 해제 웹훅을 받은 시각. 값이 있으면 실행기가 카카오에 지금 연결 상태를 물어 본다 — 정말 끊겨 있을 때만 탈퇴로
+     * 넘기고, 연결돼 있으면(사용자가 다시 로그인했거나, 옛 연결의 늦은 웹훅이 재가입 계정에 닿았다) 알림만 지운다.
+     * 웹훅에는 해제 시각이 없어 받는 순간에는 어느 연결의 이벤트인지 알 수 없다.
+     */
+    @Column(name = "kakao_unlink_reported_at")
+    private LocalDateTime kakaoUnlinkReportedAt;
+
     private User(String kakaoId) {
         this.kakaoId = kakaoId;
     }
@@ -155,6 +163,40 @@ public class User {
         this.kakaoUnlinkAttemptedAt = null;
     }
 
+    /** 카카오가 연결 해제를 알렸다(웹훅). 확인은 실행기가 한다 — {@link #confirmKakaoUnlinkReport}. */
+    public void reportKakaoUnlink(LocalDateTime now) {
+        if (isDeleted()) {
+            throw new IllegalStateException("이미 탈퇴한 회원입니다.");
+        }
+        this.kakaoUnlinkReportedAt = now;
+    }
+
+    public boolean hasKakaoUnlinkReport() {
+        return this.kakaoUnlinkReportedAt != null;
+    }
+
+    /**
+     * 카카오에 물어 보니 정말 끊겨 있다. 진행 중인 탈퇴가 없으면 접수하고, 해제를 확정한다. 기관 담당자는 탈퇴할 수 없어 알림만
+     * 지운다.
+     */
+    public void confirmKakaoUnlinkReport(LocalDateTime now) {
+        this.kakaoUnlinkReportedAt = null;
+        if (isOrganization()) {
+            return;
+        }
+        if (!isWithdrawing()) {
+            requestWithdrawal(now);
+        }
+        if (this.withdrawalStatus == WithdrawalStatus.REQUESTED) {
+            markKakaoUnlinked();
+        }
+    }
+
+    /** 카카오에 물어 보니 연결돼 있다 — 지난 연결의 알림이다. 알림만 지운다. */
+    public void dismissKakaoUnlinkReport() {
+        this.kakaoUnlinkReportedAt = null;
+    }
+
     /**
      * 카카오 연결 해제를 부르기 직전에 남긴다.
      *
@@ -188,6 +230,7 @@ public class User {
         eraseIdentity();
         this.deletedAt = now;
         clearWithdrawal();
+        clearReport();
     }
 
     /**
@@ -212,6 +255,11 @@ public class User {
         this.withdrawalStatus = null;
         this.withdrawalRequestedAt = null;
         this.kakaoUnlinkAttemptedAt = null;
+    }
+
+    /** 탈퇴를 마치면 남은 웹훅 알림도 지운다. */
+    private void clearReport() {
+        this.kakaoUnlinkReportedAt = null;
     }
 
     private void requireStatus(WithdrawalStatus expected) {

@@ -72,6 +72,8 @@ class KakaoUnlinkWebhookTest {
     @BeforeEach
     void setUp() {
         given(kakaoUnlinkClient.unlink(anyLong())).willReturn(KakaoUnlinkResult.UNLINKED);
+        // 웹훅은 탈퇴 전에 카카오에 지금 연결 상태를 묻는다. 기본은 정말 끊겨 있음
+        given(kakaoUnlinkClient.linkStatus(anyLong())).willReturn(KakaoLinkStatus.NOT_LINKED);
         organization = persist(OrganizationFixture.center());
     }
 
@@ -162,9 +164,66 @@ class KakaoUnlinkWebhookTest {
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
                 .andExpect(status().isOk());
 
-        // 카카오가 해제를 확인해 줬으므로 해제 확정으로 바꾸고 정리만 한다 — 카카오를 다시 부르지 않는다
+        // 카카오에 물어 끊긴 것을 확인했으므로 해제 확정으로 바꾸고 정리만 한다 — 연결 해제는 다시 부르지 않는다
         waitUntilDeleted(mother);
         verify(kakaoUnlinkClient, never()).unlink(anyLong());
+    }
+
+    /**
+     * 옛 연결의 웹훅이 늦게 왔다. 그 사이 이전 계정은 탈퇴를 마쳤고, 같은 카카오 계정으로 다시 가입한 새 계정이 있다. 웹훅은
+     * 카카오 회원번호로 새 계정을 찾지만, 카카오에 물어 보면 지금은 연결돼 있으므로 새 계정을 지우지 않는다.
+     */
+    @Test
+    void 옛_연결의_늦은_웹훅은_같은_카카오로_재가입한_새_계정을_지우지_않는다() throws Exception {
+        String kakaoId = nextKakaoId();
+        User old = persist(UserFixture.parent(kakaoId));
+        transactionTemplate.executeWithoutResult(status -> UserFixture.withdrawn(entityManager.find(User.class, old.getId())));
+        User again = persist(UserFixture.parent(kakaoId));
+        given(kakaoUnlinkClient.linkStatus(anyLong())).willReturn(KakaoLinkStatus.LINKED);
+
+        mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), kakaoId))
+                .andExpect(status().isOk());
+
+        waitUntilReportResolved(again);
+        User after = reload(again);
+        assertThat(after.isDeleted()).isFalse();
+        assertThat(after.isWithdrawing()).isFalse();
+        verify(kakaoUnlinkClient, never()).unlink(anyLong());
+    }
+
+    @Test
+    void 카카오_연결_상태를_모르면_알림을_남겨_두고_아무것도_지우지_않는다() throws Exception {
+        User mother = persist(UserFixture.parent(nextKakaoId()));
+        given(kakaoUnlinkClient.linkStatus(anyLong())).willReturn(KakaoLinkStatus.UNKNOWN);
+
+        mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
+                .andExpect(status().isOk());
+        executor.submit(mother.getId()).get(5, TimeUnit.SECONDS);
+
+        User after = reload(mother);
+        assertThat(after.hasKakaoUnlinkReport()).isTrue();
+        assertThat(after.isWithdrawing()).isFalse();
+        assertThat(after.isDeleted()).isFalse();
+
+        // 나중에 끊긴 것이 확인되면 탈퇴한다
+        given(kakaoUnlinkClient.linkStatus(anyLong())).willReturn(KakaoLinkStatus.NOT_LINKED);
+        executor.submit(mother.getId()).get(5, TimeUnit.SECONDS);
+        assertThat(reload(mother).isDeleted()).isTrue();
+    }
+
+    @Test
+    void 연결돼_있으면_사용자가_직접_신청한_탈퇴는_원래대로_이어진다() throws Exception {
+        User mother = persist(UserFixture.parent(nextKakaoId()));
+        transactionTemplate.executeWithoutResult(status ->
+                entityManager.find(User.class, mother.getId()).requestWithdrawal(LocalDateTime.now()));
+        given(kakaoUnlinkClient.linkStatus(anyLong())).willReturn(KakaoLinkStatus.LINKED);
+
+        mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
+                .andExpect(status().isOk());
+
+        // 지난 연결의 알림은 지우고, 직접 신청한 탈퇴는 연결 해제를 불러 끝낸다
+        waitUntilDeleted(mother);
+        verify(kakaoUnlinkClient).unlink(Long.parseLong(mother.getKakaoId()));
     }
 
     @Test
@@ -217,6 +276,17 @@ class KakaoUnlinkWebhookTest {
                 .param("app_id", APP_ID)
                 .param("user_id", kakaoId)
                 .param("referrer_type", "UNLINK_FROM_APPS");
+    }
+
+    private void waitUntilReportResolved(User user) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (!reload(user).hasKakaoUnlinkReport()) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        fail("웹훅 알림을 확인하지 않았습니다.");
     }
 
     private void waitUntilDeleted(User user) throws InterruptedException {

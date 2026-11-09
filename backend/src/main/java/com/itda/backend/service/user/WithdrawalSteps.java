@@ -42,7 +42,9 @@ public class WithdrawalSteps {
             /** 카카오를 부른다. */
             CALL_KAKAO,
             /** 카카오 해제가 확정됐다. DB 정리만 한다. */
-            CLEANUP
+            CLEANUP,
+            /** 연결 해제 웹훅 알림이 있다. 카카오에 지금 연결 상태를 먼저 묻는다. */
+            VERIFY_REPORT
         }
 
         static Plan nothing() {
@@ -55,6 +57,10 @@ public class WithdrawalSteps {
 
         static Plan callKakao(long kakaoUserId, boolean firstAttempt) {
             return new Plan(Kind.CALL_KAKAO, kakaoUserId, firstAttempt);
+        }
+
+        static Plan verifyReport(long kakaoUserId) {
+            return new Plan(Kind.VERIFY_REPORT, kakaoUserId, false);
         }
     }
 
@@ -90,21 +96,20 @@ public class WithdrawalSteps {
     }
 
     /**
-     * 카카오 쪽에서 먼저 연결을 끊었다(연결 해제 웹훅). 카카오 연결은 이미 끊겼으므로 카카오를 부르지 않고 바로 DB 정리로 넘긴다 —
-     * 다시 부르면, 그 사이 사용자가 다시 로그인해 생긴 새 연결을 끊을 수 있다.
+     * 카카오가 연결 해제를 알렸다(웹훅). 여기서는 알림만 남긴다 — 웹훅에는 해제 시각이 없어, 받는 순간에는 이 이벤트가 지금
+     * 연결에 대한 것인지 알 수 없다(사용자가 그 뒤 다시 로그인했거나, 옛 연결의 늦은 웹훅이 같은 카카오 계정으로 재가입한 새 계정에
+     * 닿았을 수 있다). 실행기가 카카오에 지금 연결 상태를 물어 정말 끊겨 있을 때만 탈퇴로 넘긴다({@link #resolveReport}).
      *
      * <ul>
      *   <li>없는 회원 · 탈퇴를 마친 회원 → 할 일 없음. 옛 방식 탈퇴 행이면 남은 식별정보를 지운다</li>
      *   <li>기관 담당자 → 할 일 없음. 기관 탈퇴는 지원하지 않는다 — 계정은 남고, 다시 카카오로 로그인하면 연결된다</li>
-     *   <li>이미 탈퇴를 처리하는 중({@code REQUESTED}) → {@code KAKAO_UNLINKED} 로 바꾸고 실행기에 다시 세운다. 카카오가 해제를
-     *       확인해 줬으므로, 그 뒤 실행기가 받은 카카오 오류로 접수가 취소되지 않는다({@link #record} 가 이 상태를 덮어쓰지 않는다)</li>
-     *   <li>그 밖(보호자 · 가입 전) → 접수와 함께 {@code KAKAO_UNLINKED}</li>
+     *   <li>그 밖(보호자 · 가입 전, 탈퇴 처리 중 포함) → 알림을 남기고 실행기에 세운다</li>
      * </ul>
      *
      * @return 실행기에 세울 회원 id
      */
     @Transactional
-    public Optional<Long> acceptUnlinkedByKakao(String kakaoId) {
+    public Optional<Long> reportUnlinkedByKakao(String kakaoId) {
         User user = userRepository.findByKakaoIdForUpdate(kakaoId).orElse(null);
         if (user == null) {
             return Optional.empty();
@@ -118,13 +123,43 @@ public class WithdrawalSteps {
                     user.getId());
             return Optional.empty();
         }
-        if (!user.isWithdrawing()) {
-            user.requestWithdrawal(now());
-        }
-        if (user.getWithdrawalStatus() == WithdrawalStatus.REQUESTED) {
-            user.markKakaoUnlinked();
-        }
+        user.reportKakaoUnlink(now());
         return Optional.of(user.getId());
+    }
+
+    /**
+     * 연결 해제 웹훅 알림을 카카오의 지금 연결 상태로 확인한다.
+     *
+     * <ul>
+     *   <li>끊겨 있음 → 탈퇴를 접수하고(이미 처리 중이면 그대로) 해제를 확정한다. 그 뒤 실행기가 받은 카카오 오류로 접수가
+     *       취소되지 않는다({@link #record} 가 이 상태를 덮어쓰지 않는다)</li>
+     *   <li>연결돼 있음 → 지난 연결의 알림이다. 알림만 지운다 — 사용자가 직접 신청한 탈퇴가 있으면 그대로 이어진다</li>
+     *   <li>모름 → 알림을 남겨 두고 나중에 다시 묻는다</li>
+     * </ul>
+     *
+     * @return 이어서 처리해도 되는지 (모름이면 false)
+     */
+    @Transactional
+    public boolean resolveReport(long userId, KakaoLinkStatus status) {
+        User user = userRepository.findByIdForUpdate(userId).orElse(null);
+        if (user == null || user.isDeleted() || !user.hasKakaoUnlinkReport()) {
+            return true;
+        }
+        switch (status) {
+            case NOT_LINKED -> {
+                user.confirmKakaoUnlinkReport(now());
+                log.info("카카오 쪽에서 연결이 끊긴 것을 확인해 탈퇴를 처리합니다: userId={}", userId);
+                return true;
+            }
+            case LINKED -> {
+                user.dismissKakaoUnlinkReport();
+                log.info("연결 해제 웹훅이 왔지만 지금은 연결돼 있어 지난 연결의 알림으로 봅니다: userId={}", userId);
+                return true;
+            }
+            default -> {
+                return false;
+            }
+        }
     }
 
     /**
@@ -134,12 +169,23 @@ public class WithdrawalSteps {
     @Transactional
     public Plan prepare(long userId) {
         Optional<User> found = userRepository.findByIdForUpdate(userId);
-        if (found.isEmpty() || found.get().isDeleted() || !found.get().isWithdrawing()) {
+        if (found.isEmpty() || found.get().isDeleted()) {
             return Plan.nothing();
         }
         User user = found.get();
         if (user.getWithdrawalStatus() == WithdrawalStatus.KAKAO_UNLINKED) {
             return Plan.cleanup();
+        }
+        if (user.hasKakaoUnlinkReport()) {
+            Optional<Long> reported = user.kakaoUserId();
+            if (reported.isPresent()) {
+                return Plan.verifyReport(reported.get());
+            }
+            // 카카오 계정이 아닌 회원에게 웹훅이 올 수 없다. 남은 알림은 지운다
+            user.dismissKakaoUnlinkReport();
+        }
+        if (!user.isWithdrawing()) {
+            return Plan.nothing();
         }
         Optional<Long> kakaoUserId = user.kakaoUserId();
         if (kakaoUserId.isEmpty()) {

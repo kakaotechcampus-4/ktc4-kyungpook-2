@@ -84,6 +84,40 @@ public class KakaoUnlinkClient {
         }
     }
 
+    /**
+     * 이 회원이 지금 앱과 연결돼 있는지 묻는다 ({@code GET /v2/user/me?target_id_type=user_id&target_id=}, 어드민 키).
+     * 연결 해제 웹훅이 지금 연결에 대한 것인지 확인할 때 쓴다 — 웹훅에는 해제 시각이 없다.
+     */
+    public KakaoLinkStatus linkStatus(long kakaoUserId) {
+        if (adminKey == null || adminKey.isBlank()) {
+            log.error("카카오 어드민 키(app.withdrawal.kakao.admin-key)가 없어 연결 상태를 묻지 않았습니다.");
+            return KakaoLinkStatus.UNKNOWN;
+        }
+        try {
+            return restClient.get()
+                    .uri(uri -> uri.path("/v2/user/me")
+                            .queryParam("target_id_type", "user_id")
+                            .queryParam("target_id", kakaoUserId)
+                            .build())
+                    .header(HttpHeaders.AUTHORIZATION, "KakaoAK " + adminKey)
+                    .exchange((request, response) -> classifyLink(response.getStatusCode(), readBody(response.getBody())));
+        } catch (RestClientException e) {
+            log.warn("카카오 연결 상태 응답을 받지 못했습니다: {}", e.getMessage());
+            return KakaoLinkStatus.UNKNOWN;
+        }
+    }
+
+    static KakaoLinkStatus classifyLink(HttpStatusCode status, Body body) {
+        if (status.is2xxSuccessful()) {
+            return KakaoLinkStatus.LINKED;
+        }
+        if (body.readable() && body.code() != null && body.code() == NOT_REGISTERED_USER) {
+            return KakaoLinkStatus.NOT_LINKED;
+        }
+        log.warn("카카오 연결 상태를 알 수 없습니다: status={} code={}", status.value(), body.code());
+        return KakaoLinkStatus.UNKNOWN;
+    }
+
     static KakaoUnlinkResult classify(HttpStatusCode status, Body body) {
         if (status.is2xxSuccessful()) {
             return KakaoUnlinkResult.UNLINKED;

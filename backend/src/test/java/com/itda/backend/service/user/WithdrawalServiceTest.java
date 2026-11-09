@@ -346,7 +346,8 @@ class WithdrawalServiceTest {
         WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
         assertThat(plan.firstAttempt()).isTrue();
 
-        withdrawalSteps.acceptUnlinkedByKakao(mother.getKakaoId());
+        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED);
         boolean proceed = withdrawalSteps.record(mother.getId(), KakaoUnlinkResult.FAILED, plan.firstAttempt());
 
         assertThat(proceed).isTrue();

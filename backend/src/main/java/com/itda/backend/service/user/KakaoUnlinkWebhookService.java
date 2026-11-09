@@ -17,6 +17,9 @@ import lombok.extern.slf4j.Slf4j;
  * <p>카카오 규칙: 헤더 {@code Authorization: KakaoAK ${대표 어드민 키}} 로 카카오가 보낸 것인지 본다. 3초 안에 {@code 200} 으로
  * 답해야 하고, 회원이 없거나 오류가 나도 {@code 200} 이다. 다시 보내 주지 않는다 — 그래서 여기서는 접수만 하고 정리는 탈퇴
  * 실행기에 넘긴다. 접수가 실패하면 그 이벤트는 잃으므로 오류 로그를 남긴다.
+ *
+ * <p>받는 즉시 탈퇴로 넘기지 않는다. 웹훅에는 해제 시각이 없어, 옛 연결의 늦은 웹훅이 같은 카카오 계정으로 다시 가입한 새 계정에
+ * 닿을 수 있다. 알림만 남기고, 실행기가 카카오에 지금 연결 상태를 물어 정말 끊겨 있을 때만 탈퇴한다.
  */
 @Slf4j
 @Service
@@ -59,8 +62,8 @@ public class KakaoUnlinkWebhookService {
             return;
         }
         try {
-            steps.acceptUnlinkedByKakao(kakaoUserId).ifPresent(userId -> {
-                log.info("카카오 쪽에서 연결이 끊겨 탈퇴를 처리합니다: userId={} referrerType={}", userId, referrerType);
+            steps.reportUnlinkedByKakao(kakaoUserId).ifPresent(userId -> {
+                log.info("연결 해제 웹훅을 받아 확인을 맡깁니다: userId={} referrerType={}", userId, referrerType);
                 executor.submit(userId);
             });
         } catch (RuntimeException e) {

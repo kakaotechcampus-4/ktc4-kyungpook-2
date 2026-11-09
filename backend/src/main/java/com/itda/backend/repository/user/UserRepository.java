@@ -66,8 +66,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query("select u.deletedAt as deletedAt, u.withdrawalStatus as withdrawalStatus from User u where u.id = :id")
     Optional<WithdrawalView> findWithdrawalViewById(@Param("id") Long id);
 
-    /** 탈퇴 실행기가 다시 볼 회원. 접수 순서대로. */
-    @Query("select u.id from User u where u.withdrawalStatus is not null and u.deletedAt is null"
-            + " order by u.withdrawalRequestedAt asc, u.id asc")
+    /** 탈퇴 실행기가 다시 볼 회원 — 진행 중인 탈퇴와 확인하지 않은 연결 해제 웹훅. 오래된 것부터. */
+    @Query("select u.id from User u where u.deletedAt is null"
+            + " and (u.withdrawalStatus is not null or u.kakaoUnlinkReportedAt is not null)"
+            + " order by coalesce(u.withdrawalRequestedAt, u.kakaoUnlinkReportedAt) asc, u.id asc")
     List<Long> findWithdrawingIds();
 }

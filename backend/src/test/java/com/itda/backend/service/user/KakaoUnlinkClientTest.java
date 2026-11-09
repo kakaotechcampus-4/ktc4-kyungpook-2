@@ -115,6 +115,38 @@ class KakaoUnlinkClientTest {
     }
 
     @Test
+    void 연결_상태는_200이면_연결됨_마이너스101이면_끊김_그_밖은_모름이다() {
+        assertThat(KakaoUnlinkClient.classifyLink(HttpStatusCode.valueOf(200), KakaoUnlinkClient.Body.code(null)))
+                .isEqualTo(KakaoLinkStatus.LINKED);
+        assertThat(KakaoUnlinkClient.classifyLink(HttpStatusCode.valueOf(400), KakaoUnlinkClient.Body.code(-101)))
+                .isEqualTo(KakaoLinkStatus.NOT_LINKED);
+        assertThat(KakaoUnlinkClient.classifyLink(HttpStatusCode.valueOf(401), KakaoUnlinkClient.Body.code(-401)))
+                .isEqualTo(KakaoLinkStatus.UNKNOWN);
+        assertThat(KakaoUnlinkClient.classifyLink(HttpStatusCode.valueOf(400), KakaoUnlinkClient.Body.unreadable()))
+                .isEqualTo(KakaoLinkStatus.UNKNOWN);
+    }
+
+    @Test
+    void 연결_상태는_어드민_키와_회원번호로_GET_한다() throws IOException {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> query = new AtomicReference<>();
+        AtomicReference<String> authorization = new AtomicReference<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v2/user/me", exchange -> {
+            method.set(exchange.getRequestMethod());
+            query.set(exchange.getRequestURI().getQuery());
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange, 400, "{\"code\":-101,\"msg\":\"NotRegisteredUserException\"}");
+        });
+        server.start();
+
+        assertThat(client("admin-key", Duration.ofSeconds(2)).linkStatus(42L)).isEqualTo(KakaoLinkStatus.NOT_LINKED);
+        assertThat(method.get()).isEqualTo("GET");
+        assertThat(query.get()).contains("target_id_type=user_id").contains("target_id=42");
+        assertThat(authorization.get()).isEqualTo("KakaoAK admin-key");
+    }
+
+    @Test
     void 어드민_키가_없으면_부르지_않고_실패다() {
         assertThat(client("", Duration.ofSeconds(1)).unlink(1L)).isEqualTo(KakaoUnlinkResult.FAILED);
     }
