@@ -1,0 +1,2 @@
+org.springframework.test.context.ContextCustomizerFactory=\
+  com.itda.backend.global.config.IsolatedH2ContextCustomizerFactory

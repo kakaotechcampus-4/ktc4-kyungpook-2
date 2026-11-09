@@ -6,9 +6,7 @@ spring:
     driver-class-name: org.h2.Driver
   jpa:
     hibernate:
-      # create-drop 이 아니다. SpringBootTest 컨텍스트들은 같은 H2(mem:backend)를 쓰는데, 컨텍스트 캐시가 차서 오래된
-      # 컨텍스트가 닫히면 create-drop 은 방금 다른 컨텍스트가 만든 테이블까지 지운다. 시작할 때 다시 만드는 것으로 충분하다.
-      ddl-auto: create
+      ddl-auto: create-drop
   security:
     oauth2:
       client:
