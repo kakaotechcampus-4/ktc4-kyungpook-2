@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,5 +67,31 @@ class SummaryResultRepositoryTest {
         summaryResultRepository.saveAndFlush(SummaryResult.of(8L, DATE, 4L, 1, "센터 요약", "[]", "[]", "[]", "{}"));
 
         assertThat(summaryResultRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void 보드용_Gate1_목록은_주어진_상태만_날짜_id_순으로_판정에_쓰는_칸만_준다() {
+        SummaryResult later = summaryResultRepository.save(
+                SummaryResult.of(8L, DATE.plusDays(1), 3L, 1, "다음 날", "[]", "[]", "[]", "{}"));
+        SummaryResult held = summaryResultRepository.save(
+                SummaryResult.of(9L, DATE, 3L, 1, "보류", "[]", "[]", "[]", "{}"));
+        held.hold();
+        SummaryResult empty = summaryResultRepository.save(SummaryResult.noContent(8L, DATE, 3L, 2, "[]", "{}"));
+        SummaryResult approved = summaryResultRepository.save(
+                SummaryResult.of(8L, DATE.minusDays(1), 3L, 1, "승인", "[]", "[]", "[]", "{}"));
+        approved.approve();
+        summaryResultRepository.save(SummaryResult.of(8L, DATE, 4L, 1, "다른 기관", "[]", "[]", "[]", "{}"));
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Gate1Key> keys = summaryResultRepository.findGate1Keys(3L,
+                List.of(SummaryStatus.GATE1_PENDING, SummaryStatus.HOLD));
+
+        assertThat(keys).containsExactly(
+                new Gate1Key(held.getId(), 9L, DATE, 1, SummaryStatus.HOLD, false),
+                new Gate1Key(empty.getId(), 8L, DATE, 2, SummaryStatus.GATE1_PENDING, true),
+                new Gate1Key(later.getId(), 8L, DATE.plusDays(1), 1, SummaryStatus.GATE1_PENDING, false));
+        assertThat(summaryResultRepository.findGate1Keys(3L, List.of(SummaryStatus.HOLD)))
+                .extracting(Gate1Key::id).containsExactly(held.getId());
     }
 }

@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.GroupKey;
 import com.itda.backend.repository.record.JournalEntryRepository;
+import com.itda.backend.repository.summary.Gate1Key;
 import com.itda.backend.repository.summary.LatestRevision;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.validation.ValidationResultRepository;
@@ -83,7 +85,7 @@ public class SummaryGate1QueryService {
         SummaryStatus status = toSummaryStatus(gate1Status);
         Long organizationId = userService.getOrganizationIdOf(userId);
         List<SummaryResult> summaries = withConsent(organizationId,
-                summaryResultRepository.findGate1List(organizationId, status));
+                summaryResultRepository.findGate1List(organizationId, status), SummaryResult::getChildId);
         if (summaries.isEmpty()) {
             return List.of();
         }
@@ -108,7 +110,7 @@ public class SummaryGate1QueryService {
             coveredIds.addAll(ids);
         }
         Map<Long, ValidationResult> latestValidation = latestValidationOf(coveredIds);
-        Set<Long> processing = processingSummaryIds(organizationId, summaries);
+        Set<Long> processing = processingSummaryIds(organizationId, summaries.stream().map(Gate1Key::of).toList());
 
         return summaries.stream()
                 .map(s -> new Gate1SummaryResponse(
@@ -133,16 +135,37 @@ public class SummaryGate1QueryService {
     }
 
     /**
+     * 대시보드 보드용. 검토 대기와 보류함 요약을 {@link #getSummaries} 와 같은 기준(동의 · 곧 바뀌는지)으로 고르되, 보드가 쓰는
+     * 칸만 읽는다 — 일지 원문 · 검증 결과 · 문장 카드는 읽지 않는다. 대기 · 보류를 한 번에 묻고 날짜 · id 순이다.
+     */
+    @Transactional(readOnly = true)
+    public List<Gate1BoardItem> getBoardItems(Long organizationId) {
+        List<Gate1Key> keys = withConsent(organizationId, summaryResultRepository.findGate1Keys(organizationId,
+                List.of(SummaryStatus.GATE1_PENDING, SummaryStatus.HOLD)), Gate1Key::childId);
+        if (keys.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, String> childNames = childRepository
+                .findAllById(keys.stream().map(Gate1Key::childId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(Child::getId, Child::getName));
+        Set<Long> processing = processingSummaryIds(organizationId, keys);
+        return keys.stream()
+                .map(k -> new Gate1BoardItem(k.id(), k.childId(), childNames.get(k.childId()), k.entryDate(),
+                        k.status(), processing.contains(k.id()), k.noContent()))
+                .toList();
+    }
+
+    /**
      * 우리 기관 동의가 켜진 아이의 요약만 남긴다 (#332). 철회 전에 만들어진 요약을 두면 그대로 승인돼 아이 맥락에 올라간다.
      * 상태를 바꾸지 않고 볼 때마다 거르므로 다시 동의하면 다시 보인다. 결정(O-31)도 같은 기준으로 거절한다.
      */
-    private List<SummaryResult> withConsent(Long organizationId, List<SummaryResult> summaries) {
+    private <T> List<T> withConsent(Long organizationId, List<T> summaries, Function<T, Long> childIdOf) {
         if (summaries.isEmpty()) {
             return summaries;
         }
         Set<Long> granted = consentStateReader.grantedChildIds(
-                summaries.stream().map(SummaryResult::getChildId).collect(Collectors.toSet()), organizationId);
-        return summaries.stream().filter(s -> granted.contains(s.getChildId())).toList();
+                summaries.stream().map(childIdOf).collect(Collectors.toSet()), organizationId);
+        return summaries.stream().filter(s -> granted.contains(childIdOf.apply(s))).toList();
     }
 
     /**
@@ -155,15 +178,15 @@ public class SummaryGate1QueryService {
      *
      * <p>요약마다 따로 묻지 않고 목록의 아동·날짜로 몇 번만 물어 코드에서 맞춘다 — 요약 수와 상관없이 SQL 수가 같다.
      */
-    private Set<Long> processingSummaryIds(Long organizationId, List<SummaryResult> summaries) {
-        List<SummaryResult> pending = summaries.stream()
-                .filter(s -> s.getStatus() == SummaryStatus.GATE1_PENDING)
+    private Set<Long> processingSummaryIds(Long organizationId, List<Gate1Key> summaries) {
+        List<Gate1Key> pending = summaries.stream()
+                .filter(s -> s.status() == SummaryStatus.GATE1_PENDING)
                 .toList();
         if (pending.isEmpty()) {
             return Set.of();
         }
-        Set<Long> childIds = pending.stream().map(SummaryResult::getChildId).collect(Collectors.toSet());
-        Set<LocalDate> dates = pending.stream().map(SummaryResult::getEntryDate).collect(Collectors.toSet());
+        Set<Long> childIds = pending.stream().map(Gate1Key::childId).collect(Collectors.toSet());
+        Set<LocalDate> dates = pending.stream().map(Gate1Key::entryDate).collect(Collectors.toSet());
         String institutionId = String.valueOf(organizationId);
 
         Map<GroupKey, Integer> latestRevision = summaryResultRepository
@@ -180,13 +203,13 @@ public class SummaryGate1QueryService {
                 .collect(Collectors.toSet());
 
         Set<Long> processing = new HashSet<>();
-        for (SummaryResult s : pending) {
-            GroupKey group = new GroupKey(s.getChildId(), s.getEntryDate());
-            boolean latest = s.getRevision().equals(latestRevision.get(group));
+        for (Gate1Key s : pending) {
+            GroupKey group = new GroupKey(s.childId(), s.entryDate());
+            boolean latest = s.revision().equals(latestRevision.get(group));
             boolean willSummarize = (summaryProperties.autoRun() || requestedGroups.contains(group))
-                    && (busyDates.contains(s.getEntryDate()) || waitingGroups.contains(group));
+                    && (busyDates.contains(s.entryDate()) || waitingGroups.contains(group));
             if (latest && (summarizingGroups.contains(group) || willSummarize)) {
-                processing.add(s.getId());
+                processing.add(s.id());
             }
         }
         return processing;

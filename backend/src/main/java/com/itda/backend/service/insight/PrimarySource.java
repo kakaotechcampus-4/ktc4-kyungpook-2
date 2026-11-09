@@ -11,8 +11,6 @@ import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.global.json.JsonColumns;
 
-import lombok.extern.slf4j.Slf4j;
-
 /**
  * Gate 2 를 승인할 기관을 고르는 규칙 (#206). 목록 조회와 결정이 같은 답을 봐야 해서 한 곳에 둔다 —
  * 둘이 갈리면 목록에 보이는데 승인이 403 나거나, 그 반대가 된다.
@@ -29,7 +27,6 @@ import lombok.extern.slf4j.Slf4j;
  * <b>결정적이기만 하면 되기 때문</b>이다 (#206 김근찬 확인). 결정적이지 않으면 같은 인사이트의 승인
  * 주체가 조회할 때마다 달라진다.
  */
-@Slf4j
 /*
  * public 이다. 보호자 메일도 "누가 정리했나" 를 화면과 같은 규칙으로 적어야 한다 (service.notify).
  * 규칙이 갈리면 메일의 기관과 화면의 기관이 달라진다.
@@ -48,8 +45,12 @@ public final class PrimarySource {
 
     /** 근거를 낸 기관 id. AI 가 쓴 JSON 이 깨져 있으면 빈 목록이다 — 그 인사이트는 아무에게도 보이지 않는다. */
     public static List<Long> sourceIdsOf(InsightResult insight) {
-        return JsonColumns.readLongs(insight.getSourceInstitutionIds(), "insight_result.source_institution_ids",
-                insight.getId());
+        return sourceIdsOf(insight.getId(), insight.getSourceInstitutionIds());
+    }
+
+    /** {@link #sourceIdsOf(InsightResult)} 를 엔티티 없이 — 판정 칸만 읽은 경우({@code InsightKey}). */
+    public static List<Long> sourceIdsOf(Long insightId, String sourceInstitutionIds) {
+        return JsonColumns.readLongs(sourceInstitutionIds, "insight_result.source_institution_ids", insightId);
     }
 
     /** 그 기관 기록이 근거로 들어간 인사이트인지. */
@@ -79,13 +80,18 @@ public final class PrimarySource {
      */
     static Organization requireApprover(InsightResult insight, Long organizationId,
             Map<Long, Organization> organizations) {
-        List<Long> sourceIds = sourceIdsOf(insight);
+        return requireApprover(insight.getId(), sourceIdsOf(insight), organizationId, organizations);
+    }
+
+    /** {@link #requireApprover(InsightResult, Long, Map)} 를 근거 기관 id 로 — 같은 404 · 403 이다. */
+    static Organization requireApprover(Long insightId, List<Long> sourceIds, Long organizationId,
+            Map<Long, Organization> organizations) {
         if (!sourceIds.contains(organizationId)) {
-            throw new InsightException(InsightErrorCode.NOT_FOUND, insight.getId());
+            throw new InsightException(InsightErrorCode.NOT_FOUND, insightId);
         }
         Organization primary = of(sourceIds, organizations);
         if (primary == null || !primary.getId().equals(organizationId)) {
-            throw new InsightException(InsightErrorCode.NOT_PRIMARY_SOURCE, insight.getId());
+            throw new InsightException(InsightErrorCode.NOT_PRIMARY_SOURCE, insightId);
         }
         return primary;
     }

@@ -13,9 +13,9 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.organization.Organization;
+import com.itda.backend.repository.insight.InsightKey;
 import com.itda.backend.repository.insight.InsightResultRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 
@@ -42,18 +42,20 @@ public class InsightWeekStageReader {
             return Map.of();
         }
         Set<Week> wanted = new HashSet<>(weeks);
-        Set<Long> childIds = weeks.stream().map(Week::childId).collect(Collectors.toSet());
-        Map<Week, List<InsightResult>> byWeek = InsightGate2QueryService
-                .latestRevisionOnly(insightResultRepository.findByChildIdInOrderByIdDesc(childIds)).stream()
-                .filter(insight -> PrimarySource.isFedBy(insight, organizationId))
+        // 아이 · 시작일 · 종료일을 따로 걸러 후보를 좁히고, 정확한 (아이, 주)는 여기서 거른다 — 요청하지 않은 조합도 후보에 든다
+        Map<Week, List<InsightKey>> byWeek = insightResultRepository.findLatestKeysForPeriods(
+                        weeks.stream().map(Week::childId).collect(Collectors.toSet()),
+                        weeks.stream().map(Week::from).collect(Collectors.toSet()),
+                        weeks.stream().map(Week::to).collect(Collectors.toSet())).stream()
                 .filter(insight -> wanted.contains(Week.of(insight)))
+                .filter(insight -> sourceIdsOf(insight).contains(organizationId))
                 .collect(Collectors.groupingBy(Week::of, LinkedHashMap::new, Collectors.toList()));
         if (byWeek.isEmpty()) {
             return Map.of();
         }
 
         Set<Long> sourceIds = new HashSet<>();
-        byWeek.values().forEach(list -> list.forEach(i -> sourceIds.addAll(PrimarySource.sourceIdsOf(i))));
+        byWeek.values().forEach(list -> list.forEach(i -> sourceIds.addAll(sourceIdsOf(i))));
         Map<Long, Organization> organizations = organizationRepository.findAllById(sourceIds).stream()
                 .collect(Collectors.toMap(Organization::getId, Function.identity()));
 
@@ -62,22 +64,26 @@ public class InsightWeekStageReader {
         return stages;
     }
 
-    private static WeekStage stageOf(Long organizationId, List<InsightResult> insights,
+    private static List<Long> sourceIdsOf(InsightKey insight) {
+        return PrimarySource.sourceIdsOf(insight.id(), insight.sourceInstitutionIds());
+    }
+
+    private static WeekStage stageOf(Long organizationId, List<InsightKey> insights,
             Map<Long, Organization> organizations) {
         WeekStage held = null;
         WeekStage elsewhere = null;
         // 오래된 글부터 — 목록이 id 내림차순이라 뒤집어 본다. 바로가기가 먼저 만든 글을 연다.
-        for (InsightResult insight : insights.reversed()) {
-            if (insight.getStatus() == InsightStatus.APPROVED) {
+        for (InsightKey insight : insights.reversed()) {
+            if (insight.status() == InsightStatus.APPROVED) {
                 continue;
             }
-            Organization primary = PrimarySource.of(PrimarySource.sourceIdsOf(insight), organizations);
+            Organization primary = PrimarySource.of(sourceIdsOf(insight), organizations);
             boolean ours = primary != null && primary.getId().equals(organizationId);
-            if (ours && insight.getStatus() == InsightStatus.GATE2_PENDING) {
-                return new WeekStage(Stage.REVIEW_HERE, insight.getId(), null);
+            if (ours && insight.status() == InsightStatus.GATE2_PENDING) {
+                return new WeekStage(Stage.REVIEW_HERE, insight.id(), null);
             }
             if (ours && held == null) {
-                held = new WeekStage(Stage.INSIGHT_HELD, insight.getId(), null);
+                held = new WeekStage(Stage.INSIGHT_HELD, insight.id(), null);
             }
             if (!ours && elsewhere == null) {
                 elsewhere = new WeekStage(Stage.REVIEW_ELSEWHERE, null, primary == null ? null : primary.getName());
@@ -92,8 +98,8 @@ public class InsightWeekStageReader {
     /** 아이×주. */
     public record Week(Long childId, LocalDate from, LocalDate to) {
 
-        static Week of(InsightResult insight) {
-            return new Week(insight.getChildId(), insight.getPeriodFrom(), insight.getPeriodTo());
+        static Week of(InsightKey insight) {
+            return new Week(insight.childId(), insight.periodFrom(), insight.periodTo());
         }
     }
 
