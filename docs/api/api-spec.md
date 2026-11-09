@@ -91,6 +91,7 @@ GET /api/v1/auth/me
 | `institutionId` | string | 아니오 | `role === "org"`일 때만 |
 | `institutionName` | string | 아니오 | `role === "org"`일 때만. 가입 때 입력한 기관명입니다 (#236) |
 | `termsAgreed` | boolean | 예 | 자기 역할의 서비스 약관(통과로 치는 판)에 동의했는지 (§2.5). `false`면 프론트는 보호자를 약관 단계(`/parent/invite`)로, 기관을 기관 약관 화면(`/org-terms`)으로 보냅니다. 가입 미완료는 `false` |
+| `withdrawalEnabled` | boolean | 예 | 서버가 탈퇴를 열었는지 (§2.7). `false` 면 프론트는 탈퇴 버튼을 숨깁니다 |
 | `withdrawal` | `"none"` \| `"in_progress"` | 예 | 탈퇴를 처리하는 중이면 `in_progress` (§2.7). 프론트는 가입 · 약관 · 아이 목록보다 먼저 이 값을 보고 탈퇴 안내 화면(`/withdrawal`)으로 보냅니다 |
 
 **프론트는 가입 여부를 `signupCompleted`만 보고 분기합니다.** `role`이 없다고 로그인 화면으로 보내면
@@ -335,10 +336,13 @@ POST /api/v1/auth/signup   → 201 Created
 ### 2.7 회원 탈퇴
 
 ```http
-DELETE /api/v1/auth/me   → 204 No Content | 202 Accepted
+DELETE /api/v1/auth/me?userId={확인 화면의 userId}   → 204 No Content | 202 Accepted
 ```
 
 > **구현 완료.** 쓰기 요청이므로 `X-XSRF-TOKEN` 헤더가 필요합니다. 가입 · 약관 동의 전에도 부를 수 있습니다.
+> **서버가 탈퇴를 열었을 때만**(`/auth/me` 의 `withdrawalEnabled: true`, 서버 `WITHDRAWAL_ENABLED`) 동작합니다. 닫혀 있으면 `404`.
+> `userId` 에는 확인 화면이 보여 준 계정(`/auth/me` 의 `userId`)을 넣습니다. 확인 창을 연 뒤 다른 탭에서 다른 계정으로 로그인했으면
+> 지금 로그인한 계정과 달라 `409` 로 막힙니다 — 사용자가 확인하지 않은 계정을 지우지 않습니다.
 
 보호자와 가입을 마치지 않은 사람만 탈퇴할 수 있습니다. 서버가 카카오 연결을 끊고, 연결된 아이와의 연결 · 내 공유 동의 ·
 인사이트 열람 권한 · 기다리던 기관 연결 요청을 거둔 뒤, 카카오 회원번호와 이름을 지우고 탈퇴 표시를 합니다. 같은 기관에 다른
@@ -349,6 +353,9 @@ DELETE /api/v1/auth/me   → 204 No Content | 202 Accepted
 | `204` + 쿠키 삭제 | 몇 초 안에 끝까지 마쳤음 (서버가 `deleted_at`을 확인한 경우만) |
 | `202` `{ "withdrawal": "in_progress" }` | 접수했고 처리 중. 서버가 이어서 끝냅니다 — `/auth/me`의 `withdrawal`로 진행을 보고, 끝나면 `/auth/me`가 `401 ACCOUNT_WITHDRAWN` |
 | `409 WITHDRAWAL_IN_PROGRESS` | 이미 접수돼 있음 |
+| `409 WITHDRAWAL_ACCOUNT_MISMATCH` | `userId` 가 지금 로그인한 계정과 다름 (다른 탭에서 계정이 바뀜). 아무것도 바꾸지 않음 |
+| `404 WITHDRAWAL_NOT_AVAILABLE` | 서버가 탈퇴를 열지 않음 |
+| `400 INVALID_REQUEST` | `userId` 누락 |
 | `403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED` | 기관 담당자 |
 | `401 ACCOUNT_WITHDRAWN` | 이미 탈퇴함 |
 | `502 KAKAO_UNLINK_FAILED` | 카카오 연결 해제 첫 호출이 분명히 실패해 접수를 취소함. 회원은 그대로 |
@@ -373,7 +380,8 @@ Authorization: KakaoAK {대표 어드민 키}
 | `user_id` | 카카오 회원번호 (`users.kakao_id`) |
 | `referrer_type` | 끊긴 경로 (`UNLINK_FROM_APPS` · `ACCOUNT_DELETE` · `FORCED_ACCOUNT_DELETE` · `UNLINK_FROM_ADMIN` · `INCOMPLETE_SIGN_UP`). 로그에만 씁니다 |
 
-보호자 · 가입 전 회원은 §2.7 과 같이 탈퇴합니다 — 카카오는 이미 끊겼으므로 다시 부르지 않습니다. 기관 담당자는 계정을 남깁니다.
+보호자 · 가입 전 회원은 §2.7 과 같이 탈퇴합니다 — 카카오는 이미 끊겼으므로 다시 부르지 않습니다. 이미 처리 중인 탈퇴도 해제
+확정으로 바꿉니다. 기관 담당자는 계정을 남깁니다. 서버가 탈퇴를 열지 않았으면(§2.7) 검증만 하고 무시합니다.
 카카오 규칙대로 3초 안에 답하고, 회원이 없거나 처리에 실패해도 `200` 입니다(카카오는 다시 보내지 않습니다).
 
 ## 3. 공통 모델
@@ -2263,6 +2271,8 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | `ACCOUNT_WITHDRAWN` | 401 | 탈퇴를 마친 회원의 출입증. 탈퇴 안내 화면은 "탈퇴가 끝났어요", 다른 화면은 일반 401 처럼 로그인 화면으로 (§2.2 · §2.7) |
 | `WITHDRAWAL_IN_PROGRESS` | 409 | 탈퇴를 처리하는 중 — `/auth/me` · 로그아웃 외 API, 탈퇴 재신청 → 탈퇴 안내 화면으로 (§2.7) |
 | `ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED` | 403 | "기관 계정은 아직 탈퇴할 수 없어요." (§2.7) |
+| `WITHDRAWAL_ACCOUNT_MISMATCH` | 409 | "다른 계정으로 로그인이 바뀌었어요. 화면을 새로 고친 뒤 다시 확인해 주세요." (§2.7) |
+| `WITHDRAWAL_NOT_AVAILABLE` | 404 | 서버가 탈퇴를 열지 않음. 화면은 탈퇴 버튼을 숨기므로 보통 보이지 않음 (§2.7) |
 | `KAKAO_WEBHOOK_UNAUTHORIZED` | 401 | 카카오 연결 해제 웹훅의 어드민 키가 맞지 않음 — 카카오가 보낸 요청이 아님 (§2.7.1) |
 | `KAKAO_UNLINK_FAILED` | 502 | "카카오 연결을 끊지 못해 탈퇴하지 못했어요. 잠시 뒤 다시 해 주세요." 회원은 그대로 (§2.7) |
 | `TERMS_VERSION_CHANGED` | 409 | 동의 요청의 `versions` 가 지금 판과 다름 — 화면을 연 뒤 약관이 바뀜 → 약관을 다시 받아 다시 확인 (§2.5) |

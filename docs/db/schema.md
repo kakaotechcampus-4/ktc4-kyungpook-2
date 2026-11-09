@@ -667,8 +667,13 @@ PARENT
 
 #### 탈퇴 — ✅ 구현 (`WithdrawalService` · `WithdrawalExecutor`)
 
-보호자와 가입을 마치지 않은 사람만 탈퇴할 수 있다(`DELETE /api/v1/auth/me`). 기관 담당자는 기관에 남은 명부 · 일지를
-어떻게 할지 정하지 않아 막는다(`403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED`).
+보호자와 가입을 마치지 않은 사람만 탈퇴할 수 있다(`DELETE /api/v1/auth/me?userId=`). 기관 담당자는 기관에 남은 명부 · 일지를
+어떻게 할지 정하지 않아 막는다(`403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED`). 요청에는 확인 화면이 보여 준 계정을 싣고, 지금
+로그인한 계정과 다르면 `409 WITHDRAWAL_ACCOUNT_MISMATCH` 다 — 다른 탭에서 계정을 바꾼 뒤 옛 확인 창으로 누른 경우다.
+
+**탈퇴는 스위치로 연다(`app.withdrawal.enabled`, 기본 꺼짐).** 꺼져 있으면 탈퇴 API 는 `404 WITHDRAWAL_NOT_AVAILABLE`, 화면은
+탈퇴 버튼을 숨기고(`/auth/me` 의 `withdrawalEnabled`), 연결 해제 웹훅은 검증만 하고 무시한다. 이미 접수된 탈퇴는 꺼도 끝까지
+처리한다. 아래 보관 근거 확인 · 카카오 키 · 웹훅 등록이 끝난 뒤 켠다.
 
 **`withdrawal_status`**
 
@@ -686,7 +691,9 @@ KAKAO_UNLINKED   카카오 해제 확정. 아이 연결 정리와 식별정보 �
   ② 카카오 POST /v1/user/unlink (서비스 앱 어드민 키)
   ③ 결과: 200 · 400 -101(이미 끊김) → KAKAO_UNLINKED
           분명한 오류 + 첫 호출 → 접수 취소(상태 NULL). 회원은 그대로
-          분명한 오류 + 이전 호출 있음 · 타임아웃 · 5xx · -1 · -7 · -10 → REQUESTED 유지, 다시 시도
+          분명한 오류 + 이전 호출 있음 · 타임아웃 · 5xx · -1 · -7 · -10 · 오류 본문을 끝까지 받지 못함
+          → REQUESTED 유지, 다시 시도 (받지 못한 본문이 -101 이었을 수 있다)
+          웹훅이 먼저 KAKAO_UNLINKED 로 바꿔 뒀으면 결과와 관계없이 ④로
   ④ DB 정리(한 트랜잭션): users 잠금 → 연결된 아이를 id 순서로 연결 해제(내 동의 · 인사이트 열람 권한 ·
      대기 중 기관 연결 요청도 거둠, §5.4) → kakao_id = withdrawn:{id}, name = 탈퇴한 회원, deleted_at,
      상태 NULL. 실패하면 KAKAO_UNLINKED 로 남아 이 단계만 다시 한다(카카오는 다시 부르지 않는다)
@@ -709,7 +716,9 @@ KAKAO_UNLINKED   카카오 해제 확정. 아이 연결 정리와 식별정보 �
 - **카카오 쪽에서 먼저 연결을 끊은 경우**(연결된 서비스 관리 · 카카오계정 탈퇴 · 고객센터 등) 카카오가 연결 해제 웹훅을 보낸다
   (`GET|POST /api/v1/webhooks/kakao/unlink`, 헤더 `Authorization: KakaoAK {대표 어드민 키}`). 우리가 연결 해제 API 로 끊은
   경우에는 오지 않는다. 보호자 · 가입 전 회원은 접수와 함께 바로 `KAKAO_UNLINKED` 로 두고 DB 정리만 한다 — 카카오를 다시
-  부르면, 그 사이 다시 로그인해 생긴 새 연결을 끊을 수 있다. 이미 처리 중이면 실행기에 다시 세운다(카카오가 `-101` 로 답한다).
+  부르면, 그 사이 다시 로그인해 생긴 새 연결을 끊을 수 있다. 이미 처리 중(`REQUESTED`)이어도 `KAKAO_UNLINKED` 로 바꾼다.
+  실행기가 카카오를 부르던 중이었어도 결과 기록이 이 상태를 덮어쓰지 않고 정리로 넘어간다 — 카카오가 해제를 확인해 줬는데
+  이번 호출의 오류로 접수가 취소되지 않게 한다.
   **기관 담당자는 계정을 남긴다** — 기관 탈퇴를 지원하지 않는다. 다시 카카오로 로그인하면 연결된다. 카카오는 다시 보내 주지
   않고 늘 `200` 을 바라므로, 회원이 없거나 처리에 실패해도 `200` 이고 실패는 오류 로그로 남긴다(`KakaoUnlinkWebhookService`).
 - 내부 회원 행 · 동의 이력을 탈퇴 뒤에도 남기는 근거 확인이 남았다 — 실서비스에서 탈퇴를 열기 전 조건이다.
@@ -3060,5 +3069,5 @@ SELECT count(*) FROM users WHERE deleted_at IS NOT NULL AND kakao_id NOT LIKE 'w
 | 2026-11-07 | `insight_result` 에 `looked_up_claim_ids` 추가 (§9.3, NULL 허용) — AI 가 같은 아이의 지난 기록(이번 기간 앞 12주치 승인 요약, 동의 기관만, 최대 200개)에서 찾아 근거로 쓴 claim 이다 (#387). Gate 2 근거에 "지난 기록" 으로 표시한다. 저장할 때 BE 가 인용된 claim(`claim_ids`·`supports`·`looked_up_claim_ids`)의 기관을 `source_institution_ids` 에 직접 더한다 — 동의 확인과 철회 때 권한 거두기가 이 값만 보므로 AI 출력에 맡기지 않는다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #387 |
 | 2026-11-07 | 요약 결과를 남길 때(저장 · 요약 실패 · 시스템 오류) 그 묶음의 요약 행 → 아이 행을 잠근 뒤 동의를 본다 — 동의 철회가 먼저 커밋됐으면 요약을 저장하지 않는다(멘토 8차 리뷰 P2). 잠금 순서 표(§3.3)에 추가, Gate 1 결정과 같은 순서. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #398 |
 | 2026-11-08 | 업로드 · AI 처리 줄 상한. `journal_entry.failure_stage` 에 `MATCHING`, `failure_reason` 에 `CONTENT_TOO_LONG` 추가 (§6.2 "실패 상태와 원인 코드") — 상한(5,000자) 전에 올라온 긴 일지를 AI 에 보내지 않고 멈춘다. AI 처리 줄에 들어오는 작업(업로드 · O-23 assign · O-25 revise · O-31 `revert` · O-36)이 `organization` 행을 마지막에 잠그고 처리 중 · 대기 일지를 센다 (§3.3 잠금 순서). 업로드는 원본 행과 일지를 한 트랜잭션에 저장한다. 컬럼 · 제약 추가 없음. **enum 값 추가라 §11.4 수동 조치 필요** — 두 CHECK DROP | #424 |
-| 2026-11-09 | 회원 탈퇴. `users` 에 `withdrawal_status`(`REQUESTED` · `KAKAO_UNLINKED`) · `withdrawal_requested_at` · `kakao_unlink_attempted_at` 추가 (§4.1, 모두 NULL 허용). 탈퇴를 마치면 `kakao_id` = `withdrawn:{id}`, `name` = `탈퇴한 회원` 으로 지우고, 같은 카카오 계정으로 오면 되살리지 않고 새 회원을 만든다(§3.3 복구 규칙에서 `users.kakao_id` 를 뺌). 잠금 순서 맨 앞에 `users`, 탈퇴 실행의 advisory lock 키 규칙 추가(§3.3). 배포 전 옛 탈퇴 행 확인(§11.4) | 미생성 |
-| 2026-11-09 | 카카오 연결 해제 웹훅 (§4.1 "탈퇴"). 카카오 쪽에서 먼저 연결이 끊긴 보호자 · 가입 전 회원은 카카오를 다시 부르지 않고 `KAKAO_UNLINKED` 로 접수해 DB 정리만 한다. 기관 담당자는 남긴다. 스키마 변경 없음 | 미생성 |
+| 2026-11-09 | 회원 탈퇴. `users` 에 `withdrawal_status`(`REQUESTED` · `KAKAO_UNLINKED`) · `withdrawal_requested_at` · `kakao_unlink_attempted_at` 추가 (§4.1, 모두 NULL 허용). 탈퇴를 마치면 `kakao_id` = `withdrawn:{id}`, `name` = `탈퇴한 회원` 으로 지우고, 같은 카카오 계정으로 오면 되살리지 않고 새 회원을 만든다(§3.3 복구 규칙에서 `users.kakao_id` 를 뺌). 잠금 순서 맨 앞에 `users`, 탈퇴 실행의 advisory lock 키 규칙 추가(§3.3). 배포 전 옛 탈퇴 행 확인(§11.4) | #473 |
+| 2026-11-09 | 카카오 연결 해제 웹훅 (§4.1 "탈퇴"). 카카오 쪽에서 먼저 연결이 끊긴 보호자 · 가입 전 회원은 카카오를 다시 부르지 않고 `KAKAO_UNLINKED` 로 접수해 DB 정리만 한다. 기관 담당자는 남긴다. 스키마 변경 없음 | #473 |
