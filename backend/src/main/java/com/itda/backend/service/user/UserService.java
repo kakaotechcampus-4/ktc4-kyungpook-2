@@ -244,7 +244,7 @@ public class UserService {
      * 카카오 회원번호가 들어 있다. 그때 NumberFormatException 이 새어나가면 catch-all 이
      * 잡아 500 이 되므로, 여기서 인증 실패로 바꾼다.
      */
-    static long parseUserId(String principal) {
+    public static long parseUserId(String principal) {
         if (principal == null || principal.isBlank()) {
             throw new UserException(UserErrorCode.SESSION_USER_NOT_FOUND);
         }
