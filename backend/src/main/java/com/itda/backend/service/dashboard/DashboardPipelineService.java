@@ -23,8 +23,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.matching.MatchingResult;
+import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.record.FailureStage;
 import com.itda.backend.domain.record.JournalEntryStatus;
+import com.itda.backend.domain.summary.SummaryStatus;
 import com.itda.backend.domain.validation.ValidationResult;
 import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse;
 import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse.Detail;
@@ -35,7 +37,6 @@ import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse.Target;
 import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse.Turn;
 import com.itda.backend.dto.response.dashboard.DashboardPipelineResponse.Week;
 import com.itda.backend.dto.response.insight.InsightProgressResponse;
-import com.itda.backend.dto.response.summary.Gate1SummaryResponse;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.matching.MatchingResultRepository;
@@ -43,6 +44,7 @@ import com.itda.backend.repository.record.GroupKey;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.PipelineEntry;
 import com.itda.backend.repository.validation.ValidationResultRepository;
+import com.itda.backend.service.approval.Gate1BoardItem;
 import com.itda.backend.service.approval.SummaryGate1QueryService;
 import com.itda.backend.service.child.InstitutionLinkService;
 import com.itda.backend.service.consent.ConsentStateReader;
@@ -132,7 +134,7 @@ public class DashboardPipelineService {
         rows.addAll(findingChildRows(entries));
         rows.addAll(matchReviewRows(entries, names));
         rows.addAll(blockedRows(entries, names));
-        rows.addAll(entryRows(userId, entries, members, names));
+        rows.addAll(entryRows(organizationId, entries, members, names));
         rows.addAll(weekRows(organizationId, userId));
         rows.sort(ORDER);
 
@@ -140,7 +142,7 @@ public class DashboardPipelineService {
                 count(rows, Status.MATCH_REVIEW),
                 count(rows, Status.BLOCKED),
                 count(rows, Status.REVIEW) + count(rows, Status.SUMMARY_FAILED),
-                insightGate2QueryService.getInsights(userId, "pending").size(),
+                insightGate2QueryService.countInsights(organizationId, InsightStatus.GATE2_PENDING),
                 institutionLinkService.pendingRequests(userId).size());
         return new DashboardPipelineResponse(turn, rows);
     }
@@ -207,18 +209,25 @@ public class DashboardPipelineService {
      * 재료라 판의 {@code processing} 이 이미 말한다(다시 요약에 실패한 일지만 따로 보인다). 보류한 판은 다시 요약하지
      * 않으므로 새 일지는 따로 보인다.
      */
-    private List<Row> entryRows(String userId, List<PipelineEntry> entries, Set<Long> members,
+    private List<Row> entryRows(Long organizationId, List<PipelineEntry> entries, Set<Long> members,
             Map<Long, String> names) {
         List<Row> rows = new ArrayList<>();
         Set<GroupKey> pendingGroups = new HashSet<>();
-        for (Gate1SummaryResponse summary : summaryGate1QueryService.getSummaries(userId, "pending")) {
+        // 보드가 쓰는 칸만 읽는다. 대기 줄을 먼저, 보류 줄을 뒤에 넣는다 — 정렬이 같은 순서인 줄은 넣은 순서를 지킨다.
+        List<Gate1BoardItem> board = summaryGate1QueryService.getBoardItems(organizationId);
+        for (Gate1BoardItem summary : board) {
+            if (summary.status() != SummaryStatus.GATE1_PENDING) {
+                continue;
+            }
             pendingGroups.add(new GroupKey(summary.childId(), summary.entryDate()));
             rows.add(summary.processing()
                     ? summaryRow(summary, Status.REGENERATING, null)
                     : summaryRow(summary, Status.REVIEW, target("summary", summary.id())));
         }
-        for (Gate1SummaryResponse summary : summaryGate1QueryService.getSummaries(userId, "hold")) {
-            rows.add(summaryRow(summary, Status.REVIEW_HELD, target("summary", summary.id())));
+        for (Gate1BoardItem summary : board) {
+            if (summary.status() == SummaryStatus.HOLD) {
+                rows.add(summaryRow(summary, Status.REVIEW_HELD, target("summary", summary.id())));
+            }
         }
 
         Set<LocalDate> busyDates = entries.stream().filter(e -> HOLDS_DATE.contains(e.status()))
@@ -315,7 +324,7 @@ public class DashboardPipelineService {
                 LocalDate.parse(progress.periodFrom()), LocalDate.parse(progress.periodTo()));
     }
 
-    private static Row summaryRow(Gate1SummaryResponse summary, Status status, Target target) {
+    private static Row summaryRow(Gate1BoardItem summary, Status status, Target target) {
         Detail detail = summary.noContent() ? new Detail(null, null, null, true, null) : null;
         return entryRow(summary.childId(), summary.childName(), summary.entryDate(), status, detail, target);
     }
