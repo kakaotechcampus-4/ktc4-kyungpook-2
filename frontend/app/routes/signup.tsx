@@ -253,7 +253,9 @@ export default function SignupPage() {
               </span>
               <input
                 value={handoverCode}
-                onChange={(e) => setHandoverCode(e.target.value.slice(0, 9))}
+                // 자르지 않는다 — 카톡에서 앞뒤 공백이 붙은 채 붙여 넣어도 맞춘 뒤 8자면 된다
+                onChange={(e) => setHandoverCode(e.target.value)}
+                maxLength={20}
                 autoComplete="off"
                 autoCapitalize="characters"
                 spellCheck={false}

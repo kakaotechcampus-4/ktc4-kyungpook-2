@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { Busy } from "@/components/ui";
 import { ListPopup } from "@/components/ui/ListPopup";
 import { cancelHandover, issueHandover, type IssuedHandover } from "@/lib/api";
@@ -17,6 +18,19 @@ export function HandoverDialog({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState<"issue" | "cancel" | null>(null);
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  /** 창을 열어 둔 사이 후임이 코드를 썼으면 이 계정은 이미 탈퇴 중이다 — 탈퇴 안내로 보낸다 */
+  function handoverDone(e: unknown): boolean {
+    if (
+      e instanceof ApiError &&
+      (e.code === "WITHDRAWAL_IN_PROGRESS" || e.code === "ACCOUNT_WITHDRAWN")
+    ) {
+      navigate("/withdrawal", { replace: true });
+      return true;
+    }
+    return false;
+  }
 
   async function issue() {
     setBusy("issue");
@@ -25,6 +39,7 @@ export function HandoverDialog({ onClose }: { onClose: () => void }) {
       setIssued(await issueHandover());
       setCopied(false);
     } catch (e) {
+      if (handoverDone(e)) return;
       setMessage(messageFor(e));
     } finally {
       setBusy(null);
@@ -39,6 +54,7 @@ export function HandoverDialog({ onClose }: { onClose: () => void }) {
       setIssued(null);
       setMessage("코드를 취소했어요. 이제 그 코드로는 가입할 수 없어요.");
     } catch (e) {
+      if (handoverDone(e)) return;
       setMessage(messageFor(e));
     } finally {
       setBusy(null);
