@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Ban,
   Check,
   ChevronRight,
   FileCheck,
@@ -12,21 +13,25 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  TriangleAlert,
   Upload,
   UserRound,
   UserSearch,
   X,
 } from "lucide-react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
-import { Busy } from "@/components/ui";
+import { Busy, ConfirmDialog } from "@/components/ui";
 import { useOrgLive } from "@/components/org/Shell";
 import {
   getAiActivity,
   getChildren,
   getFileProgress,
   getPipeline,
+  getUploadedFiles,
   UPLOAD_EXTENSIONS,
+  uploadPrecheck,
   uploadRawRecords,
+  type UploadedFile,
 } from "@/lib/api";
 import { fileProgressOf } from "@/lib/pipeline";
 import type { AiActivity, FileProgress, Pipeline, PipelineRow, PipelineTurn, UploadResult } from "@/lib/types";
@@ -346,6 +351,7 @@ function TurnList({ turn }: { turn: PipelineTurn }) {
 type UploadFailure = Extract<UploadResult, { ok: false }>;
 const FAIL_TEXT = {
   invalid: `올릴 수 없는 형식이에요 (${UPLOAD_EXTENSIONS.join(" · ")})`,
+  empty: "빈 파일이에요",
   too_large: "20MB를 넘는 파일이에요",
   too_many_entries: "기록이 500건이 넘거나 한 기록이 5,000자를 넘어요. 나눠 올려 주세요",
   queue_full: "앞서 올린 기록을 처리하고 있어요. 끝나면 다시 올려 주세요",
@@ -390,21 +396,81 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [failed, setFailed] = useState<UploadFailure[]>([]);
+  // 고른 뒤 확인 창에서 [올리기] 를 기다리는 파일 (#489). 올린 기록은 취소 · 삭제가 없어 한 번 묻는다
+  const [pending, setPending] = useState<File[] | null>(null);
+  // 기관이 올린 파일 전체를 받았는지와 그 목록. files(최근 50개)보다 오래된 파일과도 이름을 맞춰 보려고 창을 열 때 받는다
+  const [check, setCheck] = useState<FullCheck>({ status: "loading" });
+  const fetchSeq = useRef(0);
+  const waitTimer = useRef<number | undefined>(undefined);
+  // 창을 연 때부터 취소하거나 업로드가 끝날 때까지 잠근다. state 는 다시 그려져야 바뀌어서, 같은 순간에 두 번 놓으면
+  // 둘 다 통과해 첫 선택이 말없이 바뀐다 — ref 는 바로 바뀐다
+  const locked = useRef(false);
 
-  async function upload(list: FileList | null) {
+  // 화면을 떠나면 남은 기다림을 정리한다
+  useEffect(() => () => window.clearTimeout(waitTimer.current), []);
+
+  // 확인 창이 떠 있거나 올리는 중에는 페이지 어디에 파일을 놓아도 브라우저가 그 파일을 열며 대시보드를 떠나지 않게 막는다.
+  // 떠나면 고른 파일 · 남은 업로드가 사라진다. 업로드 칸은 자기 핸들러가 먼저 받는다
+  const guardDrop = uploading || pending !== null;
+  useEffect(() => {
+    if (!guardDrop) return;
+    const block = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "none";
+    };
+    window.addEventListener("dragover", block);
+    window.addEventListener("drop", block);
+    return () => {
+      window.removeEventListener("dragover", block);
+      window.removeEventListener("drop", block);
+    };
+  }, [guardDrop]);
+
+  function pick(list: FileList | null) {
     const picked = Array.from(list ?? []);
-    if (!picked.length || uploading) return;
+    // 취소한 뒤 같은 파일을 다시 골라도 onChange 가 오게 바로 비운다
+    if (input.current) input.current.value = "";
+    if (!picked.length || locked.current) return;
+    locked.current = true;
+    setPending(picked);
+    // 받기 전에는 files 로만 맞춰 보고, 창에 "맞춰 보는 중" 을 띄운다. 실패해도 창 · 업로드는 그대로다 —
+    // 대신 최근 파일과만 맞춰 봤다고 알린다 (경고가 없다고 같은 파일이 없는 건 아니라서)
+    const seq = ++fetchSeq.current;
+    setCheck({ status: "loading" });
+    window.clearTimeout(waitTimer.current);
+    // 받는 동안은 [올리기] 를 막으므로, 서버가 늦으면 기다리게만 하지 않고 최근 파일과만 맞춰 본 채로 풀어 준다.
+    // 그 뒤에라도 목록이 오면 창이 열려 있는 동안 경고를 더한다
+    waitTimer.current = window.setTimeout(() => {
+      if (fetchSeq.current === seq) setCheck((c) => (c.status === "loading" ? { status: "failed" } : c));
+    }, FULL_CHECK_WAIT_MS);
+    getUploadedFiles()
+      .then((list) => {
+        if (fetchSeq.current !== seq) return;
+        window.clearTimeout(waitTimer.current);
+        setCheck({ status: "done", list });
+      })
+      .catch(() => {
+        if (fetchSeq.current !== seq) return;
+        window.clearTimeout(waitTimer.current);
+        setCheck({ status: "failed" });
+      });
+  }
+
+  async function upload(picked: File[]) {
     setUploading(true);
     try {
+      // 창에서 "빠져요" 로 알린 파일(형식 · 20MB)은 uploadRawRecords 가 보내지 않고 실패로 돌려준다 — 같은 uploadPrecheck 를 본다.
+      // 그래서 창이 닫힌 뒤에도 실패 안내에 남는다
       const results = await uploadRawRecords(picked);
       setFailed(results.filter((r): r is UploadFailure => !r.ok));
       await onUploaded();
     } finally {
       setUploading(false);
-      if (input.current) input.current.value = "";
+      locked.current = false;
     }
   }
 
+  const dropBlocked = dragging && uploading;
   const states = files.map(fileStatus);
   const working = states.filter((s) => s.tone === "ai").length;
   const bad = states.filter((s) => s.tone === "bad").length;
@@ -415,23 +481,32 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         data-tour="upload"
         onDragOver={(e) => {
           e.preventDefault();
+          // 올리는 중에는 놓을 수 없다 — 커서도 금지 모양으로 바뀐다 (#489)
+          if (uploading) e.dataTransfer.dropEffect = "none";
           setDragging(true);
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          void upload(e.dataTransfer.files);
+          if (uploading) return;
+          pick(e.dataTransfer.files);
         }}
         className={`flex flex-wrap items-center gap-3 rounded-[18px] border-2 border-dashed px-4 py-4 ${
-          dragging ? "border-accent bg-accentsoft" : "border-line2 bg-paper"
+          dropBlocked ? "border-block bg-blocksoft" : dragging ? "border-accent bg-accentsoft" : "border-line2 bg-paper"
         }`}
       >
-        <span className="grid size-11 flex-none place-items-center rounded-full bg-accentsoft text-accentink">
-          <Upload aria-hidden size={22} />
+        <span
+          className={`grid size-11 flex-none place-items-center rounded-full ${
+            dropBlocked ? "bg-paper text-block" : "bg-accentsoft text-accentink"
+          }`}
+        >
+          {dropBlocked ? <Ban aria-hidden size={22} /> : <Upload aria-hidden size={22} />}
         </span>
         <span className="grid min-w-0 flex-1">
-          <b className="text-[15px]">관찰일지 파일을 끌어다 놓으세요</b>
+          <b className={`text-[15px] ${dropBlocked ? "text-block" : ""}`}>
+            {dropBlocked ? "지금 올리는 중이라 놓을 수 없어요. 끝나면 다시 놓아 주세요" : "관찰일지 파일을 끌어다 놓으세요"}
+          </b>
           <span className="text-[13px] text-muted">
             {UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(" · ")} · 20MB까지 · 여러 개를 한 번에 올릴 수 있어요
           </span>
@@ -440,7 +515,8 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         </span>
         <button
           type="button"
-          disabled={uploading}
+          // 확인 창이 떠 있어도 Tab 으로 여기 올 수 있다. 그때 고른 파일은 받을 수 없어 함께 막는다
+          disabled={uploading || pending !== null}
           onClick={() => input.current?.click()}
           className="tap rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110 disabled:opacity-60"
         >
@@ -452,10 +528,31 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           multiple
           hidden
           id="upload-input"
+          // 확인 창이 떠 있거나 올리는 중에는 막는다 (#489). 시작하기 카드의 [파일 고르기] 도 이 input 을 눌러 그동안은 눌러도
+          // 창이 안 열린다 — 그 카드는 첫 업로드 전에만 보이고 막히는 건 잠깐이라 버튼 모양까지 바꾸지는 않는다
+          disabled={uploading || pending !== null}
           accept={UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(",")}
-          onChange={(e) => void upload(e.target.files)}
+          onChange={(e) => pick(e.target.files)}
         />
       </div>
+
+      {pending ? (
+        <UploadConfirm
+          files={pending}
+          // 전체 목록을 받았으면 그것만 본다(서버가 저장에 실패한 FAILED 는 빠져 있다). 받기 전 · 실패면 최근 50개로 —
+          // 여기엔 FAILED 가 섞여 다시 올리는 파일에도 경고가 뜰 수 있지만 그대로 둔다. 경고만 하므로 놓치는 것보다 낫다
+          uploaded={check.status === "done" ? check.list : files}
+          fullCheck={check.status}
+          onCancel={() => {
+            setPending(null);
+            locked.current = false;
+          }}
+          onConfirm={() => {
+            setPending(null);
+            void upload(pending);
+          }}
+        />
+      ) : null}
 
       {failed.length ? (
         <div className="flex items-start gap-2 rounded-[14px] bg-blocksoft px-3.5 py-2.5 text-[14px] text-block">
@@ -505,6 +602,126 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         )}
       </ul>
     </div>
+  );
+}
+
+/** 기관이 올린 파일 전체를 받았는지. 받기 전 · 실패면 최근 50개(files)로만 맞춰 본 것이다 */
+type FullCheck = { status: "loading" } | { status: "failed" } | { status: "done"; list: UploadedFile[] };
+
+/**
+ * 전체 목록을 이만큼 기다려도 안 오면 최근 파일과만 맞춰 본 채로 [올리기] 를 풀어 준다. 끝까지 막으면 목록 API 가 느린 날
+ * 업로드 자체를 못 한다. 대신 창에 빨간 글씨로 "최근 파일과만 맞춰 봤어요" 를 띄운다
+ */
+const FULL_CHECK_WAIT_MS = 10_000;
+
+const SKIP_NOTE = {
+  invalid: "올릴 수 없는 형식이라 빠져요",
+  empty: "빈 파일이라 빠져요",
+  too_large: "20MB를 넘어 빠져요",
+} as const;
+
+/** 시각 문자열을 비교용 숫자로. 못 읽으면 가장 옛날(0)로 둔다 */
+const timeOf = (iso: string) => Date.parse(iso) || 0;
+
+/**
+ * 파일 이름을 맞춰 볼 때 쓰는 키. 서버가 저장하는 이름(RawRecordService.sanitizeDisplayName — 마지막 `/` · `\` 뒤만)과
+ * 같은 기준으로 자르고, macOS 가 한글 이름을 자모로 풀어(NFD) 넘길 때가 있어 NFC 로 모은다
+ */
+const nameKey = (name: string) =>
+  // 대소문자도 맞춘다 — Windows · macOS 는 `일지.TXT` 와 `일지.txt` 를 같은 파일로 본다. 경고만 하니 더 잡는 쪽이 낫다
+  (name.replace(/\\/g, "/").split("/").pop() ?? name).normalize("NFC").toLowerCase();
+
+/** 같은 이름 경고 문구. 올해가 아니면 연도를 붙인다 — 작년 파일이 오늘 올린 것처럼 읽히지 않게. 시각을 못 읽으면 빼고 말한다 */
+function sameNameNote(iso: string): string {
+  if (!timeOf(iso)) return "전에 같은 이름 파일을 올렸어요";
+  const year = new Date(iso).getFullYear();
+  const when = year === new Date().getFullYear() ? uploadedAt(iso) : `${year}년 ${uploadedAt(iso)}`;
+  return `${when}에 같은 이름 파일을 올렸어요`;
+}
+
+/**
+ * 올리기 전 확인 창 (#489). 이미 올린 파일이나 함께 고른 파일과 이름이 같으면 그 줄을 빨갛게 알린다.
+ * 막지는 않는다 — 고친 파일 · 이어 쓰는 파일은 같은 이름으로 다시 올리는 게 정상일 수 있다.
+ * 이름만 보므로 내용이 같고 이름이 다른 파일은 못 잡는다.
+ */
+function UploadConfirm({
+  files,
+  uploaded,
+  fullCheck,
+  onCancel,
+  onConfirm,
+}: {
+  files: File[];
+  uploaded: UploadedFile[];
+  fullCheck: FullCheck["status"];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  // 이름마다 가장 최근에 올린 시각. 시각 문자열 형식이 출처마다 다를 수 있어(시간대 · 소수 초) 날짜로 바꿔 비교한다
+  const lastUploaded = new Map<string, string>();
+  for (const f of uploaded) {
+    const key = nameKey(f.fileName);
+    const prev = lastUploaded.get(key);
+    if (prev === undefined || timeOf(prev) < timeOf(f.uploadedAt)) lastUploaded.set(key, f.uploadedAt);
+  }
+  // 함께 고른 파일끼리의 같은 이름은 실제로 보낼 파일끼리만 센다
+  const pickedCount = new Map<string, number>();
+  for (const f of files) {
+    if (uploadPrecheck(f)) continue;
+    const key = nameKey(f.name);
+    pickedCount.set(key, (pickedCount.get(key) ?? 0) + 1);
+  }
+
+  const rows = files.map((file) => {
+    // 확인 창의 줄 표시 · 제목 숫자 · 실제로 보내는 파일 · 실패 안내가 모두 uploadPrecheck 하나를 본다
+    const skip = uploadPrecheck(file);
+    if (skip) return { file, note: SKIP_NOTE[skip], same: false, skip: true };
+    const key = nameKey(file.name);
+    const at = lastUploaded.get(key);
+    if (at !== undefined) return { file, note: sameNameNote(at), same: true, skip: false };
+    if ((pickedCount.get(key) ?? 0) > 1)
+      return { file, note: "같이 고른 파일 중에 이름이 같은 게 있어요", same: true, skip: false };
+    return { file, note: null, same: false, skip: false };
+  });
+  const same = rows.filter((r) => r.same).length;
+  // 제목 숫자는 실제로 보낼 파일만 센다 — "빠져요" 로 알린 파일은 올리지 않는다
+  const sending = rows.filter((r) => !r.skip).length;
+
+  return (
+    <ConfirmDialog
+      title={sending ? `파일 ${sending}개를 올릴까요?` : "올릴 수 있는 파일이 없어요"}
+      warning={sending ? "올린 뒤에는 취소할 수 없어요" : undefined}
+      confirmLabel="올리기"
+      // 전체 목록과 이름을 맞춰 보기 전에는 막는다. 오래된 같은 이름 파일을 경고 없이 올리지 않게
+      confirmDisabled={!sending || fullCheck === "loading"}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
+      {same ? (
+        <p className="mb-2 flex items-start gap-1.5 font-bold text-block">
+          <TriangleAlert aria-hidden size={18} className="mt-1 shrink-0" />
+          같은 이름 파일이 {same}개 있어요. 같은 파일이면 취소해 주세요
+        </p>
+      ) : null}
+      {fullCheck === "loading" ? (
+        <p className="mb-2 text-[13px] text-muted">전에 올린 파일과 이름을 맞춰 보는 중이에요…</p>
+      ) : fullCheck === "failed" ? (
+        // 오래된 같은 이름 파일은 못 잡았을 수 있다 — 경고가 없다고 안심하지 않게 눈에 띄게
+        <p className="mb-2 text-[13px] font-bold text-block">
+          전에 올린 파일 목록을 다 받지 못해 최근 파일과만 맞춰 봤어요. 오래전에 올린 파일인지 한 번 더 확인해 주세요
+        </p>
+      ) : null}
+      <ul className="grid max-h-[240px] gap-1.5 overflow-y-auto">
+        {rows.map(({ file, note }, i) => (
+          <li key={i} className={`grid rounded px-3 py-2 ${note ? "bg-blocksoft text-block" : "bg-surface2"}`}>
+            <b className="truncate text-[14px]" title={file.name}>
+              {file.name}
+            </b>
+            {note ? <span className="text-[13px] font-semibold">{note}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </ConfirmDialog>
   );
 }
 

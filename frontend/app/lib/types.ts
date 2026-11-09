@@ -307,6 +307,7 @@ export type UploadResult =
 
 /**
  * invalid          → 허용되지 않는 형식 (400)
+ * empty            → 빈 파일(0바이트). 서버도 400 으로 거절한다 — 보내기 전에 거른다 (#489)
  * too_large        → 용량 초과 (413)
  * too_many_entries → 기록이 500건을 넘거나 한 기록이 5,000자를 넘는다 (400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED, #424). 나눠 올린다
  * queue_full       → 그 기관이 앞서 올린 기록을 AI 가 아직 처리 중이다 (429 AGENT_QUEUE_FULL). 끝나면 다시 올린다
@@ -315,6 +316,7 @@ export type UploadResult =
  */
 export type UploadFailReason =
   | "invalid"
+  | "empty"
   | "too_large"
   | "too_many_entries"
   | "queue_full"
