@@ -53,15 +53,15 @@ public class RawRecordService {
 
     // "8월21일" · "2026년 8월 21일" — 한글 표기는 뜻이 분명해서 가장 먼저 본다.
     private static final Pattern FILENAME_DATE_KOREAN =
-            Pattern.compile("(?:(20\\d{2})\\s*년\\s*)?(\\d{1,2})\\s*월\\s*(\\d{1,2})\\s*일");
+            Pattern.compile("(?:(?<year>20\\d{2})\\s*년\\s*)?(?<month>\\d{1,2})\\s*월\\s*(?<day>\\d{1,2})\\s*일");
 
     // "2026-08-21" · "2026.08.21" · "20260821" — 네 자리 연도가 있으면 그대로 믿는다.
     private static final Pattern FILENAME_DATE_WITH_YEAR =
-            Pattern.compile("(20\\d{2})[-._]?(\\d{1,2})[-._]?(\\d{1,2})");
+            Pattern.compile("(?<year>20\\d{2})[-._]?(?<month>\\d{1,2})[-._]?(?<day>\\d{1,2})");
 
     // "0821_관찰일지.txt" 의 MMDD. 앞뒤에 다른 숫자가 붙어 있으면(전화번호·학번 등) 보지 않는다.
     private static final Pattern FILENAME_DATE_MONTH_DAY =
-            Pattern.compile("(?<!\\d)(\\d{2})(\\d{2})(?!\\d)");
+            Pattern.compile("(?<!\\d)(?<month>\\d{2})(?<day>\\d{2})(?!\\d)");
 
     private final RawRecordRepository rawRecordRepository;
     private final RawRecordRecorder rawRecordRecorder;
@@ -364,31 +364,15 @@ public class RawRecordService {
      * 근거가 없어서, 지금은 업로드 날짜로 내려가는 것보다 낫다고 보고 그대로 둔다.
      */
     private static Optional<LocalDate> parseDateFromFilename(String filename, LocalDate uploadedOn) {
-        Matcher korean = FILENAME_DATE_KOREAN.matcher(filename);
-        while (korean.find()) {
-            int year = korean.group(1) == null ? uploadedOn.getYear() : Integer.parseInt(korean.group(1));
-            Optional<LocalDate> parsed = toDate(
-                    year, Integer.parseInt(korean.group(2)), Integer.parseInt(korean.group(3)));
-            if (parsed.isPresent()) {
-                return parsed;
-            }
-        }
-
-        Matcher full = FILENAME_DATE_WITH_YEAR.matcher(filename);
-        while (full.find()) {
-            Optional<LocalDate> parsed = toDate(
-                    Integer.parseInt(full.group(1)), Integer.parseInt(full.group(2)), Integer.parseInt(full.group(3)));
-            if (parsed.isPresent()) {
-                return parsed;
-            }
-        }
-
-        Matcher short4 = FILENAME_DATE_MONTH_DAY.matcher(filename);
-        while (short4.find()) {
-            Optional<LocalDate> parsed = toDate(
-                    uploadedOn.getYear(), Integer.parseInt(short4.group(1)), Integer.parseInt(short4.group(2)));
-            if (parsed.isPresent()) {
-                return parsed;
+        for (Pattern format : List.of(FILENAME_DATE_KOREAN, FILENAME_DATE_WITH_YEAR, FILENAME_DATE_MONTH_DAY)) {
+            Matcher matcher = format.matcher(filename);
+            while (matcher.find()) {
+                String year = matcher.namedGroups().containsKey("year") ? matcher.group("year") : null;
+                Optional<LocalDate> parsed = toDate(year == null ? uploadedOn.getYear() : Integer.parseInt(year),
+                        Integer.parseInt(matcher.group("month")), Integer.parseInt(matcher.group("day")));
+                if (parsed.isPresent()) {
+                    return parsed;
+                }
             }
         }
         return Optional.empty();

@@ -107,7 +107,7 @@ public class GuardianInstitutionShareService {
                             .add(new InstitutionSharesResponse.SharedInsight(
                                     String.valueOf(insight.getId()),
                                     GuardianInsightService.periodLabel(insight.getPeriodFrom()),
-                                    sender == null ? null : InstitutionResponse.from(sender),
+                                    InstitutionResponse.fromNullable(sender),
                                     grant.getGrantedAt(),
                                     visible,
                                     visible ? null : grant.getRevokedAt()));

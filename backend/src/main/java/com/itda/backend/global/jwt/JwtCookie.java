@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.WebUtils;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -52,6 +53,13 @@ public class JwtCookie {
      */
     public ResponseCookie issue(String token) {
         return base(NAME, token).maxAge(maxSession).build();
+    }
+
+    /** 로그인 응답에 실을 쿠키 전부. 이전 로그인의 갱신 쿠키를 지우고 새 원본을 심는다 — 카카오 로그인과 개발용 로그인이 함께 쓴다. */
+    public List<ResponseCookie> login(HttpServletRequest request, String token) {
+        List<ResponseCookie> cookies = new ArrayList<>(expireRenewals(request));
+        cookies.add(issue(token));
+        return cookies;
     }
 
     /** 늦게 도착한 이전 로그인의 응답이 새 로그인을 덮지 않도록 로그인 번호마다 다른 이름을 쓴다. */

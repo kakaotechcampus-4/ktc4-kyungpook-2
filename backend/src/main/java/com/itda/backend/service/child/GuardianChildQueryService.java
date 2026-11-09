@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.child.ChildCareInfo;
-import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.domain.child.ChildOrganizationRequest;
 import com.itda.backend.domain.child.ChildOrganizationRequestStatus;
 import com.itda.backend.domain.consent.ConsentState;
@@ -143,10 +142,7 @@ public class GuardianChildQueryService {
         }
         Map<Long, Child> children = childRepository.findByIdInAndDeletedAtIsNull(childIds).stream()
                 .collect(Collectors.toMap(Child::getId, Function.identity()));
-        Map<Long, List<Long>> enrolled = childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(childIds)
-                .stream()
-                .collect(Collectors.groupingBy(ChildOrganization::getChildId,
-                        Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
+        Map<Long, List<Long>> enrolled = childOrganizationRepository.findOrganizationIdsByChildIdIn(childIds);
         Map<Long, List<ChildOrganizationRequest>> requested = childOrganizationRequestRepository
                 .findByChildIdInAndStatusOrderByCreatedAtAscIdAsc(childIds, ChildOrganizationRequestStatus.PENDING)
                 .stream()

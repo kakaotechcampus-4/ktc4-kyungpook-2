@@ -7,6 +7,8 @@ import com.itda.backend.dto.response.dashboard.DashboardAiProgressResponse;
 import com.itda.backend.service.agent.AiProgressProperties;
 import com.itda.backend.service.user.UserService;
 
+import lombok.RequiredArgsConstructor;
+
 /**
  * 대시보드 진행 현황의 AI 진행 단계 (#453, api-spec O-83). 화면이 1초마다 부른다.
  *
@@ -15,18 +17,12 @@ import com.itda.backend.service.user.UserService;
  * 불릴 때마다 적어 두면 폴러가 그걸 보고 AI 에 묻는다 — 아무도 안 보면 묻지 않는다.
  */
 @Service
+@RequiredArgsConstructor
 public class DashboardAiProgressService {
 
     private final UserService userService;
     private final AiProgressProperties properties;
     private final AiProgressStore store;
-
-    public DashboardAiProgressService(UserService userService, AiProgressProperties properties,
-            AiProgressStore store) {
-        this.userService = userService;
-        this.properties = properties;
-        this.store = store;
-    }
 
     @Transactional(readOnly = true)
     public DashboardAiProgressResponse getProgress(String userId) {

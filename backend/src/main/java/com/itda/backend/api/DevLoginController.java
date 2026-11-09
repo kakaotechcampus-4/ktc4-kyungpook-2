@@ -94,8 +94,7 @@ public class DevLoginController {
         String token = jwtProvider.createToken(String.valueOf(user.getId()));
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(redirectUri)
-                .header(HttpHeaders.SET_COOKIE, jwtCookie.issue(token).toString())
-                .headers(headers -> jwtCookie.expireRenewals(request).forEach(cookie ->
+                .headers(headers -> jwtCookie.login(request, token).forEach(cookie ->
                         headers.add(HttpHeaders.SET_COOKIE, cookie.toString())))
                 .build();
     }

@@ -11,6 +11,7 @@ import com.itda.backend.service.agent.AiProgressProperties;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class AiProgressPoller {
 
     private final AiProgressProperties properties;
@@ -34,14 +36,6 @@ public class AiProgressPoller {
     private ScheduledExecutorService executor;
     /** 지금 이어지고 있는 실패의 종류. 실패가 아니면 {@code null}. 폴러 스레드만 읽고 쓴다. */
     private String failure;
-
-    public AiProgressPoller(AiProgressProperties properties, AiProgressClient client, AiProgressTranslator translator,
-            AiProgressStore store) {
-        this.properties = properties;
-        this.client = client;
-        this.translator = translator;
-        this.store = store;
-    }
 
     @PostConstruct
     public void start() {

@@ -17,6 +17,11 @@ public record InstitutionResponse(String id, String name, String type, boolean v
                 String.valueOf(organization.getId()), organization.getName(), typeOf(organization.getType()), false);
     }
 
+    /** 기관이 사라졌을 수 있는 자리용 — 없으면 {@code null}. */
+    public static InstitutionResponse fromNullable(Organization organization) {
+        return organization == null ? null : from(organization);
+    }
+
     private static String typeOf(OrganizationType type) {
         return switch (type) {
             case SCHOOL -> "school";

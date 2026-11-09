@@ -181,7 +181,7 @@ public class InstitutionInboxService {
                 String.valueOf(child.getId()),
                 child.getName(),
                 enrollment.getExternalId(),
-                sender == null ? null : InstitutionResponse.from(sender),
+                InstitutionResponse.fromNullable(sender),
                 GuardianInsightService.periodLabel(insight.getPeriodFrom()),
                 grant.getGrantedAt(),
                 grant.getReadAt());

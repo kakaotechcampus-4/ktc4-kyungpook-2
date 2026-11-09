@@ -20,6 +20,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -45,6 +46,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/auth")
 @Tag(name = "인증", description = "카카오 로그인 이후의 세션 조회·회원가입·약관 동의·로그아웃·회원 탈퇴")
+@RequiredArgsConstructor
 public class AuthController {
 
     private final JwtCookie jwtCookie;
@@ -52,20 +54,6 @@ public class AuthController {
     private final UserService userService;
     private final RevokedSessionService revokedSessionService;
     private final WithdrawalService withdrawalService;
-
-    public AuthController(
-            JwtCookie jwtCookie,
-            JwtProvider jwtProvider,
-            UserService userService,
-            RevokedSessionService revokedSessionService,
-            WithdrawalService withdrawalService
-    ) {
-        this.jwtCookie = jwtCookie;
-        this.jwtProvider = jwtProvider;
-        this.userService = userService;
-        this.revokedSessionService = revokedSessionService;
-        this.withdrawalService = withdrawalService;
-    }
 
     @GetMapping("/me")
     @Operation(

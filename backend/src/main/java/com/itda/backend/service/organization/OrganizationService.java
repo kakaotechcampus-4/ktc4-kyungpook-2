@@ -33,8 +33,7 @@ public class OrganizationService {
     @Transactional
     public MyInstitutionResponse getMine(String userId) {
         Long organizationId = userService.getOrganizationIdOf(userId);
-        Organization organization = organizationRepository.findByIdForUpdate(organizationId)
-                .orElseThrow(() -> new IllegalStateException("소속 기관 행이 없습니다: " + organizationId));
+        Organization organization = organizationRepository.lockOwnOrganization(organizationId);
         if (organization.getCode() == null) {
             organization.assignCode(organizationCodeIssuer.unusedCode());
             try {

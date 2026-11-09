@@ -52,8 +52,7 @@ public class AgentQueueGuard {
         if (incoming <= 0) {
             return;
         }
-        organizationRepository.findByIdForUpdate(organizationId)
-                .orElseThrow(() -> new IllegalStateException("소속 기관 행이 없습니다: " + organizationId));
+        organizationRepository.lockOwnOrganization(organizationId);
         check(organizationId, incoming);
     }
 

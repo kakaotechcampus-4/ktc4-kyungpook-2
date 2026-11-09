@@ -139,9 +139,7 @@ public class InsightGate2QueryService {
                 .filter(child -> child.getDeletedAt() == null)
                 .collect(Collectors.toMap(Child::getId, Child::getName));
 
-        Map<Long, List<Long>> enrolled = childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(childIds)
-                .stream().collect(Collectors.groupingBy(ChildOrganization::getChildId,
-                        Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
+        Map<Long, List<Long>> enrolled = childOrganizationRepository.findOrganizationIdsByChildIdIn(childIds);
         // 주간 인사이트 동의 기준이다 (#257). 수신 후보 표시와 재료 확인이 같은 값을 본다.
         Map<Long, Map<Long, ConsentState>> consents = consentStateReader.insightStatesOf(childIds);
         Map<Long, Evidence> evidences = insightEvidenceReader.read(insights);

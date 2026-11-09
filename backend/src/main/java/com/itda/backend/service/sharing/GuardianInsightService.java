@@ -322,7 +322,7 @@ public class GuardianInsightService {
                             insight.getPeriodFrom().toString(),
                             insight.getPeriodTo().toString(),
                             insight.getContent(),
-                            sender == null ? null : InstitutionResponse.from(sender),
+                            InstitutionResponse.fromNullable(sender),
                             sharedWith,
                             approvedAt.getOrDefault(insight.getId(), grant.getGrantedAt()),
                             grant.getReadAt(),

@@ -12,6 +12,7 @@ import java.util.concurrent.RejectedExecutionException;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Component;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -35,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class WithdrawalExecutor implements DisposableBean {
 
     private final WithdrawalLocks locks;
@@ -51,12 +53,6 @@ public class WithdrawalExecutor implements DisposableBean {
      * 그 작업이 상태를 읽은 뒤에 들어온 새 접수(예: 취소 직후 다시 신청)를 놓치기 때문이다.
      */
     private final ConcurrentMap<Long, Task> queued = new ConcurrentHashMap<>();
-
-    public WithdrawalExecutor(WithdrawalLocks locks, WithdrawalSteps steps, KakaoUnlinkClient kakaoUnlinkClient) {
-        this.locks = locks;
-        this.steps = steps;
-        this.kakaoUnlinkClient = kakaoUnlinkClient;
-    }
 
     /**
      * 이 회원의 탈퇴를 실행기 줄에 세운다. 아직 시작하지 않은 작업이 서 있으면 그 작업을 돌려준다 — 그 작업은 시작할 때 상태를

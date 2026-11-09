@@ -2,7 +2,9 @@ package com.itda.backend.repository.child;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import jakarta.persistence.LockModeType;
 
@@ -47,4 +49,11 @@ public interface ChildOrganizationRepository extends JpaRepository<ChildOrganiza
      * 아이마다 따로 물으면 목록 길이만큼 쿼리가 늘어난다.
      */
     List<ChildOrganization> findByChildIdInAndDeletedAtIsNull(Collection<Long> childIds);
+
+    /** 아이별로 지금 다니는 기관 id. 다니는 기관이 없는 아이는 키가 없다. */
+    default Map<Long, List<Long>> findOrganizationIdsByChildIdIn(Collection<Long> childIds) {
+        return findByChildIdInAndDeletedAtIsNull(childIds).stream()
+                .collect(Collectors.groupingBy(ChildOrganization::getChildId,
+                        Collectors.mapping(ChildOrganization::getOrganizationId, Collectors.toList())));
+    }
 }
