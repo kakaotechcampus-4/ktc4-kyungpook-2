@@ -17,6 +17,8 @@
  *  - 요청에 붙이는 일: 브라우저가 자동으로 한다 (lib/api.ts 의 credentials 참고)
  *  - 로그인 여부·역할: 서버에 묻는다 (GET /api/v1/auth/me)
  *  - 로그아웃: 서버에 부탁해야 한다 (POST /api/v1/auth/logout)
+ *  - 회원 탈퇴: DELETE /api/v1/auth/me. 서버가 카카오 연결을 끊고 정리한다. 처리 중이면 `/auth/me` 의 withdrawal 이
+ *    in_progress 이고, 끝나면 `/auth/me` 가 401 ACCOUNT_WITHDRAWN 이다(그 밖의 401 은 탈퇴 완료가 아니다).
  */
 
 import { ApiError } from "@/lib/apiError";
@@ -77,6 +79,14 @@ const INVITE_CODE_KEY = "itda_invite_code";
  */
 const RETURN_PATH_KEY = "itda_return_path";
 
+/**
+ * 이 탭에서 카카오 로그인을 시작한 시각. 카카오로 떠나기 직전에 적고 `/oauth/success` 가 한 번 읽고 지운다. 이 표시가 있을 때만
+ * 실제 로그인으로 보고 다른 탭에 알린다 — 이미 로그인한 사람이 주소를 직접 열면 표시가 없다. 로그인 의도와 같은 이유로
+ * sessionStorage 다. 카카오에서 그만두고 돌아온 표시가 오래 남지 않게 LOGIN_STARTED_TTL_MS 가 지나면 버린다.
+ */
+const LOGIN_STARTED_KEY = "itda_login_started";
+const LOGIN_STARTED_TTL_MS = 30 * 60 * 1000;
+
 export type Role = "org" | "parent" | null;
 
 /**
@@ -89,6 +99,8 @@ export type Session = {
   loggedIn: boolean;
   signupCompleted: boolean;
   role: Role;
+  /** 내부 회원 id. 로그인했을 때만 있다. 탈퇴 확인 창이 "이 계정" 을 서버에 알려 줄 때 쓴다. */
+  userId?: string;
   /** 가입 때 입력한 기관명. 기관 계정만 있고, 서버가 기관을 못 찾으면 없다. */
   institutionName?: string;
   /**
@@ -96,9 +108,29 @@ export type Session = {
    * 기관 계정은 약관이 없어 늘 true, 가입 미완료는 false.
    */
   termsAgreed: boolean;
+  /**
+   * 탈퇴를 처리하는 중인지. true 면 서버가 `/auth/me` · 로그아웃 외의 보호 API 를 409 WITHDRAWAL_IN_PROGRESS 로 막는다 —
+   * 가드는 가입 · 약관 · 아이 목록보다 먼저 이 값을 보고 탈퇴 안내 화면(`/withdrawal`)으로 보낸다.
+   */
+  withdrawing: boolean;
+  /**
+   * 비로그인인데 그 이유가 "탈퇴를 마친 회원의 출입증" 인지(401 ACCOUNT_WITHDRAWN). 탈퇴 안내 화면만 본다 —
+   * 로그인 만료 · 쿠키 없음 · 로그아웃은 false 다. 이 값이 true 일 때만 "탈퇴가 끝났다" 고 보여 준다.
+   */
+  withdrawn: boolean;
+  /** 서버가 탈퇴를 열었는지(`/auth/me` 의 withdrawalEnabled). false 면 탈퇴 버튼을 숨긴다. */
+  withdrawalEnabled: boolean;
 };
 
-const ANONYMOUS: Session = { loggedIn: false, signupCompleted: false, role: null, termsAgreed: false };
+const ANONYMOUS: Session = {
+  loggedIn: false,
+  signupCompleted: false,
+  role: null,
+  termsAgreed: false,
+  withdrawing: false,
+  withdrawn: false,
+  withdrawalEnabled: false,
+};
 
 /**
  * GET /auth/me · POST /auth/signup 의 data.
@@ -113,6 +145,10 @@ type MeResponse = {
   institutionName?: string;
   /** 늘 온다. 기관은 true, 가입 미완료는 false */
   termsAgreed: boolean;
+  /** 늘 온다. 탈퇴를 처리하는 중이면 in_progress */
+  withdrawal?: "none" | "in_progress";
+  /** 늘 온다. 서버가 탈퇴를 열었는지 */
+  withdrawalEnabled?: boolean;
 };
 
 function toSession(me: MeResponse): Session {
@@ -121,8 +157,12 @@ function toSession(me: MeResponse): Session {
     signupCompleted: me.signupCompleted,
     // signupCompleted 만 보고 분기한다. role 은 가입을 마쳤을 때만 믿는다.
     role: me.signupCompleted ? (me.role ?? null) : null,
+    userId: me.userId,
     institutionName: me.institutionName,
     termsAgreed: me.signupCompleted && me.termsAgreed === true,
+    withdrawing: me.withdrawal === "in_progress",
+    withdrawn: false,
+    withdrawalEnabled: me.withdrawalEnabled === true,
   };
 }
 
@@ -205,7 +245,15 @@ export async function getSession(): Promise<Session> {
   if (USE_MOCK) {
     const role = readRole();
     return role
-      ? { loggedIn: true, signupCompleted: true, role, termsAgreed: role === "org" || readTermsMark() }
+      ? {
+          ...ANONYMOUS,
+          loggedIn: true,
+          signupCompleted: true,
+          role,
+          termsAgreed: role === "org" || readTermsMark(),
+          userId: "mock",
+          withdrawalEnabled: true,
+        }
       : ANONYMOUS;
   }
 
@@ -215,12 +263,23 @@ export async function getSession(): Promise<Session> {
   });
   if (res.status === 401) {
     clearSession();
-    return ANONYMOUS;
+    // 탈퇴를 마친 회원인지만 나눈다. 본문을 못 읽으면 일반 401 로 본다 — 완료로 잘못 보이지 않게
+    const body = await res.json().catch(() => ({}));
+    return { ...ANONYMOUS, withdrawn: body?.code === "ACCOUNT_WITHDRAWN" };
   }
   if (!res.ok) throw await toApiError(res);
   const body = await res.json();
-  return toSession(body.data as MeResponse);
+  const session = toSession(body.data as MeResponse);
+  documentUserId ??= session.userId;
+  return session;
 }
+
+/**
+ * 이 문서(페이지 로드)가 처음 `/auth/me` 에서 확인한 계정. 화면은 이 계정의 데이터로 그려진다. 뒤에 다른 계정이 보여도 바꾸지
+ * 않는다 — 그때는 화면과 쿠키가 다른 계정이라 새로 고쳐야 한다. 이 탭 안에서 로그인하면 카카오를 다녀오며 문서가 새로 열린다.
+ * 다른 탭의 로그인이 같은 계정이면 이 탭을 새로 고치지 않는 데 쓴다(`reloadOnLoginElsewhere`).
+ */
+let documentUserId: string | undefined;
 
 /**
  * 가입을 마친 사람이 처음 볼 화면. 보호자는 약관 · 첫 연결이 남았거나, 초대 링크로 받아 둔
@@ -369,6 +428,7 @@ export async function signup(input: SignupInput): Promise<Session> {
   if (USE_MOCK) {
     grantRole(input.role);
     return {
+      ...ANONYMOUS,
       loggedIn: true,
       signupCompleted: true,
       role: input.role,
@@ -412,6 +472,11 @@ export function startKakaoLogin(intent: "org" | "parent"): void {
     sessionStorage.setItem(INTENT_KEY, intent);
   } catch {
     // 무시 — 회원가입 화면에서 역할을 미리 골라두지 못할 뿐이다.
+  }
+  try {
+    sessionStorage.setItem(LOGIN_STARTED_KEY, String(Date.now()));
+  } catch {
+    // 무시 — 로그인이 끝나도 다른 탭에 알리지 못할 뿐이다. 탈퇴는 서버가 계정을 맞춰 본다
   }
   window.location.href = `${AUTH_ORIGIN}/oauth2/authorization/kakao`;
 }
@@ -488,6 +553,176 @@ export async function signOut(): Promise<void> {
   } catch {
     // 네트워크 실패로 쿠키가 남아도 로컬 표시는 이미 지웠다. 가드가 /auth/me 로 다시 확인한다.
   }
+}
+
+/* ── 다른 탭의 로그인 ───────────────────────────────── */
+
+/**
+ * 로그인이 끝날 때마다 바꾸는 표시(`{ userId, nonce }` JSON). 같은 브라우저의 탭들은 출입증 쿠키를 함께 쓰므로, 한 탭에서 다른
+ * 계정으로 로그인하면 다른 탭은 예전 계정의 화면을 보여 주는 채로 새 계정의 쿠키로 요청하게 된다(예: A 의 설정 화면에서 탈퇴를
+ * 누르면 B 가 지워진다). 표시가 바뀌면 **보여 주는 계정이 다른 탭만** 화면을 새로 고쳐, 화면 데이터와 요청이 늘 같은 계정을
+ * 가리키게 한다. 같은 계정으로 다시 로그인한 것이면 새로 고치지 않는다 — 기관 담당자가 쓰던 요약 검토 · 검증 수정 본문은 화면
+ * 상태에만 있어 새로 고치면 사라진다.
+ */
+const LOGIN_MARK_KEY = "itda_login_mark";
+
+function readLoginMark(): string | null {
+  try {
+    return localStorage.getItem(LOGIN_MARK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** 표시에 담긴 로그인한 계정. 옛 형식이거나 읽지 못하면 null(누구인지 모름). */
+function loginMarkUserId(mark: string | null): string | null {
+  if (!mark) return null;
+  try {
+    const parsed = JSON.parse(mark) as { userId?: unknown };
+    return typeof parsed.userId === "string" ? parsed.userId : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 이 탭에서 시작한 카카오 로그인 표시를 읽고 지운다. 시작한 지 오래됐으면 없는 것으로 본다. */
+function takeLoginStarted(): boolean {
+  try {
+    const raw = sessionStorage.getItem(LOGIN_STARTED_KEY);
+    sessionStorage.removeItem(LOGIN_STARTED_KEY);
+    const startedAt = Number(raw);
+    return raw !== null && Number.isFinite(startedAt) && Date.now() - startedAt < LOGIN_STARTED_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+/** 이 문서에서 로그인 알림을 이미 판단했는지. 문서(페이지 로드)마다 한 번만 판단한다. */
+let loginLandingChecked = false;
+
+/**
+ * 실제 로그인으로 들어왔을 때만 다른 탭에 알린다 — 알리면 다른 탭이 새로 고쳐져 쓰던 내용이 사라지므로, 세션이 정말 바뀐 경우로
+ * 좁힌다. 둘 다 맞아야 한다.
+ *  - 이 탭에서 카카오 로그인을 시작했다(`startKakaoLogin` 의 표시). 이미 로그인한 사람이 `/oauth/success` 주소를 직접 열면 없다
+ *  - 백엔드가 로그인을 마치고 브라우저를 `/oauth/success` 로 **새로 불러왔다**(이 문서의 첫 주소). 앱 안에서 옮겨 가는 것
+ *    (예: 탈퇴 안내의 [돌아가기])은 아니다
+ * 표시는 판단할 때 지운다. 남겨 두면 같은 탭에서 나중에 주소를 직접 열 때 알리게 된다.
+ */
+export function announceLoginIfLanded(userId: string | undefined): void {
+  if (loginLandingChecked) return;
+  loginLandingChecked = true;
+  const started = takeLoginStarted();
+  try {
+    const entry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    if (!entry || new URL(entry.name).pathname !== "/oauth/success") return;
+  } catch {
+    return;
+  }
+  if (started) announceLogin(userId);
+}
+
+/** 로그인이 끝났다고 다른 탭에 알린다. 누가 로그인했는지 함께 싣는다. */
+function announceLogin(userId: string | undefined): void {
+  try {
+    localStorage.setItem(
+      LOGIN_MARK_KEY,
+      JSON.stringify({ userId: userId ?? null, nonce: `${Date.now()}-${Math.random().toString(36).slice(2)}` }),
+    );
+  } catch {
+    // 저장소를 못 쓰면 알리지 못한다. 그래도 탈퇴는 서버가 확인 창의 계정과 로그인한 계정을 맞춰 본다
+  }
+}
+
+/**
+ * 다른 탭에서 **다른 계정으로** 로그인하면 이 탭을 새로 고친다. 화면을 연 뒤 표시가 바뀌었는지를 저장소 이벤트와, 숨었다 다시
+ * 보일 때(멈춘 탭은 이벤트를 놓칠 수 있다) 함께 본다. 표시의 계정이 이 탭이 확인한 계정과 같으면 새로 고치지 않고 그 표시를
+ * 본 것으로 둔다 — 같은 사람이 다시 로그인해도 쓰던 글이 사라지지 않게. 이 탭이 비로그인이거나 아직 계정을 모르거나, 표시에서
+ * 계정을 읽지 못하면 새로 고친다. 이 탭의 계정은 이 문서가 처음 확인한 계정이다(`documentUserId`). 앱 최상위가 한 번 부르고, 돌려준 함수로 그만 본다.
+ */
+export function reloadOnLoginElsewhere(): () => void {
+  let seen = readLoginMark();
+  const check = () => {
+    const mark = readLoginMark();
+    if (mark === seen) return;
+    const loggedIn = loginMarkUserId(mark);
+    if (loggedIn !== null && loggedIn === documentUserId) {
+      seen = mark;
+      return;
+    }
+    window.location.reload();
+  };
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === LOGIN_MARK_KEY) check();
+  };
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") check();
+  };
+  window.addEventListener("storage", onStorage);
+  document.addEventListener("visibilitychange", onVisibility);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    document.removeEventListener("visibilitychange", onVisibility);
+  };
+}
+
+/* ── 회원 탈퇴 ──────────────────────────────────────── */
+
+/** 탈퇴 확인 창을 연 계정. 이 계정만 지운다. */
+export type WithdrawTarget = { userId: string };
+
+/**
+ * 탈퇴 버튼을 보일 계정. 서버가 탈퇴를 열지 않았거나(withdrawalEnabled) 로그인하지 않았으면 null — 버튼을 숨긴다.
+ * 화면을 열 때 읽은 세션에서 만든다. 그 뒤 다른 탭에서 계정을 바꿔도 이 값은 처음 계정이라, 서버가 409 로 막는다.
+ */
+export function withdrawTargetOf(session: Session): WithdrawTarget | null {
+  if (!session.loggedIn || !session.withdrawalEnabled || !session.userId) return null;
+  return { userId: session.userId };
+}
+
+/** 탈퇴 요청의 결과. `completed` 는 서버가 끝까지 마친 것, `in_progress` 는 서버가 이어서 처리한다. */
+export type WithdrawResult = "completed" | "in_progress";
+
+/**
+ * DELETE /api/v1/auth/me — 회원 탈퇴. 보호자와 가입을 마치지 않은 사람만 할 수 있다.
+ *
+ *  - 204: 끝났다 → `completed`. 서버는 쿠키를 지우지 않는다(늦게 온 응답이 다른 탭의 새 로그인 쿠키를 지우지 않게) — 이 브라우저 표시만 지운다
+ *  - 202: 접수했고 서버가 처리 중이다 → `in_progress` (탈퇴 안내 화면이 `/auth/me` 로 결과를 본다)
+ *  - 409 WITHDRAWAL_IN_PROGRESS: 이미 처리 중이다 → `in_progress`
+ *  - 그 밖(502 KAKAO_UNLINK_FAILED · 409 WITHDRAWAL_ACCOUNT_MISMATCH · 404 · 403 · 401 · 네트워크)은 ApiError 로
+ *    던진다. 502 면 회원은 그대로다.
+ *
+ * `target` 은 확인 창이 보여 준 계정이다. 서버는 지금 로그인한 계정과 다르면 409 WITHDRAWAL_ACCOUNT_MISMATCH 로 막는다 —
+ * 확인 창을 연 뒤 다른 탭에서 계정을 바꿨으면, 사용자가 확인하지 않은 계정이 지워지지 않게 한다.
+ */
+export async function withdraw(target: WithdrawTarget): Promise<WithdrawResult> {
+  if (USE_MOCK) {
+    clearSession();
+    return "completed";
+  }
+
+  const res = await fetch(`${API_BASE}/api/v1/auth/me?userId=${encodeURIComponent(target.userId)}`, {
+    method: "DELETE",
+    credentials: "include",
+    cache: "no-store",
+    headers: csrfHeader(),
+  });
+  if (res.status === 204) {
+    forgetLocalSession();
+    return "completed";
+  }
+  if (res.status === 202) return "in_progress";
+  const error = await toApiError(res);
+  if (error.code === "WITHDRAWAL_IN_PROGRESS") return "in_progress";
+  throw error;
+}
+
+/** 이 브라우저에 남긴 표시와 맡겨 둔 글을 지운다. 서버에는 아무것도 보내지 않는다 — 탈퇴 완료가 쓴다. */
+export function forgetLocalSession(): void {
+  clearSession();
+  // 요약 검토 · 검증 수정 요청에서 로그인이 풀려 맡겨 둔 글 — 아이에 대한 글이라 남기지 않는다
+  clearGate1Drafts();
+  clearReinputDrafts();
+  clearInviteCode();
 }
 
 /* ── CSRF ───────────────────────────────────────────── */

@@ -9,6 +9,8 @@ export default [
   route("org-terms", "routes/org-terms.tsx"),
   // 약관 다시 읽기. 로그인 없이 열고 역할 묶음 밖에 둔다(가드가 동의를 요구하면 동의 전에 못 읽는다).
   route("terms/:key", "routes/terms.tsx"),
+  // 탈퇴 안내. 가입 전 사람도 오므로 역할 묶음 밖에 둔다. 가드들이 탈퇴를 처리하는 중인 회원을 이리 보낸다.
+  route("withdrawal", "routes/withdrawal.tsx"),
 
   layout("routes/org/layout.tsx", [
     // 화면을 옮길 때마다 로그인이 풀렸는지 본다 — 가드는 같은 레이아웃 안 이동에서 다시 돌지 않는다

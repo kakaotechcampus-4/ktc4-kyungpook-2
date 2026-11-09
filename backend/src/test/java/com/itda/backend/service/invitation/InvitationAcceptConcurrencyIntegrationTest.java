@@ -127,7 +127,9 @@ class InvitationAcceptConcurrencyIntegrationTest {
         mother = userRepository.save(UserFixture.parent("kakao-mother"));
         father = userRepository.save(UserFixture.parent("kakao-father"));
         given(userService.getParentIdOf(MOTHER)).willReturn(mother.getId());
+        given(userService.lockParentForLink(MOTHER)).willReturn(mother.getId());
         given(userService.getParentIdOf(FATHER)).willReturn(father.getId());
+        given(userService.lockParentForLink(FATHER)).willReturn(father.getId());
     }
 
     @AfterEach

@@ -1,5 +1,9 @@
 package com.itda.backend.fixture;
 
+import java.time.LocalDateTime;
+
+import org.springframework.test.util.ReflectionTestUtils;
+
 import com.itda.backend.domain.user.User;
 import com.itda.backend.domain.user.UserRole;
 
@@ -21,6 +25,24 @@ public final class UserFixture {
     public static User parent(String kakaoId) {
         User user = User.pending(kakaoId);
         user.completeSignup(UserRole.PARENT, null);
+        return user;
+    }
+
+    /**
+     * 탈퇴를 끝까지 마친다(접수 → 카카오 해제 확정 → 정리). 저장된 회원이어야 한다 — 카카오 회원번호 자리에 내부 id 를 쓴다.
+     * 아이 연결 정리는 하지 않는다. 연결까지 보는 테스트는 실제 실행기를 쓴다.
+     */
+    public static User withdrawn(User saved) {
+        LocalDateTime now = LocalDateTime.now();
+        saved.requestWithdrawal(now);
+        saved.markKakaoUnlinked();
+        saved.completeWithdrawal(now);
+        return saved;
+    }
+
+    /** 옛 방식 탈퇴 행 — 카카오 회원번호를 남긴 채 탈퇴 표시만 했다. 지금 코드로는 만들 수 없어 필드를 직접 채운다. */
+    public static User legacyDeleted(User user) {
+        ReflectionTestUtils.setField(user, "deletedAt", LocalDateTime.now());
         return user;
     }
 }

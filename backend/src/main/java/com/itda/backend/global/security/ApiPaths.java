@@ -19,6 +19,14 @@ public final class ApiPaths {
     public static final String HEALTH = "/api/health";
     /** 약관 본문. 공개 문서라 로그인 · 가입 · 약관 동의 없이 연다 */
     public static final String TERMS = "/api/v1/terms";
+    /**
+     * 응답을 만든 회원의 id 를 싣는 헤더. 보호자 아이 목록 응답에 붙는다 — 화면이 보여 주는 아이 목록과 탈퇴 대상 계정을 같은
+     * 응답에서 꺼내, 다른 탭에서 계정이 바뀐 직후에도 둘이 다른 계정을 가리키지 않게 한다.
+     */
+    public static final String USER_ID_HEADER = "X-Itda-User-Id";
+
+    /** 카카오 연결 해제 웹훅. 로그인 · CSRF 대신 어드민 키 헤더로 검증한다 */
+    public static final String KAKAO_UNLINK_WEBHOOK = "/api/v1/webhooks/kakao/unlink";
 
     private ApiPaths() {
     }

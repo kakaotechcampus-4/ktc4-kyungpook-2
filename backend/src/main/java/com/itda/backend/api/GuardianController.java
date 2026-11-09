@@ -23,6 +23,7 @@ import com.itda.backend.dto.response.invitation.AcceptedInvitationResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
+import com.itda.backend.global.security.ApiPaths;
 import com.itda.backend.service.child.GuardianChildQueryService;
 import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
@@ -111,7 +112,8 @@ public class GuardianController {
                     + "institutions 는 아이가 지금 명부에 올라 있는 기관(기관 id 순)과 기관별 동의 상태입니다. "
                     + "동의 상태는 아이 기준이라 어느 보호자의 동의든 살아 있으면 granted 입니다. "
                     + "care 는 보호자가 적어 둔 알레르기·복용약이고 저장 전이면 빈 배열입니다(기관에는 공유하지 않음). "
-                    + "school 은 저장하는 곳이 없어 내려주지 않습니다.")
+                    + "school 은 저장하는 곳이 없어 내려주지 않습니다. 응답 헤더 X-Itda-User-Id 에 이 목록을 가져온 회원의 "
+                    + "userId 를 싣습니다 — 설정 화면이 탈퇴 대상을 이 목록과 같은 계정으로 정합니다.")
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공. 연결된 아이가 없으면 빈 배열"),
@@ -126,8 +128,12 @@ public class GuardianController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             )
     })
-    public ApiResponse<List<GuardianChildResponse>> children(@AuthenticationPrincipal String userId) {
-        return ApiResponse.success(guardianChildQueryService.children(userId));
+    public ResponseEntity<ApiResponse<List<GuardianChildResponse>>> children(@AuthenticationPrincipal String userId) {
+        List<GuardianChildResponse> children = guardianChildQueryService.children(userId);
+        // 이 목록을 가져온 계정. 설정 화면의 탈퇴 대상이 화면에 보이는 목록과 같은 계정이 되게 한다
+        return ResponseEntity.ok()
+                .header(ApiPaths.USER_ID_HEADER, userId)
+                .body(ApiResponse.success(children));
     }
 
     @GetMapping("/home")

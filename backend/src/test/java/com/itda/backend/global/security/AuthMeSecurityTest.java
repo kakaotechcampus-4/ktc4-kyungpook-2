@@ -153,13 +153,24 @@ class AuthMeSecurityTest {
     /** 탈퇴한 사용자의 출입증은 아직 만료 전이어도 인정하지 않는다. */
     @Test
     void withdrawnUserIsUnauthorized() throws Exception {
-        User user = UserFixture.parent("me-withdrawn-1");
-        user.delete();
-        user = userRepository.save(user);
+        User user = userRepository.save(UserFixture.parent("me-withdrawn-1"));
+        user = userRepository.save(UserFixture.withdrawn(user));
 
         mockMvc.perform(get(ME).cookie(cookieFor(user)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("SESSION_USER_NOT_FOUND"));
+                .andExpect(jsonPath("$.code").value("ACCOUNT_WITHDRAWN"));
+    }
+
+    /** 탈퇴를 처리하는 중이면 /auth/me 는 그대로 답하고 withdrawal 로 알린다. */
+    @Test
+    void withdrawingUserSeesInProgress() throws Exception {
+        User user = UserFixture.parent("me-withdrawing-1");
+        user.requestWithdrawal(java.time.LocalDateTime.now());
+        user = userRepository.save(user);
+
+        mockMvc.perform(get(ME).cookie(cookieFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.withdrawal").value("in_progress"));
     }
 
     /**

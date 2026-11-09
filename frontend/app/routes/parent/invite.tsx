@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Busy } from "@/components/ui";
 import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { KakaoLoginButton } from "@/components/KakaoLoginButton";
+import { WithdrawAccount } from "@/components/WithdrawAccount";
 import { StepProgress } from "@/components/parent/StepProgress";
 import { TERMS_CHANGED_MESSAGE, TermsForm, useTermsDocuments, type TermItem } from "@/components/TermsForm";
 import { ApiError, acceptInvitation, restoreParentOnboarded } from "@/lib/api";
@@ -14,6 +15,7 @@ import {
   isAuthMock,
   readInviteCode,
   saveInviteCode,
+  withdrawTargetOf,
   type TermKey,
 } from "@/lib/auth";
 import type { AcceptedInvitation } from "@/lib/types";
@@ -47,7 +49,10 @@ export async function clientLoader({ request }: { request: Request }) {
   const code = new URL(request.url).searchParams.get("code")?.trim();
   if (code) saveInviteCode(code);
 
-  const { loggedIn, signupCompleted, role, termsAgreed } = await getSession();
+  const session = await getSession();
+  const { loggedIn, signupCompleted, role, termsAgreed, withdrawing } = session;
+  // 탈퇴를 처리하는 중이면 약관 · 코드 수락이 409 다 — 가입보다 먼저 본다
+  if (withdrawing) return redirect("/withdrawal");
   // 카카오 로그인만 하고 가입을 안 끝낸 사람은 가입부터 — 코드 수락이 403 이다.
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   const isParent = loggedIn && role === "parent";
@@ -57,6 +62,8 @@ export async function clientLoader({ request }: { request: Request }) {
     // 약관에 동의한 보호자만 묻는다 — 동의 전에는 아이 목록이 403 TERMS_NOT_AGREED 다
     onboarded: isParent && termsAgreed && (await restoreParentOnboarded()),
     savedCode: readInviteCode(),
+    // 화면을 열 때의 계정. 탈퇴 확인 창이 이 계정만 지운다 (다른 탭에서 계정을 바꾸면 서버가 막는다)
+    withdrawTarget: isParent ? withdrawTargetOf(session) : null,
   };
 }
 
@@ -336,6 +343,8 @@ export default function ParentInvitePage() {
             onSubmit={() => void submitTerms()}
             buttonClassName={primary}
           />
+          {/* 약관에 동의하지 않은 보호자는 가드가 설정 화면으로 보내지 않는다 — 여기서 떠날 길을 둔다 */}
+          <WithdrawAccount audience="parent" account={loaded.withdrawTarget} />
         </>
       ) : null}
 
@@ -405,6 +414,8 @@ export default function ParentInvitePage() {
             코드가 만료됐다면 기관에 새 코드를 요청하세요. 하이픈과 대소문자는 신경 쓰지 않아도
             됩니다.
           </p>
+          {/* 연결된 아이가 없는 보호자는 가드가 설정 화면으로 보내지 않는다 — 여기서 떠날 길을 둔다 */}
+          <WithdrawAccount audience="parent" account={loaded.withdrawTarget} />
         </div>
       ) : null}
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { FileText, LogOut } from "lucide-react";
-import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
+import { Link, useLoaderData, useNavigate, useRevalidator, useRouteLoaderData } from "react-router";
 import { Busy, InstitutionChip } from "@/components/ui";
+import { WithdrawAccount } from "@/components/WithdrawAccount";
 import { useChildContext } from "@/components/parent/ChildContext";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
@@ -10,6 +11,7 @@ import {
   loadOpenChecklistCount,
   getInstitutionShares,
   getParentChildren,
+  getParentChildrenWithOwner,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
@@ -19,9 +21,13 @@ import {
 import { signOut } from "@/lib/auth";
 import { selectedChildOrInvite } from "@/lib/selectedChild";
 import type { ConsentState, InstitutionShares } from "@/lib/types";
+import type { clientLoader as parentSessionLoader } from "./session";
 
 export async function clientLoader() {
-  const child = selectedChildOrInvite(await getParentChildren());
+  // 탈퇴 대상은 이 화면이 보여 주는 아이 목록을 가져온 계정이다(같은 응답의 헤더). /auth/me 를 따로 물으면 다른 탭에서 계정이
+  // 바뀐 직후 목록과 계정이 서로 다른 사람을 가리킬 수 있다
+  const { children, ownerUserId } = await getParentChildrenWithOwner();
+  const child = selectedChildOrInvite(children);
   const childId = child.id;
   const [openChecklists, pendingRequests, shares] = await Promise.all([
     // 확인 안 한 준비물·확인사항 수. 못 받으면 null — 개수만 숨기고 설정은 그대로 연다
@@ -30,7 +36,7 @@ export async function clientLoader() {
     // 기관 줄의 "받은 리포트 N편". 서버에 없으면 null — 줄에 아무것도 붙이지 않는다
     loadIfReady("institutionShares", () => getInstitutionShares(childId)),
   ]);
-  return { child, openChecklists, pendingRequests, shares };
+  return { child, openChecklists, pendingRequests, shares, ownerUserId };
 }
 
 export default function ParentSettingsPage() {
@@ -45,7 +51,12 @@ function ParentSettingsContent({
   openChecklists,
   pendingRequests,
   shares,
+  ownerUserId,
 }: Awaited<ReturnType<typeof clientLoader>>) {
+  // 탈퇴를 열었는지는 바깥 세션 확인 레이아웃이 이미 읽은 세션에서, 대상 계정은 아이 목록 응답에서 꺼낸다
+  const withdrawalEnabled =
+    useRouteLoaderData<typeof parentSessionLoader>("routes/parent/session")?.withdrawalEnabled === true;
+  const withdrawTarget = withdrawalEnabled && ownerUserId ? { userId: ownerUserId } : null;
   // 보호자 이름은 저장하지 않는다 — 지금 고른 아이의 보호자로 부른다
   const guardianLabel = `${child.name} 보호자`;
   const { kids, selectChild } = useChildContext();
@@ -316,10 +327,11 @@ function ParentSettingsContent({
             <span className="text-[15px]">{signingOut ? <Busy>로그아웃 중…</Busy> : "로그아웃"}</span>
             <LogOut aria-hidden size={17} strokeWidth={1.9} className="text-muted" />
           </button>
+          <WithdrawAccount audience="parent" trigger="row" account={withdrawTarget} />
         </div>
         <p className="mt-2 text-[13px] leading-6 text-muted">
           로그아웃해도 아이와의 연결과 동의는 그대로예요. 다시 카카오로 로그인하면 이어서 볼 수
-          있어요.
+          있어요.{withdrawTarget ? " 탈퇴하면 아이와의 연결이 모두 끊겨요." : ""}
         </p>
       </div>
 
