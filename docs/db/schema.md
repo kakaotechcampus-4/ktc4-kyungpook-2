@@ -517,7 +517,9 @@ child_care_info.child_id                      UNIQUE
 | --- | --- |
 | `child_organization(child_id, organization_id)` | 기관에서 뺐다가 다시 등록 |
 | `child_guardian(child_id, user_id)` | 보호자 연결을 끊었다가 다시 연결 |
-| `users.kakao_id` | 탈퇴한 사람이 같은 카카오 계정으로 재가입 |
+
+**예외: `users.kakao_id` 는 되살리지 않고 비운다.** 탈퇴를 마치면 `kakao_id` 를 `withdrawn:{id}` 로 바꿔 번호를 놓아 준다.
+같은 카카오 계정으로 다시 오면 새 행을 만든다(§4.1 "탈퇴"). 카카오 정책상 회원번호도 파기 대상이라 남겨 두고 되살릴 수 없다.
 
 `deleted_at IS NULL`인 행만 유니크로 보는 부분 인덱스(partial unique index)가 정석이지만,
 `ddl-auto: update`가 만들어주지 못하므로 쓰지 않는다.
@@ -530,10 +532,11 @@ child_care_info.child_id                      UNIQUE
 #### 잠금 순서 — 행 두 개 이상을 잠그는 작업은 이 순서를 지킨다
 
 ```
-child → child_organization → child_organization_request → invitation → child_guardian → sharing_consent
+users → child → child_organization → child_organization_request → invitation → child_guardian → sharing_consent
 ```
 
-순서가 하나뿐이라 교착(deadlock)이 생기지 않는다. 초대 코드 수락은 앞의 네 행을 모두 이 순서로 잠근다.
+순서가 하나뿐이라 교착(deadlock)이 생기지 않는다. 초대 코드 수락은 `users`(FOR SHARE)와 그 뒤 네 행을 모두 이 순서로 잠근다.
+`users` 를 잠그는 작업은 가입 확정 · 약관 동의 · 탈퇴 · 초대 수락이고, 모두 회원 행을 맨 먼저 잠근다.
 
 **동의를 바꾸거나 동의를 보고 결정하는 작업은 모두 `child` 를 먼저 잠근다.** `sharing_consent` 는 이력 테이블이라
 UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변경을 한 줄로 세운다.
@@ -552,9 +555,16 @@ UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변�
 | 요약 결과 남기기 (요약 워커) | `summary_result`(그 묶음의 판, 최신 판부터) → `child`. 저장 · 요약 실패 · 시스템 오류를 남기기 전에 잠그고 그 기관 동의를 확인한다 — 철회가 먼저 커밋됐으면 아무것도 남기지 않고 요청을 닫는다(일지는 요약 전으로, #398). AI 를 부르는 동안에는 잠그지 않는다. Gate 1 결정과 같은 순서라 교착이 없다 — 아이 행을 먼저 잡으면 Gate 1 과 서로 기다린다 |
 | 인사이트 단건 열람 (G-36 · O-51) | `child` **FOR SHARE** → `sharing_history`(열람 시각 UPDATE 의 행 잠금). 잠글 아이는 `child_id` 값만 골라 알고, 권한 행은 잠근 뒤에 처음 읽는다. 철회·Gate 2 승인과는 줄을 서고 열람끼리는 `child` 에서 막지 않는다 — 같은 권한 행의 UPDATE 끼리만 기다린다 (§9.4) |
 | 돌봄 정보 저장 (G-13) | `child`. 잠근 뒤 보호자 연결·아이 삭제를 보고 덮어쓴다. 첫 저장이 겹쳐 행이 둘 생기지 않고, 연결 해제가 먼저 반영되면 403 이며 돌봄 정보는 생기지도 바뀌지도 않는다 |
-| 초대 코드 수락 (G-04) | `child` → `child_organization` → `invitation` → `child_guardian`. 연결한 뒤 그 아이의 **승인된 인사이트 권한**(`sharing_history`)을 이 보호자에게 열거나 되살린다(§9.4). Gate 2 승인도 `child` 를 잠근 뒤 보호자 목록을 읽으므로 둘이 겹쳐도 어느 쪽이 먼저든 한 번만, 빠짐없이 열린다 |
+| 초대 코드 수락 (G-04) | `users` **FOR SHARE** → `child` → `child_organization` → `invitation` → `child_guardian`. 회원 행을 잠근 뒤 탈퇴 여부 · 진행 여부를 본다 — 탈퇴 정리(`users` FOR UPDATE)와 줄을 서고 같은 회원의 수락끼리는 막지 않는다. 수락이 먼저면 탈퇴가 새 연결까지 끊고, 탈퇴 접수가 먼저면 수락은 `409 WITHDRAWAL_IN_PROGRESS` 다. 연결한 뒤 그 아이의 **승인된 인사이트 권한**(`sharing_history`)을 이 보호자에게 열거나 되살린다(§9.4). Gate 2 승인도 `child` 를 잠근 뒤 보호자 목록을 읽으므로 둘이 겹쳐도 어느 쪽이 먼저든 한 번만, 빠짐없이 열린다 |
 | 준비물·확인사항 확인 (G-51) | `child` **FOR SHARE** → `checklist` **FOR SHARE** → `checklist_target`(확인 UPDATE 의 행 잠금). 아이 · 요청 행은 잠그면서 처음 읽는다. 아이 행을 잡은 뒤 삭제 · 보호자 연결을 본다 — 연결 해제(G-05 · O-19, `child` FOR UPDATE)가 먼저면 403 이고 확인은 남지 않으며, 확인이 먼저면 해제는 확인이 커밋된 뒤 진행된다. 내리기(O-72)는 `checklist` 하나를 조건부 UPDATE 로 바꾸므로 요청 행의 공유 잠금과 줄을 선다 — 내리기가 먼저면 확인은 404, 확인이 먼저면 내리기는 확인이 커밋된 뒤 내린다 (§5.9) |
+| 회원 탈퇴 접수 · 정리 (§4.1) | 접수는 `users` 하나. 정리는 `users` → 연결된 아이마다 **아이 id 순서로** 보호자 연결 해제(`child` → `child_organization_request` → `child_guardian`). 연결 목록은 `users` 를 잠근 **뒤에** 읽는다 — 그 뒤 초대 수락이 새 연결을 만들지 못한다. 아이 id 순서라 같은 아이들을 둔 두 보호자가 동시에 탈퇴해도 서로 기다리다 멈추지 않는다 |
 | 보호자 일지 상세 (G-21) | `child` **FOR SHARE**. 잠근 뒤 보호자 연결·아이 삭제를 본다. 승인본(`child_context`)은 고치지 않는 테이블이라 잠그기 전에 읽어 아이 id 를 안다. 연결 해제와 줄을 서고(해제가 먼저면 404, 열람이 먼저면 200 뒤 해제) 열람끼리는 막지 않는다. 일지 목록(G-20)은 잠그지 않는다 |
+
+**회원 탈퇴 실행은 PostgreSQL 세션 advisory lock 으로 한 줄로 세운다.** 행 잠금이 아니라 카카오 호출까지 감싸는
+잠금이다. bigint 키 하나짜리 `pg_try_advisory_lock(bigint)` 에 `users.id` 를 그대로 넣는다 — **bigint 키 하나짜리 공간은
+회원 탈퇴 전용**이다. 다른 용도로 advisory lock 이 필요하면 integer 두 개짜리를 쓰고 첫 인자를 용도 번호로 쓴다(두 공간은
+겹치지 않는다). 잠근 물리 연결을 처리가 끝날 때까지 빌려 두고 같은 연결로 풀며, 풀지 못하면 그 연결을 풀에 돌려주지 않고
+버린다(`AdvisoryWithdrawalLocks`). H2(로컬 개발 · 테스트)에는 이 함수가 없어 한 프로세스 안 잠금을 쓴다(`app.withdrawal.lock: auto`).
 
 **잠그기 전에 같은 행을 엔티티로 읽지 않는다.** JPA 는 이미 읽어 둔 엔티티가 있으면 잠금 조회(`findByIdForUpdate`)가
 행을 잠그기만 하고 그 낡은 엔티티를 그대로 돌려준다. 그 엔티티의 상태를 바꾸면 모든 컬럼을 UPDATE 하므로, 그사이
@@ -608,13 +618,16 @@ NULL끼리 겹치는 것을 허용하므로, 해제된 행은 번호를 놓아 �
 | Column | Type | NULL | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | N | PK |
-| `kakao_id` | VARCHAR(50) | N | 카카오 회원번호. UNIQUE. 개발용 로그인(`DEV_LOGIN_ENABLED`)으로 만든 테스트 회원은 `dev:{이름}` (실제 카카오 회원번호는 숫자뿐이라 겹치지 않음) |
-| `name` | VARCHAR(100) | Y | 카카오 닉네임. 사용자가 동의를 거부할 수 있어 NULL 허용 |
+| `kakao_id` | VARCHAR(50) | N | 카카오 회원번호. UNIQUE. 개발용 로그인(`DEV_LOGIN_ENABLED`)으로 만든 테스트 회원은 `dev:{이름}` (실제 카카오 회원번호는 숫자뿐이라 겹치지 않음). **탈퇴를 마치면 `withdrawn:{id}`** 로 바꾼다 — 원래 값과 관계없어 되찾을 수 없다 |
+| `name` | VARCHAR(100) | Y | 카카오 닉네임. 사용자가 동의를 거부할 수 있어 NULL 허용. 탈퇴를 마치면 `탈퇴한 회원` |
 | `role` | VARCHAR(20) | **Y** | 역할. **NULL이면 "가입 미완료" 상태** (9.23 변경 — 이전엔 NOT NULL) |
 | `organization_id` | BIGINT | Y | 소속 기관. `role = ORGANIZATION`일 때만 |
 | `created_at` | DATETIME | N |  |
 | `updated_at` | DATETIME | N |  |
 | `deleted_at` | DATETIME | Y | **탈퇴 표시.** NULL이면 활성 계정 |
+| `withdrawal_status` | VARCHAR(20) | Y | 진행 중인 탈퇴의 단계. NULL이면 진행 중인 탈퇴가 없음 (아래 "탈퇴") |
+| `withdrawal_requested_at` | DATETIME | Y | 탈퇴 접수 시각 |
+| `kakao_unlink_attempted_at` | DATETIME | Y | 카카오 연결 해제를 부르기 **직전**에 남긴 시각. 값이 있으면 이전 호출이 카카오에서 성공했을 수 있다 |
 
 **`role`**
 
@@ -648,8 +661,58 @@ PARENT
 한 사람은 한 기관에만 속한다. 그래서 중간 테이블 없이 `organization_id` 컬럼 하나로 둔다.
 
 **`deleted_at`** — 탈퇴한 보호자가 남긴 `child_guardian` · `sharing_consent` · `human_review.reviewer_id`가
-존재하지 않는 `users` 행을 가리키지 않도록 행을 남긴다. 재가입은 §3.3 의 복구 규칙을 따른다.
-로그인·세션 조회(`/api/v1/auth/me`)는 `deleted_at IS NULL`인 사용자만 인정한다.
+존재하지 않는 `users` 행을 가리키지 않도록 행을 남긴다. 대신 카카오 회원번호와 이름을 지운다(카카오 정책상 회원번호도
+파기 대상이다). 로그인·세션 조회(`/api/v1/auth/me`)는 `deleted_at IS NULL`인 사용자만 인정하고, 탈퇴한 회원의 출입증은
+`401 ACCOUNT_WITHDRAWN` 이다(없는 회원은 `401 SESSION_USER_NOT_FOUND`).
+
+#### 탈퇴 — ✅ 구현 (`WithdrawalService` · `WithdrawalExecutor`)
+
+보호자와 가입을 마치지 않은 사람만 탈퇴할 수 있다(`DELETE /api/v1/auth/me`). 기관 담당자는 기관에 남은 명부 · 일지를
+어떻게 할지 정하지 않아 막는다(`403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED`).
+
+**`withdrawal_status`**
+
+```
+REQUESTED        접수. 카카오 연결 해제가 끝났는지 모른다
+KAKAO_UNLINKED   카카오 해제 확정. 아이 연결 정리와 식별정보 삭제가 남았다
+```
+
+```
+접수(요청 트랜잭션) : users 잠금 → 기관 403 · 이미 탈퇴 401 · 이미 접수 409 → REQUESTED,
+                      kakao_unlink_attempted_at = NULL (다시 신청하면 새로운 첫 호출)
+실행기(회원마다 advisory lock 하나로 감쌈, §3.3)
+  ① 상태를 다시 읽는다. KAKAO_UNLINKED 면 ④로. 카카오 계정이 아니면(dev:) 바로 KAKAO_UNLINKED.
+     REQUESTED 면 kakao_unlink_attempted_at 이 원래 비어 있었는지(첫 호출인지) 기억하고 지금 시각을 쓴 뒤 커밋
+  ② 카카오 POST /v1/user/unlink (서비스 앱 어드민 키)
+  ③ 결과: 200 · 400 -101(이미 끊김) → KAKAO_UNLINKED
+          분명한 오류 + 첫 호출 → 접수 취소(상태 NULL). 회원은 그대로
+          분명한 오류 + 이전 호출 있음 · 타임아웃 · 5xx · -1 · -7 · -10 → REQUESTED 유지, 다시 시도
+  ④ DB 정리(한 트랜잭션): users 잠금 → 연결된 아이를 id 순서로 연결 해제(내 동의 · 인사이트 열람 권한 ·
+     대기 중 기관 연결 요청도 거둠, §5.4) → kakao_id = withdrawn:{id}, name = 탈퇴한 회원, deleted_at,
+     상태 NULL. 실패하면 KAKAO_UNLINKED 로 남아 이 단계만 다시 한다(카카오는 다시 부르지 않는다)
+```
+
+- **카카오는 실행기 하나만 부른다.** 요청은 접수만 하고 실행기를 깨운다. 주기 작업(1분)이 결과를 몰랐거나 정리가 실패한
+  탈퇴를 다시 세운다. 시간이 지났다고 다른 실행이 넘겨받지 않는다 — 잠금으로만 한 줄로 선다.
+- 탈퇴를 처리하는 중인 회원은 `/auth/me` · 로그아웃 · 탈퇴 외의 보호 API 에서 `409 WITHDRAWAL_IN_PROGRESS` 다. 가입 확정 ·
+  약관 동의 · 초대 수락은 회원 행을 잠근 뒤 다시 본다. 이 상태에서 카카오 로그인하면 출입증은 주지만 새 회원을 만들거나
+  이름을 바꾸지 않는다.
+- **다시 오면 새 회원이다.** 탈퇴를 마친 행은 회원번호가 지워져 찾지 못하므로 같은 카카오 계정으로 오면 새 행이 생기고 가입 ·
+  약관 동의를 처음부터 한다. 옛 출입증은 옛 id 를 담고 있어 재가입 뒤에도 401 이다. 약관 기록도 새 id 로 쌓여 겹치지 않는다.
+- **옛 방식 탈퇴 행** — 카카오 회원번호를 남긴 채 `deleted_at` 만 찍힌 행(이 구현 전)은 그 사람이 다시 로그인할 때 식별정보를
+  지우고 새 회원을 만든다(`LoginUserTransactionService`). 되살리지 않는다.
+- 남기는 것: 체크리스트 확인 기록, 돌봄 정보, 약관 동의 기록, 지난 동의 이력. 같은 기관에 다른 보호자의 동의가 남아 있으면
+  그 기관 공유는 계속된다.
+- **남는 위험.** 실행기가 DB 연결을 잃으면 세션이 닫히며 잠금이 풀린다. 그 실행기가 살아 있는 채 멈췄다가 나중에 다시 돌면,
+  그 사이 다른 실행이 탈퇴를 끝내고 사용자가 재가입했을 수 있다. 그러면 새 가입의 카카오 연결을 끊을 수 있다. 카카오가 우리
+  처리 번호를 확인해 주지 않아 막을 수 없고 시간 상한도 없다. 영향은 다음 카카오 로그인 때 동의를 다시 하는 것이다.
+- **카카오 쪽에서 먼저 연결을 끊은 경우**(연결된 서비스 관리 · 카카오계정 탈퇴 · 고객센터 등) 카카오가 연결 해제 웹훅을 보낸다
+  (`GET|POST /api/v1/webhooks/kakao/unlink`, 헤더 `Authorization: KakaoAK {대표 어드민 키}`). 우리가 연결 해제 API 로 끊은
+  경우에는 오지 않는다. 보호자 · 가입 전 회원은 접수와 함께 바로 `KAKAO_UNLINKED` 로 두고 DB 정리만 한다 — 카카오를 다시
+  부르면, 그 사이 다시 로그인해 생긴 새 연결을 끊을 수 있다. 이미 처리 중이면 실행기에 다시 세운다(카카오가 `-101` 로 답한다).
+  **기관 담당자는 계정을 남긴다** — 기관 탈퇴를 지원하지 않는다. 다시 카카오로 로그인하면 연결된다. 카카오는 다시 보내 주지
+  않고 늘 `200` 을 바라므로, 회원이 없거나 처리에 실패해도 `200` 이고 실패는 오류 로그로 남긴다(`KakaoUnlinkWebhookService`).
+- 내부 회원 행 · 동의 이력을 탈퇴 뒤에도 남기는 근거 확인이 남았다 — 실서비스에서 탈퇴를 열기 전 조건이다.
 
 ### 4.2 `organization` ✅
 
@@ -2854,6 +2917,15 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 
 기존 기관의 `code` 는 NULL 로 두면 된다. 기관 담당자가 내 기관 정보를 처음 열 때 채워진다(§4.2).
 
+**회원 탈퇴 배포 전 확인.** 새 컬럼 셋은 NULL 허용이라 `ddl-auto` 가 만든다(`withdrawal_status` 의 CHECK 도 새 컬럼과 함께
+생긴다). 옛 방식으로 탈퇴 표시만 되고 카카오 회원번호가 남은 행이 있는지 본다. 코드 · 스크립트 어디서도 `users.deleted_at` 을
+채운 적이 없어 0건일 것으로 본다. 0건이면 결과만 PR 에 남기고, 있으면 카카오 연결 해제 뒤 식별정보를 지운다(그 사람이 다시
+로그인하면 앱도 지운다, §4.1). 운영 서버 `.env` 에 `KAKAO_ADMIN_KEY` 도 넣는다.
+
+```sql
+SELECT count(*) FROM users WHERE deleted_at IS NOT NULL AND kakao_id NOT LIKE 'withdrawn:%';
+```
+
 **Gate 1 (#178) 배포 전 확인** — 셋 다 enum 값이 늘었다.
 
 ```
@@ -2988,3 +3060,5 @@ ALTER TABLE organization ADD CONSTRAINT uk_organization_code UNIQUE (code);
 | 2026-11-07 | `insight_result` 에 `looked_up_claim_ids` 추가 (§9.3, NULL 허용) — AI 가 같은 아이의 지난 기록(이번 기간 앞 12주치 승인 요약, 동의 기관만, 최대 200개)에서 찾아 근거로 쓴 claim 이다 (#387). Gate 2 근거에 "지난 기록" 으로 표시한다. 저장할 때 BE 가 인용된 claim(`claim_ids`·`supports`·`looked_up_claim_ids`)의 기관을 `source_institution_ids` 에 직접 더한다 — 동의 확인과 철회 때 권한 거두기가 이 값만 보므로 AI 출력에 맡기지 않는다. 컬럼 추가라 `ddl-auto: update` 가 만들고 §11.4 수동 조치 불필요 | #387 |
 | 2026-11-07 | 요약 결과를 남길 때(저장 · 요약 실패 · 시스템 오류) 그 묶음의 요약 행 → 아이 행을 잠근 뒤 동의를 본다 — 동의 철회가 먼저 커밋됐으면 요약을 저장하지 않는다(멘토 8차 리뷰 P2). 잠금 순서 표(§3.3)에 추가, Gate 1 결정과 같은 순서. 컬럼 · 제약 변경 없음, §11.4 수동 조치 불필요 | #398 |
 | 2026-11-08 | 업로드 · AI 처리 줄 상한. `journal_entry.failure_stage` 에 `MATCHING`, `failure_reason` 에 `CONTENT_TOO_LONG` 추가 (§6.2 "실패 상태와 원인 코드") — 상한(5,000자) 전에 올라온 긴 일지를 AI 에 보내지 않고 멈춘다. AI 처리 줄에 들어오는 작업(업로드 · O-23 assign · O-25 revise · O-31 `revert` · O-36)이 `organization` 행을 마지막에 잠그고 처리 중 · 대기 일지를 센다 (§3.3 잠금 순서). 업로드는 원본 행과 일지를 한 트랜잭션에 저장한다. 컬럼 · 제약 추가 없음. **enum 값 추가라 §11.4 수동 조치 필요** — 두 CHECK DROP | #424 |
+| 2026-11-09 | 회원 탈퇴. `users` 에 `withdrawal_status`(`REQUESTED` · `KAKAO_UNLINKED`) · `withdrawal_requested_at` · `kakao_unlink_attempted_at` 추가 (§4.1, 모두 NULL 허용). 탈퇴를 마치면 `kakao_id` = `withdrawn:{id}`, `name` = `탈퇴한 회원` 으로 지우고, 같은 카카오 계정으로 오면 되살리지 않고 새 회원을 만든다(§3.3 복구 규칙에서 `users.kakao_id` 를 뺌). 잠금 순서 맨 앞에 `users`, 탈퇴 실행의 advisory lock 키 규칙 추가(§3.3). 배포 전 옛 탈퇴 행 확인(§11.4) | 미생성 |
+| 2026-11-09 | 카카오 연결 해제 웹훅 (§4.1 "탈퇴"). 카카오 쪽에서 먼저 연결이 끊긴 보호자 · 가입 전 회원은 카카오를 다시 부르지 않고 `KAKAO_UNLINKED` 로 접수해 DB 정리만 한다. 기관 담당자는 남긴다. 스키마 변경 없음 | 미생성 |

@@ -124,14 +124,16 @@ HTTP/1.1 404 Not Found
 - 카카오 로그인은 외부 신원 확인 수단이며, 서비스 회원·역할·권한의 기준은 내부 DB다.
 - 카카오 사용자 ID는 내부 회원(`users.kakao_id`)에 연결된다. 역할은 `PARENT`와 `ORGANIZATION`이 구현돼 있고 `ADMIN`은 아직 없다.
 - **역할은 회원가입(`POST /api/v1/auth/signup`)에서 사용자가 직접 정한다.** 카카오 로그인은 신원 확인만 하고, 처음 로그인한 사람은 역할 없는(`users.role = NULL`) 가입 미완료 회원으로 등록된다. 기관 담당자는 가입할 때 기관명·유형·사업자등록번호를 입력하고, 그 자리에서 기관이 만들어진다(기관 1곳당 계정 1개). 역할은 한 번 정해지면 바뀌지 않으며, 다시 가입을 요청하면 `409 ALREADY_SIGNED_UP`, 이미 등록된 사업자등록번호면 `409 DUPLICATE_BUSINESS_NUMBER`다. 기관이 만들어질 때 보호자에게 알려 줄 기관 코드도 함께 생긴다(코드가 동시에 겹치면 `503 INSTITUTION_CODE_ISSUE_FAILED`, 다시 보내면 된다).
-- 가입 미완료 회원은 `/api/v1/auth/me` · `/api/v1/auth/signup` · `/api/v1/auth/logout` · `/api/v1/dev/login` 외의 API에서 `403 SIGNUP_NOT_COMPLETED`로 막힌다. 보안 필터 한 곳에서 확인하므로 새 API에도 자동으로 적용된다. `/auth/me`는 가입 미완료를 `401`이 아니라 `signupCompleted: false`로 알려준다.
-- 보호 API의 가입 확인 필터는 존재하지 않거나 탈퇴한 회원의 JWT를 `401 SESSION_USER_NOT_FOUND`로 즉시 차단한다. 각 API가 회원 서비스를 호출하는지와 관계없이 적용되며, 활성 가입 미완료 회원의 `403`과 구분한다. 데이터베이스 장애 등 예상하지 못한 조회 오류는 필터에서 `500 INTERNAL_SERVER_ERROR` JSON으로 응답하고 인증 쿠키는 유지한다.
+- 가입 미완료 회원은 `/api/v1/auth/me`(조회와 탈퇴) · `/api/v1/auth/signup` · `/api/v1/auth/logout` · `/api/v1/dev/login` 외의 API에서 `403 SIGNUP_NOT_COMPLETED`로 막힌다. 보안 필터 한 곳에서 확인하므로 새 API에도 자동으로 적용된다. `/auth/me`는 가입 미완료를 `401`이 아니라 `signupCompleted: false`로 알려준다.
+- 보호 API의 가입 확인 필터는 존재하지 않는 회원의 JWT를 `401 SESSION_USER_NOT_FOUND`, 탈퇴를 마친 회원의 JWT를 `401 ACCOUNT_WITHDRAWN`으로 즉시 차단한다. 탈퇴를 처리하는 중인 회원은 가입 · 약관 확인보다 먼저 `409 WITHDRAWAL_IN_PROGRESS`로 막는다. 각 API가 회원 서비스를 호출하는지와 관계없이 적용되며, 활성 가입 미완료 회원의 `403`과 구분한다. 데이터베이스 장애 등 예상하지 못한 조회 오류는 필터에서 `500 INTERNAL_SERVER_ERROR` JSON으로 응답하고 인증 쿠키는 유지한다.
 - **개발용 로그인(`GET /api/v1/dev/login?as=`)은 `app.auth.dev-login.enabled=true`(`DEV_LOGIN_ENABLED`)일 때만 존재한다.** 카카오 대신 `dev:{as}`를 `users.kakao_id`로 써서 같은 회원 찾기·생성과 출입증 쿠키 발급을 거친다. 꺼져 있으면 `404`다. 기본값은 꺼짐이고, 배포 서버는 테스트용으로 Compose가 켜 둔다. 정식 오픈 전에는 끈다. 형식은 [API 명세 §2.4.1](api-spec.md#241-개발용-로그인--개발테스트-전용)을 따른다.
 - 같은 카카오 계정으로 최초 로그인이 동시에 들어오면 회원은 한 번만 생성하고 두 요청 모두 같은 내부 회원 ID를 사용한다. 카카오 ID 유니크 제약 경합에 한해 롤백 후 새 트랜잭션에서 기존 회원을 한 번 조회한다.
 - **JWT의 subject는 내부 `userId`다.** 카카오 회원번호가 아니다. 역할과 소속 기관은 토큰에 담지 않고 요청마다 DB에서 읽는다 — 값이 바뀌면 다음 요청부터 바로 반영되고, 토큰에 박힌 옛 값이 남지 않는다.
 - 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다. 기관 전용 API를 기관 소속이 아닌 회원이 호출하면 `403 ORGANIZATION_NOT_ASSIGNED`다.
-- **탈퇴는 행을 지우지 않고 `users.deleted_at`에 표시한다(soft delete).** 탈퇴한 회원의 출입증은 만료 전이어도 인정하지 않는다. 같은 카카오 계정으로 다시 로그인하면 새 회원을 만들지 않고 기존 행을 되살린다(`kakao_id` 유니크 제약 때문).
-- 토큰 서명은 유효하지만 그 회원이 DB에 없거나 탈퇴했으면 `404`가 아니라 `401 SESSION_USER_NOT_FOUND`다. 자격 증명이 더 이상 누구도 가리키지 못하는 상태라 다시 로그인해야 하고, 프론트도 `401`을 "역할 없음 → 로그인 화면"으로 해석한다.
+- **회원 탈퇴(`DELETE /api/v1/auth/me`)는 행을 지우지 않고 `users.deleted_at`에 표시하되, 카카오 회원번호와 이름은 지운다.** 보호자와 가입 미완료 회원만 할 수 있다(기관 담당자 `403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED`). 카카오 연결 해제(서비스 앱 어드민 키)는 서버의 탈퇴 실행기 하나만 부른다. 몇 초 안에 끝나면 `204`와 쿠키 삭제, 아니면 `202`(본문 `withdrawal: "in_progress"`), 이미 접수돼 있으면 `409 WITHDRAWAL_IN_PROGRESS`, 첫 카카오 호출이 분명히 실패해 접수를 취소했으면 `502 KAKAO_UNLINK_FAILED`(회원은 그대로)다. 탈퇴를 처리하는 중이면 `/auth/me`의 `withdrawal`이 `in_progress`다. 자세한 흐름은 [DB 스키마 §4.1 "탈퇴"](../db/schema.md#41-users-)를 따른다.
+- **카카오 연결 해제 웹훅(`GET|POST /api/v1/webhooks/kakao/unlink`)은 로그인 · CSRF 대신 `Authorization: KakaoAK {대표 어드민 키}` 헤더로 검증한다.** 맞지 않으면 `401 KAKAO_WEBHOOK_UNAUTHORIZED`, 맞으면 회원이 없거나 처리에 실패해도 `200`이다(카카오 규칙). 카카오 쪽에서 먼저 연결이 끊긴 보호자 · 가입 미완료 회원은 카카오를 다시 부르지 않고 탈퇴 정리로 넘기고, 기관 담당자는 남긴다.
+- **탈퇴한 사람이 같은 카카오 계정으로 다시 로그인하면 새 회원이다.** 기존 행을 되살리지 않는다 — 가입 · 약관 동의를 처음부터 하고, 옛 출입증은 재가입 뒤에도 `401 ACCOUNT_WITHDRAWN`이다.
+- 토큰 서명은 유효하지만 그 회원이 DB에 없으면 `404`가 아니라 `401 SESSION_USER_NOT_FOUND`, 탈퇴를 마쳤으면 `401 ACCOUNT_WITHDRAWN`이다. 자격 증명이 더 이상 누구도 가리키지 못하는 상태라 다시 로그인해야 하고, 프론트도 `401`을 "역할 없음 → 로그인 화면"으로 해석한다. 탈퇴 안내 화면만 `ACCOUNT_WITHDRAWN`을 "탈퇴가 끝났다"로 보여 주고, 그 밖의 `401`은 완료로 보지 않는다.
 - **응답 본문의 PK는 문자열로 직렬화한다.** DB의 `BIGINT`를 그대로 내리면 클라이언트 쪽에서 정밀도가 깎일 수 있다. (AI 연동 경로는 정수 그대로 주고받는다.)
   `"child_1"` 같은 접두사는 붙이지 않고 `"1"`처럼 숫자만 문자열로 내린다. 요청 본문의 ID는 문자열(`"1"`)과 숫자(`1`)를 모두 받는다.
   현재 구현의 예외: `RawRecord`의 `id`와 확인 필요 큐 항목의 `journalEntryId`는 숫자로 나간다.

@@ -91,13 +91,15 @@ GET /api/v1/auth/me
 | `institutionId` | string | 아니오 | `role === "org"`일 때만 |
 | `institutionName` | string | 아니오 | `role === "org"`일 때만. 가입 때 입력한 기관명입니다 (#236) |
 | `termsAgreed` | boolean | 예 | 자기 역할의 서비스 약관(통과로 치는 판)에 동의했는지 (§2.5). `false`면 프론트는 보호자를 약관 단계(`/parent/invite`)로, 기관을 기관 약관 화면(`/org-terms`)으로 보냅니다. 가입 미완료는 `false` |
+| `withdrawal` | `"none"` \| `"in_progress"` | 예 | 탈퇴를 처리하는 중이면 `in_progress` (§2.7). 프론트는 가입 · 약관 · 아이 목록보다 먼저 이 값을 보고 탈퇴 안내 화면(`/withdrawal`)으로 보냅니다 |
 
 **프론트는 가입 여부를 `signupCompleted`만 보고 분기합니다.** `role`이 없다고 로그인 화면으로 보내면
 안 됩니다 — 가입 미완료는 정상 상태입니다.
 
 비로그인 요청에는 `401`을 반환합니다. 프론트는 `401`을 "다시 로그인"으로 해석해
 로그인 화면으로 보냅니다. 출입증이 유효하더라도 그 회원이 DB에 없거나 탈퇴했으면(예: subject를
-내부 `userId`로 바꾸기 전에 발급된 토큰) 마찬가지로 `401`(`SESSION_USER_NOT_FOUND`)입니다.
+내부 `userId`로 바꾸기 전에 발급된 토큰) 마찬가지로 `401`(`SESSION_USER_NOT_FOUND`)입니다. 탈퇴를 마친 회원이면
+`401`(`ACCOUNT_WITHDRAWN`)입니다 — 탈퇴 안내 화면은 이 코드일 때만 "탈퇴가 끝났다"고 보여 줍니다.
 
 ### 2.3 로그아웃
 
@@ -329,6 +331,50 @@ POST /api/v1/auth/signup   → 201 Created
 | 409 | `DUPLICATE_BUSINESS_NUMBER` | 이미 등록된 사업자등록번호 | "이미 등록된 사업자등록번호입니다" 표시, 재입력 유도 |
 
 ---
+
+### 2.7 회원 탈퇴
+
+```http
+DELETE /api/v1/auth/me   → 204 No Content | 202 Accepted
+```
+
+> **구현 완료.** 쓰기 요청이므로 `X-XSRF-TOKEN` 헤더가 필요합니다. 가입 · 약관 동의 전에도 부를 수 있습니다.
+
+보호자와 가입을 마치지 않은 사람만 탈퇴할 수 있습니다. 서버가 카카오 연결을 끊고, 연결된 아이와의 연결 · 내 공유 동의 ·
+인사이트 열람 권한 · 기다리던 기관 연결 요청을 거둔 뒤, 카카오 회원번호와 이름을 지우고 탈퇴 표시를 합니다. 같은 기관에 다른
+보호자의 동의가 남아 있으면 그 기관 공유는 계속됩니다. 같은 카카오 계정으로 다시 로그인하면 새 회원으로 가입부터 합니다.
+
+| 응답 | 언제 |
+| --- | --- |
+| `204` + 쿠키 삭제 | 몇 초 안에 끝까지 마쳤음 (서버가 `deleted_at`을 확인한 경우만) |
+| `202` `{ "withdrawal": "in_progress" }` | 접수했고 처리 중. 서버가 이어서 끝냅니다 — `/auth/me`의 `withdrawal`로 진행을 보고, 끝나면 `/auth/me`가 `401 ACCOUNT_WITHDRAWN` |
+| `409 WITHDRAWAL_IN_PROGRESS` | 이미 접수돼 있음 |
+| `403 ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED` | 기관 담당자 |
+| `401 ACCOUNT_WITHDRAWN` | 이미 탈퇴함 |
+| `502 KAKAO_UNLINK_FAILED` | 카카오 연결 해제 첫 호출이 분명히 실패해 접수를 취소함. 회원은 그대로 |
+
+탈퇴를 처리하는 동안은 `/auth/me` · 로그아웃 외의 보호 API가 `409 WITHDRAWAL_IN_PROGRESS`입니다. 처리 흐름과 동시성 규칙은
+[DB 스키마 §4.1 "탈퇴"](../db/schema.md#41-users-)를 봅니다.
+
+#### 2.7.1 카카오 연결 해제 웹훅 — 카카오가 부름
+
+```http
+GET|POST /api/v1/webhooks/kakao/unlink?app_id=&user_id=&referrer_type=   → 200
+Authorization: KakaoAK {대표 어드민 키}
+```
+
+> **구현 완료.** 프론트가 부르지 않습니다. 사용자가 카카오 쪽(연결된 서비스 관리 · 카카오계정 탈퇴 · 고객센터 등)에서 먼저 앱
+> 연결을 끊으면 카카오가 부릅니다. 로그인 쿠키 · CSRF 토큰 없이 들어오고, 어드민 키 헤더로 검증합니다(맞지 않으면
+> `401 KAKAO_WEBHOOK_UNAUTHORIZED`). POST 는 폼(`application/x-www-form-urlencoded`)으로 같은 파라미터를 보냅니다.
+
+| 파라미터 | 설명 |
+| --- | --- |
+| `app_id` | 카카오 앱 ID. 서버에 `KAKAO_APP_ID` 가 있으면 같아야 하고, 다르면 무시합니다 |
+| `user_id` | 카카오 회원번호 (`users.kakao_id`) |
+| `referrer_type` | 끊긴 경로 (`UNLINK_FROM_APPS` · `ACCOUNT_DELETE` · `FORCED_ACCOUNT_DELETE` · `UNLINK_FROM_ADMIN` · `INCOMPLETE_SIGN_UP`). 로그에만 씁니다 |
+
+보호자 · 가입 전 회원은 §2.7 과 같이 탈퇴합니다 — 카카오는 이미 끊겼으므로 다시 부르지 않습니다. 기관 담당자는 계정을 남깁니다.
+카카오 규칙대로 3초 안에 답하고, 회원이 없거나 처리에 실패해도 `200` 입니다(카카오는 다시 보내지 않습니다).
 
 ## 3. 공통 모델
 
@@ -2214,6 +2260,11 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | `ALREADY_SIGNED_UP` | 409 | 이미 가입 완료 → `/auth/me` 재조회 후 역할별 홈으로 이동 (§2.6) |
 | `DUPLICATE_BUSINESS_NUMBER` | 409 | "이미 등록된 사업자등록번호입니다" (§2.6) |
 | `TERMS_NOT_AGREED` | 403 | 자기 역할의 약관에 동의하지 않은 회원(보호자 · 기관 담당자)이 `/auth/me` · `/auth/terms` · `/auth/logout` · 약관 본문 외 API 호출 → 그 역할의 약관 화면으로 이동 (§2.5) |
+| `ACCOUNT_WITHDRAWN` | 401 | 탈퇴를 마친 회원의 출입증. 탈퇴 안내 화면은 "탈퇴가 끝났어요", 다른 화면은 일반 401 처럼 로그인 화면으로 (§2.2 · §2.7) |
+| `WITHDRAWAL_IN_PROGRESS` | 409 | 탈퇴를 처리하는 중 — `/auth/me` · 로그아웃 외 API, 탈퇴 재신청 → 탈퇴 안내 화면으로 (§2.7) |
+| `ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED` | 403 | "기관 계정은 아직 탈퇴할 수 없어요." (§2.7) |
+| `KAKAO_WEBHOOK_UNAUTHORIZED` | 401 | 카카오 연결 해제 웹훅의 어드민 키가 맞지 않음 — 카카오가 보낸 요청이 아님 (§2.7.1) |
+| `KAKAO_UNLINK_FAILED` | 502 | "카카오 연결을 끊지 못해 탈퇴하지 못했어요. 잠시 뒤 다시 해 주세요." 회원은 그대로 (§2.7) |
 | `TERMS_VERSION_CHANGED` | 409 | 동의 요청의 `versions` 가 지금 판과 다름 — 화면을 연 뒤 약관이 바뀜 → 약관을 다시 받아 다시 확인 (§2.5) |
 | `INSTITUTION_CODE_NOT_FOUND` | 404 | "일치하는 기관을 찾지 못했어요. 코드를 다시 확인해주세요." (G-43 조회 · G-44 요청) |
 | `INSTITUTION_ALREADY_LINKED` | 409 | "이미 연결된 기관이에요." (G-44 요청 · O-61 수락) |
