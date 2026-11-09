@@ -25,6 +25,8 @@ test("기관 담당자가 파일을 올리면 세 단계를 거쳐 올린 파일
     mimeType: "text/plain",
     buffer: Buffer.from("2026-11-10\n오후 미술 활동에 끝까지 참여했어요.\n", "utf-8"),
   });
+  // 고른 뒤 확인 창에서 [올리기] 를 눌러야 보낸다 (#489). 전체 목록과 이름을 맞춰 본 뒤에야 눌린다
+  await page.getByRole("dialog", { name: "파일 1개를 올릴까요?" }).getByRole("button", { name: "올리기" }).click();
 
   expect((await issued).status()).toBe(201);
   expect((await put).status()).toBe(200);

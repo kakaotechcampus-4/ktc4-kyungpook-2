@@ -62,6 +62,7 @@ cd infra/docker && docker compose up -d --build
 | `parent-connect` | 보호자가 그 코드로 연결 → 공유 동의 → 보호자 홈에 그 아이가 보인다 |
 | `ai-down` | AI 서버가 꺼져 있으면 기관 화면에 "AI 서버를 점검하고 있어요" 안내가 보인다 |
 | `upload-confirm` | 파일을 고르면 확인 창이 뜨고, 취소하면 안 올라가고, 같은 이름 파일을 다시 고르면 경고가 보인다 |
+| `upload` | 파일을 올리면 업로드 주소 받기 → 본문 올리기 → 완료 세 단계가 모두 성공하고 올린 파일 목록에 보인다 (#451). E2E 백엔드엔 S3 가 없어 BE 의 로컬 경로로 올린다 |
 
 ```bash
 npx playwright install chromium   # 처음 한 번
