@@ -30,7 +30,7 @@ test("보호자가 초대 코드로 연결하고 동의하면 보호자 홈에 �
 
   // 3/3 공유 동의
   await expect(page).toHaveURL(/\/parent\/consent/);
-  await page.getByRole("checkbox", { name: new RegExp(`${orgName} 공유에 동의합니다`) }).check();
+  await page.getByRole("checkbox", { name: `${orgName} 공유에 동의합니다` }).check();
   await page.getByRole("button", { name: "동의하고 시작하기" }).click();
 
   // 보호자 홈

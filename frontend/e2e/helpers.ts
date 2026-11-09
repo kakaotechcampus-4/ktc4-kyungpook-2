@@ -1,4 +1,4 @@
-import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 
 /**
  * 시나리오들이 함께 쓰는 단계. 화면 문구·라벨로 찾는다 — 사람이 보는 그대로 눌러 본다는 게 이 테스트의 목적이다.
@@ -72,8 +72,10 @@ export async function signUpOrg(page: Page): Promise<string> {
   return orgName;
 }
 
-/** 기관 화면에서 아이를 등록하고, 보호자 초대 코드(XXXX-XXXX 그대로)와 아이 이름을 돌려준다 */
-export async function registerChild(page: Page): Promise<{ childName: string; inviteCode: string }> {
+/** 기관 화면에서 아이를 등록하고, 보호자 초대 코드(XXXX-XXXX 그대로) · 아이 이름 · 코드가 뜬 창을 돌려준다 */
+export async function registerChild(
+  page: Page,
+): Promise<{ childName: string; inviteCode: string; dialog: Locator }> {
   const suffix = uniqueSuffix();
   const childName = `김테스트${suffix.slice(-4)}`;
 
@@ -86,7 +88,8 @@ export async function registerChild(page: Page): Promise<{ childName: string; in
 
   // 등록되면 같은 창이 초대 코드 화면으로 바뀐다. 페이지 머리의 '우리 기관 코드'도 같은 모양이라 창 안에서만 찾는다
   const done = page.getByRole("dialog", { name: `${childName} 등록했어요` });
-  const code = done.getByText(INVITE_CODE);
+  // 등록 응답의 초대장은 목록이라 첫 장을 본다(보호자 한 명 몫이 하나 나온다)
+  const code = done.getByText(INVITE_CODE).first();
   await expect(code).toBeVisible();
-  return { childName, inviteCode: (await code.innerText()).trim() };
+  return { childName, inviteCode: (await code.innerText()).trim(), dialog: done };
 }
