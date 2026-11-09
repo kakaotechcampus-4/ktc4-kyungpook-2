@@ -2,7 +2,7 @@ import { Outlet, redirect, useLoaderData, type ShouldRevalidateFunctionArgs } fr
 import { ChildProvider } from "@/components/parent/ChildContext";
 import { ParentNotReady } from "@/components/parent/NotReady";
 import { getSession, rememberReturnPath } from "@/lib/auth";
-import { getGuardianInsights, getParentChildren, isReady, loadIfReady, restoreParentOnboarded } from "@/lib/api";
+import { getParentChildren, isReady, restoreParentOnboarded } from "@/lib/api";
 import { readSelectedChildId } from "@/lib/selectedChild";
 
 /**
@@ -36,12 +36,11 @@ export async function clientLoader({ request }: { request: Request }) {
   if (kids.length === 0) return redirect("/parent/invite");
   const selectedId = readSelectedChildId(kids);
   // 아직 열어 보지 않은 리포트가 있는 아이. 두 점이 이 값 하나에서 나온다 — 하단 리포트 탭(고른 아이, 셸이 아이
-  // Context 밖이라 이 loader 를 직접 읽는다)과 헤더의 아이 전환(다른 아이, Context 로 받는다)
-  const insights = await loadIfReady("guardianInsights", getGuardianInsights);
-  // "특이사항 없음" 주(quiet)는 열어 볼 상세가 없어 readAt 이 영영 비어 있다 — 세면 점이 꺼지지 않는다 (#470)
-  const unreadInsightChildIds = [
-    ...new Set((insights ?? []).filter((i) => i.kind !== "quiet" && !i.readAt).map((i) => i.childId)),
-  ];
+  // Context 밖이라 이 loader 를 직접 읽는다)과 헤더의 아이 전환(다른 아이, Context 로 받는다).
+  // 리포트 전부를 받지 않고 아이 목록의 표시로 정한다 (#457). "특이사항 없음" 주는 서버가 세지 않는다
+  const unreadInsightChildIds = isReady("guardianInsights")
+    ? kids.filter((k) => k.hasUnreadInsight).map((k) => k.id)
+    : [];
   return { kids, selectedId, unreadInsightChildIds };
 }
 
@@ -51,6 +50,9 @@ export async function clientLoader({ request }: { request: Request }) {
  * - 홈·리포트로 들어갈 때 — 머무는 동안 새 글이 승인됐으면 목록의 "새 글"과 점이 함께 보여야 한다
  * - 리포트 상세에서 나갈 때 — 방금 열어 본 시각이 남아 점이 꺼져야 한다. 설정 링크로 고른 아이도 이때 반영된다
  * 다른 탭으로 옮길 때는 읽지 않는다 — 화면마다 요청을 하나씩 더 하지 않으려는 선택이다.
+ *
+ * 다시 읽는 것은 아이 목록 하나다 (#457). 홈 · 리포트 화면도 같은 목록을 물어 응답 하나를 같이 쓴다
+ * (lib/parentChildrenCache). 상세를 열면 그 목록을 버려서 나갈 때는 새 표시를 받는다.
  */
 export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
   const isReport = (path: string) => path === "/parent/report" || path.startsWith("/parent/report/");
