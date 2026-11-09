@@ -2,9 +2,6 @@ package com.itda.backend.global.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
-/**
- * docs/api/api-conventions.md 의 성공 응답 규격 — { result, data, message }.
- */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ApiResponse<T> {
 

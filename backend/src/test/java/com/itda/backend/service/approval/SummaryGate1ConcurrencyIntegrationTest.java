@@ -61,13 +61,6 @@ import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.summary.SummaryService;
 import com.itda.backend.service.user.UserService;
 
-/**
- * Gate 1 결정이 다른 결정·요약 워커와 겹칠 때와 새 enum 값 저장을 PostgreSQL 에서 확인한다.
- *
- * <p>다른 커넥션(홀더)이 요약을 승인으로 바꾼 채 커밋하지 않고 잡아 둔다. 승인 요청이 홀더 때문에 멈췄는지
- * {@code pg_blocking_pids} 로 확인한 뒤 홀더를 커밋해, 승인이 잠금을 기다린 다음 최신 상태(승인됨)로 판단해
- * 409 를 내는지 본다. 잠그지 않고 읽으면 커밋 전 값(대기)을 보고 두 번 승인한다.
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -157,7 +150,6 @@ class SummaryGate1ConcurrencyIntegrationTest {
         try (Connection holder = dataSource.getConnection()) {
             holder.setAutoCommit(false);
             int holderPid = backendPid(holder);
-            // Gate 1 승인이 요약 행을 잠그고 일지를 완료로 바꾼 채 아직 커밋하지 않았다.
             try (Statement statement = holder.createStatement()) {
                 statement.executeQuery("SELECT id FROM summary_result WHERE id = " + summary.getId() + " FOR UPDATE");
                 statement.executeUpdate("UPDATE summary_result SET status = 'APPROVED' WHERE id = " + summary.getId());
@@ -172,7 +164,6 @@ class SummaryGate1ConcurrencyIntegrationTest {
             executor.shutdownNow();
         }
 
-        // 승인된 판의 일지는 끝났다. 새 일지만 새 판으로 요약한다.
         assertThat(claimed).singleElement().satisfies(group -> {
             assertThat(group.group()).isEqualTo(new SummaryGroup(CHILD, DATE, ORG));
             assertThat(group.journalEntryIds()).containsExactly(late.getId());
@@ -217,13 +208,8 @@ class SummaryGate1ConcurrencyIntegrationTest {
                 .isEmpty();
     }
 
-    /**
-     * 동의 철회(ConsentService)가 아이 행을 잠근 채 커밋하지 않고 있다 (#332). 승인은 아이 행에서 기다렸다가 철회가 커밋된
-     * 뒤의 동의를 보고 거절해야 한다. 아이 행을 잠그지 않고 읽으면 커밋 전 값(켜짐)을 보고 꺼진 동의로 승인한다.
-     */
     @Test
     void 동의_철회가_먼저_잡고_있으면_기다렸다가_철회된_아이로_거절한다() throws Exception {
-        // 위 테스트들의 CHILD 는 아이 행이 없어 잠글 것이 없다. 실제 아이 행을 만든다.
         Long childId = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1))).getId();
         sharingConsentRepository.save(SharingConsent.grant(childId, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY)));
         SummaryResult target = summaryResultRepository.save(SummaryResult.of(childId, DATE, ORG, 1,
@@ -271,8 +257,6 @@ class SummaryGate1ConcurrencyIntegrationTest {
 
     @Test
     void 다른_기관의_요청은_요약을_잠그지_않고_바로_없음으로_응답한다() throws Exception {
-        // 다른 기관 사용자가 남의 요약 id 로 결정을 보내도 그 행을 잠그면 안 된다 — 잠그면 그 기관의 결정과 워커가
-        // 기다리고, 기다리는 시간으로 id 가 있는지도 드러난다.
         given(userService.getOrganizationIdOf("other")).willReturn(ORG + 1);
         String version = versionOf(summary.getId());
         ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -301,7 +285,6 @@ class SummaryGate1ConcurrencyIntegrationTest {
 
     @Test
     void 새로_더한_상태와_결정값을_저장한다() {
-        // 새 테이블에서는 Hibernate 가 새 enum 값으로 CHECK 제약을 만든다. 배포 DB 는 §11.4 수동 조치가 필요하다.
         service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
         assertThat(journalEntryRepository.findById(entry.getId()).orElseThrow().getStatus())
                 .isEqualTo(JournalEntryStatus.GATE1_HELD);

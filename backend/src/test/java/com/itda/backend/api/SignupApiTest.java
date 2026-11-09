@@ -28,11 +28,6 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * POST /api/v1/auth/signup — 보안 필터·검증·예외 처리까지 실제로 거친다.
- *
- * <p>CSRF 는 {@code csrf()} 헬퍼로 주입하지 않고, 프론트처럼 XSRF-TOKEN 쿠키를 받아 헤더로 되돌려보낸다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -88,7 +83,6 @@ class SignupApiTest {
                 .andExpect(jsonPath("$.data.role").value("parent"))
                 .andExpect(jsonPath("$.data.userId").value(String.valueOf(user.getId())))
                 .andExpect(jsonPath("$.data.signupCompleted").value(true))
-                // 막 가입한 보호자는 약관 동의 기록이 없다 — 프론트가 이 값을 보고 약관 단계로 간다
                 .andExpect(jsonPath("$.data.termsAgreed").value(false))
                 .andExpect(jsonPath("$.data.institutionId").doesNotExist())
                 .andExpect(jsonPath("$.data.institutionName").doesNotExist());
@@ -107,7 +101,6 @@ class SignupApiTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.role").value("org"))
                 .andExpect(jsonPath("$.data.signupCompleted").value(true))
-                // 막 가입한 기관 담당자도 약관 동의 기록이 없다 — 프론트가 기관 약관 화면으로 간다
                 .andExpect(jsonPath("$.data.termsAgreed").value(false))
                 .andExpect(jsonPath("$.data.institutionId").isString())
                 .andExpect(jsonPath("$.data.institutionName").value("햇살아동발달센터"));
@@ -116,12 +109,10 @@ class SignupApiTest {
         Organization organization = organizationRepository.findById(saved.getOrganizationId()).orElseThrow();
         assertThat(saved.getRole()).isEqualTo(UserRole.ORGANIZATION);
         assertThat(organization.getBusinessNumber()).isEqualTo(businessNumber);
-        // 보호자에게 알려 줄 기관 코드가 가입할 때 함께 생긴다.
         assertThat(organization.getCode()).hasSize(Organization.CODE_LENGTH);
         assertThat(organization.getName()).isEqualTo("햇살아동발달센터");
     }
 
-    /** 사업자등록번호는 형식만 본다 — 체크섬이 틀린 "1234567890" 같은 값도 통과한다. */
     @Test
     void businessNumberChecksumIsNotVerified() throws Exception {
         User user = pendingUser("signup-org-checksum");
@@ -135,16 +126,13 @@ class SignupApiTest {
             "{}",
             "{\"role\": \"admin\"}",
             "{\"role\": \"ORG\"}",
-            // 기관인데 기관 정보가 빠졌다
             "{\"role\": \"org\"}",
             "{\"role\": \"org\", \"organizationType\": \"CENTER\", \"businessNumber\": \"1234567891\"}",
             "{\"role\": \"org\", \"organizationName\": \" \", \"organizationType\": \"CENTER\", \"businessNumber\": \"1234567891\"}",
             "{\"role\": \"org\", \"organizationName\": \"센터\", \"businessNumber\": \"1234567891\"}",
             "{\"role\": \"org\", \"organizationName\": \"센터\", \"organizationType\": \"CENTER\"}",
-            // 사업자등록번호 형식
             "{\"role\": \"org\", \"organizationName\": \"센터\", \"organizationType\": \"CENTER\", \"businessNumber\": \"123456789\"}",
             "{\"role\": \"org\", \"organizationName\": \"센터\", \"organizationType\": \"CENTER\", \"businessNumber\": \"123-45-67890\"}",
-            // enum 에 없는 기관 유형
             "{\"role\": \"org\", \"organizationName\": \"센터\", \"organizationType\": \"HOSPITAL\", \"businessNumber\": \"1234567891\"}",
     })
     void invalidRequestIsBadRequest(String body) throws Exception {
@@ -158,10 +146,6 @@ class SignupApiTest {
         assertThat(userRepository.findById(user.getId()).orElseThrow().isSignupCompleted()).isFalse();
     }
 
-    /**
-     * 보호자는 role 만 보낸다. 기관 필드가 하나라도 섞이면 형식이 맞든 틀리든 400 이다 —
-     * 조용히 무시하면 "기관 정보를 보냈는데 기관이 안 생겼다" 는 착각이 생긴다.
-     */
     @ParameterizedTest
     @ValueSource(strings = {
             "{\"role\": \"parent\", \"organizationName\": \"햇살센터\"}",
@@ -169,7 +153,6 @@ class SignupApiTest {
             "{\"role\": \"parent\", \"businessNumber\": \"1234567892\"}",
             "{\"role\": \"parent\", \"businessNumber\": \"12\"}",
             "{\"role\": \"parent\", \"organizationName\": \"햇살센터\", \"organizationType\": \"CENTER\", \"businessNumber\": \"1234567892\"}",
-            // 빈 문자열도 "보낸 값" 이다. 비우려면 필드를 빼거나 null 로 보내야 한다.
             "{\"role\": \"parent\", \"organizationName\": \"\"}",
             "{\"role\": \"parent\", \"businessNumber\": \"\"}",
     })
@@ -183,7 +166,6 @@ class SignupApiTest {
         assertThat(userRepository.findById(user.getId()).orElseThrow().isSignupCompleted()).isFalse();
     }
 
-    /** 폼 직렬화가 빈 선택 필드를 null 로 채우는 경우. null 은 "보내지 않음" 과 같다. */
     @Test
     void parentSignupWithNullOrganizationFieldsIsAccepted() throws Exception {
         User user = pendingUser("signup-parent-nulls");
@@ -246,7 +228,6 @@ class SignupApiTest {
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 
-    /** 쿠키 인증이라 CSRF 토큰 없는 가입 요청은 막혀야 한다. */
     @Test
     void signupWithoutCsrfTokenIsForbidden() throws Exception {
         User user = pendingUser("signup-no-csrf");

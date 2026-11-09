@@ -9,14 +9,6 @@ import org.apache.hc.core5.http.message.BasicClassicHttpRequest;
 import org.apache.hc.core5.http.message.BasicHttpResponse;
 import org.junit.jupiter.api.Test;
 
-/**
- * HTTP 클라이언트가 스스로 하는 재시도 (#153, #193).
- *
- * <p>응답 코드를 보고 다시 보내는 것(503·429)은 끈다. AI 서버는 {@code AiAgentClient} 가 다시 보내므로 켜 두면 3번이 6번이 되고,
- * 카카오 토큰 교환은 인가 코드가 일회용이라 두 번째 요청이 {@code invalid_grant} 가 된다.
- * 다만 서버가 막 닫은 keep-alive 연결을 다시 써서 GET 이 응답 없이 끊기는 경우는 계속 다시 보낸다 —
- * {@code /health} 는 앱 쪽 재시도가 없어서, 이것까지 끄면 AI 가 멀쩡한데 "응답 없음" 으로 차례를 건너뛴다.
- */
 class HttpClientRetryStrategyTest {
 
     private final HttpRequestRetryStrategy strategy = HttpClientRequestFactories.retryStrategy();
@@ -38,7 +30,6 @@ class HttpClientRetryStrategyTest {
 
     @Test
     void POST_는_연결이_끊겨도_다시_보내지_않는다() {
-        // AI 가 받아서 LLM 을 부르는 중이었을 수 있다. 다시 보낼지는 AiAgentClient 가 정한다.
         BasicClassicHttpRequest validate = new BasicClassicHttpRequest("POST", "/validation");
 
         assertThat(strategy.retryRequest(validate, new NoHttpResponseException("closed"), 1, context)).isFalse();

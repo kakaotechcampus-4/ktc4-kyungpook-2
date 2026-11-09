@@ -15,13 +15,6 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 준비물·확인사항을 받은 아이 한 명 (DB 스키마 §5.9). 보낸 순간 명부에 있던 아이마다 한 줄이 생긴다.
- *
- * <p><b>확인은 아이 몫으로 한 번이다.</b> 그 아이의 보호자 중 한 명이 확인하면 끝이고, 되돌리지 않는다. 확인은 엔티티
- * 메서드가 아니라 조건부 UPDATE({@code ChecklistTargetRepository.confirmIfUnconfirmed})로 찍는다 — 엄마 · 아빠가
- * 동시에 확인해도 먼저 한 사람만 남는다.
- */
 @Entity
 @Table(
         name = "checklist_target",
@@ -33,7 +26,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ChecklistTarget {
 
-    /** 한 요청이 같은 아이에게 두 번 가지 않는다. */
     public static final String UK_CHECKLIST_TARGET = "uk_checklist_target_checklist_child";
 
     @Id
@@ -46,11 +38,9 @@ public class ChecklistTarget {
     @Column(name = "child_id", nullable = false)
     private Long childId;
 
-    /** 확인한 시각. NULL 이면 아직 아무도 확인하지 않았다. */
     @Column(name = "confirmed_at")
     private LocalDateTime confirmedAt;
 
-    /** 확인한 보호자 ({@code users.id}). 연결이 끊겨도 지우지 않는다. */
     @Column(name = "confirmed_by")
     private Long confirmedBy;
 

@@ -37,7 +37,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 
-/** 인사이트 재료 조립 — 승인된 요약의 claim 을 모아 에이전트 입력으로 편다. */
 @DataJpaTest
 @ActiveProfiles("test")
 class InsightServiceTest {
@@ -87,15 +86,10 @@ class InsightServiceTest {
         center = em.persist(Organization.of("햇살아동발달센터", OrganizationType.CENTER, "1234567891"));
         em.persist(ChildOrganization.of(junho.getId(), school.getId()));
         em.persist(ChildOrganization.of(junho.getId(), center.getId()));
-        // 따로 말하지 않는 테스트는 보호자가 두 기관 모두에 공유를 허락한 상태다.
         consent(school);
         consent(center);
     }
 
-    /**
-     * 하루 요약만 허락한 기관의 기록은 인사이트 재료에 섞지 않는다 (#257). 받는 쪽(Gate 2)과 같은 기준이다 —
-     * 섞으면 그 기관 기록이 주간 인사이트에 실려 다른 기관으로 나간다.
-     */
     @Test
     void 하루_요약만_허락한_기관은_동의_목록과_재료에서_뺀다() {
         Organization academy = em.persist(Organization.of("하루요약만센터", OrganizationType.CENTER, "1000000099"));
@@ -127,7 +121,6 @@ class InsightServiceTest {
         em.flush();
     }
 
-    /** Gate 1 을 통과한 요약 한 건. child_context 에 행이 있다는 것이 곧 승인이다. */
     private SummaryResult approved(Organization institution, LocalDate entryDate, String claims) {
         SummaryResult summary = em.persistAndFlush(SummaryResult.of(junho.getId(), entryDate, institution.getId(),
                 1, "요약 본문", claims, "[1041]", "[]", "{}"));
@@ -167,7 +160,6 @@ class InsightServiceTest {
         assertThat(first.evidence().get(0).quote()).isEqualTo("줄에서 차례를 기다림");
     }
 
-    /** 지난 기록은 이번 기간 바로 앞 12주치의 승인된 요약이다 (#387). 이번 기간 claim 은 들어가지 않는다. */
     @Test
     void 이번_기간_앞_12주치_승인_기록을_지난_기록으로_보낸다() {
         SummaryResult thisWeek = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -186,7 +178,6 @@ class InsightServiceTest {
         assertThat(request.historyClaims().get(0).institutionType()).isEqualTo("센터");
     }
 
-    /** 지난 기록도 이번 기간과 같이 동의 기관 것만 보낸다 — AI 가 찾아 쓴 기록도 다른 기관으로 나가기 때문이다. */
     @Test
     void 동의가_꺼진_기관의_지난_기록은_보내지_않는다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -199,7 +190,6 @@ class InsightServiceTest {
                 .doesNotContain(revoked.getId() + "-0", revoked.getId() + "-1");
     }
 
-    /** 200 개를 넘으면 가장 오래된 요약부터 버린다 (#387). */
     @Test
     void 지난_기록이_200개를_넘으면_오래된_요약부터_뺀다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -215,7 +205,6 @@ class InsightServiceTest {
                 .contains(middle.getId() + "-0", newest.getId() + "-1");
     }
 
-    /** 자를 자리가 요약 한가운데면 그 요약을 통째로 뺀다 — 앞뒤 맥락 없는 문장 조각을 보내지 않는다. */
     @Test
     void 지난_기록을_자를_때_요약을_쪼개지_않는다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -239,7 +228,6 @@ class InsightServiceTest {
         return json.append("]").toString();
     }
 
-    /** claim_id 는 요약에 없는 값이라 BE 가 붙인다. 뒷자리는 claims 배열 순서다. */
     @Test
     void claim_id는_요약_id와_배열_순서로_만든다() {
         SummaryResult summary = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -250,10 +238,6 @@ class InsightServiceTest {
                 .containsExactly(summary.getId() + "-0", summary.getId() + "-1");
     }
 
-    /**
-     * 뒷자리는 <b>원본 배열</b> 위치여야 한다. 거른 뒤 위치를 쓰면 인사이트가 가리키는 근거가 한 칸씩
-     * 밀려, 다른 문장의 근거를 자기 근거라고 내보낸다. 기관 경계를 넘는 글이라 조용히 틀리면 위험하다.
-     */
     @Test
     void 버려진_문장이_앞에_있어도_claim_id는_원본_위치를_쓴다() {
         SummaryResult summary = approved(school, LocalDate.of(2026, 10, 2), """
@@ -267,7 +251,6 @@ class InsightServiceTest {
                 .containsExactly(summary.getId() + "-1");
     }
 
-    /** 이 문자열이 프롬프트에 그대로 들어간다 (AI/insight/config.py INSTITUTION_TYPES). */
     @Test
     void 기관_종류는_한국어로_보낸다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -282,13 +265,8 @@ class InsightServiceTest {
                 .containsExactlyInAnyOrder("학교", "센터");
     }
 
-    /**
-     * child_context 는 승인순이라 8월 기록을 10월에 승인하면 맨 앞에 온다.
-     * 인사이트는 기간의 흐름을 보므로 관찰 날짜로 다시 세워야 한다.
-     */
     @Test
     void 승인순이_아니라_관찰_날짜순으로_보낸다() {
-        // 먼저 저장(= 먼저 승인)된 쪽이 나중 날짜다. 승인순을 그대로 쓰면 이 순서가 뒤집힌다.
         SummaryResult later = approved(school, LocalDate.of(2026, 10, 6), CLAIMS);
         SummaryResult earlier = approved(center, LocalDate.of(2026, 10, 2), CLAIMS);
 
@@ -299,7 +277,6 @@ class InsightServiceTest {
                         later.getId() + "-0", later.getId() + "-1");
     }
 
-    /** 같은 날 두 기관에 기록이 있는 건 흔하다 — 기관 간 비교 인사이트가 바로 그 경우다. */
     @Test
     void 같은_날짜_요약은_id_순으로_세운다() {
         SummaryResult first = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -312,10 +289,6 @@ class InsightServiceTest {
                         second.getId() + "-0", second.getId() + "-1");
     }
 
-    /**
-     * 카드로 고쳐 승인한 요약도 재료로 쓴다 (#249, 멘토 리뷰 A4). #221 부터 claims 가 카드 결과로 다시 저장돼
-     * 지운 문장은 남지 않고, 문장마다 source 가 붙는다.
-     */
     @Test
     void 카드로_고쳐_승인한_요약도_재료로_쓴다() {
         SummaryResult corrected = approved(school, LocalDate.of(2026, 10, 2), """
@@ -335,10 +308,6 @@ class InsightServiceTest {
                 InsightAgentRequest.ClaimSource.TEACHER);
     }
 
-    /**
-     * #221 이전 방식(editedContent)으로 고친 요약은 계속 뺀다. 고친 글은 child_context 에만 있고 claims 는
-     * AI 원문 그대로라, 쓰면 교사가 지운 문장이 근거를 달고 다른 기관에 나간다. source 가 하나도 없으면 옛 방식이다.
-     */
     @Test
     void 옛_방식으로_고쳐_승인한_요약은_계속_뺀다() {
         SummaryResult legacy = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -351,7 +320,6 @@ class InsightServiceTest {
                 .containsOnly(center.getId());
     }
 
-    /** 그냥 승인(APPROVED)은 본문이 AI 원문 그대로라 claims 와 어긋나지 않는다. */
     @Test
     void 고치지_않고_승인한_요약은_그대로_쓴다() {
         SummaryResult summary = approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -361,10 +329,6 @@ class InsightServiceTest {
         assertThat(prepare().orElseThrow().request().claims()).hasSize(2);
     }
 
-    /**
-     * 계약이 evidence 를 최소 1건으로 막아 뒀다. 보내면 422 고, 422 는 재시도 없이 바로 실패한다.
-     * 원문으로 추적되지 않는 내용이 다른 기관으로 나가서도 안 된다 (CRITERIA §2).
-     */
     @Test
     void 근거가_없는_문장은_보내지_않는다() {
         approved(school, LocalDate.of(2026, 10, 2), """
@@ -379,7 +343,6 @@ class InsightServiceTest {
                 .containsExactly("근거가 붙은 문장");
     }
 
-    /** source 가 없는 요약은 C안(#183) 전에 저장된 것이라 전부 AI 원문이다. */
     @Test
     void source_가_없으면_AI_로_보낸다() {
         approved(school, LocalDate.of(2026, 10, 2), """
@@ -392,11 +355,6 @@ class InsightServiceTest {
                 .containsExactly(InsightAgentRequest.ClaimSource.AI);
     }
 
-    /**
-     * Gate 1 이 카드 결과를 담을 때 Jackson 기본 설정은 빈 칸을 <b>키 없음이 아니라 {@code null} 로</b> 쓴다.
-     * 고치지 않은 카드(KEEP)가 {@code "source": null} 로 저장되는데, 이걸 모르는 값으로 보면
-     * <b>안 고친 문장이 전부 인사이트에서 사라진다.</b>
-     */
     @Test
     void source_가_null_이어도_AI_로_보낸다() {
         approved(school, LocalDate.of(2026, 10, 2), """
@@ -410,10 +368,6 @@ class InsightServiceTest {
                 .containsExactly(InsightAgentRequest.ClaimSource.AI);
     }
 
-    /**
-     * 계약의 {@code quote} 는 필수다. 비워서 보내면 422 고, 422 는 재시도 없이 바로 실패한다 —
-     * 그 아이의 그 주 인사이트가 통째로 날아간다.
-     */
     @Test
     void 인용이_비면_그_근거를_버린다() {
         approved(school, LocalDate.of(2026, 10, 2), """
@@ -430,10 +384,6 @@ class InsightServiceTest {
                 .containsExactly("멀쩡한 문장");
     }
 
-    /**
-     * 교사가 Gate 1 에서 새로 쓴 문장은 원본 일지가 없다. 계약이 TEACHER 에만 빈 번호를 허용하므로
-     * 그대로 실어 보낸다 — 거르면 교사 문장이 인사이트에 영영 못 들어간다 (#199, 멘토 리뷰 A4).
-     */
     @Test
     void 교사가_새로_쓴_문장은_일지_번호_없이_보낸다() {
         approved(school, LocalDate.of(2026, 10, 2), """
@@ -452,7 +402,6 @@ class InsightServiceTest {
         });
     }
 
-    /** 교사가 고친 문장은 근거가 원래 일지 그대로다. 번호가 빠지면 근거가 끊긴 것이라 보내면 422 다. */
     @Test
     void 교사가_고친_문장은_일지_번호가_있어야_간다() {
         approved(school, LocalDate.of(2026, 10, 2), """
@@ -468,10 +417,6 @@ class InsightServiceTest {
                 .containsExactly("고치고 번호도 있는 문장");
     }
 
-    /**
-     * 모르는 값을 AI 로 봐 두면 검증을 거치지 않은 교사 문장이 "AI 원문" 으로 나가고 Gate 2 경고도 사라진다.
-     * 한 문장을 잃는 쪽이 낫다.
-     */
     @Test
     void 모르는_source_는_그_문장을_빼고_보낸다() {
         approved(school, LocalDate.of(2026, 10, 2), """
@@ -498,7 +443,6 @@ class InsightServiceTest {
                 .containsOnly("2026-10-01");
     }
 
-    /** 빈 claims 로 부르면 모델만 쓰고 결과는 어차피 비어 있다. */
     @Test
     void 승인된_요약이_없으면_부르지_않는다() {
         assertThat(prepare()).isEmpty();
@@ -513,7 +457,6 @@ class InsightServiceTest {
         assertThat(prepare()).isEmpty();
     }
 
-    /** AI 가 쓴 값이 깨진 것 — 한 건 때문에 기간 전체를 버리지 않는다. */
     @Test
     void claims가_깨진_요약만_빼고_나머지로_간다() {
         approved(school, LocalDate.of(2026, 10, 2), "{깨진 JSON");
@@ -525,7 +468,6 @@ class InsightServiceTest {
                 .containsOnly(center.getId());
     }
 
-    /** 동의 목록은 sharing_consent 가 ACTIVE 인 기관이다. 다니기만 하고 허락하지 않은 기관은 빠진다. */
     @Test
     void 동의하지_않은_기관은_동의_목록과_재료에서_뺀다() {
         em.getEntityManager().createQuery("delete from SharingConsent c where c.organizationId = :organizationId")
@@ -543,7 +485,6 @@ class InsightServiceTest {
                 .containsOnly(school.getId());
     }
 
-    /** 철회된 동의는 동의가 아니다. 철회 전에 승인된 요약도 재료로 쓰지 않는다. */
     @Test
     void 동의를_철회한_기관의_요약은_재료에서_뺀다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -568,9 +509,6 @@ class InsightServiceTest {
         assertThat(prepare()).isEmpty();
     }
 
-    /**
-     * 명부에서 빠질 때 동의를 끄는 경로가 아직 앱에 없다. 동의가 남아 있어도 더 이상 다니지 않는 기관은 뺀다.
-     */
     @Test
     void 연결이_끊긴_기관은_동의_목록에서_뺀다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -586,10 +524,6 @@ class InsightServiceTest {
                 .containsExactly(school.getId());
     }
 
-    /**
-     * 동의 목록이 비면 아무 claim 도 쓰지 않는다 — <b>모르면 막는다</b> (CRITERIA §7).
-     * 빈 목록으로 부르면 AI 가 전부 걸러 결과는 어차피 비는데, 그 사이에 원문 인용이 한 번 나간다.
-     */
     @Test
     void 동의한_기관이_하나도_없으면_부르지_않는다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -602,10 +536,6 @@ class InsightServiceTest {
         assertThat(prepare()).isEmpty();
     }
 
-    /**
-     * 받는 쪽만 막으면 철회된 기관의 기록이 재료로 들어가 다른 기관으로 흘러간다 (CRITERIA §7).
-     * {@code child_context} 는 지우지 않고 쌓이기만 해서, 연결을 끊어도 그 기관의 승인본은 남는다.
-     */
     @Test
     void 동의_목록_밖_기관의_요약은_재료에서_뺀다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);
@@ -621,7 +551,6 @@ class InsightServiceTest {
                 .containsOnly(school.getId());
     }
 
-    /** 삭제된 아이의 이름이 AI 로 나가면 안 된다. */
     @Test
     void 삭제된_아이는_부르지_않는다() {
         approved(school, LocalDate.of(2026, 10, 2), CLAIMS);

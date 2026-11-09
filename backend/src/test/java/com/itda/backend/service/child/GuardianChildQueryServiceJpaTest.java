@@ -53,10 +53,6 @@ import com.itda.backend.service.sharing.GuardianInsightService;
 import com.itda.backend.service.sharing.SharingReadRecorder;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 보호자 아이 목록·홈이 실제 DB 행에서 무엇을 고르는지 본다. 엄마는 하늘·바다 두 아이와 연결돼 있다.
- * 하늘이는 센터·학교에 다니고, 바다는 센터에만 다닌다. 아빠는 하늘이에게만 연결돼 있다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({GuardianChildQueryService.class, GuardianChildGuard.class, GuardianJournalQueryService.class, GuardianInsightService.class,
@@ -79,7 +75,6 @@ class GuardianChildQueryServiceJpaTest {
     @MockitoBean
     private UserService userService;
 
-    /** 홈은 리포트 목록의 "특이사항 없음" 주(#470)를 쓰지 않는다. */
     @MockitoBean
     private QuietWeekReader quietWeekReader;
 
@@ -90,10 +85,8 @@ class GuardianChildQueryServiceJpaTest {
 
     @BeforeEach
     void setUp() {
-        // 바다가 먼저 등록돼 id 가 작지만, 엄마는 하늘이와 먼저 연결됐다 — 목록은 연결 순서다.
         sea = em.persistAndFlush(Child.of("이바다", LocalDate.of(2019, 5, 1))).getId();
         sky = em.persistAndFlush(Child.of("김하늘", LocalDate.of(2017, 3, 14))).getId();
-        // 센터를 먼저 만들어 기관 id 순서가 센터 → 학교다.
         centerId = em.persistAndFlush(Organization.of("햇살센터", OrganizationType.CENTER, "1000000002")).getId();
         schoolId = em.persistAndFlush(Organization.of("○○초등학교", OrganizationType.SCHOOL, "1000000001")).getId();
 
@@ -148,7 +141,6 @@ class GuardianChildQueryServiceJpaTest {
                 .containsOnly(ConsentState.NOT_GRANTED);
     }
 
-    /** 동의 상태는 아이 기준이다. 아빠가 켠 동의도 엄마 화면에 켜짐으로 보인다. */
     @Test
     void 기관별_동의_상태를_아이_기준으로_싣는다() {
         grant(sky, DAD, schoolId);
@@ -162,12 +154,10 @@ class GuardianChildQueryServiceJpaTest {
         assertThat(child.status()).isEqualTo(ChildStatus.ACTIVE);
         assertThat(consentOf(child, schoolId)).isEqualTo(ConsentState.GRANTED);
         assertThat(consentOf(child, centerId)).isEqualTo(ConsentState.REVOKED);
-        // 바다의 센터 동의는 하늘이의 센터 철회와 섞이지 않는다.
         assertThat(consentOf(childOf(service.children(MOM_PRINCIPAL), sea), centerId))
                 .isEqualTo(ConsentState.NOT_GRANTED);
     }
 
-    /** 동의를 모두 끈 아이도 넣는다. 설정 화면에서 다시 켜거나 연결을 끊으려면 보여야 한다. */
     @Test
     void 동의를_모두_끈_아이도_목록에_있다() {
         revoke(grant(sea, MOM, centerId));
@@ -220,7 +210,6 @@ class GuardianChildQueryServiceJpaTest {
                 .containsExactly(String.valueOf(centerId));
     }
 
-    /** 이름을 모르는 기관을 화면에 올리지 않는다. */
     @Test
     void 기관_행이_없는_명부_항목은_싣지_않는다() {
         em.persistAndFlush(ChildOrganization.of(sea, 999_999L));
@@ -230,8 +219,6 @@ class GuardianChildQueryServiceJpaTest {
                 .extracting(institution -> institution.institution().id())
                 .containsExactly(String.valueOf(centerId));
     }
-
-    // --- 돌봄 정보 ---
 
     @Test
     void 저장한_돌봄_정보를_아이마다_싣는다() {
@@ -244,7 +231,6 @@ class GuardianChildQueryServiceJpaTest {
         assertThat(childOf(children, sky).care().medications())
                 .extracting(MedicationResponse::name, MedicationResponse::time)
                 .containsExactly(tuple("○○정", "점심 식후"));
-        // 저장한 적이 없는 아이는 빈 배열 둘이다
         assertThat(childOf(children, sea).care().allergies()).isEmpty();
         assertThat(childOf(children, sea).care().medications()).isEmpty();
     }
@@ -257,9 +243,6 @@ class GuardianChildQueryServiceJpaTest {
         assertThat(service.home(MOM_PRINCIPAL, sea).child().care().allergies()).containsExactly("계란");
     }
 
-    // --- 안 읽은 리포트 (#457) ---
-
-    /** 입구가 리포트 전부를 받지 않고 점을 그린다. 열람은 보호자마다 따로라 엄마 것만 켜진다. */
     @Test
     void 안_읽은_리포트가_있는_아이에_표시가_붙는다() {
         insightFor(MOM, sky, AUG_17, schoolId, at(21));
@@ -271,8 +254,6 @@ class GuardianChildQueryServiceJpaTest {
         assertThat(service.home(MOM_PRINCIPAL, sky).child().hasUnreadInsight()).isTrue();
     }
 
-    // --- 홈 ---
-
     @Test
     void 홈은_고른_아이를_돌려주고_승인된_일지가_없으면_활동은_비어_있다() {
         GuardianHomeResponse home = service.home(MOM_PRINCIPAL, sea);
@@ -283,7 +264,6 @@ class GuardianChildQueryServiceJpaTest {
         assertThat(home.activity()).isEmpty();
     }
 
-    /** 활동의 모양·순서·개수는 GuardianJournalQueryServiceJpaTest 가 본다. 여기서는 홈에 실리는지만 본다. */
     @Test
     void 홈의_활동은_승인된_일지다() {
         SummaryResult summary = em.persistAndFlush(
@@ -296,9 +276,6 @@ class GuardianChildQueryServiceJpaTest {
                 .containsExactly(tuple("햇살센터에서 8월 21일 일지가 도착했어요", String.valueOf(journalId)));
     }
 
-    // --- 홈 활동의 인사이트 줄 (#289) ---
-
-    /** 일지는 Gate 1 승인 시각, 인사이트는 Gate 2 승인 시각으로 한 목록에 선다. */
     @Test
     void 일지_줄과_인사이트_줄이_승인_시각_순으로_섞인다() {
         Long older = journal(sky, LocalDate.of(2026, 8, 20), at(20));
@@ -342,7 +319,6 @@ class GuardianChildQueryServiceJpaTest {
         });
     }
 
-    /** 한 번 분석에 여러 편이 나와 한 편씩 승인된다. 같은 문구가 줄줄이 서면 일지 소식이 밀려난다. */
     @Test
     void 같은_기간_같은_기관_여러_편은_한_줄로_묶고_리포트_탭으로_보낸다() {
         insightFor(MOM, sky, AUG_17, schoolId, at(21));
@@ -364,7 +340,6 @@ class GuardianChildQueryServiceJpaTest {
                 .containsExactly("햇살센터에서 8월 3주차 리포트가 도착했어요", "○○초등학교에서 8월 3주차 리포트가 도착했어요");
     }
 
-    /** 내게 지금 열린 이 아이의 글만. 거둬진 글로 줄을 만들면 눌렀을 때 404 다. */
     @Test
     void 거둬진_권한_다른_보호자의_권한_다른_아이의_글은_줄이_없다() {
         Long revoked = insightFor(MOM, sky, AUG_17, schoolId, at(21));
@@ -401,7 +376,6 @@ class GuardianChildQueryServiceJpaTest {
                 .isEqualTo(ChildErrorCode.CHILD_NOT_LINKED);
     }
 
-    /** 연결은 살아 있어도 아이가 삭제됐으면 같은 403 이다. 이유를 나누지 않는다. */
     @Test
     void 삭제된_아이의_홈은_403() {
         em.find(Child.class, sea).delete();
@@ -414,14 +388,11 @@ class GuardianChildQueryServiceJpaTest {
                 .isEqualTo(ChildErrorCode.CHILD_NOT_LINKED);
     }
 
-    // --- 대기 중 기관 권한 요청 (G-40) ---
-
     @Test
     void 아무도_동의하지_않은_기관이_대기_목록에_나온다() {
         assertThat(pendingOf(MOM_PRINCIPAL, sky)).containsExactly(String.valueOf(centerId), String.valueOf(schoolId));
     }
 
-    /** 대기 목록도 아이 기준이다. 아빠가 학교에 동의했으면 엄마에게도 학교 요청은 없다. */
     @Test
     void 다른_보호자가_동의한_기관은_대기_목록에서_빠진다() {
         grant(sky, DAD, schoolId);
@@ -430,7 +401,6 @@ class GuardianChildQueryServiceJpaTest {
         assertThat(pendingOf(MOM_PRINCIPAL, sky)).containsExactly(String.valueOf(centerId));
     }
 
-    /** 동의했다가 끈 기관은 보호자가 직접 끈 것이라 다시 알리지 않는다. 설정에서 켤 수 있다. */
     @Test
     void 동의했다가_꺼진_기관은_대기_목록에서_빠진다() {
         revoke(grant(sky, MOM, centerId));
@@ -487,12 +457,10 @@ class GuardianChildQueryServiceJpaTest {
 
     private static final LocalDate AUG_17 = LocalDate.of(2026, 8, 17);
 
-    /** 10월 {@code day} 일 오전 9시. */
     private static LocalDateTime at(int day) {
         return LocalDateTime.of(2026, 10, day, 9, 0);
     }
 
-    /** 승인된 일지 하나. 승인 시각({@code child_context.created_at})은 만들 때 정해져 덮어쓴다. */
     private Long journal(Long childId, LocalDate date, LocalDateTime approvedAt) {
         SummaryResult summary = em.persistAndFlush(
                 SummaryResult.of(childId, date, centerId, 1, "일지", "[]", "[]", "[]", "{}"));
@@ -503,7 +471,6 @@ class GuardianChildQueryServiceJpaTest {
         return id;
     }
 
-    /** {@code sender} 가 Gate 2 에서 {@code approvedAt} 에 승인해 {@code guardian} 에게 연 인사이트 하나. */
     private Long insightFor(Long guardian, Long childId, LocalDate periodFrom, Long sender, LocalDateTime approvedAt) {
         InsightResult insight = InsightResult.of(childId, periodFrom, periodFrom.plusDays(6), 1, "상황", "반응", "본문",
                 null, "[]", "[]", "[%d]".formatted(sender), false, null);

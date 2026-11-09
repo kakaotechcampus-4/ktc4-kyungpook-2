@@ -44,18 +44,6 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 사전 조회를 통과한 뒤 실제 DB 유니크 제약에 걸리는 경로를 PostgreSQL 에서 재현한다.
- *
- * <p>다른 커넥션이 같은 관리번호의 연결 행을 넣고 커밋하지 않은 채 잡아 둔다. READ COMMITTED 라 등록 쪽의
- * 사전 조회는 그 행을 보지 못하고 통과하고, 연결 INSERT 에서 유니크 인덱스를 기다리며 멈춘다. 잡아 둔 쪽이
- * 커밋하면 등록 쪽 INSERT 가 유니크 위반으로 실패한다. 그 예외가 409 로 바뀌고, 먼저 저장한 아동도
- * 롤백되는지 본다.
- *
- * <p>잡아 둔 쪽을 커밋하기 전에 등록 세션이 "잡아 둔 세션 때문에" 멈췄는지 {@code pg_blocking_pids} 로 확인한다.
- * 그래야 등록 쪽이 사전 조회를 이미 지났다는 것이 보장된다. 그렇지 않으면 사전 조회 경로의 409 로
- * 우연히 통과할 수 있다.
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -133,7 +121,6 @@ class ChildServiceExternalIdConflictIntegrationTest {
                                 e -> assertThat(e.getErrorCode()).isEqualTo(ChildErrorCode.DUPLICATE_EXTERNAL_ID));
                 assertThat(childrenNamed(REGISTERING_CHILD_NAME)).isEmpty();
             } finally {
-                // 실패해도 이 순서로 정리한다: 잠금을 풀어 등록 스레드를 빼내고 → 스레드를 끝내고 → 커넥션을 닫는다.
                 if (!holderCommitted) {
                     holder.rollback();
                 }
@@ -167,7 +154,6 @@ class ChildServiceExternalIdConflictIntegrationTest {
         }
     }
 
-    /** 잡아 둔 세션 때문에 막힌 세션이 생길 때까지 기다린다. 다른 이유로 기다리는 세션은 세지 않는다. */
     private void waitUntilBlockedBy(int holderPid) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         try (Connection observer = dataSource.getConnection();

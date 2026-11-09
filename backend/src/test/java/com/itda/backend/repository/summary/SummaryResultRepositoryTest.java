@@ -40,7 +40,6 @@ class SummaryResultRepositoryTest {
         assertThat(found.getInstitutionId()).isEqualTo(3L);
         assertThat(found.getRevision()).isEqualTo(1);
         assertThat(found.getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
-        // 문자열 인자 순서가 뒤바뀌어도 컴파일은 통과하므로 값 자체를 확인한다.
         assertThat(found.getContent()).isEqualTo("요약 본문");
         assertThat(found.getClaims()).isEqualTo("[{\"text\":\"요약 본문\"}]");
         assertThat(found.getCoveredEntryIds()).isEqualTo("[1041]");

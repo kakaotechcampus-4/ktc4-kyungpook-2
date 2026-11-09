@@ -1,14 +1,5 @@
 import { startKakaoLogin } from "@/lib/auth";
 
-/**
- * 카카오 로그인 버튼 — 기관(`/login`)과 보호자(`/parent/invite`)가 함께 쓴다.
- *
- * 역할은 서버(`/auth/me`)가 알려준다. `intent` 는 처음 로그인한 사람의 회원가입 화면에서
- * 역할을 미리 골라두는 데만 쓴다 — lib/auth 가 기록하고 `/oauth/success` 가 읽는다.
- *
- * 모양만 화면마다 다르다(기관은 각진 버튼, 보호자 앱은 둥근 큰 버튼) — `className`
- * 으로 받는다. 색은 카카오 가이드 값이라 고정이다.
- */
 export function KakaoLoginButton({
   intent,
   label = "카카오로 로그인",

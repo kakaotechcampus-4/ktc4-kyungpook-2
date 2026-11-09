@@ -40,9 +40,6 @@ import com.itda.backend.service.user.KakaoUnlinkClient;
 import com.itda.backend.service.user.KakaoUnlinkResult;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 같은 인계 코드로 두 사람이 동시에 가입하면 한 사람만 기관을 받는다 — PostgreSQL 행 잠금으로 재현한다 (#478).
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers

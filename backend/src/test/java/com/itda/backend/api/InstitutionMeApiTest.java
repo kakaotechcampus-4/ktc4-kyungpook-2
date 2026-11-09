@@ -29,7 +29,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/** O-01 내 기관 정보. 기관 코드가 생기기 전에 가입한 기관은 처음 열 때 코드가 붙는다. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

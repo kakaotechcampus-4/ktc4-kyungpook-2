@@ -4,13 +4,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
-/**
- * AI 검증이 보낸 이슈 유형을 선생님이 읽을 문장으로 바꾼다. 수정 요청 큐(O-24)와 Gate 1 확인 표시(O-30)가 같은 표를 쓴다
- * — 같은 문제를 화면마다 다른 말로 부르지 않게 (#351).
- *
- * <p>유형은 AI/validation/config.py {@code ISSUE_LEVEL} 과 nodes.py 가 붙이는 {@code 대상불명확}·{@code 모델호출실패}
- * 다. AI 가 유형을 새로 만들면 표에 없는 값이 올 수 있어서, 없으면 원래 코드를 그대로 둔다 — 빈칸보다 낫다.
- */
 public final class ValidationReasons {
 
     private static final Map<String, String> SENTENCES = Map.ofEntries(
@@ -25,16 +18,11 @@ public final class ValidationReasons {
             Map.entry("대상불명확", "어느 아이의 기록인지 분명하지 않아요"),
             Map.entry("모델호출실패", "자동 검사를 마치지 못했어요. 직접 읽고 확인해 주세요"));
 
-    /** AI 가 판정만 주고 유형을 안 보냈거나 깨진 값을 보냈을 때. 빈칸이면 선생님이 할 수 있는 게 없다. */
     private static final String UNKNOWN = "검증에서 문제가 발견됐어요. 원본을 확인해 주세요";
 
     private ValidationReasons() {
     }
 
-    /**
-     * 받은 순서대로 바꾸고, 같은 문장은 한 번만 남긴다 — 그래서 유형 목록과 칸 수가 다를 수 있다. 앞뒤 공백은 떼고
-     * 보고, 빈 유형은 버린다. 남는 게 없으면 원본을 확인하라는 문장 하나다.
-     */
     public static List<String> sentencesOf(Collection<String> issueTypes) {
         List<String> sentences = issueTypes.stream()
                 .filter(type -> type != null && !type.isBlank())

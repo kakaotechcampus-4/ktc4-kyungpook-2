@@ -23,13 +23,6 @@ public class OrganizationService {
     private final OrganizationCodeIssuer organizationCodeIssuer;
     private final UserService userService;
 
-    /**
-     * O-01 내 기관 정보. 기관 코드가 생기기 전에 가입한 기관은 처음 열 때 코드를 붙인다 — 조회지만 쓰기가 일어날 수
-     * 있어 읽기 전용 트랜잭션이 아니다.
-     *
-     * <p>기관 행을 잠근 뒤 코드가 비어 있는지 본다. 잠그기 전에 읽어 두면 동시에 연 두 요청이 모두 "비어 있다" 고 보고
-     * 서로 다른 코드를 붙인다.
-     */
     @Transactional
     public MyInstitutionResponse getMine(String userId) {
         Long organizationId = userService.getOrganizationIdOf(userId);

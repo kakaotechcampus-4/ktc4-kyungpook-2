@@ -18,7 +18,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md G-13(돌봄 정보 저장). 조회는 보호자 아이 목록·홈(G-10·G-11)의 care 가 맡는다.
 @RestController
 @RequestMapping("/api/v1/children/{childId}")
 @RequiredArgsConstructor

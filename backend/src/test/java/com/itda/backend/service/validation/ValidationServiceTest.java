@@ -80,7 +80,6 @@ class ValidationServiceTest {
                 entry.getId(), "임유진이 블록을 높이 쌓았다.", yujin.getId(), "임유진"));
     }
 
-    /** 수정 요청 큐에서 고친 일지(#357)는 고친 본문으로 다시 검증된다. 고친 사람·시각도 저장된다. */
     @Test
     void 막혀서_고친_일지는_다시_집어_가고_고친_본문으로_검증을_요청한다() {
         JournalEntry entry = validating(yujin.getId());
@@ -115,7 +114,6 @@ class ValidationServiceTest {
 
     @Test
     void 아동을_찾을_수_없으면_이름을_비워_보낸다() {
-        // AI 가 판정 대상을 몰라 REVIEW(대상불명확)로 돌려준다. 정상 경로로는 생기지 않는다.
         JournalEntry entry = validating(9999L);
 
         ValidationAgentRequest request = validationService.prepareRequest(entry.getId()).request();
@@ -180,7 +178,6 @@ class ValidationServiceTest {
 
         boolean released = validationService.releaseAfterAgentDown(entry.getId(), 2);
 
-        // 실패로 남기는 건 워커가 recorder 로 한다. 여기서는 검증 중 그대로 둔다.
         assertThat(released).isFalse();
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.VALIDATING);
         assertThat(reload(entry).getAgentRetryCount()).isEqualTo(2);

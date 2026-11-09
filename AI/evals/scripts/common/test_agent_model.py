@@ -1,13 +1,3 @@
-# AI/evals/scripts/common/test_agent_model.py
-"""
-에이전트마다 주소·모델·JSON 강제를 따로 읽는지 검사한다. LLM 을 부르지 않는다.
-
-    python evals/scripts/common/test_agent_model.py
-
-.env:  API_KEY(같이 씀) · {MATCHING,VALIDATION,SUMMARY,INSIGHT}_API_URL · _MODEL · _JSON_MODE
-요약·인사이트는 sonnet, 매칭·검증은 루나로 두는 구성이다.
-"""
-
 import os
 import sys
 from pathlib import Path
@@ -39,7 +29,6 @@ def main() -> int:
     for agent, values in (("MATCHING", luna), ("VALIDATION", luna), ("SUMMARY", sonnet), ("INSIGHT", sonnet)):
         env.update({f"{agent}_{k}": v for k, v in values.items()})
 
-    # ① 요약·인사이트는 sonnet, 매칭·검증은 루나 — 주소·모델·JSON 강제 모두
     reset(**env)
     for name, module in LLM.items():
         want = "sonnet" if name in ("summary", "insight") else "luna"
@@ -51,12 +40,10 @@ def main() -> int:
         if bool(json_format(name)) != (want == "luna"):
             fails.append(f"{name}: JSON 강제가 틀림")
 
-    # ② 모델·JSON 강제를 안 적으면 기본값 (루나, JSON 강제 켬)
     reset(API_KEY="k", SUMMARY_API_URL="http://x.test")
     if model("summary") != DEFAULT_MODEL or not json_format("summary"):
         fails.append("모델·JSON 강제 기본값이 아님")
 
-    # ③ 주소나 키가 없으면 그 에이전트만 not_configured
     reset(API_KEY="k", SUMMARY_API_URL="http://x.test")
     try:
         insight_llm._endpoint()
@@ -71,7 +58,6 @@ def main() -> int:
     except summary_llm.LlmError:
         pass
 
-    # ④ 배포 스크립트도 같은 에이전트 목록을 검사한다 (한쪽만 늘어나는 것 막기)
     deploy = Path(__file__).resolve().parents[4] / "infra/scripts/deploy-ai.sh"
     if deploy.exists():
         text = deploy.read_text(encoding="utf-8")

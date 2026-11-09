@@ -1,16 +1,10 @@
 import type { TermsDocument } from "@/lib/auth";
 
-/** "2026-11-07" → "2026년 11월 7일" */
 function koreanDate(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
   return y && m && d ? `${y}년 ${m}월 ${d}일` : ymd;
 }
 
-/**
- * 약관 본문 한 개 — 시행일 · 초안 띠 · 본문. 보기 창(`TermsSheet`)과 약관 화면(`/terms/:key`)이 쓴다.
- * 제목은 부르는 쪽이 그린다(창은 머리에, 화면은 탭 아래에).
- * 본문은 서버가 주는 그냥 글이라 줄바꿈만 살린다 — 조항 번호와 `- ` 목록은 글자 그대로 보인다.
- */
 export function TermsArticle({ doc }: { doc: TermsDocument }) {
   return (
     <div className="flex flex-col gap-4">

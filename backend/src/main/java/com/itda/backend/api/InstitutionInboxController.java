@@ -18,7 +18,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// principal 은 다른 API 와 같은 내부 userId 다. 기관 담당자인지는 서비스가 UserService 로 본다.
 @RestController
 @RequestMapping("/api/v1/institutions/me/inbox")
 @RequiredArgsConstructor

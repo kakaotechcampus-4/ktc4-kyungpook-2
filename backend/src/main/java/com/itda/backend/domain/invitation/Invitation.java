@@ -17,15 +17,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import com.itda.backend.global.jpa.TimestampedEntity;
 
-/**
- * 기관이 보호자에게 건네는 일회용 초대 코드. 코드는 본인 확인이 아니라 "이 아이와 연결해도 된다"는 권한이다.
- *
- * <p>수락해도, 취소해도 행을 지우지 않는다. 같은 코드가 다시 발급되지 않게 유니크 제약을 계속 차지하고,
- * 누가 언제 초대했고 누가 수락했는지 이력이 남아야 한다 (DB 스키마 §5.3).
- *
- * <p>만료는 상태로 표시하지 않고 {@code expiresAt} 으로만 판단한다. 판단 시각은 서비스가 주입받은
- * {@code Clock} 으로 구해 넘긴다.
- */
 @Entity
 @Table(
         name = "invitation",
@@ -81,15 +72,10 @@ public class Invitation extends TimestampedEntity {
         return new Invitation(childId, organizationId, code, expiresAt);
     }
 
-    /** 아직 수락·취소되지 않았고, {@code now} 가 만료 시각 전이다. 만료 시각과 같으면 이미 만료다. */
     public boolean isUsable(LocalDateTime now) {
         return this.status == InvitationStatus.PENDING && now.isBefore(this.expiresAt);
     }
 
-    /**
-     * 보호자가 코드를 썼다. 서비스가 잠금을 얻은 뒤 같은 시각으로 {@link #isUsable} 을 먼저 확인하지만,
-     * 쓸 수 없는 코드로 연결이 생기면 권한 없는 사람이 아이 기록에 닿게 되므로 엔티티도 스스로 막는다.
-     */
     public void accept(Long userId, LocalDateTime now) {
         if (userId == null) {
             throw new IllegalArgumentException("수락한 보호자 ID는 필수입니다.");
@@ -101,7 +87,6 @@ public class Invitation extends TimestampedEntity {
         this.acceptedUserId = userId;
     }
 
-    /** 기관이 아직 쓸 수 있는 코드를 거둬들였다. 이미 수락·취소·만료된 코드는 취소할 것이 없다. */
     public void cancel(LocalDateTime now) {
         if (!isUsable(now)) {
             throw new IllegalStateException("쓸 수 없는 초대 코드입니다.");

@@ -14,8 +14,6 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// DB초안 노션의 human_review 테이블. Gate1/Gate2 모두 이 테이블 하나를 공유하는 폴리모픽 설계 —
-// targetType(SUMMARY/INSIGHT) + targetId로 대상을 가리키고, FK는 두지 않는다(§16 원칙).
 @Entity
 @Table(name = "human_review")
 @Getter
@@ -71,13 +69,11 @@ public class Approval {
         this.createdAt = now;
     }
 
-    /** 요약 Gate 1 결정 한 줄. MVP 는 보류·제거 사유를 받지 않아 comment 는 비운다. */
     public static Approval gate1(Long summaryId, Long reviewerId, ApprovalDecision decision) {
         return new Approval(ApprovalTargetType.SUMMARY, summaryId, ApprovalReviewType.GATE1, reviewerId, decision,
                 null);
     }
 
-    /** 인사이트 Gate 2 결정 한 줄. MVP 는 보류 사유를 받지 않아 comment 는 비운다. */
     public static Approval gate2(Long insightId, Long reviewerId, ApprovalDecision decision) {
         return new Approval(ApprovalTargetType.INSIGHT, insightId, ApprovalReviewType.GATE2, reviewerId, decision,
                 null);

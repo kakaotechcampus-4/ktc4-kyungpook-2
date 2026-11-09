@@ -1,11 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { newContext, signUpOrg } from "./helpers";
 
-/**
- * 업로드 전 확인 창 (#489). 올린 기록은 취소 · 삭제가 없어 [올리기] 를 눌러야만 서버로 보낸다.
- * 이미 올린 파일과 이름이 같으면 경고한다. 업로드는 AI 상태를 보지 않아 AI 없이도 저장된다.
- * 기관을 매번 새로 만들어, 다른 실행이 올린 파일과 이름이 겹치지 않는다.
- */
 test("업로드는 확인 창에서 [올리기] 를 눌러야 올라가고, 같은 이름 파일을 다시 고르면 경고한다", async ({ browser }) => {
   const context = await newContext(browser);
   const page = await context.newPage();
@@ -18,18 +13,14 @@ test("업로드는 확인 창에서 [올리기] 를 눌러야 올라가고, 같�
   };
   const picker = page.locator("#upload-input");
   const dialog = page.getByRole("dialog", { name: "파일 1개를 올릴까요?" });
-  // 업로드 요청을 직접 센다 — 목록이 비어 보이는 것만으로는 "보내지 않았다" 가 증명되지 않는다.
-  // 업로드는 파일마다 업로드 주소 받기로 시작한다(S3 로 바로 올리는 3단계, #451)
   let uploads = 0;
   page.on("request", (req) => {
     if (req.method() === "POST" && new URL(req.url()).pathname === "/api/v1/raw-records/upload-url") uploads++;
   });
 
-  // 취소하면 아무것도 보내지 않는다
   await picker.setInputFiles(file);
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(file.name)).toBeVisible();
-  // 전체 목록과 맞춰 본 뒤에야 [올리기] 가 풀린다. 그다음에 경고가 없는지 본다
   await expect(dialog.getByRole("button", { name: "올리기" })).toBeEnabled();
   await expect(dialog.getByText(/같은 이름 파일/)).toHaveCount(0);
   await dialog.getByRole("button", { name: "취소" }).click();
@@ -37,14 +28,12 @@ test("업로드는 확인 창에서 [올리기] 를 눌러야 올라가고, 같�
   await expect(page.getByText("아직 올린 파일이 없어요")).toBeVisible();
   expect(uploads).toBe(0);
 
-  // [올리기] 를 누르면 올라가 목록에 보인다. 전체 목록과 이름을 맞춰 본 뒤에야 눌린다
   await picker.setInputFiles(file);
   await dialog.getByRole("button", { name: "올리기" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("list", { name: /올린 파일/ }).getByText(file.name)).toBeVisible();
   expect(uploads).toBe(1);
 
-  // 같은 이름을 다시 고르면 경고한다. 막지는 않는다. 올리는 중에는 고를 수 없어 끝나기를 기다린다
   await expect(picker).toBeEnabled();
   await picker.setInputFiles(file);
   await expect(dialog.getByText("같은 이름 파일을 올렸어요", { exact: false })).toBeVisible();

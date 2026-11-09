@@ -15,28 +15,20 @@ const EMPTY_CARE: ChildCareInfo = {
 
 const COMMON_ALLERGIES = ["우유와 유제품", "땅콩", "계란", "갑각류"];
 
-/** 서버와 같은 상한 (G-13). 넘기지 않게 입력에서 먼저 막는다 */
 const MAX_ITEMS = 20;
 const MAX_LENGTH = 30;
 
 export async function clientLoader() {
-  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
   if (!isReady("careInfo")) return null;
   const child = selectedChildOrInvite(await getParentChildren());
   return { childId: child.id, childName: child.name, care: child.care ?? EMPTY_CARE };
 }
 
-/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function CareInfoPageRoute() {
   if (!isReady("careInfo")) return <ParentNotReadyPage title="아이 상세정보" back />;
   return <CareInfoPage />;
 }
 
-/**
- * 설정 › 아이 정보에서 들어오는 돌봄 정보 — 알레르기와 복용약 (G-13).
- * 현재 이 아이와 연결된 모든 보호자가 보고 고칠 수 있고, 기관에는 공유하지 않는다. 기관에 가지 않는 정보라
- * 온보딩에서는 받지 않는다. 저장은 통째로 덮어쓴다.
- */
 function CareInfoPage() {
   const { childId, childName, care: initial } = useLoaderData<typeof clientLoader>()!;
   const [care, setCare] = useState<ChildCareInfo>(initial);
@@ -62,7 +54,6 @@ function CareInfoPage() {
   const addAllergy = () => {
     const value = allergyDraft.trim();
     if (!value || allergiesFull) return;
-    // 서버도 같은 값을 하나로 합친다. 화면에서 먼저 합쳐 칩이 두 번 보이지 않게 한다
     setCare((c) => (c.allergies.includes(value) ? c : { ...c, allergies: [...c.allergies, value] }));
     setAllergyDraft("");
   };
@@ -71,7 +62,6 @@ function CareInfoPage() {
 
   const addMedication = () => {
     if (!medName.trim() || medicationsFull) return;
-    // 복용 시간은 비워도 된다 — 빈 값으로 보낸다
     setCare((c) => ({
       ...c,
       medications: [...c.medications, { name: medName.trim(), time: medTime.trim() }],
@@ -228,14 +218,12 @@ function CareInfoPage() {
         ) : null}
       </section>
 
-      {/* 화면 아래 탭과 겹치지 않게 고정하지 않고 목록 끝에 둔다 */}
       <div className="flex flex-col gap-2">
         {error ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <p role="alert" className="text-[14px] leading-6 text-block">
               {error.text}
             </p>
-            {/* 보호자 진입 화면에서 다시 로그인하면 이 화면으로 돌아온다. 고른 칩은 같은 탭이면 사라진다 */}
             {error.loginLost ? <ReloginButton role="parent" /> : null}
           </div>
         ) : null}

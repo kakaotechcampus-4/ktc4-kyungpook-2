@@ -42,7 +42,6 @@ import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
-/** Gate 2 — 교사가 인사이트를 발송 전에 승인·보류한다. 기관 경계를 넘는 마지막 관문이다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({InsightGate2Service.class, ConsentStateReader.class})
@@ -83,7 +82,6 @@ class InsightGate2ServiceTest {
         em.persistAndFlush(ChildOrganization.of(childId, centerId));
         guardianId = 7L;
         em.persistAndFlush(ChildGuardian.link(childId, guardianId, 1L));
-        // 재료 기관의 공유 동의. 인사이트를 만들 때 있었던 것이고, 승인 시점에 다시 본다 (#213).
         consent(schoolId);
         consent(centerId);
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(schoolId);
@@ -105,7 +103,6 @@ class InsightGate2ServiceTest {
         assertThat(granted).filteredOn(history -> history.getReceiverType() == ReceiverType.GUARDIAN)
                 .singleElement().satisfies(history -> {
             assertThat(history.getReceiverId()).isEqualTo(guardianId);
-            // 승인한 기관이 발신이다 — 수신함이 "어디서 왔나" 로 보여준다.
             assertThat(history.getSenderOrganizationId()).isEqualTo(schoolId);
             assertThat(history.getGrantedAt()).isNotNull();
             assertThat(history.getReadAt()).isNull();
@@ -119,19 +116,15 @@ class InsightGate2ServiceTest {
         });
     }
 
-    /**
-     * 보호자가 미리 해 둔 기관별 동의를 그대로 쓴다 (#233). 글마다 고르는 단계는 없다. 받는 기관은 명부에 있고,
-     * 동의가 켜져 있는 곳이다. 승인한 기관 자신만 뺀다.
-     */
     @Test
     void 승인하면_동의한_기관도_바로_볼_수_있다() {
         Long academyId = em.persistAndFlush(
                 Organization.of("△△활동지원", OrganizationType.ACTIVITY_SUPPORT, "1000000003")).getId();
         Long formerId = em.persistAndFlush(
                 Organization.of("예전센터", OrganizationType.CENTER, "1000000004")).getId();
-        em.persistAndFlush(ChildOrganization.of(childId, academyId)); // 명부에는 있지만 동의가 없다
-        consent(formerId);                                               // 동의는 있지만 명부에 없다
-        InsightResult insight = insight(1, schoolId);                   // 재료는 학교만
+        em.persistAndFlush(ChildOrganization.of(childId, academyId));
+        consent(formerId);
+        InsightResult insight = insight(1, schoolId);
 
         service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE);
 
@@ -144,10 +137,6 @@ class InsightGate2ServiceTest {
                 });
     }
 
-    /**
-     * 재료를 낸 다른 기관도 받는다. Gate 2 목록은 승인 기관에게만 보여서, 여기서 빼면 센터는 자기 기록이 섞인
-     * 기관 간 인사이트를 영영 못 본다. 승인 기관 자신만 뺀다.
-     */
     @Test
     void 재료를_낸_다른_기관도_받고_승인_기관_자신은_받지_않는다() {
         InsightResult insight = insight(1, schoolId, centerId);
@@ -162,7 +151,7 @@ class InsightGate2ServiceTest {
 
     @Test
     void 보류하면_아무도_볼_수_없다() {
-        InsightResult insight = insight(1, schoolId); // 승인했다면 센터가 받았을 글이다
+        InsightResult insight = insight(1, schoolId);
 
         Gate2DecisionResponse response = service.decide(TEACHER, insight.getId(), Gate2Action.HOLD);
 
@@ -173,7 +162,6 @@ class InsightGate2ServiceTest {
                 .extracting(Approval::getDecision).isEqualTo(ApprovalDecision.HOLD);
     }
 
-    /** 학교 > 센터. 근거는 냈지만 승인 주체가 아닌 기관은 자기 기록이 쓰인 것은 아니까 403 으로 답한다. */
     @Test
     void 승인_주체가_아닌_근거_기관은_403() {
         InsightResult insight = insight(1, schoolId, centerId);
@@ -185,7 +173,6 @@ class InsightGate2ServiceTest {
         assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.GATE2_PENDING);
     }
 
-    /** 근거를 내지 않은 기관에는 존재 여부조차 알려주지 않는다 (deny-by-default). */
     @Test
     void 근거를_내지_않은_기관은_404() {
         InsightResult insight = insight(1, centerId);
@@ -200,7 +187,6 @@ class InsightGate2ServiceTest {
     void 이미_처리된_인사이트는_409() {
         InsightResult insight = insight(1, schoolId);
         service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE);
-        // 테스트는 한 트랜잭션이라 flush 없이 clear 하면 바뀐 상태가 버려진다. 실제로는 요청마다 커밋된다.
         em.flush();
         em.clear();
 
@@ -210,7 +196,6 @@ class InsightGate2ServiceTest {
                 .isEqualTo(InsightErrorCode.ALREADY_REVIEWED);
     }
 
-    /** 재료가 늘어 새 회차가 만들어졌다. 옛 회차를 승인하면 철 지난 글이 다른 기관으로 나간다. */
     @Test
     void 옛_회차는_승인할_수_없다() {
         InsightResult old = insight(1, schoolId);
@@ -224,7 +209,6 @@ class InsightGate2ServiceTest {
         assertThat(reload(old).getStatus()).isEqualTo(InsightStatus.GATE2_PENDING);
     }
 
-    /** 초대를 아직 수락하지 않은 아이다. 승인은 되지만 아무에게도 보이지 않는다 — 오류가 아니다. */
     @Test
     void 보호자가_없으면_승인은_되지만_열람_권한이_생기지_않는다() {
         Long orphan = em.persistAndFlush(Child.of("박소망", LocalDate.of(2019, 5, 1))).getId();
@@ -239,7 +223,6 @@ class InsightGate2ServiceTest {
         assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId())).isEmpty();
     }
 
-    /** 근거 기관 JSON 이 깨졌다. 아무도 승인 주체가 아니므로 통째로 막는다 — 조용히 아무나 승인하면 안 된다. */
     @Test
     void 근거_기관을_읽을_수_없으면_404() {
         InsightResult insight = em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1,
@@ -252,7 +235,6 @@ class InsightGate2ServiceTest {
                 .isEqualTo(InsightErrorCode.NOT_FOUND);
     }
 
-    /** 아이가 우리 기관을 떠났다. source_institution_ids 는 굳은 값이라 그것만 보면 계속 승인된다. */
     @Test
     void 연결이_끊긴_기관은_승인할_수_없다() {
         InsightResult insight = insight(1, schoolId, centerId);
@@ -267,10 +249,6 @@ class InsightGate2ServiceTest {
         assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.GATE2_PENDING);
     }
 
-    /**
-     * 인사이트를 만들 때는 동의가 있었지만 교사가 승인을 누르기 전에 보호자가 철회했다.
-     * 여기서 막지 않으면 철회된 기관의 기록이 섞인 글이 그대로 나간다 (#213).
-     */
     @Test
     void 재료_기관의_동의가_철회되면_승인할_수_없다() {
         InsightResult insight = insight(1, schoolId, centerId);
@@ -284,7 +262,6 @@ class InsightGate2ServiceTest {
         assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId())).isEmpty();
     }
 
-    /** 보류는 아무 데도 안 나간다. 막으면 교사가 철회된 인사이트를 치울 길이 없어진다. */
     @Test
     void 동의가_철회돼도_보류는_할_수_있다() {
         InsightResult insight = insight(1, schoolId, centerId);
@@ -295,7 +272,6 @@ class InsightGate2ServiceTest {
         assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.HOLD);
     }
 
-    /** 목록에서 뺀 아이의 글은 더 나가지 않는다. */
     @Test
     void 삭제된_아이는_승인할_수_없다() {
         InsightResult insight = insight(1, schoolId);
@@ -309,7 +285,6 @@ class InsightGate2ServiceTest {
                 .isEqualTo(InsightErrorCode.NOT_FOUND);
     }
 
-    /** 하루 요약만 허락한 기관은 주간 인사이트를 받지 않는다 (#257, 멘토님 리뷰 #256 P1). */
     @Test
     void 하루_요약만_허락한_기관은_인사이트를_받지_않는다() {
         Long dailyOnlyId = em.persistAndFlush(
@@ -326,7 +301,6 @@ class InsightGate2ServiceTest {
                 .containsExactly(centerId);
     }
 
-    /** 재료를 낸 기관이 범위에서 주간 인사이트를 뺐으면 철회와 같이 본다 — 승인할 수 없다 (#257). */
     @Test
     void 재료_기관이_주간_인사이트를_빼면_승인할_수_없다() {
         InsightResult insight = insight(1, schoolId, centerId);

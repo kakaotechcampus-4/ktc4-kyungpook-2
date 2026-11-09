@@ -1,14 +1,3 @@
-# AI/evals/scripts/common/test_json_mode.py
-"""
-<에이전트>_JSON_MODE 로 response_format(JSON 강제)을 켜고 끄는지 네 에이전트 모두 검사한다. Luna 를 부르지 않는다.
-
-    python evals/scripts/common/test_json_mode.py
-
-기본은 켜짐 — 루나와 서버는 지금처럼 JSON 을 강제한다. 다른 모델 비교에서 그 모델이
-response_format 을 받지 않으면(claude-opus-5-5, 400) <에이전트>_JSON_MODE=off 로 끈다.
-끈 상태에서도 응답 앞뒤에 말이 붙은 JSON 을 골라내는지 같이 본다.
-"""
-
 import os
 import sys
 from pathlib import Path
@@ -39,7 +28,6 @@ class FakeResponse:
 
 
 def send(module, content='{"ok": 1}'):
-    """한 번 부르고 (보낸 body, 받은 data) 를 돌려준다."""
     sent = []
 
     def post(url, json, **kw):

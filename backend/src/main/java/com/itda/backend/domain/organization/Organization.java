@@ -17,17 +17,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import com.itda.backend.global.jpa.TimestampedEntity;
 
-/**
- * 아이를 돌보는 기관. 학교·센터·활동지원기관을 한 테이블로 다룬다.
- *
- * <p>기관 담당자가 회원가입할 때 기관명·유형·사업자등록번호를 입력하면 그 자리에서 만들어진다.
- * 기관 1곳당 계정 1개이고, 기관을 구분하는 키는 사업자등록번호다.
- *
- * <p>{@code name} 에는 유니크를 걸지 않는다 — 같은 이름의 센터가 실제로 여러 곳 있을 수 있다.
- * {@code business_number} 의 유니크 제약은 지금 넣지 않으면 영영 못 넣는다 — 배포는
- * {@code ddl-auto: update} 라 이미 만들어진 테이블에 제약을 추가해주지 않는다.
- * 나중에 더한 {@code code} 의 유니크 제약은 그래서 배포 DB 에 손으로 건다 (DB 스키마 §11.4).
- */
 @Entity
 @Table(
         name = "organization",
@@ -56,17 +45,9 @@ public class Organization extends TimestampedEntity {
     @Column(nullable = false, length = 30)
     private OrganizationType type;
 
-    /**
-     * 사업자등록번호. 숫자 10자리 형식만 확인하고 진위·체크섬은 검증하지 않는다(MVP 의도적 선택 —
-     * 테스트 데이터를 쉽게 넣기 위해서다). 하이픈 없이 저장한다.
-     */
     @Column(name = "business_number", nullable = false, length = 10)
     private String businessNumber;
 
-    /**
-     * 기관 코드. 보호자가 이 코드를 넣어 이미 있는 아이를 이 기관에 연결해 달라고 요청한다.
-     * 기관마다 고정이고 바꾸지 않는다. 이 컬럼이 생기기 전에 가입한 기관은 비어 있다가 내 기관 정보를 처음 열 때 채워진다.
-     */
     @Column(length = CODE_LENGTH)
     private String code;
 
@@ -89,7 +70,6 @@ public class Organization extends TimestampedEntity {
         return new Organization(name, type, businessNumber);
     }
 
-    /** 코드는 한 번만 붙는다. 이미 보호자에게 알려 준 코드가 바뀌면 그 코드로는 더 이상 찾을 수 없다. */
     public void assignCode(String code) {
         if (this.code != null) {
             throw new IllegalStateException("기관 코드는 이미 발급됐습니다.");

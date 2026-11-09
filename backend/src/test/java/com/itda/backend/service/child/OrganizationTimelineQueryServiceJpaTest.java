@@ -33,10 +33,6 @@ import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 기관 아동 상세의 기록 타임라인 (#292). 명부 권한 확인({@link OrganizationChildGuard})은 진짜를 쓴다 — 명부 제외·아동
- * 삭제가 DB 에서 반영되는지 보려면 가짜로 두면 안 된다. 사용자 조회만 가짜다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({OrganizationTimelineQueryService.class, OrganizationChildGuard.class})
@@ -71,7 +67,6 @@ class OrganizationTimelineQueryServiceJpaTest {
         em.clear();
     }
 
-    /** 본문은 담당자가 승인한 최종본이다. 요약의 content 는 AI 원문이라 고쳐 승인한 글이 거기 없다. */
     @Test
     void 본문은_AI_원문이_아니라_승인본이다() {
         SummaryResult summary = summary(sky, AUG_21, schoolId, "AI 가 쓴 원문", "[1, 2]");
@@ -88,7 +83,6 @@ class OrganizationTimelineQueryServiceJpaTest {
         });
     }
 
-    /** 기관 사이에는 Gate 2 를 지난 인사이트로만 넘어간다. 다른 기관의 승인본은 여기 나오지 않는다. */
     @Test
     void 우리_기관이_승인한_요약만_보인다() {
         Long ours = approve(summary(sky, AUG_21, schoolId, "학교 요약", "[1]"), "학교 승인본");
@@ -100,7 +94,6 @@ class OrganizationTimelineQueryServiceJpaTest {
                 .containsExactly(String.valueOf(ours));
     }
 
-    /** 관찰 날짜 최근 순. 승인 뒤 같은 날 일지가 더 오면 새 요약이 따로 승인된다 — 같은 날은 승인 최근 순으로 둘 다 나온다. */
     @Test
     void 관찰_날짜_최근_순이고_같은_날은_승인_최근_순이다() {
         Long first = approve(summary(sky, AUG_21, schoolId, "1판", "[1]", 1), "오전 기록");
@@ -116,7 +109,6 @@ class OrganizationTimelineQueryServiceJpaTest {
                         tuple(String.valueOf(older), AUG_20));
     }
 
-    /** 수정 승인만 표시한다. 다른 기관 요약의 수정 승인 기록이 섞이지 않는다. */
     @Test
     void 고쳐서_승인한_요약만_수정_표시가_붙는다() {
         SummaryResult plain = summary(sky, AUG_20, schoolId, "그대로 승인", "[1]");
@@ -131,7 +123,6 @@ class OrganizationTimelineQueryServiceJpaTest {
                 .satisfies(entry -> assertThat(entry.edited()).isFalse());
     }
 
-    /** Gate 1 조회와 같은 규칙. 비었거나 배열이 아니거나 깨졌으면 0 — 한 건 때문에 목록 전체가 500 나지 않는다. */
     @Test
     void 원본_건수는_숫자_원소만_세고_읽을_수_없으면_0이다() {
         List<String> broken = java.util.Arrays.asList(null, "", "[]", "{}", "\"3\"", "{깨진 JSON");
@@ -150,7 +141,6 @@ class OrganizationTimelineQueryServiceJpaTest {
         assertThat(service.timeline(SCHOOL_STAFF, sky)).isEmpty();
     }
 
-    /** 동의 철회는 다른 기관으로 넘어가는 것과 새 처리를 막는다. 우리 기관이 쓴 지난 기록은 그대로 보인다. */
     @Test
     void 우리_기관_동의가_꺼져도_지난_기록은_보인다() {
         approve(summary(sky, AUG_21, schoolId, "요약", "[1]"), "승인본");
@@ -162,8 +152,6 @@ class OrganizationTimelineQueryServiceJpaTest {
 
         assertThat(service.timeline(SCHOOL_STAFF, sky)).hasSize(1);
     }
-
-    // --- 404 — 실제 명부·아이 행을 바꿔서 ---
 
     @Test
     void 우리_명부에_없는_아이는_404() {
@@ -194,8 +182,6 @@ class OrganizationTimelineQueryServiceJpaTest {
         assertNotFound(sky);
     }
 
-    // --- 도구 ---
-
     private void assertNotFound(Long childId) {
         assertThatThrownBy(() -> service.timeline(SCHOOL_STAFF, childId))
                 .isInstanceOfSatisfying(ChildException.class,
@@ -212,7 +198,6 @@ class OrganizationTimelineQueryServiceJpaTest {
                 "[]", "{}"));
     }
 
-    /** 담당자가 승인해 승인본을 남긴 것처럼. 승인본 id 를 돌려준다. */
     private Long approve(SummaryResult summary, String approvedContent) {
         return em.persistAndFlush(ChildContext.of(summary.getChildId(), summary.getId(), approvedContent)).getId();
     }

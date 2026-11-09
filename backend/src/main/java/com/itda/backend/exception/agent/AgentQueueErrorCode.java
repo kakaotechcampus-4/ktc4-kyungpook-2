@@ -6,7 +6,6 @@ import com.itda.backend.global.exception.ErrorCode;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-/** docs/api/api-conventions.md — AI 처리 줄 오류 코드 (#424). 업로드와 선생님 처리 네 경로가 함께 쓴다. */
 @Getter
 @RequiredArgsConstructor
 public enum AgentQueueErrorCode implements ErrorCode {

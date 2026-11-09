@@ -1,13 +1,3 @@
-# AI/evals/scripts/summary/verify_blind.py
-"""
-블라인드 세트를 **에이전트에 부르기 전에** 검사한다.
-
-    python evals/scripts/summary/verify_blind.py <세트.json>
-
-여기서 걸리면 에이전트가 아니라 문제가 틀린 것이다. 돌린 뒤에 알면 그 세트는
-소모되므로, 반드시 먼저 돌린다 (matching/HOLDOUT.md 와 같은 절차).
-"""
-
 import json
 import re
 import sys
@@ -51,11 +41,9 @@ def main(path: str) -> None:
 
         text = " ".join(s["content"] for s in c["sources"])
 
-        # 명부 안 이름은 본문에 실제로 있어야 한다 — 없으면 검사가 헛돈다
         for n in c["other_child_names"]:
             ck(n in text, f"{cid} other_child_names '{n}' 가 본문에 없음")
 
-        # names 갈래의 금지어는 본문에 있는 실제 이름이어야 한다
         if c["category"] == "names":
             ck(c["expected_absent"], f"{cid} names 인데 expected_absent 비어 있음")
             full = [t for t in c["expected_absent"] if len(t) >= 3]

@@ -1,19 +1,3 @@
-# AI/evals/scripts/insight/eval_tools.py
-"""
-도구 사용(딥다이브 3) 평가. 보강 단계(nodes._lookup)만 실제 Luna 로 돌린다.
-
-    python evals/scripts/insight/eval_tools.py --runs 3
-
-실데이터 4~6월에는 한 기관으로 걸린 상황(화장실·차량)의 다른 기관 기록이 아예 없다.
-그래서 "있으면 찾아 살리는지" 는 실데이터로 잴 수 없어, 가짜 아이·가짜 문장으로 10건을 만들었다.
-처음 인사이트(한 기관, 대처 없음)는 정해 두고, 지난 기록만 바꾼다.
-
-  찾아야 함 (5)   다른 기관에 같은 상황 + 대처와 결과가 있다 → 살리고, 그 기록을 근거로
-  찾으면 안 됨 (5) 관계없는 기록 · 같은 기관 기록 · 낱말만 겹치는 다른 상황 · 동의 안 한 기관 · 없음 → 버림
-
-결과는 evals/generated/insight/runs/tools_<name>.json (git-ignored).
-"""
-
 import argparse
 import json
 from collections import Counter
@@ -45,7 +29,6 @@ def single(situation, behavior, content, ids):
     return {"situation": situation, "behavior": behavior, "supports": [], "claim_ids": ids, "content": content}
 
 
-#: 이번 기간(10/19~10/25) 센터 기록 둘 + 처음 인사이트. 상황마다 하나씩.
 NOW = {
     "차량": ([c("n1-0", 2, "2026-10-20", "하원 차량 앞에서 바닥에 앉아 타지 않으려 했다."),
               c("n1-1", 2, "2026-10-23", "차량 탑승을 거부하고 바닥에 앉아 울었다.")],
@@ -69,7 +52,6 @@ NOW = {
                     ["n5-0", "n5-1"])),
 }
 
-#: 다른 기관(학교)에 같은 상황 + 대처와 결과
 MATCH = {
     "차량": c("h1-0", 1, "2026-10-08", "하교 차량 앞에서 앉아 버렸고, 같은 차를 타는 친구가 손을 흔들자 일어나 탔다."),
     "화장실": c("h2-0", 1, "2026-10-07", "화장실 가기를 거부했으나 체크표에 스티커를 붙이자고 하자 스스로 다녀왔다."),
@@ -141,7 +123,6 @@ def main():
         print(f"  {g:<8} {sum(r['ok'] for r in rs)}/{len(rs)}")
     wrong = [r for r in records if r["group"] == "찾으면 안 됨" and r["rescued"]]
     print(f"  잘못 묶음 {len(wrong)}건 {[r['id'] for r in wrong]}")
-    # 도구가 돌려준 기록의 점수 분포 (#373 리뷰 3: score>=1 이 느슨한지)
     allscores = [s for r in records for s in r["scores"].values()]
     if allscores:
         ones = sum(s == 1 for s in allscores)

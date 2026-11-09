@@ -1,32 +1,8 @@
-# AI/notify/template.py
-"""
-보호자 메일 HTML 템플릿.
-
-## 왜 손으로 쓰나
-
-메일 클라이언트는 2000년대 HTML 만 안다. flex·grid·float 이 안 먹고, `<style>` 블록을 떼어
-버리는 곳도 있다 (Gmail 웹은 두고, 일부 아웃룩은 지운다). 그래서 **표로 짜고 스타일을 전부
-태그에 인라인으로 박는다.** 템플릿 엔진을 쓰지 않는 것도 같은 이유다 — 의존성 하나가 늘 뿐
-결과는 같다.
-
-## 글자는 손대지 않는다
-
-인사이트 본문과 근거 문장은 **승인된 글자 그대로** 넣는다. 틀(인사말·절 제목·버튼)만 여기서
-쓴다. 아이 기록이 아니라 틀이라 승인 대상이 아니다 (nodes.py 머리말).
-
-## 이미지는 절대 주소다
-
-메일에는 상대 경로가 없다. 앱이 이미 공개로 주는 `/img/*` 를 그대로 가리킨다
-({@code NOTIFY_APP_ORIGIN}). 받는 쪽이 이미지를 막아도 글은 그대로 읽히게 `alt` 를 단다.
-"""
-
 import html
 import os
 
-#: 메일 안의 링크·이미지가 가리킬 주소. 배포마다 다르다.
 APP_ORIGIN = os.environ.get("NOTIFY_APP_ORIGIN", "https://iitda.duckdns.org").rstrip("/")
 
-# ── 색 (parent.css 와 같은 값을 쓴다) ──────────────────────────
 INK = "#241f1a"
 INK2 = "#5c5248"
 MUTED = "#8b8075"
@@ -41,7 +17,6 @@ FONT = ("-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothi
 
 
 def _esc(text: str) -> str:
-    """글자를 HTML 에 넣기 전에 반드시 거친다. 아이 기록에 <, & 가 있을 수 있다."""
     return html.escape(text or "", quote=False)
 
 
@@ -65,12 +40,6 @@ def _period(period_from: str, period_to: str) -> str:
 
 
 def _header() -> str:
-    """
-    로고와 그림. 이미지가 막혀도 alt 로 "잇다" 가 읽히고 글은 그대로 보인다.
-
-    그림은 셋을 가로로 둔다 — 아이 · 학교 · 센터. "여러 기관을 잇는다" 가 메일 맨 위에서
-    한 번에 보이게 하려는 것이다.
-    """
     kids = "".join(
         f'<img src="{APP_ORIGIN}/img/{n}.png" alt="" width="{w}" '
         f'style="display:inline-block;border:0;width:{w}px;height:auto;vertical-align:bottom;'
@@ -124,7 +93,6 @@ def _period_box(period_from: str, period_to: str) -> str:
 
 
 def _evidence(entry) -> str:
-    """근거 한 줄. 화면의 "이 글의 근거" 와 같은 모양이다 — 상황·대처 꼬리표까지."""
     tail = " · 지난 기록" if getattr(entry, "looked_up", False) else ""
     rows = []
     for sentence in entry.sentences:
@@ -205,7 +173,6 @@ def _footer() -> str:
 
 
 def render(child_name: str, period_from: str, period_to: str, insights) -> str:
-    """메일 HTML 한 통. 글자는 전부 승인된 것이고 틀만 여기서 만든다."""
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

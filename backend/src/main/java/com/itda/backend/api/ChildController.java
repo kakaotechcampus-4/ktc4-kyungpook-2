@@ -25,9 +25,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md O-10(명부)·O-11(아이 등록). 명부는 RosterPicker.tsx에 필요한
-// id/name/birthDate/status와 기관 관리번호(externalId)만 — institutions[]/care 등 풀 스펙은 별도 작업.
-// 등록하면 보호자 초대 코드도 함께 발급한다(추가 발급·취소는 InvitationController).
 @RestController
 @RequestMapping("/api/v1/institutions/me/children")
 @RequiredArgsConstructor
@@ -81,7 +78,6 @@ public class ChildController {
                 .body(ApiResponse.success(childService.register(userId, request)));
     }
 
-    /** 본문 없는 204 라 {@code ApiResponse} 로 감싸지 않는다 (backend/AGENTS.md). */
     @DeleteMapping("/{childId}")
     @Operation(summary = "명부에서 빼기",
             description = "아이를 우리 기관 명부에서 뺍니다. 아이 자체와 보호자 연결은 그대로입니다. "

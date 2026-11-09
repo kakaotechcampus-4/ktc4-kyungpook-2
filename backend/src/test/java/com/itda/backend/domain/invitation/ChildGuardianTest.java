@@ -23,7 +23,6 @@ class ChildGuardianTest {
         assertThatThrownBy(() -> ChildGuardian.link(1L, 7L, null)).isInstanceOf(IllegalArgumentException.class);
     }
 
-    /** 다시 연결되면 해제 권한의 근거도 새 초대로 바뀐다. */
     @Test
     void relinkRestoresWithNewInvitation() {
         ChildGuardian guardian = ChildGuardian.link(1L, 7L, 3L);

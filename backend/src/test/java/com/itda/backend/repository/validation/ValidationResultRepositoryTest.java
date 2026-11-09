@@ -32,17 +32,12 @@ class ValidationResultRepositoryTest {
         assertThat(found.getMatchingResultId()).isEqualTo(7L);
         assertThat(found.getChildId()).isEqualTo(8L);
         assertThat(found.getVerdict()).isEqualTo(ValidationVerdict.REVIEW);
-        // 문자열 인자 순서가 뒤바뀌어도 컴파일은 통과하므로 값 자체를 확인한다.
         assertThat(found.getIssueTypes()).isEqualTo("[\"추측성표현\"]");
         assertThat(found.getEvidence()).isEqualTo("[{\"start\":0,\"end\":5}]");
         assertThat(found.getRawResponse()).isEqualTo("{\"verdict\":\"REVIEW\"}");
         assertThat(found.getCreatedAt()).isNotNull();
     }
 
-    /**
-     * 수정 요청 큐의 처리(#357)는 화면이 보던 판정이 그 일지의 최신 판정인지 본다. 다시 검증하면 판정 행이 쌓이므로
-     * 그 일지의 가장 큰 id 를 고른다. 다른 일지의 판정은 섞이지 않는다.
-     */
     @Test
     void 그_일지의_가장_최근_판정을_고른다() {
         validationResultRepository.saveAndFlush(

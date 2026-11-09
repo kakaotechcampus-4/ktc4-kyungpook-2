@@ -24,20 +24,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 
-/**
- * 개발·테스트 전용 로그인. 카카오 계정 없이 여러 회원으로 가입·초대·동의 흐름을 따라가 보려고 둔다.
- *
- * <p>{@code as} 에 {@code dev:} 를 붙여 카카오 회원번호 자리에 넣는다. 실제 카카오 회원번호는 숫자뿐이라
- * 실제 회원과 겹치지 않는다. 그 뒤로는 {@link com.itda.backend.global.security.oauth.OAuth2LoginSuccessHandler}
- * 와 똑같이 회원을 찾거나 만들고, 출입증을 심고, 같은 주소로 돌려보낸다.
- *
- * <p>{@code app.auth.dev-login.enabled=true} 일 때만 빈이 생긴다. 꺼져 있으면 경로 자체가 없어 404 다.
- * 배포 서버는 테스트용으로 compose 가 켜 둔다. 이름만 알면 누구든 그 회원으로 들어올 수 있으므로
- * 정식 오픈 전에는 끈다.
- *
- * <p>주소창에 바로 넣어 쓰려고 GET 이다. 그 대가로 CSRF 검사를 받지 않는다 — 남의 사이트가 이 주소를 띄우면
- * 방문자가 개발용 회원으로 로그인된다. 켜 둔 환경에서만 생기는 문제라 감수한다.
- */
 @RestController
 @Validated
 @RequestMapping("/api/v1/dev")
@@ -64,7 +50,6 @@ public class DevLoginController {
         this.redirectUri = URI.create(redirectUri);
     }
 
-    /** 본문 없는 302 라 {@code ApiResponse} 로 감싸지 않는다. */
     @GetMapping("/login")
     @Operation(
             summary = "개발용 로그인",

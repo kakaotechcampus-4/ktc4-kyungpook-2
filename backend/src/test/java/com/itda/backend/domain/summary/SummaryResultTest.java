@@ -82,7 +82,6 @@ class SummaryResultTest {
         assertThat(result.isNeedsReview()).isTrue();
         assertThat(result.getReviewReasons()).isEqualTo("[\"다른아동이름\"]");
 
-        // 다시 요약해 이름이 사라졌으면 표시도 사라져야 한다 — 남아 있으면 교사가 없는 문제를 찾는다.
         result.markReview(false, "[]");
         assertThat(result.isNeedsReview()).isFalse();
         assertThat(result.getReviewReasons()).isEqualTo("[]");
@@ -93,7 +92,6 @@ class SummaryResultTest {
         SummaryResult result = summary();
         result.markReview(true, "[\"다른아동이름\"]");
 
-        // 새 본문에 대한 표시는 새 응답이 정한다. 이전 본문의 경고가 새 글에 붙어 있으면 안 된다.
         result.overwrite("다시 만든 요약", "[]", "[]", "[]", "{}");
 
         assertThat(result.isNeedsReview()).isFalse();
@@ -148,7 +146,6 @@ class SummaryResultTest {
 
         result.hold();
         assertThat(result.getStatus()).isEqualTo(SummaryStatus.HOLD);
-        // 보류된 판은 승인 전이 아니다 — 같은 묶음에 새 일지가 와도 이 판을 덮어쓰지 않고 새 판을 만든다.
         assertThat(result.isBeforeApproval()).isFalse();
 
         result.reopen();
@@ -222,18 +219,15 @@ class SummaryResultTest {
         SummaryResult result = summary();
         result.markReview(true, "[\"다른아동이름\"]");
 
-        // 같은 날 "특이사항 없음" 일지만 남기고 나머지를 지운 뒤 다시 요약한 경우
         result.overwriteNoContent("[1042]", "{\"no_content\":true}");
 
         assertThat(result.isNoContent()).isTrue();
         assertThat(result.getContent()).isEmpty();
         assertThat(result.getClaims()).isEqualTo("[]");
-        // 반영된 일지가 남아 있으면 Gate 1 원본 목록에서 빠진다 — 요약할 내용 없음은 언제나 비운다.
         assertThat(result.getCoveredEntryIds()).isEqualTo("[]");
         assertThat(result.getUncoveredEntryIds()).isEqualTo("[1042]");
         assertThat(result.isNeedsReview()).isFalse();
 
-        // 그 뒤 내용 있는 일지가 와서 다시 요약하면 일반 요약으로 돌아온다
         result.overwrite("블록 놀이에서 양보했다.", "[{\"text\":\"블록 놀이에서 양보했다.\"}]", "[1043]", "[1042]", "{}");
 
         assertThat(result.isNoContent()).isFalse();
@@ -262,7 +256,6 @@ class SummaryResultTest {
 
     @Test
     void 요약할_내용_없음을_되돌리면_되돌림_상태가_되고_더는_덮어쓸_수_없다() {
-        // 다음 [요약] 결과는 이 판을 덮어쓰지 않고 새 판으로 쌓인다 — 되돌렸다는 기록이 남는다.
         SummaryResult result = noContentSummary();
 
         result.revertNoContent();
@@ -291,7 +284,6 @@ class SummaryResultTest {
 
     @Test
     void 요약할_내용_없음은_승인_보류_제거할_수_없다() {
-        // 승인하면 빈 글이 child_context 로 올라가 인사이트 재료가 된다.
         SummaryResult result = noContentSummary();
 
         assertThatThrownBy(result::approve).isInstanceOf(IllegalStateException.class);

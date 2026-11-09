@@ -29,7 +29,6 @@ import com.itda.backend.dto.response.record.RecordProgressResponse.EntryProgress
 import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.user.UserService;
 
-/** 업로드한 파일이 지금 어디까지 갔는지 (O-26). 읽기만 한다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(RecordProgressService.class)
@@ -50,7 +49,6 @@ class RecordProgressServiceTest {
     @MockitoBean
     private UserService userService;
 
-    /** 기본은 자동 요약 꺼짐(mock 의 false). */
     @MockitoBean
     private SummaryProperties summaryProperties;
 
@@ -76,7 +74,6 @@ class RecordProgressServiceTest {
         assertThat(service.getProgress(TEACHER)).isEmpty();
     }
 
-    /** 아직 쪼개지 않은 파일(PDF)이다. 화면은 "기록 등록 중" 에 머문다 — 당분간 정상이다. */
     @Test
     void 일지로_쪼개지_않은_파일은_entries_가_비어_있다() {
         record(ORG, "0821_관찰일지.pdf");
@@ -91,18 +88,18 @@ class RecordProgressServiceTest {
     @Test
     void 단계와_상태를_화면_값으로_접는다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");
-        entry(recordId, e -> { });                                        // PENDING
-        entry(recordId, JournalEntry::startMatching);                     // MATCHING
-        entry(recordId, e -> { e.startMatching(); e.requestMatchReview(); });  // MATCH_REVIEW
-        entry(recordId, e -> { e.startMatching(); e.confirmMatch(CHILD); });   // MATCHED
-        entry(recordId, RecordProgressServiceTest::validated);            // VALIDATED
-        entry(recordId, e -> { validated(e); e.startSummarizing(); e.completeSummary(1L); }); // GATE1_PENDING
+        entry(recordId, e -> { });
+        entry(recordId, JournalEntry::startMatching);
+        entry(recordId, e -> { e.startMatching(); e.requestMatchReview(); });
+        entry(recordId, e -> { e.startMatching(); e.confirmMatch(CHILD); });
+        entry(recordId, RecordProgressServiceTest::validated);
+        entry(recordId, e -> { validated(e); e.startSummarizing(); e.completeSummary(1L); });
         entry(recordId, e -> {
             validated(e);
             e.startSummarizing();
             e.completeSummary(1L);
             e.completeGate1();
-        });                                                               // COMPLETED
+        });
 
         assertThat(service.getProgress(TEACHER).get(0).entries())
                 .extracting(EntryProgress::stageIndex, EntryProgress::state)
@@ -116,31 +113,28 @@ class RecordProgressServiceTest {
                         tuple(4, "done"));
     }
 
-    /** 자동 요약이 꺼져 있으면 요약 대기는 교사가 [요약]을 눌러야 넘어간다 (#181). 누른 뒤 요약 중이면 다시 자동이다. */
     @Test
     void 요약_대기는_사람_대기이고_요약_중은_진행_중이다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");
-        entry(recordId, RecordProgressServiceTest::validated);                       // VALIDATED
-        entry(recordId, e -> { validated(e); e.startSummarizing(); });               // SUMMARIZING
+        entry(recordId, RecordProgressServiceTest::validated);
+        entry(recordId, e -> { validated(e); e.startSummarizing(); });
 
         assertThat(service.getProgress(TEACHER).get(0).entries())
                 .extracting(EntryProgress::stageIndex, EntryProgress::state)
                 .containsExactly(tuple(3, "waiting"), tuple(3, "running"));
     }
 
-    /** 자동 요약(#369)이 켜져 있으면 요약 대기는 사람 없이 넘어가므로 진행 중이다 — 화면이 폴링을 멈추지 않게. */
     @Test
     void 자동_요약이_켜져_있으면_요약_대기도_진행_중이다() {
         given(summaryProperties.autoRun()).willReturn(true);
         Long recordId = record(ORG, "0821_관찰일지.txt");
-        entry(recordId, RecordProgressServiceTest::validated);                       // VALIDATED
+        entry(recordId, RecordProgressServiceTest::validated);
 
         assertThat(service.getProgress(TEACHER).get(0).entries())
                 .extracting(EntryProgress::stageIndex, EntryProgress::state)
                 .containsExactly(tuple(3, "running"));
     }
 
-    /** 요약 실패를 요약 없이 마무리한 기록은 요약 단계에서 끝났다 — 1차 검토를 지난 것처럼 보이면 안 된다 (#369). */
     @Test
     void 요약_없이_마무리한_기록은_요약_단계에서_끝난다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");
@@ -151,23 +145,18 @@ class RecordProgressServiceTest {
                 .containsExactly(tuple(3, "done"));
     }
 
-    /** 교사가 끝낸 기록은 아동 맥락에 안 올라가지만 계약의 값이 넷뿐이라 done 으로 간다 (#210). */
     @Test
     void 교사가_끝낸_기록도_done_이다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");
-        entry(recordId, e -> { e.startMatching(); e.requestMatchReview(); e.exclude(); });     // EXCLUDED
-        // #357 부터 새로 생기지 않지만 배포 DB 에 남은 행
+        entry(recordId, e -> { e.startMatching(); e.requestMatchReview(); e.exclude(); });
         entry(recordId, e -> { blocked(e); ReflectionTestUtils.setField(e, "status", JournalEntryStatus.REUPLOAD_REQUESTED); });
-        entry(recordId, e -> { blocked(e); e.holdAfterValidation(); });    // VALIDATION_HELD
+        entry(recordId, e -> { blocked(e); e.holdAfterValidation(); });
 
         assertThat(service.getProgress(TEACHER).get(0).entries())
                 .extracting(EntryProgress::state)
                 .containsOnly("done");
     }
 
-    /**
-     * 시스템 오류는 멈춘 단계가 {@code failure_stage} 에 적혀 있다(#180). 요약 실패는 요약 단계다.
-     */
     @Test
     void 요약_실패와_시스템_오류는_적힌_단계로_보여준다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");
@@ -192,14 +181,6 @@ class RecordProgressServiceTest {
                         tuple(3, "failed"));
     }
 
-    /**
-     * {@code FAILED} 는 실패한 자리를 적어 두는 칸이 없다. 그대로 0 으로 보내면 요약까지 갔다가 죽은 기록이
-     * "등록 단계 실패" 로 보인다 — 일지가 남긴 흔적으로 되짚는다. #180 부터 검증·요약 실패는 FAILED 가 아니지만
-     * 그 전에 남은 일지가 있을 수 있다. 지금 코드로는 만들 수 없어 상태를 직접 넣는다.
-     *
-     * <p>⚠️ <b>검증 실패에도 행이 남는다</b> ({@code verdict = FAILED}, #122). 실제 순서 그대로
-     * 재현한다 — 행이 있는지만 보면 검증 실패가 전부 "요약 실패" 로 나온다 (코드리뷰로 확인).
-     */
     @Test
     void 옛_FAILED_는_실패한_단계를_일지가_남긴_흔적으로_되짚는다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");
@@ -208,10 +189,9 @@ class RecordProgressServiceTest {
 
         Long failedInValidation = entry(recordId,
                 e -> { e.startMatching(); e.confirmMatch(CHILD); e.startValidating(); });
-        validationRow(failedInValidation, ValidationVerdict.FAILED);  // #180 전 ValidationResultRecorder.recordFailure 순서
+        validationRow(failedInValidation, ValidationVerdict.FAILED);
         markLegacyFailed(failedInValidation);
 
-        // 요약 중에 죽으면 요약 번호가 아직 안 붙는다. 검증을 지났다는 흔적은 PASS 판정뿐이다.
         Long failedInSummary = entry(recordId, e -> { validated(e); e.startSummarizing(); });
         validationRow(failedInSummary, ValidationVerdict.PASS);
         markLegacyFailed(failedInSummary);
@@ -224,7 +204,6 @@ class RecordProgressServiceTest {
                         tuple(3, "failed"));
     }
 
-    /** 화면이 이 id 로 현황 줄과 큐 항목을 잇는다. 상수를 내려보내도 아무도 모르면 안 된다. */
     @Test
     void 일지_id_를_그대로_내려준다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");

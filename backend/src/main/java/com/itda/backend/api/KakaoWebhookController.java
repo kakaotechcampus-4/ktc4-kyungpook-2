@@ -18,10 +18,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * 카카오가 부르는 웹훅. 로그인 쿠키 · CSRF 토큰 없이 들어온다 — 대신 어드민 키 헤더로 카카오가 보낸 것인지 본다.
- * 본문 없는 200 이라 {@code ApiResponse} 로 감싸지 않는다.
- */
 @RestController
 @Tag(name = "카카오 웹훅", description = "카카오가 서비스로 보내는 알림")
 @RequiredArgsConstructor
@@ -29,7 +25,6 @@ public class KakaoWebhookController {
 
     private final KakaoUnlinkWebhookService webhookService;
 
-    /** 카카오는 GET(쿼리)과 POST(폼) 둘 다로 보낼 수 있다. 파라미터는 두 경우 모두 {@code @RequestParam} 으로 읽힌다. */
     @RequestMapping(path = ApiPaths.KAKAO_UNLINK_WEBHOOK, method = {RequestMethod.GET, RequestMethod.POST})
     @Operation(
             summary = "카카오 연결 해제 웹훅",

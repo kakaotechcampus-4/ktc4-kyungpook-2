@@ -1,20 +1,3 @@
-"""
-README 판정 기준과 에이전트 프롬프트가 같은지 검사한다. LLM 호출 없음.
-
-README "판정 기준 > 유형 정의" 표의 각 줄(유형 | 판정 | 정의)이
-  - validation/prompts.py 의 ISSUE_DEFINITIONS (정의 문장)
-  - validation/config.py 의 ISSUE_LEVEL (BLOCK/REVIEW)
-와 글자 하나까지 같아야 통과한다.
-
-README "근거의 귀속" 표에서 귀속 판단이 "하지 않음"인 유형은
-  - validation/config.py 의 ATTRIBUTION_EXEMPT
-와 같아야 통과한다.
-
-README 만 고치고 프롬프트를 안 고쳤거나, 그 반대면 여기서 잡힌다.
-
-실행 (AI 폴더에서):
-    python3 evals/scripts/validation/test_prompt_sync.py
-"""
 import sys
 from pathlib import Path
 
@@ -28,7 +11,6 @@ README = Path(__file__).parent / "README.md"
 
 
 def readme_table(heading: str) -> list[list[str]]:
-    """README 에서 heading 바로 아래 표의 데이터 행을 칸 목록으로 읽는다."""
     lines = README.read_text(encoding="utf-8").splitlines()
     start = lines.index(heading)
     rows = []
@@ -46,7 +28,6 @@ def readme_attribution_exempt() -> set:
 
 
 def readme_definitions() -> dict:
-    """README 의 '### 유형 정의' 표를 {유형: (판정, 정의)} 로 읽는다."""
     lines = README.read_text(encoding="utf-8").splitlines()
     start = lines.index("### 유형 정의")
     rows = {}

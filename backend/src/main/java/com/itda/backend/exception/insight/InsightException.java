@@ -2,10 +2,6 @@ package com.itda.backend.exception.insight;
 
 import com.itda.backend.global.exception.BusinessException;
 
-/**
- * 오류 코드를 담은 인사이트 예외. 응답 메시지는 오류 코드의 고정 문구다 — 예외 메시지(요청 값, 인사이트 id)는
- * 로그에만 남는다. {@code SummaryException} 과 같은 모양이다.
- */
 public class InsightException extends BusinessException {
 
     public InsightException(InsightErrorCode errorCode, Long insightId) {

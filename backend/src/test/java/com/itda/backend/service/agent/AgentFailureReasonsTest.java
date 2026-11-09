@@ -32,7 +32,6 @@ class AgentFailureReasonsTest {
                 .isEqualTo(FailureReason.AGENT_UNAVAILABLE);
     }
 
-    /** 상한(#424) 전에 올라온 긴 일지 — AI 를 부르지 않았다. */
     @Test
     void 보낼_수_없는_긴_일지는_CONTENT_TOO_LONG이다() {
         assertThat(AgentFailureReasons.of(new AgentContentTooLongException(1L, 5001)))

@@ -23,9 +23,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md O-24, O-25.
-// principal은 MatchingQueueController와 같은 내부 userId다. 기관 식별은 ValidationQueueService가
-// UserService.getOrganizationIdOf(userId)로 풀어서 raw_record.institutionId와 비교한다.
 @RestController
 @RequestMapping("/api/v1/validation-results")
 @RequiredArgsConstructor
@@ -49,8 +46,6 @@ public class ValidationResultController {
     public ApiResponse<List<ValidationQueueItemResponse>> getQueue(
             @RequestParam(defaultValue = "BLOCK") String status,
             @AuthenticationPrincipal String userId) {
-        // FE는 ?status=BLOCK으로만 부른다(frontend/app/lib/api.ts). 다른 값은 조용히 BLOCK으로
-        // 처리하면 화면이 엉뚱한 목록을 보여주므로 명시적으로 거절한다.
         if (!"BLOCK".equalsIgnoreCase(status)) {
             throw new ValidationResultValidationException("unsupported status: " + status);
         }

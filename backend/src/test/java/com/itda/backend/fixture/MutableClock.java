@@ -6,10 +6,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
-/**
- * 테스트가 옮길 수 있는 시계. 초대 코드 만료처럼 "잠금을 기다리는 동안 시간이 흐른" 상황을 재현하려고 쓴다.
- * 여러 스레드가 함께 읽으므로 현재 시각을 volatile 로 둔다.
- */
 public final class MutableClock extends Clock {
 
     public static final ZoneId KST = ZoneId.of("Asia/Seoul");

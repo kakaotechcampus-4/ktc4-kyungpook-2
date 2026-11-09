@@ -205,7 +205,6 @@ class SummaryControllerTest {
 
     @Test
     void gate1_rejectsCardsOnConfirm() throws Exception {
-        // 요약할 내용 없음에는 고칠 문장이 없다.
         decide("{\"decision\": \"confirm\", \"version\": \"v1\", \"cards\": [{\"action\": \"ADD\", \"text\": \"새 문장\"}]}")
                 .andExpect(status().isBadRequest());
         decide("{\"decision\": \"revert\", \"version\": \"v1\", \"cards\": [{\"action\": \"ADD\", \"text\": \"새 문장\"}]}")
@@ -218,16 +217,13 @@ class SummaryControllerTest {
     void gate1_rejectsInvalidRequest() throws Exception {
         for (String body : new String[] {
                 "{}",
-                // 교사가 본 판 표시가 없으면 그 사이 바뀐 글을 승인하는지 알 수 없다.
                 "{\"decision\": \"approve\"}",
                 "{\"decision\": \"reject\", \"version\": \"v1\"}",
                 "{\"decision\": \"APPROVE\", \"version\": \"v1\"}",
                 "{\"decision\": \"approve\", \"version\": \"v1\", \"cards\": []}",
-                // 옛 계약의 고친 본문. 조용히 버리면 AI 원문이 그대로 승인된다 — 승인은 되돌릴 수 없다.
                 "{\"decision\": \"approve\", \"editedContent\": \"고친 본문\", \"version\": \"v1\"}",
                 "{\"decision\": \"hold\", \"editedContent\": \"고친 본문\", \"version\": \"v1\"}",
                 approveWithCard("{\"action\": \"ADD\", \"text\": \"" + "가".repeat(1001) + "\"}"),
-                // 보류·제거에 카드를 보내면 버려진다. 조용히 무시하지 않고 막는다.
                 "{\"decision\": \"hold\", \"version\": \"v1\", \"cards\": [{\"index\": 0, \"action\": \"KEEP\"}]}",
                 approveWithCard("{\"index\": 0, \"action\": \"keep\"}"),
                 approveWithCard("{\"index\": 0, \"action\": \"MOVE\"}"),
@@ -240,7 +236,6 @@ class SummaryControllerTest {
                 approveWithCard("{\"index\": 0, \"action\": \"EDIT\"}"),
                 approveWithCard("{\"index\": 0, \"action\": \"EDIT\", \"text\": \"  \"}"),
                 approveWithCard("{\"action\": \"ADD\"}"),
-                // ADD 는 원래 문장이 없다. 번호가 붙으면 어느 문장을 바꾸려는지 모른다.
                 approveWithCard("{\"index\": 0, \"action\": \"ADD\", \"text\": \"새 문장\"}")}) {
             decide(body).andExpect(status().isBadRequest());
         }
@@ -348,8 +343,6 @@ class SummaryControllerTest {
                 .andExpect(jsonPath("$.code").value("SUMMARY_INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value(SummaryErrorCode.INVALID_REQUEST.getMessage()));
     }
-
-    // ── 요약 실패 (#369) ──
 
     private static final String FAILED_BODY = "{\"childId\": 8, \"entryDate\": \"2026-10-08\"}";
 

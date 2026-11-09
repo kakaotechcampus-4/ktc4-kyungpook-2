@@ -1,4 +1,3 @@
--- migrate-raw-record-owners.sql 의 트랜잭션과 잠금 안에서 실행한다.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM raw_record_owner_mapping) THEN
@@ -10,7 +9,6 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Duplicate raw_record_id in owner mapping';
     END IF;
-    -- 전환 중 쓰기를 중단한 상태에서 모든 기존 기록을 대상으로 한다.
     IF EXISTS (
         SELECT 1 FROM raw_record r
         LEFT JOIN raw_record_owner_mapping m ON m.raw_record_id = r.id

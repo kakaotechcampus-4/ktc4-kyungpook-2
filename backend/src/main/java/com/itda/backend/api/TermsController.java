@@ -20,10 +20,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 약관 본문. 로그인 없이 연다 — 약관은 공개 문서이고 동의하기 전에 읽어야 하는 글이다.
- * 가입 미완료 · 약관 미동의 차단에서도 빠진다(ApiPaths.TERMS).
- */
 @RestController
 @Validated
 @RequiredArgsConstructor
@@ -53,7 +49,6 @@ public class TermsController {
         List<TermsDocumentResponse> body = termsDocumentService.forRole(userRole).stream()
                 .map(TermsDocumentResponse::from)
                 .toList();
-        // 판이 오르면 바로 보이게 — 브라우저가 옛 본문을 들고 있다가 옛 판으로 동의하지 않게
         return ResponseEntity.ok().cacheControl(CacheControl.noCache()).body(ApiResponse.success(body));
     }
 }

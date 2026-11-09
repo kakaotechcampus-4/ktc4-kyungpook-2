@@ -1,26 +1,3 @@
-# AI/evals/scripts/real/run_real.py
-"""
-실제 일지로 매칭 → 검증 → 요약 → 인사이트를 BE 없이 차례로 돌린다.
-
-    python evals/scripts/real/run_real.py --months 01 --child 아동이름
-    python evals/scripts/real/run_real.py --months 01                 # 1월, 전체 아동
-    python evals/scripts/real/run_real.py --months 04,05,06 --school synthetic_school_dev.json
-    # 블라인드 (한 번만): 센터 일지·정답표를 바꾼다
-    python evals/scripts/real/run_real.py --months 08,09,11,12 --real blind/test.json \
-        --school blind/synthetic_school_blind.json --answer blind/synthetic_school_blind_answer.json
-
-⚠️ 데이터는 레포에 없다. 실제 기록(가명)과 가상 학교 기록은 git-ignored 폴더
-`evals/generated/real/` 에 따로 받아 둔다 (README 참고).
-
-- 실제 기록: --real (기본 dev.json, 센터1). 가상 학교 기록: --school 로 더한다 (학교1).
-- 매칭: 명부는 데이터의 아동 전체(생년월일은 가짜). 이용자명 칸을 표지 힌트로 준다.
-- 검증: 매칭이 auto/review 로 고른 아이를 대상으로. 못 고르면 정답 아이로 계속 진행하되 기록한다.
-- 요약: 아동 × 날짜 × 기관 묶음. BLOCK 일지는 넣지 않는다 (BE 와 같음).
-- 인사이트: 아동 × 기간(--window 일, 기본 30). 두 기관 모두 동의한 것으로 둔다.
-- 정답표(--answer, 기본 synthetic_school_answer.json)가 있으면 패턴을 찾았는지, 관계없는 기록을 묶었는지 센다.
-
-결과는 evals/generated/real/runs/ 에 JSON·HTML 로 남는다. 레포에 커밋하지 않는다.
-"""
 import argparse
 import re
 import datetime as dt
@@ -31,11 +8,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 AI_DIR = Path(__file__).resolve().parents[3]
-#: 실제 기록·가상 학교 기록·정답표가 있는 곳. git-ignored 라 커밋되지 않는다.
 HERE = AI_DIR / "evals" / "generated" / "real"
 sys.path.insert(0, str(AI_DIR))
 
-# 에이전트 모듈을 import 하기 전에 .env 를 읽는다 (run_suite.py 와 같음). 늦으면 Luna 설정이 안 보인다.
 from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(AI_DIR / ".env")
@@ -51,13 +26,12 @@ from insight.graph import run_insight  # noqa: E402
 from insight import config as insight_config  # noqa: E402
 from common.luna import AGENTS, json_format, model as luna_model  # noqa: E402
 
-YEAR = 2025  # 날짜 계산용. 데이터에는 연도를 쓰지 않는다.
+YEAR = 2025
 INST = {"센터1": (1, "센터"), "학교1": (2, "학교")}
 
 
 
 def model_line() -> str:
-    """에이전트별 모델과 JSON 강제. 예: matching=gpt-6-luna(JSON) · summary=claude-sonnet-5-5"""
     return " · ".join(f"{a}={luna_model(a)}{'(JSON)' if json_format(a) else ''}" for a in AGENTS)
 
 def load(name):
@@ -66,8 +40,6 @@ def load(name):
 
 
 def retry(fn, tries=3):
-    """Luna 가 가끔 빈 응답·시간 초과를 낸다. 같은 입력으로 최대 3번까지 다시 부른다.
-    근거가 하나도 안 남은 요약(NoGroundedClaims)은 다시 불러도 같으므로 바로 넘긴다."""
     last = None
     for _ in range(tries):
         try:
@@ -84,7 +56,6 @@ def full_date(mmdd):
 
 
 def body(e):
-    # BE 업로드와 같은 모양: 비고가 있으면 본문 뒤에 붙인다
     return e["content"] + (f"\n비고: {e['note']}" if e.get("note") else "")
 
 
@@ -116,7 +87,6 @@ def main():
     if not entries:
         sys.exit("해당 조건의 일지가 없습니다")
 
-    # 명부: dev 아동 전체 + 고른 실제 기록 + 학교 기록. 기본값이면 지금과 같다
     names = sorted({e["child"] for e in load("dev.json")} | {e["child"] for e in load(args.real)}
                    | {e["child"] for e in school})
     child_id = {n: i + 1 for i, n in enumerate(names)}
@@ -128,7 +98,6 @@ def main():
     calls = Counter()
     t0 = time.time()
 
-    # ── 1·2. 매칭 → 검증 ──
     for e in entries:
         content = body(e)
         m = run_matching(MatchingInput(journal_entry_id=jid[e["id"]], content=content, roster=roster,
@@ -137,7 +106,6 @@ def main():
         expect = child_id[e["child"]]
         got = m.matched_child_id if m.status in ("auto", "review") else None
         subject = got or expect
-        # 느린 모델(gemini·sonnet)은 검증 60초를 가끔 넘긴다. 한 건 때문에 회차 전체가 멈추지 않게 요약처럼 다시 부른다
         v, verr = retry(lambda: run_validation(ValidationInput(journal_entry_id=jid[e["id"]], content=content,
                                                                subject_child_id=subject, subject_name=names[subject - 1])))
         if verr:
@@ -153,7 +121,6 @@ def main():
         })
         print(f"[{e['id']}] {e['child']} 매칭={m.status}{'' if got == expect else '(X)'} 검증={v.verdict} {v.issue_types}")
 
-    # ── 3. 요약 (아동 × 날짜 × 기관) ──
     verdict = {r["id"]: r for r in log["entries"]}
     groups = defaultdict(list)
     for e in entries:
@@ -173,7 +140,6 @@ def main():
             other_child_names=others)
         trace = {}
         out, err = retry(lambda: run_summary(payload, trace=trace))
-        # 근거 검사에서 버린 문장 (마지막 시도 기준). 요약 수정 루프의 기준선이다.
         rec.update(raw_claims=trace.get("raw_claims", 0), dropped=trace.get("dropped_detail", []))
         calls["summary"] += 1
         if out:
@@ -191,7 +157,6 @@ def main():
         log["summaries"].append(rec)
         print(f"[요약 {sid}] {child} {date} {inst} → {'claims ' + str(rec.get('n_claims')) if rec.get('ok') else rec['error'][:60]}")
 
-    # ── 4. 인사이트 (아동 × 기간) ──
     consented = [{"institution_id": i, "institution_type": t} for i, t in INST.values()]
     for child, claims in sorted(claims_by_child.items()):
         windows = defaultdict(list)
@@ -199,7 +164,7 @@ def main():
             d = dt.date.fromisoformat(c["entry_date"])
             key = d.month if args.window >= 28 else d.isocalendar()[1]
             windows[key].append(c)
-        past = []  # 앞 기간의 claim — 도구(find_claims)가 찾을 지난 기록 (BE 의 history_claims 와 같은 역할)
+        past = []
         for key, cs in sorted(windows.items()):
             days = sorted(c["entry_date"] for c in cs)
             history, past = list(past), past + cs
@@ -227,7 +192,6 @@ def main():
             calls["insight_refine"] += trace.get("refine_calls", 0)
             print(f"[인사이트] {child} {key} claims={len(cs)} → {len(out.insights)}개")
 
-    # ── 리포트 ──
     E = log["entries"]
     print("\n===== 요약 리포트 =====")
     print(f"일지 {len(E)}건 (실제 {sum(r['source'] == 'real' for r in E)} · 가상 {sum(r['source'] != 'real' for r in E)})")
@@ -251,7 +215,6 @@ def main():
                             "all_dropped_groups": sum(1 for s in S_all if not s.get("ok") and s.get("raw_claims"))}
     sd = log["summary_drops"]
     print(f"  요약 버린 문장  {sd['dropped']}/{sd['raw_claims']}  {sd['by_reason']}  · 전부 버려져 실패한 묶음 {sd['all_dropped_groups']}")
-    # 약한 인사이트 (insight/quality.py). drop 이면 버린 것도 분모에 넣는다 — 모델이 쓴 인사이트 수 기준
     W = log["weak"]
     n_dropped = sum(w["dropped"] for w in W)
     n_written = len(log["insights"]) + n_dropped
@@ -299,10 +262,8 @@ def main():
         prefix += f"weak-{log['weak_mode']}_"
     if log["tools"]:
         prefix += "tools_"
-    # 모델 비교 실험(11/08): 어떤 모델로 돌렸는지 파일 이름과 본문에 남긴다. 이름을 손으로 바꾸면 섞인다
     log["models"] = {a: luna_model(a) for a in AGENTS}
     log["json_mode"] = {a: bool(json_format(a)) for a in AGENTS}
-    # 파일 이름에는 쓴 모델을 모두 넣는다 (에이전트마다 다를 수 있다)
     model_tag = "+".join(dict.fromkeys(log["models"].values())).replace("/", "-")
     name = f"run_{model_tag}_{prefix}{args.months.replace(',', '-')}_{args.child or 'all'}_{dt.datetime.now():%m%d_%H%M}.json"
     (out_dir / name).write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -312,7 +273,6 @@ def main():
     print(f"보고서: {html_path}  ← 브라우저로 열어 보세요")
 
 
-#: 문장이 합쇼체로 끝나는가. "했습니다." "입니다." "됩니다." 를 잡는다.
 POLITE_END = re.compile(r"니다[.!]?\s*$")
 
 
@@ -321,7 +281,6 @@ def _polite(text):
 
 
 def compare(log, entries):
-    """v1 (2026-10-28) 에서 고친 것들이 효과가 있었는지 보는 숫자. 판정에는 쓰지 않는다."""
     by_id = {e["id"]: e for e in entries}
     S = [s for s in log["summaries"] if s.get("ok")]
     nc = [s for s in S if s.get("no_content")]

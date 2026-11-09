@@ -3,19 +3,12 @@ import { Busy } from "@/components/ui";
 import { formatInviteCode, formatRemaining, inviteLink, useRemainingMs } from "@/lib/invite";
 import type { IssuedInvitation } from "@/lib/types";
 
-/**
- * 보호자 초대 코드 한 장 — 코드 · 남은 시간 · 복사 버튼.
- * I-04(등록 직후)와 I-09-1(쓸 수 있는 코드 목록)이 함께 쓴다.
- *
- * 만료되면 복사 버튼을 숨긴다. 만료된 코드를 보내면 보호자가 오류만 보게 된다.
- */
 export function InviteCodeCard({
   invitation,
   onCancel,
   cancelling = false,
 }: {
   invitation: IssuedInvitation;
-  /** 주면 "코드 취소" 버튼을 보여준다 (O-17) */
   onCancel?: () => void;
   cancelling?: boolean;
 }) {
@@ -29,7 +22,6 @@ export function InviteCodeCard({
       await navigator.clipboard.writeText(text);
       setCopied(kind);
     } catch {
-      // 클립보드 권한이 없으면 코드를 직접 읽어 전달하면 된다 — 화면에 그대로 보인다.
     }
   }
 

@@ -23,7 +23,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md O-70(보내기)·O-71(보낸 목록)·O-72(내리기). 보호자 쪽은 GuardianChecklistController.
 @RestController
 @RequestMapping("/api/v1/institutions/me/checklists")
 @RequiredArgsConstructor
@@ -75,7 +74,6 @@ public class ChecklistController {
         return ApiResponse.success(checklistService.list(userId, before));
     }
 
-    /** 본문 없는 204 라 {@code ApiResponse} 로 감싸지 않는다 (backend/AGENTS.md). */
     @DeleteMapping("/{checklistId}")
     @Operation(summary = "준비물·확인사항 내리기",
             description = "받은 아이 모두에게서 통째로 내립니다. 이미 내렸으면 아무것도 바꾸지 않고 같은 204 입니다. "

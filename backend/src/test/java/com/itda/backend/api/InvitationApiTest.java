@@ -35,12 +35,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 기관 쪽 초대 코드·보호자 연결 API(O-15~O-19) — 보안 필터·권한 검사·저장까지 실제로 거친다.
- *
- * <p>아이는 O-11 로 실제 등록하고, 보호자 연결은 G-04 로 실제 수락한다. CSRF 는 프론트처럼 XSRF-TOKEN 쿠키를
- * 받아 헤더로 되돌려보낸다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -124,8 +118,6 @@ class InvitationApiTest {
         registeredCode = JsonPath.read(body, "$.data.invitation.code");
     }
 
-    // --- O-15 추가 발급 ---
-
     @Test
     void 기관은_추가_코드를_발급하고_목록에서_본다() throws Exception {
         String body = mockMvc.perform(withCsrf(post(invitations()), auth(staff)))
@@ -176,7 +168,6 @@ class InvitationApiTest {
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
-    /** 다른 기관 아이는 있는지조차 알려 주지 않는다 — 발급·조회·취소·보호자 목록·해제 모두 같은 404. */
     @Test
     void 다른_기관_아이는_모든_기관_API에서_404() throws Exception {
         String invitationId = JsonPath.read(mockMvc.perform(get(invitations()).cookie(auth(staff)))
@@ -203,8 +194,6 @@ class InvitationApiTest {
                 .andExpect(jsonPath("$.data.length()").value(1));
     }
 
-    // --- O-16·O-17 목록·취소 ---
-
     @Test
     void 취소한_코드는_목록에서_빠지고_수락할_수_없다() throws Exception {
         String invitationId = JsonPath.read(mockMvc.perform(get(invitations()).cookie(auth(staff)))
@@ -224,8 +213,6 @@ class InvitationApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_INVITE_CODE"));
     }
-
-    // --- O-18·O-19 보호자 목록·해제 ---
 
     @Test
     void 우리_코드로_연결된_보호자를_보고_해제한다() throws Exception {

@@ -9,23 +9,16 @@ import { readSelectedChildId } from "@/lib/selectedChild";
 
 export async function clientLoader({ params }: { params: { institutionId: string } }) {
   if (!isReady("institutionShares")) return null;
-  // 아이는 설정과 같이 헤더에서 고른 아이다 — 주소에 아이를 넣으면 헤더 선택과 어긋날 수 있다
   const kids = await getParentChildren();
   const shares = await getInstitutionShares(readSelectedChildId(kids));
   return { group: shares.find((s) => s.institution.id === params.institutionId) ?? null };
 }
 
-/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function SettingsSharesRoute() {
   if (!isReady("institutionShares")) return <ParentNotReadyPage title="공유 내역" back />;
   return <SettingsSharesPage />;
 }
 
-/**
- * 기관 공유 내역 (G-45) — 이 기관에 열린 아이 주간 리포트와 지금 상태. 동의 화면 · 끄기 확인창이 "서로 봐요",
- * "끄면 가려져요" 라고 말한 것을 확인하는 곳이라 가려진 공유도 보인다. 가려진 이유와 기관이 열어 봤는지는 없다.
- * 지금 명부에서 빠진 기관도 받은 이력이 있으면 보인다.
- */
 function SettingsSharesPage() {
   const data = useLoaderData<typeof clientLoader>();
   const group = data?.group ?? null;

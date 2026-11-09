@@ -1,26 +1,3 @@
-"""
-케이스 파일 하나를 받아 실행 → 채점 → 틀린 이유 자동 분류 → 지난번 대비 회귀까지 한 번에.
-
-지금까지는 틀린 케이스가 나오면 디버그 스크립트를 따로 짜서 llm_issues를 들여다봤다.
-이 스크립트는 그걸 매번 자동으로 한다. 틀린 케이스마다 원인을 넷 중 하나로 붙인다.
-
-    미감지     모델이 그 유형을 아예 못 봄 (llm_issues에 없음)       → 유형 정의 문제
-    귀속필터   봤는데 attributed_to_subject=false 로 버려짐          → 귀속 규칙 문제
-    인용실패   봤고 귀속도 됐는데 최종에 없음 (원문에서 인용 못 찾음)  → 근거 추출 문제
-    등급       유형은 다 맞췄는데 verdict 가 다름                     → config 매핑 문제
-    과탐       기대하지 않은 유형을 잡음                               → 정의가 너무 넓음
-
-실행 (AI 폴더에서):
-    python3 evals/scripts/validation/run_suite.py                              # dev 전체
-    python3 evals/scripts/validation/run_suite.py --cases metamorphic_cases.json
-    python3 evals/scripts/validation/run_suite.py --cases metamorphic_cases.json --limit 20
-    python3 evals/scripts/validation/run_suite.py --cases metamorphic_cases.json --rescore
-        (--rescore: LLM 을 다시 부르지 않고 지난 실행 결과로 채점만 다시 한다. 비용 0)
-
-결과:
-    generated/validation/runs/<이름>_latest.json   이번 실행 결과 (다음 실행의 비교 기준)
-    generated/validation/runs/<이름>_report.md     사람이 읽는 리포트
-"""
 from dotenv import load_dotenv
 from pathlib import Path
 load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
@@ -31,7 +8,7 @@ import sys
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))  # AI/
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from validation.graph import build_graph
 
@@ -44,7 +21,7 @@ def load_cases(name: str, limit: int | None):
     with open(GENERATED_DIR / name, encoding="utf-8") as f:
         cases = json.load(f)
     if name == "validation_inputs.json":
-        cases = [c for c in cases if c["dataset"] == "dev"]  # holdout 은 여기서 절대 안 돈다
+        cases = [c for c in cases if c["dataset"] == "dev"]
     return cases[:limit] if limit else cases
 
 
@@ -53,8 +30,6 @@ def run_one(case, graph):
     try:
         s = graph.invoke(state)
         if s.get("llm_error"):
-            # LLM 호출이 실패해도 그래프는 REVIEW["모델호출실패"]로 끝까지 돈다.
-            # 채점에 넣으면 '모델이 틀린 것'처럼 보이므로 실행 오류로 따로 센다.
             return case["case_id"], None, "LLM 호출 실패 (llm_error)"
         return case["case_id"], {
             "verdict": s["verdict"],
@@ -67,7 +42,6 @@ def run_one(case, graph):
 
 
 def diagnose(case, out) -> list[str]:
-    """틀린 이유 목록. 빈 목록이면 정답."""
     reasons = []
     expected = set(case["expected_issue_types"])
     optional = set(case.get("optional_issue_types", []))
@@ -137,14 +111,10 @@ def main():
                 if i % 50 == 0 or i == len(cases):
                     print(f"  {i}/{len(cases)} 완료...")
 
-    # ── 실행 오류·누락 ──
-    # 결과가 없는 케이스는 채점에서 빠진다. 빠진 만큼 점수가 좋아 보일 수 있으니 따로 세고, 있으면 실패로 끝낸다.
-    # (--rescore 에서는 지난 실행에 결과가 없던 케이스가 여기에 잡힌다)
     error_msg = dict(errors)
     missing = [c["case_id"] for c in cases if c["case_id"] not in outputs]
 
-    # ── 채점 ──
-    by_group = defaultdict(Counter)       # relation(없으면 expected 유형) 별 정답/전체
+    by_group = defaultdict(Counter)
     sev = Counter()
     reason_count = Counter()
     failures = []
@@ -170,17 +140,12 @@ def main():
             reason_count[r.split(":")[0]] += 1
         failures.append((s, c, out, reasons))
 
-    # ── 회귀: 지난번엔 맞았는데 이번엔 틀린 것 ──
     regressions, fixed = [], []
     if prev_data is not None and not args.rescore:
         prev = set(prev_data["passed_ids"])
         now_failed = {c["case_id"] for _, c, _, _ in failures}
         regressions = sorted(prev & now_failed)
         fixed = sorted(passed_ids - prev)
-    # --limit 으로 일부만 돌렸거나 실행 오류·누락이 있으면 지난 기록에 덮어쓰지 않고 합친다.
-    # (전에는 30건만 돌린 결과가 전체 기준점을 지워버려서 다음 회귀 비교가 30건으로 줄었다)
-    # 실행 오류가 난 케이스는 지난번 상태를 그대로 둔다. 안 그러면 정답 목록에서 빠져서
-    # 다음 실행 때 틀려도 회귀로 안 잡히고, 맞으면 '새로 맞힌 것'으로 잘못 잡힌다.
     save_outputs, save_passed = outputs, passed_ids
     if prev_data is not None and (args.limit or missing):
         ran = set(outputs)
@@ -189,7 +154,6 @@ def main():
     latest_path.write_text(json.dumps(
         {"passed_ids": sorted(save_passed), "outputs": save_outputs}, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # ── 리포트 ──
     order = {"치명적": 0, "준치명적": 1, "등급하락": 2, "과탐": 3, "": 4}
     failures.sort(key=lambda f: order[f[0]])
     total = sum(g["total"] for g in by_group.values())
@@ -221,7 +185,6 @@ def main():
     report = "\n".join(lines)
     (RUNS_DIR / f"{run_name}_report.md").write_text(report, encoding="utf-8")
 
-    # 터미널에는 요약 + 틀린 것 앞 10건만
     print("\n".join(lines[:5 + len(by_group) + 4]))
     for s, c, out, reasons in failures[:10]:
         print(f"  [{s or '유형'}] {c['case_id']} 원인: {', '.join(reasons)}\n      {c['content'][:80]}")
@@ -229,7 +192,6 @@ def main():
         print(f"  … 외 {len(failures) - 10}건 → 리포트 참고")
     print(f"\n리포트: {RUNS_DIR / f'{run_name}_report.md'}")
 
-    # 치명적 오류, 회귀, 실행 오류·누락 중 하나라도 있으면 실패 코드로 끝낸다 → 나중에 CI에 그대로 쓸 수 있음
     if missing:
         print(f"\n실행 오류·누락 {len(missing)}건 — 평가를 끝까지 못 돌렸으므로 실패로 종료")
     sys.exit(1 if sev["치명적"] or regressions or missing else 0)

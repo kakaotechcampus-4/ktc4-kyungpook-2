@@ -12,10 +12,6 @@ import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 잠그는 검사는 부르는 쪽 트랜잭션 안에서만 부른다 (#424) — 검사와 일지 반영이 한 트랜잭션이어야 동시 요청이 함께 통과하지
- * 못한다. 업로드는 저장소에 올리기 전에 트랜잭션 밖에서 미리 보므로, 미리 보기까지 막으면 업로드가 전부 실패한다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(AgentQueueGuardTest.Config.class)

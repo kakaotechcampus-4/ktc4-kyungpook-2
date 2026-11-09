@@ -19,7 +19,6 @@ import com.itda.backend.domain.sharing.ReceiverType;
 import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
 
-/** 동의가 꺼지면 이미 내준 열람 권한을 거둔다 (#213). */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(InsightAccessRevoker.class)
@@ -54,7 +53,6 @@ class InsightAccessRevokerTest {
         fromSchoolOnly = insight(CHILD, 2, SCHOOL);
     }
 
-    /** 철회의 목적은 "내 아이 기록이 다른 기관에 가는 것" 을 막는 것이다. 보호자 본인은 계속 본다. */
     @Test
     void 기관_동의를_철회하면_기관_권한만_거두고_보호자_권한은_둔다() {
         Long toCenter = grant(fromSchoolAndCenter, ReceiverType.ORGANIZATION, CENTER);
@@ -68,7 +66,6 @@ class InsightAccessRevokerTest {
         assertThat(reload(toGuardian).isActive()).isTrue();
     }
 
-    /** 그 기관 기록이 안 섞였고 그 기관이 받지도 않은 권한은 건드리지 않는다. */
     @Test
     void 재료도_수신자도_아닌_권한은_그대로다() {
         Long untouched = grant(fromSchoolOnly, ReceiverType.ORGANIZATION, ACADEMY);
@@ -78,10 +75,6 @@ class InsightAccessRevokerTest {
         assertThat(reload(untouched).isActive()).isTrue();
     }
 
-    /**
-     * 기관은 <b>자기가 재료를 내지 않은</b> 글도 받는다 (§9.4, #233). 재료 쪽만 보고
-     * 거두면 정작 그 기관이 들고 있는 권한이 한 건도 안 걸려 철회가 아무것도 안 한다.
-     */
     @Test
     void 동의를_철회하면_그_기관이_받은_권한도_거둔다() {
         Long received = grant(fromSchoolOnly, ReceiverType.ORGANIZATION, CENTER);
@@ -115,7 +108,6 @@ class InsightAccessRevokerTest {
         assertThat(reload(others).isActive()).isTrue();
     }
 
-    /** 거둔 권한은 다시 안 집는다 — 조회가 살아 있는 것만 가져온다. */
     @Test
     void 이미_거둔_권한은_다시_집지_않는다() {
         Long toCenter = grant(fromSchoolAndCenter, ReceiverType.ORGANIZATION, CENTER);
@@ -127,10 +119,6 @@ class InsightAccessRevokerTest {
         assertThat(reload(toCenter).getRevokeReason()).isEqualTo(ConsentRevokeReason.GUARDIAN_REVOKED);
     }
 
-    /**
-     * 엔티티가 마지막으로 한 번 더 막는다. 지금은 조회가 살아 있는 행만 주므로 이 길로 안 오지만,
-     * 두 경로가 같은 행을 가리킬 수 있어 덮어쓰면 <b>처음 거둔 시각과 사유가 사라진다.</b>
-     */
     @Test
     void 엔티티는_두_번째_철회를_무시한다() {
         SharingHistory history = SharingHistory.grant(CHILD, fromSchoolAndCenter, SCHOOL,
@@ -143,12 +131,10 @@ class InsightAccessRevokerTest {
         assertThat(history.getRevokeReason()).isEqualTo(ConsentRevokeReason.GUARDIAN_REVOKED);
     }
 
-    /** AI 가 쓴 JSON 이 깨져 있어도 철회가 500 나면 안 된다 — 다만 그 인사이트는 못 찾는다. */
     @Test
     void 근거_기관을_읽을_수_없는_인사이트는_건너뛴다() {
         Long broken = em.persistAndFlush(InsightResult.of(CHILD, FROM, TO, 3, "상황", "반응", "본문",
                 null, "[]", "[]", "{깨진 JSON", false, null)).getId();
-        // 받는 쪽은 다른 기관이어야 재료 경로만 남는다 — CENTER 가 받고 있으면 JSON 과 무관하게 거둬진다.
         Long grant = grant(broken, ReceiverType.ORGANIZATION, ACADEMY);
 
         revoker.revokeForInstitution(CHILD, CENTER, ConsentRevokeReason.GUARDIAN_REVOKED, AT);
@@ -156,10 +142,6 @@ class InsightAccessRevokerTest {
         assertThat(reload(grant).isActive()).isTrue();
     }
 
-    /**
-     * 거둔 권한은 같은 행을 되살린다 — 새로 넣으면 {@code (insight, receiver_type, receiver_id)} UNIQUE 에
-     * 걸린다. 동의를 다시 켜거나 보호자가 다시 연결되는 길이 여기로 돌아온다.
-     */
     @Test
     void 되살리면_다시_볼_수_있고_거둔_흔적은_지워진다() {
         SharingHistory history = SharingHistory.grant(CHILD, fromSchoolAndCenter, SCHOOL,
@@ -174,7 +156,6 @@ class InsightAccessRevokerTest {
         assertThat(history.getGrantedAt()).isEqualTo(AT.plusDays(1));
     }
 
-    /** 살아 있는 권한에 다시 부르면 "언제부터 볼 수 있었나" 가 뒤로 밀리면 안 된다. */
     @Test
     void 살아_있는_권한을_다시_열면_아무것도_바뀌지_않는다() {
         SharingHistory history = SharingHistory.grant(CHILD, fromSchoolAndCenter, SCHOOL,

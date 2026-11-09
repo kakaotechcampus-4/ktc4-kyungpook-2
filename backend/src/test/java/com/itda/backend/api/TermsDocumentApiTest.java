@@ -17,10 +17,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.itda.backend.domain.user.TermKey;
 import com.itda.backend.service.user.TermsCatalog;
 
-/**
- * GET /api/v1/terms — 로그인 없이 보안 필터를 지나 본문까지 온다.
- * 가입 미완료 · 약관 미동의 회원이 읽는 경우는 SignupCompletionFilterTest 가 본다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -70,7 +66,6 @@ class TermsDocumentApiTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
-    /** 공개는 정확히 /api/v1/terms 하나다. 그 아래 경로는 로그인이 필요하다. */
     @Test
     void 약관_본문_아래_경로는_로그인이_필요하다() throws Exception {
         mockMvc.perform(get("/api/v1/terms/tos"))

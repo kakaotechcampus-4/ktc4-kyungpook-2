@@ -45,12 +45,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 같은 아이에 다른 기관 연결 — 보호자가 기관 코드로 요청하고(G-43·G-44), 기관이 수락·거절한다(O-60~O-62).
- *
- * <p>학교가 아이를 등록하고 엄마가 초대 코드로 연결해 학교에 동의한 상태에서 시작한다. 센터는 아이를 따로 등록하지 않는다.
- * 보안 필터·권한 검사·잠금·저장까지 실제로 거친다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -183,8 +177,6 @@ class InstitutionLinkApiTest {
         schoolCode = institutionCodeOf(schoolStaff);
     }
 
-    // --- 기관 코드 조회 ---
-
     @Test
     void 기관_코드로_기관을_찾는다_하이픈과_소문자도_받는다() throws Exception {
         String typed = (centerCode.substring(0, 4) + "-" + centerCode.substring(4)).toLowerCase();
@@ -197,7 +189,6 @@ class InstitutionLinkApiTest {
         assertThat(requestRepository.findAll()).noneMatch(request -> request.getOrganizationId().equals(center.getId()));
     }
 
-    /** 공통 응답은 null 필드를 빼므로 "data: null" 대신 404 다. 형식이 틀린 코드와 없는 코드를 나누지 않는다. */
     @Test
     void 없는_코드와_형식이_틀린_코드는_404_이고_data_가_없다() throws Exception {
         for (String code : List.of("ZZZZZZZZ", "12")) {
@@ -216,8 +207,6 @@ class InstitutionLinkApiTest {
                 .andExpect(jsonPath("$.code").value("PARENT_REQUIRED"));
     }
 
-    // --- 보호자의 연결 요청 ---
-
     @Test
     void 연결을_요청하면_수락_대기_중으로_보이고_같은_보호자의_재요청은_새로_만들지_않는다() throws Exception {
         String requestedAt = json(requestLink(mom, centerCode)
@@ -233,7 +222,6 @@ class InstitutionLinkApiTest {
         mockMvc.perform(get(MY_CHILDREN).cookie(auth(mom)))
                 .andExpect(jsonPath("$.data[0].linkRequests.length()").value(1))
                 .andExpect(jsonPath("$.data[0].linkRequests[0].institution.id").value(String.valueOf(center.getId())))
-                // 아직 명부에 없어 동의할 수 없는 기관이라 기관 목록에는 섞지 않는다.
                 .andExpect(jsonPath("$.data[0].institutions.length()").value(1));
     }
 
@@ -265,8 +253,6 @@ class InstitutionLinkApiTest {
                 .andExpect(jsonPath("$.code").value("INSTITUTION_CODE_NOT_FOUND"));
     }
 
-    // --- 기관의 요청 목록·수락·거절 ---
-
     @Test
     void 기관은_아이_단위로_묶인_요청을_본다() throws Exception {
         linkGuardian(dad);
@@ -285,10 +271,6 @@ class InstitutionLinkApiTest {
                 .andExpect(jsonPath("$.data.length()").value(0));
     }
 
-    /**
-     * 수락하면 아이는 하나로 남은 채 센터 명부에 오른다. 학교에 동의해 아이 전체 상태는 active 지만, 센터에는 아직 동의하지
-     * 않았으니 센터 명부의 consent 는 not_granted 이고 매칭 대상이 아니다. 보호자에게는 새 기관 권한 요청으로 뜬다.
-     */
     @Test
     void 수락하면_센터_명부에_오르고_동의_전이라_매칭_대상이_아니다() throws Exception {
         linkGuardian(dad);
@@ -407,9 +389,6 @@ class InstitutionLinkApiTest {
                 .containsExactlyInAnyOrder(ChildOrganizationRequestStatus.REJECTED, ChildOrganizationRequestStatus.PENDING);
     }
 
-    // --- 보호자 연결 해제 ---
-
-    /** 엄마가 연결을 끊으면 엄마의 요청만 거둔다. 아빠의 요청은 남아 기관이 그대로 수락할 수 있다. */
     @Test
     void 보호자가_연결을_끊으면_그_보호자의_요청만_취소된다() throws Exception {
         linkGuardian(dad);

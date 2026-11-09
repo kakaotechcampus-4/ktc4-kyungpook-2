@@ -47,13 +47,6 @@ import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.summary.SummaryRunRequestRepository;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 같은 묶음을 처음 두 번 동시에 누를 때를 PostgreSQL 에서 확인한다 (#181).
- *
- * <p>다른 커넥션(홀더)이 같은 묶음의 요청 행을 넣고 커밋하지 않고 잡아 둔다. [요약] 은 행을 못 봐서 새로 넣다가
- * UNIQUE 인덱스에서 홀더를 기다린다. 홀더가 커밋하면 UNIQUE 위반이 나고, 새 트랜잭션에서 다시 시도해 먼저 들어간
- * 행의 누른 시각만 바꿔야 한다. 제약 이름을 PostgreSQL 오류에서 꺼내는지도 여기서만 확인된다 (H2 와 다르다).
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -121,7 +114,6 @@ class SummaryRunServiceIntegrationTest {
         try (Connection holder = dataSource.getConnection()) {
             holder.setAutoCommit(false);
             int holderPid = backendPid(holder);
-            // 먼저 누른 쪽이 요청 행을 넣고 아직 커밋하지 않았다.
             try (PreparedStatement statement = holder.prepareStatement(
                     "INSERT INTO summary_run_request (child_id, entry_date, institution_id, requested_at) "
                             + "VALUES (?, ?, ?, ?)")) {

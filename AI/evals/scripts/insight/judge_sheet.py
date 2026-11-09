@@ -1,23 +1,3 @@
-# AI/evals/scripts/insight/judge_sheet.py
-"""
-수정 루프(딥다이브 1) 사람 판정표. 모델을 부르지 않는다.
-
-    # 1) 판정표 만들기 — 루프 켬 실행 결과에서 고친 것 · 버린 것 · 최종 표본을 뽑는다
-    python evals/scripts/insight/judge_sheet.py make --runs evals/generated/real/runs/run_weak-refine_04-05-06_all_1106_*.json
-    # 2) 판정하기 — 터미널에서 하나씩 묻는다 (CSV 를 엑셀로 직접 채워도 된다)
-    python evals/scripts/insight/judge_sheet.py ask
-    # 3) 집계
-    python evals/scripts/insight/judge_sheet.py tally
-
-코드가 못 보는 것을 사람이 본다.
-  고침   전/후를 보고           나아짐 / 같음 / 나빠짐     (그 표현만 뺐나, 지어낸 말은 없나)
-  버림   버린 인사이트를 보고    버려도됨 / 아까움          (한기관이어도 쓸 만했나)
-  최종   근거 요약과 같이 보고   쓸만함 / 약함 / 엉뚱한묶음  (같은 상황을 묶었나, 다음 선생님이 쓸 수 있나)
-
-⚠️ 판정표에는 실데이터 아동 기록이 들어 있다. evals/generated/ (git-ignored) 에만 둔다.
-   레포·채팅에는 tally 가 내는 숫자만 옮긴다.
-"""
-
 import argparse
 import csv
 import json
@@ -37,7 +17,6 @@ FIELDS = ["번호", "종류", "실행", "아이", "기간", "전", "후_또는_�
 
 
 def _evidence(run: dict, diary_ids: list[str]) -> str:
-    """인사이트 근거 일지의 요약 본문. 엉뚱한 묶음인지 보려면 근거를 같이 봐야 한다."""
     by_entry = {e: s for s in run["summaries"] for e in s.get("entry_ids", []) if s.get("ok")}
     parts = []
     for d in diary_ids:
@@ -75,7 +54,7 @@ def make(paths: list[str], sample: int, seed: int) -> None:
         r["번호"] = n
         r["고를것"] = " / ".join(CHOICES[r["종류"]])
     SHEET.parent.mkdir(parents=True, exist_ok=True)
-    with SHEET.open("w", encoding="utf-8-sig", newline="") as f:  # utf-8-sig: 엑셀에서 한글이 안 깨진다
+    with SHEET.open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
         w.writeheader()
         w.writerows({k: r.get(k, "") for k in FIELDS} for r in rows)
@@ -85,7 +64,6 @@ def make(paths: list[str], sample: int, seed: int) -> None:
 
 
 def ask() -> None:
-    """판정이 빈 줄을 하나씩 보여 주고 번호로 고르게 한다. 고를 때마다 저장한다 — 중간에 그만둬도 된다."""
     if not SHEET.exists():
         sys.exit(f"판정표가 없습니다. 먼저 make 를 돌리세요: {SHEET}")
     with SHEET.open(encoding="utf-8-sig") as f:

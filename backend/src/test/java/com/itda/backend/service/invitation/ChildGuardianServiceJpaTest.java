@@ -47,14 +47,8 @@ import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.insight.InsightAccessRevoker;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 보호자 연결 조회·해제. 아이는 우리 기관과 다른 기관에 함께 다니고, 보호자 한 명은 우리 코드로,
- * 다른 한 명은 다른 기관 코드로 연결돼 있다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
-// InsightAccessRevoker 는 진짜를 넣는다 — 연결 해제가 그 보호자의 열람 권한까지 거두는지(#213)
-// 이 테스트가 같이 지켜준다.
 @Import({ChildGuardianService.class, OrganizationChildGuard.class, GuardianChildGuard.class, ConsentService.class,
         ConsentStateReader.class, InsightAccessRevoker.class, InstitutionLinkService.class,
         ChildGuardianServiceJpaTest.ClockConfig.class})
@@ -164,7 +158,6 @@ class ChildGuardianServiceJpaTest {
                         org.assertj.core.groups.Tuple.tuple(String.valueOf(father.getId()), false));
     }
 
-    /** 이름이 없어 보호자들이 모두 "아이 이름 + 보호자" 다. 해제할 사람을 고를 수 있게 우리 코드는 보여 주고, 남의 기관 코드는 숨긴다. */
     @Test
     void 우리_코드로_들어온_보호자만_그때_쓴_초대_코드를_보여준다() {
         assertThat(childGuardianService.listGuardians(OUR_USER, child.getId()))
@@ -192,7 +185,6 @@ class ChildGuardianServiceJpaTest {
         assertThat(linkOf(mother).isDeleted()).isTrue();
     }
 
-    /** 연결은 전역이라, 다른 기관을 통해 들어온 보호자를 끊으면 그 기관의 판단을 뒤집게 된다. */
     @Test
     void 다른_기관_코드로_연결된_보호자는_해제할_수_없다() {
         assertThatThrownBy(() -> childGuardianService.unlinkByOrganization(OUR_USER, child.getId(), father.getId()))
@@ -243,7 +235,6 @@ class ChildGuardianServiceJpaTest {
                         e -> assertThat(e.getErrorCode()).isEqualTo(InvitationErrorCode.CHILD_NOT_LINKED));
     }
 
-    /** 끊긴 사람의 동의로 공유가 계속되면 안 된다. 남은 보호자의 동의는 그대로 두므로 아이는 계속 active 다. */
     @Test
     void 기관이_보호자를_끊으면_그_보호자의_동의만_꺼진다() {
         consent(mother, ours);
@@ -262,7 +253,6 @@ class ChildGuardianServiceJpaTest {
         assertThat(em.find(Child.class, child.getId()).getStatus()).isEqualTo(ChildStatus.ACTIVE);
     }
 
-    /** 연결 해제는 전역이라 모든 기관에 대한 그 사람의 동의가 꺼진다. 남은 동의가 없으면 아이는 suspended 다. */
     @Test
     void 보호자가_스스로_끊으면_모든_기관의_자기_동의가_꺼진다() {
         consent(mother, ours);

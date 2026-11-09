@@ -36,10 +36,6 @@ import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.service.user.UserService;
 import com.itda.backend.service.child.GuardianChildGuard;
 
-/**
- * 보호자에게 보이는 요청과 확인이 실제 행에서 어떻게 정해지는지 본다. 하늘에게 엄마 · 아빠가 연결돼 있고, 하늘은 우리 기관
- * 명부에 있다. 남은 하늘과 연결되지 않은 보호자다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({GuardianChecklistService.class, GuardianChildGuard.class, ChecklistService.class, GuardianChecklistServiceJpaTest.ClockConfig.class})
@@ -113,7 +109,6 @@ class GuardianChecklistServiceJpaTest {
                 .isInstanceOf(ChildException.class);
     }
 
-    /** 연결 행 · 명부 행이 남아 있어도 삭제된 아이는 볼 수도 확인할 수도 없다. */
     @Test
     void 삭제된_아이는_목록도_확인도_403이다() {
         Long id = send("실내화");
@@ -192,7 +187,6 @@ class GuardianChecklistServiceJpaTest {
                 .extracting(GuardianChecklistResponse::id).containsExactly(String.valueOf(id));
     }
 
-    /** 같은 트랜잭션에서 목록을 먼저 읽어 영속성 컨텍스트에 줄이 있어도, 확인 응답은 다시 읽은 값이다. */
     @Test
     void 첫_확인_응답이_바로_확인됨이고_다른_보호자도_이름을_본다() {
         Long id = send("실내화");

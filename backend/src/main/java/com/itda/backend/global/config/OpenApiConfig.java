@@ -73,14 +73,6 @@ public class OpenApiConfig {
 						new ApiResponse().description("로그인 성공 또는 실패 페이지로 리다이렉트"))));
 	}
 
-	/**
-	 * 컨트롤러마다 반복하던 문서 표기를 한 곳에서 붙인다.
-	 * <ul>
-	 *   <li>{@link SecurityConfig#PUBLIC_PATHS} 밖의 경로는 쿠키 인증 자물쇠와 401 응답을 단다. 엔드포인트가 401 을 따로
-	 *       설명했으면 그대로 둔다.</li>
-	 *   <li>4xx · 5xx 응답은 모두 {@link ErrorResponse} 본문이다.</li>
-	 * </ul>
-	 */
 	@Bean
 	public OpenApiCustomizer commonResponsesCustomizer() {
 		AntPathMatcher matcher = new AntPathMatcher();

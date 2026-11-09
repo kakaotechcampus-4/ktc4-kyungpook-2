@@ -63,7 +63,6 @@ class InsightControllerTest {
                 1L, "김하늘", "2026-08-17", "2026-08-23", "2026년 8월 3주차",
                 InsightProgressResponse.Status.WAITING_WEEK_END)));
 
-        // /{insightId} 가 아니라 이 경로로 와야 한다.
         mockMvc.perform(get(LIST_URL + "/progress"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].childId").value("1"))
@@ -111,7 +110,6 @@ class InsightControllerTest {
                 .andExpect(jsonPath("$.data.decision").value("APPROVED"));
     }
 
-    /** 기관이 수신처를 고르지 않으므로 대상 기관은 받지 않는다. 허용되지 않은 결정값도 막는다. */
     @Test
     void gate2_rejectsMissingOrUnknownDecision() throws Exception {
         for (String body : new String[] {"{}", "{\"decision\": \"remove\"}", "{\"decision\": \"\"}"}) {

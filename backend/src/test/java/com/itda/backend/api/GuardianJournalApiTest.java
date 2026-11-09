@@ -38,11 +38,6 @@ import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 보호자 일지 목록(G-20)·상세(G-21)와 홈의 최근 공유 활동(G-11) — 보안 필터·응답 모양까지 실제로 거친다.
- * 아이는 기관이 O-11 로 등록하고 보호자가 G-04 로 연결한 상태다. 승인본은 Gate 1 승인이 만든 것과 같은 모양으로
- * 저장소에 바로 넣는다 — 요약은 AI 가 있어야 생겨서다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -134,8 +129,6 @@ class GuardianJournalApiTest {
         return childContextRepository.save(ChildContext.of(child, summary.getId(), content)).getId();
     }
 
-    // --- 정상 흐름 ---
-
     @Test
     void 일지_목록과_상세는_같은_모양이다() throws Exception {
         Long journalId = approve("오후 미술 활동에 끝까지 참여했어요.");
@@ -158,7 +151,6 @@ class GuardianJournalApiTest {
                 .andExpect(jsonPath("$.data.id").value(String.valueOf(journalId)))
                 .andExpect(jsonPath("$.data.isNew").value(true))
                 .andExpect(jsonPath("$.data.content").value("오후 미술 활동에 끝까지 참여했어요."))
-                // 옆 일지 (#458). 하나뿐이면 이전 · 다음은 null 이고 같은 날 다른 곳은 빈 배열이다
                 .andExpect(jsonPath("$.data.prevId").value(nullValue()))
                 .andExpect(jsonPath("$.data.nextId").value(nullValue()))
                 .andExpect(jsonPath("$.data.sameDay").isArray())
@@ -189,7 +181,6 @@ class GuardianJournalApiTest {
                 .andExpect(jsonPath("$.data.activity[0].insightId").value(nullValue()));
     }
 
-    /** 홈은 최근 2개만 받는다 (#458). */
     @Test
     void limit_를_주면_앞에서_그만큼만_온다() throws Exception {
         approve(LocalDate.of(2026, 8, 21), "예전 일지");
@@ -200,8 +191,6 @@ class GuardianJournalApiTest {
                 .andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].id").value(String.valueOf(newer)));
     }
-
-    // --- 오류 ---
 
     @Test
     void limit_가_1_보다_작거나_숫자가_아니면_400() throws Exception {
@@ -237,7 +226,6 @@ class GuardianJournalApiTest {
                 .andExpect(jsonPath("$.code").value("PARENT_REQUIRED"));
     }
 
-    /** 목록은 아이 id 로 부르는 것이라 홈과 같은 403, 상세는 일지 id 로 찾는 것이라 존재를 숨기는 404 다. */
     @Test
     void 연결되지_않은_보호자는_목록_403_상세_404() throws Exception {
         Long journalId = approve("센터 일지");

@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 
 import com.itda.backend.exception.record.RawRecordUploadBusyException;
 
-/** 업로드 처리 자리 (#424). 동시에 하는 수, 기다리는 수, 기다리는 시간을 묶는다. */
 class RawRecordUploadGateTest {
 
     private static RawRecordUploadGate gate(int concurrent, int waiting, Duration maxWait) {
@@ -35,7 +34,6 @@ class RawRecordUploadGateTest {
         assertThatCode(() -> gate.acquire().close()).doesNotThrowAnyException();
     }
 
-    /** 자리 2 · 대기 4 에서 두 자리를 붙잡은 채 일곱 요청이 오면, 넷은 기다리고 마지막은 바로 거절된다. */
     @Test
     void 기다리는_줄이_꽉_차면_기다리지_않고_바로_거절한다() throws Exception {
         RawRecordUploadGate gate = gate(2, 4, Duration.ofSeconds(10));
@@ -78,7 +76,6 @@ class RawRecordUploadGateTest {
         try (RawRecordUploadGate.Slot held = gate.acquire()) {
             assertThatThrownBy(gate::acquire).isInstanceOf(RawRecordUploadBusyException.class);
         }
-        // 기다리다 거절된 요청은 줄에서 빠진다 — 다음 요청이 다시 기다릴 수 있다.
         assertThatCode(() -> gate.acquire().close()).doesNotThrowAnyException();
     }
 
@@ -90,12 +87,10 @@ class RawRecordUploadGateTest {
         slot.close();
 
         try (RawRecordUploadGate.Slot again = gate.acquire()) {
-            // 두 번 돌려줬다면 자리가 2 가 돼 여기서도 받는다.
             assertThatThrownBy(gate::acquire).isInstanceOf(RawRecordUploadBusyException.class);
         }
     }
 
-    /** 기다리는 스레드가 다 줄에 섰는지 본다. 세마포어의 줄 길이는 공정 모드에서 기다리는 스레드 수다. */
     private static void awaitWaiting(RawRecordUploadGate gate, int expected) throws InterruptedException {
         java.util.concurrent.Semaphore slots =
                 (java.util.concurrent.Semaphore) org.springframework.test.util.ReflectionTestUtils.getField(gate, "slots");

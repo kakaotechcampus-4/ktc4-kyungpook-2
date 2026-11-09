@@ -4,29 +4,6 @@ import { Busy } from "@/components/ui";
 import { ApiError } from "@/lib/apiError";
 import { getSession, withdraw, type WithdrawTarget } from "@/lib/auth";
 
-/**
- * 회원 탈퇴 버튼과 확인창. 보호자 설정 · 가입 화면 · 보호자 진입(약관 · 코드 단계)에 둔다 — 가드가 약관 동의 전이거나
- * 아이가 없는 보호자를 설정 화면으로 보내지 않아서, 그 사람들이 닿는 화면마다 길이 있어야 한다.
- *
- * 확인하면 DELETE /auth/me 를 부르고 탈퇴 안내 화면(`/withdrawal`)으로 보낸다. 서버가 끝까지 마쳤으면(204) 완료 표시를
- * 화면 이동 상태(주소가 아니다)로 넘기고, 접수만 됐으면(202) 처리 중으로 간다. 첫 카카오 호출이 실패해 취소되면(502) 이
- * 확인창에 이유를 띄우고 회원은 그대로다.
- *
- * **이 계정만 지운다.** 이 버튼이 처음 그려질 때(화면이 그 계정의 내용을 보여 줄 때)의 계정을 고정해 요청에 싣는다.
- * 그 뒤 화면 데이터가 다시 읽혀 `account` 가 다른 계정(다른 탭에서 로그인한 사람)으로 바뀌어도 대상은 바뀌지 않는다 —
- * 바뀐 것을 알아채면 요청을 보내지 않고 새로 고치라고 알린다. 확인 창을 열 때도 서버에 지금 로그인한 계정을 다시 물어 본다.
- * 서버도 지금 로그인한 계정과 다르면 409 로 막는다. 다른 탭에서 로그인하면 앱이 이 탭을 새로 고치므로(reloadOnLoginElsewhere)
- * 화면 데이터와 이 계정은 같은 로그인에서 온다.
- * 처음 그려질 때 `account` 가 없으면(서버가 탈퇴를 열지 않았거나 비로그인) 아무것도 그리지 않는다.
- *
- * 확인창은 약관 본문 창(`TermsSheet`)처럼 네이티브 `<dialog>` 의 `showModal()` 로 띄운다 — 창이 떠 있는 동안 뒤 화면을 누르거나
- * Tab 으로 닿을 수 없어야 한다. 처음 포커스는 [취소]에 둔다(엔터 한 번에 탈퇴가 나가지 않게). 닫으면 [회원 탈퇴] 버튼으로
- * 포커스를 돌려준다.
- *
- * @param audience 보호자면 아이 연결 · 공유 동의 안내를 함께 보인다. 가입 전이면 가입 정보가 지워진다는 것만 보인다
- * @param trigger  `row` 는 설정 목록의 한 줄, `link` 는 화면 아래 작은 글자 버튼
- * @param account  화면 데이터의 계정. 처음 값만 대상으로 쓰고, 이후 값은 바뀌었는지 보는 데만 쓴다
- */
 export function WithdrawAccount({
   audience,
   trigger = "link",
@@ -41,9 +18,7 @@ export function WithdrawAccount({
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 처음 그려질 때의 계정으로 고정한다. 화면 데이터가 다시 읽혀도 바뀌지 않는다
   const [pinned] = useState<WithdrawTarget | null>(account);
-  // 확인 창을 열 때 서버에 물어 본 지금 계정이 고정한 계정과 다른지
   const [changedOnOpen, setChangedOnOpen] = useState(false);
 
   if (!pinned) return null;
@@ -58,7 +33,6 @@ export function WithdrawAccount({
       const now = await getSession();
       if (now.userId !== target.userId) setChangedOnOpen(true);
     } catch {
-      // 묻지 못했으면 서버의 409 검사에 맡긴다
     }
   }
 
@@ -77,8 +51,6 @@ export function WithdrawAccount({
     setError(null);
     try {
       const result = await withdraw(target);
-      // 완료는 주소가 아니라 이동 상태로 넘긴다 — 주소로 두면 아무나 열어 "탈퇴가 끝났어요" 를 볼 수 있다
-      // 탈퇴를 요청한 계정도 넘긴다 — 안내 화면이 결과를 물을 때 그 사이 다른 계정으로 바뀌었는지 본다
       navigate("/withdrawal", {
         replace: true,
         state: { completed: result === "completed", userId: target.userId },
@@ -128,7 +100,6 @@ export function WithdrawAccount({
 
 const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
-/** 탈퇴 확인창. 띄울 때만 그린다(닫으면 부르는 쪽이 지운다). */
 function WithdrawDialog({
   audience,
   message,
@@ -151,7 +122,6 @@ function WithdrawDialog({
   const titleId = useId();
   const descId = useId();
 
-  // 레이아웃 효과라 지울 때 dialog 가 문서에서 빠지기 전에 닫힌다
   useLayoutEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
@@ -163,12 +133,10 @@ function WithdrawDialog({
     return () => {
       document.body.style.overflow = prev;
       if (dialog.open) dialog.close();
-      // 탈퇴를 마쳐 다른 화면으로 옮겨 가면 버튼도 함께 사라진다. 남아 있을 때만 돌려준다
       if (trigger?.isConnected) trigger.focus();
     };
   }, [returnFocusTo]);
 
-  // 네이티브 모달은 Tab 이 브라우저 주소창으로도 나가므로 첫 · 끝 요소에서 감싸 돈다
   function trapTab(e: React.KeyboardEvent<HTMLDialogElement>) {
     if (e.key !== "Tab" || !ref.current) return;
     const items = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
@@ -190,12 +158,9 @@ function WithdrawDialog({
       aria-labelledby={titleId}
       aria-describedby={descId}
       onCancel={(e) => {
-        // Esc. 탈퇴를 보내는 중에는 닫지 않는다
         e.preventDefault();
         onCancel();
       }}
-      // Esc 를 잇달아 누르면 브라우저가 cancel 없이 닫기도 한다. close 이벤트는 늦게 오므로 그사이 다시 열렸으면
-      // (개발 모드는 효과를 두 번 돌려 닫고 다시 연다) 무시한다. 탈퇴를 보내는 중이면 결과를 보여 줄 수 있게 다시 띄운다
       onClose={() => {
         const dialog = ref.current;
         if (!dialog || dialog.open) return;
@@ -204,7 +169,6 @@ function WithdrawDialog({
       }}
       onKeyDown={trapTab}
       onClick={(e) => {
-        // 창 바깥(배경막)을 누르면 이벤트 대상이 dialog 자신이다
         if (e.target === e.currentTarget) onCancel();
       }}
       className="mx-auto mt-auto mb-0 max-h-[90dvh] w-full max-w-[430px] flex-col rounded-t-3xl bg-surface p-5 pb-7 text-ink backdrop:bg-ink/40 open:flex md:max-w-[560px] lg:max-w-[640px]"

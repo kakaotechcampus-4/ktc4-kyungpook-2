@@ -1,13 +1,3 @@
-# AI/evals/scripts/common/test_metrics.py
-"""
-호출 수 집계가 재시도를 제대로 묶는지 LLM 없이 고정한다.
-
-    python evals/scripts/common/test_metrics.py
-
-이 집계로 보려는 것은 하나다 — **BE 설정보다 많이 오는가** (`#153`).
-BE 가 `retry-backoffs: 2s,5s` 면 한 묶음의 calls 가 3 을 넘으면 안 된다.
-"""
-
 import sys
 from pathlib import Path
 
@@ -67,7 +57,6 @@ def main():
     k = metrics.key_of(1)
     call("/matching", k)
     call("/matching", k)
-    # GAP_SEC 보다 멀어진 뒤의 호출은 새 묶음이다.
     metrics.record("/matching", k, "ok", 0.1)
     with metrics._lock:
         path, key, at, outcome, elapsed = metrics._recent[-1]

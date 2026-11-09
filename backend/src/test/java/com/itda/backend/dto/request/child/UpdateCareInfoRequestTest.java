@@ -18,10 +18,6 @@ import org.junit.jupiter.api.Test;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.dto.request.child.UpdateCareInfoRequest.MedicationRequest;
 
-/**
- * 돌봄 정보 요청이 생성자에서 무엇을 다듬고, 다듬은 뒤 애너테이션이 무엇을 막는지 본다. 위반은 컨트롤러에서 400
- * INVALID_REQUEST 가 된다.
- */
 class UpdateCareInfoRequestTest {
 
     private static ValidatorFactory factory;
@@ -38,8 +34,6 @@ class UpdateCareInfoRequestTest {
     static void closeValidator() {
         factory.close();
     }
-
-    // --- 다듬기 ---
 
     @Test
     void 앞뒤_공백만_떼고_안쪽_공백은_둔다() {
@@ -75,9 +69,6 @@ class UpdateCareInfoRequestTest {
         assertThat(validator.validate(new UpdateCareInfoRequest(List.of(), List.of()))).isEmpty();
     }
 
-    // --- 개수 ---
-
-    /** 20개는 합친 뒤의 개수다. 서로 다른 21개는 막는다. */
     @Test
     void 서로_다른_알레르기_21개는_위반이다() {
         assertThat(validator.validate(new UpdateCareInfoRequest(distinct(21), List.of()))).isNotEmpty();
@@ -104,14 +95,11 @@ class UpdateCareInfoRequestTest {
         assertThat(validator.validate(new UpdateCareInfoRequest(List.of(), medications))).isNotEmpty();
     }
 
-    // --- 값 ---
-
     @Test
     void 공백뿐인_알레르기는_위반이다() {
         assertThat(validator.validate(new UpdateCareInfoRequest(List.of("   "), List.of()))).isNotEmpty();
     }
 
-    /** 길이는 공백을 뗀 뒤에 잰다. 앞뒤 공백 때문에 30자를 넘는 것은 통과한다. */
     @Test
     void 알레르기는_30자까지다() {
         assertThat(validator.validate(new UpdateCareInfoRequest(List.of("가".repeat(31)), List.of()))).isNotEmpty();

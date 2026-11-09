@@ -56,7 +56,6 @@ class InsightAgentClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl(AI);
         server = MockRestServiceServer.bindTo(builder).build();
-        // 재시도·상태 확인은 AiAgentClientTest 가 본다. 여기서는 인사이트 계약(요청·응답 모양)만 본다.
         AiAgentProperties properties = new AiAgentProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(70),
                 List.of());
         client = new InsightAgentClient(new AiAgentClient(builder.build(), new ObjectMapper(), properties));
@@ -67,13 +66,11 @@ class InsightAgentClientTest {
                 List.of(new InsightAgentRequest.Claim("31-0", "점심 줄에서 차례를 기다렸다.", "2026-10-02",
                                 3L, "학교", InsightAgentRequest.ClaimSource.AI,
                                 List.of(new InsightAgentRequest.Evidence(1041L, "줄에서 차례를 기다림"))),
-                        // 교사가 Gate 1 에서 새로 쓴 문장. 일지가 없어 번호가 비고 quote 가 그 문장이다 (#199).
                         new InsightAgentRequest.Claim("34-1", "약 먹은 날 차분했다.", "2026-10-05",
                                 5L, "센터", InsightAgentRequest.ClaimSource.TEACHER,
                                 List.of(new InsightAgentRequest.Evidence(null, "약 먹은 날 차분했다.")))),
                 List.of(new InsightAgentRequest.Institution(3L, "학교"),
                         new InsightAgentRequest.Institution(5L, "센터")),
-                // 지난 기록 (#387). claims 와 같은 모양이다.
                 List.of(new InsightAgentRequest.Claim("12-0", "급식실에서 귀를 막았다.", "2026-09-10",
                         5L, "센터", InsightAgentRequest.ClaimSource.AI,
                         List.of(new InsightAgentRequest.Evidence(900L, "급식실에서 귀를 막음")))));
@@ -132,7 +129,6 @@ class InsightAgentClientTest {
         assertThat(reply.rawJson()).isEqualTo(RESPONSE);
     }
 
-    /** 억지로 만든 패턴이 과잉해석이라 "낼 것이 없었다" 가 정답인 경우가 있다 (CRITERIA §3). */
     @Test
     void 인사이트가_없는_응답도_정상으로_읽는다() {
         server.expect(requestTo(AI + "/insight")).andRespond(withSuccess("""
@@ -155,7 +151,6 @@ class InsightAgentClientTest {
         assertThatThrownBy(() -> client.analyze(request())).isInstanceOf(AiAgentUnavailableException.class);
     }
 
-    /** #264 부터 AI 가 503 body 에 실패 종류를 싣는다. AI /metrics 와 같은 모양으로 남긴다 (#266). */
     @Test
     void 실패_사유는_503_body의_reason과_failure를_붙여_만든다() {
         server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
@@ -166,7 +161,6 @@ class InsightAgentClientTest {
                 assertThat(client.failureOf((RuntimeException) e)).isEqualTo("llm_unavailable:empty_response"));
     }
 
-    /** #264 전의 AI 는 failure 를 싣지 않는다. */
     @Test
     void 실패_종류가_없으면_reason만_남긴다() {
         server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
@@ -177,7 +171,6 @@ class InsightAgentClientTest {
                 assertThat(client.failureOf((RuntimeException) e)).isEqualTo("llm_unavailable"));
     }
 
-    /** body 가 없으면 AI 가 답한 게 아니다 — 연결 실패나 BE 쪽 시간 초과다. */
     @Test
     void body가_없으면_AI에_닿지_못한_것으로_남긴다() {
         server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
@@ -195,7 +188,6 @@ class InsightAgentClientTest {
                 .isNotInstanceOf(AiAgentUnavailableException.class);
     }
 
-    /** 워커가 아이를 집기 전에 본다. 꺼져 있을 때 집으면 전부 실패로 남기 때문이다. */
     @Test
     void AI_상태_확인이_성공하면_사용_가능하다() {
         server.expect(requestTo(AI + "/health")).andExpect(method(HttpMethod.GET))
@@ -204,10 +196,6 @@ class InsightAgentClientTest {
         assertThat(client.isAvailable()).isTrue();
     }
 
-    /**
-     * 동의된 기관 조회가 비면 {@code null} 이 흘러들어올 수 있다. 그대로 보내면 AI 쪽 기본값이 아니라
-     * {@code list[Institution]} 검증에 걸려 422 가 되고, 422 는 재시도 없이 바로 실패한다.
-     */
     @Test
     void 목록이_null이면_빈_배열로_보낸다() {
         server.expect(requestTo(AI + "/insight"))
@@ -221,7 +209,6 @@ class InsightAgentClientTest {
         server.verify();
     }
 
-    /** 일지 id 가 없는 호출이라, 실패 로그·예외에 아동과 기간이 남아야 어느 호출이 터졌는지 알 수 있다. */
     @Test
     void 실패하면_아동과_기간을_예외_메시지에_남긴다() {
         server.expect(requestTo(AI + "/insight")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));

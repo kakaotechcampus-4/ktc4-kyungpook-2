@@ -13,25 +13,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import com.itda.backend.global.jpa.CreatedAtEntity;
 
-/**
- * Gate 1 을 통과한 요약을 아동별로 쌓아 둔 한 건 (DB 스키마 §9.2).
- *
- * <p>승인한 기관의 담당자가 아동 타임라인(O-14)에서, 보호자가 일지(G-20)에서 읽는 자리이고, 인사이트도 원본 일지가
- * 아니라 여기를 재료로 쓴다. <b>다른 기관은 여기를 읽지 않는다</b> — 기관 사이에는 Gate 2 를 지난 인사이트로만 넘어간다
- * (#292). 다른 테이블은 FK·연관관계 없이 ID 컬럼으로만 가리킨다 (§16).
- *
- * <p><b>{@code content} 가 {@code summary_result.content} 와 따로 있는 이유</b> — 교사가 문구를
- * 고쳐서 승인할 수 있다. AI 가 쓴 원문은 {@code summary_result} 에 그대로 두고, 사람이 승인한
- * 최종본만 여기 담는다. 한쪽에 몰아 담으면 {@code matching_result} 가 사람 수정으로 AI 원판정을
- * 잃었던 문제(§0.3)를 되풀이하게 된다.
- *
- * <p>승인 이력이라 수정하지도 삭제하지도 않는다. 그래서 {@code updated_at}·{@code deleted_at} 이 없다 (§3.2).
- *
- * <p><b>요약 하나에 승인본은 하나다</b> — {@code summary_result_id} 에 UNIQUE 를 건다. 승인된 요약을
- * 다시 승인하는 경로가 없기 때문이다(§8.2): 반려 상태를 두지 않고, 승인 뒤에 새 일지가 오면 그 요약을
- * 고치는 게 아니라 {@code revision + 1} 로 <b>새 요약</b>을 만든다. 그러면 승인본도 다른 요약을 가리킨다.
- * 제약이 없으면 Gate 1 승인 API 를 두 번 호출했을 때 같은 글이 조용히 두 번 쌓인다(코드리뷰로 확인).
- */
 @Entity
 @Table(
         name = "child_context",
@@ -48,14 +29,9 @@ public class ChildContext extends CreatedAtEntity {
     @Column(name = "child_id", nullable = false)
     private Long childId;
 
-    /**
-     * 출처가 된 요약. 날짜·기관·판수(revision)·재료 일지는 이 ID 로 {@code summary_result} 를 찾아 쓴다
-     * — 타임라인 화면이 쓰는 값이 전부 거기 있어서 여기에 다시 담지 않는다.
-     */
     @Column(name = "summary_result_id", nullable = false)
     private Long summaryResultId;
 
-    /** 교사가 승인한 최종본. 고쳐서 승인했다면 고친 글이 들어온다. */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 

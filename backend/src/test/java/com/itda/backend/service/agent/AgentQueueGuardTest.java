@@ -27,7 +27,6 @@ import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.exception.agent.AgentQueueFullException;
 
-/** 기관별 AI 처리 줄 상한 (#424). 세는 범위와 트랜잭션 조건을 본다. 동시 요청 직렬화는 통합 시험이 본다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(AgentQueueGuardTest.Config.class)
@@ -62,11 +61,9 @@ class AgentQueueGuardTest {
         for (JournalEntryStatus status : AgentQueueGuard.AWAITING_AGENT) {
             entry(rawRecordId, status);
         }
-        // 사람을 기다리거나 끝난 일지는 세지 않는다.
         for (JournalEntryStatus status : EnumSet.complementOf(EnumSet.copyOf(AgentQueueGuard.AWAITING_AGENT))) {
             entry(rawRecordId, status);
         }
-        // 지운 일지, 다른 기관 일지도 세지 않는다.
         entry(rawRecordId, JournalEntryStatus.PENDING).delete();
         entry(rawRecord(otherOrg), JournalEntryStatus.PENDING);
         em.flush();
@@ -74,10 +71,8 @@ class AgentQueueGuardTest {
         assertThat(AgentQueueGuard.AWAITING_AGENT).containsExactlyInAnyOrder(
                 JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING, JournalEntryStatus.MATCHED,
                 JournalEntryStatus.VALIDATING, JournalEntryStatus.VALIDATED, JournalEntryStatus.SUMMARIZING);
-        // 상한 6 에 여섯 건이 있으니 한 건도 더 들어올 수 없다.
         assertThatThrownBy(() -> guard.requireRoom(org, 1)).isInstanceOf(AgentQueueFullException.class);
         assertThatThrownBy(() -> guard.peek(org, 1)).isInstanceOf(AgentQueueFullException.class);
-        // 다른 기관은 비어 있다.
         assertThatCode(() -> guard.requireRoom(otherOrg, 5)).doesNotThrowAnyException();
     }
 
@@ -91,7 +86,6 @@ class AgentQueueGuardTest {
         assertThatThrownBy(() -> guard.requireRoom(org, 5)).isInstanceOf(AgentQueueFullException.class);
     }
 
-    /** 글자를 못 뽑은 업로드처럼 들어올 일지가 없으면 잠그지도 세지도 않는다 — 줄이 꽉 차도 원본은 받는다. */
     @Test
     void 들어올_일지가_없으면_줄이_꽉_차도_통과한다() {
         for (int i = 0; i < 6; i++) {

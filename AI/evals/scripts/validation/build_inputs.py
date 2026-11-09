@@ -1,34 +1,21 @@
-"""
-잇다_파이프라인_테스트매니페스트.json의 validation_test_cases를
-Validation Agent 입력 형태로 변환한다.
-
-dataset(dev/holdout) 구분을 그대로 실어 보낸다 — 채점 시 dev로만 개발하고
-holdout(특히 sealed 60건 재작성분)은 최종 검증 전까지 열어보지 않기 위함.
-
-원본 매니페스트의 정답 라벨은 판정 기준 v1 이전에 만들어졌다. 바뀐 기준에 맞춘 정답은
-fixtures/validation_label_overrides.json 의 규칙으로 덮어쓴다 (README "데이터의 한계" 6번).
-"""
 import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))  # AI/
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from validation.config import ISSUE_LEVEL
 
 PIPELINE_PATH = Path(__file__).parent.parent.parent / "manifests" / "잇다_파이프라인_테스트매니페스트.json"
 SYNTHETIC_PATH = Path(__file__).parent.parent.parent / "manifests" / "잇다_synthetic_100.json"
-# manifests/ 는 아이 데이터라 git 에 없고, fixtures/ 는 우리가 손으로 만든 작은 파일이라 추적된다
 OVERRIDES_PATH = Path(__file__).parent.parent.parent / "fixtures" / "validation_label_overrides.json"
 LEVEL_RANK = {"PASS": 0, "REVIEW": 1, "BLOCK": 2}
 
 
 def _require(path: Path) -> None:
-    """매니페스트는 git 에 없다. 없으면 FileNotFoundError 대신 어디서 받는지 알려 주고 멈춘다."""
     if not path.exists():
         raise SystemExit(f"{path} 가 없습니다. 가상 아동 데이터라 레포에 없습니다 — AI 담당(근찬)에게 받아 AI/evals/manifests/ 에 넣으세요.")
 
 def build_child_name_map():
-    """child_id -> 이름 조회용 맵. Matching 쪽 데이터셋을 그대로 재사용."""
     _require(SYNTHETIC_PATH)
     with open(SYNTHETIC_PATH, encoding="utf-8") as f:
         data = json.load(f)
@@ -53,20 +40,13 @@ def build_inputs():
             "expected_issue_types": case["expected_이슈유형"],
             "dataset": case["데이터셋구분"],
             "subject_child_id": child_id,
-            "subject_name": name_map.get(child_id),  # 못 찾으면 None
+            "subject_name": name_map.get(child_id),
         })
     return inputs
 
 
 def apply_overrides(inputs):
-    """보정 규칙을 적용하고, 규칙별로 몇 건을 바꿨는지 돌려준다.
-
-    add_issue_types 로 유형이 늘면 판정도 더 높은 쪽으로 다시 계산한다.
-    optional_issue_types 는 잡아도 되고 안 잡아도 되는 유형이다 (run_suite 가 과탐으로 치지 않음).
-    어떤 규칙이 적용됐는지 label_overrides 필드에 남겨 리포트에서 추적할 수 있게 한다.
-    """
     if not OVERRIDES_PATH.exists():
-        # 조용히 넘어가면 보정 없이 옛 라벨로 채점돼도 아무도 모른다. 없으면 멈춘다.
         raise SystemExit(f"라벨 보정 파일이 없음: {OVERRIDES_PATH}")
     with open(OVERRIDES_PATH, encoding="utf-8") as f:
         rules = json.load(f)["rules"]
@@ -74,8 +54,6 @@ def apply_overrides(inputs):
     applied = {}
     for case in inputs:
         for rule in rules:
-            # match_contains: 문장 그대로 매칭
-            # match_template: 주인공 이름을 끼워서 매칭 (예: "{subject_name}가 먼저 밀쳤고")
             if "match_template" in rule:
                 if not case.get("subject_name"):
                     continue

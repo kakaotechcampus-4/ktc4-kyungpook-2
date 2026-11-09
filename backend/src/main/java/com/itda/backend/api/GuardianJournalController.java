@@ -22,7 +22,6 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md G-20(일지 목록)·G-21(일지 상세). 두 경로의 앞부분이 달라 /api/v1 에 붙인다.
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor

@@ -34,7 +34,6 @@ class ChildOrganizationRequestTest {
         assertThat(rejected.getStatus()).isEqualTo(ChildOrganizationRequestStatus.REJECTED);
     }
 
-    /** 취소는 보호자 연결 해제가 거두는 것이라 처리한 기관 담당자가 없다. */
     @Test
     void cancelHasNoDecider() {
         ChildOrganizationRequest request = ChildOrganizationRequest.request(1L, 10L, 41L);
@@ -46,7 +45,6 @@ class ChildOrganizationRequestTest {
         assertThat(request.getDecidedAt()).isEqualTo(NOW);
     }
 
-    /** 처리된 요청은 다시 처리하지 않는다. 다시 요청하려면 새 행을 만든다. */
     @Test
     void decidedRequestCannotBeDecidedAgain() {
         ChildOrganizationRequest request = ChildOrganizationRequest.request(1L, 10L, 41L);

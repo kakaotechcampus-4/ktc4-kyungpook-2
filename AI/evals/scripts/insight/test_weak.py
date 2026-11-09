@@ -1,12 +1,3 @@
-# AI/evals/scripts/insight/test_weak.py
-"""
-약한 인사이트 검사(insight/quality.py)와 reflect 의 INSIGHT_WEAK_MODE 단위 테스트. LLM 호출 없음.
-
-    python evals/scripts/insight/test_weak.py
-
-문장은 실데이터를 옮기지 않고 같은 꼴로 새로 썼다 (실데이터는 커밋하지 않는다).
-"""
-
 import sys
 from pathlib import Path
 
@@ -29,15 +20,14 @@ def claim(cid, inst, jid):
             "evidence": [{"journal_entry_id": jid, "quote": "인용"}]}
 
 
-# 학교 2개(날짜 다름), 센터 1개
 STATE = perceive({
     "child_name": "아동 A", "period_from": "2026-01-01", "period_to": "2026-01-31",
     "claims": [claim("10-0", 1, 101), claim("11-0", 2, 102), claim("12-0", 1, 103)],
     "consented_institutions": [{"institution_id": i, "institution_type": t} for i, t in TYPES.items()],
 })
 
-CROSS = ["10-0", "11-0"]   # 학교 + 센터
-SINGLE = ["10-0", "12-0"]  # 학교만
+CROSS = ["10-0", "11-0"]
+SINGLE = ["10-0", "12-0"]
 
 
 def raw(ids, content, supports=None):
@@ -68,8 +58,6 @@ GOOD = "학교와 센터에서 그림책을 읽어 줄 때 교사를 보지 않�
 META = "학교와 센터에서 그림책을 읽어 줄 때 교사를 보지 않았다. 센터에서 질문한 뒤의 반응은 기록되지 않았다."
 
 
-# ── 기록에없는말 ────────────────────────────────────────────────
-
 def test_본문의_기록되지_않았다를_잡고_그_문장을_돌려준다():
     r = reasons_of(CROSS, META)
     assert [x["kind"] for x in r] == [NOT_IN_RECORD], r
@@ -93,23 +81,18 @@ def test_기록했다처럼_비슷한_말은_잡지_않는다():
     assert reasons_of(CROSS, text) == []
 
 
-# ── 한기관_대처없음 ─────────────────────────────────────────────
-
 def test_한_기관이고_대처가_없으면_잡는다():
     r = reasons_of(SINGLE, "학교에서 그림책을 읽어 줄 때 교사를 보지 않는 날이 이어졌다.")
     assert [x["kind"] for x in r] == [SINGLE_NO_SUPPORT], r
 
 
 def test_기관_간_비교면_대처가_없어도_잡지_않는다():
-    # CRITERIA CROSS_WITHOUT_SUPPORT: 같은 상황에서 기관마다 반응이 다르면 대처 없이도 인사이트다
     assert reasons_of(CROSS, "학교와 센터에서 그림책을 읽어 줄 때 반응이 달랐다.") == []
 
 
 def test_한_기관이어도_대처가_있으면_잡지_않는다():
     assert reasons_of(SINGLE, "학교에서 그림책을 읽어 줄 때 교사를 보지 않았다.", [support()]) == []
 
-
-# ── reflect 모드 ────────────────────────────────────────────────
 
 RAWS = [raw(CROSS, GOOD), raw(CROSS, META)]
 
@@ -131,13 +114,10 @@ def test_기본값은_off_다():
     assert config.INSIGHT_WEAK_MODE == "off"
 
 
-# ── refine (C, 수정 루프) — 모델 답을 정해 두고 돌린다 ───────────
-
 FIXED = "학교와 센터에서 그림책을 읽어 줄 때 교사를 보지 않았다. 학교에서는 그림을 짚으며 질문하자 대답했다."
 
 
 def run_refine(raws, model_answer):
-    """reflect → refine 을 refine 모드로. model_answer 가 Exception 이면 Luna 실패로 본다."""
     sent, deadlines = [], []
 
     def fake_ask(messages, deadline=None):
@@ -196,9 +176,9 @@ def test_refine_약한_것이_없으면_부르지_않는다():
 def test_refine_요청에는_근거_claim과_문제_문장만_들어간다():
     _, sent = run_refine(RAWS, {"insights": [raw(CROSS, FIXED)]})
     user = sent[0][1]["content"]
-    assert "[10-0]" in user and "[11-0]" in user and "[12-0]" not in user  # 처음 근거 밖 claim 은 안 보냄
+    assert "[10-0]" in user and "[11-0]" in user and "[12-0]" not in user
     assert "센터에서 질문한 뒤의 반응은 기록되지 않았다." in user
-    assert "인용" not in user  # 원문 인용(다른 아이 이름이 남아 있음)은 넣지 않는다
+    assert "인용" not in user
 
 
 

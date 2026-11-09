@@ -37,7 +37,6 @@ import com.itda.backend.repository.summary.SummaryRunRequestRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
-/** [요약] — 교사가 자기 기관 아이의 그 날짜 묶음을 요약하도록 요청한다. 요약은 이 요청이 있는 묶음만 한다 (#181). */
 @DataJpaTest
 @ActiveProfiles("test")
 class SummaryRunServiceTest {
@@ -92,7 +91,6 @@ class SummaryRunServiceTest {
                 SharingConsent.grant(childId, GUARDIAN, organizationId, List.of(ConsentField.DAILY_SUMMARY)));
     }
 
-    /** 철회 전에 매칭된 아이다 — 명부에 남아 있고 요약할 일지도 있다. */
     private Long matchedThenRevoked() {
         Long childId = 9L;
         em.persist(ChildOrganization.of(childId, ORG));
@@ -153,7 +151,6 @@ class SummaryRunServiceTest {
                 .isInstanceOf(SummaryChildNotFoundException.class);
     }
 
-    /** 명부에 없는 아이와 같은 404 다 — 화면은 안내하고 카드를 다시 불러온다 (#332). */
     @Test
     void 우리_기관_동의를_철회한_아이는_없는_것으로_응답한다() {
         Long childId = matchedThenRevoked();
@@ -193,8 +190,6 @@ class SummaryRunServiceTest {
 
     @Test
     void 요약_중인_묶음은_끝날_때까지_다시_요청받지_않는다() {
-        // 요약 중에 들어온 일지는 요약이 끝난 뒤 묶음 카드에 따로 남아 그때 누른다. 지금 받으면 요약이 끝나자마자
-        // 새 판을 또 만든다 — 워커는 집은 시각까지 누른 요청만 처리한 것으로 닫는다.
         validated(CHILD, DATE);
         JournalEntry summarizing = JournalEntry.of(rawRecordId, DATE, "요약 중인 기록", 2);
         summarizing.startMatching();

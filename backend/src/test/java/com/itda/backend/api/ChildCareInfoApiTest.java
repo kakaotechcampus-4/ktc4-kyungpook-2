@@ -36,10 +36,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 돌봄 정보 저장(G-13)과 아이 목록·홈(G-10·G-11)의 {@code care} — 보안 필터·요청 검증·응답 모양까지 실제로 거친다.
- * 아이는 기관이 O-11 로 등록하고 보호자가 G-04 로 연결한 상태다(동의 여부와 무관하다).
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -116,8 +112,6 @@ class ChildCareInfoApiTest {
                 .andExpect(status().isOk());
     }
 
-    // --- 정상 흐름 ---
-
     @Test
     void 저장하면_다듬은_값을_돌려주고_아이_목록과_홈에_보인다() throws Exception {
         save(parent, """
@@ -149,7 +143,6 @@ class ChildCareInfoApiTest {
                 .andExpect(jsonPath("$.data[0].care.medications").isEmpty());
     }
 
-    /** 다른 보호자도 같은 값을 보고 덮어쓴다. */
     @Test
     void 연결된_다른_보호자가_덮어쓴_값이_보인다() throws Exception {
         save(parent, "{\"allergies\": [\"땅콩\"], \"medications\": []}").andExpect(status().isOk());
@@ -161,8 +154,6 @@ class ChildCareInfoApiTest {
         mockMvc.perform(get(MY_CHILDREN).cookie(auth(parent)))
                 .andExpect(jsonPath("$.data[0].care.allergies").isEmpty());
     }
-
-    // --- 400 ---
 
     @Test
     void 서로_다른_알레르기_21개는_400() throws Exception {
@@ -187,8 +178,6 @@ class ChildCareInfoApiTest {
                     .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
         }
     }
-
-    // --- 401 · 403 ---
 
     @Test
     void 로그인하지_않으면_401() throws Exception {
@@ -223,7 +212,6 @@ class ChildCareInfoApiTest {
                 .andExpect(status().isForbidden());
     }
 
-    /** 기관이 새 초대 코드를 내고 두 번째 보호자가 수락한다. */
     private User linkAnotherParent() throws Exception {
         User other = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
         String body = mockMvc.perform(withCsrf(post(CHILDREN + "/" + childId + "/invitations"), auth(staff)))

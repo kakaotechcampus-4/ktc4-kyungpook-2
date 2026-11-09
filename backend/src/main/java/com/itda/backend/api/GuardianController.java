@@ -31,7 +31,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md G-04(초대 코드 수락)·G-05(보호자 본인 연결 해제)·G-10(아이 목록)·G-11(홈).
 @RestController
 @RequestMapping("/api/v1/guardians/me")
 @RequiredArgsConstructor
@@ -69,7 +68,6 @@ public class GuardianController {
         return ApiResponse.success(invitationService.accept(userId, request.code()));
     }
 
-    /** 본문 없는 204 라 {@code ApiResponse} 로 감싸지 않는다 (backend/AGENTS.md). */
     @DeleteMapping("/children/{childId}")
     @Operation(summary = "아이 연결 해제", description = "보호자 본인이 아이와의 연결을 끊습니다.")
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
@@ -102,7 +100,6 @@ public class GuardianController {
     })
     public ResponseEntity<ApiResponse<List<GuardianChildResponse>>> children(@AuthenticationPrincipal String userId) {
         List<GuardianChildResponse> children = guardianChildQueryService.children(userId);
-        // 이 목록을 가져온 계정. 설정 화면의 탈퇴 대상이 화면에 보이는 목록과 같은 계정이 되게 한다
         return ResponseEntity.ok()
                 .header(ApiPaths.USER_ID_HEADER, userId)
                 .body(ApiResponse.success(children));

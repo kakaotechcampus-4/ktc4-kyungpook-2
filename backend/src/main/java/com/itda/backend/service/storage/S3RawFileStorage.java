@@ -63,10 +63,6 @@ public class S3RawFileStorage implements RawFileStorage {
         }
     }
 
-    /**
-     * 형식과 크기를 서명에 넣는다 — 브라우저는 {@code Content-Length} 를 본문 크기로 직접 채우므로, 접수한 크기와 다른 파일은 S3 가
-     * 서명 불일치로 받지 않는다. 브라우저가 붙일 수 있는 헤더는 {@code Content-Type} 뿐이라 그것만 돌려준다.
-     */
     @Override
     public PresignedUpload presignUpload(Long uploadId, String storedKey, String contentType, long sizeBytes,
             Duration ttl) {

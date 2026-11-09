@@ -44,7 +44,6 @@ class AiAgentClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl(AI);
         server = MockRestServiceServer.bindTo(builder).build();
-        // 백오프는 설정값이다. 테스트에서는 기다리지 않도록 0으로 둔다.
         AiAgentProperties properties = new AiAgentProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(65),
                 List.of(Duration.ZERO, Duration.ZERO));
         client = new AiAgentClient(builder.build(), new ObjectMapper(), properties);
@@ -88,7 +87,6 @@ class AiAgentClientTest {
         server.verify();
     }
 
-    /** 인사이트처럼 오래 기다리는 에이전트는 시간 초과만 덜 다시 보낸다 (#386). */
     @Test
     void 시간_초과_재시도_상한을_넘으면_남은_재시도가_있어도_멈춘다() {
         RestClient.Builder builder = RestClient.builder().baseUrl(AI);
@@ -130,7 +128,6 @@ class AiAgentClientTest {
         server.expect(requestTo(AI + "/validation")).andRespond(withServerError());
         server.expect(requestTo(AI + "/validation")).andRespond(withServerError());
 
-        // AI 가 응답하지 못하는 상태라는 뜻 — 워커는 이 예외를 보고 이번 차례를 멈춘다.
         assertThatThrownBy(() -> client.post("/validation", Map.of(), 1041L))
                 .isInstanceOf(AiAgentUnavailableException.class);
         server.verify();
@@ -140,7 +137,6 @@ class AiAgentClientTest {
     void 요청이_잘못됐다는_응답은_다시_시도하지_않고_거절로_본다() {
         server.expect(requestTo(AI + "/validation")).andRespond(withBadRequest());
 
-        // BE 가 계약과 다른 요청을 보냈다는 뜻 — 다시 보내도 같으므로 시스템 오류(REQUEST_REJECTED)가 된다.
         assertThatThrownBy(() -> client.post("/validation", Map.of(), 1041L))
                 .isInstanceOf(AiAgentRejectedException.class);
         server.verify();
@@ -182,10 +178,9 @@ class AiAgentClientTest {
                     .isInstanceOf(AiAgentException.class)
                     .isNotInstanceOf(AiAgentUnavailableException.class)
                     .isNotInstanceOf(AiAgentRejectedException.class);
-            // 워커는 이 표시를 보고 종료 중이라 판단해 실패로 남기지 않는다.
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
         } finally {
-            Thread.interrupted(); // 다른 테스트에 영향이 없도록 인터럽트 표시를 지운다
+            Thread.interrupted();
         }
     }
 
@@ -195,7 +190,6 @@ class AiAgentClientTest {
             throw new RestClientException("No HttpMessageConverter for request body");
         });
 
-        // AI 응답을 받기 전에 BE 쪽에서 났다 — AI 탓(응답 못 읽음)도 요청 거절도 아니라 INTERNAL_ERROR 로 간다.
         assertThatThrownBy(() -> client.post("/validation", Map.of(), 1041L))
                 .isInstanceOf(AiAgentException.class)
                 .isNotInstanceOf(AiAgentUnreadableResponseException.class)

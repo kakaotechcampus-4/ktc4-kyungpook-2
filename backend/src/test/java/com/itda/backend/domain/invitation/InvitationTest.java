@@ -35,7 +35,6 @@ class InvitationTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    /** 만료 시각과 같은 순간은 이미 만료다. */
     @Test
     void usableOnlyBeforeExpiry() {
         Invitation invitation = pending();

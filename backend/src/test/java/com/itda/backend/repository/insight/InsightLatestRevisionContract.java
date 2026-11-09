@@ -14,17 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
 
-/**
- * 인사이트 "마지막 회차" 쿼리의 계약 (#493). H2 단위 시험과 PostgreSQL 통합 시험이 같은 시험을 돈다 — 튜플 {@code IN} ·
- * {@code group by} 를 두 DB 가 같게 읽는지 본다.
- *
- * <ul>
- * <li>같은 (아이, 기간)의 마지막 회차에 든 인사이트는 <b>모두</b> 남는다 — 한 번 실행이 여러 행이 된다</li>
- * <li>상태는 마지막 회차를 고른 <b>뒤에</b> 건다 — 마지막 회차가 승인됐으면 옛 회차의 대기 행은 안 나온다</li>
- * <li>다른 기간 · 다른 아이의 회차와 섞이지 않는다</li>
- * </ul>
- */
-// 시험 메서드가 이 클래스에 선언돼 있어, 하위 클래스의 @DataJpaTest 트랜잭션이 아니라 여기 선언을 본다
 @Transactional
 abstract class InsightLatestRevisionContract {
 
@@ -90,7 +79,6 @@ abstract class InsightLatestRevisionContract {
         insight(1L, W2, 2);
         InsightResult a2 = insight(1L, W2, 3);
         InsightResult b1 = insight(2L, W1, 2);
-        // 아이 2 의 W2 는 회차 5 까지 있다. 아이 1 의 W2 마지막 회차(3)를 가리면 안 된다
         insight(2L, W2, 4);
         InsightResult b2 = insight(2L, W2, 5);
         insight(3L, W1, 1);
@@ -122,10 +110,6 @@ abstract class InsightLatestRevisionContract {
                 InsightStatus.GATE2_PENDING, "[3]"));
     }
 
-    /**
-     * 기간 후보 쿼리는 아이 · 시작일 · 종료일을 따로 거른다. (1, W1) · (2, W2) 를 물으면 묻지 않은 (1, W2) 도 후보로 나올 수
-     * 있다 — 정확한 조합은 부르는 쪽이 거른다. 여기서는 후보가 물은 값 안에 있는지와 각 기간이 마지막 회차인지만 본다.
-     */
     @Test
     void 기간_후보는_물은_값_안의_마지막_회차만_준다() {
         insight(1L, W1, 1);

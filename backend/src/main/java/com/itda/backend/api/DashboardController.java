@@ -17,7 +17,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md O-80, O-81, O-83.
 @RestController
 @RequestMapping("/api/v1/dashboard")
 @RequiredArgsConstructor

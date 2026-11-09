@@ -1,11 +1,6 @@
 import type { TermsDocument } from "@/lib/auth";
 
-/**
- * mock 모드의 약관 본문. 실제 문안은 서버(`backend/src/main/resources/terms/`)에 있고, 여기는 화면 모양만 보이는 짧은 글이다.
- * 순서는 서버와 같다 — 보호자 둘, 기관 셋.
- */
 const VERSION = "2026-11-07";
-/** 개인정보 수집 두 약관은 카카오 닉네임을 뺀 판이다 (서버 TermsCatalog 와 같다) */
 const PRIVACY_VERSION = "2026-11-09";
 
 function doc(key: TermsDocument["key"], title: string, body: string, version = VERSION): TermsDocument {

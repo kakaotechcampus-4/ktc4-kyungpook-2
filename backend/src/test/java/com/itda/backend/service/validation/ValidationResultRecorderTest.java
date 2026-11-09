@@ -88,7 +88,6 @@ class ValidationResultRecorderTest {
 
     @Test
     void 교사_확인이_필요해도_요약_대기로_넘긴다() throws Exception {
-        // REVIEW 도 요약으로 넘기고 Gate 1 에서 문제 문장을 표시한다 (AI 팀 확인, 10/1).
         JournalEntry entry = validatingEntry();
 
         recorder.record(target(entry), reply(entry, "REVIEW", "[\"추측성표현\"]", "[{\"start\": 0, \"end\": 5}]"));
@@ -123,12 +122,6 @@ class ValidationResultRecorderTest {
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.VALIDATING);
     }
 
-    /**
-     * 호출이 실패하면 verdict = FAILED 로 행을 남기고(#122), 일지는 시스템 오류로 멈추며 단계·원인을 남긴다(#180).
-     *
-     * <p>행을 남기는 이유: 예전에는 "판정이 없다"는 이유로 행을 안 남겨 실패가 로그에만 남았다. 매칭이 이미
-     * MatchingStatus.FAILED 로 행을 남기고 있어 그쪽과 대칭을 맞췄다.
-     */
     @Test
     void 호출이_실패하면_FAILED_판정으로_행을_남기고_일지는_시스템_오류가_된다() {
         JournalEntry entry = validatingEntry();
@@ -147,7 +140,6 @@ class ValidationResultRecorderTest {
     @Test
     void 판정이_없거나_AI_계약에_없는_FAILED면_응답_원문과_함께_FAILED_행을_남기고_RESPONSE_UNREADABLE로_멈춘다()
             throws Exception {
-        // FAILED 는 BE 가 호출 실패를 남기려고 만든 값이라 AI 가 보낼 수 없다. 무엇을 보냈는지 봐야 고칠 수 있어 원문을 남긴다.
         JournalEntry noVerdict = validatingEntry();
         JournalEntry failedVerdict = validatingEntry();
         String noVerdictJson = "{\"journal_entry_id\": %d}".formatted(noVerdict.getId());

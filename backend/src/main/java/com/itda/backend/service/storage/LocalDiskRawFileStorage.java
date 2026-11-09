@@ -22,7 +22,6 @@ import lombok.extern.slf4j.Slf4j;
 @Profile("!docker")
 public class LocalDiskRawFileStorage implements RawFileStorage {
 
-    /** 로컬에서 브라우저가 파일 본문을 올리는 BE 주소 (#450). {@code LocalRawUploadController} 가 받는다. */
     public static final String UPLOAD_CONTENT_PATH = "/api/v1/raw-records/uploads/%d/content";
 
     private final Path baseDir;
@@ -59,10 +58,6 @@ public class LocalDiskRawFileStorage implements RawFileStorage {
         }
     }
 
-    /**
-     * 로컬에는 S3 가 없어 BE 자신의 주소를 준다. 이 주소는 다른 API 처럼 로그인 · CSRF 를 그대로 본다 — 브라우저는 주소가
-     * {@code /} 로 시작하면 쿠키와 CSRF 헤더를 붙여 보낸다.
-     */
     @Override
     public PresignedUpload presignUpload(Long uploadId, String storedKey, String contentType, long sizeBytes,
             Duration ttl) {
@@ -81,12 +76,6 @@ public class LocalDiskRawFileStorage implements RawFileStorage {
         return Files.readAllBytes(requireWithinBase(storedKey));
     }
 
-    /**
-     * 로컬 업로드 본문을 쓴다. 상한보다 길면 쓰지 않는다 — S3 가 서명한 크기와 다른 본문을 받지 않는 것과 같다. 임시 파일에 다 쓴
-     * 뒤 옮겨서, 쓰다 끊긴 파일이 완료 확인에 걸리지 않게 한다.
-     *
-     * @return 실제로 쓴 바이트 수
-     */
     public long write(String storedKey, InputStream body, long maxBytes) throws IOException {
         Path target = requireWithinBase(storedKey);
         Path temporary = Files.createTempFile(baseDir, ".upload-", ".part");
@@ -116,7 +105,6 @@ public class LocalDiskRawFileStorage implements RawFileStorage {
         return target.startsWith(baseDir) ? target : null;
     }
 
-    /** 상한을 넘으면 읽기를 멈추고 실패한다. */
     private static final class BoundedInputStream extends InputStream {
 
         private final InputStream in;

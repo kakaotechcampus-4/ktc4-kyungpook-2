@@ -25,7 +25,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md G-02(동의 미리보기)·G-41(동의 부여·철회)·G-40(대기 중 권한 요청).
 @RestController
 @RequestMapping("/api/v1/children/{childId}")
 @RequiredArgsConstructor

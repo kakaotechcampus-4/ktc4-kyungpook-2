@@ -111,10 +111,6 @@ class AiProgressTranslatorTest {
         verify(journalEntryRepository, never()).findProgressKeys(any());
     }
 
-    /**
-     * 하루 요약만 허락한 기관(주간 리포트 동의 없음)은 O-80 주 줄이 {@code not_consented} 다 — "분석 중"을 주지 않는다.
-     * 꺼졌거나 동의가 없는 기관도 마찬가지다. insightStatesOf 는 하루 요약만 허락한 기관을 NOT_GRANTED 로 준다.
-     */
     @Test
     void 리포트는_주간_리포트_동의가_없거나_꺼진_기관에는_붙이지_않는다() {
         given(childOrganizationRepository.findByChildIdInAndDeletedAtIsNull(Set.of(7L)))
@@ -168,7 +164,6 @@ class AiProgressTranslatorTest {
                 new Item(Kind.ENTRY, "7", NOV_8, null, "validation", "reflect", 4));
     }
 
-    /** 진행 현황(O-80)은 묶음에 검증 중인 일지가 하나라도 있으면 그 줄을 "AI 확인"으로 둔다 — 단계 문구도 그쪽을 따른다. */
     @Test
     void 같은_줄에_다른_에이전트가_겹치면_줄_상태처럼_더_이른_에이전트를_고른다() {
         given(journalEntryRepository.findProgressKeys(any()))

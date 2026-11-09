@@ -21,10 +21,6 @@ import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 로그인 성공 이후 우리가 맡은 부분 — 회원 등록과 출입증 발급.
- * 카카오를 실제로 다녀오지 않고 핸들러를 직접 구동한다.
- */
 @SpringBootTest
 @ActiveProfiles("test")
 class OAuth2LoginSuccessHandlerTest {
@@ -54,7 +50,6 @@ class OAuth2LoginSuccessHandlerTest {
         return response;
     }
 
-    /** 역할은 가입 API 에서 정한다. 첫 로그인은 역할·소속 없는 가입 미완료 회원을 만든다. */
     @Test
     void firstLoginStoresUserWithoutRole() throws Exception {
         MockHttpServletResponse response = login(new MockHttpServletRequest(), 900001L, "박지현");
@@ -65,7 +60,6 @@ class OAuth2LoginSuccessHandlerTest {
         assertThat(response.getStatus()).isEqualTo(302);
     }
 
-    /** 출입증의 subject 가 카카오 회원번호가 아니라 내부 userId 여야 한다. */
     @Test
     void issuedTokenCarriesInternalUserIdAsSubject() throws Exception {
         MockHttpServletResponse response = login(new MockHttpServletRequest(), 900002L, "김하늘");
@@ -89,7 +83,6 @@ class OAuth2LoginSuccessHandlerTest {
                 .filter(u -> u.getKakaoId().equals("900003")).count()).isEqualTo(1);
     }
 
-    /** 닉네임은 받지 않는다 — 카카오 응답에 properties 가 없어도 로그인이 된다. */
     @Test
     void loginWorksWithOnlyTheKakaoId() throws Exception {
         MockHttpServletResponse response = login(new MockHttpServletRequest(), 900004L, null);

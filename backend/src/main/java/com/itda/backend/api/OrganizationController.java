@@ -19,7 +19,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md O-01(내 기관 정보) · O-84 · O-85(담당자 넘기기, #478).
 @RestController
 @RequestMapping("/api/v1/institutions/me")
 @RequiredArgsConstructor

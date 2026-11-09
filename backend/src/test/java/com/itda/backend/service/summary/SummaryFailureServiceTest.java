@@ -34,13 +34,11 @@ import com.itda.backend.service.user.UserService;
 import com.itda.backend.exception.agent.AgentQueueFullException;
 import com.itda.backend.service.agent.AgentQueueGuard;
 
-/** 요약 실패 묶음을 검토에 올리고 교사가 다시 요약하거나 요약 없이 마무리한다 (#369). */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({SummaryFailureService.class, SummaryRunRequests.class, ConsentStateReader.class, ClockConfig.class})
 class SummaryFailureServiceTest {
 
-    /** AI 처리 줄 상한은 AgentQueueGuardTest 가 본다. 여기서는 늘 자리가 있다. */
     @MockitoBean
     private AgentQueueGuard agentQueueGuard;
 
@@ -61,7 +59,6 @@ class SummaryFailureServiceTest {
     @MockitoBean
     private UserService userService;
 
-    /** 기본은 자동 요약 꺼짐(mock 의 false). */
     @MockitoBean
     private SummaryProperties summaryProperties;
 
@@ -168,7 +165,6 @@ class SummaryFailureServiceTest {
         assertThat(statusOf(otherDay)).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
     }
 
-    /** 다시 요약하면 요약 대기로 다시 들어간다 — AI 처리 줄이 꽉 찼으면 그대로 둔다 (#424). */
     @Test
     void AI_처리_줄이_꽉_찼으면_다시_요약하지_않는다() {
         JournalEntry target = failed(school, junho, DATE, "블록 놀이를 했다.");
@@ -188,7 +184,6 @@ class SummaryFailureServiceTest {
 
         service.retry(TEACHER, junho, DATE);
 
-        // 꺼져 있으면 요청이 있는 묶음만 요약하므로, 남기지 않으면 [다시 요약]을 눌러도 멈춰 있다.
         assertThat(runRequests.isRequested(new SummaryGroup(junho, DATE, ORG))).isTrue();
     }
 
@@ -217,7 +212,6 @@ class SummaryFailureServiceTest {
 
     @Test
     void 요약_실패_일지가_없는_묶음은_찾을_수_없다() {
-        // 다른 창에서 이미 처리했거나, 다른 기관 일지다.
         consent(junho, OTHER_ORG);
         failed(center, junho, DATE, "센터 기록");
 

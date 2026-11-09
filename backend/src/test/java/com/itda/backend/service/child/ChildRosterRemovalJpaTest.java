@@ -58,10 +58,6 @@ import com.itda.backend.service.sharing.InstitutionInboxService;
 import com.itda.backend.service.sharing.SharingReadRecorder;
 import com.itda.backend.service.user.UserService;
 
-/**
- * O-63 명부에서 빼기. 아이는 우리 센터와 학교에 함께 다니고, 엄마가 센터 코드로 연결돼 두 기관 모두에 주간 리포트까지
- * 동의했다. 동의 철회·열람권 회수·초대 코드 취소를 진짜 서비스로 엮어, 배선이 빠지면 여기서 드러나게 한다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({ChildService.class, OrganizationChildGuard.class, GuardianChildGuard.class, ConsentService.class, ConsentStateReader.class,
@@ -144,8 +140,6 @@ class ChildRosterRemovalJpaTest {
         given(inviteCodeGenerator.generate()).willReturn("NEWCD234", "NEWCD235", "NEWCD236");
     }
 
-    // ── 명부 연결 ─────────────────────────────────────────
-
     @Test
     void 명부_연결에_삭제_시각이_찍히고_관리번호가_비워진다() {
         childService.removeFromRoster(OUR_STAFF, child.getId());
@@ -169,8 +163,6 @@ class ChildRosterRemovalJpaTest {
         assertThat(childService.getRoster(OUR_STAFF)).singleElement()
                 .satisfies(row -> assertThat(row.externalId()).isEqualTo("C-7"));
     }
-
-    // ── 동의와 아이 상태 ───────────────────────────────────
 
     @Test
     void 우리_기관_동의만_명부_제외로_꺼지고_뺀_담당자가_남는다() {
@@ -197,15 +189,12 @@ class ChildRosterRemovalJpaTest {
         assertThat(reload(Child.class, child.getId()).getStatus()).isEqualTo(ChildStatus.SUSPENDED);
     }
 
-    /** 동의 이력이 없으면 끌 것도 없다. 동의 대기 그대로다 — 공유 중단으로 바꾸면 안 된다. */
     @Test
     void 한_번도_동의하지_않은_아이는_동의_대기_그대로다() {
         childService.removeFromRoster(OUR_STAFF, child.getId());
 
         assertThat(reload(Child.class, child.getId()).getStatus()).isEqualTo(ChildStatus.PENDING_CONSENT);
     }
-
-    // ── 초대 코드 ────────────────────────────────────────
 
     @Test
     void 우리_기관의_쓸_수_있는_코드만_취소한다() {
@@ -231,8 +220,6 @@ class ChildRosterRemovalJpaTest {
 
         assertChildNotFound(() -> invitationService.issueFor(OUR_STAFF, child.getId()));
     }
-
-    // ── 인사이트 열람권과 보호자 ────────────────────────────
 
     @Test
     void 받은_권한과_재료를_낸_권한을_모두_거두고_보호자_권한은_남긴다() {
@@ -267,8 +254,6 @@ class ChildRosterRemovalJpaTest {
                 .setParameter("childId", child.getId())
                 .getSingleResult().getDeletedAt()).isNull();
     }
-
-    // ── 오류 ─────────────────────────────────────────────
 
     @Test
     void 이미_뺀_아이를_다시_빼면_404다() {
@@ -307,12 +292,6 @@ class ChildRosterRemovalJpaTest {
         assertThat(reload(ChildOrganization.class, ourLinkId).isDeleted()).isFalse();
     }
 
-    // ── 다시 연결 ─────────────────────────────────────────
-
-    /**
-     * 빼고 다시 연결해도 거둔 기관 열람권은 살아나지 않는다. Gate 2 대기 글은 근거를 낸 기관의 주간 리포트 동의를
-     * 보므로, 다시 연결만 해서는 숨은 채이고 보호자가 동의를 다시 켜야 돌아온다.
-     */
     @Test
     void 다시_연결하고_동의해도_예전_수신함_글은_돌아오지_않고_대기_글은_동의_뒤에_돌아온다() {
         grantBoth();
@@ -344,8 +323,6 @@ class ChildRosterRemovalJpaTest {
                 .extracting(Gate2InsightResponse::id)
                 .containsExactly(String.valueOf(pending));
     }
-
-    // ── 도우미 ───────────────────────────────────────────
 
     private void grantBoth() {
         consentService.update(MOTHER, child.getId(), center.getId(), ConsentAction.GRANT,

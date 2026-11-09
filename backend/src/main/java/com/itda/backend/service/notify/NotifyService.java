@@ -29,14 +29,6 @@ import com.itda.backend.service.sharing.GuardianInsightService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * 보호자에게 보낼 거리를 모은다 (#419).
- *
- * <p><b>승인된 인사이트만 모은다.</b> Gate 2 를 지나지 않은 글은 여기 오지 않는다 — 발송은 판정이 아니다.
- *
- * <p><b>이메일 주소를 다루지 않는다.</b> BE 는 끝까지 주소를 모른다. AI 가 {@code childId} 로 MCP 서버에
- * 물어보고, MCP 서버가 찾는다 (AI/notify/CRITERIA.md §2).
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -48,12 +40,6 @@ public class NotifyService {
     private final OrganizationRepository organizationRepository;
     private final InsightEvidenceReader insightEvidenceReader;
 
-    /**
-     * 그 아이·그 기간에 보낼 거리. 승인된 인사이트가 없으면 {@link Optional#empty()} 다.
-     *
-     * <p>비어 있으면 <b>집지 않는다</b> — 집어서 SENT 로 남기면, 그 뒤에 교사가 승인해도 그 기간을 다시
-     * 보지 않는다. 인사이트 워커가 재료 없는 기간을 집지 않는 것과 같은 이유다.
-     */
     @Transactional(readOnly = true)
     public Optional<PreparedNotify> prepare(Long childId, LocalDate periodFrom, LocalDate periodTo) {
         List<InsightResult> approved = insightResultRepository
@@ -67,12 +53,10 @@ public class NotifyService {
 
         Optional<Child> child = childRepository.findById(childId);
         if (child.isEmpty()) {
-            // 아이가 지워졌다. 보낼 곳이 없다 — 오류가 아니라 보낼 것이 없는 것이다.
             log.info("child not found, nothing to notify childId={}", childId);
             return Optional.empty();
         }
 
-        // 근거는 보호자 리포트 화면(G-36)과 **같은 곳에서** 읽는다. 갈리면 메일과 화면이 다른 근거를 댄다.
         Map<Long, InsightEvidenceReader.Evidence> evidences = insightEvidenceReader.read(approved);
         Map<Long, Organization> institutions = institutionsOf(approved, evidences);
         List<NotifyAgentRequest.ApprovedInsight> insights = approved.stream()
@@ -87,19 +71,12 @@ public class NotifyService {
                 .toList();
 
         long lastInsightId = approved.get(approved.size() - 1).getId();
-        // notificationId 는 집은 뒤에야 정해진다 (insight_notification.id). 여기서는 비워 두고 워커가 채운다.
         NotifyAgentRequest request = new NotifyAgentRequest(
                 childId, child.get().getName(), periodFrom.toString(), periodTo.toString(),
                 insights, null, otherChildNames(childId, institutions.keySet()));
         return Optional.of(new PreparedNotify(request, insights.size(), lastInsightId));
     }
 
-    /**
-     * 인사이트들의 기관을 한 번에 가져온다. 기관마다 묻지 않는다.
-     *
-     * <p>근거 줄의 기관도 함께 담는다 — AI 가 쓴 {@code source_institution_ids} 와 요약이 가진
-     * 기관이 어긋날 수 있어서, 둘 중 하나만 보면 근거 줄의 기관 이름이 비는 수가 있다.
-     */
     private Map<Long, Organization> institutionsOf(List<InsightResult> approved,
             Map<Long, InsightEvidenceReader.Evidence> evidences) {
         Set<Long> ids = approved.stream()
@@ -110,27 +87,16 @@ public class NotifyService {
                 .collect(Collectors.toMap(Organization::getId, organization -> organization));
     }
 
-    /**
-     * "누가 정리했나". Gate 2 승인 주체이고, 보호자 리포트 화면의 {@code from} 과 같은 기관이다
-     * ({@link PrimarySource}). 기관 행이 없으면 빈 문자열 — 메일에서 그 줄만 빠진다.
-     */
     private String primaryNameOf(InsightResult insight, Map<Long, Organization> institutions) {
         try {
             Organization primary = PrimarySource.of(PrimarySource.sourceIdsOf(insight), institutions);
             return primary == null ? "" : primary.getName();
         } catch (RuntimeException e) {
-            // 승인 주체를 못 고르는 인사이트가 있어도 메일 전체를 실패시키지 않는다. 그 줄만 비운다.
             log.warn("could not pick the primary institution insightId={}", insight.getId(), e);
             return "";
         }
     }
 
-    /**
-     * 그 글의 근거. <b>화면(G-36)과 같은 순서</b>다 — 관찰 날짜 오래된 순, 같은 날은 기관 이름순.
-     *
-     * <p>기관 행이 없는 줄은 뺀다. 화면이 그렇게 하므로 메일도 같아야 한다.
-     * 인용 문장이 없는 줄도 뺀다 — 메일에서는 날짜만 있는 줄이 읽을 거리가 없다.
-     */
     private List<NotifyAgentRequest.EvidenceEntry> evidenceOf(InsightEvidenceReader.Evidence evidence,
             Map<Long, Organization> institutions) {
         return evidence.refs().stream()
@@ -149,12 +115,6 @@ public class NotifyService {
                 .toList();
     }
 
-    /**
-     * 그 인사이트의 근거 기관 종류. <b>한국어다</b> — {@code "학교"}·{@code "센터"}·{@code "활동지원사"}.
-     *
-     * <p>AI 가 이 값으로 "학교에서는" 을 쓸 수 있는지 가른다. 기관 <b>이름</b>은 보내지 않는다 —
-     * 다른 기관 이름이 보호자 메일에 나가면 기관 경계가 새는 것이고, 보호자는 기관마다 따로 동의했을 뿐이다.
-     */
     private List<String> institutionTypesOf(InsightResult insight, Map<Long, Organization> institutions) {
         return PrimarySource.sourceIdsOf(insight).stream()
                 .map(institutions::get)
@@ -164,15 +124,6 @@ public class NotifyService {
                 .toList();
     }
 
-    /**
-     * 메일 본문에 남았는지 대조할 다른 아이 이름 — <b>같은 기관에 다니는 아이들</b>이다.
-     *
-     * <p>요약은 일지에 이름이 나온 아이들({@code mentioned_child_ids})만 본다. 알림은 그보다 넓게 본다.
-     * 메일은 기관 경계 밖으로 나가는 유일한 길이라, 어느 일지에서 왔는지보다 <b>샐 수 있는 이름 전부</b>를
-     * 막는 쪽이 맞다.
-     *
-     * <p>명부에서 빠진 아이도 이름이 새면 안 되므로 {@code deletedAt} 으로 거르지 않는다.
-     */
     private List<String> otherChildNames(Long childId, Set<Long> institutionIds) {
         if (institutionIds.isEmpty()) {
             return List.of();

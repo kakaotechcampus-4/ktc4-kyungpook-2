@@ -39,19 +39,11 @@ import { TourButton } from "@/components/Tour";
 import { usePolling } from "@/lib/usePolling";
 import { useAiProgress, type AiPhase } from "@/lib/aiProgress";
 
-/**
- * 대시보드 — 선생님 차례 · 기록 올리기 · 진행 현황 · 오늘 AI가 한 일 (시안 screenDash).
- * 단계 판정은 서버(O-80)가 하고 화면은 받은 그대로 그린다. 10초마다 다시 받는다(탭이 숨으면 멈춤).
- * 요약은 자동으로 시작하므로(#369) [요약] 버튼이 없다.
- */
 export async function clientLoader() {
   const [pipeline, activity, files, children] = await Promise.all([
-    // 진행 현황 · AI 멈춤은 셸(components/org/Shell)이 받아 10초마다 다시 받는다. 이 값은 셸이 진행 현황을
-    // 한 번도 못 받았을 때 쓰고, 여기서 실패하면 지금처럼 오류 화면이다. AI 멈춤은 셸 값만 쓴다
     getPipeline(),
     getAiActivity(),
     getFileProgress(),
-    // 시작하기 체크리스트용. 이미 닫은 기관은 받지 않는다. 못 받아도 대시보드는 띄운다
     readClosed() ? Promise.resolve(null) : getChildren().catch(() => null),
   ]);
   return {
@@ -66,7 +58,6 @@ export async function clientLoader() {
 const POLL_MS = 10_000;
 
 const STEPS = ["아이 매칭", "내용 검증", "일지 요약", "요약 검토", "주간 리포트", "리포트 승인"] as const;
-/** 진행 현황 단계 칸 오른쪽 끝에 붙는 아이콘. STEPS 와 같은 순서 */
 const STEP_ICONS = [UserSearch, ShieldCheck, ScrollText, FileCheck, Layers, Send] as const;
 const STEP_DESC = [
   "AI가 파일 이름과 일지 속 이름을 아동 명부와 맞춰 누구의 기록인지 찾아요",
@@ -89,20 +80,17 @@ function today(): string {
 
 export default function DashboardPage() {
   const initial = useLoaderData<typeof clientLoader>();
-  // 진행 현황 · AI 멈춤(O-82, AI 차례 줄을 "멈춤" 으로)은 셸이 10초마다 받는 값을 같이 쓴다 — 같은 요청을 두 번 보내지 않게
   const live = useOrgLive();
   const pipeline: Pipeline = live.pipeline ?? initial.pipeline;
   const aiDown = live.aiDown;
   const [activity, setActivity] = useState<AiActivity>(initial.activity);
   const [files, setFiles] = useState<FileProgress[]>(initial.files);
 
-  // loader 가 다시 돌면(다른 화면에서 처리하고 돌아옴 · revalidate) 새 값으로 바꾼다 — 다음 폴링까지 옛 숫자가 남지 않게
   useEffect(() => {
     setActivity(initial.activity);
     setFiles(initial.files);
   }, [initial]);
 
-  /** 이 화면에만 있는 값. 10초마다 */
   async function refreshOwn() {
     const [a, f] = await Promise.all([getAiActivity(), getFileProgress()]);
     setActivity(a);
@@ -110,7 +98,6 @@ export default function DashboardPage() {
   }
   usePolling(refreshOwn, POLL_MS, true, false);
 
-  /** 기록을 올린 뒤 — 진행 현황(셸)과 이 화면 값을 함께 바로 다시 받는다 */
   async function refreshAll() {
     await Promise.all([live.refresh(), refreshOwn()]);
   }
@@ -157,8 +144,6 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-/* ── 시작하기 체크리스트 ─────────────────────────── */
-
 const ONB_KEY = "itda.org.onboarding.closed";
 
 function readClosed(): boolean {
@@ -169,10 +154,6 @@ function readClosed(): boolean {
   }
 }
 
-/**
- * 처음 쓰는 기관: 아이가 0명이거나 올린 일지가 0건이면 대시보드 위에 세 단계를 띄운다
- * (아이 등록 → 보호자 초대 → 첫 일지 올리기). 한 번 뜨면 이 방문 동안은 남아 있고, 세 단계를 마치면 [닫기]가 생긴다.
- */
 function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardians: number | null; uploads: number }) {
   const revalidator = useRevalidator();
   const [closed, setClosed] = useState(readClosed);
@@ -231,7 +212,6 @@ function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardia
               try {
                 localStorage.setItem(ONB_KEY, "1");
               } catch {
-                // 저장이 막힌 브라우저 — 이번 방문에서만 닫는다
               }
               setClosed(true);
             }}
@@ -267,8 +247,6 @@ function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardia
   );
 }
 
-/* ── 오늘 AI가 한 일 ─────────────────────────── */
-
 function AiDay({ a }: { a: AiActivity }) {
   const items: [string, number][] = [
     ["기록 나누기", a.split],
@@ -297,8 +275,6 @@ function AiDay({ a }: { a: AiActivity }) {
     </section>
   );
 }
-
-/* ── 선생님 차례 ─────────────────────────────── */
 
 const TURN: { key: keyof PipelineTurn; label: string; desc: string; icon: typeof Check; href: string }[] = [
   { key: "confirm", label: "아이 확인", desc: "AI가 누구의 기록인지 정하지 못한 일지", icon: UserRound, href: "/check?open=confirm" },
@@ -345,8 +321,6 @@ function TurnList({ turn }: { turn: PipelineTurn }) {
     </ul>
   );
 }
-
-/* ── 기록 올리기 ─────────────────────────────── */
 
 type UploadFailure = Extract<UploadResult, { ok: false }>;
 const FAIL_TEXT = {
@@ -396,21 +370,14 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [failed, setFailed] = useState<UploadFailure[]>([]);
-  // 고른 뒤 확인 창에서 [올리기] 를 기다리는 파일 (#489). 올린 기록은 취소 · 삭제가 없어 한 번 묻는다
   const [pending, setPending] = useState<File[] | null>(null);
-  // 기관이 올린 파일 전체를 받았는지와 그 목록. files(최근 50개)보다 오래된 파일과도 이름을 맞춰 보려고 창을 열 때 받는다
   const [check, setCheck] = useState<FullCheck>({ status: "loading" });
   const fetchSeq = useRef(0);
   const waitTimer = useRef<number | undefined>(undefined);
-  // 창을 연 때부터 취소하거나 업로드가 끝날 때까지 잠근다. state 는 다시 그려져야 바뀌어서, 같은 순간에 두 번 놓으면
-  // 둘 다 통과해 첫 선택이 말없이 바뀐다 — ref 는 바로 바뀐다
   const locked = useRef(false);
 
-  // 화면을 떠나면 남은 기다림을 정리한다
   useEffect(() => () => window.clearTimeout(waitTimer.current), []);
 
-  // 확인 창이 떠 있거나 올리는 중에는 페이지 어디에 파일을 놓아도 브라우저가 그 파일을 열며 대시보드를 떠나지 않게 막는다.
-  // 떠나면 고른 파일 · 남은 업로드가 사라진다. 업로드 칸은 자기 핸들러가 먼저 받는다
   const guardDrop = uploading || pending !== null;
   useEffect(() => {
     if (!guardDrop) return;
@@ -428,18 +395,13 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
 
   function pick(list: FileList | null) {
     const picked = Array.from(list ?? []);
-    // 취소한 뒤 같은 파일을 다시 골라도 onChange 가 오게 바로 비운다
     if (input.current) input.current.value = "";
     if (!picked.length || locked.current) return;
     locked.current = true;
     setPending(picked);
-    // 받기 전에는 files 로만 맞춰 보고, 창에 "맞춰 보는 중" 을 띄운다. 실패해도 창 · 업로드는 그대로다 —
-    // 대신 최근 파일과만 맞춰 봤다고 알린다 (경고가 없다고 같은 파일이 없는 건 아니라서)
     const seq = ++fetchSeq.current;
     setCheck({ status: "loading" });
     window.clearTimeout(waitTimer.current);
-    // 받는 동안은 [올리기] 를 막으므로, 서버가 늦으면 기다리게만 하지 않고 최근 파일과만 맞춰 본 채로 풀어 준다.
-    // 그 뒤에라도 목록이 오면 창이 열려 있는 동안 경고를 더한다
     waitTimer.current = window.setTimeout(() => {
       if (fetchSeq.current === seq) setCheck((c) => (c.status === "loading" ? { status: "failed" } : c));
     }, FULL_CHECK_WAIT_MS);
@@ -459,8 +421,6 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   async function upload(picked: File[]) {
     setUploading(true);
     try {
-      // 창에서 "빠져요" 로 알린 파일(형식 · 20MB)은 uploadRawRecords 가 보내지 않고 실패로 돌려준다 — 같은 uploadPrecheck 를 본다.
-      // 그래서 창이 닫힌 뒤에도 실패 안내에 남는다
       const results = await uploadRawRecords(picked);
       setFailed(results.filter((r): r is UploadFailure => !r.ok));
       await onUploaded();
@@ -481,7 +441,6 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         data-tour="upload"
         onDragOver={(e) => {
           e.preventDefault();
-          // 올리는 중에는 놓을 수 없다 — 커서도 금지 모양으로 바뀐다 (#489)
           if (uploading) e.dataTransfer.dropEffect = "none";
           setDragging(true);
         }}
@@ -510,12 +469,10 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           <span className="text-[13px] text-muted">
             {UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(" · ")} · 20MB까지 · 여러 개를 한 번에 올릴 수 있어요
           </span>
-          {/* 스캔 pdf 는 올라가도 기록이 안 생긴다(BE 가 글자를 못 뽑음) — 올리기 전에 알려 둔다 */}
           <span className="text-[13px] text-muted">스캔하거나 사진으로 만든 PDF는 글자를 읽지 못해요. 워드·한글에서 PDF로 저장한 파일을 올려 주세요</span>
         </span>
         <button
           type="button"
-          // 확인 창이 떠 있어도 Tab 으로 여기 올 수 있다. 그때 고른 파일은 받을 수 없어 함께 막는다
           disabled={uploading || pending !== null}
           onClick={() => input.current?.click()}
           className="tap rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110 disabled:opacity-60"
@@ -528,8 +485,6 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           multiple
           hidden
           id="upload-input"
-          // 확인 창이 떠 있거나 올리는 중에는 막는다 (#489). 시작하기 카드의 [파일 고르기] 도 이 input 을 눌러 그동안은 눌러도
-          // 창이 안 열린다 — 그 카드는 첫 업로드 전에만 보이고 막히는 건 잠깐이라 버튼 모양까지 바꾸지는 않는다
           disabled={uploading || pending !== null}
           accept={UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(",")}
           onChange={(e) => pick(e.target.files)}
@@ -539,8 +494,6 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
       {pending ? (
         <UploadConfirm
           files={pending}
-          // 전체 목록을 받았으면 그것만 본다(서버가 저장에 실패한 FAILED 는 빠져 있다). 받기 전 · 실패면 최근 50개로 —
-          // 여기엔 FAILED 가 섞여 다시 올리는 파일에도 경고가 뜰 수 있지만 그대로 둔다. 경고만 하므로 놓치는 것보다 낫다
           uploaded={check.status === "done" ? check.list : files}
           fullCheck={check.status}
           onCancel={() => {
@@ -605,13 +558,8 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   );
 }
 
-/** 기관이 올린 파일 전체를 받았는지. 받기 전 · 실패면 최근 50개(files)로만 맞춰 본 것이다 */
 type FullCheck = { status: "loading" } | { status: "failed" } | { status: "done"; list: UploadedFile[] };
 
-/**
- * 전체 목록을 이만큼 기다려도 안 오면 최근 파일과만 맞춰 본 채로 [올리기] 를 풀어 준다. 끝까지 막으면 목록 API 가 느린 날
- * 업로드 자체를 못 한다. 대신 창에 빨간 글씨로 "최근 파일과만 맞춰 봤어요" 를 띄운다
- */
 const FULL_CHECK_WAIT_MS = 10_000;
 
 const SKIP_NOTE = {
@@ -620,18 +568,11 @@ const SKIP_NOTE = {
   too_large: "20MB를 넘어 빠져요",
 } as const;
 
-/** 시각 문자열을 비교용 숫자로. 못 읽으면 가장 옛날(0)로 둔다 */
 const timeOf = (iso: string) => Date.parse(iso) || 0;
 
-/**
- * 파일 이름을 맞춰 볼 때 쓰는 키. 서버가 저장하는 이름(RawRecordService.sanitizeDisplayName — 마지막 `/` · `\` 뒤만)과
- * 같은 기준으로 자르고, macOS 가 한글 이름을 자모로 풀어(NFD) 넘길 때가 있어 NFC 로 모은다
- */
 const nameKey = (name: string) =>
-  // 대소문자도 맞춘다 — Windows · macOS 는 `일지.TXT` 와 `일지.txt` 를 같은 파일로 본다. 경고만 하니 더 잡는 쪽이 낫다
   (name.replace(/\\/g, "/").split("/").pop() ?? name).normalize("NFC").toLowerCase();
 
-/** 같은 이름 경고 문구. 올해가 아니면 연도를 붙인다 — 작년 파일이 오늘 올린 것처럼 읽히지 않게. 시각을 못 읽으면 빼고 말한다 */
 function sameNameNote(iso: string): string {
   if (!timeOf(iso)) return "전에 같은 이름 파일을 올렸어요";
   const year = new Date(iso).getFullYear();
@@ -639,11 +580,6 @@ function sameNameNote(iso: string): string {
   return `${when}에 같은 이름 파일을 올렸어요`;
 }
 
-/**
- * 올리기 전 확인 창 (#489). 이미 올린 파일이나 함께 고른 파일과 이름이 같으면 그 줄을 빨갛게 알린다.
- * 막지는 않는다 — 고친 파일 · 이어 쓰는 파일은 같은 이름으로 다시 올리는 게 정상일 수 있다.
- * 이름만 보므로 내용이 같고 이름이 다른 파일은 못 잡는다.
- */
 function UploadConfirm({
   files,
   uploaded,
@@ -657,14 +593,12 @@ function UploadConfirm({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  // 이름마다 가장 최근에 올린 시각. 시각 문자열 형식이 출처마다 다를 수 있어(시간대 · 소수 초) 날짜로 바꿔 비교한다
   const lastUploaded = new Map<string, string>();
   for (const f of uploaded) {
     const key = nameKey(f.fileName);
     const prev = lastUploaded.get(key);
     if (prev === undefined || timeOf(prev) < timeOf(f.uploadedAt)) lastUploaded.set(key, f.uploadedAt);
   }
-  // 함께 고른 파일끼리의 같은 이름은 실제로 보낼 파일끼리만 센다
   const pickedCount = new Map<string, number>();
   for (const f of files) {
     if (uploadPrecheck(f)) continue;
@@ -673,7 +607,6 @@ function UploadConfirm({
   }
 
   const rows = files.map((file) => {
-    // 확인 창의 줄 표시 · 제목 숫자 · 실제로 보내는 파일 · 실패 안내가 모두 uploadPrecheck 하나를 본다
     const skip = uploadPrecheck(file);
     if (skip) return { file, note: SKIP_NOTE[skip], same: false, skip: true };
     const key = nameKey(file.name);
@@ -684,7 +617,6 @@ function UploadConfirm({
     return { file, note: null, same: false, skip: false };
   });
   const same = rows.filter((r) => r.same).length;
-  // 제목 숫자는 실제로 보낼 파일만 센다 — "빠져요" 로 알린 파일은 올리지 않는다
   const sending = rows.filter((r) => !r.skip).length;
 
   return (
@@ -692,7 +624,6 @@ function UploadConfirm({
       title={sending ? `파일 ${sending}개를 올릴까요?` : "올릴 수 있는 파일이 없어요"}
       warning={sending ? "올린 뒤에는 취소할 수 없어요" : undefined}
       confirmLabel="올리기"
-      // 전체 목록과 이름을 맞춰 보기 전에는 막는다. 오래된 같은 이름 파일을 경고 없이 올리지 않게
       confirmDisabled={!sending || fullCheck === "loading"}
       onCancel={onCancel}
       onConfirm={onConfirm}
@@ -706,7 +637,6 @@ function UploadConfirm({
       {fullCheck === "loading" ? (
         <p className="mb-2 text-[13px] text-muted">전에 올린 파일과 이름을 맞춰 보는 중이에요…</p>
       ) : fullCheck === "failed" ? (
-        // 오래된 같은 이름 파일은 못 잡았을 수 있다 — 경고가 없다고 안심하지 않게 눈에 띄게
         <p className="mb-2 text-[13px] font-bold text-block">
           전에 올린 파일 목록을 다 받지 못해 최근 파일과만 맞춰 봤어요. 오래전에 올린 파일인지 한 번 더 확인해 주세요
         </p>
@@ -725,15 +655,12 @@ function UploadConfirm({
   );
 }
 
-/* ── 진행 현황 ─────────────────────────────── */
-
 type Filter = "all" | "me" | "run" | "done";
 const isMe = (r: PipelineRow) => r.who === "me";
 const isRun = (r: PipelineRow) => r.who === "ai" || r.who === "wait" || r.who === "other";
 const isDone = (r: PipelineRow) => r.who === "done";
 
 function ProgressBoard({ rows, aiDown, refresh }: { rows: PipelineRow[]; aiDown: boolean; refresh: () => Promise<void> }) {
-  // AI 줄의 지금 단계 (O-83). 1초마다 바뀌므로 이 보드 안에 둔다 — 대시보드 전체가 다시 그려지지 않게. 못 받으면 줄마다 null → 기존 문구
   const progressOf = useAiProgress(rows, aiDown, refresh);
   const [stage, setStage] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -765,7 +692,6 @@ function ProgressBoard({ rows, aiDown, refresh }: { rows: PipelineRow[]; aiDown:
           const c = by[i];
           const on = stage === i;
           const Icon = STEP_ICONS[i];
-          // AI 가 일하는 단계는 아이콘에 펄스 링 (점검 중이면 멈춤이라 끈다)
           const run = c.ai > 0 && !aiDown;
           return (
             <button
@@ -812,7 +738,6 @@ function ProgressBoard({ rows, aiDown, refresh }: { rows: PipelineRow[]; aiDown:
         })}
       </div>
 
-      {/* 툴팁(title)만으로는 처음 쓰는 사람이 설명을 못 본다. 단계를 고르면 그 단계가 하는 일을 칸 아래에 한 줄로 보인다 */}
       {stage !== null ? (
         <p role="status" className="mb-3 flex items-start gap-1.5 rounded-[12px] border border-line px-3 py-2.5 text-[14px] leading-normal text-ink2">
           <Info aria-hidden size={15} className="mt-[3px] flex-none" />
@@ -880,7 +805,6 @@ function rowKey(r: PipelineRow, i: number): string {
   return `${r.kind}-${r.childId ?? "x"}-${r.date ?? r.week?.from}-${r.status}-${r.target?.id ?? i}`;
 }
 
-/** 서버 상태를 한 줄 문구와 바로가기로. 바로가기는 선생님 차례(target 있음)에만 */
 function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolean; go?: [string, string] } {
   const id = r.target?.id ? `&id=${encodeURIComponent(r.target.id)}` : "";
   const d = r.detail ?? {};
@@ -931,14 +855,12 @@ function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolea
     case "review_here":
       return { text: "리포트가 왔어요 · 읽고 승인하면 보호자에게 가요", go: ["읽고 승인", `/children?tab=approve&open=insight${id}`] };
     case "insight_held":
-      // Gate 2 보류는 되돌릴 수 없다 — 다시 읽을 화면이 없어 바로가기를 두지 않는다
       return { text: "리포트를 보류해 뒀어요", hold: true };
     case "review_elsewhere":
       return { text: `${d.approverName ?? "다른 기관"}에서 승인할 차례예요` };
     case "approved":
       return { text: "승인했어요 · 보호자가 볼 수 있어요" };
     default:
-      // 서버가 새 상태를 먼저 보내도 화면이 깨지지 않게
       return { text: "" };
   }
 }
@@ -959,12 +881,10 @@ const DOT = {
   skip: "border-dashed border-line text-line2",
 } as const;
 
-/** AI 단계 문구의 걸린 시간. 60초가 넘으면 초 대신 안내 문구 */
 const SLOW_SEC = 60;
 
 function JRow({ r, aiDown, phase: got }: { r: PipelineRow; aiDown: boolean; phase: AiPhase | null }) {
   const paused = aiDown && r.who === "ai";
-  // 점검 중이면 점검 문구가 우선이다
   const phase = paused ? null : got;
   const info = paused ? { ...describe(r), text: "AI 점검 중이라 잠시 멈췄어요 · 돌아오면 이어서 해요" } : describe(r);
   const sub = r.kind === "week" ? `${r.week?.label ?? ""} 리포트` : r.date ? md(r.date) : "";
@@ -1029,7 +949,6 @@ function JRow({ r, aiDown, phase: got }: { r: PipelineRow; aiDown: boolean; phas
             <>
               <span className="inline-flex min-w-0 items-center gap-1.5">
                 <Sparkles aria-hidden size={15} className="flex-none animate-ai-spin text-accent motion-reduce:animate-none" />
-                {/* 문구가 바뀌면 다시 붙어서 아래에서 올라온다. 반짝임은 안쪽에 둔다 — animation 이 겹치지 않게 */}
                 <span key={phase.text} className="inline-block animate-rise motion-reduce:animate-none">
                   <span className="ai-shimmer">
                     {phase.text}

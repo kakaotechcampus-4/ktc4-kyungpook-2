@@ -18,7 +18,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md O-18(연결된 보호자 목록)·O-19(기관이 보호자 연결 해제).
 @RestController
 @RequestMapping("/api/v1/institutions/me/children/{childId}/guardians")
 @RequiredArgsConstructor
@@ -47,7 +46,6 @@ public class ChildGuardianController {
         return ApiResponse.success(childGuardianService.listGuardians(userId, childId));
     }
 
-    /** 본문 없는 204 라 {@code ApiResponse} 로 감싸지 않는다 (backend/AGENTS.md). */
     @DeleteMapping("/{guardianUserId}")
     @Operation(summary = "보호자 연결 해제",
             description = "우리 기관이 발급한 코드로 연결된 보호자만 해제할 수 있습니다. 연결은 기관 구분 없는 "

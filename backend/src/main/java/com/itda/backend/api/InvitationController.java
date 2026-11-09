@@ -21,7 +21,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md O-15(추가 발급)·O-16(쓸 수 있는 코드 목록)·O-17(취소). 등록 직후 발급은 O-11 이 한다.
 @RestController
 @RequestMapping("/api/v1/institutions/me/children/{childId}/invitations")
 @RequiredArgsConstructor
@@ -75,7 +74,6 @@ public class InvitationController {
         return ApiResponse.success(invitationService.listLive(userId, childId));
     }
 
-    /** 본문 없는 204 라 {@code ApiResponse} 로 감싸지 않는다 (backend/AGENTS.md). */
     @DeleteMapping("/{invitationId}")
     @Operation(summary = "초대 코드 취소", description = "아직 쓸 수 있는 코드를 거둬들입니다.")
     @io.swagger.v3.oas.annotations.responses.ApiResponses({

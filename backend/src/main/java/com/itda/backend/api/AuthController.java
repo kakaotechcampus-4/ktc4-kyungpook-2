@@ -34,14 +34,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 로그인 엔드포인트는 없다. Spring Security 가
- * {@code /oauth2/authorization/kakao} 와 {@code /login/oauth2/code/kakao} 를 직접 제공한다.
- *
- * <p>여기 있는 건 로그인 이후에 필요한 것들이다 — 프론트 라우트 가드가 매 진입마다 부르는
- * 세션 조회, 역할을 정하는 회원가입, 약관 동의, 출입증 쿠키를 지우는 로그아웃이다. 출입증이 httpOnly 쿠키라 프론트가 스스로
- * 지울 수 없어서, 서버가 지워주지 않으면 사용자는 로그아웃할 방법이 아예 없다.
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -161,10 +153,6 @@ public class AuthController {
         return ApiResponse.success(userService.agreeTerms(userId, request.agreed(), request.versions()));
     }
 
-    /**
-     * 본문 없는 204 라 {@code ApiResponse} 로 감싸지 않는다
-     * (backend/AGENTS.md, docs/api/api-conventions.md).
-     */
     @PostMapping("/logout")
     @Operation(
             summary = "로그아웃",
@@ -183,17 +171,9 @@ public class AuthController {
             )
     })
     public ResponseEntity<Void> logout(HttpServletRequest request) {
-        // 출입증 필터는 로그아웃에서 출입증을 보지 않는다 — 여기서 직접 읽는다. 만료 직전 발급한 연장 쿠키도 막아야
-        // 하므로, 서명이 맞고 최대 로그인 시간이 남아 있으면 만료된 출입증으로도 로그인 번호를 기록한다
         return endLogin(request);
     }
 
-    /**
-     * 회원 탈퇴. 접수를 커밋한 뒤 탈퇴 실행기를 깨우고 잠깐 기다린다. 완료(204)는 DB 에서 {@code deleted_at} 을 확인한 경우만이다.
-     * 쿠키는 지우지 않고 로그아웃으로 기록하지도 않는다 — 늦게 온 응답이 다른 탭의 새 로그인 쿠키를 지울 수 있고, 로그아웃으로 기록하면
-     * 204 를 놓친 화면이 같은 쿠키로 {@code /auth/me} 를 물을 때 탈퇴 완료(401 ACCOUNT_WITHDRAWN) 대신 로그인 풀림을 본다. 탈퇴한
-     * 계정의 출입증은 서버가 늘 401 ACCOUNT_WITHDRAWN 으로 막는다. 202 는 본문이 있어 {@code ApiResponse} 로 감싼다.
-     */
     @DeleteMapping("/me")
     @Operation(
             summary = "회원 탈퇴",
@@ -245,9 +225,6 @@ public class AuthController {
             @RequestParam("userId") String expectedUserId) {
         WithdrawalSteps.Outcome outcome = withdrawalService.withdraw(userId, expectedUserId);
         return switch (outcome) {
-            // 쿠키는 지우지 않는다. 기다리는 사이 다른 탭에서 로그인했으면 늦게 온 이 응답이 그 사람의 새 쿠키를 지운다.
-            // 로그아웃으로 기록하지도 않는다 — 204 를 놓친 화면 · 같은 로그인의 다른 탭이 이 쿠키로 /auth/me 를 물으면
-            // 401 ACCOUNT_WITHDRAWN 으로 완료를 알아야 한다. 탈퇴한 계정의 출입증은 서버가 늘 이렇게 막고, 다음 로그인이 쿠키를 덮어쓴다
             case COMPLETED -> ResponseEntity.noContent().build();
             case IN_PROGRESS -> ResponseEntity.status(HttpStatus.ACCEPTED)
                     .body(ApiResponse.success(WithdrawalResponse.inProgress()));
@@ -255,14 +232,12 @@ public class AuthController {
         };
     }
 
-    /** 이 요청의 출입증이 가리키는 로그인을 로그아웃으로 남긴다. */
     private void revokeLoginOf(HttpServletRequest request) {
         jwtProvider.parseForLogout(jwtCookie.read(request))
                 .filter(token -> token.sessionId() != null)
                 .ifPresent(this::revoke);
     }
 
-    /** 이 로그인을 로그아웃으로 남기고 출입증 쿠키(연장 쿠키 포함)를 지운 204. */
     private ResponseEntity<Void> endLogin(HttpServletRequest request) {
         revokeLoginOf(request);
         return ResponseEntity.noContent()
@@ -272,7 +247,6 @@ public class AuthController {
                 .build();
     }
 
-    /** 기록에 실패해도 쿠키는 지운다. 로그아웃이 듣지 않으면 공용 PC 의 다음 사람이 그대로 들어온다. */
     private void revoke(AccessToken token) {
         try {
             revokedSessionService.revoke(token.sessionId(), Long.valueOf(token.subject()));

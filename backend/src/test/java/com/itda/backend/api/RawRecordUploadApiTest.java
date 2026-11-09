@@ -44,10 +44,6 @@ import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.record.RawRecordUploadService;
 import com.itda.backend.service.storage.RawFileStorage;
 
-/**
- * 저장소로 바로 올리는 업로드의 세 단계 (#450). 테스트는 S3 가 없는 로컬 저장소라, 업로드 주소가 BE 의 로컬 경로다 — 브라우저가
- * S3 에 올리는 대신 그 경로에 올린다. 확인하는 기준(이 기관의 접수 · 형식 · 크기)은 S3 서명과 같다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -79,8 +75,6 @@ class RawRecordUploadApiTest {
                 userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), other.getId())));
     }
 
-    // --- 정상 흐름 ---
-
     @Test
     void 주소를_받아_올리고_완료하면_원본_기록과_일지가_생긴다() throws Exception {
         Long uploadId = issue(staff, "0821_관찰일지.txt", "text/plain", NOTE.length);
@@ -98,12 +92,10 @@ class RawRecordUploadApiTest {
         List<JournalEntry> entries =
                 journalEntryRepository.findByRawRecordIdInAndDeletedAtIsNullOrderByIdAsc(List.of(rawRecordId));
         assertThat(entries).extracting(JournalEntry::getContent).containsExactly("오후 미술 활동에 끝까지 참여했어요.");
-        // 처리 현황에도 지금 업로드처럼 보인다
         mockMvc.perform(get("/api/v1/raw-records/" + rawRecordId).cookie(auth(staff)))
                 .andExpect(status().isOk());
     }
 
-    /** 완료 응답이 끊겨 다시 불러도 원본 기록은 하나다. 같은 기록이 다시 온다. */
     @Test
     void 완료를_두_번_불러도_원본_기록은_하나다() throws Exception {
         Long uploadId = issue(staff, "note.txt", "text/plain", NOTE.length);
@@ -130,8 +122,6 @@ class RawRecordUploadApiTest {
                 .andExpect(jsonPath("$.data.expiresAt").isString());
     }
 
-    // --- 주소 받기 거절 ---
-
     @Test
     void 허용되지_않은_확장자는_주소를_주지_않는다() throws Exception {
         mockMvc.perform(withCsrf(post(UPLOAD_URL), auth(staff))
@@ -150,7 +140,6 @@ class RawRecordUploadApiTest {
                 .andExpect(jsonPath("$.code").value("RAW_RECORD_INVALID_REQUEST"));
     }
 
-    /** S3 로 바로 가면 Caddy 25MiB 상한이 걸리지 않는다 — 한 번에 올리는 업로드와 같은 20MB 상한을 여기서 지킨다. */
     @Test
     void 상한보다_큰_파일은_413() throws Exception {
         mockMvc.perform(withCsrf(post(UPLOAD_URL), auth(staff))
@@ -171,9 +160,6 @@ class RawRecordUploadApiTest {
                 .andExpect(status().isForbidden());
     }
 
-    // --- 완료 거절 ---
-
-    /** 파일을 올리기 전에 완료를 알리면 409 다. 접수는 남아 올린 뒤 다시 부르면 된다. */
     @Test
     void 파일을_올리기_전에_완료하면_409이고_올린_뒤에는_된다() throws Exception {
         Long uploadId = issue(staff, "note.txt", "text/plain", NOTE.length);
@@ -186,7 +172,6 @@ class RawRecordUploadApiTest {
         complete(staff, uploadId);
     }
 
-    /** 다른 기관의 접수는 있는지조차 알리지 않는다. 본문을 올리는 것도, 완료도 404 다. */
     @Test
     void 다른_기관의_접수는_404() throws Exception {
         Long uploadId = issue(staff, "note.txt", "text/plain", NOTE.length);
@@ -200,7 +185,6 @@ class RawRecordUploadApiTest {
                 .andExpect(jsonPath("$.code").value("RAW_RECORD_UPLOAD_NOT_FOUND"));
     }
 
-    /** 일지 하나가 너무 긴 파일은 다시 해도 받을 수 없다 — 파일과 접수를 지우고, 다시 완료하면 404 다. */
     @Test
     void 일지_상한을_넘는_파일은_400이고_접수를_지운다() throws Exception {
         byte[] tooLong = "가".repeat(JournalEntry.MAX_CONTENT_LENGTH + 1).getBytes(StandardCharsets.UTF_8);
@@ -218,8 +202,6 @@ class RawRecordUploadApiTest {
                 .andExpect(status().isNotFound());
     }
 
-    // --- 로컬 업로드 경로 (S3 서명과 같은 확인) ---
-
     @Test
     void 접수와_다른_형식이나_크기로는_올릴_수_없다() throws Exception {
         Long uploadId = issue(staff, "note.txt", "text/plain", NOTE.length);
@@ -232,14 +214,10 @@ class RawRecordUploadApiTest {
                         .contentType("text/plain").content("짧다".getBytes(StandardCharsets.UTF_8)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("RAW_RECORD_INVALID_REQUEST"));
-        // 실패한 본문은 남지 않아 완료는 아직 409 다
         mockMvc.perform(withCsrf(post(completePath(uploadId)), auth(staff)))
                 .andExpect(status().isConflict());
     }
 
-    // --- 정리 ---
-
-    /** 하루가 지난 접수를 지운다. 완료되지 않은 것은 파일도 지울 대상이고, 완료된 것은 행만 지운다(파일은 원본 기록의 것). */
     @Test
     void 정리는_하루_지난_접수를_지우고_완료되지_않은_파일만_돌려준다() throws Exception {
         Long abandoned = issue(staff, "left.txt", "text/plain", NOTE.length);
@@ -250,7 +228,6 @@ class RawRecordUploadApiTest {
         String abandonedPath = rawRecordUploadRepository.findById(abandoned).orElseThrow().getStoredPath();
         String donePath = rawRecordUploadRepository.findById(done).orElseThrow().getStoredPath();
 
-        // 다른 테스트가 남긴 접수도 함께 지워질 수 있다 — 모은 파일 목록에서 이 테스트의 두 건만 본다
         List<String> abandonedKeys = new ArrayList<>();
         RawRecordUploadService.Swept swept;
         do {
@@ -271,8 +248,6 @@ class RawRecordUploadApiTest {
 
         assertThat(rawRecordUploadRepository.findById(fresh)).isPresent();
     }
-
-    // --- 도구 ---
 
     private Long issue(User user, String filename, String contentType, long size) throws Exception {
         String body = mockMvc.perform(withCsrf(post(UPLOAD_URL), auth(user))

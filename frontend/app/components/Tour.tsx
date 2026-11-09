@@ -1,18 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-/**
- * 화면별 사용법(코치마크). 제목 옆 "?" 를 누르면 화면이 어두워지고 설명할 부분만 밝게 보인다.
- * 단계는 화면의 `data-tour="이름"` 표시를 가리킨다. 지금 화면에 없는 표시는 건너뛴다(목록이 비었을 때 등).
- * 각 묶음의 첫 화면(기관 대시보드 · 보호자 홈)만 처음 온 사람에게 한 번 자동으로 띄운다.
- *
- * 기관·보호자가 함께 쓰므로 `components/org` 가 아니라 여기 둔다. react 말고는 아무것도 안 받아서
- * 보호자 묶음에 들어가도 무게가 늘지 않는다 (보호자는 SMS 링크로 들어오는 첫 페인트가 중요하다).
- */
 export type TourScreen = "dash" | "check" | "review" | "kids" | "lists" | "home";
 
 interface Step {
-  /** data-tour 이름. 없으면 화면 가운데에 띄운다 */
   at: string | null;
   title: string;
   text: string;
@@ -51,8 +42,6 @@ const TOURS: Record<TourScreen, Step[]> = {
     { at: "composer", title: "새로 보내기", text: "준비물이나 확인할 일을 보호자에게 보내요." },
     { at: "sent", title: "확인 현황", text: "보호자가 몇 명 확인했는지 보여요. 필요 없어진 안내는 [내리기]로 내려요." },
   ],
-  // 보호자는 한 달에 몇 번, 그것도 휴대폰으로 들어온다. 선생님 투어(6단계)와 같은 분량을 보지 않는다.
-  // 세 단계만 둔다 — 무엇이 오는지 · 어디서 모아 보는지 · 무엇을 내가 정하는지.
   home: [
     { at: "news", title: "새 소식", text: "기관에서 올린 그날의 기록이에요. 눌러서 전체를 읽을 수 있어요." },
     { at: "orgs", title: "연결된 기관", text: "아이가 다니는 곳이에요. 기관마다 기록을 공유할지 보호자가 정해요." },
@@ -60,14 +49,12 @@ const TOURS: Record<TourScreen, Step[]> = {
   ],
 };
 
-/** 자동 재생은 화면마다 따로 센다 — 하나로 묶으면 기관 투어를 본 사람에게 보호자 투어가 안 뜬다 */
 const seenKey = (screen: TourScreen) => `itda.tour.${screen}.seen`;
 
 function target(at: string | null): HTMLElement | null {
   return at ? document.querySelector<HTMLElement>(`[data-tour="${at}"]`) : null;
 }
 
-/** 제목 옆 "?" — 누르면 그 화면 사용법을 띄운다. `auto` 면 처음 방문 때 한 번 저절로 띄운다 */
 export function TourButton({ screen, auto = false }: { screen: TourScreen; auto?: boolean }) {
   const [steps, setSteps] = useState<Step[] | null>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -83,18 +70,15 @@ export function TourButton({ screen, auto = false }: { screen: TourScreen; auto?
     try {
       seen = localStorage.getItem(seenKey(screen)) === "1";
     } catch {
-      // 저장소가 막힌 브라우저 — 매번 띄우지 않도록 본 것으로 친다
     }
     if (!seen) start();
   }, [auto, start]);
 
   function end() {
-    // 저절로 뜨는 화면만 "봤다"를 남긴다. 손으로 연 투어는 다음에 또 열 수 있어야 한다
     if (auto) {
       try {
         localStorage.setItem(seenKey(screen), "1");
       } catch {
-        // 위와 같음
       }
     }
     setSteps(null);
@@ -113,7 +97,6 @@ export function TourButton({ screen, auto = false }: { screen: TourScreen; auto?
       >
         ?
       </button>
-      {/* 제목(h1) 옆에 있어도 제목의 글꼴·읽기 이름에 섞이지 않게 body 에 그린다 */}
       {steps ? createPortal(<Coach steps={steps} onEnd={end} />, document.body) : null}
     </>
   );

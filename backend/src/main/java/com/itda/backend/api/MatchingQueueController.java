@@ -19,10 +19,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md O-22, O-23.
-// principal은 RawRecordController와 같은 내부 userId다. 기관 식별은 MatchingResultService가
-// UserService.getOrganizationIdOf(userId)로 풀어서 raw_record.institutionId, child_organization과
-// 비교한다 — 컨트롤러는 저장소를 직접 보지 않는다.
 @RestController
 @RequestMapping("/api/v1/matching-queue")
 @RequiredArgsConstructor

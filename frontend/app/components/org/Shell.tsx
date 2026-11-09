@@ -11,41 +11,27 @@ import { onNotice } from "@/lib/notice";
 import type { Pipeline } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
 
-/** 머리띠 오른쪽의 내 정보. 사람 이름은 저장하지 않아 기관명만 보여 준다. null 은 서버가 주지 않은 값 */
 export interface OrgShellMe {
   institutionName: string | null;
-  /** 서버가 회원 탈퇴를 열었는지. 담당자 넘기기는 끝에 이 계정을 탈퇴시키므로 같은 스위치를 따른다(#478) */
   withdrawalEnabled: boolean;
 }
 
-/** 메뉴 배지. null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다 */
 export interface OrgShellCounts {
-  /** 아이 확인 + 고쳐야 할 기록 */
   check: number | null;
-  /** 검토 대기 (요약 실패 포함) */
   review: number | null;
-  /** 분석 승인 + 새 분석(안 읽은 수신함) + 보호자 연결 요청 */
   children: number | null;
-  /** 선생님 차례 합계(O-80 turn 다섯 줄). 탭 제목 "(N) 잇다" 에 쓴다 */
   turnTotal: number | null;
-  /** AI 가 멈춘 상태(O-82 available=false). 모든 기관 화면 위에 배너를 띄운다 */
   aiDown: boolean;
-  /** 분석 도착 알림용 — 우리가 승인할 분석 수 · 안 읽은 받은 분석 수 */
   approve: number | null;
   unread: number | null;
 }
 
-/** 셸이 받아 두는 값. 진행 현황(O-80)은 배지를 세고 남은 원본도 대시보드에 그대로 내려준다 */
 export interface OrgShellLive {
   counts: OrgShellCounts;
-  /** 못 받았으면 null */
   pipeline: Pipeline | null;
 }
 
-/** 메뉴 배지 숫자를 센다. 진행 현황(O-80)의 선생님 차례와 수신함 안 읽은 글 수(O-54) */
 export async function loadOrgLive(): Promise<OrgShellLive> {
-  // 배지는 덤이다 — 하나가 실패해도 기관 화면 전체(이 값을 쓰는 layout loader)가 깨지지 않게 각각 null 로 둔다.
-  // AI 상태를 못 받았다고 배너를 띄우지도 않는다 — 서버가 "멈췄다" 고 할 때만
   const [pipeline, unreadCount, ai] = await Promise.all([
     loadIfReady("dashboard", getPipeline).catch(() => null),
     loadIfReady("inbox", getInboxUnreadCount).catch(() => null),
@@ -67,10 +53,6 @@ export async function loadOrgLive(): Promise<OrgShellLive> {
   };
 }
 
-/**
- * 셸이 10초마다 받는 진행 현황 · AI 멈춤을 화면(대시보드)이 같이 쓴다 — 같은 요청을 화면이 따로 또 보내지 않게.
- * pipeline 은 마지막으로 받은 값이다(한 번도 못 받았으면 null). refresh 는 지금 바로 다시 받고 끝나면 풀린다.
- */
 export interface OrgLive {
   pipeline: Pipeline | null;
   aiDown: boolean;
@@ -85,7 +67,6 @@ export function useOrgLive(): OrgLive {
   return live;
 }
 
-/** 이전 폴링보다 늘었으면 새로 도착한 분석이 있다. 숫자를 모르면(준비 중) 비교하지 않는다 */
 function arrived(prev: OrgShellCounts, next: OrgShellCounts): "approve" | "unread" | null {
   if (prev.approve != null && next.approve != null && next.approve > prev.approve) return "approve";
   if (prev.unread != null && next.unread != null && next.unread > prev.unread) return "unread";
@@ -110,7 +91,6 @@ function nav(counts: OrgShellCounts): NavItem[] {
   ];
 }
 
-/** "셀 수 있는 내 차례"에 쓰는 노랑 배지 */
 function Count({ n }: { n: number }) {
   return (
     <span className="shrink-0 rounded-full bg-mark px-2 py-px text-[13px] font-bold tabular-nums text-markink">
@@ -134,31 +114,18 @@ export function OrgShell({
 }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  // 다음 화면을 기다리는 동안 지금 화면을 살짝 흐린다 — 맨 위 막대(NavigationProgress)와 함께
   const navigating = useNavigating();
 
-  // 처음 값은 layout 의 clientLoader 가 준다. 화면을 옮기거나 처리 뒤 revalidate 되면 그 값으로 바뀌고,
-  // 그 사이에는 10초마다 직접 다시 받는다(탭이 숨으면 멈춤)
   const [live, setLive] = useState(loaded.counts);
-  /** 진행 현황 원본. 못 받은 차례에는 마지막 값을 둔다 — 대시보드가 더 옛 값으로 되돌아가지 않게 */
   const [pipeline, setPipeline] = useState(loaded.pipeline);
-  /**
-   * 새로 받기 시작할 때마다 올린다(loader · 폴링 · 바로 다시 받기). 그보다 먼저 떠난 응답은 버린다 —
-   * 늦게 와서 최신 값을 덮지 않게
-   */
   const generation = useRef(0);
   useEffect(() => {
     generation.current += 1;
     setLive(loaded.counts);
     if (loaded.pipeline) setPipeline(loaded.pipeline);
   }, [loaded]);
-  /**
-   * 분석 도착 알림: 10초 폴링이 이전 값보다 늘었을 때만 띄운다. 첫 로드 · 새로고침 · 선생님이 처리해 다시 센 값(loader)은
-   * 비교 기준만 바꾸고 알리지 않는다.
-   */
   const [arrival, setArrival] = useState<"approve" | "unread" | null>(null);
   const clearArrival = useCallback(() => setArrival(null), []);
-  /** 화면을 떠난 뒤 생긴 알림(lib/notice) */
   const [notice, setNotice] = useState<string | null>(null);
   const clearNotice = useCallback(() => setNotice(null), []);
   useEffect(() => onNotice(setNotice), []);
@@ -177,7 +144,6 @@ export function OrgShell({
   const orgLive = useMemo(() => ({ pipeline, aiDown: live.aiDown, refresh }), [pipeline, live.aiDown, refresh]);
   const ITEMS = nav(live);
 
-  // 탭 제목 "(N) 잇다 ITDA" — 다른 탭에 있어도 선생님 차례가 생긴 걸 알 수 있게
   useEffect(() => {
     const base = "잇다 ITDA";
     document.title = live.turnTotal ? `(${live.turnTotal}) ${base}` : base;
@@ -259,12 +225,6 @@ export function OrgShell({
   );
 }
 
-/**
- * 머리띠 오른쪽 이름 칩 — 누르면 계정 메뉴가 열린다.
- *
- * 전에는 눌러도 아무 일이 없었고, 로그아웃은 화면 어디에도 없었다. 출입증이 httpOnly 쿠키라
- * 프론트가 스스로 지울 수 없어 서버에 부탁해야 한다(`signOut`).
- */
 function AccountMenu({ me }: { me: OrgShellMe }) {
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);

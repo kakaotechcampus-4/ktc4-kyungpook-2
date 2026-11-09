@@ -27,7 +27,6 @@ spring:
 app:
   cors:
     allowed-origins: http://localhost:3000
-  # 테스트 중에 워커가 실제 AI 를 부르지 않도록 끈다.
   matching:
     worker:
       enabled: false
@@ -37,7 +36,6 @@ app:
   summary:
     worker:
       enabled: false
-    # 요청 기반(#181) 테스트를 그대로 두려고 끈다. 켜진 동작은 테스트가 설정을 직접 넘겨 본다.
     auto-run: false
   insight:
     worker:
@@ -49,7 +47,6 @@ app:
     direct-upload:
       sweeper:
         enabled: false
-  # H2 단위 테스트는 한 프로세스 안 잠금, PostgreSQL 통합 테스트는 advisory lock 을 auto 가 고른다.
   withdrawal:
     enabled: true
     wait-for-completion: 2s

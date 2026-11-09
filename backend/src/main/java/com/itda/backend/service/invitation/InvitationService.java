@@ -32,12 +32,6 @@ import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * 보호자 초대 코드의 발급·조회·취소·수락. 코드는 본인 확인이 아니라 "이 아이와 연결해도 된다"는 일회용 권한이다.
- *
- * <p>시각은 주입받은 {@link Clock} 으로 구한다. 잠금이 필요한 메서드는 잠금을 얻은 뒤에 시각을 구한다 —
- * 잠금을 기다리는 동안 만료된 코드를 통과시키지 않기 위해서다.
- */
 @Service
 @RequiredArgsConstructor
 public class InvitationService {
@@ -56,13 +50,6 @@ public class InvitationService {
     private final InviteCodeGenerator inviteCodeGenerator;
     private final Clock clock;
 
-    /**
-     * 권한 확인이 끝난 아이에게 코드를 발급한다. O-11 아이 등록이 같은 트랜잭션에서 부른다.
-     *
-     * <p>이미 있는 코드와 겹치지 않을 때까지 조회로 다시 뽑는다. 조회만 하므로 트랜잭션이 깨지지 않는다.
-     * 그 사이 다른 요청이 같은 코드를 먼저 저장하면 유니크 제약이 막는데, 그때는 트랜잭션이 이미 깨져
-     * 여기서 다시 저장할 수 없다. 요청 전체를 503 으로 끝내고(O-11 이면 아이 등록도 롤백) 클라이언트가 다시 보낸다.
-     */
     @Transactional
     public IssuedInvitationResponse issue(Long organizationId, Long childId) {
         Invitation invitation = Invitation.issue(childId, organizationId, unusedCode(), now().plus(TIME_TO_LIVE));
@@ -78,25 +65,12 @@ public class InvitationService {
                 String.valueOf(invitation.getId()), invitation.getCode(), toOffset(invitation.getExpiresAt()));
     }
 
-    /**
-     * O-15 추가 발급. 엄마·아빠에게 따로 보내도록 한 아이에 쓸 수 있는 코드가 여러 개 있어도 된다.
-     *
-     * <p>명부를 잠근 뒤 확인한다. 잠그지 않으면 "명부 확인 → 명부 제외·코드 취소 → 새 코드 저장" 순서가 생겨
-     * 제외된 아이에게 쓸 수 있는 코드가 남고, 다시 명부에 올리면 그 코드가 살아난다.
-     */
     @Transactional
     public IssuedInvitationResponse issueFor(String userId, Long childId) {
         Long organizationId = organizationChildGuard.lockRosterChild(userId, childId);
         return issue(organizationId, childId);
     }
 
-    /**
-     * 명부 제외가 같은 트랜잭션에서 부른다. 이 기관이 이 아이에게 발급한, 아직 쓸 수 있는 코드를 모두 취소한다.
-     * 호출하는 쪽이 child → child_organization 을 이미 잠갔다는 전제다.
-     *
-     * <p>기준 시각은 한 번만 구해 조회와 취소에 같이 쓴다. 잠금을 기다리는 사이 만료된 코드를 새 시각으로 취소하면
-     * {@link Invitation#cancel} 이 예외를 던져 명부 제외 전체가 롤백된다.
-     */
     @Transactional
     public void cancelLiveForRosterRemoval(Long childId, Long organizationId) {
         LocalDateTime now = now();
@@ -104,7 +78,6 @@ public class InvitationService {
                 .forEach(invitation -> invitation.cancel(now));
     }
 
-    /** O-16 아직 쓸 수 있는 코드 목록. 수락·취소·만료된 코드는 빠진다. */
     @Transactional(readOnly = true)
     public List<LiveInvitationResponse> listLive(String userId, Long childId) {
         Long organizationId = organizationChildGuard.requireRosterChild(userId, childId);
@@ -117,10 +90,6 @@ public class InvitationService {
                 .toList();
     }
 
-    /**
-     * O-17 코드 취소. 행을 잠근 뒤의 시각으로 쓸 수 있는지 본다 — 수락과 겹치면 먼저 잠근 쪽이 이긴다.
-     * 이미 쓸 수 없는 코드는 목록에 없는 코드라 404 다.
-     */
     @Transactional
     public void cancel(String userId, Long childId, Long invitationId) {
         Long organizationId = organizationChildGuard.requireRosterChild(userId, childId);
@@ -134,19 +103,6 @@ public class InvitationService {
         invitation.cancel(now);
     }
 
-    /**
-     * G-04 보호자가 코드를 써서 아이와 연결된다. 코드 소모와 연결 생성은 한 트랜잭션이라, 어디서 실패해도 둘 다 남지 않는다.
-     *
-     * <p>잠금 순서는 users(FOR SHARE) → child → child_organization → invitation → child_guardian → sharing_history 다
-     * (DB 스키마 §3.3). 아이 삭제·명부 제외가 동시에 진행돼도 그 행을 잠그고 기다린 뒤 커밋된 상태를 보고 판단한다.
-     * 회원 행은 탈퇴와 줄을 세우려고 잠근다 — 수락이 먼저 끝나면 탈퇴가 새 연결까지 끊고, 탈퇴가 먼저 접수되면 수락은 막힌다.
-     *
-     * <p>연결되면 그 아이의 승인된 인사이트를 이 보호자에게 연다 (#287). Gate 2 승인은 그 순간 연결된 보호자에게만
-     * 열기 때문에, 여기서 열지 않으면 나중에 연결된 보호자는 지난 글을 못 본다. 승인도 {@code child} 를 잠그므로 겹쳐도
-     * 빠지거나 두 번 열리지 않는다.
-     *
-     * <p>수락은 아동 상태를 바꾸지 않는다. 연결은 동의가 아니다 — 동의는 별도 기능이 맡는다.
-     */
     @Transactional
     public AcceptedInvitationResponse accept(String userId, String rawCode) {
         Long parentId = userService.lockParentForLink(userId);
@@ -171,7 +127,6 @@ public class InvitationService {
         linkGuardian(child.getId(), parentId, invitation.getId());
         insightAccessGranter.grantForLinkedGuardian(child.getId(), parentId, now());
 
-        // 연결 행 잠금을 기다리는 동안 만료됐을 수 있다. 앞에서 구한 시각을 다시 쓰지 않는다.
         LocalDateTime now = now();
         if (!invitation.isUsable(now)) {
             throw invalidCode();
@@ -186,12 +141,6 @@ public class InvitationService {
                 organizationName, child.getStatus());
     }
 
-    /**
-     * 연결 행을 잠근 뒤 살아 있는지 다시 본다. 해제된 행은 새 초대로 되살리고, 없으면 새로 만든다 (DB 스키마 §3.3).
-     * 이미 연결돼 있으면 409 — 예외로 트랜잭션이 롤백되므로 코드는 쓰이지 않은 채 남는다.
-     *
-     * <p>행이 없을 때는 잠글 것이 없어서 동시에 두 INSERT 가 들어올 수 있다. 그건 유니크 제약이 막고, 같은 409 로 바꾼다.
-     */
     private void linkGuardian(Long childId, Long parentId, Long invitationId) {
         Optional<ChildGuardian> existing = childGuardianRepository.findByChildIdAndUserIdForUpdate(childId, parentId);
         if (existing.isPresent()) {

@@ -22,7 +22,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md G-50(목록)·G-51(확인). 기관 쪽은 ChecklistController.
 @RestController
 @RequestMapping("/api/v1/children/{childId}/checklists")
 @RequiredArgsConstructor

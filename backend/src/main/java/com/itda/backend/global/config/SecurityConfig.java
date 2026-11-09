@@ -35,23 +35,13 @@ import java.util.List;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    /**
-     * 로그인 없이 여는 경로. 그 밖은 모두 인증이 필요하다. API 문서도 이 목록으로 자물쇠 표시와 401 응답을 정한다
-     * ({@link OpenApiConfig}).
-     */
     public static final String[] PUBLIC_PATHS = {
             "/oauth2/**",
             "/login/oauth2/**",
-            // 메서드로 좁히지 않는다. POST 만 열면 익명 GET 요청이
-            // DispatcherServlet 에 닿기 전에 401 로 끝나서, 405 로 응답해야 할
-            // 잘못된 메서드 호출이 인증 오류로 둔갑한다.
             "/api/v1/auth/logout",
-            // 개발용 로그인. app.auth.dev-login.enabled 가 꺼져 있으면 컨트롤러가 없어 404 다.
             "/api/v1/dev/login",
             "/api/health",
-            // 카카오 연결 해제 웹훅. 로그인 대신 어드민 키 헤더로 검증한다
             ApiPaths.KAKAO_UNLINK_WEBHOOK,
-            // 약관 본문. 동의하기 전에 읽어야 하는 공개 문서다. 정확히 이 경로만 — 아래에 새 API 가 생겨도 열리지 않게
             "/api/v1/terms",
             "/v3/api-docs/**",
             "/swagger-ui/**",
@@ -96,63 +86,16 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                /*
-                 * 출입증이 쿠키로 바뀌면서 CSRF 방어가 필요해졌다. 브라우저가 쿠키를 자동으로
-                 * 붙여 보내므로, 남의 사이트에서 띄운 폼 하나로 우리 API 가 호출될 수 있다.
-                 * (헤더 방식일 때는 프론트가 직접 붙여야 해서 이 문제가 없었다.)
-                 *
-                 * 토큰을 쿠키로 내려주고 프론트가 X-XSRF-TOKEN 헤더로 되돌려보내는 방식이다.
-                 * 이 쿠키만은 httpOnly 가 아니어야 한다 — 프론트 JS 가 읽어야 하기 때문이다.
-                 * 출입증 쿠키와 달리 이 값은 새어도 그 자체로는 아무 권한이 없다.
-                 */
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
-                        // 로그인 진입·콜백은 카카오에서 넘어오는 흐름이라 토큰을 실을 수 없다. 카카오 웹훅도 서버가 보내는
-                        // 요청이라 토큰이 없다 — 쿠키로 인증하지 않고 어드민 키 헤더로 검증하므로 CSRF 대상이 아니다.
                         .ignoringRequestMatchers("/oauth2/**", "/login/oauth2/**", ApiPaths.KAKAO_UNLINK_WEBHOOK)
                 )
-                // 토큰은 게으르게 만들어진다. 아무도 건드리지 않으면 쿠키가 나가지 않아
-                // 프론트가 토큰을 구할 수 없고 모든 쓰기 요청이 403 이 된다. 아래 필터가 그걸 막는다.
                 .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                /*
-                 * 세션 정책은 기본값(IF_REQUIRED)을 쓴다. STATELESS 로 두면 안 된다.
-                 *
-                 * oauth2Login 은 인가 요청(state 포함)을 카카오에 다녀오는 동안 어딘가
-                 * 보관해야 하고, 기본 보관소가 HttpSession 이다. STATELESS 면 세션이 아예
-                 * 만들어지지 않아 로그인이 성립하지 않는다.
-                 *
-                 * 세션은 인가 화면에 다녀오는 몇 초 동안만 살아 있고, 성공·실패 핸들러가
-                 * 곧바로 invalidate 한다. 그 뒤의 모든 API 요청은 JWT 쿠키만 보는 무상태 방식이다.
-                 *
-                 * <b>sessionCreationPolicy(IF_REQUIRED) 를 명시적으로 쓰지 않는다.</b> 기본값과 같은 값이라도
-                 * 명시하면 Spring 이 SessionManagementFilter 를 끼워 넣는다. 이 필터는 출입증으로 인증된
-                 * 요청을 매번 "방금 새로 로그인한 사람" 으로 오해하고 로그인 직후 절차를 돌려서 두 가지 버그를 냈다.
-                 *  - 인증을 세션에 저장해, 로그아웃으로 출입증을 지워도 JSESSIONID 로 로그인이 유지됐다.
-                 *  - CsrfAuthenticationStrategy 가 XSRF-TOKEN 쿠키를 비워, 로그인한 뒤 GET 한 번이면
-                 *    다음 쓰기 요청(업로드·로그아웃)이 403 이 됐다.
-                 * oauth2Login 쪽 세션 처리(세션 ID 교체 등)는 로그인 필터가 직접 하므로 이 필터가 없어도 된다.
-                 *
-                 * 대가: 서버를 재시작하면 그 순간 로그인 중이던 사용자는 다시 눌러야 하고,
-                 * 인스턴스를 늘리면 sticky session 이나 공유 세션 저장소가 필요해진다.
-                 * 지금은 EC2 한 대라 문제되지 않는다.
-                 */
-                /*
-                 * 로그인 정보(SecurityContext)를 세션에 저장하지 않는다. 출입증 쿠키만이 인증 수단이다.
-                 * 요청 속성 저장소는 그 요청 안에서만 인증을 들고 있다가 버린다. 세션은 위에 적은 대로
-                 * 카카오 인가 요청(state)을 잠깐 담는 용도로만 남는다.
-                 */
                 .securityContext(context -> context
                         .securityContextRepository(new RequestAttributeSecurityContextRepository()))
-                // API의 401 요청을 세션에 저장하지 않는다. OAuth state 보관 세션은 별도로 유지된다.
                 .requestCache(cache -> cache.disable())
-                /*
-                 * 규칙은 먼저 맞는 것이 이긴다. "/api/v1/auth/**" 를 통째로 열어두면
-                 * 그 아래 새로 만드는 API 가 전부 인증 없이 뚫리므로, 열 것만 하나씩 적는다.
-                 * /api/v1/auth/me 는 anyRequest().authenticated() 가 잡아,
-                 * 비로그인 요청은 JsonAuthenticationEntryPoint 가 401 JSON 으로 응답한다.
-                 */
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .anyRequest().authenticated()
@@ -165,12 +108,9 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jsonAuthenticationEntryPoint)
                         .accessDeniedHandler(jsonAccessDeniedHandler)
                 )
-                // 출입증으로 인증을 세우고 쓰는 동안 연장한다. 로그아웃한 로그인은 받지 않는다.
                 .addFilterBefore(
                         new JwtAuthenticationFilter(jwtProvider, jwtCookie, revokedSessionService, jsonErrorResponseWriter),
                         UsernamePasswordAuthenticationFilter.class)
-                // 출입증으로 누군지 알아낸 직후, 가입을 마치지 않은 회원을 403 SIGNUP_NOT_COMPLETED 로,
-                // 약관에 동의하지 않은 보호자를 403 TERMS_NOT_AGREED 로 막는다.
                 .addFilterAfter(
                         new SignupCompletionFilter(userService, jsonErrorResponseWriter),
                         JwtAuthenticationFilter.class);
@@ -184,7 +124,6 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(allowedOrigins));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
-        // 다른 오리진에서 볼 때도 프론트가 읽을 수 있게 (같은 오리진이면 필요 없다)
         configuration.setExposedHeaders(List.of(ApiPaths.USER_ID_HEADER));
         configuration.setAllowCredentials(true);
 

@@ -33,7 +33,6 @@ class RemovedRecordPurgeWorkerTest {
         verify(rawFileStorage).delete("b.txt");
     }
 
-    /** DB 행은 이미 지워졌다. 파일 하나가 안 지워져도 나머지 파일과 다음 묶음은 계속 지운다. */
     @Test
     void 파일_삭제가_실패해도_나머지를_계속_지운다() {
         given(purgeService.purgeBatch()).willReturn(new Purged(2, List.of("a.txt", "b.txt")));

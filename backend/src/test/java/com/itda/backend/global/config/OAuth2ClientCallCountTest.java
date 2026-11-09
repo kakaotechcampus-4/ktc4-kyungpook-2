@@ -39,13 +39,6 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationResp
 import com.itda.backend.global.security.oauth.OAuth2LoginFailureHandler;
 import com.sun.net.httpserver.HttpServer;
 
-/**
- * 카카오가 실제로 몇 번 불리는지 센다 (#193).
- *
- * <p>Apache HttpClient 5 는 기본으로 503·429 를 한 번 더 보낸다. 토큰 교환 요청에는 한 번만 쓸 수 있는 인가 코드가
- * 들어 있어서 두 번째 요청은 {@code invalid_grant} 가 된다. 그래서 진짜 HTTP 서버를 띄우고 운영과 같은 설정 클래스로 부른다
- * ({@code com.itda.backend.service.agent.AiAgentCallCountTest} 와 같은 방식).
- */
 @ExtendWith(OutputCaptureExtension.class)
 class OAuth2ClientCallCountTest {
 
@@ -56,7 +49,6 @@ class OAuth2ClientCallCountTest {
     private HttpServer server;
     private final AtomicInteger calls = new AtomicInteger();
     private ClientRegistration kakao;
-    // 기본은 카카오가 잠깐 바쁠 때의 응답
     private volatile int status = 503;
     private volatile String body = "{\"error\":\"server_error\"}";
 
@@ -67,7 +59,6 @@ class OAuth2ClientCallCountTest {
             calls.incrementAndGet();
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            // 카카오가 "이만큼 뒤에 다시 와" 라고 할 때. HttpClient 기본 정책은 이 시간만큼 스레드를 재우고 다시 보낸다.
             exchange.getResponseHeaders().add("Retry-After", "1");
             exchange.sendResponseHeaders(status, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
@@ -107,10 +98,6 @@ class OAuth2ClientCallCountTest {
         assertThat(calls.get()).isEqualTo(1);
     }
 
-    /**
-     * 사용자 정보에 "카카오에 묻기 직전 시각" 을 더한다. 로그인이 연결 해제 웹훅 알림을 지울지 정할 때 쓴다 — 그 시각보다 먼저 받은
-     * 알림만 지운다. 묻기 전 시각이라 응답을 받은 뒤보다 늦지 않다.
-     */
     @org.junit.jupiter.api.Test
     void 사용자_정보에_카카오에_묻기_직전_시각을_더한다() {
         this.status = 200;
@@ -125,12 +112,6 @@ class OAuth2ClientCallCountTest {
         assertThat(user.getAttributes().get(OAuth2ClientConfig.KAKAO_VERIFIED_AT)).isEqualTo(fixed);
         assertThat(user.getName()).isEqualTo("123456789");
     }
-
-    /*
-     * 로그인 실패 핸들러(OAuth2LoginFailureHandler)는 이 예외 메시지를 서버 로그에 남긴다.
-     * 아래 두 테스트는 우리 쪽(요청을 만드는 코드)이 보낸 인가 코드·client secret·액세스 토큰을 메시지에 넣지 않는지 본다.
-     * 카카오가 응답에 인가 코드를 담아 돌려주는 경우(KOE320)는 그다음 테스트가 핸들러 로그까지 이어서 본다.
-     */
 
     @ParameterizedTest
     @ValueSource(ints = {400, 401, 503})
@@ -160,12 +141,10 @@ class OAuth2ClientCallCountTest {
 
     @Test
     void 카카오가_오류_설명에_돌려준_인가_코드는_실패_로그에서_가려진다(CapturedOutput output) throws Exception {
-        // 카카오 KOE320 응답 원문 형식 — 이미 썼거나 만료된 코드를 설명에 그대로 담는다.
         this.status = 400;
         this.body = "{\"error\":\"invalid_grant\",\"error_description\":\"authorization code not found for code="
                 + AUTHORIZATION_CODE + "\",\"error_code\":\"KOE320\"}";
         OAuth2ClientConfig config = new OAuth2ClientConfig();
-        // 운영과 같은 부품으로 로그인 처리 → 실패 핸들러까지 잇는다.
         var provider = new OAuth2LoginAuthenticationProvider(config.accessTokenResponseClient(), config.oAuth2UserService(java.time.Clock.systemDefaultZone()));
         OAuth2AuthorizationExchange exchange = authorizationCodeGrant(AUTHORIZATION_CODE).getAuthorizationExchange();
 
@@ -178,7 +157,6 @@ class OAuth2ClientCallCountTest {
         assertThat(output).contains("authorization code not found for code=***");
     }
 
-    /** application.yml 의 kakao 등록과 같은 값. 주소만 로컬 서버로 바꾼다. */
     private static ClientRegistration kakaoRegistration(String baseUrl) {
         return ClientRegistration.withRegistrationId("kakao")
                 .clientId("test-client-id")

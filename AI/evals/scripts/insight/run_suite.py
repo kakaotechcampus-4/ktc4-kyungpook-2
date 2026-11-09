@@ -1,23 +1,3 @@
-# AI/evals/scripts/insight/run_suite.py
-"""
-인사이트 세트를 여러 번 실행하고 채점한다.
-
-    python evals/scripts/insight/run_suite.py --runs 3 --sample 10
-    python evals/scripts/insight/run_suite.py --cases evals/generated/insight/sealed/blind_v1.json --name blind_v1
-    python evals/scripts/insight/run_suite.py --rescore evals/generated/insight/runs/latest.json
-
-채점 단위는 "심은 패턴" 하나다.
-  - 패턴마다 그 패턴을 찾은 인사이트가 있는지 본다 (근거가 최소 근거 수 이상 겹치면 찾음)
-  - 어느 패턴과도 맞지 않는 인사이트는 "남는 인사이트" 로 센다. 지어낸 패턴일 수 있다
-  - 모든 패턴을 찾고 남는 인사이트가 0 이면 "완전 정답"
-
-쓸모 태그는 정답 세트가 없어 분포만 본다 (CRITERIA §9).
-세 종류를 매번 다 고르면 이전 "추천" 처럼 신호가 되지 않는다.
-
-모델은 temperature 를 고정할 수 없어 한 번 실행으로 판단하지 않는다.
-결과에는 모델과 세트 경로를 함께 남긴다. 모델이 다르면 같은 세트도 숫자가 달라진다.
-"""
-
 import argparse
 import json
 import sys
@@ -46,8 +26,6 @@ RUNS = GEN / "runs"
 def load_cases(path) -> list[dict]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
-
-# ── 실행 ────────────────────────────────────────────────────────
 
 def run_one(case: dict, run_no: int) -> dict:
     start = time.time()
@@ -79,26 +57,21 @@ def execute(cases_path: Path, runs: int, limit: int, workers: int, name: str) ->
     return result
 
 
-# ── 채점 ────────────────────────────────────────────────────────
-
 def pct(a: int, b: int) -> str:
     return f"{a}/{b} ({a / b * 100:.0f}%)" if b else f"{a}/0"
 
 
 def finds(insight: dict, pattern_ids: list[str]) -> bool:
-    """그 패턴의 근거와 최소 근거 수 이상 겹치면 찾은 것으로 본다 (CRITERIA §9)."""
     return len(set(insight["claim_ids"]) & set(pattern_ids)) >= config.MIN_EVIDENCE_CLAIMS
 
 
 def spans_institutions(insight: dict, pattern_ids: list[str], types_of: dict) -> bool:
-    """기관 간 차이 패턴은 인사이트 하나가 두 기관 이상의 근거를 함께 품어야 한다.
-    학교 것만, 센터 것만 따로 묶으면(쪼개기) 비교가 사라지므로 찾은 것으로 보지 않는다."""
     shared = set(insight["claim_ids"]) & set(pattern_ids)
     return len({types_of[c] for c in shared}) >= 2
 
 
 def score(result: dict, sample: int) -> int:
-    cases_path = result.get("cases", str(DEFAULT_CASES))  # 기준점 파일에는 경로가 없다
+    cases_path = result.get("cases", str(DEFAULT_CASES))
     cases = {c["case_id"]: c for c in load_cases(cases_path)}
     records = result["records"]
     errors = [r for r in records if r["error"]]
@@ -106,12 +79,11 @@ def score(result: dict, sample: int) -> int:
     print(f"\n모델 {result['model']} · 세트 {Path(cases_path).name} · {result['runs']}회 실행"
           f" · 기록 {len(records)}건 · 오류 {len(errors)}건")
 
-    # 갈래별 집계
     stat = defaultdict(lambda: {"records": 0, "correct": 0, "patterns": 0, "found": 0,
                                 "insights": 0, "extra": 0})
-    verdicts = defaultdict(list)                  # (갈래, case_id) → 실행별 완전 정답 여부
+    verdicts = defaultdict(list)
     cross_mention, cross_flag, leaks = [0, 0], [0, 0], []
-    split = [0, 0]                                # 기관 간 차이 패턴을 기관별로 쪼갠 횟수 / 전체
+    split = [0, 0]
 
     for r in ok:
         case = cases[r["case_id"]]
@@ -125,8 +97,8 @@ def score(result: dict, sample: int) -> int:
             if p.get("cross_institution"):
                 split[1] += 1
                 whole = [k for k in hits if spans_institutions(insights[k], p["claim_ids"], types_of)]
-                split[0] += int(not whole and len(hits) >= 2)   # 기관별로 나눠 묶음
-                hits = whole                                     # 쪼갠 인사이트는 남는 인사이트로 셈
+                split[0] += int(not whole and len(hits) >= 2)
+                hits = whole
             if not hits:
                 continue
             found += 1
@@ -169,7 +141,6 @@ def score(result: dict, sample: int) -> int:
     print("  cross_institution 참            ", pct(*cross_flag))
     print("  기관별로 쪼갬 (전체 패턴 기준)    ", pct(*split), " ← 0 이어야 함")
 
-    # ── 쓸모 태그 (정답 세트 없음 → 분포만 본다) ──
     all_insights = [i for r in ok for i in r["insights"]]
     tagged = [i for i in all_insights if i.get("relevant_institution_types")]
     all_types = set(config.INSTITUTION_TYPES)

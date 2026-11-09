@@ -57,7 +57,6 @@ class JournalEntryTest {
 
         entry.failMatching();
 
-        // 매칭 실패는 확인 필요 큐에서 사람이 아이를 고른다. 시스템 오류가 아니라 실패 원인을 남기지 않는다.
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.FAILED);
         assertThat(entry.getFailureStage()).isNull();
         assertThat(entry.getFailureReason()).isNull();
@@ -100,7 +99,6 @@ class JournalEntryTest {
 
     @Test
     void 매칭이_끝나_검증_대기가_되면_되돌린_횟수를_0으로_돌린다() {
-        // 매칭에서 쓴 횟수가 검증 단계로 넘어가면 검증은 시작하자마자 상한에 걸린다.
         JournalEntry byAgent = matching();
         byAgent.releaseMatchingAfterAgentDown();
         byAgent.startMatching();
@@ -336,7 +334,6 @@ class JournalEntryTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    /** 서비스가 "고치지 않음"을 다른 거절과 나눠 알려 주려고 먼저 묻는다. 고칠 때와 같은 기준이다. */
     @Test
     void 앞뒤_공백만_다르면_같은_본문이다() {
         assertThat(blocked().hasSameContent(" 점심시간에 식사를 잘함\n")).isTrue();
@@ -409,7 +406,6 @@ class JournalEntryTest {
 
         entry.failSummary();
 
-        // 다시 요약하면 될 수 있는 실패다. 상태만으로 뜻이 분명해 단계·원인은 남기지 않는다.
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
         assertThat(entry.getFailureStage()).isNull();
         assertThat(entry.getFailureReason()).isNull();
@@ -428,7 +424,6 @@ class JournalEntryTest {
 
         entry.retrySummary();
 
-        // 워커가 다음 차례에 다시 집는다 (#369). 횟수 제한은 없다.
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
         assertThat(entry.getSummaryId()).isNull();
     }
@@ -439,7 +434,6 @@ class JournalEntryTest {
 
         entry.closeFailedSummary();
 
-        // 요약할 내용 없음 확인(#244)과 같은 끝 상태다. 요약을 가리키지 않으니 아동 맥락·보호자로 가지 않는다.
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.COMPLETED);
         assertThat(entry.getSummaryId()).isNull();
     }
@@ -474,7 +468,6 @@ class JournalEntryTest {
         failed.failSummary();
         systemError.failSummaryBySystemError(FailureReason.RESPONSE_UNREADABLE);
 
-        // 기존 요약은 그대로 유효하다. 재요약 실패로 그 요약까지 무너뜨리지 않는다.
         assertThat(failed.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
         assertThat(failed.getSummaryId()).isEqualTo(50L);
         assertThat(systemError.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
@@ -530,7 +523,6 @@ class JournalEntryTest {
 
         entry.holdGate1();
         assertThat(entry.getStatus()).isEqualTo(JournalEntryStatus.GATE1_HELD);
-        // 보류된 일지는 워커가 다시 집어 가지 않는다.
         assertThatThrownBy(entry::startSummarizing).isInstanceOf(IllegalStateException.class);
 
         entry.reopenGate1();
@@ -557,7 +549,6 @@ class JournalEntryTest {
 
     @Test
     void 되돌린_일지를_다시_요약하다_실패하면_요약_실패가_된다() {
-        // 연결이 남아 있으면 "이미 Gate 1 에 있던 일지"로 보여 끝난 요약을 가리키는 Gate 1 대기로 간다.
         JournalEntry entry = gate1Pending();
         entry.revertToSummaryWait();
         entry.startSummarizing();

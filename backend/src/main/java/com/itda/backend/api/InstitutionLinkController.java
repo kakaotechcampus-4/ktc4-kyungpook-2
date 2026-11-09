@@ -21,7 +21,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md G-43(기관 코드 조회)·G-44(기관 코드로 연결 요청).
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor

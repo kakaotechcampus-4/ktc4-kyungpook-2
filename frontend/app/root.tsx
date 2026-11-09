@@ -39,9 +39,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  // 다른 탭에서 다른 계정으로 로그인하면 이 탭을 새로 고친다 — 예전 계정의 화면으로 새 계정의 요청을 보내지 않게. 같은 계정이면 그대로 둔다
   useEffect(() => reloadOnLoginElsewhere(), []);
-  // 화면을 옮기는 동안 맨 위 막대 — 기관 · 보호자 · 로그인 화면이 함께 쓴다
   return (
     <>
       <NavigationProgress />
@@ -50,21 +48,10 @@ export default function App() {
   );
 }
 
-/**
- * 역할 확인(각 레이아웃의 clientLoader)이 끝나기 전까지 보여주는 화면.
- * proxy.ts 가 서버에서 렌더 전에 끊던 것을, SPA에서는 여기서 "아무 화면도
- * 그리지 않은 채" 기다리는 방식으로 대체한다 — 다른 역할의 화면이 잠깐이라도
- * 보이는 일은 없다.
- */
 export function HydrateFallback() {
   return <FullPageLoading />;
 }
 
-/**
- * 화면 loader 가 401 로 실패하면(출입증 만료 — 세션 확인 레이아웃보다 화면 loader 가 먼저 끝난 경우 등) 오류 화면 대신
- * 주소를 남기고 로그인 화면으로 보낸다. `/parent` 아래면 보호자 진입 화면, 그 밖은 기관 로그인 화면이다.
- * 화면 안에서 저장하다 받은 401 은 loader 오류가 아니라 여기까지 오지 않는다 — 고치던 내용이 화면에 남는다.
- */
 function useSendExpiredToLogin(expired: boolean) {
   const location = useLocation();
   const navigate = useNavigate();

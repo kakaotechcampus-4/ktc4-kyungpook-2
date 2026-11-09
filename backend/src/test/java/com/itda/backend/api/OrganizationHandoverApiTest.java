@@ -38,7 +38,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/** 기관 담당자 인계 코드 발급 · 취소 (#478). */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -126,7 +125,6 @@ class OrganizationHandoverApiTest {
 
         assertThat(handoverRepository.findByCode(code).orElseThrow().getStatus())
                 .isEqualTo(OrganizationHandoverStatus.CANCELLED);
-        // 취소할 코드가 없어도 실패하지 않는다 — 화면이 두 번 눌러도 같은 결과
         perform(delete(HANDOVER), staff).andExpect(status().isNoContent());
     }
 

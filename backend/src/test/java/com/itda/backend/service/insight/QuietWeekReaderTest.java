@@ -33,14 +33,12 @@ import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.insight.QuietWeekReader.QuietWeek;
 import com.itda.backend.service.insight.QuietWeekReader.Reason;
 
-/** 보호자 리포트의 "특이사항 없음" 주 (#470). 하나라도 모르면 빈칸이다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({QuietWeekReader.class, InsightResultRecorder.class, ConsentStateReader.class, QuietWeekReaderTest.Config.class})
 class QuietWeekReaderTest {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
-    /** 지난주 같은 요일. 끝난 주다. */
     private static final LocalDate LAST_WEEK = LocalDate.now(SEOUL).minusWeeks(1);
 
     @TestConfiguration
@@ -96,7 +94,6 @@ class QuietWeekReaderTest {
         em.flush();
         assertThat(read()).extracting(QuietWeek::reason).containsExactly(Reason.NOTHING_NEW);
 
-        // 끝난 뒤 다른 기관이 같은 주를 승인했다. 워커가 다시 볼 주라 기다린다.
         approve(schoolId, LAST_WEEK);
         assertThat(read()).isEmpty();
     }
@@ -119,7 +116,6 @@ class QuietWeekReaderTest {
     void 기록이_없거나_허락받은_기관의_결정이_없으면_빈칸이다() {
         assertThat(read()).isEmpty();
 
-        // 학교는 주간 인사이트를 허락받지 않았다.
         confirmNoContent(schoolId, LAST_WEEK);
         assertThat(read()).isEmpty();
     }
@@ -138,7 +134,6 @@ class QuietWeekReaderTest {
         assertThat(read()).isEmpty();
     }
 
-    /** 날짜를 못 읽은 일지가 있어도 목록이 깨지지 않는다 — 어느 주에도 속하지 않는다. */
     @Test
     void 날짜_없는_일지는_어느_주도_막지_않는다() {
         confirmNoContent(centerId, LAST_WEEK);
@@ -167,7 +162,6 @@ class QuietWeekReaderTest {
         em.persistAndFlush(summary);
     }
 
-    /** 그 기관이 그날 기록을 Gate 1 에서 승인했다. 승인본 id 를 돌려준다. */
     private Long approve(Long organizationId, LocalDate entryDate) {
         SummaryResult summary = SummaryResult.of(childId, entryDate, organizationId, 1, "블록을 쌓았다.", "[]", "[1]", "[]",
                 "{}");

@@ -1,10 +1,3 @@
-"""
-노드 사이를 흐르는 데이터.
-
-각 노드는 이 State 를 받아서 자기가 채울 몫만 돌려준다.
-LangGraph 가 돌려받은 부분을 State 에 합쳐서 다음 노드로 넘긴다.
-"""
-
 from typing import TypedDict
 
 from .names import NameHit
@@ -17,50 +10,30 @@ class ScoredCandidate(TypedDict):
 
 
 class MatchingState(TypedDict, total=False):
-    # ── 입력 (그래프가 도는 동안 바뀌지 않는다) ──
     journal_entry_id: int
     content: str
     roster: list[RosterEntry]
     hint_name: str | None
     hint_birthdate: str | None
 
-    # ── extract 가 채운다 ──
     hits: list[NameHit]
 
-    # ── shortlist 가 채운다 ──
     candidates: list[ScoredCandidate]
     mentioned_child_ids: list[int]
     co_mention: bool
-    #: 본문에 이름이 그대로 적힌 아이가 한 명이라도 있었는지.
-    #: 미등록 아동 판정에만 쓴다 — "이 명부의 누구도 본문에 없다" 는 뜻이다.
     has_exact: bool
-    #: 본문에 이름이 그대로 적힌 아이들의 ID. **코드가 글자로 확인한 것만** 담는다.
-    #: mentioned_child_ids 와 달리 llm_judge 가 건드리지 않는다 — 자동 확정의
-    #: 근거로 쓰이므로, 모델이 "얘도 나왔다" 고 말한 것이 섞이면 안 된다.
     exact_child_ids: list[int]
-    #: 표지 힌트의 이름이 명부에 있는지. 없으면 미등록 아동일 수 있다.
     hint_in_roster: bool
-    #: 본문에도 표지에도 근거가 글자로 없는 상태.
     no_textual_anchor: bool
-    #: 이름이 겹쳐 구별이 안 되는 아이들.
     ambiguous_group: list[int]
 
-    # ── llm_judge 가 채운다 ──
     llm_called: bool
-    #: 모델이 인용한 근거 구간. 있으면 decide 가 이름 위치보다 우선해서 쓴다.
     llm_evidence: list[dict]
-    #: 호출이 실패했을 때의 사유. 값이 있으면 auto 로 확정하지 않는다.
     llm_error: str | None
-    #: 모델이 명부에 없는 child_id 를 돌려줬는지. True 면 auto 로 확정하지 않는다.
     llm_off_roster: bool
-    #: 모델이 글자 근거 없는 아이를 골랐고, 본문에 이름이 있는 아이가 따로
-    #: 있었는지. 그 판단은 버리고 본문이 가리키는 아이를 후보로 남기지만,
-    #: 모델과 본문이 어긋났다는 사실 자체가 사람이 볼 이유라 auto 로 안 간다.
     llm_ungrounded_pick: bool
-    #: 토큰 사용량. cached_tokens 로 프롬프트 캐싱이 먹는지 확인한다.
     llm_usage: dict
 
-    # ── decide 가 채운다 (최종 출력이 되는 값들) ──
     status: str
     matched_child_id: int | None
     confidence: float

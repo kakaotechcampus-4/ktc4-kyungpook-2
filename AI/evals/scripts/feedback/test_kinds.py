@@ -1,13 +1,3 @@
-# AI/evals/scripts/feedback/test_kinds.py
-"""
-교사 피드백 분류를 검사한다. **모델을 부르지 않는다.**
-
-    python evals/scripts/feedback/test_kinds.py
-
-여기서 재는 것은 "분류가 맞나" 가 아니라 **"Gate 1 이 남긴 모양을 제대로 되살리나"** 다.
-짝을 잘못 지으면 많이 고친 문장이 삭제+추가로 둘로 세어져 숫자가 통째로 어긋난다.
-"""
-
 import sys
 from pathlib import Path
 
@@ -37,7 +27,6 @@ def teacher(text):
 def main():
     print("교사 피드백 분류 — 모델 없이\n")
 
-    # ── 수량 읽기 ─────────────────────────────────────────
     print("■ 한글 수사도 숫자로 센다")
     check("아라비아 숫자", numbers("40분 놀았다")[40] == 1)
     check("한글 수사 — 세 번", numbers("공을 세 번 주고받았다")[3] == 1)
@@ -45,7 +34,6 @@ def main():
     check("단위 없는 글자는 숫자가 아니다 (세수·한글)",
           not numbers("세수를 하고 한글을 읽었다"), f"{dict(numbers('세수를 하고 한글을 읽었다'))}")
 
-    # ── 고친 종류 ─────────────────────────────────────────
     print("■ 무엇이 바뀌었나")
     check("끝 낱말만 다르면 말투",
           edit_kind("블록 영역에서 놀았습니다.", "블록 영역에서 놀았음.") == TONE)
@@ -63,7 +51,6 @@ def main():
           edit_kind("블록을 쌓았다.", "모래를 담았다.") == OTHER,
           edit_kind("블록을 쌓았다.", "모래를 담았다."))
 
-    # ── Gate 1 모양 되살리기 ──────────────────────────────
     print("■ source 로 교사가 한 일을 되살린다")
     draft = [claim("첫 문장.", 1, "조각1"), claim("둘째 문장.", 2, "조각2"), claim("셋째 문장.", 3, "조각3")]
 
@@ -80,25 +67,21 @@ def main():
     check("빠진 셋째 문장이 삭제로 잡힌다", by[DELETE]["before"] == "셋째 문장.")
     check("교사가 쓴 문장은 짝지을 초안이 없다", by[ADD]["before"] is None)
 
-    # 많이 고친 문장 — 글로 짝지으면 삭제+추가로 둘로 세어진다
     far = compare([claim("원래는 전혀 다른 긴 문장이었다.", 7, "조각7")],
                   [claim("완전히 바뀐 짧은 글.", 7, "조각7", "EDITED")])
     check("많이 고쳐도 삭제+추가로 둘로 세지 않는다",
           len(far) == 1 and far[0]["action"] == EDIT,
           f"{[r['action'] for r in far]}")
 
-    # 승인만 하고 아무것도 안 고친 경우
     plain = compare(draft, [claim("첫 문장.", 1, "조각1", "AI"),
                             claim("둘째 문장.", 2, "조각2", "AI"),
                             claim("셋째 문장.", 3, "조각3", "AI")])
     check("그대로 승인하면 전부 유지다 (데이터가 0 이라는 신호)",
           {r["action"] for r in plain} == {KEEP})
 
-    # source 가 없는 옛 행 — 글이 다르면 수정으로 본다
     legacy = compare([claim("원문.", 5, "조각5")], [claim("고친 글.", 5, "조각5")])
     check("source 가 없어도 글이 다르면 수정으로 본다", legacy[0]["action"] == EDIT)
 
-    # ── 접기 ──────────────────────────────────────────────
     print("■ 한 장으로 접기")
     t = tally(got)
     check("문장 수가 맞는다", t["문장"] == 4, f"{t['문장']}")
@@ -114,7 +97,6 @@ def main():
     one = tally(compare([claim("문장.", 9, "조각9")], [claim("문장임.", 9, "조각9", "EDITED")]))
     check("1건짜리는 반복 오류가 아니다", one["반복오류"] == {}, f"{one['반복오류']}")
 
-    # ── 집계 ──
     print()
     failed = 0
     for title, ok, detail in RESULTS:

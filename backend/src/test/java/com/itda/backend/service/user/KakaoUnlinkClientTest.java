@@ -17,9 +17,6 @@ import org.springframework.web.client.RestClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 
-/**
- * 카카오 연결 해제 응답을 세 가지로 나누는지. 실제 HTTP 로 요청 모양(어드민 키 헤더 · 폼 본문)과 타임아웃까지 본다.
- */
 class KakaoUnlinkClientTest {
 
     private HttpServer server;
@@ -94,7 +91,6 @@ class KakaoUnlinkClientTest {
 
     @Test
     void 오류_상태를_받고_본문을_끝까지_받지_못하면_결과를_모르는_것이다() throws IOException {
-        // 400 헤더를 보내고 본문 앞부분만 보낸 뒤 멈춘다. 받지 못한 본문이 "이미 끊김(-101)" 이었을 수 있다
         start(exchange -> {
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(400, 200);

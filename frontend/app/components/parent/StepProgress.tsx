@@ -1,4 +1,3 @@
-/** 온보딩 진행 표시 — 프로토타입의 "STEP n/총단계" + 세그먼트 바를 그대로 재현한다. */
 export function StepProgress({ step, total }: { step: number; total: number }) {
   return (
     <div className="mb-1">

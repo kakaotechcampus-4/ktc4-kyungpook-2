@@ -9,7 +9,6 @@ import jakarta.persistence.PreUpdate;
 
 import lombok.Getter;
 
-/** 처음 저장한 시각과 마지막으로 고친 시각을 남기는 엔티티의 부모. */
 @Getter
 @MappedSuperclass
 public abstract class TimestampedEntity {

@@ -15,10 +15,6 @@ import com.itda.backend.service.matching.MatchingProperties;
 import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.validation.ValidationProperties;
 
-/**
- * application.yml 의 에이전트 설정이 실제로 읽히는지 본다. 키 이름이 틀어지면 값이 null 로 들어와
- * 재시도 없이 바로 실패하는데, 다른 테스트는 설정을 손으로 만들어 넣어서 이걸 잡지 못한다.
- */
 class AgentPropertiesBindingTest {
 
     @EnableConfigurationProperties({AiAgentProperties.class, AgentDownProperties.class, AiProgressProperties.class, MatchingProperties.class, ValidationProperties.class,

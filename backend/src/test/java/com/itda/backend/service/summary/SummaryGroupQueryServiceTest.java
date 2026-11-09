@@ -35,7 +35,6 @@ import com.itda.backend.dto.response.summary.SummaryGroupBoardResponse.SummaryGr
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
-/** 오늘의 업무 묶음 카드 — 요약 전 묶음만, 할 일 우선 라벨과 상태별 건수, 요약 요청·대기 표시. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({SummaryGroupQueryService.class, SummaryRunRequests.class, ConsentStateReader.class})
@@ -89,12 +88,10 @@ class SummaryGroupQueryServiceTest {
                 "application/pdf", 12, RawRecordStatus.PENDING)).getId();
     }
 
-    /** 우리 기관 파일에서 나온 일지를 그 상태까지 보낸다. */
     private JournalEntry entry(Long child, LocalDate date, JournalEntryStatus target) {
         return entry(ourFile, child, date, target);
     }
 
-    /** 워커·교사가 지나가는 순서대로 상태를 바꿔 {@code target} 에 멈춘다. */
     private JournalEntry entry(Long rawRecordId, Long child, LocalDate date, JournalEntryStatus target) {
         JournalEntry e = JournalEntry.of(rawRecordId, date, "일지", 1);
         switch (target) {
@@ -174,7 +171,6 @@ class SummaryGroupQueryServiceTest {
         em.persist(ChildOrganization.of(minjun, ORG)).delete();
         entry(minjun, DATE, JournalEntryStatus.VALIDATED);
 
-        // [요약](O-32)은 기관에서 뺀 아이를 404 로 거절한다. 누를 수 없는 카드를 띄우지 않는다.
         assertThat(service.getBoard(TEACHER).groups()).isEmpty();
     }
 
@@ -185,7 +181,6 @@ class SummaryGroupQueryServiceTest {
         revoke(grant(minjun, ORG));
         entry(minjun, DATE, JournalEntryStatus.VALIDATED);
 
-        // 철회 전에 매칭된 일지다. [요약](O-32)이 404 로 거절하므로 누를 수 없는 카드를 띄우지 않는다.
         assertThat(service.getBoard(TEACHER).groups()).isEmpty();
     }
 
@@ -197,7 +192,6 @@ class SummaryGroupQueryServiceTest {
         grant(minjun, OTHER_ORG);
         entry(minjun, DATE, JournalEntryStatus.VALIDATED);
 
-        // 다른 기관 동의로 child.status 가 ACTIVE 여도 우리 기관 동의는 꺼져 있다.
         assertThat(service.getBoard(TEACHER).groups()).isEmpty();
     }
 
@@ -320,7 +314,6 @@ class SummaryGroupQueryServiceTest {
 
     @Test
     void 요약_중에_새로_요약_대기가_되어도_요약이_끝날_때까지_누를_수_없다() {
-        // 워커가 집은 뒤 들어온 일지는 이번 요약에 없다. 요약이 끝나 1차 검토로 간 뒤 이 카드에 요약 대기로 남는다.
         entry(junho, DATE, JournalEntryStatus.SUMMARIZING);
         requested(junho, DATE);
         entry(junho, DATE, JournalEntryStatus.VALIDATED);
@@ -345,7 +338,6 @@ class SummaryGroupQueryServiceTest {
 
     @Test
     void 눌렀어도_요약할_일지가_없게_되면_기다리는_건수를_주지_않는다() {
-        // 검증이 모두 막히면 워커가 요청을 거두므로 "곧 시작" 이 아니다.
         entry(junho, DATE, JournalEntryStatus.VALIDATION_BLOCKED);
         requested(junho, DATE);
         entry(seoa, DATE, JournalEntryStatus.VALIDATING);

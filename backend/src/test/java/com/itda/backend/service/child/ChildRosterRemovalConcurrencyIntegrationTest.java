@@ -60,12 +60,6 @@ import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 명부 제외(O-63)가 초대 코드 추가 발급(O-15)·수락(G-04)과 겹칠 때를 PostgreSQL 에서 재현한다.
- *
- * <p>홀더가 아이 행을 잠근 채 있는 동안 작업을 하나씩 보내 줄을 세운다. 먼저 줄을 선 작업이 먼저 잠금을 얻는다.
- * 어느 순서든 "명부에 없는 아이에게 쓸 수 있는 코드" 나 "명부 제외로 사라진 보호자 연결" 이 남으면 안 된다.
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -158,7 +152,6 @@ class ChildRosterRemovalConcurrencyIntegrationTest {
         assertThat(childOrganizationRepository.findById(linkId).orElseThrow().isDeleted()).isTrue();
     }
 
-    /** 발급이 명부를 잠그지 않으면 이 순서에서 "확인 → 제외·취소 → 저장" 이 되어 쓸 수 있는 코드가 남는다. */
     @Test
     void 발급이_먼저면_제외가_그_코드까지_취소한다() throws Exception {
         List<String> outcomes = inOrderWhileHeld(lockChild(),
@@ -170,7 +163,6 @@ class ChildRosterRemovalConcurrencyIntegrationTest {
                 .containsExactly(InvitationStatus.CANCELLED);
     }
 
-    /** 발급이 아이 행을 잠그기 전에 확인만 하고 지나가지 않는지 — 명부 행을 잡은 홀더 뒤에서도 기다려야 한다. */
     @Test
     void 명부_행이_잠겨_있으면_발급은_기다렸다가_커밋된_제외를_본다() throws Exception {
         List<String> outcomes = inOrderWhileHeld(
@@ -211,11 +203,6 @@ class ChildRosterRemovalConcurrencyIntegrationTest {
         assertThat(childOrganizationRepository.findById(linkId).orElseThrow().isDeleted()).isTrue();
     }
 
-    /**
-     * 홀더가 {@code holderSql} 로 행을 잠근 채 있는 동안 작업을 <b>하나씩</b> 보내, 앞 작업이 줄을 선 것을 확인한 뒤
-     * 다음 작업을 보낸다. 모두 줄을 서면 홀더를 끝낸다 — SELECT ... FOR UPDATE 면 롤백(잠금만 풀기), UPDATE 면
-     * 커밋(변경을 확정)한다. 각 작업의 결과를 "OK" 또는 오류 코드 이름으로 돌려준다.
-     */
     @SafeVarargs
     private List<String> inOrderWhileHeld(String holderSql, Callable<Object>... tasks) throws Exception {
         boolean commitHolder = holderSql.startsWith("UPDATE");
@@ -247,7 +234,6 @@ class ChildRosterRemovalConcurrencyIntegrationTest {
                 }
                 return outcomes;
             } finally {
-                // 실패해도 이 순서로 정리한다: 잠금을 풀어 작업 스레드를 빼내고 → 스레드를 끝내고 → 커넥션을 닫는다.
                 if (!holderFinished) {
                     holder.rollback();
                 }
@@ -283,10 +269,6 @@ class ChildRosterRemovalConcurrencyIntegrationTest {
         }
     }
 
-    /**
-     * 홀더 때문에 막힌 세션이 생기고, 잠금을 기다리는 세션이 모두 {@code expected} 개가 될 때까지 기다린다.
-     * 같은 행을 둘이 기다리면 두 번째는 첫 번째 대기자 뒤에 줄을 서서, 막은 쪽이 홀더가 아니라 첫 번째 대기자로 보인다.
-     */
     private void waitUntilBlockedBy(int holderPid, int expected) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         try (Connection observer = dataSource.getConnection();

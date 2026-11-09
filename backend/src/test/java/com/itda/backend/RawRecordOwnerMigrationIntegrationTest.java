@@ -34,7 +34,6 @@ import com.itda.backend.service.record.RawRecordService;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** 실제 psql 진입 스크립트의 검증 모드와 적용 모드를 모두 실행한다. */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -75,7 +74,6 @@ class RawRecordOwnerMigrationIntegrationTest {
         organizations.deleteAll();
         ownerOrganization = organizations.saveAndFlush(OrganizationFixture.center());
         otherOrganization = organizations.saveAndFlush(OrganizationFixture.center());
-        // 다른 기관 ID와 같은 숫자인 카카오 ID도 기록별 매핑으로 이전한다.
         legacyId = String.valueOf(otherOrganization.getId());
         owner = users.saveAndFlush(UserFixture.organizationUser(legacyId, ownerOrganization.getId()));
         otherUser = users.saveAndFlush(UserFixture.organizationUser("other", otherOrganization.getId()));
@@ -137,11 +135,11 @@ class RawRecordOwnerMigrationIntegrationTest {
     @Test
     void invalidMappingsNeverPartiallyApply() throws Exception {
         List<String> invalid = List.of(
-                row(first), // 누락
-                row(first) + row(first) + row(second), // 중복
-                row(first) + second.getId() + ",wrong," + ownerOrganization.getId() + "\n", // 소유자 불일치
-                row(first) + second.getId() + "," + legacyId + ",99999999\n", // 없는 기관
-                row(first) + second.getId() + "," + legacyId + "," + otherOrganization.getId() + "\n", // 다른 소속
+                row(first),
+                row(first) + row(first) + row(second),
+                row(first) + second.getId() + ",wrong," + ownerOrganization.getId() + "\n",
+                row(first) + second.getId() + "," + legacyId + ",99999999\n",
+                row(first) + second.getId() + "," + legacyId + "," + otherOrganization.getId() + "\n",
                 row(first) + row(second) + "99999999," + legacyId + "," + ownerOrganization.getId() + "\n",
                 "");
         for (String mapping : invalid) {

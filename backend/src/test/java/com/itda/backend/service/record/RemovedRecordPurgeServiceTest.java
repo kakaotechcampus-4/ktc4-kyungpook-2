@@ -56,7 +56,6 @@ class RemovedRecordPurgeServiceTest {
         assertThat(em.find(MatchingResult.class, matching)).isNull();
         assertThat(em.find(ValidationResult.class, validation)).isNull();
         assertThat(em.find(SummaryResult.class, summary)).isNull();
-        // 누가 언제 반려했는지는 감사 기록이라 남긴다.
         assertThat(em.find(Approval.class, approval)).isNotNull();
     }
 
@@ -101,7 +100,6 @@ class RemovedRecordPurgeServiceTest {
         assertThat(em.find(RawRecord.class, raw)).isNotNull();
     }
 
-    /** 같은 반려 요약의 일지가 아직 30일이 안 됐으면, 지난 일지만 지우고 요약은 남긴다 — 다음 정리 때 함께 지운다. */
     @Test
     void 반려_요약에_아직_남은_일지가_있으면_요약은_남긴다() {
         Long raw = raw("split.txt");
@@ -117,7 +115,6 @@ class RemovedRecordPurgeServiceTest {
         assertThat(em.find(SummaryResult.class, summary)).isNotNull();
     }
 
-    /** 반려가 아닌 요약을 가리키는 삭제 표시 일지는 이 정리의 대상이 아니다. */
     @Test
     void 요약이_반려가_아니면_삭제_표시된_일지라도_지우지_않는다() {
         Long raw = raw("other.txt");
@@ -140,7 +137,6 @@ class RemovedRecordPurgeServiceTest {
         return em.persistAndFlush(summary).getId();
     }
 
-    /** 반려된 일지 — 요약을 가리키고 삭제 표시가 {@code deletedAt} 에 찍혀 있다. */
     private Long entry(Long rawRecordId, Long summaryId, LocalDateTime deletedAt) {
         JournalEntry entry = JournalEntry.of(rawRecordId, DAY, "반려된 일지", 1);
         ReflectionTestUtils.setField(entry, "summaryId", summaryId);

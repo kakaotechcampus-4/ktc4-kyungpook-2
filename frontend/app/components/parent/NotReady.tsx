@@ -4,13 +4,6 @@ import { Link, useNavigate } from "react-router";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { signOut } from "@/lib/auth";
 
-/**
- * 실연동에서 보호자 본 화면(홈 · 타임라인 · 리포트 · 설정)이 아직 서버에 없을 때.
- *
- * 이 화면들은 연결된 아이 목록(G-10)부터 받아야 하는데 그 API 가 없다. mock 아이를 띄우면
- * 동의까지 마친 실제 보호자에게 남의 아이가 보이므로, 연결은 끝났다는 것만 알린다.
- * 로그아웃을 같이 두는 이유: 이 화면에서 갈 곳이 없고, 다른 카카오 계정으로 바꿔 시험해 볼 수 있어야 한다.
- */
 export function ParentNotReady() {
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
@@ -55,12 +48,6 @@ export function ParentNotReady() {
   );
 }
 
-/**
- * 실연동 빌드에서 서버에 아직 없는 보호자 화면 하나(타임라인·리포트·알림 등). 아이 목록·홈은 실서버라
- * 입구는 열려 있지만, 이 화면에 mock 을 띄우면 진짜 아이 옆에 가짜 일지가 보인다.
- * 전체 mock 모드에서는 원래 화면이 그대로 보인다 — 각 라우트가 isReady() 로 가른다.
- * (기관 쪽 components/org/NotReady 와 같은 규칙)
- */
 export function ParentNotReadyPage({
   title,
   back = false,
@@ -83,7 +70,6 @@ export function ParentNotReadyPage({
   );
 }
 
-/** 화면 일부만 서버에 없을 때 그 자리에 둔다 (홈의 새 소식 등) */
 export function ParentNotReadySection() {
   return (
     <p className="rounded-2xl border border-dashed border-line2 px-4 py-6 text-center text-[14px] text-muted">

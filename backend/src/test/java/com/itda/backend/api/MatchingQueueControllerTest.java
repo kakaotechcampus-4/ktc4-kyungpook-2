@@ -56,8 +56,6 @@ class MatchingQueueControllerTest {
                 .andExpect(jsonPath("$.data[0].status").value("review"))
                 .andExpect(jsonPath("$.data[0].record.fileName").value("0821_관찰일지.docx"))
                 .andExpect(jsonPath("$.data[0].hintName").value("김하늘"))
-                // 팀원 리뷰 반영: evidence는 문자열이 아니라 실제 JSON 배열로 내려가야
-                // 프론트(EvidenceSpan[])가 바로 쓸 수 있다.
                 .andExpect(jsonPath("$.data[0].evidence[0].start").value(0))
                 .andExpect(jsonPath("$.data[0].evidence[0].end").value(3));
     }
@@ -125,7 +123,6 @@ class MatchingQueueControllerTest {
                 .andExpect(jsonPath("$.code").value("MATCHING_RESULT_INVALID_REQUEST"));
     }
 
-    /** 내부 사유(아이 id 가 든 영어 문장)는 응답에 나가지 않고 오류 코드의 고정 문구가 나간다. 없는 아이와 다른 기관 아이가 같은 응답이다. */
     @Test
     void resolveAssignUnavailableChild_returns400WithFixedMessage() throws Exception {
         given(matchingResultService.resolve(eq(1L), eq("assign"), eq(2L), any(), any()))

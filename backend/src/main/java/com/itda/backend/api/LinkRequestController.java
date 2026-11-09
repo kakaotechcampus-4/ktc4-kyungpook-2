@@ -23,7 +23,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md O-60(연결 요청 목록)·O-61(수락)·O-62(거절).
 @RestController
 @RequestMapping("/api/v1/institutions/me/link-requests")
 @RequiredArgsConstructor

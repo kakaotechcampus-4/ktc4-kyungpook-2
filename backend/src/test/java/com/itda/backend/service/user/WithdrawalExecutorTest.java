@@ -14,7 +14,6 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/** 실행기 줄. 같은 회원을 줄에 두 번 세우지 않되, 이미 돌기 시작한 작업은 새 접수에 다시 쓰지 않는다. */
 class WithdrawalExecutorTest {
 
     private final WithdrawalSteps steps = mock(WithdrawalSteps.class);
@@ -26,10 +25,6 @@ class WithdrawalExecutorTest {
         executor.destroy();
     }
 
-    /**
-     * 첫 작업이 상태를 읽고 접수를 취소하는 중에(아직 줄에서 빠지기 전) 다시 신청했다. 새 접수는 새 작업으로 서서 처리돼야 한다 —
-     * 끝나 가는 첫 작업을 돌려주면 새 접수는 아무도 처리하지 않는다.
-     */
     @Test
     void 돌고_있는_작업은_다시_쓰지_않고_새_작업을_세운다() throws Exception {
         CountDownLatch firstRunning = new CountDownLatch(1);
@@ -64,7 +59,6 @@ class WithdrawalExecutorTest {
 
         executor.submit(1L);
         assertThat(blockerRunning.await(5, TimeUnit.SECONDS)).isTrue();
-        // 스레드 하나라 1번이 도는 동안 2번은 줄에서 기다린다
         Future<Void> queued = executor.submit(2L);
         Future<Void> again = executor.submit(2L);
         release.countDown();

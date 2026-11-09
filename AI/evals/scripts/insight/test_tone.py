@@ -1,16 +1,3 @@
-# AI/evals/scripts/insight/test_tone.py
-"""
-교사 말투가 남은 인사이트를 세는 검사. LLM 을 부르지 않는다 (#433).
-
-    python evals/scripts/insight/test_tone.py
-
-인사이트는 글이 하나고 말투는 보호자 기준(`~했어요`)이다 (CRITERIA §8-b). 읽는 사람이
-보호자 · 다른 기관 담당자 · 교사인데 아무도 `~했다` 를 필요로 하지 않는다.
-
-**막지 않고 센다.** 말투는 글의 값어치를 바꾸지 않지만 숫자·기관·이름은 사실을 바꾼다 —
-막는 기준이 다르다. 여기서 재는 것은 "보호자가 교사 말투 글을 받는 비율" 이다.
-"""
-
 import sys
 from pathlib import Path
 
@@ -50,7 +37,6 @@ def case_patterns() -> bool:
 
 
 def case_counts_not_drops() -> bool:
-    """버리지 않는다 — 센 수만 돌려준다."""
     insights = [SimpleNamespace(content="잘 지냈어요."),
                 SimpleNamespace(content="잘 지냈다."),
                 SimpleNamespace(content="바뀐 모습이 보여요.")]
@@ -73,7 +59,7 @@ if __name__ == "__main__":
     for name, fn in ALL:
         try:
             ok = fn()
-        except Exception as exc:  # 예상 못 한 에러도 실패로 센다
+        except Exception as exc:
             ok = False
             name += f"  ({type(exc).__name__}: {exc})"
         print(("PASS " if ok else "FAIL ") + name)

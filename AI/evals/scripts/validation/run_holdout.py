@@ -1,19 +1,3 @@
-"""
-Validation Agent 최종 블라인드 검증 — holdout 채점.
-
-- holdout 케이스를 돌리되, 직접 재작성한 16건(sealed_holdout_16.json)은
-  원래 템플릿 문장 대신 재작성한 content로 바꿔 끼워서 돌린다.
-- 실행(run_one)은 run_dev.py 것을 그대로 가져다 쓴다
-  → dev와 holdout이 완전히 같은 방식으로 돌아가야 비교가 공정하다.
-- 채점은 score.py의 score()를 그대로 쓰고,
-  "전체 holdout"과 "재작성 16건만" 두 번 집계한다.
-  (순환 검증 방지 효과는 재작성 16건 쪽 숫자가 보여준다)
-
-⚠️ sealed 파일 내용은 이 스크립트가 읽기만 한다. 채점 전에 직접 열어보지 말 것.
-
-실행 (AI 폴더에서):
-    python3 evals/scripts/validation/run_holdout.py
-"""
 from dotenv import load_dotenv
 from pathlib import Path
 load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
@@ -22,8 +6,8 @@ import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))  # AI/
-sys.path.insert(0, str(Path(__file__).parent))                       # 같은 폴더의 run_dev, score
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
 
 from validation.graph import build_graph
 from run_dev import run_one, MAX_WORKERS
@@ -44,7 +28,6 @@ def load_holdout_with_sealed():
     holdout = [c for c in inputs if c["dataset"] == "holdout"]
     holdout_ids = {c["case_id"] for c in holdout}
 
-    # sealed 16건이 전부 holdout 안에 있는지 먼저 확인 (case_id 오타 방지)
     missing = set(sealed) - holdout_ids
     if missing:
         raise SystemExit(f"sealed 파일의 case_id가 holdout에 없음: {sorted(missing)}")
@@ -54,7 +37,6 @@ def load_holdout_with_sealed():
         s = sealed.get(case["case_id"])
         if s is None:
             continue
-        # 정답 라벨이 바뀌었으면 재작성 과정에서 실수한 것 → 멈춤
         if s["expected_verdict"] != case["expected_verdict"] or \
            s["expected_issue_types"] != case["expected_issue_types"]:
             raise SystemExit(f"{case['case_id']}: sealed 정답 라벨이 원본과 다름")
@@ -91,7 +73,6 @@ def run(holdout):
 
 
 def print_misses(holdout, outputs):
-    """치명적/준치명적 오류만 원문과 함께 출력 — 채점이 끝난 뒤에만 보이게."""
     print("\n놓친 케이스 (BLOCK→PASS, REVIEW→PASS):")
     found = False
     for case in holdout:

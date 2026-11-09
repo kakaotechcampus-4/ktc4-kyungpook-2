@@ -4,9 +4,6 @@ import org.springframework.http.HttpStatus;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-/**
- * docs/api/api-conventions.md 의 공통 오류 초기 목록.
- */
 @Getter
 @RequiredArgsConstructor
 public enum CommonErrorCode implements ErrorCode {

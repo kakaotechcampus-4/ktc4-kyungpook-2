@@ -19,10 +19,6 @@ import jakarta.persistence.LockModeType;
 
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long> {
 
-    /**
-     * Gate 1 에서 반려(제거)한 지 {@code cutoff} 보다 오래된 일지, id 순 (#432). 일지에 삭제 표시를 하는 곳은 반려뿐이지만,
-     * 다른 삭제가 생겨도 섞이지 않게 요약이 {@code REMOVED} 인지도 본다.
-     */
     @Query("""
             select e from JournalEntry e
             where e.deletedAt < :cutoff
@@ -36,28 +32,15 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
 
     boolean existsByRawRecordId(Long rawRecordId);
 
-    /**
-     * 그 파일들에서 나온 일지. 처리 현황(O-26)이 파일마다 따로 묻지 않고 한 번에 읽는 데 쓴다 —
-     * 파일 수만큼 쿼리가 늘면 목록이 길어질수록 느려진다.
-     */
     List<JournalEntry> findByRawRecordIdInAndDeletedAtIsNullOrderByIdAsc(Collection<Long> rawRecordIds);
 
 
     Optional<JournalEntry> findByIdAndDeletedAtIsNull(Long id);
 
-    /**
-     * 수정 요청 큐의 처리(보류·고치기)용 (#357). 같은 막힌 일지를 두 요청이 동시에 처리하면 둘 다 "막힘"으로 읽고
-     * 나중 것이 앞 것을 덮으므로, 행을 잠근 뒤 상태를 확인한다. 검증 워커는 막힌 일지를 집지 않아 워커와는 겹치지 않는다.
-     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from JournalEntry e where e.id = :id and e.deletedAt is null")
     Optional<JournalEntry> findByIdForUpdate(@Param("id") Long id);
 
-    /**
-     * 그 기관이 올린 원본 파일에서 나온 살아 있는 일지인지 (#357). 수정 요청 큐의 처리가 행을 잠그기 전에 묻는다 — 다른
-     * 기관 id 로 그 기관 아이·일지 행을 잠그면 그 기관 처리가 기다리고, 기다린 시간으로 id 가 있는지도 드러난다.
-     * 일지 엔티티를 읽지 않아, 뒤에 잠그고 읽는 {@link #findByIdForUpdate} 가 잠금을 기다린 뒤의 상태를 그대로 가져온다.
-     */
     @Query("""
             select count(e) > 0 from JournalEntry e, RawRecord r
             where e.id = :id and e.deletedAt is null
@@ -65,10 +48,6 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             """)
     boolean existsOwnedBy(@Param("id") Long id, @Param("institutionId") String institutionId);
 
-    /**
-     * 그 기관이 올린 원본 파일에서 나온 살아 있는 일지 중 이 상태인 것의 수 (#424, AI 처리 줄 상한). 기관은 원본 파일로만 안다 —
-     * {@link #existsOwnedBy} 와 같은 기준이다.
-     */
     @Query("""
             select count(e) from JournalEntry e, RawRecord r
             where r.id = e.rawRecordId and r.institutionId = :institutionId and r.deletedAt is null
@@ -77,19 +56,11 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     long countByInstitutionAndStatusIn(@Param("institutionId") String institutionId,
             @Param("statuses") Collection<JournalEntryStatus> statuses);
 
-    /**
-     * 매칭 워커가 처리할 일지. 원본 파일이 없는 직접 입력은 매칭 단계를 건너뛰므로 뺀다 (DB 스키마 §6.2).
-     * 오래된 것부터 처리하도록 id 순으로 가져온다.
-     */
     @Query("select e from JournalEntry e "
             + "where e.status = :status and e.rawRecordId is not null and e.deletedAt is null "
             + "order by e.id")
     List<JournalEntry> findMatchingTargets(@Param("status") JournalEntryStatus status, Limit limit);
 
-    /**
-     * 검증 워커가 처리할 일지. 아동이 비어 있으면 AI 가 판정 대상을 몰라 REVIEW(대상불명확)로 흘려보내므로 뺀다.
-     * 오래된 것부터 처리하도록 id 순으로 가져온다.
-     */
     @Query("select e from JournalEntry e "
             + "where e.status = :status and e.childId is not null and e.deletedAt is null "
             + "order by e.id")
@@ -97,10 +68,6 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
 
     List<JournalEntry> findByStatusAndDeletedAtIsNull(JournalEntryStatus status);
 
-    /**
-     * 요약 묶음 후보. 묶음 키(아동·날짜·기관)가 다 있는 일지만 가져온다 — 원본 파일이 없는 직접 입력은 기관을 몰라 뺀다.
-     * 묶음 안에서 일지 순서가 유지되도록 id 순으로 가져온다.
-     */
     @Query("select new com.itda.backend.repository.record.SummaryCandidate("
             + "e.id, e.childId, e.entryDate, r.institutionId, e.createdAt) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
@@ -109,7 +76,6 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
             + "order by e.id")
     List<SummaryCandidate> findSummaryCandidates(@Param("statuses") Collection<JournalEntryStatus> statuses);
 
-    /** 한 묶음(아동·날짜·기관)에서 주어진 상태인 일지 id. 묶음 전체를 훑지 않고 필요한 묶음만 본다. */
     @Query("select e.id from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status = :status and e.childId = :childId and e.entryDate = :entryDate "
             + "and r.institutionId = :institutionId and e.deletedAt is null "
@@ -117,9 +83,6 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<Long> findGroupEntryIds(@Param("status") JournalEntryStatus status, @Param("childId") Long childId,
             @Param("entryDate") LocalDate entryDate, @Param("institutionId") String institutionId);
 
-    /**
-     * 한 기관의 주어진 상태 일지를 묶음(날짜·아동) 순으로. 아동이 정해진 일지만 — 요약 실패 목록이 묶음으로 보여준다 (#369).
-     */
     @Query("select e from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status = :status and r.institutionId = :institutionId and e.childId is not null "
             + "and e.deletedAt is null "
@@ -127,31 +90,23 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<JournalEntry> findByInstitutionAndStatus(@Param("institutionId") String institutionId,
             @Param("status") JournalEntryStatus status);
 
-    /** 한 요약(판)에 든 일지 중 주어진 상태인 것의 id. */
     @Query("select e.id from JournalEntry e "
             + "where e.summaryId = :summaryId and e.status = :status and e.deletedAt is null "
             + "order by e.id")
     List<Long> findIdsBySummaryIdAndStatus(@Param("summaryId") Long summaryId,
             @Param("status") JournalEntryStatus status);
 
-    /** 한 요약(판)에 든 삭제되지 않은 일지. 요약에 안 들어간 일지(uncovered)도 같은 요약을 가리킨다. */
     List<JournalEntry> findBySummaryIdAndDeletedAtIsNull(Long summaryId);
 
-    /** Gate 1 목록용. 여러 요약에 든 삭제되지 않은 일지를 한 번에. */
     @Query("select e from JournalEntry e where e.summaryId in :summaryIds and e.deletedAt is null order by e.id")
     List<JournalEntry> findLiveBySummaryIds(@Param("summaryIds") Collection<Long> summaryIds);
 
-    /** 그 기관·날짜에 주어진 상태(매칭·검증 진행 중)의 일지가 남아 있는지. */
     @Query("select count(e) > 0 from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and r.institutionId = :institutionId and e.entryDate = :entryDate "
             + "and e.deletedAt is null")
     boolean existsInProgress(@Param("statuses") Collection<JournalEntryStatus> statuses,
             @Param("institutionId") String institutionId, @Param("entryDate") LocalDate entryDate);
 
-    /**
-     * Gate 1 목록용. 한 기관의 주어진 날짜들 중 주어진 상태인 일지가 있는 묶음(아동·날짜). 요약마다 따로 묻지 않고
-     * 목록 전체를 한 번에 본다.
-     */
     @Query("select distinct new com.itda.backend.repository.record.GroupKey(e.childId, e.entryDate) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and r.institutionId = :institutionId and e.entryDate in :entryDates "
@@ -159,17 +114,12 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<GroupKey> findGroupKeys(@Param("statuses") Collection<JournalEntryStatus> statuses,
             @Param("institutionId") String institutionId, @Param("entryDates") Collection<LocalDate> entryDates);
 
-    /** Gate 1 목록용. 한 기관의 주어진 날짜들 중 주어진 상태(매칭·검증 진행 중)의 일지가 남아 있는 날짜. */
     @Query("select distinct e.entryDate from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and r.institutionId = :institutionId and e.entryDate in :entryDates "
             + "and e.deletedAt is null")
     List<LocalDate> findInProgressDates(@Param("statuses") Collection<JournalEntryStatus> statuses,
             @Param("institutionId") String institutionId, @Param("entryDates") Collection<LocalDate> entryDates);
 
-    /**
-     * 묶음 카드용. 한 기관에서 주어진 상태인 일지를 묶음(아동·날짜)·상태별로 센다. 묶음마다 따로 묻지 않고 한 번에
-     * 센다 — 카드 수와 상관없이 SQL 이 하나다.
-     */
     @Query("select new com.itda.backend.repository.record.GroupStatusCount(e.childId, e.entryDate, e.status, count(e)) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and r.institutionId = :institutionId "
@@ -178,7 +128,6 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<GroupStatusCount> countByGroupAndStatus(@Param("statuses") Collection<JournalEntryStatus> statuses,
             @Param("institutionId") String institutionId);
 
-    /** 묶음 카드용. 한 기관의 주어진 날짜들에서 주어진 상태(매칭·검증 진행 중)인 일지를 날짜별로 센다. */
     @Query("select new com.itda.backend.repository.record.DateCount(e.entryDate, count(e)) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and r.institutionId = :institutionId and e.entryDate in :entryDates "
@@ -187,38 +136,27 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<DateCount> countByDate(@Param("statuses") Collection<JournalEntryStatus> statuses,
             @Param("institutionId") String institutionId, @Param("entryDates") Collection<LocalDate> entryDates);
 
-    /**
-     * 묶음 카드용. 한 기관에서 아동이 아직 정해지지 않은 채 주어진 상태인 일지 수 — 어느 카드에도 넣을 수 없는 일지다.
-     * {@code FAILED} 는 #180 전 검증 실패로 아동이 정해진 채 남은 것이 있어 아동으로 걸러야 매칭 실패만 센다.
-     */
     @Query("select count(e) from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and r.institutionId = :institutionId "
             + "and e.childId is null and e.deletedAt is null")
     long countChildUnknown(@Param("statuses") Collection<JournalEntryStatus> statuses,
             @Param("institutionId") String institutionId);
 
-    /** 주어진 상태(매칭·검증 진행 중)의 일지가 남아 있는 기관·날짜. */
     @Query("select distinct new com.itda.backend.repository.record.InProgressKey(r.institutionId, e.entryDate) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and e.entryDate is not null and e.deletedAt is null")
     List<InProgressKey> findInProgressKeys(@Param("statuses") Collection<JournalEntryStatus> statuses);
 
-    /** 그 기관에서 {@code since} 뒤로 나눠 만든 일지 수 — 오늘 AI가 한 일의 "기록 나누기" (#370). 지운 일지도 센다. */
     @Query("select count(e) from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where r.institutionId = :institutionId and e.createdAt >= :since")
     long countCreatedSince(@Param("institutionId") String institutionId, @Param("since") LocalDateTime since);
 
-    /**
-     * 대시보드 AI 진행 단계(#453). AI 가 지금 처리 중이라고 알려 준 일지들의 기관·아이·날짜 — 폴러가 1초에 한 번 읽는다.
-     * 진행 현황(#370)과 같이 원본 파일이 있는 살아 있는 일지만 본다. 거기 없는 일지는 붙일 줄도 없다.
-     */
     @Query("select new com.itda.backend.repository.record.ProgressEntryKey("
             + "e.id, e.childId, e.entryDate, r.institutionId) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.id in :ids and e.deletedAt is null")
     List<ProgressEntryKey> findProgressKeys(@Param("ids") Collection<Long> ids);
 
-    /** 대시보드 진행 현황(#370). 한 기관의 살아 있는 일지 중 주어진 상태인 것을 날짜·id 순으로 — 요청마다 한 번 읽는다. */
     @Query("select new com.itda.backend.repository.record.PipelineEntry("
             + "e.id, e.childId, e.entryDate, e.status, e.failureStage) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
@@ -227,7 +165,6 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<PipelineEntry> findPipelineEntries(@Param("institutionId") String institutionId,
             @Param("statuses") Collection<JournalEntryStatus> statuses);
 
-    /** 아이들의 일지 중 지우지 않았고 상태가 {@code statuses} 밖인 것. 아직 안 끝난 일지를 고른다 (#470, {@code QuietWeekReader}). */
     List<JournalEntry> findByChildIdInAndDeletedAtIsNullAndStatusNotIn(Collection<Long> childIds,
             Collection<JournalEntryStatus> statuses);
 }

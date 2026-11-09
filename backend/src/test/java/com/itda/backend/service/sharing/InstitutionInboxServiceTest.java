@@ -35,12 +35,6 @@ import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 기관 수신함 (#273). 다른 기관이 Gate 2 에서 승인해 우리 기관에 열린 글을 읽는다.
- *
- * <p>정상 경로는 동의를 끄거나 연결을 끊을 때 권한 줄을 함께 거둔다. 그래서 "읽을 때 다시 본다" 가 혼자서도 막는지는
- * <b>권한 줄을 살려 둔 채</b> 명부·동의·아이만 바꿔서 본다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({InstitutionInboxService.class, SharingReadRecorder.class, ConsentStateReader.class, ClockConfig.class})
@@ -78,14 +72,12 @@ class InstitutionInboxServiceTest {
 
         em.persist(ChildOrganization.of(childId, schoolId, "S-1"));
         enrollmentId = em.persistAndFlush(ChildOrganization.of(childId, centerId, "C-7")).getId();
-        // 학교 동의도 켜 둔다 — 아이 전체 상태가 아니라 "우리 기관 기준" 동의로 판단하는지 보려고.
         em.persist(SharingConsent.grant(childId, GUARDIAN_ID, schoolId, List.of(ConsentField.WEEKLY_INSIGHT)));
         centerConsentId = em.persistAndFlush(
                 SharingConsent.grant(childId, GUARDIAN_ID, centerId, List.of(ConsentField.WEEKLY_INSIGHT))).getId();
 
         firstRevisionId = em.persistAndFlush(insight(1, "이동 전 5분 예고가 효과적이었습니다.")).getId();
         secondRevisionId = em.persistAndFlush(insight(2, "이동 전 그림 카드가 효과적이었습니다.")).getId();
-        // Gate 2 승인이 만든 것과 같은 모양 — 학교가 승인해 센터와 보호자에게 열었다.
         grantId = em.persistAndFlush(SharingHistory.grant(childId, firstRevisionId, schoolId,
                 ReceiverType.ORGANIZATION, centerId)).getId();
         em.persist(SharingHistory.grant(childId, firstRevisionId, schoolId, ReceiverType.GUARDIAN, GUARDIAN_ID));
@@ -114,7 +106,6 @@ class InstitutionInboxServiceTest {
         });
     }
 
-    /** 승인한 기관 자신은 받지 않는다. 받은 권한이 없는 기관 수신함은 비어 있다. */
     @Test
     void 우리_기관에_열리지_않은_글은_목록에도_단건에도_없다() {
         assertThat(service.getInbox(SCHOOL_STAFF)).isEmpty();
@@ -133,7 +124,6 @@ class InstitutionInboxServiceTest {
                 .singleElement().extracting(InboxItemResponse::readAt).isEqualTo(detail.readAt());
     }
 
-    /** 안 읽은 글 수 (#456). 목록에서 readAt 이 비어 있는 줄의 수와 같다. 옛 회차도 따로 센다. */
     @Test
     void 안_읽은_글_수는_목록에서_안_연_줄의_수와_같다() {
         assertThat(service.countUnread(CENTER_STAFF)).isEqualTo(2);
@@ -166,8 +156,6 @@ class InstitutionInboxServiceTest {
         assertThat(em.find(SharingHistory.class, grantId).getReadAt()).isNull();
     }
 
-    // --- 권한 줄은 살아 있는데 지금 상태가 막는 경우 (읽을 때 판정) ---
-
     @Test
     void 우리_명부에서_빠진_아이의_글은_권한이_남아_있어도_안_보인다() {
         em.find(ChildOrganization.class, enrollmentId).delete();
@@ -177,7 +165,6 @@ class InstitutionInboxServiceTest {
         assertHiddenButGrantUntouched();
     }
 
-    /** 학교 동의는 켜져 있어 아이 전체 상태는 이용 중이다. 그래도 우리 기관 동의가 꺼졌으면 막는다. */
     @Test
     void 우리_기관_동의만_꺼지면_권한이_남아_있어도_안_보인다() {
         em.find(SharingConsent.class, centerConsentId)
@@ -197,7 +184,6 @@ class InstitutionInboxServiceTest {
         assertHiddenButGrantUntouched();
     }
 
-    /** 목록에서 빠지고(안 읽은 수에도 안 든다) 단건은 404 다. 조회는 권한을 거두지 않고, 못 연 글에 열람 시각을 남기지도 않는다. */
     private void assertHiddenButGrantUntouched() {
         assertThat(service.getInbox(CENTER_STAFF)).isEmpty();
         assertThat(service.countUnread(CENTER_STAFF)).isZero();

@@ -1,17 +1,3 @@
-# AI/evals/scripts/insight/test_tools.py
-"""
-도구 사용(딥다이브 3) 단위 테스트. LLM 호출 없음 — ask_with_tools 를 가짜로 바꿔 끼운다.
-
-    python evals/scripts/insight/test_tools.py
-
-확인하는 것
-  - find_claims 는 history_claims 안에서만, 기간 앞쪽만, 인용 없이 찾는다
-  - 동의 안 한 기관의 지난 기록은 perceive 에서 빠져 도구에도 안 나온다
-  - 보강은 처음 근거 + 도구가 실제로 돌려준 claim 만 근거로 쓸 수 있다
-  - 보강한 것도 성립 조건·약한 검사를 다시 통과해야 하고, 실패하면 버린다
-  - INSIGHT_TOOLS 를 끄면 예전처럼 버린다 (롤백)
-"""
-
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,10 +18,8 @@ def claim(cid, inst, jid, date, text):
             "institution_type": TYPES[inst], "evidence": [{"journal_entry_id": jid, "quote": "인용 원문"}]}
 
 
-# 이번 기간: 센터 기록 둘 (같은 상황, 대처 없음)
 NOW = [claim("20-0", 2, 201, "2026-10-20", "차량 탑승 전에 바닥에 앉아 타지 않으려 했다."),
        claim("21-0", 2, 202, "2026-10-22", "차량 탑승을 거부하고 바닥에 앉았다.")]
-# 지난 기록: 학교(동의), 활동지원사(동의 안 함), 관계없는 학교 기록
 PAST = [claim("10-0", 1, 101, "2026-10-08", "하교 차량 앞에서 앉아 버렸고, 친구가 손을 흔들자 일어나 탔다."),
         claim("11-0", 3, 111, "2026-10-09", "차량 탑승을 거부해 손을 잡고 태웠다."),
         claim("12-0", 1, 112, "2026-10-10", "급식 시간에 반찬을 골고루 먹었다.")]
@@ -58,7 +42,6 @@ CROSS = {"situation": "차량 탑승 전", "behavior": "바닥에 앉아 타지 
 
 def run(answer, tool_args=({"situation": "차량 탑승을 거부하고 바닥에 앉음", "weeks_back": 4},),
         tools_on=True, history=True):
-    """reflect → refine. 가짜 Luna 는 tool_args 대로 도구를 부른 뒤 answer 를 답한다."""
     seen = []
 
     def fake(instructions, user, specs, run_tool, max_calls=2, timeout=None, deadline=None):
@@ -78,8 +61,6 @@ def run(answer, tool_args=({"situation": "차량 탑승을 거부하고 바닥�
     return out, seen
 
 
-# ── find_claims ─────────────────────────────────────────────────
-
 def test_동의_안_한_기관의_지난_기록은_도구에_안_나온다():
     assert set(STATE["history_index"]) == {"10-0", "12-0"}
 
@@ -95,8 +76,6 @@ def test_기간_밖_기록은_찾지_않는다():
     assert find_claims(list(STATE["history_index"].values()), "차량", weeks_back=1, before="2026-10-19") == []
 
 
-# ── 보강 ────────────────────────────────────────────────────────
-
 def test_찾은_기록으로_기관_간_인사이트가_되면_살린다():
     out, seen = run({"insights": [CROSS]})
     assert len(out["insights"]) == 1, out["weak_refined"]
@@ -107,7 +86,7 @@ def test_찾은_기록으로_기관_간_인사이트가_되면_살린다():
 
 def test_도구가_돌려주지_않은_지난_기록은_근거로_못_쓴다():
     sneaky = {**CROSS, "claim_ids": ["20-0", "21-0", "12-0"], "supports": []}
-    out, _ = run({"insights": [sneaky]})  # 12-0 은 history 에 있지만 도구가 돌려준 적 없음
+    out, _ = run({"insights": [sneaky]})
     assert out["insights"] == [] and out["weak_refined"][0]["why"] == "조회 밖 근거"
 
 
@@ -122,7 +101,6 @@ def test_보강해도_한_기관이면_버린다():
 
 
 def test_같은_기관_지난_기록을_대처로만_붙이면_버린다():
-    # 11/07 도구 평가: 센터 인사이트에 센터의 지난 기록을 대처로 붙여 "대처 없음" 만 벗어남
     past_center = claim("13-0", 2, 113, "2026-10-09", "화장실 가기를 거부해 손을 잡고 함께 갔다.")
     state = perceive({**{k: STATE[k] for k in ("child_name", "period_from", "period_to")},
                       "claims": [dict(c) for c in NOW], "history_claims": [dict(past_center)],

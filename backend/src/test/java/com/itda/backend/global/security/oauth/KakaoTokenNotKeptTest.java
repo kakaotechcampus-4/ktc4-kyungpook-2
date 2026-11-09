@@ -33,13 +33,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.util.UriComponentsBuilder;
 
-/**
- * 카카오 로그인이 끝난 뒤 카카오 토큰을 서버에 남기지 않는다.
- *
- * <p>Spring Boot 기본 설정은 로그인할 때 받은 카카오 액세스 · 리프레시 토큰을 메모리 저장소에 회원번호별로 넣어 두고
- * 재시작할 때까지 지우지 않는다. 우리는 로그인 뒤 카카오 API 를 다시 부르지 않으므로 들고 있을 이유가 없다.
- * 카카오와의 토큰 교환 · 사용자 조회만 가짜로 바꾸고 나머지(state 검증 · 성공 핸들러)는 운영과 같은 흐름으로 돈다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -74,7 +67,6 @@ class KakaoTokenNotKeptTest {
         MockHttpSession session = new MockHttpSession();
         String location = mockMvc.perform(get("/oauth2/authorization/kakao").session(session))
                 .andReturn().getResponse().getHeader("Location");
-        // 인가 URL 의 state 는 URL 인코딩돼 있다 — 카카오가 돌려줄 때처럼 원래 값으로 되돌려 보낸다
         String state = UriComponentsBuilder.fromUriString(location).build().getQueryParams().getFirst("state");
         state = URLDecoder.decode(state, StandardCharsets.UTF_8);
 

@@ -10,15 +10,6 @@ import org.springframework.context.annotation.Configuration;
 
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * 탈퇴 잠금을 고른다 ({@code app.withdrawal.lock}).
- *
- * <ul>
- *   <li>{@code auto}(기본): 연결한 DB 가 PostgreSQL 이면 advisory lock, 아니면(H2 로컬 개발) 한 프로세스 안 잠금</li>
- *   <li>{@code advisory}: PostgreSQL advisory lock. 다른 DB 면 기동하지 않는다</li>
- *   <li>{@code local}: 한 프로세스 안 잠금. 여러 프로세스(배포 중 겹침)를 줄 세우지 못하므로 운영에 쓰지 않는다</li>
- * </ul>
- */
 @Slf4j
 @Configuration
 public class WithdrawalLocksConfig {

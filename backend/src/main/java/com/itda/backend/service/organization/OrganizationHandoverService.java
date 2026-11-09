@@ -24,14 +24,6 @@ import com.itda.backend.service.invitation.InviteCodeGenerator;
 import com.itda.backend.service.user.UserService;
 import com.itda.backend.service.user.WithdrawalProperties;
 
-/**
- * 기관 담당자 넘기기 (#478). 지금 담당자가 인계 코드를 발급하고, 후임이 가입할 때 코드를 넣으면 같은 기관의 담당자가 되며
- * 발급한 담당자는 탈퇴로 정리된다.
- *
- * <p>회원 서비스({@code UserService})를 주입받지 않는다 — 가입이 이 서비스를 부르므로 서로 물린다. 회원 행은 저장소로 직접 잠근다.
- *
- * <p>잠금 순서: 회원 행 → 인계 행 (DB 스키마 §3.3). 발급 · 취소는 담당자 행을, 가입은 새 회원 행 → 발급한 담당자 행을 먼저 잠근다.
- */
 @Service
 public class OrganizationHandoverService {
 
@@ -56,10 +48,6 @@ public class OrganizationHandoverService {
         this.enabled = withdrawalProperties.enabled();
     }
 
-    /**
-     * 새 인계 코드를 발급한다. 그 기관에 살아 있던 코드는 거둬들인다 — 살아 있는 코드는 늘 하나다.
-     * 탈퇴 스위치가 꺼져 있으면 404: 인계가 끝나면 이 담당자를 탈퇴시키는데 그 길이 닫혀 있다.
-     */
     @Transactional
     public IssuedHandoverResponse issue(String principal) {
         if (!enabled) {
@@ -83,24 +71,12 @@ public class OrganizationHandoverService {
                 handover.getExpiresAt().atZone(clock.getZone()).toOffsetDateTime());
     }
 
-    /** 살아 있는 코드를 거둬들인다. 없어도 실패하지 않는다. */
     @Transactional
     public void cancel(String principal) {
         User staff = lockStaff(principal);
         cancelLive(staff.getOrganizationId(), now());
     }
 
-    /**
-     * 후임이 가입하면서 인계 코드를 썼다. 코드를 발급한 담당자의 기관 id 를 돌려주고, 그 담당자의 탈퇴를 접수한다.
-     * 가입 트랜잭션 안에서 부른다 — 새 회원 행은 부르는 쪽이 이미 잠갔다.
-     *
-     * <p>잠금 순서: (새 회원 행) → 발급한 담당자 행 → 인계 행. 발급 · 취소도 담당자 행 → 인계 행이라 서로 물리지 않는다.
-     * 잠근 뒤 시각을 다시 읽는다 — 잠금을 기다리는 사이 만료된 코드는 받지 않는다.
-     *
-     * <p>쓸 수 없는 이유(형식 · 없음 · 만료 · 이미 씀 · 취소 · 발급한 담당자가 이미 탈퇴 · 자기 코드)는 모두 같은 400 이다.
-     * 탈퇴 스위치가 꺼져 있으면 이미 발급된 코드도 받지 않는다 — 받으면 이전 담당자의 탈퇴가 새로 접수되는데, 스위치는 탈퇴가
-     * 일어나지 않게 막는 장치다(이미 접수된 탈퇴만 꺼도 끝까지 간다). 꺼지면 화면이 메뉴를 숨겨 담당자가 코드를 거둘 수도 없다.
-     */
     @Transactional
     public Long accept(User successor, String rawCode) {
         String code = InviteCodeGenerator.normalize(rawCode);
@@ -137,7 +113,6 @@ public class OrganizationHandoverService {
         handoverRepository.findLiveForUpdate(organizationId, now).forEach(live -> live.cancel(now));
     }
 
-    /** 기관 담당자 행을 잠근다. 탈퇴 중이면 409, 기관 담당자가 아니면 403. */
     private User lockStaff(String principal) {
         User user = userRepository.findActiveByIdForUpdate(UserService.parseUserId(principal))
                 .orElseThrow(() -> new UserException(UserErrorCode.SESSION_USER_NOT_FOUND));

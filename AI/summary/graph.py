@@ -1,13 +1,3 @@
-# AI/summary/graph.py
-"""
-Summary Agent 그래프 조립.
-
-    gather → write → ground → assemble
-
-matching/graph.py · validation/graph.py 와 같은 모양이다. 분기가 없는 것은
-요약이 판정이 아니기 때문이다 — 고를 것이 없으니 갈림길도 없다.
-"""
-
 from langgraph.graph import END, StateGraph
 
 from common.progress import tracked
@@ -34,7 +24,6 @@ def build_graph():
     return graph.compile()
 
 
-#: 요청마다 컴파일하지 않도록 서버 시작 시 한 번만 만든다.
 GRAPH = build_graph()
 
 
@@ -53,17 +42,6 @@ def _to_claim(raw: dict) -> Claim:
 
 
 def run_summary(payload: SummaryInput, trace: dict | None = None) -> SummaryOutput:
-    """
-    /summary 엔드포인트의 진입점.
-
-    하는 일은 둘뿐이다 — 판정 로직(nodes.py)은 안 건드린다.
-    ① pydantic 모델을 그래프가 쓰는 dict 로 푼다.
-    ② 그래프 결과를 다시 pydantic 모델로 포장한다.
-
-    모델 호출이 실패하면 빈 요약을 돌려주지 않고 503 으로 올린다. 빈 글을
-    200 으로 주면 "그날 쓸 말이 없었다" 와 "모델이 죽었다" 가 구별되지 않고,
-    교사가 빈 요약을 승인하면서 일지는 반영된 것처럼 닫힌다.
-    """
     state = {
         "child_id": payload.child_id,
         "child_name": payload.child_name,
@@ -75,9 +53,6 @@ def run_summary(payload: SummaryInput, trace: dict | None = None) -> SummaryOutp
     }
     result = GRAPH.invoke(state)
 
-    # 평가 스크립트만 trace 를 넘긴다. 근거 검사에서 버린 문장과 이유를 담아 준다.
-    # 서버(main.py)는 넘기지 않으므로 응답은 바뀌지 않는다. 503 으로 끝나는 경우
-    # (전부 버려짐)가 수정 루프에 가장 중요한 재료라, 예외를 올리기 전에 채운다.
     if trace is not None:
         trace.update(
             raw_claims=len(result.get("raw_claims") or []),
@@ -88,10 +63,6 @@ def run_summary(payload: SummaryInput, trace: dict | None = None) -> SummaryOutp
     if result.get("llm_error"):
         raise LlmUnavailable(result["llm_error"], failure=result.get("llm_failure", "unknown"))
 
-    # 남은 문장이 0 개인 경우는 둘이다 (CRITERIA.md §2).
-    #   모델이 처음부터 빈 claims 를 냈다  → 쓸 관찰 사실이 없다 → 200 no_content
-    #   문장은 냈는데 ground 에서 다 버려졌다 → 다시 부르면 될 수 있다 → 503
-    # 앞의 경우 content "" · covered [] · uncovered 전부는 assemble 이 이미 그렇게 만든다.
     no_content = bool(payload.sources) and not result.get("raw_claims")
     if payload.sources and not result["claims"] and not no_content:
         raise NoGroundedClaims(

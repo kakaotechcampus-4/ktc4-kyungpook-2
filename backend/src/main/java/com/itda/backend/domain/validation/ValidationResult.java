@@ -15,12 +15,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import com.itda.backend.global.jpa.CreatedAtEntity;
 
-/**
- * 검증 에이전트 실행 결과 한 건 (DB 스키마 §8.1).
- *
- * <p>다른 테이블은 FK·연관관계 없이 ID 컬럼으로만 가리킨다 (DB 스키마 §16). 실행 이력이라 삭제하지 않고
- * 수정하지도 않는다 — 다시 검증하면 새 행을 쌓는다. 그래서 {@code updated_at}·{@code deleted_at} 이 없다.
- */
 @Entity
 @Table(name = "validation_result",
         indexes = @Index(name = "idx_validation_result_journal_entry_id", columnList = "journal_entry_id"))
@@ -35,11 +29,9 @@ public class ValidationResult extends CreatedAtEntity {
     @Column(name = "journal_entry_id", nullable = false)
     private Long journalEntryId;
 
-    // 입력으로 쓴 매칭 결과. 일지는 journalEntryId 로 직접 찾는다 — 검증이 매칭 결과에 과하게 기대지 않도록.
     @Column(name = "matching_result_id")
     private Long matchingResultId;
 
-    // 검증 대상 아동 (요청의 subject_child_id).
     @Column(name = "child_id")
     private Long childId;
 
@@ -47,8 +39,6 @@ public class ValidationResult extends CreatedAtEntity {
     @Column(nullable = false, length = 10)
     private ValidationVerdict verdict;
 
-    // AI 가 보낸 JSON 조각을 그대로 담는다. issue_types 는 한글 문자열 배열 ["개인정보표현"],
-    // evidence 는 [{start, end}] (Python 코드포인트 인덱스 — 화면에서는 Array.from 으로 잘라야 한다).
     @Column(columnDefinition = "TEXT")
     private String issueTypes;
 

@@ -29,11 +29,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// principal 은 JwtAuthenticationFilter 가 심은 내부 userId 다. 이 사용자의 소속 기관을 찾는
-// 일은 RawRecordService 가 한다 — 컨트롤러는 저장소를 직접 보지 않는다. 클라이언트가 보낸
-// institutionId는 여전히 신뢰하지 않는다.
-// (이슈 #34 이전에는 여기 카카오 회원번호가 들어와 그대로 기관 식별자로 쓰이고 있었다.
-//  즉 "기관"이 사실상 "카카오 계정 하나"였다.)
 @RestController
 @RequestMapping("/api/v1/raw-records")
 @RequiredArgsConstructor

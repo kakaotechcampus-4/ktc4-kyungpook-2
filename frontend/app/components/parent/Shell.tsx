@@ -30,21 +30,16 @@ const TABS = [
   },
 ];
 
-/** 온보딩(초대 진입·확인 동의) 중에는 하단 탭을 숨긴다 — 아직 첫 설정이 안 끝났다. */
 const ONBOARDING = ["/parent/invite", "/parent/consent"];
 
-/** 학부모 화면은 SMS 링크로 들어오는 모바일 브라우저가 주 환경이다. */
 export function ParentShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  // 보호자 입구(guard) 안에서만 값이 있다. 온보딩 화면이나 아직 입구를 지나지 않았으면 undefined, 준비 중 빌드면
-  // 고른 아이가 없다(selectedId null) — 둘 다 점이 없다. 리포트 탭 점은 고른 아이 기준이다
   const guard = useRouteLoaderData<typeof guardLoader>("routes/parent/guard");
   const unreadReport =
     guard && "unreadInsightChildIds" in guard && guard.selectedId
       ? guard.unreadInsightChildIds.includes(guard.selectedId)
       : false;
   const isOnboarding = ONBOARDING.includes(pathname);
-  // 다음 화면을 기다리는 동안 지금 화면을 살짝 흐린다 — 기관 화면과 같다
   const navigating = useNavigating();
 
   return (
@@ -55,7 +50,6 @@ export function ParentShell({ children }: { children: React.ReactNode }) {
         </header>
       ) : null}
 
-      {/* 아래 여백은 하단 메뉴 자리다. md:py-6 으로 쓰면 넓은 화면에서 pb-24 를 덮어 끝 내용이 메뉴에 가려진다 (#351) */}
       <main
         aria-busy={navigating}
         className={`flex-1 px-4 pt-5 transition-opacity duration-200 md:px-6 md:pt-6 ${isOnboarding ? "pb-5 md:pb-6" : "pb-24"} ${navigating ? "opacity-60" : ""}`}

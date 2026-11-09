@@ -9,7 +9,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.itda.backend.fixture.UserFixture;
 
-/** 카카오 연결 해제 재시도 간격: 마지막 호출 뒤 1 · 2 · 5 · 10 · 30 · 60분(이후 60분). */
 class UserWithdrawalRetryTest {
 
     private static final LocalDateTime AT = LocalDateTime.of(2026, 11, 9, 10, 0);

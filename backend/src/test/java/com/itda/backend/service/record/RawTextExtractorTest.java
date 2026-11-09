@@ -16,7 +16,6 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.junit.jupiter.api.Test;
 
-/** 업로드 원본에서 기록 분리용 텍스트를 뽑는다 (#383). 못 뽑으면 비어서 돌아와야 한다. */
 class RawTextExtractorTest {
 
     private final RawTextExtractor extractor = new RawTextExtractor();
@@ -34,7 +33,6 @@ class RawTextExtractorTest {
         assertThat(extractor.extract("docx", docx)).contains("관찰일지\n2026-09-15 센터 블록을 쌓음");
     }
 
-    /** 칸 안의 여러 문단을 붙여 쓰면 "…지름.손을…" 처럼 문장이 엉킨다. 공백으로 잇는다. */
     @Test
     void docx_칸_안의_여러_문단은_공백으로_잇는다() throws IOException {
         try (XWPFDocument doc = new XWPFDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -72,24 +70,17 @@ class RawTextExtractorTest {
         }
     }
 
-    // --- docx 압축 상한 (#424) -------------------------------------------------------
-    // 본문은 무작위 단어로 채워 압축률을 몇 배 수준으로 둔다 — POI 자체 압축률 검사(100배)는 통과하고 크기 상한만 넘는 파일이다.
-    // 기본 상한은 XML 합 5MB · 전체 30MB 다.
-
     private static final long MB = 1024 * 1024;
 
-    /** 본문 파트가 6MB 로 풀리는 docx. POI 기본 설정이면 문제없이 읽는 파일이다. */
     @Test
     void docx_XML_이_상한을_넘게_풀리면_못_읽은_파일로_둔다() throws IOException {
         byte[] docx = Docx.withBody("word/document.xml", bodyXml(6 * MB)).bytes();
 
         assertThat(extractor.extract("docx", docx)).isEmpty();
-        // 상한만 올린 추출기는 같은 파일에서 글을 뽑는다 — POI 혼자서는 읽는 파일을 사전 검사가 막았다.
         assertThat(new RawTextExtractor(20 * MB, 60 * MB).extract("docx", docx))
                 .hasValueSatisfying(text -> assertThat(text).startsWith("2026-09-15 첫 기록"));
     }
 
-    /** 본문 이름을 .dat 로 바꿔도 POI 는 관계 정보를 따라 본문으로 읽는다. 사전 검사도 이름과 상관없이 막는다. */
     @Test
     void docx_본문_이름을_바꿔도_같은_상한에서_막는다() throws IOException {
         byte[] docx = Docx.withBody("word/document.dat", bodyXml(MB + 1024)).bytes();
@@ -109,7 +100,6 @@ class RawTextExtractorTest {
         assertThat(new RawTextExtractor(2 * MB, 60 * MB).extract("docx", docx)).isPresent();
     }
 
-    /** 이름이 그림이어도 내용이 그림 앞머리로 시작하지 않으면 XML 로 센다 — POI 가 관계를 따라 XML 로 읽을 수 있다. */
     @Test
     void docx_그림_이름이어도_내용이_그림이_아니면_XML_로_센다() throws IOException {
         byte[] docx = Docx.withBody("word/document.xml", bodyXml(1024))
@@ -119,7 +109,6 @@ class RawTextExtractorTest {
         assertThat(new RawTextExtractor(MB, 60 * MB).extract("docx", docx)).isEmpty();
     }
 
-    /** 그림은 XML 상한을 받지 않고 전체 상한만 받는다 — 압축만 풀리고 DOM 으로 올라가지 않는다. */
     @Test
     void docx_그림은_전체_상한만_받는다() throws IOException {
         Docx docx = Docx.withBody("word/document.xml", bodyXml(1024));
@@ -128,9 +117,7 @@ class RawTextExtractorTest {
         }
         byte[] bytes = docx.bytes();
 
-        // 그림 합 약 4MB 는 XML 상한(1MB)과 상관없다.
         assertThat(new RawTextExtractor(MB, 5 * MB).extract("docx", bytes)).isPresent();
-        // 전체 상한(3MB)은 넘는다.
         assertThat(new RawTextExtractor(MB, 3 * MB).extract("docx", bytes)).isEmpty();
     }
 
@@ -139,7 +126,6 @@ class RawTextExtractorTest {
         extractor.checkZipBudget(docx(List.of("관찰일지"), List.of(List.of("2026-09-15", "센터", "블록을 쌓음"))));
     }
 
-    /** 첫 문단은 날짜로 시작하고, 나머지는 무작위 단어 문단으로 채워 풀린 크기가 대략 {@code bytes} 가 되게 한다. */
     private static String bodyXml(long bytes) {
         StringBuilder xml = new StringBuilder(
                 "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
@@ -153,7 +139,6 @@ class RawTextExtractorTest {
         return xml.append("</w:body></w:document>").toString();
     }
 
-    /** PNG 앞머리 뒤에 무작위 글을 붙인다 — 압축률은 글과 같고 앞머리만 그림이다. */
     private static byte[] png(long length, long seed) {
         byte[] head = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
         byte[] body = randomWords(length - head.length, seed).getBytes(StandardCharsets.UTF_8);
@@ -163,7 +148,6 @@ class RawTextExtractorTest {
         return out;
     }
 
-    /** 압축이 몇 배 수준으로만 되는 글. 같은 줄을 되풀이하면 POI 압축률 검사에 먼저 걸려 사전 검사를 시험하지 못한다. */
     private static String randomWords(long length, long seed) {
         java.util.Random random = new java.util.Random(seed);
         StringBuilder text = new StringBuilder();
@@ -177,7 +161,6 @@ class RawTextExtractorTest {
         return text.substring(0, (int) length);
     }
 
-    /** 이름과 관계를 손으로 정해 docx 를 만든다 — POI 로 만들면 본문 이름을 바꿀 수 없다. */
     private static final class Docx {
 
         private static final String MAIN = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
@@ -244,7 +227,6 @@ class RawTextExtractorTest {
         }
     }
 
-    /** 문단 몇 줄과 표 하나로 docx 를 만든다. 표가 비어 있으면 표를 넣지 않는다. */
     static byte[] docx(List<String> paragraphs, List<List<String>> rows) throws IOException {
         try (XWPFDocument doc = new XWPFDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             paragraphs.forEach(text -> doc.createParagraph().createRun().setText(text));

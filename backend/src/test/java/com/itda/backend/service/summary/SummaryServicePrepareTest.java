@@ -36,7 +36,6 @@ import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.summary.SummaryRunRequestRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 
-/** 요약 요청 조립 — 묶음의 일지들, 아동·기관 이름, 본문에 이름이 나온 다른 아이들. */
 @DataJpaTest
 @ActiveProfiles("test")
 class SummaryServicePrepareTest {
@@ -165,10 +164,6 @@ class SummaryServicePrepareTest {
         assertThat(summaryService.prepareRequest(group(entry)).otherChildNames()).containsExactly("서준호");
     }
 
-    /**
-     * 상한(#424) 전에 올라온 긴 일지가 묶음에 있으면 묶음째 요청을 만들지 않는다. 긴 일지만 빼고 요약하면 선생님이 모르는 사이
-     * 그 기록이 요약에서 빠진다. 상태는 바꾸지 않는다 — 워커가 받아 쓰기 트랜잭션에서 남긴다.
-     */
     @Test
     void 묶음에_긴_일지가_있으면_요청을_만들지_않고_상태도_바꾸지_않는다() {
         JournalEntry ok = summarizing("김준호가 블록을 쌓았다.", 1, junho.getId());

@@ -1,124 +1,40 @@
-/**
- * 인증 심(seam).
- *
- * 로그인은 **백엔드가 전부 맡는다**. Spring Security oauth2Login 이 인가 요청(state 포함),
- * 카카오 토큰 교환, 사용자 조회까지 처리하고, 끝나면 출입증을 httpOnly 쿠키로 심은 뒤
- * 프론트로 돌려보낸다. 프론트가 인가 코드나 토큰을 직접 만지는 부분은 없다.
- *
- *   /login → (BE) /oauth2/authorization/kakao → 카카오
- *          → (BE) /login/oauth2/code/kakao → 쿠키 발급
- *          → /oauth/success   (실패 시 /login)
- *          → GET /api/v1/auth/me
- *              signupCompleted: true  → 역할별 첫 화면
- *              signupCompleted: false → /signup → POST /api/v1/auth/signup
- *              보호자 termsAgreed: false → /parent/invite 약관 단계 → POST /api/v1/auth/terms
- *
- * 출입증이 httpOnly 쿠키라 이 파일은 토큰을 읽지도 지우지도 못한다.
- *  - 요청에 붙이는 일: 브라우저가 자동으로 한다 (lib/api.ts 의 credentials 참고)
- *  - 로그인 여부·역할: 서버에 묻는다 (GET /api/v1/auth/me)
- *  - 로그아웃: 서버에 부탁해야 한다 (POST /api/v1/auth/logout)
- *  - 회원 탈퇴: DELETE /api/v1/auth/me. 서버가 카카오 연결을 끊고 정리한다. 처리 중이면 `/auth/me` 의 withdrawal 이
- *    in_progress 이고, 끝나면 `/auth/me` 가 401 ACCOUNT_WITHDRAWN 이다(그 밖의 401 은 탈퇴 완료가 아니다).
- */
-
 import { ApiError } from "@/lib/apiError";
 import { clearGate1Drafts } from "@/lib/gate1Draft";
 import { clearReinputDrafts } from "@/lib/reinputDraft";
 import { MOCK_TERMS } from "@/lib/mock/terms";
 import { forgetParentChildren } from "@/lib/parentChildrenCache";
 
-/**
- * 인증만 실연동하고 나머지 데이터는 mock 으로 둘 수 있게 플래그를 분리했다
- * (데이터 쪽은 lib/api.ts 의 VITE_USE_MOCK).
- */
 const USE_MOCK = import.meta.env.VITE_AUTH_MOCK !== "false";
 
-/**
- * 로그인 진입 주소의 오리진.
- *
- * 운영은 비워 둔다 — nginx 가 같은 오리진의 `/oauth2/` 를 백엔드로 넘긴다.
- * dev 는 `http://localhost:8080` 이 필요하다. Spring 이 **자기가 받은 주소**로
- * redirect_uri 를 조립하는데, Vite 프록시를 거치면 그 값이 카카오 콘솔 등록값과
- * 어긋나 KOE006 이 나기 때문이다. (BE 의 application-secret.yml.example 참고)
- */
 const AUTH_ORIGIN = import.meta.env.VITE_AUTH_ORIGIN ?? "";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
-/** mock 모드에서만 쓴다. 실연동에서는 역할을 서버(`/auth/me`)가 알려준다. */
 const ROLE_KEY = "itda_role";
 
-/**
- * 온보딩을 끝냈다는 표시. 역할과 따로 둔다 — 보호자는 가입 직후에 역할이 정해지는데,
- * 첫 기관 연결이 아직 안 끝난 상태를 그것과 구분할 방법이 필요하다.
- * 약관 동의는 여기 두지 않는다 — 서버가 저장하고 `/auth/me` 의 termsAgreed 로 알려준다.
- */
 const ONBOARDED_KEY = "itda_parent_onboarded";
 
-/** mock 모드에서만 쓴다. 보호자가 약관에 동의했다는 표시. 실연동에서는 서버(`termsAgreed`)가 기준이다. */
 const TERMS_KEY = "itda_parent_terms";
 
-/**
- * 로그인 의도. 카카오로 떠나기 전에 적어두고 `/oauth/success` 가 읽는다.
- * 역할을 정하지는 않는다 — 처음 가입하는 사람의 회원가입 화면에서 어느 역할을
- * 먼저 골라둘지에만 쓴다. 탭을 닫으면 사라져야 하므로 sessionStorage 를 쓴다.
- */
 const INTENT_KEY = "itda_login_intent";
 
-/**
- * 초대 링크(`/parent/invite?code=`)로 받은 코드. 카카오 로그인과 회원가입을 다녀오는 동안
- * 들고 있다가, 보호자 화면에 들어오면 수락(G-04)에 쓴다. 로그인 의도와 같은 이유로
- * sessionStorage 다. 카톡 인앱 브라우저에서 외부 브라우저로 넘어가면 사라질 수 있어
- * P-01 에 직접 입력 칸을 따로 둔다.
- */
 const INVITE_CODE_KEY = "itda_invite_code";
 
-/**
- * 로그인이 풀려 로그인 화면으로 보낼 때 가려던 주소와 그 화면의 역할(`{ role, path }`).
- * 다시 로그인하면 `/oauth/success` 가 한 번 읽고 지운다. 로그인 의도와 같은 이유로 sessionStorage 다 —
- * 카카오를 다녀오는 동안은 같은 탭이라 남고, 탭을 닫으면 사라진다.
- */
 const RETURN_PATH_KEY = "itda_return_path";
 
-/**
- * 이 탭에서 카카오 로그인을 시작한 시각. 카카오로 떠나기 직전에 적고 `/oauth/success` 가 한 번 읽고 지운다. 이 표시가 있을 때만
- * 실제 로그인으로 보고 다른 탭에 알린다 — 이미 로그인한 사람이 주소를 직접 열면 표시가 없다. 로그인 의도와 같은 이유로
- * sessionStorage 다. 카카오에서 그만두고 돌아온 표시가 오래 남지 않게 LOGIN_STARTED_TTL_MS 가 지나면 버린다.
- */
 const LOGIN_STARTED_KEY = "itda_login_started";
 const LOGIN_STARTED_TTL_MS = 30 * 60 * 1000;
 
 export type Role = "org" | "parent" | null;
 
-/**
- * 라우트 가드가 보는 세션.
- *  - loggedIn=false            : 비로그인 → 로그인 화면
- *  - loggedIn, !signupCompleted: 카카오 로그인만 하고 역할을 안 고름 → /signup
- *  - signupCompleted           : role 이 정해져 있다
- */
 export type Session = {
   loggedIn: boolean;
   signupCompleted: boolean;
   role: Role;
-  /** 내부 회원 id. 로그인했을 때만 있다. 탈퇴 확인 창이 "이 계정" 을 서버에 알려 줄 때 쓴다. */
   userId?: string;
-  /** 가입 때 입력한 기관명. 기관 계정만 있고, 서버가 기관을 못 찾으면 없다. */
   institutionName?: string;
-  /**
-   * 보호자가 서비스 약관(지금 판)에 동의했는지. false 면 서버가 보호 API 를 403 TERMS_NOT_AGREED 로 막는다.
-   * 기관 계정은 약관이 없어 늘 true, 가입 미완료는 false.
-   */
   termsAgreed: boolean;
-  /**
-   * 탈퇴를 처리하는 중인지. true 면 서버가 `/auth/me` · 로그아웃 외의 보호 API 를 409 WITHDRAWAL_IN_PROGRESS 로 막는다 —
-   * 가드는 가입 · 약관 · 아이 목록보다 먼저 이 값을 보고 탈퇴 안내 화면(`/withdrawal`)으로 보낸다.
-   */
   withdrawing: boolean;
-  /**
-   * 비로그인인데 그 이유가 "탈퇴를 마친 회원의 출입증" 인지(401 ACCOUNT_WITHDRAWN). 탈퇴 안내 화면만 본다 —
-   * 로그인 만료 · 쿠키 없음 · 로그아웃은 false 다. 이 값이 true 일 때만 "탈퇴가 끝났다" 고 보여 준다.
-   */
   withdrawn: boolean;
-  /** 서버가 탈퇴를 열었는지(`/auth/me` 의 withdrawalEnabled). false 면 탈퇴 버튼을 숨긴다. */
   withdrawalEnabled: boolean;
 };
 
@@ -132,22 +48,14 @@ const ANONYMOUS: Session = {
   withdrawalEnabled: false,
 };
 
-/**
- * GET /auth/me · POST /auth/signup 의 data.
- * 값이 없는 필드는 null 이 아니라 **아예 빠진다**(BE CurrentUserResponse 의 NON_NULL).
- */
 type MeResponse = {
   signupCompleted: boolean;
   userId: string;
   role?: "org" | "parent";
   institutionId?: string;
-  /** role === "org" 일 때만 (#236) */
   institutionName?: string;
-  /** 늘 온다. 기관은 true, 가입 미완료는 false */
   termsAgreed: boolean;
-  /** 늘 온다. 탈퇴를 처리하는 중이면 in_progress */
   withdrawal?: "none" | "in_progress";
-  /** 늘 온다. 서버가 탈퇴를 열었는지 */
   withdrawalEnabled?: boolean;
 };
 
@@ -155,7 +63,6 @@ function toSession(me: MeResponse): Session {
   return {
     loggedIn: true,
     signupCompleted: me.signupCompleted,
-    // signupCompleted 만 보고 분기한다. role 은 가입을 마쳤을 때만 믿는다.
     role: me.signupCompleted ? (me.role ?? null) : null,
     userId: me.userId,
     institutionName: me.institutionName,
@@ -166,13 +73,10 @@ function toSession(me: MeResponse): Session {
   };
 }
 
-/** 실패 응답 { result, code, message } 를 ApiError 로. */
 async function toApiError(res: Response): Promise<ApiError> {
   const body = await res.json().catch(() => ({}));
   return new ApiError(res.status, body.code ?? "UNKNOWN", body.message);
 }
-
-/* ── 역할 (mock 전용) ───────────────────────────────── */
 
 function readRole(): Role {
   try {
@@ -183,41 +87,28 @@ function readRole(): Role {
   }
 }
 
-/**
- * mock 모드에서 역할을 로컬에 기록한다. **로그인이 아니다.**
- * "mock 데이터로 둘러보기" 버튼이 부른다. 실연동에서는 아무것도 하지 않는다 —
- * 역할은 회원가입(`signup()`)으로 서버에 정해지고 `/auth/me` 가 알려준다.
- */
 export function grantRole(role: "org" | "parent"): void {
   if (!USE_MOCK) return;
   try {
     localStorage.setItem(ROLE_KEY, role);
   } catch {
-    // 무시 — getSession() 이 비로그인을 돌려주고 가드가 로그인 화면으로 보낸다.
   }
 }
 
-/** 서버가 401 을 주면 쿠키가 만료·무효라는 뜻이다. 로컬 표시도 함께 지운다. */
 export function clearSession(): void {
-  // 로그아웃 · 로그인 풀림 — 다음 사람이 이 탭에서 로그인해도 앞사람 아이 목록을 같이 쓰지 않게
   forgetParentChildren();
   try {
     localStorage.removeItem(ROLE_KEY);
     localStorage.removeItem(ONBOARDED_KEY);
     localStorage.removeItem(TERMS_KEY);
   } catch {
-    // 무시
   }
 }
 
-/* ── 온보딩 ─────────────────────────────────────────── */
-
-/** 보호자가 첫 기관 공유 동의까지 마쳤다는 표시. 약관 동의는 따로 본다(Session.termsAgreed). */
 export function markOnboarded(): void {
   try {
     localStorage.setItem(ONBOARDED_KEY, "1");
   } catch {
-    // 무시 — 온보딩 화면을 한 번 더 보게 될 뿐이다.
   }
 }
 
@@ -229,18 +120,6 @@ export function isOnboarded(): boolean {
   }
 }
 
-/* ── 세션 ───────────────────────────────────────────── */
-
-/**
- * GET /api/v1/auth/me — 라우트 가드가 화면에 들어갈 때마다 부른다.
- *
- * 401 은 "다시 로그인" 이라 에러가 아니라 비로그인 세션으로 돌려준다.
- * 그 밖의 실패(5xx·네트워크)는 그대로 던진다 — 비로그인으로 바꿔 삼키면
- * 서버 장애가 "로그아웃됨" 으로 보인다.
- *
- * 이 GET 이 BE 의 XSRF-TOKEN 쿠키를 처음 심어주는 요청이기도 하다
- * (BE CsrfCookieFilter). 그래서 signup() 같은 쓰기 요청 전에 한 번은 불려 있어야 한다.
- */
 export async function getSession(): Promise<Session> {
   if (USE_MOCK) {
     const role = readRole();
@@ -263,7 +142,6 @@ export async function getSession(): Promise<Session> {
   });
   if (res.status === 401) {
     clearSession();
-    // 탈퇴를 마친 회원인지만 나눈다. 본문을 못 읽으면 일반 401 로 본다 — 완료로 잘못 보이지 않게
     const body = await res.json().catch(() => ({}));
     return { ...ANONYMOUS, withdrawn: body?.code === "ACCOUNT_WITHDRAWN" };
   }
@@ -274,17 +152,8 @@ export async function getSession(): Promise<Session> {
   return session;
 }
 
-/**
- * 이 문서(페이지 로드)가 처음 `/auth/me` 에서 확인한 계정. 화면은 이 계정의 데이터로 그려진다. 뒤에 다른 계정이 보여도 바꾸지
- * 않는다 — 그때는 화면과 쿠키가 다른 계정이라 새로 고쳐야 한다. 이 탭 안에서 로그인하면 카카오를 다녀오며 문서가 새로 열린다.
- * 다른 탭의 로그인이 같은 계정이면 이 탭을 새로 고치지 않는 데 쓴다(`reloadOnLoginElsewhere`).
- */
 let documentUserId: string | undefined;
 
-/**
- * 가입을 마친 사람이 처음 볼 화면. 보호자는 약관 · 첫 연결이 남았거나, 초대 링크로 받아 둔
- * 코드가 있으면 온보딩(약관 또는 코드 수락)으로. 기관은 약관이 남았으면 기관 약관 화면으로.
- */
 export function homePathFor(role: "org" | "parent", termsAgreed: boolean): string {
   if (role === "parent") {
     return termsAgreed && isOnboarded() && !readInviteCode() ? "/parent" : "/parent/invite";
@@ -292,30 +161,17 @@ export function homePathFor(role: "org" | "parent", termsAgreed: boolean): strin
   return termsAgreed ? "/dashboard" : "/org-terms";
 }
 
-/* ── 약관 동의 ──────────────────────────────────────── */
-
-/** BE TermKey 값 그대로. 보호자는 앞의 둘, 기관은 org_ 셋이 모두 필수다(다른 역할의 약관은 보낼 수 없다). */
 export type TermKey = "tos" | "privacy" | "org_tos" | "org_privacy" | "org_child_data";
 
-/** 약관 한 개의 지금 판 (GET /api/v1/terms 의 원소). */
 export interface TermsDocument {
   key: TermKey;
   title: string;
-  /** 동의할 때 `versions` 에 그대로 보낸다 */
   version: string;
-  /** 시행일 YYYY-MM-DD */
   effectiveDate: string;
-  /** 팀 검토 전 초안 — 화면은 본문 위에 초안 표시를 띄운다 */
   draft: boolean;
-  /** 줄바꿈만 살리는 그냥 글 */
   body: string;
 }
 
-/**
- * GET /api/v1/terms?role= — 그 역할이 동의해야 하는 약관의 지금 판 본문. 로그인 없이 부른다.
- *
- * 동의 요청과 같은 인증 mock 스위치를 따른다 — 둘이 다르면 mock 판으로 실서버에 동의해 409 가 난다.
- */
 export async function getTerms(role: "parent" | "org"): Promise<TermsDocument[]> {
   if (USE_MOCK) return MOCK_TERMS.filter((t) => t.key.startsWith("org_") === (role === "org"));
 
@@ -333,21 +189,11 @@ function readTermsMark(): boolean {
   }
 }
 
-/**
- * POST /api/v1/auth/terms — 약관 동의(보호자 · 기관). 체크한 약관마다 화면이 받아 둔 판(사용자가 읽은 판)을 붙여 보낸다.
- * 서버는 그 판으로 기록하고, 지금 판과 다르면 아무것도 기록하지 않고 409 TERMS_VERSION_CHANGED 를 준다.
- *
- * 인증 mock 스위치(`VITE_AUTH_MOCK`)를 따른다. 데이터 mock(`VITE_USE_MOCK`)을 따르면 "로그인만 실연동"
- * 모드에서 저장한 척만 하고 다음 `/auth/me` 는 계속 termsAgreed: false 를 돌려준다.
- *
- * 실패는 ApiError 로 던진다 (INVALID_REQUEST · SIGNUP_NOT_COMPLETED · TERMS_VERSION_CHANGED · 401).
- */
 export async function agreeTerms(agreed: { key: TermKey; version: string }[]): Promise<void> {
   if (USE_MOCK) {
     try {
       localStorage.setItem(TERMS_KEY, "1");
     } catch {
-      // 무시 — 약관 화면을 한 번 더 보게 될 뿐이다.
     }
     return;
   }
@@ -368,13 +214,10 @@ export async function agreeTerms(agreed: { key: TermKey; version: string }[]): P
   }
 }
 
-/* ── 초대 코드 ──────────────────────────────────────── */
-
 export function saveInviteCode(code: string): void {
   try {
     sessionStorage.setItem(INVITE_CODE_KEY, code);
   } catch {
-    // 무시 — 로그인 뒤 코드를 직접 입력하면 된다.
   }
 }
 
@@ -386,23 +229,17 @@ export function readInviteCode(): string | null {
   }
 }
 
-/** 수락이 끝났거나(성공 · 이미 연결됨) 코드가 틀려 더 쓸 수 없을 때 지운다. */
 export function clearInviteCode(): void {
   try {
     sessionStorage.removeItem(INVITE_CODE_KEY);
   } catch {
-    // 무시
   }
 }
 
-/** mock 모드인지. 로그인 화면이 "둘러보기" 진입을 띄울지 판단하는 데만 쓴다. */
 export function isAuthMock(): boolean {
   return USE_MOCK;
 }
 
-/* ── 회원가입 ───────────────────────────────────────── */
-
-/** BE enum 값 그대로. 화면 표시 이름은 회원가입 화면이 붙인다. */
 export type OrganizationType = "SCHOOL" | "CENTER" | "ACTIVITY_SUPPORT";
 
 export type SignupInput =
@@ -411,26 +248,13 @@ export type SignupInput =
       role: "org";
       organizationName: string;
       organizationType: OrganizationType;
-      /** 하이픈 없이 숫자 10자리 */
       businessNumber: string;
     }
   | {
       role: "org";
-      /** 이전 담당자가 발급한 인계 코드(#478). 기관을 새로 만들지 않고 그 기관을 이어받는다 */
       handoverCode: string;
     };
 
-/**
- * POST /api/v1/auth/signup → 201. 응답은 /auth/me 의 가입 완료 응답과 같다.
- *
- * 보호자는 role **만** 보낸다. 기관 필드가 `""` 로라도 섞이면 BE 가 400 을 준다.
- * 그래서 폼 상태를 그대로 싣지 않고 역할별로 본문을 새로 만든다.
- *
- * 담당자가 바뀌는 기관은 기관 정보 대신 인계 코드 하나만 보낸다(#478) — 둘을 섞으면 400 이다.
- *
- * 실패는 ApiError 로 던진다. 화면이 code 로 나눠 처리한다
- * (ALREADY_SIGNED_UP · DUPLICATE_BUSINESS_NUMBER · INVALID_HANDOVER_CODE · INVALID_REQUEST).
- */
 export async function signup(input: SignupInput): Promise<Session> {
   if (USE_MOCK) {
     grantRole(input.role);
@@ -470,27 +294,18 @@ export async function signup(input: SignupInput): Promise<Session> {
   return toSession(json.data as MeResponse);
 }
 
-/* ── 로그인 · 로그아웃 ──────────────────────────────── */
-
-/**
- * 카카오 로그인 시작. fetch 가 아니라 페이지 이동이다 —
- * 사용자가 카카오 도메인에서 직접 로그인·동의해야 하므로 브라우저가 실제로 가야 한다.
- */
 export function startKakaoLogin(intent: "org" | "parent"): void {
   try {
     sessionStorage.setItem(INTENT_KEY, intent);
   } catch {
-    // 무시 — 회원가입 화면에서 역할을 미리 골라두지 못할 뿐이다.
   }
   try {
     sessionStorage.setItem(LOGIN_STARTED_KEY, String(Date.now()));
   } catch {
-    // 무시 — 로그인이 끝나도 다른 탭에 알리지 못할 뿐이다. 탈퇴는 서버가 계정을 맞춰 본다
   }
   window.location.href = `${AUTH_ORIGIN}/oauth2/authorization/kakao`;
 }
 
-/** 로그인 의도를 **한 번만** 읽는다 — 읽고 지운다. 다음 로그인까지 남으면 안 된다. */
 export function takeLoginIntent(): "org" | "parent" | null {
   try {
     const intent = sessionStorage.getItem(INTENT_KEY);
@@ -501,21 +316,13 @@ export function takeLoginIntent(): "org" | "parent" | null {
   }
 }
 
-/* ── 로그인 뒤 돌아갈 주소 ──────────────────────────── */
-
-/**
- * 로그인이 풀려 로그인 화면으로 보내기 직전에 가려던 주소(경로 + `?` 뒤)를 남긴다. 가드 · 세션 확인 레이아웃 ·
- * 최상위 오류 화면이 부른다. 역할도 함께 남겨, 같은 탭에서 다른 역할로 로그인하면 쓰지 않는다.
- */
 export function rememberReturnPath(role: "org" | "parent", url: URL): void {
   try {
     sessionStorage.setItem(RETURN_PATH_KEY, JSON.stringify({ role, path: url.pathname + url.search }));
   } catch {
-    // 무시 — 로그인 뒤 첫 화면으로 갈 뿐이다.
   }
 }
 
-/** 로그인이 풀려서 왔는지. 로그인 화면의 만료 안내에만 쓴다 — 지우지 않는다. */
 export function hasReturnPath(): boolean {
   try {
     return sessionStorage.getItem(RETURN_PATH_KEY) !== null;
@@ -524,10 +331,6 @@ export function hasReturnPath(): boolean {
   }
 }
 
-/**
- * 남긴 주소를 **한 번만** 읽는다 — 읽고 지운다. 역할이 다르면 버린다(남의 화면 주소로 보내면 403 이다).
- * 우리 앱 안의 경로(`/` 로 시작, `//` 는 아님)만 돌려준다. 역할이 없으면(가입 전) 지우기만 한다.
- */
 export function takeReturnPath(role: Role): string | null {
   try {
     const raw = sessionStorage.getItem(RETURN_PATH_KEY);
@@ -542,13 +345,8 @@ export function takeReturnPath(role: Role): string | null {
   }
 }
 
-/**
- * 로그아웃. 출입증이 httpOnly 쿠키라 **프론트가 스스로 지울 수 없다.**
- * 서버가 만료된 쿠키를 다시 심어줘야 한다.
- */
 export async function signOut(): Promise<void> {
   clearSession();
-  // 요약 검토 · 검증 수정 요청에서 로그인이 풀려 맡겨 둔 글 — 아이에 대한 글이라 남기지 않는다
   clearGate1Drafts();
   clearReinputDrafts();
   if (USE_MOCK) return;
@@ -560,19 +358,9 @@ export async function signOut(): Promise<void> {
       headers: csrfHeader(),
     });
   } catch {
-    // 네트워크 실패로 쿠키가 남아도 로컬 표시는 이미 지웠다. 가드가 /auth/me 로 다시 확인한다.
   }
 }
 
-/* ── 다른 탭의 로그인 ───────────────────────────────── */
-
-/**
- * 로그인이 끝날 때마다 바꾸는 표시(`{ userId, nonce }` JSON). 같은 브라우저의 탭들은 출입증 쿠키를 함께 쓰므로, 한 탭에서 다른
- * 계정으로 로그인하면 다른 탭은 예전 계정의 화면을 보여 주는 채로 새 계정의 쿠키로 요청하게 된다(예: A 의 설정 화면에서 탈퇴를
- * 누르면 B 가 지워진다). 표시가 바뀌면 **보여 주는 계정이 다른 탭만** 화면을 새로 고쳐, 화면 데이터와 요청이 늘 같은 계정을
- * 가리키게 한다. 같은 계정으로 다시 로그인한 것이면 새로 고치지 않는다 — 기관 담당자가 쓰던 요약 검토 · 검증 수정 본문은 화면
- * 상태에만 있어 새로 고치면 사라진다.
- */
 const LOGIN_MARK_KEY = "itda_login_mark";
 
 function readLoginMark(): string | null {
@@ -583,7 +371,6 @@ function readLoginMark(): string | null {
   }
 }
 
-/** 표시에 담긴 로그인한 계정. 옛 형식이거나 읽지 못하면 null(누구인지 모름). */
 function loginMarkUserId(mark: string | null): string | null {
   if (!mark) return null;
   try {
@@ -594,7 +381,6 @@ function loginMarkUserId(mark: string | null): string | null {
   }
 }
 
-/** 이 탭에서 시작한 카카오 로그인 표시를 읽고 지운다. 시작한 지 오래됐으면 없는 것으로 본다. */
 function takeLoginStarted(): boolean {
   try {
     const raw = sessionStorage.getItem(LOGIN_STARTED_KEY);
@@ -606,17 +392,8 @@ function takeLoginStarted(): boolean {
   }
 }
 
-/** 이 문서에서 로그인 알림을 이미 판단했는지. 문서(페이지 로드)마다 한 번만 판단한다. */
 let loginLandingChecked = false;
 
-/**
- * 실제 로그인으로 들어왔을 때만 다른 탭에 알린다 — 알리면 다른 탭이 새로 고쳐져 쓰던 내용이 사라지므로, 세션이 정말 바뀐 경우로
- * 좁힌다. 둘 다 맞아야 한다.
- *  - 이 탭에서 카카오 로그인을 시작했다(`startKakaoLogin` 의 표시). 이미 로그인한 사람이 `/oauth/success` 주소를 직접 열면 없다
- *  - 백엔드가 로그인을 마치고 브라우저를 `/oauth/success` 로 **새로 불러왔다**(이 문서의 첫 주소). 앱 안에서 옮겨 가는 것
- *    (예: 탈퇴 안내의 [돌아가기])은 아니다
- * 표시는 판단할 때 지운다. 남겨 두면 같은 탭에서 나중에 주소를 직접 열 때 알리게 된다.
- */
 export function announceLoginIfLanded(userId: string | undefined): void {
   if (loginLandingChecked) return;
   loginLandingChecked = true;
@@ -630,7 +407,6 @@ export function announceLoginIfLanded(userId: string | undefined): void {
   if (started) announceLogin(userId);
 }
 
-/** 로그인이 끝났다고 다른 탭에 알린다. 누가 로그인했는지 함께 싣는다. */
 function announceLogin(userId: string | undefined): void {
   try {
     localStorage.setItem(
@@ -638,16 +414,9 @@ function announceLogin(userId: string | undefined): void {
       JSON.stringify({ userId: userId ?? null, nonce: `${Date.now()}-${Math.random().toString(36).slice(2)}` }),
     );
   } catch {
-    // 저장소를 못 쓰면 알리지 못한다. 그래도 탈퇴는 서버가 확인 창의 계정과 로그인한 계정을 맞춰 본다
   }
 }
 
-/**
- * 다른 탭에서 **다른 계정으로** 로그인하면 이 탭을 새로 고친다. 화면을 연 뒤 표시가 바뀌었는지를 저장소 이벤트와, 숨었다 다시
- * 보일 때(멈춘 탭은 이벤트를 놓칠 수 있다) 함께 본다. 표시의 계정이 이 탭이 확인한 계정과 같으면 새로 고치지 않고 그 표시를
- * 본 것으로 둔다 — 같은 사람이 다시 로그인해도 쓰던 글이 사라지지 않게. 이 탭이 비로그인이거나 아직 계정을 모르거나, 표시에서
- * 계정을 읽지 못하면 새로 고친다. 이 탭의 계정은 이 문서가 처음 확인한 계정이다(`documentUserId`). 앱 최상위가 한 번 부르고, 돌려준 함수로 그만 본다.
- */
 export function reloadOnLoginElsewhere(): () => void {
   let seen = readLoginMark();
   const check = () => {
@@ -674,35 +443,15 @@ export function reloadOnLoginElsewhere(): () => void {
   };
 }
 
-/* ── 회원 탈퇴 ──────────────────────────────────────── */
-
-/** 탈퇴 확인 창을 연 계정. 이 계정만 지운다. */
 export type WithdrawTarget = { userId: string };
 
-/**
- * 탈퇴 버튼을 보일 계정. 서버가 탈퇴를 열지 않았거나(withdrawalEnabled) 로그인하지 않았으면 null — 버튼을 숨긴다.
- * 화면을 열 때 읽은 세션에서 만든다. 그 뒤 다른 탭에서 계정을 바꿔도 이 값은 처음 계정이라, 서버가 409 로 막는다.
- */
 export function withdrawTargetOf(session: Session): WithdrawTarget | null {
   if (!session.loggedIn || !session.withdrawalEnabled || !session.userId) return null;
   return { userId: session.userId };
 }
 
-/** 탈퇴 요청의 결과. `completed` 는 서버가 끝까지 마친 것, `in_progress` 는 서버가 이어서 처리한다. */
 export type WithdrawResult = "completed" | "in_progress";
 
-/**
- * DELETE /api/v1/auth/me — 회원 탈퇴. 보호자와 가입을 마치지 않은 사람만 할 수 있다.
- *
- *  - 204: 끝났다 → `completed`. 서버는 쿠키를 지우지 않는다(늦게 온 응답이 다른 탭의 새 로그인 쿠키를 지우지 않게) — 이 브라우저 표시만 지운다
- *  - 202: 접수했고 서버가 처리 중이다 → `in_progress` (탈퇴 안내 화면이 `/auth/me` 로 결과를 본다)
- *  - 409 WITHDRAWAL_IN_PROGRESS: 이미 처리 중이다 → `in_progress`
- *  - 그 밖(502 KAKAO_UNLINK_FAILED · 409 WITHDRAWAL_ACCOUNT_MISMATCH · 404 · 403 · 401 · 네트워크)은 ApiError 로
- *    던진다. 502 면 회원은 그대로다.
- *
- * `target` 은 확인 창이 보여 준 계정이다. 서버는 지금 로그인한 계정과 다르면 409 WITHDRAWAL_ACCOUNT_MISMATCH 로 막는다 —
- * 확인 창을 연 뒤 다른 탭에서 계정을 바꿨으면, 사용자가 확인하지 않은 계정이 지워지지 않게 한다.
- */
 export async function withdraw(target: WithdrawTarget): Promise<WithdrawResult> {
   if (USE_MOCK) {
     clearSession();
@@ -725,22 +474,13 @@ export async function withdraw(target: WithdrawTarget): Promise<WithdrawResult> 
   throw error;
 }
 
-/** 이 브라우저에 남긴 표시와 맡겨 둔 글을 지운다. 서버에는 아무것도 보내지 않는다 — 탈퇴 완료가 쓴다. */
 export function forgetLocalSession(): void {
   clearSession();
-  // 요약 검토 · 검증 수정 요청에서 로그인이 풀려 맡겨 둔 글 — 아이에 대한 글이라 남기지 않는다
   clearGate1Drafts();
   clearReinputDrafts();
   clearInviteCode();
 }
 
-/* ── CSRF ───────────────────────────────────────────── */
-
-/**
- * 쿠키가 자동 전송되면서 CSRF 방어가 필요해졌다. 백엔드가 `XSRF-TOKEN` 쿠키를
- * 내려주고(이 쿠키만은 httpOnly 가 아니다), 프론트가 `X-XSRF-TOKEN` 헤더로 되돌려준다.
- * 없으면 쓰기 요청이 전부 403 이 된다.
- */
 export function readCsrfToken(): string | null {
   try {
     const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/);

@@ -38,9 +38,6 @@ import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.checklist.ChecklistService;
 
-/**
- * G-50 · G-51 — 보안 필터 · 검증 · 예외 처리까지 실제로 거친다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

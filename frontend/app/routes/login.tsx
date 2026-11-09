@@ -3,28 +3,9 @@ import { Link, useNavigate } from "react-router";
 import { grantRole, hasReturnPath, isAuthMock, startKakaoLogin } from "@/lib/auth";
 import "./login.css";
 
-/**
- * 기관 담당자 로그인 진입점.
- *
- * 기획서 12절의 SMS OTP 는 폐기됐다 — 인증은 기관·보호자 모두 카카오 하나로 통일했다.
- *
- * 버튼은 백엔드의 `/oauth2/authorization/kakao` 로 **페이지를 이동시킨다**. 그 뒤로는
- * 전부 백엔드 몫이다 — state 발급, 카카오 인가, 토큰 교환, 출입증 쿠키 발급까지.
- * 끝나면 `/oauth/success` 로 돌아온다(실패하면 이 화면으로). 처음 로그인한 사람은
- * 거기서 회원가입(`/signup`)으로 넘어가 역할을 고른다.
- *
- * 보호자도 같은 카카오 로그인을 타지만 진입 화면은 `/parent/invite` 로 따로 둔다 —
- * 보호자에게 맞는 안내 문구로 시작하기 위해서다.
- *
- * 모양은 디자인 캔버스의 랜딩을 옮긴 것이다(`login.css`). 색은 그 파일 안에서만
- * 사는 변수라 **다른 화면은 영향을 받지 않는다** — 전역 팔레트 교체는 따로 할 일이다.
- * 공용 `KakaoLoginButton` 은 각진 버튼 모양이라 이 화면에서는 쓰지 않고, 같은
- * `startKakaoLogin()` 을 직접 부른다 — 보이는 모양만 다르고 동작은 완전히 같다.
- */
 export default function LoginPage() {
   const navigate = useNavigate();
   const mock = isAuthMock();
-  // 빌드 때 미리 그린 첫 화면과 어긋나지 않게 탭 저장소는 그린 뒤에 읽는다
   const [expired, setExpired] = useState(false);
   useEffect(() => setExpired(hasReturnPath()), []);
 
@@ -37,7 +18,6 @@ export default function LoginPage() {
         <i style={{ right: -60, bottom: 40, width: 380, height: 380, background: "#FFDCCF", opacity: 0.6 }} />
       </div>
 
-      {/* 왼쪽 위 로고 — 선생님 화면 머리띠와 같은 44px. 가운데 고리 안의 큰 로고와는 다른 자리다 */}
       <header className="brandbar">
         <img src="/img/logo.png" alt="잇다" width={120} height={44} />
       </header>
@@ -59,11 +39,6 @@ export default function LoginPage() {
 
         <p className="lede">아이와 기관의 정보를 연결해 더 나은 돌봄과 더 넓은 가능성을 만듭니다.</p>
 
-        {/*
-          데모용 진입. 백엔드 없이 기관 화면을 볼 수 있어야 하는데, 역할을 주는 곳이
-          로그인 성공 페이지뿐이라 이것이 없으면 대시보드에 들어갈 방법이 사라진다.
-          실연동 빌드(VITE_AUTH_MOCK=false)에서는 렌더링되지 않는다.
-        */}
         {mock ? (
           <div className="demo">
             <span className="or">데모</span>
@@ -92,15 +67,9 @@ export default function LoginPage() {
   );
 }
 
-/* ── 고리 ──────────────────────────────────────────────
-   아이를 가운데 두고 네 기관이 둘러선다.
-   자리는 눈대중이 아니라 정오각형 계산값이다 — 반지름은 고리와 같은 36, 간격 72°.
-   점과 색 호는 이웃한 두 원의 **한가운데**에 하나씩 온다. */
-
 const R = 36;
 const CIRC = 2 * Math.PI * R;
 
-/** viewBox(100×100) 안에서 중심으로부터 `deg` 방향, 반지름 R 인 점 */
 function at(deg: number) {
   const t = (deg * Math.PI) / 180;
   return { x: 50 + R * Math.cos(t), y: 50 - R * Math.sin(t) };
@@ -114,7 +83,6 @@ const NODES: [number, string, string][] = [
   [162, "아이", "#C2A6F0"],
 ];
 
-/** 이웃한 두 원의 한가운데 — [각도, 호 색] */
 const MID: [number, string][] = [
   [54, "#9CC6EF"],
   [-18, "#9FD9BE"],
@@ -123,12 +91,8 @@ const MID: [number, string][] = [
   [126, "#CDB8F1"],
 ];
 
-/** 색 호 하나의 길이. 둘레를 다섯으로 나눈 값(72°)이라 호끼리 **정확히 맞물린다**.
-   경계는 중심 ±36° 에 생기고, 그 자리가 원 다섯 개의 자리와 같다.
-   이보다 짧으면 호 사이에 맨 고리선이 드러난다. */
 const SEG = CIRC / 5;
 
-/** 호가 `deg` 를 한가운데 두도록 하는 dashoffset. 경로는 3시 방향에서 시계 방향으로 간다. */
 function arcOffset(deg: number) {
   const cw = (((-deg % 360) + 360) % 360) / 360;
   return -(cw * CIRC - SEG / 2);
@@ -154,7 +118,6 @@ function Ring() {
         ))}
       </svg>
 
-      {/* 세 줄을 한 묶음으로 두고 그 묶음의 가운데를 고리 중심에 맞춘다. */}
       <div className="center">
         <img src="/img/logo.png" alt="잇다" width={600} height={220} />
         <p className="sub">
@@ -167,8 +130,6 @@ function Ring() {
         </p>
       </div>
 
-      {/* 자리마다 뜻이 있지만(학교·센터·활동지원사·부모·아이) 화면에는 색만 둔다.
-          읽히지 않는 색에 뜻이 담기므로 고리 전체에 이름을 한 번 붙인다. */}
       <ul className="orbit" aria-label="학교, 센터, 활동지원사, 부모, 아이를 잇습니다">
         {NODES.map(([deg, label, color]) => {
           const p = at(deg);

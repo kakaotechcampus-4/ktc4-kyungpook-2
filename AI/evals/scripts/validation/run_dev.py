@@ -1,9 +1,3 @@
-"""
-Validation Agent를 dev 데이터로 돌려서 결과를 generated/validation/dev_outputs.json에 저장한다.
-
-ThreadPoolExecutor로 동시 6개 처리 — Matching과 동일한 방식.
-Luna 응답 대기가 대부분인 I/O 바운드 작업이라 스레드로 충분하다.
-"""
 from dotenv import load_dotenv
 from pathlib import Path
 load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")

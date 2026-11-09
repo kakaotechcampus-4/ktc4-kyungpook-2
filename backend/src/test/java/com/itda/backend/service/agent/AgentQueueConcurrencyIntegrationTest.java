@@ -73,10 +73,6 @@ import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.summary.SummaryService;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 기관별 AI 처리 줄 상한(#424)을 PostgreSQL 에서 동시에 두드려 본다. 미리 보기는 잠그지 않으므로 동시 요청이 함께 통과할 수 있고,
- * 상한을 지키는 것은 기관 행을 잠근 뒤의 다시 세기다.
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -99,7 +95,6 @@ class AgentQueueConcurrencyIntegrationTest {
         registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
         registry.add("app.agent-queue.max-awaiting-entries", () -> "1000");
-        // 다섯 업로드가 모두 바이트 읽기 자리를 얻어 함께 미리 보기를 지나가게 한다 — 잠금 안의 다시 세기를 시험한다.
         registry.add("app.raw-record.upload.max-concurrent", () -> "5");
     }
 
@@ -154,15 +149,12 @@ class AgentQueueConcurrencyIntegrationTest {
         assertThat(outcomes).filteredOn(RawRecord.class::isInstance).hasSize(1);
         assertThat(outcomes).filteredOn(AgentQueueFullException.class::isInstance).hasSize(4);
         assertThat(awaiting()).isEqualTo(1000);
-        // 원본 행은 처음 것과 받은 것 하나뿐이다.
         assertThat(rawRecordRepository.count()).isEqualTo(2);
-        // 저장소에 올린 뒤 잠금 안에서 거절된 파일은 지웠다(미리 보기에서 거절된 파일은 올리지도 않았다).
         int stored = mockingDetails(rawFileStorage).getInvocations().stream()
                 .filter(invocation -> invocation.getMethod().getName().equals("store")).mapToInt(i -> 1).sum();
         verify(rawFileStorage, times(stored - 1)).delete(anyString());
     }
 
-    /** 사람이 처리해 다시 들어오는 경로들도 같은 잠금을 거친다. 자리가 하나면 하나만 들어간다. */
     @Test
     void 자리가_하나일_때_동시에_두_건이_들어오면_하나만_들어간다() throws Exception {
         insertPending(999);
@@ -177,10 +169,6 @@ class AgentQueueConcurrencyIntegrationTest {
         assertThat(awaiting()).isEqualTo(1000);
     }
 
-    /**
-     * 되돌리기는 요약 행 → 기관 행 순서로 잠근다. 요약 워커는 요약 행만 잠근다. 다른 업로드가 기관 행을 쥐고 있어도 교착 없이 둘 다
-     * 끝나고, 결과는 "되돌리기 → 워커" 순서와 같다.
-     */
     @Test
     void 기관_행을_쥔_업로드가_있어도_되돌리기와_요약_워커는_교착_없이_끝난다() throws Exception {
         sharingConsentRepository.save(SharingConsent.grant(CHILD, 100L, org, List.of(ConsentField.DAILY_SUMMARY)));
@@ -194,7 +182,6 @@ class AgentQueueConcurrencyIntegrationTest {
             reverted.add(journalEntryRepository.save(entry).getId());
         }
         Long late = journalEntryRepository.save(validated(3)).getId();
-        // 시험 설정은 자동 요약이 꺼져 있다 — [요약] 요청이 있어야 워커가 묶음을 집는다.
         runRequests.request(new SummaryGroup(CHILD, DATE, org), LocalDateTime.now());
         String version = Gate1Version.of(summaryResultRepository.findById(empty.getId()).orElseThrow(),
                 journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(empty.getId()));
@@ -218,7 +205,6 @@ class AgentQueueConcurrencyIntegrationTest {
 
             assertThat(summaryResultRepository.findById(empty.getId()).orElseThrow().getStatus())
                     .isEqualTo(SummaryStatus.REVERTED);
-            // 워커는 되돌리기가 커밋한 뒤의 상태로 골랐다 — 되돌린 일지는 요약 대기거나 이번 묶음에 함께 담겼다.
             List<Long> claimedIds = claimed.stream().flatMap(g -> g.journalEntryIds().stream()).toList();
             assertThat(claimedIds).contains(late);
             for (Long id : reverted) {
@@ -260,7 +246,6 @@ class AgentQueueConcurrencyIntegrationTest {
         return new MockMultipartFile("file", "note.txt", "text/plain", text.toString().getBytes(StandardCharsets.UTF_8));
     }
 
-    /** 모두 준비된 뒤 한꺼번에 출발시킨다. 각 결과는 반환값이거나 던진 예외다. */
     private static List<Object> runTogether(int n, Callable<?> task) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(n);
         CountDownLatch ready = new CountDownLatch(n);

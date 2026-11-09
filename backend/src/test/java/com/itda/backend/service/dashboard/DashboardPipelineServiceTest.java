@@ -61,7 +61,6 @@ import com.itda.backend.service.insight.InsightWeekStageReader.Stage;
 import com.itda.backend.service.insight.InsightWeekStageReader.WeekStage;
 import com.itda.backend.service.user.UserService;
 
-/** 대시보드 진행 현황 (#370). 줄 규칙은 시안 {@code rows()} 와 plan.md B-1 표를 따른다. */
 @ExtendWith(MockitoExtension.class)
 class DashboardPipelineServiceTest {
 
@@ -248,7 +247,6 @@ class DashboardPipelineServiceTest {
                         tuple("김준호", 3, Who.ME, Status.REVIEW, new Target("summary", "50")),
                         tuple("이서아", 3, Who.AI, Status.REGENERATING, null));
         assertThat(response.rows().get(1).detail().noContent()).isTrue();
-        // 다시 만드는 중인 요약은 지금 열어도 409 가 나므로 선생님 차례에서 뺀다.
         assertThat(response.turn().review()).isEqualTo(1);
     }
 
@@ -264,7 +262,6 @@ class DashboardPipelineServiceTest {
 
     @Test
     void 검토_대기_요약이_있어도_새_일지의_요약이_실패하면_그_실패도_내_차례로_보인다() {
-        // 다시 요약이 실패하면 원래 일지는 검토 대기로 돌아가고 새 일지만 SUMMARY_FAILED 로 남는다.
         given(summaryGate1QueryService.getBoardItems(ORG))
                 .willReturn(List.of(pending(50L, JUNHO, DATE, false, false)));
         entry(1L, JUNHO, DATE, JournalEntryStatus.SUMMARY_FAILED);
@@ -338,7 +335,6 @@ class DashboardPipelineServiceTest {
                         tuple("김준호", 5, Who.ME, Status.INSIGHT_HELD, new Target("insight", "71")),
                         tuple("김준호", 5, Who.ME, Status.REVIEW_HERE, new Target("insight", "70")),
                         tuple("이서아", 5, Who.OTHER, Status.REVIEW_ELSEWHERE, null),
-                        // 우리 기록이 쓰인 글이 없는 주는 우리에게 새로 알릴 것이 없다.
                         tuple("김준호", 4, Who.DONE, Status.NOTHING_NEW, null),
                         tuple("이서아", 5, Who.DONE, Status.APPROVED, null));
         assertThat(rows.get(2).detail().approverName()).isEqualTo("해솔초등학교");

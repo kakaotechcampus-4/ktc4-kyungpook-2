@@ -16,7 +16,6 @@ class OrganizationTest {
         assertThat(organization.getBusinessNumber()).isEqualTo("1234567890");
     }
 
-    /** 요청 DTO 가 형식을 검사하지만, 엔티티도 숫자 10자리가 아닌 번호로는 만들어지지 않는다. */
     @Test
     void businessNumberMustBeTenDigits() {
         assertThatThrownBy(() -> Organization.of("센터", OrganizationType.CENTER, "123456789"))
@@ -35,7 +34,6 @@ class OrganizationTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    /** 기관 코드는 한 번만 붙는다. 보호자에게 알려 준 코드가 바뀌면 그 코드로 더 이상 찾을 수 없다. */
     @Test
     void institutionCodeIsAssignedOnce() {
         Organization organization = Organization.of("센터", OrganizationType.CENTER, "1234567890");

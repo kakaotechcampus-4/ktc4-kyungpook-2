@@ -6,9 +6,6 @@ spring:
   task:
     scheduling:
       pool:
-        # @Scheduled 작업 하나에 스레드 하나 — AI 를 부르는 워커 다섯(매칭·검증·요약·인사이트·알림)과 반려 데이터 정리(#432),
-        # 탈퇴 주기 작업(실행기 줄에 세우기만 하고 AI 를 부르지 않는다). 기본값 1이면 워커들이 번갈아 돌아 단계별 속도가 나뉜다.
-        # AI 동시 호출은 워커 수(5)라 한도(8)를 넘지 않는다.
         size: 7
   servlet:
     multipart:
@@ -18,128 +15,76 @@ spring:
   security:
     oauth2:
       client:
-        # 이 블록이 예전의 KakaoAuthService(토큰 교환 + 사용자 조회)를 대체한다.
-        # provider 를 추가하려면 registration/provider 에 블록만 더 넣으면 된다.
         registration:
           kakao:
             client-id: ${KAKAO_CLIENT_ID}
             client-secret: ${KAKAO_CLIENT_SECRET}
-            # {baseUrl} 은 실제 요청 주소로 치환된다. 이 주소가 카카오 콘솔의
-            # Redirect URI 와 글자까지 같아야 한다 (다르면 KOE006).
             redirect-uri: "{baseUrl}/login/oauth2/code/kakao"
             authorization-grant-type: authorization_code
-            # 카카오는 client_secret 을 헤더가 아니라 폼 파라미터로 받는다.
             client-authentication-method: client_secret_post
-            # scope 를 보내지 않는다 — 회원번호만 쓰고 닉네임 등 개인정보는 받지 않는다.
-            # 카카오 콘솔의 동의 항목에서도 닉네임을 꺼야 동의 화면에 닉네임이 뜨지 않는다.
             client-name: Kakao
         provider:
           kakao:
             authorization-uri: https://kauth.kakao.com/oauth/authorize
             token-uri: https://kauth.kakao.com/oauth/token
             user-info-uri: https://kapi.kakao.com/v2/user/me
-            # 사용자 정보 응답에서 식별자로 쓸 최상위 필드.
-            # OAuth2LoginSuccessHandler 가 이 값을 JWT subject 로 넣는다.
             user-name-attribute: id
 
 server:
   port: 8080
-  # Caddy 뒤에 있을 때 X-Forwarded-* 를 신뢰한다. 기본값(NONE)이면 Spring 이 이 헤더를
-  # 무시해서, redirect-uri 의 {baseUrl} 이 내부 주소나 잘못된 scheme 으로 만들어진다.
-  # 특히 HTTPS 를 붙이면 http:// 로 조립돼 카카오가 KOE006 으로 거절한다.
   forward-headers-strategy: framework
 
 app:
   raw-storage:
     base-dir: ${RAW_STORAGE_DIR:./data/raw-storage}
-  # 업로드 상한 (#424). 파일 하나로 일지를 수천 건 만들거나, 큰 docx 여럿으로 힙을 채우는 일을 막는다.
   raw-record:
     limits:
-      # 파일 하나에서 나오는 일지 수. 넘으면 파일을 받지 않는다(400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED).
-      # 일지 하나의 길이 상한(5,000자)은 화면과 맞춰야 해서 코드 상수다(JournalEntry.MAX_CONTENT_LENGTH).
       max-entries-per-file: ${RAW_RECORD_MAX_ENTRIES_PER_FILE:500}
     upload:
-      # 바이트 읽기 · 글자 뽑기 · 나누기를 서버 전체에서 동시에 하는 수. 넘는 업로드는 자리를 기다리고,
-      # 기다리는 수나 시간도 넘으면 429 RAW_RECORD_UPLOAD_BUSY. 값은 -Xmx512m 메모리 측정으로 정했다(#424 PR).
       max-concurrent: ${RAW_RECORD_UPLOAD_MAX_CONCURRENT:2}
       max-waiting: ${RAW_RECORD_UPLOAD_MAX_WAITING:4}
       max-wait: 10s
-    # 브라우저가 저장소(S3)로 바로 올리는 업로드 (#450). 주소는 10분 쓸 수 있고, 하루가 지나도 완료되지 않은 접수는
-    # 버린 것으로 보고 매일 새벽 4시 30분(서울)에 저장소 파일과 함께 지운다. 완료된 접수는 행만 지운다.
     direct-upload:
       url-ttl: 10m
       abandon-after: 1d
       sweeper:
         enabled: ${UPLOAD_SWEEPER_ENABLED:true}
         cron: "0 30 4 * * *"
-  # 기관마다 AI 처리 줄(매칭 · 검증 · 요약 대기와 처리 중)에 세워 둘 수 있는 일지 수 (#424). 업로드와 선생님 처리로 새로
-  # 들어올 때만 지킨다 — 요약 워커가 승인 대기 일지를 함께 다시 담으면 잠깐 넘을 수 있다. 넘으면 429 AGENT_QUEUE_FULL.
   agent-queue:
     max-awaiting-entries: ${AGENT_QUEUE_MAX_AWAITING_ENTRIES:1000}
   auth:
     cookie:
-      # 로컬 HTTP는 false, 운영 HTTPS는 true로 설정한다.
-      # true 인데 HTTPS 가 아니면 브라우저가 쿠키를 보내지 않아 로그인이 전부 실패한다.
       secure: ${AUTH_COOKIE_SECURE:false}
-    # 로그인이 끝난 뒤 사용자를 돌려보낼 프론트 주소.
     success-redirect: ${AUTH_SUCCESS_REDIRECT:http://localhost:3000/oauth/success}
     failure-redirect: ${AUTH_FAILURE_REDIRECT:http://localhost:3000/login}
     dev-login:
-      # 개발·테스트 전용 로그인(GET /api/v1/dev/login). 기본은 꺼짐이다.
-      # 로컬에서는 DEV_LOGIN_ENABLED=true 로 실행해 켜고, 배포 서버는 compose 가 켜 둔다(정식 오픈 전에 끈다).
-      # 켜고 끄는 건 환경변수로 한다. application-secret.yml 같은 로컬 설정 파일은 jar·Docker 이미지에 들어가지
-      # 않아(build.gradle, backend/.dockerignore) 거기 적어도 서버에는 적용되지 않는다.
       enabled: ${DEV_LOGIN_ENABLED:false}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
-  # 회원 탈퇴 (DELETE /api/v1/auth/me). 카카오 연결 해제는 탈퇴 실행기 하나만 부른다 (WithdrawalExecutor).
   withdrawal:
-    # 탈퇴를 열지. 꺼져 있으면 탈퇴 API 는 404, 화면은 탈퇴 버튼을 숨기고, 연결 해제 웹훅은 무시한다.
-    # 탈퇴 뒤 기록 보관 근거 확인 · KAKAO_ADMIN_KEY · 연결 해제 웹훅 등록이 끝난 뒤에 켠다. 이미 접수된 탈퇴는 꺼도 끝까지 처리한다.
     enabled: ${WITHDRAWAL_ENABLED:false}
-    # 탈퇴 API 가 실행기 결과를 기다리는 시간. 그 안에 끝나면 204, 아니면 202 로 접수만 알린다.
     wait-for-completion: 4s
-    # auto = PostgreSQL 이면 세션 advisory lock(운영), H2 면 한 프로세스 안 잠금(로컬 개발 · 테스트).
-    # advisory 로 못박으면 PostgreSQL 이 아닐 때 탈퇴가 실패한다.
     lock: auto
     kakao:
       base-url: https://kapi.kakao.com
-      # 카카오 디벨로퍼스 > 앱 > 앱 키 > 어드민 키 중 **대표** 키. 서버 밖으로 내보내지 않는다. 연결 해제 호출과 연결 해제 웹훅
-      # 검증(Authorization: KakaoAK 대표 어드민 키)에 함께 쓴다. 비어 있으면 카카오 계정 회원의 탈퇴는 첫 호출 실패로
-      # 취소되고(개발용 로그인 회원은 카카오를 부르지 않는다) 웹훅은 모두 401 이다.
       admin-key: ${KAKAO_ADMIN_KEY:}
-      # 카카오 디벨로퍼스 > 앱 > 앱 키의 앱 ID(숫자). 있으면 연결 해제 웹훅의 app_id 도 맞춰 본다.
       app-id: ${KAKAO_APP_ID:}
       connect-timeout: 2s
-      # 짧게 둔다. 넘으면 결과를 모르는 것으로 보고 실행기가 다시 부른다(이미 끊겼으면 -101 이 와 성공으로 본다).
       read-timeout: 3s
     worker:
       enabled: ${WITHDRAWAL_WORKER_ENABLED:true}
-      # 결과를 몰랐거나 정리가 실패한 탈퇴를 다시 보는 주기.
       delay-ms: 60000
   ai:
-    # AI 서버 주소 (매칭·검증 에이전트 공통). compose 에서는 서비스 이름으로 http://ai:8000 을 넘긴다.
     base-url: ${AI_BASE_URL:http://localhost:8000}
     connect-timeout: 3s
-    # AI 가 LLM 응답을 60초(AI/matching/config.py, AI/validation/config.py LUNA_TIMEOUT)까지 기다린다.
-    # 이보다 짧으면 느린 정상 응답을 BE 가 먼저 끊고 재시도해서 LLM 을 여러 번 부르게 된다. AI 처리 시간까지 여유를 둔다.
     read-timeout: 70s
-    # 재시도 전에 쉬는 시간. 개수가 재시도 횟수다 (최초 1회 + 2회).
     retry-backoffs: 2s,5s
-    # 위 재시도까지 실패한 "AI 다운" 때 매칭·검증 워커가 하는 일 (#153).
     agent-down:
-      # 처리 중이던 일지를 실패로 남기지 않고 대기로 되돌리는 최대 횟수. 넘으면 실패로 남긴다
-      # (매칭은 확인 필요 큐, 검증은 시스템 오류 AGENT_UNAVAILABLE). AI 가 이 일지만 계속 거절하는 경우를 다운과 구별할 수 없어서 둔 상한이다.
       max-releases: 2
-      # AI 다운 뒤 그 워커가 쉬는 시간. 짧은 장애에 상한을 바로 채우지 않게 한다 (서킷 브레이커가 보통 30초~1분 쉰다)
       pause: 30s
-  # 대시보드 진행 현황의 AI 진행 단계 (#453). 전용 스레드 하나가 AI GET /progress 를 묻고 기관별 메모리에 둔다.
-  # 일지 처리(워커·app.ai.*)와는 따로 돈다. 문제가 생기면 서버 .env 에 AI_PROGRESS_ENABLED=false 를 넣고 BE 를
-  # 다시 띄운다 — 화면은 기존 고정 문구로 돌아간다. 코드 기본값은 꺼짐, 배포 compose 가 켠다.
   ai-progress:
     enabled: ${AI_PROGRESS_ENABLED:false}
     interval: 1s
-    # 1초마다 묻는데 늦은 답을 기다릴 이유가 없다. 넘으면 이번 차례는 실패로 보고, 3초 넘게 이어지면 화면을 비운다.
     timeout: 500ms
   matching:
     worker:
@@ -155,67 +100,35 @@ app:
     worker:
       enabled: ${SUMMARY_WORKER_ENABLED:true}
       delay-ms: 5000
-      # 요약은 일지가 아니라 묶음(아동·날짜·기관) 단위로 집는다.
       batch-size: 10
-    # 자동 요약 (#369). 같은 기관·날짜에 매칭·검증 중인 일지가 없으면 [요약] 요청 없이 요약한다.
-    # 끄면 교사가 [요약](O-32)을 누른 묶음만 요약한다 (#181) — 장애 때 되돌리는 스위치.
     auto-run: ${SUMMARY_AUTO_RUN:true}
-    # 요약은 AI 가 LLM 을 90초(AI/summary/config.py LUNA_TIMEOUT)까지 기다린다. app.ai.read-timeout(70초)으로는
-    # 느린 정상 응답을 먼저 끊고 다시 불러서 LLM 을 여러 번 부르게 된다.
     read-timeout: 120s
   notify:
     worker:
       enabled: ${NOTIFY_WORKER_ENABLED:true}
       delay-ms: 5000
-      # 알림도 인사이트처럼 아동 × 기간 단위로 집는다.
       batch-size: 10
-    # 같은 아이·같은 기간의 발송이 연달아 실패하면 다시 집기까지 기다린다. 인사이트와 같은 장치다 (#266).
     failure-backoffs: 1m,5m,30m
-    # 응답 대기. 모델 호출 한 번 + SMTP 왕복이라 인사이트(210s)보다 짧다.
     read-timeout: 90s
-    # 응답 대기 시간 초과 뒤 다시 보내는 횟수. 0 이다 — 다시 보내도 AI 는 앞 요청을 멈추지 않고,
-    # 앞 요청이 메일을 이미 보냈을 수 있다. 중복은 AI 쪽 notification_id 가 막지만 일부러 두 번 보낼 이유는 없다.
     timeout-retries: 0
   insight:
     worker:
       enabled: ${INSIGHT_WORKER_ENABLED:true}
       delay-ms: 5000
-      # 인사이트는 일지가 아니라 아동 × 기간 단위로 집는다.
       batch-size: 10
-    # 한 번에 볼 기간의 길이. AI/insight/CRITERIA.md 가 "여러 날·여러 기관을 겹쳐 본다"고만 하고
-    # 길이를 정하지 않아서 설정으로 둔다. 기간의 끝은 지난 주 일요일로 고정한다 — "어제까지" 로 잡으면
-    # 자정마다 키가 밀려 같은 아이가 겹치는 창으로 매일 다시 돌고 Gate 2 대기 목록에 비슷한 글이 쌓인다.
     period-days: 7
     zone: Asia/Seoul
-    # 최근 며칠 안에 Gate 1 을 통과한 요약까지 다시 볼지 (#239). 관찰 날짜가 아니라 승인 시각으로 고른다 —
-    # 밀린 기록을 늦게 승인해도 그 주를 다시 보게 하려고다. 워커가 5초마다 돌아 보통은 승인 직후에 처리된다.
     lookback-days: 14
-    # 끝나지 않은 이번 주도 볼지. 시연용이다 — 켜면 그날 올려 승인한 기록이 바로 인사이트 재료가 된다.
-    # 대신 이번 주는 승인이 들어올 때마다 새 회차가 생긴다. 운영에서는 끈다.
     include-current-week: ${INSIGHT_INCLUDE_CURRENT_WEEK:false}
-    # 같은 아이·같은 기간이 연달아 실패하면 다시 집기까지 기다린다 (#266). n 번째 연속 실패 뒤 n 번째 값, 넘치면
-    # 마지막 값. 기다리지 않으면 계속 실패하는 아이가 5초마다 맨 앞에 와서 뒤의 아이들이 차례를 못 받는다.
     failure-backoffs: 1m,5m,30m
-    # 응답 대기 시간 (#386). 수정 루프·도구 사용을 켜면 요청 하나에서 LLM 을 여러 번 부르는데, AI 가 요청 하나를
-    # 180초(INSIGHT_DEADLINE, AI #373) 안에 끝낸다. 여유 30초를 더한다. AI 에 호출이 더 붙어도 이 값은 다시 바꾸지 않는다.
     read-timeout: 210s
-    # 응답 대기 시간 초과 뒤 다시 보내는 횟수. 최악 210초 × 2번 ≈ 7분, 그 뒤는 위 failure-backoffs 가 받는다.
-    # 연결 실패·5xx 는 금방 끝나서 app.ai.retry-backoffs 대로 다시 보낸다.
     timeout-retries: 1
   purge:
     worker:
-      # Gate 1 에서 반려한 지 30일이 지난 일지 데이터를 매일 새벽 4시(서울)에 지운다 (#432).
       enabled: ${PURGE_WORKER_ENABLED:true}
       cron: "0 0 4 * * *"
 
 jwt:
-  # 로컬은 application-secret.yml 이 덮어쓰고, 배포는 이 환경변수로 넣는다.
-  # 기본값을 두지 않는다 — 값이 없거나 32바이트보다 짧으면 기동 단계에서 바로 실패한다.
   secret: ${JWT_SECRET}
-  # 3시간 / 출입증 쿠키 만료도 이 값을 따른다. 남은 시간이 이 값의 절반보다 적은 /api 요청에는 서버가 새 출입증을
-  # 내려줘(JwtAuthenticationFilter) 쓰는 동안은 끊기지 않고, 마지막 요청 뒤 1시간 반 ~ 3시간 가만히 두면 풀린다.
-  # 짧게 줄이지 않는다 — Gate 1 에서 문장을 고치는 동안에는 서버 요청이 없어 타이핑 중에 끊긴다(#351).
   access-token-expiration-ms: 10800000
-  # 12시간 / 처음 로그인부터 이 시간이 지나면 쓰는 중이어도 더 연장하지 않는다. 새어 나간 출입증도 쓰는 동안
-  # 연장되므로 끝을 둔다. 하루 근무 단위.
   max-session-ms: 43200000

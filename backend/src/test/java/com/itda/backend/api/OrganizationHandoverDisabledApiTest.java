@@ -35,7 +35,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/** 탈퇴 스위치가 꺼져 있으면 인계 코드도 발급하지 않는다 — 인계가 끝나면 이전 담당자를 탈퇴시키기 때문이다 (#478). */
 @SpringBootTest(properties = "app.withdrawal.enabled=false")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -72,10 +71,6 @@ class OrganizationHandoverDisabledApiTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("WITHDRAWAL_NOT_AVAILABLE"));
     }
-    /**
-     * 스위치를 끄기 전에 발급된 코드로도 가입하지 못한다 — 가입하면 이전 담당자의 탈퇴가 새로 접수되는데, 스위치는 탈퇴가
-     * 일어나지 않게 막는 장치다. 꺼지면 화면이 메뉴를 숨겨 담당자가 코드를 거둘 수도 없다.
-     */
     @Test
     void 스위치가_꺼져_있으면_이미_발급된_코드로도_가입하지_못한다() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());

@@ -31,8 +31,6 @@ class MatchingResultRepositoryTest {
         assertThat(found.getJournalEntryId()).isEqualTo(1L);
         assertThat(found.getMatchedChildId()).isEqualTo(2L);
         assertThat(found.getStatus()).isEqualTo(MatchingStatus.AUTO);
-        // candidates/evidence/mentionedChildIds/rawResponse 인자 순서가 뒤바뀌어도 컴파일은 통과하므로
-        // 값 자체를 명시적으로 확인한다 (리뷰에서 지적된 인자 전치 위험 방지).
         assertThat(found.getCandidates()).isEqualTo("[{\"child_id\":2,\"confidence\":0.91}]");
         assertThat(found.getEvidence()).isEqualTo("[{\"start\":0,\"end\":3}]");
         assertThat(found.getMentionedChildIds()).isEqualTo("[2]");
@@ -41,8 +39,6 @@ class MatchingResultRepositoryTest {
 
     @Test
     void resolveAsNotOurs_removesItemFromQueue() {
-        // 버그 재발 방지: resolveAsNotOurs()가 UNMATCHED를 쓰면 findByStatusNot(AUTO)에
-        // 계속 걸려서 큐에서 안 빠졌다. 실제 리포지토리 쿼리로 끝까지 확인한다.
         MatchingResult saved = matchingResultRepository.save(
                 new MatchingResult(1L, null, new BigDecimal("0.2"), MatchingStatus.UNMATCHED,
                         null, null, null, null, null, null, "v1"));

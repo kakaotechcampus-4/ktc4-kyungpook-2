@@ -4,10 +4,6 @@ import { Busy, Card } from "@/components/ui";
 import { ApiError, acceptLinkRequest, rejectLinkRequest } from "@/lib/api";
 import type { PendingLinkRequest } from "@/lib/types";
 
-/**
- * 보호자가 우리 기관 코드로 보낸 연결 요청 하나(O-60). 관리번호를 넣어 수락하면 아이가 명부에 오른다.
- * 수락은 동의가 아니라서 보호자가 우리 기관에 동의하기 전까지는 "보호자 동의 대기"로 보인다.
- */
 export function LinkRequestCard({ request }: { request: PendingLinkRequest }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -17,7 +13,6 @@ export function LinkRequestCard({ request }: { request: PendingLinkRequest }) {
   const [busy, setBusy] = useState(false);
   const [confirmingReject, setConfirmingReject] = useState(false);
 
-  // 보호자 이름은 저장하지 않는다 — 아이 이름으로 부르고, 여럿이면 수를 붙인다
   const requesters =
     request.requesterCount > 1
       ? `${request.child.name} 보호자 ${request.requesterCount}명`
@@ -63,7 +58,6 @@ export function LinkRequestCard({ request }: { request: PendingLinkRequest }) {
         setFieldError("관리번호를 확인해 주세요 (50자 이하)");
         return;
       case "LINK_REQUEST_NOT_FOUND":
-        // 그사이 보호자가 연결을 끊었거나 다른 화면에서 처리됐다. 목록을 다시 불러오면 사라진다.
         setError("이미 처리됐거나 보호자가 거둔 요청입니다. 목록을 새로 불러왔습니다.");
         revalidator.revalidate();
         return;
@@ -152,7 +146,6 @@ export function LinkRequestCard({ request }: { request: PendingLinkRequest }) {
   );
 }
 
-/** "10.29 09:20" — 날짜와 시각만. 요청은 대개 최근이라 연도는 뺀다 */
 function formatRequestedAt(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");

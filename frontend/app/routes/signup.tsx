@@ -12,15 +12,6 @@ import {
   type SignupInput,
 } from "@/lib/auth";
 
-/**
- * 회원가입 — 카카오 로그인만 하고 역할을 안 고른 사람(`/auth/me` 의 signupCompleted=false)이 온다.
- *
- * 이메일·비밀번호는 없다. 역할을 고르고, 기관이면 기관 정보를 넣는 것까지가 가입이다
- * (docs/api/api-spec.md §2.6). 역할은 한 번 정하면 바뀌지 않는다.
- *
- * `?role=org|parent` 는 미리 골라둘 역할이다. 로그인 전에 누른 버튼(`/oauth/success`)이나
- * 가입 전에 들어가려던 화면(각 가드)이 붙여준다. 사용자가 바꿀 수 있다.
- */
 export async function clientLoader({ request }: { request: Request }) {
   const session = await getSession();
   if (!session.loggedIn) return redirect("/login");
@@ -48,10 +39,8 @@ const ROLES = [
 
 type Errors = { organizationName?: string; businessNumber?: string; handoverCode?: string; form?: string };
 
-/** 기관 담당자는 기관을 새로 등록하거나, 이전 담당자가 준 인계 코드로 그 기관을 이어받는다(#478) */
 type OrgMode = "new" | "handover";
 
-/** 공백·하이픈을 빼고 대문자로. 화면에는 XXXX-XXXX 로 보이고 사람이 소문자로 칠 수도 있다 */
 function normalizeCode(raw: string): string {
   return raw.replace(/[\s-]/g, "").toUpperCase();
 }
@@ -91,8 +80,6 @@ export default function SignupPage() {
     setErrors(invalid);
     if (Object.keys(invalid).length > 0) return;
 
-    // 보호자는 role 만 보낸다 — 기관 칸에 쓰다 만 값이 있어도 싣지 않는다(실으면 400).
-    // 인계 코드로 이어받을 때는 기관 정보를 싣지 않는다(섞으면 400).
     const input: SignupInput =
       role === "parent"
         ? { role: "parent" }
@@ -132,7 +119,6 @@ export default function SignupPage() {
         setErrors({ handoverCode: "코드가 맞지 않거나 시간이 지났어요. 이전 담당자에게 새 코드를 받아 주세요" });
         return;
       case "ALREADY_SIGNED_UP": {
-        // 다른 탭에서 먼저 끝낸 경우 등. 역할은 서버에 이미 정해져 있으니 그쪽으로 보낸다.
         const session = await getSession().catch(() => null);
         navigate(session?.role ? homePathFor(session.role, session.termsAgreed) : "/login", {
           replace: true,
@@ -156,14 +142,6 @@ export default function SignupPage() {
   return (
     <div
       className="flex min-h-screen items-center justify-center px-4 py-10 break-keep"
-      /*
-        기관·보호자 캔버스와 같은 두 겹 바탕.
-
-        이 화면은 **둘 중 어느 묶음에도 안 들어간다** — 역할을 고르는 자리라
-        아직 기관인지 보호자인지 모른다. 그래서 org.css 도 parent.css 도 닿지 않아
-        여기만 맨 크림으로 남아 있었다 (로그인 → 이 화면 → 초대 순으로 보면 가운데
-        한 장만 색이 빠진다). 두 캔버스가 같은 바탕을 쓰므로 여기에 직접 깐다.
-      */
       style={{
         background:
           "radial-gradient(620px 380px at 100% 0%, #fff0b4 0%, rgb(255 240 180 / 0) 64%)," +
@@ -253,7 +231,6 @@ export default function SignupPage() {
               </span>
               <input
                 value={handoverCode}
-                // 자르지 않는다 — 카톡에서 앞뒤 공백이 붙은 채 붙여 넣어도 맞춘 뒤 8자면 된다
                 onChange={(e) => setHandoverCode(e.target.value)}
                 maxLength={20}
                 autoComplete="off"
@@ -311,7 +288,6 @@ export default function SignupPage() {
                 <span className="text-[15px] font-semibold">사업자등록번호</span>
                 <input
                   value={businessNumber}
-                  // 하이픈을 섞어 붙여넣어도 숫자만 남긴다. BE 는 숫자 10자리만 받는다.
                   onChange={(e) => setBusinessNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
                   inputMode="numeric"
                   autoComplete="off"
@@ -343,7 +319,6 @@ export default function SignupPage() {
             {pending ? <Busy>가입하는 중…</Busy> : "가입하기"}
           </button>
         </form>
-        {/* 역할을 고르기 전에도 떠날 수 있어야 한다 — 카카오 연결을 끊고 가입 정보를 지운다 */}
         <div className="mt-4">
           <WithdrawAccount audience="pending" account={withdrawTarget} />
         </div>

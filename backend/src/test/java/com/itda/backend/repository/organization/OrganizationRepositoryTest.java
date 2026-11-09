@@ -29,7 +29,6 @@ class OrganizationRepositoryTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
-    /** 같은 이름의 센터가 실제로 여러 곳 있을 수 있다. 기관을 구분하는 키는 사업자등록번호다. */
     @Test
     void 이름이_같아도_사업자등록번호가_다르면_만들_수_있다() {
         organizationRepository.saveAndFlush(Organization.of("햇살센터", OrganizationType.CENTER, "1234567890"));

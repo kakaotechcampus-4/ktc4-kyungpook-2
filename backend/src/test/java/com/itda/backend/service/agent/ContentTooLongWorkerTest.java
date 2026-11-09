@@ -45,11 +45,6 @@ import com.itda.backend.service.validation.ValidationResultRecorder;
 import com.itda.backend.service.validation.ValidationService;
 import com.itda.backend.service.validation.ValidationWorker;
 
-/**
- * 상한(#424) 전에 올라온 긴 일지는 AI 에 보내지 않고 시스템 오류로 멈춘다. 워커를 실제 서비스 · 레코더와 함께 돌리고, 각 단계가
- * 자기 트랜잭션에서 커밋한 뒤 <b>새로 읽어</b> 상태 · 단계 · 원인이 DB 에 남았는지 본다. 요청 조립은 읽기 전용이라 거기서 상태를
- * 바꾸면 저장되지 않는다 — 그 실수를 잡는다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({MatchingService.class, MatchingResultRecorder.class, ValidationService.class, ValidationResultRecorder.class})
@@ -107,11 +102,9 @@ class ContentTooLongWorkerTest {
         assertThat(stopped.getFailureStage()).isEqualTo(FailureStage.MATCHING);
         assertThat(stopped.getFailureReason()).isEqualTo(FailureReason.CONTENT_TOO_LONG);
         verify(matchingClient, never()).match(any());
-        // 확인 필요 큐(FAILED)로 보내지 않는다 — 결과 행이 없어야 큐에 뜨지 않는다.
         assertThat(matchingResults.findAll()).isEmpty();
     }
 
-    /** 확인 필요 큐에서 아이를 골라 검증 대기로 들어온 긴 일지 (경로 ①). */
     @Test
     void 검증_대기의_긴_일지는_AI_에_보내지_않고_검증_단계_시스템_오류로_남긴다() {
         JournalEntry entry = JournalEntry.of(1L, LocalDate.of(2026, 10, 8), TOO_LONG, 1);

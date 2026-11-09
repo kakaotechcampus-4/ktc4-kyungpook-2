@@ -50,11 +50,6 @@ import com.itda.backend.global.security.ApiPaths;
 import com.itda.backend.repository.user.KakaoUnlinkWebhookRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 카카오 연결 해제 웹훅. 실제 보안 필터 · 수신함 · 실행기 · 정리를 쓰고 카카오 호출만 바꿔 끼운다. 웹훅이 카카오를 다시 부르지
- * 않는지도 본다. 웹훅은 수신함에 남기고 바로 답하므로, 회원에 옮긴 결과는 수신함이 빌 때까지 기다려 본다.
- * 테스트 설정의 대표 어드민 키는 {@code test-admin-key}, 앱 ID 는 {@code 123456} 이다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -80,7 +75,6 @@ class KakaoUnlinkWebhookTest {
     @BeforeEach
     void setUp() {
         given(kakaoUnlinkClient.unlink(anyLong())).willReturn(KakaoUnlinkResult.UNLINKED);
-        // 웹훅은 탈퇴 전에 카카오에 지금 연결 상태를 묻는다. 기본은 정말 끊겨 있음
         given(kakaoUnlinkClient.linkStatus(anyLong())).willReturn(KakaoLinkStatus.NOT_LINKED);
         organization = persist(OrganizationFixture.center());
     }
@@ -108,7 +102,6 @@ class KakaoUnlinkWebhookTest {
         Child child = enrolledChild();
         link(child, mother);
 
-        // CSRF 토큰 · 로그인 쿠키 없이 들어온다
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
                 .andExpect(status().isOk())
                 .andExpect(content().string(""));
@@ -174,15 +167,10 @@ class KakaoUnlinkWebhookTest {
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
                 .andExpect(status().isOk());
 
-        // 카카오에 물어 끊긴 것을 확인했으므로 해제 확정으로 바꾸고 정리만 한다 — 연결 해제는 다시 부르지 않는다
         waitUntilDeleted(mother);
         verify(kakaoUnlinkClient, never()).unlink(anyLong());
     }
 
-    /**
-     * 옛 연결의 웹훅이 늦게 왔다. 그 사이 이전 계정은 탈퇴를 마쳤고, 같은 카카오 계정으로 다시 가입한 새 계정이 있다. 웹훅은
-     * 카카오 회원번호로 새 계정을 찾지만, 카카오에 물어 보면 지금은 연결돼 있으므로 새 계정을 지우지 않는다.
-     */
     @Test
     void 옛_연결의_늦은_웹훅은_같은_카카오로_재가입한_새_계정을_지우지_않는다() throws Exception {
         String kakaoId = nextKakaoId();
@@ -194,7 +182,6 @@ class KakaoUnlinkWebhookTest {
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), kakaoId))
                 .andExpect(status().isOk());
 
-        // 알림이 회원에 옮겨지기 전에도 "알림 없음" 이다. 카카오에 연결 상태를 묻고 그 작업이 끝날 때까지 기다린 뒤 본다
         waitUntilInboxEmpty();
         verify(kakaoUnlinkClient, timeout(5000)).linkStatus(Long.parseLong(kakaoId));
         waitUntilExecutorIdle(again);
@@ -220,13 +207,11 @@ class KakaoUnlinkWebhookTest {
         assertThat(after.isWithdrawing()).isFalse();
         assertThat(after.isDeleted()).isFalse();
 
-        // 나중에 끊긴 것이 확인되면 탈퇴한다
         given(kakaoUnlinkClient.linkStatus(anyLong())).willReturn(KakaoLinkStatus.NOT_LINKED);
         executor.submit(mother.getId()).get(5, TimeUnit.SECONDS);
         assertThat(reload(mother).isDeleted()).isTrue();
     }
 
-    /** 연결 상태 조회가 계속 실패해도, 사용자가 직접 신청한 탈퇴는 연결 해제를 불러 진행한다. */
     @Test
     void 연결_상태를_몰라도_직접_신청한_탈퇴는_연결_해제를_불러_진행한다() throws Exception {
         User mother = persist(UserFixture.parent(nextKakaoId()));
@@ -251,7 +236,6 @@ class KakaoUnlinkWebhookTest {
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
                 .andExpect(status().isOk());
 
-        // 지난 연결의 알림은 지우고, 직접 신청한 탈퇴는 연결 해제를 불러 끝낸다
         waitUntilDeleted(mother);
         verify(kakaoUnlinkClient).unlink(Long.parseLong(mother.getKakaoId()));
     }
@@ -301,10 +285,6 @@ class KakaoUnlinkWebhookTest {
         assertThat(reload(legacy).getWithdrawalStatus()).isNotEqualTo(WithdrawalStatus.REQUESTED);
     }
 
-    /**
-     * 다른 트랜잭션이 회원 행을 오래 잠그고 있어도 웹훅은 기다리지 않고 답한다 — 카카오는 3초 안에 답을 받아야 하고 다시 보내지
-     * 않는다. 받은 웹훅은 수신함에 남아 있다가 잠금이 풀리면 옮겨져 처리된다.
-     */
     @Test
     void 회원_행이_잠겨_있어도_웹훅은_기다리지_않고_답하고_나중에_처리한다() throws Exception {
         User mother = persist(UserFixture.parent(nextKakaoId()));
@@ -336,15 +316,10 @@ class KakaoUnlinkWebhookTest {
             holder.shutdownNow();
         }
 
-        // 잠금을 기다리다 실패했으면 수신함에 남아 있다. 주기 작업처럼 다시 옮긴다
         inbox.drain();
         waitUntilDeleted(mother);
     }
 
-    /**
-     * 한 회원 행이 잠겨 있어도 뒤에 받은 다른 회원의 웹훅은 그대로 처리된다. 운영(PostgreSQL)은 기다리지 않고(NOWAIT) 바로
-     * 넘어간다({@code WithdrawalConcurrencyIntegrationTest}). H2 는 NOWAIT 를 따르지 않아 자기 잠금 대기 상한까지 기다린 뒤 넘어간다.
-     */
     @Test
     void 한_회원_행이_잠겨_있어도_다른_회원의_웹훅은_처리한다() throws Exception {
         User locked = persist(UserFixture.parent(nextKakaoId()));
@@ -369,7 +344,6 @@ class KakaoUnlinkWebhookTest {
             mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), other.getKakaoId()))
                     .andExpect(status().isOk());
 
-            // 잠긴 회원의 줄은 남겨 둔 채, 다른 회원은 탈퇴까지 끝난다
             inbox.drain();
             waitUntilDeleted(other);
             assertThat(reload(locked).isDeleted()).isFalse();
@@ -381,12 +355,9 @@ class KakaoUnlinkWebhookTest {
             holder.shutdownNow();
         }
 
-        // 잠금이 풀리면 남은 줄을 옮겨 처리한다
         inbox.drain();
         waitUntilDeleted(locked);
     }
-
-    // ── 준비 ──────────────────────────────────────────────
 
     private void waitUntilInboxEmpty() throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
@@ -407,10 +378,6 @@ class KakaoUnlinkWebhookTest {
                 .param("referrer_type", "UNLINK_FROM_APPS");
     }
 
-    /**
-     * 실행기가 이 회원에 대해 앞서 받은 작업을 마칠 때까지 기다린다. 실행기는 스레드 하나라, 새로 세운 작업이 끝났으면 그 앞의
-     * 작업도 끝났다(아직 시작하지 않은 작업이 서 있으면 그 작업을 돌려받아 기다린다).
-     */
     private void waitUntilExecutorIdle(User user) throws Exception {
         executor.submit(user.getId()).get(5, TimeUnit.SECONDS);
     }

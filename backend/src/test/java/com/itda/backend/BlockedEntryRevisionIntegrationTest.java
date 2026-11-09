@@ -84,13 +84,6 @@ import com.jayway.jsonpath.JsonPath;
 
 import jakarta.servlet.http.Cookie;
 
-/**
- * 검증에서 막힌 일지를 수정 요청 큐에서 고쳐 다시 검증받는 흐름을 한 번에 돌린다 (#357) — 업로드 → 매칭 → 검증(BLOCK)
- * → 큐 → 고치기 → 다시 검증.
- *
- * <p>AI 호출만 가짜로 바꾸고 나머지(API, 워커, 서비스, 레코더, PostgreSQL)는 실제 것을 쓴다 (Gate1PipelineIntegrationTest 와
- * 같은 방식). 워커는 테스트 프로필에서 꺼져 있어 직접 만들어 한 차례씩 돌린다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -140,7 +133,6 @@ class BlockedEntryRevisionIntegrationTest {
     private Child junho;
     private MatchingWorker matchingWorker;
     private ValidationWorker validationWorker;
-    /** 가짜 검증 AI 가 받은 본문 */
     private final List<String> validatedContents = new ArrayList<>();
 
     @BeforeEach
@@ -165,7 +157,6 @@ class BlockedEntryRevisionIntegrationTest {
         String cardId = uploadUntilBlocked();
         Long entryId = entryIdOf(BLOCKED);
 
-        // 다시 올리기는 없어졌고, 안 고친 본문은 받지 않는다
         resolve(cardId, "reupload").andExpect(status().isBadRequest());
         revise(cardId, BLOCKED)
                 .andExpect(status().isBadRequest())
@@ -202,7 +193,6 @@ class BlockedEntryRevisionIntegrationTest {
         String secondCard = JsonPath.read(listed, "$.data[0].id");
         assertThat(secondCard).isNotEqualTo(firstCard);
 
-        // 지난 카드로는 처리하지 않는다
         resolve(firstCard, "hold")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_RESULT_OUTDATED"));
@@ -213,9 +203,6 @@ class BlockedEntryRevisionIntegrationTest {
         blockedQueue().andExpect(jsonPath("$.data", hasSize(0)));
     }
 
-    // ── 흐름 ──
-
-    /** 연락처가 든 일지를 올려 매칭·검증을 돌리고, 수정 요청 큐에 뜬 카드 id 를 돌려준다. */
     private String uploadUntilBlocked() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "journal.txt", "text/plain",
                 ("2026-10-08 " + BLOCKED + "\n").getBytes(StandardCharsets.UTF_8));
@@ -262,9 +249,6 @@ class BlockedEntryRevisionIntegrationTest {
                 .orElseThrow();
     }
 
-    // ── 가짜 AI ──
-
-    /** 명부에 준호가 있으면 준호로 자동 확정한다. */
     private MatchingAgentClient fakeMatchingAgent() {
         MatchingAgentClient client = mock(MatchingAgentClient.class);
         given(client.isAvailable()).willReturn(true);
@@ -283,7 +267,6 @@ class BlockedEntryRevisionIntegrationTest {
         return client;
     }
 
-    /** 전화번호(010-)가 있으면 개인정보로 BLOCK, 아니면 PASS. 받은 본문을 남긴다. */
     private ValidationAgentClient fakeValidationAgent() {
         ValidationAgentClient client = mock(ValidationAgentClient.class);
         given(client.isAvailable()).willReturn(true);
