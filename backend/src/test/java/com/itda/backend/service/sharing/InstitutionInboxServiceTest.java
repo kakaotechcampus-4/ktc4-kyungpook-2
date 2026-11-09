@@ -133,6 +133,19 @@ class InstitutionInboxServiceTest {
                 .singleElement().extracting(InboxItemResponse::readAt).isEqualTo(detail.readAt());
     }
 
+    /** 안 읽은 글 수 (#456). 목록에서 readAt 이 비어 있는 줄의 수와 같다. 옛 회차도 따로 센다. */
+    @Test
+    void 안_읽은_글_수는_목록에서_안_연_줄의_수와_같다() {
+        assertThat(service.countUnread(CENTER_STAFF)).isEqualTo(2);
+
+        service.getInboxItem(CENTER_STAFF, firstRevisionId);
+        em.flush();
+        em.clear();
+
+        assertThat(service.countUnread(CENTER_STAFF)).isEqualTo(1);
+        assertThat(service.countUnread(SCHOOL_STAFF)).isZero();
+    }
+
     @Test
     void 다시_열어도_처음_시각을_덮지_않는다() {
         LocalDateTime first = service.getInboxItem(CENTER_STAFF, firstRevisionId).readAt();
@@ -184,9 +197,10 @@ class InstitutionInboxServiceTest {
         assertHiddenButGrantUntouched();
     }
 
-    /** 목록에서 빠지고 단건은 404 다. 조회는 권한을 거두지 않고, 못 연 글에 열람 시각을 남기지도 않는다. */
+    /** 목록에서 빠지고(안 읽은 수에도 안 든다) 단건은 404 다. 조회는 권한을 거두지 않고, 못 연 글에 열람 시각을 남기지도 않는다. */
     private void assertHiddenButGrantUntouched() {
         assertThat(service.getInbox(CENTER_STAFF)).isEmpty();
+        assertThat(service.countUnread(CENTER_STAFF)).isZero();
         assertNotFound(CENTER_STAFF, firstRevisionId);
 
         em.clear();

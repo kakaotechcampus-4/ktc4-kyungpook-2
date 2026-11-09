@@ -290,6 +290,7 @@ class OpenApiDocumentationTest {
 		String item = "$.paths['/api/v1/institutions/me/inbox/{insightId}']";
 		String itemSchema = "$.components.schemas.InboxItemResponse";
 		String detailSchema = "$.components.schemas.InboxDetailResponse";
+		String unread = "$.paths['/api/v1/institutions/me/inbox/unread-count']";
 
 		mockMvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
@@ -303,6 +304,11 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(item + ".get.responses.403.description").value(containsString("ORGANIZATION_NOT_ASSIGNED")))
 				.andExpect(jsonPath(item + ".get.responses.404.description").value(containsString("SHARING_NOT_FOUND")))
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/inbox/{id}/read']").doesNotExist())
+				.andExpect(jsonPath(unread + ".get.security[0].cookieAuth").exists())
+				.andExpect(jsonPath(unread + ".get.responses.200").exists())
+				.andExpect(jsonPath(unread + ".get.responses.401").exists())
+				.andExpect(jsonPath(unread + ".get.responses.403.description").value(containsString("ORGANIZATION_NOT_ASSIGNED")))
+				.andExpect(jsonPath("$.components.schemas.InboxUnreadCountResponse.properties.unread.type").value("integer"))
 				.andExpect(jsonPath(itemSchema + ".properties.length()").value(8))
 				.andExpect(jsonPath(itemSchema + ".properties.content").doesNotExist())
 				.andExpect(jsonPath(itemSchema + ".properties.sharedWith").doesNotExist())

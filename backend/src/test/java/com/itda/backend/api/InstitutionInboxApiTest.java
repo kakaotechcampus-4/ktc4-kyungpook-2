@@ -54,6 +54,7 @@ import com.itda.backend.repository.user.UserRepository;
 class InstitutionInboxApiTest {
 
     private static final String INBOX = "/api/v1/institutions/me/inbox";
+    private static final String UNREAD = INBOX + "/unread-count";
     private static final String ROSTER = "/api/v1/institutions/me/children";
 
     @Autowired
@@ -195,6 +196,28 @@ class InstitutionInboxApiTest {
                 .andExpect(jsonPath("$.data[0].readAt").isNotEmpty());
     }
 
+    /** 기관 화면이 10초마다 묻는 안 읽은 글 수 (#456). 단건을 열면 준다. */
+    @Test
+    void 안_읽은_글_수는_단건을_열면_준다() throws Exception {
+        mockMvc.perform(get(UNREAD).cookie(auth(centerStaff)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unread").value(1));
+
+        mockMvc.perform(get(INBOX + "/" + insightId).cookie(auth(centerStaff)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get(UNREAD).cookie(auth(centerStaff)))
+                .andExpect(jsonPath("$.data.unread").value(0));
+    }
+
+    @Test
+    void 동의가_꺼진_아이의_글은_안_읽은_수에_넣지_않는다() throws Exception {
+        consent(center, "revoke");
+
+        mockMvc.perform(get(UNREAD).cookie(auth(centerStaff)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unread").value(0));
+    }
+
     @Test
     void 보호자가_센터_동의를_끄면_목록에서_사라지고_단건은_404_다() throws Exception {
         consent(center, "revoke");
@@ -217,6 +240,8 @@ class InstitutionInboxApiTest {
     void 승인한_학교의_수신함에는_없고_단건은_404_다() throws Exception {
         mockMvc.perform(get(INBOX).cookie(auth(schoolStaff)))
                 .andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(get(UNREAD).cookie(auth(schoolStaff)))
+                .andExpect(jsonPath("$.data.unread").value(0));
         mockMvc.perform(get(INBOX + "/" + insightId).cookie(auth(schoolStaff)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("SHARING_NOT_FOUND"));
@@ -229,11 +254,16 @@ class InstitutionInboxApiTest {
                 .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_ASSIGNED"));
         mockMvc.perform(get(INBOX + "/" + insightId).cookie(auth(mom)))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(get(UNREAD).cookie(auth(mom)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_ASSIGNED"));
     }
 
     @Test
     void 로그인하지_않으면_401_이다() throws Exception {
         mockMvc.perform(get(INBOX))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get(UNREAD))
                 .andExpect(status().isUnauthorized());
     }
 }
