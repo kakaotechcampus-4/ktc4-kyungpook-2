@@ -58,6 +58,17 @@ public interface SummaryResultRepository extends JpaRepository<SummaryResult, Lo
             @Param("status") SummaryStatus status);
 
     /**
+     * 대시보드 보드용 Gate 1 목록. {@link #findGate1List} 와 같은 정렬이고 TEXT 칸 없이 판정에 쓰는 칸만 읽는다. 대기 · 보류를
+     * 한 번에 묻는다.
+     */
+    @Query("select new com.itda.backend.repository.summary.Gate1Key("
+            + "s.id, s.childId, s.entryDate, s.revision, s.status, s.noContent) "
+            + "from SummaryResult s where s.institutionId = :institutionId and s.status in :statuses "
+            + "order by s.entryDate, s.id")
+    List<Gate1Key> findGate1Keys(@Param("institutionId") Long institutionId,
+            @Param("statuses") Collection<SummaryStatus> statuses);
+
+    /**
      * 요약 워커가 묶음을 집을 때 그 묶음의 판을 최신 판부터 잠근다. Gate 1 결정·보류 해제도 요약 행을 잠그므로, 결정이
      * 커밋되기 전에 옛 상태를 보고 승인된 일지를 다시 묶거나, 집는 사이에 판이 바뀌는 일이 없다.
      */
