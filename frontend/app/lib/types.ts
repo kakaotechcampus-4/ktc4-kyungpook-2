@@ -638,6 +638,19 @@ export interface JournalEntry {
   content: string;
 }
 
+/**
+ * 보호자 일지 상세 (G-21) — 목록 한 건에 옆 일지를 더한 것 (#458). 순서는 목록과 같다(최근 순).
+ * 새 필드는 선택이다 — FE 가 먼저 배포되면 그 사이 예전 서버는 이 값들을 주지 않는다.
+ */
+export interface JournalEntryDetail extends JournalEntry {
+  /** 목록에서 바로 뒤 칸, 곧 더 예전 일지. 맨 끝이면 null */
+  prevId?: string | null;
+  /** 목록에서 바로 앞 칸, 곧 더 최근 일지. 맨 앞이면 null */
+  nextId?: string | null;
+  /** 같은 날 다른 기관이 쓴 일지, 목록 순서. 기관은 id 로 가른다 */
+  sameDay?: JournalEntry[];
+}
+
 /** 기관 › 준비물·확인사항 — 보낸 요청의 받은 아이 한 명 (O-71) */
 export interface SentChecklistTarget {
   child: { id: string; name: string | null };

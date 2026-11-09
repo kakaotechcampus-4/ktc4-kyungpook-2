@@ -550,6 +550,8 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(journal + ".get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath(journal + ".get.responses.200").exists())
 				.andExpect(jsonPath(journal + ".get.responses.401").exists())
+				.andExpect(jsonPath(journal + ".get.parameters[?(@.name == 'limit')].required", hasItems(false)))
+				.andExpect(jsonPath(journal + ".get.responses.400.description").value(containsString("INVALID_REQUEST")))
 				.andExpect(jsonPath(journal + ".get.responses.403.description").value(containsString("FORBIDDEN")))
 				.andExpect(jsonPath(entry + ".get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath(entry + ".get.responses.200").exists())
@@ -559,7 +561,10 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(schema + ".length()").value(6))
 				.andExpect(jsonPath(schema + ".isNew").exists())
 				.andExpect(jsonPath(schema + ".content").exists())
-				.andExpect(jsonPath(schema + ".institution").exists());
+				.andExpect(jsonPath(schema + ".institution").exists())
+				.andExpect(jsonPath(entry + ".get.responses.200.content['*/*'].schema['$ref']").value(containsString("GuardianJournalDetailResponse")))
+				.andExpect(jsonPath("$.components.schemas.GuardianJournalDetailResponse.properties.sameDay.items['$ref']")
+						.value(containsString("GuardianJournalResponse")));
 	}
 
 	@Test

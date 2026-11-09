@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +32,7 @@ import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
+import com.itda.backend.dto.response.child.GuardianJournalDetailResponse;
 import com.itda.backend.dto.response.child.GuardianJournalResponse;
 import com.itda.backend.dto.response.child.ParentActivityResponse;
 import com.itda.backend.exception.child.ChildErrorCode;
@@ -217,6 +219,21 @@ class GuardianJournalQueryServiceJpaTest {
                 .containsExactly("하늘이 일지");
     }
 
+    /** 홈은 최근 2개만 보인다 (#458). 순서는 전부 받을 때와 같고 앞에서 자르기만 한다. */
+    @Test
+    void limit_를_주면_같은_순서로_앞에서_그만큼만_준다() {
+        Long a = approve(sky, AUG_20, schoolId, 1, "20일 학교");
+        Long b = approve(sky, AUG_21, centerId, 1, "21일 센터");
+        Long c = approve(sky, AUG_21, schoolId, 1, "21일 학교");
+        em.clear();
+
+        assertThat(service.journal(MOM_PRINCIPAL, sky, 2)).extracting(GuardianJournalResponse::id)
+                .containsExactly(ids(c, b));
+        assertThat(service.journal(MOM_PRINCIPAL, sky, 10)).extracting(GuardianJournalResponse::id)
+                .containsExactly(ids(c, b, a));
+        assertThat(service.journal(MOM_PRINCIPAL, sky, null)).hasSize(3);
+    }
+
     @Test
     void 승인된_일지가_없으면_빈_목록() {
         assertThat(service.journal(MOM_PRINCIPAL, sky)).isEmpty();
@@ -262,15 +279,62 @@ class GuardianJournalQueryServiceJpaTest {
     // --- 상세 ---
 
     @Test
-    void 상세는_목록의_한_건과_같다() {
-        approve(sky, AUG_20, schoolId, 1, "20일 학교");
+    void 상세는_목록의_한_건에_옆_일지를_더한_것이다() {
+        Long earlier = approve(sky, AUG_20, schoolId, 1, "20일 학교");
         Long id = approve(sky, AUG_21, centerId, 1, "21일 센터");
         em.clear();
 
         GuardianJournalResponse fromList = service.journal(MOM_PRINCIPAL, sky).getFirst();
         em.clear();
 
-        assertThat(service.entry(MOM_PRINCIPAL, id)).isEqualTo(fromList);
+        assertThat(service.entry(MOM_PRINCIPAL, id))
+                .isEqualTo(GuardianJournalDetailResponse.of(fromList, String.valueOf(earlier), null, List.of()));
+    }
+
+    /**
+     * 이전 · 다음은 목록 순서를 따른다 — 앞 칸이 더 최근(다음), 뒤 칸이 더 예전(이전)이다 (#458). 같은 날 다른 기관
+     * 일지는 목록 순서로 오고, 같은 기관이 같은 날 쓴 다른 판은 넣지 않는다(화면이 하던 것과 같다).
+     */
+    @Test
+    void 상세의_이전_다음과_같은_날_다른_기관_일지는_목록_순서를_따른다() {
+        Long a = approve(sky, AUG_20, schoolId, 1, "20일 학교");
+        Long b = approve(sky, AUG_21, centerId, 1, "21일 센터");
+        Long c = approve(sky, AUG_21, schoolId, 1, "21일 학교");
+        Long d = approve(sky, AUG_21, centerId, 2, "21일 센터 두 번째 판");
+        em.clear();
+        // 목록: d, c, b, a
+        assertThat(service.journal(MOM_PRINCIPAL, sky)).extracting(GuardianJournalResponse::id)
+                .containsExactly(ids(d, c, b, a));
+
+        GuardianJournalDetailResponse middle = service.entry(MOM_PRINCIPAL, b);
+        assertThat(middle.nextId()).isEqualTo(String.valueOf(c));
+        assertThat(middle.prevId()).isEqualTo(String.valueOf(a));
+        assertThat(middle.sameDay()).extracting(GuardianJournalResponse::id).containsExactly(ids(c));
+
+        GuardianJournalDetailResponse newest = service.entry(MOM_PRINCIPAL, d);
+        assertThat(newest.nextId()).isNull();
+        assertThat(newest.prevId()).isEqualTo(String.valueOf(c));
+        assertThat(newest.sameDay()).extracting(GuardianJournalResponse::id).containsExactly(ids(c));
+
+        GuardianJournalDetailResponse school = service.entry(MOM_PRINCIPAL, c);
+        assertThat(school.sameDay()).extracting(GuardianJournalResponse::id).containsExactly(ids(d, b));
+
+        GuardianJournalDetailResponse oldest = service.entry(MOM_PRINCIPAL, a);
+        assertThat(oldest.nextId()).isEqualTo(String.valueOf(b));
+        assertThat(oldest.prevId()).isNull();
+        assertThat(oldest.sameDay()).isEmpty();
+    }
+
+    /** 같은 날 다른 기관인지는 이름이 아니라 기관 id 로 가른다. 이름이 같은 다른 기관도 "다른 곳" 이다. */
+    @Test
+    void 이름이_같아도_다른_기관이면_같은_날_다른_곳에_나온다() {
+        Long twin = em.persistAndFlush(Organization.of("햇살센터", OrganizationType.CENTER, "1000000003")).getId();
+        Long mine = approve(sky, AUG_21, centerId, 1, "햇살센터 일지");
+        Long other = approve(sky, AUG_21, twin, 1, "이름이 같은 다른 센터 일지");
+        em.clear();
+
+        assertThat(service.entry(MOM_PRINCIPAL, mine).sameDay())
+                .extracting(GuardianJournalResponse::id).containsExactly(ids(other));
     }
 
     @Test
@@ -355,6 +419,10 @@ class GuardianJournalQueryServiceJpaTest {
     private static SummaryResult summary(Long childId, LocalDate date, Long institutionId, int revision,
             String content) {
         return SummaryResult.of(childId, date, institutionId, revision, content, "[]", "[]", "[]", "{}");
+    }
+
+    private static String[] ids(Long... ids) {
+        return Arrays.stream(ids).map(String::valueOf).toArray(String[]::new);
     }
 
     private boolean isNewAt(LocalDateTime now) {

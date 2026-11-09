@@ -18,6 +18,7 @@ import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.summary.ChildContext;
 import com.itda.backend.domain.summary.SummaryResult;
+import com.itda.backend.dto.response.child.GuardianJournalDetailResponse;
 import com.itda.backend.dto.response.child.GuardianJournalResponse;
 import com.itda.backend.dto.response.child.ParentActivityResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
@@ -67,28 +68,41 @@ public class GuardianJournalQueryService {
      */
     @Transactional(readOnly = true)
     public List<GuardianJournalResponse> journal(String userId, Long childId) {
+        return journal(userId, childId, null);
+    }
+
+    /**
+     * {@link #journal(String, Long)} 의 앞에서 {@code limit} 개 (#458). 홈은 최근 2개만 보여서 전부 받지 않는다.
+     * 정렬은 같고, 자르기만 한다 — 날짜가 요약 쪽에 있어 DB 에서 미리 자르지 않고 읽은 뒤 줄 세워 자른다.
+     *
+     * @param limit 없으면 전부. 1 이상인지는 컨트롤러가 본다
+     */
+    @Transactional(readOnly = true)
+    public List<GuardianJournalResponse> journal(String userId, Long childId, Integer limit) {
         Long parentId = userService.getParentIdOf(userId);
         if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)
                 || childRepository.findByIdAndDeletedAtIsNull(childId).isEmpty()) {
             throw new ChildException(ChildErrorCode.CHILD_NOT_LINKED);
         }
         LocalDateTime now = LocalDateTime.now(clock);
-        // 승인 최근 순으로 읽어 날짜로만 다시 줄 세운다. 정렬이 안정적이라 같은 날 안에서는 승인 순서가 남는다.
-        return approved(childContextRepository.findByChildIdOrderByIdDesc(childId)).stream()
-                .sorted(Comparator.comparing((Approved approved) -> approved.summary().getEntryDate()).reversed())
+        return ordered(childId).stream()
+                .limit(limit == null ? Long.MAX_VALUE : limit)
                 .map(approved -> toResponse(approved, now))
                 .toList();
     }
 
     /**
-     * 일지 하나. 볼 수 없으면 이유를 나누지 않고 404 다.
+     * 일지 하나와 그 옆 일지 (#458). 볼 수 없으면 이유를 나누지 않고 404 다.
+     *
+     * <p>이전 · 다음 · 같은 날 다른 기관 일지는 목록({@link #journal})과 <b>같은 순서</b>로 정한다 — 앞 칸이 더 최근(다음),
+     * 뒤 칸이 더 예전(이전)이다. 화면이 목록을 따로 받아 계산하던 것과 같은 결과다. 같은 날 다른 기관은 기관 id 로 가른다.
      *
      * <p>아이 행을 공유 잠금으로 잡으므로 읽기 전용 트랜잭션이 아니다. 잠그기 전에 연결·아이를 엔티티로 읽지 않는다 —
      * 영속성 컨텍스트가 잠그기 전 값을 돌려줘 그사이 커밋된 해제를 놓친다. 승인본은 고치지 않는 테이블이라 아이 id 를
      * 알려고 먼저 읽어도 된다.
      */
     @Transactional
-    public GuardianJournalResponse entry(String userId, Long journalId) {
+    public GuardianJournalDetailResponse entry(String userId, Long journalId) {
         Long parentId = userService.getParentIdOf(userId);
         ChildContext context = childContextRepository.findById(journalId)
                 .orElseThrow(GuardianJournalQueryService::notFound);
@@ -99,10 +113,37 @@ public class GuardianJournalQueryService {
             throw notFound();
         }
         LocalDateTime now = LocalDateTime.now(clock);
-        return approved(List.of(context)).stream()
-                .findFirst()
-                .map(approved -> toResponse(approved, now))
-                .orElseThrow(GuardianJournalQueryService::notFound);
+        List<Approved> ordered = ordered(child.getId());
+        int at = -1;
+        for (int i = 0; i < ordered.size(); i++) {
+            if (ordered.get(i).context().getId().equals(context.getId())) {
+                at = i;
+                break;
+            }
+        }
+        // 요약이나 기관 행이 없는 승인본은 목록에도 없다 — 상세도 열지 않는다
+        if (at == -1) {
+            throw notFound();
+        }
+        Approved self = ordered.get(at);
+        String nextId = at > 0 ? String.valueOf(ordered.get(at - 1).context().getId()) : null;
+        String prevId = at < ordered.size() - 1 ? String.valueOf(ordered.get(at + 1).context().getId()) : null;
+        List<GuardianJournalResponse> sameDay = ordered.stream()
+                .filter(other -> other.summary().getEntryDate().equals(self.summary().getEntryDate())
+                        && !other.institution().getId().equals(self.institution().getId()))
+                .map(other -> toResponse(other, now))
+                .toList();
+        return GuardianJournalDetailResponse.of(toResponse(self, now), prevId, nextId, sameDay);
+    }
+
+    /**
+     * 이 아이의 보이는 일지 전부, 목록 순서. 승인 최근 순으로 읽어 날짜로만 다시 줄 세운다. 정렬이 안정적이라 같은 날
+     * 안에서는 승인 순서가 남는다. 목록과 상세의 옆 일지가 이 한 곳에서 순서를 얻는다.
+     */
+    private List<Approved> ordered(Long childId) {
+        return approved(childContextRepository.findByChildIdOrderByIdDesc(childId)).stream()
+                .sorted(Comparator.comparing((Approved approved) -> approved.summary().getEntryDate()).reversed())
+                .toList();
     }
 
     /**

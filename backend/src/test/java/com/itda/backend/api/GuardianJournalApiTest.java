@@ -124,9 +124,13 @@ class GuardianJournalApiTest {
     }
 
     private Long approve(String content) {
+        return approve(LocalDate.of(2026, 8, 21), content);
+    }
+
+    private Long approve(LocalDate date, String content) {
         Long child = Long.valueOf(childId);
         SummaryResult summary = summaryResultRepository.save(SummaryResult.of(
-                child, LocalDate.of(2026, 8, 21), organization.getId(), 1, content, "[]", "[]", "[]", "{}"));
+                child, date, organization.getId(), 1, content, "[]", "[]", "[]", "{}"));
         return childContextRepository.save(ChildContext.of(child, summary.getId(), content)).getId();
     }
 
@@ -153,7 +157,12 @@ class GuardianJournalApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(String.valueOf(journalId)))
                 .andExpect(jsonPath("$.data.isNew").value(true))
-                .andExpect(jsonPath("$.data.content").value("오후 미술 활동에 끝까지 참여했어요."));
+                .andExpect(jsonPath("$.data.content").value("오후 미술 활동에 끝까지 참여했어요."))
+                // 옆 일지 (#458). 하나뿐이면 이전 · 다음은 null 이고 같은 날 다른 곳은 빈 배열이다
+                .andExpect(jsonPath("$.data.prevId").value(nullValue()))
+                .andExpect(jsonPath("$.data.nextId").value(nullValue()))
+                .andExpect(jsonPath("$.data.sameDay").isArray())
+                .andExpect(jsonPath("$.data.sameDay").isEmpty());
     }
 
     @Test
@@ -180,7 +189,29 @@ class GuardianJournalApiTest {
                 .andExpect(jsonPath("$.data.activity[0].insightId").value(nullValue()));
     }
 
+    /** 홈은 최근 2개만 받는다 (#458). */
+    @Test
+    void limit_를_주면_앞에서_그만큼만_온다() throws Exception {
+        approve(LocalDate.of(2026, 8, 21), "예전 일지");
+        Long newer = approve(LocalDate.of(2026, 8, 22), "최근 일지");
+
+        mockMvc.perform(get(journalPath() + "?limit=1").cookie(auth(parent)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value(String.valueOf(newer)));
+    }
+
     // --- 오류 ---
+
+    @Test
+    void limit_가_1_보다_작거나_숫자가_아니면_400() throws Exception {
+        mockMvc.perform(get(journalPath() + "?limit=0").cookie(auth(parent)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mockMvc.perform(get(journalPath() + "?limit=abc").cookie(auth(parent)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
 
     @Test
     void 로그인하지_않으면_401() throws Exception {
