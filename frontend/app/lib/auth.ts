@@ -575,7 +575,7 @@ export async function withdraw(target: WithdrawTarget): Promise<WithdrawResult> 
     headers: csrfHeader(),
   });
   if (res.status === 204) {
-    forgetLocalTraces();
+    forgetLocalSession();
     return "completed";
   }
   if (res.status === 202) return "in_progress";
@@ -584,8 +584,8 @@ export async function withdraw(target: WithdrawTarget): Promise<WithdrawResult> 
   throw error;
 }
 
-/** 이 브라우저에 남긴 표시와 맡겨 둔 글을 지운다. 로그아웃 · 탈퇴 완료가 함께 쓴다. */
-function forgetLocalTraces(): void {
+/** 이 브라우저에 남긴 표시와 맡겨 둔 글을 지운다. 서버에는 아무것도 보내지 않는다 — 탈퇴 완료가 쓴다. */
+export function forgetLocalSession(): void {
   clearSession();
   // 요약 검토 · 검증 수정 요청에서 로그인이 풀려 맡겨 둔 글 — 아이에 대한 글이라 남기지 않는다
   clearGate1Drafts();

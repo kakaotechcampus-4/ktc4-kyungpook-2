@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { getSession, signOut } from "@/lib/auth";
+import { forgetLocalSession, getSession } from "@/lib/auth";
 
 /** 처리 중일 때 `/auth/me` 를 다시 읽는 간격. 서버 실행기는 결과를 몰랐던 탈퇴를 1분마다 다시 본다. */
 const POLL_MS = 3000;
@@ -13,7 +13,8 @@ type State = "checking" | "in_progress" | "done" | "canceled" | "none" | "login_
  * 역할 묶음 밖에 둔다 — 가입 전 사람도 온다.
  *
  * `/auth/me` 를 주기적으로 다시 읽어 결과를 나눈다.
- *  - 401 ACCOUNT_WITHDRAWN: 끝났다. 쿠키는 서버 로그아웃 API 가 지운다(httpOnly 라 프론트가 못 지운다)
+ *  - 401 ACCOUNT_WITHDRAWN: 끝났다. 이 브라우저의 표시만 지운다 — 서버 로그아웃은 부르지 않는다(그 사이 다른 탭에서 로그인한
+ *    사람의 쿠키가 실려 가 그 로그인을 끊을 수 있다). 탈퇴한 계정의 출입증은 서버가 늘 401 로 막는다
  *  - 그 밖의 401: 로그인이 풀렸을 뿐이다. 끝났다고 보여 주지 않는다 — 다시 로그인하면 진행을 볼 수 있다
  *  - withdrawal = in_progress: 계속 기다린다
  *  - withdrawal = none: 탈퇴 확인 창에서 왔으면 첫 카카오 호출이 실패해 접수가 취소된 것이다. 주소로 직접 들어왔으면 진행 중인
@@ -36,8 +37,10 @@ export default function WithdrawalPage() {
         const session = await getSession();
         if (stopped) return;
         if (session.withdrawn) {
-          await signOut();
-          if (!stopped) setState("done");
+          // 서버 로그아웃을 부르지 않는다. 그 사이 다른 탭에서 다른 계정으로 로그인했으면 그 사람의 쿠키가 실려 가 그 로그인을
+          // 끊는다. 탈퇴한 계정의 출입증은 서버가 늘 401 로 막고, 다음 로그인이 쿠키를 덮어쓴다 — 이 브라우저 표시만 지운다
+          forgetLocalSession();
+          setState("done");
           return;
         }
         if (!session.loggedIn) {

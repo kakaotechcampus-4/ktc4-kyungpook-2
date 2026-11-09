@@ -12,12 +12,14 @@ import { withdraw, type WithdrawTarget } from "@/lib/auth";
  * 화면 이동 상태(주소가 아니다)로 넘기고, 접수만 됐으면(202) 처리 중으로 간다. 첫 카카오 호출이 실패해 취소되면(502) 이
  * 확인창에 이유를 띄우고 회원은 그대로다.
  *
- * **이 계정만 지운다.** 화면을 열 때 읽은 계정(`account`)을 요청에 싣는다. 확인 창을 연 뒤 다른 탭에서 다른 계정으로
- * 로그인했으면 서버가 409 로 막는다. `account` 가 없으면(서버가 탈퇴를 열지 않았거나 비로그인) 아무것도 그리지 않는다.
+ * **이 계정만 지운다.** 이 버튼이 처음 그려질 때(화면이 그 계정의 내용을 보여 줄 때)의 계정을 고정해 요청에 싣는다.
+ * 그 뒤 화면 데이터가 다시 읽혀 `account` 가 다른 계정(다른 탭에서 로그인한 사람)으로 바뀌어도 대상은 바뀌지 않는다 —
+ * 바뀐 것을 알아채면 요청을 보내지 않고 새로 고치라고 알린다. 서버도 지금 로그인한 계정과 다르면 409 로 막는다.
+ * 처음 그려질 때 `account` 가 없으면(서버가 탈퇴를 열지 않았거나 비로그인) 아무것도 그리지 않는다.
  *
  * @param audience 보호자면 아이 연결 · 공유 동의 안내를 함께 보인다. 가입 전이면 가입 정보가 지워진다는 것만 보인다
  * @param trigger  `row` 는 설정 목록의 한 줄, `link` 는 화면 아래 작은 글자 버튼
- * @param account  화면을 열 때 읽은 계정. 요청에 싣는다
+ * @param account  화면 데이터의 계정. 처음 값만 대상으로 쓰고, 이후 값은 바뀌었는지 보는 데만 쓴다
  */
 export function WithdrawAccount({
   audience,
@@ -32,11 +34,18 @@ export function WithdrawAccount({
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 처음 그려질 때의 계정으로 고정한다. 화면 데이터가 다시 읽혀도 바뀌지 않는다
+  const [pinned] = useState<WithdrawTarget | null>(account);
 
-  if (!account) return null;
-  const target = account;
+  if (!pinned) return null;
+  const target = pinned;
+  const accountChanged = account?.userId !== target.userId;
 
   async function confirm() {
+    if (accountChanged) {
+      setError(ACCOUNT_CHANGED);
+      return;
+    }
     setPending(true);
     setError(null);
     try {
@@ -104,9 +113,9 @@ export function WithdrawAccount({
                 </li>
               </ul>
             </div>
-            {error ? (
+            {error || accountChanged ? (
               <p role="alert" className="mb-3 rounded-2xl bg-blocksoft px-4 py-3 text-[14px] text-block">
-                {error}
+                {error ?? ACCOUNT_CHANGED}
               </p>
             ) : null}
             <div className="flex gap-2">
@@ -123,7 +132,7 @@ export function WithdrawAccount({
               </button>
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending || accountChanged}
                 onClick={confirm}
                 className="tap h-14 flex-1 rounded-2xl bg-block text-[16px] font-bold text-white disabled:opacity-50"
               >
@@ -137,13 +146,15 @@ export function WithdrawAccount({
   );
 }
 
+const ACCOUNT_CHANGED = "다른 계정으로 로그인이 바뀌었어요. 화면을 새로 고친 뒤 다시 확인해 주세요.";
+
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.code === "KAKAO_UNLINK_FAILED") {
       return "카카오 연결을 끊지 못해 탈퇴하지 못했어요. 잠시 뒤 다시 해 주세요.";
     }
     if (error.code === "WITHDRAWAL_ACCOUNT_MISMATCH") {
-      return "다른 계정으로 로그인이 바뀌었어요. 화면을 새로 고친 뒤 다시 확인해 주세요.";
+      return ACCOUNT_CHANGED;
     }
     if (error.code === "WITHDRAWAL_NOT_AVAILABLE") {
       return "지금은 탈퇴할 수 없어요.";
