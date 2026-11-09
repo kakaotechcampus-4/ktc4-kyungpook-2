@@ -85,6 +85,11 @@ public class OrganizationController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "409",
+                    description = "이 계정이 이미 탈퇴 처리 중 — 후임이 코드를 썼음 (WITHDRAWAL_IN_PROGRESS)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "503",
                     description = "코드를 겹치지 않게 만들지 못함. 다시 요청 (HANDOVER_CODE_ISSUE_FAILED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))

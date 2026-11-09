@@ -98,12 +98,13 @@ public class OrganizationHandoverService {
      * 잠근 뒤 시각을 다시 읽는다 — 잠금을 기다리는 사이 만료된 코드는 받지 않는다.
      *
      * <p>쓸 수 없는 이유(형식 · 없음 · 만료 · 이미 씀 · 취소 · 발급한 담당자가 이미 탈퇴 · 자기 코드)는 모두 같은 400 이다.
-     * 탈퇴 스위치는 보지 않는다 — 발급할 때 이미 봤고, 이미 접수된 탈퇴는 스위치를 꺼도 끝까지 가는 것과 같은 원칙이다.
+     * 탈퇴 스위치가 꺼져 있으면 이미 발급된 코드도 받지 않는다 — 받으면 이전 담당자의 탈퇴가 새로 접수되는데, 스위치는 탈퇴가
+     * 일어나지 않게 막는 장치다(이미 접수된 탈퇴만 꺼도 끝까지 간다). 꺼지면 화면이 메뉴를 숨겨 담당자가 코드를 거둘 수도 없다.
      */
     @Transactional
     public Long accept(User successor, String rawCode) {
         String code = InviteCodeGenerator.normalize(rawCode);
-        if (code == null) {
+        if (!enabled || code == null) {
             throw invalidCode();
         }
         HandoverTarget target = handoverRepository.findTargetByCode(code).orElseThrow(OrganizationHandoverService::invalidCode);

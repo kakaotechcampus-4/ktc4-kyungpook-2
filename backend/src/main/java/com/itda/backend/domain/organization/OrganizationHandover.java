@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -18,6 +19,8 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+
+import com.itda.backend.domain.invitation.Invitation;
 
 /**
  * 기관 담당자가 후임에게 건네는 일회용 인계 코드 (#478).
@@ -31,13 +34,16 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(
         name = "organization_handover",
-        uniqueConstraints = @UniqueConstraint(name = OrganizationHandover.UK_CODE, columnNames = "code"))
+        uniqueConstraints = @UniqueConstraint(name = OrganizationHandover.UK_CODE, columnNames = "code"),
+        // 발급 · 취소가 그 기관의 쓸 수 있는 코드를 찾는다. 행을 지우지 않아 계속 쌓인다
+        indexes = @Index(name = "idx_organization_handover_organization", columnList = "organization_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class OrganizationHandover {
 
     public static final String UK_CODE = "uk_organization_handover_code";
-    public static final int CODE_LENGTH = 8;
+    /** 코드는 초대 코드 생성기({@code InviteCodeGenerator})로 만든다 — 길이도 같이 따라간다. */
+    public static final int CODE_LENGTH = Invitation.CODE_LENGTH;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
