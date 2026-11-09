@@ -69,10 +69,12 @@ npm run e2e                       # 백엔드(:8080) · 프론트(:3000)를 띄�
 
 - `npm run e2e` 가 백엔드를 `./gradlew bootRun` 으로 직접 띄웁니다. DB 는 H2 메모리, 개발용 로그인은 켜고,
   출입증 비밀값 · 카카오 값은 테스트 전용 더미를 환경변수로 넘깁니다. 백엔드 설정 파일은 필요 없습니다.
-  AI 서버는 띄우지 않습니다.
+  AI 주소는 아무것도 듣지 않는 포트로 넘겨, 로컬에 AI 를 띄워 둬도 "AI 꺼짐" 상태로 돌립니다.
+- 프론트는 dev 서버가 아니라 mock 을 끈 빌드 번들(`npm run build` → `vite preview`)로 띄웁니다. 배포되는
+  번들과 같고, dev 서버가 처음 보는 화면에서 페이지를 새로 고치는 일이 없습니다. `build/` 를 덮어씁니다.
 - 3000 · 8080 이 이미 떠 있으면 그 서버를 그대로 씁니다. 이때 백엔드는 `DEV_LOGIN_ENABLED=true` 로
-  떠 있어야 하고, 프론트는 mock 이 꺼져 있어야 합니다(`VITE_USE_MOCK=false`). 개발용 로그인 이름 ·
-  사업자등록번호는 실행마다 새로 지어서, 이미 쓰던 DB 에 대고 여러 번 돌려도 겹치지 않습니다.
+  떠 있고 AI 에 닿지 않아야 하며(`ai-down`), 프론트는 mock 이 꺼져 있어야 합니다(`VITE_USE_MOCK=false`).
+  개발용 로그인 이름은 실행마다 새로 짓고 사업자등록번호는 무작위 10자리라, 이미 쓰던 DB 에 대고 다시 돌려도 됩니다.
 - 실패하면 `playwright-report/` 와 `test-results/`(스크린샷 · trace)가 남습니다.
   `npx playwright show-report` 로 엽니다.
 - CI: 프론트 CI(`.github/workflows/frontend-ci.yml`)의 `e2e` 잡이 PR 마다 돌립니다. 배포 잡과는 따로라
