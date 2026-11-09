@@ -173,6 +173,27 @@ public class User {
         if (isOrganization()) {
             throw new IllegalStateException("기관 담당자는 탈퇴할 수 없습니다.");
         }
+        markWithdrawalRequested(now);
+    }
+
+    /**
+     * 후임이 인계 코드로 가입해 이 기관 담당자의 탈퇴를 접수한다 (#478). 기관 담당자가 탈퇴하는 유일한 길이다 — 직접 신청하면
+     * 기관이 주인 없이 남는다. 접수 뒤 단계는 보호자 탈퇴와 같다(카카오 연결 해제 → 식별정보 삭제).
+     */
+    public void requestHandoverWithdrawal(LocalDateTime now) {
+        if (isDeleted()) {
+            throw new IllegalStateException("이미 탈퇴한 회원입니다.");
+        }
+        if (isWithdrawing()) {
+            throw new IllegalStateException("이미 탈퇴를 처리하고 있습니다.");
+        }
+        if (!isOrganization()) {
+            throw new IllegalStateException("기관 담당자만 담당자를 넘길 수 있습니다.");
+        }
+        markWithdrawalRequested(now);
+    }
+
+    private void markWithdrawalRequested(LocalDateTime now) {
         this.withdrawalStatus = WithdrawalStatus.REQUESTED;
         this.withdrawalRequestedAt = now;
         this.kakaoUnlinkAttemptedAt = null;

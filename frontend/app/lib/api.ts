@@ -385,6 +385,23 @@ export async function getMyInstitution(): Promise<MyInstitution> {
   return request("/api/v1/institutions/me");
 }
 
+/** 담당자 넘기기 인계 코드(#478). code 는 하이픈 없는 8자, 화면은 XXXX-XXXX 로 보인다 */
+export interface IssuedHandover {
+  code: string;
+  /** 시간대 오프셋이 붙은 ISO 시각 (발급 + 12시간) */
+  expiresAt: string;
+}
+
+/** POST /api/v1/institutions/me/handover — 인계 코드 발급. 다시 받으면 이전 코드는 못 쓴다 (O-84) */
+export async function issueHandover(): Promise<IssuedHandover> {
+  return request("/api/v1/institutions/me/handover", { method: "POST" });
+}
+
+/** DELETE /api/v1/institutions/me/handover — 아직 쓰지 않은 인계 코드 취소 (O-85) */
+export async function cancelHandover(): Promise<void> {
+  await request("/api/v1/institutions/me/handover", { method: "DELETE" });
+}
+
 /** GET /api/v1/institutions/me/link-requests — 보호자가 기관 코드로 보낸, 기다리는 연결 요청 (O-60) */
 export async function getLinkRequests(): Promise<PendingLinkRequest[]> {
   if (mockFor("linkRequests")) return mock.LINK_REQUESTS;

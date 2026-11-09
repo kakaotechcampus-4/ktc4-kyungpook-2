@@ -167,7 +167,7 @@ class WithdrawalServiceTest {
 
         withdrawalService.withdraw(principal(mother), principal(mother));
         User again = userService.findOrCreateByKakaoId(mother.getKakaoId());
-        userService.completeSignup(principal(again), new SignupRequest("parent", null, null, null));
+        userService.completeSignup(principal(again), new SignupRequest("parent", null, null, null, null));
         link(child, again);
 
         assertThat(again.getId()).isNotEqualTo(mother.getId());
