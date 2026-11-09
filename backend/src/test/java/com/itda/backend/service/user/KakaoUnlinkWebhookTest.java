@@ -211,6 +211,21 @@ class KakaoUnlinkWebhookTest {
         assertThat(reload(mother).isDeleted()).isTrue();
     }
 
+    /** 연결 상태 조회가 계속 실패해도, 사용자가 직접 신청한 탈퇴는 연결 해제를 불러 진행한다. */
+    @Test
+    void 연결_상태를_몰라도_직접_신청한_탈퇴는_연결_해제를_불러_진행한다() throws Exception {
+        User mother = persist(UserFixture.parent(nextKakaoId()));
+        transactionTemplate.executeWithoutResult(status ->
+                entityManager.find(User.class, mother.getId()).requestWithdrawal(LocalDateTime.now()));
+        given(kakaoUnlinkClient.linkStatus(anyLong())).willReturn(KakaoLinkStatus.UNKNOWN);
+
+        mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
+                .andExpect(status().isOk());
+
+        waitUntilDeleted(mother);
+        verify(kakaoUnlinkClient).unlink(Long.parseLong(mother.getKakaoId()));
+    }
+
     @Test
     void 연결돼_있으면_사용자가_직접_신청한_탈퇴는_원래대로_이어진다() throws Exception {
         User mother = persist(UserFixture.parent(nextKakaoId()));

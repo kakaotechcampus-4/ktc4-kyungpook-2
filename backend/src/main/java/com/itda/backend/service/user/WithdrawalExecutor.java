@@ -112,10 +112,16 @@ public class WithdrawalExecutor implements DisposableBean {
                         return;
                     }
                     KakaoLinkStatus status = kakaoUnlinkClient.linkStatus(plan.kakaoUserId());
-                    if (!steps.resolveReport(userId, status)) {
+                    WithdrawalSteps.ReportResolution resolution = steps.resolveReport(userId, status, plan.reportedAt());
+                    if (resolution == WithdrawalSteps.ReportResolution.RETRY_LATER) {
                         return;
                     }
-                    plan = steps.prepare(userId);
+                    plan = steps.prepare(userId,
+                            resolution != WithdrawalSteps.ReportResolution.PROCEED_WITHOUT_REPORT);
+                    if (plan.kind() == WithdrawalSteps.Plan.Kind.VERIFY_REPORT) {
+                        // 확인하는 사이 새 알림이 왔다. 이번에는 그만두고 새 알림으로 다시 확인한다(웹훅이 실행기를 다시 깨운다)
+                        return;
+                    }
                 }
                 if (plan.kind() == WithdrawalSteps.Plan.Kind.NOTHING) {
                     return;

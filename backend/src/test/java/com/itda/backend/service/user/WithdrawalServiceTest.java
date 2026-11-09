@@ -282,8 +282,8 @@ class WithdrawalServiceTest {
     }
 
     /**
-     * API 로 부르면 요청 동안 영속성 컨텍스트가 열려 있다(open-in-view). 그래도 실행기가 커밋한 결과를 읽어 204 로 끝내고
-     * 쿠키를 지워야 한다 — 접수 때 읽은 옛 회원을 다시 보면 늘 202 가 된다.
+     * API 로 부르면 요청 동안 영속성 컨텍스트가 열려 있다(open-in-view). 그래도 실행기가 커밋한 결과를 읽어 204 로 끝내야
+     * 한다 — 접수 때 읽은 옛 회원을 다시 보면 늘 202 가 된다. 출입증 쿠키는 지우지 않고, 그 출입증은 401 로 막힌다.
      */
     @Test
     void API_로_탈퇴하면_실행기가_마친_결과를_읽어_204_로_끝낸다() throws Exception {
@@ -293,9 +293,11 @@ class WithdrawalServiceTest {
                         .delete("/api/v1/auth/me").param("userId", principal(mother)), cookieFor(mother)))
                 .andExpect(status().isNoContent())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
-                        .stringValues("Set-Cookie", org.hamcrest.Matchers.hasItem(
-                                org.hamcrest.Matchers.startsWith(JwtCookie.NAME + "=;"))));
+                        .stringValues("Set-Cookie", org.hamcrest.Matchers.everyItem(
+                                org.hamcrest.Matchers.not(org.hamcrest.Matchers.startsWith(JwtCookie.NAME + "=")))));
         assertThat(reload(mother).isDeleted()).isTrue();
+        mockMvc.perform(get("/api/v1/auth/me").cookie(cookieFor(mother)))
+                .andExpect(status().isUnauthorized());
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder withCsrf(
@@ -347,13 +349,51 @@ class WithdrawalServiceTest {
         assertThat(plan.firstAttempt()).isTrue();
 
         withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
-        withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED);
+        withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED,
+                reload(mother).getKakaoUnlinkReportedAt());
         boolean proceed = withdrawalSteps.record(mother.getId(), KakaoUnlinkResult.FAILED, plan.firstAttempt());
 
         assertThat(proceed).isTrue();
         assertThat(reload(mother).getWithdrawalStatus()).isEqualTo(WithdrawalStatus.KAKAO_UNLINKED);
         withdrawalSteps.cleanup(mother.getId());
         assertThat(reload(mother).isDeleted()).isTrue();
+    }
+
+    /**
+     * 웹훅 알림을 확인하는 사이 사용자가 카카오로 다시 로그인했다. 로그인이 같은 회원 행 잠금 아래에서 알림을 지우므로, 늦게 온
+     * 조회 결과(끊김)로 다시 연결된 회원을 탈퇴시키지 않는다.
+     */
+    @Test
+    void 확인하는_사이_카카오로_다시_로그인하면_이전_조회_결과로_탈퇴시키지_않는다() {
+        User mother = parent();
+        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
+        assertThat(plan.kind()).isEqualTo(WithdrawalSteps.Plan.Kind.VERIFY_REPORT);
+
+        userService.findOrCreateByKakaoId(mother.getKakaoId());
+        WithdrawalSteps.ReportResolution resolution =
+                withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED, plan.reportedAt());
+
+        assertThat(resolution).isEqualTo(WithdrawalSteps.ReportResolution.PROCEED);
+        User after = reload(mother);
+        assertThat(after.isWithdrawing()).isFalse();
+        assertThat(after.hasKakaoUnlinkReport()).isFalse();
+    }
+
+    /** 확인하는 사이 새 웹훅이 왔다. 이전 조회 결과(연결됨)로 새 알림을 지우지 않는다. */
+    @Test
+    void 확인하는_사이_새_웹훅이_오면_이전_조회_결과로_새_알림을_지우지_않는다() throws Exception {
+        User mother = parent();
+        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
+        Thread.sleep(5);
+        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+
+        WithdrawalSteps.ReportResolution resolution =
+                withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.LINKED, plan.reportedAt());
+
+        assertThat(resolution).isEqualTo(WithdrawalSteps.ReportResolution.RETRY_LATER);
+        assertThat(reload(mother).hasKakaoUnlinkReport()).isTrue();
     }
 
     // ── 준비 ──────────────────────────────────────────────

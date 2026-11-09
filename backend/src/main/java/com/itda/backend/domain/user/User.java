@@ -192,7 +192,9 @@ public class User {
         }
     }
 
-    /** 카카오에 물어 보니 연결돼 있다 — 지난 연결의 알림이다. 알림만 지운다. */
+    /**
+     * 카카오에 물어 보니 연결돼 있거나, 카카오 로그인에 성공했다 — 지난 연결의 알림이다. 알림만 지운다.
+     */
     public void dismissKakaoUnlinkReport() {
         this.kakaoUnlinkReportedAt = null;
     }

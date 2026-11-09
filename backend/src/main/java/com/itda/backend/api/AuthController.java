@@ -206,7 +206,7 @@ public class AuthController {
 
     /**
      * 회원 탈퇴. 접수를 커밋한 뒤 탈퇴 실행기를 깨우고 잠깐 기다린다. 완료(204)는 DB 에서 {@code deleted_at} 을 확인한 경우만이다.
-     * 완료되면 로그아웃처럼 이 로그인을 기록하고 쿠키를 지운다. 202 는 본문이 있어 {@code ApiResponse} 로 감싼다.
+     * 완료되면 이 로그인을 로그아웃으로 기록한다. 쿠키는 지우지 않는다 — 늦게 온 응답이 다른 탭의 새 로그인 쿠키를 지울 수 있다. 202 는 본문이 있어 {@code ApiResponse} 로 감싼다.
      */
     @DeleteMapping("/me")
     @Operation(
@@ -215,7 +215,8 @@ public class AuthController {
                     + "카카오 연결을 끊고, 연결된 아이와의 연결 · 내 공유 동의 · 인사이트 열람 권한 · 기다리던 기관 연결 요청을 "
                     + "거둔 뒤, 카카오 회원번호를 지우고 탈퇴 표시를 합니다. 같은 기관에 다른 보호자의 동의가 남아 있으면 "
                     + "그 기관 공유는 계속됩니다. 같은 카카오 계정으로 다시 로그인하면 새 회원으로 가입부터 합니다. "
-                    + "몇 초 안에 끝나면 204 와 함께 access_token 쿠키를 지우고, 아니면 202 로 접수만 알립니다 — 이때는 "
+                    + "몇 초 안에 끝나면 204(이 로그인을 로그아웃으로 기록, 쿠키는 지우지 않음 — 탈퇴한 계정의 출입증은 늘 401), "
+                    + "아니면 202 로 접수만 알립니다 — 이때는 "
                     + "/auth/me 의 withdrawal 로 진행을 보고, 끝나면 /auth/me 가 401 ACCOUNT_WITHDRAWN 입니다. "
                     + "userId 에는 확인 화면이 보여 준 계정의 userId(/auth/me)를 넣습니다 — 지금 로그인한 계정과 다르면 409 입니다. "
                     + "서버가 탈퇴를 열지 않았으면(withdrawalEnabled false) 404 입니다. "
@@ -224,7 +225,7 @@ public class AuthController {
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "204", description = "탈퇴 완료. 본문 없음. 쿠키를 지움"),
+                    responseCode = "204", description = "탈퇴 완료. 본문 없음. 쿠키는 지우지 않음"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400", description = "userId 누락 (INVALID_REQUEST)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
@@ -257,18 +258,29 @@ public class AuthController {
             HttpServletRequest request) {
         WithdrawalSteps.Outcome outcome = withdrawalService.withdraw(userId, expectedUserId);
         return switch (outcome) {
-            case COMPLETED -> endLogin(request);
+            case COMPLETED -> {
+                // 쿠키는 지우지 않는다. 기다리는 사이 다른 탭에서 로그인했으면 늦게 온 이 응답이 그 사람의 새 쿠키를 지운다.
+                // 탈퇴한 계정의 출입증은 서버가 늘 401 ACCOUNT_WITHDRAWN 으로 막고, 다음 로그인이 쿠키를 덮어쓴다.
+                // 이 요청의 로그인만 로그아웃으로 기록한다 — 그 출입증에만 해당해 다른 로그인을 건드리지 않는다
+                revokeLoginOf(request);
+                yield ResponseEntity.noContent().build();
+            }
             case IN_PROGRESS -> ResponseEntity.status(HttpStatus.ACCEPTED)
                     .body(ApiResponse.success(WithdrawalResponse.inProgress()));
             case CANCELED -> throw new UserException(UserErrorCode.KAKAO_UNLINK_FAILED);
         };
     }
 
-    /** 이 로그인을 로그아웃으로 남기고 출입증 쿠키(연장 쿠키 포함)를 지운 204. */
-    private ResponseEntity<Void> endLogin(HttpServletRequest request) {
+    /** 이 요청의 출입증이 가리키는 로그인을 로그아웃으로 남긴다. */
+    private void revokeLoginOf(HttpServletRequest request) {
         jwtProvider.parseForLogout(jwtCookie.read(request))
                 .filter(token -> token.sessionId() != null)
                 .ifPresent(this::revoke);
+    }
+
+    /** 이 로그인을 로그아웃으로 남기고 출입증 쿠키(연장 쿠키 포함)를 지운 204. */
+    private ResponseEntity<Void> endLogin(HttpServletRequest request) {
+        revokeLoginOf(request);
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, jwtCookie.expire().toString())
                 .headers(headers -> jwtCookie.expireRenewals(request).forEach(cookie ->

@@ -127,18 +127,19 @@ class AuthControllerTest {
                 .andExpect(content().string(""));
     }
 
-    /** 탈퇴를 마쳤으면 204 로 끝내고 출입증 쿠키를 지운다. 본문이 없다. */
+    /**
+     * 탈퇴를 마쳤으면 본문 없는 204. 쿠키는 지우지 않는다 — 기다리는 사이 다른 탭에서 로그인했으면 늦게 온 이 응답이 그 사람의
+     * 새 쿠키를 지운다. 탈퇴한 계정의 출입증은 서버가 늘 401 로 막는다.
+     */
     @Test
-    void withdrawCompletedReturnsNoContentAndExpiresCookie() throws Exception {
+    void withdrawCompletedReturnsNoContentWithoutTouchingCookies() throws Exception {
         authenticateAs("2");
         given(withdrawalService.withdraw("2", "2")).willReturn(WithdrawalSteps.Outcome.COMPLETED);
-        given(jwtCookie.expire()).willReturn(
-                ResponseCookie.from(JwtCookie.NAME, "").maxAge(0).path("/").httpOnly(true).build());
 
         mockMvc.perform(delete("/api/v1/auth/me").param("userId", "2"))
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""))
-                .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
+                .andExpect(header().doesNotExist("Set-Cookie"));
     }
 
     /** 아직 처리 중이면 202 와 withdrawal = in_progress. 쿠키는 지우지 않는다. */

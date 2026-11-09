@@ -34,7 +34,10 @@ public class WithdrawalSteps {
     private final Clock clock;
 
     /** 실행기가 이번에 할 일. */
-    public record Plan(Kind kind, Long kakaoUserId, boolean firstAttempt) {
+    /**
+     * @param reportedAt {@code VERIFY_REPORT} 일 때 확인할 웹훅 알림의 시각. 확인 결과는 이 알림이 그대로 남아 있을 때만 쓴다
+     */
+    public record Plan(Kind kind, Long kakaoUserId, boolean firstAttempt, LocalDateTime reportedAt) {
 
         public enum Kind {
             /** 진행 중인 탈퇴가 없다(이미 끝났거나 취소됐다). */
@@ -48,20 +51,30 @@ public class WithdrawalSteps {
         }
 
         static Plan nothing() {
-            return new Plan(Kind.NOTHING, null, false);
+            return new Plan(Kind.NOTHING, null, false, null);
         }
 
         static Plan cleanup() {
-            return new Plan(Kind.CLEANUP, null, false);
+            return new Plan(Kind.CLEANUP, null, false, null);
         }
 
         static Plan callKakao(long kakaoUserId, boolean firstAttempt) {
-            return new Plan(Kind.CALL_KAKAO, kakaoUserId, firstAttempt);
+            return new Plan(Kind.CALL_KAKAO, kakaoUserId, firstAttempt, null);
         }
 
-        static Plan verifyReport(long kakaoUserId) {
-            return new Plan(Kind.VERIFY_REPORT, kakaoUserId, false);
+        static Plan verifyReport(long kakaoUserId, LocalDateTime reportedAt) {
+            return new Plan(Kind.VERIFY_REPORT, kakaoUserId, false, reportedAt);
         }
+    }
+
+    /** 웹훅 알림 확인 뒤 실행기가 할 일. */
+    public enum ReportResolution {
+        /** 이어서 처리한다(남은 탈퇴가 있으면 진행). */
+        PROCEED,
+        /** 이어서 처리하되 이번에는 알림 확인을 건너뛴다 — 연결 상태를 몰랐지만 사용자가 직접 신청한 탈퇴가 기다리고 있다. */
+        PROCEED_WITHOUT_REPORT,
+        /** 이번에는 그만둔다. 알림을 남겨 두고 나중에 다시 묻는다. */
+        RETRY_LATER
     }
 
     /** 탈퇴 API 가 기다린 뒤 본 결과. */
@@ -128,36 +141,47 @@ public class WithdrawalSteps {
     }
 
     /**
-     * 연결 해제 웹훅 알림을 카카오의 지금 연결 상태로 확인한다.
-     *
+     * 연결 해제 웹훅 알림을 카카오의 지금 연결 상태로 확인한다. 회원 행을 잠근 뒤, <b>조회를 시작할 때 본 알림이 그대로 남아 있을
+     * 때만</b> 결과를 쓴다.
+     * <ul>
+     *   <li>알림이 없어졌다 — 그 사이 카카오 로그인에 성공해 알림이 무효가 됐다(LoginUserTransactionService). 조회 결과가 끊김이었어도
+     *       그 뒤 다시 연결된 것이다. 아무것도 바꾸지 않는다</li>
+     *   <li>알림이 새것으로 바뀌었다 — 그 사이 새 웹훅이 왔다. 이 결과로 새 알림을 지우거나 확정하지 않고, 다시 묻는다</li>
+     * </ul>
+     * 같은 알림이면:
      * <ul>
      *   <li>끊겨 있음 → 탈퇴를 접수하고(이미 처리 중이면 그대로) 해제를 확정한다. 그 뒤 실행기가 받은 카카오 오류로 접수가
      *       취소되지 않는다({@link #record} 가 이 상태를 덮어쓰지 않는다)</li>
      *   <li>연결돼 있음 → 지난 연결의 알림이다. 알림만 지운다 — 사용자가 직접 신청한 탈퇴가 있으면 그대로 이어진다</li>
-     *   <li>모름 → 알림을 남겨 두고 나중에 다시 묻는다</li>
+     *   <li>모름 → 알림을 남겨 두고 나중에 다시 묻는다. 다만 사용자가 직접 신청한 탈퇴가 기다리고 있으면 그것은 연결 해제를 불러
+     *       진행한다 — 조회가 계속 실패해도 직접 신청한 탈퇴가 막히지 않게 한다</li>
      * </ul>
-     *
-     * @return 이어서 처리해도 되는지 (모름이면 false)
      */
     @Transactional
-    public boolean resolveReport(long userId, KakaoLinkStatus status) {
+    public ReportResolution resolveReport(long userId, KakaoLinkStatus status, LocalDateTime reportedAtSeen) {
         User user = userRepository.findByIdForUpdate(userId).orElse(null);
         if (user == null || user.isDeleted() || !user.hasKakaoUnlinkReport()) {
-            return true;
+            return ReportResolution.PROCEED;
+        }
+        if (!user.getKakaoUnlinkReportedAt().equals(reportedAtSeen)) {
+            log.info("확인하는 사이 새 연결 해제 웹훅이 와서 다시 묻습니다: userId={}", userId);
+            return ReportResolution.RETRY_LATER;
         }
         switch (status) {
             case NOT_LINKED -> {
                 user.confirmKakaoUnlinkReport(now());
                 log.info("카카오 쪽에서 연결이 끊긴 것을 확인해 탈퇴를 처리합니다: userId={}", userId);
-                return true;
+                return ReportResolution.PROCEED;
             }
             case LINKED -> {
                 user.dismissKakaoUnlinkReport();
                 log.info("연결 해제 웹훅이 왔지만 지금은 연결돼 있어 지난 연결의 알림으로 봅니다: userId={}", userId);
-                return true;
+                return ReportResolution.PROCEED;
             }
             default -> {
-                return false;
+                return user.getWithdrawalStatus() == WithdrawalStatus.REQUESTED
+                        ? ReportResolution.PROCEED_WITHOUT_REPORT
+                        : ReportResolution.RETRY_LATER;
             }
         }
     }
@@ -168,6 +192,14 @@ public class WithdrawalSteps {
      */
     @Transactional
     public Plan prepare(long userId) {
+        return prepare(userId, true);
+    }
+
+    /**
+     * @param verifyReport 웹훅 알림이 있으면 먼저 확인할지. 연결 상태를 몰라 이번에는 건너뛰기로 했으면 false
+     */
+    @Transactional
+    public Plan prepare(long userId, boolean verifyReport) {
         Optional<User> found = userRepository.findByIdForUpdate(userId);
         if (found.isEmpty() || found.get().isDeleted()) {
             return Plan.nothing();
@@ -176,10 +208,10 @@ public class WithdrawalSteps {
         if (user.getWithdrawalStatus() == WithdrawalStatus.KAKAO_UNLINKED) {
             return Plan.cleanup();
         }
-        if (user.hasKakaoUnlinkReport()) {
+        if (verifyReport && user.hasKakaoUnlinkReport()) {
             Optional<Long> reported = user.kakaoUserId();
             if (reported.isPresent()) {
-                return Plan.verifyReport(reported.get());
+                return Plan.verifyReport(reported.get(), user.getKakaoUnlinkReportedAt());
             }
             // 카카오 계정이 아닌 회원에게 웹훅이 올 수 없다. 남은 알림은 지운다
             user.dismissKakaoUnlinkReport();
