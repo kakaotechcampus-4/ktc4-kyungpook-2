@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { useNavigating } from "@/components/ui/Loading";
 import { Busy } from "@/components/ui";
 import { Toast } from "@/components/org/WorkList";
-import { getAiStatus, getInbox, getPipeline, loadIfReady } from "@/lib/api";
+import { getAiStatus, getInboxUnreadCount, getPipeline, loadIfReady } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { onNotice } from "@/lib/notice";
 import type { Pipeline } from "@/lib/types";
@@ -39,17 +39,17 @@ export interface OrgShellLive {
   pipeline: Pipeline | null;
 }
 
-/** 메뉴 배지 숫자를 센다. 진행 현황(O-80)의 선생님 차례와 수신함(O-50) 안 읽은 글 */
+/** 메뉴 배지 숫자를 센다. 진행 현황(O-80)의 선생님 차례와 수신함 안 읽은 글 수(O-54) */
 export async function loadOrgLive(): Promise<OrgShellLive> {
   // 배지는 덤이다 — 하나가 실패해도 기관 화면 전체(이 값을 쓰는 layout loader)가 깨지지 않게 각각 null 로 둔다.
   // AI 상태를 못 받았다고 배너를 띄우지도 않는다 — 서버가 "멈췄다" 고 할 때만
-  const [pipeline, inbox, ai] = await Promise.all([
+  const [pipeline, unreadCount, ai] = await Promise.all([
     loadIfReady("dashboard", getPipeline).catch(() => null),
-    loadIfReady("inbox", getInbox).catch(() => null),
+    loadIfReady("inbox", getInboxUnreadCount).catch(() => null),
     loadIfReady("dashboard", getAiStatus).catch(() => null),
   ]);
   const t = pipeline?.turn;
-  const unread = inbox?.filter((i) => !i.readAt).length ?? 0;
+  const unread = unreadCount ?? 0;
   return {
     counts: {
       check: t ? t.confirm + t.blocked : null,
@@ -58,7 +58,7 @@ export async function loadOrgLive(): Promise<OrgShellLive> {
       turnTotal: t ? t.confirm + t.blocked + t.review + t.approve + t.requests : null,
       aiDown: ai?.available === false,
       approve: t ? t.approve : null,
-      unread: inbox ? unread : null,
+      unread: unreadCount,
     },
     pipeline,
   };

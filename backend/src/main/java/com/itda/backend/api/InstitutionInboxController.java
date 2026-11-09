@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.itda.backend.dto.response.sharing.InboxDetailResponse;
 import com.itda.backend.dto.response.sharing.InboxItemResponse;
+import com.itda.backend.dto.response.sharing.InboxUnreadCountResponse;
 import com.itda.backend.global.config.OpenApiConfig;
 import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
@@ -54,6 +55,31 @@ public class InstitutionInboxController {
     })
     public ApiResponse<List<InboxItemResponse>> list(@AuthenticationPrincipal String userId) {
         return ApiResponse.success(institutionInboxService.getInbox(userId));
+    }
+
+    @GetMapping("/unread-count")
+    @Operation(
+            summary = "수신함 안 읽은 글 수",
+            description = "수신함 목록에서 아직 안 열어 본(readAt 이 null 인) 글의 수만 반환합니다. 목록과 같은 기준으로 "
+                    + "셉니다 — 우리 명부에 없는 아이, 우리 기관 동의가 꺼진 아이의 글은 세지 않습니다. 기관 화면이 "
+                    + "메뉴 배지와 \"새 리포트 도착\" 알림을 위해 주기적으로 부릅니다."
+    )
+    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401",
+                    description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "403",
+                    description = "기관 소속 사용자가 아님 (ORGANIZATION_NOT_ASSIGNED)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+            )
+    })
+    public ApiResponse<InboxUnreadCountResponse> unreadCount(@AuthenticationPrincipal String userId) {
+        return ApiResponse.success(new InboxUnreadCountResponse(institutionInboxService.countUnread(userId)));
     }
 
     @GetMapping("/{insightId}")

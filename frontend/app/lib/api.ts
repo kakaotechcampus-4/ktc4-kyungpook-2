@@ -1188,6 +1188,18 @@ export async function getInbox(): Promise<InboxItem[]> {
 }
 
 /**
+ * GET /api/v1/institutions/me/inbox/unread-count — 수신함에서 안 연 글 수 (#456). 목록과 같은 기준으로 센다.
+ * 셸이 10초마다 묻기 때문에 목록 대신 숫자만 받는다.
+ */
+export async function getInboxUnreadCount(): Promise<number> {
+  if (mockFor("inbox")) {
+    return mock.INBOX.filter((i) => onMyRoster(i.childId) && !i.readAt).length;
+  }
+  const { unread } = await request<{ unread: number }>("/api/v1/institutions/me/inbox/unread-count");
+  return unread;
+}
+
+/**
  * GET /api/v1/institutions/me/inbox/{insightId} — 수신함 단건 (O-51). 처음 열면 열람 시각이 남는다.
  *
  * 없는 글 · 다른 기관에 열린 글 · 동의가 꺼졌거나 명부에서 빠진 아이의 글은 모두

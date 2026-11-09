@@ -64,31 +64,13 @@ public class InstitutionInboxService {
      */
     @Transactional(readOnly = true)
     public List<InboxItemResponse> getInbox(String userId) {
-        Long organizationId = userService.getOrganizationIdOf(userId);
-        List<SharingHistory> received = sharingHistoryRepository
-                .findByReceiverTypeAndReceiverIdAndRevokedAtIsNullOrderByIdDesc(
-                        ReceiverType.ORGANIZATION, organizationId);
-        if (received.isEmpty()) {
-            return List.of();
-        }
-
-        Map<Long, ChildOrganization> enrollments = childOrganizationRepository
-                .findByOrganizationIdAndDeletedAtIsNull(organizationId).stream()
-                .collect(Collectors.toMap(ChildOrganization::getChildId, Function.identity(), (a, b) -> a));
-        Set<Long> childIds = received.stream().map(SharingHistory::getChildId).collect(Collectors.toSet());
-        Map<Long, Child> children = childRepository.findByIdInAndDeletedAtIsNull(childIds).stream()
-                .collect(Collectors.toMap(Child::getId, Function.identity()));
-        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
-
-        List<SharingHistory> readable = received.stream()
-                .filter(grant -> OrganizationGrantVisibility.readable(grant, children.get(grant.getChildId()),
-                        enrollments.get(grant.getChildId()),
-                        consents.getOrDefault(grant.getChildId(), Map.of())
-                                .getOrDefault(organizationId, ConsentState.NOT_GRANTED)))
-                .toList();
+        Readable found = readableGrants(userService.getOrganizationIdOf(userId));
+        List<SharingHistory> readable = found.grants();
         if (readable.isEmpty()) {
             return List.of();
         }
+        Map<Long, Child> children = found.children();
+        Map<Long, ChildOrganization> enrollments = found.enrollments();
 
         Map<Long, InsightResult> insights = insightResultRepository
                 .findAllById(readable.stream().map(SharingHistory::getInsightResultId).toList()).stream()
@@ -111,6 +93,54 @@ public class InstitutionInboxService {
                 })
                 .filter(Objects::nonNull)
                 .toList();
+    }
+
+    /**
+     * 목록에서 아직 안 연 글의 수 (#456). 기관 화면이 메뉴 배지와 "새 리포트 도착" 알림을 위해 10초마다 묻는다.
+     * 목록과 같은 판정({@link #readableGrants})으로 센다 — 갈리면 배지 수와 목록의 "새 리포트" 수가 어긋난다.
+     *
+     * <p>인사이트·보낸 기관은 읽지 않는다. 목록은 인사이트가 없는 권한 줄을 빼지만, 인사이트는 지우지 않는
+     * 테이블이라 올 일이 없다. 그 확인 때문에 본문까지 읽으면 개수만 따로 주는 의미가 없다.
+     */
+    @Transactional(readOnly = true)
+    public int countUnread(String userId) {
+        return (int) readableGrants(userService.getOrganizationIdOf(userId)).grants().stream()
+                .filter(grant -> grant.getReadAt() == null)
+                .count();
+    }
+
+    /**
+     * 우리 기관에 열려 있고 지금 읽어도 되는 권한 줄, 최근 열린 순. 판정에 쓴 아이·명부도 함께 돌려준다 — 목록이
+     * 한 줄을 만들 때 다시 쓴다.
+     */
+    private Readable readableGrants(Long organizationId) {
+        List<SharingHistory> received = sharingHistoryRepository
+                .findByReceiverTypeAndReceiverIdAndRevokedAtIsNullOrderByIdDesc(
+                        ReceiverType.ORGANIZATION, organizationId);
+        if (received.isEmpty()) {
+            return Readable.NONE;
+        }
+
+        Map<Long, ChildOrganization> enrollments = childOrganizationRepository
+                .findByOrganizationIdAndDeletedAtIsNull(organizationId).stream()
+                .collect(Collectors.toMap(ChildOrganization::getChildId, Function.identity(), (a, b) -> a));
+        Set<Long> childIds = received.stream().map(SharingHistory::getChildId).collect(Collectors.toSet());
+        Map<Long, Child> children = childRepository.findByIdInAndDeletedAtIsNull(childIds).stream()
+                .collect(Collectors.toMap(Child::getId, Function.identity()));
+        Map<Long, Map<Long, ConsentState>> consents = consentStateReader.statesOf(childIds);
+
+        List<SharingHistory> readable = received.stream()
+                .filter(grant -> OrganizationGrantVisibility.readable(grant, children.get(grant.getChildId()),
+                        enrollments.get(grant.getChildId()),
+                        consents.getOrDefault(grant.getChildId(), Map.of())
+                                .getOrDefault(organizationId, ConsentState.NOT_GRANTED)))
+                .toList();
+        return new Readable(readable, children, enrollments);
+    }
+
+    private record Readable(List<SharingHistory> grants, Map<Long, Child> children,
+            Map<Long, ChildOrganization> enrollments) {
+        static final Readable NONE = new Readable(List.of(), Map.of(), Map.of());
     }
 
     /**
