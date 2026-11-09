@@ -90,6 +90,8 @@ export type Session = {
   loggedIn: boolean;
   signupCompleted: boolean;
   role: Role;
+  /** 내부 회원 id. 로그인했을 때만 있다. 탈퇴 확인 창이 "이 계정" 을 서버에 알려 줄 때 쓴다. */
+  userId?: string;
   /** 카카오 닉네임. 동의를 거부하면 없다. */
   name?: string;
   /** 가입 때 입력한 기관명. 기관 계정만 있고, 서버가 기관을 못 찾으면 없다. */
@@ -109,6 +111,8 @@ export type Session = {
    * 로그인 만료 · 쿠키 없음 · 로그아웃은 false 다. 이 값이 true 일 때만 "탈퇴가 끝났다" 고 보여 준다.
    */
   withdrawn: boolean;
+  /** 서버가 탈퇴를 열었는지(`/auth/me` 의 withdrawalEnabled). false 면 탈퇴 버튼을 숨긴다. */
+  withdrawalEnabled: boolean;
 };
 
 const ANONYMOUS: Session = {
@@ -118,6 +122,7 @@ const ANONYMOUS: Session = {
   termsAgreed: false,
   withdrawing: false,
   withdrawn: false,
+  withdrawalEnabled: false,
 };
 
 /**
@@ -136,6 +141,8 @@ type MeResponse = {
   termsAgreed: boolean;
   /** 늘 온다. 탈퇴를 처리하는 중이면 in_progress */
   withdrawal?: "none" | "in_progress";
+  /** 늘 온다. 서버가 탈퇴를 열었는지 */
+  withdrawalEnabled?: boolean;
 };
 
 function toSession(me: MeResponse): Session {
@@ -144,11 +151,13 @@ function toSession(me: MeResponse): Session {
     signupCompleted: me.signupCompleted,
     // signupCompleted 만 보고 분기한다. role 은 가입을 마쳤을 때만 믿는다.
     role: me.signupCompleted ? (me.role ?? null) : null,
+    userId: me.userId,
     name: me.name,
     institutionName: me.institutionName,
     termsAgreed: me.signupCompleted && me.termsAgreed === true,
     withdrawing: me.withdrawal === "in_progress",
     withdrawn: false,
+    withdrawalEnabled: me.withdrawalEnabled === true,
   };
 }
 
@@ -235,6 +244,8 @@ export async function getSession(): Promise<Session> {
           signupCompleted: true,
           role,
           termsAgreed: role === "org" || readTermsMark(),
+          userId: "mock",
+          withdrawalEnabled: true,
         }
       : ANONYMOUS;
   }
@@ -525,6 +536,18 @@ export async function signOut(): Promise<void> {
 
 /* ── 회원 탈퇴 ──────────────────────────────────────── */
 
+/** 탈퇴 확인 창이 보여 주는 계정. 이 계정만 지운다. */
+export type WithdrawTarget = { userId: string; name?: string };
+
+/**
+ * 탈퇴 버튼을 보일 계정. 서버가 탈퇴를 열지 않았거나(withdrawalEnabled) 로그인하지 않았으면 null — 버튼을 숨긴다.
+ * 화면을 열 때 읽은 세션에서 만든다. 그 뒤 다른 탭에서 계정을 바꿔도 이 값은 처음 계정이라, 서버가 409 로 막는다.
+ */
+export function withdrawTargetOf(session: Session): WithdrawTarget | null {
+  if (!session.loggedIn || !session.withdrawalEnabled || !session.userId) return null;
+  return { userId: session.userId, name: session.name };
+}
+
 /** 탈퇴 요청의 결과. `completed` 는 서버가 끝까지 마치고 쿠키를 지운 것, `in_progress` 는 서버가 이어서 처리한다. */
 export type WithdrawResult = "completed" | "in_progress";
 
@@ -534,15 +557,19 @@ export type WithdrawResult = "completed" | "in_progress";
  *  - 204: 끝났다. 서버가 출입증 쿠키를 지웠다 → `completed`
  *  - 202: 접수했고 서버가 처리 중이다 → `in_progress` (탈퇴 안내 화면이 `/auth/me` 로 결과를 본다)
  *  - 409 WITHDRAWAL_IN_PROGRESS: 이미 처리 중이다 → `in_progress`
- *  - 그 밖(502 KAKAO_UNLINK_FAILED · 403 · 401 · 네트워크)은 ApiError 로 던진다. 502 면 회원은 그대로다.
+ *  - 그 밖(502 KAKAO_UNLINK_FAILED · 409 WITHDRAWAL_ACCOUNT_MISMATCH · 404 · 403 · 401 · 네트워크)은 ApiError 로
+ *    던진다. 502 면 회원은 그대로다.
+ *
+ * `target` 은 확인 창이 보여 준 계정이다. 서버는 지금 로그인한 계정과 다르면 409 WITHDRAWAL_ACCOUNT_MISMATCH 로 막는다 —
+ * 확인 창을 연 뒤 다른 탭에서 계정을 바꿨으면, 사용자가 확인하지 않은 계정이 지워지지 않게 한다.
  */
-export async function withdraw(): Promise<WithdrawResult> {
+export async function withdraw(target: WithdrawTarget): Promise<WithdrawResult> {
   if (USE_MOCK) {
     clearSession();
     return "completed";
   }
 
-  const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
+  const res = await fetch(`${API_BASE}/api/v1/auth/me?userId=${encodeURIComponent(target.userId)}`, {
     method: "DELETE",
     credentials: "include",
     cache: "no-store",

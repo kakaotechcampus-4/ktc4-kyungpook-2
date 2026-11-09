@@ -18,7 +18,7 @@ import {
   unlinkChild,
   updateConsent,
 } from "@/lib/api";
-import { getSession, isAuthMock, signOut } from "@/lib/auth";
+import { getSession, isAuthMock, signOut, withdrawTargetOf } from "@/lib/auth";
 import { ME } from "@/lib/mock/data";
 import { readSelectedChildId } from "@/lib/selectedChild";
 import type { ConsentState, InstitutionShares } from "@/lib/types";
@@ -37,7 +37,7 @@ export async function clientLoader() {
   ]);
   // 실연동에서는 /auth/me 의 카카오 닉네임. 동의를 거부해 없으면 이름을 빼고 "보호자"만 쓴다
   const myName = isAuthMock() ? ME.name : (session.name ?? null);
-  return { child, openChecklists, pendingRequests, shares, myName };
+  return { child, openChecklists, pendingRequests, shares, myName, withdrawTarget: withdrawTargetOf(session) };
 }
 
 export default function ParentSettingsPage() {
@@ -53,6 +53,7 @@ function ParentSettingsContent({
   pendingRequests,
   shares,
   myName,
+  withdrawTarget,
 }: Awaited<ReturnType<typeof clientLoader>>) {
   const guardianLabel = myName ? `보호자 ${myName}` : "보호자";
   const { kids, selectChild } = useChildContext();
@@ -323,11 +324,11 @@ function ParentSettingsContent({
             <span className="text-[15px]">{signingOut ? <Busy>로그아웃 중…</Busy> : "로그아웃"}</span>
             <LogOut aria-hidden size={17} strokeWidth={1.9} className="text-muted" />
           </button>
-          <WithdrawAccount audience="parent" trigger="row" />
+          <WithdrawAccount audience="parent" trigger="row" account={withdrawTarget} />
         </div>
         <p className="mt-2 text-[13px] leading-6 text-muted">
           로그아웃해도 아이와의 연결과 동의는 그대로예요. 다시 카카오로 로그인하면 이어서 볼 수
-          있어요. 탈퇴하면 아이와의 연결이 모두 끊겨요.
+          있어요.{withdrawTarget ? " 탈퇴하면 아이와의 연결이 모두 끊겨요." : ""}
         </p>
       </div>
 

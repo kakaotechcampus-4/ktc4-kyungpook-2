@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/apiError";
 import {
   getSession,
   homePathFor,
+  withdrawTargetOf,
   signup,
   type OrganizationType,
   type SignupInput,
@@ -31,7 +32,7 @@ export async function clientLoader({ request }: { request: Request }) {
   const hint = new URL(request.url).searchParams.get("role");
   const initialRole: "org" | "parent" | null =
     hint === "org" || hint === "parent" ? hint : null;
-  return { name: session.name, initialRole };
+  return { name: session.name, initialRole, withdrawTarget: withdrawTargetOf(session) };
 }
 
 const ORG_TYPES: { value: OrganizationType; label: string }[] = [
@@ -48,7 +49,7 @@ const ROLES = [
 type Errors = { organizationName?: string; businessNumber?: string; form?: string };
 
 export default function SignupPage() {
-  const { name, initialRole } = useLoaderData<typeof clientLoader>();
+  const { name, initialRole, withdrawTarget } = useLoaderData<typeof clientLoader>();
   const navigate = useNavigate();
 
   const [role, setRole] = useState<"org" | "parent" | null>(initialRole);
@@ -269,7 +270,7 @@ export default function SignupPage() {
         </form>
         {/* 역할을 고르기 전에도 떠날 수 있어야 한다 — 카카오 연결을 끊고 가입 정보를 지운다 */}
         <div className="mt-4">
-          <WithdrawAccount audience="pending" />
+          <WithdrawAccount audience="pending" account={withdrawTarget} />
         </div>
       </div>
     </div>
