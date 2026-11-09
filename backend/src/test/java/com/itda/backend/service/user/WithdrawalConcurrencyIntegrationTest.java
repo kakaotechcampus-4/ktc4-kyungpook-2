@@ -70,6 +70,7 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.user.KakaoUnlinkWebhookRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -105,6 +106,7 @@ class WithdrawalConcurrencyIntegrationTest {
     @Autowired private UserRepository userRepository;
     @Autowired private TermsAgreementRepository termsAgreementRepository;
     @Autowired private InvitationService invitationService;
+    @Autowired private ChildGuardianService childGuardianService;
     @Autowired private UserService userService;
     @Autowired private WithdrawalSteps steps;
     @Autowired private WithdrawalExecutor withdrawalExecutor;
@@ -344,6 +346,37 @@ class WithdrawalConcurrencyIntegrationTest {
             resultSet.next();
             assertThat(resultSet.getInt(1)).isNotEqualTo(pid);
         }
+    }
+
+    /**
+     * 탈퇴 정리가 아이 목록을 읽은 뒤 아이 행을 기다리는 사이, 기관이 같은 연결을 먼저 끊고 커밋했다. 정리는 아이를 잠근 뒤 이미
+     * 끊긴 연결을 건너뛴다 — 미리 읽어 둔 연결 엔티티로 기관이 남긴 해제 기록(deleted_at)을 덮어쓰지 않는다.
+     */
+    @Test
+    void 기관이_먼저_연결을_끊으면_탈퇴_정리는_그_해제_기록을_덮어쓰지_않는다() throws Exception {
+        User mother = parent();
+        User staff = persist(UserFixture.organizationUser(String.valueOf(nextKakaoId++), organization.getId()));
+        Child child = enrolledChild();
+        link(child, mother);
+        readyForCleanup(mother);
+        LocalDateTime[] cleanupStarted = new LocalDateTime[1];
+
+        contention.firstHoldsThen(
+                () -> {
+                    childGuardianService.unlinkByOrganization(principal(staff), child.getId(), mother.getId());
+                    return null;
+                },
+                () -> {
+                    cleanupStarted[0] = LocalDateTime.now();
+                    steps.cleanup(mother.getId());
+                    return null;
+                });
+
+        assertThat(reload(mother).isDeleted()).isTrue();
+        ChildGuardian link = guardianLink(child, mother);
+        assertThat(link.isDeleted()).isTrue();
+        // 기관이 끊은 시각 그대로다. 정리가 덮어썼다면 정리를 시작한 뒤의 시각이다
+        assertThat(link.getDeletedAt()).isBefore(cleanupStarted[0]);
     }
 
     // ── 웹훅 수신함 ────────────────────────────────────────

@@ -60,7 +60,7 @@ class UserServiceTest {
     void setUp() {
         userService = new UserService(userRepository, organizationRepository,
                 new OrganizationCodeIssuer(organizationRepository, new InviteCodeGenerator()),
-                new LoginUserTransactionService(userRepository), new TermsService(termsAgreementRepository));
+                new LoginUserTransactionService(userRepository, java.time.Clock.systemDefaultZone()), new TermsService(termsAgreementRepository));
     }
 
     /**

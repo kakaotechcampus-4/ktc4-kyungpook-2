@@ -461,17 +461,62 @@ class WithdrawalServiceTest {
         assertThat(reload(mother).isDeleted()).isTrue();
     }
 
-    /** 사용자가 직접 신청한 탈퇴는 웹훅이 해제를 확정했더라도 다시 로그인해 취소되지 않는다 — 본인이 탈퇴를 원했다. */
+    /**
+     * 직접 신청한 탈퇴가 카카오 해제를 확정한 뒤 DB 정리가 실패해 다시 기다리는 사이, 사용자가 카카오로 다시 로그인했다. 그 로그인으로
+     * 카카오 연결이 다시 생겼을 수 있다 — 탈퇴는 그대로 두고 연결 해제를 다시 부른 뒤 정리한다.
+     */
     @Test
-    void 직접_신청한_탈퇴는_웹훅이_확정한_뒤_다시_로그인해도_취소하지_않는다() {
+    void 직접_신청한_탈퇴의_정리_전에_카카오로_다시_로그인하면_연결_해제를_다시_부르고_탈퇴한다() throws Exception {
+        User mother = parent();
+        withdrawalSteps.accept(mother.getId());
+        WithdrawalSteps.Plan first = withdrawalSteps.prepare(mother.getId());
+        withdrawalSteps.record(mother.getId(), KakaoUnlinkResult.UNLINKED, first.firstAttempt());
+        assertThat(reload(mother).getWithdrawalStatus()).isEqualTo(WithdrawalStatus.KAKAO_UNLINKED);
+
+        // 정리 전에 다시 로그인 — 탈퇴는 남고 해제 확정만 거둔다
+        userService.findOrCreateByKakaoId(mother.getKakaoId(), LocalDateTime.now());
+        User reopened = reload(mother);
+        assertThat(reopened.getWithdrawalStatus()).isEqualTo(WithdrawalStatus.REQUESTED);
+        assertThat(reopened.isDueForRetry(LocalDateTime.now())).isTrue();
+
+        withdrawalExecutor.submit(mother.getId()).get(5, TimeUnit.SECONDS);
+        verify(kakaoUnlinkClient).unlink(Long.parseLong(mother.getKakaoId()));
+        assertThat(reload(mother).isDeleted()).isTrue();
+    }
+
+    /**
+     * 웹훅이 직접 신청한 탈퇴의 해제를 확정했다(카카오를 아직 부르지 않음). 그 뒤 다시 로그인하면 연결 해제를 다시 부르는데, 그
+     * 호출이 분명한 오류로 끝나도 접수를 취소하지 않는다 — 본인이 탈퇴를 원했고 이미 한 번 끊겼다.
+     */
+    @Test
+    void 웹훅이_확정한_직접_신청_탈퇴는_다시_로그인한_뒤_연결_해제가_실패해도_취소하지_않는다() {
         User mother = parent();
         withdrawalSteps.accept(mother.getId());
         withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
         WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
         withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED, plan.reportedAt());
         assertThat(reload(mother).getWebhookWithdrawalReportedAt()).isNull();
+        assertThat(reload(mother).getKakaoUnlinkAttemptedAt()).isNull();
 
         userService.findOrCreateByKakaoId(mother.getKakaoId(), plan.reportedAt().plusSeconds(1));
+
+        assertThat(reload(mother).getWithdrawalStatus()).isEqualTo(WithdrawalStatus.REQUESTED);
+        WithdrawalSteps.Plan again = withdrawalSteps.prepare(mother.getId());
+        assertThat(again.kind()).isEqualTo(WithdrawalSteps.Plan.Kind.CALL_KAKAO);
+        assertThat(again.firstAttempt()).isFalse();
+        withdrawalSteps.record(mother.getId(), KakaoUnlinkResult.FAILED, again.firstAttempt());
+        assertThat(reload(mother).getWithdrawalStatus()).isEqualTo(WithdrawalStatus.REQUESTED);
+    }
+
+    /** 개발용 로그인(카카오 확인 시각 없음)은 카카오 연결과 상관없어 정리만 남은 탈퇴를 건드리지 않는다. */
+    @Test
+    void 카카오_확인_시각이_없는_로그인은_정리만_남은_탈퇴를_건드리지_않는다() {
+        User mother = parent();
+        withdrawalSteps.accept(mother.getId());
+        WithdrawalSteps.Plan first = withdrawalSteps.prepare(mother.getId());
+        withdrawalSteps.record(mother.getId(), KakaoUnlinkResult.UNLINKED, first.firstAttempt());
+
+        userService.findOrCreateByKakaoId(mother.getKakaoId());
 
         assertThat(reload(mother).getWithdrawalStatus()).isEqualTo(WithdrawalStatus.KAKAO_UNLINKED);
     }

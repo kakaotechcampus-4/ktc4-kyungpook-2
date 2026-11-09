@@ -260,6 +260,34 @@ public class User {
                 && this.webhookWithdrawalReportedAt.isBefore(kakaoVerifiedAt);
     }
 
+    /**
+     * 사용자가 직접 신청한 탈퇴가 카카오 해제를 확정한 뒤(정리만 남음) 카카오 로그인이 왔는지 — 그 로그인으로 카카오 연결이 다시
+     * 생겼을 수 있다. 확정은 그 순간의 상태일 뿐이라, 그대로 정리하면 카카오 쪽 연결이 남는다.
+     *
+     * @param kakaoVerifiedAt 카카오에 사용자 정보를 묻기 직전 시각. null(개발용 로그인)이면 카카오 연결과 상관없다
+     */
+    public boolean isRelinkedBeforeCleanup(LocalDateTime kakaoVerifiedAt) {
+        return !isDeleted() && kakaoVerifiedAt != null && this.withdrawalStatus == WithdrawalStatus.KAKAO_UNLINKED
+                && this.webhookWithdrawalReportedAt == null;
+    }
+
+    /**
+     * 직접 신청한 탈퇴는 그대로 두고 카카오 해제 확정만 거둔다 — 실행기가 연결 해제를 다시 부른다. 이미 한 번 끊었으므로 다음
+     * 호출이 분명한 오류로 끝나도 접수를 취소하지 않는다(이전 호출 시각을 남긴다). 다시 끊겨 있으면 카카오가 "이미 끊김" 으로
+     * 답해 바로 정리로 넘어간다.
+     */
+    public void reopenKakaoUnlink(LocalDateTime now) {
+        requireStatus(WithdrawalStatus.KAKAO_UNLINKED);
+        if (this.webhookWithdrawalReportedAt != null) {
+            throw new IllegalStateException("웹훅으로 시작된 탈퇴는 다시 연결하면 취소한다.");
+        }
+        this.withdrawalStatus = WithdrawalStatus.REQUESTED;
+        if (this.kakaoUnlinkAttemptedAt == null) {
+            this.kakaoUnlinkAttemptedAt = now;
+        }
+        this.kakaoUnlinkFailures = null;
+    }
+
     /** 웹훅으로 시작된 탈퇴를 다시 연결한 로그인이 취소한다. 정리 전이라 아이 연결 · 동의는 그대로 남는다. */
     public void cancelWebhookWithdrawal() {
         if (isDeleted() || this.webhookWithdrawalReportedAt == null) {
