@@ -954,6 +954,12 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
  */
 export const INVITATIONS: Record<string, LiveInvitation[]> = {};
 
+/**
+ * 명부에서 빼면서 꺼진 기관 동의 (O-63 mock). 서버처럼 다시 연결돼도 꺼진 채 남고, 보호자가 그 기관 주간 리포트
+ * 공유를 다시 켜야 지워진다. 그 기관이 근거를 낸 리포트는 그때까지 Gate 2 목록에서 숨는다.
+ */
+export const ROSTER_REMOVED: { childId: string; institutionId: string }[] = [];
+
 /** 아이별 연결된 보호자 (O-18, O-19 mock) */
 export const CHILD_GUARDIANS: Record<string, ChildGuardian[]> = {
   child_1023: [

@@ -33,6 +33,7 @@
  *      PUT  /api/v1/children/{childId}/consent-scopes/{institutionId}
  *      GET  /api/v1/institutions/me/children
  *      POST /api/v1/institutions/me/children   → 201 (초대 코드 포함)
+ *      DELETE /api/v1/institutions/me/children/{childId}                    → 204 (명부에서 빼기)
  *      POST   /api/v1/institutions/me/children/{childId}/invitations        → 201
  *      GET    /api/v1/institutions/me/children/{childId}/invitations
  *      DELETE /api/v1/institutions/me/children/{childId}/invitations/{id}   → 204
@@ -334,6 +335,26 @@ function rosterItemOf(child: Child): ChildListItem | null {
   // 원본 mock 은 보호자 화면이 쓰므로 고치지 않는다.
   const { id, name, birthDate, externalId, status } = child;
   return { id, name, birthDate, externalId, status, consent: mine.consent };
+}
+
+/** mock 아이가 지금 우리 기관 명부에 있는지. 서버가 명부를 다시 보는 곳(등록 중복 · Gate 2 · 수신함 · 초대 수락)에서 같이 쓴다 */
+function onMyRoster(childId: string): boolean {
+  const child = mock.CHILDREN.find((c) => c.id === childId);
+  return !!child && rosterItemOf(child) !== null;
+}
+
+/** 명부 제외로 꺼진 기관 동의가 아직 다시 켜지지 않았는지 (mock.ROSTER_REMOVED) */
+function rosterRemoved(childId: string, institutionId: string): boolean {
+  return mock.ROSTER_REMOVED.some((r) => r.childId === childId && r.institutionId === institutionId);
+}
+
+/** 보호자가 그 기관 주간 리포트 공유를 다시 켰다 — 명부 제외로 꺼졌던 표시를 지운다 */
+function clearRosterRemoved(childId: string, institutionId: string, fields: ConsentField[] | undefined) {
+  if (!fields?.includes("weekly_insight")) return;
+  for (let i = mock.ROSTER_REMOVED.length - 1; i >= 0; i--) {
+    const r = mock.ROSTER_REMOVED[i];
+    if (r.childId === childId && r.institutionId === institutionId) mock.ROSTER_REMOVED.splice(i, 1);
+  }
 }
 
 /** GET /api/v1/institutions/me/children */
@@ -703,8 +724,13 @@ export async function closeFailedSummary(childId: string, entryDate: string): Pr
  */
 export async function getInsights(gate2Status: Gate2Status = "pending"): Promise<Insight[]> {
   if (mockFor("insights")) {
+    // 서버처럼 명부에 있는 아이만, 근거를 낸 기관 동의가 명부 제외로 꺼진 채인 글은 뺀다
     return mock.INSIGHTS.filter(
-      (i) => i.primarySource.id === mock.MY_INSTITUTION.id && i.gate2Status === gate2Status,
+      (i) =>
+        i.primarySource.id === mock.MY_INSTITUTION.id &&
+        i.gate2Status === gate2Status &&
+        onMyRoster(i.childId) &&
+        !i.evidence.some((e) => rosterRemoved(i.childId, e.institution.id)),
     );
   }
   return request(`/api/v1/insights?gate2Status=${gate2Status}`);
@@ -1002,12 +1028,14 @@ export async function registerChild(input: {
   externalId: string;
 }): Promise<{ child: RegisteredChild; invitation: IssuedInvitation }> {
   if (mockFor("childRegister")) {
+    // 서버처럼 지금 우리 명부에 있는 아이와만 겹치는지 본다 — 명부에서 뺀 아이의 번호 · 이름은 다시 쓸 수 있다
+    const roster = mock.CHILDREN.filter((c) => rosterItemOf(c) !== null);
     const externalId = input.externalId.trim();
-    if (mock.CHILDREN.some((c) => c.externalId === externalId)) {
+    if (roster.some((c) => c.externalId === externalId)) {
       throw new ApiError(409, "DUPLICATE_EXTERNAL_ID");
     }
     const trimmedName = input.name.trim();
-    if (mock.CHILDREN.some((c) => c.name === trimmedName && c.birthDate === input.birthDate)) {
+    if (roster.some((c) => c.name === trimmedName && c.birthDate === input.birthDate)) {
       throw new ApiError(409, "DUPLICATE_CHILD");
     }
     const child: Child = {
@@ -1055,6 +1083,35 @@ function issueMockInvitation(childId: string): IssuedInvitation {
 
 const childPath = (childId: string) =>
   `/api/v1/institutions/me/children/${encodeURIComponent(childId)}`;
+
+/**
+ * DELETE /api/v1/institutions/me/children/{childId} — 우리 기관 명부에서 빼기 (O-63).
+ *
+ * 아이 자체와 보호자 연결은 남는다. 우리 기관 공유 동의가 꺼지고, 우리 기관이 받았거나 근거를 낸 리포트의 기관 열람이
+ * 거둬지고, 쓰지 않은 초대 코드가 취소된다. 다시 연결해도 거둔 열람은 돌아오지 않는다.
+ * 우리 명부에 없으면(이미 뺐으면) 404 CHILD_NOT_FOUND.
+ */
+export async function removeChildFromRoster(childId: string): Promise<void> {
+  if (mockFor("children")) {
+    const child = mock.CHILDREN.find((c) => c.id === childId);
+    const idx = child ? child.institutions.findIndex((i) => i.institution.id === mock.MY_INSTITUTION.id) : -1;
+    if (!child || idx === -1) throw new ApiError(404, "CHILD_NOT_FOUND");
+    child.institutions.splice(idx, 1);
+    child.externalId = null;
+    delete mock.INVITATIONS[childId];
+    mock.ROSTER_REMOVED.push({ childId, institutionId: mock.MY_INSTITUTION.id });
+    // 서버는 거둔 기관 열람을 되살리지 않는다 — 다시 연결돼도 예전 수신함 글은 돌아오지 않게 지운다
+    for (let i = mock.INBOX.length - 1; i >= 0; i--) {
+      if (mock.INBOX[i].childId === childId) mock.INBOX.splice(i, 1);
+    }
+    // 아이 상태는 서버 규칙대로 — 동의 이력이 없던 아이(pending_consent)는 그대로
+    if (child.status !== "pending_consent") {
+      child.status = child.institutions.some((i) => i.consent === "granted") ? "active" : "suspended";
+    }
+    return;
+  }
+  return request(childPath(childId), { method: "DELETE" });
+}
 
 /**
  * POST …/children/{childId}/invitations — 초대 코드 추가 발급 (O-15).
@@ -1117,7 +1174,10 @@ export async function unlinkGuardian(childId: string, guardianUserId: string): P
 
 /** GET /api/v1/institutions/me/inbox — 수신함 목록 (O-50). 본문은 없다 */
 export async function getInbox(): Promise<InboxItem[]> {
-  if (mockFor("inbox")) return mock.INBOX.map(({ content: _content, ...item }) => ({ ...item }));
+  if (mockFor("inbox")) {
+    // 서버처럼 읽을 때마다 명부를 다시 본다
+    return mock.INBOX.filter((i) => onMyRoster(i.childId)).map(({ content: _content, ...item }) => ({ ...item }));
+  }
   return request("/api/v1/institutions/me/inbox");
 }
 
@@ -1130,7 +1190,7 @@ export async function getInbox(): Promise<InboxItem[]> {
 export async function getInboxItem(insightId: string): Promise<InboxDetail> {
   if (mockFor("inbox")) {
     const item = mock.INBOX.find((i) => i.id === insightId);
-    if (!item) throw new ApiError(404, "SHARING_NOT_FOUND", "인사이트를 찾을 수 없습니다.");
+    if (!item || !onMyRoster(item.childId)) throw new ApiError(404, "SHARING_NOT_FOUND", "인사이트를 찾을 수 없습니다.");
     item.readAt ??= new Date().toISOString();
     return { ...item };
   }
@@ -1152,12 +1212,14 @@ export async function acceptInvitation(code: string): Promise<AcceptedInvitation
     const valid =
       normalized.length === 8 && [...normalized].every((c) => INVITE_ALPHABET.includes(c));
     if (!valid) throw new ApiError(400, "INVALID_INVITE_CODE");
-    // mock 은 형식만 맞으면 데모 아이 하나에 연결한다
+    // mock 은 형식만 맞으면 데모 아이 하나에 우리 기관 코드로 연결한다. 목록을 바꾸기 전에 다 확인한다 —
+    // 서버처럼 초대한 기관 명부에서 빠진 아이면 코드가 없는 것과 같은 400 이다 (명부에서 빼면 코드도 취소된다)
     const child = mock.CHILDREN.find((c) => c.id === mock.INVITED_CHILD_ID);
-    if (!child) throw new ApiError(400, "INVALID_INVITE_CODE");
+    const mine = child?.institutions.find((i) => i.institution.id === mock.MY_INSTITUTION.id);
+    if (!child || !mine) throw new ApiError(400, "INVALID_INVITE_CODE");
     if (mock.PARENT_CHILDREN.includes(child)) throw new ApiError(409, "LINK_ALREADY_EXISTS");
     mock.PARENT_CHILDREN.push(child);
-    const institution = child.institutions[0].institution;
+    const institution = mine.institution;
     return {
       childId: child.id,
       childName: child.name,
@@ -1325,6 +1387,7 @@ export async function grantConsent(
     if (!child || !rec) throw new ApiError(404, "CONSENT_TARGET_NOT_FOUND");
     rec.consent = "granted";
     child.status = "active";
+    clearRosterRemoved(childId, institutionId, allowedFields);
     return { childStatus: "active", consent: "granted", allowedFields };
   }
   return changesParentChildren(
@@ -1358,6 +1421,7 @@ export async function updateConsent(
     if (!child || !rec) throw new ApiError(404, "CONSENT_TARGET_NOT_FOUND");
     rec.consent = body.action === "grant" ? "granted" : "revoked";
     child.status = child.institutions.some((i) => i.consent === "granted") ? "active" : "suspended";
+    if (body.action === "grant") clearRosterRemoved(childId, institutionId, body.allowedFields);
     return {
       childStatus: child.status,
       consent: rec.consent,

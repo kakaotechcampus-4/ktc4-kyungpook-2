@@ -315,6 +315,11 @@ export default function ChildrenPage() {
           onDecided={(insight, d) => decided(insight, d, false)}
           onStale={stale}
           onRead={() => revalidator.revalidate()}
+          onRemoved={(removed) => {
+            setOpenKid(null);
+            setToast(`${removed.name}을(를) 명부에서 뺐어요`);
+            revalidator.revalidate();
+          }}
         />
       ) : null}
 
