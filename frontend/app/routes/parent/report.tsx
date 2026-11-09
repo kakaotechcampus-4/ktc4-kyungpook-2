@@ -54,6 +54,8 @@ type Month = { key: string; label: string; weeks: Week[]; count: number; unread:
  * `periodFrom` 으로 주를 정하므로 기준이 같다.
  *
  * 서버 순서(승인 시각 최근 순)를 그대로 쓴다 — 여기서 다시 정렬하지 않는다.
+ *
+ * "특이사항 없음" 주(quiet, #470)는 그 주 자리에만 놓는다. 리포트가 아니라 글 수 · 새 글 · 기관에 세지 않는다.
  */
 function groupByMonth(insights: GuardianInsight[]): Month[] {
   const months: Month[] = [];
@@ -71,6 +73,7 @@ function groupByMonth(insights: GuardianInsight[]): Month[] {
       month.weeks.push(week);
     }
     week.items.push(insight);
+    if (insight.kind === "quiet") continue;
     month.count += 1;
     month.unread += insight.readAt ? 0 : 1;
     // 그 달에 함께 기록을 살펴본 기관 — 정리한 기관과 근거를 낸 기관 모두. 중복은 한 번만.
@@ -132,15 +135,19 @@ function ReportPage() {
             {isOpen(month.key) ? (
               <>
                 <h2 className="mb-2 text-[15px] font-bold text-ink2">{month.label}</h2>
-                <MonthSummary month={month} />
+                {month.count > 0 ? <MonthSummary month={month} /> : null}
                 <div className="mt-4 flex flex-col gap-4">
                   {month.weeks.map((week) => (
                     <div key={week.period}>
                       <p className="mb-2 text-[13px] text-muted">{weekLabel(week)}</p>
                       <div className="flex flex-col gap-3">
-                        {week.items.map((insight) => (
-                          <ReportCard key={insight.id} insight={insight} />
-                        ))}
+                        {week.items.map((insight) =>
+                          insight.kind === "quiet" ? (
+                            <QuietCard key={insight.id} insight={insight} />
+                          ) : (
+                            <ReportCard key={insight.id} insight={insight} />
+                          ),
+                        )}
                       </div>
                     </div>
                   ))}
@@ -156,7 +163,9 @@ function ReportPage() {
               >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-bold">{month.label}</span>
-                  <span className="block text-[13px] text-muted">리포트 {month.count}개</span>
+                  <span className="block text-[13px] text-muted">
+                    {month.count > 0 ? `리포트 ${month.count}개` : "특이사항 없음"}
+                  </span>
                 </span>
                 <ChevronRight aria-hidden className="size-4 shrink-0 text-muted" />
               </button>
@@ -211,6 +220,26 @@ function ReportCard({ insight }: { insight: GuardianInsight }) {
           자세히 보기 ›
         </Link>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 리포트가 없는 지난 주 (#470). 누를 수 없다 — 열어 볼 상세가 없다. 그 주에 리포트가 생기면 서버가 이 항목 대신
+ * 리포트를 준다.
+ */
+function QuietCard({ insight }: { insight: GuardianInsight }) {
+  const nothingNew = insight.quietReason === "NOTHING_NEW";
+  return (
+    <div className="rounded-2xl bg-surface2 px-4 py-4">
+      <p className="text-[15px] font-bold">
+        {nothingNew ? "이 주는 따로 알릴 내용이 없었어요" : "이 주는 특이사항이 없었어요"}
+      </p>
+      <p className="mt-1 text-[14px] leading-6 text-muted">
+        {nothingNew
+          ? "기관들이 기록을 함께 살펴봤지만 되풀이되는 모습은 없었어요."
+          : "기관 기록에 따로 알릴 관찰이 없었어요."}
+      </p>
     </div>
   );
 }

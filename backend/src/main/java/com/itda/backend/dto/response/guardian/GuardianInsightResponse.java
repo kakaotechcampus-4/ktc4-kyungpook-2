@@ -1,5 +1,6 @@
 package com.itda.backend.dto.response.guardian;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -17,6 +18,11 @@ import com.itda.backend.dto.response.organization.InstitutionResponse;
  * @param evidence   이 글의 근거가 된 일지, 관찰 날짜 오래된 순 (#405). Gate 2 근거와 같은 범위에서 <b>보호자가 지금 일지
  *                   상세(G-21)로 열 수 있는 것</b>만 — 동의를 끈 기관 · 명부에서 빠진 기관의 일지도 남는다(일지 탭과 같다).
  *                   남는 것이 없으면 빈 배열이고, 글은 그대로 보인다
+ * @param kind       {@code "insight"} 는 리포트, {@code "quiet"} 는 리포트가 없는 지난 주를 "특이사항 없음" 으로 보이는
+ *                   항목이다 (#470). quiet 은 아이 · 주만 담는다 — 본문 · 기관 · 근거가 없고 열어 볼 상세도 없다.
+ *                   {@code approvedAt} 은 승인 시각 대신 그 주가 끝난 다음 날(월요일) 0시라 목록 정렬에만 쓴다
+ * @param quietReason quiet 일 때만. {@code NOTHING_NOTABLE}(① 기록이 모두 "특이사항 없음" 확인) ·
+ *                   {@code NOTHING_NEW}(② 기록은 있었지만 분석이 낼 것이 없었음)
  */
 public record GuardianInsightResponse(
         String id,
@@ -37,7 +43,20 @@ public record GuardianInsightResponse(
         List<InstitutionResponse> sharedWith,
         LocalDateTime approvedAt,
         LocalDateTime readAt,
-        List<Evidence> evidence) {
+        List<Evidence> evidence,
+        String kind,
+        String quietReason) {
+
+    public static final String INSIGHT = "insight";
+    public static final String QUIET = "quiet";
+
+    /** 리포트가 없는 지난 주 (#470). id 는 목록 key 로만 쓴다 — 단건 경로로 열 수 없다. */
+    public static GuardianInsightResponse quiet(String childId, String childName, String period, LocalDate periodFrom,
+            LocalDate periodTo, String quietReason) {
+        return new GuardianInsightResponse("quiet-" + childId + "-" + periodFrom, childId, childName, period,
+                periodFrom.toString(), periodTo.toString(), null, null, List.of(),
+                periodTo.plusDays(1).atStartOfDay(), null, List.of(), QUIET, quietReason);
+    }
 
     /**
      * 근거 일지 한 건.

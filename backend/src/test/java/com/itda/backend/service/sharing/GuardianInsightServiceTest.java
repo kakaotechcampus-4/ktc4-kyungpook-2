@@ -3,6 +3,7 @@ package com.itda.backend.service.sharing;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
 import java.time.LocalDate;
@@ -42,6 +43,9 @@ import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.child.GuardianJournalQueryService;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.insight.InsightEvidenceReader;
+import com.itda.backend.service.insight.QuietWeekReader;
+import com.itda.backend.service.insight.QuietWeekReader.QuietWeek;
+import com.itda.backend.service.insight.QuietWeekReader.Reason;
 import com.itda.backend.service.user.UserService;
 
 /** 보호자가 Gate 2 를 지나 받은 인사이트를 읽는다 (#233). */
@@ -67,6 +71,9 @@ class GuardianInsightServiceTest {
 
     @MockitoBean
     private UserService userService;
+
+    @MockitoBean
+    private QuietWeekReader quietWeekReader;
 
     private Long guardianId;
     private Long childId;
@@ -109,6 +116,27 @@ class GuardianInsightServiceTest {
             assertThat(insight.id()).isEqualTo(String.valueOf(insightId));
             assertThat(insight.from().id()).isEqualTo(String.valueOf(schoolId));
         });
+        assertThat(service.getInsights(STRANGER)).isEmpty();
+    }
+
+    /** 리포트가 없는 지난 주는 "특이사항 없음" 항목으로 섞인다 (#470). 승인 시각 대신 그 주가 끝난 다음 날 자리에 놓인다. */
+    @Test
+    void 내_아이의_특이사항_없음_주가_리포트와_함께_보인다() {
+        em.persistAndFlush(ChildGuardian.link(childId, guardianId, 1L));
+        LocalDate quietFrom = FROM.minusWeeks(1);
+        given(quietWeekReader.read(any())).willReturn(
+                List.of(new QuietWeek(childId, quietFrom, quietFrom.plusDays(6), Reason.NOTHING_NOTABLE)));
+
+        assertThat(service.getInsights(MOTHER))
+                .extracting(GuardianInsightResponse::kind, GuardianInsightResponse::id)
+                .containsExactly(tuple("insight", String.valueOf(insightId)),
+                        tuple("quiet", "quiet-%d-%s".formatted(childId, quietFrom)));
+        GuardianInsightResponse quiet = service.getInsights(MOTHER).get(1);
+        assertThat(quiet.quietReason()).isEqualTo("NOTHING_NOTABLE");
+        assertThat(quiet.childName()).isEqualTo("김하늘");
+        assertThat(quiet.content()).isNull();
+        assertThat(quiet.evidence()).isEmpty();
+        assertThat(quiet.approvedAt()).isEqualTo(quietFrom.plusDays(7).atStartOfDay());
         assertThat(service.getInsights(STRANGER)).isEmpty();
     }
 

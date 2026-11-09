@@ -882,6 +882,23 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     ],
   },
   {
+    // 리포트가 없는 지난 주 (#470). 누를 수 없는 "특이사항 없음" 카드로 보인다
+    id: "quiet-child_1023-2026-10-06",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 1주차",
+    periodFrom: "2026-10-06",
+    periodTo: "2026-10-12",
+    content: null,
+    from: null,
+    sharedWith: [],
+    approvedAt: "2026-10-13T00:00:00",
+    readAt: null,
+    evidence: [],
+    kind: "quiet",
+    quietReason: "NOTHING_NOTABLE",
+  },
+  {
     // 달에 걸친 주 — periodFrom 이 9월이라 9월로 묶인다
     id: "gi_05",
     childId: "child_1023",

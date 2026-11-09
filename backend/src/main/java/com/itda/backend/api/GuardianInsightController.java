@@ -36,7 +36,9 @@ public class GuardianInsightController {
             description = "담당자가 Gate 2 에서 승인해 보호자에게 열린 인사이트를 승인 시각(approvedAt) 최근 순으로 "
                     + "반환합니다. 나중에 연결된 보호자에게도 연결할 때 지난 승인 글이 열리고, 같은 승인 시각 자리에 놓입니다. "
                     + "sharedWith 는 지금 이 글을 볼 수 있는 다른 기관입니다 — 기관 수신함 · 공유 내역(G-45)과 같은 판정"
-                    + "(권한이 살아 있고 · 아이가 그 기관 명부에 있고 · 그 기관 동의가 켜져 있음)이고, 기관 이름순입니다."
+                    + "(권한이 살아 있고 · 아이가 그 기관 명부에 있고 · 그 기관 동의가 켜져 있음)이고, 기관 이름순입니다. "
+                    + "리포트가 없는 지난 주는 kind=quiet 항목(\"특이사항 없음\")으로 섞여 옵니다 — 본문 · 기관 · 근거가 없고 "
+                    + "G-36 으로 열 수 없으며, approvedAt 은 그 주가 끝난 다음 날 0시입니다 (#470)."
     )
     @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
