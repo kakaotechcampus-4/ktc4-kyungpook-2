@@ -153,7 +153,7 @@ class RawRecordOwnerMigrationIntegrationTest {
 
     @Test
     void deletedOwnerCannotBeMigrated() throws Exception {
-        owner.delete();
+        UserFixture.legacyDeleted(owner);
         users.saveAndFlush(owner);
         var result = run(row(first) + row(second), true);
         assertThat(result.getExitCode()).isNotZero();

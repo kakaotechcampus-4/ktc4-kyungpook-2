@@ -127,6 +127,7 @@ class ConsentConcurrencyIntegrationTest {
         childOrganizationRepository.save(ChildOrganization.of(child.getId(), organization.getId()));
         mother = userRepository.save(UserFixture.parent("kakao-mother", "김엄마"));
         given(userService.getParentIdOf(MOTHER)).willReturn(mother.getId());
+        given(userService.lockParentForLink(MOTHER)).willReturn(mother.getId());
         given(userService.getOrganizationIdOf(STAFF)).willReturn(organization.getId());
 
         invitationService.accept(MOTHER, invitationService.issue(organization.getId(), child.getId()).code());

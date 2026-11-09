@@ -118,8 +118,9 @@ public class InvitationService {
     /**
      * G-04 보호자가 코드를 써서 아이와 연결된다. 코드 소모와 연결 생성은 한 트랜잭션이라, 어디서 실패해도 둘 다 남지 않는다.
      *
-     * <p>잠금 순서는 child → child_organization → invitation → child_guardian → sharing_history 다 (DB 스키마 §3.3).
-     * 아이 삭제·명부 제외가 동시에 진행돼도 그 행을 잠그고 기다린 뒤 커밋된 상태를 보고 판단한다.
+     * <p>잠금 순서는 users(FOR SHARE) → child → child_organization → invitation → child_guardian → sharing_history 다
+     * (DB 스키마 §3.3). 아이 삭제·명부 제외가 동시에 진행돼도 그 행을 잠그고 기다린 뒤 커밋된 상태를 보고 판단한다.
+     * 회원 행은 탈퇴와 줄을 세우려고 잠근다 — 수락이 먼저 끝나면 탈퇴가 새 연결까지 끊고, 탈퇴가 먼저 접수되면 수락은 막힌다.
      *
      * <p>연결되면 그 아이의 승인된 인사이트를 이 보호자에게 연다 (#287). Gate 2 승인은 그 순간 연결된 보호자에게만
      * 열기 때문에, 여기서 열지 않으면 나중에 연결된 보호자는 지난 글을 못 본다. 승인도 {@code child} 를 잠그므로 겹쳐도
@@ -129,7 +130,7 @@ public class InvitationService {
      */
     @Transactional
     public AcceptedInvitationResponse accept(String userId, String rawCode) {
-        Long parentId = userService.getParentIdOf(userId);
+        Long parentId = userService.lockParentForLink(userId);
         String code = InviteCodeGenerator.normalize(rawCode);
         if (code == null) {
             throw invalidCode();

@@ -47,8 +47,9 @@ public class UserService {
      * <p>새 회원은 역할 없이(가입 미완료) 만든다. 역할과 소속은 가입 API 에서 사용자가 정한다.
      * 로그인 진입 경로로 역할을 추측하지 않는다.
      *
-     * <p>탈퇴한 회원이면 새로 만들지 않고 되살린다. kakao_id 유니크 제약 때문에 새로 넣을 수 없다.
-     * 역할과 소속도 탈퇴 전 값을 그대로 쓴다. 이미 있는 회원의 역할은 로그인으로 바뀌지 않는다.
+     * <p>탈퇴를 마친 회원은 카카오 회원번호를 지웠으므로 찾지 못하고 새 회원이 된다 — 가입 · 약관 동의를 처음부터 한다.
+     * 탈퇴를 처리하는 중인 회원은 그대로 돌려준다(새로 만들지도, 이름을 바꾸지도 않는다). 이미 있는 회원의 역할은
+     * 로그인으로 바뀌지 않는다.
      *
      * <p>동시 최초 로그인에서 카카오 ID 중복이 발생하면 롤백 후 새 트랜잭션에서
      * 먼저 등록된 회원을 다시 찾는다. 다른 제약 위반은 숨기지 않는다.
@@ -86,8 +87,7 @@ public class UserService {
      */
     @Transactional
     public CurrentUserResponse completeSignup(String principal, SignupRequest request) {
-        User user = userRepository.findActiveByIdForUpdate(parseUserId(principal))
-                .orElseThrow(() -> new UserException(UserErrorCode.SESSION_USER_NOT_FOUND));
+        User user = lockActive(principal);
         if (user.isSignupCompleted()) {
             throw new UserException(UserErrorCode.ALREADY_SIGNED_UP);
         }
@@ -108,8 +108,7 @@ public class UserService {
      */
     @Transactional
     public TermsAgreementResponse agreeTerms(String principal, List<TermKey> agreed, Map<TermKey, String> versions) {
-        User user = userRepository.findActiveByIdForUpdate(parseUserId(principal))
-                .orElseThrow(() -> new UserException(UserErrorCode.SESSION_USER_NOT_FOUND));
+        User user = lockActive(principal);
         termsService.agree(user, agreed, versions);
         return new TermsAgreementResponse(true);
     }
@@ -117,11 +116,15 @@ public class UserService {
     /**
      * 가입 미완료 차단 필터가 쓴다. 회원을 한 번 읽고, 가입을 마쳤으면 약관 동의 기록을 한 번 더 읽는다.
      *
-     * <p>없는 회원과 탈퇴 회원은 SESSION_USER_NOT_FOUND 예외로 차단한다.
+     * <p>없는 회원은 SESSION_USER_NOT_FOUND, 탈퇴한 회원은 ACCOUNT_WITHDRAWN 예외로 차단한다. 탈퇴를 처리하는 중인
+     * 회원은 가입 · 약관보다 먼저 본다.
      */
     @Transactional(readOnly = true)
     public AccountAccess accessOf(String principal) {
         User user = getByPrincipal(principal);
+        if (user.isWithdrawing()) {
+            return AccountAccess.WITHDRAWAL_IN_PROGRESS;
+        }
         if (!user.isSignupCompleted()) {
             return AccountAccess.SIGNUP_NOT_COMPLETED;
         }
@@ -179,10 +182,50 @@ public class UserService {
         return getByPrincipal(principal).getId();
     }
 
-    private User getByPrincipal(String principal) {
-        // 탈퇴한 사용자의 출입증은 아직 만료 전이어도 인정하지 않는다.
-        return userRepository.findByIdAndDeletedAtIsNull(parseUserId(principal))
+    /**
+     * 초대 수락용 보호자 식별자. 회원 행을 FOR SHARE 로 잠가 탈퇴 정리와 줄을 세운다 — 수락이 먼저 끝나면 탈퇴가 새 연결까지
+     * 보고 끊고, 탈퇴가 먼저 끝나면 수락은 401 이다. 같은 회원의 수락끼리는 서로 막지 않는다. 잠금 순서의 맨 앞이다
+     * (DB 스키마 §3.3). 부르는 쪽 트랜잭션에 합류해야 잠금이 수락이 끝날 때까지 남는다.
+     */
+    @Transactional
+    public Long lockParentForLink(String principal) {
+        User user = userRepository.findByIdForShare(parseUserId(principal))
                 .orElseThrow(() -> new UserException(UserErrorCode.SESSION_USER_NOT_FOUND));
+        requireUsable(user);
+        if (!user.isParent()) {
+            throw new UserException(UserErrorCode.PARENT_REQUIRED);
+        }
+        return user.getId();
+    }
+
+    /** 가입 · 약관 동의용. 회원 행을 잠근 뒤 탈퇴 여부와 진행 여부를 다시 본다. */
+    private User lockActive(String principal) {
+        long id = parseUserId(principal);
+        User user = userRepository.findActiveByIdForUpdate(id).orElseThrow(() -> missingOrWithdrawn(id));
+        requireUsable(user);
+        return user;
+    }
+
+    private static void requireUsable(User user) {
+        if (user.isDeleted()) {
+            throw new UserException(UserErrorCode.ACCOUNT_WITHDRAWN);
+        }
+        if (user.isWithdrawing()) {
+            throw new UserException(UserErrorCode.WITHDRAWAL_IN_PROGRESS);
+        }
+    }
+
+    private User getByPrincipal(String principal) {
+        // 탈퇴한 사용자의 출입증은 아직 만료 전이어도 인정하지 않는다. 없는 회원과 코드를 나눠, 탈퇴 안내 화면이
+        // "탈퇴가 끝났다" 를 로그인 만료와 구별하게 한다.
+        long id = parseUserId(principal);
+        return userRepository.findByIdAndDeletedAtIsNull(id).orElseThrow(() -> missingOrWithdrawn(id));
+    }
+
+    /** 활성 회원을 찾지 못했을 때. 탈퇴한 행이 남아 있으면 ACCOUNT_WITHDRAWN, 아예 없으면 SESSION_USER_NOT_FOUND. */
+    private UserException missingOrWithdrawn(long id) {
+        boolean withdrawn = userRepository.findById(id).map(User::isDeleted).orElse(false);
+        return new UserException(withdrawn ? UserErrorCode.ACCOUNT_WITHDRAWN : UserErrorCode.SESSION_USER_NOT_FOUND);
     }
 
     /**
@@ -192,7 +235,7 @@ public class UserService {
      * 카카오 회원번호가 들어 있다. 그때 NumberFormatException 이 새어나가면 catch-all 이
      * 잡아 500 이 되므로, 여기서 인증 실패로 바꾼다.
      */
-    private long parseUserId(String principal) {
+    static long parseUserId(String principal) {
         if (principal == null || principal.isBlank()) {
             throw new UserException(UserErrorCode.SESSION_USER_NOT_FOUND);
         }

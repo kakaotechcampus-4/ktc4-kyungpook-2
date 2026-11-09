@@ -23,11 +23,18 @@ import com.itda.backend.domain.user.UserRole;
  * <p>{@code @JsonInclude} 를 여기에 직접 붙여야 한다 — ApiResponse 에 붙은 설정은
  * 중첩된 타입까지 내려가지 않는다. 이게 없으면 보호자 응답에 {@code "institutionId": null} 이
  * 그대로 나가서 "role 이 org 일 때만 포함한다" 는 계약이 깨진다. {@code institutionName} 도 같다.
+ *
+ * <p>{@code withdrawal} 은 늘 나간다. {@code none} 이면 진행 중인 탈퇴가 없고 {@code in_progress} 면 탈퇴를 처리하는
+ * 중이다 — 프론트는 가입 · 약관 · 아이 목록보다 먼저 이 값을 보고 탈퇴 안내 화면으로 보낸다. 탈퇴를 마친 회원은 이 응답 대신
+ * 401 ACCOUNT_WITHDRAWN 이다.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record CurrentUserResponse(
         String role, String userId, String name, String institutionId, String institutionName,
-        boolean signupCompleted, boolean termsAgreed) {
+        boolean signupCompleted, boolean termsAgreed, String withdrawal) {
+
+    public static final String WITHDRAWAL_NONE = "none";
+    public static final String WITHDRAWAL_IN_PROGRESS = "in_progress";
 
     /**
      * @param organization 회원이 속한 기관. 기관 회원이 아니거나 찾지 못했으면 null 이고, 기관명이 응답에서 빠진다
@@ -42,7 +49,8 @@ public record CurrentUserResponse(
                 institutionId,
                 institutionId == null || organization == null ? null : organization.getName(),
                 user.isSignupCompleted(),
-                termsAgreed);
+                termsAgreed,
+                user.isWithdrawing() ? WITHDRAWAL_IN_PROGRESS : WITHDRAWAL_NONE);
     }
 
     /** 가입 미완료 회원은 역할이 없다. null 이면 NON_NULL 설정으로 응답에서 빠진다. */

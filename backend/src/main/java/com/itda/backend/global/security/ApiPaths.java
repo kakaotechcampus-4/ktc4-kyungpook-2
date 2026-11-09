@@ -19,6 +19,8 @@ public final class ApiPaths {
     public static final String HEALTH = "/api/health";
     /** 약관 본문. 공개 문서라 로그인 · 가입 · 약관 동의 없이 연다 */
     public static final String TERMS = "/api/v1/terms";
+    /** 카카오 연결 해제 웹훅. 로그인 · CSRF 대신 어드민 키 헤더로 검증한다 */
+    public static final String KAKAO_UNLINK_WEBHOOK = "/api/v1/webhooks/kakao/unlink";
 
     private ApiPaths() {
     }

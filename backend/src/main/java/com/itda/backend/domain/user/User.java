@@ -1,6 +1,7 @@
 package com.itda.backend.domain.user;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -37,6 +38,12 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class User {
+
+    /** 탈퇴를 마친 행의 {@code kakao_id}. 원래 값과 관계없어 되찾을 수 없다. 뒤에 내부 id 를 붙여 유니크를 지킨다. */
+    public static final String WITHDRAWN_KAKAO_ID_PREFIX = "withdrawn:";
+
+    /** 탈퇴를 마친 행의 이름. */
+    public static final String WITHDRAWN_NAME = "탈퇴한 회원";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -79,9 +86,25 @@ public class User {
      *
      * <p>행을 지우지 않는 이유: FK 제약이 없어서, 지우면 이 사용자를 가리키는 child_guardian ·
      * sharing_consent · human_review.reviewer_id 가 존재하지 않는 id 를 가리킨 채 남는다.
+     * 대신 탈퇴를 마칠 때 카카오 회원번호와 이름을 지운다({@link #completeWithdrawal}).
      */
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    /** 탈퇴 진행 단계. null 이면 진행 중인 탈퇴가 없다 (DB 스키마 §4.1). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "withdrawal_status", length = 20)
+    private WithdrawalStatus withdrawalStatus;
+
+    @Column(name = "withdrawal_requested_at")
+    private LocalDateTime withdrawalRequestedAt;
+
+    /**
+     * 카카오 연결 해제를 부르기 직전에 남긴 시각. 값이 있으면 이전 호출이 카카오에서 성공했을 수도 있다 —
+     * 그 뒤의 분명한 오류는 "이번 호출이 실패했다" 는 뜻일 뿐이라 탈퇴 접수를 취소하지 않는다.
+     */
+    @Column(name = "kakao_unlink_attempted_at")
+    private LocalDateTime kakaoUnlinkAttemptedAt;
 
     private User(String kakaoId, String name) {
         this.kakaoId = kakaoId;
@@ -130,17 +153,112 @@ public class User {
         this.name = name;
     }
 
-    public void delete() {
-        this.deletedAt = LocalDateTime.now();
+    /**
+     * 탈퇴를 접수한다. 기관 담당자는 탈퇴할 수 없다 — 기관에 남은 명부 · 일지를 어떻게 할지 정하지 않았다.
+     * 다시 신청하는 것이면 새로운 첫 호출이므로 이전 호출 시각을 지운다.
+     */
+    public void requestWithdrawal(LocalDateTime now) {
+        if (isDeleted()) {
+            throw new IllegalStateException("이미 탈퇴한 회원입니다.");
+        }
+        if (isWithdrawing()) {
+            throw new IllegalStateException("이미 탈퇴를 처리하고 있습니다.");
+        }
+        if (isOrganization()) {
+            throw new IllegalStateException("기관 담당자는 탈퇴할 수 없습니다.");
+        }
+        this.withdrawalStatus = WithdrawalStatus.REQUESTED;
+        this.withdrawalRequestedAt = now;
+        this.kakaoUnlinkAttemptedAt = null;
     }
 
-    /** 탈퇴한 사람이 같은 카카오 계정으로 다시 들어오면 새 행을 만들지 않고 되살린다 (§3.3). */
-    public void restore() {
-        this.deletedAt = null;
+    /**
+     * 카카오 연결 해제를 부르기 직전에 남긴다.
+     *
+     * @return 이번이 이 접수의 첫 호출인지
+     */
+    public boolean markKakaoUnlinkAttempt(LocalDateTime now) {
+        requireStatus(WithdrawalStatus.REQUESTED);
+        boolean first = this.kakaoUnlinkAttemptedAt == null;
+        this.kakaoUnlinkAttemptedAt = now;
+        return first;
+    }
+
+    /** 카카오 연결이 끊긴 것이 확정됐다. 이 뒤로는 DB 정리만 남는다. */
+    public void markKakaoUnlinked() {
+        requireStatus(WithdrawalStatus.REQUESTED);
+        this.withdrawalStatus = WithdrawalStatus.KAKAO_UNLINKED;
+    }
+
+    /** 첫 호출이 분명히 실패해 탈퇴 접수를 취소한다. 회원은 그대로 서비스를 쓴다. */
+    public void cancelWithdrawal() {
+        requireStatus(WithdrawalStatus.REQUESTED);
+        clearWithdrawal();
+    }
+
+    /**
+     * 탈퇴를 마친다. 행은 남기고 카카오 회원번호와 이름을 지운다 (카카오 정책: 회원번호도 파기 대상이다).
+     * 같은 카카오 계정으로 다시 오면 이 행을 찾지 못하므로 새 회원으로 가입한다.
+     */
+    public void completeWithdrawal(LocalDateTime now) {
+        requireStatus(WithdrawalStatus.KAKAO_UNLINKED);
+        eraseIdentity();
+        this.deletedAt = now;
+        clearWithdrawal();
+    }
+
+    /**
+     * 옛 방식(카카오 회원번호를 남긴 채 탈퇴 표시만 함)으로 탈퇴한 행의 식별정보를 지운다. 그 사람이 다시 로그인하면
+     * 이 행을 비우고 새 회원을 만든다 — 되살리지 않는다.
+     */
+    public void eraseLegacyIdentity() {
+        if (!isDeleted()) {
+            throw new IllegalStateException("탈퇴한 회원만 식별정보를 지울 수 있습니다.");
+        }
+        eraseIdentity();
+    }
+
+    private void eraseIdentity() {
+        if (this.id == null) {
+            throw new IllegalStateException("저장된 회원만 탈퇴할 수 있습니다.");
+        }
+        this.kakaoId = WITHDRAWN_KAKAO_ID_PREFIX + this.id;
+        this.name = WITHDRAWN_NAME;
+    }
+
+    private void clearWithdrawal() {
+        this.withdrawalStatus = null;
+        this.withdrawalRequestedAt = null;
+        this.kakaoUnlinkAttemptedAt = null;
+    }
+
+    private void requireStatus(WithdrawalStatus expected) {
+        if (this.withdrawalStatus != expected) {
+            throw new IllegalStateException("탈퇴 단계가 " + expected + " 가 아닙니다: " + this.withdrawalStatus);
+        }
+    }
+
+    /**
+     * 카카오에 연결 해제를 요청할 회원번호. 개발용 로그인 회원({@code dev:})처럼 카카오 계정이 아닌 회원은 비어 있다.
+     */
+    public Optional<Long> kakaoUserId() {
+        if (kakaoId == null || kakaoId.isEmpty() || !kakaoId.chars().allMatch(c -> c >= '0' && c <= '9')) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Long.parseLong(kakaoId));
+        } catch (NumberFormatException e) {
+            // 숫자만 있어도 long 범위를 넘으면 카카오 회원번호가 아니다
+            return Optional.empty();
+        }
     }
 
     public boolean isDeleted() {
         return this.deletedAt != null;
+    }
+
+    public boolean isWithdrawing() {
+        return this.withdrawalStatus != null;
     }
 
     public boolean isSignupCompleted() {

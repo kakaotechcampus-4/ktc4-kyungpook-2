@@ -43,6 +43,14 @@ app:
   insight:
     worker:
       enabled: false
+  # H2 단위 테스트는 한 프로세스 안 잠금, PostgreSQL 통합 테스트는 advisory lock 을 auto 가 고른다.
+  withdrawal:
+    wait-for-completion: 2s
+    kakao:
+      admin-key: test-admin-key
+      app-id: "123456"
+    worker:
+      enabled: false
 
 jwt:
   secret: test-secret-key-for-unit-tests-only

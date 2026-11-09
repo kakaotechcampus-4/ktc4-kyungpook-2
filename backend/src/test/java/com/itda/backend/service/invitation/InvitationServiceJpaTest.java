@@ -102,6 +102,9 @@ class InvitationServiceJpaTest {
         given(userService.getParentIdOf(PARENT)).willReturn(parent.getId());
         given(userService.getParentIdOf(ORGANIZATION_AS_PARENT))
                 .willThrow(new UserException(UserErrorCode.PARENT_REQUIRED));
+        given(userService.lockParentForLink(PARENT)).willReturn(parent.getId());
+        given(userService.lockParentForLink(ORGANIZATION_AS_PARENT))
+                .willThrow(new UserException(UserErrorCode.PARENT_REQUIRED));
     }
 
     private IssuedInvitationResponse issue() {
@@ -320,6 +323,7 @@ class InvitationServiceJpaTest {
         IssuedInvitationResponse issued = issue();
         User otherParent = em.persist(UserFixture.parent("kakao-other-parent", "이보호"));
         given(userService.getParentIdOf("u-other-parent")).willReturn(otherParent.getId());
+        given(userService.lockParentForLink("u-other-parent")).willReturn(otherParent.getId());
         invitationService.accept(PARENT, issued.code());
 
         assertInvalidCode(() -> invitationService.accept("u-other-parent", issued.code()));

@@ -41,6 +41,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}
+      # 회원 탈퇴의 카카오 연결 해제용 서비스 앱 어드민 키. 없으면 카카오 계정 회원은 탈퇴하지 못한다(502).
+      KAKAO_ADMIN_KEY: ${KAKAO_ADMIN_KEY:-}
+      # 연결 해제 웹훅의 app_id 확인용 카카오 앱 ID(숫자). 비워 두면 어드민 키만 본다.
+      KAKAO_APP_ID: ${KAKAO_APP_ID:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-${PUBLIC_ORIGIN:-http://localhost}}
       AUTH_SUCCESS_REDIRECT: ${PUBLIC_ORIGIN:-http://localhost}/oauth/success
       AUTH_FAILURE_REDIRECT: ${PUBLIC_ORIGIN:-http://localhost}/login

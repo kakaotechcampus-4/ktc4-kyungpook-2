@@ -120,7 +120,29 @@ public class ChildGuardianService {
      */
     @Transactional
     public void unlinkBySelf(String userId, Long childId) {
-        Long parentId = userService.getParentIdOf(userId);
+        unlinkGuardian(userService.getParentIdOf(userId), childId);
+    }
+
+    /**
+     * 탈퇴하는 보호자의 아이 연결을 모두 끊는다. 아이마다 {@link #unlinkBySelf} 와 같은 일을 한다 — 연결, 내 공유 동의, 인사이트
+     * 열람 권한, 기다리던 기관 연결 요청을 거둔다. 같은 기관에 다른 보호자의 동의가 남아 있으면 그 기관 공유는 계속된다.
+     *
+     * <p><b>부르는 쪽이 회원 행을 잠근 채로 불러야 한다</b>(잠금 순서 {@code users} → {@code child}, DB 스키마 §3.3). 그래야
+     * 이 목록을 읽은 뒤 초대 수락이 새 연결을 만들지 못한다. 아이는 id 순서로 잠근다 — 같은 아이들을 둔 두 보호자가 동시에
+     * 탈퇴해도 서로 기다리다 멈추지 않는다. 하나라도 실패하면 부르는 쪽 트랜잭션과 함께 전체가 되돌아간다.
+     */
+    @Transactional
+    public void unlinkAllForWithdrawal(Long parentId) {
+        List<Long> childIds = childGuardianRepository.findByUserIdAndDeletedAtIsNullOrderByLinkedAtAscIdAsc(parentId)
+                .stream()
+                .map(ChildGuardian::getChildId)
+                .distinct()
+                .sorted()
+                .toList();
+        childIds.forEach(childId -> unlinkGuardian(parentId, childId));
+    }
+
+    private void unlinkGuardian(Long parentId, Long childId) {
         Optional<Child> child = childRepository.findByIdForUpdate(childId);
         institutionLinkService.cancelForUnlinkedGuardian(childId, parentId);
         ChildGuardian guardian = childGuardianRepository.findByChildIdAndUserIdForUpdate(childId, parentId)

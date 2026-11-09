@@ -329,13 +329,24 @@ class SignupCompletionFilterTest {
 
     @Test
     void tokenForDeletedUserIsUnauthorizedBeforeController() throws Exception {
-        User user = UserFixture.parent("filter-deleted", "탈퇴회원");
-        user.delete();
-        userRepository.saveAndFlush(user);
+        User user = userRepository.saveAndFlush(UserFixture.parent("filter-deleted", "탈퇴회원"));
+        userRepository.saveAndFlush(UserFixture.withdrawn(user));
 
         mockMvc.perform(get(PROTECTED).cookie(cookieFor(user)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("SESSION_USER_NOT_FOUND"));
+                .andExpect(jsonPath("$.code").value("ACCOUNT_WITHDRAWN"));
+    }
+
+    /** 탈퇴를 처리하는 중이면 가입 · 약관보다 먼저 막는다. 약관에 동의하지 않은 보호자도 같다. */
+    @Test
+    void userWithdrawingIsConflictBeforeSignupAndTermsChecks() throws Exception {
+        User user = UserFixture.parent("filter-withdrawing", "탈퇴중");
+        user.requestWithdrawal(java.time.LocalDateTime.now());
+        userRepository.saveAndFlush(user);
+
+        mockMvc.perform(get(PROTECTED).cookie(cookieFor(user)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WITHDRAWAL_IN_PROGRESS"));
     }
 
     @Test

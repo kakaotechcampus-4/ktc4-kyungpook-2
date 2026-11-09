@@ -18,6 +18,23 @@ public enum UserErrorCode implements ErrorCode {
      */
     SESSION_USER_NOT_FOUND(HttpStatus.UNAUTHORIZED, "SESSION_USER_NOT_FOUND", "인증 정보를 확인할 수 없습니다."),
 
+    /**
+     * 출입증은 유효한데(서명 · 만료 · 로그아웃 통과) 그 회원이 탈퇴를 마쳤다. 탈퇴 안내 화면은 이 코드일 때만
+     * "탈퇴가 끝났다" 고 보여 준다 — 로그인 만료 · 쿠키 없음 · 로그아웃은 다른 401 이다.
+     */
+    ACCOUNT_WITHDRAWN(HttpStatus.UNAUTHORIZED, "ACCOUNT_WITHDRAWN", "탈퇴한 회원입니다."),
+
+    /** 탈퇴를 처리하는 중이다. 세션 조회(/auth/me) · 로그아웃 외에는 막힌다. 탈퇴를 다시 신청해도 이 코드다. */
+    WITHDRAWAL_IN_PROGRESS(HttpStatus.CONFLICT, "WITHDRAWAL_IN_PROGRESS", "탈퇴를 처리하고 있습니다."),
+
+    /** 기관 담당자 탈퇴는 아직 지원하지 않는다. 카카오를 부르기 전에 막는다. */
+    ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED(HttpStatus.FORBIDDEN, "ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED",
+            "기관 담당자는 탈퇴할 수 없습니다."),
+
+    /** 카카오 연결 해제의 첫 호출이 분명히 실패해 탈퇴 접수를 취소했다. 회원은 그대로다. */
+    KAKAO_UNLINK_FAILED(HttpStatus.BAD_GATEWAY, "KAKAO_UNLINK_FAILED",
+            "카카오 연결을 끊지 못해 탈퇴하지 못했습니다. 잠시 후 다시 시도해주세요."),
+
     /** 로그인은 됐지만 기관 소속이 아니다. 기관 전용 API 에서 막힌다. */
     ORGANIZATION_NOT_ASSIGNED(HttpStatus.FORBIDDEN, "ORGANIZATION_NOT_ASSIGNED", "기관 소속 사용자만 이용할 수 있습니다."),
 

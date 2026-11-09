@@ -116,17 +116,38 @@ class UserServiceTest {
         assertThat(found.getName()).isEqualTo("박지현");
     }
 
-    /** 탈퇴한 사람이 같은 카카오 계정으로 다시 오면 새 행을 만들지 않고 되살린다. */
+    /**
+     * 옛 방식으로 탈퇴 표시만 된 행(카카오 회원번호가 남음)으로 다시 오면 되살리지 않는다. 그 행의 식별정보를 지우고 새 회원을
+     * 만든다 — 가입 · 약관 동의를 처음부터 한다.
+     */
     @Test
-    void withdrawnUserIsRestoredInsteadOfCreatingANewRow() {
-        User withdrawn = UserFixture.organizationUser(KAKAO_ID, "박지현", 7L);
-        withdrawn.delete();
-        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(withdrawn));
+    void legacyWithdrawnRowIsErasedAndANewMemberIsCreated() {
+        User legacy = UserFixture.legacyDeleted(UserFixture.organizationUser(KAKAO_ID, "박지현", 7L));
+        org.springframework.test.util.ReflectionTestUtils.setField(legacy, "id", 5L);
+        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(legacy));
+        given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> invocation.getArgument(0));
 
         User found = userService.findOrCreateByKakaoId(KAKAO_ID, "박지현");
 
-        assertThat(found).isSameAs(withdrawn);
-        assertThat(found.isDeleted()).isFalse();
+        assertThat(found).isNotSameAs(legacy);
+        assertThat(found.getKakaoId()).isEqualTo(KAKAO_ID);
+        assertThat(found.isSignupCompleted()).isFalse();
+        assertThat(legacy.getKakaoId()).isEqualTo("withdrawn:5");
+        assertThat(legacy.getName()).isEqualTo(User.WITHDRAWN_NAME);
+        verify(userRepository).flush();
+    }
+
+    /** 탈퇴를 처리하는 중이면 새로 만들지도, 이름을 바꾸지도 않는다. */
+    @Test
+    void withdrawingUserIsReturnedUnchanged() {
+        User withdrawing = UserFixture.parent(KAKAO_ID, "옛이름");
+        withdrawing.requestWithdrawal(java.time.LocalDateTime.now());
+        given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.of(withdrawing));
+
+        User found = userService.findOrCreateByKakaoId(KAKAO_ID, "새이름");
+
+        assertThat(found).isSameAs(withdrawing);
+        assertThat(found.getName()).isEqualTo("옛이름");
         verify(userRepository, never()).saveAndFlush(any(User.class));
     }
 

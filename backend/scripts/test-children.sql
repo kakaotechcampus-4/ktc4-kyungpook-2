@@ -237,16 +237,17 @@ SELECT action = 'seed' AS is_seed, action = 'unlink' AS is_unlink, action = 'pur
 FROM test_params \gset
 
 \if :is_seed
--- 테스트 보호자. 탈퇴 표시돼 있으면 되살린다(kakao_id 는 UNIQUE 라 새로 넣을 수 없다).
+-- 테스트 보호자. 탈퇴한 회원은 되살리지 않는다(앱과 같다) — 탈퇴를 마친 행은 kakao_id 를 지웠으므로 새 행이 생긴다.
+-- 옛 방식으로 탈퇴 표시만 되고 kakao_id 가 남은 행은 앱 로그인처럼 식별정보를 먼저 지운다(kakao_id 는 UNIQUE).
+UPDATE users u
+SET kakao_id = 'withdrawn:' || u.id, name = '탈퇴한 회원', updated_at = now()
+FROM test_params p
+WHERE u.kakao_id = p.guardian_kakao_id AND u.deleted_at IS NOT NULL;
+
 INSERT INTO users (kakao_id, name, role, created_at, updated_at)
 SELECT p.guardian_kakao_id, '테스트 보호자', 'PARENT', now(), now()
 FROM test_params p
 ON CONFLICT (kakao_id) DO NOTHING;
-
-UPDATE users u
-SET deleted_at = NULL, updated_at = now()
-FROM test_params p
-WHERE u.kakao_id = p.guardian_kakao_id AND u.deleted_at IS NOT NULL;
 
 -- 새 아이는 앱과 같이 동의 대기로 넣는다. 아래에서 동의를 넣은 뒤 상태를 다시 계산한다.
 INSERT INTO child (name, birthdate, status, created_at, updated_at)
