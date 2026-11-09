@@ -14,6 +14,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 import lombok.Getter;
@@ -22,7 +23,8 @@ import lombok.NoArgsConstructor;
 // ponytail: DB초안 노션 문서 §16 원칙 — journal_entry_id/matched_child_id는 FK/연관관계가 아니라
 // 참조용 Long 컬럼일 뿐이다. JournalEntry/Child 엔티티가 존재하지 않아도 이 엔티티는 컴파일/저장 가능해야 한다.
 @Entity
-@Table(name = "matching_result")
+@Table(name = "matching_result",
+        indexes = @Index(name = "idx_matching_result_journal_entry_id", columnList = "journal_entry_id"))
 @Getter
 @NoArgsConstructor
 public class MatchingResult {

@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -37,7 +38,8 @@ import lombok.NoArgsConstructor;
  * <p>실행 이력이라 수정하지도 삭제하지도 않는다. 상태만 Gate 2 에서 바뀐다 (§3.2).
  */
 @Entity
-@Table(name = "insight_result")
+@Table(name = "insight_result",
+        indexes = @Index(name = "idx_insight_result_child_id", columnList = "child_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class InsightResult {

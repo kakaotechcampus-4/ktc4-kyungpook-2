@@ -9,6 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
@@ -23,7 +24,8 @@ import lombok.NoArgsConstructor;
  * 수정하지도 않는다 — 다시 검증하면 새 행을 쌓는다. 그래서 {@code updated_at}·{@code deleted_at} 이 없다.
  */
 @Entity
-@Table(name = "validation_result")
+@Table(name = "validation_result",
+        indexes = @Index(name = "idx_validation_result_journal_entry_id", columnList = "journal_entry_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ValidationResult {

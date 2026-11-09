@@ -9,6 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
@@ -42,7 +43,9 @@ import lombok.NoArgsConstructor;
         name = "sharing_history",
         uniqueConstraints = @UniqueConstraint(
                 name = SharingHistory.UK_SHARING_HISTORY,
-                columnNames = {"insight_result_id", "receiver_type", "receiver_id"}))
+                columnNames = {"insight_result_id", "receiver_type", "receiver_id"}),
+        // 기관 수신함(안 읽은 수는 10초마다). UNIQUE 키는 insight_result_id 로 시작해 수신자 조회에 쓰지 못한다 (#479)
+        indexes = @Index(name = "idx_sharing_history_receiver_type_receiver_id", columnList = "receiver_type, receiver_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SharingHistory {

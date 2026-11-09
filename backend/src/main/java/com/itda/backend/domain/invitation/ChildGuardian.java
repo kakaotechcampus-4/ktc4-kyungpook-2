@@ -7,6 +7,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -30,7 +31,9 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(
         name = "child_guardian",
-        uniqueConstraints = @UniqueConstraint(name = ChildGuardian.UK_CHILD_GUARDIAN, columnNames = {"child_id", "user_id"}))
+        uniqueConstraints = @UniqueConstraint(name = ChildGuardian.UK_CHILD_GUARDIAN, columnNames = {"child_id", "user_id"}),
+        // 보호자의 아이 목록. UNIQUE 키는 child_id 로 시작해 user_id 조회에 쓰지 못한다 (#479)
+        indexes = @Index(name = "idx_child_guardian_user_id", columnList = "user_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ChildGuardian {

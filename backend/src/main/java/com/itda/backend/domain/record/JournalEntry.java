@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -27,7 +28,14 @@ import lombok.NoArgsConstructor;
  * {@code childId} 는 매칭이 확정되기 전까지 NULL 이다 (DB 스키마 §6.2).
  */
 @Entity
-@Table(name = "journal_entry")
+@Table(name = "journal_entry", indexes = {
+        // 매칭 · 검증 · 요약 워커가 5초마다 상태로 대상을 찾는다 (#479)
+        @Index(name = "idx_journal_entry_status_id", columnList = "status, id"),
+        // 처리 현황 · 기관 조건 조인은 원본 파일로 잇는다
+        @Index(name = "idx_journal_entry_raw_record_id", columnList = "raw_record_id"),
+        @Index(name = "idx_journal_entry_summary_id", columnList = "summary_id"),
+        // 요약 묶음(아동 · 날짜)
+        @Index(name = "idx_journal_entry_child_id_entry_date", columnList = "child_id, entry_date")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class JournalEntry {
