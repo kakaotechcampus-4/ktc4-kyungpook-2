@@ -26,7 +26,7 @@
 | 🟡 **초안** | 구조는 유지, **컬럼은 바뀔 수 있음** | 프론트 화면에서 역산. AI 계약이 아직 없음 |
 | ⛔ **추정** | **근거 없음.** 예시일 뿐 | 누구도 확정한 적 없는 값 |
 
-### 0.2 테이블 26개 현황
+### 0.2 테이블 27개 현황
 
 | # | 테이블 | 설계 | 구현 (엔티티) | 삭제 방식 |
 | --- | --- | --- | --- | --- |
@@ -56,12 +56,13 @@
 | 24 | `revoked_session` | ✅ 확정 | ✅ `RevokedSession` | 삭제 없음 (쌓기만) |
 | 25 | `kakao_unlink_webhook` | ✅ 확정 | ✅ `KakaoUnlinkWebhook` | 행 삭제 (회원에 옮기면 지운다, 수신함) |
 | 26 | `organization_handover` | ✅ 확정 | ✅ `OrganizationHandover` | `status` 로 대체 |
+| 27 | `raw_record_upload` | ✅ 확정 | ✅ `RawRecordUpload` | 행 삭제 (하루 지나면 정리 작업이 지운다) |
 
-**26개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
+**27개 모두 설계가 확정됐다.** `validation_result`·`summary_result` 는 에이전트 계약이 나와서,
 `insight_result`·`sharing_history` 는 Insight 에이전트 계약(`AI/insight/schemas.py`)과 Gate 2 공유 정책이
 정해져서 확정으로 올렸다. `human_review` 는 Gate 1 결정값이 `APPROVED`·`CORRECTED`·`HOLD`·`REMOVED`·`REOPENED` 로 정해지며 확정됐다.
 
-**26개 모두 엔티티가 있다** (기관 담당자 인계 코드 `organization_handover` 가 마지막으로 들어왔다, #478).
+**27개 모두 엔티티가 있다** (저장소로 바로 올리는 업로드의 접수 `raw_record_upload` 가 마지막으로 들어왔다, #450).
 `human_review` 는 Gate 1 결정 API(#178)와 Gate 2 결정 API(#206)가 함께 쓴다.
 
 삭제 방식은 §3.2 에서 설명한다. **`deleted_at` 이 붙은 6개 테이블만 삭제 대상이고, 나머지는 애초에 지우지 않는다.**
@@ -170,6 +171,8 @@ erDiagram
 
 ```mermaid
 erDiagram
+    organization ||--o{ raw_record_upload : "업로드 접수 (#450)"
+    raw_record_upload |o--o| raw_record : "완료하면 만듦"
     organization ||--o{ raw_record : "업로드"
     raw_record ||--o{ journal_entry : "일지로 분리"
     child ||--o{ journal_entry : "매칭 확정 후"
@@ -571,7 +574,7 @@ UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변�
 | 사람의 매칭 확정 (O-23 assign) | `child` → `organization`. 아이 행을 잠근 뒤 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 새 확정이 성공하지 않는다. 기관 행은 AI 처리 줄 상한 확인이다(아래 "AI 처리 줄에 들어오기", #424) |
 | 막힌 일지 고쳐서 다시 검사 (O-25 revise) | `child` → `journal_entry`. 먼저 잠그지 않고 우리 기관 일지인지 본다 — 다른 기관 id 로는 그 기관 행을 잠그지 않는다. 판정의 아이 행을 한 번 잠근 뒤 일지 행을 잠가 상태·최신 판정·아이가 같은지 보고, 명부·그 기관 동의를 확인한다 — 철회·명부 제외가 커밋된 뒤에는 고치기가 성공하지 않는다(400, #357). 그다음 `organization` 을 잠가 AI 처리 줄 상한을 본다(#424). 보류(O-25 hold)는 같은 소유 확인 뒤 `journal_entry` 만 잠근다. 막힌 일지 행을 잠그는 다른 작업은 없다 |
 | Gate 1 결정 · 보류 해제 (O-31 · O-33) | `summary_result` → `child`. 요약 행을 잠가 결정끼리 줄을 세운 뒤 아이 행을 잠그고 그 기관 동의를 확인한다 — 철회가 커밋된 뒤에는 승인·보류 해제가 성공하지 않는다(404, #332). Gate 2 승인(`insight_result` → `child`)과 같은 모양이고, `child` 를 먼저 잠그는 작업들은 요약 행을 잠그지 않아 교착이 없다 |
-| AI 처리 줄에 들어오기 (O-20 업로드 · O-23 assign · O-25 revise · O-31 `revert` · O-36, #424) | **`organization` 은 늘 마지막**. 위 작업들이 자기 행(`child` · `journal_entry` · `summary_result`)을 잠근 뒤 그 기관 행을 잠그고 AI 처리 중 · 대기 일지를 센다. 업로드는 저장소 전송을 잠금 밖에서 끝내고 기관 행만 잠근다. 기관 행을 먼저 잡고 다른 행을 기다리는 작업이 없어 교착이 없다. 요약 워커는 기관 행을 잠그지 않는다 |
+| AI 처리 줄에 들어오기 (O-20 업로드 · O-23 assign · O-25 revise · O-31 `revert` · O-36, #424) | **`organization` 은 늘 마지막**. 위 작업들이 자기 행(`child` · `journal_entry` · `summary_result`)을 잠근 뒤 그 기관 행을 잠그고 AI 처리 중 · 대기 일지를 센다. 업로드는 저장소 전송을 잠금 밖에서 끝내고 기관 행만 잠근다. 저장소로 바로 올리는 업로드의 완료(#450)는 `raw_record_upload` 를 먼저 잠그고 기관 행을 잠근다. 기관 행을 먼저 잡고 다른 행을 기다리는 작업이 없어 교착이 없다. 요약 워커는 기관 행을 잠그지 않는다 |
 | 요약 결과 남기기 (요약 워커) | `summary_result`(그 묶음의 판, 최신 판부터) → `child`. 저장 · 요약 실패 · 시스템 오류를 남기기 전에 잠그고 그 기관 동의를 확인한다 — 철회가 먼저 커밋됐으면 아무것도 남기지 않고 요청을 닫는다(일지는 요약 전으로, #398). AI 를 부르는 동안에는 잠그지 않는다. Gate 1 결정과 같은 순서라 교착이 없다 — 아이 행을 먼저 잡으면 Gate 1 과 서로 기다린다 |
 | 인사이트 단건 열람 (G-36 · O-51) | `child` **FOR SHARE** → `sharing_history`(열람 시각 UPDATE 의 행 잠금). 잠글 아이는 `child_id` 값만 골라 알고, 권한 행은 잠근 뒤에 처음 읽는다. 철회·Gate 2 승인과는 줄을 서고 열람끼리는 `child` 에서 막지 않는다 — 같은 권한 행의 UPDATE 끼리만 기다린다 (§9.4) |
 | 돌봄 정보 저장 (G-13) | `child`. 잠근 뒤 보호자 연결·아이 삭제를 보고 덮어쓴다. 첫 저장이 겹쳐 행이 둘 생기지 않고, 연결 해제가 먼저 반영되면 403 이며 돌봄 정보는 생기지도 바뀌지도 않는다 |
@@ -1456,6 +1459,10 @@ BLOCKED      (정의만 있고 아직 쓰는 곳 없음)
 파일 저장·메타데이터 저장·`csv`/`txt` 기록 분리는 **업로드 요청 안에서 동기로 처리한다** (`RawRecordService`).
 그 뒤 매칭·검증·요약은 워커가 비동기로 실행한다. 상태 조회(O-21)와 파일별 진행 조회(O-26)는 아직 미구현이다.
 
+**저장소로 바로 올리는 업로드 (#450).** 브라우저가 S3 로 바로 올리는 업로드는 다 올라온 뒤 완료 요청에서 이 행을 만든다.
+올리는 동안은 §6.3 `raw_record_upload` 에만 있다 — 이 테이블에 "올리는 중" 상태를 두지 않는다. `status` 에는 Hibernate 가 만든
+CHECK 제약이 있어 값을 더하면 배포 DB 를 손으로 고쳐야 하고(§11.4), 목록 · 처리 현황 · 대시보드가 모두 그 상태를 빼야 해서다.
+
 **조회는 `findByIdAndDeletedAtIsNull` · `findByInstitutionIdAndDeletedAtIsNull`을 쓴다.**
 
 **`hint_name` / `hint_birthdate`**
@@ -1780,6 +1787,37 @@ AI 다운으로 되돌린 횟수는 `agent_retry_count` 가 센다 (#153).
 #2  entry_date=2026-09-02  sequence_no=2  content=큰 소리에 귀를 막음
 #3  entry_date=2026-09-03  sequence_no=3  content=김민수가 장난감을 가져감
 ```
+
+### 6.3 `raw_record_upload` ✅ — ✅ 구현 (`RawRecordUpload`, #450)
+
+> **근거** — 멘토링 피드백 "업로드 파일이 BE 를 거치지 않게" · API `POST /raw-records/upload-url` · `POST /raw-records/uploads/{uploadId}/complete`
+
+브라우저가 저장소(S3)로 바로 올리는 파일 하나의 **접수**. 업로드 주소를 줄 때 만들고, 완료 요청에서 파일을 확인한 뒤
+`raw_record`(§6.1)를 만들어 그 id 를 남긴다.
+
+| Column | Type | NULL | 설명 |
+| --- | --- | --- | --- |
+| `id` | BIGINT | N | PK. API 의 `uploadId` (원본 기록 id 와 다른 번호) |
+| `organization_id` | BIGINT | N | 접수한 사용자의 소속 기관. 완료는 같은 기관 사용자만 할 수 있다 |
+| `user_id` | BIGINT | N | 접수한 사용자 (기록용) |
+| `original_filename` | VARCHAR(255) | N | 화면용 파일 이름. `raw_record.original_filename` 과 같은 규칙으로 다듬은 값 |
+| `stored_path` | VARCHAR(255) | N | 저장소 안 이름(UUID). 완료하면 `raw_record.stored_path` 가 이 값이 된다 |
+| `content_type` | VARCHAR(255) | N | 업로드 주소에 서명한 형식 |
+| `size_bytes` | BIGINT | N | 업로드 주소에 서명한 크기. 완료할 때 저장소의 실제 크기와 맞춰 본다 |
+| `created_at` | DATETIME | N | 접수 시각. 정리 작업이 이 값으로 고른다 |
+| `raw_record_id` | BIGINT | Y | 완료로 만든 원본 기록. 완료 전이면 NULL |
+| `completed_at` | DATETIME | Y | 완료 시각 |
+
+인덱스 `idx_raw_record_upload_created_at (created_at)` — 정리 작업이 오래된 접수를 고른다.
+
+- **완료는 여러 번 와도 원본 기록을 하나만 만든다.** 완료는 이 행을 `FOR UPDATE` 로 잠그고 `raw_record_id` 를 본다 —
+  비어 있을 때만 `raw_record` · `journal_entry` 를 만들고 같은 트랜잭션에서 채운다. 잠금 순서는 `raw_record_upload` →
+  `organization`(AI 처리 줄 상한, #424)이다.
+- **받지 않은 파일은 지운다.** 저장소의 크기가 접수와 다르거나 일지 상한(#424)을 넘으면 저장소 파일과 이 행을 지운다.
+  원본은 append-only 지만 받은 적 없는 파일이라 대상이 아니다. 혼잡(429)이면 남겨 완료만 다시 부를 수 있게 한다.
+- **정리** — 매일 새벽 4시 30분(서울) `AbandonedUploadSweeper` 가 하루 지난 접수를 지운다. 완료되지 않은 접수는 저장소
+  파일도 지우고(올리다 창을 닫은 경우), 완료된 접수는 행만 지운다(파일은 원본 기록의 것). 파일은 DB 커밋 뒤에 지운다.
+- 새 테이블이라 `ddl-auto: update` 가 만든다 — §11.4 수동 조치는 필요 없다.
 
 ---
 
@@ -3301,3 +3339,4 @@ Hibernate 가 쓰기를 막으며 다시 만든다.
 | 2026-11-09 | 탈퇴 보강 (§3.3 잠금 순서 · §4.1 "탈퇴") — 정리만 남은 직접 신청 탈퇴에 카카오 로그인이 오면 `REQUESTED` 로 되돌려 연결 해제를 다시 부른다. 탈퇴 정리는 아이 id 만 읽고 아이를 잠근 뒤 이미 끊긴 연결은 건너뛴다. 스키마 변경 없음 | #473 |
 | 2026-11-09 | `organization_handover` 추가 (§4.6) — 기관 담당자 넘기기. 후임이 인계 코드로 가입하면 같은 기관에 소속되고 이전 담당자는 탈퇴로 정리된다(§4.1 "탈퇴"). 기관 담당자의 탈퇴는 카카오 첫 호출이 실패해도 취소하지 않는다. 잠금 순서 두 줄 추가(§3.3). 새 테이블이라 `ddl-auto: update` 가 만든다 | #478 |
 | 2026-11-09 | 자주 읽는 테이블 인덱스 11개 추가 — `journal_entry` 4개 · `raw_record` · `matching_result` · `validation_result` · `summary_result` · `insight_result` · `child_guardian` · `sharing_history` 각 1개 (§5.4 · §6.1 · §6.2 · §7.1 · §8.1 · §8.2 · §9.3 · §9.4). 컬럼 · 제약 변경 없음. `update` 가 기존 테이블에도 없는 인덱스를 쓰기를 막으며 만들어, 배포 전에 운영 DB 에 `CONCURRENTLY` 로 먼저 만들고 검증한다 (§11.4) | #479 |
+| 2026-11-09 | `raw_record_upload` 추가 (§6.3) — 브라우저가 S3 로 바로 올리는 업로드의 접수. 완료하면 `raw_record` 를 만들고 그 id 를 남긴다. `raw_record.status` 에 "올리는 중" 값을 더하지 않은 이유를 §6.1 에 적음. 하루 지난 접수는 정리 작업이 지운다. 새 테이블이라 `ddl-auto: update` 가 만든다 | #450 |
