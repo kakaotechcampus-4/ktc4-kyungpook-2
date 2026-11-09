@@ -16,7 +16,11 @@ public enum RawRecordErrorCode implements ErrorCode {
     /** 파일에서 나온 일지가 너무 많거나 하나가 너무 길다 (#424). 파일은 저장하지 않는다. */
     ENTRY_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "RAW_RECORD_ENTRY_LIMIT_EXCEEDED", "기록이 너무 많거나 긴 파일입니다."),
     /** 지금 처리 중인 업로드가 많다 (#424). 파일은 저장하지 않는다. */
-    UPLOAD_BUSY(HttpStatus.TOO_MANY_REQUESTS, "RAW_RECORD_UPLOAD_BUSY", "지금 올리는 파일이 많습니다. 잠시 뒤 다시 올려 주세요.");
+    UPLOAD_BUSY(HttpStatus.TOO_MANY_REQUESTS, "RAW_RECORD_UPLOAD_BUSY", "지금 올리는 파일이 많습니다. 잠시 뒤 다시 올려 주세요."),
+    /** 없는 접수이거나 다른 기관의 접수다 (#450). */
+    UPLOAD_NOT_FOUND(HttpStatus.NOT_FOUND, "RAW_RECORD_UPLOAD_NOT_FOUND", "업로드 접수를 찾을 수 없습니다."),
+    /** 완료를 알렸지만 저장소에 아직 파일이 없다 (#450). 파일을 올린 뒤 다시 완료를 알린다. */
+    UPLOAD_NOT_READY(HttpStatus.CONFLICT, "RAW_RECORD_UPLOAD_NOT_READY", "파일이 아직 올라오지 않았습니다.");
 
     private final HttpStatus status;
     private final String code;

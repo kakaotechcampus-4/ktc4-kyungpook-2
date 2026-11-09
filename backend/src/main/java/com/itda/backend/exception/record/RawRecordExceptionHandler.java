@@ -55,6 +55,24 @@ public class RawRecordExceptionHandler {
                 .body(ErrorResponse.of(RawRecordErrorCode.FILE_TOO_LARGE));
     }
 
+    @ExceptionHandler(RawRecordTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleDeclaredTooLarge(RawRecordTooLargeException e) {
+        return ResponseEntity.status(RawRecordErrorCode.FILE_TOO_LARGE.getStatus())
+                .body(ErrorResponse.of(RawRecordErrorCode.FILE_TOO_LARGE));
+    }
+
+    @ExceptionHandler(RawRecordUploadNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleUploadNotFound(RawRecordUploadNotFoundException e) {
+        return ResponseEntity.status(RawRecordErrorCode.UPLOAD_NOT_FOUND.getStatus())
+                .body(ErrorResponse.of(RawRecordErrorCode.UPLOAD_NOT_FOUND));
+    }
+
+    @ExceptionHandler(RawRecordUploadNotReadyException.class)
+    public ResponseEntity<ErrorResponse> handleUploadNotReady(RawRecordUploadNotReadyException e) {
+        return ResponseEntity.status(RawRecordErrorCode.UPLOAD_NOT_READY.getStatus())
+                .body(ErrorResponse.of(RawRecordErrorCode.UPLOAD_NOT_READY));
+    }
+
     @ExceptionHandler(RawRecordStorageException.class)
     public ResponseEntity<ErrorResponse> handleStorageFailure(RawRecordStorageException e) {
         log.error("raw record storage failure", e);

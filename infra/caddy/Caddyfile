@@ -51,12 +51,14 @@
 	# 정적 자산의 캐시 헤더는 frontend가 정한다.
 	# CSP: React Router SPA 모드가 index.html 에 인라인 스크립트를 넣어 'unsafe-inline' 이 필요하다. 그래서 인라인 XSS 는 막지 못하고,
 	# 외부 리소스 로드와 일부 데이터 전송 경로(fetch · 이미지 · 폼)를 같은 오리진으로 제한하고 클릭재킹을 막는다. 페이지 이동은 막지 못한다.
+	# connect-src 의 S3 주소는 원본 기록 업로드가 파일 본문을 S3 로 바로 PUT 하는 곳이다 (#450). 버킷이 하나라 직접 적는다 — 바꾸면
+	# infra/scripts/tests/test_caddy_proxy.py 의 FRONTEND_CSP 도 고친다 (infra/README.md 보안 헤더 절).
 	# 압축은 화면 응답에만 건다 (#477). API 와 OAuth 응답은 압축하지 않는다 — 초대 코드 · 기관 코드처럼 비밀값이 본문에 있는 응답에
 	# 요청자가 조작할 수 있는 값이 함께 담기면 압축된 크기로 비밀값을 추측할 수 있다(BREACH). API 를 넣으려면 그 응답들을 먼저 확인한다.
 	# 기본값대로 압축이 잘 되는 형식(HTML · JS · CSS · JSON · SVG)을 512바이트 이상일 때만 압축한다. png · woff2 는 건드리지 않는다.
 	handle {
 		encode zstd gzip
-		header >Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		header >Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self' https://itda-raw-records-dev.s3.ap-northeast-2.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		reverse_proxy frontend:3000
 	}
 

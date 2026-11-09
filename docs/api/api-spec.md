@@ -801,7 +801,9 @@ O-15 ~ O-19 · O-63 공통 오류:
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| O-20 | POST | `/raw-records` | 원본 기록 업로드 (multipart) | I-05 |
+| O-20 | POST | `/raw-records` | 원본 기록 업로드 (multipart) · 화면이 O-20a · O-20b 로 옮기면 없앰 | I-05 |
+| O-20a | POST | `/raw-records/upload-url` | 저장소로 바로 올릴 주소 받기 · **구현됨** (#450) | I-05 |
+| O-20b | POST | `/raw-records/uploads/{uploadId}/complete` | 다 올렸다고 알리기 → 원본 기록 만들기 · **구현됨** (#450) | I-05 |
 | O-21 | GET | `/raw-records/{id}/status` | 파이프라인 진행 상태 | I-03, I-05 |
 | O-22 | GET | `/matching-queue` | 확인 필요 큐 · **구현됨** | I-03, I-06 |
 | O-23 | POST | `/matching-queue/{itemId}/resolve` | 아이 확정 / 제외 · **구현됨** | I-06 |
@@ -850,6 +852,69 @@ O-15 ~ O-19 · O-63 공통 오류:
 > 올려 정리합니다.
 >
 > 조회용으로 `GET /raw-records`(내 기관 목록)와 `GET /raw-records/{id}`(단건, 다른 기관 기록은 `404 RAW_RECORD_NOT_FOUND`)가 있습니다.
+
+#### O-20a · O-20b 저장소로 바로 올리는 업로드 (#450)
+
+> **2026-11-09 (#450)** — 파일 본문이 BE 를 거치지 않고 브라우저에서 S3 로 바로 갑니다(멘토링 피드백). BE 는 주소를 주면서
+> 권한만 확인하고, AWS 키는 BE 밖으로 나가지 않습니다. O-20 은 화면이 옮겨 간 뒤(#451) 없앱니다.
+
+| 단계 | 요청 | 하는 일 |
+| --- | --- | --- |
+| 1 | `POST /raw-records/upload-url` (O-20a) | 이름 · 형식 · 크기를 O-20 과 같은 기준으로 확인하고 접수 id 와 업로드 주소를 받는다 |
+| 2 | `PUT {uploadUrl}` | 파일 본문을 올린다. BE 를 거치지 않는다(운영) |
+| 3 | `POST /raw-records/uploads/{uploadId}/complete` (O-20b) | 다 올렸다고 알린다 → O-20 과 같은 흐름(기록 나누기 → 상한 → 저장). 이후 매칭 → 검증 → 요약은 같다 |
+
+**O-20a 요청** · JSON (파일 본문은 보내지 않습니다)
+
+```json
+{ "filename": "0821_관찰일지.txt", "contentType": "text/plain", "size": 2048 }
+```
+
+`contentType` 은 브라우저의 `File.type`, `size` 는 `File.size` 를 그대로 보냅니다. 허용 확장자 · 형식 · 20MB 상한은 O-20 과 같습니다.
+
+**O-20a 응답** · `201 Created`
+
+```json
+{ "uploadId": 12,
+  "uploadUrl": "https://itda-raw-records.s3.ap-northeast-2.amazonaws.com/3f2c…e1.txt?X-Amz-Algorithm=…",
+  "method": "PUT",
+  "headers": { "Content-Type": "text/plain" },
+  "expiresAt": "2026-11-09T05:10:00Z" }
+```
+
+| 필드 | 설명 |
+| --- | --- |
+| `uploadId` | 접수 id. 단계 3에 씁니다. **원본 기록 id 와 다른 번호**입니다 |
+| `uploadUrl` | 본문을 올릴 주소. **운영은 S3 주소**라 쿠키 · CSRF 헤더를 붙이지 않습니다(붙이면 S3 CORS · 서명 검사에서 실패). **로컬(S3 없음)은 `/api` 로 시작하는 BE 주소**라 다른 API 처럼 쿠키 · CSRF 헤더를 붙입니다 |
+| `method` | 언제나 `PUT` |
+| `headers` | 그대로 붙일 헤더. 서명에 들어간 값이라 바꾸면 거절됩니다. `Content-Length` 는 브라우저가 본문 크기로 채우는데, 이것도 서명돼 있어 접수한 `size` 와 다른 파일은 S3 가 받지 않습니다 |
+| `expiresAt` | 이 시각(10분 뒤)이 지나면 주소를 쓸 수 없습니다. 단계 1부터 다시 합니다 |
+
+**O-20b 응답** · `200 OK`, O-20 의 응답과 같은 원본 기록(`RawRecordResponse`)
+
+- **여러 번 불러도 원본 기록은 하나입니다.** 이미 완료된 접수는 만든 기록을 그대로 돌려줍니다. 완료 응답을 못 받았으면 본문을
+  다시 올리지 말고 이 요청만 다시 부릅니다.
+- 접수한 기관의 사용자만 부를 수 있습니다. 다른 기관 접수는 `404 RAW_RECORD_UPLOAD_NOT_FOUND` 입니다.
+
+**어느 단계에서 어떤 오류가 나는지**
+
+| 단계 | 상태 | `code` | 상황 · 화면이 할 일 |
+| --- | --- | --- | --- |
+| 1 | 400 | `RAW_RECORD_INVALID_REQUEST` | 크기 누락 · 0, 확장자 · 형식 · 파일명 오류 |
+| 1 | 413 | `RAW_RECORD_FILE_TOO_LARGE` | 20MB 초과. O-20 과 같은 코드입니다 (Caddy 413 은 이제 나지 않습니다) |
+| 1 | 500 | `RAW_RECORD_STORAGE_FAILED` | 업로드 주소 만들기 실패 |
+| 2 | 403 | (S3 XML) | 주소 만료, 형식 · 크기가 서명과 다름. 단계 1부터 다시 |
+| 3 | 409 | `RAW_RECORD_UPLOAD_NOT_READY` | 저장소에 아직 파일이 없음. 단계 2를 마친 뒤 다시 (주소가 만료됐으면 단계 1부터) |
+| 3 | 400 | `RAW_RECORD_INVALID_REQUEST` | 저장소의 파일 크기가 접수와 다름 — **파일과 접수를 지웁니다.** 단계 1부터 다시 |
+| 3 | 400 | `RAW_RECORD_ENTRY_LIMIT_EXCEEDED` | 기록 500건 · 5,000자 상한 초과 — **파일과 접수를 지웁니다.** 나눠 올립니다 |
+| 3 | 429 | `RAW_RECORD_UPLOAD_BUSY` · `AGENT_QUEUE_FULL` | 혼잡 · 그 기관 AI 처리 줄이 꽉 참 — 파일과 접수는 남습니다. 잠시 뒤 **단계 3만** 다시 |
+| 3 | 404 | `RAW_RECORD_UPLOAD_NOT_FOUND` | 없는 접수, 다른 기관 접수, 상한 초과로 지운 접수, 하루가 지나 정리된 접수 |
+| 3 | 500 | `RAW_RECORD_STORAGE_FAILED` | 저장소 확인 · 읽기 또는 기록 저장 실패 — 접수는 남아 단계 3을 다시 부를 수 있습니다 |
+
+- **끝까지 오지 않은 업로드** — 올리다 창을 닫으면 완료가 오지 않습니다. 하루가 지난 접수는 매일 새벽 정리 작업이 저장소
+  파일과 함께 지웁니다(DB 스키마 §6.3).
+- **운영 준비** — 브라우저가 S3 로 `PUT` 하려면 버킷 CORS 가 우리 도메인의 `PUT` 을 허용하고, 화면 CSP `connect-src` 에 S3
+  주소가 있어야 합니다. 둘 다 화면을 옮기기(#451) 전에 맞춥니다.
 
 **O-21 응답** · 파이프라인 단계는 프론트 `PIPELINE_STAGES`와 맞춥니다.
 
@@ -2478,6 +2543,8 @@ G-20 의 `id` 는 승인본(`child_context`) id 입니다.
 | `FILE_TOO_LARGE` | 413 | 업로드 용량 초과 (현재 구현: `RAW_RECORD_FILE_TOO_LARGE`) |
 | `RAW_RECORD_ENTRY_LIMIT_EXCEEDED` | 400 | 파일에서 나온 기록이 500건을 넘거나 기록 하나가 5,000자를 넘음 — 파일을 저장하지 않음 (O-20, #424) |
 | `RAW_RECORD_UPLOAD_BUSY` | 429 | 서버 전체의 동시 업로드 처리 자리와 대기가 꽉 참 — 파일을 저장하지 않음 (O-20, #424) |
+| `RAW_RECORD_UPLOAD_NOT_FOUND` | 404 | 없는 업로드 접수 · 다른 기관 접수 · 지운 접수 (O-20b, #450) |
+| `RAW_RECORD_UPLOAD_NOT_READY` | 409 | 완료를 알렸지만 저장소에 아직 파일이 없음 — 올린 뒤 다시 (O-20b, #450) |
 | `AGENT_QUEUE_FULL` | 429 | 그 기관 AI 처리 줄이 꽉 참 (O-20 · O-23 `assign` · O-25 `revise` · O-31 `revert` · O-36, #424) |
 | `UNSUPPORTED_FILE_TYPE` | 400 | 허용되지 않은 확장자 (현재 구현: 입력 오류와 함께 `RAW_RECORD_INVALID_REQUEST`) |
 | `CHILD_NOT_FOUND` | 404 | 없는 아이 |

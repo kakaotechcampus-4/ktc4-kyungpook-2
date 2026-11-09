@@ -41,6 +41,7 @@ import com.itda.backend.exception.user.UserException;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
+import com.itda.backend.repository.record.RawRecordUploadRepository;
 import com.itda.backend.service.agent.AgentQueueGuard;
 import com.itda.backend.service.storage.RawFileStorage;
 import com.itda.backend.service.user.UserService;
@@ -64,6 +65,9 @@ class RawRecordServiceTest {
     private AgentQueueGuard agentQueueGuard;
 
     @Mock
+    private RawRecordUploadRepository rawRecordUploadRepository;
+
+    @Mock
     private RawFileStorage rawFileStorage;
 
     @Mock
@@ -83,7 +87,8 @@ class RawRecordServiceTest {
         // 힌트는 항상 비워진다(applyHintFromFilename). 힌트 자체를 검증하는 테스트는 이 stub을 덮어쓴다.
         lenient().when(childRepository.findByOrganizationId(any())).thenReturn(List.of());
         // JournalEntrySplitter는 의존성 없는 순수 로직이라 목 대신 실제 구현을 쓴다.
-        rawRecordRecorder = spy(new RawRecordRecorder(rawRecordRepository, journalEntryRepository, agentQueueGuard));
+        rawRecordRecorder = spy(new RawRecordRecorder(rawRecordRepository, journalEntryRepository, agentQueueGuard,
+                rawRecordUploadRepository));
         rawRecordService = newService(PROPERTIES);
     }
 

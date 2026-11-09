@@ -18,6 +18,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import com.itda.backend.service.record.RawRecordUploadService;
 import com.itda.backend.service.record.RecordProgressService;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -49,6 +50,10 @@ class RawRecordControllerTest {
 
     @MockitoBean
     private RecordProgressService recordProgressService;
+
+    /** 저장소로 바로 올리는 업로드(#450)는 RawRecordUploadApiTest 가 실제 흐름으로 본다. */
+    @MockitoBean
+    private RawRecordUploadService rawRecordUploadService;
 
     @AfterEach
     void clearSecurityContext() {
