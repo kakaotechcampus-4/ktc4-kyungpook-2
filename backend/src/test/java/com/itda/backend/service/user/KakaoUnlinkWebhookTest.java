@@ -14,6 +14,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -42,10 +46,12 @@ import com.itda.backend.domain.user.WithdrawalStatus;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.global.security.ApiPaths;
+import com.itda.backend.repository.user.KakaoUnlinkWebhookRepository;
 import com.itda.backend.repository.user.UserRepository;
 
 /**
- * 카카오 연결 해제 웹훅. 실제 보안 필터 · 실행기 · 정리를 쓰고 카카오 호출만 바꿔 끼운다. 웹훅이 카카오를 다시 부르지 않는지도 본다.
+ * 카카오 연결 해제 웹훅. 실제 보안 필터 · 수신함 · 실행기 · 정리를 쓰고 카카오 호출만 바꿔 끼운다. 웹훅이 카카오를 다시 부르지
+ * 않는지도 본다. 웹훅은 수신함에 남기고 바로 답하므로, 회원에 옮긴 결과는 수신함이 빌 때까지 기다려 본다.
  * 테스트 설정의 대표 어드민 키는 {@code test-admin-key}, 앱 ID 는 {@code 123456} 이다.
  */
 @SpringBootTest
@@ -62,8 +68,9 @@ class KakaoUnlinkWebhookTest {
     @Autowired private UserRepository userRepository;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private EntityManager entityManager;
-    @Autowired private WithdrawalSteps steps;
     @Autowired private WithdrawalExecutor executor;
+    @Autowired private KakaoUnlinkInbox inbox;
+    @Autowired private KakaoUnlinkWebhookRepository webhookRepository;
 
     @MockitoBean private KakaoUnlinkClient kakaoUnlinkClient;
 
@@ -141,6 +148,7 @@ class KakaoUnlinkWebhookTest {
                 .andExpect(status().isOk());
 
         assertThat(reload(mother).isWithdrawing()).isFalse();
+        assertThat(webhookRepository.findAll()).noneMatch(w -> w.getKakaoId().equals(mother.getKakaoId()));
     }
 
     @Test
@@ -149,6 +157,7 @@ class KakaoUnlinkWebhookTest {
 
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), staff.getKakaoId()))
                 .andExpect(status().isOk());
+        waitUntilInboxEmpty();
 
         User after = reload(staff);
         assertThat(after.isWithdrawing()).isFalse();
@@ -198,6 +207,7 @@ class KakaoUnlinkWebhookTest {
 
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
                 .andExpect(status().isOk());
+        waitUntilInboxEmpty();
         executor.submit(mother.getId()).get(5, TimeUnit.SECONDS);
 
         User after = reload(mother);
@@ -244,13 +254,14 @@ class KakaoUnlinkWebhookTest {
     @Test
     void 탈퇴를_열지_않았으면_검증만_하고_무시한다() {
         User mother = persist(UserFixture.parent(nextKakaoId()));
-        KakaoUnlinkWebhookService closed = new KakaoUnlinkWebhookService(steps, executor, new WithdrawalProperties(
+        KakaoUnlinkWebhookService closed = new KakaoUnlinkWebhookService(inbox, new WithdrawalProperties(
                 false, java.time.Duration.ofSeconds(1), "local",
                 new WithdrawalProperties.Kakao("http://unused", "test-admin-key", APP_ID, null, null), null));
 
         closed.handle(AUTH, APP_ID, mother.getKakaoId(), "UNLINK_FROM_APPS");
 
         assertThat(reload(mother).isWithdrawing()).isFalse();
+        assertThat(webhookRepository.findAll()).noneMatch(w -> w.getKakaoId().equals(mother.getKakaoId()));
         org.assertj.core.api.Assertions.assertThatThrownBy(
                         () -> closed.handle("KakaoAK wrong", APP_ID, mother.getKakaoId(), "UNLINK_FROM_APPS"))
                 .isInstanceOf(com.itda.backend.exception.auth.AuthException.class);
@@ -267,6 +278,7 @@ class KakaoUnlinkWebhookTest {
 
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
                 .andExpect(status().isOk());
+        waitUntilInboxEmpty();
 
         assertThat(reload(mother).getDeletedAt()).isEqualTo(deletedAt);
         assertThat(reload(mother).getWithdrawalStatus()).isNull();
@@ -278,12 +290,64 @@ class KakaoUnlinkWebhookTest {
 
         mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), legacy.getKakaoId()))
                 .andExpect(status().isOk());
+        waitUntilInboxEmpty();
 
         assertThat(reload(legacy).getKakaoId()).isEqualTo("withdrawn:" + legacy.getId());
         assertThat(reload(legacy).getWithdrawalStatus()).isNotEqualTo(WithdrawalStatus.REQUESTED);
     }
 
+    /**
+     * 다른 트랜잭션이 회원 행을 오래 잠그고 있어도 웹훅은 기다리지 않고 답한다 — 카카오는 3초 안에 답을 받아야 하고 다시 보내지
+     * 않는다. 받은 웹훅은 수신함에 남아 있다가 잠금이 풀리면 옮겨져 처리된다.
+     */
+    @Test
+    void 회원_행이_잠겨_있어도_웹훅은_기다리지_않고_답하고_나중에_처리한다() throws Exception {
+        User mother = persist(UserFixture.parent(nextKakaoId()));
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService holder = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> holding = holder.submit(() -> transactionTemplate.executeWithoutResult(status -> {
+                userRepository.findByIdForUpdate(mother.getId());
+                locked.countDown();
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
+
+            long started = System.nanoTime();
+            mockMvc.perform(webhook(post(ApiPaths.KAKAO_UNLINK_WEBHOOK), mother.getKakaoId()))
+                    .andExpect(status().isOk());
+            assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(1000);
+            assertThat(reload(mother).isDeleted()).isFalse();
+
+            release.countDown();
+            holding.get(5, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            holder.shutdownNow();
+        }
+
+        // 잠금을 기다리다 실패했으면 수신함에 남아 있다. 주기 작업처럼 다시 옮긴다
+        inbox.drain();
+        waitUntilDeleted(mother);
+    }
+
     // ── 준비 ──────────────────────────────────────────────
+
+    private void waitUntilInboxEmpty() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (webhookRepository.count() == 0) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        fail("수신함의 웹훅을 옮기지 않았습니다.");
+    }
 
     private static MockHttpServletRequestBuilder webhook(MockHttpServletRequestBuilder request, String kakaoId) {
         return request.header("Authorization", AUTH)

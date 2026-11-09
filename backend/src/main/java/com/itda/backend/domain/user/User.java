@@ -114,6 +114,14 @@ public class User {
     @Column(name = "kakao_unlink_reported_at")
     private LocalDateTime kakaoUnlinkReportedAt;
 
+    /**
+     * 웹훅으로 시작된 탈퇴(사용자가 신청하지 않았다)의 근거가 된 연결 해제 웹훅을 받은 시각. 탈퇴를 마칠 때까지 남긴다 — 그 전에
+     * 카카오가 이 시각 뒤에 연결을 확인한 로그인이 오면 그 뒤 다시 연결한 것이라 탈퇴를 취소한다({@link #cancelWebhookWithdrawal}).
+     * 사용자가 직접 신청한 탈퇴는 null 이다.
+     */
+    @Column(name = "webhook_withdrawal_reported_at")
+    private LocalDateTime webhookWithdrawalReportedAt;
+
     private User(String kakaoId) {
         this.kakaoId = kakaoId;
     }
@@ -169,6 +177,7 @@ public class User {
         this.withdrawalRequestedAt = now;
         this.kakaoUnlinkAttemptedAt = null;
         this.kakaoUnlinkFailures = null;
+        this.webhookWithdrawalReportedAt = null;
     }
 
     /** 카카오 연결 해제가 이번에도 끝나지 않았다(결과 모름, 또는 이전 호출 뒤 분명한 오류). 다음 시도 간격이 늘어난다. */
@@ -199,12 +208,19 @@ public class User {
         return !now.isBefore(this.kakaoUnlinkAttemptedAt.plusMinutes(wait));
     }
 
-    /** 카카오가 연결 해제를 알렸다(웹훅). 확인은 실행기가 한다 — {@link #confirmKakaoUnlinkReport}. */
-    public void reportKakaoUnlink(LocalDateTime now) {
+    /**
+     * 카카오가 연결 해제를 알렸다(웹훅). 확인은 실행기가 한다 — {@link #confirmKakaoUnlinkReport}. 웹훅은 받은 순서와 다르게
+     * 옮겨 올 수 있어 더 늦게 받은 알림만 덮어쓴다.
+     *
+     * @param receivedAt 웹훅을 받은 시각(수신함에 남긴 시각)
+     */
+    public void reportKakaoUnlink(LocalDateTime receivedAt) {
         if (isDeleted()) {
             throw new IllegalStateException("이미 탈퇴한 회원입니다.");
         }
-        this.kakaoUnlinkReportedAt = now;
+        if (this.kakaoUnlinkReportedAt == null || this.kakaoUnlinkReportedAt.isBefore(receivedAt)) {
+            this.kakaoUnlinkReportedAt = receivedAt;
+        }
     }
 
     public boolean hasKakaoUnlinkReport() {
@@ -214,18 +230,42 @@ public class User {
     /**
      * 카카오에 물어 보니 정말 끊겨 있다. 진행 중인 탈퇴가 없으면 접수하고, 해제를 확정한다. 기관 담당자는 탈퇴할 수 없어 알림만
      * 지운다.
+     *
+     * <p>이 알림으로 새로 접수한 탈퇴는 알림 시각을 근거로 남긴다. 조회 결과는 조회한 순간의 상태일 뿐이라, 정리 전에 다시 연결한
+     * 로그인이 오면 취소할 수 있어야 한다({@link #isRelinkedAfterWebhookWithdrawal}).
      */
     public void confirmKakaoUnlinkReport(LocalDateTime now) {
+        LocalDateTime reportedAt = this.kakaoUnlinkReportedAt;
         this.kakaoUnlinkReportedAt = null;
         if (isOrganization()) {
             return;
         }
         if (!isWithdrawing()) {
             requestWithdrawal(now);
+            this.webhookWithdrawalReportedAt = reportedAt;
         }
         if (this.withdrawalStatus == WithdrawalStatus.REQUESTED) {
             markKakaoUnlinked();
         }
+    }
+
+    /**
+     * 웹훅으로 시작된 탈퇴인데, 그 웹훅을 받은 뒤에 카카오가 연결을 확인한 로그인이 왔는지 — 그 뒤 다시 연결한 것이다. 연결 해제는
+     * 웹훅을 받기 전에 일어났으므로, 이 시각 뒤에 사용자 정보 조회가 성공했다면 그 사이 연결이 다시 생겼다.
+     *
+     * @param kakaoVerifiedAt 카카오에 사용자 정보를 묻기 직전 시각
+     */
+    public boolean isRelinkedAfterWebhookWithdrawal(LocalDateTime kakaoVerifiedAt) {
+        return !isDeleted() && this.webhookWithdrawalReportedAt != null && kakaoVerifiedAt != null
+                && this.webhookWithdrawalReportedAt.isBefore(kakaoVerifiedAt);
+    }
+
+    /** 웹훅으로 시작된 탈퇴를 다시 연결한 로그인이 취소한다. 정리 전이라 아이 연결 · 동의는 그대로 남는다. */
+    public void cancelWebhookWithdrawal() {
+        if (isDeleted() || this.webhookWithdrawalReportedAt == null) {
+            throw new IllegalStateException("취소할 웹훅 탈퇴가 없습니다.");
+        }
+        clearWithdrawal();
     }
 
     /**
@@ -294,6 +334,7 @@ public class User {
         this.withdrawalRequestedAt = null;
         this.kakaoUnlinkAttemptedAt = null;
         this.kakaoUnlinkFailures = null;
+        this.webhookWithdrawalReportedAt = null;
     }
 
     /** 탈퇴를 마치면 남은 웹훅 알림도 지운다. */

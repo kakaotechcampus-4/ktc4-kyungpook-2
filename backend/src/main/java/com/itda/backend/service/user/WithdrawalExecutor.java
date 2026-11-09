@@ -136,8 +136,9 @@ public class WithdrawalExecutor implements DisposableBean {
                         return;
                     }
                 }
-                steps.cleanup(userId);
-                log.info("탈퇴를 마쳤습니다: userId={}", userId);
+                if (steps.cleanup(userId)) {
+                    log.info("탈퇴를 마쳤습니다: userId={}", userId);
+                }
             }
         } catch (RuntimeException e) {
             // 접수는 남아 있다. 주기 작업이 다시 집는다

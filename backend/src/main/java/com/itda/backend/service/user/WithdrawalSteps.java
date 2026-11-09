@@ -8,10 +8,12 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.itda.backend.domain.user.KakaoUnlinkWebhook;
 import com.itda.backend.domain.user.User;
 import com.itda.backend.domain.user.WithdrawalStatus;
 import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
+import com.itda.backend.repository.user.KakaoUnlinkWebhookRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.ChildGuardianService;
 
@@ -30,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 public class WithdrawalSteps {
 
     private final UserRepository userRepository;
+    private final KakaoUnlinkWebhookRepository webhookRepository;
     private final ChildGuardianService childGuardianService;
     private final Clock clock;
 
@@ -109,6 +112,31 @@ public class WithdrawalSteps {
     }
 
     /**
+     * 수신함에 남긴 웹훅 하나를 회원 행으로 옮긴다({@link KakaoUnlinkInbox}). 회원 행을 먼저 잠그고(잠금 순서) 수신함 줄을 지운다 —
+     * 지운 줄이 없으면 다른 실행이 먼저 옮긴 것이라 아무것도 바꾸지 않는다. 알림 시각은 웹훅을 받은 시각이다.
+     *
+     * @return 실행기에 세울 회원 id
+     */
+    @Transactional
+    public Optional<Long> absorbWebhook(long webhookId) {
+        KakaoUnlinkWebhook webhook = webhookRepository.findById(webhookId).orElse(null);
+        if (webhook == null) {
+            return Optional.empty();
+        }
+        User user = userRepository.findByKakaoIdForUpdate(webhook.getKakaoId()).orElse(null);
+        if (webhookRepository.deleteOne(webhookId) == 0) {
+            return Optional.empty();
+        }
+        return report(user, webhook.getReceivedAt());
+    }
+
+    /** 지금 받은 것으로 알림을 남긴다. 수신함을 거치지 않는 테스트용 입구다. */
+    @Transactional
+    public Optional<Long> reportUnlinkedByKakao(String kakaoId) {
+        return report(userRepository.findByKakaoIdForUpdate(kakaoId).orElse(null), now());
+    }
+
+    /**
      * 카카오가 연결 해제를 알렸다(웹훅). 여기서는 알림만 남긴다 — 웹훅에는 해제 시각이 없어, 받는 순간에는 이 이벤트가 지금
      * 연결에 대한 것인지 알 수 없다(사용자가 그 뒤 다시 로그인했거나, 옛 연결의 늦은 웹훅이 같은 카카오 계정으로 재가입한 새 계정에
      * 닿았을 수 있다). 실행기가 카카오에 지금 연결 상태를 물어 정말 끊겨 있을 때만 탈퇴로 넘긴다({@link #resolveReport}).
@@ -119,11 +147,10 @@ public class WithdrawalSteps {
      *   <li>그 밖(보호자 · 가입 전, 탈퇴 처리 중 포함) → 알림을 남기고 실행기에 세운다</li>
      * </ul>
      *
+     * @param user 잠근 회원 행. 없으면 null
      * @return 실행기에 세울 회원 id
      */
-    @Transactional
-    public Optional<Long> reportUnlinkedByKakao(String kakaoId) {
-        User user = userRepository.findByKakaoIdForUpdate(kakaoId).orElse(null);
+    private Optional<Long> report(User user, LocalDateTime receivedAt) {
         if (user == null) {
             return Optional.empty();
         }
@@ -136,7 +163,7 @@ public class WithdrawalSteps {
                     user.getId());
             return Optional.empty();
         }
-        user.reportKakaoUnlink(now());
+        user.reportKakaoUnlink(receivedAt);
         return Optional.of(user.getId());
     }
 
@@ -151,7 +178,8 @@ public class WithdrawalSteps {
      * 같은 알림이면:
      * <ul>
      *   <li>끊겨 있음 → 탈퇴를 접수하고(이미 처리 중이면 그대로) 해제를 확정한다. 그 뒤 실행기가 받은 카카오 오류로 접수가
-     *       취소되지 않는다({@link #record} 가 이 상태를 덮어쓰지 않는다)</li>
+     *       취소되지 않는다({@link #record} 가 이 상태를 덮어쓰지 않는다). 이 알림으로 새로 접수한 탈퇴는 알림 시각을 정리 때까지
+     *       남긴다 — 그 사이 다시 연결한 로그인이 탈퇴를 취소한다(LoginUserTransactionService)</li>
      *   <li>연결돼 있음 → 지난 연결의 알림이다. 알림만 지운다 — 사용자가 직접 신청한 탈퇴가 있으면 그대로 이어진다</li>
      *   <li>모름 → 알림을 남겨 두고 나중에 다시 묻는다. 다만 사용자가 직접 신청한 탈퇴가 기다리고 있으면 그것은 연결 해제를 불러
      *       진행한다 — 조회가 계속 실패해도 직접 신청한 탈퇴가 막히지 않게 한다</li>
@@ -189,6 +217,8 @@ public class WithdrawalSteps {
     /**
      * 상태를 다시 읽고 이번에 할 일을 정한다. 카카오를 부를 것이면 <b>부르기 직전에</b> 호출 시각을 남기고 커밋한다 — 그 뒤
      * 프로세스가 죽어도 "이전 호출이 성공했을 수 있다" 가 남는다. 카카오 계정이 아닌 회원(개발용 로그인)은 부르지 않는다.
+     * 재시도 간격({@link User#isDueForRetry})도 여기서 잠금 아래 다시 본다 — 주기 작업은 줄에 세울 때 보지만, 줄에 서 있는 사이
+     * 앞선 호출이 결과를 모른 채 끝나면 간격을 건너뛰게 된다.
      */
     @Transactional
     public Plan prepare(long userId) {
@@ -224,7 +254,14 @@ public class WithdrawalSteps {
             user.markKakaoUnlinked();
             return Plan.cleanup();
         }
-        boolean first = user.markKakaoUnlinkAttempt(now());
+        LocalDateTime now = now();
+        if (!user.isDueForRetry(now)) {
+            // 줄에 서 있던 사이 앞선 호출이 결과를 모른 채 끝났다. 재시도 간격이 지나면 주기 작업이 다시 세운다
+            log.info("카카오 연결 해제 재시도 간격이 지나지 않아 이번에는 부르지 않습니다: userId={} 횟수={}",
+                    userId, user.kakaoUnlinkFailureCount());
+            return Plan.nothing();
+        }
+        boolean first = user.markKakaoUnlinkAttempt(now);
         return Plan.callKakao(kakaoUserId.get(), first);
     }
 
@@ -280,17 +317,21 @@ public class WithdrawalSteps {
 
     /**
      * DB 정리. 아이 연결을 모두 끊고, 카카오 회원번호를 지우고, 탈퇴 표시를 한다. 실패하면 전체가 되돌아가고
-     * {@code KAKAO_UNLINKED} 로 남아 이 단계만 다시 한다(카카오는 다시 부르지 않는다).
+     * {@code KAKAO_UNLINKED} 로 남아 이 단계만 다시 한다(카카오는 다시 부르지 않는다). 회원 행을 잠근 뒤 단계를 다시 보므로,
+     * 그 사이 다시 연결한 로그인이 웹훅 탈퇴를 취소했으면 아무것도 지우지 않는다.
+     *
+     * @return 탈퇴를 마쳤는지
      */
     @Transactional
-    public void cleanup(long userId) {
+    public boolean cleanup(long userId) {
         User user = userRepository.findByIdForUpdate(userId).orElse(null);
         if (user == null || user.getWithdrawalStatus() != WithdrawalStatus.KAKAO_UNLINKED) {
-            return;
+            return false;
         }
         // 회원 행을 잠근 뒤에 연결 목록을 읽는다 — 초대 수락은 회원 행을 FOR SHARE 로 잠그고 시작하므로 끼어들지 못한다
         childGuardianService.unlinkAllForWithdrawal(user.getId());
         user.completeWithdrawal(now());
+        return true;
     }
 
     /** 실행기가 커밋한 결과를 DB 에서 읽는다. 완료는 {@code deleted_at} 을 확인한 경우만이다. */
