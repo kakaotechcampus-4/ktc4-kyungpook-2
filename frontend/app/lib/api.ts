@@ -941,6 +941,26 @@ export async function getFileProgress(): Promise<FileProgress[]> {
   return request("/api/v1/raw-records/progress");
 }
 
+/** 우리 기관이 이미 올린 파일의 이름과 올린 시각. 업로드 확인 창의 "같은 이름" 경고에만 쓴다 (#489) */
+export interface UploadedFile {
+  fileName: string;
+  uploadedAt: string;
+}
+
+/**
+ * 우리 기관이 올린 파일 전체 (#489).
+ *
+ * GET /api/v1/raw-records — 구현됨. 서버가 로그인한 기관 파일만 내려준다(다른 기관 · 내린 파일 제외).
+ * 처리 현황(O-26)은 최근 50개뿐이라, 그보다 오래된 파일과도 이름을 맞춰 보려고 따로 받는다.
+ */
+export async function getUploadedFiles(): Promise<UploadedFile[]> {
+  if (mockFor("fileProgress")) {
+    return mock.FILE_PROGRESS.map((f) => ({ fileName: f.fileName, uploadedAt: f.uploadedAt }));
+  }
+  const rows = await request<{ originalFilename: string; createdAt: string }[]>("/api/v1/raw-records");
+  return rows.map((r) => ({ fileName: r.originalFilename, uploadedAt: r.createdAt }));
+}
+
 /**
  * mock 전용: 방금 올린 파일이 백그라운드에서 한 칸씩 나아가는 것을 흉내낸다.
  * 조회할 때마다 마지막으로 움직인 뒤 일정 시간이 지났으면 한 단계씩 전진시킨다.

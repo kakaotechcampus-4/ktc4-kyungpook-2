@@ -12,21 +12,24 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  TriangleAlert,
   Upload,
   UserRound,
   UserSearch,
   X,
 } from "lucide-react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
-import { Busy } from "@/components/ui";
+import { Busy, ConfirmDialog } from "@/components/ui";
 import { useOrgLive } from "@/components/org/Shell";
 import {
   getAiActivity,
   getChildren,
   getFileProgress,
   getPipeline,
+  getUploadedFiles,
   UPLOAD_EXTENSIONS,
   uploadRawRecords,
+  type UploadedFile,
 } from "@/lib/api";
 import { fileProgressOf } from "@/lib/pipeline";
 import type { AiActivity, FileProgress, Pipeline, PipelineRow, PipelineTurn, UploadResult } from "@/lib/types";
@@ -390,9 +393,29 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [failed, setFailed] = useState<UploadFailure[]>([]);
+  // 고른 뒤 확인 창에서 [올리기] 를 기다리는 파일 (#489). 올린 기록은 취소 · 삭제가 없어 한 번 묻는다
+  const [pending, setPending] = useState<File[] | null>(null);
+  // 기관이 올린 파일 전체. files(최근 50개)보다 오래된 파일과도 이름을 맞춰 보려고 창을 열 때 받는다
+  const [allUploaded, setAllUploaded] = useState<UploadedFile[]>([]);
+  const fetchSeq = useRef(0);
 
-  async function upload(list: FileList | null) {
+  function pick(list: FileList | null) {
     const picked = Array.from(list ?? []);
+    // 취소한 뒤 같은 파일을 다시 골라도 onChange 가 오게 바로 비운다
+    if (input.current) input.current.value = "";
+    if (!picked.length || uploading || pending) return;
+    setPending(picked);
+    // 받기 전에는 files 로만 맞춰 본다. 실패해도 창 · 업로드는 그대로다 (경고만 덜 잡힌다)
+    const seq = ++fetchSeq.current;
+    setAllUploaded([]);
+    getUploadedFiles()
+      .then((list) => {
+        if (fetchSeq.current === seq) setAllUploaded(list);
+      })
+      .catch(() => {});
+  }
+
+  async function upload(picked: File[]) {
     if (!picked.length || uploading) return;
     setUploading(true);
     try {
@@ -421,7 +444,7 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          void upload(e.dataTransfer.files);
+          pick(e.dataTransfer.files);
         }}
         className={`flex flex-wrap items-center gap-3 rounded-[18px] border-2 border-dashed px-4 py-4 ${
           dragging ? "border-accent bg-accentsoft" : "border-line2 bg-paper"
@@ -453,9 +476,21 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           hidden
           id="upload-input"
           accept={UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(",")}
-          onChange={(e) => void upload(e.target.files)}
+          onChange={(e) => pick(e.target.files)}
         />
       </div>
+
+      {pending ? (
+        <UploadConfirm
+          files={pending}
+          uploaded={[...files, ...allUploaded]}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            setPending(null);
+            void upload(pending);
+          }}
+        />
+      ) : null}
 
       {failed.length ? (
         <div className="flex items-start gap-2 rounded-[14px] bg-blocksoft px-3.5 py-2.5 text-[14px] text-block">
@@ -505,6 +540,75 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         )}
       </ul>
     </div>
+  );
+}
+
+/** 파일 이름을 맞춰 볼 때 쓰는 키. macOS 는 한글 파일 이름을 자모로 풀어(NFD) 넘길 때가 있어 NFC 로 모은다 */
+const nameKey = (name: string) => name.normalize("NFC");
+
+/**
+ * 올리기 전 확인 창 (#489). 이미 올린 파일이나 함께 고른 파일과 이름이 같으면 그 줄을 빨갛게 알린다.
+ * 막지는 않는다 — 고친 파일 · 이어 쓰는 파일은 같은 이름으로 다시 올리는 게 정상일 수 있다.
+ * 이름만 보므로 내용이 같고 이름이 다른 파일은 못 잡는다.
+ */
+function UploadConfirm({
+  files,
+  uploaded,
+  onCancel,
+  onConfirm,
+}: {
+  files: File[];
+  uploaded: UploadedFile[];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  // 이름마다 가장 최근에 올린 시각. 서버 시각 문자열은 형식이 같아 글자 비교로 순서가 맞다
+  const lastUploaded = new Map<string, string>();
+  for (const f of uploaded) {
+    const key = nameKey(f.fileName);
+    const prev = lastUploaded.get(key);
+    if (!prev || prev < f.uploadedAt) lastUploaded.set(key, f.uploadedAt);
+  }
+  const pickedCount = new Map<string, number>();
+  for (const f of files) pickedCount.set(nameKey(f.name), (pickedCount.get(nameKey(f.name)) ?? 0) + 1);
+
+  const rows = files.map((file) => {
+    const key = nameKey(file.name);
+    const at = lastUploaded.get(key);
+    const note = at
+      ? `${uploadedAt(at)}에 같은 이름 파일을 올렸어요`
+      : (pickedCount.get(key) ?? 0) > 1
+        ? "같이 고른 파일 중에 이름이 같은 게 있어요"
+        : null;
+    return { file, note };
+  });
+  const same = rows.filter((r) => r.note).length;
+
+  return (
+    <ConfirmDialog
+      title={`파일 ${files.length}개를 올릴까요?`}
+      warning="올린 뒤에는 취소할 수 없어요"
+      confirmLabel="올리기"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
+      {same ? (
+        <p className="mb-2 flex items-start gap-1.5 font-bold text-block">
+          <TriangleAlert aria-hidden size={18} className="mt-1 shrink-0" />
+          같은 이름 파일이 {same}개 있어요. 같은 파일이면 취소해 주세요
+        </p>
+      ) : null}
+      <ul className="grid max-h-[240px] gap-1.5 overflow-y-auto">
+        {rows.map(({ file, note }, i) => (
+          <li key={i} className={`grid rounded px-3 py-2 ${note ? "bg-blocksoft text-block" : "bg-surface2"}`}>
+            <b className="truncate text-[14px]" title={file.name}>
+              {file.name}
+            </b>
+            {note ? <span className="text-[13px] font-semibold">{note}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </ConfirmDialog>
   );
 }
 
