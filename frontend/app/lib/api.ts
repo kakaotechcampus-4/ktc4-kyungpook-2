@@ -963,8 +963,13 @@ export async function getUploadedFiles(): Promise<UploadedFile[]> {
   if (mockFor("fileProgress")) {
     return mock.FILE_PROGRESS.map((f) => ({ fileName: f.fileName, uploadedAt: f.uploadedAt }));
   }
-  const rows = await request<{ originalFilename: string; createdAt: string }[]>("/api/v1/raw-records");
-  return rows.map((r) => ({ fileName: r.originalFilename, uploadedAt: r.createdAt }));
+  const rows = await request<{ originalFilename: string; createdAt: string; status: string }[]>(
+    "/api/v1/raw-records",
+  );
+  // FAILED 는 서버가 저장하다 실패해 남긴 흔적이다(RawRecordService.ingest). 다시 올리는 게 맞으니 "이미 올린 파일" 로 치지 않는다
+  return rows
+    .filter((r) => r.status !== "FAILED")
+    .map((r) => ({ fileName: r.originalFilename, uploadedAt: r.createdAt }));
 }
 
 /**

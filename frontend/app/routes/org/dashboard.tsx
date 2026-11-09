@@ -429,12 +429,13 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
     }, FULL_CHECK_WAIT_MS);
   }
 
-  async function upload(picked: File[]) {
+  /** skipped: 확인 창에서 빼고 보내지 않은 파일. 끝난 뒤 실패 안내에 함께 남긴다 — 창이 닫히면 빠진 걸 다시 볼 곳이 없어서 */
+  async function upload(picked: File[], skipped: UploadFailure[] = []) {
     if (!picked.length || uploading) return;
     setUploading(true);
     try {
       const results = await uploadRawRecords(picked);
-      setFailed(results.filter((r): r is UploadFailure => !r.ok));
+      setFailed([...skipped, ...results.filter((r): r is UploadFailure => !r.ok)]);
       await onUploaded();
     } finally {
       setUploading(false);
@@ -507,17 +508,34 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
       </div>
 
       {pending ? (
-        <UploadConfirm
-          files={pending}
-          uploaded={[...files, ...allUploaded]}
-          fullCheck={fullCheck}
-          onCancel={() => setPending(null)}
-          onConfirm={() => {
-            setPending(null);
-            // 창에서 "빠져요" 로 알린 파일은 보내지 않는다 — 20MB 넘는 파일을 끝까지 올렸다가 거절당하지 않게
-            void upload(pending.filter(canUpload));
+        // 창이 화면을 덮는 동안 그 위에 파일을 놓으면 브라우저가 파일을 열며 대시보드를 떠난다. 여기서 받아 막는다
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "none";
           }}
-        />
+          onDrop={(e) => e.preventDefault()}
+        >
+          <UploadConfirm
+            files={pending}
+            // 전체 목록을 받았으면 그것만 본다(서버가 저장에 실패한 파일은 빠져 있다). 받기 전 · 실패면 최근 50개로
+            uploaded={fullCheck === "done" ? allUploaded : [...files, ...allUploaded]}
+            fullCheck={fullCheck}
+            onCancel={() => setPending(null)}
+            onConfirm={() => {
+              setPending(null);
+              // 창에서 "빠져요" 로 알린 파일은 보내지 않는다 — 20MB 넘는 파일을 끝까지 올렸다가 거절당하지 않게
+              const skipped = pending.flatMap((file): UploadFailure[] => {
+                const reason = skipReason(file);
+                return reason ? [{ ok: false, file, reason }] : [];
+              });
+              void upload(
+                pending.filter((file) => !skipReason(file)),
+                skipped,
+              );
+            }}
+          />
+        </div>
       ) : null}
 
       {failed.length ? (
@@ -577,8 +595,17 @@ type FullCheck = "loading" | "done" | "failed";
 /** 전체 목록을 이만큼 기다려도 안 오면 최근 파일과만 맞춰 본 채로 [올리기] 를 풀어 준다 */
 const FULL_CHECK_WAIT_MS = 5_000;
 
-/** 확인 창에서 빠진다고 알린 파일(형식 · 20MB)이 아닌지 */
-const canUpload = (file: File) => hasUploadExtension(file) && !isUploadTooLarge(file);
+/**
+ * 보내기 전에 빼는 파일과 그 이유. 확인 창의 줄 표시 · 제목 숫자 · 실제로 보내는 파일 · 실패 안내가 모두 이것 하나를 본다.
+ * 끌어다 놓기는 input 의 accept 를 거치지 않아 형식이 틀린 파일도 들어온다
+ */
+function skipReason(file: File): "invalid" | "too_large" | null {
+  if (!hasUploadExtension(file)) return "invalid";
+  if (isUploadTooLarge(file)) return "too_large";
+  return null;
+}
+
+const SKIP_NOTE = { invalid: "올릴 수 없는 형식이라 빠져요", too_large: "20MB를 넘어 빠져요" } as const;
 
 /** 시각 문자열을 비교용 숫자로. 못 읽으면 가장 옛날(0)로 둔다 */
 const timeOf = (iso: string) => Date.parse(iso) || 0;
@@ -622,25 +649,27 @@ function UploadConfirm({
     const prev = lastUploaded.get(key);
     if (prev === undefined || timeOf(prev) < timeOf(f.uploadedAt)) lastUploaded.set(key, f.uploadedAt);
   }
+  // 함께 고른 파일끼리의 같은 이름은 실제로 보낼 파일끼리만 센다
   const pickedCount = new Map<string, number>();
   for (const f of files) {
+    if (skipReason(f)) continue;
     const key = nameKey(f.name);
     pickedCount.set(key, (pickedCount.get(key) ?? 0) + 1);
   }
 
   const rows = files.map((file) => {
-    // 끌어다 놓기는 input 의 accept 를 거치지 않는다. 올릴 때 빠질 파일을 미리 알린다
-    if (!hasUploadExtension(file)) return { file, note: "올릴 수 없는 형식이라 빠져요", same: false };
-    if (isUploadTooLarge(file)) return { file, note: "20MB를 넘어 빠져요", same: false };
+    const skip = skipReason(file);
+    if (skip) return { file, note: SKIP_NOTE[skip], same: false, skip: true };
     const key = nameKey(file.name);
     const at = lastUploaded.get(key);
-    if (at !== undefined) return { file, note: sameNameNote(at), same: true };
-    if ((pickedCount.get(key) ?? 0) > 1) return { file, note: "같이 고른 파일 중에 이름이 같은 게 있어요", same: true };
-    return { file, note: null, same: false };
+    if (at !== undefined) return { file, note: sameNameNote(at), same: true, skip: false };
+    if ((pickedCount.get(key) ?? 0) > 1)
+      return { file, note: "같이 고른 파일 중에 이름이 같은 게 있어요", same: true, skip: false };
+    return { file, note: null, same: false, skip: false };
   });
   const same = rows.filter((r) => r.same).length;
   // 제목 숫자는 실제로 보낼 파일만 센다 — "빠져요" 로 알린 파일은 올리지 않는다
-  const sending = files.filter(canUpload).length;
+  const sending = rows.filter((r) => !r.skip).length;
 
   return (
     <ConfirmDialog
