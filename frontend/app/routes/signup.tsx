@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { WithdrawAccount } from "@/components/WithdrawAccount";
 import { Busy } from "@/components/ui";
 import { redirect, useLoaderData, useNavigate } from "react-router";
 import { ApiError } from "@/lib/apiError";
@@ -22,6 +23,7 @@ import {
 export async function clientLoader({ request }: { request: Request }) {
   const session = await getSession();
   if (!session.loggedIn) return redirect("/login");
+  if (session.withdrawing) return redirect("/withdrawal");
   if (session.signupCompleted && session.role) {
     return redirect(homePathFor(session.role, session.termsAgreed));
   }
@@ -265,6 +267,10 @@ export default function SignupPage() {
             {pending ? <Busy>가입하는 중…</Busy> : "가입하기"}
           </button>
         </form>
+        {/* 역할을 고르기 전에도 떠날 수 있어야 한다 — 카카오 연결을 끊고 가입 정보를 지운다 */}
+        <div className="mt-4">
+          <WithdrawAccount audience="pending" />
+        </div>
       </div>
     </div>
   );

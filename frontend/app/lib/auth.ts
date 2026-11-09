@@ -17,6 +17,8 @@
  *  - 요청에 붙이는 일: 브라우저가 자동으로 한다 (lib/api.ts 의 credentials 참고)
  *  - 로그인 여부·역할: 서버에 묻는다 (GET /api/v1/auth/me)
  *  - 로그아웃: 서버에 부탁해야 한다 (POST /api/v1/auth/logout)
+ *  - 회원 탈퇴: DELETE /api/v1/auth/me. 서버가 카카오 연결을 끊고 정리한다. 처리 중이면 `/auth/me` 의 withdrawal 이
+ *    in_progress 이고, 끝나면 `/auth/me` 가 401 ACCOUNT_WITHDRAWN 이다(그 밖의 401 은 탈퇴 완료가 아니다).
  */
 
 import { ApiError } from "@/lib/apiError";
@@ -97,9 +99,26 @@ export type Session = {
    * 기관 계정은 약관이 없어 늘 true, 가입 미완료는 false.
    */
   termsAgreed: boolean;
+  /**
+   * 탈퇴를 처리하는 중인지. true 면 서버가 `/auth/me` · 로그아웃 외의 보호 API 를 409 WITHDRAWAL_IN_PROGRESS 로 막는다 —
+   * 가드는 가입 · 약관 · 아이 목록보다 먼저 이 값을 보고 탈퇴 안내 화면(`/withdrawal`)으로 보낸다.
+   */
+  withdrawing: boolean;
+  /**
+   * 비로그인인데 그 이유가 "탈퇴를 마친 회원의 출입증" 인지(401 ACCOUNT_WITHDRAWN). 탈퇴 안내 화면만 본다 —
+   * 로그인 만료 · 쿠키 없음 · 로그아웃은 false 다. 이 값이 true 일 때만 "탈퇴가 끝났다" 고 보여 준다.
+   */
+  withdrawn: boolean;
 };
 
-const ANONYMOUS: Session = { loggedIn: false, signupCompleted: false, role: null, termsAgreed: false };
+const ANONYMOUS: Session = {
+  loggedIn: false,
+  signupCompleted: false,
+  role: null,
+  termsAgreed: false,
+  withdrawing: false,
+  withdrawn: false,
+};
 
 /**
  * GET /auth/me · POST /auth/signup 의 data.
@@ -115,6 +134,8 @@ type MeResponse = {
   institutionName?: string;
   /** 늘 온다. 기관은 true, 가입 미완료는 false */
   termsAgreed: boolean;
+  /** 늘 온다. 탈퇴를 처리하는 중이면 in_progress */
+  withdrawal?: "none" | "in_progress";
 };
 
 function toSession(me: MeResponse): Session {
@@ -126,6 +147,8 @@ function toSession(me: MeResponse): Session {
     name: me.name,
     institutionName: me.institutionName,
     termsAgreed: me.signupCompleted && me.termsAgreed === true,
+    withdrawing: me.withdrawal === "in_progress",
+    withdrawn: false,
   };
 }
 
@@ -206,7 +229,13 @@ export async function getSession(): Promise<Session> {
   if (USE_MOCK) {
     const role = readRole();
     return role
-      ? { loggedIn: true, signupCompleted: true, role, termsAgreed: role === "org" || readTermsMark() }
+      ? {
+          ...ANONYMOUS,
+          loggedIn: true,
+          signupCompleted: true,
+          role,
+          termsAgreed: role === "org" || readTermsMark(),
+        }
       : ANONYMOUS;
   }
 
@@ -216,7 +245,9 @@ export async function getSession(): Promise<Session> {
   });
   if (res.status === 401) {
     clearSession();
-    return ANONYMOUS;
+    // 탈퇴를 마친 회원인지만 나눈다. 본문을 못 읽으면 일반 401 로 본다 — 완료로 잘못 보이지 않게
+    const body = await res.json().catch(() => ({}));
+    return { ...ANONYMOUS, withdrawn: body?.code === "ACCOUNT_WITHDRAWN" };
   }
   if (!res.ok) throw await toApiError(res);
   const body = await res.json();
@@ -370,6 +401,7 @@ export async function signup(input: SignupInput): Promise<Session> {
   if (USE_MOCK) {
     grantRole(input.role);
     return {
+      ...ANONYMOUS,
       loggedIn: true,
       signupCompleted: true,
       role: input.role,
@@ -489,6 +521,50 @@ export async function signOut(): Promise<void> {
   } catch {
     // 네트워크 실패로 쿠키가 남아도 로컬 표시는 이미 지웠다. 가드가 /auth/me 로 다시 확인한다.
   }
+}
+
+/* ── 회원 탈퇴 ──────────────────────────────────────── */
+
+/** 탈퇴 요청의 결과. `completed` 는 서버가 끝까지 마치고 쿠키를 지운 것, `in_progress` 는 서버가 이어서 처리한다. */
+export type WithdrawResult = "completed" | "in_progress";
+
+/**
+ * DELETE /api/v1/auth/me — 회원 탈퇴. 보호자와 가입을 마치지 않은 사람만 할 수 있다.
+ *
+ *  - 204: 끝났다. 서버가 출입증 쿠키를 지웠다 → `completed`
+ *  - 202: 접수했고 서버가 처리 중이다 → `in_progress` (탈퇴 안내 화면이 `/auth/me` 로 결과를 본다)
+ *  - 409 WITHDRAWAL_IN_PROGRESS: 이미 처리 중이다 → `in_progress`
+ *  - 그 밖(502 KAKAO_UNLINK_FAILED · 403 · 401 · 네트워크)은 ApiError 로 던진다. 502 면 회원은 그대로다.
+ */
+export async function withdraw(): Promise<WithdrawResult> {
+  if (USE_MOCK) {
+    clearSession();
+    return "completed";
+  }
+
+  const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
+    method: "DELETE",
+    credentials: "include",
+    cache: "no-store",
+    headers: csrfHeader(),
+  });
+  if (res.status === 204) {
+    forgetLocalTraces();
+    return "completed";
+  }
+  if (res.status === 202) return "in_progress";
+  const error = await toApiError(res);
+  if (error.code === "WITHDRAWAL_IN_PROGRESS") return "in_progress";
+  throw error;
+}
+
+/** 이 브라우저에 남긴 표시와 맡겨 둔 글을 지운다. 로그아웃 · 탈퇴 완료가 함께 쓴다. */
+function forgetLocalTraces(): void {
+  clearSession();
+  // 요약 검토 · 검증 수정 요청에서 로그인이 풀려 맡겨 둔 글 — 아이에 대한 글이라 남기지 않는다
+  clearGate1Drafts();
+  clearReinputDrafts();
+  clearInviteCode();
 }
 
 /* ── CSRF ───────────────────────────────────────────── */

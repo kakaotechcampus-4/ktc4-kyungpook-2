@@ -9,9 +9,10 @@ import { getSession, rememberReturnPath } from "@/lib/auth";
  * 바뀔 때마다 돈다(`/auth/me` 한 번). 로그인이 풀렸는지만 보고 나머지는 가드 몫이다.
  */
 export async function clientLoader({ request }: { request: Request }) {
-  const { loggedIn } = await getSession();
+  const { loggedIn, withdrawing } = await getSession();
   // 취소된 탐색의 늦은 응답이 마지막으로 선택한 복귀 주소를 덮어쓰지 않게 한다.
   if (request.signal.aborted) return null;
+  if (withdrawing) return redirect("/withdrawal");
   if (!loggedIn) {
     rememberReturnPath("parent", new URL(request.url));
     return redirect("/parent/invite");

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FileText, LogOut } from "lucide-react";
 import { Link, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import { Busy, InstitutionChip } from "@/components/ui";
+import { WithdrawAccount } from "@/components/WithdrawAccount";
 import { useChildContext } from "@/components/parent/ChildContext";
 import { InstitutionIcon } from "@/components/parent/InstitutionIcon";
 import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
@@ -322,10 +323,11 @@ function ParentSettingsContent({
             <span className="text-[15px]">{signingOut ? <Busy>로그아웃 중…</Busy> : "로그아웃"}</span>
             <LogOut aria-hidden size={17} strokeWidth={1.9} className="text-muted" />
           </button>
+          <WithdrawAccount audience="parent" trigger="row" />
         </div>
         <p className="mt-2 text-[13px] leading-6 text-muted">
           로그아웃해도 아이와의 연결과 동의는 그대로예요. 다시 카카오로 로그인하면 이어서 볼 수
-          있어요.
+          있어요. 탈퇴하면 아이와의 연결이 모두 끊겨요.
         </p>
       </div>
 

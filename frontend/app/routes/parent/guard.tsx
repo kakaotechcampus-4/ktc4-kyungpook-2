@@ -14,7 +14,9 @@ import { readSelectedChildId } from "@/lib/selectedChild";
  * 그 값을 매번 다시 읽어오는 지점이 된다.
  */
 export async function clientLoader({ request }: { request: Request }) {
-  const { loggedIn, signupCompleted, role, termsAgreed } = await getSession();
+  const { loggedIn, signupCompleted, role, termsAgreed, withdrawing } = await getSession();
+  // 탈퇴를 처리하는 중이면 서버가 아이 목록 등을 409 로 막는다 — 가입 · 약관 · 아이 목록보다 먼저 본다
+  if (withdrawing) return redirect("/withdrawal");
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   // 로그인이 풀렸으면 다시 로그인한 뒤 이 화면으로 돌아오게 주소를 남긴다(보호자 로그인은 진입 화면에서 한다)
   if (!loggedIn) {
