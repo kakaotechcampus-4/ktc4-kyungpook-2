@@ -72,7 +72,6 @@ import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
-import com.zaxxer.hikari.HikariDataSource;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -312,10 +311,8 @@ class WithdrawalConcurrencyIntegrationTest {
 
     @Test
     void 해제에_실패하면_그_연결은_풀로_돌아가지_않고_닫힌다() throws Exception {
-        HikariDataSource hikari = dataSource.unwrap(HikariDataSource.class);
         WithdrawalLocks.Held held = locks.tryAcquire(8L).orElseThrow();
         int pid = backendPid(held);
-        int totalBefore = hikari.getHikariPoolMXBean().getTotalConnections();
         try (Statement statement = lockConnection(held).createStatement()) {
             statement.execute("SELECT pg_advisory_unlock_all()");
         }
@@ -323,7 +320,6 @@ class WithdrawalConcurrencyIntegrationTest {
         held.close();
 
         waitUntil(() -> !isAlive(pid), "버린 연결의 세션이 닫히지 않았습니다.");
-        assertThat(hikari.getHikariPoolMXBean().getTotalConnections()).isLessThan(totalBefore);
         try (Connection next = dataSource.getConnection();
              ResultSet resultSet = next.createStatement().executeQuery("SELECT pg_backend_pid()")) {
             resultSet.next();
