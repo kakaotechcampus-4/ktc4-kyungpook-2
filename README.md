@@ -36,15 +36,25 @@
 잇다는 기관이 올린 관찰일지를 AI가 **어느 아이의 기록인지 가리고(매칭), 그대로 둬도 안전한지 보고(검증),
 하루치로 묶어 쓰고(요약), 여러 기관의 기록에서 반복되는 모습을 찾아(인사이트)** 보호자에게 전합니다.
 
-AI가 혼자 결정하지 않습니다. 사람이 끼어드는 자리는 두 곳입니다.
+선생님은 AI가 판단하기 어려운 기록을 확인하고, 하루 요약과 주간 인사이트를 각각 승인합니다.
 
 ```
-업로드 → 매칭 → 검증 → 요약 → [1차 검토: 선생님 승인] → 인사이트 → [2차 검토: 선생님 승인] → 보호자에게 공유
+업로드 → 매칭 → 검증 → 요약 → [1차 승인] → 보호자에게 일지 공유
+승인된 일지 → 주간 인사이트 → [2차 승인] → 보호자와 공유 동의를 받은 기관에 인사이트 공유
 ```
 
 - 매칭 · 검증 · 요약 · 인사이트는 백엔드 워커가 스스로 집어서 돌립니다
-- 어느 아이 기록인지 애매하거나 위험한 표현이 있는 기록만 선생님 확인 큐로 옵니다
-- 보호자는 **승인된 것만, 동의한 기관의 것만** 봅니다
+- 어느 아이 기록인지 애매하거나 위험한 표현이 있으면 선생님 확인 큐로 보냅니다
+- 보호자는 **선생님이 승인한 일지와 인사이트**를 봅니다. 다른 기관에 인사이트를 공유할 범위는 보호자가 정합니다
+
+### 화면으로 보는 사용 흐름
+
+| 1. 기관이 관찰일지 업로드 | 2. 선생님이 AI 요약 검토 | 3. 보호자가 리포트와 근거 확인 |
+| --- | --- | --- |
+| 관찰일지 파일을 올리면 AI가 아이별로 기록을 나눕니다. | 선생님이 원문과 대조해 하루 요약을 승인하고, 주간 리포트도 한 번 더 검토합니다. | 보호자는 승인된 주간 리포트에서 근거가 된 기관별 일지를 열어 봅니다. |
+| [![기관 대시보드의 관찰일지 업로드 화면](docs/images/readme/upload.webp)](docs/images/readme/upload.webp) | [![선생님이 AI 요약 문장과 근거를 검토하는 화면](docs/images/readme/review.webp)](docs/images/readme/review.webp) | [![보호자가 주간 리포트와 학교·센터의 근거 일지를 보는 화면](docs/images/readme/report.webp)](docs/images/readme/report.webp) |
+
+예시 데이터로 촬영했습니다. 이미지를 누르면 크게 볼 수 있습니다.
 
 <!-- TODO: 이름의 뜻 · 개발 기간 -->
 
@@ -123,7 +133,7 @@ AI가 혼자 결정하지 않습니다. 사람이 끼어드는 자리는 두 곳
 ### 1️⃣ 일지 파일을 올리면 AI가 아이별로 나눠요
 > csv · txt · docx · pdf 파일을 올리면 AI가 기록 한 줄마다 어느 아이의 것인지 가립니다. 애매한 기록만 선생님께 물어요
 
-<!-- TODO: 업로드 · 매칭 확인 화면 캡처 -->
+<!-- TODO: 매칭 확인 화면 캡처 -->
 
 **근거** 코드 [`matching/graph.py`](AI/matching/graph.py) · 테스트 [`test_auto_gate.py`](AI/evals/scripts/matching/test_auto_gate.py) · 측정 [오매칭 0 / 1005](AI/evals/SCOREBOARD.md)
 
@@ -137,16 +147,19 @@ AI가 혼자 결정하지 않습니다. 사람이 끼어드는 자리는 두 곳
 ### 3️⃣ 선생님이 확인한 요약과 인사이트만 보호자에게 가요
 > 하루치 일지를 한 편의 요약으로, 여러 기관의 기록을 한 주의 인사이트로 묶습니다. 1차 · 2차 검토에서 선생님이 고치고 승인해요
 
-<!-- TODO: 1차 검토 · 보호자 일지 화면 캡처 -->
+<!-- TODO: 보호자 일지 상세 화면 캡처 -->
 
 **근거** 코드 [`summary/nodes.py`](AI/summary/nodes.py) · [`insight/tools.py`](AI/insight/tools.py) · [`GuardianJournalQueryService.java`](backend/src/main/java/com/itda/backend/service/child/GuardianJournalQueryService.java) · 테스트 [`test_grounding.py`](AI/evals/scripts/summary/test_grounding.py) · [`test_tools.py`](AI/evals/scripts/insight/test_tools.py) · [`Gate1PipelineIntegrationTest.java`](backend/src/test/java/com/itda/backend/Gate1PipelineIntegrationTest.java)
 
 ### 4️⃣ 보호자가 공유 범위를 정해요
-> 보호자는 초대 코드로 아이와 연결하고, 어느 기관에 무엇을 보여 줄지 동의로 정합니다. 동의를 거두면 그 기관의 기록은 인사이트에서도 빠져요
+> 보호자는 초대 코드로 아이와 연결하고, 기관별로 하루 요약과 주간 인사이트의 공유 범위를 정합니다.
+
+- 동의를 철회하면 해당 기관은 받은 인사이트를 더 이상 열람할 수 없습니다. 해당 기관의 기록이 포함된 인사이트는 수신 기관 모두의 열람 권한이 회수됩니다.
+- 보호자는 이미 승인된 일지와 인사이트를 계속 볼 수 있습니다. 승인 전 인사이트는 근거를 제공한 기관의 동의가 철회되면 승인할 수 없습니다.
 
 <!-- TODO: 동의 관리 화면 캡처 -->
 
-**근거** 코드 [`insight/nodes.py`](AI/insight/nodes.py) · 테스트 [`test_tools.py`](AI/evals/scripts/insight/test_tools.py)
+**근거** 코드 [`InsightAccessRevoker.java`](backend/src/main/java/com/itda/backend/service/insight/InsightAccessRevoker.java) · 테스트 [`InsightAccessRevocationIntegrationTest.java`](backend/src/test/java/com/itda/backend/service/insight/InsightAccessRevocationIntegrationTest.java)
 
 ---
 
