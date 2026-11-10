@@ -299,7 +299,7 @@ def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> boo
 
     ⚠️ **사람 이름은 검사하지 못한다.** SummaryInput 에 명부가 없어서 어떤
     글자가 다른 아이 이름인지 알 방법이 없다. 매칭의 mentioned_child_ids 를
-    입력으로 받으면 잡을 수 있다 (schema.md §10.2-11 과 연결된다).
+    입력으로 받으면 잡을 수 있다 (schema.md §5 "다른 아이 이름" 과 연결된다).
     """
     quotes = " ".join(e["quote"] for e in evidence)
 

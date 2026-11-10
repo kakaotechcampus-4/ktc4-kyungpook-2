@@ -103,7 +103,7 @@
 ## DB 마이그레이션
 
 백엔드는 뜰 때 Flyway로 `backend/src/main/resources/db/migration`의 새 파일을 실행하고, 엔티티와 테이블이 맞는지 본 뒤 뜹니다. 맞지 않으면 뜨지 않고 위 5번 복구가 돕니다.
-마이그레이션을 쓰는 규칙은 [DB 스키마 §11.4](../docs/db/schema.md)에 있습니다.
+마이그레이션을 쓰는 규칙은 [DB 스키마 §4](../docs/db/schema.md#4-스키마-바꾸기)에 있습니다.
 
 적용 기록은 서버의 `infra/docker`에서 확인합니다.
 

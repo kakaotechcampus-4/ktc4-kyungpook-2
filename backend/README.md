@@ -110,7 +110,7 @@ API 응답 형식과 오류 코드 규약은 [api-conventions.md](../docs/api/ap
 
 운영 DB 스키마는 Flyway 마이그레이션(`src/main/resources/db/migration`)만 바꿉니다. `docker` 프로필은 `ddl-auto: validate`라 엔티티와 테이블이 다르면 뜨지 않습니다.
 
-- 스키마를 바꾸는 규칙: [DB 스키마 §11.4](../docs/db/schema.md)
+- 스키마를 바꾸는 규칙: [DB 스키마 §4](../docs/db/schema.md#4-스키마-바꾸기)
 - 배포 절차: [인프라 문서](../infra/README.md#db-마이그레이션)
 - 서버 DB를 직접 고치는 도구(테스트 아이 넣기 · 멈춘 일지 되돌리기 등): [scripts/README.md](scripts/README.md)
 

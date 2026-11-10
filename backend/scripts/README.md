@@ -19,7 +19,7 @@ dbsql() { docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRE
 ## 테스트 아이 명부 넣기
 
 웹에서 업로드 → 매칭 → 검증을 확인하려면 매칭 명부에 아이가 있어야 합니다. 매칭 명부는 **그 기관에 보호자 동의가 있는
-아이**만 씁니다(DB 스키마 §5.1). 테스트 아이 100명에게 일일이 초대 코드 수락과 동의를 할 수 없으니,
+아이**만 씁니다(DB 스키마 §3.2 `child_organization`). 테스트 아이 100명에게 일일이 초대 코드 수락과 동의를 할 수 없으니,
 [`test-children.sql`](test-children.sql)이 테스트 아이 100명(`잇다_synthetic_100.json`의 dev·holdout)과
 함께 테스트 보호자·사용된 초대·보호자 연결·동의를 앱과 같은 모양으로 직접 넣습니다.
 
@@ -49,7 +49,7 @@ dbsql -v action=seed -v org_id=5 -v apply=true < ../../backend/scripts/test-chil
 ## 시스템 오류로 멈춘 일지 되돌리기
 
 검증·요약 중 코드 버그나 AI 계약 위반으로 멈춘 일지는 `SYSTEM_ERROR`가 되고, 어느 단계(`failure_stage`)에서 왜
-(`failure_reason`) 멈췄는지 남습니다(DB 스키마 §6.2 "실패 상태와 원인 코드"). 원인을 고친 뒤
+(`failure_reason`) 멈췄는지 남습니다(DB 스키마 §3.3 `journal_entry`). 원인을 고친 뒤
 [`recover-system-errors.sql`](recover-system-errors.sql)로 **고친 원인의 일지만** 골라 다시 처리하게 합니다.
 위의 `dbsql`로 실행합니다.
 
