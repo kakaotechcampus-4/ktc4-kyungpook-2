@@ -249,11 +249,6 @@ public class WithdrawalSteps {
     }
 
     @Transactional(readOnly = true)
-    public List<Long> withdrawingIds() {
-        return userRepository.findWithdrawingIds();
-    }
-
-    @Transactional(readOnly = true)
     public List<Long> dueIds() {
         LocalDateTime now = now();
         return userRepository.findAllById(userRepository.findWithdrawingIds()).stream()
