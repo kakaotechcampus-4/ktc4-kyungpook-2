@@ -51,49 +51,49 @@ import type {
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
-const BE_READY = {
-  children: true,
-  childRegister: true,
-  invitations: true,
-  childGuardians: true,
-  childTimeline: true,
-  matchingQueue: true,
-  blockedQueue: true,
-  gate1: true,
-  dashboard: true,
-  summaryFailures: true,
-  insights: true,
-  upload: true,
-  fileProgress: true,
-  inbox: true,
-  institutionInfo: true,
-  linkRequests: true,
-  guardianConsent: true,
-  guardianLinks: true,
-  guardianInvite: true,
-  guardianUnlink: true,
-  guardianChildren: true,
-  guardianJournal: true,
-  consentRequests: true,
-  checklists: true,
-  institutionCode: true,
-  guardianInsights: true,
-  institutionShares: true,
-  careInfo: true,
-} satisfies Record<string, boolean>;
+// 기능 이름. 예전에는 백엔드가 준비된 기능만 실연동하는 스위치 표(BE_READY)의 키였다.
+// 모든 기능이 준비돼 표를 지웠고, 호출하는 쪽을 바꾸지 않으려고 이름과 아래 함수 모양만 남긴다.
+export type Feature =
+  | "children"
+  | "childRegister"
+  | "invitations"
+  | "childGuardians"
+  | "childTimeline"
+  | "matchingQueue"
+  | "blockedQueue"
+  | "gate1"
+  | "dashboard"
+  | "summaryFailures"
+  | "insights"
+  | "upload"
+  | "fileProgress"
+  | "inbox"
+  | "institutionInfo"
+  | "linkRequests"
+  | "guardianConsent"
+  | "guardianLinks"
+  | "guardianInvite"
+  | "guardianUnlink"
+  | "guardianChildren"
+  | "guardianJournal"
+  | "consentRequests"
+  | "checklists"
+  | "institutionCode"
+  | "guardianInsights"
+  | "institutionShares"
+  | "careInfo";
 
-export type Feature = keyof typeof BE_READY;
-
-function mockFor(feature: Feature): boolean {
-  return USE_MOCK || !BE_READY[feature];
+// mock 은 VITE_USE_MOCK 하나로만 정한다.
+function mockFor(_feature: Feature): boolean {
+  return USE_MOCK;
 }
 
-export function loadIfReady<T>(feature: Feature, load: () => Promise<T>): Promise<T | null> {
-  return isReady(feature) ? load() : Promise.resolve(null);
+export function loadIfReady<T>(_feature: Feature, load: () => Promise<T>): Promise<T | null> {
+  return load();
 }
 
-export function isReady(feature: Feature): boolean {
-  return USE_MOCK || BE_READY[feature];
+export function isReady(_feature: Feature): boolean {
+  return true;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

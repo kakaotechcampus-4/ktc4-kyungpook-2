@@ -37,7 +37,8 @@ public class ConsentController {
     @GetMapping("/consent-preview")
     @Operation(summary = "동의 미리보기",
             description = "동의 화면에 그릴 아이·기관·공유 범위입니다. 저장하지 않습니다. "
-                    + "동의할 때는 allowedFields 를 G-41 에 그대로 보냅니다. "
+                    + "동의할 때는 allowedFields 를 PUT /api/v1/children/{childId}/consent-scopes/{institutionId} 에 "
+                    + "그대로 보냅니다. "
                     + "이미 이 기관에 동의가 있으면(다른 보호자의 동의 포함) 404 입니다.")
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -65,7 +66,9 @@ public class ConsentController {
             description = "grant 는 이 기관에 공유를 켭니다. 보호자 한 명이면 충분하고, 공유 항목은 기관 단위로 하나라 "
                     + "마지막으로 동의한 보호자의 항목이 그 기관 전체에 적용됩니다. "
                     + "revoke 는 이 기관에 대한 모든 보호자의 동의를 끕니다. 끌 동의가 없으면 아무것도 바꾸지 않고 200 입니다. "
-                    + "철회는 앞으로의 전달만 막고, 이미 보낸 정보는 회수되지 않습니다.")
+                    + "철회하면 앞으로의 처리가 멈추고, 이미 열린 기관 열람 권한을 거둡니다 — 그 기관이 받은 인사이트와, "
+                    + "그 기관 기록이 재료인 인사이트에 대해 다른 기관이 가진 권한입니다. grant 로 주간 인사이트 항목만 빼도 "
+                    + "같은 권한을 거둡니다. 보호자 열람 권한과 이미 승인된 일지는 그대로 둡니다.")
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "반영 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(

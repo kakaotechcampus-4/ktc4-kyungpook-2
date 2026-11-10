@@ -129,7 +129,7 @@ public class GuardianController {
 
     @GetMapping("/children/{childId}/institution-shares")
     @Operation(summary = "기관 공유 내역",
-            description = "이 아이의 주간 리포트가 어느 기관에 언제 열렸고 지금도 보이는지입니다(G-45). 기관별로 묶고, "
+            description = "이 아이의 주간 리포트가 어느 기관에 언제 열렸고 지금도 보이는지입니다. 기관별로 묶고, "
                     + "기관은 이름순 · 묶음 안은 열린 순서 최신부터입니다. 거둔(가려진) 공유도 옵니다. "
                     + "visible 은 그 기관이 지금 볼 수 있는지로, 기관 수신함과 같은 판정입니다(권한이 살아 있고 · 명부에 있고 · "
                     + "그 기관 동의가 켜져 있음). hiddenAt 은 권한을 거둔 시각이고, 거둔 기록 없이 가려졌으면 null 입니다. "
