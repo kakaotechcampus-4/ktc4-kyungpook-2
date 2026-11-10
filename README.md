@@ -243,7 +243,7 @@ for t in evals/scripts/*/test_*.py; do python "$t" > /dev/null || echo "FAIL $t"
 | 문서 | 내용 |
 | --- | --- |
 | <!-- TODO: 테크스펙 링크 --> 테크스펙 | |
-| API 명세 | 백엔드를 띄운 뒤 Swagger UI `http://localhost:8080/swagger-ui/index.html` · 공통 규약 [api-conventions.md](docs/api/api-conventions.md) |
+| API 명세 | 공통 규약 [api-conventions.md](docs/api/api-conventions.md) |
 | DB 스키마 | [docs/db/schema.md](docs/db/schema.md) |
 | AI 설계 | [AI/README.md](AI/README.md) · [AI/AGENTIC.md](AI/AGENTIC.md) |
 | AI 평가 결과 | [AI/evals/SCOREBOARD.md](AI/evals/SCOREBOARD.md) |
