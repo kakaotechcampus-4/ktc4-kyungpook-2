@@ -34,8 +34,7 @@ import lombok.RequiredArgsConstructor;
 public class QuietWeekReader {
 
     private static final Set<JournalEntryStatus> FINISHED_ENTRIES = EnumSet.of(
-            JournalEntryStatus.COMPLETED, JournalEntryStatus.EXCLUDED, JournalEntryStatus.REUPLOAD_REQUESTED,
-            JournalEntryStatus.CONSENT_BLOCKED);
+            JournalEntryStatus.COMPLETED, JournalEntryStatus.EXCLUDED);
     private static final Set<SummaryStatus> UNDECIDED_SUMMARIES = EnumSet.of(
             SummaryStatus.GENERATED, SummaryStatus.GATE1_PENDING, SummaryStatus.HOLD);
 

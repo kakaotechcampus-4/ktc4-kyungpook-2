@@ -96,8 +96,8 @@ public class RecordProgressService {
     private static int stageOf(JournalEntry entry, Set<Long> validatedIds) {
         return switch (entry.getStatus()) {
             case PENDING -> STAGE_UPLOADED;
-            case MATCHING, MATCH_REVIEW, CONSENT_BLOCKED, EXCLUDED -> STAGE_MATCHING;
-            case MATCHED, VALIDATING, VALIDATION_BLOCKED, REUPLOAD_REQUESTED, VALIDATION_HELD -> STAGE_VALIDATING;
+            case MATCHING, MATCH_REVIEW, EXCLUDED -> STAGE_MATCHING;
+            case MATCHED, VALIDATING, VALIDATION_BLOCKED, VALIDATION_HELD -> STAGE_VALIDATING;
             case VALIDATED, SUMMARIZING -> STAGE_SUMMARIZING;
             case GATE1_PENDING, GATE1_HELD -> STAGE_GATE1;
             case COMPLETED -> entry.getSummaryId() == null ? STAGE_SUMMARIZING : STAGE_GATE1;
@@ -125,8 +125,8 @@ public class RecordProgressService {
         }
         return switch (status) {
             case PENDING, MATCHING, MATCHED, VALIDATING, SUMMARIZING -> RUNNING;
-            case MATCH_REVIEW, CONSENT_BLOCKED, VALIDATION_BLOCKED, VALIDATED, GATE1_PENDING, GATE1_HELD -> WAITING;
-            case EXCLUDED, REUPLOAD_REQUESTED, VALIDATION_HELD, COMPLETED -> DONE;
+            case MATCH_REVIEW, VALIDATION_BLOCKED, VALIDATED, GATE1_PENDING, GATE1_HELD -> WAITING;
+            case EXCLUDED, VALIDATION_HELD, COMPLETED -> DONE;
             case FAILED, SUMMARY_FAILED, SYSTEM_ERROR -> FAILED;
         };
     }

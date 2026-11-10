@@ -15,7 +15,6 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.domain.record.JournalEntry;
@@ -149,7 +148,6 @@ class RecordProgressServiceTest {
     void 교사가_끝낸_기록도_done_이다() {
         Long recordId = record(ORG, "0821_관찰일지.txt");
         entry(recordId, e -> { e.startMatching(); e.requestMatchReview(); e.exclude(); });
-        entry(recordId, e -> { blocked(e); ReflectionTestUtils.setField(e, "status", JournalEntryStatus.REUPLOAD_REQUESTED); });
         entry(recordId, e -> { blocked(e); e.holdAfterValidation(); });
 
         assertThat(service.getProgress(TEACHER).get(0).entries())

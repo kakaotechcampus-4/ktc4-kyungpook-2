@@ -128,7 +128,7 @@ AI에 보내는 입력은 기존 테이블에서 그때그때 조립합니다. �
 - `raw_record` — 올린 파일 하나. `stored_path`는 저장소 안 이름(로컬 디스크 또는 S3 키)
   - ⚠️ `institution_id`는 기관 ID를 **문자열**로 저장합니다. 예전에 다른 값을 담던 컬럼이라 타입이 남았습니다. `summary_result.institution_id`(숫자)와 비교할 때 변환이 필요합니다
   - `hint_name` · `hint_birthdate` — 파일명에서 찾은 아이. 매칭의 힌트입니다
-  - `status` — 지금은 `PENDING`만 씁니다. 처리 진행은 `journal_entry.status`가 맡습니다
+  - `status` — 값은 `PENDING` 하나뿐입니다. 처리 진행은 `journal_entry.status`가 맡습니다
 
 #### `journal_entry` — 일지
 
@@ -221,16 +221,17 @@ AI 판정 한 번에 한 줄입니다. 다시 판정하면 새 줄이 쌓이고,
 
 - `V1__baseline.sql` — Flyway로 옮기기 전(2026-11-10) 엔티티가 만들던 스키마. 그 전부터 있던 운영 DB는 실행하지 않고 V1까지 적용된 것으로 표시만 했습니다
 - `V2__sync_enum_checks.sql` — `ddl-auto: update`가 고치지 않아 운영 DB에서 낡아 있던 enum 검사 제약 7개를 엔티티와 맞춥니다
+- `V3__drop_unused_status_values.sql` — 코드에서 쓰지 않는 일지 · 원본 기록 상태 값을 검사 제약에서 뺍니다
 
 **스키마를 바꾸는 PR**
 
-1. 엔티티를 고치고, 다음 번호로 마이그레이션 파일을 더합니다 (`V3__무엇을_바꾸는지.sql`). **머지된 마이그레이션 파일은 고치지 않습니다**
+1. 엔티티를 고치고, 다음 번호로 마이그레이션 파일을 더합니다 (`V4__무엇을_바꾸는지.sql`). **머지된 마이그레이션 파일은 고치지 않습니다**
 2. `./gradlew integrationTest --tests '*FlywayMigrationIntegrationTest'`로 빈 DB에 마이그레이션을 돌려 엔티티와 맞는지 봅니다
 3. 이 문서의 해당 테이블과 맨 아래 변경 이력을 고칩니다
 
 **마이그레이션을 쓸 때 주의할 것**
 
-- **enum 값 추가 · 삭제** — 엔티티의 enum만 고치면 새 값 저장이 거부됩니다. 마이그레이션에서 `DROP CONSTRAINT IF EXISTS` 뒤 새 목록으로 `ADD CONSTRAINT`합니다 (`V2` 참고). 테스트는 Hibernate가 테이블을 새로 만들어 이 문제가 보이지 않습니다
+- **enum 값 추가 · 삭제** — 엔티티의 enum만 고치면 새 값 저장이 거부됩니다. 마이그레이션에서 `DROP CONSTRAINT IF EXISTS` 뒤 새 목록으로 `ADD CONSTRAINT`합니다 (`V2` 참고). 테스트는 Hibernate가 테이블을 새로 만들어 이 문제가 보이지 않습니다. 값을 지울 때는 그 값을 가진 행이 남아 있으면 마이그레이션이 실패하므로 배포 전에 운영 DB를 확인합니다 (`V3` 참고)
 - **기존 행이 있는 테이블에 NOT NULL 컬럼** — 기본값을 주거나, NULL 허용으로 더하고 값을 채운 뒤 NOT NULL로 바꿉니다
 - **행이 쌓인 테이블의 인덱스** — `CREATE INDEX CONCURRENTLY`로 씁니다. 그 문장만 담은 파일로 두면 Flyway가 트랜잭션 밖에서 실행합니다. 이를 위해 `spring.flyway.postgresql.transactional-lock: false`를 둡니다. 켜 두면 Flyway가 연 트랜잭션을 기다리며 영원히 멈춥니다
 - **컬럼 삭제 · 이름 변경** — 되돌린 이전 이미지가 그 컬럼을 찾으면 뜨지 않습니다. 코드에서 먼저 안 쓰게 배포한 뒤, 다음 PR에서 지웁니다
@@ -247,3 +248,4 @@ AI 판정 한 번에 한 줄입니다. 다시 판정하면 새 줄이 쌓이고,
 | --- | --- | --- |
 | 2026-11-10 | 스키마 관리를 `ddl-auto: update`에서 Flyway로 옮김 (§4). `V2`로 운영 DB의 낡은 enum 검사 제약 7개를 맞춤 | #500 |
 | 2026-11-11 | 문서를 새로 씀. 컬럼 나열은 마이그레이션에 맡기고 테이블의 뜻과 규칙만 남김 | — |
+| 2026-11-11 | `V3`로 쓰지 않는 상태 값을 검사 제약에서 뺌 — `journal_entry.status`의 `CONSENT_BLOCKED` · `REUPLOAD_REQUESTED`, `raw_record.status`의 `REVIEW` · `BLOCKED` · `FAILED` | — |
