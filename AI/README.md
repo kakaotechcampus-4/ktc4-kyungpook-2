@@ -1,28 +1,99 @@
 # AI
 
-관찰 기록 파이프라인의 에이전트와 평가 도구를 관리합니다.
+관찰일지를 아이별로 나누고, 걸러 내고, 요약하고, 패턴을 찾아 보호자에게 보내는 에이전트 다섯과 그 평가 도구입니다.
+FastAPI 서버 하나에 LangGraph 그래프 다섯이 들어 있고, 백엔드만 이 서버를 부릅니다.
+
+- AI는 DB를 만지지 않습니다. 저장과 상태 관리는 전부 백엔드가 합니다
+- 에이전트는 상태를 갖지 않습니다. 같은 요청이 다시 와도 안전합니다
+- 모델이 틀려도 마지막에 코드가 다시 판정합니다. 꼭 지켜야 하는 규칙은 프롬프트가 아니라 코드에 둡니다
+
+---
+
+## 한눈에
 
 ```
-Local Record → ①매칭 → ②검증 → ③요약 → [Gate 1] → ④인사이트 → [Gate 2] → ⑤공유
-               └─── 구현 완료 ───┘
+업로드 → 매칭 → 검증 → 요약 → [1차 검토] → 인사이트 → [2차 검토] → 알림
 ```
 
-| 디렉터리 | 내용 |
-| --- | --- |
-| `matching/` | 매칭 에이전트 — 기록 한 줄이 어느 아동의 것인지 판정 |
-| `validation/` | 검증 에이전트 — 그 기록을 저장해도 안전한지 판정 |
-| `evals/` | 평가 스크립트 — 에이전트별로 나뉘어 있습니다 ([매칭](evals/scripts/matching/README.md)) |
-| `main.py` | FastAPI 서버 |
+사람이 끼어드는 자리는 1차 · 2차 검토 두 곳입니다. 매칭 · 검증 · 요약 · 인사이트 · 알림은 백엔드 워커가 스스로 일을 집어 AI 서버에 보냅니다.
+
+---
+
+## 에이전트
+
+### 매칭 — 이 기록은 어느 아이의 것인가
+
+일지 한 줄과 기관의 아이 명부를 받아 주인을 판정합니다.
+
+- 이름이 그대로 적힌 아이가 한 명뿐이면 모델을 부르지 않습니다. 실제 기록의 대부분이 여기에 해당합니다
+- 애매할 때만 모델에 묻습니다. 이 갈림길이 코드가 아니라 그래프 구조로 드러납니다
+- 판정은 넷입니다 — `auto` 바로 다음 단계로 · `review` 선생님이 확인 · `multi` 후보 중에서 고름 · `unmatched` 이름으로 직접 찾음
+
+코드 [`matching/graph.py`](matching/graph.py) · 기준 [`matching/CRITERIA.md`](matching/CRITERIA.md)
+
+### 검증 — 그대로 공유해도 안전한가
+
+`PASS` · `REVIEW` · `BLOCK` 중 하나로 판정합니다. `BLOCK`은 요약으로 넘어가지 않습니다.
+
+- 전화번호 · 주민번호는 모델 없이 항상 막습니다. 모델 호출이 실패해도 마찬가지입니다
+- 모델이 틀려도 마지막에 코드가 다시 판정합니다. 아이 자신의 이름이나 "연락처로 알렸다"처럼 값 없는 언급을 개인정보로 본 판정은 버립니다
+- 누구의 기록인지 모르면 항상 선생님 확인(`REVIEW`)으로 보냅니다
+
+코드 [`validation/nodes.py`](validation/nodes.py) · [`validation/config.py`](validation/config.py) · 기준 [`evals/scripts/validation/README.md`](evals/scripts/validation/README.md)
+
+### 요약 — 하루치 일지를 한 편으로
+
+같은 아이 · 같은 날 · 같은 기관의 일지 여러 건을 한 편의 요약으로 묶습니다.
+
+- 모델이 쓴 문장마다 원문 근거를 대조해, 일지에 없는 말은 버립니다
+- 쓸 관찰 사실이 없으면 빈 요약을 돌려줍니다
+
+코드 [`summary/nodes.py`](summary/nodes.py) · 기준 [`summary/CRITERIA.md`](summary/CRITERIA.md)
+
+### 인사이트 — 여러 기관에 걸친 패턴 찾기
+
+한 아이의 승인된 요약을 겹쳐 기관을 가로지르는 돌봄 패턴을 찾습니다.
+
+- 보호자가 동의하지 않은 기관의 기록은 처음부터 뺍니다
+- 근거가 약한 인사이트는 한 번만 고쳐 쓰게 합니다. 한 기관에서만 보인 패턴은 도구로 지난 기록을 찾아 보강합니다
+- 고친 것도 검사를 처음부터 다시 통과해야 남습니다. 못 통과하면 그 인사이트만 버립니다
+- 고쳐 쓰기와 도구는 환경변수로 켭니다. 기본은 꺼져 있습니다
+
+코드 [`insight/nodes.py`](insight/nodes.py) · [`insight/tools.py`](insight/tools.py) · 기준 [`insight/CRITERIA.md`](insight/CRITERIA.md)
+
+### 알림 — 승인된 인사이트를 보호자에게
+
+2차 검토에서 승인된 인사이트를 메일로 보냅니다. 아이 정보가 밖으로 나가는 유일한 길입니다.
+
+- 모델을 부르지 않습니다. 선생님이 승인한 문장을 글자 그대로 보냅니다
+- 다른 아이 이름이 섞이면 보내지 않습니다
+- 메일은 MCP 서버가 보냅니다. 받는 주소는 서버가 직접 찾고, 메일 서버 설정이 없으면 파일로 적습니다
+
+코드 [`notify/graph.py`](notify/graph.py) · [`mcp_servers/itda_notify.py`](mcp_servers/itda_notify.py) · 기준 [`notify/CRITERIA.md`](notify/CRITERIA.md)
+
+---
+
+## 폴더
+
+- `matching/` · `validation/` · `summary/` · `insight/` · `notify/` — 에이전트 하나씩
+- `common/` — 모델 접속 · 실패 종류 · 진행 현황 · 호출 수
+- `mcp_servers/` — 알림 메일을 보내는 MCP 서버
+- `evals/` — 테스트 · 평가 · 측정 기록 (이미지에 넣지 않습니다)
+- `main.py` — FastAPI 서버
 
 ---
 
 ## 실행
 
-`.env` 를 만들고 Luna 키를 채웁니다. 형식은 [.env.example](.env.example) 참고.
+```bash
+cp .env.example .env
+```
 
 ```bash
-cp .env.example .env     # API_KEY, 에이전트별 *_API_URL 채우기
 pip install -r requirements.txt
+```
+
+```bash
 uvicorn main:app --reload --port 8000
 ```
 
@@ -32,241 +103,70 @@ uvicorn main:app --reload --port 8000
 docker compose -f infra/docker/compose.yaml up -d --build ai
 ```
 
-> 서버에서는 `127.0.0.1:8000` 에만 바인드되고 Caddy 가 라우팅하지 않습니다.
-> 인증이 없는 엔드포인트라 외부에 열지 않습니다 — 확인하려면 서버 안에서 `curl localhost:8000` 을 씁니다.
+`.env`에는 모델 키와 에이전트별 모델 주소를 넣습니다. 각 값의 뜻은 [`.env.example`](.env.example)에 적혀 있습니다.
+운영에서는 매칭 · 검증에 `gpt-6-luna`, 요약 · 인사이트에 `claude-sonnet-5-5`를 씁니다 ([고른 이유](evals/scripts/real/MODEL_COMPARE.md)).
 
 ### 배포
 
-`develop` 에 병합되면 [AI CI/CD](../.github/workflows/ai-ci-cd.yml) 가 이미지를 빌드·확인한 뒤
-서버의 AI 컨테이너만 교체합니다. `*.md` 와 `evals/` 만 바꾸면 재배포하지 않습니다.
-`evals/` 는 이미지에 넣지 않고 서버 checkout 을 마운트해 씁니다.
-
-배포 확인은 `/health` 와 모델을 부르지 않는 `/matching` 한 건으로 하고, 서버 `AI/.env` 에
-Luna 키가 없으면 배포가 실패합니다. 실패했을 때 다시 배포하는 방법과 서버 절차는
-[인프라 문서](../infra/README.md#ai-cicd) 를 참고하세요.
+`develop`에 병합되면 [AI CI/CD](../.github/workflows/ai-ci-cd.yml)가 서버의 AI 컨테이너만 바꿉니다. 문서와 `evals/`만 바꾸면 다시 배포하지 않습니다.
+AI 서버는 인증이 없어서 서버 안에서만 열립니다. 자세한 절차는 [인프라 문서](../infra/README.md#ai-cicd)에 있습니다.
 
 ---
 
 ## API
 
-| 메서드 | 경로 | 역할 |
-| --- | --- | --- |
-| `GET` | `/health` | 상태 확인. Luna 키가 설정돼 있으면 200, 없으면 503 (`luna_configured` 로 함께 알려줍니다) |
-| `POST` | `/matching` | 기록 한 줄을 받아 어느 아동의 것인지 판정합니다 |
-| `POST` | `/validation` | 그 기록을 저장해도 안전한지 판정합니다. Luna 호출이 실패하면 503 (정규식으로 개인정보가 잡힌 경우는 200 + `BLOCK`) |
-| `POST` | `/summary` | 같은 아이의 같은 날 일지 여러 건을 한 편으로 묶습니다. 쓸 관찰 사실이 없으면 200 `no_content: true`(빈 요약), Luna 호출이 실패하거나 근거가 전부 탈락하면 503 입니다 |
-| `GET` | `/progress` | 매칭·검증·요약·리포트가 지금 어느 노드에 있는지 돌려줍니다 (아래). 어떤 에러가 나도 200 `[]` 입니다 |
-
-### `GET /progress`
-
-대시보드 진행 현황에 "요약 문장을 쓰고 있어요" 같은 단계를 띄우려고 BE 가 1초마다 묻습니다 (#452).
-본 호출(`/matching` 등)은 그대로이고, 그래프 노드에 **들어갈 때** 메모리 지도에 적은 것을 돌려줍니다
-([common/progress.py](common/progress.py)).
-
-```json
-[
-  {"agent": "matching",   "journal_entry_id": 120, "node": "llm_judge", "elapsed_sec": 7},
-  {"agent": "validation", "journal_entry_id": 123, "node": "act", "elapsed_sec": 5},
-  {"agent": "summary",    "child_id": 7, "entry_date": "2026-11-08", "institution_id": 3, "node": "write", "elapsed_sec": 12},
-  {"agent": "insight",    "child_id": 7, "period_from": "2026-11-03", "period_to": "2026-11-09", "node": "find_claims", "elapsed_sec": 31}
-]
-```
-
-| agent | `node` 값 |
+| 경로 | 하는 일 |
 | --- | --- |
-| `matching` | `extract` · `shortlist` · `llm_judge` · `decide` |
-| `validation` | `perceive` · `plan` · `act` · `reflect` |
-| `summary` | `gather` · `write` · `ground` · `assemble` |
-| `insight` | `perceive` · `plan` · `act` · `reflect` · `refine` · `find_claims` (refine 이 도구로 지난 기록을 찾는 동안) |
+| `POST /matching` · `/validation` · `/summary` · `/insight` · `/notify` | 에이전트 다섯. 입출력은 각 폴더의 `schemas.py`가 기준입니다 |
+| `GET /health` | 검증 에이전트의 모델 설정이 있으면 200, 없으면 503. 백엔드가 AI 장애를 판정할 때 씁니다 |
+| `GET /progress` | 지금 어느 에이전트가 어느 단계에 있는지. 대시보드 진행 현황에 씁니다 |
+| `GET /metrics` | 요청마다 몇 번 불렸는지. 재시도를 확인할 때 씁니다 |
 
-- 요청이 끝나면(성공·503 모두) 그 줄은 사라집니다. 남아도 5분 동안 소식이 없으면 지웁니다
-- `elapsed_sec` 는 AI 가 직접 셉니다. 같은 일이 60초 안에 다시 오면(BE 재시도) 이어서 셉니다.
-  결과는 가리지 않습니다 — BE 가 타임아웃으로 끊어도 AI 쪽은 늦게 200 으로 끝나기 때문입니다
-  - **한계:** AI 는 재시도와 새 일을 구분하지 못해, 성공 뒤 60초 안에 같은 키로 온 새 일(재요약 등)도
-    이어 셉니다. 정확히 하려면 BE 가 한 번의 논리적 호출 동안 같은 시도 ID 를 보내야 합니다
-- 앞선 호출이 아직 도는데 재시도가 겹치면 나중 요청 한 줄만 냅니다 (시작 시각은 처음 것).
-  재시도가 성공하면 앞선 호출도 함께 내리고, 실패하면 다음 시도까지 앞선 호출을 보여 줍니다
-- 키는 해시하지 않습니다 — 외부에 열지 않고 BE 만 부릅니다
-- `/notify` 는 넣지 않습니다 (리포트 승인 뒤라 진행 현황 줄이 이미 끝나 있습니다)
-- 노드 이름을 바꾸면 BE 문구표도 같이 고칩니다. `evals/scripts/common/test_progress.py` 가 노드 목록을 고정합니다
-- uvicorn 프로세스가 하나라 메모리로 충분합니다. 프로세스를 늘리면 다시 봐야 합니다
+실패는 모두 503이고, 백엔드는 `detail.reason`을 보고 다음 행동을 정합니다.
+
+- `llm_unavailable` 모델 호출 실패 → 멈췄다가 나중에 다시
+- `no_grounded_claims` 요약 문장이 전부 근거 대조에서 떨어짐 → 그 묶음만 되돌림
+- `delivery_failed` 메일 서버 장애 → 다시 보냄
 
 ---
 
-### `POST /matching`
+## 테스트
 
-계약은 [matching/schemas.py](matching/schemas.py) 가 유일한 기준입니다. 아래는 요약입니다.
+모델 응답을 고정해 두고 코드가 지키는 규칙만 봅니다. 모델을 부르지 않아 바로 끝납니다.
 
-**입력**
-
-```json
-{
-  "journal_entry_id": 1041,
-  "content": "자유놀이 중 블록을 높이 쌓았다.",
-  "roster": [{ "child_id": 1, "name": "송준호", "birthdate": "2019-11-26" }],
-  "raw_record_id": 77,
-  "entry_date": "2026-09-20",
-  "hint_name": "박서연",
-  "hint_birthdate": "2019-05-05"
-}
+```bash
+for t in evals/scripts/*/test_*.py; do python "$t" > /dev/null || echo "FAIL $t"; done
 ```
 
-- `roster` — 해당 기관의 아동 전체. 백엔드가 채웁니다
-- `hint_name` / `hint_birthdate` — 파일 표지(파일명)에서 뽑은 값. **선택 필드**이고 `null` 이어도 동작합니다
+아무것도 출력되지 않으면 전부 통과입니다. 에이전트별 테스트는 `evals/scripts/<에이전트>/test_*.py`에 있습니다.
 
-**출력**
-
-```json
-{
-  "journal_entry_id": 1041,
-  "status": "auto",
-  "matched_child_id": 8,
-  "confidence": 0.99,
-  "hint_mismatch": false,
-  "evidence": [{ "start": 0, "end": 3 }],
-  "mentioned_child_ids": [8],
-  "multi_reason": null,
-  "candidates": [],
-  "llm_called": true
-}
-```
-
-| status | 뜻 | 화면이 할 일 |
-| --- | --- | --- |
-| `auto` | 근거가 충분하고 부정 신호 없음 | 다음 단계로 |
-| `review` | 후보는 하나인데 근거가 약함 | "이 아이 맞나요?" 확인 |
-| `multi` | 후보가 둘 이상 | `candidates` 중에서 고르게 |
-| `unmatched` | 명부에 해당하는 아이 없음 | 이름으로 직접 검색 |
-
-`mentioned_child_ids` 는 본문에 이름이 남은 **다른 아이**까지 담습니다. 검증 단계가 개인정보
-노출을 잡는 근거이므로 비우면 안 됩니다.
-
-**AI 는 DB 를 만지지 않습니다.** 결과 저장과 상태 관리는 전부 백엔드가 합니다.
-재시도해도 안전하도록 에이전트는 상태를 갖지 않습니다.
+**판정 기준 문서가 먼저고 코드가 따릅니다.** 둘이 어긋나면 동기화 테스트가 깨집니다.
+바꿀 때는 문서를 먼저 고치고 코드를 맞춥니다.
 
 ---
 
-### `POST /validation`
+## 평가
 
-계약은 [validation/schemas.py](validation/schemas.py) 가 유일한 기준입니다.
+실제 모델로 평가 세트를 돌려 점수를 잽니다. `.env`에 모델 키가 있어야 합니다.
 
-**입력**
+- **지금 점수** — [evals/SCOREBOARD.md](evals/SCOREBOARD.md)
+- **측정할 때마다 무엇이 틀렸고 무엇을 고쳤나** — [evals/MEASUREMENTS.md](evals/MEASUREMENTS.md)
+- **에이전트별 평가 방법** — [매칭](evals/scripts/matching/README.md) · [검증](evals/scripts/validation/README.md) · [요약](evals/scripts/summary/README.md) · [실데이터 전체 흐름](evals/scripts/real/README.md)
+- **선생님이 AI 초안을 얼마나 고치나** — [evals/scripts/feedback/README.md](evals/scripts/feedback/README.md)
 
-```json
-{
-  "journal_entry_id": 1041,
-  "content": "박서연이 자유놀이 시간에 블록을 높이 쌓았다.",
-  "subject_child_id": 8,
-  "subject_name": "박서연"
-}
-```
-
-- `subject_child_id` / `subject_name` — **매칭 결과에서 넘겨야 합니다.** 판정 대상이
-  누구인지 모르면 귀속 검증이 성립하지 않아, 코드가 강제로 `REVIEW` 로 보냅니다
-
-**출력**
-
-```json
-{
-  "journal_entry_id": 1041,
-  "verdict": "BLOCK",
-  "issue_types": ["개인정보표현"],
-  "evidence": [{ "start": 23, "end": 36 }],
-  "issues": [{ "type": "개인정보표현", "start": 23, "end": 36 }]
-}
-```
-
-| verdict | 뜻 | 백엔드가 할 일 |
-| --- | --- | --- |
-| `PASS` | 문제 없음 | 요약으로 넘김 |
-| `REVIEW` | 교사 확인 필요 | 수정 요청 큐로 |
-| `BLOCK` | 그대로 두면 위험 | **요약으로 넘기지 않음** |
-
-| 등급 | 이슈 유형 |
-| --- | --- |
-| `BLOCK` | 진단명 · 개인정보표현 |
-| `REVIEW` | 확정적표현 · 다수아동언급 · 추측성표현 · 감정적표현 · 위험행동표현 · 건강관리기록 |
-
-전화번호·주민번호 형식은 모델 판단 없이 정규식으로 항상 `BLOCK` 입니다. 모델 호출이
-실패해도 이 판정은 유지됩니다.
-
-`evidence` 는 겹치지 않는 최소 구간만 담습니다. 구조적 히트와 모델 인용이 같은 곳을
-가리키면 좁은 쪽만 남습니다.
-
-`issues` 는 사유와 구간의 짝입니다 (#177). Gate 1 에서 요약에 들어간 구간의 사유만
-고를 때 씁니다.
-
-| 필드 | 용도 |
-| --- | --- |
-| `issues` | **정본.** 하이라이트와 사유 표시에 씁니다 |
-| `issue_types` · `evidence` | 옛 결과와 평가 스크립트 호환용입니다. 새 화면에서는 쓰지 않습니다 |
-
-- 사유 종류는 `issue_types` 와 항상 같습니다
-- 겹침 정리를 **사유별로** 해서, 다른 사유의 구간을 품은 넓은 구간도 남습니다.
-  `evidence` 는 사유를 섞어 정리하므로 이 구간이 빠질 수 있습니다
-- 위치가 없는 사유(`대상불명확`·`모델호출실패`)는 `start`·`end` 가 `null` 입니다.
-  **이 사유는 겹침과 상관없이 항상 표시합니다.** `대상불명확`은 기록 전체를 의심해야 하는 사유입니다
-- 구간은 그 일지 원문 기준 위치입니다. 요약 근거와 겹침을 비교할 때는
-  **같은 `journal_entry_id` 안에서만** 비교합니다. 다른 일지의 구간과 숫자가 같아도 다른 자리입니다
-
----
-
-## 매칭 그래프 구조
-
-```
-START → extract → shortlist ─┬─(이름 하나가 명확)──────────→ decide → END
-                             └─(그 외)→ llm_judge ─────────┘
-```
-
-| 노드 | 하는 일 | LLM |
-| --- | --- | --- |
-| `extract` | 본문에서 명부의 이름이 등장하는 지점을 찾음 | 안 씀 |
-| `shortlist` | 아이별 점수 집계, 표지 힌트 반영, 겹치는 이름 정리 | 안 씀 |
-| `llm_judge` | 애매한 경우만 모델에 판단을 맡김 | 씀 |
-| `decide` | status 확정, 자동 확정을 막을 신호 확인 | 안 씀 |
-
-조건부 엣지가 이 그래프의 핵심입니다. **이름이 하나로 명확한 기록은 모델을 부르지 않는다**는
-결정이 코드가 아니라 그래프 구조로 드러납니다.
-
-검증 그래프는 분기 없이 `perceive → plan → act → reflect` 로 곧게 흐릅니다. 구조적 패턴을
-먼저 훑고(`perceive`), 모델에 물은 뒤(`act`), 마지막에 코드가 최종 판정을 내립니다(`reflect`).
-**모델 응답과 무관하게 지켜야 하는 규칙은 전부 `reflect` 에 있습니다.**
+평가 데이터와 결과는 `evals/generated/`에 생기고 커밋하지 않습니다.
 
 ---
 
 ## 고칠 곳
 
-| 무엇을 바꾸고 싶은가 | 파일 |
+| 바꾸고 싶은 것 | 파일 |
 | --- | --- |
-| 임계값 · 동작 켜고 끄기 | [matching/config.py](matching/config.py) — 전부 여기 모여 있습니다 |
-| 이름을 찾는 방식 | [matching/names.py](matching/names.py) |
-| 판정 규칙 | [matching/nodes.py](matching/nodes.py) |
-| 모델에게 주는 지시 | [matching/prompts.py](matching/prompts.py) |
-| 입출력 계약 | [matching/schemas.py](matching/schemas.py) |
-| 검증 이슈 유형 · 등급 | [validation/config.py](validation/config.py) |
-| 검증 판정 규칙 | [validation/nodes.py](validation/nodes.py) |
+| 임계값 · 기능 켜고 끄기 | `<에이전트>/config.py` |
+| 판정 규칙 | `<에이전트>/nodes.py` |
+| 모델에게 주는 지시 | `<에이전트>/prompts.py` |
+| 입출력 | `<에이전트>/schemas.py` (백엔드의 `*AgentClient`도 함께) |
+| 단계 이름 | `<에이전트>/graph.py` (백엔드 진행 현황 문구와 `test_progress.py`도 함께) |
+| 모델 접속 | `common/luna.py` |
 
-`config.py` 의 플래그는 전부 되돌릴 수 있게 되어 있습니다. 규칙 하나를 끄고 평가를 돌리면
-그 규칙의 기여도를 바로 볼 수 있습니다.
-
----
-
-## 판정 기준은 어디에 있나
-
-**어떤 상황에서 어떤 status 가 정답인가**는 레포 안에 있습니다.
-
-| 에이전트 | 판정 기준 | 동기화 테스트 |
-| --- | --- | --- |
-| 매칭 | [matching/CRITERIA.md](matching/CRITERIA.md) | `evals/scripts/matching/test_criteria_sync.py`<br>`evals/scripts/matching/test_auto_gate.py` |
-| 검증 | [evals/scripts/validation/README.md](evals/scripts/validation/README.md) | `evals/scripts/validation/test_prompt_sync.py` |
-| 요약 | [summary/CRITERIA.md](summary/CRITERIA.md) | `evals/scripts/summary/test_criteria_sync.py`<br>`evals/scripts/summary/test_grounding.py`<br>`evals/scripts/summary/test_no_content.py` |
-
-요약을 **얼마나 잘 쓰는지** 재는 법은 [evals/scripts/summary/README.md](evals/scripts/summary/README.md) 에 있습니다. 환각·누락 지표만으로는 일지를 그대로 베낀 것과 구별되지 않아, 규칙 기준선과 나란히 채점합니다.
-
-네 에이전트의 **현재 점수**(dev · 블라인드 · 실데이터, 3회 범위)는 [evals/SCOREBOARD.md](evals/SCOREBOARD.md) 한 곳에 모읍니다. 측정을 새로 하면 이 표도 같이 고칩니다.
-
-**문서가 기준이고 코드가 그것을 따릅니다.** 둘이 어긋나면 동기화 테스트가 깨집니다.
-LLM 을 부르지 않으므로 즉시 끝납니다.
-
-바꿀 때는 **문서를 먼저 고치고 코드를 맞춥니다.** 순서가 반대면 기준이 구현을
-따라가게 되고, 그러면 "왜 이렇게 판정하나" 에 답할 수 없습니다.
+설계 이유와 약한 점은 [AGENTIC.md](AGENTIC.md)에 있습니다.
