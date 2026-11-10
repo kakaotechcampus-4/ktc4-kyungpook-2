@@ -42,3 +42,4 @@
 
 백엔드의 실행 방법과 현재 상태는 [backend/README.md](../backend/README.md), 구현·검토
 규칙은 [backend/AGENTS.md](../backend/AGENTS.md)에서 확인합니다.
+서버 DB를 직접 고치는 운영 스크립트(테스트 아이 넣기 · 멈춘 일지 되돌리기 등)는 [backend/scripts/README.md](../backend/scripts/README.md)에 있습니다.
