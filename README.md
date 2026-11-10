@@ -15,16 +15,16 @@
 ## 📑 목차
 
 1. [프로젝트 소개](#-프로젝트-소개)
-2. [기술 스택](#-기술-스택)
-3. [화면으로 보는 사용 흐름](#-화면으로-보는-사용-흐름)
-4. [구조](#-구조)
-5. [주요 기능](#-주요-기능)
-6. [폴더 안내](#-폴더-안내)
-7. [실행하기](#-실행하기)
-8. [테스트](#-테스트)
-9. [AI 품질 평가](#-ai-품질-평가)
-10. [CI/CD와 환경](#-cicd와-환경)
-11. [문서](#-문서)
+2. [화면으로 보는 사용 흐름](#-화면으로-보는-사용-흐름)
+3. [구조](#-구조)
+4. [주요 기능](#-주요-기능)
+5. [폴더 안내](#-폴더-안내)
+6. [실행하기](#-실행하기)
+7. [테스트](#-테스트)
+8. [AI 품질 평가](#-ai-품질-평가)
+9. [CI/CD와 환경](#-cicd와-환경)
+10. [문서](#-문서)
+11. [기술 스택](#-기술-스택)
 12. [팀원 소개](#-팀원-소개)
 
 ---
@@ -49,62 +49,6 @@
 - 보호자는 **선생님이 승인한 일지와 인사이트**를 봅니다. 다른 기관에 인사이트를 공유할 범위는 보호자가 정합니다
 
 <!-- TODO: 이름의 뜻 · 개발 기간 -->
-
----
-
-## 🛠 기술 스택
-
-<table>
-  <tr>
-    <th>Category</th>
-    <th>Stack</th>
-  </tr>
-  <tr>
-    <td>Frontend</td>
-    <td>
-      <img src="https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black">
-      <img src="https://img.shields.io/badge/React_Router-CA4245?style=flat&logo=reactrouter&logoColor=white">
-      <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white">
-      <img src="https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite&logoColor=white">
-    </td>
-  </tr>
-  <tr>
-    <td>Backend</td>
-    <td>
-      <img src="https://img.shields.io/badge/Java_21-007396?style=flat&logo=openjdk&logoColor=white">
-      <img src="https://img.shields.io/badge/Spring_Boot-6DB33F?style=flat&logo=springboot&logoColor=white">
-      <img src="https://img.shields.io/badge/Spring_Security-6DB33F?style=flat&logo=springsecurity&logoColor=white">
-      <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white">
-    </td>
-  </tr>
-  <tr>
-    <td>AI</td>
-    <td>
-      <img src="https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white">
-      <img src="https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white">
-      <img src="https://img.shields.io/badge/LangGraph-1C3C3C?style=flat&logo=langchain&logoColor=white">
-      <img src="https://img.shields.io/badge/MCP-000000?style=flat&logoColor=white">
-    </td>
-  </tr>
-  <tr>
-    <td>Testing</td>
-    <td>
-      <img src="https://img.shields.io/badge/JUnit_5-25A162?style=flat&logo=junit5&logoColor=white">
-      <img src="https://img.shields.io/badge/Testcontainers-2496ED?style=flat&logo=docker&logoColor=white">
-      <img src="https://img.shields.io/badge/Playwright-2EAD33?style=flat&logo=playwright&logoColor=white">
-    </td>
-  </tr>
-  <tr>
-    <td>Infra</td>
-    <td>
-      <img src="https://img.shields.io/badge/Docker_Compose-2496ED?style=flat&logo=docker&logoColor=white">
-      <img src="https://img.shields.io/badge/Caddy-1F88C0?style=flat&logo=caddy&logoColor=white">
-      <img src="https://img.shields.io/badge/AWS_EC2-FF9900?style=flat&logo=amazonec2&logoColor=white">
-      <img src="https://img.shields.io/badge/AWS_S3-569A31?style=flat&logo=amazons3&logoColor=white">
-      <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat&logo=githubactions&logoColor=white">
-    </td>
-  </tr>
-</table>
 
 ---
 
@@ -304,6 +248,62 @@ for t in evals/scripts/*/test_*.py; do python "$t" > /dev/null || echo "FAIL $t"
 | AI 설계 | [AI/README.md](AI/README.md) · [AI/AGENTIC.md](AI/AGENTIC.md) |
 | AI 평가 결과 | [AI/evals/SCOREBOARD.md](AI/evals/SCOREBOARD.md) |
 | 협업 규칙 | [AGENTS.md](AGENTS.md) · [PR 템플릿](.github/pull_request_template.md) · [이슈 템플릿](.github/ISSUE_TEMPLATE) |
+
+---
+
+## 🛠 기술 스택
+
+<table>
+  <tr>
+    <th>Category</th>
+    <th>Stack</th>
+  </tr>
+  <tr>
+    <td>Frontend</td>
+    <td>
+      <img src="https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black">
+      <img src="https://img.shields.io/badge/React_Router-CA4245?style=flat&logo=reactrouter&logoColor=white">
+      <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white">
+      <img src="https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite&logoColor=white">
+    </td>
+  </tr>
+  <tr>
+    <td>Backend</td>
+    <td>
+      <img src="https://img.shields.io/badge/Java_21-007396?style=flat&logo=openjdk&logoColor=white">
+      <img src="https://img.shields.io/badge/Spring_Boot-6DB33F?style=flat&logo=springboot&logoColor=white">
+      <img src="https://img.shields.io/badge/Spring_Security-6DB33F?style=flat&logo=springsecurity&logoColor=white">
+      <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white">
+    </td>
+  </tr>
+  <tr>
+    <td>AI</td>
+    <td>
+      <img src="https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white">
+      <img src="https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white">
+      <img src="https://img.shields.io/badge/LangGraph-1C3C3C?style=flat&logo=langchain&logoColor=white">
+      <img src="https://img.shields.io/badge/MCP-000000?style=flat&logoColor=white">
+    </td>
+  </tr>
+  <tr>
+    <td>Testing</td>
+    <td>
+      <img src="https://img.shields.io/badge/JUnit_5-25A162?style=flat&logo=junit5&logoColor=white">
+      <img src="https://img.shields.io/badge/Testcontainers-2496ED?style=flat&logo=docker&logoColor=white">
+      <img src="https://img.shields.io/badge/Playwright-2EAD33?style=flat&logo=playwright&logoColor=white">
+    </td>
+  </tr>
+  <tr>
+    <td>Infra</td>
+    <td>
+      <img src="https://img.shields.io/badge/Docker_Compose-2496ED?style=flat&logo=docker&logoColor=white">
+      <img src="https://img.shields.io/badge/Caddy-1F88C0?style=flat&logo=caddy&logoColor=white">
+      <img src="https://img.shields.io/badge/AWS_EC2-FF9900?style=flat&logo=amazonec2&logoColor=white">
+      <img src="https://img.shields.io/badge/AWS_S3-569A31?style=flat&logo=amazons3&logoColor=white">
+      <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat&logo=githubactions&logoColor=white">
+    </td>
+  </tr>
+</table>
 
 ---
 
