@@ -28,6 +28,7 @@ API 계약은 API 규약을, 의존성과 버전은 `build.gradle`을 기준으�
 | 일지 텍스트 추출 | Apache POI(docx), Apache PDFBox(pdf) |
 | AI 서버·카카오 호출 | Spring `RestClient`·`RestTemplate` + Apache HttpClient 5 (503·429 자동 재시도 끔, `global.config.HttpClientRequestFactories`) |
 | 운영 데이터베이스 | PostgreSQL |
+| 스키마 관리 | Flyway (`docker` 프로필에서만 켬, `ddl-auto: validate`) |
 | 테스트 데이터베이스 | H2 PostgreSQL 호환 모드 |
 | 테스트 | Spring Boot Test, JUnit 5, Spring Security Test, Testcontainers PostgreSQL |
 | 보조 도구 | Lombok |
@@ -211,6 +212,7 @@ PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션을 변경한 경우�
 - 변경한 유스케이스의 성공 경로와 주요 실패 경로를 함께 테스트한다.
 - DB 매핑, JPA 쿼리, 트랜잭션 관련 변경에는 H2 PostgreSQL 호환 모드 또는 Testcontainers PostgreSQL로 실행되는 테스트를 추가한다.
 - DB 테스트는 `test` 프로필을 사용하고 기존 `application-test.yml` 설정을 유지한다.
+- `test` 프로필과 통합 테스트는 Hibernate가 테이블을 만든다. 마이그레이션과 엔티티가 맞는지는 `FlywayMigrationIntegrationTest` 하나가 본다. 엔티티를 바꾸면 이 테스트를 꼭 돌린다.
 - `test`와 `build`는 `@Tag("integration")` 테스트를 제외하므로 Docker 없이 실행 가능하게 유지한다.
 - PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션 검증이 필요한 통합 테스트에만 Testcontainers를 사용하고 `integrationTest` 태스크로 실행한다.
 - Testcontainers를 사용하는 테스트에는 `@Tag("integration")`을 붙인다. `integrationTest`에는 이 태그가 있는 테스트만 포함한다.
@@ -227,7 +229,7 @@ PostgreSQL 고유 동작, JPA 매핑·쿼리, 트랜잭션을 변경한 경우�
 | --- | --- |
 | API 경로, 요청·응답, HTTP 상태, 오류 코드 | `docs/api/api-conventions.md`, 컨트롤러 OpenAPI annotation, `global.config.OpenApiConfig`, `/v3/api-docs` 검증 테스트 |
 | JDK, Spring Boot, 의존성, DB 변경 | `build.gradle`, `backend/README.md`, 이 문서의 기술 스택 |
-| Entity·테이블·컬럼·제약·enum 값 변경 | `docs/db/schema.md` (예외 없이 같은 PR에서 갱신) |
+| Entity·테이블·컬럼·제약·인덱스·enum 값 변경 | `src/main/resources/db/migration`에 새 마이그레이션, `docs/db/schema.md` (예외 없이 같은 PR에서 갱신) |
 | 실행 명령, 프로필, 환경 변수 변경 | `backend/README.md` |
 | 패키지 구조나 계층 책임 변경 | `backend/AGENTS.md` |
 | 인증·인가 API 계약 변경 | `docs/api/api-conventions.md`, `SecurityConfig`, `global.config.OpenApiConfig`, 관련 endpoint의 OpenAPI 보안 요구 사항 |

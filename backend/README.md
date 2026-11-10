@@ -81,7 +81,7 @@ JWT 유효시간은 3시간이고, 남은 시간이 절반보다 짧은 API 요�
 동시 최초 로그인은 카카오 ID 중복 경합 후 새 트랜잭션에서 먼저 생성된 회원을 조회하므로 두 요청이
 같은 회원 ID를 사용합니다. 로그인 시 복구와 회원가입은 회원 행의 잠금으로 조율합니다.
 
-> **기존 배포 데이터를 보존할 때 테이블을 삭제하지 마세요.** `docker` 프로필의 `ddl-auto: update`는
+> **기존 배포 데이터를 보존할 때 테이블을 삭제하지 마세요.** Flyway 이전에 쓰던 `ddl-auto: update`는
 > 이전 실험 스키마의 `users.role` NOT NULL이나 `organization.name` UNIQUE 제약을 제거하지 못합니다.
 > 기존 `organization` 행이 있다면 사업자등록번호도 실제 값으로 보완해야 합니다. 해당 스키마가 남아 있는
 > 환경은 백업 후 별도의 스키마 변경을 먼저 준비해야 하며, 아래 도구는 소유자 데이터 이전만 담당합니다.
@@ -137,7 +137,7 @@ psql "$DATABASE_URL" -v apply=true -f /absolute/path/to/backend/scripts/migrate-
 [`scripts/test-children.sql`](scripts/test-children.sql)이 테스트 아이 100명(`잇다_synthetic_100.json`의 dev·holdout)과
 함께 테스트 보호자·사용된 초대·보호자 연결·동의를 앱과 같은 모양으로 직접 넣습니다.
 
-**새 BE를 먼저 배포합니다.** `sharing_consent` 테이블은 BE가 만들고(`ddl-auto: update`), 테이블이 없으면 스크립트가 바로 멈춥니다.
+**새 BE를 먼저 배포합니다.** `sharing_consent` 테이블은 BE가 기동하며 만들고(Flyway 마이그레이션), 테이블이 없으면 스크립트가 바로 멈춥니다.
 배포 직후부터 스크립트를 돌리기 전까지는 예전에 넣은 테스트 아이가 매칭 명부에서 빠집니다.
 
 서버의 `infra/docker`에서 실행합니다. 기관 id는 이슈 #130 댓글이나 아래 조회로 확인합니다.
@@ -208,6 +208,7 @@ dbsql -c "UPDATE journal_entry SET status = 'VALIDATED', updated_at = now() AT T
 | AI 서버·카카오 호출 | Spring `RestClient`·`RestTemplate` + Apache HttpClient 5 (`global.config.HttpClientRequestFactories`). HTTP 클라이언트는 503·429 를 다시 보내지 않고 연결이 끊긴 GET 만 1회 다시 보낸다. AI 호출의 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, 카카오 토큰 교환(POST)은 503·429·연결 끊김에 다시 보내지 않는다(인가 코드가 일회용) |
 | API 문서 | Springdoc OpenAPI 2.9.1, Swagger UI |
 | 운영 DB | PostgreSQL |
+| 스키마 관리 | Flyway (`src/main/resources/db/migration`, `docker` 프로필에서만 켬) |
 | 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |
 | 빌드 | Gradle Wrapper |
 
@@ -321,7 +322,7 @@ docker compose up --build
 ```
 
 Compose 환경에서는 `docker` 프로필이 활성화되고, `DB_URL`, `DB_USERNAME`,
-`DB_PASSWORD` 환경 변수로 PostgreSQL에 연결합니다. `JWT_SECRET`, `KAKAO_CLIENT_ID`,
+`DB_PASSWORD` 환경 변수로 PostgreSQL에 연결합니다. 기동할 때 Flyway가 스키마를 만들거나 바꿉니다. `JWT_SECRET`, `KAKAO_CLIENT_ID`,
 `KAKAO_CLIENT_SECRET`, `RAW_STORAGE_S3_BUCKET`이 비어 있으면 Compose가 실행을 거부합니다.
 
 외부 진입점은 Caddy입니다. 기본값 `PUBLIC_ORIGIN=http://localhost`에서는 HTTP,
@@ -342,8 +343,8 @@ Caddy 재로딩과 상태·CORS·카카오 콜백 검증이 실패하면 이전 
 
 `BACKEND_IMAGE`는 Compose에서 사용할 이미지 참조입니다. 비어 있으면 로컬 빌드용
 `ktc-backend`를 사용하고, CD는 성공한 이미지 digest를 서버 `.env`에 기록합니다.
-DB 컨테이너·볼륨은 재생성하지 않으며 `ddl-auto: update`를 유지합니다.
-이미지 복구는 DB 스키마 변경을 되돌리지 않습니다.
+DB 컨테이너·볼륨은 재생성하지 않습니다. 스키마는 BE가 기동할 때 Flyway 마이그레이션이 바꾸고(`ddl-auto: validate`),
+이미지 복구는 이미 실행된 마이그레이션을 되돌리지 않습니다. 절차는 [인프라 문서](../infra/README.md#db-마이그레이션)를 참고하세요.
 
 GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
 [인프라 문서](../infra/README.md#백엔드-cicd)를 참고하세요.
