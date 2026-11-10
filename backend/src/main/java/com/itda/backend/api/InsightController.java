@@ -41,7 +41,8 @@ public class InsightController {
                     + "기관 종류 우선순위(학교 > 센터 > 활동지원사, 동점이면 작은 기관 ID)로 정해집니다. "
                     + "같은 아동·같은 기간은 최신 회차만 보입니다. needsReview 는 지금 항상 true 입니다 — 본문에 "
                     + "다른 아이 이름이 없다는 보장이 없고 교사가 검증 없이 쓴 문장이 근거로 섞일 수 있습니다. "
-                    + "targets 는 읽기 전용 참고이고, 수신 기관은 승인 뒤 보호자가 정합니다."
+                    + "targets 는 읽기 전용 참고입니다. 승인하면 연결된 보호자와, 아이가 지금 명부에 있고 주간 인사이트 "
+                    + "공유 동의가 켜진 다른 기관에 열람 권한이 생깁니다. 승인하는 우리 기관은 수신 대상에서 빠집니다."
     )
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -88,10 +89,11 @@ public class InsightController {
     @PostMapping("/{insightId}/gate2")
     @Operation(
             summary = "Gate 2 결정",
-            description = "인사이트를 승인하거나 보류합니다. 승인하면 보호자에게 열람 권한이 생기고, 수신 기관은 그 뒤 "
-                    + "보호자가 고릅니다 — 기관이 수신처를 고르지 않으므로 요청에 대상 기관을 담지 않습니다. "
-                    + "보호자가 한 명도 연결돼 있지 않으면 승인은 되지만 아무에게도 보이지 않습니다(오류 아님). "
-                    + "승인·보류 모두 되돌릴 수 없고, Gate 1 과 달리 보류 해제가 없습니다."
+            description = "인사이트를 승인하거나 보류합니다. 승인하면 열람 권한을 두 갈래로 따로 만듭니다 — 연결된 보호자 "
+                    + "모두와, 아이가 지금 명부에 있고 주간 인사이트 공유 동의가 켜진 다른 기관(승인 기관 제외)입니다. "
+                    + "수신 기관은 동의로 정해지므로 요청에 대상 기관을 담지 않습니다. 연결된 보호자가 없어도 기관 권한은 "
+                    + "생기고 보호자 권한만 없습니다(오류 아님). 근거를 낸 기관의 주간 인사이트 동의가 꺼져 있으면 승인할 수 "
+                    + "없습니다. 승인·보류 모두 되돌릴 수 없고, Gate 1 과 달리 보류 해제가 없습니다."
     )
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "결정 반영"),

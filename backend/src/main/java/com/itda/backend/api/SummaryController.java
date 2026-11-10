@@ -122,7 +122,7 @@ public class SummaryController {
     @Operation(
             summary = "요약 실패 다시 요약",
             description = "그 아이·날짜의 요약 실패 일지를 요약 대기로 돌립니다. 워커가 곧 다시 요약하고, 결과는 Gate 1 "
-                    + "검토 목록(O-30)에 옵니다. 횟수 제한은 없으며 또 실패하면 다시 요약 실패 목록에 뜹니다."
+                    + "검토 목록(GET /api/v1/summaries)에 옵니다. 횟수 제한은 없으며 또 실패하면 다시 요약 실패 목록에 뜹니다."
     )
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "요약 대기로 돌림"),
