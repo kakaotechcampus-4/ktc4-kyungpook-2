@@ -155,18 +155,3 @@ for t in evals/scripts/*/test_*.py; do python "$t" > /dev/null || echo "FAIL $t"
 - **선생님이 AI 초안을 얼마나 고치나** — [evals/scripts/feedback/README.md](evals/scripts/feedback/README.md)
 
 평가 데이터와 결과는 `evals/generated/`에 생기고 커밋하지 않습니다.
-
----
-
-## 고칠 곳
-
-| 바꾸고 싶은 것 | 파일 |
-| --- | --- |
-| 임계값 · 기능 켜고 끄기 | `<에이전트>/config.py` |
-| 판정 규칙 | `<에이전트>/nodes.py` |
-| 모델에게 주는 지시 | `<에이전트>/prompts.py` |
-| 입출력 | `<에이전트>/schemas.py` (백엔드의 `*AgentClient`도 함께) |
-| 단계 이름 | `<에이전트>/graph.py` (백엔드 진행 현황 문구와 `test_progress.py`도 함께) |
-| 모델 접속 | `common/luna.py` |
-
-설계 이유와 약한 점은 [AGENTIC.md](AGENTIC.md)에 있습니다.
