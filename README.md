@@ -293,8 +293,11 @@ for t in evals/scripts/*/test_*.py; do python "$t" > /dev/null || echo "FAIL $t"
 
 ## 👥 팀원 소개
 
-<!-- TODO: 사진 · 이름(GitHub 링크) · 맡은 영역 -->
-
 | | | |
 | :--: | :--: | :--: |
-| | | |
+| <img src="https://avatars.githubusercontent.com/jin2214?s=140" width="140" height="140" /> | <img src="https://avatars.githubusercontent.com/chjh1211?s=140" width="140" height="140" /> | <img src="https://avatars.githubusercontent.com/KinsHishI?s=140" width="140" height="140" /> |
+| [jin2214](https://github.com/jin2214) | [chjh1211](https://github.com/chjh1211) | [KinsHishI](https://github.com/KinsHishI) |
+| BE | BE | BE |
+| <img src="https://avatars.githubusercontent.com/xohasnefo?s=140" width="140" height="140" /> | <img src="https://avatars.githubusercontent.com/geunchanKim?s=140" width="140" height="140" /> | <img src="https://avatars.githubusercontent.com/gogumajoha?s=140" width="140" height="140" /> |
+| [xohasnefo](https://github.com/xohasnefo) | [geunchanKim](https://github.com/geunchanKim) | [gogumajoha](https://github.com/gogumajoha) |
+| FE | AI | AI |
