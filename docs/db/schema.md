@@ -625,7 +625,7 @@ NULL끼리 겹치는 것을 허용하므로, 해제된 행은 번호를 놓아 �
 
 > **(9.25) 배포 주의 — 이전 스키마 테이블 정리**
 > 배포 DB(PostgreSQL)에 이전 설계로 만들어진 `users`·`organization` 테이블이 이미 있다면 데이터를 보존하고,
-> 백업 후 별도 스키마 변경을 준비한다. 테이블을 지우고 배포하지 않는다 (`backend/README.md`의 이전 절차 참고).
+> 백업 후 별도 스키마 변경을 준비한다. 테이블을 지우고 배포하지 않는다 (`backend/scripts/README.md`의 소유자 이전 절차 참고).
 > `ddl-auto: update`는 `users.role`의 NOT NULL 해제와 `organization.name`의 UNIQUE 제거를 해주지 않고,
 > 기존 행이 있으면 NOT NULL인 `organization.business_number` 컬럼 추가도 실패한다.
 > `test` 프로필은 H2 인메모리(`create-drop`)라 재기동하면 초기화된다. 로컬 개발 DB는 개발자의
@@ -1746,7 +1746,7 @@ AI 가 살아나면 `AGENT_UNAVAILABLE` 만 골라 되돌린다 (아래 "실패 
 
 **되돌리기** — 고친 뒤 [`backend/scripts/recover-system-errors.sql`](../../backend/scripts/recover-system-errors.sql)로 단계와
 원인을 골라 되돌린다. 검증은 `MATCHED`(`agent_retry_count = 0`), 요약은 `VALIDATED` 로 돌리고 두 실패 컬럼을 비운다.
-아이가 정해지지 않은 일지는 검증 워커가 집지 않으므로 되돌리지 않고 id 만 보여준다. 사용법은 `backend/README.md`.
+아이가 정해지지 않은 일지는 검증 워커가 집지 않으므로 되돌리지 않고 id 만 보여준다. 사용법은 `backend/scripts/README.md`.
 
 **#180 전에 생긴 `FAILED`** — 배포 DB 에는 검증·요약에서 실패해 `FAILED` 로 남은 일지가 있을 수 있다. 원인을 몰라
 옮기지 않았다. 매칭 결과가 `AUTO` 라 확인 필요 큐에도 뜨지 않는다. 마지막 검증 결과로 단계를 안다 — `FAILED` 면 검증,

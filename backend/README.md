@@ -1,403 +1,165 @@
 # Backend
 
-잇다(ITDA)의 API 서버입니다. 기관과 학부모가 이용하는 서비스의 도메인 로직,
-데이터베이스 연동, 인증·인가를 담당합니다.
+잇다(ITDA)의 API 서버입니다. 로그인 · 회원가입, 아이와 보호자 연결, 동의, 원본 기록 업로드, 1차 · 2차 검토, 공유를 맡고,
+AI 서버를 부르는 워커(매칭 · 검증 · 요약 · 인사이트 · 알림)가 이 안에서 돕니다.
 
-## 현재 상태
+- 스택: Java 21 · Spring Boot 3.5 · Spring Security(카카오 OAuth2 + JWT 쿠키) · Spring Data JPA · PostgreSQL · Flyway · Springdoc
+- 테스트: JUnit 5 · H2(빠른 테스트) · Testcontainers PostgreSQL(통합 테스트)
 
-기본 Spring Boot 애플리케이션, 데이터베이스 연결 설정, Swagger/OpenAPI 문서 기반과
-함께 공통 응답 래퍼, 전역 예외 처리, 카카오 로그인(Spring Security `oauth2Login`),
-JWT 쿠키 인증과 CSRF 보호, 회원가입이 구현되어 있습니다. 로그인한 사용자는 `User`로
-저장되고, 기관 담당자는 가입할 때 만든 `Organization`에 소속됩니다.
+---
 
-도메인 API는 원본 기록 업로드·조회(`/api/v1/raw-records`)가 있으며, 원본 파일은 기본
-프로필에서 로컬 디스크에, `docker` 프로필에서 S3에 저장합니다. 원본 기록은 로그인한
-사용자의 소속 기관 기준으로 저장·조회됩니다.
+## 실행
 
-### 로그인과 회원가입
+JDK 21이 필요합니다. Gradle도 JDK 21로 실행해야 해서, 여러 JDK가 있으면 먼저 맞춥니다.
 
-기관 담당자와 보호자 모두 `GET /oauth2/authorization/kakao`로 로그인합니다. 로그인은 신원 확인만
-하고 역할을 정하지 않습니다.
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+```
 
-1. 처음 로그인하면 역할 없는(`role = NULL`) **가입 미완료** 회원이 만들어집니다.
-2. 프론트는 `GET /api/v1/auth/me`의 `signupCompleted: false`를 보고 역할 선택 화면을 띄웁니다.
-3. `POST /api/v1/auth/signup`으로 역할을 확정합니다. 보호자는 `role`만, 기관은 기관명·기관유형·
-   사업자등록번호를 함께 보내고, 이때 `organization` 행이 새로 만들어집니다(기관 1곳당 계정 1개).
+### 로컬 PostgreSQL로 실행
 
-사업자등록번호는 숫자 10자리 형식만 검사하고 진위·체크섬은 검증하지 않습니다. 역할은 한 번 정해지면
-바뀌지 않습니다. 가입 미완료 회원은 `/auth/me` · `/auth/signup` · `/auth/logout` · `/dev/login` 외의 API에서
-`403 SIGNUP_NOT_COMPLETED`로 막힙니다. 요청·응답 형식은
-[API 명세 §2.2 · §2.6](../docs/api/api-spec.md)을 참고하세요.
+1. `src/main/resources/application-local.yml`에 DB 접속 정보를 둡니다 (Git에서 무시됩니다).
 
-시연용 기관 시드는 없습니다. 기관은 회원가입으로만 만들어집니다.
+   ```yaml
+   spring:
+     datasource:
+       url: jdbc:postgresql://localhost:5432/itda
+       username: your_username
+       password: your_password
+     jpa:
+       hibernate:
+         ddl-auto: update
+   ```
 
-#### 로그인 유지와 쿠키
-
-JWT 유효시간은 3시간이고, 남은 시간이 절반보다 짧은 API 요청에서 갱신합니다. 로그인 때 받은
-`access_token` 원본 쿠키는 현재 로그인 번호를 선택하도록 최대 12시간 보관하고, 갱신 JWT 는
-`access_token_renewal_{sid}` 쿠키에 따로 담습니다. 이전 로그인 응답이 늦게 와도 새 로그인 쿠키를 덮지 않습니다.
-두 쿠키 모두 httpOnly 이며 브라우저가 자동 전송합니다. 원본을 보관하는 시간과 인증 유효시간은 별개라,
-유효한 원본 또는 같은 로그인의 갱신 JWT 가 없으면 401 입니다. 계속 사용해도 처음 로그인부터 12시간에 끝납니다.
-로그아웃은 원본 쿠키를 지우고 로그인 번호를 취소합니다. 남아 있거나 늦게 온 갱신 쿠키만으로는 인증되지 않습니다.
-로그인·로그아웃 응답은 요청에 실린 이전 갱신 쿠키도 지워 계정 전환 때 쿠키가 쌓이지 않게 합니다.
-
-#### 카카오 계정 없이 테스트하기 (개발용 로그인)
-
-카카오 계정 하나는 회원 하나이고 역할도 바꿀 수 없어서, 기관과 보호자를 오가는 흐름(아이 등록 → 초대 →
-보호자 동의)을 카카오 계정 하나로는 테스트할 수 없습니다. 로컬에서는 개발용 로그인을 켜서 씁니다.
-
-1. 백엔드를 개발용 로그인을 켠 채 실행합니다. 켜고 끄는 건 실행할 때 환경변수 `DEV_LOGIN_ENABLED`로 합니다.
-   `application-secret.yml` 같은 로컬 설정 파일은 jar·Docker 이미지에 들어가지 않으므로(`build.gradle`,
-   `backend/.dockerignore`) 거기 적어도 서버에는 적용되지 않습니다. 서버에서는 compose 의 `DEV_LOGIN_ENABLED`가 정합니다.
+2. JWT 서명 키와 카카오 앱 키 파일을 만들고 값을 채웁니다 (Git에서 무시됩니다).
 
    ```bash
-   DEV_LOGIN_ENABLED=true ./gradlew bootRun --args='--spring.profiles.active=local'
+   cp src/main/resources/application-secret.example.yml src/main/resources/application-secret.yml
    ```
 
-2. 프론트 개발 서버를 mock 없이 실제 API로 실행합니다(기본값은 mock입니다). `frontend/.env`에 아래처럼 두고
-   `npm run dev`를 다시 시작합니다.
+3. 실행합니다. **http://localhost:8080** 에서 뜹니다.
 
-   ```dotenv
-   VITE_AUTH_MOCK=false
-   VITE_USE_MOCK=false
-   VITE_API_BASE_URL=
+   ```bash
+   ./gradlew bootRun --args='--spring.profiles.active=local'
    ```
 
-3. 브라우저 주소창에서 `http://localhost:3000/api/v1/dev/login?as=org1`을 엽니다. `dev:org1` 회원으로
-   로그인되고, 처음이면 회원가입 화면으로 갑니다. 기관으로 가입하고 아이를 등록해 초대 코드를 받습니다.
-4. 같은 창에서 `?as=parent1`로 열면 보호자 테스트 회원으로 바뀝니다. 보호자로 가입하고 초대 코드를 수락한 뒤
-   동의합니다. 다시 `?as=org1`로 열면 기관 화면으로 돌아옵니다.
+로컬 프로필은 Flyway를 끄고 Hibernate가 테이블을 만듭니다. 운영과 같은 방식은 Docker Compose로 띄울 때입니다.
 
-`as`는 영문 소문자·숫자·하이픈 1~20자입니다. 새 이름을 쓰면 새 회원이 만들어지고, 쓴 적 있는 이름이면 그 회원으로
-들어갑니다. 두 계정을 동시에 띄워 두려면 시크릿 창을 함께 쓰세요. 설정을 켜지 않으면 이 주소는 `404`입니다.
-배포 서버는 Compose가 켜 두므로 `https://iitda.duckdns.org/api/v1/dev/login?as=parent1`처럼 바로 쓸 수 있습니다.
-누구든 테스트 회원으로 들어올 수 있으니 정식 오픈 전에는 서버 `infra/docker/.env`에 `DEV_LOGIN_ENABLED=false`를 넣어 끕니다.
-형식은 [API 명세 §2.4.1](../docs/api/api-spec.md)을 참고하세요.
+### Docker Compose로 실행
 
-없는 회원·탈퇴 회원을 가리키는 JWT는 보호 API 필터에서 `401 SESSION_USER_NOT_FOUND`로 차단합니다.
-가입 상태 조회 중 DB 장애 등 서버 오류는 필터에서 `500 INTERNAL_SERVER_ERROR` JSON으로 응답하며
-인증 쿠키를 만료시키지 않습니다. 비로그인 API GET 요청은 RequestCache에 저장하지 않아 세션을
-생성하지 않고, 카카오 인가 요청의 state를 보관할 때는 세션을 사용합니다.
-동시 최초 로그인은 카카오 ID 중복 경합 후 새 트랜잭션에서 먼저 생성된 회원을 조회하므로 두 요청이
-같은 회원 ID를 사용합니다. 로그인 시 복구와 회원가입은 회원 행의 잠금으로 조율합니다.
+전체 스택(DB · 백엔드 · AI · 프론트 · Caddy)을 함께 띄웁니다. 방법은 [루트 README](../README.md)에 있습니다.
 
-> **기존 배포 데이터를 보존할 때 테이블을 삭제하지 마세요.** Flyway 이전에 쓰던 `ddl-auto: update`는
-> 이전 실험 스키마의 `users.role` NOT NULL이나 `organization.name` UNIQUE 제약을 제거하지 못합니다.
-> 기존 `organization` 행이 있다면 사업자등록번호도 실제 값으로 보완해야 합니다. 해당 스키마가 남아 있는
-> 환경은 백업 후 별도의 스키마 변경을 먼저 준비해야 하며, 아래 도구는 소유자 데이터 이전만 담당합니다.
+- `docker` 프로필로 뜨고, 기동할 때 Flyway가 스키마를 만들거나 바꿉니다
+- 백엔드 8080은 `127.0.0.1`에만 열립니다
 
-### 기존 원본 기록의 기관 소유자 이전
+### 카카오 계정 없이 테스트하기 (개발용 로그인)
 
-이전 버전은 `raw_record.institution_id`에 카카오 ID를 저장했습니다. 새 버전은 가입 시 만든 기관 ID를
-저장하므로 기존 기록은 명시적 매핑을 통해 옮겨야 합니다. 카카오 ID와 기관 ID가 같은 숫자일 수 있어
-값만 보고 자동 추정하지 않습니다. PostgreSQL 16의 `psql`과 아래 수동 도구를 사용합니다.
+카카오 계정 하나는 회원 하나이고 역할도 바꿀 수 없어서, 기관과 보호자를 오가는 흐름은 개발용 로그인으로 확인합니다.
 
-1. 회원·기관·원본 기록을 포함한 DB 전체를 `pg_dump`로 백업하고, 원본 파일도 보존합니다. 이전이 끝날
-   때까지 원본 기록 업로드·조회와 회원 소속 변경을 중단합니다. 이미 숫자가 겹치는 기록이 다른 기관에
-   보이는 일을 방지하려면 조회도 차단해야 합니다.
-2. 기존 기록 소유자가 새 버전에서 카카오 로그인과 기관 가입을 완료하도록 합니다. 전환 중 로그인·가입은
-   허용하되 원본 기록 API는 열지 않습니다. JWT subject가 카카오 ID에서 내부 ID로 바뀌므로 최초 배포 시
-   `JWT_SECRET`도 새 키로 교체하여 이전 토큰을 폐기합니다.
-3. 백업한 기존 기록 **전체**의 ID·카카오 ID를 새 기관 ID에 연결합니다. 새 버전으로 이미 생성한 기록이
-   섞인 DB용 도구가 아니며, 그런 환경에서는 별도로 이전 대상을 분리하는 절차가 필요합니다.
-   [CSV 예제](scripts/raw-record-owner-mapping.csv.example)를 복사해 실제 값으로 채웁니다.
-   헤더는 `raw_record_id,legacy_kakao_id,organization_id` 순서 그대로 사용합니다.
-4. CSV를 보관할 작업 디렉터리에서 아래 검증 명령을 실행합니다. `DATABASE_URL`은 운영자가 준비한
-   PostgreSQL 접속 문자열이며, 비밀번호는 명령에 직접 넣지 말고 `.pgpass` 등으로 제공합니다.
+1. 백엔드를 `DEV_LOGIN_ENABLED=true`로 실행하고, 프론트는 `VITE_AUTH_MOCK=false` · `VITE_USE_MOCK=false`로 띄웁니다
+2. 브라우저에서 `http://localhost:3000/api/v1/dev/login?as=org1`을 열면 `dev:org1` 테스트 회원으로 들어갑니다
+3. `?as=parent1`로 바꾸면 보호자 테스트 회원으로 바뀝니다. 두 계정을 동시에 띄우려면 시크릿 창을 함께 씁니다
 
-```bash
-# 이 디렉터리의 raw-record-owner-mapping.csv 를 읽습니다.
-# /absolute/path/to/backend 는 실제 저장소의 backend 절대 경로로 바꿉니다.
-psql "$DATABASE_URL" -f /absolute/path/to/backend/scripts/migrate-raw-record-owners.sql
-```
+`as`는 영문 소문자 · 숫자 · 하이픈 1~20자이고, 새 이름이면 새 회원을 만듭니다. 꺼져 있으면 이 주소는 404입니다.
+배포 서버는 Compose가 켜 두므로, 정식 오픈 전에 서버 `infra/docker/.env`에 `DEV_LOGIN_ENABLED=false`를 넣어 끕니다.
 
-기본 모드는 이전 예정 내역과 건수를 출력한 뒤 `ROLLBACK`합니다. 빈 매핑, 기록 ID 중복·누락,
-소유자 불일치, 없는 기록·기관, 비활성 회원이나 다른 기관 소속은 오류로 중단됩니다. 검증 중에도 테이블
-잠금을 사용하므로 점검 시간에 실행하세요. 매핑 누락을 정확히 판정하도록 DB의 원본 기록 전체가 CSV에
-포함되어야 합니다.
+---
 
-5. 검증 결과를 백업·CSV와 대조한 뒤 같은 디렉터리에서 적용합니다.
-
-```bash
-psql "$DATABASE_URL" -v apply=true -f /absolute/path/to/backend/scripts/migrate-raw-record-owners.sql
-```
-
-적용은 하나의 트랜잭션에서 `institution_id`만 갱신합니다. 기록 ID·파일 경로·파일 내용·생성 시각은
-변경하지 않습니다. 오류가 나면 연결 종료 시 전체 롤백되므로 일부만 이전되지 않습니다. CSV와 실행
-결과는 보관하고, 적용 후 같은 CSV를 반복 실행하지 마세요.
-
-6. 기관별 기존 기록 목록·상세 조회와 다른 기관의 접근 거부를 확인한 뒤 원본 기록 API를 다시 엽니다.
-   적용 후 문제가 확인되면 API를 계속 중단한 상태에서 사전 백업으로 복구하고 매핑을 다시 검증합니다.
-   도구는 서버 시작 시 자동 실행되지 않습니다.
-
-### 테스트 아이 명부 넣기
-
-웹에서 업로드 → 매칭 → 검증을 확인하려면 매칭 명부에 아이가 있어야 합니다. 매칭 명부는 **그 기관에 보호자 동의가 있는
-아이**만 씁니다(DB 스키마 §5.1). 테스트 아이 100명에게 일일이 초대 코드 수락과 동의를 할 수 없으니,
-[`scripts/test-children.sql`](scripts/test-children.sql)이 테스트 아이 100명(`잇다_synthetic_100.json`의 dev·holdout)과
-함께 테스트 보호자·사용된 초대·보호자 연결·동의를 앱과 같은 모양으로 직접 넣습니다.
-
-**새 BE를 먼저 배포합니다.** `sharing_consent` 테이블은 BE가 기동하며 만들고(Flyway 마이그레이션), 테이블이 없으면 스크립트가 바로 멈춥니다.
-배포 직후부터 스크립트를 돌리기 전까지는 예전에 넣은 테스트 아이가 매칭 명부에서 빠집니다.
-
-서버의 `infra/docker`에서 실행합니다. 기관 id는 이슈 #130 댓글이나 아래 조회로 확인합니다.
-
-```bash
-dbsql() { docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@"; }
-dbsql -c "SELECT o.id, o.name FROM organization o ORDER BY o.id;"   # 기관 id
-dbsql -v action=seed -v org_id=5 < ../../backend/scripts/test-children.sql               # 확인만 (ROLLBACK)
-dbsql -v action=seed -v org_id=5 -v apply=true < ../../backend/scripts/test-children.sql # 저장
-```
-
-- `seed`는 아이가 없으면 만들고 `org_id` 기관 명부에 연결한 뒤, 테스트 보호자(`kakao_id = test-guardian-130`)와 연결하고
-  그 기관에 동의(`daily_summary`·`weekly_insight`)를 넣습니다. 다시 실행해도 빠진 것만 채웁니다 — 이미 연결된 아이에게는
-  초대 행을 새로 만들지 않습니다. 예전 판 스크립트로 넣은 아이(`ACTIVE`, 연결·동의 없음)에게 돌리면 연결과 동의가 채워집니다.
-- 여러 기관에 넣으면 같은 아이 행을 함께 쓰고, 기관마다 동의가 따로 생깁니다(등록 API는 기관마다 따로 만듭니다).
-- `unlink`는 그 기관 명부에서만 빼고 그 기관 동의를 철회합니다. `purge`(`org_id`를 주면 거절)는 모든 기관에서 빼고 동의를
-  모두 철회한 뒤 아이를 삭제 처리합니다. 철회는 `REVOKED`(`revoke_reason = ROSTER_REMOVED`)로 남고, 삭제는 `deleted_at`만 채웁니다.
-- 아이 상태는 앱과 같은 규칙으로 다시 계산합니다(살아 있는 동의가 있으면 `ACTIVE`, 모두 철회됐으면 `SUSPENDED`).
-
-테스트 아이와 이름·생년월일이 같은데 테스트 아이가 아닌 아이(등록 API로 만든 아이, 실제 보호자가 연결된 아이)가 있으면
-아무것도 바꾸지 않고 멈추며, 오류에 그 `child.id`와 상태를 보여줍니다. 테스트하려고 등록한 아이라면 그 아이를 정리한 뒤
-다시 실행합니다. 실행했으면 이슈 #130에 기관과 action을 남깁니다.
-
-### 시스템 오류로 멈춘 일지 되돌리기
-
-검증·요약 중 코드 버그나 AI 계약 위반으로 멈춘 일지는 `SYSTEM_ERROR`가 되고, 어느 단계(`failure_stage`)에서 왜
-(`failure_reason`) 멈췄는지 남습니다(DB 스키마 §6.2 "실패 상태와 원인 코드"). 원인을 고친 뒤
-[`scripts/recover-system-errors.sql`](scripts/recover-system-errors.sql)로 **고친 원인의 일지만** 골라 다시 처리하게 합니다.
-서버의 `infra/docker`에서 위의 `dbsql`로 실행합니다.
-
-```bash
-dbsql -c "SELECT failure_stage, failure_reason, count(*) FROM journal_entry
-          WHERE status = 'SYSTEM_ERROR' AND deleted_at IS NULL GROUP BY 1, 2;"                              # 원인별 건수
-dbsql -v stage=VALIDATION -v reason=AGENT_UNAVAILABLE < ../../backend/scripts/recover-system-errors.sql             # 확인만 (ROLLBACK)
-dbsql -v stage=VALIDATION -v reason=AGENT_UNAVAILABLE -v apply=true < ../../backend/scripts/recover-system-errors.sql # 되돌리기
-```
-
-- `stage`는 `VALIDATION`·`SUMMARY`, `reason`은 `REQUEST_REJECTED`·`RESPONSE_UNREADABLE`·`EVIDENCE_MISMATCH`·
-  `AGENT_UNAVAILABLE`·`INTERNAL_ERROR` 중 하나입니다. 빠지거나 틀리면 아무것도 바꾸지 않고 멈춥니다.
-- 검증은 검증 대기(`MATCHED`), 요약은 요약 대기(`VALIDATED`)로 돌아가고 두 실패 컬럼이 비워집니다. 검증은 워커가 다시 집습니다.
-  요약은 자동 요약(`SUMMARY_AUTO_RUN`, 기본 켜짐)이면 워커가 다시 집습니다. 꺼져 있으면 그 묶음에서 [요약](O-32)을 다시 눌러야 집습니다 (#181).
-- 아이가 정해지지 않은 일지는 검증 워커가 집지 않아 되돌리지 않고 `skipped_journal_entry_id_without_child`로 id만 보여줍니다.
-- 버그를 고치기 전에 되돌리면 같은 원인으로 다시 멈춥니다. 서버 시작 시 자동 실행되지 않습니다.
-
-**요약 실패(`SUMMARY_FAILED`)는 선생님이 검토 화면에서 처리합니다** (#369). 근거가 남은 문장이 없어 멈춘 일지라
-요약 실패 목록(O-35)에 묶음으로 뜨고, 선생님이 [다시 요약](O-36) 하거나 [요약 없이 마무리](O-37) 합니다. 화면이 들어오기
-전에 관리자가 한꺼번에 되돌려야 하면 아래처럼 요약 대기로 돌립니다. 같은 아이·날짜 묶음의 일지는 함께 돌려야 한 요약으로
-묶입니다. 자동 요약이 꺼져 있으면 돌린 뒤 그 묶음에서 [요약](O-32)을 다시 눌러야 요약됩니다 (#181).
-
-```bash
-dbsql -c "SELECT id, child_id, entry_date FROM journal_entry
-          WHERE status = 'SUMMARY_FAILED' AND deleted_at IS NULL ORDER BY child_id, entry_date, id;"   # 대상 확인
-dbsql -c "UPDATE journal_entry SET status = 'VALIDATED', updated_at = now() AT TIME ZONE 'Asia/Seoul'
-          WHERE status = 'SUMMARY_FAILED' AND deleted_at IS NULL AND id IN (101, 102);"                # 고른 id 만
-```
-
-## 기술 스택
-
-| 항목 | 사용 기술 |
-| --- | --- |
-| 언어·런타임 | Java 21 |
-| 프레임워크 | Spring Boot 3.5.3 |
-| 웹·검증 | Spring Web, Bean Validation |
-| 인증 | Spring Security, OAuth2 Client(카카오), JJWT 0.12.6 |
-| 데이터 접근 | Spring Data JPA |
-| 파일 저장 | 로컬 디스크(기본), AWS SDK S3(`docker` 프로필) |
-| 일지 텍스트 추출 | Apache POI 5.4.1(docx), Apache PDFBox 3.0.5(pdf) — `RawTextExtractor` |
-| AI 서버·카카오 호출 | Spring `RestClient`·`RestTemplate` + Apache HttpClient 5 (`global.config.HttpClientRequestFactories`). HTTP 클라이언트는 503·429 를 다시 보내지 않고 연결이 끊긴 GET 만 1회 다시 보낸다. AI 호출의 응답 오류(5xx 등)·타임아웃 재시도는 `AiAgentClient`만 하고, 카카오 토큰 교환(POST)은 503·429·연결 끊김에 다시 보내지 않는다(인가 코드가 일회용) |
-| API 문서 | Springdoc OpenAPI 2.9.1, Swagger UI |
-| 운영 DB | PostgreSQL |
-| 스키마 관리 | Flyway (`src/main/resources/db/migration`, `docker` 프로필에서만 켬) |
-| 테스트 DB | H2 (빠른 테스트), Testcontainers PostgreSQL (통합 테스트) |
-| 빌드 | Gradle Wrapper |
-
-## 시작하기
-
-### 사전 조건
-
-- JDK 21
-- Docker Desktop (Docker 환경으로 실행할 경우)
-- 로컬 실행 시 PostgreSQL
-
-Gradle Wrapper 자체도 JDK 21로 실행해야 합니다. `build.gradle`의 Java toolchain은
-컴파일·테스트에 사용할 Java 버전을 지정할 뿐, 이미 시작된 Gradle의 런타임을 바꾸지 않습니다.
-여러 JDK가 설치된 환경에서는 검증 전에 `java -version`이 21을 가리키는지 확인하세요.
-
-### 테스트와 빌드
-
-`backend/`에서 실행합니다.
+## 테스트와 빌드
 
 ```bash
 ./gradlew test
-./gradlew build
 ```
-
-Windows에서는 `gradlew.bat test`와 `gradlew.bat build`를 사용합니다.
-
-PostgreSQL 동작을 확인하는 Testcontainers 통합 테스트는 Docker Desktop을 실행한 뒤 별도로
-실행합니다.
 
 ```bash
 ./gradlew integrationTest
 ```
 
-### API 문서
-
-애플리케이션을 실행한 뒤 아래 경로에서 API 문서를 확인할 수 있습니다.
-
-- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
-- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
-- OpenAPI YAML: `http://localhost:8080/v3/api-docs.yaml`
-
-새 외부 API를 추가할 때는 컨트롤러의 `@Tag`, `@Operation`과 요청·응답·오류 응답
-명세를 같은 변경에서 갱신한다. 인증이 필요한 API에는 `access_token` 쿠키 보안 스킴인
-`cookieAuth`(`OpenApiConfig.COOKIE_AUTH_SCHEME`) 보안 요구 사항을 선언하고, 공개 API에는
-이를 적용하지 않는다.
-
-### 테스트 환경
-
-- [BackendApplicationTests](src/test/java/com/itda/backend/BackendApplicationTests.java)는
-  H2 PostgreSQL 호환 모드로 실행되는 빠른 스모크 테스트다. 단위 테스트와 간단한
-  애플리케이션 기동 검증에는 Docker가 필요 없다.
-- `@Tag("integration")`이 붙은 통합 테스트는 Testcontainers로 실제 PostgreSQL
-  컨테이너를 실행하며 `./gradlew integrationTest`로만 실행한다. JPA 매핑, 쿼리,
-  트랜잭션처럼 PostgreSQL 동작을 검증해야 할 경우에만 추가한다.
-- Testcontainers 통합 테스트를 실행하려면 Docker Desktop이 실행 중이어야 한다.
-  Docker를 사용할 수 없는 환경에서도 `./gradlew test`와 `./gradlew build`는 실행할 수 있다.
-
-프로젝트는 Java 21을 기준으로 한다. 여러 JDK가 설치된 macOS 환경에서는 아래처럼
-Java 21을 명시하고 확인한 뒤 테스트·빌드를 실행한다.
-
 ```bash
-export JAVA_HOME=$(/usr/libexec/java_home -v 21)
-export PATH="$JAVA_HOME/bin:$PATH"
-java -version # 21.x인지 확인
-./gradlew test --rerun-tasks
-./gradlew build --rerun-tasks
-# Docker Desktop 실행 후 PostgreSQL 통합 테스트가 필요한 경우
-./gradlew integrationTest --rerun-tasks
+./gradlew build
 ```
 
-### 로컬 PostgreSQL로 실행
+- `test` · `build`는 H2로 돌아 Docker가 필요 없습니다
+- `integrationTest`는 Docker가 켜져 있어야 합니다. `@Tag("integration")`이 붙은 Testcontainers 테스트만 돕니다
+- 엔티티를 바꿨다면 `FlywayMigrationIntegrationTest`가 마이그레이션과 엔티티가 맞는지 봅니다
 
-기본 `application.yml`에는 데이터베이스 접속 정보가 없습니다. 개인별 설정은
-`src/main/resources/application-local.yml`에만 두며, 이 파일은 Git에서 무시됩니다.
+---
 
-```yaml
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/itda
-    username: your_username
-    password: your_password
-  jpa:
-    hibernate:
-      ddl-auto: update
-```
+## API 문서
 
-아래 명령으로 `local` 프로필을 활성화합니다.
+백엔드를 띄운 뒤 Swagger UI를 엽니다.
 
-```bash
-./gradlew bootRun --args='--spring.profiles.active=local'
-```
+- `http://localhost:8080/swagger-ui/index.html`
+- OpenAPI: `/v3/api-docs` (JSON) · `/v3/api-docs.yaml`
 
-JWT 서명 키와 카카오 앱 키는 `application.yml`이 자동으로 읽는
-`src/main/resources/application-secret.yml`에 둡니다. 예시 파일을 복사해 값을 채웁니다.
-이 파일도 Git에서 무시됩니다.
+운영에서는 Caddy가 Swagger를 막습니다. 서버에서는 SSH 터널(`ssh -L 8080:127.0.0.1:8080 …`)로 붙습니다.
+API 응답 형식과 오류 코드 규약은 [api-conventions.md](../docs/api/api-conventions.md)에 있습니다.
 
-```bash
-cp src/main/resources/application-secret.yml.example src/main/resources/application-secret.yml
-```
+---
 
-비밀번호, 카카오 클라이언트 시크릿, 운영 키는 Git이 추적하는 `application*.yml`에 커밋하지
-않습니다. 환경 변수 또는 무시되는 `application-local.yml`·`application-secret.yml`로만 제공합니다.
+## 로그인
 
-### Docker Compose로 실행
+- 기관과 보호자 모두 `/oauth2/authorization/kakao`로 로그인합니다. 처음 로그인하면 역할이 없는 회원이 생기고, `POST /api/v1/auth/signup`에서 역할을 정합니다. 역할은 바꿀 수 없습니다
+- 기관은 가입할 때 기관명 · 유형 · 사업자등록번호(형식만 검사)를 함께 보내고, 이때 기관이 만들어집니다
+- 로그인 상태는 httpOnly 쿠키의 JWT입니다. 3시간짜리이고 쓰는 동안 자동으로 늘어나며, 처음 로그인부터 12시간에 끝납니다
+- 쓰기 요청은 `XSRF-TOKEN` 쿠키 값을 `X-XSRF-TOKEN` 헤더로 보내야 합니다
 
-루트의 `infra/docker/.env.example`을 참고해 `infra/docker/.env`를 만든 후 실행합니다.
+---
 
-```bash
-cd ../infra/docker
-docker compose up --build
-```
+## DB 스키마
 
-Compose 환경에서는 `docker` 프로필이 활성화되고, `DB_URL`, `DB_USERNAME`,
-`DB_PASSWORD` 환경 변수로 PostgreSQL에 연결합니다. 기동할 때 Flyway가 스키마를 만들거나 바꿉니다. `JWT_SECRET`, `KAKAO_CLIENT_ID`,
-`KAKAO_CLIENT_SECRET`, `RAW_STORAGE_S3_BUCKET`이 비어 있으면 Compose가 실행을 거부합니다.
+운영 DB 스키마는 Flyway 마이그레이션(`src/main/resources/db/migration`)만 바꿉니다. `docker` 프로필은 `ddl-auto: validate`라 엔티티와 테이블이 다르면 뜨지 않습니다.
 
-외부 진입점은 Caddy입니다. 기본값 `PUBLIC_ORIGIN=http://localhost`에서는 HTTP,
-운영 HTTPS 주소를 설정하면 인증서 발급·갱신과 HTTP 리다이렉트를 자동 처리합니다.
-백엔드 8080은 `127.0.0.1`에만 연결됩니다. Swagger · OpenAPI는 Caddy가 외부에서 막습니다(#442) —
-서버에서는 SSH 터널(`ssh -L 8080:127.0.0.1:8080 …`)로 `http://localhost:8080/swagger-ui/index.html`에 붙습니다
-(`infra/README.md` "Caddy와 HTTPS").
-Compose는 CORS·로그인 완료 주소를 `PUBLIC_ORIGIN`에서 생성합니다.
+- 스키마를 바꾸는 규칙: [DB 스키마 §11.4](../docs/db/schema.md)
+- 배포 절차: [인프라 문서](../infra/README.md#db-마이그레이션)
+- 서버 DB를 직접 고치는 도구(테스트 아이 넣기 · 멈춘 일지 되돌리기 등): [scripts/README.md](scripts/README.md)
 
-### 백엔드 CI/CD
-
-`backend/`·`infra/`·워크플로 파일을 바꾼 `develop`·`main` 대상 PR에서는 Java 21로 단위 테스트,
-Testcontainers PostgreSQL 통합 테스트, 빌드를 실행합니다(`*.md`나 AI 전용 배포 파일만 바꾸면 실행하지 않습니다).
-같은 경로를 바꾼 `develop` push 및 `develop`에서의 수동 실행은 검증 성공 후
-Docker 이미지를 GHCR에 올리고, SSM을 통해 기존 EC2의 BE 컨테이너만 배포합니다.
-Caddy 재로딩과 상태·CORS·카카오 콜백 검증이 실패하면 이전 BE 이미지와 활성 프록시 설정으로 복구합니다.
-실제 EC2 전환이 끝난 뒤 `CADDY_READY=true`를 설정해야 자동 배포가 실행됩니다.
-
-`BACKEND_IMAGE`는 Compose에서 사용할 이미지 참조입니다. 비어 있으면 로컬 빌드용
-`ktc-backend`를 사용하고, CD는 성공한 이미지 digest를 서버 `.env`에 기록합니다.
-DB 컨테이너·볼륨은 재생성하지 않습니다. 스키마는 BE가 기동할 때 Flyway 마이그레이션이 바꾸고(`ddl-auto: validate`),
-이미지 복구는 이미 실행된 마이그레이션을 되돌리지 않습니다. 절차는 [인프라 문서](../infra/README.md#db-마이그레이션)를 참고하세요.
-
-GitHub Variables, GHCR 로그인, IAM 설정 및 수동 배포 방법은
-[인프라 문서](../infra/README.md#백엔드-cicd)를 참고하세요.
-
-### 환경 변수
-
-| 변수 | 기본값 | 설명 |
-| --- | --- | --- |
-| `JWT_SECRET` | 없음 (필수) | JWT 서명 키. 32바이트 이상이어야 하며, 없으면 기동하지 않음 |
-| `KAKAO_CLIENT_ID` · `KAKAO_CLIENT_SECRET` | 없음 (필수) | 카카오 REST API 키와 클라이언트 시크릿 |
-| `KAKAO_ADMIN_KEY` | 없음 | 회원 탈퇴의 카카오 연결 해제(`POST /v1/user/unlink`)와 연결 해제 웹훅 검증에 쓰는 **대표** 어드민 키. 카카오 콘솔 [앱] > [웹훅] > [연결 해제 웹훅]에 `https://{도메인}/api/v1/webhooks/kakao/unlink` 를 등록한다(HTTPS 만 받는다). 서버 밖으로 내보내지 않는다. 없으면 카카오 계정 회원의 탈퇴는 `502 KAKAO_UNLINK_FAILED`로 취소된다(개발용 로그인 회원은 카카오를 부르지 않음). 실서비스에서 탈퇴를 열기 전에 꼭 넣는다 |
-| `WITHDRAWAL_ENABLED` | `false` | 회원 탈퇴를 열지. 꺼져 있으면 `DELETE /api/v1/auth/me` 는 `404 WITHDRAWAL_NOT_AVAILABLE`, 화면은 탈퇴 버튼을 숨기고(`/auth/me` 의 `withdrawalEnabled`), 연결 해제 웹훅은 검증만 하고 무시한다. 탈퇴 뒤 기록 보관 근거 확인 · `KAKAO_ADMIN_KEY` · 웹훅 등록이 끝난 뒤 켠다. 이미 접수된 탈퇴는 꺼도 끝까지 처리한다. 테스트 프로필은 켬 |
-| `KAKAO_APP_ID` | 없음 | 카카오 앱 ID(숫자, 콘솔 > 앱 > 앱 키). 있으면 연결 해제 웹훅의 `app_id`가 같은지도 본다. 없으면 어드민 키만 본다 |
-| `WITHDRAWAL_WORKER_ENABLED` | `true` | 탈퇴 주기 작업 사용 여부. 켜 두면 1분마다 수신함에 남은 연결 해제 웹훅을 옮기도록 수신함 스레드를 깨우고(기다리지 않는다), 결과를 몰랐거나 정리가 실패한 탈퇴 · 확인하지 않은 연결 해제 웹훅을 다시 실행기에 세운다. 카카오 연결 해제가 계속 끝나지 않는 회원은 1 · 2 · 5 · 10 · 30 · 60분으로 간격을 늘린다. 꺼도 탈퇴 API 가 실행기를 바로 깨우므로 접수한 탈퇴는 한 번은 처리된다. 테스트 프로필은 끔 |
-| `AUTH_SUCCESS_REDIRECT` | `http://localhost:3000/oauth/success` | 로그인 성공 후 보낼 프론트 주소 (`docker` 프로필은 배포 주소) |
-| `AUTH_FAILURE_REDIRECT` | `http://localhost:3000/login` | 로그인 실패 후 보낼 프론트 주소. `?error=login_failed`가 붙음 |
-| `AUTH_COOKIE_SECURE` | `false` | `access_token` 쿠키의 `Secure` 속성. HTTPS 적용 후 `true` |
-| `DEV_LOGIN_ENABLED` | `false` (Compose는 `true`) | 개발용 로그인 `GET /api/v1/dev/login`. 배포 서버는 테스트용으로 켜 두고, 정식 오픈 전에 서버 `.env`에서 `false`로 끔 |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | 허용 오리진(쉼표 구분). Compose는 미지정 시 `PUBLIC_ORIGIN`을 전달하고, `docker` 프로필에서는 필수 |
-| `PUBLIC_ORIGIN` | `http://localhost` (Compose) | Caddy 사이트 주소 및 CORS·로그인 완료 주소의 기준. 운영은 `https://iitda.duckdns.org` |
-| `RAW_STORAGE_DIR` | `./data/raw-storage` | 기본 프로필의 원본 파일 저장 경로 |
-| `RAW_RECORD_MAX_ENTRIES_PER_FILE` | `500` | 업로드 파일 하나에서 나온 기록 수 상한 (#424). 넘으면 파일을 저장하지 않고 `400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED`. 기록 하나의 길이 상한(5,000자)은 화면과 맞춰야 해서 코드 상수(`JournalEntry.MAX_CONTENT_LENGTH`) |
-| `RAW_RECORD_UPLOAD_MAX_CONCURRENT` | `2` | 업로드의 글자 뽑기 · 기록 나누기를 서버 전체에서 동시에 하는 수 (#424). `-Xmx512m` 실측으로 가장 큰 docx(XML 5MB) 두 개가 약 160MB. 화면도 2개씩 보낸다 |
-| `RAW_RECORD_UPLOAD_MAX_WAITING` | `4` | 위 자리를 기다릴 수 있는 업로드 수(최대 10초). 넘으면 `429 RAW_RECORD_UPLOAD_BUSY` |
-| `AGENT_QUEUE_MAX_AWAITING_ENTRIES` | `1000` | 기관마다 AI 처리 줄(매칭 · 검증 · 요약 대기와 처리 중)에 세워 둘 수 있는 기록 수 (#424). 업로드와 선생님 처리(아이 고르기 · 본문 고치기 · 다시 요약 · 내용 없음 되돌리기)가 들어올 때 지킨다. 넘으면 `429 AGENT_QUEUE_FULL`. 요약 워커가 승인 대기 기록을 함께 다시 담으면 잠깐 넘을 수 있다 |
-| `RAW_STORAGE_S3_BUCKET` | 없음 (`docker` 필수) | `docker` 프로필의 원본 파일 버킷 |
-| `AWS_REGION` | `ap-northeast-2` | S3 리전 |
-| `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` | 없음 (`docker` 필수) | `docker` 프로필의 PostgreSQL 연결 정보 |
-| `AI_BASE_URL` | `http://localhost:8000` | AI 서버 주소 (매칭·검증·요약 에이전트 공통). Compose는 서비스 이름으로 `http://ai:8000`을 전달 |
-| `AI_PROGRESS_ENABLED` | `false` (Compose는 `true`) | 대시보드 진행 현황의 AI 진행 단계(O-83, #453). 켜면 전용 스레드 하나가 1초마다 AI `GET /progress`를 묻는다(최근 5초 안에 화면이 O-83을 불렀을 때만, 대기 0.5초). 문제가 생기면 서버 `.env`에서 `false`로 끄고 backend만 다시 띄움 — 화면은 기존 문구로 돌아가고 일지 처리에는 영향 없음 |
-| `MATCHING_WORKER_ENABLED` | `true` | 매칭 워커 사용 여부. 켜 두면 5초마다 대기(`PENDING`) 일지를 AI `POST /matching`에 보내 결과를 `matching_result`에 저장. 테스트 프로필은 끔 |
-| `VALIDATION_WORKER_ENABLED` | `true` | 검증 워커 사용 여부. 켜 두면 5초마다 매칭 확정(`MATCHED`) 일지를 AI `POST /validation`에 보내 결과를 `validation_result`에 저장하고 `VALIDATED`/`VALIDATION_BLOCKED`로 바꿈. 테스트 프로필은 끔 |
-| `INSIGHT_INCLUDE_CURRENT_WEEK` | `false` | **시연용.** 켜면 인사이트 워커가 끝나지 않은 이번 주 기록도 재료로 본다. 끄면 월~일이 끝난 주만 본다. 켜 두면 이번 주는 승인이 들어올 때마다 새 회차가 생겨 Gate 2 에 비슷한 글이 쌓이므로 운영에서는 끈다 (#239) |
-| `SUMMARY_WORKER_ENABLED` | `true` | 요약 워커 사용 여부. 켜 두면 5초마다 검증 통과(`VALIDATED`) 일지를 아동 × 날짜 × 기관 묶음으로 AI `POST /summary`에 보내 `summary_result`에 저장하고 `GATE1_PENDING`으로 바꿈. 어떤 묶음을 집는지는 `SUMMARY_AUTO_RUN`이 정한다. 테스트 프로필은 끔 |
-| `SUMMARY_AUTO_RUN` | `true` | 자동 요약 (#369). 켜 두면 같은 기관·날짜에 매칭·검증 중인 일지가 없을 때 [요약] 요청 없이 그 기관 동의가 켜진 아이 묶음을 요약한다. 끄면 교사가 [요약](O-32)을 누른 묶음만 요약한다(`summary_run_request`, #181) — 장애 때 되돌리는 스위치. 테스트 프로필은 끔 |
+---
 
 ## 설정 프로필
 
-| 프로필 | 파일 | 용도 | Git 추적 |
-| --- | --- | --- | --- |
-| 기본 | `application.yml` | 애플리케이션 이름·포트 등 공통 설정 | 예 |
-| `docker` | `application-docker.yml` | Docker Compose PostgreSQL 연결 | 예 |
-| `test` | `src/test/resources/application-test.yml` | H2 기반 테스트 | 예 |
-| `local` | `application-local.yml` | 개발자별 로컬 DB 설정 | 아니오 |
-| (항상 로드) | `application-secret.yml` | JWT 서명 키·카카오 앱 키 (`application.yml`이 선택적으로 import) | 아니오 |
+- 기본 (`application.yml`) — 공통 설정. Flyway 꺼짐
+- `local` (`application-local.yml`, Git 무시) — 개발자별 로컬 DB
+- `docker` (`application-docker.yml`) — Compose · 운영. Flyway 켜짐, S3 저장
+- `test` (`src/test/resources/application-test.yml`) — H2 테스트
+- 항상 읽음 (`application-secret.yml`, Git 무시) — JWT 서명 키 · 카카오 앱 키
+
+---
+
+## 환경 변수
+
+**꼭 필요한 것**
+
+- `JWT_SECRET` — JWT 서명 키. 32바이트 이상, 없으면 뜨지 않습니다
+- `KAKAO_CLIENT_ID` · `KAKAO_CLIENT_SECRET` — 카카오 REST API 키와 시크릿
+- `docker` 프로필: `DB_URL` · `DB_USERNAME` · `DB_PASSWORD` · `RAW_STORAGE_S3_BUCKET` · `CORS_ALLOWED_ORIGINS` · `AUTH_SUCCESS_REDIRECT` · `AUTH_FAILURE_REDIRECT`
+
+**로그인 · 탈퇴**
+
+- `AUTH_COOKIE_SECURE` (`false`) — HTTPS면 `true`
+- `DEV_LOGIN_ENABLED` (`false`, Compose는 `true`) — 개발용 로그인
+- `WITHDRAWAL_ENABLED` (`false`) — 회원 탈퇴를 열지. 켜기 전에 `KAKAO_ADMIN_KEY`와 카카오 연결 해제 웹훅을 준비합니다
+- `KAKAO_ADMIN_KEY` · `KAKAO_APP_ID` — 탈퇴할 때 카카오 연결 해제와 웹훅 검증에 씁니다
+
+**저장 · 한도**
+
+- `RAW_STORAGE_DIR` (`./data/raw-storage`) — 기본 프로필의 원본 파일 위치. `docker` 프로필은 S3(`AWS_REGION`, 기본 `ap-northeast-2`)
+- `RAW_RECORD_MAX_ENTRIES_PER_FILE` (`500`) — 파일 하나에서 나올 수 있는 기록 수
+- `RAW_RECORD_UPLOAD_MAX_CONCURRENT` (`2`) · `RAW_RECORD_UPLOAD_MAX_WAITING` (`4`) — 업로드를 동시에 처리하는 수와 기다릴 수 있는 수
+- `AGENT_QUEUE_MAX_AWAITING_ENTRIES` (`1000`) — 기관마다 AI 처리 줄에 세워 둘 수 있는 기록 수
+
+**AI · 워커**
+
+- `AI_BASE_URL` (`http://localhost:8000`) — AI 서버 주소
+- `AI_PROGRESS_ENABLED` (`false`, Compose는 `true`) — 대시보드에 AI 진행 단계 표시
+- `SUMMARY_AUTO_RUN` (`true`) — 끄면 선생님이 [요약]을 누른 묶음만 요약합니다
+- `INSIGHT_INCLUDE_CURRENT_WEEK` (`false`) — 시연용. 끝나지 않은 이번 주도 인사이트 재료로 봅니다
+- 워커 스위치 (모두 기본 `true`): `MATCHING_WORKER_ENABLED` · `VALIDATION_WORKER_ENABLED` · `SUMMARY_WORKER_ENABLED` · `INSIGHT_WORKER_ENABLED` · `NOTIFY_WORKER_ENABLED` · `PURGE_WORKER_ENABLED` · `UPLOAD_SWEEPER_ENABLED` · `WITHDRAWAL_WORKER_ENABLED`
+
+---
 
 ## 관련 문서
 
-| 목적 | 문서 |
-| --- | --- |
-| API 경로, 응답 형식, 오류 코드, HTTP 상태 계약 | [API 규약](../docs/api/api-conventions.md) |
-| 패키지 구조, 계층 책임, 테스트와 문서 동기화 규칙 | [AGENTS.md](AGENTS.md) |
-| Docker·Caddy 등 인프라 실행 환경 | [인프라 문서](../infra/README.md) |
-
-새 API 구현과 계약 변경은 API 규약을 따른다. 인증·인가를 포함한 API 계약의 예정된
-방향도 API 규약에서 관리한다.
+- 구현 · 검토 규칙: [AGENTS.md](AGENTS.md)
+- API 규약: [api-conventions.md](../docs/api/api-conventions.md)
+- 배포와 서버 설정: [인프라 문서](../infra/README.md)
