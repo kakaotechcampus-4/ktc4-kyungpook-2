@@ -58,7 +58,7 @@
 | [기록](domains/records.md) | 업로드 · 매칭 · 검증 · 요약, AI가 묻는 기록 확인 | `RawRecord` · `MatchingQueue` · `ValidationResult` |
 | [검토](domains/review.md) | 1차 검토(요약) · 인사이트 · 2차 검토 | `Summary` · `Insight` |
 | [공유](domains/sharing.md) | 보호자 일지 · 리포트 · 메일 · 다른 기관 수신함 | `GuardianJournal` · `GuardianInsight` · `InstitutionInbox` |
-| 준비물 · 확인사항 | 기관이 보내고 보호자가 확인 | `Checklist` · `GuardianChecklist` |
+| [준비물 · 확인사항](domains/checklist.md) | 기관이 보내고 보호자가 확인 | `Checklist` · `GuardianChecklist` |
 | 대시보드 | 처리 현황 · 아이 타임라인 · AI 상태 | `Dashboard` · `OrganizationTimeline` · `System` · `Health` |
 
 AI가 각 단계에서 어떻게 판단하는지는 [AI/README.md](../AI/README.md), 테이블은 [db/schema.md](db/schema.md)에 있습니다.
