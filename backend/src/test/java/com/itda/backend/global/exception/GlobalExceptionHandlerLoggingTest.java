@@ -108,4 +108,19 @@ class GlobalExceptionHandlerLoggingTest {
         assertThat(output).doesNotContain(SECRET);
         assertThat(output).contains("요청 처리 실패", "INVALID_INVITE_CODE");
     }
+
+    @Test
+    void businessExceptionReasonIsLoggedOnOneLine(CapturedOutput output) throws Exception {
+        given(invitationService.accept(any(), any()))
+                .willThrow(new BusinessException(InvitationErrorCode.INVALID_INVITE_CODE,
+                        "reason\nFAKE LOG LINE\r end"));
+
+        mockMvc.perform(post("/api/v1/guardians/me/invitations/accept")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\": \"ABC\"}"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(output).contains("reason=reason_FAKE LOG LINE__end");
+        assertThat(output).doesNotContain("\nFAKE LOG LINE");
+    }
 }

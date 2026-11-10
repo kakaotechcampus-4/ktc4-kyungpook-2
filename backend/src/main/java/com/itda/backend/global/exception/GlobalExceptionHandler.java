@@ -1,6 +1,7 @@
 package com.itda.backend.global.exception;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 @Order(Ordered.LOWEST_PRECEDENCE)
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
+    private static final Pattern CONTROL_CHARACTERS = Pattern.compile("[\\p{Cntrl}\\u2028\\u2029]");
+
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ErrorResponse> handleConstraintViolationException(ConstraintViolationException e) {
         return ResponseEntity.status(CommonErrorCode.INVALID_REQUEST.getStatus())
@@ -36,11 +39,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ErrorCode errorCode = e.getErrorCode();
         Level level = errorCode.logLevel();
         if (level == Level.ERROR) {
-            log.error("요청 처리 실패 code={} reason={}", errorCode.getCode(), e.getMessage(), e);
+            log.error("요청 처리 실패 code={} reason={}", errorCode.getCode(), oneLine(e.getMessage()), e);
         } else {
-            log.atLevel(level).log("요청 처리 실패 code={} reason={}", errorCode.getCode(), e.getMessage());
+            log.atLevel(level).log("요청 처리 실패 code={} reason={}", errorCode.getCode(), oneLine(e.getMessage()));
         }
         return ResponseEntity.status(errorCode.getStatus()).body(ErrorResponse.of(errorCode));
+    }
+
+    private static String oneLine(String reason) {
+        return reason == null ? null : CONTROL_CHARACTERS.matcher(reason).replaceAll("_");
     }
 
     @ExceptionHandler(Exception.class)

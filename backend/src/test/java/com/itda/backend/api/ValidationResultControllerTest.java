@@ -96,7 +96,7 @@ class ValidationResultControllerTest {
 
     @Test
     void resolve_unsupportedAction_returns400() throws Exception {
-        willThrow(new ValidationResultValidationException("unsupported action: approve"))
+        willThrow(new ValidationResultValidationException("unsupported action for validation result: 1"))
                 .given(validationQueueService).resolve(any(), any(), any());
 
         mockMvc.perform(post(BASE_URL + "/11/resolve")
