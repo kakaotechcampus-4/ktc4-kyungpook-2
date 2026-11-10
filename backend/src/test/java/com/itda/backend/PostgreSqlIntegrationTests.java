@@ -100,7 +100,7 @@ class PostgreSqlIntegrationTests {
 	void userTableIsCreatedAndEnumsAreStoredAsStrings() {
 		User saved = userRepository.save(UserFixture.parent("pg-1"));
 
-		assertThat(userRepository.findByKakaoId("pg-1")).isPresent();
+		assertThat(UserFixture.findByKakaoId(userRepository, "pg-1")).isPresent();
 		assertThat(saved.getRole()).isEqualTo(UserRole.PARENT);
 		assertThat(saved.getCreatedAt()).isNotNull();
 	}

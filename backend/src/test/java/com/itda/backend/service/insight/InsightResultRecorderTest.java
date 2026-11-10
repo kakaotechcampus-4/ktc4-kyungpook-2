@@ -172,7 +172,9 @@ class InsightResultRecorderTest {
 
         recorder.record(run, oneInsight(), "{\"raw\": true}", 41L, REQUEST);
 
-        List<InsightResult> saved = insightResultRepository.findByStatusOrderByIdDesc(InsightStatus.GATE2_PENDING);
+        List<InsightResult> saved = insightResultRepository.findAll().stream()
+                .filter(result -> result.getStatus() == InsightStatus.GATE2_PENDING)
+                .toList();
         assertThat(saved).singleElement().satisfies(result -> {
             assertThat(result.getChildId()).isEqualTo(CHILD);
             assertThat(result.getPeriodFrom()).isEqualTo(FROM);

@@ -58,6 +58,9 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.consent.ConsentService;
+import com.itda.backend.domain.user.KakaoUnlinkWebhook;
+import com.itda.backend.repository.user.KakaoUnlinkWebhookRepository;
+import java.time.Clock;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -70,6 +73,8 @@ class WithdrawalServiceTest {
     @Autowired private WithdrawalService withdrawalService;
     @Autowired private WithdrawalExecutor withdrawalExecutor;
     @Autowired private WithdrawalSteps withdrawalSteps;
+    @Autowired private KakaoUnlinkWebhookRepository kakaoUnlinkWebhookRepository;
+    @Autowired private Clock clock;
     @Autowired private UserService userService;
     @Autowired private UserRepository userRepository;
     @Autowired private TransactionTemplate transactionTemplate;
@@ -337,7 +342,7 @@ class WithdrawalServiceTest {
         WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
         assertThat(plan.firstAttempt()).isTrue();
 
-        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        receiveUnlinkWebhook(mother);
         withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED,
                 reload(mother).getKakaoUnlinkReportedAt());
         boolean proceed = withdrawalSteps.record(mother.getId(), KakaoUnlinkResult.FAILED, plan.firstAttempt());
@@ -351,7 +356,7 @@ class WithdrawalServiceTest {
     @Test
     void 확인하는_사이_카카오로_다시_로그인하면_이전_조회_결과로_탈퇴시키지_않는다() {
         User mother = parent();
-        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        receiveUnlinkWebhook(mother);
         WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
         assertThat(plan.kind()).isEqualTo(WithdrawalSteps.Plan.Kind.VERIFY_REPORT);
 
@@ -369,7 +374,7 @@ class WithdrawalServiceTest {
     void 연결_확인_뒤에_받은_알림은_늦게_끝난_로그인이_지우지_않는다() {
         User mother = parent();
         LocalDateTime verifiedAt = LocalDateTime.now().minusSeconds(5);
-        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        receiveUnlinkWebhook(mother);
 
         userService.findOrCreateByKakaoId(mother.getKakaoId(), verifiedAt);
 
@@ -383,7 +388,7 @@ class WithdrawalServiceTest {
     @Test
     void 카카오_확인_시각이_없는_로그인은_알림을_지우지_않는다() {
         User mother = parent();
-        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        receiveUnlinkWebhook(mother);
 
         userService.findOrCreateByKakaoId(mother.getKakaoId());
 
@@ -396,7 +401,7 @@ class WithdrawalServiceTest {
         Child child = enrolledChild();
         link(child, mother);
         consent(child, mother);
-        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        receiveUnlinkWebhook(mother);
         WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
         withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED, plan.reportedAt());
         assertThat(reload(mother).getWithdrawalStatus()).isEqualTo(WithdrawalStatus.KAKAO_UNLINKED);
@@ -416,7 +421,7 @@ class WithdrawalServiceTest {
     @Test
     void 웹훅을_받기_전에_연결을_확인한_로그인은_웹훅_탈퇴를_취소하지_않는다() {
         User mother = parent();
-        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        receiveUnlinkWebhook(mother);
         WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
         withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED, plan.reportedAt());
 
@@ -449,7 +454,7 @@ class WithdrawalServiceTest {
     void 웹훅이_확정한_직접_신청_탈퇴는_다시_로그인한_뒤_연결_해제가_실패해도_취소하지_않는다() {
         User mother = parent();
         withdrawalSteps.accept(mother.getId());
-        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        receiveUnlinkWebhook(mother);
         WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
         withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.NOT_LINKED, plan.reportedAt());
         assertThat(reload(mother).getWebhookWithdrawalReportedAt()).isNull();
@@ -504,10 +509,10 @@ class WithdrawalServiceTest {
     @Test
     void 확인하는_사이_새_웹훅이_오면_이전_조회_결과로_새_알림을_지우지_않는다() throws Exception {
         User mother = parent();
-        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        receiveUnlinkWebhook(mother);
         WithdrawalSteps.Plan plan = withdrawalSteps.prepare(mother.getId());
         Thread.sleep(5);
-        withdrawalSteps.reportUnlinkedByKakao(mother.getKakaoId());
+        receiveUnlinkWebhook(mother);
 
         WithdrawalSteps.ReportResolution resolution =
                 withdrawalSteps.resolveReport(mother.getId(), KakaoLinkStatus.LINKED, plan.reportedAt());
@@ -522,6 +527,14 @@ class WithdrawalServiceTest {
                 .setParameter("at", LocalDateTime.now().minusSeconds(seconds))
                 .setParameter("id", user.getId())
                 .executeUpdate());
+    }
+
+
+    /** 카카오 연결 해제 웹훅이 수신함에 들어온 뒤 회원에게 옮겨진 상태로 만든다 — 운영의 수신함 → 회원 경로와 같다. */
+    private void receiveUnlinkWebhook(User user) {
+        Long webhookId = kakaoUnlinkWebhookRepository.save(
+                KakaoUnlinkWebhook.received(user.getKakaoId(), LocalDateTime.now(clock))).getId();
+        withdrawalSteps.absorbWebhook(webhookId);
     }
 
     private User parent() {

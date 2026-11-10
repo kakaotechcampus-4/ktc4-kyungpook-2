@@ -16,8 +16,6 @@ import com.itda.backend.domain.user.User;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    Optional<User> findByKakaoId(String kakaoId);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.kakaoId = :kakaoId")
     Optional<User> findByKakaoIdForUpdate(@Param("kakaoId") String kakaoId);

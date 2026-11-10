@@ -99,7 +99,7 @@ class InsightGate2ServiceTest {
         assertThat(response.decision()).isEqualTo("APPROVED");
         assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.APPROVED);
 
-        List<SharingHistory> granted = sharingHistoryRepository.findByInsightResultId(insight.getId());
+        List<SharingHistory> granted = sharesOf(insight.getId());
         assertThat(granted).filteredOn(history -> history.getReceiverType() == ReceiverType.GUARDIAN)
                 .singleElement().satisfies(history -> {
             assertThat(history.getReceiverId()).isEqualTo(guardianId);
@@ -128,7 +128,7 @@ class InsightGate2ServiceTest {
 
         service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE);
 
-        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId()))
+        assertThat(sharesOf(insight.getId()))
                 .filteredOn(history -> history.getReceiverType() == ReceiverType.ORGANIZATION)
                 .singleElement().satisfies(history -> {
                     assertThat(history.getReceiverId()).isEqualTo(centerId);
@@ -143,7 +143,7 @@ class InsightGate2ServiceTest {
 
         service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE);
 
-        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId()))
+        assertThat(sharesOf(insight.getId()))
                 .filteredOn(history -> history.getReceiverType() == ReceiverType.ORGANIZATION)
                 .extracting(SharingHistory::getReceiverId)
                 .containsExactly(centerId);
@@ -157,7 +157,7 @@ class InsightGate2ServiceTest {
 
         assertThat(response.gate2Status()).isEqualTo("hold");
         assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.HOLD);
-        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId())).isEmpty();
+        assertThat(sharesOf(insight.getId())).isEmpty();
         assertThat(approvalRepository.findAll()).singleElement()
                 .extracting(Approval::getDecision).isEqualTo(ApprovalDecision.HOLD);
     }
@@ -220,7 +220,7 @@ class InsightGate2ServiceTest {
         service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE);
 
         assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.APPROVED);
-        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId())).isEmpty();
+        assertThat(sharesOf(insight.getId())).isEmpty();
     }
 
     @Test
@@ -259,7 +259,7 @@ class InsightGate2ServiceTest {
                 .extracting(e -> ((InsightException) e).getErrorCode())
                 .isEqualTo(InsightErrorCode.MATERIAL_CONSENT_REVOKED);
         assertThat(reload(insight).getStatus()).isEqualTo(InsightStatus.GATE2_PENDING);
-        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId())).isEmpty();
+        assertThat(sharesOf(insight.getId())).isEmpty();
     }
 
     @Test
@@ -295,7 +295,7 @@ class InsightGate2ServiceTest {
 
         service.decide(TEACHER, insight.getId(), Gate2Action.APPROVE);
 
-        assertThat(sharingHistoryRepository.findByInsightResultId(insight.getId()))
+        assertThat(sharesOf(insight.getId()))
                 .filteredOn(history -> history.getReceiverType() == ReceiverType.ORGANIZATION)
                 .extracting(SharingHistory::getReceiverId)
                 .containsExactly(centerId);
@@ -355,5 +355,11 @@ class InsightGate2ServiceTest {
         em.flush();
         em.clear();
         return em.find(InsightResult.class, insight.getId());
+    }
+
+    private List<SharingHistory> sharesOf(Long insightResultId) {
+        return sharingHistoryRepository.findAll().stream()
+                .filter(history -> history.getInsightResultId().equals(insightResultId))
+                .toList();
     }
 }

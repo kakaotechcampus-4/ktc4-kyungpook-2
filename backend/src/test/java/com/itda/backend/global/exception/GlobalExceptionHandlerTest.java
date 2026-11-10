@@ -51,7 +51,7 @@ class GlobalExceptionHandlerTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        User member = userRepository.findByKakaoId("exception-handler-test")
+        User member = UserFixture.findByKakaoId(userRepository, "exception-handler-test")
                 .orElseGet(() -> TermsFixture.agreeAll(termsAgreementRepository,
                         userRepository.saveAndFlush(UserFixture.parent("exception-handler-test"))));
         authCookie = new Cookie(JwtCookie.NAME, jwtProvider.createToken(String.valueOf(member.getId())));
