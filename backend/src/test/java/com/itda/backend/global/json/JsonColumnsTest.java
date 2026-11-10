@@ -32,8 +32,22 @@ class JsonColumnsTest {
     }
 
     @Test
-    void 숫자가_아닌_값은_건너뛰고_원문을_로그에_남기지_않는다(CapturedOutput output) {
-        assertThat(JsonColumns.readLongsAllowingText("[\"김비밀\\n다음줄\", 3]", COLUMN, 7L)).containsExactly(3L);
+    void 배열만_읽는_함수는_잘못된_원소가_하나라도_있으면_빈_목록을_준다() {
+        assertThat(JsonColumns.readLongsAllowingText("[42, \"invalid\"]", COLUMN, 1L)).isEmpty();
+        assertThat(JsonColumns.readLongsAllowingText("[42, null]", COLUMN, 1L)).isEmpty();
+        assertThat(JsonColumns.readLongsAllowingText("[42, true]", COLUMN, 1L)).isEmpty();
+        assertThat(JsonColumns.readLongsAllowingText("[42, {\"id\": 1}]", COLUMN, 1L)).isEmpty();
+    }
+
+    @Test
+    void 값까지_읽는_함수는_잘못된_원소만_건너뛴다() {
+        assertThat(JsonColumns.readLongValuesAllowingText("[42, \"invalid\", null]", COLUMN, 1L))
+                .containsExactly(42L);
+    }
+
+    @Test
+    void 숫자가_아닌_값의_원문을_로그에_남기지_않는다(CapturedOutput output) {
+        assertThat(JsonColumns.readLongsAllowingText("[\"김비밀\\n다음줄\", 3]", COLUMN, 7L)).isEmpty();
 
         assertThat(output).contains(COLUMN, "id=7").doesNotContain("김비밀", "다음줄");
     }
