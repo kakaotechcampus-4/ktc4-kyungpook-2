@@ -12,15 +12,6 @@ import { getChildren, getInbox, getInsights, getLinkRequests, getMyInstitution, 
 import { formatInviteCode } from "@/lib/invite";
 import type { ChildListItem, ConsentState, Insight } from "@/lib/types";
 
-/**
- * 아동 목록 — 옛 인사이트 승인(O-40 · O-42) · 관찰·분석 결과 · 메시지(수신함 O-50 · O-51)를 모은 화면.
- * 칸 셋: 아이(명부) · 분석 승인(우리가 승인할 차례) · 연결 요청(O-60).
- * 아이 카드를 누르면 아이 팝업(분석 · 기록 · 보호자)이 뜬다. 분석 승인은 그 팝업에서 하고, 승인하면 다음 분석이 이어서 뜬다.
- *
- * 주소: `?tab=kids|approve|req`, `&open=first` (분석 승인 첫 건) · `&open=insight&id=` (그 분석),
- * `?register=1` (등록 팝업), `?child=<id>` (그 아이 팝업, 옛 /children/:id).
- */
-/** 칸 바꾸기 · `?open=` 지우기로는 다시 불러오지 않는다 (lib/revalidate) */
 export const shouldRevalidate = skipSearchOnlyChange;
 
 export async function clientLoader() {
@@ -45,7 +36,6 @@ export async function clientLoader() {
 type Tab = "kids" | "approve" | "req";
 const idOf = (i: Insight) => i.id;
 
-/** 아이 칸 거르기 — 칩 문구(guardianChip)와 같은 말을 쓴다 */
 const CONSENT_FILTERS: { key: ConsentState | "all"; label: string }[] = [
   { key: "all", label: "전체" },
   { key: "granted", label: "동의함" },
@@ -62,7 +52,6 @@ export default function ChildrenPage() {
   const [toast, setToast] = useState<string | null>(null);
   const clearToast = useCallback(() => setToast(null), []);
   const [registering, setRegistering] = useState(false);
-  /** 아동 칸에서 연 아이 팝업 */
   const [openKid, setOpenKid] = useState<{ id: string; tab: ChildTab; unread: boolean } | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, string>>({});
 
@@ -70,7 +59,6 @@ export default function ChildrenPage() {
   const unreadBy = useMemo(() => countBy(inbox.filter((m) => !m.readAt), (m) => m.childId), [inbox]);
   const pendingBy = useMemo(() => countBy(pending, (i) => i.childId), [pending]);
 
-  // 할 일이 있는 아이(승인할 분석·새 분석)를 위로, 나머지는 명부 순서 그대로
   const kids = useMemo(
     () =>
       [...children].sort(
@@ -96,7 +84,6 @@ export default function ChildrenPage() {
     setParams(next === "kids" ? {} : { tab: next }, { replace: true, preventScrollReset: true });
   }
 
-  // 주소로 들어온 바로가기를 한 번 처리하고 지운다
   useEffect(() => {
     const open = params.get("open");
     const child = params.get("child");
@@ -106,7 +93,6 @@ export default function ChildrenPage() {
     if (child && children.some((c) => c.id === child)) setOpenKid({ id: child, tab: "analysis", unread: false });
     if (open && tab === "approve") {
       const id = params.get("id");
-      // id 를 줬는데 없으면(보류·승인됨) 다른 아이 분석으로 대신 열지 않는다
       const target = open === "insight" && id ? pending.find((i) => i.id === id) : pending[0];
       if (target) walk.open(target.id);
     }
@@ -261,7 +247,6 @@ export default function ChildrenPage() {
                   tag={
                     <span className="flex flex-wrap justify-end gap-1.5">
                       {i.teacherWritten ? <Chip tone="human">교사 작성 포함</Chip> : <Chip tone="human">리포트 도착</Chip>}
-                      {/* #388 지난 기록을 찾아 쓴 분석. 경고가 아니라 알아 둘 일이라 ai 색 */}
                       {i.evidence.some((e) => e.lookedUp) ? <Chip tone="ai">지난 기록 포함</Chip> : null}
                     </span>
                   }
@@ -336,7 +321,6 @@ function countBy<T>(list: T[], key: (t: T) => string): Record<string, number> {
   return out;
 }
 
-/** 분석 승인 팝업에 띄울 아이. 명부에서 찾고, 없으면(그새 빠짐) 분석에 적힌 이름으로 */
 function childOf(insight: Insight, children: ChildListItem[]): ChildListItem {
   return (
     children.find((c) => c.id === insight.childId) ?? {
@@ -360,8 +344,6 @@ function KidCard({
   onOpen: (tab: ChildTab, unread: boolean) => void;
 }) {
   const chip = guardianChip(child.consent);
-  // 카드 아무 곳이나 눌러도 [열기]/[새 분석 읽기] 와 같게 연다. 키보드 사용자는 안쪽 버튼으로 연다.
-  // 안쪽 버튼은 stopPropagation 으로 카드 클릭과 겹쳐 두 번 열리지 않게 한다.
   const stop = (open: () => void) => (e: MouseEvent) => {
     e.stopPropagation();
     open();
@@ -410,7 +392,6 @@ function KidCard({
   );
 }
 
-/** "우리 기관 코드 XXXX-XXXX [복사]" — 보호자가 이 코드로 연결을 요청한다 (O-01) */
 function OrgCode({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
   const shown = formatInviteCode(code);
@@ -426,7 +407,6 @@ function OrgCode({ code }: { code: string }) {
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           } catch {
-            // 복사가 막힌 브라우저 — 코드가 화면에 보이니 그대로 둔다
           }
         }}
         className="tap rounded-full border border-line2 px-3 text-[13px] font-bold text-ink2 hover:bg-surface2"

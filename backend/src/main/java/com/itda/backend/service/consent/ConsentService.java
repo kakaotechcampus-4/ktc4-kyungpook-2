@@ -32,22 +32,6 @@ import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * 보호자의 기관별 공유 동의 (DB 스키마 §5.5). 매칭 대상인지는 이 동의로 판단하고, {@code child.status} 는
- * 동의를 요약한 화면용 값으로 함께 맞춘다.
- *
- * <p>규칙
- * <ul>
- *   <li>보호자 한 명만 동의해도 그 기관 공유가 켜진다.</li>
- *   <li>공유 항목은 기관 단위로 하나다. 마지막으로 동의한 보호자의 항목으로 그 기관의 ACTIVE 행을 모두 맞춘다.</li>
- *   <li>보호자 한 명이 철회하면 그 기관의 <b>모든 보호자</b> 동의가 꺼진다. 끄는 쪽을 우선한다(Consent First).</li>
- *   <li>보호자 연결이 끊기면 끊긴 그 사람의 동의만 꺼진다. 남은 보호자의 판단은 그대로 둔다.</li>
- * </ul>
- *
- * <p>동의를 바꾸는 작업은 모두 {@code child} 행을 먼저 잠근다. 동의 행에는 UNIQUE 를 걸 수 없어서(이력 테이블)
- * 이 잠금이 중복 ACTIVE 행과 상태 계산 경합을 막는다. 잠금 순서는
- * child → child_organization → invitation → child_guardian → sharing_consent 다 (DB 스키마 §3.3).
- */
 @Service
 @RequiredArgsConstructor
 public class ConsentService {
@@ -62,10 +46,6 @@ public class ConsentService {
     private final InsightAccessRevoker insightAccessRevoker;
     private final Clock clock;
 
-    /**
-     * G-02 동의 화면에 그릴 아이·기관·공유 범위. 연결되지 않은 아이면 403, 동의할 대상이 아니면 404 다.
-     * 이미 그 기관에 살아 있는 동의가 있으면 "동의할 것이 없다"로 보고 404 다 — 다른 보호자가 동의했어도 같다.
-     */
     @Transactional(readOnly = true)
     public ConsentPreviewResponse preview(String userId, Long childId, Long institutionId) {
         Long parentId = userService.getParentIdOf(userId);
@@ -89,12 +69,6 @@ public class ConsentService {
                 ConsentFieldCatalog.ALLOWED_FIELDS);
     }
 
-    /**
-     * G-41 동의 부여·철회. 철회할 동의가 없으면 아무것도 바꾸지 않고 현재 상태를 돌려준다 — PUT 이라 같은 요청을
-     * 여러 번 보내도 결과가 같아야 한다.
-     *
-     * <p>잠근 뒤에 판단한다. 연결 해제·명부 제외·다른 보호자의 동의가 동시에 진행돼도 커밋된 상태를 보고 정한다.
-     */
     @Transactional
     public ConsentResponse update(
             String userId, Long childId, Long institutionId, ConsentAction action, List<ConsentField> allowedFields) {
@@ -125,10 +99,6 @@ public class ConsentService {
             if (active.stream().noneMatch(consent -> consent.getGuardianId().equals(parentId))) {
                 sharingConsentRepository.save(SharingConsent.grant(childId, parentId, institutionId, allowedFields));
             }
-            // 범위에서 주간 인사이트를 빼면 이미 내준 인사이트 열람 권한도 거둔다 (#257, 멘토님 리뷰 #256 P1).
-            // 동의 자체는 살아 있어도 인사이트는 더 이상 허락이 아니다. 원래 허락이 없었으면 거둘 것도 없다.
-            // 사유는 GUARDIAN_REVOKED 를 쓴다 — 보호자가 인사이트 공유를 거둔 것이고, 새 값을 더하면 배포 DB 의
-            // CHECK 제약 수동 조치(§11.4)가 필요하다. 동의 행이 살아 있고 scope 에 weekly_insight 가 없으면 범위 축소다.
             if (hadInsight && consentStateReader.insightStateOf(childId, institutionId) != ConsentState.GRANTED) {
                 insightAccessRevoker.revokeForInstitution(
                         childId, institutionId, ConsentRevokeReason.GUARDIAN_REVOKED, now());
@@ -136,8 +106,6 @@ public class ConsentService {
         } else {
             LocalDateTime now = now();
             active.forEach(consent -> consent.revoke(parentId, ConsentRevokeReason.GUARDIAN_REVOKED, now));
-            // 이 기관의 ACTIVE 동의를 모두 끈 참이라 그 기관 공유는 확실히 꺼졌다. 이미 내준 인사이트
-            // 열람 권한도 함께 거둔다 — 안 거두면 철회가 "앞으로만" 적용되고 이미 나간 글은 그대로 보인다 (#213).
             insightAccessRevoker.revokeForInstitution(
                     childId, institutionId, ConsentRevokeReason.GUARDIAN_REVOKED, now);
         }
@@ -150,15 +118,6 @@ public class ConsentService {
         return new ConsentResponse(child.getStatus(), state, shared);
     }
 
-    /**
-     * 연결이 끊긴 보호자가 이 아이에 남긴 동의를 모든 기관에서 끈다 (DB 스키마 §5.4). 다른 보호자의 동의는 그대로다.
-     *
-     * <p>호출하는 쪽이 이미 {@code child} 행을 잠갔다는 전제다 — 연결 해제가 child → child_guardian 순서로 잠근 뒤
-     * 같은 트랜잭션에서 부른다. 그 트랜잭션은 잠그기 전에 아동을 읽어 두면 안 된다. 낡은 엔티티의 상태를 바꾸면
-     * 그사이 커밋된 삭제까지 덮어쓴다.
-     *
-     * @param actorId 연결을 끊은 사용자. 보호자 본인이거나 기관 담당자다
-     */
     @Transactional
     public void revokeForUnlinkedGuardian(Child lockedChild, Long guardianId, Long actorId) {
         LocalDateTime now = now();
@@ -166,15 +125,11 @@ public class ConsentService {
                 lockedChild.getId(), guardianId, SharingConsentStatus.ACTIVE);
         revoked.forEach(consent -> consent.revoke(actorId, ConsentRevokeReason.GUARDIAN_UNLINKED, now));
 
-        // 더 이상 이 아이의 보호자가 아니다. 이미 내준 인사이트 열람 권한을 거둔다 (#213).
         insightAccessRevoker.revokeForGuardian(
                 lockedChild.getId(), guardianId, ConsentRevokeReason.GUARDIAN_UNLINKED, now);
-        // 이 사람이 마지막 동의자였던 기관은 공유가 꺼진다. 다른 보호자가 남아 있으면 그대로 켜져 있으므로
-        // 기관마다 다시 본다 — 끈 행만 보고 거두면 남은 동의까지 무시하게 된다.
         revoked.stream()
                 .map(SharingConsent::getOrganizationId)
                 .distinct()
-                // 남은 동의가 하루 요약만이면 인사이트 권한은 거둔다 (#257).
                 .filter(organizationId ->
                         consentStateReader.insightStateOf(lockedChild.getId(), organizationId) != ConsentState.GRANTED)
                 .forEach(organizationId -> insightAccessRevoker.revokeForInstitution(
@@ -183,33 +138,17 @@ public class ConsentService {
         refreshStatus(lockedChild);
     }
 
-    /**
-     * 아이가 이 기관 명부에서 빠졌다. 이 기관에 대한 살아 있는 동의를 모두 {@code ROSTER_REMOVED} 로 끄고, 이 기관이
-     * 받았거나 재료를 낸 인사이트의 기관 열람 권한을 거둔다. 보호자 열람 권한과 다른 기관 동의는 그대로다.
-     *
-     * <p>호출하는 쪽이 이미 {@code child} 행을 잠갔다는 전제다 — 명부 제외가 child → child_organization 순서로 잠근 뒤
-     * 같은 트랜잭션에서 부른다. 다시 명부에 올라와도 이 동의는 꺼진 채 남는다 (DB 스키마 §5.6 알려진 빈틈).
-     *
-     * @param actorId 명부에서 뺀 기관 담당자
-     */
     @Transactional
     public void revokeForRosterRemoval(Child lockedChild, Long organizationId, Long actorId) {
         LocalDateTime now = now();
         sharingConsentRepository.findByChildIdAndOrganizationIdAndStatus(
                         lockedChild.getId(), organizationId, SharingConsentStatus.ACTIVE)
                 .forEach(consent -> consent.revoke(actorId, ConsentRevokeReason.ROSTER_REMOVED, now));
-        // 동의가 없던 기관이어도 거둔다 — 재료를 낸 인사이트가 다른 기관에 열려 있을 수 있다. 거둘 것이 없으면 아무 일도 없다.
         insightAccessRevoker.revokeForInstitution(
                 lockedChild.getId(), organizationId, ConsentRevokeReason.ROSTER_REMOVED, now);
         refreshStatus(lockedChild);
     }
 
-    /**
-     * 기관별 동의를 아이 전체 요약으로 옮긴다. 살아 있는 동의가 있으면 ACTIVE, 동의 행은 있지만 모두 꺼졌으면 SUSPENDED.
-     * 동의 행이 하나도 없으면 PENDING_CONSENT 그대로다 — 동의 행은 지우지 않으므로 한 번 생기면 다시 없어지지 않는다.
-     *
-     * <p>조회 전에 Hibernate 가 바뀐 동의 행을 먼저 내보낸다(같은 테이블 JPQL 이라 자동 flush).
-     */
     private void refreshStatus(Child child) {
         if (sharingConsentRepository.existsByChildIdAndStatus(child.getId(), SharingConsentStatus.ACTIVE)) {
             child.activate();

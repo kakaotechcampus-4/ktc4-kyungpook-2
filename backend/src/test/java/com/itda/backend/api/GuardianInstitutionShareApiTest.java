@@ -44,9 +44,6 @@ import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 보호자 기관 공유 내역 (G-45) — 보안 필터와 응답 모양까지 실제로 거친다. 판정의 갈래는 서비스 테스트가 본다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

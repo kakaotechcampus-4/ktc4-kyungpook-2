@@ -20,25 +20,15 @@ import com.itda.backend.dto.request.record.RawRecordUploadUrlRequest;
 import com.itda.backend.dto.response.record.RawRecordResponse;
 import com.itda.backend.dto.response.record.RawRecordUploadUrlResponse;
 import com.itda.backend.dto.response.record.RecordProgressResponse;
-import com.itda.backend.global.config.OpenApiConfig;
-import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.record.RawRecordService;
 import com.itda.backend.service.record.RawRecordUploadService;
 import com.itda.backend.service.record.RecordProgressService;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// principal 은 JwtAuthenticationFilter 가 심은 내부 userId 다. 이 사용자의 소속 기관을 찾는
-// 일은 RawRecordService 가 한다 — 컨트롤러는 저장소를 직접 보지 않는다. 클라이언트가 보낸
-// institutionId는 여전히 신뢰하지 않는다.
-// (이슈 #34 이전에는 여기 카카오 회원번호가 들어와 그대로 기관 식별자로 쓰이고 있었다.
-//  즉 "기관"이 사실상 "카카오 계정 하나"였다.)
 @RestController
 @RequestMapping("/api/v1/raw-records")
 @RequiredArgsConstructor
@@ -56,33 +46,27 @@ public class RawRecordController {
                     + "X-XSRF-TOKEN 헤더에 포함해야 합니다. 화면이 저장소로 바로 올리는 업로드(upload-url → PUT → complete, "
                     + "#450)로 옮기면 없앱니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "업로드 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "파일 누락, 허용되지 않은 확장자·형식, 너무 긴 파일명 (RAW_RECORD_INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "파일 누락, 허용되지 않은 확장자·형식, 너무 긴 파일명 (RAW_RECORD_INVALID_REQUEST)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "CSRF 토큰 누락, 가입 미완료 (SIGNUP_NOT_COMPLETED), 또는 기관 소속이 아닌 사용자",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "CSRF 토큰 누락, 가입 미완료 (SIGNUP_NOT_COMPLETED), 또는 기관 소속이 아닌 사용자"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "413",
-                    description = "파일 크기 20MB 초과 (RAW_RECORD_FILE_TOO_LARGE)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "파일 크기 20MB 초과 (RAW_RECORD_FILE_TOO_LARGE)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "500",
-                    description = "원본 파일·기록 저장 실패 (RAW_RECORD_STORAGE_FAILED) 또는 가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "원본 파일·기록 저장 실패 (RAW_RECORD_STORAGE_FAILED) 또는 가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)"
             )
     })
     public ResponseEntity<ApiResponse<RawRecordResponse>> upload(
@@ -105,33 +89,27 @@ public class RawRecordController {
                     + "POST /api/v1/raw-records/uploads/{uploadId}/complete 를 부릅니다. "
                     + "일지 수 · 혼잡 · AI 처리 줄은 파일 내용을 봐야 알아 완료 단계에서 거절합니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "접수 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "크기 누락 · 0, 허용되지 않은 확장자 · 형식, 너무 긴 파일명 (RAW_RECORD_INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "크기 누락 · 0, 허용되지 않은 확장자 · 형식, 너무 긴 파일명 (RAW_RECORD_INVALID_REQUEST)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "CSRF 토큰 누락, 가입 미완료 (SIGNUP_NOT_COMPLETED), 또는 기관 소속이 아닌 사용자",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "CSRF 토큰 누락, 가입 미완료 (SIGNUP_NOT_COMPLETED), 또는 기관 소속이 아닌 사용자"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "413",
-                    description = "파일 크기 20MB 초과 (RAW_RECORD_FILE_TOO_LARGE)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "파일 크기 20MB 초과 (RAW_RECORD_FILE_TOO_LARGE)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "500",
-                    description = "업로드 주소 만들기 실패 (RAW_RECORD_STORAGE_FAILED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "업로드 주소 만들기 실패 (RAW_RECORD_STORAGE_FAILED)"
             )
     })
     public ResponseEntity<ApiResponse<RawRecordUploadUrlResponse>> uploadUrl(
@@ -150,44 +128,36 @@ public class RawRecordController {
                     + "409 면 파일을 올린 뒤 다시 부르고, 429 는 잠시 뒤 이 요청만 다시 부릅니다(파일을 다시 올리지 않습니다). "
                     + "400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED · 크기 불일치는 파일과 접수를 지우므로 처음부터 다시 올려야 합니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "완료 (이미 완료된 접수도 200)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
                     description = "저장소의 파일 크기가 접수와 다름 (RAW_RECORD_INVALID_REQUEST), "
-                            + "일지가 너무 많거나 너무 긴 파일 (RAW_RECORD_ENTRY_LIMIT_EXCEEDED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "일지가 너무 많거나 너무 긴 파일 (RAW_RECORD_ENTRY_LIMIT_EXCEEDED)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "CSRF 토큰 누락, 가입 미완료 (SIGNUP_NOT_COMPLETED), 또는 기관 소속이 아닌 사용자",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "CSRF 토큰 누락, 가입 미완료 (SIGNUP_NOT_COMPLETED), 또는 기관 소속이 아닌 사용자"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 접수이거나 다른 기관의 접수 (RAW_RECORD_UPLOAD_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "없는 접수이거나 다른 기관의 접수 (RAW_RECORD_UPLOAD_NOT_FOUND)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
-                    description = "저장소에 아직 파일이 없음 (RAW_RECORD_UPLOAD_NOT_READY)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "저장소에 아직 파일이 없음 (RAW_RECORD_UPLOAD_NOT_READY)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "429",
-                    description = "처리 중인 업로드가 많음 (RAW_RECORD_UPLOAD_BUSY), 기관의 AI 처리 줄이 꽉 참 (AGENT_QUEUE_FULL)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "처리 중인 업로드가 많음 (RAW_RECORD_UPLOAD_BUSY), 기관의 AI 처리 줄이 꽉 참 (AGENT_QUEUE_FULL)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "500",
-                    description = "저장소 확인 · 읽기 또는 기록 저장 실패 (RAW_RECORD_STORAGE_FAILED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "저장소 확인 · 읽기 또는 기록 저장 실패 (RAW_RECORD_STORAGE_FAILED)"
             )
     })
     public ApiResponse<RawRecordResponse> complete(
@@ -204,18 +174,11 @@ public class RawRecordController {
                     + "failed(시스템 오류) · done(완료)입니다. 파일을 기록 단위로 나누기 전이면 entries 가 "
                     + "비어 있습니다(PDF 는 아직 쪼개지지 않습니다)."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)"
             )
     })
     public ApiResponse<List<RecordProgressResponse>> progress(@AuthenticationPrincipal String userId) {
@@ -224,28 +187,23 @@ public class RawRecordController {
 
     @GetMapping("/{id}")
     @Operation(summary = "원본 기록 단건 조회")
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 기록이거나 다른 기관의 기록 (RAW_RECORD_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "없는 기록이거나 다른 기관의 기록 (RAW_RECORD_NOT_FOUND)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "500",
-                    description = "가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)"
             )
     })
     public ApiResponse<RawRecordResponse> getOne(
@@ -255,23 +213,19 @@ public class RawRecordController {
 
     @GetMapping
     @Operation(summary = "원본 기록 목록 조회")
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED) 또는 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "500",
-                    description = "가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)"
             )
     })
     public ApiResponse<List<RawRecordResponse>> list(@AuthenticationPrincipal String userId) {

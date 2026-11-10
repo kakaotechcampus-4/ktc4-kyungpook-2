@@ -20,7 +20,6 @@ class InsightRunTest {
         assertThat(run.getInsightCount()).isNull();
     }
 
-    /** 이 테이블을 둔 이유가 이것이다 — 0건도 "처리했다" 로 남아야 다시 부르지 않는다. */
     @Test
     void 인사이트가_0건이어도_끝난_것이다() {
         InsightRun run = InsightRun.claim(8L, FROM, TO, 1);
@@ -31,7 +30,6 @@ class InsightRunTest {
         assertThat(run.getInsightCount()).isZero();
     }
 
-    /** 0건으로 끝난 것과 못 끝낸 것이 구별돼야 한다. */
     @Test
     void 실패는_건수를_채우지_않는다() {
         InsightRun run = InsightRun.claim(8L, FROM, TO, 1);
@@ -42,7 +40,6 @@ class InsightRunTest {
         assertThat(run.getInsightCount()).isNull();
     }
 
-    /** AI 가 낯선 긴 값을 보내도 컬럼 길이(60)에 맞춰 잘라 저장이 터지지 않는다 (#266). */
     @Test
     void 실패_사유가_길면_잘라_남긴다() {
         InsightRun run = InsightRun.claim(8L, FROM, TO, 1);

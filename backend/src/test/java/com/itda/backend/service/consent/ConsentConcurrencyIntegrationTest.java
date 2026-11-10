@@ -69,13 +69,6 @@ import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.matching.MatchingResultService;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 동의 변경이 다른 작업과 겹칠 때를 PostgreSQL 에서 재현한다. 동의 부여·철회, 연결 해제, 사람의 매칭 확정은 모두
- * {@code child} 행을 먼저 잠근다 — 이 잠금이 그 작업들을 한 줄로 세우는지 본다.
- *
- * <p>다른 커넥션(홀더)이 {@code child} 행을 잠근 채 잡아 두고, 작업을 하나씩 보내 홀더 뒤에 줄을 세운다.
- * 줄 선 순서를 {@code pg_blocking_pids} 로 확인한 뒤 홀더를 풀면, 먼저 줄 선 작업이 먼저 잠금을 얻는다.
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -155,7 +148,6 @@ class ConsentConcurrencyIntegrationTest {
         return () -> matchingResultService.resolve(matchingResultId, "assign", child.getId(), "teacher-1", STAFF);
     }
 
-    /** 확인 필요 큐에 올라온 우리 기관 일지 한 건. */
     private MatchingResult reviewItem() {
         RawRecord rawRecord = rawRecordRepository.save(new RawRecord(String.valueOf(organization.getId()),
                 "관찰일지.txt", "stored.txt", "text/plain", 10L, RawRecordStatus.PENDING));
@@ -184,7 +176,6 @@ class ConsentConcurrencyIntegrationTest {
         assertThat(childRepository.findById(child.getId()).orElseThrow().getStatus()).isEqualTo(ChildStatus.ACTIVE);
     }
 
-    /** 동의가 먼저면 연결 해제가 그 동의를 끈다. 둘 다 child 부터 잠그므로 교착 없이 끝난다. */
     @Test
     void 동의_뒤에_연결이_끊기면_그_동의는_꺼진다() throws Exception {
         List<String> outcomes = inOrderWhileHeld(lockChild(),
@@ -215,7 +206,6 @@ class ConsentConcurrencyIntegrationTest {
         assertThat(sharingConsentRepository.findAll()).isEmpty();
     }
 
-    /** 철회가 완료된 뒤에는 새 매칭 확정이 성공하지 않는다. */
     @Test
     void 철회가_먼저_끝나면_뒤이은_매칭_확정은_거절된다() throws Exception {
         grant().call();
@@ -231,7 +221,6 @@ class ConsentConcurrencyIntegrationTest {
                 .isEqualTo(JournalEntryStatus.MATCH_REVIEW);
     }
 
-    /** 이번 범위에서는 이미 확정된 결과를 취소하지 않는다. 확정이 먼저면 확정은 남고, 그 뒤 동의가 꺼진다. */
     @Test
     void 확정이_먼저_끝나면_확정은_유지되고_그_뒤_동의가_철회된다() throws Exception {
         grant().call();
@@ -246,11 +235,6 @@ class ConsentConcurrencyIntegrationTest {
         assertThat(activeConsents()).isEmpty();
     }
 
-    /**
-     * 기관이 보호자를 끊는 동안 아동이 삭제됐다. 잠그기 전에 아동을 읽어 두면, 잠금 조회는 그 낡은 엔티티를 그대로
-     * 돌려주고 동의 철회로 상태가 바뀔 때 {@code deleted_at = null} 까지 다시 저장해 삭제를 되돌린다.
-     * 아동을 먼저 잠그고 그 뒤에 삭제·명부 소속을 봐야 한다.
-     */
     @Test
     void 기관의_연결_해제_중에_아동이_삭제되면_404이고_삭제는_그대로다() throws Exception {
         grant().call();
@@ -267,11 +251,6 @@ class ConsentConcurrencyIntegrationTest {
         assertThat(activeConsents()).hasSize(1);
     }
 
-    /**
-     * 홀더가 {@code holderSql} 로 행을 잠근 채 있는 동안 작업을 <b>하나씩</b> 보내, 앞 작업이 줄을 선 것을 확인한 뒤
-     * 다음 작업을 보낸다. 모두 줄을 서면 홀더를 끝낸다 — SELECT ... FOR UPDATE 면 롤백(잠금만 풀기), UPDATE 면
-     * 커밋(변경을 확정)한다. 각 작업의 결과를 "OK" 또는 실패 이름으로 돌려준다.
-     */
     @SafeVarargs
     private List<String> inOrderWhileHeld(String holderSql, Callable<Object>... tasks) throws Exception {
         boolean commitHolder = holderSql.startsWith("UPDATE");
@@ -303,7 +282,6 @@ class ConsentConcurrencyIntegrationTest {
                 }
                 return outcomes;
             } finally {
-                // 실패해도 이 순서로 정리한다: 잠금을 풀어 작업 스레드를 빼내고 → 스레드를 끝내고 → 커넥션을 닫는다.
                 if (!holderFinished) {
                     holder.rollback();
                 }
@@ -342,10 +320,6 @@ class ConsentConcurrencyIntegrationTest {
         }
     }
 
-    /**
-     * 홀더 때문에 막힌 세션이 생기고, 잠금을 기다리는 세션이 모두 {@code expected} 개가 될 때까지 기다린다.
-     * 같은 행을 둘이 기다리면 두 번째는 첫 번째 대기자 뒤에 줄을 서서, 막은 쪽이 홀더가 아니라 첫 번째 대기자로 보인다.
-     */
     private void waitUntilBlockedBy(int holderPid, int expected) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         try (Connection observer = dataSource.getConnection();

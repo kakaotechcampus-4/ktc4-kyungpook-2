@@ -16,7 +16,6 @@ import org.springframework.test.context.ActiveProfiles;
 import com.itda.backend.domain.summary.SummaryRunRequest;
 import com.itda.backend.repository.summary.SummaryRunRequestRepository;
 
-/** 교사가 누른 [요약] 요청 — 버튼이 요약의 유일한 시작점이라 재시작해도 남아야 한다 (#181). */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(SummaryRunRequests.class)
@@ -68,7 +67,6 @@ class SummaryRunRequestsTest {
         runRequests.markHandled(GROUP, claimedAt);
 
         assertThat(runRequests.isRequested(GROUP)).isFalse();
-        // 행은 지우지 않는다 (DB 스키마 §3.2). 어디까지 처리했는지만 남긴다.
         em.flush();
         em.clear();
         assertThat(repository.findAll()).singleElement().satisfies(saved -> {
@@ -79,7 +77,6 @@ class SummaryRunRequestsTest {
 
     @Test
     void 집은_뒤에_다시_누른_요청은_결과를_남겨도_요청으로_남는다() {
-        // 요약하는 사이 새 일지가 들어와 교사가 다시 눌렀다. 그 일지는 방금 요약에 들어 있지 않다.
         LocalDateTime claimedAt = PRESSED.plusMinutes(1);
         runRequests.request(GROUP, PRESSED);
         runRequests.request(GROUP, claimedAt.plusMinutes(1));
@@ -113,7 +110,6 @@ class SummaryRunRequestsTest {
 
     @Test
     void 늦게_도착한_옛_누름이_더_늦게_누른_시각을_되돌리지_않는다() {
-        // 잠금을 기다리던 옛 요청(T1)이 그새 들어온 요청(T3)을 덮으면, T2 에 처리 표시된 뒤 T3 요청이 사라진다.
         runRequests.request(GROUP, PRESSED.plusMinutes(3));
         runRequests.markHandled(GROUP, PRESSED.plusMinutes(2));
 
@@ -124,7 +120,6 @@ class SummaryRunRequestsTest {
 
     @Test
     void 읽어_둔_요청을_거둘_때_그새_다시_누른_시각을_옛_값으로_덮지_않는다() {
-        // 워커가 요청 목록을 읽은 뒤(같은 트랜잭션에 엔티티가 남음) 교사가 다시 눌러 커밋했다.
         runRequests.request(GROUP, PRESSED);
         em.flush();
         em.clear();

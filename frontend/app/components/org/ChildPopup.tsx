@@ -10,17 +10,14 @@ import type { ChildListItem, InboxDetail, InboxItem, Insight } from "@/lib/types
 
 export type ChildTab = "analysis" | "records" | "guardian";
 
-/** 지난 분석 한 건 — 우리가 승인한 것(O-40 approved) 또는 다른 기관이 보낸 것(O-50) */
 type Past = { kind: "approved"; insight: Insight } | { kind: "inbox"; item: InboxItem };
 
-/** 보호자 칩은 우리 기관 동의(O-10 consent)로만 정한다 */
 export function guardianChip(consent: ChildListItem["consent"]): string | null {
   if (consent === "not_granted") return "보호자 동의 전";
   if (consent === "revoked") return "동의 철회";
   return null;
 }
 
-/** 분석이 다룬 때. 받은 글은 받은 시각, 우리 승인분은 근거 기록 중 가장 늦은 날 — 주 묶음 정렬에 쓴다 */
 function whenOf(p: Past): string {
   if (p.kind === "inbox") return p.item.receivedAt;
   return p.insight.evidence.reduce((max, e) => (e.date > max ? e.date : max), "");
@@ -29,7 +26,6 @@ function periodOf(p: Past): string {
   return p.kind === "inbox" ? p.item.period : p.insight.period;
 }
 
-/** 주(기간 라벨)로 묶고 최신 주를 위에 */
 function byWeek(list: Past[]): { period: string; items: Past[] }[] {
   const groups = new Map<string, Past[]>();
   for (const p of [...list].sort((a, b) => (whenOf(b) > whenOf(a) ? 1 : -1))) {
@@ -59,20 +55,16 @@ export function ChildPopup({
   onRemoved,
 }: {
   child: ChildListItem;
-  /** 우리 기관이 승인할 차례인 분석(O-40 pending). 있으면 분석 탭 맨 위에 보고서와 보류·승인을 둔다 */
   review?: Insight;
   approved: Insight[];
   inbox: InboxItem[];
   initialTab?: ChildTab;
-  /** 안 읽은 받은 분석이 있으면 그 글을 바로 연다 */
   openUnread?: boolean;
   position?: { index: number; total: number };
   onClose: () => void;
   onDecided: (insight: Insight, decision: "approve" | "hold") => void;
   onStale: (message: string) => void;
-  /** 받은 분석을 처음 열었다 — 배지를 줄이려 목록을 새로 받는다 */
   onRead: () => void;
-  /** 있으면 "명부에서 빼기" 를 보인다(O-63). 뺀 뒤 부른다 — 팝업을 닫고 목록을 새로 받는다 */
   onRemoved?: (child: ChildListItem) => void;
 }) {
   const [tab, setTab] = useState<ChildTab>(initialTab);
@@ -111,7 +103,6 @@ export function ChildPopup({
       onRemoved?.(child);
     } catch (err) {
       setRemoving(false);
-      // 이미 빠졌다(다른 담당자가 먼저 뺐다) — 다시 눌러도 같으니 목록을 새로 받는다
       if (err instanceof ApiError && err.status === 404) onStale(`${child.name}은(는) 이미 명부에서 빠졌어요. 목록을 새로 불러왔어요.`);
       else setError(removeMessageOf(err));
     } finally {
@@ -294,7 +285,6 @@ export function ChildPopup({
   );
 }
 
-/** 승인하면 볼 수 있는 곳 — 보호자 + 공유에 동의한 기관 (#233) */
 function viewers(insight: Insight): string[] {
   return ["보호자", ...insight.targets.filter((t) => t.consent === "granted").map((t) => t.institution.name)];
 }
@@ -311,7 +301,6 @@ function Paragraphs({ text }: { text: string }) {
   );
 }
 
-/** 분석 보고서 — 본문 · 근거 기록 · 볼 수 있는 곳 · 지난 기록 안내 · 교사 작성 경고 (O-40 에 있는 것만) */
 function Report({ insight, kind }: { insight: Insight; kind: "review" | "approved" }) {
   const granted = insight.targets.filter((t) => t.consent === "granted");
   const lookedUp = insight.evidence.some((e) => e.lookedUp);
@@ -321,8 +310,6 @@ function Report({ insight, kind }: { insight: Insight; kind: "review" | "approve
         <Chip tone="idle">{insight.period}</Chip>
         {kind === "review" ? `기록 ${insight.evidence.length}건 · 승인 전` : "우리 기관이 승인"}
       </p>
-      {/* #388 정보 안내. 교사 작성 경고(아래, alert)와 달리 잘못이 아니라 알아 둘 일이라 차분한 색 · role 없이 둔다.
-          승인자가 "이번 주 기록끼리 엮은 글"로 읽지 않도록 본문보다 먼저 보인다 */}
       {lookedUp ? (
         <p className="rounded-[14px] bg-accentsoft px-3.5 py-3 text-[14px] leading-normal text-accentink">
           <b>AI가 지난 기록도 찾아 봤어요.</b> 이번 기간 기록이 아닌 근거는 &lsquo;지난 기록&rsquo;으로 표시했어요. 날짜와 기관을
@@ -353,7 +340,6 @@ function Report({ insight, kind }: { insight: Insight; kind: "review" | "approve
           ))}
         </ul>
       </PopSection>
-      {/* CRITERIA §5 필수 경고. 기관 경계를 넘는 마지막 관문이라 승인자가 알아야 한다 */}
       {insight.teacherWritten ? (
         <div role="alert" className="rounded-[14px] bg-humansoft px-3.5 py-3 text-[14px] leading-normal text-human">
           <b>선생님이 고쳐 쓴 문장이 근거에 들어 있어요.</b> 내용 검증을 거치지 않은 문장이니 내용을 한 번 더 봐 주세요.
@@ -363,7 +349,6 @@ function Report({ insight, kind }: { insight: Insight; kind: "review" | "approve
   );
 }
 
-/** 다른 기관이 보낸 분석 한 편(O-51). 처음 열면 열람 시각이 남는다 */
 function InboxReport({ item, onRead }: { item: InboxItem; onRead: () => void }) {
   const [detail, setDetail] = useState<InboxDetail | null>(null);
   const [failed, setFailed] = useState(false);
@@ -381,7 +366,6 @@ function InboxReport({ item, onRead }: { item: InboxItem; onRead: () => void }) 
     return () => {
       alive = false;
     };
-    // 글이 바뀔 때만 다시 연다
   }, [item.id]);
 
   if (failed) return <p className="text-[15px] text-block">더 이상 볼 수 없는 리포트예요. 보호자가 공유를 껐을 수 있어요.</p>;
@@ -411,7 +395,6 @@ function removeMessageOf(err: unknown): string {
   return "명부에서 빼지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 }
 
-/** 다시 눌러도 결과가 같은 오류 — 팝업을 닫고 목록을 새로 받는다 */
 function isStale(err: unknown): boolean {
   return (
     err instanceof ApiError &&
@@ -431,7 +414,6 @@ function messageOf(err: unknown): string {
       return "같은 기간의 더 새 리포트가 만들어졌어요. 목록에서 새 리포트를 읽어 주세요.";
     case "INSIGHT_NOT_PRIMARY_SOURCE":
       return "우리 기관이 승인하는 리포트가 아니에요. 학교 > 센터 > 활동지원사 순으로 한 곳이 승인해요.";
-    // 여러 기관 기록을 엮은 글이라 일부만 뺄 수 없다. 보류는 된다
     case "INSIGHT_MATERIAL_CONSENT_REVOKED":
       return "근거를 낸 기관 중 보호자가 공유를 끈 곳이 있어 승인할 수 없어요. 보류는 할 수 있어요.";
   }

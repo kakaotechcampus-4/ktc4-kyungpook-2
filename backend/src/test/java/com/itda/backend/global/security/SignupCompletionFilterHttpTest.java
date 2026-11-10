@@ -23,11 +23,6 @@ import org.springframework.web.bind.annotation.RestController;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
-/**
- * 가입 미완료 차단이 실제 Tomcat 이 넘겨주는 경로 기준으로도 빠지지 않는지 검증한다.
- *
- * <p>MockMvc 는 요청 URI 를 서블릿 컨테이너처럼 다루지 않아, 인코딩된 경로로 필터를 건너뛰는 문제를 잡지 못한다.
- */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "spring.datasource.url=jdbc:h2:mem:signup-filter-http;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE")
 @ActiveProfiles("test")
@@ -78,7 +73,6 @@ class SignupCompletionFilterHttpTest {
         assertThat(response.body()).contains("\"code\":\"SIGNUP_NOT_COMPLETED\"").doesNotContain("controller-reached");
     }
 
-    /** "/%61pi" 는 Tomcat 이 "/api" 로 풀어서 컨트롤러까지 간다. 필터도 같은 경로로 판단해야 한다. */
     @Test
     void percentEncodedPathCannotSkipSignupCheck() throws Exception {
         for (String rawPath : new String[]{
@@ -93,10 +87,6 @@ class SignupCompletionFilterHttpTest {
         }
     }
 
-    /**
-     * 경로를 꾸미는 다른 방법도 컨트롤러에 닿지 않는다. 대부분 Spring Security 방화벽이 먼저 거부하고,
-     * 거부된 요청의 ERROR 디스패치가 인증 실패로 끝나 401 이 되기도 한다.
-     */
     @Test
     void otherPathTricksNeverReachController() throws Exception {
         for (String rawPath : new String[]{
@@ -111,7 +101,6 @@ class SignupCompletionFilterHttpTest {
         }
     }
 
-    /** 약관 차단도 같은 경로 기준이다 — 인코딩된 경로로 건너뛰지 못한다. */
     @Test
     void percentEncodedPathCannotSkipTermsCheck() throws Exception {
         for (String rawPath : new String[]{
@@ -126,7 +115,6 @@ class SignupCompletionFilterHttpTest {
         }
     }
 
-    /** 약관 본문은 가입 · 약관 차단에서 빠진다. 인코딩해도 같은 경로로 보고 통과시킨다 — 서비스는 실제 것이 돈다. */
     @Test
     void termsDocumentsPassForPendingAndUnagreedUsersEvenEncoded() throws Exception {
         for (String rawPath : new String[]{"/api/v1/terms?role=parent", "/api/v1/%74erms?role=parent"}) {

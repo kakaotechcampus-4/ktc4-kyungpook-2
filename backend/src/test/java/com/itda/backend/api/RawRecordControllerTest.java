@@ -32,10 +32,6 @@ import com.itda.backend.exception.record.RawRecordUploadBusyException;
 import com.itda.backend.exception.record.RawRecordValidationException;
 import com.itda.backend.service.record.RawRecordService;
 
-// addFilters(false)라 필터 체인이 안 돈다 — JwtAuthenticationFilter가 실제로 하는 일
-// (SecurityContext principal에 카카오ID(String)를 심는 것)을 authenticateAs(...)로 직접
-// 재현한다. RequestPostProcessor 기반의 authentication(...)은 세션에만 값을 넣고 그걸
-// SecurityContextHolder로 옮기는 건 필터가 하는 일이라, addFilters(false)에서는 무시된다.
 @WebMvcTest(RawRecordController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class RawRecordControllerTest {
@@ -51,7 +47,6 @@ class RawRecordControllerTest {
     @MockitoBean
     private RecordProgressService recordProgressService;
 
-    /** 저장소로 바로 올리는 업로드(#450)는 RawRecordUploadApiTest 가 실제 흐름으로 본다. */
     @MockitoBean
     private RawRecordUploadService rawRecordUploadService;
 
@@ -146,8 +141,6 @@ class RawRecordControllerTest {
 
     @Test
     void getOtherInstitutionsRecord_returns404NotForbidden() throws Exception {
-        // 다른 기관 소유 레코드를 조회하면, 서비스 계층이 "권한 없음"이 아니라 "없음"으로 던진다
-        // (RawRecordService.getById 참고) — 존재 여부 자체를 노출하지 않기 위함.
         authenticateAs("kakao-attacker");
         given(rawRecordService.getById(1L, "kakao-attacker")).willThrow(new RawRecordNotFoundException(1L));
 

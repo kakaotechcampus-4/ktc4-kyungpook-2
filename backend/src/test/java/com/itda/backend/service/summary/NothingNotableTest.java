@@ -31,7 +31,6 @@ class NothingNotableTest {
         assertThat(NothingNotable.matches(request(content))).isTrue();
     }
 
-    /** 관찰 사실이 붙어 있거나 표현이 다르면 AI 로 보낸다 — 여기서 맞으면 그 기록이 사라진다. */
     @ParameterizedTest
     @ValueSource(strings = {"특이사항 없음. 점심은 다 먹음", "하늘이 특이사항 없음", "없음", "특이사항 있음",
             "급식실에서 소리를 지름", ""})
@@ -49,7 +48,6 @@ class NothingNotableTest {
         assertThat(NothingNotable.matches(request())).isFalse();
     }
 
-    /** AI 의 no_content 응답과 같은 모양이어야 근거 검사(SummaryEvidenceChecker)를 지나 Gate 1 에 뜬다. */
     @Test
     void 응답은_본문과_문장이_비고_묶음_일지가_모두_uncovered인_요약할_내용_없음이다() {
         SummaryAgentRequest request = new SummaryAgentRequest(8L, "하늘", "2026-11-09", 3L, "햇살센터",

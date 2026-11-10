@@ -71,7 +71,6 @@ class PostgreSqlIntegrationTests {
 		registry.add("spring.datasource.username", postgres::getUsername);
 		registry.add("spring.datasource.password", postgres::getPassword);
 		registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
-		// 컨테이너가 스키마까지 폐기하므로 컨텍스트 종료 때 다시 접속해 DROP 하지 않는다.
 		registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
 	}
 
@@ -97,10 +96,6 @@ class PostgreSqlIntegrationTests {
 	void contextLoadsWithPostgreSql() {
 	}
 
-	/**
-	 * users 는 PostgreSQL 예약어(USER)를 피한 이름이다. 테이블이 실제로 만들어지고
-	 * enum 이 문자열로 저장되는지 PostgreSQL 에서 확인한다.
-	 */
 	@Test
 	void userTableIsCreatedAndEnumsAreStoredAsStrings() {
 		User saved = userRepository.save(UserFixture.parent("pg-1"));
@@ -110,10 +105,6 @@ class PostgreSqlIntegrationTests {
 		assertThat(saved.getCreatedAt()).isNotNull();
 	}
 
-	/**
-	 * 검증 워커가 쓰는 테이블·상태값이 PostgreSQL 에서 저장되는지 본다. enum 은 테이블을 처음 만들 때
-	 * CHECK 제약이 걸리므로 새 상태값(VALIDATION_BLOCKED)과 판정(BLOCK)이 실제로 들어가는지 확인한다.
-	 */
 	@Test
 	void validationResultAndNewJournalStatusesAreStored() {
 		JournalEntry entry = JournalEntry.of(null, null, "임유진의 연락처는 010-1234-5678", 1);
@@ -134,7 +125,6 @@ class PostgreSqlIntegrationTests {
 		assertThat(found.getCreatedAt()).isNotNull();
 	}
 
-	/** 검증 시스템 오류(#180)의 상태·실패 단계·원인 코드가 PostgreSQL 에 문자열로 저장되는지 본다. */
 	@Test
 	void systemErrorStatusAndFailureColumnsAreStored() {
 		JournalEntry entry = JournalEntry.of(null, null, "임유진이 블록을 높이 쌓았다.", 1);
@@ -150,7 +140,6 @@ class PostgreSqlIntegrationTests {
 		assertThat(found.getFailureReason()).isEqualTo(FailureReason.AGENT_UNAVAILABLE);
 	}
 
-	/** 유니크 제약은 엔티티를 만들 때 넣지 않으면 ddl-auto: update 가 나중에 붙여주지 않는다. */
 	@Test
 	void duplicateKakaoIdIsRejectedByTheUniqueConstraint() {
 		userRepository.saveAndFlush(User.pending("pg-dup"));
@@ -160,7 +149,6 @@ class PostgreSqlIntegrationTests {
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
-	/** 사업자등록번호 유니크 제약이 PostgreSQL 에서도 실제로 걸린다. */
 	@Test
 	void duplicateBusinessNumberIsRejectedByTheUniqueConstraint() {
 		organizationRepository.saveAndFlush(Organization.of("햇살센터", OrganizationType.CENTER, "1234567890"));
@@ -170,16 +158,10 @@ class PostgreSqlIntegrationTests {
 				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
-	/*
-	 * 동시 가입. H2 테스트는 요청을 순서대로 보내므로 잠금과 유니크 경합을 실제로 겪지 않는다.
-	 * 여기서는 두 스레드를 같은 순간에 출발시켜 PostgreSQL 에서 확인한다.
-	 */
-
 	private static SignupRequest organizationSignup(String businessNumber) {
 		return new SignupRequest("org", "햇살센터", OrganizationType.CENTER, businessNumber, null);
 	}
 
-	/** 작업들을 동시에 출발시키고, 각 작업이 던진 예외(성공이면 null)를 순서대로 돌려준다. */
 	private static List<Throwable> runAtOnce(List<Callable<?>> tasks) throws Exception {
 		ExecutorService executor = Executors.newFixedThreadPool(tasks.size());
 		CountDownLatch ready = new CountDownLatch(tasks.size());
@@ -210,10 +192,6 @@ class PostgreSqlIntegrationTests {
 		}
 	}
 
-	/**
-	 * 가입 버튼을 두 번 빠르게 누른 경우. 회원 행을 잠그므로 두 번째 요청은 첫 번째가 끝날 때까지
-	 * 기다렸다가 "이미 가입함" 을 보고 409 로 끝난다. 기관은 하나만 생긴다.
-	 */
 	@Test
 	void sameUserSigningUpTwiceAtOnceCreatesOnlyOneOrganization() throws Exception {
 		User user = userRepository.save(User.pending("pg-race-same"));
@@ -232,10 +210,6 @@ class PostgreSqlIntegrationTests {
 		assertThat(created).isEqualTo(1);
 	}
 
-	/**
-	 * 서로 다른 두 사람이 같은 사업자등록번호로 동시에 가입한 경우. 둘 다 "아직 없는 번호" 확인을
-	 * 통과하더라도 유니크 제약이 한쪽을 막고, 그 예외는 500 이 아니라 409 로 바뀐다.
-	 */
 	@Test
 	void sameBusinessNumberAtOnceLetsOnlyOneOrganizationIn() throws Exception {
 		User first = userRepository.save(User.pending("pg-race-bn-1"));
@@ -255,7 +229,6 @@ class PostgreSqlIntegrationTests {
 		assertThat(signedUp).isEqualTo(1);
 	}
 
-	/** 두 조회가 모두 빈 결과를 본 뒤 INSERT 하도록 해 중복 경합을 확실하게 재현한다. */
 	@Test
 	void simultaneousFirstLoginsBothReturnTheSameUser() throws Exception {
 		CountDownLatch bothRead = new CountDownLatch(2);

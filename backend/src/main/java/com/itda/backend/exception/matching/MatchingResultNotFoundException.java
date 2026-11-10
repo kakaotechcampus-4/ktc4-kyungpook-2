@@ -1,8 +1,10 @@
 package com.itda.backend.exception.matching;
 
-public class MatchingResultNotFoundException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
+
+public class MatchingResultNotFoundException extends BusinessException {
 
     public MatchingResultNotFoundException(Long id) {
-        super("matching result not found: " + id);
+        super(MatchingResultErrorCode.NOT_FOUND, "matching result not found: " + id);
     }
 }

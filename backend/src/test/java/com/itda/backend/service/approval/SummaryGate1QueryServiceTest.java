@@ -45,7 +45,6 @@ import com.itda.backend.service.summary.SummaryProperties;
 import com.itda.backend.service.summary.SummaryRunRequests;
 import com.itda.backend.service.user.UserService;
 
-/** Gate 1 검토 목록 — 요약 본문, 다른 아이 이름 경고, 요약에 안 들어간 일지, 요약에 들어간 원본의 REVIEW 사유. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({SummaryGate1QueryService.class, SummaryRunRequests.class, ConsentStateReader.class})
@@ -64,7 +63,6 @@ class SummaryGate1QueryServiceTest {
     @MockitoBean
     private UserService userService;
 
-    /** 기본은 자동 요약 꺼짐(mock 의 false). 켜진 동작은 테스트가 직접 켠다 (#369). */
     @MockitoBean
     private SummaryProperties summaryProperties;
 
@@ -81,7 +79,6 @@ class SummaryGate1QueryServiceTest {
         consent = em.persistAndFlush(SharingConsent.grant(junho, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY)));
     }
 
-    /** 요약 워커가 집어 간 일지. 요약이 저장되면 {@link #summary} 가 그 요약을 가리키게 한다. */
     private JournalEntry entry(String content) {
         JournalEntry entry = JournalEntry.of(1L, DATE, content, 1);
         entry.startMatching();
@@ -92,7 +89,6 @@ class SummaryGate1QueryServiceTest {
         return em.persistAndFlush(entry);
     }
 
-    /** 요약을 저장하고, 보낸 일지(covered·uncovered)가 그 요약을 가리키게 한다 — 레코더와 같다. */
     private SummaryResult summary(Long institutionId, LocalDate date, String claims, List<JournalEntry> covered,
             List<JournalEntry> uncovered) {
         SummaryResult summary = em.persistAndFlush(SummaryResult.of(junho, date, institutionId, 1, "요약 본문", claims,
@@ -113,7 +109,6 @@ class SummaryGate1QueryServiceTest {
                 .map(s -> "[" + s + "]").orElse("[]");
     }
 
-    /** 한 일지를 근거로 든 claim 하나. span 은 그 일지 원문 기준 [start, end). */
     private static String claim(JournalEntry entry, int start, int end) {
         return "{\"text\":\"문장\",\"evidence\":[{\"journal_entry_id\":" + entry.getId()
                 + ",\"quote\":\"q\",\"span\":{\"start\":" + start + ",\"end\":" + end + "}}]}";
@@ -151,7 +146,6 @@ class SummaryGate1QueryServiceTest {
                 .extracting(Gate1SummaryResponse::id).containsExactly(held.getId());
     }
 
-    /** 철회 전에 만들어진 요약이다 (#332). 목록에 두면 그대로 승인돼 아이 맥락에 올라간다. */
     @Test
     void 동의를_철회한_아이의_요약은_검토_대기와_보류함에서_뺀다() {
         summary(ORG, DATE, "[]", List.of(), List.of());
@@ -165,7 +159,6 @@ class SummaryGate1QueryServiceTest {
 
     @Test
     void 요약할_내용_없음은_표시와_함께_그날_일지_원본을_모두_보여준다() {
-        // 교사가 "왜 없지?" 할 때 바로 원본을 볼 수 있어야 한다 (#244). covered 가 비어 일지가 모두 uncovered 로 간다.
         JournalEntry first = entry("특이사항 없음");
         JournalEntry second = entry("특이사항 없음.");
         SummaryResult empty = em.persistAndFlush(SummaryResult.noContent(junho, DATE, ORG, 1,
@@ -239,7 +232,6 @@ class SummaryGate1QueryServiceTest {
 
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
-        // index 는 결정(O-31) 카드에 그대로 돌려보내는 번호다 — claims 배열 순서다.
         assertThat(item.claims()).containsExactly(new ClaimCard(0, "블록을 쌓았다.", List.of()),
                 new ClaimCard(1, "낮잠을 잤다.", List.of()));
     }
@@ -259,7 +251,6 @@ class SummaryGate1QueryServiceTest {
 
     @Test
     void 선생님이_고치거나_새로_쓴_문장은_근거를_비워_보여준다() {
-        // 고친 문장은 AI 근거가 남아 있어도 글이 달라 인용이 맞지 않고, 새로 쓴 문장의 근거는 그 문장 자신이다.
         JournalEntry blocks = entry("블록을 높이 쌓았다.");
         String evidence = "[{\"journal_entry_id\":" + blocks.getId() + ",\"quote\":\"블록\","
                 + "\"span\":{\"start\":0,\"end\":2}}]";
@@ -277,7 +268,6 @@ class SummaryGate1QueryServiceTest {
 
     @Test
     void 문장이_아닌_값이_섞인_claims_는_카드로_보여주지_않는다() {
-        // 결정(O-31)도 같은 기준으로 문장이 없다고 본다. 카드를 보여주면 그대로 보내도 400 이 난다.
         summary(ORG, DATE, "[{\"text\":\"블록을 쌓았다.\"}, \"문장\"]", List.of(), List.of());
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).claims()).isEmpty();
@@ -301,7 +291,6 @@ class SummaryGate1QueryServiceTest {
     void 요약_근거와_겹치지_않는_REVIEW_구간이면_숨긴다() {
         JournalEntry apart = entry("블록 놀이를 했다. 집에 가고 싶다고 울었다.");
         validated(apart, ValidationVerdict.REVIEW, "[\"감정적표현\"]", "[{\"start\":11,\"end\":24}]");
-        // 끝은 포함하지 않는다 — [0, 11) 과 [11, 24) 는 겹치지 않는다.
         summary(ORG, DATE, "[" + claim(apart, 0, 11) + "]", List.of(apart), List.of());
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).reviewFlags()).isEmpty();
@@ -317,8 +306,6 @@ class SummaryGate1QueryServiceTest {
                 .containsExactly(new ReviewFlag(unknown.getId(), List.of("대상불명확"),
                         List.of("어느 아이의 기록인지 분명하지 않아요"), List.of()));
     }
-
-    // --- 경고가 짚은 문장 (#408) ---
 
     @Test
     void 검증_구간과_겹친_문장_번호만_오름차순으로_준다() {
@@ -345,14 +332,12 @@ class SummaryGate1QueryServiceTest {
                 .singleElement().extracting(ReviewFlag::claimIndexes).isEqualTo(List.of(0));
     }
 
-    /** 구간 비교는 같은 일지 안에서만 한다. 경고마다 자기 일지와 겹친 문장만 든다. */
     @Test
     void 일지가_둘이면_경고마다_자기_일지와_겹친_문장만_든다() {
         JournalEntry morning = entry("블록 놀이 중 친구를 밀었다.");
         JournalEntry afternoon = entry("간식을 먹고 아마 졸렸던 것 같다.");
         validated(morning, ValidationVerdict.REVIEW, "[\"위험행동표현\"]", "[{\"start\":5,\"end\":15}]");
         validated(afternoon, ValidationVerdict.REVIEW, "[\"추측성표현\"]", "[{\"start\":7,\"end\":18}]");
-        // 1번 문장은 오후 일지의 같은 위치를 근거로 들었다 — 오전 경고에는 들지 않는다
         summary(ORG, DATE, "[" + claim(morning, 0, 8) + "," + claim(afternoon, 5, 12) + "," + claim(afternoon, 0, 4) + "]",
                 List.of(morning, afternoon), List.of());
 
@@ -361,7 +346,6 @@ class SummaryGate1QueryServiceTest {
                 .containsExactly(tuple(morning.getId(), List.of(0)), tuple(afternoon.getId(), List.of(1)));
     }
 
-    /** 카드로 못 읽는 요약이라도 판정은 지금처럼 원시 근거 구간으로 한다. 번호만 비운다. */
     @Test
     void 카드로_못_읽는_요약은_경고와_사유는_그대로고_번호만_비어_있다() {
         JournalEntry pushed = entry("블록 놀이 중 친구를 밀었다.");
@@ -375,7 +359,6 @@ class SummaryGate1QueryServiceTest {
                 List.of("위험 행동이 그대로 묘사돼 있어요"), List.of()));
     }
 
-    /** 고친 문장의 남은 근거도 판정에는 쓰인다(지금 그대로). 카드가 근거를 보이지 않는 문장이라 번호에는 넣지 않는다. */
     @Test
     void 고친_문장의_남은_근거로만_겹치면_경고는_그대로고_번호만_비어_있다() {
         JournalEntry pushed = entry("블록 놀이 중 친구를 밀었다.");
@@ -422,7 +405,6 @@ class SummaryGate1QueryServiceTest {
 
         Gate1SummaryResponse item = service.getSummaries(TEACHER, "pending").get(0);
 
-        // 구간을 못 읽으면 비어 있는 것과 같다 — 숨기기보다 보여주는 쪽이 안전하다.
         assertThat(item.reviewFlags()).containsExactly(new ReviewFlag(broken.getId(), List.of(),
                 List.of("검증에서 문제가 발견됐어요. 원본을 확인해 주세요"), List.of()));
         assertThat(item.reviewReasons()).isEmpty();
@@ -431,7 +413,6 @@ class SummaryGate1QueryServiceTest {
 
     @Test
     void 검토_대기와_보류함_말고는_조회하지_않는다() {
-        // 다른 값을 조용히 대기 목록으로 처리하면 화면이 엉뚱한 목록을 보여준다.
         for (String unsupported : new String[] {"approved", "rejected", "HOLD", "GATE1_PENDING"}) {
             assertThatThrownBy(() -> service.getSummaries(TEACHER, unsupported))
                     .isInstanceOf(SummaryException.class)
@@ -442,8 +423,6 @@ class SummaryGate1QueryServiceTest {
 
     @Test
     void AI가_어느_목록에도_넣지_않은_일지도_요약에_안_들어간_일지로_보여준다() {
-        // AI 가 covered·uncovered 어디에도 넣지 않아도 그 일지는 이 요약을 가리키고, 승인하면 함께 끝난다.
-        // 목록에 안 보이면 교사가 보지도 못한 기록이 승인과 함께 사라진다.
         JournalEntry used = entry("블록 놀이를 했다.");
         JournalEntry forgotten = entry("낮잠을 잤다.");
         SummaryResult s = summary(ORG, DATE, "[" + claim(used, 0, 4) + "]", List.of(used), List.of());
@@ -468,7 +447,6 @@ class SummaryGate1QueryServiceTest {
                 RawRecordStatus.PENDING)).getId();
     }
 
-    /** 교사가 그 묶음에 [요약]을 눌렀다 (#181). 누르지 않으면 요약은 바뀌지 않는다. */
     private void requestRun(LocalDate date) {
         em.persistAndFlush(SummaryRunRequest.of(junho, date, ORG, date.atTime(17, 0)));
     }
@@ -479,7 +457,6 @@ class SummaryGate1QueryServiceTest {
         requestRun(DATE);
         assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isFalse();
 
-        // 검증을 통과해 요약을 기다리는 같은 아이·같은 날 일지. 눌러 뒀으니 곧 이 요약을 다시 만든다.
         validatedInSameGroup();
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
@@ -487,7 +464,6 @@ class SummaryGate1QueryServiceTest {
 
     @Test
     void 요약을_누르지_않았으면_새_일지가_있어도_처리_중이_아니다() {
-        // 자동 요약이 없어 누르기 전까지 이 요약은 바뀌지 않는다. 처리 중으로 두면 열기·승인을 끝없이 막는다.
         summary(ORG, DATE, "[]", List.of(), List.of());
         validatedInSameGroup();
 
@@ -496,7 +472,6 @@ class SummaryGate1QueryServiceTest {
 
     @Test
     void 지금_요약_중인_일지가_있으면_누른_요청이_없어도_처리_중이다() {
-        // 워커가 이미 집어 갔다. 결과를 남기면서 처리 표시를 했어도 요약은 곧 바뀐다.
         summary(ORG, DATE, "[]", List.of(), List.of());
         JournalEntry summarizing = JournalEntry.of(schoolRecord(), DATE, "점심을 먹었다.", 2);
         summarizing.startMatching();
@@ -511,7 +486,6 @@ class SummaryGate1QueryServiceTest {
 
     @Test
     void 요약을_누른_묶음의_같은_기관_같은_날에_매칭_전_일지가_있으면_처리_중으로_표시한다() {
-        // 매칭 전이라 누구 일지인지 모른다. 이 아이 일지일 수 있다.
         summary(ORG, DATE, "[]", List.of(), List.of());
         requestRun(DATE);
         em.persistAndFlush(JournalEntry.of(schoolRecord(), DATE, "누구 기록인지 모름", 3));
@@ -525,7 +499,6 @@ class SummaryGate1QueryServiceTest {
         summary(ORG, DATE, "[]", List.of(), List.of());
         assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isFalse();
 
-        // 워커가 곧 이 일지까지 묶어 같은 판을 다시 만든다.
         validatedInSameGroup();
 
         assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
@@ -575,7 +548,6 @@ class SummaryGate1QueryServiceTest {
 
     @Test
     void 다른_아이의_일지가_검증_중이면_이_아이_요약은_처리_중이_아니다() {
-        // 매칭이 끝난 일지는 누구 것인지 안다. 다른 아이 일지 때문에 그날 모든 요약의 승인을 막지 않는다.
         summary(ORG, DATE, "[]", List.of(), List.of());
         requestRun(DATE);
         JournalEntry others = JournalEntry.of(schoolRecord(), DATE, "민지가 그림을 그렸다.", 4);
@@ -599,7 +571,6 @@ class SummaryGate1QueryServiceTest {
         assertThat(service.getSummaries(TEACHER, "pending").get(0).processing()).isTrue();
     }
 
-    /** 검토 대기 요약을 {@code count} 개 만들고(날짜마다 하나, 일지 둘씩) 목록 조회가 날린 SQL 수를 센다. */
     private long queriesForPendingList(int count) {
         Long record = schoolRecord();
         for (int i = 0; i < count; i++) {
@@ -608,7 +579,6 @@ class SummaryGate1QueryServiceTest {
             JournalEntry uncovered = entry("낮잠을 잤다.");
             summary(ORG, date, "[" + claim(covered, 0, 4) + "]", List.of(covered), List.of(uncovered));
             validated(covered, ValidationVerdict.REVIEW, "[\"추측성표현\"]", "[]");
-            // 같은 날 요약을 기다리는 일지와 [요약] 요청 — 이 요약은 processing 이다.
             em.persist(SummaryRunRequest.of(junho, date, ORG, date.atTime(17, 0)));
             JournalEntry waiting = JournalEntry.of(record, date, "점심을 먹었다.", 3);
             waiting.startMatching();
@@ -640,13 +610,9 @@ class SummaryGate1QueryServiceTest {
         em.getEntityManager().createQuery("delete from SummaryRunRequest").executeUpdate();
         long twenty = queriesForPendingList(20);
 
-        // 요약마다 묶음 상태를 따로 물으면 요약 수에 비례해 늘어난다(N+1).
         assertThat(twenty).as("요약 1개: %d번, 요약 20개: %d번", one, twenty).isEqualTo(one);
     }
 
-    // ── 대시보드 보드 (getBoardItems) — 목록과 같은 요약 · 같은 판정을 보드가 쓰는 칸만으로 준다 ──
-
-    /** 같은 데이터에서 검토 대기 · 보류함 목록을 합친 것. 보드와 비교하려고 보드 칸만 뽑는다. */
     private List<Gate1BoardItem> fromLists() {
         return java.util.stream.Stream.concat(service.getSummaries(TEACHER, "pending").stream(),
                         service.getSummaries(TEACHER, "hold").stream())

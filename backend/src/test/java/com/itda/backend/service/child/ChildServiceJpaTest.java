@@ -33,7 +33,6 @@ import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.user.UserService;
 
-/** register 가 child 와 child_organization 을 실제로 저장해 O-10 명부에 나타나는지 DB 로 확인한다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({ChildService.class, ConsentStateReader.class})
@@ -97,7 +96,6 @@ class ChildServiceJpaTest {
         assertThat(childRepository.findByOrganizationId(other.getId())).isEmpty();
     }
 
-    /** 관리번호만 다르게 넣어도 같은 기관에 이름·생일이 같은 아이가 있으면 409 다 (멘토님 리뷰 #256). */
     @Test
     void 같은_기관에_같은_이름과_생일로_다시_등록하면_409다() {
         childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-1"));
@@ -110,7 +108,6 @@ class ChildServiceJpaTest {
         assertThat(childRepository.findByOrganizationId(ours.getId())).hasSize(1);
     }
 
-    /** 다른 기관이 같은 아이를 등록해도 기존 아동을 찾지 않고 새 아동을 만든다. */
     @Test
     void 다른_기관이_같은_아이를_등록하면_별도_아동이_된다() {
         RegisteredChildResponse first = childService.register(OUR_USER, new RegisterChildRequest("김하늘", "2017-03-14", "A-1"));
@@ -159,7 +156,6 @@ class ChildServiceJpaTest {
         assertThat(second.child().id()).isNotEqualTo(first.child().id());
     }
 
-    /** 관리번호가 필수가 되기 전에 등록된 아이는 번호가 없다. 그런 아이도 명부에 null 로 나온다. */
     @Test
     void 명부_조회에_관리번호가_함께_나온다() {
         childService.register(OUR_USER, withExternalId("2026-0031"));

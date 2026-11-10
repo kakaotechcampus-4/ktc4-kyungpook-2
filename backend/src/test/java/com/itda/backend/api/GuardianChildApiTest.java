@@ -44,10 +44,6 @@ import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 보호자 아이 목록(G-10)·홈(G-11)·대기 중 기관 권한 요청(G-40) — 보안 필터·요청 검증·응답 모양까지 실제로 거친다.
- * 아이는 기관이 O-11 로 등록하고, 보호자가 그때 받은 코드로 G-04 연결을 마친 상태에서 시작한다(동의 전).
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -134,14 +130,10 @@ class GuardianChildApiTest {
                 .andExpect(status().isOk());
     }
 
-    // --- 정상 흐름 ---
-
-    /** 연결만 하고 동의하기 전에도 목록에 나온다. 그래야 설정 화면에서 동의를 켜거나 연결을 끊을 수 있다. */
     @Test
     void 동의_전_아이도_목록에_나온다() throws Exception {
         mockMvc.perform(get(MY_CHILDREN).cookie(auth(parent)))
                 .andExpect(status().isOk())
-                // 이 목록을 가져온 계정 — 설정 화면이 탈퇴 대상을 이 목록과 같은 계정으로 정한다
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                         .string("X-Itda-User-Id", String.valueOf(parent.getId())))
                 .andExpect(jsonPath("$.data.length()").value(1))
@@ -154,14 +146,11 @@ class GuardianChildApiTest {
                 .andExpect(jsonPath("$.data[0].institutions[0].institution.type").value("center"))
                 .andExpect(jsonPath("$.data[0].institutions[0].institution.verified").value(false))
                 .andExpect(jsonPath("$.data[0].institutions[0].consent").value("not_granted"))
-                // 저장하는 곳이 없어 키째 뺀다. doesNotExist() 는 "school": null 이어도 통과해서 쓰지 않는다.
                 .andExpect(jsonPath("$.data[0].school").doesNotHaveJsonPath())
-                // 돌봄 정보는 늘 싣는다. 저장한 적이 없으면 빈 배열 둘이다 (null 은 프론트 타입이 허용하지 않는다)
                 .andExpect(jsonPath("$.data[0].care.allergies").isArray())
                 .andExpect(jsonPath("$.data[0].care.allergies").isEmpty())
                 .andExpect(jsonPath("$.data[0].care.medications").isArray())
                 .andExpect(jsonPath("$.data[0].care.medications").isEmpty())
-                // 받은 리포트가 없으면 안 읽음 표시는 false 로 온다 — 키가 빠지면 입구 점이 꺼진 채로 보인다 (#457)
                 .andExpect(jsonPath("$.data[0].hasUnreadInsight").value(false));
     }
 
@@ -190,7 +179,6 @@ class GuardianChildApiTest {
                 .andExpect(jsonPath("$.data.activity").isEmpty());
     }
 
-    /** 받은 인사이트가 홈 최근 공유 활동에 한 줄로 실린다 (#289). 묶음·순서 규칙은 서비스 테스트가 본다. */
     @Test
     void 홈의_최근_공유_활동에_받은_인사이트가_실린다() throws Exception {
         Long child = Long.valueOf(childId);
@@ -223,9 +211,6 @@ class GuardianChildApiTest {
                 .andExpect(jsonPath("$.data").isEmpty());
     }
 
-    // --- 대기 중 기관 권한 요청 (G-40) ---
-
-    /** 연결만 하고 동의 전이면 그 기관이 대기 중 요청이다. 동의하면 목록에서 빠진다. */
     @Test
     void 동의_전_기관은_대기_중_요청이고_동의하면_빠진다() throws Exception {
         mockMvc.perform(get(pendingPath()).cookie(auth(parent)))
@@ -262,9 +247,6 @@ class GuardianChildApiTest {
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
-    // --- 요청 검증 ---
-
-    /** 어느 아이를 볼지는 화면이 정한다. 서버가 "첫 번째 아이"를 고르지 않는다. */
     @Test
     void 홈은_childId_가_없으면_400() throws Exception {
         mockMvc.perform(get(HOME).cookie(auth(parent)))
@@ -278,8 +260,6 @@ class GuardianChildApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
-
-    // --- 인증·권한 ---
 
     @Test
     void 로그인하지_않으면_401() throws Exception {

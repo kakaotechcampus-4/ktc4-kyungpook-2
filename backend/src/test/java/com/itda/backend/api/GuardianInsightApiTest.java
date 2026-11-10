@@ -43,10 +43,6 @@ import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 보호자 받은 인사이트 목록·단건 — 보안 필터와 응답 모양까지 실제로 거친다. 인사이트·승인 기록·권한 행은 저장소로 바로
- * 만든다. Gate 2 를 지나는 과정은 이 테스트의 관심이 아니다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -107,7 +103,6 @@ class GuardianInsightApiTest {
                 .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
                 .andExpect(jsonPath("$.data[0].approvedAt").value("2026-10-27T15:30:00"))
                 .andExpect(jsonPath("$.data[0].readAt").value(nullValue()))
-                // 근거 번호가 없는 글도 근거 칸은 빈 배열로 온다 — 화면이 null 을 따로 보지 않게
                 .andExpect(jsonPath("$.data[0].evidence").isArray())
                 .andExpect(jsonPath("$.data[0].evidence.length()").value(0));
     }
@@ -120,8 +115,6 @@ class GuardianInsightApiTest {
                 .andExpect(jsonPath("$.data.readAt").isNotEmpty());
     }
 
-    // --- 아이 하나로 좁히기 (#457) ---
-
     @Test
     void 연결된_아이를_고르면_그_아이_것만_온다() throws Exception {
         childGuardianRepository.save(ChildGuardian.link(childId, parent.getId(), 1L));
@@ -132,7 +125,6 @@ class GuardianInsightApiTest {
                 .andExpect(jsonPath("$.data[0].childId").value(String.valueOf(childId)));
     }
 
-    /** 홈 · 일지와 같다. 연결되지 않은 아이는 리포트가 있는지조차 알려주지 않는다. */
     @Test
     void 연결되지_않은_아이를_고르면_403() throws Exception {
         mockMvc.perform(get(INSIGHTS + "?childId=" + childId).cookie(auth(parent)))

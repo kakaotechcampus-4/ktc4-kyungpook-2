@@ -8,18 +8,11 @@ import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import { useChildContext } from "@/components/parent/ChildContext";
 import type { Institution } from "@/lib/types";
 
-/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function InstitutionAddPageRoute() {
   if (!isReady("institutionCode")) return <ParentNotReadyPage title="기관 직접 추가" back />;
   return <InstitutionAddPage />;
 }
 
-/**
- * "기관 직접 추가" — 보호자가 기관 코드로 아이를 다른 기관에 연결해 달라고 요청한다.
- *
- * 바로 연결되지 않는다. 기관이 수락하면 아이가 그 기관 명부에 오르고, 그때 "새 기관 권한 요청"
- * 알림으로 떠서 동의 화면에서 공유에 동의한다. 그래서 여기서는 공유를 묻지 않는다.
- */
 function InstitutionAddPage() {
   const { selected } = useChildContext();
   const [code, setCode] = useState("");
@@ -50,7 +43,6 @@ function InstitutionAddPage() {
       try {
         await addInstitutionByCode(selected.id, code);
         setRequested(true);
-        // 설정 화면의 "수락 대기 중"이 바로 보이도록 아이 정보를 다시 읽는다
         revalidator.revalidate();
       } catch (err) {
         setError(messageOf(err));
@@ -92,7 +84,6 @@ function InstitutionAddPage() {
           <p>
             {selected.name}을(를) 이 기관에 연결해 달라고 요청합니다. 기관이 수락하면 알림으로 알려 드려요.
           </p>
-          {/* 요청은 수락 전부터 기관의 연결 요청 목록에 보인다 — "아무 정보도 공유되지 않는다"고 하지 않는다 */}
           <p className="mt-2">
             연결 요청을 위해 아이 이름·생년월일과 보호자 이름이 기관에 전달돼요.{" "}
             <b className="font-semibold text-ink">기록과 리포트 공유는 기관 수락 후 동의 화면에서 정해요.</b>

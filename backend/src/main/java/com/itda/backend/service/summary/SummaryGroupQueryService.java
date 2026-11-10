@@ -32,18 +32,6 @@ import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * 오늘의 업무 묶음 카드 (O-34). 요약 전 묶음(아동 × 날짜)마다 일지가 어디까지 왔는지와 교사가 할 일을 보여준다.
- *
- * <p>요약이 만들어지면 묶음은 1차 검토(O-30)로 옮겨 가고 카드는 없어진다. 그래서 남은 카드가 곧 밀린 일이라 날짜로
- * 자르지 않고 전부 준다. 아동이 아직 정해지지 않은 일지는 어느 카드인지 몰라 건수만 따로 준다. 기관에서 뺀 아이와
- * 우리 기관 동의를 철회한 아이는 [요약](O-32)이 거절하므로 카드를 띄우지 않는다.
- *
- * <p>라벨은 가장 덜 진행된 일지가 아니라 교사가 할 일을 먼저 보여준다 — 수정 요청, 요약 대기 순이다. 할 일이 없으면
- * 진행 중인 단계를 보여준다. 다른 상태의 일지가 섞여 있어도 요약 대기 일지가 있으면 [요약]을 누를 수 있다.
- *
- * <p>묶음·상태별 건수를 한 번에 세고 코드에서 맞춘다 — 카드 수와 상관없이 SQL 수가 같다.
- */
 @Service
 @RequiredArgsConstructor
 public class SummaryGroupQueryService {
@@ -54,10 +42,6 @@ public class SummaryGroupQueryService {
     private static final String VALIDATING = "validating";
     private static final String ADMIN_CHECK = "admin_check";
 
-    /**
-     * 카드를 만드는 상태 — 아동·날짜가 정해졌고 아직 요약 전이다. 요약 실패({@code SUMMARY_FAILED})는 1차 검토로
-     * 보내기로 해서 넣지 않는다. 수정 요청에서 끝낸 일지와 끝난 일지도 넣지 않는다.
-     */
     private static final Set<JournalEntryStatus> CARD = Set.of(JournalEntryStatus.MATCHED,
             JournalEntryStatus.VALIDATING, JournalEntryStatus.VALIDATION_BLOCKED, JournalEntryStatus.VALIDATED,
             JournalEntryStatus.SUMMARIZING, JournalEntryStatus.SYSTEM_ERROR);
@@ -65,7 +49,6 @@ public class SummaryGroupQueryService {
     private static final Set<JournalEntryStatus> MATCHING_IN_PROGRESS =
             Set.of(JournalEntryStatus.PENDING, JournalEntryStatus.MATCHING);
 
-    /** 확인 필요 큐에서 아이를 골라야 하는 일지 ({@code JournalEntry#isAwaitingReview}). */
     private static final Set<JournalEntryStatus> AWAITING_MATCH_REVIEW =
             Set.of(JournalEntryStatus.MATCH_REVIEW, JournalEntryStatus.FAILED);
 
@@ -79,7 +62,6 @@ public class SummaryGroupQueryService {
     private final SummaryRunRequests runRequests;
     private final ConsentStateReader consentStateReader;
 
-    /** 요청 교사 기관의 요약 전 묶음 카드를 오래된 날짜부터. */
     @Transactional(readOnly = true)
     public SummaryGroupBoardResponse getBoard(String userId) {
         Long organizationId = userService.getOrganizationIdOf(userId);
@@ -104,8 +86,6 @@ public class SummaryGroupQueryService {
                 .filter(link -> link.getOrganizationId().equals(organizationId))
                 .map(ChildOrganization::getChildId)
                 .collect(Collectors.toSet());
-        // 철회 전에 매칭된 일지가 남아 있어도, 우리 기관 동의가 꺼진 아이는 [요약]이 거절하므로 카드를 띄우지 않는다 (#332).
-        // 명부로 먼저 좁혀 동의 행을 덜 읽는다.
         Set<Long> members = consentStateReader.grantedChildIds(onRoster, organizationId);
         groups.keySet().removeIf(group -> !members.contains(group.childId()));
         if (groups.isEmpty()) {
@@ -118,7 +98,6 @@ public class SummaryGroupQueryService {
                 .collect(Collectors.toSet());
         Set<GroupKey> inReview = new HashSet<>(journalEntryRepository
                 .findGroupKeys(Set.of(JournalEntryStatus.GATE1_PENDING), institutionId, dates));
-        // 요약은 같은 기관·날짜에 매칭·검증 중인 일지가 있으면 기다린다 (SummaryService.isReady). 그 건수다.
         Map<LocalDate, Long> busyByDate = journalEntryRepository
                 .countByDate(SummaryService.IN_PROGRESS, institutionId, dates).stream()
                 .collect(Collectors.toMap(DateCount::entryDate, DateCount::count));
@@ -141,8 +120,6 @@ public class SummaryGroupQueryService {
                 count(byStatus, JournalEntryStatus.VALIDATED),
                 count(byStatus, JournalEntryStatus.SUMMARIZING),
                 count(byStatus, JournalEntryStatus.SYSTEM_ERROR));
-        // 눌렀거나 요약 중이면 [요약]을 막는다. 시작 전에 들어온 요약 대기 일지는 워커가 함께 집어 가고, 요약 중에 들어온
-        // 일지는 요약이 끝나 1차 검토로 간 뒤 이 카드에 요약 대기로 남아 그때 따로 누른다.
         boolean summaryUnderway = requested || counts.summarizing() > 0;
         boolean willSummarize = requested && counts.summarizing() == 0
                 && counts.ready() + counts.validating() > 0;
@@ -159,7 +136,6 @@ public class SummaryGroupQueryService {
                 inReview);
     }
 
-    /** 할 일 우선. 눌러 뒀거나 요약 중인 묶음은 요약 중으로 본다 — 교사가 할 일은 끝났다. */
     private static String label(Counts c, boolean summaryUnderway, boolean willSummarize) {
         if (c.needsFix() > 0) {
             return NEEDS_FIX;

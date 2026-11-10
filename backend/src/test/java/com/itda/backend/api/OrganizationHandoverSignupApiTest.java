@@ -47,10 +47,6 @@ import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.user.KakaoUnlinkClient;
 import com.itda.backend.service.user.KakaoUnlinkResult;
 
-/**
- * 인계 코드로 가입하면 같은 기관의 담당자가 되고, 코드를 발급한 담당자는 탈퇴로 정리된다 (#478).
- * 탈퇴 실행기는 실제로 돌리고 카카오 호출만 가짜로 둔다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -74,7 +70,6 @@ class OrganizationHandoverSignupApiTest {
     void setUp() {
         given(kakaoUnlinkClient.unlink(anyLong())).willReturn(KakaoUnlinkResult.UNLINKED);
         organization = organizationRepository.save(OrganizationFixture.center());
-        // 카카오 회원번호는 숫자다 — 실행기가 숫자로 바꿔 연결 해제를 부른다
         staff = TermsFixture.agreeAll(termsAgreementRepository,
                 userRepository.save(UserFixture.organizationUser(kakaoId(), organization.getId())));
     }
@@ -110,7 +105,6 @@ class OrganizationHandoverSignupApiTest {
         return userRepository.save(User.pending(kakaoId()));
     }
 
-    /** 탈퇴 실행기는 다른 스레드다. 조건이 맞을 때까지 잠깐 기다린다. */
     private User awaitUser(long id, Predicate<User> condition) throws InterruptedException {
         for (int i = 0; i < 50; i++) {
             User user = userRepository.findById(id).orElseThrow();
@@ -127,7 +121,6 @@ class OrganizationHandoverSignupApiTest {
         String code = issueCode();
         User successor = pending();
 
-        // 화면은 XXXX-XXXX 로 보여 주고 사람이 소문자로 칠 수도 있다
         String typed = (code.substring(0, 4) + "-" + code.substring(4)).toLowerCase();
         signup(successor, handoverBody(typed))
                 .andExpect(status().isCreated())
@@ -148,10 +141,8 @@ class OrganizationHandoverSignupApiTest {
         User former = awaitUser(staff.getId(), User::isDeleted);
         verify(kakaoUnlinkClient).unlink(Long.parseLong(formerKakaoId));
         assertThat(former.getKakaoId()).startsWith("withdrawn:");
-        // 기관은 그대로다 — 새 기관이 생기지 않는다
         assertThat(organizationRepository.findById(organization.getId())).isPresent();
 
-        // 이전 담당자의 출입증은 더 이상 쓰지 못한다
         mockMvc.perform(get("/api/v1/auth/me")
                         .cookie(new Cookie(JwtCookie.NAME, jwtProvider.createToken(String.valueOf(staff.getId())))))
                 .andExpect(status().isUnauthorized())
@@ -224,10 +215,6 @@ class OrganizationHandoverSignupApiTest {
                 .isEqualTo(OrganizationHandoverStatus.PENDING);
     }
 
-    /**
-     * 카카오 첫 호출이 분명히 실패해도 인계 탈퇴는 취소하지 않는다. 취소하면 이전 담당자가 되살아나 한 기관에 계정이 둘이 된다.
-     * 보호자 탈퇴처럼 접수를 되돌리지 않고 간격을 늘려 다시 시도한다.
-     */
     @Test
     void 카카오_첫_호출이_실패해도_이전_담당자_탈퇴는_취소하지_않고_다시_시도한다() throws Exception {
         given(kakaoUnlinkClient.unlink(anyLong())).willReturn(KakaoUnlinkResult.FAILED);

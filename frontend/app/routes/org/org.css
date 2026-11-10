@@ -1,11 +1,3 @@
-/* 선생님 화면 전용 — 디자인 캔버스(교사 화면 12장)의 서체와 바탕을 그대로 옮긴다.
-   ─────────────────────────────────────────────────────────────
-   **보호자 화면에는 넣지 않는다.** app.css 주석에 적힌 이유 그대로다 —
-   보호자는 SMS 링크로 모바일에서 들어와 첫 페인트가 동의 완료율을 좌우한다.
-   선생님은 기관 PC 에서 하루 종일 쓰므로 638KB(400·600·700·800 네 벌)를 감수한다.
-
-   라우트 단위 CSS 라 /dashboard 같은 org 경로에서만 내려받는다. */
-
 @font-face {
   font-family: "Paperlogy";
   src: url("/font/paperlogy-400.woff2") format("woff2");
@@ -35,13 +27,10 @@
   font-family:
     "Paperlogy", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
     "Noto Sans KR", system-ui, sans-serif;
-  /* 숫자가 세로로 늘어서는 곳(배지 카운트·날짜)이 많아 고정폭 숫자로 둔다 */
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
 
-/* 캔버스의 따뜻한 종이 바탕 — 오른쪽 위에 옅은 노랑, 왼쪽 아래에 옅은 초록.
-   fixed 라 스크롤해도 번짐이 따라오지 않는다. */
 .org-ui {
   background:
     radial-gradient(1200px 620px at 100% 0%, #fff0b4 0%, rgb(255 240 180 / 0) 62%),
@@ -50,9 +39,6 @@
   background-attachment: fixed;
 }
 
-/* 조작 요소는 알약 모양 — 캔버스의 버튼이 전부 그렇다.
-   `rounded`(=14px)를 쓰는 button, 그리고 클릭 타깃(`tap`)인 링크만 골라 바꾼다.
-   카드·입력칸·배지는 14px 를 그대로 둔다. */
 .org-ui button[class~="rounded"],
 .org-ui :is(a, label)[class~="rounded"][class~="tap"] {
   border-radius: 999px;

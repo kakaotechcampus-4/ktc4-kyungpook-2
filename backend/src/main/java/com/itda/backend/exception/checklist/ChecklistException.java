@@ -1,15 +1,10 @@
 package com.itda.backend.exception.checklist;
 
-public class ChecklistException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
 
-    private final ChecklistErrorCode errorCode;
+public class ChecklistException extends BusinessException {
 
     public ChecklistException(ChecklistErrorCode errorCode) {
-        super(errorCode.getMessage());
-        this.errorCode = errorCode;
-    }
-
-    public ChecklistErrorCode getErrorCode() {
-        return errorCode;
+        super(errorCode);
     }
 }

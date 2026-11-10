@@ -34,9 +34,6 @@ import com.itda.backend.service.user.WithdrawalService;
 import com.itda.backend.service.user.WithdrawalSteps;
 import com.itda.backend.service.user.UserService;
 
-// addFilters(false) 라 필터 체인이 돌지 않는다 — JwtAuthenticationFilter 가 하는 일
-// (SecurityContext principal 에 내부 userId(String) 를 심는 것)을 authenticateAs(...) 로
-// 직접 재현한다. 인증 실패(401) 경로는 필터가 있어야 하므로 AuthMeSecurityTest 가 맡는다.
 @WebMvcTest(AuthController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class AuthControllerTest {
@@ -81,7 +78,6 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.role").value("org"))
                 .andExpect(jsonPath("$.data.userId").value("1"))
-                // 카카오 닉네임을 저장하지 않으므로 이름은 내려가지 않는다
                 .andExpect(jsonPath("$.data.name").doesNotExist())
                 .andExpect(jsonPath("$.data.institutionId").value("1"))
                 .andExpect(jsonPath("$.data.institutionName").value("햇살아동발달센터"))
@@ -89,7 +85,6 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.withdrawalEnabled").value(true));
     }
 
-    /** 가입 미완료 — signupCompleted 는 false 로 반드시 나가고, role 은 빠진다. */
     @Test
     void meReportsSignupNotCompletedWithoutRole() throws Exception {
         authenticateAs("3");
@@ -103,7 +98,6 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.institutionId").doesNotExist());
     }
 
-    /** institutionId · institutionName 은 role 이 org 일 때만 내려간다 — null 로도 실어 보내지 않는다. */
     @Test
     void meOmitsInstitutionIdForParent() throws Exception {
         authenticateAs("2");
@@ -115,11 +109,9 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.role").value("parent"))
                 .andExpect(jsonPath("$.data.institutionId").doesNotExist())
                 .andExpect(jsonPath("$.data.institutionName").doesNotExist())
-                // 원시 boolean 이라 false 여도 빠지지 않는다
                 .andExpect(jsonPath("$.data.termsAgreed").value(false));
     }
 
-    /** 204 에는 ApiResponse 래퍼를 쓰지 않는다 (AGENTS.md, api-conventions.md). */
     @Test
     void logoutReturnsNoContentWithoutBody() throws Exception {
         given(jwtCookie.expire()).willReturn(
@@ -130,10 +122,6 @@ class AuthControllerTest {
                 .andExpect(content().string(""));
     }
 
-    /**
-     * 탈퇴를 마쳤으면 본문 없는 204. 쿠키는 지우지 않는다 — 기다리는 사이 다른 탭에서 로그인했으면 늦게 온 이 응답이 그 사람의
-     * 새 쿠키를 지운다. 로그아웃으로 기록하지도 않는다 — 204 를 놓친 화면이 같은 쿠키로 탈퇴 완료(401 ACCOUNT_WITHDRAWN)를 봐야 한다.
-     */
     @Test
     void withdrawCompletedReturnsNoContentWithoutTouchingCookies() throws Exception {
         authenticateAs("2");
@@ -146,7 +134,6 @@ class AuthControllerTest {
         verify(revokedSessionService, never()).revoke(any(), any());
     }
 
-    /** 아직 처리 중이면 202 와 withdrawal = in_progress. 쿠키는 지우지 않는다. */
     @Test
     void withdrawInProgressReturnsAccepted() throws Exception {
         authenticateAs("2");
@@ -158,7 +145,6 @@ class AuthControllerTest {
                 .andExpect(header().doesNotExist("Set-Cookie"));
     }
 
-    /** 확인 화면의 계정(userId)이 없으면 400 이다 — 어느 계정을 지울지 확인하지 않은 요청이다. */
     @Test
     void withdrawWithoutShownAccountIsBadRequest() throws Exception {
         authenticateAs("2");
@@ -167,7 +153,6 @@ class AuthControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
-    /** 첫 카카오 호출이 분명히 실패해 접수가 취소됐으면 502 KAKAO_UNLINK_FAILED. */
     @Test
     void withdrawCanceledReturnsBadGateway() throws Exception {
         authenticateAs("2");

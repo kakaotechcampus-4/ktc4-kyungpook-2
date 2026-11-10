@@ -37,7 +37,6 @@ class OrganizationHandoverTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    /** 만료 시각과 같은 순간은 이미 만료다. */
     @Test
     void 만료_전에만_쓸_수_있다() {
         OrganizationHandover handover = pending();
@@ -71,7 +70,6 @@ class OrganizationHandoverTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
-    /** 발급한 담당자가 자기 코드로 다시 가입할 수는 없다 — 넘길 사람이 없다. */
     @Test
     void 발급한_담당자는_자기_코드를_받을_수_없다() {
         OrganizationHandover handover = pending();

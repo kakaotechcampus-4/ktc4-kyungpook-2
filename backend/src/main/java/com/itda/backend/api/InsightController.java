@@ -15,8 +15,6 @@ import com.itda.backend.dto.request.insight.Gate2DecisionRequest;
 import com.itda.backend.dto.response.insight.Gate2DecisionResponse;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse;
 import com.itda.backend.dto.response.insight.InsightProgressResponse;
-import com.itda.backend.global.config.OpenApiConfig;
-import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.insight.InsightGate2QueryService;
 import com.itda.backend.service.insight.InsightGate2Service;
@@ -24,14 +22,11 @@ import com.itda.backend.service.insight.InsightProgressService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
-// principal 은 다른 기관 API 와 같은 내부 userId 다. 기관은 서비스가 UserService 로 푼다.
 @RestController
 @RequestMapping("/api/v1/insights")
 @RequiredArgsConstructor
@@ -51,23 +46,15 @@ public class InsightController {
                     + "다른 아이 이름이 없다는 보장이 없고 교사가 검증 없이 쓴 문장이 근거로 섞일 수 있습니다. "
                     + "targets 는 읽기 전용 참고이고, 수신 기관은 승인 뒤 보호자가 정합니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "지원하지 않는 gate2Status (INSIGHT_INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "지원하지 않는 gate2Status (INSIGHT_INVALID_REQUEST)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)"
             )
     })
     public ApiResponse<List<Gate2InsightResponse>> list(
@@ -84,18 +71,11 @@ public class InsightController {
                     + "돌려줍니다. 최근 주부터, 같은 주는 아이 이름 순입니다. 지금 우리 명부에 있고 공유 동의가 켜진 "
                     + "아이만 나옵니다. message 는 화면에 그대로 쓰는 문장입니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)"
             )
     })
     public ApiResponse<List<InsightProgressResponse>> progress(@AuthenticationPrincipal String userId) {
@@ -108,24 +88,16 @@ public class InsightController {
             description = "목록의 원소 하나와 같은 모양입니다. 인가 규칙도 같습니다 — 근거를 내지 않은 기관에는 "
                     + "404 로 응답해 존재 여부를 알려주지 않습니다. 옛 회차도 ID 로 직접 물으면 보이지만 승인은 막힙니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED), "
-                            + "근거는 냈지만 승인 주체가 아님 (INSIGHT_NOT_PRIMARY_SOURCE)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "근거는 냈지만 승인 주체가 아님 (INSIGHT_NOT_PRIMARY_SOURCE)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 인사이트이거나 근거를 내지 않은 기관 (INSIGHT_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "없는 인사이트이거나 근거를 내지 않은 기관 (INSIGHT_NOT_FOUND)"
             )
     })
     public ApiResponse<Gate2InsightResponse> get(
@@ -142,35 +114,25 @@ public class InsightController {
                     + "보호자가 한 명도 연결돼 있지 않으면 승인은 되지만 아무에게도 보이지 않습니다(오류 아님). "
                     + "승인·보류 모두 되돌릴 수 없고, Gate 1 과 달리 보류 해제가 없습니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "결정 반영"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "decision 누락·허용되지 않은 값 (INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "decision 누락·허용되지 않은 값 (INVALID_REQUEST)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED), "
-                            + "근거는 냈지만 승인 주체가 아님 (INSIGHT_NOT_PRIMARY_SOURCE), CSRF 토큰 누락 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "근거는 냈지만 승인 주체가 아님 (INSIGHT_NOT_PRIMARY_SOURCE), CSRF 토큰 누락 (FORBIDDEN)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없는 인사이트이거나 근거를 내지 않은 기관 (INSIGHT_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "없는 인사이트이거나 근거를 내지 않은 기관 (INSIGHT_NOT_FOUND)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
                     description = "이미 승인·보류됨 (INSIGHT_ALREADY_REVIEWED), "
-                            + "같은 기간의 새 회차가 만들어짐 (INSIGHT_SUPERSEDED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "같은 기간의 새 회차가 만들어짐 (INSIGHT_SUPERSEDED)"
             )
     })
     public ApiResponse<Gate2DecisionResponse> decide(

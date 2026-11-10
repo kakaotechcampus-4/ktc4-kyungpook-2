@@ -1,15 +1,10 @@
 package com.itda.backend.exception.child;
 
-public class InstitutionLinkException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
 
-    private final InstitutionLinkErrorCode errorCode;
+public class InstitutionLinkException extends BusinessException {
 
     public InstitutionLinkException(InstitutionLinkErrorCode errorCode) {
-        super(errorCode.getMessage());
-        this.errorCode = errorCode;
-    }
-
-    public InstitutionLinkErrorCode getErrorCode() {
-        return errorCode;
+        super(errorCode);
     }
 }

@@ -31,13 +31,11 @@ import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.service.user.UserService;
 import com.itda.backend.service.agent.AgentQueueGuard;
 
-/** resolve 가 matching_result 와 journal_entry 를 한 트랜잭션에서 실제로 저장하는지 DB 로 확인한다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(MatchingResultService.class)
 class MatchingResultServiceJpaTest {
 
-    /** AI 처리 줄 상한은 AgentQueueGuardTest 가 본다. 여기서는 늘 자리가 있다. */
     @MockitoBean
     private AgentQueueGuard agentQueueGuard;
 
@@ -70,7 +68,6 @@ class MatchingResultServiceJpaTest {
         entry = em.persist(pending);
         matchingResult = em.persist(new MatchingResult(entry.getId(), null, new BigDecimal("0.4"),
                 MatchingStatus.REVIEW, null, null, null, null, null, null, null));
-        // 매칭 확정은 이 기관에 대한 동의가 있는 아이만 받는다.
         child.activate();
         em.persist(SharingConsent.grant(child.getId(), 100L, ours.getId(), List.of(ConsentField.DAILY_SUMMARY)));
         em.flush();
@@ -102,7 +99,6 @@ class MatchingResultServiceJpaTest {
         assertThat(matchingResultService.getQueue(USER_ID)).isEmpty();
     }
 
-    /** 후보 child_id 는 AI 가 쓴 값이다. 우리 명부 밖 아이(다른 기관, 연결 해제)는 이름·생년월일이 나가면 안 된다. */
     @Test
     void 후보에는_우리_기관_명부의_아이만_나온다() {
         Organization other = em.persist(Organization.of("○○초등학교", OrganizationType.SCHOOL, "1234567891"));
@@ -127,7 +123,6 @@ class MatchingResultServiceJpaTest {
         });
     }
 
-    /** 후보가 모두 명부 밖이면 빈 목록이다. 명부 조회가 빈 IN 으로 가도 깨지지 않아야 한다. */
     @Test
     void 후보가_모두_명부_밖이면_빈_목록이다() {
         Organization other = em.persist(Organization.of("○○초등학교", OrganizationType.SCHOOL, "1234567891"));

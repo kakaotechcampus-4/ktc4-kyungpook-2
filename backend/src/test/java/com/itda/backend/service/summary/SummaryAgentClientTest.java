@@ -58,7 +58,6 @@ class SummaryAgentClientTest {
 
     @BeforeEach
     void setUp() {
-        // 재시도·상태 확인은 AiAgentClientTest 가 본다. 여기서는 요약 계약(요청·응답 모양)만 본다.
         client = clientWithRetries(List.of());
     }
 

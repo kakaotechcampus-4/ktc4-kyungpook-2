@@ -21,13 +21,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * 대시보드 진행 현황의 5단계(분석 승인) 판정 (#370). 분석이 끝난 아이×주마다 마지막 회차 인사이트 중 우리 기록이 쓰인
- * 것을 보고, 누가 승인할 차례인지 정한다. 승인 주체는 Gate 2 와 같은 {@link PrimarySource} 다.
- *
- * <p>우선순위: 여기서 승인할 대기 글 &gt; 여기서 보류한 글 &gt; 다른 기관이 승인할 글 &gt; 모두 승인됨. 선생님이 할 일을
- * 먼저 보여준다. 쿼리 수는 주 수와 상관없이 같다(인사이트 한 번, 기관 한 번).
- */
 @Service
 @RequiredArgsConstructor
 public class InsightWeekStageReader {
@@ -35,14 +28,12 @@ public class InsightWeekStageReader {
     private final InsightResultRepository insightResultRepository;
     private final OrganizationRepository organizationRepository;
 
-    /** 우리 기록이 쓰인 인사이트가 있는 주만 답한다. 없는 주는 맵에 없다. */
     @Transactional(readOnly = true)
     public Map<Week, WeekStage> stagesOf(Long organizationId, Collection<Week> weeks) {
         if (weeks.isEmpty()) {
             return Map.of();
         }
         Set<Week> wanted = new HashSet<>(weeks);
-        // 아이 · 시작일 · 종료일을 따로 걸러 후보를 좁히고, 정확한 (아이, 주)는 여기서 거른다 — 요청하지 않은 조합도 후보에 든다
         Map<Week, List<InsightKey>> byWeek = insightResultRepository.findLatestKeysForPeriods(
                         weeks.stream().map(Week::childId).collect(Collectors.toSet()),
                         weeks.stream().map(Week::from).collect(Collectors.toSet()),
@@ -72,7 +63,6 @@ public class InsightWeekStageReader {
             Map<Long, Organization> organizations) {
         WeekStage held = null;
         WeekStage elsewhere = null;
-        // 오래된 글부터 — 목록이 id 내림차순이라 뒤집어 본다. 바로가기가 먼저 만든 글을 연다.
         for (InsightKey insight : insights.reversed()) {
             if (insight.status() == InsightStatus.APPROVED) {
                 continue;
@@ -95,7 +85,6 @@ public class InsightWeekStageReader {
         return elsewhere != null ? elsewhere : new WeekStage(Stage.APPROVED, null, null);
     }
 
-    /** 아이×주. */
     public record Week(Long childId, LocalDate from, LocalDate to) {
 
         static Week of(InsightKey insight) {
@@ -107,10 +96,6 @@ public class InsightWeekStageReader {
         REVIEW_HERE, INSIGHT_HELD, REVIEW_ELSEWHERE, APPROVED
     }
 
-    /**
-     * @param insightId    바로가기로 열 인사이트 — 여기서 처리할 글일 때만
-     * @param approverName 승인할 다른 기관 이름 — 다른 기관 차례일 때만
-     */
     public record WeekStage(Stage stage, Long insightId, String approverName) {
     }
 }

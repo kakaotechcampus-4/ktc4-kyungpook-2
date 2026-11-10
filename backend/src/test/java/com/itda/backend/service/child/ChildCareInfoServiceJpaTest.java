@@ -28,13 +28,9 @@ import com.itda.backend.exception.child.ChildErrorCode;
 import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 돌봄 정보 저장이 실제 DB 행에 무엇을 남기는지 본다. 엄마·아빠 모두 하늘이와 연결돼 있다. 바다는 엄마와만 연결돼 있다.
- * 저장한 뒤에는 영속성 컨텍스트를 비우고 다시 읽어 JSON 칸에 실제로 들어간 값을 본다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import(ChildCareInfoService.class)
+@Import({ChildCareInfoService.class, GuardianChildGuard.class})
 class ChildCareInfoServiceJpaTest {
 
     private static final String MOM_PRINCIPAL = "41";
@@ -82,7 +78,6 @@ class ChildCareInfoServiceJpaTest {
         assertThat(rowCount()).isEqualTo(1);
     }
 
-    /** 아이마다 한 행이다. 아빠가 다시 저장하면 엄마가 저장한 행을 덮어쓰고, 마지막에 고친 사람이 바뀐다. */
     @Test
     void 다시_저장하면_같은_행을_덮어쓴다() {
         service.save(MOM_PRINCIPAL, sky, request(List.of("땅콩"), new MedicationRequest("○○정", "점심 식후")));
@@ -99,7 +94,6 @@ class ChildCareInfoServiceJpaTest {
         assertThat(rowCount()).isEqualTo(1);
     }
 
-    /** 지우기도 덮어쓰기다. 빈 배열로 덮어쓰면 다시 읽어도 비어 있다. */
     @Test
     void 두_목록을_모두_비워_저장할_수_있다() {
         service.save(MOM_PRINCIPAL, sky, request(List.of("땅콩"), new MedicationRequest("○○정", "점심 식후")));
@@ -123,8 +117,6 @@ class ChildCareInfoServiceJpaTest {
         assertThat(storedOf(sky).getAllergies()).containsExactly("땅콩");
         assertThat(storedOf(sea).getAllergies()).containsExactly("계란");
     }
-
-    // --- 권한 ---
 
     @Test
     void 연결되지_않은_아이는_403이고_행이_생기지_않는다() {
@@ -163,8 +155,6 @@ class ChildCareInfoServiceJpaTest {
     void 없는_아이는_403() {
         assertForbidden(() -> service.save(MOM_PRINCIPAL, 999_999L, request(List.of("땅콩"))));
     }
-
-    // --- 도구 ---
 
     private static UpdateCareInfoRequest request(List<String> allergies, MedicationRequest... medications) {
         return new UpdateCareInfoRequest(allergies, List.of(medications));

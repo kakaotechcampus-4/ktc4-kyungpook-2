@@ -1,15 +1,10 @@
 package com.itda.backend.exception.user;
 
-public class UserException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
 
-    private final UserErrorCode errorCode;
+public class UserException extends BusinessException {
 
     public UserException(UserErrorCode errorCode) {
-        super(errorCode.getMessage());
-        this.errorCode = errorCode;
-    }
-
-    public UserErrorCode getErrorCode() {
-        return errorCode;
+        super(errorCode);
     }
 }

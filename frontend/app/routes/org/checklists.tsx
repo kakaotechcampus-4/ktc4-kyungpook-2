@@ -23,27 +23,15 @@ export async function clientLoader() {
   return { page, roster };
 }
 
-/**
- * I-15 준비물·확인사항 — 기관이 명부의 아이들에게 준비물 · 확인사항을 보내고, 누가 확인했는지 본다 (api-spec O-70 ~ O-72).
- *
- * 받는 아이는 보낸 순간의 명부로 정해지고, 공유 동의와는 상관없다. 보낸 뒤에는 고칠 수 없어 보내기 전에 한 번 더 묻는다.
- * 보호자 중 한 명이 확인하면 그 아이 몫은 끝난다.
- */
 export default function ChecklistsPage() {
   const { page, roster } = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
-  /*
-   * 이어 본 쪽은 **그 쪽을 이어 붙인 첫 쪽**에 묶는다. 보내기 · 내리기로 loader 가 첫 쪽을 새로 받으면 그 사이 순서가 밀려,
-   * 옛 이어 보기를 붙이면 요청이 빠지거나 겹친다. 그래서 첫 쪽이 바뀌면 이어 본 쪽은 버리고 새 nextBefore 부터 다시 본다.
-   * 갱신 전에 보낸 더 보기 요청의 응답 · 오류도 같은 이유로 버린다(for 가 지금 첫 쪽이 아니면 쓰지 않는다).
-   */
   const [more, setMore] = useState<{ for: SentChecklistPage; items: SentChecklist[]; next: string | null } | null>(
     null,
   );
   const [loadingFor, setLoadingFor] = useState<SentChecklistPage | null>(null);
   const [cancelling, setCancelling] = useState<SentChecklist | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
-  // 더 보기와 내리기가 함께 쓴다. 문구와 [다시 로그인]을 한 값으로 들어, 내리기 401 뒤 더 보기가 실패하면 버튼도 사라진다
   const [listError, setListError] = useState<ShownError | null>(null);
   const latestPage = useRef(page);
   latestPage.current = page;
@@ -60,7 +48,6 @@ export default function ChecklistsPage() {
     setListError(null);
     try {
       const next = await getSentChecklists(cursor);
-      // 새로 받은 요청이 시작되는 쪽으로 넘긴다 — 지금 쪽에 머물면 눌러도 아무 일 없는 것처럼 보인다
       if (next.checklists.length) jumpTo.current = sent.length;
       setMore((prev) => ({
         for: base,
@@ -94,9 +81,7 @@ export default function ChecklistsPage() {
     }
   }
 
-  // 받아 둔 목록을 10건씩 쪽으로 나눈다. 더 오래된 요청은 아래 [이전 요청 더 보기]로 서버에서 더 받는다
   const sentPage = usePage(sent);
-  /** 더 보기로 받은 첫 요청의 순번 — 목록이 늘어난 뒤 그 쪽으로 넘긴다 */
   const jumpTo = useRef<number | null>(null);
   useEffect(() => {
     if (jumpTo.current == null || sent.length <= jumpTo.current) return;
@@ -136,7 +121,6 @@ export default function ChecklistsPage() {
               <Pager {...sentPage} onChange={sentPage.setPage} />
             </>
           )}
-          {/* 더 오래된 요청은 마지막 쪽에서만 더 받는다 */}
           {cursor && sentPage.page === sentPage.pages ? (
             <button
               type="button"
@@ -169,7 +153,6 @@ export default function ChecklistsPage() {
   );
 }
 
-/** 새 요청 — 항목 줄 · 받을 아이 · 보내기 전 확인 */
 function Composer({ roster, onSent }: { roster: ChildListItem[]; onSent: () => void }) {
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<string[]>([""]);
@@ -352,7 +335,6 @@ function Composer({ roster, onSent }: { roster: ChildListItem[]; onSent: () => v
             <p role="alert" className="text-[14px] text-block">
               {error.text}
             </p>
-            {/* 이 줄은 보내기 폼 안이다 — 버튼은 type="button" 이라 폼을 제출하지 않는다 */}
             {error.loginLost ? <ReloginButton role="org" /> : null}
           </div>
         ) : null}
@@ -385,7 +367,6 @@ function Composer({ roster, onSent }: { roster: ChildListItem[]; onSent: () => v
   );
 }
 
-/** 보낸 요청 한 줄 — 펼치면 아이별 확인 */
 function SentRow({ checklist, onCancel }: { checklist: SentChecklist; onCancel: () => void }) {
   const [open, setOpen] = useState(false);
   const first = checklist.items[0];
@@ -393,7 +374,6 @@ function SentRow({ checklist, onCancel }: { checklist: SentChecklist; onCancel: 
 
   return (
     <li className="rounded border border-line">
-      {/* 줄 아무 곳이나 눌러도 펼친다(키보드는 안쪽 버튼으로). 안쪽 버튼은 stopPropagation 으로 두 번 안 바뀌게 */}
       <div
         onClick={() => setOpen((o) => !o)}
         className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"

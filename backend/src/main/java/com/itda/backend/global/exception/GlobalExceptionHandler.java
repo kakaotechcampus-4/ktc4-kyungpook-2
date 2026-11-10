@@ -1,17 +1,11 @@
 package com.itda.backend.global.exception;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
-import com.itda.backend.exception.auth.AuthException;
-import com.itda.backend.exception.child.ChildException;
-import com.itda.backend.exception.child.InstitutionLinkException;
-import com.itda.backend.exception.checklist.ChecklistException;
-import com.itda.backend.exception.consent.ConsentException;
-import com.itda.backend.exception.invitation.InvitationException;
-import com.itda.backend.exception.organization.OrganizationException;
-import com.itda.backend.exception.user.UserException;
+import com.itda.backend.exception.record.RawRecordErrorCode;
 import java.util.stream.Collectors;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.event.Level;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -25,21 +19,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-/**
- * Spring MVC 표준 예외(잘못된 경로·메서드·타입·Content-Type, 누락된 파라미터·파트 등)는
- * {@link ResponseEntityExceptionHandler} 가 알맞은 4xx 로 분류하고, 본문만 API 규약의
- * 실패 응답으로 바꾼다.
- *
- * <p>아래 {@code Exception.class} catch-all 만 두면 이 예외들까지 전부 500 이 된다.
- * {@code @ExceptionHandler} 가 Spring 기본 예외 변환보다 먼저 매칭되기 때문이다.
- *
- * <p>catch-all 을 들고 있으므로 <b>반드시 가장 나중에</b> 물어봐야 한다. Spring 은
- * @RestControllerAdvice 를 순서대로 훑다가 처음 매칭되는 하나로 끝내는데, 순서를 명시하지 않으면
- * 빈 등록 순서(사실상 패키지 이름 순)가 정해버려 패키지를 옮기는 것만으로 도메인별 처리기가
- * 영영 실행되지 않고 전부 500 이 될 수 있다.
- */
 @Slf4j
 @RestControllerAdvice
 @Order(Ordered.LOWEST_PRECEDENCE)
@@ -51,60 +33,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(ErrorResponse.of(CommonErrorCode.INVALID_REQUEST));
     }
 
-    @ExceptionHandler(AuthException.class)
-    public ResponseEntity<ErrorResponse> handleAuthException(AuthException e) {
-        log.warn("인증 처리 실패: {}", e.getMessage());
-        return ResponseEntity.status(e.getErrorCode().getStatus())
-                .body(ErrorResponse.of(e.getErrorCode()));
-    }
-
-    @ExceptionHandler(UserException.class)
-    public ResponseEntity<ErrorResponse> handleUserException(UserException e) {
-        log.warn("사용자 처리 실패: {}", e.getMessage());
-        return ResponseEntity.status(e.getErrorCode().getStatus())
-                .body(ErrorResponse.of(e.getErrorCode()));
-    }
-
-    @ExceptionHandler(OrganizationException.class)
-    public ResponseEntity<ErrorResponse> handleOrganizationException(OrganizationException e) {
-        log.warn("기관 처리 실패: {}", e.getMessage());
-        return ResponseEntity.status(e.getErrorCode().getStatus())
-                .body(ErrorResponse.of(e.getErrorCode()));
-    }
-
-    @ExceptionHandler(ChildException.class)
-    public ResponseEntity<ErrorResponse> handleChildException(ChildException e) {
-        log.warn("아동 처리 실패: {}", e.getMessage());
-        return ResponseEntity.status(e.getErrorCode().getStatus())
-                .body(ErrorResponse.of(e.getErrorCode()));
-    }
-
-    @ExceptionHandler(InstitutionLinkException.class)
-    public ResponseEntity<ErrorResponse> handleInstitutionLinkException(InstitutionLinkException e) {
-        log.warn("기관 연결 요청 처리 실패: {}", e.getMessage());
-        return ResponseEntity.status(e.getErrorCode().getStatus())
-                .body(ErrorResponse.of(e.getErrorCode()));
-    }
-
-    @ExceptionHandler(InvitationException.class)
-    public ResponseEntity<ErrorResponse> handleInvitationException(InvitationException e) {
-        log.warn("초대 처리 실패: {}", e.getMessage());
-        return ResponseEntity.status(e.getErrorCode().getStatus())
-                .body(ErrorResponse.of(e.getErrorCode()));
-    }
-
-    @ExceptionHandler(ConsentException.class)
-    public ResponseEntity<ErrorResponse> handleConsentException(ConsentException e) {
-        log.warn("동의 처리 실패: {}", e.getMessage());
-        return ResponseEntity.status(e.getErrorCode().getStatus())
-                .body(ErrorResponse.of(e.getErrorCode()));
-    }
-
-    @ExceptionHandler(ChecklistException.class)
-    public ResponseEntity<ErrorResponse> handleChecklistException(ChecklistException e) {
-        log.warn("준비물·확인사항 처리 실패: {}", e.getMessage());
-        return ResponseEntity.status(e.getErrorCode().getStatus())
-                .body(ErrorResponse.of(e.getErrorCode()));
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException e) {
+        ErrorCode errorCode = e.getErrorCode();
+        Level level = errorCode.logLevel();
+        if (level == Level.ERROR) {
+            log.error("요청 처리 실패 code={} reason={}", errorCode.getCode(), e.getMessage(), e);
+        } else {
+            log.atLevel(level).log("요청 처리 실패 code={} reason={}", errorCode.getCode(), e.getMessage());
+        }
+        return ResponseEntity.status(errorCode.getStatus()).body(ErrorResponse.of(errorCode));
     }
 
     @ExceptionHandler(Exception.class)
@@ -114,10 +52,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(ErrorResponse.of(CommonErrorCode.INTERNAL_SERVER_ERROR));
     }
 
-    /**
-     * 상태 코드와 헤더(405 의 {@code Allow}, 415 의 {@code Accept} 등)는 Spring 이 정한 값을
-     * 그대로 쓰고, 기본 ProblemDetail 본문만 {@link ErrorResponse} 로 바꾼다.
-     */
+    @Override
+    protected ResponseEntity<Object> handleMaxUploadSizeExceededException(
+            MaxUploadSizeExceededException ex,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request
+    ) {
+        return ResponseEntity.status(RawRecordErrorCode.FILE_TOO_LARGE.getStatus())
+                .body(ErrorResponse.of(RawRecordErrorCode.FILE_TOO_LARGE));
+    }
+
     @Override
     protected ResponseEntity<Object> handleExceptionInternal(
             Exception ex,
@@ -158,13 +103,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 : CommonErrorCode.INVALID_REQUEST;
     }
 
-    /**
-     * 4xx 로그에 남겨도 되는 정보만 꺼낸다. 예외 메시지는 쓰지 않는다 — 검증 실패에는 거부된 값이,
-     * 본문 해석 실패·경로 변수 변환 실패·없는 경로에는 입력 일부가 들어 있어 개인정보가 로그에 남는다.
-     * 필드 이름과 위반 코드, 원인 예외 종류, JSON 필드 경로처럼 값이 없는 정보만 남긴다.
-     *
-     * <p>5xx 는 스택트레이스를 그대로 남기므로 원인 예외에 담긴 입력값까지 막아 주지는 않는다.
-     */
     private static String safeDetail(Exception ex) {
         if (ex instanceof MethodArgumentNotValidException invalid) {
             String fields = invalid.getBindingResult().getAllErrors().stream()

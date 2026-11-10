@@ -89,7 +89,6 @@ class NotifyWorkerTest {
 
     @Test
     void 승인된_인사이트가_없으면_집지_않는다() {
-        // 집어서 SENT 로 남기면, 그 뒤에 교사가 승인해도 그 기간을 다시 보지 않는다.
         given(notifyService.prepare(CHILD, FROM, TO)).willReturn(Optional.empty());
 
         worker.run();
@@ -123,8 +122,6 @@ class NotifyWorkerTest {
 
     @Test
     void 멱등성_키는_판_번호가_아니라_재료에_묶인다() {
-        // 앱이 메일을 보낸 직후 죽으면 판 번호가 올라간 채 다시 집는다. 그때도 키가 같아야
-        // AI 쪽 MCP 서버가 두 번째 발송을 막는다.
         given(notifyService.prepare(CHILD, FROM, TO)).willReturn(Optional.of(prepared(99L)));
         given(recorder.needsRun(CHILD, FROM, TO, 99L)).willReturn(true);
         given(recorder.claim(CHILD, FROM, TO)).willReturn(Optional.of(claimed()));
@@ -139,7 +136,6 @@ class NotifyWorkerTest {
 
     @Test
     void 재료가_늘면_키가_달라진다() {
-        // 뒤에 인사이트가 더 승인되면 새 메일이 맞다. 그때는 MCP 가 막으면 안 된다.
         NotifyWorker.Period period = new NotifyWorker.Period(CHILD, FROM, TO);
         assertThat(NotifyWorker.notificationIdOf(period, 99L))
                 .isNotEqualTo(NotifyWorker.notificationIdOf(period, 100L));
@@ -156,7 +152,6 @@ class NotifyWorkerTest {
         worker.run();
 
         verify(recorder).recordFailure(any(), eq("delivery_failed"));
-        // /health 는 LLM 까지 보지 않으므로 여기서 멈춘 것을 장애 배너에 따로 알린다.
         verify(availability).reportCallGaveUp();
     }
 

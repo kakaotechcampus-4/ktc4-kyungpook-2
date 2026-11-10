@@ -10,20 +10,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.itda.backend.dto.response.guardian.GuardianInsightResponse;
-import com.itda.backend.global.config.OpenApiConfig;
-import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.sharing.GuardianInsightService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// principal 은 다른 API 와 같은 내부 userId 다. 보호자인지는 서비스가 UserService 로 본다.
 @RestController
 @RequestMapping("/api/v1/guardians/me/insights")
 @RequiredArgsConstructor
@@ -43,24 +37,16 @@ public class GuardianInsightController {
                     + "G-36 으로 열 수 없으며, approvedAt 은 그 주가 끝난 다음 날 0시입니다 (#470). "
                     + "childId 를 주면 그 아이 것만 반환합니다 (#457)."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "childId 형식 오류 (INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "childId 형식 오류 (INVALID_REQUEST)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "보호자 계정이 아님 (PARENT_REQUIRED), "
-                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)"
             )
     })
     public ApiResponse<List<GuardianInsightResponse>> list(
@@ -76,23 +62,15 @@ public class GuardianInsightController {
                     + "열람 방식이라 '언제 봤나' 를 남기지 않으면 아무 흔적이 없습니다. "
                     + "내게 열리지 않은 글은 404 입니다 — 있는지조차 알려주지 않습니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "보호자 계정이 아님 (PARENT_REQUIRED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "보호자 계정이 아님 (PARENT_REQUIRED)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "내게 열리지 않은 인사이트 (SHARING_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "내게 열리지 않은 인사이트 (SHARING_NOT_FOUND)"
             )
     })
     public ApiResponse<GuardianInsightResponse> get(

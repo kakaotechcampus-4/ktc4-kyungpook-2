@@ -40,13 +40,6 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.user.RevokedSessionRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 같은 로그인의 로그아웃이 겹칠 때를 PostgreSQL 에서 재현한다. 방식은 {@link LockContention} 이다 — 먼저 온 로그아웃이
- * 기록을 넣고 커밋하지 않은 채 멈추면, 뒤의 로그아웃은 "아직 없음" 을 보고 넣다가 UNIQUE 인덱스에서 기다린다.
- *
- * <p>정책: 뒤의 로그아웃은 먼저 쪽이 커밋된 뒤 UNIQUE 위반을 받는데, 그 저장 트랜잭션만 롤백되고 바깥에서 "이미 기록됨" 으로
- * 넘긴다 — 둘 다 성공하고 기록은 한 줄이다. 같은 트랜잭션 안에서 위반을 잡았다면 커밋 때 실패해 500 이 된다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -112,10 +105,6 @@ class LogoutConcurrencyIntegrationTest {
                 .extracting(RevokedSession::getSessionId).isEqualTo(parsed.sessionId());
     }
 
-    /**
-     * 로그아웃 API 는 기록에 실패해도 쿠키를 지우고 204 를 낸다. 그래서 위 시험만으로는 기록이 예외 없이 끝났는지 알 수 없다 —
-     * 같은 경합을 서비스에 직접 걸어 예외가 나지 않는지 본다(예외가 나면 뒤 쪽 작업이 실패로 끝난다).
-     */
     @Test
     void 겹친_로그아웃_기록은_예외_없이_끝난다() throws Exception {
         String sessionId = jwtProvider.parse(jwtProvider.createToken(String.valueOf(parent.getId())))

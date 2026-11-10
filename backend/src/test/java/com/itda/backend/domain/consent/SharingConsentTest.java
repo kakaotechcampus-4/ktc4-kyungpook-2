@@ -77,7 +77,6 @@ class SharingConsentTest {
         assertThat(consent.getRevokeReason()).isEqualTo(ConsentRevokeReason.ROSTER_REMOVED);
     }
 
-    /** 철회된 행은 이력이다. 고치거나 다시 철회하면 이력이 바뀐다. */
     @Test
     void 철회된_동의는_바꿀_수_없다() {
         SharingConsent consent = SharingConsent.grant(1L, 2L, 3L, List.of(ConsentField.DAILY_SUMMARY));

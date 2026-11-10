@@ -48,12 +48,6 @@ import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.invitation.InviteCodeGenerator;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 명부 제외는 한 트랜잭션이다. 마지막 단계(인사이트 열람권 회수)가 실패하면 앞에서 바꾼 명부·초대 코드·동의도 남지 않아야 한다.
- *
- * <p>테스트 트랜잭션을 끈다(NOT_SUPPORTED). 그래야 {@code removeFromRoster} 의 트랜잭션이 가장 바깥이 되어 실제 롤백을
- * 확인할 수 있다. 행은 Repository 로 만들고 지운다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({ChildService.class, OrganizationChildGuard.class, ConsentService.class, ConsentStateReader.class,

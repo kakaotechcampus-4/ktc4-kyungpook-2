@@ -45,7 +45,6 @@ class ValidationAgentClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl(AI);
         server = MockRestServiceServer.bindTo(builder).build();
-        // 재시도·상태 확인은 AiAgentClientTest 가 본다. 여기서는 검증 계약(요청·응답 모양)만 본다.
         AiAgentProperties properties = new AiAgentProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(65),
                 List.of());
         client = new ValidationAgentClient(new AiAgentClient(builder.build(), new ObjectMapper(), properties));
@@ -86,7 +85,6 @@ class ValidationAgentClientTest {
 
     @Test
     void LLM을_못_써서_503이면_재시도_끝에_AI를_쓸_수_없다고_본다() {
-        // AI 는 LLM 호출이 실패하면 503 을 준다 (#98). 일지 탓이 아니라 워커가 이번 차례를 멈춰야 한다.
         server.expect(requestTo(AI + "/validation")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body("{\"detail\": {\"reason\": \"llm_unavailable\", \"message\": \"Luna 호출 실패\"}}"));

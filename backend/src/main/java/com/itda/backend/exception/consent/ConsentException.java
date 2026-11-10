@@ -1,15 +1,10 @@
 package com.itda.backend.exception.consent;
 
-public class ConsentException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
 
-    private final ConsentErrorCode errorCode;
+public class ConsentException extends BusinessException {
 
     public ConsentException(ConsentErrorCode errorCode) {
-        super(errorCode.getMessage());
-        this.errorCode = errorCode;
-    }
-
-    public ConsentErrorCode getErrorCode() {
-        return errorCode;
+        super(errorCode);
     }
 }

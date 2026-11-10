@@ -1,58 +1,26 @@
-/**
- * 기획서 9절 데이터 모델을 화면이 쓰는 형태로 옮긴 것.
- * 백엔드 DTO 가 확정되면 이 파일이 계약서가 된다.
- */
-
 export type InstitutionType = "school" | "center" | "assistant";
 
-/** Validation Agent 판정 — 기획서 11.3 */
 export type ValidationStatus = "PASS" | "REVIEW" | "BLOCK";
 
-/**
- * Matching Agent 결과 상태. AI 쪽 이름(`AI/matching/nodes.py` 의 decide)과 맞춘다.
- * `auto` 는 자동 확정이라 확인 큐에 오지 않는다.
- * `failed` 는 AI 호출 자체가 실패한 건(네트워크·타임아웃)이라 후보도 근거도 없다.
- */
 export type MatchStatus = "auto" | "review" | "multi" | "unmatched" | "failed";
 
-/** multi 로 내려온 이유 — 둘은 교사가 할 일이 서로 다르다 */
 export type MultiReason = "co_mention" | "ambiguous_identity";
 
-/**
- * 본문에서 판정 근거가 된 구간.
- * 인덱스는 **유니코드 코드포인트** 기준이다(Python str 인덱스, `AI/matching/schemas.py`).
- */
 export interface EvidenceSpan {
   start: number;
   end: number;
 }
 
-/**
- * 이 기록을 왜 이 아이로 봤는지 — Gate 1 에 한 줄로 보여준다.
- * cover   → "파일 표지: 이하은"
- * body    → 본문에 "이하은" 등장
- * teacher → 선생님이 직접 지정 (매칭 확인 화면 또는 Gate 1 에서 바꾼 경우)
- */
 export interface MatchBasis {
   source: "cover" | "body" | "teacher";
-  /** 근거가 된 이름. 표지·본문에 적힌 그대로다 (명부의 이름과 다를 수 있다) */
   name: string;
 }
 
-/**
- * 반려(reject)는 없다 — BE 는 보류(hold)와 제거(remove)만 받는다 (#178).
- * 보류한 요약은 바로 승인할 수 없다. 보류 해제(O-33)로 검토 대기에 돌린 뒤 승인하거나, 제거한다.
- * 요약할 내용 없음(noContent) 요약은 확인(confirmed)하거나 요약 전으로 되돌린다(reverted) (#244).
- * 목록(O-30)은 pending · hold 만 준다. 나머지는 mock 이 목록에서 빼는 데만 쓴다.
- */
 export type Gate1Status = "pending" | "approved" | "hold" | "removed" | "confirmed" | "reverted";
-/** BE Gate2InsightResponse.gate2Status. 승인이 곧 보호자 열람이라 "발송 완료"가 따로 없다 */
 export type Gate2Status = "pending" | "approved" | "hold";
 
-/** ConsentScope 로부터 파생된 화면용 상태 */
 export type ConsentState = "granted" | "not_granted" | "revoked";
 
-/** 부모 동의 완료 전에는 파이프라인이 한 줄도 돌지 않는다 */
 export type ChildStatus = "pending_consent" | "active" | "suspended";
 
 export type ConsentField = "daily_summary" | "weekly_insight";
@@ -64,10 +32,6 @@ export interface Institution {
   verified: boolean;
 }
 
-/**
- * 보호자가 설정 › 아이 정보에서 적는 돌봄 정보 (G-13). 현재 이 아이와 연결된 모든 보호자가 조회·수정하고,
- * 기관에는 공유하지 않는다. 복용 시간은 비어 있을 수 있다("").
- */
 export interface ChildCareInfo {
   allergies: string[];
   medications: { name: string; time: string }[];
@@ -77,132 +41,73 @@ export interface Child {
   id: string;
   name: string;
   birthDate: string;
-  /** 학교/학년 등 — 보호자 온보딩 화면에 짧게 표시 */
   school?: string;
   status: ChildStatus;
-  /** 기관이 아이마다 붙여 쓰는 관리번호 (예: 2026-0031). 없으면 null */
   externalId?: string | null;
   institutions: { institution: Institution; consent: ConsentState }[];
-  /**
-   * 보호자가 기관 코드로 연결을 요청했고 기관의 수락을 기다리는 기관 (G-10·G-11). 아직 명부에 없어
-   * 동의할 수 없으므로 institutions 와 섞지 않는다. 기관 화면 mock 에는 없다.
-   */
   linkRequests?: LinkRequest[];
   care?: ChildCareInfo;
-  /**
-   * 나에게 열렸는데 아직 열어 보지 않은 리포트가 있는지 (G-10·G-11, #457). 리포트 탭 · 아이 전환의 점이 이 값 하나로
-   * 그려진다. 열람은 보호자마다 따로라 엄마가 열어도 아빠 점은 남는다. 기관 화면 mock 에는 없다.
-   */
   hasUnreadInsight?: boolean;
 }
 
-/** 수락 대기 중인 기관 하나. requestedAt 은 가장 먼저 요청한 시각 (ISO 8601) */
 export interface LinkRequest {
   institution: Institution;
   requestedAt: string;
 }
 
-/**
- * 기관 아동 명부 한 줄 (GET /institutions/me/children).
- *
- * 서버는 id·name·birthDate·externalId·status·consent 만 준다. 연결된 기관 목록은 다른 기관
- * 정보를 보호자 동의 범위 안에서만 보여줘야 해서, 동의 기능이 생긴 뒤에 온다.
- *
- * **기관 화면은 status 가 아니라 consent 로 판단한다.** status 는 아이 전체 요약이라 어느 기관이든
- * 동의가 있으면 active 다. 학교에 동의한 아이가 우리 명부에 막 올라오면 status 는 active 인데
- * 우리 기관에는 아직 동의 전(not_granted)이다.
- */
-/**
- * 기관 명부 한 줄 (O-10). 명부에 있는 칸만 고른다 — 다른 기관 정보(다니는 기관 · 그 기관 동의)와 보호자용 칸(학교 ·
- * 돌봄 정보 · 연결 요청)은 없다. 보호자는 기관마다 따로 동의할 뿐, 다른 기관에 다닌다는 사실을 알리는 데 동의하지 않았다.
- */
 export type ChildListItem = Pick<Child, "id" | "name" | "birthDate" | "externalId" | "status"> & {
-  /** 우리 기관에 대한 동의 상태 */
   consent: ConsentState;
 };
 
-/** 내 기관 정보 (O-01). code 는 보호자에게 알려 주는 기관 코드 8자 — 화면은 4-4 로 나눠 보여준다 */
 export interface MyInstitution extends Institution {
   code: string;
 }
 
-/** 기관이 보는 연결 요청 하나 (O-60). 같은 아이에 보호자 여럿이 요청했으면 한 항목이다 */
 export interface PendingLinkRequest {
   child: { id: string; name: string; birthDate: string };
-  /** 요청한 보호자 수. 보호자 이름은 저장하지 않아 화면은 "아이 이름 + 보호자" 로 부른다 */
   requesterCount: number;
-  /** 가장 먼저 요청한 시각 (ISO 8601) */
   requestedAt: string;
 }
 
-/** 아이 등록 응답 (POST /institutions/me/children). 등록 직후라 status 는 항상 pending_consent 다 */
 export type RegisteredChild = Pick<Child, "id" | "name" | "birthDate" | "status"> & {
   externalId: string | null;
 };
 
-/**
- * 보호자 초대 코드 (api-spec O-11 의 invitation · O-15 응답).
- *
- * 10분짜리 일회용이다. code 는 하이픈 없는 8자라 화면에서 4-4 로 나눠 보여준다.
- */
 export interface IssuedInvitation {
   id: string;
   code: string;
-  /** ISO 8601 (오프셋 포함). 화면은 브라우저 시계와 비교해 카운트다운한다 */
   expiresAt: string;
 }
 
-/** 아직 쓸 수 있는 초대 코드 (api-spec O-16) */
 export interface LiveInvitation extends IssuedInvitation {
   issuedAt: string;
 }
 
-/** 아이와 연결된 보호자 (api-spec O-18) */
 export interface ChildGuardian {
   userId: string;
   linkedAt: string;
-  /** true 인 보호자만 우리 기관이 연결을 끊을 수 있다 (O-19) */
   linkedByThisOrganization: boolean;
-  /** 이 보호자가 연결할 때 쓴 우리 기관의 초대 코드. 이름이 없어 이 코드와 연결 시각으로 보호자를 구별한다. 다른 기관 코드로 연결됐으면 null */
   invitationCode: string | null;
 }
 
-/**
- * 초대 코드 수락 결과 (api-spec G-04).
- *
- * 수락은 아동 상태를 바꾸지 않는다. childStatus 는 아이의 실제 현재 상태다.
- */
 export interface AcceptedInvitation {
   childId: string;
   childName: string;
   organizationName: string;
-  /** 코드를 발급한 기관. 수락 뒤 이 기관에 대한 동의 미리보기(G-02)를 부를 때 쓴다 */
   organizationId: string;
   childStatus: ChildStatus;
 }
 
-/**
- * P-02 확인 · 동의 화면이 한 번에 그리는 정보 (api-spec G-02).
- *
- * 스펙 예시에는 child.id 가 없지만 동의(G-41)와 연결 해제(G-05) 호출에 필요해서 받는다.
- *
- * 공유 범위 안내는 기관 유형과 상관없는 고정 문구다(P-02) — 기관 유형별 항목 목록은 실제 공유와 맞지 않아 없앴다.
- */
 export interface ConsentPreview {
   child: { id: string; name: string; birthDate: string };
   institution: Institution;
-  /** 증빙서류. 없으면 null — 화면에서 버튼을 숨긴다 */
   documentUrl: string | null;
-  /** 동의할 때 G-41 에 그대로 돌려보낼 항목 코드. 저장되는 것은 이 값이다 */
   allowedFields: ConsentField[];
 }
 
-/** 동의 부여 · 철회 결과 (api-spec G-41). 바뀐 뒤의 상태다 */
 export interface ConsentResult {
   childStatus: ChildStatus;
-  /** 이 기관에 대한 동의 상태 */
   consent: ConsentState;
-  /** 이 기관에 지금 공유되는 항목. granted 가 아니면 빈 배열 */
   allowedFields: ConsentField[];
 }
 
@@ -214,13 +119,6 @@ export interface RawRecord {
   preview: string;
 }
 
-/**
- * 확인 필요 큐 한 건 (api-spec O-22).
- *
- * `null` 이거나 없을 수 있는 필드는 BE(#35)가 아직 채우지 못하는 값이다.
- * 유형(`type`)·반(`group`)·미매칭 이유·표지 이름은 보내지 않고, 원문·날짜·명부가
- * 비어 있으면 `null` 이 온다. 화면은 값이 없으면 그 칸을 숨긴다.
- */
 export interface MatchingItem {
   id: string;
   record: {
@@ -228,92 +126,38 @@ export interface MatchingItem {
     fileName: string;
     type?: RawRecord["type"] | null;
     capturedAt: string | null;
-    /** 앞 60자만 자른 목록용 미리보기. 뒤쪽 아이 이름·근거는 잘린다 */
     preview: string | null;
-    /**
-     * 자르지 않은 전체 본문 (#112). 아이를 고를 때는 이걸 보여준다.
-     * `evidence` 좌표도 preview 가 아니라 이 값 기준이다.
-     */
     fullContent: string | null;
   };
   status: Exclude<MatchStatus, "auto">;
-  /**
-   * AI 가 지목한 아이. **`review` 의 추천 아이는 여기로만 온다** — AI 계약상
-   * `candidates` 는 `multi` 일 때만 채워진다(AI/matching/graph.py). 이름·생년월일은
-   * 오지 않으니 화면이 명부에서 찾아 붙인다.
-   */
   matchedChildId: string | null;
-  /**
-   * `multi` 의 후보들. 그 밖의 상태에서는 빈 배열이다.
-   * 동명이인이면 후보가 둘 이상 남는다(AI 의 SPLIT_SAME_NAME_CANDIDATES).
-   * 이름만으로는 구별이 안 되므로 **생년월일이 반드시 함께 와야 한다.**
-   * 명부에서 삭제된 아이는 서버가 이름·생년월일 없이 id 만 보낸다.
-   */
   candidates: {
     childId: string;
     name: string | null;
     group?: string | null;
     birthDate: string | null;
   }[];
-  /** 본문에서 이 판정의 근거가 된 구간. 화면에서 하이라이트한다. */
   evidence: EvidenceSpan[];
   multiReason?: MultiReason | null;
-  // unmatched 의 이유는 AI · 서버 어디에도 없다(O-22). 화면은 이유를 나누지 않는다 (#381)
-  /** 표지에 적힌 이름과 본문 판정이 어긋남 */
   hintMismatch?: boolean;
-  /**
-   * 표지 힌트 — 업로드 때 **파일 이름**에 명부 아이 이름이 한 명 들어 있으면 그 이름(O-22, #381).
-   * 일지 본문에서 찾은 이름이 아니다(그건 AI 판정의 `evidence`). 없으면 null — 화면은 파일 이름을 보인다
-   */
   hintName?: string | null;
 }
 
-/*
- * confidence 는 일부러 두지 않는다.
- *
- * 모델 점수는 같은 입력에도 0.72~0.98 로 흔들리고(AI/matching/config.py 참고),
- * AI 쪽도 자동 확정 판단에서 이 값을 뺐다(AUTO_GATE = "structural").
- * 화면에 숫자를 띄우면 교사가 그 숫자를 근거로 삼게 되므로 상태 문구로만 표현한다.
- */
-
-/** 매칭 확인 화면에서 교사가 내린 결정 (api-spec O-23) */
 export type MatchResolution =
-  /** 고른 아이로 확정 */
   | { action: "assign"; childId: string }
-  /** 명부에 있는 아이가 아니다 — 파이프라인에서 뺀다 */
   | { action: "not_ours" };
 
-/**
- * 파일 하나의 처리 현황.
- *
- * 업로드는 즉시 응답하고 처리는 백그라운드에서 돈다. 파일 하나에서 기록이 여러 건
- * 나오고, 건마다 도달한 단계가 다르므로 건별 위치를 받아 화면이 집계한다.
- */
 export interface FileProgress {
   rawRecordId: string;
   fileName: string;
   uploadedAt: string;
-  /** 파일에서 기록을 아직 떼어내지 못했으면 비어 있다 (기록 등록 단계) */
   entries: EntryProgress[];
 }
 
-/**
- * 파일 하나의 업로드 결과. 여러 파일을 올리면 일부만 실패할 수 있어 파일마다 따로 돌려준다.
- * 실패한 건 서버에 없으므로 원본 File 을 들고 있다가 그것만 다시 올린다.
- */
 export type UploadResult =
   | { ok: true; file: File; progress: FileProgress }
   | { ok: false; file: File; reason: UploadFailReason };
 
-/**
- * invalid          → 허용되지 않는 형식 (400)
- * empty            → 빈 파일(0바이트). 서버도 400 으로 거절한다 — 보내기 전에 거른다 (#489)
- * too_large        → 용량 초과 (413)
- * too_many_entries → 기록이 500건을 넘거나 한 기록이 5,000자를 넘는다 (400 RAW_RECORD_ENTRY_LIMIT_EXCEEDED, #424). 나눠 올린다
- * queue_full       → 그 기관이 앞서 올린 기록을 AI 가 아직 처리 중이다 (429 AGENT_QUEUE_FULL). 끝나면 다시 올린다
- * server_busy      → 지금 서버가 다른 업로드를 처리 중이다 (429 RAW_RECORD_UPLOAD_BUSY). 잠시 뒤 다시 올린다
- * temporary        → 저장 실패 · 네트워크 오류 등. 같은 파일을 다시 올리면 될 수 있다
- */
 export type UploadFailReason =
   | "invalid"
   | "empty"
@@ -325,127 +169,66 @@ export type UploadFailReason =
 
 export interface EntryProgress {
   id: string;
-  /**
-   * PIPELINE_STAGES 의 인덱스.
-   * 요약 검토까지 승인돼 파이프라인을 빠져나간 건은 PIPELINE_STAGES.length 이고 state 는 done 이다.
-   */
   stageIndex: number;
-  /**
-   * running → 자동으로 진행 중
-   * waiting → 사람이 골라야 진행 (매칭 확인 · 검증 수정 요청 · 요약 검토)
-   * failed  → 시스템 오류. 재시도하면 된다
-   */
   state: "running" | "waiting" | "failed" | "done";
 }
 
-/**
- * 수정 요청(BLOCK) 큐 한 건 (api-spec O-24).
- *
- * `record` 는 확인 필요 큐와 같은 모양이다(BE RecordResponse). 유형(`type`)은 BE 가 아직
- * 보내지 않고, 날짜는 `YYYY-MM-DD` 로 온다. 비어 있으면 화면이 그 칸을 숨긴다.
- */
 export interface BlockedItem {
   id: string;
-  /** 검증 결과가 붙은 일지 id. 화면에서는 쓰지 않는다 */
   journalEntryId?: number;
   record: {
     id: string;
     fileName: string;
     type?: RawRecord["type"] | null;
     capturedAt: string | null;
-    /** 앞 60자만 자른 목록용 미리보기 */
     preview: string | null;
-    /** 자르지 않은 전체 본문. 막힌 문장이 60자 뒤에 있을 수 있어 이걸 보여준다 */
     fullContent: string | null;
   };
-  /** 매칭 전에 막혔으면 아이를 모른다 */
   childName: string | null;
-  /** 화면에 그대로 띄우는 한국어 문장. 사유가 여럿이면 " / " 로 이어져 온다 */
   violationReason: string;
-  /** AI 가 보낸 위반 유형 원본(`진단명` · `개인정보표현` 등). 화면에서는 쓰지 않는다 */
   violationCode?: string[];
 }
 
-/** 요약 문장 하나. index 는 결정(O-31) 때 그대로 돌려보낸다 */
 export interface SummaryClaim {
   index: number;
   text: string;
-  /** AI 가 든 근거 일지와 원문 인용. 선생님이 고치거나 새로 쓴 문장은 빈 목록 */
   evidence?: ClaimEvidence[];
 }
 
-/** 요약 문장 근거 하나 — 어느 일지의 어떤 원문 구절인지 */
 export interface ClaimEvidence {
   journalEntryId: string;
   quote: string;
 }
 
-/**
- * Gate 1 검토 대기 · 보류함 한 건 (BE Gate1SummaryResponse, api-spec O-30).
- * id 는 문자열로, status(GATE1_PENDING · HOLD)는 gate1Status 로 바꿔 받는다 (lib/api.ts).
- */
 export interface SummaryItem {
   id: string;
   childId: string;
   childName: string;
-  /** 일지 날짜 YYYY-MM-DD */
   entryDate: string;
-  /** 같은 묶음을 몇 번째 요약했는지 */
   revision: number;
   gate1Status: Gate1Status;
-  /** 결정할 때 그대로 돌려보내는 판 표시. 그 사이 요약이 바뀌었으면 409 SUMMARY_CHANGED */
   version: string;
-  /** 같은 날 새 기록이 반영되는 중이라 곧 요약이 바뀐다 — 고치기·승인을 막는다 */
   processing: boolean;
   content: string;
-  /** 빈 배열이면 문장을 못 읽은 요약 — 문장 편집 없이 그대로 승인하거나 제거만 된다 */
   claims: SummaryClaim[];
-  /**
-   * 그날 기록에 요약할 내용이 없다는 결과 (#244). content 는 "", claims 는 [] 이고
-   * uncoveredEntries 가 이 요약에 묶인 기록 원본 전체다. 결정은 confirm · revert 만 받는다.
-   */
   noContent: boolean;
-  /** 본문에 다른 아이 이름이 남아 있을 수 있다. 막지 않고 경고만 한다 */
   needsReview: boolean;
   reviewReasons: string[];
-  /** 요약에 안 들어간 일지. 승인하면 이 일지도 함께 끝난다 */
   uncoveredEntries: { journalEntryId: string; content: string }[];
-  /** 이 요약에 묶인 일지 원문 전체(요약에 든 것 + 안 든 것, id 순). 검토 팝업이 늘 펼쳐 둔다 (O-30 entries, #371) */
   entries: { journalEntryId: string; content: string }[];
-  /**
-   * 요약에 들어간 원본 중 검증에서 REVIEW 를 받은 일지와 사유.
-   * issueTypes 는 AI 코드 원본, reasons 는 선생님이 읽을 문장 — 화면은 reasons 를 보여 준다 (#351)
-   * claimIndexes 는 검증 구간과 근거가 겹친 문장 카드 번호(claims[].index). 비어도 경고는 그대로다 —
-   * 어디가 문제인지 모르는 사유이거나 문장을 못 읽은 요약이다. 사유와 짝지어지지 않는다 (#408)
-   */
   reviewFlags: { journalEntryId: string; issueTypes: string[]; reasons: string[]; claimIndexes: number[] }[];
 }
 
-/**
- * Gate 1 승인 때 보내는 문장 카드 (api-spec O-31). 원래 문장은 모두 한 번씩, 배열 순서가 최종 순서다.
- * KEEP · DELETE 는 index 만, EDIT 는 index 와 고친 글, ADD 는 새 글만 보낸다.
- */
 export type Gate1Card =
   | { index: number; action: "KEEP" | "DELETE" }
   | { index: number; action: "EDIT"; text: string }
   | { action: "ADD"; text: string };
 
-/** Child Context 타임라인 한 칸 */
-/**
- * 기관 아동 상세의 기록 타임라인 한 건 (O-14) — 우리 기관이 요약 검토에서 승인한 요약 하나.
- * 다른 기관 기록은 오지 않는다(기관 사이에는 2차 검토를 지난 인사이트로만 넘어간다). 기록이 없는 날은 항목이 없다 —
- * 추정치로 채우지 않는다. 같은 날 승인본이 여럿이면 따로 온다.
- */
 export interface TimelineEntry {
-  /** 승인본 id */
   id: string;
-  /** 관찰 날짜 YYYY-MM-DD */
   date: string;
-  /** 담당자가 승인한 최종본 */
   content: string;
-  /** 요약 검토에서 고쳐서 승인했는지 — "선생님 수정" */
   edited: boolean;
-  /** 그 요약에 묶인 원본 일지 수 */
   sourceCount: number;
 }
 
@@ -453,12 +236,7 @@ export interface EvidenceRef {
   childContextId: string;
   date: string;
   label: string;
-  /** 어느 기관 기록인지 — Gate 2 승인자가 확인해야 한다 */
   institution: Institution;
-  /**
-   * 이번 기간이 아니라 AI 가 지난 기록(앞 12주)에서 찾아 쓴 근거인지 (#387 · #388).
-   * 없으면(BE 배포 전) 이번 기간 근거로 본다
-   */
   lookedUp?: boolean;
 }
 
@@ -468,217 +246,117 @@ export interface Insight {
   childName: string;
   period: string;
   content: string;
-  /**
-   * 공유 전에 꼭 봐야 하는 글인지. BE 는 지금 항상 true 를 준다 — 본문에 다른 아이 이름이
-   * 없다는 보장이 없고, Gate 1 에서 교사가 고친 문장이 검증 없이 근거로 섞일 수 있다.
-   */
   needsReview: boolean;
-  /**
-   * 근거(대처 근거 포함)에 교사가 Gate 1 에서 고치거나 새로 쓴 문장이 섞였는지 (#323, CRITERIA §5).
-   * 서버가 근거 문장을 확인하지 못해도 true 다. 없으면(BE 배포 전) 경고를 띄우지 않는다.
-   */
   teacherWritten?: boolean;
-  /** 승인 주체. 근거를 낸 기관 중 기관 종류 우선순위(학교 > 센터 > 활동지원사)로 정한다 */
   primarySource: Institution;
-  /** 근거 기록. `lookedUp` 이 하나라도 true 면 "지난 기록" 이 섞인 분석이다 */
   evidence: EvidenceRef[];
-  /** 읽기 전용 참고. 수신 기관은 기관이 고르지 않고 승인 뒤 보호자가 정한다 (#206) */
   targets: { institution: Institution; consent: ConsentState }[];
   gate2Status: Gate2Status;
 }
 
-/**
- * 기관 수신함 목록 한 줄 (O-50). 다른 기관이 Gate 2 에서 승인해 우리 기관에 열린 인사이트다.
- * **본문이 없다** — 단건(O-51)을 열어야 보이고, 그때 우리 기관의 처음 열람 시각이 남는다.
- * 같이 받은 다른 기관은 오지 않는다(아이가 어디에 또 다니는지는 최소 정보를 넘는다).
- */
 export interface InboxItem {
-  /** 인사이트 id. 단건 경로에 그대로 쓴다 */
   id: string;
   childId: string;
   childName: string;
-  /** 우리 기관이 붙인 관리번호. 이름이 같은 아이를 가른다. 관리번호 필수 전에 등록된 아이는 없다(null) */
   externalId: string | null;
-  /** 이 글을 Gate 2 에서 승인한 기관 */
   from: Institution;
-  /** "2026년 8월 3주차" 같은 문구 */
   period: string;
-  /** 우리 기관이 볼 수 있게 된 시각 (ISO) */
   receivedAt: string;
-  /** 우리 기관에서 처음 열어 본 시각 (ISO). 아직 안 열었으면 null — 키는 항상 온다 */
   readAt: string | null;
 }
 
-/** 기관 수신함 단건 (O-51). 본문은 보호자에게 열린 글과 같다 — 수신자별 변환은 아직 없다 */
 export interface InboxDetail extends InboxItem {
   content: string;
 }
 
-/**
- * 보호자 홈 "최근 공유 활동" 한 줄 (G-11). 승인된 일지 하나, 또는 같은 기간·같은 승인 기관의 받은 인사이트 묶음 하나.
- * id 는 종류를 앞에 붙여(`journal-3` · `insight-…`) 목록 안에서 겹치지 않는다 — 화면은 key 로만 쓴다.
- */
 export interface ParentActivity {
   id: string;
   kind: "journal" | "insight";
-  /** 화면에 그대로 쓰는 "2026-08-21 15:20" */
   at: string;
   text: string;
-  /** 일지 줄이면 그 일지 상세로 연결한다 */
   journalId?: string | null;
-  /** 인사이트 한 편이면 그 상세로, 여러 편을 묶은 줄이면 null 이라 리포트 탭으로 연결한다 */
   insightId?: string | null;
 }
 
-/** 기관 공유 내역의 한 줄 — 그 기관에 열린 이 아이 주간 리포트 한 편 (api-spec G-45) */
 export interface InstitutionShare {
   insightId: string;
-  /** "2026년 10월 4주차" 같은 문구. 리포트 탭과 같다 */
   period: string;
-  /** 이 리포트를 Gate 2 에서 승인한 기관. 없어진 기관이면 null */
   from: Institution | null;
-  /** 그 기관에 열린 시각 (ISO) */
   grantedAt: string;
-  /** 그 기관이 지금 볼 수 있는지. 기관 수신함과 같은 판정이다 */
   visible: boolean;
-  /** 가려진 시각. 볼 수 있거나, 거둔 기록 없이 명부 · 동의로 가려졌으면 null */
   hiddenAt: string | null;
 }
 
-/**
- * 보호자의 기관 공유 내역 중 한 기관 (G-45). 지금 명부에서 빠진 기관도 받은 이력이 있으면 온다.
- * 가려진 이유와 기관이 열어 봤는지는 오지 않는다.
- */
 export interface InstitutionShares {
   institution: Institution;
-  /** 열린 순서 최신부터 */
   shares: InstitutionShare[];
 }
 
-/**
- * 보호자가 받은 인사이트 한 편 (G-35 · G-36). 담당자가 Gate 2 에서 승인하면 열린다. 화면 이름은 "주간 리포트".
- * 서버는 내 모든 아이 것을 승인 시각 최근 순으로 준다 — 화면이 고른 아이로 거른다.
- */
 export interface GuardianInsight {
   id: string;
   childId: string;
-  /** 아이가 삭제됐으면 null */
   childName: string | null;
-  /** "2026년 8월 3주차" — 어느 주의 이야기인지 */
   period: string;
-  /**
-   * 이 글이 다룬 주의 시작·끝 "2026-10-19". 화면이 **달로 묶을 때** 쓴다.
-   *
-   * period 글자를 잘라 달을 구하면 깨진다 — 9/29~10/5 처럼 달에 걸친 주가 있고, 문구가 바뀌면
-   * 같이 깨진다. 달은 periodFrom 기준이다 (BE periodLabel 과 같은 기준).
-   */
   periodFrom: string;
   periodTo: string;
-  /** 교사·보호자가 읽을 한두 문장. quiet 이면 null */
   content: string | null;
-  /** Gate 2 에서 승인한 기관. 기관 행이 사라졌으면 null — 화면은 "기관 정보 없음" */
   from: Institution | null;
-  /** 지금 이 글을 볼 수 있는 다른 기관. 기관 동의를 끄면 빠진다 */
   sharedWith: Institution[];
-  /** 담당자가 승인한 시각 (ISO). 모든 보호자에게 같다 — 언제 받았는지 */
   approvedAt: string;
-  /** 처음 열어 본 시각 (ISO). 아직 안 봤으면 null — "새 글" 표시 */
   readAt: string | null;
-  /**
-   * 이 글의 근거가 된 일지, 관찰 날짜 오래된 순. 응답 시점에 일지 상세로 열 수 있는 것만 온다 —
-   * 동의를 끈 기관 · 명부에서 빠진 기관의 일지도 남는다(일지 탭과 같다). 없으면 빈 배열
-   */
   evidence: GuardianInsightEvidence[];
-  /**
-   * "insight" 는 리포트, "quiet" 은 리포트가 없는 지난 주를 "특이사항 없음" 으로 보이는 항목이다 (#470).
-   * quiet 은 아이 · 주만 담는다 — 본문 · 기관 · 근거가 없고, 열어 볼 상세도 없다(누를 수 없다). approvedAt 은
-   * 그 주가 끝난 다음 날 0시라 정렬에만 쓰고, readAt 은 늘 null 이라 "새 글"·안 읽은 점에서 뺀다.
-   * 없으면(BE 배포 전) 리포트다.
-   */
   kind?: "insight" | "quiet";
-  /** quiet 일 때만. ① NOTHING_NOTABLE 기록이 모두 "특이사항 없음" · ② NOTHING_NEW 기록은 있었지만 되풀이되는 모습이 없음 */
   quietReason?: "NOTHING_NOTABLE" | "NOTHING_NEW" | null;
 }
 
-/** 리포트 근거 일지 한 건. journalEntryId 로 일지 상세(`/parent/journal/:id`)를 연다 */
 export interface GuardianInsightEvidence {
   journalEntryId: string;
-  /** 관찰 날짜 "2026-10-21" */
   date: string;
-  /** 그 일지를 쓴 기관. 명부에서 빠진 기관일 수 있다 */
   institution: Institution;
-  /** 이번 기간이 아니라 지난 기록에서 찾아 쓴 근거인지 (#387 · #422). 화면은 "지난 기록" 으로 구분한다 */
   lookedUp: boolean;
-  /**
-   * 이 글이 그 일지에서 **실제로 인용한 문장**. 없으면 빈 배열이고 근거 줄은 그대로 보인다.
-   *
-   * Gate 1 에서 교사가 승인한 요약 문장이다 — 원본 일지 인용이 아니다. 원본에는 다른 아이 이름이
-   * 남아 있어 밖으로 내보내지 않는다 (`AI/insight/CRITERIA.md §2`).
-   */
   sentences: GuardianInsightSentence[];
 }
 
-/** 근거 문장 하나. 역할은 "상황"(본문 근거) 또는 "대처"(대처 근거) 다 */
 export interface GuardianInsightSentence {
   text: string;
   role: "상황" | "대처";
 }
 
-/**
- * 학부모 홈/타임라인에 뜨는 일지 한 건 (G-20·G-21) — 교사가 요약 검토에서 승인한 요약 하나.
- * 요약은 하루 단위라 시각이 없다. 목록은 content 를 2줄로 자르고, 상세는 전부 보여 준다.
- */
 export interface JournalEntry {
   id: string;
   childId: string;
   institution: Institution;
-  /** 관찰 날짜 yyyy-MM-dd */
   date: string;
-  /** 승인된 지 24시간이 안 됐다. 읽었는지와는 무관하다 */
   isNew: boolean;
-  /** 교사가 승인한 글 */
   content: string;
 }
 
-/**
- * 보호자 일지 상세 (G-21) — 목록 한 건에 옆 일지를 더한 것 (#458). 순서는 목록과 같다(최근 순).
- * 새 필드는 선택이다 — FE 가 먼저 배포되면 그 사이 예전 서버는 이 값들을 주지 않는다.
- */
 export interface JournalEntryDetail extends JournalEntry {
-  /** 목록에서 바로 뒤 칸, 곧 더 예전 일지. 맨 끝이면 null */
   prevId?: string | null;
-  /** 목록에서 바로 앞 칸, 곧 더 최근 일지. 맨 앞이면 null */
   nextId?: string | null;
-  /** 같은 날 다른 기관이 쓴 일지, 목록 순서. 기관은 id 로 가른다 */
   sameDay?: JournalEntry[];
 }
 
-/** 기관 › 준비물·확인사항 — 보낸 요청의 받은 아이 한 명 (O-71) */
 export interface SentChecklistTarget {
   child: { id: string; name: string | null };
-  /** 아이가 삭제되지 않았고 지금도 우리 명부에 있다. false 면 "명부에서 빠짐" 이고 숫자에서 빠진다 */
   onRoster: boolean;
   confirmedAt: string | null;
 }
 
-/** 기관 › 준비물·확인사항 — 보낸 요청 한 건 (O-70 · O-71) */
 export interface SentChecklist {
   id: string;
   items: string[];
   sentAt: string;
-  /** 지금 명부에 있는 받은 아이 수 */
   total: number;
   confirmed: number;
   targets: SentChecklistTarget[];
 }
 
-/** O-71 한 쪽. nextBefore 가 있으면 그 값으로 더 오래된 요청을 이어 본다 */
 export interface SentChecklistPage {
   checklists: SentChecklist[];
   nextBefore: string | null;
 }
 
-/** 보호자 › 준비물·확인사항 한 건 (G-50 · G-51). 보호자 중 한 명이 확인하면 모두에게 confirmed */
 export interface ChecklistItem {
   id: string;
   institution: Institution;
@@ -688,26 +366,16 @@ export interface ChecklistItem {
   confirmedAt: string | null;
 }
 
-/* ── 대시보드 (O-80 ~ O-82) ──────────────────── */
-
-/** 선생님 차례 5줄 건수 (O-80 `turn`) */
 export interface PipelineTurn {
-  /** 아이 확인 (O-22 건수) */
   confirm: number;
-  /** 고쳐야 할 기록 (O-24 건수) */
   blocked: number;
-  /** 검토 대기 요약 + 요약 실패 묶음 */
   review: number;
-  /** 우리가 승인할 분석 (O-40 pending 건수) */
   approve: number;
-  /** 보호자 연결 요청 (O-60 건수) */
   requests: number;
 }
 
-/** 0 아이 매칭 · 1 내용 검증 · 2 일지 요약 · 3 요약 검토 · 4 주간 리포트 · 5 리포트 승인 */
 export type PipelineStep = 0 | 1 | 2 | 3 | 4 | 5;
 
-/** me 선생님 차례 · ai AI 가 하는 중 · wait 기다리는 중 · other 다른 사람 차례 · done 끝 */
 export type PipelineWho = "me" | "ai" | "wait" | "other" | "done";
 
 export type PipelineStatus =
@@ -733,21 +401,16 @@ export type PipelineStatus =
   | "review_elsewhere"
   | "approved";
 
-/** 바로가기 대상. summary_failed 는 id 가 없다 — 줄의 childId · date 로 찾는다 */
 export interface PipelineTarget {
   type: "matching" | "validation" | "summary" | "summary_failed" | "insight";
   id?: string;
 }
 
-/** 진행 현황 한 줄 (O-80 `rows[]`). 검토 승인 전은 entry(아이×날짜), 뒤는 week(아이×주) */
 export interface PipelineRow {
   kind: "entry" | "week";
-  /** 아이를 아직 못 찾은 줄은 null */
   childId: string | null;
   childName: string | null;
-  /** entry 줄만. YYYY-MM-DD */
   date: string | null;
-  /** week 줄만 */
   week: { from: string; to: string; label: string } | null;
   step: PipelineStep;
   who: PipelineWho;
@@ -759,7 +422,6 @@ export interface PipelineRow {
     noContent?: boolean;
     approverName?: string;
   } | null;
-  /** 선생님 차례가 아니면 null */
   target: PipelineTarget | null;
 }
 
@@ -768,26 +430,19 @@ export interface Pipeline {
   rows: PipelineRow[];
 }
 
-/** 서울 기준 오늘 0시부터 우리 기관 기록에 AI 가 한 일 (O-81) */
 export interface AiActivity {
   split: number;
   matched: number;
   validated: number;
-  /** 근사값 */
   summarized: number;
   insights: number;
 }
 
-/** AI 장애 배너용 (O-82). available 이 true 면 since 는 null */
 export interface AiStatus {
   available: boolean;
   since: string | null;
 }
 
-/**
- * 진행 현황 줄의 AI 진행 단계 (O-83, #454). 줄과는 kind · childId · date(entry) / weekFrom(week = rows[].week.from)로 붙인다.
- * agent · node 는 서버가 먼저 새 값을 보내도 깨지지 않게 string 으로 둔다 — 모르는 값이면 화면은 기존 문구를 쓴다
- */
 export interface AiProgressItem {
   kind: "entry" | "week";
   childId: string | null;
@@ -798,19 +453,15 @@ export interface AiProgressItem {
   elapsedSec: number;
 }
 
-/** enabled 가 false 면 items 는 늘 비어 있다 */
 export interface AiProgress {
   enabled: boolean;
   items: AiProgressItem[];
 }
 
-/** 요약에 실패한 묶음(아이 × 날짜, O-35). 요약 행이 없어 O-30 에 섞이지 않는다 (#369) */
 export interface FailedSummary {
   childId: string;
   childName: string;
   entryDate: string;
-  /** 요약하지 못한 기록과 원문(id 순) */
   entries: { journalEntryId: string; content: string }[];
-  /** 실패 원인. 지금은 NO_GROUNDED_CLAIMS(요약 문장의 근거를 원문에서 찾지 못함) 하나 */
   reason: string;
 }

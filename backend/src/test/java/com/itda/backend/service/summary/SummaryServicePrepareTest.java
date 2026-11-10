@@ -10,9 +10,12 @@ import java.util.Arrays;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.itda.backend.domain.child.Child;
@@ -36,9 +39,9 @@ import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.summary.SummaryRunRequestRepository;
 import com.itda.backend.service.consent.ConsentStateReader;
 
-/** 요약 요청 조립 — 묶음의 일지들, 아동·기관 이름, 본문에 이름이 나온 다른 아이들. */
 @DataJpaTest
 @ActiveProfiles("test")
+@ExtendWith(OutputCaptureExtension.class)
 class SummaryServicePrepareTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
@@ -165,10 +168,36 @@ class SummaryServicePrepareTest {
         assertThat(summaryService.prepareRequest(group(entry)).otherChildNames()).containsExactly("서준호");
     }
 
-    /**
-     * 상한(#424) 전에 올라온 긴 일지가 묶음에 있으면 묶음째 요청을 만들지 않는다. 긴 일지만 빼고 요약하면 선생님이 모르는 사이
-     * 그 기록이 요약에서 빠진다. 상태는 바꾸지 않는다 — 워커가 받아 쓰기 트랜잭션에서 남긴다.
-     */
+    @Test
+    void 아이_번호가_숫자_문자열로_저장돼_있어도_이름을_싣는다() {
+        JournalEntry entry = summarizing("김준호가 서준호와 블록을 쌓았다.", 1);
+        em.persistAndFlush(new MatchingResult(entry.getId(), junho.getId(), null, MatchingStatus.AUTO, null, false,
+                "[]", "[]", "[\"" + junho.getId() + "\", \"" + seojun.getId() + "\"]", "{}", null));
+
+        assertThat(summaryService.prepareRequest(group(entry)).otherChildNames()).containsExactly("서준호");
+    }
+
+    @Test
+    void 아이_번호가_객체의_값으로_저장돼_있어도_이름을_싣는다() {
+        JournalEntry entry = summarizing("김준호가 서준호, 박민지와 블록을 쌓았다.", 1);
+        em.persistAndFlush(new MatchingResult(entry.getId(), junho.getId(), null, MatchingStatus.AUTO, null, false,
+                "[]", "[]", "{\"self\": " + junho.getId() + ", \"other\": " + seojun.getId()
+                        + ", \"friend\": \"" + minji.getId() + "\"}", "{}", null));
+
+        assertThat(summaryService.prepareRequest(group(entry)).otherChildNames())
+                .containsExactlyInAnyOrder("서준호", "박민지");
+    }
+
+    @Test
+    void 숫자가_아닌_아이_번호는_건너뛰고_그_값을_로그에_남기지_않는다(CapturedOutput output) {
+        JournalEntry entry = summarizing("김준호가 서준호와 블록을 쌓았다.", 1);
+        em.persistAndFlush(new MatchingResult(entry.getId(), junho.getId(), null, MatchingStatus.AUTO, null, false,
+                "[]", "[]", "[\"서준호\\n비밀\", " + seojun.getId() + "]", "{}", null));
+
+        assertThat(summaryService.prepareRequest(group(entry)).otherChildNames()).containsExactly("서준호");
+        assertThat(output).contains("matching_result.mentioned_child_ids").doesNotContain("비밀");
+    }
+
     @Test
     void 묶음에_긴_일지가_있으면_요청을_만들지_않고_상태도_바꾸지_않는다() {
         JournalEntry ok = summarizing("김준호가 블록을 쌓았다.", 1, junho.getId());

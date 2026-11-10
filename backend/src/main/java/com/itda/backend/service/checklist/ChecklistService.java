@@ -30,18 +30,10 @@ import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * 기관의 준비물·확인사항 — 보내기(O-70) · 보낸 목록(O-71) · 내리기(O-72).
- *
- * <p><b>"명부에 있다"</b>는 아이가 삭제되지 않았고 그 기관의 {@code child_organization} 이 살아 있다는 뜻이다. 보내기 검증과
- * 목록의 {@code onRoster} · 숫자가 이 기준 하나를 쓴다. 보호자에게 보이는 조건도 같다({@link GuardianChecklistService}).
- * 공유 동의와는 상관없다 — 동의는 아이 정보가 기관으로 가는 허락이고, 이 기능은 방향이 반대다.
- */
 @Service
 @RequiredArgsConstructor
 public class ChecklistService {
 
-    /** 보낸 목록 한 쪽. 더 오래된 요청은 {@code before} 로 이어 본다. */
     static final int PAGE_SIZE = 50;
 
     private final UserService userService;
@@ -51,10 +43,6 @@ public class ChecklistService {
     private final ChildOrganizationRepository childOrganizationRepository;
     private final Clock clock;
 
-    /**
-     * 받을 아이가 모두 지금 명부에 있어야 보낸다. 하나라도 아니면 아무것도 저장하지 않고 400 이다. 받는 아이는 지금 정해진다 —
-     * "명부 전체" 로 보냈어도 나중에 들어온 아이는 받지 않는다.
-     */
     @Transactional
     public SentChecklistResponse send(String userId, List<String> items, List<Long> childIds) {
         Long organizationId = userService.getOrganizationIdOf(userId);
@@ -73,10 +61,6 @@ public class ChecklistService {
         return toResponse(checklist, targets, children, onRoster);
     }
 
-    /**
-     * 살아 있는 요청을 최신순 {@value #PAGE_SIZE}개씩. {@code before} 가 있으면 그 요청보다 오래된 쪽이다 — 기준 요청은 내린 것이어도
-     * 우리 기관 요청이면 된다. 조회는 쪽마다 요청 · 받은 아이 · 아이 · 명부 · 보호자 이름 한 번씩이다.
-     */
     @Transactional(readOnly = true)
     public SentChecklistPageResponse list(String userId, Long before) {
         Long organizationId = userService.getOrganizationIdOf(userId);
@@ -105,10 +89,6 @@ public class ChecklistService {
         return new SentChecklistPageResponse(responses, nextBefore);
     }
 
-    /**
-     * 통째로 내린다. 이미 내렸으면 아무것도 바꾸지 않는다(처음 시각이 남는다). 다른 기관 요청이거나 없으면 404 다.
-     * 확인이 진행 중이면 그 확인이 커밋될 때까지 기다린다({@code ChecklistRepository.findByIdForShare}).
-     */
     @Transactional
     public void cancel(String userId, Long checklistId) {
         Long organizationId = userService.getOrganizationIdOf(userId);
@@ -122,13 +102,11 @@ public class ChecklistService {
         return new ChecklistException(ChecklistErrorCode.CHECKLIST_NOT_FOUND);
     }
 
-    /** 삭제된 아이도 담는다 — 보낸 목록에서 "명부에서 빠짐" 으로 이름을 보여야 한다. */
     private Map<Long, Child> childrenById(Collection<Long> childIds) {
         return childRepository.findAllById(Set.copyOf(childIds)).stream()
                 .collect(Collectors.toMap(Child::getId, Function.identity()));
     }
 
-    /** 이 아이들 중 지금 우리 명부에 있는 아이 — 삭제되지 않았고 명부 행이 살아 있다. */
     private Set<Long> onRoster(Long organizationId, Map<Long, Child> children) {
         Set<Long> alive = children.values().stream()
                 .filter(child -> !child.isDeleted())

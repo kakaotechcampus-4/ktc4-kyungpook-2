@@ -74,7 +74,6 @@ class SummaryResultRecorderTest {
         return em.persistAndFlush(entry);
     }
 
-    /** 승인 전 요약에 이미 들어가 있다가 새 일지와 함께 다시 요약 중인 일지. */
     private JournalEntry resummarizing(SummaryResult existing) {
         JournalEntry entry = JournalEntry.of(5L, DATE, "이미 요약된 일지", 1);
         entry.startMatching();
@@ -91,7 +90,6 @@ class SummaryResultRecorderTest {
         return new ClaimedSummaryGroup(GROUP, Arrays.stream(entries).map(JournalEntry::getId).toList(), CLAIMED_AT);
     }
 
-    /** 워커가 AI 에 보낸 요청 — 묶음의 일지 원문. */
     private SummaryAgentRequest sent(JournalEntry... entries) {
         return new SummaryAgentRequest(8L, "김준호", "2026-10-08", 3L, "햇살초등학교",
                 Arrays.stream(entries)
@@ -100,7 +98,6 @@ class SummaryResultRecorderTest {
                 List.of());
     }
 
-    /** 계약대로 만든 AI 응답. 문장 하나가 {@code evidenceFrom} 원문 전체를 인용한다. */
     private SummaryAgentReply reply(String content, JournalEntry evidenceFrom, String covered, String uncovered)
             throws Exception {
         String quote = evidenceFrom.getContent();
@@ -114,7 +111,6 @@ class SummaryResultRecorderTest {
         return new SummaryAgentReply(new ObjectMapper().readValue(json, SummaryAgentResponse.class), json);
     }
 
-    /** AI 가 요약 본문에 다른 아이 이름이 남았다고 표시한 응답. */
     private SummaryAgentReply flagged(SummaryAgentReply reply) throws Exception {
         String json = reply.rawJson().replace("\"llm_called\": true}",
                 "\"llm_called\": true, \"needs_review\": true, \"review_reasons\": [\"다른아동이름\"]}");
@@ -148,7 +144,6 @@ class SummaryResultRecorderTest {
         assertThat(summary.getCoveredEntryIds()).isEqualTo("[" + covered.getId() + "]");
         assertThat(summary.getUncoveredEntryIds()).isEqualTo("[" + uncovered.getId() + "]");
         assertThat(summary.getRawResponse()).isEqualTo(reply.rawJson());
-        // 요약에 반영되지 않은 일지도 같은 요약을 가리킨다 — 빠졌다는 사실을 Gate 1 에서 볼 수 있게.
         for (JournalEntry entry : List.of(covered, uncovered)) {
             JournalEntry found = reload(entry);
             assertThat(found.getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
@@ -179,7 +174,6 @@ class SummaryResultRecorderTest {
     void 승인된_판이_있으면_새_판으로_쌓는다() throws Exception {
         SummaryResult approved = summaryResultRepository.saveAndFlush(
                 SummaryResult.of(8L, DATE, 3L, 1, "승인된 요약", "[]", "[]", "[]", "{}"));
-        // Gate 1 승인은 아직 없어서 상태만 바꿔 둔다.
         em.getEntityManager().createQuery("update SummaryResult s set s.status = :status where s.id = :id")
                 .setParameter("status", SummaryStatus.APPROVED)
                 .setParameter("id", approved.getId())
@@ -234,7 +228,6 @@ class SummaryResultRecorderTest {
         JournalEntry old = resummarizing(existing);
         JournalEntry late = summarizing("늦게 올라온 일지");
 
-        // needs_review 가 없는 응답 (#148 이전 AI) — 표시 없음으로 본다.
         recorder.record(claimed(old, late), sent(old, late), reply("다시 만든 요약", late, "[]", "[]"));
 
         SummaryResult summary = summaryResultRepository.findById(existing.getId()).orElseThrow();
@@ -246,14 +239,12 @@ class SummaryResultRecorderTest {
     void 본문이_비어_오면_저장하지_않고_RESPONSE_UNREADABLE_시스템_오류로_남긴다() throws Exception {
         JournalEntry entry = summarizing("블록 놀이를 했다.");
 
-        // AI 계약상 근거가 없으면 503 이 와야 한다. 빈 200 은 다시 요약해도 같으니 요약 실패가 아니다.
         recorder.record(claimed(entry), sent(entry), reply("", entry, "[]", "[" + entry.getId() + "]"));
 
         assertThat(summaryResultRepository.findAll()).isEmpty();
         assertSystemError(reload(entry), FailureReason.RESPONSE_UNREADABLE);
     }
 
-    /** 요약할 내용이 없다는 응답 (#244). 계약대로 본문 "", claims [], 묶음 일지 전부 uncovered 다. */
     private SummaryAgentReply noContentReply(String claims, JournalEntry... entries) throws Exception {
         String uncovered = Arrays.stream(entries).map(e -> String.valueOf(e.getId()))
                 .collect(java.util.stream.Collectors.joining(",", "[", "]"));
@@ -291,7 +282,6 @@ class SummaryResultRecorderTest {
 
     @Test
     void 요약할_내용_없음에는_AI_가_빠뜨려도_실제로_묶은_일지를_모두_남긴다() throws Exception {
-        // 되돌린 판에서는 이 값이 어떤 일지가 들어 있었는지 남는 유일한 흔적이다 — AI 값을 그대로 믿지 않는다.
         JournalEntry first = summarizing("특이사항 없음");
         JournalEntry second = summarizing("특이사항 없음.");
 
@@ -428,7 +418,6 @@ class SummaryResultRecorderTest {
         removed.delete();
         em.persistAndFlush(removed);
 
-        // 계약대로 보낸 일지는 모두 covered 나 uncovered 에 들어온다.
         recorder.record(claimed(kept, removed), request, reply("블록 놀이를 했다.", kept,
                 "[" + kept.getId() + "]", "[" + removed.getId() + "]"));
 
@@ -442,7 +431,6 @@ class SummaryResultRecorderTest {
         JournalEntry entry = summarizing("블록 놀이를 했다.");
         JournalEntry other = summarizing("점심을 먹었다.");
         SummaryAgentReply reply = reply("블록 놀이를 했다.", other, "[]", "[]");
-        // 다른 일지 원문을 이 일지 id 로 인용한 응답 — AI 쪽 버그를 흉내 낸다.
         String broken = reply.rawJson().replace("\"journal_entry_id\": " + other.getId(),
                 "\"journal_entry_id\": " + entry.getId());
         SummaryAgentReply brokenReply = new SummaryAgentReply(
@@ -496,7 +484,6 @@ class SummaryResultRecorderTest {
 
     @Test
     void 요약하는_사이_다시_누른_요청은_결과를_남겨도_요청으로_남는다() throws Exception {
-        // 요약하는 사이 새 일지가 들어와 교사가 다시 눌렀다. 그 일지는 방금 요약에 들어 있지 않다.
         JournalEntry ok = summarizing("블록 놀이를 했다.");
         runRequests.request(GROUP, CLAIMED_AT.plusMinutes(1));
 
@@ -505,7 +492,6 @@ class SummaryResultRecorderTest {
         assertThat(runRequests.isRequested(GROUP)).isTrue();
     }
 
-    /** 집은 뒤 AI 를 부르기 전에 철회됐다 (#332). 요약하지 않고, 실패로도 남기지 않는다. */
     @Test
     void 요약하기_전에_동의가_철회됐으면_요청을_닫고_일지를_요약_전으로_돌린다() {
         SummaryResult existing = summaryResultRepository.saveAndFlush(
@@ -520,7 +506,6 @@ class SummaryResultRecorderTest {
         assertThat(closed).isTrue();
         assertThat(runRequests.isRequested(GROUP)).isFalse();
         assertThat(reload(fresh).getStatus()).isEqualTo(JournalEntryStatus.VALIDATED);
-        // 이전 판에 있던 일지는 그 판의 대기로 돌아간다. 그 판은 Gate 1 목록·결정에서 막힌다.
         assertThat(reload(old).getStatus()).isEqualTo(JournalEntryStatus.GATE1_PENDING);
         assertThat(summaryResultRepository.findAll()).singleElement()
                 .extracting(SummaryResult::getContent).isEqualTo("이전 요약");
@@ -538,7 +523,6 @@ class SummaryResultRecorderTest {
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.SUMMARIZING);
     }
 
-    /** AI 를 부르는 수십 초 사이에 철회됐다 (#332). 받은 요약을 저장하지 않는다. */
     @Test
     void AI_응답을_받는_사이_동의가_철회됐으면_저장하지_않고_요청을_닫는다() throws Exception {
         JournalEntry entry = summarizing("블록 놀이를 했다.");
@@ -555,7 +539,6 @@ class SummaryResultRecorderTest {
         assertThat(found.getSummaryId()).isNull();
     }
 
-    /** AI 호출 사이에 철회됐고 AI 도 실패했다 (#332). 실패로 남기지 않고 요약하지 않은 것으로 닫는다. */
     @Test
     void AI_가_실패해도_그사이_동의가_철회됐으면_실패로_남기지_않고_요청을_닫는다() {
         JournalEntry failed = summarizing("블록 놀이를 했다.");

@@ -37,10 +37,6 @@ import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 기관의 보내기 · 목록 · 내리기가 실제 행을 어떻게 남기고 읽는지 본다. 우리 기관(ours) 명부에 하늘 · 바다, 다른 기관(other)
- * 명부에 별이 있다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({ChecklistService.class, ChecklistServiceJpaTest.ClockConfig.class})

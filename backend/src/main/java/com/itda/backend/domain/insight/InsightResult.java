@@ -1,7 +1,6 @@
 package com.itda.backend.domain.insight;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -11,38 +10,19 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
-/**
- * 인사이트 한 건 (DB 스키마 §9.3). 승인된 요약들을 겹쳐 찾아낸 "상황 → 반응 → 대처와 결과" 묶음이다.
- *
- * <p><b>한 행이 인사이트 하나다.</b> 에이전트가 한 번 호출에 여러 건을 돌려주므로 한 번 실행이 여러 행이
- * 된다. 그래서 행 단위로 걸 자연키가 없고, 중복 실행은 {@link InsightRun} 의 UNIQUE 가 막는다 (§9.5).
- *
- * <p>JSON 조각({@code supports}·{@code claimIds}·{@code sourceEntryIds}·{@code sourceInstitutionIds})은
- * AI 가 보낸 그대로 TEXT 에 담는다 — {@code summary_result.claims} 와 같은 방식이다.
- *
- * <p><b>{@code sourceInstitutionIds} 는 근거를 낸 기관이지 받을 기관이 아니다.</b> 누구에게 보일지는
- * Gate 2 시점의 동의로 BE 가 계산한다 — 인사이트를 만든 뒤에도 동의가 바뀌기 때문이다. AI 가 수신 기관을
- * 추천하던 방식은 #137 에서 되돌렸다.
- *
- * <p>⚠️ <b>{@code content} 에 다른 아이 이름이 없다는 보장은 없다.</b> 요약 익명화와 인사이트 프롬프트로만
- * 막고 보장하는 층이 없다 ({@code AI/insight/CRITERIA.md} §5). Gate 2 화면이 그 사실을 교사에게 표시해야 한다.
- *
- * <p>실행 이력이라 수정하지도 삭제하지도 않는다. 상태만 Gate 2 에서 바뀐다 (§3.2).
- */
 @Entity
 @Table(name = "insight_result",
         indexes = @Index(name = "idx_insight_result_child_id", columnList = "child_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class InsightResult {
+public class InsightResult extends TimestampedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -57,27 +37,21 @@ public class InsightResult {
     @Column(name = "period_to", nullable = false)
     private LocalDate periodTo;
 
-    /** 같은 아동·같은 기간의 몇 번째 생성인지. {@link InsightRun} 이 정한 값을 받아 쓴다. */
     @Column(nullable = false)
     private Integer revision;
 
-    /** 어떤 상황에서. */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String situation;
 
-    /** 어떤 반응이 나타나는지. */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String behavior;
 
-    /** 교사·보호자가 읽을 본문. */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    /** 대처와 결과 JSON 문자열. 결과가 기록에 없는 대처는 AI 쪽 코드가 이미 버린다. */
     @Column(columnDefinition = "TEXT")
     private String supports;
 
-    /** 근거가 된 claim JSON 문자열 {@code ["31-0", "34-2"]}. */
     @Column(name = "claim_ids", columnDefinition = "TEXT")
     private String claimIds;
 
@@ -87,14 +61,9 @@ public class InsightResult {
     @Column(name = "source_institution_ids", columnDefinition = "TEXT")
     private String sourceInstitutionIds;
 
-    /**
-     * 도구로 지난 기록에서 찾아 근거로 쓴 claim JSON 문자열 {@code ["12-0"]} (#387). {@code claimIds}·{@code supports} 근거
-     * 안에 들어 있다. 도구를 안 썼으면 {@code []}, 이 컬럼 전에 만든 행은 {@code null} 이다 — 둘 다 "찾아 쓴 것 없음" 이다.
-     */
     @Column(name = "looked_up_claim_ids", columnDefinition = "TEXT")
     private String lookedUpClaimIds;
 
-    /** 두 기관 이상의 근거를 이었는지. */
     @Column(name = "cross_institution", nullable = false)
     private boolean crossInstitution;
 
@@ -107,12 +76,6 @@ public class InsightResult {
 
     @Column(name = "model_version", length = 100)
     private String modelVersion;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     private InsightResult(Long childId, LocalDate periodFrom, LocalDate periodTo, int revision,
             String situation, String behavior, String content, String supports, String claimIds,
@@ -140,7 +103,6 @@ public class InsightResult {
                 sourceEntryIds, sourceInstitutionIds, crossInstitution, rawResponse, null);
     }
 
-    /** {@code lookedUpClaimIds} 까지 받는다 (#387). */
     public static InsightResult of(Long childId, LocalDate periodFrom, LocalDate periodTo, int revision,
             String situation, String behavior, String content, String supports, String claimIds,
             String sourceEntryIds, String sourceInstitutionIds, boolean crossInstitution, String rawResponse,
@@ -160,22 +122,16 @@ public class InsightResult {
         return result;
     }
 
-    /** Gate 2 승인. 허용된 수신자가 볼 수 있게 된다 — 되돌리는 경로는 없다. */
     public void approveGate2() {
         requireGate2Pending();
         this.status = InsightStatus.APPROVED;
     }
 
-    /** Gate 2 보류. 나가지 않는다. 보류 해제는 Gate 1 과 달리 두지 않는다. */
     public void holdGate2() {
         requireGate2Pending();
         this.status = InsightStatus.HOLD;
     }
 
-    /**
-     * 서비스가 행을 잠그고 상태를 먼저 보지만, 여기서 한 번 더 막는다 — 승인을 두 번 받으면 열람 권한이
-     * 두 번 생기고, 보류된 글이 조용히 승인되면 교사가 막은 글이 다른 기관으로 나간다.
-     */
     private void requireGate2Pending() {
         if (this.status != InsightStatus.GATE2_PENDING) {
             throw new IllegalStateException("이미 처리된 인사이트입니다: id=" + id + " status=" + status);
@@ -184,20 +140,7 @@ public class InsightResult {
 
     private static void requireText(String value, String name) {
         if (value == null || value.isBlank()) {
-            // 빈 글이 Gate 2 에 올라가면 교사가 판단할 수 없고, 승인되면 빈 글이 다른 기관으로 나간다.
             throw new IllegalArgumentException("인사이트 " + name + "은 필수입니다.");
         }
-    }
-
-    @PrePersist
-    void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
-        this.createdAt = now;
-        this.updatedAt = now;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

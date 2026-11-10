@@ -63,7 +63,6 @@ class AiProgressStoreTest {
 
     @Test
     void 묻는_간격을_늘리면_한_번_실패해도_버티도록_비우는_기준이_늘어난다() {
-        // 2 × (간격 5초 + 대기 0.5초) = 11초
         AiProgressStore slow = new AiProgressStore(clock, everySeconds(5));
         slow.replace(Map.of(3L, List.of(OURS)));
 

@@ -41,9 +41,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * O-70 · O-71 · O-72 — 보안 필터 · 검증 · 예외 처리까지 실제로 거친다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -118,7 +115,6 @@ class ChecklistApiTest {
                 .andExpect(jsonPath("$.data.checklists.length()").value(0));
     }
 
-    /** 항목 0개 · 11개 · 101자 · 공백뿐 · null, 아이 0명 · null 원소, 필드 없음. */
     @ParameterizedTest
     @ValueSource(strings = {
             "{\"items\": [], \"childIds\": [\"1\"]}",

@@ -18,10 +18,6 @@ import com.itda.backend.domain.consent.ConsentRevokeReason;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.consent.SharingConsent;
 
-/**
- * 동의 행에서 아이·기관별 상태를 계산한다. 상태는 아이 기준이라 어느 보호자의 동의든 하나라도 살아 있으면 켜짐이다.
- * 동의 행은 아이·기관·보호자 id 만 보므로 아동·기관 행 없이 숫자로 넣는다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(ConsentStateReader.class)
@@ -60,7 +56,6 @@ class ConsentStateReaderTest {
         assertThat(reader.stateOf(CHILD, SCHOOL)).isEqualTo(ConsentState.REVOKED);
     }
 
-    /** 철회는 그때 살아 있던 동의를 모두 끈다. 그 뒤 누군가 다시 동의했다면 지금은 켜짐이다. */
     @Test
     void 철회_뒤_다른_보호자가_다시_동의하면_켜짐() {
         revoke(grant(CHILD, DAD, SCHOOL), ConsentRevokeReason.GUARDIAN_REVOKED);
@@ -70,7 +65,6 @@ class ConsentStateReaderTest {
         assertThat(reader.statesOf(List.of(CHILD)).get(CHILD)).containsEntry(SCHOOL, ConsentState.GRANTED);
     }
 
-    /** 연결 해제는 끊긴 사람의 동의만 끈다. 남은 보호자의 동의가 있으면 그 기관은 켜져 있다. */
     @Test
     void 한_보호자_동의만_꺼져도_남은_동의가_있으면_켜짐() {
         grant(CHILD, MOM, SCHOOL);
@@ -92,7 +86,6 @@ class ConsentStateReaderTest {
                 .containsExactlyInAnyOrderEntriesOf(Map.of(
                         SCHOOL, ConsentState.GRANTED,
                         CENTER, ConsentState.REVOKED));
-        // 동의 행이 없는 기관은 결과에 없다 — 꺼내는 쪽이 NOT_GRANTED 로 읽는다.
         assertThat(states.get(OTHER_CHILD))
                 .containsExactlyInAnyOrderEntriesOf(Map.of(CENTER, ConsentState.GRANTED));
     }
@@ -113,7 +106,6 @@ class ConsentStateReaderTest {
         assertThat(reader.grantedChildIds(List.of(), SCHOOL)).isEmpty();
     }
 
-    /** 요약·Gate 1 목록이 쓴다 (#332). 다른 기관 동의는 상관없고 그 기관 동의가 켜진 아이만 남는다. */
     @Test
     void 그_기관_동의가_켜진_아이만_고른다() {
         Long revoked = 3L;
@@ -126,7 +118,6 @@ class ConsentStateReaderTest {
                 .containsExactly(CHILD);
     }
 
-    /** 하루 요약만 허락한 기관에는 주간 인사이트가 가면 안 된다 (#257, 멘토님 리뷰 #256 P1). */
     @Test
     void 인사이트_동의는_주간_인사이트를_허락했을_때만_켜진다() {
         grant(CHILD, MOM, SCHOOL);
@@ -140,7 +131,6 @@ class ConsentStateReaderTest {
                 .containsEntry(CENTER, ConsentState.GRANTED);
     }
 
-    /** 꺼진 동의는 범위에 주간 인사이트가 남아 있어도 허락이 아니다. 살아 있는 하루 요약 동의가 그보다 세다. */
     @Test
     void 꺼진_인사이트_동의보다_살아_있는_하루_요약_동의가_세다() {
         SharingConsent dadWeekly = em.persistAndFlush(

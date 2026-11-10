@@ -20,8 +20,6 @@ import com.itda.backend.dto.response.child.GuardianChildResponse;
 import com.itda.backend.dto.response.child.GuardianHomeResponse;
 import com.itda.backend.dto.response.guardian.InstitutionSharesResponse;
 import com.itda.backend.dto.response.invitation.AcceptedInvitationResponse;
-import com.itda.backend.global.config.OpenApiConfig;
-import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.global.security.ApiPaths;
 import com.itda.backend.service.child.GuardianChildQueryService;
@@ -30,13 +28,9 @@ import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.sharing.GuardianInstitutionShareService;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-// docs/api/api-spec.md G-04(초대 코드 수락)·G-05(보호자 본인 연결 해제)·G-10(아이 목록)·G-11(홈).
 @RestController
 @RequestMapping("/api/v1/guardians/me")
 @RequiredArgsConstructor
@@ -52,30 +46,21 @@ public class GuardianController {
     @Operation(summary = "초대 코드 수락",
             description = "기관에게 받은 코드로 아이와 연결됩니다. 하이픈·공백·소문자는 무시합니다. "
                     + "연결은 동의가 아닙니다 — 아동 상태는 바뀌지 않고, childStatus 는 아동의 실제 현재 상태입니다.")
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "연결 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
                     description = "코드 누락 (INVALID_REQUEST), 형식이 틀렸거나 없거나 만료·사용·취소된 코드 "
-                            + "(INVALID_INVITE_CODE)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "(INVALID_INVITE_CODE)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아닌 사용자 (PARENT_REQUIRED), "
-                            + "CSRF 토큰 누락·불일치 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "CSRF 토큰 누락·불일치 (FORBIDDEN)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
-                    description = "이미 연결된 아이. 코드는 쓰지 않은 채 남음 (LINK_ALREADY_EXISTS)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "이미 연결된 아이. 코드는 쓰지 않은 채 남음 (LINK_ALREADY_EXISTS)"
             )
     })
     public ApiResponse<AcceptedInvitationResponse> accept(
@@ -83,22 +68,14 @@ public class GuardianController {
         return ApiResponse.success(invitationService.accept(userId, request.code()));
     }
 
-    /** 본문 없는 204 라 {@code ApiResponse} 로 감싸지 않는다 (backend/AGENTS.md). */
     @DeleteMapping("/children/{childId}")
     @Operation(summary = "아이 연결 해제", description = "보호자 본인이 아이와의 연결을 끊습니다.")
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "204", description = "해제 성공. 본문 없음"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아닌 사용자 (PARENT_REQUIRED), "
-                            + "연결되지 않은 아이 또는 CSRF 토큰 누락·불일치 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "연결되지 않은 아이 또는 CSRF 토큰 누락·불일치 (FORBIDDEN)"
             )
     })
     public ResponseEntity<Void> unlink(@AuthenticationPrincipal String userId, @PathVariable Long childId) {
@@ -114,23 +91,15 @@ public class GuardianController {
                     + "care 는 보호자가 적어 둔 알레르기·복용약이고 저장 전이면 빈 배열입니다(기관에는 공유하지 않음). "
                     + "school 은 저장하는 곳이 없어 내려주지 않습니다. 응답 헤더 X-Itda-User-Id 에 이 목록을 가져온 회원의 "
                     + "userId 를 싣습니다 — 설정 화면이 탈퇴 대상을 이 목록과 같은 계정으로 정합니다.")
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공. 연결된 아이가 없으면 빈 배열"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아닌 사용자 (PARENT_REQUIRED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아닌 사용자 (PARENT_REQUIRED)"
             )
     })
     public ResponseEntity<ApiResponse<List<GuardianChildResponse>>> children(@AuthenticationPrincipal String userId) {
         List<GuardianChildResponse> children = guardianChildQueryService.children(userId);
-        // 이 목록을 가져온 계정. 설정 화면의 탈퇴 대상이 화면에 보이는 목록과 같은 계정이 되게 한다
         return ResponseEntity.ok()
                 .header(ApiPaths.USER_ID_HEADER, userId)
                 .body(ApiResponse.success(children));
@@ -142,24 +111,16 @@ public class GuardianController {
                     + "최근 공유 활동(activity)은 승인된 일지 줄(kind=journal)과 받은 인사이트 줄(kind=insight)을 "
                     + "승인 시각 최근 순으로 섞은 5줄입니다. 인사이트는 같은 기간·같은 승인 기관이면 한 줄로 묶습니다. "
                     + "journalId 로 일지 상세를, insightId(한 편일 때만)로 인사이트 상세를 열 수 있습니다.")
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "childId 누락·형식 오류 (INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "childId 누락·형식 오류 (INVALID_REQUEST)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아닌 사용자 (PARENT_REQUIRED), "
-                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)"
             )
     })
     public ApiResponse<GuardianHomeResponse> home(@AuthenticationPrincipal String userId, @RequestParam Long childId) {
@@ -173,24 +134,16 @@ public class GuardianController {
                     + "visible 은 그 기관이 지금 볼 수 있는지로, 기관 수신함과 같은 판정입니다(권한이 살아 있고 · 명부에 있고 · "
                     + "그 기관 동의가 켜져 있음). hiddenAt 은 권한을 거둔 시각이고, 거둔 기록 없이 가려졌으면 null 입니다. "
                     + "가려진 이유와 기관의 열람 여부는 주지 않습니다.")
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
-                    description = "childId 형식 오류 (INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "childId 형식 오류 (INVALID_REQUEST)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
                     description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 보호자가 아닌 사용자 (PARENT_REQUIRED), "
-                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                            + "연결되지 않았거나 삭제된 아이 (FORBIDDEN)"
             )
     })
     public ApiResponse<List<InstitutionSharesResponse>> institutionShares(

@@ -7,8 +7,6 @@ import com.itda.backend.dto.response.user.TermsAgreementResponse;
 import com.itda.backend.dto.response.user.WithdrawalResponse;
 import com.itda.backend.exception.user.UserErrorCode;
 import com.itda.backend.exception.user.UserException;
-import com.itda.backend.global.config.OpenApiConfig;
-import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.jwt.AccessToken;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.global.jwt.JwtProvider;
@@ -18,13 +16,11 @@ import com.itda.backend.service.user.UserService;
 import com.itda.backend.service.user.WithdrawalService;
 import com.itda.backend.service.user.WithdrawalSteps;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -38,18 +34,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 로그인 엔드포인트는 없다. Spring Security 가
- * {@code /oauth2/authorization/kakao} 와 {@code /login/oauth2/code/kakao} 를 직접 제공한다.
- *
- * <p>여기 있는 건 로그인 이후에 필요한 것들이다 — 프론트 라우트 가드가 매 진입마다 부르는
- * 세션 조회, 역할을 정하는 회원가입, 약관 동의, 출입증 쿠키를 지우는 로그아웃이다. 출입증이 httpOnly 쿠키라 프론트가 스스로
- * 지울 수 없어서, 서버가 지워주지 않으면 사용자는 로그아웃할 방법이 아예 없다.
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/auth")
 @Tag(name = "인증", description = "카카오 로그인 이후의 세션 조회·회원가입·약관 동의·로그아웃·회원 탈퇴")
+@RequiredArgsConstructor
 public class AuthController {
 
     private final JwtCookie jwtCookie;
@@ -57,20 +46,6 @@ public class AuthController {
     private final UserService userService;
     private final RevokedSessionService revokedSessionService;
     private final WithdrawalService withdrawalService;
-
-    public AuthController(
-            JwtCookie jwtCookie,
-            JwtProvider jwtProvider,
-            UserService userService,
-            RevokedSessionService revokedSessionService,
-            WithdrawalService withdrawalService
-    ) {
-        this.jwtCookie = jwtCookie;
-        this.jwtProvider = jwtProvider;
-        this.userService = userService;
-        this.revokedSessionService = revokedSessionService;
-        this.withdrawalService = withdrawalService;
-    }
 
     @GetMapping("/me")
     @Operation(
@@ -85,15 +60,14 @@ public class AuthController {
                     + "탈퇴를 마친 회원의 출입증이면 401 ACCOUNT_WITHDRAWN 입니다. withdrawalEnabled 는 서버가 탈퇴를 열었는지이며 "
                     + "false 면 화면이 탈퇴 버튼을 숨깁니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
                     description = "비로그인 · 로그인 만료 · 로그아웃(UNAUTHORIZED), 없는 회원(SESSION_USER_NOT_FOUND), "
-                            + "탈퇴를 마친 회원(ACCOUNT_WITHDRAWN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+                            + "탈퇴를 마친 회원(ACCOUNT_WITHDRAWN)"
+            )
     })
     public ApiResponse<CurrentUserResponse> me(@AuthenticationPrincipal String userId) {
         return ApiResponse.success(
@@ -111,7 +85,6 @@ public class AuthController {
                     + "같습니다(막 가입하면 보호자 · 기관 모두 termsAgreed 가 false). 요청 전에 받은 XSRF-TOKEN "
                     + "쿠키 값을 X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "201", description = "가입 완료"),
@@ -120,21 +93,21 @@ public class AuthController {
                     description = "role 누락·잘못된 값, 기관인데 기관 필드 누락, 보호자인데 기관 필드 포함, "
                             + "기관 정보와 handoverCode 를 함께 보냄, 사업자등록번호 형식 오류 (INVALID_REQUEST). "
                             + "쓸 수 없는 인계 코드 — 형식 오류 · 없음 · 만료 · 이미 씀 · 취소됨 · 회원 탈퇴가 꺼짐 "
-                            + "(INVALID_HANDOVER_CODE)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                            + "(INVALID_HANDOVER_CODE)"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "비로그인이거나 출입증이 더 이상 유효한 사용자를 가리키지 않음",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    description = "비로그인이거나 출입증이 더 이상 유효한 사용자를 가리키지 않음"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "CSRF 토큰 누락 또는 불일치 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    description = "CSRF 토큰 누락 또는 불일치 (FORBIDDEN)"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
                     description = "이미 가입 완료 (ALREADY_SIGNED_UP) 또는 이미 등록된 사업자등록번호 "
-                            + "(DUPLICATE_BUSINESS_NUMBER)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+                            + "(DUPLICATE_BUSINESS_NUMBER)"
+            )
     })
     public ResponseEntity<ApiResponse<CurrentUserResponse>> signup(
             @AuthenticationPrincipal String userId, @Valid @RequestBody SignupRequest request) {
@@ -154,37 +127,32 @@ public class AuthController {
                     + "/auth/me · /auth/terms · /auth/logout 외의 API 가 403 TERMS_NOT_AGREED 로 막힙니다. "
                     + "요청 전에 받은 XSRF-TOKEN 쿠키 값을 X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "200", description = "동의 저장(또는 이미 동의함)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "400",
                     description = "agreed 누락·빈 목록, 모르는 약관 키, 다른 역할의 약관이 섞임, 필수 약관 누락, "
-                            + "versions 의 키가 agreed 와 다름 (INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                            + "versions 의 키가 agreed 와 다름 (INVALID_REQUEST)"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "비로그인이거나 출입증이 더 이상 유효한 사용자를 가리키지 않음",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    description = "비로그인이거나 출입증이 더 이상 유효한 사용자를 가리키지 않음"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), CSRF 토큰 누락 또는 불일치 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), CSRF 토큰 누락 또는 불일치 (FORBIDDEN)"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
-                    description = "versions 의 판이 지금 판과 다름 — 화면을 연 뒤 약관이 바뀌었다 (TERMS_VERSION_CHANGED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+                    description = "versions 의 판이 지금 판과 다름 — 화면을 연 뒤 약관이 바뀌었다 (TERMS_VERSION_CHANGED)"
+            )
     })
     public ApiResponse<TermsAgreementResponse> agreeTerms(
             @AuthenticationPrincipal String userId, @Valid @RequestBody AgreeTermsRequest request) {
         return ApiResponse.success(userService.agreeTerms(userId, request.agreed(), request.versions()));
     }
 
-    /**
-     * 본문 없는 204 라 {@code ApiResponse} 로 감싸지 않는다
-     * (backend/AGENTS.md, docs/api/api-conventions.md).
-     */
     @PostMapping("/logout")
     @Operation(
             summary = "로그아웃",
@@ -199,21 +167,13 @@ public class AuthController {
                     responseCode = "204", description = "로그아웃 성공. 본문 없음"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "CSRF 토큰 누락 또는 불일치 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+                    description = "CSRF 토큰 누락 또는 불일치 (FORBIDDEN)"
+            )
     })
     public ResponseEntity<Void> logout(HttpServletRequest request) {
-        // 출입증 필터는 로그아웃에서 출입증을 보지 않는다 — 여기서 직접 읽는다. 만료 직전 발급한 연장 쿠키도 막아야
-        // 하므로, 서명이 맞고 최대 로그인 시간이 남아 있으면 만료된 출입증으로도 로그인 번호를 기록한다
         return endLogin(request);
     }
 
-    /**
-     * 회원 탈퇴. 접수를 커밋한 뒤 탈퇴 실행기를 깨우고 잠깐 기다린다. 완료(204)는 DB 에서 {@code deleted_at} 을 확인한 경우만이다.
-     * 쿠키는 지우지 않고 로그아웃으로 기록하지도 않는다 — 늦게 온 응답이 다른 탭의 새 로그인 쿠키를 지울 수 있고, 로그아웃으로 기록하면
-     * 204 를 놓친 화면이 같은 쿠키로 {@code /auth/me} 를 물을 때 탈퇴 완료(401 ACCOUNT_WITHDRAWN) 대신 로그인 풀림을 본다. 탈퇴한
-     * 계정의 출입증은 서버가 늘 401 ACCOUNT_WITHDRAWN 으로 막는다. 202 는 본문이 있어 {@code ApiResponse} 로 감싼다.
-     */
     @DeleteMapping("/me")
     @Operation(
             summary = "회원 탈퇴",
@@ -229,44 +189,42 @@ public class AuthController {
                     + "서버가 탈퇴를 열지 않았으면(withdrawalEnabled false) 404 입니다. "
                     + "요청 전에 받은 XSRF-TOKEN 쿠키 값을 X-XSRF-TOKEN 헤더에 포함해야 합니다."
     )
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "204", description = "탈퇴 완료. 본문 없음. 쿠키는 지우지 않음"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "400", description = "userId 누락 (INVALID_REQUEST)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    responseCode = "400",
+                    description = "userId 누락 (INVALID_REQUEST)"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "404", description = "탈퇴를 아직 열지 않음 (WITHDRAWAL_NOT_AVAILABLE)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    responseCode = "404",
+                    description = "탈퇴를 아직 열지 않음 (WITHDRAWAL_NOT_AVAILABLE)"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "202", description = "접수했고 처리 중 (withdrawal = in_progress)"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "401",
-                    description = "비로그인이거나 출입증이 더 이상 유효한 사용자를 가리키지 않음, 이미 탈퇴 (ACCOUNT_WITHDRAWN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    description = "비로그인이거나 출입증이 더 이상 유효한 사용자를 가리키지 않음, 이미 탈퇴 (ACCOUNT_WITHDRAWN)"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "기관 담당자 (ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED) 또는 CSRF 토큰 누락 · 불일치 (FORBIDDEN)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    description = "기관 담당자 (ORGANIZATION_WITHDRAWAL_NOT_SUPPORTED) 또는 CSRF 토큰 누락 · 불일치 (FORBIDDEN)"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "409",
                     description = "이미 탈퇴를 처리하는 중 (WITHDRAWAL_IN_PROGRESS) 또는 확인 화면의 계정과 로그인한 계정이 다름 "
-                            + "(WITHDRAWAL_ACCOUNT_MISMATCH)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                            + "(WITHDRAWAL_ACCOUNT_MISMATCH)"
+            ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "502",
-                    description = "카카오 연결 해제 첫 호출이 실패해 탈퇴를 취소함. 회원은 그대로 (KAKAO_UNLINK_FAILED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+                    description = "카카오 연결 해제 첫 호출이 실패해 탈퇴를 취소함. 회원은 그대로 (KAKAO_UNLINK_FAILED)"
+            )
     })
     public ResponseEntity<?> withdraw(
             @AuthenticationPrincipal String userId,
             @RequestParam("userId") String expectedUserId) {
         WithdrawalSteps.Outcome outcome = withdrawalService.withdraw(userId, expectedUserId);
         return switch (outcome) {
-            // 쿠키는 지우지 않는다. 기다리는 사이 다른 탭에서 로그인했으면 늦게 온 이 응답이 그 사람의 새 쿠키를 지운다.
-            // 로그아웃으로 기록하지도 않는다 — 204 를 놓친 화면 · 같은 로그인의 다른 탭이 이 쿠키로 /auth/me 를 물으면
-            // 401 ACCOUNT_WITHDRAWN 으로 완료를 알아야 한다. 탈퇴한 계정의 출입증은 서버가 늘 이렇게 막고, 다음 로그인이 쿠키를 덮어쓴다
             case COMPLETED -> ResponseEntity.noContent().build();
             case IN_PROGRESS -> ResponseEntity.status(HttpStatus.ACCEPTED)
                     .body(ApiResponse.success(WithdrawalResponse.inProgress()));
@@ -274,14 +232,12 @@ public class AuthController {
         };
     }
 
-    /** 이 요청의 출입증이 가리키는 로그인을 로그아웃으로 남긴다. */
     private void revokeLoginOf(HttpServletRequest request) {
         jwtProvider.parseForLogout(jwtCookie.read(request))
                 .filter(token -> token.sessionId() != null)
                 .ifPresent(this::revoke);
     }
 
-    /** 이 로그인을 로그아웃으로 남기고 출입증 쿠키(연장 쿠키 포함)를 지운 204. */
     private ResponseEntity<Void> endLogin(HttpServletRequest request) {
         revokeLoginOf(request);
         return ResponseEntity.noContent()
@@ -291,7 +247,6 @@ public class AuthController {
                 .build();
     }
 
-    /** 기록에 실패해도 쿠키는 지운다. 로그아웃이 듣지 않으면 공용 PC 의 다음 사람이 그대로 들어온다. */
     private void revoke(AccessToken token) {
         try {
             revokedSessionService.revoke(token.sessionId(), Long.valueOf(token.subject()));

@@ -2,31 +2,14 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { forgetLocalSession, getSession } from "@/lib/auth";
 
-/** 처리 중일 때 `/auth/me` 를 다시 읽는 간격. 서버 실행기는 결과를 몰랐던 탈퇴를 1분마다 다시 본다. */
 const POLL_MS = 3000;
 
 type State = "checking" | "in_progress" | "done" | "canceled" | "none" | "login_lost" | "other_account";
 
-/**
- * 탈퇴 안내 화면. 탈퇴 확인창이 보내고, 가드들이 탈퇴를 처리하는 중인 회원을 이리 보낸다. 확인창이 실제 204 를 받았을 때만
- * 이동 상태(`completed`)로 완료를 넘긴다 — 주소로 넘기지 않아 직접 열어서는 완료 화면을 볼 수 없다. 그 밖에는 서버에 묻는다.
- * 역할 묶음 밖에 둔다 — 가입 전 사람도 온다.
- *
- * `/auth/me` 를 주기적으로 다시 읽어 결과를 나눈다.
- *  - 401 ACCOUNT_WITHDRAWN: 끝났다. 이 브라우저의 표시만 지운다 — 서버 로그아웃은 부르지 않는다(그 사이 다른 탭에서 로그인한
- *    사람의 쿠키가 실려 가 그 로그인을 끊을 수 있다). 탈퇴한 계정의 출입증은 서버가 늘 401 로 막는다
- *  - 그 밖의 401: 로그인이 풀렸을 뿐이다. 끝났다고 보여 주지 않는다 — 다시 로그인하면 진행을 볼 수 있다
- *  - withdrawal = in_progress: 계속 기다린다
- *  - 지금 계정이 탈퇴를 요청한 계정과 다르면(그 사이 다른 탭에서 로그인) 그 계정의 상태를 결과로 읽지 않는다
- *  - withdrawal = none: 탈퇴 확인 창에서 왔으면 첫 카카오 호출이 실패해 접수가 취소된 것이다. 주소로 직접 들어왔으면 진행 중인
- *    탈퇴가 없다는 것뿐이다 — 신청한 적 없는 사람에게 "탈퇴하지 못했어요" 를 보이지 않는다
- */
 export default function WithdrawalPage() {
   const navState = useLocation().state as { completed?: boolean; userId?: string } | null;
-  // 탈퇴를 요청한 계정. 결과를 해석하기 전에 지금 로그인한 계정과 같은지 본다
   const requestedUserId = navState?.userId ?? null;
   const completed = navState?.completed === true;
-  // 탈퇴 확인 창이 보낸 것인지. 직접 연 주소에는 이동 상태가 없다
   const fromRequest = navState !== null && typeof navState === "object" && "completed" in navState;
   const [state, setState] = useState<State>(completed ? "done" : "checking");
 
@@ -40,8 +23,6 @@ export default function WithdrawalPage() {
         const session = await getSession();
         if (stopped) return;
         if (session.withdrawn) {
-          // 서버 로그아웃을 부르지 않는다. 그 사이 다른 탭에서 다른 계정으로 로그인했으면 그 사람의 쿠키가 실려 가 그 로그인을
-          // 끊는다. 탈퇴한 계정의 출입증은 서버가 늘 401 로 막고, 다음 로그인이 쿠키를 덮어쓴다 — 이 브라우저 표시만 지운다
           forgetLocalSession();
           setState("done");
           return;
@@ -51,7 +32,6 @@ export default function WithdrawalPage() {
           return;
         }
         if (requestedUserId && session.userId !== requestedUserId) {
-          // 그 사이 다른 탭에서 다른 계정으로 로그인했다. 그 계정의 상태를 탈퇴를 요청한 계정의 결과로 읽지 않는다
           setState("other_account");
           return;
         }
@@ -61,7 +41,6 @@ export default function WithdrawalPage() {
         }
         setState("in_progress");
       } catch {
-        // 서버 장애 · 네트워크 — 결과를 모르니 처리 중으로 두고 다시 묻는다
         if (!stopped) setState("in_progress");
       }
       if (!stopped) timer = setTimeout(check, POLL_MS);
@@ -72,7 +51,6 @@ export default function WithdrawalPage() {
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-    // 처음 한 번만 시작한다 — 이어서 묻는 일은 check 가 스스로 한다
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

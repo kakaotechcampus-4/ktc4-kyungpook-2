@@ -41,13 +41,6 @@ import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 기관 수신함 (#273) — 학교가 Gate 2 에서 승인한 글이 센터 수신함에 뜨고, 열면 열람 시각이 남고, 보호자가 센터
- * 동의를 끄면 사라진다. 보안 필터·권한 검사·잠금·저장까지 실제로 거친다.
- *
- * <p>학교가 아이를 등록하고 엄마가 연결해 학교에 동의한다. 센터는 엄마의 기관 코드 요청을 수락하고, 엄마가 센터에도
- * 동의한다. 인사이트는 AI 워커 대신 저장소로 넣고, 승인은 실제 API 로 한다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -142,7 +135,6 @@ class InstitutionInboxApiTest {
                 .andExpect(status().isOk());
         consent(school, "grant");
 
-        // 엄마가 센터 코드로 요청하고 센터가 관리번호를 넣어 수락한다 — 같은 아이가 두 기관 명부에 오른다.
         String centerCode = json(mockMvc.perform(get("/api/v1/institutions/me").cookie(auth(centerStaff)))
                 .andExpect(status().isOk()), "$.data.code");
         mockMvc.perform(withCsrf(post("/api/v1/children/" + childId + "/institutions"), auth(mom))
@@ -178,12 +170,10 @@ class InstitutionInboxApiTest {
                 .andExpect(jsonPath("$.data[0].from.id").value(String.valueOf(school.getId())))
                 .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
                 .andExpect(jsonPath("$.data[0].receivedAt").isNotEmpty())
-                // 본문은 단건에서만 준다. 같이 받은 다른 기관도 주지 않는다.
                 .andExpect(jsonPath("$.data[0].content").doesNotExist())
                 .andExpect(jsonPath("$.data[0].sharedWith").doesNotExist())
                 .andExpect(jsonPath("$.data[0].readAt").value(nullValue()))
                 .andReturn().getResponse().getContentAsString();
-        // 공통 응답의 NON_NULL 은 중첩 DTO 에 닿지 않는다. 키는 남고 값만 null 이다.
         assertThat(raw).contains("\"readAt\":null");
 
         mockMvc.perform(get(INBOX + "/" + insightId).cookie(auth(centerStaff)))
@@ -196,7 +186,6 @@ class InstitutionInboxApiTest {
                 .andExpect(jsonPath("$.data[0].readAt").isNotEmpty());
     }
 
-    /** 기관 화면이 10초마다 묻는 안 읽은 글 수 (#456). 단건을 열면 준다. */
     @Test
     void 안_읽은_글_수는_단건을_열면_준다() throws Exception {
         mockMvc.perform(get(UNREAD).cookie(auth(centerStaff)))
@@ -235,7 +224,6 @@ class InstitutionInboxApiTest {
                 .hasValueSatisfying(grant -> assertThat(grant.getReadAt()).isNull());
     }
 
-    /** 승인한 기관 자신은 받지 않는다. 남의 기관에 열린 글은 있는지조차 알려주지 않는다. */
     @Test
     void 승인한_학교의_수신함에는_없고_단건은_404_다() throws Exception {
         mockMvc.perform(get(INBOX).cookie(auth(schoolStaff)))

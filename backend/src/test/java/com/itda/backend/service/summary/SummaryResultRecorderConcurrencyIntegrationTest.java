@@ -49,13 +49,6 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 
-/**
- * 요약 결과를 남기는 일이 동의 철회 · Gate 1 결정과 겹칠 때를 PostgreSQL 에서 확인한다 (#398, 멘토 8차 리뷰 P2).
- *
- * <p>다른 커넥션(홀더)이 행을 잠근 채 커밋하지 않고 잡아 둔다. 결과 저장이 홀더 때문에 멈췄는지
- * {@code pg_blocking_pids} 로 확인한 뒤 홀더를 커밋해, 저장이 잠금을 기다린 다음 최신 상태로 판단하는지 본다.
- * 잠금 순서는 Gate 1 결정과 같은 요약 행 → 아이 행이다 (DB 스키마 §3.3).
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -94,7 +87,6 @@ class SummaryResultRecorderConcurrencyIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        // 아이 행이 있어야 잠글 것이 있다.
         childId = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1))).getId();
         group = new SummaryGroup(childId, DATE, ORG);
         sharingConsentRepository.save(SharingConsent.grant(childId, 100L, ORG, List.of(ConsentField.DAILY_SUMMARY)));
@@ -114,10 +106,6 @@ class SummaryResultRecorderConcurrencyIntegrationTest {
         }
     }
 
-    /**
-     * 동의 철회(ConsentService)가 아이 행을 잠근 채 커밋하지 않고 있다. 결과 저장은 아이 행에서 기다렸다가 철회가 커밋된
-     * 뒤의 동의를 보고 저장하지 않아야 한다. 잠그지 않고 읽으면 커밋 전 값(켜짐)을 보고 철회된 아이의 요약을 남긴다.
-     */
     @Test
     void 동의_철회가_아이_행을_잡고_있으면_저장은_기다렸다가_요약을_남기지_않는다() throws Exception {
         JournalEntry entry = journalEntryRepository.save(summarizing("블록 놀이를 했다."));
@@ -149,10 +137,6 @@ class SummaryResultRecorderConcurrencyIntegrationTest {
         assertThat(found.getSummaryId()).isNull();
     }
 
-    /**
-     * Gate 1 결정은 요약 행 → 아이 행 순서로 잠근다. 그 요약 행을 쥔 동안 결과 저장이 오면 저장은 아이 행을 잡지 않은 채
-     * 요약 행에서 기다려야 한다 — 아이 행을 먼저 잡으면 Gate 1 이 아이 행을 기다리고 저장이 요약 행을 기다려 교착이 된다.
-     */
     @Test
     void Gate1_결정처럼_요약_행을_먼저_잡고_아이_행을_잡아도_교착_없이_끝난다() throws Exception {
         SummaryResult pending = summaryResultRepository.save(SummaryResult.of(childId, DATE, ORG, 1,
@@ -174,7 +158,6 @@ class SummaryResultRecorderConcurrencyIntegrationTest {
             Future<?> record = executor.submit(
                     () -> recorder.record(claimed(resummarizing), sent(resummarizing), reply));
             waitUntilBlockedBy(holderPid);
-            // Gate 1 결정의 다음 단계 — 아이 행을 잠근다. 저장이 아이 행을 쥐고 있으면 여기서 막혀 교착이 된다.
             try (Statement statement = holder.createStatement()) {
                 statement.execute("SET LOCAL lock_timeout = '3s'");
                 statement.executeQuery("SELECT id FROM child WHERE id = " + childId + " FOR UPDATE");
@@ -215,7 +198,6 @@ class SummaryResultRecorderConcurrencyIntegrationTest {
                 List.of(new SummaryAgentRequest.Source(entry.getId(), entry.getContent(), "2026-10-08")), List.of());
     }
 
-    /** 계약대로 만든 AI 응답. 문장 하나가 {@code evidenceFrom} 원문 전체를 인용한다. */
     private SummaryAgentReply reply(String content, JournalEntry evidenceFrom) throws Exception {
         String quote = evidenceFrom.getContent();
         String json = """

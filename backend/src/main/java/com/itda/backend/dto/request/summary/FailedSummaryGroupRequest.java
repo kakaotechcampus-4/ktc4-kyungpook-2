@@ -12,13 +12,6 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 
-/**
- * POST /api/v1/summaries/failed/retry · /failed/close 의 요청 (#369). 교사가 자기 기관 아이의 그 날짜 요약 실패 묶음을
- * 다시 요약하거나 요약 없이 마무리한다.
- *
- * <p>{@code entryDate} 를 문자열로 받는 이유는 {@link RegisterChildRequest} 와 같다 — "yyyy-MM-dd" 이고 실제로 있는
- * 날짜만 받는다. 실패는 전부 400 INVALID_REQUEST 다.
- */
 public record FailedSummaryGroupRequest(
         @NotNull
         Long childId,
@@ -29,7 +22,6 @@ public record FailedSummaryGroupRequest(
         String entryDate
 ) {
 
-    /** 실제로 있는 날짜여야 한다. null 은 {@code @NotNull} 이 따로 잡는다. */
     @JsonIgnore
     @AssertTrue
     public boolean isEntryDateValid() {
@@ -44,7 +36,6 @@ public record FailedSummaryGroupRequest(
         }
     }
 
-    /** 검증을 통과한 뒤에만 부른다. */
     public LocalDate entryDateValue() {
         return LocalDate.parse(entryDate);
     }

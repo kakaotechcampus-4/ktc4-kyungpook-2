@@ -53,12 +53,6 @@ import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.ChildGuardianService;
 
-/**
- * 돌봄 정보 저장이 다른 저장·연결 해제와 겹칠 때를 PostgreSQL 에서 재현한다. 방식은 {@link LockContention} 이다.
- *
- * <p>정책: 저장끼리는 아이 행에서 줄을 서서 뒤에 온 쪽이 덮어쓰고 행은 하나다. 연결 해제가 먼저 반영되면 뒤따른 저장은
- * 403 이고 돌봄 정보는 생기지도 바뀌지도 않는다 — 권한을 잠근 뒤에 보는지는 저장끼리의 경합만으로는 드러나지 않는다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -103,7 +97,6 @@ class ChildCareInfoConcurrencyIntegrationTest {
         mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom")));
         dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad")));
         childId = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14))).getId();
-        // 초대 코드 경로는 이 테스트의 관심이 아니다. 연결 행은 초대 id 만 있으면 된다.
         childGuardianRepository.save(ChildGuardian.link(childId, mom.getId(), 1L));
         childGuardianRepository.save(ChildGuardian.link(childId, dad.getId(), 1L));
     }
@@ -121,7 +114,6 @@ class ChildCareInfoConcurrencyIntegrationTest {
         }
     }
 
-    /** 첫 저장이 겹쳐도 둘 다 "행 없음" 을 보고 INSERT 하지 않는다. 뒤에 온 아빠가 기다렸다 덮어쓴다. */
     @Test
     void 저장끼리는_줄을_서고_뒤에_온_쪽이_덮어쓰며_행은_하나다() throws Exception {
         Held<Object> held = contention.firstHoldsThen(
@@ -173,8 +165,6 @@ class ChildCareInfoConcurrencyIntegrationTest {
         assertThat(stored.getAllergies()).containsExactly("땅콩");
         assertThat(stored.getUpdatedBy()).isEqualTo(mom.getId());
     }
-
-    // --- 도구 ---
 
     private static UpdateCareInfoRequest request(String allergy) {
         return new UpdateCareInfoRequest(List.of(allergy), List.of(new MedicationRequest("○○정", "점심 식후")));

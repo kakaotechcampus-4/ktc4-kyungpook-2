@@ -1,4 +1,3 @@
-/** iOS 스타일 토글 스위치 — 프로토타입의 기관 권한 on/off 시각을 재현한다. */
 export function Toggle({
   on,
   onChange,

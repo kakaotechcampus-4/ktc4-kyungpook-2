@@ -53,7 +53,6 @@ class MatchingServiceTest {
         consent(other, theirs);
     }
 
-    // 매칭 명부는 child.status 가 아니라 그 기관에 대한 동의(sharing_consent)로 정해진다.
     private void consent(Child child, Organization organization) {
         em.merge(child).activate();
         em.persist(SharingConsent.grant(child.getId(), 100L, organization.getId(), List.of(ConsentField.DAILY_SUMMARY)));
@@ -69,7 +68,6 @@ class MatchingServiceTest {
         return em.persist(JournalEntry.of(rawRecord.getId(), LocalDate.of(2026, 9, 1), "점심을 잘 먹음", 1));
     }
 
-    // RawRecord 에는 아직 표지 힌트를 채우는 메서드가 없다 (업로드 쪽 후속 작업). 테스트에서는 컬럼을 직접 채운다.
     private void setHint(RawRecord rawRecord, String name, String birthdate) {
         em.getEntityManager()
                 .createNativeQuery("update raw_record set hint_name = ?1, hint_birthdate = ?2 where id = ?3")
@@ -125,7 +123,6 @@ class MatchingServiceTest {
                 .containsExactly(yujin.getId());
     }
 
-    /** 다른 기관에만 동의한 아이는 child.status 가 ACTIVE 여도 이 기관 명단에 들어가지 않는다. */
     @Test
     void 다른_기관에만_동의한_아동은_명단에서_빠진다() {
         Organization school = em.persist(Organization.of("○○초", OrganizationType.SCHOOL, "1111111111"));
@@ -164,7 +161,6 @@ class MatchingServiceTest {
 
     @Test
     void 원본의_기관이_없으면_요청을_만들_수_없다() {
-        // 9/22 이전 행은 기관 ID 대신 카카오 회원번호가 들어 있다 (DB 스키마 §6.1). 숫자라 파싱은 된다.
         JournalEntry legacy = entry(rawRecord("3141592653"));
         JournalEntry broken = entry(rawRecord("kakao-abc"));
 
@@ -233,7 +229,6 @@ class MatchingServiceTest {
 
         boolean released = matchingService.releaseAfterAgentDown(entry.getId(), 2);
 
-        // 실패로 남기는 건 워커가 recorder 로 한다. 여기서는 매칭 중 그대로 둔다.
         assertThat(released).isFalse();
         assertThat(reload(entry).getStatus()).isEqualTo(JournalEntryStatus.MATCHING);
         assertThat(reload(entry).getAgentRetryCount()).isEqualTo(2);
@@ -241,7 +236,6 @@ class MatchingServiceTest {
 
     @Test
     void 횟수_컬럼이_비어_있는_기존_일지도_0번으로_보고_센다() {
-        // 배포 DB 의 기존 행은 컬럼이 추가될 때 NULL 로 채워진다 (DB 스키마 §11.4).
         JournalEntry entry = entry(rawRecord(String.valueOf(ours.getId())));
         matchingService.claimPending(10);
         em.flush();

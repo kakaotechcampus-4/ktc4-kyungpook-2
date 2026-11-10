@@ -39,7 +39,6 @@ class ChildContextRepositoryTest {
         assertThat(found.getCreatedAt()).isNotNull();
     }
 
-    /** 타임라인(O-14)은 최근 승인부터 본다. */
     @Test
     void 아동별로_최근_승인부터_가져온다() {
         childContextRepository.saveAndFlush(ChildContext.of(8L, 31L, "먼저 승인된 요약"));
@@ -52,13 +51,6 @@ class ChildContextRepositoryTest {
                 .containsExactly("나중에 승인된 요약", "먼저 승인된 요약");
     }
 
-    /**
-     * 한 요약에 승인본은 하나다 (코드리뷰 반영).
-     *
-     * <p>승인된 요약을 다시 승인하는 경로가 없다(§8.2) — 반려 상태가 없고, 승인 뒤 새 일지가 오면
-     * 그 요약을 고치지 않고 revision + 1 로 새 요약을 만든다. 제약이 없으면 Gate 1 승인 API 를
-     * 두 번 호출했을 때 같은 글이 조용히 두 번 쌓인다.
-     */
     @Test
     void 같은_요약으로_두_번_승인하면_막힌다() {
         childContextRepository.saveAndFlush(ChildContext.of(8L, 31L, "처음 승인한 글"));
@@ -68,7 +60,6 @@ class ChildContextRepositoryTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
-    /** 판이 바뀌면(revision + 1) 다른 요약이므로 같은 아이에게 승인본이 여러 건 쌓인다. */
     @Test
     void 다른_요약이면_같은_아이에게_여러_건_쌓인다() {
         childContextRepository.saveAndFlush(ChildContext.of(8L, 31L, "1판 승인본"));
@@ -78,10 +69,6 @@ class ChildContextRepositoryTest {
         assertThat(childContextRepository.findByChildIdOrderByIdDesc(8L)).hasSize(2);
     }
 
-    /**
-     * 인사이트 워커는 <b>승인 시각</b>으로 다시 볼 주를 고른다 (#239). 관찰 날짜가 오래돼도 최근에 승인됐으면
-     * 나와야 하고, 승인이 오래됐으면 빠져야 한다.
-     */
     @Test
     void 그때_이후_승인된_요약의_아이와_관찰_날짜를_가져온다() {
         LocalDate oldEntry = LocalDate.of(2026, 8, 19);

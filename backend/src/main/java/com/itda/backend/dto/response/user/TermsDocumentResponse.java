@@ -5,12 +5,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import com.itda.backend.domain.user.TermKey;
 import com.itda.backend.service.user.TermsDocument;
 
-/**
- * GET /api/v1/terms 의 약관 한 개.
- *
- * <p>{@code effectiveDate} 는 지금 판 이름의 날짜 부분이다. 판 이름이 날짜 뒤에 꼬리({@code 2026-11-07-2})를 달아도
- * 화면이 시행일을 그대로 그리도록 따로 준다.
- */
 public record TermsDocumentResponse(
         @Schema(description = "약관 키. 동의 요청의 agreed · versions 키와 같다", example = "privacy")
         TermKey key,

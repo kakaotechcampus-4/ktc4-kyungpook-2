@@ -11,14 +11,12 @@ import org.junit.jupiter.api.Test;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.dto.response.summary.SummaryAgentResponse;
 
-/** 요약 저장 직전 BE 근거 재검사 (멘토 리뷰 A4, #129). */
 class SummaryEvidenceCheckerTest {
 
     private static final SummaryGroup GROUP = new SummaryGroup(8L, LocalDate.of(2026, 10, 8), 3L);
     private static final Map<Long, String> SOURCES = Map.of(
             1041L, "블록 놀이에서 친구에게 양보함",
             1042L, "오늘 😀 블록을 쌓았다");
-    /** AI 에 보낸 일지. 1043 은 보낸 뒤 요약하는 사이 삭제돼 SOURCES 에 없다. */
     private static final Set<Long> SENT = Set.of(1041L, 1042L, 1043L);
 
     private final SummaryEvidenceChecker checker = new SummaryEvidenceChecker();
@@ -40,7 +38,6 @@ class SummaryEvidenceCheckerTest {
         }
     }
 
-    /** 요약할 내용이 없다는 응답 (#244). 계약은 본문 "", claims [], 묶음 일지 전부 uncovered 다. */
     private SummaryAgentResponse noContent(long childId, String content, String claims, String uncovered) {
         String json = """
                 {"child_id": %d, "entry_date": "2026-10-08", "institution_id": 3, "content": "%s",
@@ -62,7 +59,6 @@ class SummaryEvidenceCheckerTest {
 
     @Test
     void 요약할_내용이_없다면서_문장이나_본문이_있으면_걸린다() {
-        // 빈 요약으로 저장하면 AI 가 쓴 글이 Gate 1 에 안 보인 채 사라진다.
         assertThat(checker.findProblem(GROUP, SENT, SOURCES,
                 noContent(8, "", "[" + claim(evidence(1041, "친구에게 양보함", 8, 16)) + "]", "[]")))
                 .get().asString().contains("no_content");
@@ -72,7 +68,6 @@ class SummaryEvidenceCheckerTest {
 
     @Test
     void 요약할_내용이_없다면서_반영된_일지가_있으면_걸린다() {
-        // covered 에 든 일지는 Gate 1 원본 목록에서 빠져, 교사가 보지 못한 채 확인과 함께 끝난다.
         String json = """
                 {"child_id": 8, "entry_date": "2026-10-08", "institution_id": 3, "content": "",
                  "claims": [], "covered_entry_ids": [1041], "uncovered_entry_ids": [1042], "no_content": true}
@@ -113,7 +108,6 @@ class SummaryEvidenceCheckerTest {
 
     @Test
     void 이모지가_앞에_있으면_코드포인트_기준_span만_통과한다() {
-        // "오늘 😀 블록을 쌓았다" — 😀 는 코드포인트 1개, UTF-16 char 2개다.
         String codePointSpan = "[" + claim(evidence(1042, "블록을 쌓았다", 5, 12)) + "]";
         String utf16Span = "[" + claim(evidence(1042, "블록을 쌓았다", 6, 13)) + "]";
 
@@ -123,7 +117,6 @@ class SummaryEvidenceCheckerTest {
 
     @Test
     void 이번_묶음_재료에_없는_일지를_근거로_들면_걸린다() {
-        // 요약하는 사이 삭제된 일지도 재료에서 빠지므로 여기 걸린다.
         String claims = "[" + claim(evidence(9999, "친구에게 양보함", 8, 16)) + "]";
 
         assertThat(checker.findProblem(GROUP, SENT, SOURCES, response(claims))).get().asString()
@@ -193,7 +186,6 @@ class SummaryEvidenceCheckerTest {
 
     @Test
     void 요약하는_사이_삭제된_일지가_반영_안_됨_목록에_있는_것은_괜찮다() {
-        // AI 는 보낸 일지를 모두 covered 나 uncovered 에 넣는다. 근거로 들지 않았으면 삭제됐어도 문제가 아니다.
         String claims = "[" + claim(evidence(1041, "친구에게 양보함", 8, 16)) + "]";
 
         assertThat(checker.findProblem(GROUP, SENT, SOURCES,

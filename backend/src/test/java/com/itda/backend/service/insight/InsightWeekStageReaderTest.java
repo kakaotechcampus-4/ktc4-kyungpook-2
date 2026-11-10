@@ -22,7 +22,6 @@ import com.itda.backend.service.insight.InsightWeekStageReader.Stage;
 import com.itda.backend.service.insight.InsightWeekStageReader.Week;
 import com.itda.backend.service.insight.InsightWeekStageReader.WeekStage;
 
-/** 대시보드 5단계(분석 승인) 판정 (#370). 승인 주체는 학교 &gt; 센터 &gt; 활동지원사다 ({@link PrimarySource}). */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(InsightWeekStageReader.class)
@@ -112,10 +111,6 @@ class InsightWeekStageReaderTest {
         assertThat(reader.stagesOf(center, List.of(WEEK))).isEmpty();
     }
 
-    /**
-     * (아이 8, 이번 주) · (아이 9, 다음 주)를 물으면 묻지 않은 (아이 8, 다음 주)도 조회 후보에 든다 (#493). 답에는 물은 조합만
-     * 남아야 한다.
-     */
     @Test
     void 물은_아이와_주의_조합만_답한다() {
         Week other = new Week(9L, FROM.plusWeeks(1), TO.plusWeeks(1));
@@ -133,7 +128,6 @@ class InsightWeekStageReaderTest {
     void 물은_주_밖의_회차는_답에_영향을_주지_않는다() {
         Week next = new Week(CHILD, FROM.plusWeeks(1), TO.plusWeeks(1));
         InsightResult mine = insight(1, "[" + center + "]");
-        // 다음 주에는 회차가 더 많고 모두 승인됐다. 이번 주의 마지막 회차(1)를 가리면 안 된다
         for (int revision = 1; revision <= 3; revision++) {
             InsightResult later = insight(next, revision, "[" + center + "]");
             later.approveGate2();

@@ -48,14 +48,8 @@ import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.service.insight.InsightAccessRevoker;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 동의 미리보기·부여·철회가 실제 DB 행과 아동 상태를 어떻게 바꾸는지 본다.
- * 아이는 센터(ours)와 학교(school)에 함께 다니고, 엄마·아빠가 연결돼 있다. 명부에 없는 기관(outside)도 있다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
-// InsightAccessRevoker 는 가짜가 아니라 진짜를 넣는다 — 동의 철회가 열람 권한까지 거두는지(#213)
-// 이 테스트가 같이 지켜준다. 가짜면 배선이 끊겨도 초록이다.
 @Import({ConsentService.class, ConsentStateReader.class, InsightAccessRevoker.class,
         ConsentServiceJpaTest.ClockConfig.class})
 class ConsentServiceJpaTest {
@@ -155,9 +149,6 @@ class ConsentServiceJpaTest {
         return em.find(Child.class, child.getId()).getStatus();
     }
 
-    // --- grant ---
-
-    /** 동의는 기관별이다. 센터에 동의하면 센터 명부에만 들어가고, 학교 명부에는 들어가지 않는다. */
     @Test
     void 첫_동의로_아이가_active_가_되고_그_기관_명부에만_들어간다() {
         ConsentResponse response = grant(MOTHER, ours, BOTH);
@@ -176,7 +167,6 @@ class ConsentServiceJpaTest {
         assertThat(childRepository.findConsentedByOrganizationId(school.getId())).isEmpty();
     }
 
-    /** 같은 보호자가 다시 동의하면 새 행 없이 항목만 바뀐다. 같은 요청을 여러 번 보내도 결과가 같다. */
     @Test
     void 같은_보호자가_다시_동의하면_항목만_바뀐다() {
         grant(MOTHER, ours, DAILY);
@@ -188,7 +178,6 @@ class ConsentServiceJpaTest {
                 .satisfies(consent -> assertThat(consent.getScope()).containsExactlyElementsOf(BOTH));
     }
 
-    /** 공유 항목은 기관 단위로 하나다. 마지막으로 동의한 보호자의 항목으로 그 기관의 ACTIVE 행을 모두 맞춘다. */
     @Test
     void 두_번째_보호자가_동의하면_자기_행이_생기고_기관의_항목이_하나로_맞춰진다() {
         grant(MOTHER, ours, BOTH);
@@ -209,9 +198,6 @@ class ConsentServiceJpaTest {
                 .satisfies(consent -> assertThat(consent.getScope()).containsExactlyElementsOf(BOTH));
     }
 
-    // --- revoke ---
-
-    /** 끄는 쪽을 우선한다. 아빠가 철회하면 엄마의 동의까지 그 기관 동의가 모두 꺼진다. */
     @Test
     void 한_보호자가_철회하면_그_기관의_모든_동의가_꺼진다() {
         grant(MOTHER, ours, BOTH);
@@ -232,7 +218,6 @@ class ConsentServiceJpaTest {
         assertThat(childRepository.findConsentedByOrganizationId(ours.getId())).isEmpty();
     }
 
-    /** 다른 기관 동의가 남아 있으면 아이는 계속 active 다. */
     @Test
     void 다른_기관_동의가_남으면_아이는_active_로_남는다() {
         grant(MOTHER, ours, BOTH);
@@ -257,7 +242,6 @@ class ConsentServiceJpaTest {
         assertThat(childStatus()).isEqualTo(ChildStatus.PENDING_CONSENT);
     }
 
-    /** 철회 뒤 다시 동의하면 새 행이 생긴다. 철회 이력은 그대로 남는다. */
     @Test
     void 철회_뒤_다시_동의하면_새_행으로_켜진다() {
         grant(MOTHER, ours, BOTH);
@@ -269,8 +253,6 @@ class ConsentServiceJpaTest {
         assertThat(consentsAt(ours)).extracting(SharingConsent::getStatus)
                 .containsExactly(SharingConsentStatus.REVOKED, SharingConsentStatus.ACTIVE);
     }
-
-    // --- 거절 경로 ---
 
     @Test
     void 연결되지_않은_아이에는_동의할_수_없다() {
@@ -317,7 +299,6 @@ class ConsentServiceJpaTest {
         assertTargetNotFound(() -> consentService.preview(MOTHER, child.getId(), ours.getId()));
     }
 
-    /** 요청 검증을 거치지 않고 들어와도 엔티티까지 내려가 500 이 되지 않고 400 으로 끝난다. */
     @Test
     void 빈_항목이나_비어_있는_값이_섞인_동의는_400() {
         assertInvalid(() -> grant(MOTHER, ours, null));
@@ -325,8 +306,6 @@ class ConsentServiceJpaTest {
         assertInvalid(() -> grant(MOTHER, ours, Arrays.asList(ConsentField.DAILY_SUMMARY, null)));
         assertThat(consentsAt(ours)).isEmpty();
     }
-
-    // --- preview ---
 
     @Test
     void 미리보기는_아이와_기관과_공유_범위를_돌려준다() {
@@ -342,7 +321,6 @@ class ConsentServiceJpaTest {
         assertThat(preview.allowedFields()).containsExactlyElementsOf(BOTH);
     }
 
-    /** 다른 보호자가 이미 동의한 기관도 "동의할 것이 없다"로 본다. 철회된 뒤에는 다시 보인다. */
     @Test
     void 이미_동의한_기관은_미리보기가_404다() {
         grant(FATHER, ours, BOTH);

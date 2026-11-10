@@ -25,13 +25,6 @@ import com.itda.backend.exception.agent.AiAgentUnreadableResponseException;
 
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * AI 서버 호출 공통 부분. 에이전트별 클라이언트(매칭·검증·요약·인사이트)가 경로와 요청·응답 타입만 정해서 쓴다.
- *
- * <p>대량으로 돌리면 몇 건은 응답이 없다(9/28 실서버 11건 중 1건). 그래서 연결 실패·타임아웃·5xx 는
- * 설정된 간격으로 다시 시도한다. "잠시 뒤 다시"라는 408·429 도 같다. 그 밖의 4xx 는 요청 자체가 계약과 다르다는 뜻이라
- * 다시 보내도 같으므로 바로 실패한다.
- */
 @Slf4j
 @Component
 public class AiAgentClient {
@@ -49,12 +42,6 @@ public class AiAgentClient {
         this(restClient, objectMapper, properties, properties.retryBackoffs().size());
     }
 
-    /**
-     * 응답 대기 시간 초과만 따로 덜 다시 보내는 에이전트용 (#386). 연결 실패·5xx 는 그대로 {@code retryBackoffs} 만큼 다시 보낸다.
-     *
-     * <p>인사이트는 한 번에 몇 분을 기다린다. 시간 초과를 다른 실패처럼 세 번 보내면 한 아이에 십 분 넘게 묶인다.
-     * 연결 실패·5xx 는 금방 끝나서 줄일 이유가 없다.
-     */
     public AiAgentClient(RestClient restClient, ObjectMapper objectMapper, AiAgentProperties properties,
             int timeoutRetries) {
         this.restClient = restClient;
@@ -63,19 +50,10 @@ public class AiAgentClient {
         this.timeoutRetries = timeoutRetries;
     }
 
-    /** {@code path} 로 요청을 보내고 응답 원문을 돌려준다. 원문은 결과 테이블의 raw_response 에 그대로 남긴다. */
     public String post(String path, Object request, Long journalEntryId) {
         return post(path, request, "journalEntryId=" + journalEntryId);
     }
 
-    /**
-     * 처리 단위가 일지 한 건이 아닌 에이전트용. {@code context} 는 재시도 로그와 예외 메시지에만 쓴다.
-     *
-     * <p>인사이트는 아동 × 기간으로 부르느라 넘길 일지 id 가 없다. 그렇다고 {@code null} 을 넘기면 실패
-     * 로그가 전부 {@code journalEntryId=null} 이 돼서 어느 호출이 터졌는지 알 수 없다.
-     *
-     * <p>⚠️ {@code context} 에 아이 이름 같은 개인정보를 넣지 않는다. ID 와 기간이면 충분하다.
-     */
     public String post(String path, Object request, String context) {
         int timeouts = 0;
         for (int attempt = 0; ; attempt++) {
@@ -104,7 +82,6 @@ public class AiAgentClient {
         }
     }
 
-    // 연결 실패·타임아웃·5xx 와, 4xx 중 "잠시 뒤 다시"라는 뜻인 408·429 는 다시 보내면 될 수 있다.
     private static boolean isTransient(RestClientException e) {
         if (e instanceof ResourceAccessException || e instanceof HttpServerErrorException) {
             return true;
@@ -114,16 +91,12 @@ public class AiAgentClient {
                         || clientError.getStatusCode().value() == HttpStatus.TOO_MANY_REQUESTS.value());
     }
 
-    // 응답 대기 시간 초과. 연결 시간 초과(3초)는 금방 끝나서 덜 보낼 이유가 없다 — HttpClient 5 는 이것도
-    // SocketTimeoutException 의 하위 타입으로 던져서 따로 뺀다.
     private static boolean isReadTimeout(RestClientException e) {
         return e instanceof ResourceAccessException
                 && e.getCause() instanceof SocketTimeoutException
                 && !(e.getCause() instanceof ConnectTimeoutException);
     }
 
-    // 그 밖의 4xx 는 BE 가 계약과 다른 요청을 보낸 것이다. 4xx 도 아닌데 실패했으면 요청 본문을 못 만드는 등 BE 쪽에서
-    // 난 것이라 원인을 고르지 않고 그대로 올린다(INTERNAL_ERROR).
     private static AiAgentException notRetried(RestClientException e, String path, Object context) {
         if (e instanceof HttpClientErrorException) {
             return new AiAgentRejectedException("agent rejected request path=" + path + " " + context, e);
@@ -141,18 +114,12 @@ public class AiAgentClient {
         } catch (JsonProcessingException e) {
             throw new AiAgentUnreadableResponseException("agent returned unreadable body", e);
         }
-        // 본문이 JSON null 이면 예외 없이 null 이 나온다. 넘기면 받는 쪽에서 NPE 가 나 BE 오류로 잘못 분류된다.
         if (parsed == null) {
             throw new AiAgentUnreadableResponseException("agent returned null body");
         }
         return parsed;
     }
 
-    /**
-     * 재시도까지 실패한 마지막 응답 body 의 {@code detail.<field>}. 연결 실패·타임아웃이거나 body 를 읽을 수 없으면
-     * {@code null} 이다. AI 는 503 body 에 {@code detail.reason}(BE 가 후속 처리를 가르는 값)과
-     * {@code detail.failure}(실패 종류, 기록용)를 싣는다.
-     */
     public String detailOf(AiAgentUnavailableException e, String field) {
         if (!(e.getCause() instanceof HttpServerErrorException serverError)) {
             return null;
@@ -165,7 +132,6 @@ public class AiAgentClient {
         }
     }
 
-    /** 일지를 집기 전에 AI 가 떠 있는지 본다. 꺼져 있을 때 일지를 집으면 전부 실패로 남기 때문이다. */
     public boolean isAvailable() {
         try {
             restClient.get().uri("/health").retrieve().toBodilessEntity();
@@ -179,7 +145,6 @@ public class AiAgentClient {
         try {
             Thread.sleep(backoff);
         } catch (InterruptedException e) {
-            // 앱 종료 중이다. 인터럽트 표시를 되살려 두면 워커가 보고 실패로 남기지 않고 멈춘다.
             Thread.currentThread().interrupt();
             throw new AiAgentException("interrupted while waiting to retry", e);
         }

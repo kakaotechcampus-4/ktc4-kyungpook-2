@@ -45,13 +45,9 @@ import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 보호자 일지가 실제 DB 행에서 무엇을 고르는지 본다. 엄마는 하늘이와 연결돼 있고, 하늘이는 센터·학교에 다닌다.
- * 아빠는 바다에게만 연결돼 있다. 일지는 교사가 Gate 1 에서 승인한 요약(승인본) 하나다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianJournalQueryService.class, ClockConfig.class})
+@Import({GuardianJournalQueryService.class, GuardianChildGuard.class, ClockConfig.class})
 class GuardianJournalQueryServiceJpaTest {
 
     private static final String MOM_PRINCIPAL = "41";
@@ -110,9 +106,6 @@ class GuardianJournalQueryServiceJpaTest {
         em.clear();
     }
 
-    // --- 목록 ---
-
-    /** 관찰 날짜 최근 순이다. 같은 날은 승인 최근 순 — 8월 기록을 늦게 승인해도 날짜 자리에 들어간다. */
     @Test
     void 관찰_날짜_최근_순이고_같은_날은_승인_최근_순이다() {
         Long late = approve(sky, AUG_21, centerId, 1, "21일 센터");
@@ -125,7 +118,6 @@ class GuardianJournalQueryServiceJpaTest {
                 .containsExactly(String.valueOf(sameDayLater), String.valueOf(late), String.valueOf(earlier));
     }
 
-    /** 승인 뒤 같은 날 새 기록이 오면 새 판이 생긴다. 판마다 따로 승인돼 두 건이다. */
     @Test
     void 같은_날_같은_기관의_두_판은_두_건이다() {
         Long first = approve(sky, AUG_21, centerId, 1, "오전 기록");
@@ -154,7 +146,6 @@ class GuardianJournalQueryServiceJpaTest {
         assertThat(entry.content()).isEqualTo("오후 미술 활동에 끝까지 참여했어요.");
     }
 
-    /** 보호자에게는 교사가 승인한 최종본이 간다. 고쳐서 승인했으면 AI 원문이 아니라 고친 글이다. */
     @Test
     void 글은_요약_원문이_아니라_승인본이다() {
         SummaryResult summary = em.persistAndFlush(summary(sky, AUG_21, centerId, 1, "AI 가 쓴 원문"));
@@ -166,7 +157,6 @@ class GuardianJournalQueryServiceJpaTest {
                 .containsExactly("교사가 고친 글");
     }
 
-    /** 승인되지 않은 요약은 일지가 아니다. 사람이 승인한 글만 보호자에게 간다. */
     @Test
     void 승인되지_않은_요약은_나오지_않는다() {
         em.persistAndFlush(summary(sky, AUG_21, centerId, 1, "아직 검토 전"));
@@ -175,7 +165,6 @@ class GuardianJournalQueryServiceJpaTest {
         assertThat(service.journal(MOM_PRINCIPAL, sky)).isEmpty();
     }
 
-    /** 동의 철회는 다른 기관으로 가는 것을 막는 장치다. 보호자 자신이 지난 일지를 못 보게 하지 않는다. */
     @Test
     void 동의를_끈_기관의_지난_일지도_나온다() {
         approve(sky, AUG_21, centerId, 1, "센터 일지");
@@ -219,7 +208,6 @@ class GuardianJournalQueryServiceJpaTest {
                 .containsExactly("하늘이 일지");
     }
 
-    /** 홈은 최근 2개만 보인다 (#458). 순서는 전부 받을 때와 같고 앞에서 자르기만 한다. */
     @Test
     void limit_를_주면_같은_순서로_앞에서_그만큼만_준다() {
         Long a = approve(sky, AUG_20, schoolId, 1, "20일 학교");
@@ -262,9 +250,6 @@ class GuardianJournalQueryServiceJpaTest {
         assertForbidden(() -> service.journal(MOM_PRINCIPAL, sky));
     }
 
-    // --- 새 소식 ---
-
-    /** 승인된 지 24시간 미만이면 새 소식이다. 정각 24시간은 아니다. 읽었는지와는 무관하다. */
     @Test
     void 새_소식은_승인_후_24시간_미만이다() {
         Long id = approve(sky, AUG_21, centerId, 1, "센터 일지");
@@ -275,8 +260,6 @@ class GuardianJournalQueryServiceJpaTest {
         assertThat(isNewAt(approvedAt.plus(Duration.ofHours(24)))).isFalse();
         assertThat(isNewAt(approvedAt.plus(Duration.ofHours(24)).plusSeconds(1))).isFalse();
     }
-
-    // --- 상세 ---
 
     @Test
     void 상세는_목록의_한_건에_옆_일지를_더한_것이다() {
@@ -291,10 +274,6 @@ class GuardianJournalQueryServiceJpaTest {
                 .isEqualTo(GuardianJournalDetailResponse.of(fromList, String.valueOf(earlier), null, List.of()));
     }
 
-    /**
-     * 이전 · 다음은 목록 순서를 따른다 — 앞 칸이 더 최근(다음), 뒤 칸이 더 예전(이전)이다 (#458). 같은 날 다른 기관
-     * 일지는 목록 순서로 오고, 같은 기관이 같은 날 쓴 다른 판은 넣지 않는다(화면이 하던 것과 같다).
-     */
     @Test
     void 상세의_이전_다음과_같은_날_다른_기관_일지는_목록_순서를_따른다() {
         Long a = approve(sky, AUG_20, schoolId, 1, "20일 학교");
@@ -302,7 +281,6 @@ class GuardianJournalQueryServiceJpaTest {
         Long c = approve(sky, AUG_21, schoolId, 1, "21일 학교");
         Long d = approve(sky, AUG_21, centerId, 2, "21일 센터 두 번째 판");
         em.clear();
-        // 목록: d, c, b, a
         assertThat(service.journal(MOM_PRINCIPAL, sky)).extracting(GuardianJournalResponse::id)
                 .containsExactly(ids(d, c, b, a));
 
@@ -325,7 +303,6 @@ class GuardianJournalQueryServiceJpaTest {
         assertThat(oldest.sameDay()).isEmpty();
     }
 
-    /** 같은 날 다른 기관인지는 이름이 아니라 기관 id 로 가른다. 이름이 같은 다른 기관도 "다른 곳" 이다. */
     @Test
     void 이름이_같아도_다른_기관이면_같은_날_다른_곳에_나온다() {
         Long twin = em.persistAndFlush(Organization.of("햇살센터", OrganizationType.CENTER, "1000000003")).getId();
@@ -342,7 +319,6 @@ class GuardianJournalQueryServiceJpaTest {
         assertNotFound(() -> service.entry(MOM_PRINCIPAL, 999_999L));
     }
 
-    /** 남의 아이 일지는 403 이 아니라 404 다. 그 id 의 일지가 있다는 사실도 알리지 않는다. */
     @Test
     void 남의_아이_일지는_404() {
         Long id = approve(sea, AUG_21, centerId, 1, "바다 일지");
@@ -371,8 +347,6 @@ class GuardianJournalQueryServiceJpaTest {
         assertNotFound(() -> service.entry(MOM_PRINCIPAL, id));
     }
 
-    // --- 홈 최근 공유 활동 ---
-
     @Test
     void 활동은_승인된_일지마다_한_줄이다() {
         Long id = approve(sky, AUG_21, centerId, 1, "센터 일지");
@@ -391,7 +365,6 @@ class GuardianJournalQueryServiceJpaTest {
         assertThat(service.recentActivity(sky)).extracting(ActivityLine::at).containsExactly(approvedAt);
     }
 
-    /** 관찰 날짜가 아니라 승인 순이다 — "도착한" 순서다. 최근 5건만이다. */
     @Test
     void 활동은_승인_최근_순_5건이다() {
         List<Long> ids = List.of(
@@ -408,9 +381,6 @@ class GuardianJournalQueryServiceJpaTest {
                 .containsExactly(ids.reversed().subList(0, 5).stream().map(String::valueOf).toArray(String[]::new));
     }
 
-    // --- 도구 ---
-
-    /** 요약 하나를 만들고 교사가 그대로 승인한 것처럼 승인본을 붙인다. 승인본 id 를 돌려준다. */
     private Long approve(Long childId, LocalDate date, Long institutionId, int revision, String content) {
         SummaryResult summary = em.persistAndFlush(summary(childId, date, institutionId, revision, content));
         return em.persistAndFlush(ChildContext.of(childId, summary.getId(), content)).getId();
@@ -427,7 +397,8 @@ class GuardianJournalQueryServiceJpaTest {
 
     private boolean isNewAt(LocalDateTime now) {
         Clock clock = Clock.fixed(now.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
-        GuardianJournalQueryService at = new GuardianJournalQueryService(userService, childGuardianRepository,
+        GuardianJournalQueryService at = new GuardianJournalQueryService(userService,
+                new GuardianChildGuard(childRepository, childGuardianRepository), childGuardianRepository,
                 childRepository, childContextRepository, summaryResultRepository, organizationRepository, clock);
         return at.journal(MOM_PRINCIPAL, sky).getFirst().isNew();
     }

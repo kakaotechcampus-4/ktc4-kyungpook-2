@@ -1,5 +1,9 @@
 package com.itda.backend.global.config;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -7,6 +11,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -51,7 +59,6 @@ class OpenApiDocumentationTest {
 						.value(containsString("INTERNAL_SERVER_ERROR")))
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/{id}'].get.responses.404").exists())
-				// 저장소로 바로 올리는 업로드 (#450). 어느 단계에서 어떤 오류가 나는지 명세에 드러나야 한다.
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/upload-url'].post.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/upload-url'].post.responses.201").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/upload-url'].post.responses.413.description")
@@ -62,20 +69,16 @@ class OpenApiDocumentationTest {
 						.value(containsString("AGENT_QUEUE_FULL")))
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/uploads/{uploadId}/complete'].post.responses.404.description")
 						.value(containsString("RAW_RECORD_UPLOAD_NOT_FOUND")))
-				// 로컬 전용 본문 경로는 운영 문서에 싣지 않는다
 				.andExpect(jsonPath("$.paths['/api/v1/raw-records/uploads/{uploadId}/content']").doesNotExist())
-				// 세션 조회는 보호 API 다 — 쿠키 인증 요구와 401 이 명세에 드러나야 한다.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/me'].get.responses.401").exists())
-				// 회원가입은 보호 API 이고, 가입 완료 응답을 201 로 준다.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.201").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.401").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.responses.409").exists())
-				// 담당자 넘기기 (#478)
 				.andExpect(jsonPath("$.paths['/api/v1/auth/signup'].post.requestBody").exists())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.handoverCode").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/handover'].post.responses.201").exists())
@@ -83,14 +86,11 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/handover'].post.responses.409").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/handover'].post.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/handover'].delete.responses.204").exists())
-				// 요청 스키마에는 실제 요청 필드만 있어야 한다. 검증용 is*() 메서드가 필드로 새면 안 된다.
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.role").exists())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.businessNumber").exists())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationSignup").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.organizationInfoMatchingRole").doesNotExist())
-				// 세션 응답은 보호자 약관 동의 여부를 늘 싣는다.
 				.andExpect(jsonPath("$.components.schemas.CurrentUserResponse.properties.termsAgreed").exists())
-				// 약관 동의는 보호 API 다. 요청에는 동의한 키 목록만 있고 검증용 is*() 메서드가 필드로 새지 않는다.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.400").exists())
@@ -99,12 +99,10 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/auth/terms'].post.responses.409").exists())
 				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.agreed").exists())
 				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.versions").exists())
-				// 약관 본문은 공개다 — 출입증 요구가 붙지 않는다.
 				.andExpect(jsonPath("$.paths['/api/v1/terms'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/terms'].get.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/terms'].get.security").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.AgreeTermsRequest.properties.allRequiredAgreed").doesNotExist())
-				// 기관 준비물·확인사항 — 보내기 201 · 목록 · 내리기 204. 요청에는 항목과 아이 id 만 있다.
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].post.responses.201").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].post.responses.400").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists'].get.responses.200").exists())
@@ -113,12 +111,10 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/institutions/me/checklists/{checklistId}'].delete.responses.404").exists())
 				.andExpect(jsonPath("$.components.schemas.SendChecklistRequest.properties.items").exists())
 				.andExpect(jsonPath("$.components.schemas.SendChecklistRequest.properties.childIds").exists())
-				// 보호자 준비물·확인사항 — 목록 · 확인
 				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists'].get.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists'].get.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists/{checklistId}/confirm'].post.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/children/{childId}/checklists/{checklistId}/confirm'].post.responses.404").exists())
-				// 로그아웃은 본문 없는 204 다. CSRF 토큰이 없으면 403.
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.204").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/auth/logout'].post.description")
@@ -130,7 +126,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.security[0].cookieAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.200").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.400").exists())
-				// 화면이 400 을 code 로 나눠 안내한다 — 문서도 나뉜 코드를 적는다
 				.andExpect(jsonPath("$.paths['/api/v1/validation-results/{id}/revise'].post.responses.400.description",
 						allOf(containsString("VALIDATION_RESULT_CONTENT_UNCHANGED"),
 								containsString("VALIDATION_RESULT_CHILD_NOT_SHARED"),
@@ -220,14 +215,12 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.paths['/api/v1/summaries'].get.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/gate1'].post.responses.403").exists())
 				.andExpect(jsonPath("$.paths['/api/v1/summaries/{summaryId}/reopen'].post.responses.403").exists())
-				// 요청 스키마는 decision · cards · version 셋, 카드는 index · action · text 셋뿐이다. 검증용 메서드가 필드로 새면 안 된다.
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.length()").value(3))
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.cards").exists())
 				.andExpect(jsonPath("$.components.schemas.Card.properties.length()").value(3))
 				.andExpect(jsonPath("$.components.schemas.Card.properties.action.enum", hasItems("KEEP", "EDIT", "DELETE", "ADD")))
 				.andExpect(jsonPath("$.components.schemas.Card.properties.shapeValid").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.required", hasItems("decision", "version")))
-				// 요약할 내용 없음은 확인(confirm)으로만 닫는다 (#244).
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.decision.enum",
 						hasItems("approve", "hold", "remove", "confirm", "revert")))
 				.andExpect(jsonPath("$.components.schemas.Gate1SummaryResponse.properties.noContent").exists())
@@ -236,7 +229,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.Gate1DecisionRequest.properties.cardsValid").doesNotExist());
 	}
 
-	/** 아동 등록·명부 스키마에 실제 필드만 있어야 한다. 검증용 메서드나 범위 밖 필드가 새면 안 된다. */
 	@Test
 	void registerChildSchemasExposeOnlyContractFields() throws Exception {
 		mockMvc.perform(get("/v3/api-docs"))
@@ -264,7 +256,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.ChildRosterResponse.properties.consent").exists());
 	}
 
-	/** 같은 아이에 다른 기관 연결(O-01, G-43·G-44, O-60~O-62). 모두 쿠키 인증을 요구하고, 오류 코드가 명세에 드러나야 한다. */
 	@Test
 	void institutionLinkApisAreDocumented() throws Exception {
 		String me = "$.paths['/api/v1/institutions/me']";
@@ -301,10 +292,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.GuardianChildResponse.properties.linkRequests").exists());
 	}
 
-	/**
-	 * 기관 수신함(O-50·O-51). 쿠키 인증을 요구하고, 목록은 본문 없이 · 단건은 본문을 더해 내려야 한다 — 목록이
-	 * 본문을 주면 열지 않고도 다 읽어서 열람 시각이 의미를 잃는다.
-	 */
 	@Test
 	void institutionInboxApisAreDocumented() throws Exception {
 		String list = "$.paths['/api/v1/institutions/me/inbox']";
@@ -343,7 +330,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(detailSchema + ".properties.readAt.format").value("date-time"));
 	}
 
-	/** 기관 아동 기록 타임라인(O-14). 우리 기관 명부의 아이만이라 404 가 명세에 드러나야 한다 (#292). */
 	@Test
 	void organizationTimelineIsDocumented() throws Exception {
 		String path = "$.paths['/api/v1/institutions/me/children/{childId}/timeline']";
@@ -362,7 +348,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(schema + ".properties.date.format").value("date"));
 	}
 
-	/** 보호자 받은 인사이트(G-35·G-36). 승인 시각 순이라 응답에 승인 시각이 있어야 한다 (#287). */
 	@Test
 	void guardianInsightApisAreDocumented() throws Exception {
 		String list = "$.paths['/api/v1/guardians/me/insights']";
@@ -378,7 +363,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(schema + ".properties.readAt.format").value("date-time"));
 	}
 
-	/** 명부에서 빼기(O-63)와 초대 코드·보호자 연결 API(O-15~O-19, G-04·G-05). 모두 쿠키 인증을 요구하고, 권한·소속 오류가 명세에 드러나야 한다. */
 	@Test
 	void invitationAndGuardianLinkApisAreDocumented() throws Exception {
 		String rosterChild = "$.paths['/api/v1/institutions/me/children/{childId}']";
@@ -432,7 +416,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.ChildGuardianResponse.properties.linkedByThisOrganization").exists());
 	}
 
-	/** 동의 미리보기·저장 API(G-02·G-41). 요청 스키마에 조건부 검증 메서드가 필드처럼 새면 안 된다. */
 	@Test
 	void consentApisAreDocumented() throws Exception {
 		String preview = "$.paths['/api/v1/children/{childId}/consent-preview']";
@@ -458,14 +441,12 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.UpdateConsentRequest.properties.allowedFieldsValidForAction").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.allowedFields").exists())
 				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.documentUrl").exists())
-				// 기관 유형별 설명 목록은 실제 공유와 맞지 않아 지웠다 — 되살아나지 않게 막는다
 				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.sharedFields").doesNotHaveJsonPath())
 				.andExpect(jsonPath("$.components.schemas.ConsentPreviewResponse.properties.notSharedFields").doesNotHaveJsonPath())
 				.andExpect(jsonPath("$.components.schemas.ConsentResponse.properties.length()").value(3))
 				.andExpect(jsonPath("$.components.schemas.InstitutionResponse.properties.verified").exists());
 	}
 
-	/** 보호자 기관 공유 내역(G-45). 가려진 공유를 나타내는 visible · hiddenAt 이 응답에 있어야 한다. */
 	@Test
 	void institutionSharesApiIsDocumented() throws Exception {
 		String shares = "$.paths['/api/v1/guardians/me/children/{childId}/institution-shares']";
@@ -482,7 +463,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.SharedInsight.properties.hiddenAt").exists());
 	}
 
-	/** 보호자 아이 목록·홈(G-10·G-11). school 은 저장하는 곳이 없어 스키마에도 없어야 한다. care 는 돌봄 정보(G-13)다. */
 	@Test
 	void guardianChildApisAreDocumented() throws Exception {
 		String children = "$.paths['/api/v1/guardians/me/children']";
@@ -517,7 +497,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath("$.components.schemas.ParentActivityResponse.properties.journalId").exists());
 	}
 
-	/** 대기 중 기관 권한 요청(G-40). 명세 모양 [{ institution }] 그대로다. */
 	@Test
 	void pendingConsentRequestApiIsDocumented() throws Exception {
 		String pending = "$.paths['/api/v1/children/{childId}/institution-requests/pending']";
@@ -545,7 +524,6 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(careInfo + ".put.responses.401").exists())
 				.andExpect(jsonPath(careInfo + ".put.responses.403.description").value(containsString("FORBIDDEN")))
 				.andExpect(jsonPath("$.components.schemas.UpdateCareInfoRequest.required", hasItems("allergies", "medications")))
-				// 복용 시간은 빠지면 빈 문자열로 받는다. 필수로 표시되면 계약과 어긋난다.
 				.andExpect(jsonPath("$.components.schemas.MedicationRequest.required", hasItems("name")))
 				.andExpect(jsonPath("$.components.schemas.MedicationRequest.required.length()").value(1))
 				.andExpect(jsonPath("$.components.schemas.ChildCareInfoResponse.properties.allergies").exists())
@@ -578,6 +556,52 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(entry + ".get.responses.200.content['*/*'].schema['$ref']").value(containsString("GuardianJournalDetailResponse")))
 				.andExpect(jsonPath("$.components.schemas.GuardianJournalDetailResponse.properties.sameDay.items['$ref']")
 						.value(containsString("GuardianJournalResponse")));
+	}
+
+	@Test
+	void errorResponsesReferenceErrorResponseSchema() throws Exception {
+		String errorRef = "#/components/schemas/ErrorResponse";
+		String webhook = "$.paths['/api/v1/webhooks/kakao/unlink'].post.responses.401";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.components.schemas.ErrorResponse.properties.code").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.401.description").value("인증 필요"))
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.401.content['*/*'].schema['$ref']")
+						.value(errorRef))
+				.andExpect(jsonPath(webhook + ".description").value(containsString("KAKAO_WEBHOOK_UNAUTHORIZED")))
+				.andExpect(jsonPath(webhook + ".content['*/*'].schema['$ref']").value(errorRef))
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].get.responses.500.content['*/*'].schema['$ref']")
+						.value(errorRef));
+	}
+
+	@Test
+	void everyErrorResponseInTheDocumentUsesErrorResponseSchema() throws Exception {
+		String body = mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		JsonNode paths = new ObjectMapper().readTree(body).path("paths");
+
+		List<String> wrong = new ArrayList<>();
+		int checked = 0;
+		for (Map.Entry<String, JsonNode> path : paths.properties()) {
+			for (Map.Entry<String, JsonNode> operation : path.getValue().properties()) {
+				for (Map.Entry<String, JsonNode> response : operation.getValue().path("responses").properties()) {
+					String code = response.getKey();
+					if (!code.startsWith("4") && !code.startsWith("5")) {
+						continue;
+					}
+					checked++;
+					String ref = response.getValue().path("content").path("*/*").path("schema").path("$ref").asText("");
+					if (!ref.equals("#/components/schemas/ErrorResponse")) {
+						wrong.add(operation.getKey() + " " + path.getKey() + " " + code + " -> " + ref);
+					}
+				}
+			}
+		}
+
+		assertThat(checked).isGreaterThan(100);
+		assertThat(wrong).isEmpty();
 	}
 
 	@Test

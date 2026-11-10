@@ -24,16 +24,12 @@ import type { ConsentState, InstitutionShares } from "@/lib/types";
 import type { clientLoader as parentSessionLoader } from "./session";
 
 export async function clientLoader() {
-  // 탈퇴 대상은 이 화면이 보여 주는 아이 목록을 가져온 계정이다(같은 응답의 헤더). /auth/me 를 따로 물으면 다른 탭에서 계정이
-  // 바뀐 직후 목록과 계정이 서로 다른 사람을 가리킬 수 있다
   const { children, ownerUserId } = await getParentChildrenWithOwner();
   const child = selectedChildOrInvite(children);
   const childId = child.id;
   const [openChecklists, pendingRequests, shares] = await Promise.all([
-    // 확인 안 한 준비물·확인사항 수. 못 받으면 null — 개수만 숨기고 설정은 그대로 연다
     loadOpenChecklistCount(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
-    // 기관 줄의 "받은 리포트 N편". 서버에 없으면 null — 줄에 아무것도 붙이지 않는다
     loadIfReady("institutionShares", () => getInstitutionShares(childId)),
   ]);
   return { child, openChecklists, pendingRequests, shares, ownerUserId };
@@ -41,8 +37,6 @@ export async function clientLoader() {
 
 export default function ParentSettingsPage() {
   const data = useLoaderData<typeof clientLoader>();
-  // 아이가 바뀌면 화면 상태(기관 목록·확인 대화·오류)를 새로 시작한다. 기관 목록은 처음 값만 잡는 상태라, 그대로 두면
-  // 헤더에서 아이를 바꿔도 이전 아이의 기관이 남고 동의 끄기는 새 아이로 가서 화면과 요청이 어긋난다.
   return <ParentSettingsContent key={data.child.id} {...data} />;
 }
 
@@ -53,16 +47,12 @@ function ParentSettingsContent({
   shares,
   ownerUserId,
 }: Awaited<ReturnType<typeof clientLoader>>) {
-  // 탈퇴를 열었는지는 바깥 세션 확인 레이아웃이 이미 읽은 세션에서, 대상 계정은 아이 목록 응답에서 꺼낸다
   const withdrawalEnabled =
     useRouteLoaderData<typeof parentSessionLoader>("routes/parent/session")?.withdrawalEnabled === true;
   const withdrawTarget = withdrawalEnabled && ownerUserId ? { userId: ownerUserId } : null;
-  // 보호자 이름은 저장하지 않는다 — 지금 고른 아이의 보호자로 부른다
   const guardianLabel = `${child.name} 보호자`;
   const { kids, selectChild } = useChildContext();
   const [institutions, setInstitutions] = useState(child.institutions);
-  // 같은 아이에서 다시 불러오면(권한 끄기 뒤 등) 서버 목록으로 맞춘다. 처음 값만 잡아 두면 명부에서 빠진 기관이
-  // 토글과 함께 남아 아래 "지금은 연결되지 않은 기관" 과 겹친다. 끄기 직후의 즉시 표시(setLocal)는 이 값이 오면 덮인다
   useEffect(() => setInstitutions(child.institutions), [child.institutions]);
   const sharesOf = new Map((shares ?? []).map((s) => [s.institution.id, s]));
   const pastShares = (shares ?? []).filter(
@@ -72,7 +62,6 @@ function ParentSettingsContent({
   const [pending, setPending] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
-  /** 보호자는 보호자 입구로 — 기관 로그인(/login)으로 보내면 남의 문 앞에 세우는 셈이다 */
   async function logout() {
     setSigningOut(true);
     await signOut();
@@ -90,16 +79,11 @@ function ParentSettingsContent({
       list.map((i) => (i.institution.id === instId ? { ...i, consent } : i)),
     );
 
-  /**
-   * 다시 켤 때는 동의 화면(P-02)을 거친다 — 무엇이 공유되는지 보고 동의해야 한다(Consent First).
-   * 공유 항목도 그 화면의 미리보기가 정한다. 동의를 마치면 이 화면으로 돌아온다.
-   */
   function grant(instId: string) {
     const query = new URLSearchParams({ childId: child.id, institutionId: instId, from: "settings" });
     navigate(`/parent/consent?${query}`);
   }
 
-  /** G-41 revoke. 이 기관에 대한 다른 보호자의 동의도 함께 꺼진다 — 상태는 서버 응답으로 고친다 */
   async function revoke(instId: string) {
     setPending(true);
     setRevokeError(null);
@@ -107,7 +91,6 @@ function ParentSettingsContent({
       const result = await updateConsent(child.id, instId, { action: "revoke" });
       setLocal(instId, result.consent);
       setConfirming(null);
-      // 끈 기관(과 그 기관 기록이 들어간 리포트를 받은 다른 기관)의 "가려짐" 개수를 바로 고친다
       revalidator.revalidate();
     } catch {
       setRevokeError("권한을 끄지 못했어요. 새로고침한 뒤 다시 시도해 주세요.");
@@ -116,13 +99,6 @@ function ParentSettingsContent({
     }
   }
 
-  /**
-   * G-05. 끊으면 이 아이는 목록에서 빠지니 홈으로 돌아가 남은 아이를 다시 고른다.
-   *
-   * 아이 목록은 입구(guard.tsx)가 들고 있는데, 같은 레이아웃 안의 이동이라 입구의 loader 는 다시 돌지 않는다.
-   * 그대로 두면 아이 전환 목록에 끊은 아이가 남으니 이동 뒤 한 번 더 불러온다. 남은 아이가 없으면 홈 대신
-   * 초대 코드 화면으로 바로 간다 — 홈 loader 는 고를 아이가 없어 빈 childId 로 요청하게 된다.
-   */
   async function unlink() {
     setPending(true);
     setUnlinkError(null);
@@ -143,10 +119,8 @@ function ParentSettingsContent({
   }
 
   const target = institutions.find((i) => i.institution.id === confirming);
-  // 확인 안 한 것은 서버가 상한 없이 모두 주므로 길이가 곧 전체 수다. null 이면 모른다 — 개수를 띄우지 않는다
   const needsCheck = openChecklists;
   const careCount = (child.care?.allergies.length ?? 0) + (child.care?.medications.length ?? 0);
-  // 돌봄 정보는 서버에 저장할 곳이 없다. "0개"는 "알레르기 없음"으로 읽히니 개수 대신 준비 중이라고 쓴다
   const careReady = isReady("careInfo");
 
   return (
@@ -158,8 +132,6 @@ function ParentSettingsContent({
         alert={(pendingRequests ?? []).length > 0 || (needsCheck ?? 0) > 0}
       />
 
-      {/* 연결된 아이 모두. 아래 기관 권한·아이 정보는 고른 아이 것이라, 다른 아이는 [설정 보기]로 바꿔 본다.
-          아이 이름·생년월일은 기관이 등록한 값이라 보호자가 고칠 곳은 없다 */}
       <div className="flex flex-col gap-2.5">
         {kids.map((kid) => {
           const current = kid.id === child.id;
@@ -259,7 +231,6 @@ function ParentSettingsContent({
         {pastShares.length > 0 ? (
           <div className="mt-4">
             <h3 className="mb-2 text-[14px] font-bold text-ink2">지금은 연결되지 않은 기관</h3>
-            {/* 명부에서 빠져 권한을 켜고 끌 수 없는 기관. 받은 리포트가 가려졌는지는 볼 수 있어야 한다 */}
             <div className="flex flex-col gap-2.5">
               {pastShares.map((s) => (
                 <div
@@ -379,14 +350,11 @@ function ParentSettingsContent({
           aria-describedby="revoke-desc"
           className="fixed inset-0 z-10 flex items-end justify-center bg-ink/40"
         >
-          {/* 안내가 길어 작은 화면 · 글자 확대에서 잘리지 않게 높이를 묶고 안내만 스크롤한다. 버튼은 늘 보인다 */}
           <div className="flex max-h-[90dvh] w-full max-w-[430px] md:max-w-[560px] lg:max-w-[640px] flex-col rounded-t-3xl bg-surface p-5 pb-7">
             <div className="min-h-0 overflow-y-auto">
               <p id="revoke-title" className="mb-2 text-[18px] font-extrabold">
                 {target.institution.name} 권한을 끌까요?
               </p>
-              {/* 지금 동작보다 강하게 말하지 않는다. 받기만 한 기관을 끄면 쓴 기관은 계속 보므로 "양쪽 모두"가
-                  아니고, 이미 시작된 매칭은 동의를 다시 보지 않으며, 다시 켜도 거둔 수신함 권한은 돌아오지 않는다 */}
               <ul
                 id="revoke-desc"
                 className="mb-5 flex list-disc flex-col gap-1.5 pl-5 text-[15px] leading-7 text-ink2"
@@ -434,7 +402,6 @@ function ParentSettingsContent({
   );
 }
 
-/** 기관 줄의 "받은 리포트 N편 · 가려짐 K ›". 받은 것이 없으면 아무것도 붙이지 않는다 */
 function SharesLink({ shares }: { shares: InstitutionShares | undefined }) {
   if (!shares || shares.shares.length === 0) return null;
   const hidden = shares.shares.filter((s) => !s.visible).length;

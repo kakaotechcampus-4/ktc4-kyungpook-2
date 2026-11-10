@@ -20,26 +20,8 @@ import {
 } from "@/lib/auth";
 import type { AcceptedInvitation } from "@/lib/types";
 
-/**
- * P-01 보호자 진입 — 카카오 로그인 · 약관 동의 · 초대 코드 수락 (docs/api/api-spec.md §5.1).
- *
- * 기관이 아이를 등록하면 10분짜리 일회용 초대 코드가 나오고, 기관이 코드나 링크
- * (`/parent/invite?code=K7P3QX9M`)를 카톡 등으로 보낸다. 링크의 코드는 sessionStorage 에
- * 보관해서 카카오 로그인 · 회원가입을 다녀와도 남게 한다 (lib/auth.ts saveInviteCode).
- *
- *  - 처음 오는 사람: intro → terms → code → done
- *  - 카카오에서 막 돌아온 사람(`/oauth/success` 가 보낸다): 약관에 동의하지 않았으면 terms 부터
- *  - 이미 쓰고 있는 사람("아이 추가"나 새 링크로 들어온다): 약관에 동의했으면 code 부터
- *
- * 약관 동의 여부는 서버가 안다(`/auth/me` 의 termsAgreed). 동의를 저장한 뒤에는 받아 둔 코드가 있으면
- * 코드 단계로 이어 가고, 코드 없이 이미 아이가 연결된 보호자(약관 판이 올라 다시 동의한 경우)는 홈으로 간다.
- *
- * code 단계에 보관된 코드가 있으면 바로 수락한다. 링크가 안 열렸거나 sessionStorage 가
- * 사라진 경우(카톡 인앱 브라우저 → 외부 브라우저)를 위해 직접 입력 칸도 둔다.
- */
 type Step = "intro" | "terms" | "code" | "done";
 
-// 서버 TermKey 와 같은 값이다. 본문 · 판은 약관 단계에 들어갈 때 서버에서 받는다.
 const TERMS: readonly TermItem[] = [
   { key: "tos", label: "서비스 이용약관 동의", required: true },
   { key: "privacy", label: "개인정보와 민감정보 수집 동의", required: true },
@@ -51,18 +33,14 @@ export async function clientLoader({ request }: { request: Request }) {
 
   const session = await getSession();
   const { loggedIn, signupCompleted, role, termsAgreed, withdrawing } = session;
-  // 탈퇴를 처리하는 중이면 약관 · 코드 수락이 409 다 — 가입보다 먼저 본다
   if (withdrawing) return redirect("/withdrawal");
-  // 카카오 로그인만 하고 가입을 안 끝낸 사람은 가입부터 — 코드 수락이 403 이다.
   if (loggedIn && !signupCompleted) return redirect("/signup?role=parent");
   const isParent = loggedIn && role === "parent";
   return {
     role: loggedIn ? role : null,
     termsAgreed: isParent && termsAgreed,
-    // 약관에 동의한 보호자만 묻는다 — 동의 전에는 아이 목록이 403 TERMS_NOT_AGREED 다
     onboarded: isParent && termsAgreed && (await restoreParentOnboarded()),
     savedCode: readInviteCode(),
-    // 화면을 열 때의 계정. 탈퇴 확인 창이 이 계정만 지운다 (다른 탭에서 계정을 바꾸면 서버가 막는다)
     withdrawTarget: isParent ? withdrawTargetOf(session) : null,
   };
 }
@@ -74,8 +52,6 @@ export default function ParentInvitePage() {
     if (role !== "parent") return "intro";
     return loaded.termsAgreed ? "code" : "terms";
   });
-  // 약관에 동의한 뒤 다시 구한다 — 로더는 동의 전이라 묻지 않고 false 를 준다. "이미 연결됨"을 홈으로 보낼지,
-  // "홈으로" 링크를 보일지가 이 값을 본다
   const [onboarded, setOnboarded] = useState(loaded.onboarded);
   const [agreed, setAgreed] = useState<TermKey[]>([]);
   const terms = useTermsDocuments("parent", TERMS, step === "terms");
@@ -87,7 +63,6 @@ export default function ParentInvitePage() {
   const revalidator = useRevalidator();
   const mock = isAuthMock();
   const autoTried = useRef(false);
-  // 로그인이 풀려서 왔는지 — 빌드 때 미리 그린 첫 화면과 어긋나지 않게 탭 저장소는 그린 뒤에 읽는다
   const [expired, setExpired] = useState(false);
   useEffect(() => setExpired(hasReturnPath()), []);
 
@@ -100,7 +75,6 @@ export default function ParentInvitePage() {
       await agreeTerms(picked);
       const linked = await restoreParentOnboarded();
       setOnboarded(linked);
-      // 받아 둔 코드(링크로 받았거나 코드 단계에서 막혀 돌아온 입력)가 있으면 수락을 이어 간다
       if (linked && !readInviteCode() && !code.trim()) {
         navigate("/parent", { replace: true });
         return;
@@ -112,7 +86,6 @@ export default function ParentInvitePage() {
         return;
       }
       if (err instanceof ApiError && err.code === "TERMS_VERSION_CHANGED") {
-        // 약관 단계를 연 뒤 약관이 바뀌었다 — 바뀐 약관의 체크만 풀고 다시 보게 한다
         const changed = await terms.reloadChanged();
         setAgreed((prev) => prev.filter((k) => !changed.includes(k)));
         setError(TERMS_CHANGED_MESSAGE);
@@ -147,7 +120,6 @@ export default function ParentInvitePage() {
     }
     switch (err.code) {
       case "LINK_ALREADY_EXISTS":
-        // 이미 연결된 아이다 — 실패가 아니라 다음 단계로 넘어간다
         clearInviteCode();
         if (onboarded) {
           navigate("/parent");
@@ -157,7 +129,6 @@ export default function ParentInvitePage() {
         setStep("done");
         return;
       case "INVALID_INVITE_CODE":
-        // 보관된 코드가 틀렸으면 다음 로그인 때 또 자동 수락하지 않게 지운다
         clearInviteCode();
         setError("코드가 올바르지 않거나 만료됐어요. 기관에 새 코드를 요청하세요.");
         return;
@@ -171,15 +142,12 @@ export default function ParentInvitePage() {
         navigate("/signup?role=parent", { replace: true });
         return;
       case "TERMS_NOT_AGREED":
-        // 코드 단계를 연 채 약관 판이 올라간 경우 등. 공통 처리는 이미 이 주소라 옮기지 않으므로 여기서 약관으로
-        // 돌린다. 보관된 코드는 동의 뒤 다시 자동 수락하도록 시도 표시를 되돌린다.
         autoTried.current = false;
         setAgreed([]);
         setStep("terms");
         return;
     }
     if (err.status === 401) {
-      // 로그인이 풀렸다. 코드는 보관돼 있으니 다시 로그인하면 이어서 수락한다.
       setStep("intro");
       revalidator.revalidate();
       return;
@@ -191,7 +159,6 @@ export default function ParentInvitePage() {
     setError("잠시 후 다시 시도해 주세요.");
   }
 
-  // 링크로 받아 둔 코드는 코드 단계에 들어오자마자 한 번만 수락한다
   useEffect(() => {
     if (step !== "code" || !savedCode || autoTried.current) return;
     autoTried.current = true;
@@ -223,7 +190,6 @@ export default function ParentInvitePage() {
     <div className="flex flex-col gap-6">
       {step === "intro" ? (
         <div className="flex flex-col gap-6">
-          {/* 세 곳에서 오던 소식이 아이 하나로 모이는 그림. 선생님 화면과 같은 그림을 쓴다 */}
           <div className="flex flex-col items-center gap-1 pt-2">
             <div className="flex items-end justify-center gap-5">
               <Sender src="/img/school.png" label="학교" />
@@ -249,7 +215,6 @@ export default function ParentInvitePage() {
             />
           </div>
 
-          {/* 문구는 로그인 화면(web)과 같은 것을 쓴다 — 슬로건 · 핵심 가치 · 서비스 설명 */}
           <div className="flex flex-col items-center gap-3 text-center">
             <h1 className="text-[30px] leading-[1.25] font-extrabold tracking-[-0.03em] text-ink">
               아이의 세상을 <b className="text-accentink">잇다</b>
@@ -288,11 +253,6 @@ export default function ParentInvitePage() {
             </p>
           </div>
 
-          {/*
-            데모용 진입. 카카오 키 없이도 학부모 화면 전체를 볼 수 있어야 한다 —
-            기관 로그인(/login)에 둔 것과 같은 장치다.
-            실연동 빌드(VITE_AUTH_MOCK=false)에서는 렌더링되지 않는다.
-          */}
           {mock ? (
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-3 text-[13px] text-muted">
@@ -343,23 +303,12 @@ export default function ParentInvitePage() {
             onSubmit={() => void submitTerms()}
             buttonClassName={primary}
           />
-          {/* 약관에 동의하지 않은 보호자는 가드가 설정 화면으로 보내지 않는다 — 여기서 떠날 길을 둔다 */}
           <WithdrawAccount audience="parent" account={loaded.withdrawTarget} />
         </>
       ) : null}
 
       {step === "code" ? (
         <div className="flex flex-col gap-4">
-          {/*
-            이미 쓰고 있는 보호자가 "아이 추가"로 들어온 경우 — 온보딩 진행 표시 대신
-            돌아갈 길을 준다. 이 화면은 셸에서 하단 탭이 숨겨지는 온보딩 경로라
-            나가는 문이 따로 없다.
-          */}
-          {/*
-            처음 오는 사람은 약관 · 코드 · 공유 동의 세 단계.
-            이미 쓰는 사람이 "아이 추가" 로 들어오면 약관은 지났으니 코드 · 공유 동의 두 단계다.
-            전에는 이 경우 단계를 아예 안 보여 줘서 몇 번 더 눌러야 하는지 알 수 없었다.
-          */}
           {onboarded ? (
             <div className="flex flex-col gap-3">
               <Link to="/parent" className="text-[14px] font-semibold text-accentink">
@@ -414,7 +363,6 @@ export default function ParentInvitePage() {
             코드가 만료됐다면 기관에 새 코드를 요청하세요. 하이픈과 대소문자는 신경 쓰지 않아도
             됩니다.
           </p>
-          {/* 연결된 아이가 없는 보호자는 가드가 설정 화면으로 보내지 않는다 — 여기서 떠날 길을 둔다 */}
           <WithdrawAccount audience="parent" account={loaded.withdrawTarget} />
         </div>
       ) : null}
@@ -426,10 +374,6 @@ export default function ParentInvitePage() {
   );
 }
 
-/**
- * 수락 결과. 연결은 동의가 아니다 — 수락은 아동 상태를 바꾸지 않아서, 동의가 남았으면
- * 동의 화면(P-02)으로 이어 준다.
- */
 function AcceptedStep({
   result,
   onboarded,
@@ -491,7 +435,6 @@ function AcceptedStep({
   );
 }
 
-/** 소식을 보내는 쪽 한 칸 — 그림과 이름 */
 function Sender({ src, label }: { src: string; label: string }) {
   return (
     <span className="flex flex-col items-center gap-1">

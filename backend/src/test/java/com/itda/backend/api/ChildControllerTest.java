@@ -113,7 +113,6 @@ class ChildControllerTest {
         assertThat(captor.getValue().birthDateValue()).isEqualTo(LocalDate.of(2017, 3, 14));
     }
 
-    /** 보호자 연락처는 받지 않는다. 보내더라도 무시하고 등록한다. */
     @Test
     void register_ignoresFieldsOutsideThisScope() throws Exception {
         givenRegistered();
@@ -138,7 +137,6 @@ class ChildControllerTest {
         assertThat(captor.getValue().externalId()).isEqualTo("2026-0031");
     }
 
-    /** 관리번호는 필수다. 없거나 비어 있거나 공백뿐이면 400 이다. */
     @ParameterizedTest
     @ValueSource(strings = {
             "{\"name\": \"김하늘\", \"birthDate\": \"2017-03-14\"}",
@@ -200,7 +198,6 @@ class ChildControllerTest {
                 .andExpect(status().isCreated());
     }
 
-    /** 날짜는 "yyyy-MM-dd" 문자열만 받는다. 날짜시각·배열·숫자처럼 Jackson 이 LocalDate 로 바꿔줄 입력도 거부한다. */
     @ParameterizedTest
     @ValueSource(strings = {
             "{\"name\": \"김하늘\"}",

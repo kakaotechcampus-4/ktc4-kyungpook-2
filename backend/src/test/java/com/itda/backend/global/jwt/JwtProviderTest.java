@@ -24,7 +24,6 @@ class JwtProviderTest {
         return new JwtProvider(SECRET, TTL_MS, MAX_SESSION_MS, Clock.fixed(now, ZoneOffset.UTC));
     }
 
-    /** 로그인 시각에 발급한 출입증을 {@code later} 에 읽는다. */
     private static AccessToken loginThenReadAt(Instant later) {
         String token = at(LOGIN).createToken("12345");
         return at(later).parse(token).orElseThrow();
@@ -65,7 +64,6 @@ class JwtProviderTest {
         assertThat(at(LOGIN).parse(forged)).isEmpty();
     }
 
-    /** 읽을 때도 주입한 시계로 만료를 본다. 실제 시계로 보면 고정 시계 테스트와 실제 동작이 어긋난다. */
     @Test
     void readingUsesTheInjectedClockForExpiry() {
         String token = at(LOGIN).createToken("12345");
@@ -130,7 +128,6 @@ class JwtProviderTest {
         assertThat(renewed.loginAt()).isEqualTo(LOGIN);
     }
 
-    /** 연장을 이어 가도 처음 로그인 + 12시간을 넘지 않는다. */
     @Test
     void renewalIsCappedAtTheMaximumSession() {
         AccessToken eightHoursIn = renewedEveryTwoHoursUntil(Duration.ofHours(8));
@@ -143,7 +140,6 @@ class JwtProviderTest {
                 .isEqualTo(LOGIN.plus(Duration.ofHours(12)));
     }
 
-    /** 이미 12시간 끝에 맞춰 둔 출입증은 더 늘릴 수 없어 새로 만들지 않는다. 그 출입증은 12시간에 죽는다. */
     @Test
     void doesNotRenewOnceCappedAtTheMaximumSession() {
         Instant tenHoursIn = LOGIN.plus(Duration.ofHours(10));
@@ -154,7 +150,6 @@ class JwtProviderTest {
         assertThat(at(LOGIN.plus(Duration.ofHours(12)).plusSeconds(1)).parse(capped)).isEmpty();
     }
 
-    /** 로그인 번호가 없는 옛 출입증(자동 연장 전 발급)은 통과하되 연장하지 않는다. */
     @Test
     void legacyTokenWithoutSessionIdIsAcceptedButNotRenewed() {
         String legacy = Jwts.builder()
@@ -172,7 +167,6 @@ class JwtProviderTest {
         assertThat(at(now).renew(token)).isEmpty();
     }
 
-    /** 로그인 뒤 2시간마다 연장해 {@code until} 에 받은 출입증. */
     private static AccessToken renewedEveryTwoHoursUntil(Duration until) {
         String token = at(LOGIN).createToken("12345");
         for (Duration elapsed = Duration.ofHours(2); elapsed.compareTo(until) <= 0; elapsed = elapsed.plusHours(2)) {

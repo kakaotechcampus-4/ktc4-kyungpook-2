@@ -30,16 +30,6 @@ import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * 아이와 보호자 연결의 조회·해제. 연결은 기관 구분 없는 전역 연결이라 해제하면 모든 기관에서 끊긴다.
- *
- * <p>기관은 자기가 발급한 코드로 생긴 연결만 끊을 수 있다. 다른 기관을 통해 들어온 보호자를 끊으면
- * 그 기관의 판단을 뒤집게 된다. 보호자는 자기 연결을 언제든 끊을 수 있다.
- *
- * <p>연결을 끊으면 그 보호자가 이 아이에 대해 남긴 동의도 함께 REVOKED 로 바꾼다. 끊긴 사람의 동의로 공유가
- * 계속되면 안 된다 (DB 스키마 §5.4). 동의를 바꾸므로 해제도 {@code child} 를 먼저 잠그고 {@code child_guardian} 을
- * 잠근다 — 동의 부여와 같은 순서라 서로 교착하지 않는다 (DB 스키마 §3.3).
- */
 @Service
 @RequiredArgsConstructor
 public class ChildGuardianService {
@@ -54,7 +44,6 @@ public class ChildGuardianService {
     private final InstitutionLinkService institutionLinkService;
     private final Clock clock;
 
-    /** O-18 아이와 연결된 보호자 목록. 다른 기관을 통해 연결된 보호자도 보여 주되 해제할 수 있는지 표시한다. */
     @Transactional(readOnly = true)
     public List<ChildGuardianResponse> listGuardians(String userId, Long childId) {
         Long organizationId = organizationChildGuard.requireRosterChild(userId, childId);
@@ -79,14 +68,6 @@ public class ChildGuardianService {
                 .toList();
     }
 
-    /**
-     * O-19 기관이 보호자 연결을 끊는다. 자기 기관 코드로 생긴 연결이 아니면 403 이다. 끊긴 보호자의 동의와
-     * 그 보호자가 낸 기관 연결 요청도 거둔다.
-     *
-     * <p>아동을 먼저 잠그고 그 뒤에 삭제·명부 소속을 본다. {@link OrganizationChildGuard} 를 쓰지 않는 이유다 —
-     * 가드가 잠금 없이 아동을 읽어 두면 잠금 조회가 그 낡은 엔티티를 그대로 돌려주고, 동의 철회로 상태가 바뀔 때
-     * 그사이 커밋된 삭제({@code deleted_at})까지 덮어써 되돌린다.
-     */
     @Transactional
     public void unlinkByOrganization(String userId, Long childId, Long guardianUserId) {
         Long organizationId = userService.getOrganizationIdOf(userId);
@@ -96,7 +77,6 @@ public class ChildGuardianService {
         if (!childOrganizationRepository.existsByChildIdAndOrganizationIdAndDeletedAtIsNull(childId, organizationId)) {
             throw new ChildException(ChildErrorCode.CHILD_NOT_FOUND);
         }
-        // 잠금 순서상 연결 요청이 보호자 연결보다 앞이다 (DB 스키마 §3.3). 아래에서 실패하면 함께 롤백된다.
         institutionLinkService.cancelForUnlinkedGuardian(childId, guardianUserId);
         ChildGuardian guardian = childGuardianRepository.findByChildIdAndUserIdForUpdate(childId, guardianUserId)
                 .filter(found -> !found.isDeleted())
@@ -111,30 +91,15 @@ public class ChildGuardianService {
         consentService.revokeForUnlinkedGuardian(child, guardianUserId, userService.getUserIdOf(userId));
     }
 
-    /**
-     * G-05 보호자가 자기 연결을 끊는다. 연결되지 않은 아이면 api-spec §5 규칙대로 403 FORBIDDEN 이다. 본인의 동의와
-     * 본인이 낸 기관 연결 요청도 거둔다.
-     */
     @Transactional
     public void unlinkBySelf(String userId, Long childId) {
         unlinkGuardian(userService.getParentIdOf(userId), childId);
     }
 
-    /**
-     * 탈퇴하는 보호자의 아이 연결을 모두 끊는다. 아이마다 {@link #unlinkBySelf} 와 같은 일을 한다 — 연결, 내 공유 동의, 인사이트
-     * 열람 권한, 기다리던 기관 연결 요청을 거둔다. 같은 기관에 다른 보호자의 동의가 남아 있으면 그 기관 공유는 계속된다.
-     *
-     * <p><b>부르는 쪽이 회원 행을 잠근 채로 불러야 한다</b>(잠금 순서 {@code users} → {@code child}, DB 스키마 §3.3). 그래야
-     * 이 목록을 읽은 뒤 초대 수락이 새 연결을 만들지 못한다. 아이는 id 순서로 잠근다 — 같은 아이들을 둔 두 보호자가 동시에
-     * 탈퇴해도 서로 기다리다 멈추지 않는다. 아이를 잠근 뒤 연결이 이미 끊겼으면(기관 · 본인이 먼저 끊음) 건너뛴다. 하나라도 실패하면
-     * 부르는 쪽 트랜잭션과 함께 전체가 되돌아간다.
-     */
     @Transactional
     public void unlinkAllForWithdrawal(Long parentId) {
-        // 아이 id 만 읽는다. 연결 엔티티를 읽어 두면 아래 잠금 조회가 그 낡은 엔티티를 돌려줘 그사이 남은 해제 기록을 덮어쓴다
         for (Long childId : childGuardianRepository.findLinkedChildIds(parentId)) {
             Optional<Child> child = childRepository.findByIdForUpdate(childId);
-            // 아이를 잠근 뒤 다시 본다. 그사이 기관 · 본인이 먼저 끊었으면(그쪽도 아이를 먼저 잠근다) 동의 · 요청까지 거뒀으니 건너뛴다
             if (!childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, parentId)) {
                 continue;
             }
@@ -146,7 +111,6 @@ public class ChildGuardianService {
         unlinkLocked(parentId, childId, childRepository.findByIdForUpdate(childId));
     }
 
-    /** 아이 행을 잠근 뒤 부른다. 연결 요청 → 보호자 연결 순서로 잠근다 (DB 스키마 §3.3). */
     private void unlinkLocked(Long parentId, Long childId, Optional<Child> child) {
         institutionLinkService.cancelForUnlinkedGuardian(childId, parentId);
         ChildGuardian guardian = childGuardianRepository.findByChildIdAndUserIdForUpdate(childId, parentId)

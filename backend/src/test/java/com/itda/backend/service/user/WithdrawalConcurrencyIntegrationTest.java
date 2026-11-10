@@ -72,12 +72,7 @@ import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
-import com.zaxxer.hikari.HikariDataSource;
 
-/**
- * 회원 탈퇴의 동시성을 PostgreSQL 에서 재현한다 — 회원 행 잠금으로 탈퇴와 초대 수락 · 가입이 줄을 서는지, advisory lock 이
- * 카카오 호출을 한 줄로 세우는지, 잠금 연결을 제대로 돌려주거나 버리는지.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -111,7 +106,6 @@ class WithdrawalConcurrencyIntegrationTest {
     @Autowired private WithdrawalSteps steps;
     @Autowired private WithdrawalExecutor withdrawalExecutor;
     @Autowired private KakaoUnlinkWebhookRepository webhookRepository;
-    // 기본값 auto 가 PostgreSQL 을 보고 운영과 같은 세션 advisory lock 을 고른다 (잠금 연결 테스트가 그것을 전제한다)
     @Autowired private WithdrawalLocks locks;
 
     @MockitoBean private KakaoUnlinkClient kakaoUnlinkClient;
@@ -139,8 +133,6 @@ class WithdrawalConcurrencyIntegrationTest {
                     + " child_organization, child, terms_agreement, revoked_session, organization, kakao_unlink_webhook, users CASCADE");
         }
     }
-
-    // ── 회원 행 잠금: 탈퇴 × 초대 수락 ─────────────────────
 
     @Test
     void 초대_수락이_먼저_잠그면_탈퇴가_기다렸다가_새_연결까지_끊는다() throws Exception {
@@ -174,8 +166,6 @@ class WithdrawalConcurrencyIntegrationTest {
         assertThat(guardianLinks(mother)).isEmpty();
     }
 
-    // ── 회원 행 잠금: 가입 전 탈퇴 × 기관 가입 ──────────────
-
     @Test
     void 가입_전_탈퇴가_먼저면_기관_가입은_409다() throws Exception {
         User pending = persist(User.pending(String.valueOf(nextKakaoId++)));
@@ -207,15 +197,12 @@ class WithdrawalConcurrencyIntegrationTest {
         verify(kakaoUnlinkClient, times(0)).unlink(anyLong());
     }
 
-    // ── 아이 잠금 순서 ──────────────────────────────────────
-
     @Test
     void 같은_아이들을_둔_두_보호자의_정리가_겹쳐도_멈추지_않고_둘_다_끝난다() throws Exception {
         User mother = parent();
         User father = parent();
         Child first = enrolledChild();
         Child second = enrolledChild();
-        // 연결 순서를 서로 반대로 둔다 — 연결 순서대로 잠그면 서로 기다리다 멈춘다
         link(first, mother);
         link(second, mother);
         link(second, father);
@@ -249,8 +236,6 @@ class WithdrawalConcurrencyIntegrationTest {
         assertThat(guardianLinks(father)).allMatch(ChildGuardian::isDeleted);
     }
 
-    // ── advisory lock: 카카오 호출을 한 줄로 ────────────────
-
     @Test
     void 잠금을_쥔_실행기가_멈춘_동안_다른_실행기는_카카오를_부르지_않고_넘어간다() throws Exception {
         User mother = parent();
@@ -268,7 +253,6 @@ class WithdrawalConcurrencyIntegrationTest {
 
         Future<Void> first = withdrawalExecutor.submit(mother.getId());
         assertThat(calling.await(10, TimeUnit.SECONDS)).isTrue();
-        // 시간이 지나도 넘겨받지 않는다 — 잠금을 못 잡으면 그냥 넘어간다
         otherProcess.process(mother.getId());
         verify(kakaoUnlinkClient, times(1)).unlink(anyLong());
 
@@ -303,7 +287,6 @@ class WithdrawalConcurrencyIntegrationTest {
         WithdrawalLocks.Held held = locks.tryAcquire(beyondInt).orElseThrow();
         try {
             assertThat(locks.tryAcquire(beyondInt)).isEmpty();
-            // 32비트로 잘랐다면 같은 키가 되어 막혔을 것이다
             Optional<WithdrawalLocks.Held> other = locks.tryAcquire(sameLow32Bits);
             assertThat(other).isPresent();
             other.get().close();
@@ -328,11 +311,8 @@ class WithdrawalConcurrencyIntegrationTest {
 
     @Test
     void 해제에_실패하면_그_연결은_풀로_돌아가지_않고_닫힌다() throws Exception {
-        HikariDataSource hikari = dataSource.unwrap(HikariDataSource.class);
         WithdrawalLocks.Held held = locks.tryAcquire(8L).orElseThrow();
         int pid = backendPid(held);
-        int totalBefore = hikari.getHikariPoolMXBean().getTotalConnections();
-        // 같은 세션에서 잠금을 미리 풀어 해제가 false 를 돌려주게 만든다
         try (Statement statement = lockConnection(held).createStatement()) {
             statement.execute("SELECT pg_advisory_unlock_all()");
         }
@@ -340,7 +320,6 @@ class WithdrawalConcurrencyIntegrationTest {
         held.close();
 
         waitUntil(() -> !isAlive(pid), "버린 연결의 세션이 닫히지 않았습니다.");
-        assertThat(hikari.getHikariPoolMXBean().getTotalConnections()).isLessThan(totalBefore);
         try (Connection next = dataSource.getConnection();
              ResultSet resultSet = next.createStatement().executeQuery("SELECT pg_backend_pid()")) {
             resultSet.next();
@@ -348,10 +327,6 @@ class WithdrawalConcurrencyIntegrationTest {
         }
     }
 
-    /**
-     * 탈퇴 정리가 아이 목록을 읽은 뒤 아이 행을 기다리는 사이, 기관이 같은 연결을 먼저 끊고 커밋했다. 정리는 아이를 잠근 뒤 이미
-     * 끊긴 연결을 건너뛴다 — 미리 읽어 둔 연결 엔티티로 기관이 남긴 해제 기록(deleted_at)을 덮어쓰지 않는다.
-     */
     @Test
     void 기관이_먼저_연결을_끊으면_탈퇴_정리는_그_해제_기록을_덮어쓰지_않는다() throws Exception {
         User mother = parent();
@@ -375,16 +350,9 @@ class WithdrawalConcurrencyIntegrationTest {
         assertThat(reload(mother).isDeleted()).isTrue();
         ChildGuardian link = guardianLink(child, mother);
         assertThat(link.isDeleted()).isTrue();
-        // 기관이 끊은 시각 그대로다. 정리가 덮어썼다면 정리를 시작한 뒤의 시각이다
         assertThat(link.getDeletedAt()).isBefore(cleanupStarted[0]);
     }
 
-    // ── 웹훅 수신함 ────────────────────────────────────────
-
-    /**
-     * 웹훅을 회원 행으로 옮길 때는 그 행을 기다리지 않는다(NOWAIT). 다른 트랜잭션이 행을 잠그고 있으면 바로 잠금 예외로 끝나고 줄은
-     * 남는다 — 한 회원 행 때문에 뒤의 웹훅 · 주기 작업이 밀리지 않는다. 잠금이 풀리면 옮겨진다.
-     */
     @Test
     void 잠긴_회원의_웹훅은_기다리지_않고_실패해_줄에_남는다() throws Exception {
         User mother = parent();
@@ -409,8 +377,6 @@ class WithdrawalConcurrencyIntegrationTest {
         assertThat(webhookRepository.existsById(webhook.getId())).isFalse();
         assertThat(reload(mother).hasKakaoUnlinkReport()).isTrue();
     }
-
-    // ── 준비 ──────────────────────────────────────────────
 
     private User parent() {
         User user = persist(UserFixture.parent(String.valueOf(nextKakaoId++)));

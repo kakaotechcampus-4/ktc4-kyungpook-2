@@ -58,17 +58,6 @@ import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.ChildGuardianService;
 
-/**
- * 보호자 일지 상세가 보호자 연결 해제와 겹칠 때를 PostgreSQL 에서 재현한다. 상세는 인사이트 열람 도우미
- * ({@code SharingReadRecorder})를 거치지 않고 아이 행을 직접 공유 잠금으로 잡으므로 따로 본다 — 잠금을 빠뜨리거나
- * 잠그기 전에 연결을 읽어도 인사이트 쪽 테스트는 통과한다.
- *
- * <p>방식은 {@link LockContention} 이다. 먼저 가는 쪽은 바깥 트랜잭션 안에서 실제 서비스를
- * 불러 <b>커밋하지 않고 잠금을 쥔 채</b> 멈춘다. 뒤에 오는 쪽은 MockMvc 로 보내 보안 필터부터 거친다. 뒤의 요청이 먼저
- * 쪽 때문에 멈췄는지 {@code pg_blocking_pids} 로 확인한 뒤 먼저 쪽을 커밋하고, HTTP 응답과 DB 상태를 함께 본다.
- *
- * <p>정책: 해제가 먼저 반영되면 404. 열람이 먼저면 200 을 돌려준 뒤 해제된다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -119,10 +108,8 @@ class GuardianJournalConcurrencyIntegrationTest {
 
         childId = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14))).getId();
         childOrganizationRepository.save(ChildOrganization.of(childId, center.getId(), "C-7"));
-        // 초대 코드 경로는 이 테스트의 관심이 아니다. 연결 행은 초대 id 만 있으면 된다.
         childGuardianRepository.save(ChildGuardian.link(childId, mom.getId(), 1L));
 
-        // Gate 1 승인이 만든 것과 같은 모양 — 센터가 요약을 승인했다.
         SummaryResult summary = summaryResultRepository.save(SummaryResult.of(childId, LocalDate.of(2026, 8, 21),
                 center.getId(), 1, "오후 미술 활동에 끝까지 참여했어요.", "[]", "[]", "[]", "{}"));
         journalId = childContextRepository.save(
@@ -168,8 +155,6 @@ class GuardianJournalConcurrencyIntegrationTest {
         assertThat(held.second().getResponse().getStatus()).isEqualTo(204);
         assertNotFound(mockMvc.perform(get(entryPath()).cookie(auth(mom))).andReturn());
     }
-
-    // --- 도구 ---
 
     private static void assertNotFound(MvcResult result) throws Exception {
         assertThat(result.getResponse().getStatus()).isEqualTo(404);

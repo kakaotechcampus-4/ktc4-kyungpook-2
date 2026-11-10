@@ -12,13 +12,6 @@ import com.itda.backend.service.storage.RawFileStorage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * 하루 한 번 오래된 업로드 접수를 지운다 (#450). 선생님이 올리다 창을 닫으면 완료가 오지 않아 접수와 저장소 파일이 남는다 —
- * 하루가 지난 것은 버린 것으로 보고 파일과 함께 지운다. 업로드 주소는 10분이면 만료돼 하루면 넉넉하다.
- *
- * <p>저장소 파일은 DB 가 커밋된 뒤에 지운다 ({@link RemovedRecordPurgeWorker} 와 같은 이유). 파일 삭제가 실패하면 행 없는 파일이
- * 남는데, 로그로만 알린다.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor

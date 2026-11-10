@@ -20,7 +20,6 @@ class ChildOrganizationTest {
         assertThat(ChildOrganization.of(1L, 10L).getExternalId()).isNull();
     }
 
-    /** 요청 DTO 가 공백 제거·길이를 검사하지만, 엔티티도 그 규칙을 어긴 번호로는 만들어지지 않는다. */
     @Test
     void rejectsBlankOrTooLongExternalId() {
         assertThatThrownBy(() -> ChildOrganization.of(1L, 10L, "   "))
@@ -51,7 +50,6 @@ class ChildOrganizationTest {
         assertThat(link.getExternalId()).isNull();
     }
 
-    /** 연결 요청을 수락해 되살릴 때는 새로 받은 관리번호를 넣는다. 번호 없이 되살릴 수는 없다. */
     @Test
     void restoreWithExternalIdSetsTheNewNumber() {
         ChildOrganization link = ChildOrganization.of(1L, 10L, "2026-0031");

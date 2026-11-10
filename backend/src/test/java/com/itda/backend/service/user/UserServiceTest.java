@@ -64,10 +64,6 @@ class UserServiceTest {
                 org.mockito.Mockito.mock(com.itda.backend.service.organization.OrganizationHandoverService.class));
     }
 
-    /**
-     * 카카오 로그인은 신원 확인만 한다. 역할과 소속은 가입 API 에서 정하므로
-     * 첫 로그인에서는 역할 없는(가입 미완료) 회원을 만든다.
-     */
     @Test
     void firstLoginCreatesUserWithoutRole() {
         given(userRepository.findByKakaoIdForUpdate(KAKAO_ID)).willReturn(Optional.empty());
@@ -93,7 +89,6 @@ class UserServiceTest {
         verify(userRepository, never()).saveAndFlush(any(User.class));
     }
 
-    /** 가입을 마친 회원이 다시 로그인해도 역할과 소속은 그대로다. */
     @Test
     void loggingInAgainKeepsTheCompletedSignup() {
         User existing = UserFixture.organizationUser(KAKAO_ID, 7L);
@@ -105,10 +100,6 @@ class UserServiceTest {
         assertThat(found.getOrganizationId()).isEqualTo(7L);
     }
 
-    /**
-     * 옛 방식으로 탈퇴 표시만 된 행(카카오 회원번호가 남음)으로 다시 오면 되살리지 않는다. 그 행의 식별정보를 지우고 새 회원을
-     * 만든다 — 가입 · 약관 동의를 처음부터 한다.
-     */
     @Test
     void legacyWithdrawnRowIsErasedAndANewMemberIsCreated() {
         User legacy = UserFixture.legacyDeleted(UserFixture.organizationUser(KAKAO_ID, 7L));
@@ -125,7 +116,6 @@ class UserServiceTest {
         verify(userRepository).flush();
     }
 
-    /** 탈퇴를 처리하는 중이면 새로 만들지 않고 그 회원을 돌려준다(출입증을 받아 진행 상태를 본다). */
     @Test
     void withdrawingUserIsReturnedUnchanged() {
         User withdrawing = UserFixture.parent(KAKAO_ID);
@@ -154,7 +144,6 @@ class UserServiceTest {
         assertThat(response.signupCompleted()).isTrue();
     }
 
-    /** 기관 행을 못 찾아도 라우트 가드가 막히지 않게 기관명만 빼고 응답한다. */
     @Test
     void currentUserOfOrganizationWithoutOrganizationRowOmitsOnlyTheName() {
         given(userRepository.findByIdAndDeletedAtIsNull(1L))
@@ -167,7 +156,6 @@ class UserServiceTest {
         assertThat(response.institutionName()).isNull();
     }
 
-    /** 가입 미완료는 정상 상태다. 역할 없이 signupCompleted=false 로 내려 프론트가 가입 화면으로 보낸다. */
     @Test
     void currentUserBeforeSignupHasNoRole() {
         given(userRepository.findByIdAndDeletedAtIsNull(3L))
@@ -203,7 +191,6 @@ class UserServiceTest {
                 .isEqualTo(UserErrorCode.SESSION_USER_NOT_FOUND);
     }
 
-    /** subject 전환 전에 발급된 토큰에는 숫자가 아닌 값이 들어 있을 수 있다. */
     @Test
     void nonNumericPrincipalIsReportedAsSessionFailure() {
         assertThatThrownBy(() -> userService.getCurrentUser("kakao-legacy"))
@@ -236,8 +223,6 @@ class UserServiceTest {
 
         assertThat(userService.getOrganizationIdOf("1")).isEqualTo(7L);
     }
-
-    /* ── 회원가입 ───────────────────────────────────────── */
 
     private static final SignupRequest PARENT_SIGNUP = new SignupRequest("parent", null, null, null, null);
 
@@ -287,7 +272,6 @@ class UserServiceTest {
         assertThat(response.institutionName()).isEqualTo("햇살아동발달센터");
     }
 
-    /** 역할은 한 번 정해지면 바뀌지 않는다. 두 번째 가입 요청은 409 이고 아무것도 만들지 않는다. */
     @Test
     void secondSignupIsRejectedAndChangesNothing() {
         User user = pendingUserWithId(5L);
@@ -301,7 +285,6 @@ class UserServiceTest {
         verify(organizationRepository, never()).saveAndFlush(any(Organization.class));
     }
 
-    /** 기관 1곳당 계정 1개. 이미 가입된 사업자등록번호면 409 이고 역할도 정하지 않는다. */
     @Test
     void duplicateBusinessNumberIsRejected() {
         User user = pendingUserWithId(5L);
@@ -315,10 +298,6 @@ class UserServiceTest {
         verify(organizationRepository, never()).saveAndFlush(any(Organization.class));
     }
 
-    /**
-     * 두 사람이 같은 번호로 동시에 가입하면 둘 다 존재 확인을 통과할 수 있다.
-     * 그때는 유니크 제약이 막는데, 그 예외가 500 으로 새지 않고 같은 409 가 되어야 한다.
-     */
     @Test
     void duplicateBusinessNumberRaceIsReportedAsConflict() {
         User user = pendingUserWithId(5L);
@@ -333,7 +312,6 @@ class UserServiceTest {
         assertThat(user.isSignupCompleted()).isFalse();
     }
 
-    /** 가입하면 기관 코드가 함께 붙는다. 보호자가 이 코드로 아이를 이 기관에 연결해 달라고 요청한다. */
     @Test
     void organizationSignupAssignsInstitutionCode() {
         pendingUserWithId(5L);
@@ -350,7 +328,6 @@ class UserServiceTest {
         assertThat(captor.getValue().getCode()).hasSize(Organization.CODE_LENGTH);
     }
 
-    /** 기관 코드가 동시에 겹쳐 유니크에 걸린 것은 사업자번호 중복이 아니다. 다시 보내면 되는 503 이다. */
     @Test
     void institutionCodeRaceIsNotReportedAsDuplicateBusinessNumber() {
         pendingUserWithId(5L);
@@ -377,8 +354,6 @@ class UserServiceTest {
                 .extracting(e -> ((UserException) e).getErrorCode())
                 .isEqualTo(UserErrorCode.SESSION_USER_NOT_FOUND);
     }
-
-    /* ── 가입 · 약관 동의 여부 (가입 미완료 차단 필터용) ───────────── */
 
     @Test
     void pendingUserIsNotSignedUp() {
@@ -408,7 +383,6 @@ class UserServiceTest {
         assertThat(userService.accessOf("2")).isEqualTo(AccountAccess.OK);
     }
 
-    /** 기관 담당자도 기관 약관에 동의하기 전에는 막힌다. 보호자 약관 줄로는 통과하지 못한다. */
     @Test
     void organizationUserWithoutOrganizationTermsIsTermsNotAgreed() {
         given(userRepository.findByIdAndDeletedAtIsNull(4L))

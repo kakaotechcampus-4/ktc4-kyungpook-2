@@ -6,13 +6,6 @@ import { cancelHandover, issueHandover, type IssuedHandover } from "@/lib/api";
 import { ApiError } from "@/lib/apiError";
 import { formatInviteCode } from "@/lib/invite";
 
-/**
- * 담당자 넘기기(#478) — 후임에게 건넬 인계 코드를 받는다.
- *
- * 후임이 카카오로 로그인해 회원가입에서 이 코드를 넣으면 같은 기관의 담당자가 되고, 이 계정은 탈퇴로 정리된다.
- * 열 때 코드를 바로 만들지 않는다 — 다시 받으면 이전 코드가 취소되므로, 메뉴를 실수로 연 것만으로 이미 보낸 코드가
- * 못 쓰게 되면 안 된다.
- */
 export function HandoverDialog({ onClose }: { onClose: () => void }) {
   const [issued, setIssued] = useState<IssuedHandover | null>(null);
   const [busy, setBusy] = useState<"issue" | "cancel" | null>(null);
@@ -20,7 +13,6 @@ export function HandoverDialog({ onClose }: { onClose: () => void }) {
   const [message, setMessage] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  /** 창을 열어 둔 사이 후임이 코드를 썼으면 이 계정은 이미 탈퇴 중이다 — 탈퇴 안내로 보낸다 */
   function handoverDone(e: unknown): boolean {
     if (
       e instanceof ApiError &&
@@ -67,7 +59,6 @@ export function HandoverDialog({ onClose }: { onClose: () => void }) {
       await navigator.clipboard.writeText(formatInviteCode(issued.code));
       setCopied(true);
     } catch {
-      // 클립보드 권한이 없으면 화면의 코드를 직접 읽어 전달하면 된다
     }
   }
 
@@ -134,7 +125,6 @@ export function HandoverDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** "11월 10일 오후 6:30" */
 function until(iso: string): string {
   return new Date(iso).toLocaleString("ko-KR", {
     month: "long",

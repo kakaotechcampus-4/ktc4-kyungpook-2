@@ -20,13 +20,6 @@ import jakarta.persistence.EntityManager;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/**
- * 두 작업이 같은 행 잠금에서 줄을 서는지 PostgreSQL 에서 재현한다. 잠금 동시성 통합 테스트들이 함께 쓴다.
- *
- * <p>먼저 가는 쪽은 바깥 트랜잭션 안에서 실제 서비스를 불러 <b>커밋하지 않고 잠금을 쥔 채</b> 멈춘다 — 서비스 트랜잭션이
- * 바깥에 합류한다. 뒤에 오는 쪽은 MockMvc 로 보내 보안 필터부터 거친다. 뒤의 요청이 먼저 쪽 때문에 멈췄는지
- * {@code pg_blocking_pids} 로 확인한 뒤 먼저 쪽을 커밋한다. 잠금을 거치지 않고 끝나면 실패한다.
- */
 public final class LockContention {
 
     private final TransactionTemplate transactionTemplate;
@@ -39,14 +32,9 @@ public final class LockContention {
         this.dataSource = dataSource;
     }
 
-    /** 먼저 쪽의 반환값과 뒤 쪽의 HTTP 응답. */
     public record Held<T>(T first, MvcResult second) {
     }
 
-    /**
-     * {@code first} 를 바깥 트랜잭션 안에서 끝내고 커밋하지 않은 채 잡아 둔다. 그동안 {@code second} 를 넣고, 그것이
-     * {@code first} 의 잠금 때문에 멈췄는지 확인한 뒤 커밋한다.
-     */
     public <T> Held<T> firstHoldsThen(Callable<T> first, Callable<MvcResult> second) throws Exception {
         CountDownLatch ran = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -87,7 +75,6 @@ public final class LockContention {
         }
     }
 
-    /** 먼저 쪽 세션 때문에 막힌 세션이 생길 때까지 기다린다. 잠금을 거치지 않고 끝났으면 실패한다. */
     private void waitUntilBlockedBy(int holderPid) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         try (Connection observer = dataSource.getConnection();

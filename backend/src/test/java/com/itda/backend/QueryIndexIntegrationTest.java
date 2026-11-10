@@ -18,20 +18,12 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/**
- * 자주 읽는 테이블의 인덱스(#479)가 엔티티 선언대로 만들어지는지 실제 PostgreSQL 에서 확인한다.
- *
- * <p>운영 DB 에는 같은 이름 · 같은 정의로 {@code CREATE INDEX CONCURRENTLY} 를 먼저 실행한다(DB 스키마 §11.4). Hibernate 는
- * 이름만 보고 이미 있으면 건너뛰므로, 엔티티의 이름이나 컬럼 순서가 그 SQL 과 어긋나면 운영에는 다른 인덱스가 남는다.
- * 그래서 이름 · 테이블 · 컬럼 순서 · btree · 비유니크 · 조건 없음까지 운영 검증 쿼리와 같은 문장으로 비교한다.
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
 @Tag("integration")
 class QueryIndexIntegrationTest {
 
-    /** 인덱스 이름 → {테이블, 컬럼}. 운영에서 실행하는 SQL · 검증 쿼리(DB 스키마 §11.4)와 같아야 한다. */
     private static final Map<String, List<String>> EXPECTED = new LinkedHashMap<>();
 
     static {

@@ -34,10 +34,6 @@ import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.service.insight.InsightActivityReader;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 오늘 AI가 한 일 (#370). 시각은 서울 기준 오늘 0시부터 센다. 행의 생성 시각은 엔티티가 JVM 기본 시간대로 남기므로
- * 테스트도 서울 시각을 JVM 시간대로 바꿔 넣는다 — 어느 시간대에서 돌려도 경계가 같다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({DashboardActivityService.class, InsightActivityReader.class, DashboardActivityServiceTest.ClockConfig.class})
@@ -122,9 +118,7 @@ class DashboardActivityServiceTest {
     @Test
     void 오늘_만든_요약과_오늘_다시_만든_검토_대기_요약을_센다() {
         atSummary(summary(ORG, 1, DATE), NOW, NOW);
-        // 어제 만든 판을 오늘 새 일지와 함께 다시 요약했다 — 같은 행을 덮어써 생성 시각은 어제다.
         atSummary(summary(ORG, 2, DATE), YESTERDAY_LAST, NOW);
-        // 어제 만들고 오늘 승인한 판은 선생님이 한 일이다.
         SummaryResult approved = summary(ORG, 3, DATE);
         approved.approve();
         atSummary(em.persistAndFlush(approved), YESTERDAY_LAST, NOW);
@@ -139,7 +133,6 @@ class DashboardActivityServiceTest {
         atInsight(insight(8L, "[1,2]"), NOW);
         atInsight(insight(8L, "[2]"), NOW);
         atInsight(insight(8L, "[1]"), YESTERDAY_LAST);
-        // 그날 플랫폼 전체 인사이트를 읽지 않도록 우리 명부 아이로 먼저 좁힌다.
         atInsight(insight(9L, "[1]"), NOW);
 
         assertThat(service.getActivity(TEACHER).insights()).isEqualTo(1);
@@ -197,7 +190,6 @@ class DashboardActivityServiceTest {
         update("insight_result", "created_at", insight.getId(), seoul);
     }
 
-    /** 서울 시각을 JVM 시간대의 벽시계 시각으로 바꿔 넣는다 — 엔티티가 {@code LocalDateTime.now()} 로 남기는 것과 같다. */
     private void update(String table, String column, Long id, LocalDateTime seoul) {
         LocalDateTime local = seoul.atZone(MutableClock.KST).withZoneSameInstant(ZoneId.systemDefault())
                 .toLocalDateTime();

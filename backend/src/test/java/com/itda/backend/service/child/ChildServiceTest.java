@@ -104,14 +104,9 @@ class ChildServiceTest {
         assertThat(roster.get(0).name()).isEqualTo("김하늘");
         assertThat(roster.get(0).birthDate()).isEqualTo("2020-01-01");
         assertThat(roster.get(0).externalId()).isEqualTo("2026-0031");
-        // 관리번호가 없는 아이도 실패하지 않고 null 로 내려간다.
         assertThat(roster.get(1).externalId()).isNull();
     }
 
-    /**
-     * 명부의 consent 는 이 기관에 대한 동의다. 다른 기관에만 동의한 아이는 아이 전체 상태가 active 여도
-     * 이 기관 명부에서는 not_granted 다.
-     */
     @Test
     void getRoster_reportsConsentOfThisOrganizationOnly() {
         long otherOrgId = ORG_ID + 1;
@@ -159,10 +154,6 @@ class ChildServiceTest {
         assertThat(response.invitation()).isEqualTo(invitation);
     }
 
-    /**
-     * 요청은 관리번호를 필수로 받지만, 서비스는 번호 없이 불려도 중복 조회를 하지 않는다. 번호가 없는 기존 연결이
-     * 있으면 "external_id IS NULL" 조회가 참이 되어 엉뚱한 409 가 나기 때문이다.
-     */
     @Test
     void register_withoutExternalIdSkipsDuplicateCheck() {
         given(userService.getOrganizationIdOf(USER_ID)).willReturn(ORG_ID);
@@ -189,7 +180,6 @@ class ChildServiceTest {
         verify(childOrganizationRepository, never()).saveAndFlush(any());
     }
 
-    /** 동시에 같은 번호로 등록해 사전 검사를 함께 통과하면 DB 유니크 제약이 막는다 — 그것도 같은 409 다. */
     @Test
     void register_turnsExternalIdUniqueViolationIntoDuplicateError() {
         given(userService.getOrganizationIdOf(USER_ID)).willReturn(ORG_ID);

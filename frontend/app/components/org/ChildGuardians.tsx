@@ -13,12 +13,7 @@ import {
 import { formatInviteCode } from "@/lib/invite";
 import type { ChildGuardian, LiveInvitation } from "@/lib/types";
 
-/**
- * 아이 팝업 [보호자] 탭 — 연결된 보호자(O-18 · O-19)와 쓸 수 있는 초대 코드(O-15 ~ O-17).
- * 탭을 열 때 불러오고, 처리할 때마다 서버 목록을 다시 받는다. 만료된 코드는 서버가 빼고 준다.
- */
 export function ChildGuardians({ childId, childName }: { childId: string; childName: string }) {
-  // 보호자 이름은 저장하지 않는다 — 아이 이름으로 부른다
   const guardianLabel = `${childName} 보호자`;
   const [data, setData] = useState<{ guardians: ChildGuardian[]; invitations: LiveInvitation[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -137,12 +132,7 @@ export function ChildGuardians({ childId, childName }: { childId: string; childN
   );
 }
 
-/**
- * 보호자 이름은 저장하지 않아 같은 아이의 보호자들이 모두 "OO 보호자" 다. 해제할 사람을 잘못 고르지 않게
- * 그 보호자가 쓴 우리 기관 초대 코드와 연결 시각(분까지)으로 구별한다. 기관은 어떤 코드를 누구에게 줬는지로 대조한다.
- */
 function linkedLine(g: ChildGuardian): string {
-  // "2026-11-03T14:05:00+09:00" → "2026.11.03 14:05". 서버가 한국 시각으로 준다
   const linkedAt = `${g.linkedAt.slice(0, 10).replaceAll("-", ".")} ${g.linkedAt.slice(11, 16)}`;
   return g.invitationCode
     ? `${formatInviteCode(g.invitationCode)} 코드로 · ${linkedAt} 연결`

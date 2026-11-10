@@ -49,13 +49,11 @@ import com.itda.backend.service.user.UserService;
 import com.itda.backend.exception.agent.AgentQueueFullException;
 import com.itda.backend.service.agent.AgentQueueGuard;
 
-/** Gate 1 — 교사가 요약을 승인·수정 후 승인·보류·제거하고, 보류함에서 보류를 해제한다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({SummaryGate1Service.class, ConsentStateReader.class})
 class SummaryGate1ServiceTest {
 
-    /** AI 처리 줄 상한은 AgentQueueGuardTest 가 본다. 여기서는 늘 자리가 있다. */
     @MockitoBean
     private AgentQueueGuard agentQueueGuard;
 
@@ -67,7 +65,6 @@ class SummaryGate1ServiceTest {
     private static final String FIRST = "블록 놀이에서 친구에게 양보했다.";
     private static final String SECOND = "낮잠을 잘 잤다.";
     private static final String AI_TEXT = FIRST + " " + SECOND;
-    /** 문장마다 근거가 있는 AI 원문 claims. AI 는 source 를 보내지 않는다. */
     private static final String AI_CLAIMS = "["
             + "{\"text\":\"" + FIRST + "\",\"evidence\":[{\"journal_entry_id\":1041,\"quote\":\"양보\","
             + "\"span\":{\"start\":7,\"end\":9}}]},"
@@ -136,7 +133,6 @@ class SummaryGate1ServiceTest {
         return entry;
     }
 
-    /** 같은 묶음의 새 일지만 워커가 집어 간 상태. 이 요약의 일지는 하나도 집히지 않았다. */
     private void newEntrySummarizingInSameGroup() {
         JournalEntry fresh = validated();
         fresh.startSummarizing();
@@ -156,7 +152,6 @@ class SummaryGate1ServiceTest {
         return em.find(JournalEntry.class, entry.getId());
     }
 
-    /** 교사가 목록에서 받은 판 표시. 결정할 때 그대로 돌려보낸다. */
     private String versionOf(Long summaryId) {
         return Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow(),
                 journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId));
@@ -195,8 +190,6 @@ class SummaryGate1ServiceTest {
         return approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, summary.getId());
     }
 
-    // ── 승인 ──
-
     @Test
     void 그대로_승인하면_요약은_승인되고_AI_원문이_아동_맥락으로_올라간다() {
         Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null,
@@ -218,8 +211,6 @@ class SummaryGate1ServiceTest {
         });
     }
 
-    // ── 문장 카드 ──
-
     @Test
     void 카드를_모두_유지하면_그대로_승인이고_claims_는_바뀌지_않는다() throws Exception {
         Gate1DecisionResponse response = approveWith(keep(0), keep(1));
@@ -237,11 +228,9 @@ class SummaryGate1ServiceTest {
         JsonNode claims = savedClaims();
         assertThat(claims).hasSize(1);
         assertThat(claims.get(0).path("text").asText()).isEqualTo(FIRST);
-        // 고치지 않은 문장도 source 를 비워 두지 않는다 — 인사이트가 누가 쓴 문장인지 이 값으로 가른다.
         assertThat(claims.get(0).path("source").asText()).isEqualTo("AI");
         assertThat(claims.get(0).path("evidence").get(0).path("journal_entry_id").asLong()).isEqualTo(1041L);
         assertThat(approvedContent()).isEqualTo(FIRST);
-        // AI 원문은 요약 행에 그대로 남는다.
         assertThat(reloadSummary().getContent()).isEqualTo(AI_TEXT);
         assertThat(history()).singleElement()
                 .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.CORRECTED));
@@ -273,7 +262,6 @@ class SummaryGate1ServiceTest {
         assertThat(claim.path("source").asText()).isEqualTo("TEACHER");
         JsonNode evidence = claim.path("evidence");
         assertThat(evidence).hasSize(1);
-        // 키를 빼지 않고 null 로 둔다 — 인사이트 계약이 TEACHER 근거의 일지 번호를 null 로 받는다.
         assertThat(evidence.get(0).has("journal_entry_id")).isTrue();
         assertThat(evidence.get(0).path("journal_entry_id").isNull()).isTrue();
         assertThat(evidence.get(0).path("quote").asText()).isEqualTo(added);
@@ -293,7 +281,6 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 고친_글이_원문과_줄바꿈이나_앞뒤_공백만_다르면_고친_것으로_보지_않는다() {
-        // 입력창을 거치면 끝에 줄바꿈이 붙거나 CRLF 로 바뀌곤 한다. 고친 것으로 보면 근거 없는 수정이 남는다.
         Gate1DecisionResponse response = approveWith(edit(0, " " + FIRST + "\r\n"), keep(1));
 
         assertThat(response.decision()).isEqualTo("APPROVED");
@@ -327,9 +314,9 @@ class SummaryGate1ServiceTest {
     @Test
     void 원래_문장을_모두_한_번씩_보내지_않으면_받지_않는다() {
         List<List<Card>> invalid = List.of(
-                List.of(keep(0)),                     // 빠짐
-                List.of(keep(0), keep(1), keep(1)),   // 중복
-                List.of(keep(0), keep(1), keep(2)),   // 범위 밖
+                List.of(keep(0)),
+                List.of(keep(0), keep(1), keep(1)),
+                List.of(keep(0), keep(1), keep(2)),
                 List.of(keep(0), edit(0, "x"), keep(1)),
                 List.of(keep(-1), keep(0), keep(1)));
         for (List<Card> cards : invalid) {
@@ -353,7 +340,6 @@ class SummaryGate1ServiceTest {
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
     }
 
-    /** 문장 목록(claims)을 못 읽는 요약. 목록에는 카드 0장으로 보인다. */
     private SummaryResult unreadableSummary(String claims) {
         SummaryResult unreadable = em.persistAndFlush(SummaryResult.of(CHILD, DATE.plusDays(1), ORG, 1, AI_TEXT,
                 claims, "[]", "[]", "{}"));
@@ -406,8 +392,6 @@ class SummaryGate1ServiceTest {
         assertThat(reload(uncovered).getStatus()).isEqualTo(JournalEntryStatus.COMPLETED);
     }
 
-    // ── 보류 ──
-
     @Test
     void 보류하면_요약과_그_일지가_보류된다() {
         Gate1DecisionResponse response = service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null,
@@ -421,8 +405,6 @@ class SummaryGate1ServiceTest {
         assertThat(history()).singleElement()
                 .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.HOLD));
     }
-
-    // ── 제거 ──
 
     @Test
     void 제거하면_요약은_제거되고_그_일지는_모두_삭제_표시된다() {
@@ -438,11 +420,8 @@ class SummaryGate1ServiceTest {
                 .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.REMOVED));
     }
 
-    // ── 요약할 내용 없음 (#244) ──
-
     private static final LocalDate EMPTY_DATE = DATE.plusDays(1);
 
-    /** 그날 일지에 쓸 내용이 없다는 요약과 그 일지 두 건. 일반 요약과 다른 날짜 묶음이다. */
     private SummaryResult noContentSummaryWithEntries() {
         SummaryResult empty = em.persistAndFlush(
                 SummaryResult.noContent(CHILD, EMPTY_DATE, ORG, 1, "[]", "{\"no_content\":true}"));
@@ -475,7 +454,6 @@ class SummaryGate1ServiceTest {
         assertThat(journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(empty.getId()))
                 .hasSize(2)
                 .allSatisfy(e -> assertThat(e.getStatus()).isEqualTo(JournalEntryStatus.COMPLETED));
-        // 빈 글이 아동 맥락에 올라가면 인사이트 재료가 된다.
         assertThat(childContextRepository.findByChildIdOrderByIdDesc(CHILD)).isEmpty();
         assertThat(approvalRepository.findByTargetTypeAndTargetId(ApprovalTargetType.SUMMARY, empty.getId()))
                 .singleElement()
@@ -510,7 +488,6 @@ class SummaryGate1ServiceTest {
         em.flush();
         em.clear();
         assertThat(em.find(SummaryResult.class, empty.getId()).getStatus()).isEqualTo(SummaryStatus.REVERTED);
-        // 연결을 끊었으니 이 요약을 가리키는 일지는 없다. 일지는 [요약]을 다시 누르면 요약된다.
         assertThat(journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(empty.getId())).isEmpty();
         assertThat(journalEntryRepository.findAll()).filteredOn(e -> e.getEntryDate().equals(EMPTY_DATE))
                 .hasSize(2)
@@ -524,7 +501,6 @@ class SummaryGate1ServiceTest {
                 .satisfies(h -> assertThat(h.getDecision()).isEqualTo(ApprovalDecision.REVERTED));
     }
 
-    /** 되돌리면 요약 대기로 다시 들어간다 — AI 처리 줄이 꽉 찼으면 되돌리지 않는다 (#424). */
     @Test
     void AI_처리_줄이_꽉_찼으면_요약할_내용_없음을_되돌리지_않는다() {
         SummaryResult empty = noContentSummaryWithEntries();
@@ -563,7 +539,6 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 목록을_연_뒤_요약이_바뀌었으면_결정이_맞지_않아도_바뀌었다고_먼저_알린다() {
-        // 교사가 일반 요약을 본 사이 다시 요약돼 요약할 내용 없음이 됐다. 400 이 아니라 409 로 다시 보게 해야 한다.
         String seen = versionOf(summary.getId());
         SummaryResult changed = em.find(SummaryResult.class, summary.getId());
         changed.overwriteNoContent("[]", "{}");
@@ -596,8 +571,6 @@ class SummaryGate1ServiceTest {
         }
     }
 
-    // ── 권한·중복 ──
-
     @Test
     void 다른_기관의_요약은_없는_것으로_응답한다() {
         SummaryResult others = summaryOf(OTHER_ORG);
@@ -613,10 +586,6 @@ class SummaryGate1ServiceTest {
                 .isEqualTo(SummaryErrorCode.NOT_FOUND);
     }
 
-    /**
-     * 철회 전에 만들어진 요약이다 (#332). 목록(O-30)에서도 빠지므로 다른 기관 요약처럼 없는 것으로 응답한다 — 화면은
-     * 안내하고 목록을 다시 불러온다. 요약과 일지는 그대로 두어 다시 동의하면 이어서 검토한다.
-     */
     @Test
     void 동의를_철회한_아이의_요약은_없는_것으로_응답하고_그대로_둔다() {
         em.find(SharingConsent.class, consentId)
@@ -637,7 +606,6 @@ class SummaryGate1ServiceTest {
         assertThat(history()).isEmpty();
     }
 
-    /** 승인을 다시 보낸 경우(더블클릭·재시도)다. 이미 처리됐다는 응답이 먼저다 — 없다고 하면 승인한 요약이 사라진 것처럼 보인다. */
     @Test
     void 이미_처리된_요약은_동의가_철회된_뒤에도_이미_처리됐다고_응답한다() {
         service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null, versionOf(summary.getId()));
@@ -653,7 +621,6 @@ class SummaryGate1ServiceTest {
                 .isEqualTo(SummaryErrorCode.ALREADY_REVIEWED);
     }
 
-    /** 보류함의 요약은 아직 끝나지 않았다. "보류 해제 먼저"(409) 라고 하면 그 해제가 다시 404 라 앞뒤가 안 맞는다. */
     @Test
     void 동의를_철회한_아이의_보류_요약은_승인해도_없는_것으로_응답한다() {
         service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
@@ -700,7 +667,6 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 새_일지와_함께_다시_요약하는_중이면_결정할_수_없다() {
-        // 워커가 이 요약의 일지를 새 일지와 함께 집어 갔다. 승인하면 곧 덮어써질 글을 승인하게 된다.
         JournalEntry resummarizing = em.find(JournalEntry.class, covered.getId());
         resummarizing.startSummarizing();
         em.flush();
@@ -713,8 +679,6 @@ class SummaryGate1ServiceTest {
                 .isEqualTo(SummaryErrorCode.REGENERATING);
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
     }
-
-    // ── 보류 해제 ──
 
     @Test
     void 보류를_해제하면_요약과_그_일지가_다시_Gate1_대기가_된다() {
@@ -742,7 +706,6 @@ class SummaryGate1ServiceTest {
         assertThat(history()).isEmpty();
     }
 
-    /** 철회된 아이의 보류 요약은 보류함에서 빠진다. 직접 불러도 상태와 이력을 바꾸지 않는다 (#332). */
     @Test
     void 동의를_철회한_아이의_요약은_보류_해제할_수_없다() {
         service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
@@ -773,8 +736,6 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 이_요약의_일지가_집히지_않았어도_같은_묶음을_요약하는_중이면_결정할_수_없다() {
-        // 이 요약의 일지가 모두 지워졌거나, 다른 판의 일지만 집힌 경우다. 요약 결과는 최신 판을 덮어쓸 수 있으므로
-        // 묶음 단위로 막는다.
         newEntrySummarizingInSameGroup();
 
         assertThatThrownBy(() -> service.decide(TEACHER, summary.getId(), Gate1Action.APPROVE, null,
@@ -786,8 +747,6 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 같은_묶음을_요약하는_중이면_보류를_해제할_수_없다() {
-        // 보류한 판이 최신이라 워커는 새 일지만 집었다. 지금 해제하면 요약 결과가 이 판을 새 일지만으로 덮어써
-        // 이 판의 일지가 요약에서 사라진 채 승인될 수 있다.
         service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
         em.flush();
         newEntrySummarizingInSameGroup();
@@ -799,12 +758,9 @@ class SummaryGate1ServiceTest {
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.HOLD);
     }
 
-    // ── 교사가 본 판 ──
-
     @Test
     void 교사가_목록을_연_뒤_요약이_새_일지로_다시_만들어졌으면_결정할_수_없다() {
         String seen = versionOf(summary.getId());
-        // 그 사이 같은 날 일지가 들어와 워커가 같은 요약을 덮어썼다. id 와 판 번호는 그대로다.
         SummaryResult overwritten = em.find(SummaryResult.class, summary.getId());
         overwritten.overwrite("새 일지까지 반영한 요약", "[]", "[]", "[]", "{}");
         em.flush();
@@ -819,8 +775,6 @@ class SummaryGate1ServiceTest {
         assertThat(reloadSummary().getStatus()).isEqualTo(SummaryStatus.GATE1_PENDING);
         assertThat(history()).isEmpty();
     }
-
-    // ── 보류함 ──
 
     @Test
     void 보류함에서_바로_제거하면_요약과_그_일지가_지워진다() {
@@ -856,7 +810,6 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 보류함에서_제거는_같은_묶음을_요약하는_중이어도_할_수_있다() {
-        // 보류된 판은 워커가 덮어쓰지 않는다 — 새 일지는 새 판이 된다. 제거와 부딪힐 일이 없다.
         service.decide(TEACHER, summary.getId(), Gate1Action.HOLD, null, versionOf(summary.getId()));
         em.flush();
         newEntrySummarizingInSameGroup();
@@ -869,7 +822,6 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 최신_판이_아닌_요약은_같은_묶음을_요약하는_중이어도_결정할_수_있다() {
-        // 1판을 보류한 사이 2판이 생겼고 1판을 보류 해제했다. 워커는 최신 판(2판)만 덮어쓰므로 1판은 바뀌지 않는다.
         em.persistAndFlush(SummaryResult.of(CHILD, DATE, ORG, 2, "2판", "[]", "[]", "[]", "{}"));
         newEntrySummarizingInSameGroup();
 
@@ -881,8 +833,6 @@ class SummaryGate1ServiceTest {
 
     @Test
     void 요약_글이_그대로여도_요약에_든_일지가_늘었으면_바뀐_것으로_본다() {
-        // 워커가 새 일지까지 묶어 다시 요약했는데 AI 가 같은 글을 돌려줬다. 요약 행은 그대로라 수정 시각도 그대로다.
-        // 교사는 새 일지를 본 적이 없으니, 받으면 그 일지가 승인과 함께 끝난다.
         String seen = versionOf(summary.getId());
         entryIn(em.find(SummaryResult.class, summary.getId()));
         em.flush();

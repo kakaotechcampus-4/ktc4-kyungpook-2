@@ -13,7 +13,6 @@ public class IsolatedH2ContextCustomizerFactory implements ContextCustomizerFact
     private static final String DATASOURCE_URL = "spring.datasource.url";
     private static final String SHARED_H2_URL = "jdbc:h2:mem:backend";
 
-    // 컨텍스트 캐시는 그대로 재사용하되, 서로 다른 컨텍스트의 create-drop은 분리한다.
     private static final ContextCustomizer ISOLATE_H2 = (context, configuration) -> {
         var environment = context.getEnvironment();
         String url = environment.getProperty(DATASOURCE_URL, "");
