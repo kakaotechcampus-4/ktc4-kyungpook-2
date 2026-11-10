@@ -52,7 +52,7 @@
 
 | 도메인 | 다루는 것 | 주요 API (`backend/.../api`) |
 | --- | --- | --- |
-| 계정 | 로그인 · 가입 · 약관 · 탈퇴 · 기관 담당자 넘기기 | `Auth` · `Terms` · `DevLogin` · `KakaoWebhook` · `Organization` |
+| [계정](domains/account.md) | 로그인 · 가입 · 약관 · 탈퇴 · 기관 담당자 넘기기 | `Auth` · `Terms` · `DevLogin` · `KakaoWebhook` · `Organization` |
 | [아이 · 보호자](domains/child-guardian.md) | 아이 등록 · 초대 코드 · 보호자 연결 · 기관 코드 연결 요청 · 돌봄 정보 | `Child` · `Invitation` · `Guardian` · `ChildGuardian` · `InstitutionLink` · `LinkRequest` · `ChildCareInfo` |
 | [동의](domains/consent.md) | 기관마다 무엇을 공유할지, 동의를 거두면 무엇이 사라지나 | `Consent` |
 | [기록](domains/records.md) | 업로드 · 매칭 · 검증 · 요약, AI가 묻는 기록 확인 | `RawRecord` · `MatchingQueue` · `ValidationResult` |

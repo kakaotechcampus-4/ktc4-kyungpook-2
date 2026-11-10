@@ -3,7 +3,7 @@
 레포 문서의 지도입니다. 처음이면 [루트 README](../README.md)부터 읽습니다.
 
 서비스가 무엇을 하고 일이 어떤 순서로 흐르는지는 [overview.md](overview.md)에 있습니다 — 역할 · 전체 흐름 · 도메인 지도 · 용어.
-도메인별 규칙은 `domains/`에 있습니다 — [기록](domains/records.md) · [검토](domains/review.md) · [아이 · 보호자](domains/child-guardian.md) · [동의](domains/consent.md) · [공유](domains/sharing.md).
+도메인별 규칙은 `domains/`에 있습니다 — [계정](domains/account.md) · [기록](domains/records.md) · [검토](domains/review.md) · [아이 · 보호자](domains/child-guardian.md) · [동의](domains/consent.md) · [공유](domains/sharing.md).
 
 ---
 
