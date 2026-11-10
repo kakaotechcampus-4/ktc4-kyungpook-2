@@ -1,3 +1,16 @@
+# AI/evals/scripts/summary/test_criteria_sync.py
+"""
+요약 판정 기준 문서와 config.py 가 어긋나지 않는지 검사한다. LLM 을 부르지 않는다.
+
+    python evals/scripts/summary/test_criteria_sync.py
+
+매칭의 test_criteria_sync.py 와 같은 생각이다. 기준이 사람 머릿속에만 있으면
+문서가 조용히 낡는다. 문서를 고치고 코드를 안 고치면(또는 반대면) 여기서 깨진다.
+
+여기서 재는 것은 **문서가 말하는 규칙과 config.py 의 값이 같은가** 뿐이다.
+요약이 좋은지는 평가 스크립트가 본다.
+"""
+
 import sys
 from pathlib import Path
 
@@ -13,6 +26,7 @@ def check_doc_exists():
 
 
 def check_flags(text):
+    """문서가 전제하는 동작이 config 에서 켜져 있는지."""
     rules = [
         ("DROP_UNFOUND_QUOTES", True, "원문에 없는 인용은 버린다"),
         ("DROP_CLAIMS_WITHOUT_EVIDENCE", True, "근거 0 개가 된 문장은 버린다"),
@@ -38,6 +52,11 @@ def check_flags(text):
 
 
 def check_no_threshold(text):
+    """
+    요약에는 판정 임계값이 없다. 생기면 문서가 먼저 말해야 한다.
+
+    LUNA_* 는 접속 설정이라 세지 않는다 — 판정 기준이 아니다.
+    """
     numeric = [
         n
         for n in dir(config)
@@ -53,6 +72,7 @@ def check_no_threshold(text):
 
 
 def check_decisions(text):
+    """합의로 정해진 것이 문서에서 사라지지 않았는지."""
     decided = [
         ("아동 × 날짜 × 기관", "묶음 단위 — 기관을 가로지르지 않는다"),
         ("인사이트가 가로지른다", "기관 간 비교는 요약이 아니라 인사이트 몫이다"),

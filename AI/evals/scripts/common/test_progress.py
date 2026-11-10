@@ -1,3 +1,12 @@
+"""
+진행 지도(`common/progress.py`)가 노드 단계를 제대로 기록하고 지우는지 LLM 없이 고정한다 (#452).
+
+    python evals/scripts/common/test_progress.py
+
+대시보드 진행 현황이 `GET /progress` 로 "지금 어느 노드인지" 를 묻는다.
+**진행 표시가 어떻게 망가져도 일지 처리 결과는 같아야 한다** — 이 파일이 지키는 것은 그 하나다.
+"""
+
 import sys
 from pathlib import Path
 
@@ -7,6 +16,7 @@ from common import progress  # noqa: E402
 
 
 class Clock:
+    """테스트에서 시간을 직접 움직인다."""
 
     def __init__(self, t: float = 1000.0):
         self.t = t
@@ -89,6 +99,7 @@ SUMMARY_KEY = {"child_id": 7, "entry_date": "2026-11-08", "institution_id": 3}
 
 
 def _failed_run(clock, seconds):
+    """503 으로 끝나는 한 번의 호출."""
     try:
         with progress.begin("summary", **SUMMARY_KEY):
             progress.mark("write")
@@ -102,14 +113,14 @@ def test_retry():
     print("\n■ 같은 일이 60초 안에 다시 오면 이어서 센다 (BE 재시도)")
     clock = fresh()
     _failed_run(clock, 20)
-    clock.t += 59
+    clock.t += 59                                   # 503 뒤 59초 만에 재시도
     with progress.begin("summary", **SUMMARY_KEY):
         progress.mark("gather")
         ck("이어서 센다", progress.snapshot()[0]["elapsed_sec"], 79, "처음 시작부터 20 + 59 초")
 
     clock = fresh()
     _failed_run(clock, 20)
-    clock.t += 61
+    clock.t += 61                                   # 61초 뒤면 새 일
     with progress.begin("summary", **SUMMARY_KEY):
         progress.mark("gather")
         ck("61초 뒤면 새로 센다", progress.snapshot()[0]["elapsed_sec"], 0, "metrics.GAP_SEC 와 같은 60초 기준")
@@ -117,8 +128,8 @@ def test_retry():
     clock = fresh()
     with progress.begin("validation", journal_entry_id=3):
         progress.mark("act")
-        clock.t += 71
-    clock.t += 2
+        clock.t += 71                               # BE 는 70초에 끊었지만 AI 는 71초에 200
+    clock.t += 2                                    # BE 재시도
     with progress.begin("validation", journal_entry_id=3):
         progress.mark("perceive")
         ck("AI 쪽에서 성공했어도 이어서 센다", progress.snapshot()[0]["elapsed_sec"], 73,
@@ -128,7 +139,7 @@ def test_retry():
     with progress.begin("summary", **SUMMARY_KEY):
         progress.mark("write")
         clock.t += 40
-    clock.t += 10
+    clock.t += 10                                   # 성공 뒤 새 일지로 같은 묶음이 다시 옴
     with progress.begin("summary", **SUMMARY_KEY):
         progress.mark("gather")
         ck("[한계] 성공 뒤 60초 안 새 일도 이어 센다", progress.snapshot()[0]["elapsed_sec"], 50,
@@ -145,7 +156,7 @@ def test_retry():
     clock = fresh()
     with progress.begin("matching", journal_entry_id=5):
         progress.mark("llm_judge")
-        clock.t += 30
+        clock.t += 30                               # BE 가 타임아웃 뒤 다시 보냄
         with progress.begin("matching", journal_entry_id=5):
             ck("재시도가 노드에 들어가기 전엔 앞선 호출", [r["node"] for r in progress.snapshot()], ["llm_judge"],
                "그 사이 줄이 사라지면 BE 가 고정 문구로 깜빡인다")
@@ -203,7 +214,7 @@ def test_broken():
        "삼키는 것은 GET /progress 가 한다 (빈 목록)")
 
     fresh()
-    progress._lock = None
+    progress._lock = None                           # with None: → TypeError
     try:
         with progress.begin("matching", journal_entry_id=9):
             progress.mark("extract")
@@ -213,6 +224,7 @@ def test_broken():
     ck("자물쇠가 없어도 돈다", ran[-1], "자물쇠 없이", "어떤 에러도 노드 실행에 닿지 않는다")
 
 
+#: 이슈 #452 의 node 값. BE 문구표(#453)가 이 이름으로 번역한다 — 노드가 바뀌면 같이 고친다.
 NODES = {
     "matching": ["extract", "shortlist", "llm_judge", "decide"],
     "validation": ["perceive", "plan", "act", "reflect"],
@@ -230,6 +242,7 @@ def _graphs():
 
 
 def _exact_matching_input():
+    """이름이 그대로 적힌 아이 한 명 — 코드로 끝나고 모델을 부르지 않는다."""
     from matching.schemas import MatchingInput
     return MatchingInput(journal_entry_id=120, content="김민준이 블록을 높이 쌓았다.",
                          roster=[{"child_id": 1, "name": "김민준", "birthdate": "2020-03-01"},
@@ -397,7 +410,7 @@ def test_wrapper_shape():
     def node(state: dict, config=None) -> dict:
         return state
 
-    node.__signature__ = inspect.signature(node)
+    node.__signature__ = inspect.signature(node)   # 다른 데코레이터가 붙여 둔 경우
     wrapped = progress.tracked("node", node)
     ck("시그니처", list(inspect.signature(wrapped).parameters), ["state"],
        "원래 함수 시그니처를 보이면 LangGraph 가 config 를 넘겨 TypeError 가 난다")

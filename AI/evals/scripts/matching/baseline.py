@@ -1,8 +1,26 @@
+# AI/evals/scripts/matching/baseline.py
+"""
+에이전트 없이 규칙만으로 매칭하는 기준선. 채점 결과를 읽는 잣대다.
+
+    python evals/scripts/matching/baseline.py <입력.json> <결과.json> [--mode hint|both]
+    python evals/scripts/matching/score.py <결과.json>
+
+에이전트 점수 하나만 보면 잘한 건지 알 수 없다. 2026-09-16 에 자체 채점 96% 가
+나왔는데, 표지만 읽는 이 코드가 같은 데이터에서 100% 를 받았다. 에이전트가 잘한 게
+아니라 데이터가 쉬웠던 것이었고, 그걸 알아채는 데 시간이 걸렸다.
+
+그래서 홀드아웃을 돌릴 때는 **항상 이것과 나란히** 채점한다. 에이전트가 기준선을
+못 넘으면 그 홀드아웃에서 에이전트는 실패한 것이다.
+
+LLM 을 부르지 않으므로 즉시 끝나고 결과가 매번 같다.
+"""
+
 import argparse
 import json
 import unicodedata
 from pathlib import Path
 
+#: run_eval.py 와 같은 모양으로 내보낸다 — score.py 가 둘을 구분하지 않는다.
 PASSTHROUGH = (
     "case_id", "content", "hint_name",
     "expected_child_id", "expected_status", "expected_hint_mismatch",
@@ -12,10 +30,12 @@ PASSTHROUGH = (
 
 
 def nfc(text: str) -> str:
+    """macOS 에서 만든 한글은 자모가 분리(NFD)돼 있어 그냥 비교하면 안 맞는다."""
     return unicodedata.normalize("NFC", text or "")
 
 
 def by_hint(case: dict) -> int | None:
+    """표지 이름을 명부에서 그대로 찾는다. 규칙 전부가 이 세 줄이다."""
     hint = nfc(case.get("hint_name"))
     if not hint:
         return None
@@ -24,12 +44,19 @@ def by_hint(case: dict) -> int | None:
 
 
 def by_body(case: dict) -> int | None:
+    """본문에 명부의 이름이 그대로 들어 있는지 본다. 조사·경계는 보지 않는다."""
     content = nfc(case["content"])
     hits = [e for e in case["roster"] if nfc(e["name"]) in content]
     return hits[0]["child_id"] if len(hits) == 1 else None
 
 
 def by_body_first(case: dict) -> int | None:
+    """
+    본문을 표지보다 앞세운다. 표지 이름이 본문에 없고 명부의 다른 이름이 본문에
+    있으면 그쪽을 고른다 — "표지 A · 본문 B" 를 규칙만으로 맞히는 가장 싼 방법이다.
+
+    이 기준선을 못 넘으면, 표지를 뒤집는 데 LLM 을 쓸 이유가 없다는 뜻이 된다.
+    """
     content = nfc(case["content"])
     hint = nfc(case.get("hint_name"))
     if hint and hint in content:

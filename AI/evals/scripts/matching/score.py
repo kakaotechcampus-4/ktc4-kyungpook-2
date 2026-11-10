@@ -1,3 +1,25 @@
+"""
+run_eval.py 가 만든 결과 파일을 채점한다.
+
+    python evals/score.py <결과.json>
+
+정답 필드는 전부 선택이다. 없는 항목은 그 지표를 건너뛴다 —
+데이터가 늘어날 때마다 스크립트를 고치지 않기 위해서다.
+
+    expected_child_id            아동 ID. null 이면 한 명으로 특정할 수 없다는 뜻이고,
+                                 그때 정답 status 는 expected_status 가 정한다
+                                 (unmatched = 명부에 없음 / multi = 후보가 여럿)
+    expected_status              auto / review / multi / unmatched
+    expected_multi_reason        co_mention / ambiguous_identity / null(대등 언급 아님)
+    expected_hint_mismatch       표지를 뒤집는 것이 맞는 케이스인지
+    expected_mentioned_child_ids 본문에 이름이 등장해야 하는 아이들
+    expected_candidates_child_ids multi 일 때 교사에게 보여야 하는 후보 집합
+
+가장 중요한 숫자는 맨 위의 **오매칭**이다. auto 는 사람 확인 없이 지나가므로,
+여기서 틀리면 다른 아이의 기록이 부모에게 간다. 나머지 지표가 좋아도
+이 값이 0 이 아니면 τ 를 올려야 한다.
+"""
+
 import argparse
 import collections
 import json
@@ -12,6 +34,11 @@ def pct(part: int, whole: int) -> str:
 
 
 def _unmatched_expected(row: dict) -> bool:
+    """정답이 "명부에 없는 아이" 인가.
+
+    expected_child_id 가 null 인 것만으로는 판단할 수 없다. 한 명으로 특정할
+    수 없다는 뜻일 뿐이어서, multi 가 정답인 경우도 null 로 온다.
+    """
     if row.get("expected_child_id") is not None:
         return False
     want = row.get("expected_status")
@@ -19,16 +46,24 @@ def _unmatched_expected(row: dict) -> bool:
 
 
 def first_choice_ok(row: dict) -> bool | None:
+    """1순위 판정이 정답인가. 정답 라벨이 없으면 None."""
     if "expected_child_id" not in row:
         return None
     expected = row["expected_child_id"]
     if expected is None:
+        # 한 명으로 특정할 수 없는 케이스. status 가 맞으면 정답으로 본다.
         want = row.get("expected_status") or "unmatched"
         return row["status"] == want
     return row["matched_child_id"] == expected
 
 
 def answer_reachable(row: dict) -> bool | None:
+    """
+    교사에게 정답이 도달하는가.
+
+    multi 는 matched_child_id 가 비어 있지만 후보로 정답을 보여주므로,
+    교사 입장에서는 한 번 고르면 끝이다. 1순위 정답률과 따로 잰다.
+    """
     if "expected_child_id" not in row:
         return None
     expected = row["expected_child_id"]
@@ -53,6 +88,7 @@ def report(rows: list[dict]) -> None:
     for status in ("auto", "review", "multi", "unmatched"):
         print(f"   {status:10} {counts[status]:5}건  {pct(counts[status], len(ok))}")
 
+    # ── 가장 중요한 지표 ──────────────────────────────────
     auto = [r for r in ok if r["status"] == "auto"]
     auto_wrong = [r for r in auto if first_choice_ok(r) is False]
     print(f"\n■ 오매칭 {len(auto_wrong)} / auto {len(auto)}  ({pct(len(auto_wrong), len(auto))})")
@@ -77,6 +113,7 @@ def report(rows: list[dict]) -> None:
         print(f"\n■ 1순위 정답률          {one}/{len(scored)}  {pct(one, len(scored))}")
         print(f"■ 정답 도달률(multi 포함) {both}/{len(scored)}  {pct(both, len(scored))}")
 
+    # ── 선택 정답 필드 ────────────────────────────────────
     st = [r for r in ok if r.get("expected_status")]
     if st:
         hit = [r for r in st if r["status"] == r["expected_status"]]

@@ -1,3 +1,13 @@
+"""
+매칭 에이전트를 테스트 데이터 전체에 돌려 결과 파일을 만든다.
+
+    python evals/run_eval.py <입력.json> <결과.json> [--limit N] [--workers N]
+
+LLM 을 부르므로 시간과 토큰이 든다 (1,070건 기준 약 8분).
+채점은 결과 파일만 있으면 되므로 score.py 로 따로 돌린다 —
+임계값을 바꿔가며 여러 번 채점할 때 매번 다시 부르지 않기 위해서다.
+"""
+
 import argparse
 import json
 import sys
@@ -16,22 +26,31 @@ from matching.schemas import MatchingInput  # noqa: E402
 
 
 def run_one(case: dict) -> dict:
+    """한 건을 그래프에 태우고, 채점에 필요한 것만 남긴다."""
     record = {
         "case_id": case.get("case_id"),
         "content": case["content"],
         "hint_name": case.get("hint_name"),
+        # 정답 필드들. 없으면 그 항목은 채점에서 빠진다.
         "expected_child_id": case.get("expected_child_id"),
         "expected_status": case.get("expected_status"),
         "expected_hint_mismatch": case.get("expected_hint_mismatch"),
         "expected_mentioned_child_ids": case.get("expected_mentioned_child_ids"),
+        # null 이 "대등 언급이 아니어야 한다" 는 정답이라, 필드가 없는 것과
+        # 구별해야 한다. 없으면 이 지표를 건너뛴다.
         "expected_multi_reason": case.get("expected_multi_reason", "__skip__"),
+        #: multi 일 때 교사에게 보여야 하는 후보 집합.
         "expected_candidates_child_ids": case.get("expected_candidates_child_ids"),
         "confusion_child_id": case.get("confusion_child_id"),
+        # 분석용 꼬리표. 채점에는 안 쓰지만 카테고리별로 끊어 보기 위해 남긴다.
         "category": case.get("category"),
         "difficulty": case.get("difficulty"),
     }
 
     try:
+        # 그래프를 한 번만 돌리고, 계약 출력과 진단값을 같은 실행에서 뽑는다.
+        # run_matching 을 따로 부르면 호출이 두 배가 되고 비결정성 때문에
+        # 진단값이 그 출력과 맞지 않는다.
         payload = MatchingInput(
             journal_entry_id=case["journal_entry_id"],
             content=case["content"],
@@ -58,6 +77,7 @@ def run_one(case: dict) -> dict:
             hint_mismatch=final.get("hint_mismatch", False),
             mentioned_child_ids=final.get("mentioned_child_ids", []),
             multi_reason=final.get("multi_reason"),
+            # 계약대로 multi 일 때만 채운다
             candidates=(
                 [dict(c) for c in final.get("candidates", [])]
                 if status == "multi"
@@ -65,8 +85,12 @@ def run_one(case: dict) -> dict:
             ),
             llm_called=final.get("llm_called", False),
             error=None,
+            # 게이트를 바꿔 비교하려면 판정에 쓰인 재료가 필요하다.
+            # 계약 밖의 값이라 결과 파일에만 남긴다.
             diag={
                 "has_exact": bool(final.get("has_exact")),
+                #: 코드가 글자로 확인한 ID 만. 자동 확정 근거가 고른 아이
+                #: 본인의 것인지 사후에 따져보려면 이 값이 있어야 한다.
                 "exact_child_ids": list(final.get("exact_child_ids") or []),
                 "winner_named": final.get("matched_child_id")
                 in set(final.get("exact_child_ids") or ()),

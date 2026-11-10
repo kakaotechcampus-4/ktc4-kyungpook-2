@@ -1,7 +1,19 @@
+# AI/insight/prompts.py
+"""
+인사이트 프롬프트.
+
+WRITING_RULES 의 문장은 CRITERIA.md §5 표의 "원칙" 칸과 글자까지 같아야 한다.
+기준을 바꿀 때 순서: CRITERIA 수정 → test_criteria_sync FAIL → 여기 맞춤 → PASS.
+
+고정 규칙은 system 에, 아이별 claims 는 user 에 둔다. 앞부분이 매번 같아야
+프롬프트 캐싱이 먹는다 (매칭에서 98% 캐시 확인).
+"""
+
 import json
 
 from . import config
 
+#: CRITERIA §5 와 1:1. 키 = config 플래그 이름.
 WRITING_RULES = {
     "DROP_TRAIT": "성격·특성으로 일반화하지 않는다. 상황과 반응으로만 쓴다",
     "DROP_DIAGNOSIS": "진단이나 의학적 해석을 하지 않는다",
@@ -23,6 +35,7 @@ WRITING_RULES = {
 
 
 def _enabled_rules() -> list[str]:
+    """config 에서 켜진 원칙만 프롬프트에 넣는다."""
     return [WRITING_RULES[f] for f in config.WRITING_RULE_FLAGS if getattr(config, f)]
 
 
@@ -57,6 +70,13 @@ JSON 으로만 답한다.
 
 
 def user_prompt(state: dict) -> str:
+    """
+    아이별 기록. claim 의 번호·날짜·기관 종류·문장만 넣는다.
+
+    ⚠️ 인용(evidence.quote)은 넣지 않는다. claim 문장은 요약이 익명화했지만,
+    인용은 원문이라 다른 아이 이름이 그대로 남아 있다 (CRITERIA §2).
+    test_reflect.py 가 이 규칙을 확인한다.
+    """
     lines = [
         f"[{c['claim_id']}] ({c['entry_date']}, {c['institution_type']}) {c['text']}"
         for c in state["claims"]
@@ -76,6 +96,12 @@ def build_messages(state: dict) -> list[dict]:
 
 
 def build_refine_messages(state: dict, raw: dict, reasons: list[dict], allowed_ids: list[str]) -> list[dict]:
+    """
+    수정 루프 (nodes.refine). 처음 쓴 인사이트와 코드가 찾은 문제 문장을 주고 한 번 고치게 한다.
+
+    기록은 처음 인사이트가 가리킨 claim 만 넣는다. 다른 claim 을 끌어와 새 인사이트를 만들지
+    못하게 하기 위해서다 — 고치기는 빼는 일이지 새로 쓰는 일이 아니다. 인용은 여기서도 넣지 않는다.
+    """
     index = {c["claim_id"]: c for c in state["claims"]}
     lines = [
         f"[{i}] ({index[i]['entry_date']}, {index[i]['institution_type']}) {index[i]['text']}"
@@ -103,6 +129,12 @@ def build_refine_messages(state: dict, raw: dict, reasons: list[dict], allowed_i
 
 def build_lookup_messages(state: dict, raw: dict, claim_ids: list[str],
                           reasons: list[dict] | None = None) -> tuple[str, str]:
+    """
+    도구 사용 (nodes._lookup). 한 기관뿐인 인사이트를 지난 기록으로 보강하게 한다.
+
+    /v1/responses 형식이라 (instructions, input) 두 덩어리로 돌려준다. 쓰는 원칙은 처음 쓸 때와
+    같다. 기록은 이 인사이트의 근거 claim 만 넣는다. 인용은 넣지 않는다.
+    """
     index = {c["claim_id"]: c for c in state["claims"]}
     lines = [
         f"[{i}] ({index[i]['entry_date']}, {index[i]['institution_type']}) {index[i]['text']}"
@@ -116,6 +148,8 @@ def build_lookup_messages(state: dict, raw: dict, claim_ids: list[str],
         "대처와 결과가 그 기록에 있으면 supports 에 쓴다. "
         "같은 상황이 없으면 억지로 묶지 말고 insights 를 빈 배열로 둔다. "
         "근거 claim_id 는 아래 기록과 find_claims 가 돌려준 것에서만 고른다. "
+        # 다시 쓴 글도 quality.weak_reasons 를 다시 통과해야 한다. 이 말이 없으면 "…한 기록도 있었다" 처럼
+        # 기록 자체를 말하는 표현을 새로 써서 기록에없는말 로 버려진다 (시연 데이터 3회 중 1회).
         "'기록되지 않았다', '기록도 있다', '확인되지 않았다', '알 수 없다' 처럼 기록에 대해 말하는 "
         "표현은 쓰지 않는다. 기록에 있는 사실만 쓴다."
     )
@@ -125,6 +159,7 @@ def build_lookup_messages(state: dict, raw: dict, claim_ids: list[str],
         "기록 (이 인사이트의 근거):\n" + "\n".join(lines) + "\n\n"
         "처음 쓴 인사이트:\n" + json.dumps(keep, ensure_ascii=False)
     )
+    # 기록에없는말 이 같이 걸렸으면 그 문장도 빼게 한다 (build_refine_messages 와 같은 말)
     fixes = [r for r in (reasons or []) if r.get("sentence")]
     if fixes:
         user += "\n\n같이 고칠 점:\n" + "\n".join(

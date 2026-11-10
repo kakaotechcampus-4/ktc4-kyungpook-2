@@ -1,3 +1,17 @@
+# AI/evals/scripts/matching/test_criteria_sync.py
+"""
+판정 기준 문서와 config.py 가 어긋나지 않는지 검사한다. LLM 을 부르지 않는다.
+
+    python evals/scripts/matching/test_criteria_sync.py
+
+검증 에이전트의 test_prompt_sync.py 와 같은 생각이다. 기준이 사람 머릿속에만
+있으면 문서가 조용히 낡는다. 문서를 고치고 코드를 안 고치면(또는 반대면) 여기서
+깨지게 묶어둔다.
+
+여기서 재는 것은 **문서가 말하는 숫자·플래그와 config.py 의 값이 같은가** 뿐이다.
+판정이 옳은지는 채점 스크립트가 본다.
+"""
+
 import sys
 from pathlib import Path
 
@@ -15,18 +29,22 @@ def check_doc_exists():
 
 
 def check_statuses(text):
+    """문서의 상태 표에 네 가지가 모두 있는지."""
     missing = [s for s in ("auto", "review", "multi", "unmatched") if f"`{s}`" not in text]
     return [f"상태 표에 {m} 가 없다" for m in missing]
 
 
 def check_numbers(text):
+    """문서가 적은 숫자가 config 와 같은지."""
     problems = []
 
+    # 퍼지 유사도 하한
     if "0.6 이상" not in text:
         problems.append("퍼지 유사도 하한(0.6)이 문서에 없다")
     elif config.FUZZY_MIN_RATIO != 0.6:
         problems.append(f"문서는 퍼지 하한 0.6 인데 config 는 {config.FUZZY_MIN_RATIO}")
 
+    # 한글 3글자 한 글자 차이 = 0.667
     if "0.667" not in text:
         problems.append("3글자 한 글자 차이 유사도(0.667)가 문서에 없다")
 
@@ -34,6 +52,7 @@ def check_numbers(text):
 
 
 def check_flags(text):
+    """문서가 전제하는 동작이 config 에서 켜져 있는지."""
     rules = [
         ("AUTO_GATE", "structural", "모델 confidence 를 보지 않는다"),
         ("REQUIRE_EXACT_NAME_BOUNDARY", True, "정확 일치에 이름 경계를 요구한다"),
@@ -57,6 +76,7 @@ def check_flags(text):
 
 
 def check_known_limits(text):
+    """홀드아웃에서 확인된 한계가 문서에 남아 있는지."""
     limits = [
         ("쉼표", "이름 뒤 쉼표로 퍼지가 거부되는 한계"),
         ("이름만", "성 없이 이름만 쓰면 auto 가 안 되는 한계"),

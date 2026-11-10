@@ -1,3 +1,11 @@
+"""
+holdout 200건 중 이슈 유형이 있는 케이스(BLOCK/REVIEW)만 30%씩 뽑아서
+순환 검증 방지용 재작성 대상을 고른다.
+
+PASS 문장은 재작성 대상에서 뺀다 — "정상 문장을 정상이라고 맞히는지"는
+판정 로직이 뭔가를 "잡아내야" 하는 상황이 아니므로, 만든 사람이 같아도
+순환 검증 문제가 생기지 않는다.
+"""
 import json
 import random
 from pathlib import Path
