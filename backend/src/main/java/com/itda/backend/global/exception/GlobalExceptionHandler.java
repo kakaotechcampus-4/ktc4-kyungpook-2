@@ -5,6 +5,7 @@ import com.itda.backend.exception.record.RawRecordErrorCode;
 import java.util.stream.Collectors;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.event.Level;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -35,10 +36,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException e) {
         ErrorCode errorCode = e.getErrorCode();
-        if (errorCode.getStatus().is5xxServerError()) {
+        Level level = errorCode.logLevel();
+        if (level == Level.ERROR) {
             log.error("요청 처리 실패 code={} reason={}", errorCode.getCode(), e.getMessage(), e);
         } else {
-            log.warn("요청 처리 실패 code={} reason={}", errorCode.getCode(), e.getMessage());
+            log.atLevel(level).log("요청 처리 실패 code={} reason={}", errorCode.getCode(), e.getMessage());
         }
         return ResponseEntity.status(errorCode.getStatus()).body(ErrorResponse.of(errorCode));
     }

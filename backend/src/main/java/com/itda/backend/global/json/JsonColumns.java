@@ -44,6 +44,22 @@ public final class JsonColumns {
         return values;
     }
 
+    public static List<Long> readLongsAllowingText(String raw, String column, Long rowId) {
+        List<Long> values = new ArrayList<>();
+        for (JsonNode node : readArray(raw, column, rowId)) {
+            if (node.canConvertToLong()) {
+                values.add(node.asLong());
+            } else if (node.isTextual()) {
+                try {
+                    values.add(Long.parseLong(node.asText().trim()));
+                } catch (NumberFormatException e) {
+                    log.warn("non-numeric value in {} id={}: {}", column, rowId, node.asText());
+                }
+            }
+        }
+        return values;
+    }
+
     public static List<String> readTexts(String raw, String column, Long rowId) {
         List<String> values = new ArrayList<>();
         for (JsonNode node : readArray(raw, column, rowId)) {

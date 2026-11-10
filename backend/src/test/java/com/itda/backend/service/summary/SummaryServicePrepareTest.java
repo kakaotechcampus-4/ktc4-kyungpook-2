@@ -165,6 +165,15 @@ class SummaryServicePrepareTest {
     }
 
     @Test
+    void 아이_번호가_숫자_문자열로_저장돼_있어도_이름을_싣는다() {
+        JournalEntry entry = summarizing("김준호가 서준호와 블록을 쌓았다.", 1);
+        em.persistAndFlush(new MatchingResult(entry.getId(), junho.getId(), null, MatchingStatus.AUTO, null, false,
+                "[]", "[]", "[\"" + junho.getId() + "\", \"" + seojun.getId() + "\"]", "{}", null));
+
+        assertThat(summaryService.prepareRequest(group(entry)).otherChildNames()).containsExactly("서준호");
+    }
+
+    @Test
     void 묶음에_긴_일지가_있으면_요청을_만들지_않고_상태도_바꾸지_않는다() {
         JournalEntry ok = summarizing("김준호가 블록을 쌓았다.", 1, junho.getId());
         JournalEntry tooLong = summarizing("가".repeat(JournalEntry.MAX_CONTENT_LENGTH + 1), 2, junho.getId());

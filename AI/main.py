@@ -33,6 +33,7 @@ def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
 
 @app.get("/health")
 def health() -> JSONResponse:
+    """Luna 설정이 없으면 503. BE 는 이걸 보고 일지를 보내지 않는다. (설정만 보고 실제 호출은 안 한다)"""
     configured = is_configured()
     return JSONResponse(
         status_code=200 if configured else 503,
@@ -42,11 +43,29 @@ def health() -> JSONResponse:
 
 @app.get("/metrics")
 def read_metrics() -> dict:
+    """
+    실제로 몇 번 불렸는지. `repeats` 가 재시도가 몇 번 왔는지를 보여준다.
+
+    BE 설정(`app.ai.retry-backoffs`)이 2개면 한 묶음의 `calls` 가 3 을 넘으면 안 된다.
+    2026-10-10 E2E 에서 6 이 나왔다 (`#153`). 서버를 다시 띄우면 0 부터 센다.
+    """
     return metrics.snapshot()
 
 
 @app.get("/progress")
 async def read_progress() -> list[dict]:
+    """
+    에이전트가 지금 어느 노드에 있는지 (#452). BE 가 1초마다 물어 대시보드 진행 현황에 띄운다.
+
+        [{"agent": "summary", "child_id": 7, "entry_date": "2026-11-08", "institution_id": 3,
+          "node": "write", "elapsed_sec": 12}, ...]
+
+    **async 로 둔다.** sync 엔드포인트는 작업 스레드 풀에서 도는데, 그 풀을 LLM 호출이 오래
+    붙잡고 있다. 진행을 묻는 호출이 그 뒤에 줄 서면 정작 오래 걸릴 때 대답을 못 한다.
+    (snapshot 은 메모리만 보고 lock 도 잠깐이라 이벤트 루프를 막지 않는다)
+
+    어떤 에러가 나도 빈 목록이다 — BE 는 빈 목록이면 기존 고정 문구를 띄운다.
+    """
     try:
         return progress.snapshot()
     except Exception as exc:
@@ -56,6 +75,7 @@ async def read_progress() -> list[dict]:
 
 @app.post("/matching", response_model=MatchingOutput)
 def matching(payload: MatchingInput) -> MatchingOutput:
+    """일지 항목 한 건이 어느 아이의 것인지 판정한다."""
     with metrics.track("/matching", metrics.key_of(payload.journal_entry_id)), \
             progress.begin("matching", journal_entry_id=payload.journal_entry_id):
         return run_matching(payload)
@@ -63,6 +83,7 @@ def matching(payload: MatchingInput) -> MatchingOutput:
 
 @app.post("/validation", response_model=ValidationOutput)
 def validation(payload: ValidationInput) -> ValidationOutput:
+    """일지 항목 한 건이 저장해도 안전한지 판정한다."""
     with metrics.track("/validation", metrics.key_of(payload.journal_entry_id)), \
             progress.begin("validation", journal_entry_id=payload.journal_entry_id):
         return run_validation(payload)
@@ -70,6 +91,7 @@ def validation(payload: ValidationInput) -> ValidationOutput:
 
 @app.post("/summary", response_model=SummaryOutput)
 def summary(payload: SummaryInput) -> SummaryOutput:
+    """같은 아이의 같은 날 일지 여러 건을 한 편의 요약으로 묶는다."""
     key = metrics.key_of(payload.child_id, payload.entry_date, payload.institution_id)
     with metrics.track("/summary", key), \
             progress.begin("summary", child_id=payload.child_id, entry_date=payload.entry_date,
@@ -79,6 +101,7 @@ def summary(payload: SummaryInput) -> SummaryOutput:
 
 @app.post("/insight", response_model=InsightOutput)
 def insight(payload: InsightInput) -> InsightOutput:
+    """한 아이의 승인된 요약들을 겹쳐 기관을 가로지르는 돌봄 패턴을 찾는다."""
     key = metrics.key_of(payload.child_id, payload.period_from, payload.period_to)
     with metrics.track("/insight", key), \
             progress.begin("insight", child_id=payload.child_id, period_from=payload.period_from,
@@ -88,6 +111,16 @@ def insight(payload: InsightInput) -> InsightOutput:
 
 @app.post("/notify", response_model=NotifyOutput)
 def notify(payload: NotifyInput) -> NotifyOutput:
+    """
+    Gate 2 에서 승인된 인사이트를 보호자에게 메일로 내보낸다 (#419).
+
+    셋 중 하나로 끝난다.
+      200 sent            나갔다
+      200 blocked         근거 검사에 걸려 **보내지 않았다**. 교사 확인이 필요하다
+      503 delivery_failed 메일 서버 장애. BE 가 재시도한다
+
+    근거 미달을 503 으로 올리면 BE 가 영원히 재시도한다 — 재시도해도 같은 글이 나온다.
+    """
     key = metrics.key_of(payload.child_id, payload.notification_id)
     with metrics.track("/notify", key):
         return run_notify(payload)
