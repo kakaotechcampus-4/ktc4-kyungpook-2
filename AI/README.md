@@ -109,7 +109,7 @@ docker compose -f infra/docker/compose.yaml up -d --build ai
 ### 배포
 
 `develop`에 병합되면 [AI CI/CD](../.github/workflows/ai-ci-cd.yml)가 서버의 AI 컨테이너만 바꿉니다. 문서와 `evals/`만 바꾸면 다시 배포하지 않습니다.
-AI 서버는 인증이 없어서 서버 안에서만 열립니다. 자세한 절차는 [인프라 문서](../infra/README.md#ai-cicd)에 있습니다.
+AI 서버는 인증이 없어서 서버 안에서만 열립니다. 자세한 절차는 [인프라 문서](../infra/README.md#cicd)에 있습니다.
 
 ---
 

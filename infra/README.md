@@ -1,544 +1,169 @@
 # Infra
 
-개발·배포 환경을 위한 설정과 자동화 파일을 관리합니다.
+운영 서버 구성과 배포 자동화입니다. 비밀값은 커밋하지 않고, 환경 변수는 `.env.example`로만 공유합니다.
 
-- `docker/`: Docker 및 Docker Compose 설정
-- `caddy/`: 외부 리버스 프록시·자동 HTTPS 설정
-- `iam/`: GitHub Actions 배포 역할의 AWS IAM 신뢰·권한 정책
-- `scripts/`: 환경 구성과 배포 보조 스크립트
+- `docker/` — Docker Compose (DB · 백엔드 · AI · 프론트 · Caddy)
+- `caddy/` — 외부 진입점 · 자동 HTTPS · 보안 헤더
+- `iam/` — GitHub Actions 배포 역할의 AWS IAM 정책
+- `scripts/` — 배포 · 확인 스크립트와 그 테스트
 
-비밀값은 커밋하지 않습니다. 환경 변수는 `.env.example`로만 공유합니다.
+---
 
-## 백엔드 CI/CD
+## 운영 구성
 
-`.github/workflows/backend-ci-cd.yml`은 PR에서 백엔드를 검증하고, `develop` 반영 시
-GHCR에 이미지를 게시한 뒤 기존 EC2를 SSM Run Command로 배포합니다.
-GitHub의 Ubuntu 실행 환경에서 빌드하며 서버에서는 이미지를 받아 BE만 교체합니다.
-DB 컨테이너 배포와 Flyway 도입은 포함하지 않습니다.
-AI는 [AI CI/CD](#ai-cicd)가, 프론트는 [프론트엔드 CI/CD](#프론트엔드-cicd)가 따로 배포합니다.
+```
+인터넷 ─→ Caddy (80 · 443, 자동 HTTPS) ─┬─ /api · /oauth2 · /login/oauth2 ─→ backend (127.0.0.1:8080)
+                                         └─ 그 밖 ─────────────────────────→ frontend (Nginx 정적 파일)
+           backend ─→ ai (127.0.0.1:8000, 밖에 열지 않음) · db (PostgreSQL) · S3 (원본 파일)
+```
 
-| 작업 | 실행 시점 | 내용 |
+- 서버는 EC2 한 대이고, 주소는 `https://iitda.duckdns.org`입니다
+- 서버의 레포 위치는 `/home/ubuntu/ktc4-kyungpook-2`, 브랜치는 `develop`입니다
+- 운영 값은 서버의 `infra/docker/.env`와 `AI/.env`에 있습니다
+
+---
+
+## CI/CD
+
+영역마다 워크플로가 따로입니다. **바뀐 영역만** 검사하고, `develop`에 병합되면 그 영역만 배포합니다.
+
+| 워크플로 | PR에서 | `develop` 병합 뒤 |
 | --- | --- | --- |
-| `test` | 대상 경로를 바꾼 `develop`·`main` 대상 PR·`develop` push, 수동 실행 | 배포 스크립트 테스트와 `./gradlew test integrationTest build` |
-| `publish` | 대상 경로를 바꾼 `develop` push 또는 `develop` 수동 실행, 테스트 성공 후 | `linux/amd64` BE 이미지 빌드·GHCR 업로드 |
-| `deploy` | 이미지 업로드 성공 후, `CADDY_READY=true` | SSM 배포·Caddy 설정 변경 시 재로딩·내부 검증·외부 HTTPS API 확인 |
+| [Backend CI/CD](../.github/workflows/backend-ci-cd.yml) | 배포 스크립트 테스트 · `./gradlew test integrationTest build` | 이미지 게시 → 백엔드만 교체 |
+| [AI CI/CD](../.github/workflows/ai-ci-cd.yml) | 배포 스크립트 테스트 · 이미지 빌드 · 모델 키 없이 동작 확인 | 이미지 게시 → AI만 교체 |
+| [Frontend CI/CD](../.github/workflows/frontend-ci.yml) | 배포 스크립트 테스트 · `typecheck` · `build` | 이미지 게시 → 프론트만 교체 |
+| [E2E](../.github/workflows/e2e.yml) | 프론트 · 백엔드가 바뀐 PR에서 Playwright | 없음 (배포와 별개) |
 
-PR과 push는 `backend/`, `infra/`, 이 워크플로 파일이 바뀔 때만 실행합니다.
-두 폴더의 `*.md`와, AI·프론트 전용 배포 파일(`deploy-ai.sh`·`verify-ai.py`·`tests/test_ai_deploy.py`·`deploy-frontend.sh`·`tests/test_frontend_deploy.py`)은 제외합니다.
-FE·AI·문서만 바꾼 병합은 BE를 다시 배포하지 않으므로 BE 중단과 로그인 세션 끊김이 생기지 않습니다.
-`infra/`를 포함하는 이유는 배포가 서버의 `compose.yaml`·`Caddyfile`·배포 스크립트를 함께 반영하기 때문입니다.
-건너뛴 커밋은 다음 배포 때 한꺼번에 반영됩니다. 바로 반영하려면 `develop`에서 수동 실행합니다.
-경로 필터로 건너뛴 PR은 검사가 생기지 않으므로, 이 검사를 필수 상태 검사로 지정하면 해당 PR이 병합되지 못합니다.
-PR에는 AWS OIDC 권한과 패키지 업로드 권한을 부여하지 않습니다.
-수동 실행도 선택한 브랜치가 `develop`일 때만 이미지를 게시하며, 배포는 `CADDY_READY=true`가 필요합니다.
+- 각 영역의 `*.md`만 바꾸면 배포하지 않습니다. `AI/evals/`도 이미지에 넣지 않아 배포하지 않습니다
+- `infra/docker/compose.yaml`과 `scripts/send-deploy.py`는 세 워크플로가 모두 보고 있어, 바꾸면 셋 다 다시 배포됩니다
+- 이미지는 `ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-{backend,ai,frontend}:<커밋 SHA>`로 올리고, 배포에는 digest를 씁니다
+- 배포는 AWS SSM Run Command로 서버에서 `scripts/deploy-*.sh`를 실행합니다
+- 건너뛴 변경은 다음 배포 때 함께 나갑니다. 바로 내보내려면 **Actions → 해당 워크플로 → Run workflow**에서 `develop`을 고릅니다
 
-### GitHub 설정
+### GitHub Variables
 
-저장소 **Settings → Secrets and variables → Actions → Variables**에 다음 값을 등록합니다.
-주소·ARN·인스턴스 ID는 비밀값이 아니므로 Variables로 관리합니다.
+저장소 **Settings → Secrets and variables → Actions → Variables**. 비밀값이 아니라 Variables로 둡니다.
 
-| 이름 | 현재 값 |
-| --- | --- |
-| `AWS_ROLE_ARN` | `arn:aws:iam::782178410739:role/ktc-backend-deploy` |
-| `AWS_REGION` | `ap-northeast-2` |
-| `EC2_INSTANCE_ID` | `i-0e30a4108bfd4ea9f` |
-| `PUBLIC_ORIGIN` | `https://iitda.duckdns.org` |
-| `CADDY_READY` | 최초 운영 전환 전 미설정 또는 `false`, 완료 후 `true` |
-| `USE_MOCK` | 프론트 데이터 mock. 실연동은 `false` (→ [프론트엔드 CI/CD](#프론트엔드-cicd)) |
-| `VITE_AUTH_MOCK` | 프론트 로그인 mock. 실연동은 `false` |
-| `PUBLIC_API_BASE_URL` | **선택.** 프론트가 부를 API 주소. 같은 오리진이면 **등록하지 않습니다** |
-
-이미지는 `ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend:<커밋 SHA>`로 업로드합니다.
-배포에는 태그 대신 digest를 사용합니다. 최초 게시된 패키지는 비공개 상태를 유지하고,
-조직에서 패키지 생성과 이 저장소의 Actions 접근을 허용해야 합니다.
-Actions는 자동 제공되는 `GITHUB_TOKEN`으로 업로드하므로 업로드용 PAT는 필요하지 않습니다.
-
-### AWS IAM Role
-
-EC2에는 실행 중인 SSM Agent와 기존 SSM 인스턴스 권한이 필요합니다.
-서버의 기존 S3·SSM 인스턴스 Role은 변경하지 않습니다.
-GitHub Actions가 사용할 별도 Role `ktc-backend-deploy`의 정책은 다음 두 파일에 있습니다.
-교육용 관리 Role `ktc-github-deploy`와 그 제한 정책은 변경하지 않습니다.
-
-- [`iam/backend-deploy-trust.json`](iam/backend-deploy-trust.json): 이 저장소의 `develop`만 신뢰
-- [`iam/backend-deploy-permissions.json`](iam/backend-deploy-permissions.json): 대상 EC2에 `AWS-RunShellScript` 실행 및 실행 결과 조회
-
-이 저장소는 immutable OIDC subject를 사용합니다. 따라서 조직·저장소 ID가 들어간
-`repo:kakaotechcampus-4@287968646/ktc4-kyungpook-2@1340154210:ref:refs/heads/develop`을 사용합니다.
-GitHub 저장소의 OIDC 설정을 변경하면 신뢰 정책도 그 설정에 맞춰야 합니다.
-
-전용 Role을 최초로 만들 때는 저장소 루트에서 다음 명령으로 설정합니다.
-기존 GitHub OIDC Provider를 사용하고 다른 관리 Role의 정책은 변경하지 않습니다.
-
-```bash
-aws iam create-role \
-  --role-name ktc-backend-deploy \
-  --assume-role-policy-document file://infra/iam/backend-deploy-trust.json \
-  --description 'GitHub develop backend deployment through SSM'
-
-aws iam put-role-policy \
-  --role-name ktc-backend-deploy \
-  --policy-name BackendDeploySSM \
-  --policy-document file://infra/iam/backend-deploy-permissions.json
-```
-
-### 서버에서 GHCR 로그인
-
-비공개 이미지를 다운로드하려면 패키지에 접근할 수 있는 계정에서 **PAT classic**을
-만들고 `read:packages` 권한을 부여합니다. 조직이 SSO를 요구하면 토큰도 SSO 승인해야 합니다.
-토큰은 코드, GitHub Variables, SSM 명령에 넣지 않습니다.
-
-EC2의 `ubuntu` 계정에서 아래 명령으로 로그인합니다. `sudo docker login`을 사용하면
-root 계정의 로그인으로 저장되어 `ubuntu`로 실행되는 배포에 적용되지 않습니다.
-
-```bash
-AWS_DEFAULT_REGION=ap-northeast-2 ssh ktc-server
-
-read -r -p 'GitHub username: ' ghcr_user
-read -r -s -p 'GHCR read:packages token: ' ghcr_token
-printf '\n'
-printf '%s' "$ghcr_token" | docker login ghcr.io -u "$ghcr_user" --password-stdin
-unset ghcr_token ghcr_user
-```
-
-패키지 게시 후 GitHub Packages에서 해당 계정에 읽기 접근 권한이 있는지도 확인합니다.
-토큰이 만료되면 같은 방식으로 서버에서 다시 로그인합니다.
-
-### 배포와 복구
-
-SSM은 Actions가 검증한 [`scripts/deploy-backend.sh`](scripts/deploy-backend.sh)를 전달받아
-`ubuntu` 계정으로 실행합니다. 이 계정이 기존 Docker를 실행할 수 있어야 합니다.
-루트 경로 기본값은 `/home/ubuntu/ktc4-kyungpook-2`, 브랜치는 `develop`입니다.
-
-1. 수정 중인 서버 파일·다른 브랜치가 있으면 중단합니다.
-   BE·AI 배포는 서버 잠금 `.git/deploy.lock`을 공유합니다. 다른 배포가 진행 중이면 최대 5분 기다린 뒤 실패합니다.
-   전달받은 `EXPECTED_PUBLIC_ORIGIN`, 서버 `.env`, 실행 중인 Caddy의 사이트 주소가 다르거나
-   CORS·로그인 완료 주소·HTTPS 보안 쿠키 설정이 맞지 않으면 컨테이너를 변경하지 않습니다.
-2. 대상 커밋이 `origin/develop`에 속하는지 확인하고 서버 checkout을 갱신합니다. 규칙은 [서버 checkout 갱신 규칙](#서버-checkout-갱신-규칙)을 따릅니다.
-3. 기존 이미지를 복구용 로컬 태그로 보관하고 새 이미지 digest를 다운로드합니다.
-   다운로드 실패 시 실행 중인 BE는 그대로 유지합니다.
-   교체 전에 Caddyfile을 JSON으로 변환·검증하고 기존 활성 JSON 설정과 비교·백업합니다.
-4. `--no-deps --no-build --pull never`로 BE만 교체하고 직접 상태 확인을 최대 120초 기다립니다.
-5. Caddy 설정이 변경된 경우에만 검증한 JSON을 재로딩합니다. 설정이 같으면 재로딩을 생략합니다.
-   `backend:8080`으로 연결하므로 백엔드 컨테이너 교체만으로 Caddy를 재로딩할 필요는 없습니다.
-   이후 프록시 상태·CORS·카카오 인가 요청의 콜백 주소를 검사합니다.
-   FE와 API가 같은 출처라 같은 출처 요청에는 CORS 헤더가 붙지 않습니다. 그래서 CORS는
-   허용될 수 없는 출처(`https://cors-check.invalid`)의 사전 요청이 403으로 거부되는지로 확인하고,
-   공개 주소가 허용 목록에 있는지는 배포 전 설정 검사에서 확인합니다.
-   HTTPS는 도메인과 SNI를 유지한 채 루프백에 접속하여 시스템 CA로 인증서를 검증합니다.
-   리다이렉트를 따라가지 않고 HTTP 상태 코드도 확인합니다.
-6. 성공하면 서버 `infra/docker/.env`의 `BACKEND_IMAGE`만 원자적으로 갱신합니다.
-   다른 환경변수와 파일 권한은 보존합니다.
-7. 교체 후 검증이 실패하면 서버 checkout을 이전 커밋으로 되돌린 뒤, 이전 compose.yaml로 이전 이미지를 다시 띄웁니다.
-   Caddy 재로딩을 시도한 배포라면 백업한 Caddy 활성 JSON도 다시 로딩합니다.
-   잘못된 새 Caddyfile을 복구 단계에서 다시 읽지 않습니다.
-   교체 전(설정 검사·Caddyfile 검증·다운로드)에 실패해도 checkout을 되돌립니다.
-   복구 성공 여부를 로그에 남기며 워크플로는 실패로 표시합니다.
-
-GitHub에서는 배포 작업을 직렬 실행하고 서버에서는 `flock`으로 BE·AI 배포가 겹치지 않게 합니다.
-SSM 결과가 아직 조회되지 않을 때는 재시도하고, 원격 명령의 종료 코드까지 확인합니다.
-GitHub의 외부 API 확인만 실패하면 서버 배포 자체는 이미 완료된 상태일 수 있으므로
-네트워크 경로와 SSM 실행 결과를 함께 확인합니다.
-
-운영 `.env`·`AI/.env`·실행 중인 DB·Caddy·기존 BE가 준비된 서버를 전제로 합니다.
-단일 BE 컨테이너를 교체하므로 짧은 중단이 발생합니다. 이전 이미지 복구는 이미 실행된 DB 마이그레이션을 되돌리지 않습니다.
-
-### DB 마이그레이션
-
-BE는 기동할 때 Flyway로 `backend/src/main/resources/db/migration`의 새 마이그레이션을 실행하고,
-엔티티와 테이블이 맞는지 확인한 뒤 뜹니다(`docker` 프로필, `ddl-auto: validate`). 맞지 않으면 뜨지 않고 위 7번 복구가 돕니다.
-마이그레이션을 쓰는 규칙은 [DB 스키마 §11.4](../docs/db/schema.md)에 있습니다.
-
-**처음 Flyway 버전을 배포할 때 (한 번만)** — 운영 DB에는 Flyway 기록이 없습니다. 첫 기동에서 `V1`까지 적용된 것으로 표시하고 `V2`(enum 검사 제약 정리)만 실행합니다.
-
-1. 머지 전에 서버의 `infra/docker`에서 DB 전체를 백업합니다.
-
-   ```bash
-   docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > ~/itda-before-flyway.dump
-   ```
-
-2. 머지해 자동 배포가 성공했는지 확인합니다.
-3. 적용 기록을 확인합니다. `1`(`<< Flyway Baseline >>`)과 `2`가 `t`로 보이면 끝입니다.
-
-   ```bash
-   docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select version, description, success from flyway_schema_history order by installed_rank"'
-   ```
-
-배포가 실패해 이전 이미지로 돌아가도 그대로 둡니다. `V2`는 허용 값을 넓히기만 해서, 이전 이미지가 그 DB에서 그대로 돕니다.
-로컬 compose에서 예전 볼륨이 엔티티와 달라 BE가 뜨지 않으면 `docker compose down -v`로 볼륨을 지우고 다시 띄웁니다(로컬 데이터가 지워집니다).
-
-### 최초 실행 및 확인
-
-기능 브랜치에서 PR을 열어 `test` 작업을 확인한 뒤 `develop`에 병합합니다.
-최초 Caddy 전환을 마치고 게이트를 열면 자동 배포가 실행됩니다. 이후 **Actions → Backend CI/CD → Run workflow**에서
-`develop`을 선택하여 동일한 커밋을 다시 배포할 수 있습니다.
-
-본인 컴퓨터에서 다음 주소를 확인합니다.
-
-```bash
-python3 infra/scripts/verify-proxy.py health --origin https://iitda.duckdns.org
-```
-
-명령이 성공하면 외부 → Caddy → BE 경로와 인증서, HTTP 200, `{"status":"ok"}` 응답이 정상입니다.
-SSM 로그의 OAuth 검사는 인가 요청의 `redirect_uri`까지 검사하며, 카카오 콘솔 등록 및
-사용자의 실제 로그인 성공 여부는 별도로 확인해야 합니다.
-
-수동 배포도 같은 스크립트를 사용합니다. `<커밋 SHA>`와 `<이미지 digest>`를 실제 값으로 바꾸세요.
-
-```bash
-cd /home/ubuntu/ktc4-kyungpook-2
-EXPECTED_PUBLIC_ORIGIN=https://iitda.duckdns.org bash infra/scripts/deploy-backend.sh \
-  '<커밋 SHA>' \
-  'ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:<이미지 digest>'
-```
-
-### 로컬 검증
-
-```bash
-bash -n infra/scripts/deploy-backend.sh
-python3 -m unittest discover -s infra/scripts/tests -p 'test_backend_deploy.py' -v
-python3 -m unittest discover -s infra/scripts/tests -p 'test_caddy_proxy.py' -v
-cd backend
-./gradlew --no-daemon test integrationTest build
-```
-
-배포 테스트는 임시 Git 저장소·HTTP 서버·가짜 Docker를 사용하여 성공, 다운로드 실패,
-기동 실패, CORS·OAuth·Caddy 재로딩 실패 시 복구, 실패 시 checkout 복원, 서버 수정 파일 보존, 오래된 커밋 거부,
-AI 배포가 checkout을 먼저 옮긴 역순 배포, 공유 잠금 대기·시간 초과를 검증합니다. Docker 프록시 테스트는 임시 Caddy와 에코 서버, 내부 CA로 실제 HTTPS 경로를 확인합니다.
-백엔드 재생성 후 재로딩 없이 연결이 복구되는지 확인하고, 호스트 이름 불일치는 신뢰하는
-localhost 인증서를 항상 제공하는 별도 TLS 서버에서 curl의 인증서 검증 오류와 원인을 확인합니다.
-Docker가 없으면 해당 테스트는 건너뛰지만 CI에서는 `REQUIRE_DOCKER_TESTS=true`로 필수 실행합니다.
-잠금 테스트는 실제 `flock`이 필요합니다. macOS처럼 없으면 건너뛰고, CI에서는 `REQUIRE_FLOCK_TESTS=true`로 필수 실행합니다.
-실제 서버와 운영 DB에는 접근하지 않습니다.
-
-## AI CI/CD
-
-`.github/workflows/ai-ci-cd.yml`은 BE와 같은 방식으로 AI를 검증·게시·배포합니다.
-서버에서는 AI 컨테이너만 교체합니다. DB·BE·FE·Caddy는 건드리지 않고 BE도 재시작하지 않습니다.
-AI는 외부에 노출하지 않으므로 공개 주소 확인은 없습니다.
-
-| 작업 | 실행 시점 | 내용 |
+| 이름 | 값 | 뜻 |
 | --- | --- | --- |
-| `test` | 대상 경로를 바꾼 `develop`·`main` 대상 PR·`develop` push, 수동 실행 | AI 배포 스크립트 테스트, `linux/amd64` 이미지 빌드, Luna 키 없는 컨테이너 확인 |
-| `publish` | 대상 경로를 바꾼 `develop` push 또는 `develop` 수동 실행, 테스트 성공 후 | `ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-ai:<커밋 SHA>` 업로드 |
-| `deploy` | 이미지 업로드 성공 후 | SSM으로 AI만 교체·확인·실패 시 복구 |
+| `AWS_ROLE_ARN` | `arn:aws:iam::782178410739:role/ktc-backend-deploy` | 배포 역할 |
+| `AWS_REGION` · `EC2_INSTANCE_ID` | `ap-northeast-2` · `i-0e30a4108bfd4ea9f` | 배포 대상 |
+| `PUBLIC_ORIGIN` | `https://iitda.duckdns.org` | 배포 확인에 쓰는 공개 주소 |
+| `CADDY_READY` | `true` | 백엔드 · 프론트 자동 배포 스위치. 운영 반영을 잠시 멈추려면 내립니다 |
+| `USE_MOCK` · `VITE_AUTH_MOCK` | `false` · `false` | 프론트 번들에 들어가는 mock 스위치 |
 
-대상 경로는 `AI/`, `infra/docker/compose.yaml`, AI 배포 파일(`deploy-ai.sh`·`verify-ai.py`·`send-deploy.py`·`tests/test_ai_deploy.py`), 이 워크플로 파일입니다.
-`AI/**/*.md`와 `AI/evals/**`는 제외합니다. 평가 파일은 이미지에 넣지 않고 서버 checkout의 `AI/evals`를 마운트해 쓰기 때문입니다.
-`compose.yaml`과 `send-deploy.py`는 BE 워크플로의 대상이기도 해서, 바꾸면 BE도 다시 배포됩니다.
+**프론트의 `VITE_*` 값은 CI가 빌드할 때 번들에 들어갑니다.** 운영 값은 서버 `.env`가 아니라 이 Variables입니다.
+프론트는 `"false"`라는 글자만 실연동으로 읽어서, 비워 두면 mock이 켜진 채 나갑니다. 그래서 게시 전에 두 값이 정확히 `true`/`false`인지 검사합니다.
 
-컨테이너 확인은 [`scripts/verify-ai.py`](scripts/verify-ai.py)가 합니다. 외부 모델은 부르지 않습니다.
+---
 
-- 공통: `/health`와, 이름이 정확히 적혀 모델을 부르지 않는 `/matching` 요청 한 건을 확인합니다.
-- CI(`--offline`): Luna 키가 없는 상태에서 `/validation`이 전화번호를 `BLOCK`으로, 일반 기록을 `REVIEW`(`모델호출실패`)로 판정하는지 확인합니다.
-- 운영 배포(`--require-luna`): `luna_configured=true`를 요구합니다.
+## 배포는 이렇게 돕니다
 
-GitHub Variables(`AWS_ROLE_ARN`·`AWS_REGION`·`EC2_INSTANCE_ID`)와 IAM Role `ktc-backend-deploy`는 BE와 같은 것을 씁니다.
-권한이 인스턴스 단위라 IAM 정책은 바꾸지 않습니다. 이미지 캐시는 `scope=ai`로 BE와 분리합니다.
+세 영역이 같은 순서를 따릅니다 ([deploy-backend.sh](scripts/deploy-backend.sh) · [deploy-ai.sh](scripts/deploy-ai.sh) · [deploy-frontend.sh](scripts/deploy-frontend.sh)).
 
-### AI 배포 순서
+1. **확인** — 다른 배포가 돌고 있으면 최대 5분 기다립니다(서버 잠금 `.git/deploy.lock`). 서버 파일이 수정됐거나 브랜치가 `develop`이 아니면 멈춥니다
+2. **checkout 갱신** — 아래 규칙대로 서버 레포를 배포할 커밋으로 옮깁니다
+3. **이미지 받기** — 지금 이미지를 복구용 태그로 남기고 새 이미지를 받습니다. 받기에 실패하면 실행 중인 것은 그대로입니다
+4. **교체 · 확인** — 그 영역 컨테이너만 바꾸고 확인합니다
+   - 백엔드: 상태 확인 · Caddy 설정이 바뀌었으면 재로딩 · CORS · 카카오 콜백 주소 · 외부 HTTPS
+   - AI: `/health`와 모델을 부르지 않는 매칭 한 건 · 모델 키가 있는지 ([verify-ai.py](scripts/verify-ai.py))
+   - 프론트: 200이고 `index.html` 안에 번들 `<script>`가 있는지 (기본 Nginx 안내 페이지도 200이라)
+5. **기록 또는 복구** — 성공하면 서버 `.env`의 `BACKEND_IMAGE` · `AI_IMAGE` · `FRONTEND_IMAGE`에 digest를 적습니다. 실패하면 checkout과 이전 이미지(백엔드는 이전 Caddy 설정까지)로 되돌리고 워크플로를 실패로 남깁니다
 
-SSM은 [`scripts/deploy-ai.sh`](scripts/deploy-ai.sh)를 `ubuntu` 계정으로 실행합니다.
-
-1. 서버 잠금을 기다리고(최대 5분), 서버 파일이 수정됐거나 브랜치가 `develop`이 아니면 중단합니다.
-2. 복구에 쓸 기존 `ai` 컨테이너가 있어야 합니다. [서버 checkout 갱신 규칙](#서버-checkout-갱신-규칙)대로 checkout을 갱신합니다.
-3. 서버 `AI/.env`의 `API_KEY`·에이전트별 `*_API_URL`(매칭·검증·요약·인사이트)이 비어 있으면 컨테이너를 건드리기 전에 중단합니다. 값은 출력하지 않습니다.
-4. 기존 이미지를 `ktc-ai:rollback-<id>`로 보관하고 새 digest를 받습니다. 다운로드에 실패해도 실행 중인 AI는 그대로입니다.
-5. `--no-deps --no-build --pull never`로 AI만 교체하고 확인을 최대 60초 기다립니다.
-6. 성공하면 서버 `infra/docker/.env`의 `AI_IMAGE`만 원자적으로 갱신합니다.
-   실패하면 서버 checkout을 이전 커밋으로 되돌리고 이전 이미지로 복구한 뒤 워크플로를 실패로 표시합니다.
+컨테이너 하나를 바꾸므로 짧은 중단이 있습니다. **이미지를 되돌려도 이미 실행된 DB 마이그레이션은 되돌아가지 않습니다.**
 
 ### 서버 checkout 갱신 규칙
 
-BE·AI 배포는 모두 서버 checkout을 옮깁니다. 두 배포가 겹치거나 순서가 뒤바뀌어도
-과거 이미지와 최신 서버 파일이 섞이지 않도록, 두 스크립트는 대상 커밋 C를 다음 순서로 판정합니다.
+세 배포가 겹치거나 순서가 뒤바뀌어도 옛 이미지와 새 서버 파일이 섞이지 않게, 배포할 커밋 C를 이렇게 판정합니다.
 
-1. C가 `origin/develop`에 없으면 실패합니다.
-2. 실행 중인 컨테이너의 `org.opencontainers.image.revision`보다 오래된 커밋이면 실패합니다.
-   과거 실행을 다시 돌려도 이미지가 되돌아가지 않습니다. 라벨이 없는 기존 이미지와는 비교하지 않습니다.
-3. 서버 HEAD가 C의 조상이면 fast-forward합니다.
-4. C가 이미 HEAD에 포함돼 있으면(다른 서비스 배포가 먼저 옮긴 경우), C와 HEAD 사이에 그 서비스의 대상 경로 변경이 없을 때만 checkout을 그대로 둡니다.
-   변경이 있으면 실패합니다. 그 변경은 해당 서비스 워크플로를 이미 실행시켰으므로 뒤따르는 실행이 배포합니다.
-5. 이력이 갈라졌으면 실패합니다.
+1. C가 `origin/develop`에 없거나, 실행 중인 이미지보다 오래된 커밋이면 실패
+2. 서버 HEAD가 C의 조상이면 fast-forward. 실패하면 이 이동을 되돌립니다
+3. C가 이미 HEAD에 들어 있으면(다른 영역 배포가 먼저 옮김), 그 사이에 이 영역 파일 변경이 없을 때만 그대로 둡니다
+4. 이력이 갈라졌으면 실패
 
-4번의 경로는 각 스크립트의 `service_paths`이며, 워크플로 `paths`와 같아야 합니다. 테스트가 둘이 같은지 검사합니다.
-
-`compose.yaml`·Caddyfile은 checkout에 있는 파일로 검증하므로 3번의 fast-forward는 검증보다 먼저 일어납니다.
-그래서 배포가 어느 단계에서든 실패하면 3번으로 옮긴 checkout을 `git reset --keep`으로 이전 커밋에 되돌립니다.
-4번처럼 다른 서비스 배포가 옮긴 checkout은 되돌리지 않습니다.
-
-### 최초 적용
-
-- 이 변경을 병합하면 `compose.yaml`·BE 배포 스크립트도 바뀌므로 **BE가 한 번 다시 배포됩니다**(짧은 중단·로그인 세션 끊김).
-  첫 적용에 한해 허용한 동작입니다. 이후 AI만 바꾸면 BE는 재시작하지 않습니다.
-- 서버에 기존 `ai` 컨테이너와 Luna 키가 채워진 `AI/.env`가 있어야 합니다.
-- 첫 게시로 GHCR에 `ktc4-kyungpook-2-ai` 패키지가 생깁니다. 서버의 GHCR 로그인 계정이 이 패키지를 읽을 수 있는지 확인합니다.
-  권한이 없으면 pull 단계에서 실패하고 기존 AI는 그대로 유지됩니다.
+3번의 "이 영역 파일"은 스크립트의 `service_paths`이고 워크플로 `paths`와 같아야 합니다. 테스트가 둘이 같은지 봅니다.
 
 ### 실패했을 때
 
-AI 배포가 실패한 뒤 AI 대상 경로를 바꾸지 않는 push만 이어지면 AI 워크플로는 다시 실행되지 않습니다.
-원인을 고친 뒤 **Actions → AI CI/CD → Run workflow**에서 `develop`을 선택해 수동으로 실행합니다.
-수동 실행은 `develop` 최신 커밋의 AI 전체를 빌드하므로 빠진 변경이 없습니다.
-배포가 대기 중일 때 새 실행이 들어와 기존 대기 실행이 취소되는 경우도 같습니다. 최신 실행이 이전 변경을 모두 포함합니다.
+- 실패한 뒤 그 영역을 건드리지 않는 push만 이어지면 다시 배포되지 않습니다. 원인을 고친 뒤 **Run workflow**로 `develop`을 수동 실행합니다
+- 서버에서 직접 배포할 때는 같은 스크립트를 씁니다
 
-서버에서 직접 배포할 때는 다음 명령을 씁니다.
+  ```bash
+  cd /home/ubuntu/ktc4-kyungpook-2
+  EXPECTED_PUBLIC_ORIGIN=https://iitda.duckdns.org bash infra/scripts/deploy-backend.sh '<커밋 SHA>' \
+    'ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:<digest>'
+  ```
 
-```bash
-cd /home/ubuntu/ktc4-kyungpook-2
-bash infra/scripts/deploy-ai.sh '<커밋 SHA>' \
-  'ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-ai@sha256:<이미지 digest>'
-```
+  AI · 프론트는 `deploy-ai.sh` · `deploy-frontend.sh`에 `<커밋 SHA>`와 이미지만 줍니다
+- 로그에 `Could not restore the server checkout`이 남으면 서버에서 `git status`와 `git log -1`을 확인합니다
+- 외부에서 확인: `python3 infra/scripts/verify-proxy.py health --origin https://iitda.duckdns.org`
 
-### AI 로컬 검증
+---
 
-```bash
-bash -n infra/scripts/deploy-ai.sh
-python3 -m unittest discover -s infra/scripts/tests -p 'test_ai_deploy.py' -v
-docker build --platform linux/amd64 -t ktc-ai:local AI
-docker run -d --rm --name ai-local -p 127.0.0.1:8000:8000 ktc-ai:local
-python3 infra/scripts/verify-ai.py --offline
-docker stop ai-local
-```
+## DB 마이그레이션
 
-## 프론트엔드 CI/CD
+백엔드는 뜰 때 Flyway로 `backend/src/main/resources/db/migration`의 새 파일을 실행하고, 엔티티와 테이블이 맞는지 본 뒤 뜹니다. 맞지 않으면 뜨지 않고 위 5번 복구가 돕니다.
+마이그레이션을 쓰는 규칙은 [DB 스키마 §11.4](../docs/db/schema.md)에 있습니다.
 
-`.github/workflows/frontend-ci.yml`은 BE·AI와 같은 방식으로 프론트를 검증·게시·배포합니다.
-서버에서는 프론트 컨테이너만 교체합니다. DB·BE·AI·Caddy는 건드리지 않습니다.
-
-예전에는 CD가 없어 서버에서 직접 `compose build frontend`를 돌렸습니다.
-EC2 가용 메모리가 3.7Gi 중 2.5Gi·Swap 0B라(10/30 실측) 자동 배포가 OOM으로 죽으면
-프론트가 내려간 채 남습니다. 그래서 #270에서 **CI가 이미지를 만들어 올리고 서버는 pull만 하는**
-방식으로 바꿨습니다. 서버 빌드 부하가 0이 됩니다.
-
-| 작업 | 실행 시점 | 내용 |
-| --- | --- | --- |
-| `check` | 대상 경로를 바꾼 `develop`·`main` 대상 PR·`develop` push, 수동 실행 | `npm ci`·`typecheck`·`build`와 프론트 배포 스크립트 테스트 |
-| `publish` | 대상 경로를 바꾼 `develop` push 또는 `develop` 수동 실행, 검사 성공 후 | `ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-frontend:<커밋 SHA>` 업로드 |
-| `deploy` | 이미지 업로드 성공 후, `CADDY_READY=true` | SSM으로 프론트만 교체·확인·실패 시 복구 |
-
-대상 경로는 `frontend/`, `infra/docker/compose.yaml`, 프론트 배포 파일(`deploy-frontend.sh`·`send-deploy.py`·`tests/test_frontend_deploy.py`), 이 워크플로 파일입니다.
-`frontend/**/*.md`는 제외합니다.
-`compose.yaml`과 `send-deploy.py`는 BE·AI 워크플로의 대상이기도 해서, 바꾸면 셋 다 다시 배포됩니다.
-
-GitHub Variables(`AWS_ROLE_ARN`·`AWS_REGION`·`EC2_INSTANCE_ID`·`CADDY_READY`)와 IAM Role은 BE와 같은 것을 씁니다.
-이미지 캐시는 `scope=frontend`로 BE·AI와 분리합니다.
-
-### `VITE_*`의 진실의 원천이 옮겨갔습니다
-
-`VITE_*` 값은 **빌드할 때 번들에 박힙니다.** 이제 빌드하는 쪽이 CI라서, 운영에 나가는 값은
-서버 `infra/docker/.env`가 아니라 **GitHub repo variables**입니다.
-
-| 변수 | 실연동 값 | 설명 |
-|---|---|---|
-| `USE_MOCK` | `false` | 데이터 mock. 프론트의 `VITE_USE_MOCK`으로 전달됩니다 |
-| `VITE_AUTH_MOCK` | `false` | 로그인 mock. `USE_MOCK`과 **별개**입니다. `true`면 `/auth/me`·회원가입을 타지 않고 "mock 데이터로 둘러보기" 버튼이 나옵니다 |
-| `PUBLIC_API_BASE_URL` | 등록하지 않음 | Caddy가 같은 오리진의 `/api`를 backend로 넘깁니다. 변수가 없으면 `${{ vars.PUBLIC_API_BASE_URL }}`가 빈 문자열이 되어 그대로 맞습니다. 별도 도메인으로 분리할 때만 등록합니다 |
-
-> ⚠️ 프론트는 `"false"`라는 **글자**만 실연동으로 읽습니다(`auth.ts`·`api.ts`의 `!== "false"`).
-> 변수를 비워 두면 mock이 켜진 채 운영에 나가고 로그인 화면에 "mock 데이터로 둘러보기" 버튼이 보입니다.
-> `publish` 작업이 두 변수가 정확히 `true`/`false`인지 먼저 확인하고, 아니면 게시 전에 실패합니다.
-> `PUBLIC_API_BASE_URL`은 비어 있는 것이 정상이라 이 검사를 걸지 않습니다.
-
-서버 `.env`의 같은 이름 값들은 이제 **로컬 `compose build frontend`에만** 쓰입니다.
-서버 `.env`를 고쳐도 운영 번들은 바뀌지 않습니다.
-
-### 프론트 배포 순서
-
-SSM은 [`scripts/deploy-frontend.sh`](scripts/deploy-frontend.sh)를 `ubuntu` 계정으로 실행합니다.
-BE·AI 배포와 같은 `deploy.lock`을 쓰고, checkout 갱신 규칙도 같습니다.
-
-1. 서버 checkout을 배포 커밋으로 옮깁니다(더 새 프론트 변경을 덮는 커밋은 거부).
-2. 현재 이미지를 `ktc-frontend:rollback-<id>`로 태그합니다.
-3. GHCR에서 digest로 pull한 뒤 프론트 컨테이너만 교체합니다.
-4. `http://127.0.0.1:3000/`이 200을 주고 **index.html 안에 번들 `<script>`가 있는지** 확인합니다.
-   상태 코드만 보면 빌드가 안 들어간 이미지도 통과합니다 — 기본 nginx 안내 페이지도 200입니다.
-5. 성공하면 서버 `.env`의 `FRONTEND_IMAGE`에 digest를 기록합니다.
-   실패하면 checkout과 이전 이미지를 되돌립니다.
-
-### 수동 배포
-
-CD가 멈춰 있거나 특정 커밋을 되돌려야 할 때만 씁니다.
+적용 기록은 서버의 `infra/docker`에서 확인합니다.
 
 ```bash
-cd /home/ubuntu/ktc4-kyungpook-2
-bash infra/scripts/deploy-frontend.sh '<커밋 SHA>' \
-  'ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-frontend@sha256:<이미지 digest>'
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select version, description, success from flyway_schema_history order by installed_rank"'
 ```
 
-새 브라우저에서 카카오 로그인 후 Network에 `GET /api/v1/auth/me`가 보이고,
-가입 전이면 `/signup`으로 이동해 제출 시 `POST /api/v1/auth/signup`이 발생하면 정상입니다.
+- 되돌리기 어려운 마이그레이션(컬럼 삭제 등)을 배포하기 전에는 DB를 백업합니다: `docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > ~/itda-<날짜>.dump`
+- 2026-11-10에 처음 적용했습니다. 기존 운영 DB는 `1`(`<< Flyway Baseline >>`)로 표시하고 `2`부터 실행했습니다
+- 로컬 compose에서 예전 볼륨이 엔티티와 달라 백엔드가 뜨지 않으면 `docker compose down -v`로 볼륨을 지우고 다시 띄웁니다 (로컬 데이터가 지워집니다)
 
-### 프론트 로컬 검증
-
-```bash
-bash -n infra/scripts/deploy-frontend.sh
-python3 -m unittest discover -s infra/scripts/tests -p 'test_frontend_deploy.py' -v
-```
+---
 
 ## Caddy와 HTTPS
 
-로컬은 `.env.example`의 `PUBLIC_ORIGIN=http://localhost`, `AUTH_COOKIE_SECURE=false`를 사용합니다.
-운영 서버 `infra/docker/.env`에는 아래 값을 설정합니다.
+- Caddy가 공인 인증서를 발급 · 갱신하고 HTTP를 HTTPS로 넘깁니다. 도메인이 Elastic IP를 가리키고, 보안 그룹이 80 · 443을 열어야 합니다
+- **`caddy_data` · `caddy_config` 볼륨은 지우지 않습니다.** 인증서와 발급 계정이 들어 있습니다
+- 운영 `.env`: `PUBLIC_ORIGIN=https://iitda.duckdns.org` · `AUTH_COOKIE_SECURE=true`. `PUBLIC_ORIGIN`을 바꾸면 Caddy와 백엔드를 다시 만들어야 하고, GitHub의 `PUBLIC_ORIGIN`도 맞춥니다
+- 운영 Swagger(`/swagger-ui*` · `/v3/api-docs*`)는 404로 막습니다. 보려면 `ssh -L 8080:127.0.0.1:8080 ubuntu@<서버>` 뒤 `http://localhost:8080/swagger-ui/index.html`
+- API 응답 대기 · 읽기 시간은 각각 120초로 제한합니다
 
-```dotenv
-PUBLIC_ORIGIN=https://iitda.duckdns.org
-AUTH_COOKIE_SECURE=true
-```
+**보안 헤더** — 모든 응답에 붙이고, Caddy가 직접 만드는 오류(502 · 413)에도 붙입니다.
 
-Caddy가 공인 인증서를 발급·갱신하고 HTTP 요청을 HTTPS로 이동시킵니다.
-도메인이 Elastic IP를 가리켜야 하며 보안 그룹은 TCP 80·443을 허용해야 합니다.
-2019 관리 API는 컨테이너 내부 루프백에만 열리고 외부에 공개하지 않습니다.
-`caddy_data`와 `caddy_config` 볼륨을 삭제하지 마세요. 인증서와 발급 계정 정보가 들어 있습니다.
-Certbot이나 별도 갱신 cron은 필요하지 않습니다.
+- `Strict-Transport-Security` (1년) · `X-Content-Type-Options: nosniff` · `X-Frame-Options: DENY` · `Referrer-Policy` · `Permissions-Policy` (카메라 · 마이크 · 위치 끔) · `Server` 헤더는 지움
+- `Content-Security-Policy` — 화면은 같은 오리진만 허용하고, React Router SPA의 인라인 스크립트 때문에 `'unsafe-inline'`을 둡니다. API는 `default-src 'none'`
+- 화면 CSP의 `connect-src`에는 **원본 기록 S3 버킷 주소**가 있습니다. 브라우저가 파일을 S3로 바로 올리기 때문입니다. 버킷을 바꾸면 Caddyfile과 `scripts/tests/test_caddy_proxy.py`의 `FRONTEND_CSP`를 함께 고칩니다. 버킷 CORS(운영 주소의 `PUT`만 허용)는 AWS 콘솔에서 설정합니다
+- 화면이 외부 스크립트 · 글꼴 · 이미지를 새로 쓰면 CSP에 그 주소를 더해야 합니다. 안 더하면 브라우저가 막습니다
 
-`PUBLIC_ORIGIN`을 변경할 때는 Caddy와 백엔드를 재생성해야 합니다. 파일 재로딩만으로
-컨테이너 환경변수가 바뀌지 않습니다. 일반 백엔드 배포는 이 변경을 자동으로 처리하지 않고
-실행 중인 Caddy와 주소가 다르면 중단합니다. GitHub 값은 `EXPECTED_PUBLIC_ORIGIN`으로만 전달해
-서버 `.env`를 덮어쓰지 않습니다. 주소 변경 후 GitHub의 `PUBLIC_ORIGIN`도 맞춥니다.
+**압축** — 화면 응답에만 `zstd` · `gzip`을 겁니다 (첫 화면 약 449KB → 135KB). API · OAuth 응답은 비밀값이 본문에 있을 수 있어(BREACH 공격) 압축하지 않습니다.
 
-운영 Swagger · OpenAPI(`/swagger-ui*` · `/v3/api-docs*`, JSON · YAML 모두)는 Caddy가 404로 막습니다(#442).
-운영 명세가 필요하면 서버의 백엔드(`127.0.0.1:8080`)에 SSH 터널로 붙어 봅니다.
+---
 
-```bash
-ssh -L 8080:127.0.0.1:8080 ubuntu@<서버>
-# 브라우저에서 http://localhost:8080/swagger-ui/index.html
-```
+## 처음 한 번 하는 설정
 
-프론트 컨테이너 안의 정적 파일용 Nginx는 유지하며, 캐시 헤더도 이 컨테이너에서 정합니다.
-API 응답 헤더 대기와 응답 읽기 사이의 대기 시간은 각각 120초로 제한합니다.
-HTTP/3는 이번 구성에서 활성화하지 않습니다.
-
-**보안 헤더 (#442)** — Caddy가 모든 응답에 붙입니다. 업스트림이 같은 이름으로 보낸 값(Spring 기본 헤더)은 응답을 받은 뒤
-덮어써 한 줄만 남깁니다. Caddy가 직접 만드는 오류(백엔드 연결 실패 502, 업로드 상한 413)에도 `handle_errors`로 같은 헤더를 붙입니다.
-
-| 헤더 | 값 |
-| --- | --- |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` — API 응답에 Spring이 보내던 값과 같습니다. preload는 하지 않습니다(공용 도메인 하위). HTTP 응답의 HSTS는 브라우저가 무시합니다 |
-| `X-Content-Type-Options` · `X-Frame-Options` | `nosniff` · `DENY` |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` |
-| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
-| `Content-Security-Policy` | 화면: 같은 오리진만(`'self'`), 스크립트 · 스타일은 `'unsafe-inline'` 허용, `connect-src` 에만 원본 기록 S3 버킷 주소를 더함(#450), `frame-ancestors 'none'`. API: `default-src 'none'; frame-ancestors 'none'` |
-| `Server` | 지웁니다 |
-
-화면 CSP는 React Router SPA 모드가 `index.html`에 넣는 인라인 스크립트 때문에 `'unsafe-inline'`을 허용합니다. 그래서 인라인 XSS는
-막지 못하고, 외부 리소스 로드와 일부 데이터 전송 경로(`fetch` · 이미지 · 폼)를 같은 오리진으로 제한하고 클릭재킹을 막습니다.
-페이지 이동(`location.href`)으로 내보내는 길은 막지 못합니다. 화면이 외부 스크립트 · 글꼴 · 이미지를 새로 쓰게 되면 Caddyfile의 CSP에
-그 주소를 더해야 합니다 — 더하지 않으면 브라우저가 막고 콘솔에 CSP 위반이 남습니다.
-
-**S3 주소를 `connect-src` 에 더한 이유 (#450)** — 원본 기록 업로드는 브라우저가 파일 본문을 S3 로 바로 `PUT` 합니다
-(`POST /api/v1/raw-records/upload-url` 이 준 서명 주소). `connect-src 'self'` 만 두면 브라우저가 이 요청을 막습니다. 더한 것은 원본
-기록 버킷 하나(`https://itda-raw-records-dev.s3.ap-northeast-2.amazonaws.com`, 운영도 이 버킷을 씁니다)뿐입니다. 버킷이 하나라 주소를
-Caddyfile 에 직접 적었습니다 — 환경변수(`{$RAW_STORAGE_S3_BUCKET}`)로 받으면 Caddy 컨테이너에 값을 넘겨 다시 만들어야 하는데, 배포는
-Caddy 설정을 다시 읽기만 합니다. 버킷을 바꾸면 이 주소와 `infra/scripts/tests/test_caddy_proxy.py` 의 `FRONTEND_CSP` 를 함께 고칩니다.
-버킷 쪽에서는 CORS 로 운영 주소(`https://iitda.duckdns.org`)의 `PUT` 만 허용합니다 — AWS 콘솔에서 설정하며 저장소에는 없습니다.
-
-**응답 압축 (#477)** — Caddy가 **화면 응답에만** `zstd` · `gzip` 압축을 겁니다(Caddyfile의 마지막 `handle`). 프론트 Nginx는 압축하지
-않습니다. Caddy 기본값대로 압축이 잘 되는 형식(HTML · JS · CSS · JSON · SVG)을 512바이트 이상일 때만 압축하고, png · woff2처럼 이미
-압축된 파일은 그대로 보냅니다. 압축한 응답에는 `Vary: Accept-Encoding`이 붙고, `/assets/`의 캐시 헤더는 그대로입니다.
-압축하기 전 첫 화면 HTML · JS · CSS 14개는 449KB였고, 같은 파일을 Caddy 기본 수준으로 압축하면 약 135KB입니다(2026-11-09 측정).
-
-API(`/api/*`)와 OAuth(`/oauth2/*` · `/login/oauth2/*`) 응답은 압축하지 않습니다. 초대 코드 · 기관 코드처럼 비밀값이 본문에 있는 응답에
-요청자가 조작할 수 있는 값이 함께 담기면, 압축된 크기로 비밀값을 추측하는 공격(BREACH)이 성립할 수 있습니다. 출입증 쿠키가
-`SameSite=Lax`라 위험은 낮지만, API 응답을 확인하기 전까지는 넣지 않습니다. 넣을 때는 그 확인과 함께 Caddyfile과
-`test_caddy_proxy.py`의 압축 범위 시험을 바꿉니다.
-
-배포 뒤에는 첫 화면 JS를 압축 요청 / 요청 없음으로 받아, 둘 다 `200`인지와 압축 요청에만 `Content-Encoding`이 붙는지 확인합니다.
+**AWS IAM 역할** — GitHub Actions가 쓰는 `ktc-backend-deploy` 역할의 정책은 [`iam/`](iam)에 있습니다. 이 레포의 `develop`만 믿고, 대상 EC2에 SSM 명령 실행 · 결과 조회만 허용합니다.
+레포의 OIDC subject는 조직 · 레포 ID가 들어간 `repo:kakaotechcampus-4@287968646/ktc4-kyungpook-2@1340154210:ref:refs/heads/develop`입니다. 역할을 다시 만들 때는 레포 루트에서 실행합니다.
 
 ```bash
-ORIGIN=https://iitda.duckdns.org; JS=$(curl -s "$ORIGIN/" | grep -o '/assets/[^"]*\.js' | head -1)
-curl -s -o /dev/null -w '%{http_code} %header{content-encoding} %{size_download}\n' "$ORIGIN$JS"
-curl -s -o /dev/null -w '%{http_code} %header{content-encoding} %{size_download}\n' --compressed "$ORIGIN$JS"
+aws iam create-role --role-name ktc-backend-deploy --assume-role-policy-document file://infra/iam/backend-deploy-trust.json
 ```
-
-### 최초 EC2 전환
-
-이 절차는 운영자가 별도로 실행합니다. 먼저 GitHub의 `CADDY_READY`를 `false`로 설정하고
-이미 진행 중인 배포가 끝났는지 확인합니다. 병합 후 게이트가 닫혀 있는 동안에는
-백엔드 핫픽스도 자동 배포되지 않으므로 전환 시간을 미리 정합니다.
-
-1. DuckDNS 주소와 EC2의 Elastic IP가 같은지 확인합니다. 카카오 콘솔에
-   `https://iitda.duckdns.org/login/oauth2/code/kakao`를 추가하고 기존 HTTP 콜백은 유지합니다.
-2. 서버의 작업 트리가 깨끗하고 브랜치가 `develop`인지 확인한 뒤, 이전 커밋·환경값·실행 이미지와
-   Nginx 컨테이너 ID를 백업합니다. 다음 명령은 **서버 저장소 루트**에서 실행합니다.
 
 ```bash
-cd /home/ubuntu/ktc4-kyungpook-2
-git status --short
-git branch --show-current
-mkdir -p .git/caddy-migration
-chmod 700 .git/caddy-migration
-git rev-parse HEAD > .git/caddy-migration/previous-sha
-cp -p infra/docker/.env .git/caddy-migration/previous.env
-backend_id=$(docker compose -f infra/docker/compose.yaml ps --quiet backend)
-docker tag "$(docker inspect --format '{{.Image}}' "$backend_id")" ktc-backend:before-caddy
-docker compose -f infra/docker/compose.yaml ps --quiet nginx > .git/caddy-migration/nginx-id
+aws iam put-role-policy --role-name ktc-backend-deploy --policy-name BackendDeploySSM --policy-document file://infra/iam/backend-deploy-permissions.json
 ```
 
-3. `git fetch origin develop` 후 전환 대상으로 정한 `<SHA>`를 `git merge --ff-only <SHA>`로 적용합니다.
-   서버 `.env`의 운영 값을 설정하고 CI가 게시한 해당 SHA의 백엔드 digest를 확인합니다.
-   컨테이너 포트를 열기 전에 이미지를 받고 설정을 검사합니다.
+**서버의 GHCR 로그인** — 비공개 이미지를 받으려면 서버의 `ubuntu` 계정이 GHCR에 로그인해 있어야 합니다. `read:packages` 권한의 PAT classic을 쓰고, 토큰이 만료되면 다시 로그인합니다. `sudo docker login`은 root 계정에 저장돼 배포에 적용되지 않습니다.
 
 ```bash
-docker compose -f infra/docker/compose.yaml pull caddy
-docker pull 'ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:<digest>'
-docker compose -f infra/docker/compose.yaml config --quiet
-docker compose -f infra/docker/compose.yaml run --rm --no-deps caddy \
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+read -r -p 'GitHub username: ' u; read -r -s -p 'token: ' t; printf '\n'; printf '%s' "$t" | docker login ghcr.io -u "$u" --password-stdin; unset u t
 ```
 
-4. 기존 Nginx를 중지한 뒤 Caddy를 시작합니다. Nginx를 삭제하거나 `--remove-orphans`를 사용하지 않습니다.
-   인증서가 발급되면 곧바로 같은 SHA의 백엔드를 적용합니다. 이 과정에는 짧은 전환 시간이 있습니다.
+---
+
+## 로컬 검증
+
+배포 스크립트 테스트는 임시 Git 레포 · 가짜 Docker · 임시 Caddy로 성공 · 실패 · 복구 경로를 확인합니다. 실제 서버에는 접근하지 않습니다.
 
 ```bash
-docker stop "$(cat .git/caddy-migration/nginx-id)"
-docker compose -f infra/docker/compose.yaml up -d --no-deps caddy
-# 인증서 발급 대기: 실패하면 Caddy 로그를 확인하고 무한히 기다리지 않는다.
-for attempt in {1..60}; do
-  python3 infra/scripts/verify-proxy.py health --origin https://iitda.duckdns.org --local && break
-  sleep 2
-done
-python3 infra/scripts/verify-proxy.py health --origin https://iitda.duckdns.org --local
-EXPECTED_PUBLIC_ORIGIN=https://iitda.duckdns.org bash infra/scripts/deploy-backend.sh \
-  '<SHA>' 'ghcr.io/kakaotechcampus-4/ktc4-kyungpook-2-backend@sha256:<digest>'
+python3 -m unittest discover -s infra/scripts/tests -v
 ```
 
-5. HTTPS 인증서, HTTP 리다이렉트, 외부 8080 접근 차단을 확인합니다.
-   실제 카카오 로그인 후 `access_token`의 `Secure`·`HttpOnly`와 `/api/v1/auth/me`를 확인합니다.
-   프론트가 `VITE_AUTH_MOCK=true`로 빌드돼 있으면 로그인 진입 URL로 직접 이동합니다.
-   이 변경은 프론트 로그인 모드나 프론트 이미지를 바꾸지 않습니다.
-6. 성공하면 GitHub `PUBLIC_ORIGIN`을 운영 주소로 맞추고 `CADDY_READY=true`로 배포 게이트를 엽니다.
-   안정화 후 중지된 Nginx 컨테이너, 보안 그룹 8080 규칙, 카카오 HTTP 콜백을 정리합니다.
-
-### 최초 전환 실패 시 복구
-
-게이트를 닫은 채 진행 중인 배포가 없는지 확인합니다. 추가 서버 수정이 없다면 이전 커밋과
-환경을 복원할 수 있습니다. DB·AI·프론트와 볼륨은 건드리지 않습니다.
-
-```bash
-cd /home/ubuntu/ktc4-kyungpook-2
-(
-  flock -n 9 || exit 1
-  test -z "$(git status --porcelain)" || exit 1
-  docker compose -f infra/docker/compose.yaml stop caddy
-  git reset --hard "$(cat .git/caddy-migration/previous-sha)"
-  cp -p .git/caddy-migration/previous.env infra/docker/.env
-  BACKEND_IMAGE=ktc-backend:before-caddy docker compose -f infra/docker/compose.yaml \
-    up -d --no-deps --no-build --pull never nginx backend
-  python3 - <<'PY'
-from pathlib import Path
-path = Path('infra/docker/.env')
-lines = [line for line in path.read_text().splitlines() if not line.startswith('BACKEND_IMAGE=')]
-path.write_text('\n'.join(lines) + '\nBACKEND_IMAGE=ktc-backend:before-caddy\n')
-PY
-  curl --fail http://54.116.206.217/api/health
-) 9>.git/deploy.lock
-```
-
-`develop` 브랜치와 깨끗한 작업 트리를 유지하므로 이후 후손 커밋으로 재시도할 수 있습니다.
-실패한 최초 전환에서는 백엔드 이미지 복구만으로 HTTP·Nginx 운영 상태까지 돌아가지 않으므로
-위 전체 복구 절차가 필요합니다. Caddy 영구 볼륨은 보존합니다.
-
-일반 배포의 자동 복구는 서버 checkout을 이전 커밋으로 되돌리고 이전 활성 Caddy JSON을 다시 로딩합니다.
-그래서 Caddy가 재시작돼도 검증되지 않은 새 Caddyfile을 읽지 않습니다. 잘못된 배포 설정은 수정 커밋으로 해결합니다.
-로그에 `Could not restore the server checkout`이 남으면 서버에서 `git status`와 `git log -1`을 확인하세요.
+- Docker가 없으면 Caddy 프록시 테스트를, `flock`이 없으면(macOS) 잠금 테스트를 건너뜁니다. CI에서는 `REQUIRE_DOCKER_TESTS` · `REQUIRE_FLOCK_TESTS`로 반드시 돌립니다
+- AI 이미지를 직접 확인할 때: `docker build --platform linux/amd64 -t ktc-ai:local AI` → `docker run -d --rm --name ai-local -p 127.0.0.1:8000:8000 ktc-ai:local` → `python3 infra/scripts/verify-ai.py --offline`
