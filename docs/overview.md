@@ -54,7 +54,7 @@
 | --- | --- | --- |
 | 계정 | 로그인 · 가입 · 약관 · 탈퇴 · 기관 담당자 넘기기 | `Auth` · `Terms` · `DevLogin` · `KakaoWebhook` · `Organization` |
 | 아이 · 보호자 | 아이 등록 · 초대 코드 · 보호자 연결 · 기관 코드 연결 요청 · 돌봄 정보 | `Child` · `Invitation` · `Guardian` · `ChildGuardian` · `InstitutionLink` · `LinkRequest` · `ChildCareInfo` |
-| 동의 | 기관마다 무엇을 공유할지, 동의를 거두면 무엇이 사라지나 | `Consent` |
+| [동의](domains/consent.md) | 기관마다 무엇을 공유할지, 동의를 거두면 무엇이 사라지나 | `Consent` |
 | [기록](domains/records.md) | 업로드 · 매칭 · 검증 · 요약, AI가 묻는 기록 확인 | `RawRecord` · `MatchingQueue` · `ValidationResult` |
 | [검토](domains/review.md) | 1차 검토(요약) · 인사이트 · 2차 검토 | `Summary` · `Insight` |
 | 공유 | 보호자 일지 · 리포트 · 메일 · 다른 기관 수신함 | `GuardianJournal` · `GuardianInsight` · `InstitutionInbox` |
