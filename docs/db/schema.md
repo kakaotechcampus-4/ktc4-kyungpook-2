@@ -1,9 +1,9 @@
 # 잇다 DB 스키마
 
-> **이 문서가 DB 스키마의 원본이다.**
+> **운영 DB 스키마는 Flyway 마이그레이션(`backend/src/main/resources/db/migration`)만 바꾼다. 이 문서는 그 테이블의 뜻과 규칙을 설명한다.**
 > 노션 「DB 수정본」은 이 문서를 주기적으로 옮겨 적은 **사본**이다. 노션을 먼저 고치지 않는다.
 >
-> **엔티티·테이블·컬럼·제약·enum 값을 바꾸는 PR은 이 문서를 같은 PR에서 고친다.** 예외 없음.
+> **엔티티·테이블·컬럼·제약·인덱스·enum 값을 바꾸는 PR은 마이그레이션을 더하고 이 문서를 같은 PR에서 고친다.** 예외 없음.
 > 컬럼 하나 추가, NULL 허용 변경, enum 값 하나 추가도 해당한다.
 > 코드와 이 문서가 다르면 **코드가 맞고 문서가 버그다.** 발견한 사람이 고친다.
 >
@@ -12,7 +12,7 @@
 
 > **이 문서의 범위**
 > 필수 테이블과 테이블 간 관계까지만 정한다. 세부 컬럼은 개발하면서 추가한다.
-> 백엔드가 `ddl-auto: update`를 쓰기 때문에 **컬럼 추가는 자동 반영되지만, 관계 변경·컬럼 삭제·타입 변경은 자동 반영되지 않는다.**
+> 스키마를 바꾸는 방법은 §11.4 에 있다. 본문 곳곳의 "`ddl-auto: update` 가 만든다 · 못 바꾼다"는 Flyway 로 옮기기 전(2026-11-10)의 기록이다.
 
 ---
 
@@ -3083,22 +3083,32 @@ repository.findByChildIdAndOrganizationId(childId, organizationId)   // deleted_
 
 ### 11.4 배포 DB 스키마 변경
 
-배포는 `ddl-auto: update`라 **컬럼·테이블 추가만 자동**이다. 아래는 자동으로 되지 않으므로
-PR 설명에 "배포 DB 수동 조치 필요"를 적고 배포 전에 직접 처리한다.
+**운영 DB 스키마는 Flyway 마이그레이션만 바꾼다** (2026-11-10 부터). 마이그레이션은 `backend/src/main/resources/db/migration` 에 있고,
+백엔드가 기동하면서 아직 적용하지 않은 파일을 차례로 실행한다. `docker` 프로필은 `ddl-auto: validate` 라 Hibernate 는 테이블을 만들지 않고
+엔티티와 맞는지만 본다. 맞지 않으면 앱이 뜨지 않는다.
 
-**인덱스는 자동이지만 쓰기를 막는다.** `update` 는 기존 테이블에도 엔티티의 `@Index` 중 **이름이 없는 것**을 기동하면서
-일반 `CREATE INDEX` 로 만든다(`CONCURRENTLY` 아님). 만드는 동안 그 테이블의 쓰기가 막히므로, 행이 쌓인 테이블에 인덱스를 더할 때는
-배포 전에 같은 이름으로 `CREATE INDEX CONCURRENTLY` 를 먼저 실행한다. 같은 이름이 있으면 `update` 는 정의를 보지 않고 건너뛴다
-(2026-11-09 PostgreSQL 16 에서 확인 — 아래 #479 절차).
+- `V1__baseline.sql` — Flyway 로 옮기기 전 엔티티가 만들던 스키마. 그 전부터 있던 운영 DB 는 이 파일을 실행하지 않고 V1 까지 적용된 것으로 표시만 한다
+- `V2__sync_enum_checks.sql` — `ddl-auto: update` 가 고치지 않아 운영 DB 에서 낡아 있던 enum 검사 제약 7개를 엔티티와 맞춘다
 
-- 컬럼 삭제, 컬럼 이름 변경 (새 컬럼이 추가되고 옛 컬럼은 남는다)
-- 타입 변경, NOT NULL ↔ NULL 변경
-- UNIQUE 등 제약 추가·제거
-- 기존 행이 있는 테이블에 NOT NULL 컬럼 추가 (실패한다)
-- **기존 enum 에 값 추가.** Hibernate 는 테이블을 처음 만들 때 `@Enumerated(STRING)` 컬럼에
-  `CHECK (status IN (...))` 제약을 거는데, `update`는 이 제약을 고치지 않는다. 새 값을 저장하면 거부된다.
-  `\d <테이블>`로 제약 이름(보통 `<테이블>_<컬럼>_check`)을 확인하고 `ALTER TABLE ... DROP CONSTRAINT ...`로 지운다.
-  테스트(H2·Testcontainers)는 테이블을 새로 만들어서 이 문제가 보이지 않는다
+**스키마를 바꾸는 PR**
+
+1. 엔티티를 고치고, 다음 번호로 마이그레이션 파일을 더한다 (`V3__무엇을_바꾸는지.sql`). 머지된 마이그레이션 파일은 고치지 않는다
+2. `./gradlew integrationTest --tests '*FlywayMigrationIntegrationTest'` 로 빈 DB 에 마이그레이션을 돌려 엔티티와 맞는지 본다
+3. 이 문서의 해당 절과 변경 이력을 고친다
+
+**마이그레이션을 쓸 때 주의할 것**
+
+- **enum 값 추가 · 삭제** — `@Enumerated(STRING)` 컬럼에는 `<테이블>_<컬럼>_check` 제약이 있다. 엔티티의 enum 만 고치면 새 값 저장이 거부된다.
+  마이그레이션에서 `DROP CONSTRAINT IF EXISTS` 뒤 새 목록으로 `ADD CONSTRAINT` 한다 (`V2` 참고). 테스트는 Hibernate 가 테이블을 새로 만들어 이 문제가 보이지 않는다
+- **기존 행이 있는 테이블에 NOT NULL 컬럼** — 기본값을 주거나, NULL 허용으로 더하고 값을 채운 뒤 NOT NULL 로 바꾼다
+- **행이 쌓인 테이블의 인덱스** — `CREATE INDEX CONCURRENTLY` 로 쓴다. 그 문장만 담은 파일로 두면 Flyway 가 트랜잭션 밖에서 실행한다.
+  이를 위해 `spring.flyway.postgresql.transactional-lock: false` 를 둔다. 켜 두면 Flyway 가 연 트랜잭션을 기다리며 영원히 멈춘다 (2026-11-10 확인)
+- **컬럼 삭제 · 이름 변경** — 되돌린 이전 이미지가 그 컬럼을 찾으면 뜨지 않는다. 코드에서 먼저 안 쓰게 배포한 뒤, 다음 PR 에서 지운다
+
+**배포와 되돌리기** — 이미지를 되돌려도 이미 실행된 마이그레이션은 되돌아가지 않는다. 되돌려야 하면 반대 작업을 하는 새 마이그레이션을 더한다.
+처음 Flyway 버전을 배포하는 절차는 [인프라 문서](../../infra/README.md#db-마이그레이션) 에 있다.
+
+> 아래는 Flyway 로 옮기기 전(`ddl-auto: update`) 배포 때 손으로 한 조치의 기록이다. 새 변경에는 쓰지 않는다.
 
 **기관 코드 (#258) 배포 전 조치 — 이 순서로, 새 버전을 배포하기 전에 한다.** `ddl-auto: update` 가 컬럼을 만들기를 기다리면
 UNIQUE 를 먼저 걸 수 없고, 배포 뒤에 걸면 그사이 겹친 코드가 생길 수 있다. 그래서 컬럼도 직접 만든다.
@@ -3340,3 +3350,4 @@ Hibernate 가 쓰기를 막으며 다시 만든다.
 | 2026-11-09 | `organization_handover` 추가 (§4.6) — 기관 담당자 넘기기. 후임이 인계 코드로 가입하면 같은 기관에 소속되고 이전 담당자는 탈퇴로 정리된다(§4.1 "탈퇴"). 기관 담당자의 탈퇴는 카카오 첫 호출이 실패해도 취소하지 않는다. 잠금 순서 두 줄 추가(§3.3). 새 테이블이라 `ddl-auto: update` 가 만든다 | #478 |
 | 2026-11-09 | 자주 읽는 테이블 인덱스 11개 추가 — `journal_entry` 4개 · `raw_record` · `matching_result` · `validation_result` · `summary_result` · `insight_result` · `child_guardian` · `sharing_history` 각 1개 (§5.4 · §6.1 · §6.2 · §7.1 · §8.1 · §8.2 · §9.3 · §9.4). 컬럼 · 제약 변경 없음. `update` 가 기존 테이블에도 없는 인덱스를 쓰기를 막으며 만들어, 배포 전에 운영 DB 에 `CONCURRENTLY` 로 먼저 만들고 검증한다 (§11.4) | #479 |
 | 2026-11-09 | `raw_record_upload` 추가 (§6.3) — 브라우저가 S3 로 바로 올리는 업로드의 접수. 완료하면 `raw_record` 를 만들고 그 id 를 남긴다. `raw_record.status` 에 "올리는 중" 값을 더하지 않은 이유를 §6.1 에 적음. 하루 지난 접수는 정리 작업이 지운다. 새 테이블이라 `ddl-auto: update` 가 만든다 | #450 |
+| 2026-11-10 | 스키마 관리를 `ddl-auto: update` 에서 Flyway 로 옮김 (§11.4). `V1__baseline` 은 엔티티가 만들던 스키마, `V2__sync_enum_checks` 는 운영 DB 에서 낡아 있던 enum 검사 제약 7개(`journal_entry` 의 `status`·`failure_reason`·`failure_stage`, `validation_result.verdict`, `summary_result.status`, `human_review.decision`, `terms_agreement.term_key`)를 엔티티와 맞춤. 운영에서는 `CONTENT_TOO_LONG`·`MATCHING`·`FAILED` 저장이 거부되던 상태였다. `docker` 프로필은 `ddl-auto: validate` | #499 |

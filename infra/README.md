@@ -141,8 +141,31 @@ GitHub의 외부 API 확인만 실패하면 서버 배포 자체는 이미 완�
 네트워크 경로와 SSM 실행 결과를 함께 확인합니다.
 
 운영 `.env`·`AI/.env`·실행 중인 DB·Caddy·기존 BE가 준비된 서버를 전제로 합니다.
-단일 BE 컨테이너를 교체하므로 짧은 중단이 발생합니다. `ddl-auto: update`를 유지하므로
-이전 이미지 복구는 DB 스키마를 되돌리지 않습니다.
+단일 BE 컨테이너를 교체하므로 짧은 중단이 발생합니다. 이전 이미지 복구는 이미 실행된 DB 마이그레이션을 되돌리지 않습니다.
+
+### DB 마이그레이션
+
+BE는 기동할 때 Flyway로 `backend/src/main/resources/db/migration`의 새 마이그레이션을 실행하고,
+엔티티와 테이블이 맞는지 확인한 뒤 뜹니다(`docker` 프로필, `ddl-auto: validate`). 맞지 않으면 뜨지 않고 위 7번 복구가 돕니다.
+마이그레이션을 쓰는 규칙은 [DB 스키마 §11.4](../docs/db/schema.md)에 있습니다.
+
+**처음 Flyway 버전을 배포할 때 (한 번만)** — 운영 DB에는 Flyway 기록이 없습니다. 첫 기동에서 `V1`까지 적용된 것으로 표시하고 `V2`(enum 검사 제약 정리)만 실행합니다.
+
+1. 머지 전에 서버의 `infra/docker`에서 DB 전체를 백업합니다.
+
+   ```bash
+   docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > ~/itda-before-flyway.dump
+   ```
+
+2. 머지해 자동 배포가 성공했는지 확인합니다.
+3. 적용 기록을 확인합니다. `1`(`<< Flyway Baseline >>`)과 `2`가 `t`로 보이면 끝입니다.
+
+   ```bash
+   docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select version, description, success from flyway_schema_history order by installed_rank"'
+   ```
+
+배포가 실패해 이전 이미지로 돌아가도 그대로 둡니다. `V2`는 허용 값을 넓히기만 해서, 이전 이미지가 그 DB에서 그대로 돕니다.
+로컬 compose에서 예전 볼륨이 엔티티와 달라 BE가 뜨지 않으면 `docker compose down -v`로 볼륨을 지우고 다시 띄웁니다(로컬 데이터가 지워집니다).
 
 ### 최초 실행 및 확인
 
