@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class InsightEvidence(BaseModel):
+    """claim 하나를 뒷받침하는 원본 일지 근거. summary.schemas.Evidence 와 같은 모양이다."""
 
     journal_entry_id: int | None = None
 
@@ -12,6 +13,12 @@ class InsightEvidence(BaseModel):
 ClaimSource = Literal["AI", "EDITED", "TEACHER"]
 
 class InsightClaim(BaseModel):
+    """
+    승인된 요약 문장 하나.
+
+    claim_id 는 요약에 없는 값이라 BE 가 붙인다: "{summary_id}-{claims 배열 순서}".
+    요약이 배열 순서를 본문 순서로 못 박았으므로 같은 판 안에서는 바뀌지 않는다.
+    """
 
     claim_id: str
     text: str
@@ -50,6 +57,7 @@ class InsightInput(BaseModel):
 
 
 class Support(BaseModel):
+    """기록된 대처 하나와 그 결과. 결과가 기록에 없는 대처는 코드가 버린다."""
 
     action: str
     result: str
