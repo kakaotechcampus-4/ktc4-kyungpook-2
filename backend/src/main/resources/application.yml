@@ -61,7 +61,6 @@ app:
   withdrawal:
     enabled: ${WITHDRAWAL_ENABLED:false}
     wait-for-completion: 4s
-    lock: auto
     kakao:
       base-url: https://kapi.kakao.com
       admin-key: ${KAKAO_ADMIN_KEY:}

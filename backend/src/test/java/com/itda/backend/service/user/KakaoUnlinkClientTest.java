@@ -155,7 +155,7 @@ class KakaoUnlinkClientTest {
 
     private KakaoUnlinkClient client(String adminKey, Duration readTimeout) {
         String baseUrl = server == null ? "http://127.0.0.1:9" : "http://127.0.0.1:" + server.getAddress().getPort();
-        WithdrawalProperties properties = new WithdrawalProperties(true, Duration.ofSeconds(1), "local",
+        WithdrawalProperties properties = new WithdrawalProperties(true, Duration.ofSeconds(1),
                 new WithdrawalProperties.Kakao(baseUrl, adminKey, null, Duration.ofSeconds(1), readTimeout),
                 new WithdrawalProperties.Worker(false, 60_000));
         return new KakaoUnlinkClient(RestClient.builder(), properties, new ObjectMapper());

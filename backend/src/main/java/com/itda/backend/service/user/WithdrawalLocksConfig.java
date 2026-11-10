@@ -15,20 +15,12 @@ import lombok.extern.slf4j.Slf4j;
 public class WithdrawalLocksConfig {
 
     @Bean
-    WithdrawalLocks withdrawalLocks(WithdrawalProperties properties, DataSource dataSource) {
-        String mode = properties.lock() == null ? "auto" : properties.lock();
-        return switch (mode) {
-            case "advisory" -> new AdvisoryWithdrawalLocks(dataSource);
-            case "local" -> new LocalWithdrawalLocks();
-            case "auto" -> {
-                if (isPostgreSql(dataSource)) {
-                    yield new AdvisoryWithdrawalLocks(dataSource);
-                }
-                log.warn("PostgreSQL 이 아니어서 탈퇴 잠금을 한 프로세스 안 잠금으로 씁니다. 로컬 개발 전용입니다.");
-                yield new LocalWithdrawalLocks();
-            }
-            default -> throw new IllegalStateException("app.withdrawal.lock 은 auto · advisory · local 중 하나입니다: " + mode);
-        };
+    WithdrawalLocks withdrawalLocks(DataSource dataSource) {
+        if (isPostgreSql(dataSource)) {
+            return new AdvisoryWithdrawalLocks(dataSource);
+        }
+        log.warn("PostgreSQL 이 아니어서 탈퇴 잠금을 한 프로세스 안 잠금으로 씁니다. 로컬 개발 전용입니다.");
+        return new LocalWithdrawalLocks();
     }
 
     private static boolean isPostgreSql(DataSource dataSource) {

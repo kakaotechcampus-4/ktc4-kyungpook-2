@@ -244,7 +244,7 @@ class KakaoUnlinkWebhookTest {
     void 탈퇴를_열지_않았으면_검증만_하고_무시한다() {
         User mother = persist(UserFixture.parent(nextKakaoId()));
         KakaoUnlinkWebhookService closed = new KakaoUnlinkWebhookService(inbox, new WithdrawalProperties(
-                false, java.time.Duration.ofSeconds(1), "local",
+                false, java.time.Duration.ofSeconds(1),
                 new WithdrawalProperties.Kakao("http://unused", "test-admin-key", APP_ID, null, null), null));
 
         closed.handle(AUTH, APP_ID, mother.getKakaoId(), "UNLINK_FROM_APPS");

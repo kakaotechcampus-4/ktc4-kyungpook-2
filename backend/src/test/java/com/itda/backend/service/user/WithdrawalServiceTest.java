@@ -326,7 +326,7 @@ class WithdrawalServiceTest {
     void 탈퇴를_열지_않았으면_404이고_접수하지_않는다() {
         User mother = parent();
         WithdrawalService closed = new WithdrawalService(withdrawalSteps, withdrawalExecutor, new WithdrawalProperties(
-                false, java.time.Duration.ofSeconds(1), "local", null, null));
+                false, java.time.Duration.ofSeconds(1), null, null));
 
         assertThatThrownBy(() -> closed.withdraw(principal(mother), principal(mother)))
                 .isInstanceOf(UserException.class)
