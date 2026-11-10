@@ -17,6 +17,7 @@ import com.itda.backend.domain.insight.InsightResult;
 import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.dto.request.notify.NotifyAgentRequest;
+import com.itda.backend.global.json.JsonColumns;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
@@ -77,10 +78,15 @@ public class NotifyService {
         return Optional.of(new PreparedNotify(request, insights.size(), lastInsightId));
     }
 
+    private static List<Long> sourceIdsOf(InsightResult insight) {
+        return JsonColumns.readLongsAllowingText(insight.getSourceInstitutionIds(),
+                "insight_result.source_institution_ids", insight.getId());
+    }
+
     private Map<Long, Organization> institutionsOf(List<InsightResult> approved,
             Map<Long, InsightEvidenceReader.Evidence> evidences) {
         Set<Long> ids = approved.stream()
-                .flatMap(insight -> PrimarySource.sourceIdsOf(insight).stream())
+                .flatMap(insight -> sourceIdsOf(insight).stream())
                 .collect(Collectors.toCollection(java.util.HashSet::new));
         evidences.values().forEach(evidence -> ids.addAll(evidence.institutionIds()));
         return organizationRepository.findAllById(ids).stream()
@@ -89,7 +95,7 @@ public class NotifyService {
 
     private String primaryNameOf(InsightResult insight, Map<Long, Organization> institutions) {
         try {
-            Organization primary = PrimarySource.of(PrimarySource.sourceIdsOf(insight), institutions);
+            Organization primary = PrimarySource.of(sourceIdsOf(insight), institutions);
             return primary == null ? "" : primary.getName();
         } catch (RuntimeException e) {
             log.warn("could not pick the primary institution insightId={}", insight.getId(), e);
@@ -116,7 +122,7 @@ public class NotifyService {
     }
 
     private List<String> institutionTypesOf(InsightResult insight, Map<Long, Organization> institutions) {
-        return PrimarySource.sourceIdsOf(insight).stream()
+        return sourceIdsOf(insight).stream()
                 .map(institutions::get)
                 .filter(organization -> organization != null)
                 .map(organization -> InstitutionTypeNames.of(organization.getType()))

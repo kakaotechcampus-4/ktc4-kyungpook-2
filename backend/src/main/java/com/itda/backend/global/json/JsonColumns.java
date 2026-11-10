@@ -24,7 +24,7 @@ public final class JsonColumns {
         try {
             return MAPPER.readTree(raw);
         } catch (JsonProcessingException e) {
-            log.warn("failed to parse {} id={}", column, rowId, e);
+            log.warn("failed to parse {} id={} ({})", column, rowId, e.getClass().getSimpleName());
             return null;
         }
     }
@@ -45,15 +45,27 @@ public final class JsonColumns {
     }
 
     public static List<Long> readLongsAllowingText(String raw, String column, Long rowId) {
+        return collectLongs(readArray(raw, column, rowId), column, rowId);
+    }
+
+    public static List<Long> readLongValuesAllowingText(String raw, String column, Long rowId) {
+        JsonNode node = readTree(raw, column, rowId);
+        if (node == null || !node.isContainerNode()) {
+            return new ArrayList<>();
+        }
+        return collectLongs(node, column, rowId);
+    }
+
+    private static List<Long> collectLongs(Iterable<JsonNode> nodes, String column, Long rowId) {
         List<Long> values = new ArrayList<>();
-        for (JsonNode node : readArray(raw, column, rowId)) {
+        for (JsonNode node : nodes) {
             if (node.canConvertToLong()) {
                 values.add(node.asLong());
             } else if (node.isTextual()) {
                 try {
                     values.add(Long.parseLong(node.asText().trim()));
                 } catch (NumberFormatException e) {
-                    log.warn("non-numeric value in {} id={}: {}", column, rowId, node.asText());
+                    log.warn("non-numeric value in {} id={}", column, rowId);
                 }
             }
         }

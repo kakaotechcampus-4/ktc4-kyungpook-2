@@ -1,3 +1,19 @@
+# AI/summary/nodes.py
+"""
+Summary Agent 의 노드들.
+
+    gather → write → ground → assemble
+
+모델이 일하는 것은 write 하나뿐이다. 나머지 셋은 코드가 한다.
+판정 기준은 CRITERIA.md 에 있고, 여기 코드는 그 §2 "코드가 거르는 네 단계" 를
+그대로 옮긴 것이다.
+
+    ① 인용을 원문에서 찾는다           못 찾으면 그 근거를 버린다
+    ② 근거 0 개가 된 문장을 버린다
+    ③ 고유명사가 근거에 없으면 버린다
+    ④ 남은 claims 로 본문을 잇는다      covered 도 코드가 센다
+"""
+
 import re
 
 from .config import (
@@ -13,11 +29,30 @@ from .prompts import build_messages
 from .state import SummaryState
 
 
+# ── ① gather ───────────────────────────────────────────────────
+
+
 def gather(state: SummaryState) -> dict:
+    """
+    일지를 id 로 색인한다.
+
+    인용을 **그 일지 안에서만** 찾기 위해서다. 전부 이어 붙여 놓고 아무 데서나
+    찾으면, 모델이 A 일지 내용이라고 말한 문장을 B 일지에서 찾아 통과시키게 된다.
+    근거가 어느 기록에서 왔는지가 요약의 전부라 그걸 섞으면 안 된다.
+    """
     return {"by_id": {s.journal_entry_id: s.content for s in state["sources"]}}
 
 
+# ── ② write ────────────────────────────────────────────────────
+
+
 def write(state: SummaryState) -> dict:
+    """
+    모델에게 claims 를 받는다. 본문도 좌표도 받지 않는다 (prompts.py 참고).
+
+    호출이 실패해도 여기서 터뜨리지 않는다. llm_error 만 남기고 run_summary 가
+    503 으로 바꾼다 — 노드가 예외를 던지면 그래프 중간 상태가 사라진다.
+    """
     if not state["sources"]:
         return {"llm_called": False, "llm_error": None, "raw_claims": []}
 
@@ -42,25 +77,47 @@ def write(state: SummaryState) -> dict:
     }
 
 
+# ── ③ ground ───────────────────────────────────────────────────
+
+
+#: 문장 안에서 날짜를 가리키는 숫자. "10월 5일", "2026년" 처럼 단위가 붙은 것만 본다.
+#: "7번", "오전 10시" 는 여기 걸리지 않는다 — 그것은 관찰한 내용이다.
 DATE_UNIT = re.compile(r"(\d+)\s*[년월일]")
 
 
 def _numbers(text: str) -> set[int]:
+    """숫자를 값으로 비교한다. "04" 와 "4" 가 다른 수로 취급되면 안 된다."""
     return {int(n) for n in re.findall(r"\d+", text or "")}
 
 
+#: 수량을 나타내는 말. 값을 아는 것과 모르는 것을 나눠 둔다.
+#:
+#: **모르는 표현은 통과시키지 않는다.** 목록에 없는 수사를 만나면 검사를 건너뛰는
+#: 것이 아니라, 토큰 그대로 인용과 대조한다 — "마흔 번" 은 인용에도 "마흔 번" 이
+#: 있어야 한다. 넓히다 빠뜨리면 환각이 그냥 나간다 (2026-10-08 · 10-11 · 10-14 ·
+#: 10-17 멘토 리뷰에서 네 번 연속 같은 자리를 고쳤다).
 _ONES = {"한": 1, "첫": 1, "두": 2, "세": 3, "네": 4,
          "다섯": 5, "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9}
+#: "스무" 는 "스물" 의 관형형이다 — "스무 번" 이 바른 말이라 둘 다 둔다.
 _TENS = {"열": 10, "스물": 20, "스무": 20, "서른": 30, "마흔": 40, "쉰": 50,
          "예순": 60, "일흔": 70, "여든": 80, "아흔": 90}
 _BIG = {"백": 100, "천": 1000}
 
+#: 값을 정할 수 없는 수량. 숫자로 바꾸지 않고 토큰 그대로 비교한다.
+#: 원문이 "한두 번" 인데 요약이 "두 번" 이면 그게 환각이다.
 _VAGUE = ("한두", "두어", "두어세", "두세", "서너", "서넛", "네댓", "네다섯",
           "너덧", "대여섯", "예닐곱", "일여덟", "여남은", "열댓",
           "여러", "몇몇", "몇", "수십", "수백", "수천", "수")
 
+#: "백여 번" · "십여 번" 처럼 **"여" 가 붙는 근사 표현.** 계열이라 한 번에 잡는다.
+#:
+#: 한자어 수사(십·백·천)를 여기서만 본다 — "여" 가 붙으면 지시사 "이" 와 헷갈릴
+#: 일이 없어 안전하다. "참여"·"급여" 는 앞 글자가 이 목록에 없어 안 걸린다.
 _APPROX = r"(?:수)?(?:[일이삼사오육칠팔구])?(?:십|백|천)여"
 
+#: 수량 뒤에 오는 단위. 날짜 단위(년·월·일)는 넣지 않는다 — 그쪽은
+#: _numbers_outside_dates 가 묶음 날짜와 대조한다.
+#: 같은 뜻은 묶는다. "세 번" 과 "세 차례" 가 갈리면 안 된다.
 _UNIT_GROUP = {
     "번": "회", "회": "회", "차례": "회",
     "바퀴": "바퀴", "걸음": "걸음", "칸": "칸",
@@ -68,10 +125,17 @@ _UNIT_GROUP = {
     "분": "분", "시간": "시간", "초": "초",
 }
 
+#: 수량이 아닌 수식어. 아는 수사와 겹치는 말을 뺀다 ("이 장" 의 "이").
 NOT_QUANTITY = {"이", "그", "저", "요", "매", "지난", "이번", "저번", "요번"}
 
+#: 아는 수사. 복합(열두)을 한자리보다 먼저 본다.
+#:
+#: **단위 앞의 한글을 전부 수량으로 보는 방식은 접었다.** 오탐이 더 크다 —
+#: "교사 회의" 가 (교사, 회), "자전거 바퀴" 가 (자전거, 바퀴), "점심 시간" 이
+#: (점심, 시간) 으로 읽혀 정상 문장을 버린다 (2026-10-18 측정).
+#: 대신 목록을 한 번에 크게 넓히고, **여기 없는 표현은 못 잡는다**고 적어 둔다.
 _KNOWN = "|".join([
-    _APPROX,
+    _APPROX,                                        # "백여" 를 "백" 보다 먼저
     rf"(?:{'|'.join(_TENS)})(?:{'|'.join(_ONES)})",
     "|".join(sorted(_TENS, key=len, reverse=True)),
     "|".join(sorted(_VAGUE, key=len, reverse=True)),
@@ -79,29 +143,69 @@ _KNOWN = "|".join([
     "|".join(_BIG),
 ])
 
+#: 긴 것부터 본다 — "차례" 를 "차"+"례" 로 읽지 않기 위해서다.
 _UNIT_RE = "|".join(sorted(_UNIT_GROUP, key=len, reverse=True))
 
+#: 단위 뒤에는 조사·어미·문장부호만 올 수 있다 — "장난감" 의 "장" 을 집지 않는다.
 _TAIL = r"(?=[을를이가은는에의와과도만씩째쯤적까부보마처밖\s,.)\]]|$)"
 
+#: 앞에 글자가 붙어 있으면 세지 않는다 — "총열두" 처럼 다른 낱말의 꼬리를 집지 않게.
 COUNT = re.compile(rf"(?<![0-9가-힣])(\d+|{_KNOWN})\s*({_UNIT_RE})" + _TAIL)
 
+#: 근거(원문 인용) 쪽에서만 쓰는 느슨한 모양. 교사 일지는 띄어쓰기가 자주 빠진다.
+#:   "귀를여러 차례" — 조사 바로 뒤에 붙은 수량도 센다 (위 COUNT 는 앞 글자가 있으면 안 셈)
+#:   "10여분"       — "10여" 를 10 으로 본다 (요약이 "약 10분" 으로 쓴다)
+#: 근거 쪽을 넓히면 "덜 버리는" 방향으로만 틀린다. 요약 쪽은 그대로 엄격하게 본다.
+#: 실데이터 4~6월 버린 문장 대부분이 이 꼴이었다 (11/03~11/06, "귀를여러 차례" 매 실행).
 _JOSA_BEFORE = r"(?<=[을를이가은는에의도와과로])"
 COUNT_LOOSE = re.compile(
     rf"(?:(?<![0-9가-힣])|{_JOSA_BEFORE})(\d+여|\d+|{_KNOWN})\s*({_UNIT_RE})" + _TAIL
 )
 
+#: 부정 표현. "한 번도 울지 않았다" 는 횟수 주장이 아니다.
+#: "안" 은 넣지 않는다 — "안았다" · "책상 안에" 와 겹쳐 오탐이 난다.
+#:
+#: **"못" 은 하다의 활용을 모두 본다.** "못하" 만 보면 "못했다" · "못한다" · "못할" ·
+#: "못함" · "못해서" 가 전부 빠져 "한 번도 성공하지 못했다" 의 1회가 근거를 요구했다.
+#: 붙여 쓴 꼴에는 앞글자 제한을 두지 않는다 — "하지못했다" 처럼 띄어쓰기가 틀려도 잡는다.
+#:
+#: 띄어 쓴 "못 " 은 앞에 한글이 없을 때만 본다. "연못 주변" · "연못 가" 가
+#: 부정으로 잡혔다. 붙여 쓴 꼴과 달리 뒤를 안 보므로("못 갔다" 도 부정) 앞을 막아야 한다.
 NEGATION = re.compile(r"않|못[하했한할함해]|(?<![가-힣])못 |없")
 
+#: 절의 끝. 부정은 **횟수가 속한 절 안에서만** 찾는다.
+#:
+#: 문장 전체를 보면 "세 번도 넘게 시도했지만 울지는 않았다" 의 "않" 이 앞의 3회까지
+#: 면제한다 — 뒤 절의 부정인데 앞 절의 횟수 주장이 근거 없이 통과했다 (멘토님 리뷰 #256).
+#:
+#: **대조·전환 어미만 넣는다.** "거나"·"면서" 는 대등·동시 연결이라 부정이 양쪽에
+#: 걸린다 — "한 번도 보채거나 울지 않았다" 를 끊으면 "않" 을 놓쳐 1회를 세게 된다.
+#:
+#: **"지만" 은 시제형만 본다.** 맨 "지만" 은 "바지만"·"강아지만"·"편지만" 처럼
+#: 명사 + "만" 과 겹쳐 절을 엉뚱한 데서 끊는다. "했지만"·"았지만" 은 겹칠 명사가 없다.
+#: 한 글자 어미("고"·"나")도 같은 이유로 뺀다 — "고개" 의 "고" 에서 끊긴다.
+#: 쉼표도 넣지 않는다 — "한 번도, 정말 한 번도 울지 않았다" 가 끊긴다.
+#:
+#: 그래서 **여기 없는 어미로 이어진 절은 못 끊는다** ("~하고"·"~하는데" 등).
+#: 못 끊으면 예전처럼 뒤 절까지 보므로 **덜 거르는 쪽으로** 틀린다 —
+#: 정상 문장을 버리는 것보다 낫다는 §3 의 방향과 같다.
 CLAUSE_END = re.compile(r"았지만|었지만|했지만|였지만|으나|는데|[.!?\n]")
 
 
 def _count_value(token: str) -> str | None:
+    """
+    수사를 숫자로 바꾼다. "열두" 는 10 + 2 다.
+
+    **못 읽는 말은 토큰 그대로 돌려준다.** "한두"·"대여섯" 처럼 값을 정할 수 없는
+    것을 숫자로 바꾸면, 원문의 "한두 번" 과 요약의 "두 번" 이 같아져 환각이
+    통과한다. 수량이 아닌 수식어면 None 이다.
+    """
     if token.isdigit():
         return token
     if token in NOT_QUANTITY:
         return None
     if token.endswith("여"):
-        return token
+        return token          # "백여" 는 값을 정할 수 없다 — 토큰 그대로
     for tens, value in _TENS.items():
         if token.startswith(tens):
             rest = token[len(tens):]
@@ -109,40 +213,73 @@ def _count_value(token: str) -> str | None:
                 return str(value)
             if rest in _ONES:
                 return str(value + _ONES[rest])
-            return token
+            return token          # "열몇" 처럼 못 읽는 조합은 그대로
     if token in _ONES:
         return str(_ONES[token])
     if token in _BIG:
         return str(_BIG[token])
-    return token
+    return token                   # 모르는 수량 표현 — 그대로 대조한다
 
 
 def _clause_from(text: str, start: int) -> str:
+    """
+    {start} 부터 그 절이 끝나는 자리까지. 부정을 찾을 범위다.
+
+    끝은 어미의 **앞**이다 — "울지 않는데" 의 "는데" 에서 끊으면 "않" 이 범위에
+    남아야 한다. 어미를 못 찾으면 문장 끝까지다.
+    """
     end = CLAUSE_END.search(text, start)
     return text[start:end.start()] if end else text[start:]
 
 
 def _counts(text: str, loose: bool = False) -> set[tuple[str, str]]:
+    """
+    문장에 쓰인 수량을 (값, 단위) 쌍으로 모은다. loose=True 는 근거 쪽에서만 쓴다 (COUNT_LOOSE).
+
+    숫자만 비교하면 네 가지를 놓친다.
+      ① "세 번" — 한글 수사는 숫자 검사에 안 걸린다
+      ② "여러 번" — 수량 표현인데 숫자가 아니다
+      ③ "7번" 인데 인용에 "7층" 이 있으면 통과한다 — 값은 같고 단위가 다르다
+      ④ "열두 번" — 한자리를 먼저 보면 "두" 만 걸려 2회가 된다
+    """
     text = text or ""
     pairs = set()
     for m in (COUNT_LOOSE if loose else COUNT).finditer(text):
         token, unit = m.group(1), m.group(2)
+        # "한 명씩" · "한 개씩" — 하나씩 차례로라는 뜻이지 1명이라는 주장이 아니다
         if token in ("한", "1") and text[m.end():m.end() + 1] == "씩":
             continue
+        # "한쪽" · "양쪽" — 방향이다. 쪽수는 "3쪽", "세 쪽" 처럼 숫자거나 띄어 쓴다
         if unit == "쪽" and not token.isdigit() and not re.search(r"\s", m.group(0)):
             continue
+        # 단위 뒤에 "도" 가 붙고 **그 횟수가 속한 절이** 부정이면 횟수 주장이 아니다.
+        # "한 번도 울지 않았다" 는 빼고, "세 번도 넘게 시도했다" 는 센다 —
+        # 뒤쪽은 횟수를 주장하므로 근거가 있어야 한다.
         if text[m.end():m.end() + 1] == "도" and NEGATION.search(_clause_from(text, m.end())):
             continue
         if loose and token.endswith("여") and token[:-1].isdigit():
-            token = token[:-1]
+            token = token[:-1]    # "10여분" → 10분
         value = _count_value(token)
         if value is None:
-            continue
+            continue              # 수량이 아닌 수식어 ("이 장면", "매번")
         pairs.add((value, _UNIT_GROUP[unit]))
     return pairs
 
 
 def _numbers_outside_dates(text: str, entry_date: str) -> set[int]:
+    """
+    날짜로 쓰인 **자리**를 지우고 남은 숫자를 센다.
+
+    값이 아니라 자리를 지우는 것이 핵심이다. 값으로 빼면 같은 수가 한 문장에서
+    날짜로도 횟수로도 쓰일 때 둘 다 빠진다.
+
+        2026-10-07 · "10월 7일, 공을 7번 주고받았다"
+          값으로 뺄 때   {10, 7} - {10, 7} = {}       → "7번" 이 근거 없이 통과
+          자리로 뺄 때   "  , 공을 7번 …" → {7}       → 근거를 확인한다
+
+    단위(년·월·일)가 붙고 **묶음 날짜와 값이 같은** 자리만 지운다. 다른 날짜가
+    적혀 있으면(관찰일이 묶음 날짜와 다를 때) 그 숫자도 원문에 있어야 한다.
+    """
     allowed = _numbers(entry_date)
     blanked = DATE_UNIT.sub(
         lambda m: " " if int(m.group(1)) in allowed else m.group(0), text or ""
@@ -151,20 +288,53 @@ def _numbers_outside_dates(text: str, entry_date: str) -> set[int]:
 
 
 def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> bool:
+    """
+    문장에 나온 숫자가 근거에 있는지 본다.
+
+    환각이 가장 눈에 띄게 드러나는 자리다 — 모델은 "세 번" 을 "다섯 번" 으로
+    바꾼다.
+
+    기관명 대조는 더 하지 않는다. 묶음이 한 기관 안에서만 이뤄지면서
+    "센터 일을 학교 것으로 옮겨 적는" 경우 자체가 입력에서 사라졌다.
+
+    ⚠️ **사람 이름은 검사하지 못한다.** SummaryInput 에 명부가 없어서 어떤
+    글자가 다른 아이 이름인지 알 방법이 없다. 매칭의 mentioned_child_ids 를
+    입력으로 받으면 잡을 수 있다 (schema.md §10.2-11 과 연결된다).
+    """
     quotes = " ".join(e["quote"] for e in evidence)
 
+    # 날짜를 가리키는 숫자는 입력으로 받은 값이라 지어낸 것이 아니다. 그 **자리만**
+    # 지우고, 남은 숫자는 전부 근거 인용에 그대로 있어야 한다 — 횟수·시간·층수는
+    # 관찰한 내용이다.
+    #
+    # 두 번 고친 자리다.
+    #   ① entry_date 의 숫자를 통째로 면제했다. 2026-10-07 요약이면 "공을 7번",
+    #     "10번", "2026번" 이 전부 통과했다 (2026-10-08 멘토 리뷰).
+    #   ② 단위가 붙은 것만 면제하되 여전히 **값**으로 뺐다. "10월 7일, 공을 7번"
+    #     처럼 같은 수가 날짜로도 횟수로도 쓰이면 "7번" 까지 빠졌다
+    #     (2026-10-11 멘토 리뷰 P2).
     left = _numbers_outside_dates(text, state.get("entry_date", ""))
     if left - _numbers(quotes):
         return False
 
+    # 횟수는 (값, 단위) 로 따로 본다. 위 검사는 값만 보기 때문에 한글 수사와
+    # "여러 번" 을 놓치고, 단위가 달라도 같은 값이면 통과시킨다.
     return not (_counts(text) - _counts(quotes, loose=True))
 
 
 def ground(state: SummaryState) -> dict:
+    """
+    모델이 쓴 문장을 원문에 대조한다. 여기가 환각을 막는 자리다.
+
+    남는 것만 claims 가 되고, 버린 것은 세어서 남긴다 — 얼마나 버렸는지가
+    모델 품질 지표다 (CRITERIA.md §6).
+    """
     by_id = state["by_id"]
     claims: list[dict] = []
     dropped_evidence = 0
     dropped_claims: list[str] = []
+    #: 버린 문장마다 이유와 모델이 낸 인용. 수정 루프가 피드백을 만들 재료이자
+    #: 루프가 몇 개를 살렸는지 재는 기준선이다 (평가 스크립트만 읽는다).
     dropped_detail: list[dict] = []
 
     for raw in state.get("raw_claims") or []:
@@ -180,9 +350,16 @@ def ground(state: SummaryState) -> dict:
                 continue
             entry_id = item.get("journal_entry_id")
             quote = item.get("quote")
+            # bool 은 int 의 하위 타입이라 True 가 1 로 통과한다. 먼저 걸러낸다.
             if isinstance(entry_id, bool) or not isinstance(entry_id, int):
                 dropped_evidence += 1
                 continue
+            # ① 그 일지 안에서만 찾는다. 없는 일지를 댔으면 그것도 버린다.
+            #
+            # 못 찾으면 플래그와 무관하게 버린다. Evidence.span 이 필수라 빈 채로
+            # 만들면 ValidationError 가 나고, BE 의 근거 재검사도 span 없는 근거를
+            # 요약 전체 실패로 본다 (#146). DROP_UNFOUND_QUOTES 는 이제 "버린 것을
+            # 세는가" 만 정한다.
             span = locate_quote(by_id[entry_id], quote) if entry_id in by_id else None
             if span is None:
                 if DROP_UNFOUND_QUOTES:
@@ -192,12 +369,14 @@ def ground(state: SummaryState) -> dict:
                 {"journal_entry_id": entry_id, "quote": quote, "span": span}
             )
 
+        # ② 근거가 하나도 안 남은 문장은 버린다.
         if DROP_CLAIMS_WITHOUT_EVIDENCE and not kept:
             dropped_claims.append(text)
             dropped_detail.append({"text": text, "reason": "인용_못찾음",
                                    "evidence": raw.get("evidence") or []})
             continue
 
+        # ③ 숫자가 근거에 없으면 버린다.
         if CHECK_PROPER_NOUNS and kept and not _facts_grounded(text, kept, state):
             dropped_claims.append(text)
             dropped_detail.append({"text": text, "reason": "숫자_불일치",
@@ -214,7 +393,16 @@ def ground(state: SummaryState) -> dict:
     }
 
 
+# ── ④ assemble ─────────────────────────────────────────────────
+
+
 def assemble(state: SummaryState) -> dict:
+    """
+    살아남은 claims 로 본문을 잇고, 반영된 일지를 센다.
+
+    본문을 모델에게 따로 받지 않는 이유가 여기 있다. 받으면 claims 밖 문장이
+    생기고, 그 문장은 위 세 단계를 거치지 않은 채 교사에게 간다.
+    """
     claims = state.get("claims") or []
 
     content = " ".join(c["text"] for c in claims) if CONTENT_FROM_CLAIMS_ONLY else ""
@@ -224,6 +412,12 @@ def assemble(state: SummaryState) -> dict:
     else:
         covered = set()
 
+    # 익명화가 실패했는지 본다. 이름을 지우는 일은 프롬프트가 하고(ANONYMIZE_OTHER_NAMES),
+    # 여기서는 **남았는지만 센다.** 코드가 자동으로 고치면 프롬프트가 안 지켜졌다는
+    # 사실이 가려지고, 조사가 깨져 문장이 어색해진다 ("기관 내 아동가").
+    #
+    # ⚠️ 받은 목록은 ACTIVE 명부 아이만 담긴다. 형제·교사·동의 전 아동은 빠지므로
+    # 여기서 0 이 나와도 "안 샌다" 는 뜻이 아니다 (CRITERIA §3).
     reasons: list[str] = []
     if REVIEW_ON_OTHER_NAMES:
         leaked = [n for n in (state.get("other_child_names") or []) if n and n in content]

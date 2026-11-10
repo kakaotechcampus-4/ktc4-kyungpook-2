@@ -1,3 +1,19 @@
+# AI/evals/scripts/feedback/report.py
+"""
+교사가 AI 초안을 얼마나 · 어떻게 고쳤는지 한 장으로 본다. **모델을 부르지 않는다.**
+
+    python evals/scripts/feedback/report.py <내보낸.json> [--rows] [--save 결과.json]
+
+입력은 `summary_result` 를 내보낸 JSON 배열이다 (뽑는 법은 README).
+
+    [{"summary_id": 12, "raw_response": "...", "claims": "..."}, ...]
+
+`raw_response` · `claims` 는 DB 에 TEXT(JSON 문자열)로 들어 있어 문자열이어도 되고
+이미 푼 객체여도 된다.
+
+⚠️ **아동 기록이 들어 있는 파일이다.** 레포에 커밋하지 않는다 (`evals/generated/` 아래 둔다).
+"""
+
 import argparse
 import json
 import sys
@@ -9,6 +25,7 @@ from kinds import ADD, DELETE, EDIT, KEEP, compare, tally  # noqa: E402
 
 
 def _json(value, key: str):
+    """TEXT 컬럼이면 풀고, 이미 객체면 그대로."""
     if value is None or value == "":
         return None
     if isinstance(value, str):
@@ -23,7 +40,7 @@ def _claims(value, key: str) -> list[dict]:
     data = _json(value, key)
     if data is None:
         return []
-    if isinstance(data, dict):
+    if isinstance(data, dict):          # raw_response 는 {"claims": [...]} 꼴이다
         data = data.get("claims")
     return [c for c in (data or []) if isinstance(c, dict)]
 
@@ -38,7 +55,7 @@ def load(path: Path) -> list[dict]:
         draft = _claims(row.get("raw_response"), "raw_response")
         final = _claims(row.get("claims"), "claims")
         if not final:
-            continue
+            continue                    # 아직 승인 안 된 요약은 건너뛴다
         for item in compare(draft, final):
             out.append({**item, "summary_id": row.get("summary_id")})
     return out
@@ -88,6 +105,8 @@ def main() -> None:
         for kind, cnt in t["종류"].items():
             print(f"  {kind}  {_bar(cnt, worst)}  {cnt:>4}")
 
+    # **기록 2건 이상**에서 지운 말만 "고칠 자리" 다. 같은 일지를 여러 판 요약하면
+    # 같은 군더더기가 여러 번 나오는데, 그건 한 건짜리다 (#368 리뷰 1).
     repeated = [w for w in t["자주뺀말"] if w["기록"] >= 2]
     if repeated:
         print("\n■ 교사가 **여러 기록에서 지운 말** — 프롬프트에서 고칠 자리")

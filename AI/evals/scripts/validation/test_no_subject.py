@@ -1,3 +1,12 @@
+# AI/evals/scripts/validation/test_no_subject.py
+"""
+subject_name이 없을 때(subject_known=False) 코드가 항상 REVIEW(또는
+구조적 BLOCK)로 보내는지 확인하는 단위 테스트.
+
+이건 모델 판단력을 재는 eval이 아니라, 코드 규칙이 지켜지는지 보는
+pytest 스타일 테스트다. 그래서 홀드아웃/블라인드 절차가 필요 없다 —
+"이 사람이 만들어서 편향됐다"는 걱정이 성립하지 않는, 결정적 규칙 검증이다.
+"""
 import json
 import sys
 from pathlib import Path

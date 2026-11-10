@@ -1,3 +1,16 @@
+# AI/evals/scripts/matching/test_false_multi.py
+"""
+실데이터에서 나온 잘못된 multi 두 갈래가 막히는지 검사한다. LLM 을 부르지 않는다.
+
+    python evals/scripts/matching/test_false_multi.py
+
+① FUZZY_REQUIRE_SAME_SURNAME — "수행정도" 의 '수행정' 이 '조수정' 오타로 걸리던 것
+② CO_MENTION_NEEDS_TWO_NAMES — 이름 없는 기록에 모델이 co_mention 을 주던 것,
+   이름 2개인 기록에서 모델이 본문에 없는 아이를 함께 넣던 것
+
+플래그를 끄면 예전 동작으로 돌아가는지도 같이 본다 (롤백 확인).
+"""
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,6 +36,7 @@ def case_fragment_dropped():
 
 
 def case_real_typo_kept():
+    # 성이 같은 진짜 오타는 그대로 잡는다
     return "임유진" in _fuzzy_names("오늘 임유젼이 블록을 쌓았다.")
 
 
@@ -39,6 +53,7 @@ NO_NAME = "체육 시간, 줄넘기를 시도한다. 친구들이 연속으로 �
 
 
 def _judge(code_co_mention, model_answer, content=NO_NAME, exact=(), candidates=None):
+    """모델 답을 정해 두고 llm_judge 만 돌린다. exact = 코드가 본문에서 글자로 찾은 아이."""
     state = {
         "content": content,
         "roster": ROSTER, "hint_name": "김민수",
@@ -66,6 +81,7 @@ MODEL_INVENTS_ID = {"child_id": None, "confidence": 0.5, "co_mention": True, "co
 
 
 def case_invented_ids_not_leaked():
+    # 이름 0개 본문에서 모델이 준 ID 는 mentioned_child_ids 로 새지 않는다 (#306 리뷰)
     return 2 not in _judge(False, MODEL_INVENTS_ID)["mentioned_child_ids"]
 
 
@@ -79,6 +95,7 @@ def case_invented_ids_back_when_off():
 
 
 def case_confirmed_co_mention_kept():
+    # 코드가 이름 2개를 찾은 기록이면 모델 판단을 그대로 받는다
     return _judge(True, MODEL_SAYS_CO)["co_mention"] is True
 
 
@@ -92,6 +109,7 @@ def case_invented_back_when_off():
 
 
 
+# 본문에는 최성은(1)·조수정(2)만 나온다. 모델은 본문에 없는 김민수(4)까지 함께 준다.
 TWO_NAMES = "최성은과 조수정이 함께 블록을 쌓았다. 두 아이가 번갈아 블록을 올렸다."
 MODEL_ADDS_ABSENT = {"child_id": 1, "confidence": 0.7, "co_mention": True, "co_mention_child_ids": [1, 2, 4]}
 TWO_CANDS = [{"child_id": 1, "confidence": 1.0}, {"child_id": 2, "confidence": 1.0}]

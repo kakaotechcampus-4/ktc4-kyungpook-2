@@ -1,3 +1,15 @@
+# AI/evals/scripts/notify/roundtrip.py
+"""
+MCP 서버를 실제로 띄워 왕복을 확인한다. Luna 는 부르지 않는다.
+
+    PYTHONPATH=. python evals/scripts/notify/roundtrip.py
+
+test_gate.py 는 MCP 를 가짜로 바꿔 **관문**만 본다. 여기서는 반대로 관문을 빼고
+**서버가 실제로 뜨고 도구가 불리는지**를 본다. 둘이 나뉘어야 "검사는 되는데
+서버가 안 뜬다" 가 조용히 지나가지 않는다.
+
+NOTIFY_SMTP_HOST 가 없으면 서버가 보내는 시늉만 하므로 메일은 나가지 않는다.
+"""
 import os, sys
 from pathlib import Path
 

@@ -1,3 +1,16 @@
+# AI/evals/scripts/summary/test_no_content.py
+"""
+요약할 내용 없음(no_content) 과 503 이 제대로 갈리는지 검사한다. LLM 을 부르지 않는다.
+
+    python evals/scripts/summary/test_no_content.py
+
+남은 문장이 0 개인 경우는 둘이다 (CRITERIA.md §2).
+    모델이 처음부터 빈 claims        → 200 no_content
+    문장은 냈는데 근거가 다 탈락     → 503 no_grounded_claims
+그리고 claims 키가 없는 응답({})은 모델 고장이라 503 llm_unavailable 이다.
+ask_json 을 가짜로 바꿔 모델 답을 정해 두고 run_summary 결과만 본다.
+"""
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +39,7 @@ def _payload(*contents):
 
 
 def _model_says(data):
+    """모델이 data 를 답한 것처럼 꾸민다."""
     nodes.ask_json = lambda messages: SimpleNamespace(data=data, usage={})
 
 
@@ -71,6 +85,7 @@ def case_all_dropped_is_503():
 
 
 def case_trace_keeps_drops_on_503():
+    # 전부 버려져 503 이 나도, 평가용 trace 에는 버린 문장과 이유가 남는다
     _model_says({"claims": [{
         "text": "오전에 그림을 그렸다.",
         "evidence": [{"journal_entry_id": 11, "quote": "원문에 없는 구절"}],
@@ -128,7 +143,7 @@ if __name__ == "__main__":
     for name, fn in CASES:
         try:
             ok = fn()
-        except Exception as exc:
+        except Exception as exc:  # 예상 못 한 에러도 실패로 센다
             ok = False
             name += f"  ({type(exc).__name__}: {exc})"
         finally:

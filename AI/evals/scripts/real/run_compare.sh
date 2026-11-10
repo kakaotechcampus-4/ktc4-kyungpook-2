@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
+# 모델 비교 실험. 스크립트는 레포에, 데이터·결과·로그는 git-ignored 폴더(evals/generated/real/)에 둔다.
+#
+#   bash evals/scripts/real/run_compare.sh <모델> smoke   # 사전 검증: 4월만 (.env 의 COMPARE_SMOKE_CHILD 한 명이면 2~3분)
+#   bash evals/scripts/real/run_compare.sh <모델> full    # 본실행: 딥다이브 전 3 + 후 3 동시 (약 45분)
+#
+# <모델> = .env 의 COMPARE_<이름> 칸 이름 (luna · opus · sonnet · gemini · sol 등).
+# 주소·모델·JSON 강제는 AI/.env 의 COMPARE_<이름>_URL · _MODEL · _JSON 에서 읽는다. 네 에이전트 모두 이 모델로 돌린다. 키는 API_KEY 하나를 같이 쓴다.
+# 결과 파일 이름 시각이 분 단위라, 같은 설정이 같은 분에 시작하면 덮어쓴다 → 본실행은 65초 간격으로 띄운다.
 set -euo pipefail
-cd "$(dirname "$0")/../../.."
+cd "$(dirname "$0")/../../.."          # AI/
 NAME=$1; MODE=${2:-smoke}
 set -a; source .env; set +a
 UP=$(echo "$NAME" | tr '[:lower:]' '[:upper:]')

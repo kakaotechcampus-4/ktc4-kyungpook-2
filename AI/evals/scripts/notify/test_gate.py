@@ -1,3 +1,20 @@
+# AI/evals/scripts/notify/test_gate.py
+"""
+발송 관문이 제대로 갈리는지 검사한다. MCP 서버를 띄우지 않는다.
+
+    python evals/scripts/notify/test_gate.py
+
+여기서 보는 것은 하나다 — **다른 아이 이름이 메일로 나가지 않는가** (CRITERIA.md §3).
+
+끝나는 길이 다섯이다. 섞이면 교사가 고칠 수 없는 것을 큐에서 보거나, 고쳐야 할 것이 조용히
+재시도만 돌다 끝난다 (graph.py run_notify).
+    200 sent / no_recipient / nothing_to_send
+    200 blocked          다른 아이 이름. 재시도해도 같다
+    503 delivery_failed  메일 서버 장애. 재시도하면 될 수 있다
+
+**모델을 부르지 않는다** (#433). 그래서 ask_json 을 가짜로 바꾸는 자리가 없다.
+"""
+
 import sys
 from pathlib import Path
 
@@ -28,6 +45,7 @@ SECOND = ApprovedInsight(
     institution_types=["센터"],
     cross_institution=False,
 )
+#: 승인된 글에 다른 아이 이름이 섞인 경우. AI 는 이 검사를 못 한다 (InsightInput 에 목록이 없다).
 WITH_NAME = ApprovedInsight(
     content="자유놀이 시간에 박서연이 쌓은 블록을 무너뜨렸지만, 순서를 정해 주자 번갈아 쌓았어요.",
     institution_name="센터1",
@@ -36,6 +54,7 @@ WITH_NAME = ApprovedInsight(
     cross_institution=False,
 )
 
+#: 본문은 깨끗한데 **근거 문장**에 이름이 섞인 경우. 근거도 메일에 나가므로 똑같이 막아야 한다.
 NAME_IN_EVIDENCE = ApprovedInsight(
     content="자유놀이 시간에 블록을 쌓았어요.",
     institution_name="센터1",
@@ -58,23 +77,30 @@ def _payload(*, insights=(INSIGHT,), notification_id="run-1", others=("박서연
 
 
 class _Calls(list):
+    """send_email 이 실제로 불렸는지 센다. 막혔는데 불리면 아이 기록이 나간 것이다."""
 
     def tool(self, name, args):
         self.append((name, args))
         return {"status": "sent", "message_id": "itda-test", "duplicate": False}
 
 
+# ── 통과 ────────────────────────────────────────────────────────
+
+
 def case_sends_approved_text_verbatim():
+    """승인된 글자가 **그대로** 나가야 한다. 한 글자라도 고치면 교사가 승인한 글이 아니다."""
     calls = _Calls()
     nodes.call_tool = calls.tool
     out = run_notify(_payload(insights=(INSIGHT, SECOND)))
     body = calls[0][1]["body"]
     return (out.status == "sent" and len(calls) == 1
             and INSIGHT.content in body and SECOND.content in body
+            # 수신자는 도구 인자에 없다 — child_id 로 서버가 찾는다
             and "to" not in calls[0][1] and "email" not in calls[0][1])
 
 
 def case_body_has_report_shape():
+    """메일이 보호자 리포트 화면과 같은 모양이어야 한다 — 기관·기간, 본문, 근거(상황·대처)."""
     calls = _Calls()
     nodes.call_tool = calls.tool
     run_notify(_payload())
@@ -85,6 +111,7 @@ def case_body_has_report_shape():
 
 
 def case_html_is_built_and_escaped():
+    """HTML 본문도 같이 나간다. 승인된 글자가 들어 있고, <·& 는 이스케이프돼야 한다."""
     calls = _Calls()
     nodes.call_tool = calls.tool
     run_notify(_payload())
@@ -96,6 +123,7 @@ def case_html_is_built_and_escaped():
 
 
 def case_html_escapes_markup():
+    """아이 기록에 <, & 가 있어도 태그로 새지 않는다."""
     calls = _Calls()
     nodes.call_tool = calls.tool
     risky = ApprovedInsight(
@@ -108,6 +136,7 @@ def case_html_escapes_markup():
 
 
 def case_evidence_name_is_blocked():
+    """근거 문장에 다른 아이 이름이 있으면 본문이 깨끗해도 막는다."""
     calls = _Calls()
     nodes.call_tool = calls.tool
     out = run_notify(_payload(insights=(NAME_IN_EVIDENCE,)))
@@ -131,6 +160,7 @@ def case_no_insight_sends_nothing():
 
 
 def case_no_recipient_is_not_sent():
+    """장애는 아니지만 메일도 안 나갔다. sent 로 묶으면 교사가 보냈다고 믿는다 (#430 리뷰)."""
     nodes.call_tool = lambda n, a: {"status": "no_recipient", "message_id": None, "duplicate": False}
     out = run_notify(_payload())
     return out.status == "no_recipient" and out.message_id is None and not out.blocked_lines
@@ -142,17 +172,22 @@ def case_duplicate_is_not_resent():
     return out.status == "sent" and out.duplicate is True
 
 
+# ── 막힘 (200 blocked · 발송 안 함) ─────────────────────────────
+
+
 def case_other_child_name_is_blocked():
+    """**승인된 글이어도** 다른 아이 이름이 있으면 기관 경계 밖으로 내보내지 않는다."""
     calls = _Calls()
     nodes.call_tool = calls.tool
     out = run_notify(_payload(insights=(WITH_NAME,)))
     return (out.status == "blocked"
-            and not calls
+            and not calls  # ← 핵심. 막혔으면 도구가 불리면 안 된다
             and out.message_id is None
             and any(OTHER_CHILD_NAME in b.reasons for b in out.blocked_lines))
 
 
 def case_one_bad_line_blocks_whole_mail():
+    """걸린 줄만 빼고 보내지 않는다 — 한 줄 빠진 메일은 교사가 승인한 적 없는 조합이다."""
     calls = _Calls()
     nodes.call_tool = calls.tool
     out = run_notify(_payload(insights=(INSIGHT, WITH_NAME)))
@@ -160,6 +195,7 @@ def case_one_bad_line_blocks_whole_mail():
 
 
 def case_name_in_subject_is_blocked():
+    """제목은 아이 이름으로 만든다. 그 이름이 다른 아이 목록에 있으면 막는다."""
     calls = _Calls()
     nodes.call_tool = calls.tool
     out = run_notify(_payload(name="박서연"))
@@ -167,13 +203,18 @@ def case_name_in_subject_is_blocked():
 
 
 def case_unrelated_name_passes():
+    """목록에 없는 이름은 막지 않는다 — 막을 근거가 없다."""
     calls = _Calls()
     nodes.call_tool = calls.tool
     out = run_notify(_payload(insights=(WITH_NAME,), others=("최하늘",)))
     return out.status == "sent" and len(calls) == 1
 
 
+# ── 503 ────────────────────────────────────────────────────────
+
+
 def case_delivery_failure_is_503_not_blocked():
+    """메일 서버 장애 ≠ 내용 문제. 전자는 재시도, 후자는 교사 확인이다."""
     nodes.call_tool = lambda n, a: (_ for _ in ()).throw(McpUnavailable("메일 서버 죽음"))
     try:
         run_notify(_payload())
@@ -206,7 +247,7 @@ if __name__ == "__main__":
     for name, fn in CASES:
         try:
             ok = fn()
-        except Exception as exc:
+        except Exception as exc:  # 예상 못 한 에러도 실패로 센다
             ok = False
             name += f"  ({type(exc).__name__}: {exc})"
         finally:

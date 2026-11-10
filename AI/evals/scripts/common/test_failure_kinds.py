@@ -1,3 +1,16 @@
+# AI/evals/scripts/common/test_failure_kinds.py
+"""
+Luna 실패 종류(timeout · empty_response …)가 끝까지 실려 가는지 검사한다. Luna 를 부르지 않는다.
+
+    python evals/scripts/common/test_failure_kinds.py
+
+멘토 A1 (2026-10-29): 빈 응답과 타임아웃을 따로 기록하라. 지금은 요약·인사이트만 한다.
+
+    ① llm.py      requests.post 를 가짜로 바꿔 실패마다 LlmError.kind 가 맞는지
+    ② graph.py    ask_json 이 실패하면 LlmUnavailable.failure 로 이어지는지
+    ③ metrics.py  /metrics 에 "llm_unavailable:timeout" 처럼 남는지
+"""
+
 import os
 import sys
 from pathlib import Path
@@ -49,6 +62,7 @@ def _post_raises(exc):
     return post
 
 
+#: (이름, 가짜 requests.post, 기대 kind)
 LLM_CASES = [
     ("타임아웃", _post_raises(requests.Timeout("read timed out")), "timeout"),
     ("연결 실패", _post_raises(requests.ConnectionError("refused")), "http_error"),
@@ -72,6 +86,7 @@ def check_llm_kinds(module) -> list[str]:
             except module.LlmError as exc:
                 if exc.kind != expected:
                     fails.append(f"{name}: kind={exc.kind}, 기대 {expected}")
+        # 정상 응답은 그대로 통과
         module.requests.post = _post_returns(FakeResponse(_openai('{"claims": []}')))
         if module.ask_json([{"role": "user", "content": "x"}]).data != {"claims": []}:
             fails.append("정상 응답이 바뀌었다")
@@ -157,7 +172,7 @@ if __name__ == "__main__":
     for name, fn in CHECKS:
         try:
             problems = fn()
-        except Exception as exc:
+        except Exception as exc:  # 예상 못 한 에러도 실패로 센다
             problems = [f"{type(exc).__name__}: {exc}"]
         print(("PASS " if not problems else "FAIL ") + name)
         for p in problems:

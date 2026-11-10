@@ -1,42 +1,73 @@
+# AI/insight/config.py
+"""
+인사이트 판정에 쓰는 상수를 한 곳에 모은다.
+
+CRITERIA.md 가 원본이고 이 파일이 따라간다. 플래그 이름은 CRITERIA 표의
+이름과 글자까지 같아야 한다 (test_criteria_sync.py 가 대조한다).
+"""
+
 import os
 
 from common.luna import CHAT_PATH
 
 
+# ── 성립 조건 (CRITERIA §4) — 코드가 거른다 ─────────────────────
+
+#: 모델이 가리킨 claim_id 가 입력에 없으면 그 인사이트를 버린다.
+#: 매칭의 "명부 밖 ID 는 버린다" 와 같은 원칙이다.
 REQUIRE_VALID_CLAIM_IDS = True
 
+#: 인사이트 하나에 필요한 최소 근거 claim 수. 관찰 하나는 패턴이 아니다.
 MIN_EVIDENCE_CLAIMS = 2
 
+#: 근거 claim 중 AI 원문(source=AI)이 최소 하나 있어야 한다 
+#: 교사가 Gate 1 에서 고치거나 쓴 문장은 검증을 거치지 않으므로, 그것만으로는 인사이트를 만들지 않는다.
+#: EDITED 는 근거 일지가 있어도 내용이 바뀌었을 수 있어 원문으로 세지 않는다.
 REQUIRE_SOURCE_CLAIM = True
 
+#: 근거 수를 "서로 다른 기록" 으로 센다. 기록 하나 = (날짜, 기관) — 요약 한 편과 같은 단위다.
+#: 같은 요약에서 나온 문장 두 개는 1개다. 실데이터 v1 (2026-10-28) 에서 일지가 길어
+#: 한 건에서 문장이 여러 개 나왔고, 인사이트 17개 중 4개가 일지 한 건만으로 성립했다.
+#: 같은 날 두 기관은 2개다 — 기관 간 비교 근거는 그대로 남긴다.
+#: test_reflect.py 가 이 결정을 고정한다. 바꾸면 테스트도 같이 바꾼다.
 COUNT_DISTINCT_RECORDS = True
 
+#: 대처마다 자기 claim_ids 가 있어야 한다. 없으면 그 대처만 버린다.
 REQUIRE_SUPPORT_EVIDENCE = True
 
+#: 대처마다 결과가 있어야 한다. 결과가 기록에 없는 대처는 쓰지 않는다.
 REQUIRE_SUPPORT_RESULT = True
 
+#: 본문에 나온 기관 종류가 근거 claim 의 기관 종류 안에 있어야 한다.
+#: 이름 대신 종류로 대조한다 — 프롬프트가 기관 이름을 쓰지 말라고 하고,
+#: 기관 간 비교 문장은 "학교에서는… 센터에서는…" 처럼 종류로 쓰인다.
+#: 한계: 같은 종류 기관이 둘이면(센터 두 곳) 구별하지 못한다.
 REQUIRE_INSTITUTION_GROUNDING = True
 
+#: 기관 종류 목록. 본문 대조에 쓴다. BE enum 과 1:1 (SCHOOL·CENTER·ACTIVITY_SUPPORT).
 INSTITUTION_TYPES = ("학교", "센터", "활동지원사")
 
 
-DROP_TRAIT = True
-DROP_DIAGNOSIS = True
-DROP_PRESCRIPTION = True
-KEEP_HEDGES = True
-DROP_SENTIMENT = True
-DROP_OTHER_CHILD_NAMES = True
-KEEP_FAILED_SUPPORT = True
-ONE_SITUATION = True
-SAME_SITUATION = True
-WRITE_INSTITUTION_TYPE = True
-CROSS_WITHOUT_SUPPORT = True
-DROP_ADVICE_TAIL = True
-RELATE_RECORDS = True
-NEED_DIFFERENCE = True
-PLAIN_TONE = True
-DROP_HEALTH_ONLY = True
+# ── 쓰는 원칙 (CRITERIA §5) — 프롬프트에 들어간다 ──────────────
 
+DROP_TRAIT = True              # 성격·특성으로 일반화하지 않는다
+DROP_DIAGNOSIS = True          # 진단·의학적 해석을 하지 않는다
+DROP_PRESCRIPTION = True       # 처방하지 않는다. 기록된 대처와 결과만
+KEEP_HEDGES = True             # 원문이 추측이면 추측으로 남긴다
+DROP_SENTIMENT = True          # 작성자의 감정 평가는 빼고 사실만. 감정·추측이 섞인 기록도 사실 부분은 근거로
+DROP_OTHER_CHILD_NAMES = True  # 다른 아이 이름을 쓰지 않는다
+KEEP_FAILED_SUPPORT = True     # 통하지 않은 대처도 남긴다
+ONE_SITUATION = True           # 인사이트 하나에 상황 하나. 같은 상황은 기관·장면 이름이 달라도 함께
+SAME_SITUATION = True          # 같은 상황은 아이에게 요구되는 것이 같은지로 판단 (v0.7)
+WRITE_INSTITUTION_TYPE = True  # 기관마다 다르면 기관 종류로 쓴다. 이름은 쓰지 않는다
+CROSS_WITHOUT_SUPPORT = True   # 대처가 없어도 같은 상황에서 기관마다 반응이 다르면 인사이트
+DROP_ADVICE_TAIL = True        # 끝에 조언·활용 문장을 붙이지 않는다 (v0.7)
+RELATE_RECORDS = True          # 기록 하나를 다시 말하지 않는다. 묶거나 비교한다
+NEED_DIFFERENCE = True         # 같은 행동이 겹치기만 해서는 쓰지 않는다 (v0.8)
+PLAIN_TONE = True              # "~했다" 로 끝낸다. 실데이터 v1 에서 "~했습니다" 가 섞임 (v0.9.3)
+DROP_HEALTH_ONLY = True        # 건강 상태만으로 쓰지 않는다. 실데이터 v2 에서 코로나 증상 두 기록을 묶음 (v0.9.5)
+
+#: 동기화 테스트가 CRITERIA §5 표와 대조할 목록.
 WRITING_RULE_FLAGS = (
     "DROP_TRAIT",
     "DROP_DIAGNOSIS",
@@ -57,26 +88,67 @@ WRITING_RULE_FLAGS = (
 )
 
 
+# ── 동의 (CRITERIA §7) — 모델이 아니라 코드가 정한다 ────────────
+
+#: 동의하지 않은 기관의 claim 은 인사이트 재료에서 뺀다 (#109).
+#: 받는 쪽만 막으면 철회된 기관 기록이 재료로 들어가 다른 기관으로 흘러간다.
+#: 동의 목록이 비어 있으면 아무 claim 도 쓰지 않는다 — 모르면 막는다.
+#: 수신 후보는 인사이트가 정하지 않는다. BE 가 Gate 2 시점의 동의로 계산한다.
 FILTER_UNCONSENTED_SOURCES = True
 
 
+# ── 약한 인사이트 (딥다이브 1, 수정 루프) ───────────────────────
+
+#: 성립 조건을 통과했지만 다음 사람이 쓰기 어려운 인사이트를 어떻게 할지 (quality.py).
+#:   "off"  검사만 하고 그대로 낸다 (기본, 지금까지와 같음)
+#:   "drop" 검사에 걸린 인사이트를 버린다
+#:   "refine" 한기관_대처없음 은 버리고, 기록에없는말 은 문제 문장을 짚어 Luna 로 한 번 고친다 (nodes.refine)
+#: 11/05 A·B 1회: drop 은 약한 것만 뺐지만, A 의 기록에없는말 하나가 정답 패턴(P12)이었다 → refine 을 만든 이유
+#: 실데이터 dev 65개 중 코드로 잡히는 8개를 모두 잡고, 블라인드 11개에서 오탐 0 (11/05).
+#: 서버에서는 AI/.env 의 INSIGHT_WEAK_MODE 로 켠다 (compose.yaml env_file). 모르는 값이면 off.
 INSIGHT_WEAK_MODE = os.environ.get("INSIGHT_WEAK_MODE", "off").strip().lower()
 if INSIGHT_WEAK_MODE not in ("off", "drop", "refine"):
     INSIGHT_WEAK_MODE = "off"
+#: 한 요청에서 refine 으로 고치거나 보강할 최대 인사이트 수. 넘는 것은 버린다.
+#: 하나마다 Luna 를 더 부르므로(각 최대 LUNA_TIMEOUT) 요청 시간의 상한을 정한다 — BE read-timeout 과 맞춘다.
 INSIGHT_REFINE_MAX = 3
+#: 요청 하나의 시간 상한(초). 고치기·보강은 요청 시작부터 이 시간 안에서만 한다.
+#: 첫 호출(act)은 지금과 같고(최악 120초), 그 뒤 남은 시간이 모자라면 그 인사이트만 버린다.
+#: 호출 수를 늘려도(도구 추가 등) BE read-timeout 은 이 값 + 여유로 고정된다 (#373 리뷰).
 INSIGHT_DEADLINE = 180.0
 
 
+# ── 도구 사용 (딥다이브 3) ─────────────────────────────────────
+
+#: refine 모드에서 "한기관_대처없음" 을 버리기 전에, 같은 아이의 지난 기록(history_claims)을
+#: 도구 find_claims 로 찾아 기관 간 인사이트로 보강할지. 기본 꺼짐.
+#: Luna 는 /v1/chat/completions 에서 생각(reasoning)과 도구를 같이 못 쓴다 (11/06 확인).
+#: 그래서 도구 호출만 /v1/responses 로 부른다 (llm.ask_with_tools).
 INSIGHT_TOOLS = os.environ.get("INSIGHT_TOOLS", "").strip().lower() in ("1", "true", "yes", "on")
+#: 인사이트 하나에 도구를 부를 수 있는 최대 횟수. 넘으면 도구 없이 답하게 한다.
 INSIGHT_TOOL_MAX_CALLS = 2
+#: find_claims 가 돌려주는 최대 문장 수. 길면 출력 2000 토큰 상한에 걸린다.
 INSIGHT_TOOL_LIMIT = 5
 
 
+# ── 출력 크기 ───────────────────────────────────────────────────
+
+#: 한 번에 내보낼 최대 인사이트 수. 정하지 않았다 (CRITERIA §10). None = 제한 없음.
 MAX_INSIGHTS = None
 
 
+# ── Luna (OpenAI 호환) — 판정 기준이 아니라 접속 설정 ──────────
+
+#: 접속 경로와 모델은 네 에이전트가 같이 쓴다 (common/luna.py).
+#: 모델은 .env 의 INSIGHT_MODEL 로 바꾼다.
 LUNA_CHAT_PATH = CHAT_PATH
 
+#: 호출 제한시간만 에이전트마다 다르다.
 LUNA_TIMEOUT = 60.0
 
+#: 생각 한도에 걸렸을 때만 쓰는 생각의 양. Luna 프록시는 출력(생각 + 답)을 2000 토큰까지만
+#: 허용해서 한도를 늘릴 수 없다 (max_completion_tokens 4000 도 400, 스트리밍이 아닌 응답의 상한).
+#: 2026-10-30 실데이터: 긴 입력에서 생각에만 2000 을 다 써서 답이 비었다 (finish_reason=length).
+#: 처음부터 low 로 두면 실패는 0 이 됐지만 4~6월 정답 패턴이 9/10 → 7/10, 기관 간 인사이트가
+#: 9 → 7 로 줄었다 (v3). 그래서 보통은 기본값으로 생각하고, 한도에 걸렸을 때만 낮춘다.
 LUNA_REASONING_EFFORT_ON_OVERFLOW = "low"
