@@ -38,7 +38,7 @@ class TermsDocumentApiTest {
                 .andExpect(jsonPath("$.data[0].title").value("서비스 이용약관"))
                 .andExpect(jsonPath("$.data[0].version").value(version))
                 .andExpect(jsonPath("$.data[0].effectiveDate").value(version.substring(0, 10)))
-                .andExpect(jsonPath("$.data[0].draft").value(true))
+                .andExpect(jsonPath("$.data[0].draft").value(false))
                 .andExpect(jsonPath("$.data[0].body").isNotEmpty())
                 .andExpect(jsonPath("$.data[1].key").value("privacy"));
     }

@@ -45,9 +45,9 @@ class TermsCatalogTest {
 
     @ParameterizedTest
     @EnumSource(value = TermKey.class, names = {"PRIVACY", "ORG_PRIVACY"})
-    void 닉네임만_뺀_개인정보_판은_옛_판_동의도_통과한다(TermKey key) {
-        assertThat(TermsCatalog.currentVersion(key)).isEqualTo("2026-11-09");
-        assertThat(TermsCatalog.acceptedVersions(key)).contains("2026-11-07");
+    void 빈칸만_채운_개인정보_판은_옛_판_동의도_통과한다(TermKey key) {
+        assertThat(TermsCatalog.currentVersion(key)).isEqualTo("2026-11-11");
+        assertThat(TermsCatalog.acceptedVersions(key)).contains("2026-11-07", "2026-11-09");
     }
 
     private static String path(TermKey key, String version) {

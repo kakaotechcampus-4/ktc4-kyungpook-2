@@ -16,15 +16,17 @@ public final class TermsCatalog {
 
     public static String currentVersion(TermKey key) {
         return switch (key) {
-            case TOS, ORG_TOS, ORG_CHILD_DATA -> "2026-11-07";
-            case PRIVACY, ORG_PRIVACY -> "2026-11-09";
+            case ORG_CHILD_DATA -> "2026-11-07";
+            case TOS, ORG_TOS, PRIVACY, ORG_PRIVACY -> "2026-11-11";
         };
     }
 
+    // 2026-11-11 판은 빈칸(보유 기간 · 처리 업체 · 문의처)만 채운 판이라 옛 판 동의도 통과시킨다.
     private static Set<String> stillAcceptedVersions(TermKey key) {
         return switch (key) {
-            case TOS, ORG_TOS, ORG_CHILD_DATA -> Set.of();
-            case PRIVACY, ORG_PRIVACY -> Set.of("2026-11-07");
+            case TOS, ORG_TOS -> Set.of("2026-11-07");
+            case ORG_CHILD_DATA -> Set.of();
+            case PRIVACY, ORG_PRIVACY -> Set.of("2026-11-07", "2026-11-09");
         };
     }
 
@@ -44,7 +46,7 @@ public final class TermsCatalog {
 
     public static boolean isDraft(TermKey key) {
         return switch (key) {
-            case TOS, PRIVACY, ORG_TOS, ORG_PRIVACY, ORG_CHILD_DATA -> true;
+            case TOS, PRIVACY, ORG_TOS, ORG_PRIVACY, ORG_CHILD_DATA -> false;
         };
     }
 
