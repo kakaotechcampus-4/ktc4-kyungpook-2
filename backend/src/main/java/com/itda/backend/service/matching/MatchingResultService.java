@@ -114,7 +114,7 @@ public class MatchingResultService {
                 matchingResult.resolveAsNotOurs(reviewerId);
                 ctx.entry().exclude();
             }
-            default -> throw new MatchingResultValidationException("unsupported action: " + action);
+            default -> throw new MatchingResultValidationException("unsupported action for matching result: " + id);
         }
 
         MatchingResult saved = matchingResultRepository.save(matchingResult);

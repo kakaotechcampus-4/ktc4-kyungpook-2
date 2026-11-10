@@ -67,7 +67,7 @@ public class ValidationQueueService {
     @Transactional
     public void resolve(Long id, String action, String userId) {
         if (!"hold".equals(action)) {
-            throw new ValidationResultValidationException("unsupported action: " + action);
+            throw new ValidationResultValidationException("unsupported action for validation result: " + id);
         }
         String institutionId = String.valueOf(userService.getOrganizationIdOf(userId));
         ValidationResult result = findResult(id);

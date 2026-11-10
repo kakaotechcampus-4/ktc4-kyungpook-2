@@ -85,4 +85,15 @@ class NotifyServicePrepareTest {
         assertThat(request.insights().get(0).institutionTypes()).containsExactlyInAnyOrder("학교", "센터");
         assertThat(request.otherChildNames()).containsExactly("서준호");
     }
+
+    @Test
+    void 기관_번호_배열에_잘못된_값이_하나라도_있으면_배열_전체를_뺀다() {
+        approvedInsight("[" + center.getId() + ", \"invalid\"]");
+
+        NotifyAgentRequest request = notifyService.prepare(junho.getId(), FROM, TO).orElseThrow().request();
+
+        assertThat(request.insights().get(0).institutionTypes()).isEmpty();
+        assertThat(request.insights().get(0).institutionName()).isEmpty();
+        assertThat(request.otherChildNames()).isEmpty();
+    }
 }

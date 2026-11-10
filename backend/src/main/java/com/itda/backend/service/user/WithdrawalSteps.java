@@ -98,11 +98,6 @@ public class WithdrawalSteps {
         return report(user, webhook.getReceivedAt());
     }
 
-    @Transactional
-    public Optional<Long> reportUnlinkedByKakao(String kakaoId) {
-        return report(userRepository.findByKakaoIdForUpdate(kakaoId).orElse(null), now());
-    }
-
     private Optional<Long> report(User user, LocalDateTime receivedAt) {
         if (user == null) {
             return Optional.empty();
@@ -246,11 +241,6 @@ public class WithdrawalSteps {
             return Outcome.COMPLETED;
         }
         return view.getWithdrawalStatus() != null ? Outcome.IN_PROGRESS : Outcome.CANCELED;
-    }
-
-    @Transactional(readOnly = true)
-    public List<Long> withdrawingIds() {
-        return userRepository.findWithdrawingIds();
     }
 
     @Transactional(readOnly = true)

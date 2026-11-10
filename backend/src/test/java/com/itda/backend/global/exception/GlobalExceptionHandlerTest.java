@@ -22,7 +22,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -52,7 +51,7 @@ class GlobalExceptionHandlerTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        User member = userRepository.findByKakaoId("exception-handler-test")
+        User member = UserFixture.findByKakaoId(userRepository, "exception-handler-test")
                 .orElseGet(() -> TermsFixture.agreeAll(termsAgreementRepository,
                         userRepository.saveAndFlush(UserFixture.parent("exception-handler-test"))));
         authCookie = new Cookie(JwtCookie.NAME, jwtProvider.createToken(String.valueOf(member.getId())));
@@ -90,18 +89,19 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void missingMultipartFileReturns400() throws Exception {
-        mockMvc.perform(withAuthAndCsrf(multipart(RAW_RECORDS)))
-                .andExpect(status().isBadRequest())
+    void removedMultipartUploadReturns405() throws Exception {
+        mockMvc.perform(withAuthAndCsrf(post(RAW_RECORDS)))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(header().string(HttpHeaders.ALLOW, containsString("GET")))
                 .andExpect(jsonPath("$.result").value("FAIL"))
-                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+                .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
     }
 
     @Test
     void unsupportedContentTypeReturns415() throws Exception {
-        mockMvc.perform(withAuthAndCsrf(post(RAW_RECORDS)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}")))
+        mockMvc.perform(withAuthAndCsrf(post(RAW_RECORDS + "/upload-url")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("note.txt")))
                 .andExpect(status().isUnsupportedMediaType())
                 .andExpect(jsonPath("$.result").value("FAIL"))
                 .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"));

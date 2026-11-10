@@ -589,7 +589,7 @@ UNIQUE 를 걸 수 없어서(§5.5), 이 잠금이 같은 아이의 동의 변�
 잠금이다. bigint 키 하나짜리 `pg_try_advisory_lock(bigint)` 에 `users.id` 를 그대로 넣는다 — **bigint 키 하나짜리 공간은
 회원 탈퇴 전용**이다. 다른 용도로 advisory lock 이 필요하면 integer 두 개짜리를 쓰고 첫 인자를 용도 번호로 쓴다(두 공간은
 겹치지 않는다). 잠근 물리 연결을 처리가 끝날 때까지 빌려 두고 같은 연결로 풀며, 풀지 못하면 그 연결을 풀에 돌려주지 않고
-버린다(`AdvisoryWithdrawalLocks`). H2(로컬 개발 · 테스트)에는 이 함수가 없어 한 프로세스 안 잠금을 쓴다(`app.withdrawal.lock: auto`).
+버린다(`AdvisoryWithdrawalLocks`). H2(로컬 개발 · 테스트)에는 이 함수가 없어 한 프로세스 안 잠금을 쓴다. 설정이 아니라 연결한 DB 종류를 보고 고른다(`WithdrawalLocksConfig`).
 
 **잠그기 전에 같은 행을 엔티티로 읽지 않는다.** JPA 는 이미 읽어 둔 엔티티가 있으면 잠금 조회(`findByIdForUpdate`)가
 행을 잠그기만 하고 그 낡은 엔티티를 그대로 돌려준다. 그 엔티티의 상태를 바꾸면 모든 컬럼을 UPDATE 하므로, 그사이

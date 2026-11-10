@@ -1,7 +1,7 @@
 package com.itda.backend.global.exception;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
-import com.itda.backend.exception.record.RawRecordErrorCode;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -19,13 +19,14 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
-import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 @Slf4j
 @RestControllerAdvice
 @Order(Ordered.LOWEST_PRECEDENCE)
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+    private static final Pattern CONTROL_CHARACTERS = Pattern.compile("[\\p{Cntrl}\\u2028\\u2029]");
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ErrorResponse> handleConstraintViolationException(ConstraintViolationException e) {
@@ -38,11 +39,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ErrorCode errorCode = e.getErrorCode();
         Level level = errorCode.logLevel();
         if (level == Level.ERROR) {
-            log.error("요청 처리 실패 code={} reason={}", errorCode.getCode(), e.getMessage(), e);
+            log.error("요청 처리 실패 code={} reason={}", errorCode.getCode(), oneLine(e.getMessage()), e);
         } else {
-            log.atLevel(level).log("요청 처리 실패 code={} reason={}", errorCode.getCode(), e.getMessage());
+            log.atLevel(level).log("요청 처리 실패 code={} reason={}", errorCode.getCode(), oneLine(e.getMessage()));
         }
         return ResponseEntity.status(errorCode.getStatus()).body(ErrorResponse.of(errorCode));
+    }
+
+    private static String oneLine(String reason) {
+        return reason == null ? null : CONTROL_CHARACTERS.matcher(reason).replaceAll("_");
     }
 
     @ExceptionHandler(Exception.class)
@@ -50,17 +55,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         log.error("예상하지 못한 서버 오류", e);
         return ResponseEntity.status(CommonErrorCode.INTERNAL_SERVER_ERROR.getStatus())
                 .body(ErrorResponse.of(CommonErrorCode.INTERNAL_SERVER_ERROR));
-    }
-
-    @Override
-    protected ResponseEntity<Object> handleMaxUploadSizeExceededException(
-            MaxUploadSizeExceededException ex,
-            HttpHeaders headers,
-            HttpStatusCode status,
-            WebRequest request
-    ) {
-        return ResponseEntity.status(RawRecordErrorCode.FILE_TOO_LARGE.getStatus())
-                .body(ErrorResponse.of(RawRecordErrorCode.FILE_TOO_LARGE));
     }
 
     @Override

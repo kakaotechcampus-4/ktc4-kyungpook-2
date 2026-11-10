@@ -15,8 +15,6 @@ public interface SharingConsentRepository extends JpaRepository<SharingConsent, 
 
     List<SharingConsent> findByChildIdAndGuardianIdAndStatus(Long childId, Long guardianId, SharingConsentStatus status);
 
-    List<SharingConsent> findByChildIdAndStatus(Long childId, SharingConsentStatus status);
-
     List<SharingConsent> findByChildIdIn(Collection<Long> childIds);
 
     boolean existsByChildIdAndOrganizationIdAndStatus(Long childId, Long organizationId, SharingConsentStatus status);

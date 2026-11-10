@@ -15,8 +15,6 @@ import com.itda.backend.domain.sharing.SharingHistory;
 
 public interface SharingHistoryRepository extends JpaRepository<SharingHistory, Long> {
 
-    List<SharingHistory> findByInsightResultId(Long insightResultId);
-
     List<SharingHistory> findByInsightResultIdIn(Collection<Long> insightResultIds);
 
     List<SharingHistory> findByInsightResultIdInAndReceiverTypeAndRevokedAtIsNull(

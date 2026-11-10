@@ -13,7 +13,6 @@ import java.util.OptionalLong;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -29,19 +28,6 @@ public class LocalDiskRawFileStorage implements RawFileStorage {
     public LocalDiskRawFileStorage(@Value("${app.raw-storage.base-dir}") String baseDir) throws IOException {
         this.baseDir = Path.of(baseDir).toAbsolutePath().normalize();
         Files.createDirectories(this.baseDir);
-    }
-
-    @Override
-    public String store(MultipartFile file, String validatedExtension) throws IOException {
-        String storedFilename = RawFileStorage.newKey(validatedExtension);
-
-        Path target = resolveWithinBase(storedFilename);
-        if (target == null) {
-            throw new IOException("resolved storage path escapes base directory");
-        }
-
-        file.transferTo(target);
-        return storedFilename;
     }
 
     @Override

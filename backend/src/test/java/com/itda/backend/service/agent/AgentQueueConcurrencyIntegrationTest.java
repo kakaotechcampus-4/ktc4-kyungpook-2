@@ -2,11 +2,9 @@ package com.itda.backend.service.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.mockingDetails;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import java.nio.charset.StandardCharsets;
@@ -19,6 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalLong;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -36,7 +35,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -49,7 +47,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import com.itda.backend.domain.approval.Gate1Action;
 import com.itda.backend.domain.consent.ConsentField;
 import com.itda.backend.domain.consent.SharingConsent;
-import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
@@ -65,7 +62,9 @@ import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.service.approval.Gate1Version;
 import com.itda.backend.service.approval.SummaryGate1Service;
-import com.itda.backend.service.record.RawRecordService;
+import com.itda.backend.domain.record.RawRecordUpload;
+import com.itda.backend.repository.record.RawRecordUploadRepository;
+import com.itda.backend.service.record.RawRecordUploadService;
 import com.itda.backend.service.storage.RawFileStorage;
 import com.itda.backend.service.summary.ClaimedSummaryGroup;
 import com.itda.backend.service.summary.SummaryGroup;
@@ -98,7 +97,8 @@ class AgentQueueConcurrencyIntegrationTest {
         registry.add("app.raw-record.upload.max-concurrent", () -> "5");
     }
 
-    @Autowired private RawRecordService rawRecordService;
+    @Autowired private RawRecordUploadService rawRecordUploadService;
+    @Autowired private RawRecordUploadRepository rawRecordUploadRepository;
     @Autowired private AgentQueueGuard guard;
     @Autowired private SummaryGate1Service gate1Service;
     @Autowired private SummaryService summaryService;
@@ -123,8 +123,6 @@ class AgentQueueConcurrencyIntegrationTest {
         rawRecordId = rawRecordRepository.save(new RawRecord(String.valueOf(org), "old.txt", "kept/old.txt",
                 "text/plain", 10, RawRecordStatus.PENDING)).getId();
         given(userService.getOrganizationIdOf(TEACHER)).willReturn(org);
-        AtomicInteger keys = new AtomicInteger();
-        given(rawFileStorage.store(any(), anyString())).willAnswer(invocation -> "stored-" + keys.incrementAndGet());
     }
 
     @AfterEach
@@ -134,6 +132,7 @@ class AgentQueueConcurrencyIntegrationTest {
             statement.executeUpdate("DELETE FROM journal_entry");
             statement.executeUpdate("DELETE FROM summary_result");
             statement.executeUpdate("DELETE FROM summary_run_request");
+            statement.executeUpdate("DELETE FROM raw_record_upload");
             statement.executeUpdate("DELETE FROM raw_record");
             statement.executeUpdate("DELETE FROM sharing_consent");
             statement.executeUpdate("DELETE FROM organization");
@@ -144,15 +143,27 @@ class AgentQueueConcurrencyIntegrationTest {
     void 동시에_올린_파일들은_상한을_넘겨_함께_들어가지_못한다() throws Exception {
         insertPending(900);
 
-        List<Object> outcomes = runTogether(5, () -> rawRecordService.ingest(TEACHER, datedTxt(100)));
+        byte[] file = datedTxt(100);
+        given(rawFileStorage.sizeOf(anyString())).willReturn(OptionalLong.of(file.length));
+        given(rawFileStorage.read(anyString())).willReturn(file);
+        List<Long> uploadIds = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            uploadIds.add(rawRecordUploadRepository.save(new RawRecordUpload(org, Long.valueOf(TEACHER),
+                    "note-" + i + ".txt", "stored-" + i, "text/plain", file.length)).getId());
+        }
+        AtomicInteger next = new AtomicInteger();
+
+        List<Object> outcomes = runTogether(5,
+                () -> rawRecordUploadService.complete(TEACHER, uploadIds.get(next.getAndIncrement())));
 
         assertThat(outcomes).filteredOn(RawRecord.class::isInstance).hasSize(1);
         assertThat(outcomes).filteredOn(AgentQueueFullException.class::isInstance).hasSize(4);
         assertThat(awaiting()).isEqualTo(1000);
         assertThat(rawRecordRepository.count()).isEqualTo(2);
-        int stored = mockingDetails(rawFileStorage).getInvocations().stream()
-                .filter(invocation -> invocation.getMethod().getName().equals("store")).mapToInt(i -> 1).sum();
-        verify(rawFileStorage, times(stored - 1)).delete(anyString());
+        // 줄이 차서 거절된 접수는 다시 완료할 수 있게 접수와 파일을 남긴다
+        assertThat(rawRecordUploadRepository.findAllById(uploadIds))
+                .filteredOn(upload -> !upload.isCompleted()).hasSize(4);
+        verify(rawFileStorage, never()).delete(anyString());
     }
 
     @Test
@@ -238,12 +249,12 @@ class AgentQueueConcurrencyIntegrationTest {
         return journalEntryRepository.countByInstitutionAndStatusIn(String.valueOf(org), AgentQueueGuard.AWAITING_AGENT);
     }
 
-    private static MockMultipartFile datedTxt(int n) {
+    private static byte[] datedTxt(int n) {
         StringBuilder text = new StringBuilder();
         for (int i = 0; i < n; i++) {
             text.append(LocalDate.of(2026, 1, 1).plusDays(i)).append(" 관찰 ").append(i).append('\n');
         }
-        return new MockMultipartFile("file", "note.txt", "text/plain", text.toString().getBytes(StandardCharsets.UTF_8));
+        return text.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     private static List<Object> runTogether(int n, Callable<?> task) throws Exception {

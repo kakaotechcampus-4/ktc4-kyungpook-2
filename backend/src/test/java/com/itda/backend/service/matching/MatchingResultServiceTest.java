@@ -487,6 +487,21 @@ class MatchingResultServiceTest {
     }
 
     @Test
+    void resolveUnsupportedAction_keepsInputOutOfMessage() {
+        MatchingResult matchingResult = new MatchingResult(
+                1L, null, new BigDecimal("0.4"), MatchingStatus.REVIEW, null, null, null, null, null, null, "v1");
+        given(userService.getOrganizationIdOf(OUR_USER_ID)).willReturn(OUR_ORG_ID);
+        given(matchingResultRepository.findById(1L)).willReturn(Optional.of(matchingResult));
+        given(journalEntryRepository.findByIdAndDeletedAtIsNull(1L)).willReturn(Optional.of(ourJournalEntry()));
+        given(rawRecordRepository.findByIdAndDeletedAtIsNull(3L)).willReturn(Optional.of(ourRawRecord(OUR_INSTITUTION)));
+
+        assertThatThrownBy(() ->
+                matchingResultService.resolve(1L, "x\nFAKE LOG LINE", null, "kakao-teacher-1", OUR_USER_ID))
+                .isInstanceOf(MatchingResultValidationException.class)
+                .hasMessage("unsupported action for matching result: 1");
+    }
+
+    @Test
     void resolveNotOurs_clearsMatchedChildAndLeavesQueue() {
         MatchingResult matchingResult = new MatchingResult(
                 1L, 5L, new BigDecimal("0.3"), MatchingStatus.MULTI, null, null, null, null, null, null, "v1");

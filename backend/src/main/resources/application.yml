@@ -7,10 +7,6 @@ spring:
     scheduling:
       pool:
         size: 7
-  servlet:
-    multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
 
   security:
     oauth2:
@@ -45,6 +41,7 @@ app:
       max-waiting: ${RAW_RECORD_UPLOAD_MAX_WAITING:4}
       max-wait: 10s
     direct-upload:
+      max-file-size: 20MB
       url-ttl: 10m
       abandon-after: 1d
       sweeper:
@@ -64,7 +61,6 @@ app:
   withdrawal:
     enabled: ${WITHDRAWAL_ENABLED:false}
     wait-for-completion: 4s
-    lock: auto
     kakao:
       base-url: https://kapi.kakao.com
       admin-key: ${KAKAO_ADMIN_KEY:}

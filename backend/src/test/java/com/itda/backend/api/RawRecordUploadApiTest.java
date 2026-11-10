@@ -150,6 +150,11 @@ class RawRecordUploadApiTest {
     }
 
     @Test
+    void 정확히_20MB인_파일은_주소를_준다() throws Exception {
+        issue(staff, "big.pdf", "application/pdf", 20L * 1024 * 1024);
+    }
+
+    @Test
     void 기관_소속이_아니면_주소를_주지_않는다() throws Exception {
         User parent = TermsFixture.agreeAll(termsAgreementRepository,
                 userRepository.save(UserFixture.parent(uniqueKakaoId())));

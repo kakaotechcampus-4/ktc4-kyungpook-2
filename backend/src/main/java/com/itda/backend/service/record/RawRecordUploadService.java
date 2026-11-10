@@ -5,11 +5,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.OptionalLong;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.unit.DataSize;
 
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordUpload;
@@ -49,15 +47,12 @@ public class RawRecordUploadService {
     private final AgentQueueGuard agentQueueGuard;
     private final DirectUploadProperties properties;
 
-    @Value("${spring.servlet.multipart.max-file-size}")
-    private DataSize maxFileSize;
-
     public RawRecordUploadUrlResponse issue(String userId, RawRecordUploadUrlRequest request) {
         Long organizationId = userService.getOrganizationIdOf(userId);
         if (request == null || request.size() == null || request.size() <= 0) {
             throw new RawRecordValidationException("file is required");
         }
-        if (request.size() > maxFileSize.toBytes()) {
+        if (request.size() > properties.maxFileSize().toBytes()) {
             throw new RawRecordTooLargeException("declared size exceeds the limit: " + request.size());
         }
         ValidatedFile file = rawRecordService.validate(request.filename(), request.contentType());

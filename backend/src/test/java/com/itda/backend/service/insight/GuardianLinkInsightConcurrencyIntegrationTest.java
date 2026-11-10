@@ -183,7 +183,7 @@ class GuardianLinkInsightConcurrencyIntegrationTest {
     }
 
     private List<SharingHistory> guardianGrants(User guardian) {
-        return sharingHistoryRepository.findByInsightResultId(insightId).stream()
+        return sharesOf(insightId).stream()
                 .filter(grant -> grant.getReceiverType() == ReceiverType.GUARDIAN
                         && grant.getReceiverId().equals(guardian.getId()))
                 .toList();
@@ -204,5 +204,11 @@ class GuardianLinkInsightConcurrencyIntegrationTest {
         System.arraycopy(cookies, 0, all, 0, cookies.length);
         all[cookies.length] = csrf;
         return request.cookie(all).header("X-XSRF-TOKEN", csrf.getValue());
+    }
+
+    private List<SharingHistory> sharesOf(Long insightResultId) {
+        return sharingHistoryRepository.findAll().stream()
+                .filter(history -> history.getInsightResultId().equals(insightResultId))
+                .toList();
     }
 }

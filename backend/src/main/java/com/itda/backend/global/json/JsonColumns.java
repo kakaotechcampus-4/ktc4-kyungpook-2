@@ -45,7 +45,16 @@ public final class JsonColumns {
     }
 
     public static List<Long> readLongsAllowingText(String raw, String column, Long rowId) {
-        return collectLongs(readArray(raw, column, rowId), column, rowId);
+        List<Long> values = new ArrayList<>();
+        for (JsonNode node : readArray(raw, column, rowId)) {
+            Long value = toLong(node);
+            if (value == null) {
+                log.warn("non-numeric value in {} id={}, ignoring the whole array", column, rowId);
+                return new ArrayList<>();
+            }
+            values.add(value);
+        }
+        return values;
     }
 
     public static List<Long> readLongValuesAllowingText(String raw, String column, Long rowId) {
@@ -59,17 +68,28 @@ public final class JsonColumns {
     private static List<Long> collectLongs(Iterable<JsonNode> nodes, String column, Long rowId) {
         List<Long> values = new ArrayList<>();
         for (JsonNode node : nodes) {
-            if (node.canConvertToLong()) {
-                values.add(node.asLong());
+            Long value = toLong(node);
+            if (value != null) {
+                values.add(value);
             } else if (node.isTextual()) {
-                try {
-                    values.add(Long.parseLong(node.asText().trim()));
-                } catch (NumberFormatException e) {
-                    log.warn("non-numeric value in {} id={}", column, rowId);
-                }
+                log.warn("non-numeric value in {} id={}", column, rowId);
             }
         }
         return values;
+    }
+
+    private static Long toLong(JsonNode node) {
+        if (node.isNumber()) {
+            return node.canConvertToLong() ? node.asLong() : null;
+        }
+        if (node.isTextual()) {
+            try {
+                return Long.parseLong(node.asText().trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
     }
 
     public static List<String> readTexts(String raw, String column, Long rowId) {

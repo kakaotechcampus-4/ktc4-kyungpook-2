@@ -28,14 +28,12 @@ import com.itda.backend.dto.response.insight.Gate2DecisionResponse;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse.EvidenceRef;
 import com.itda.backend.dto.response.insight.Gate2InsightResponse.Target;
-import com.itda.backend.dto.response.insight.InsightProgressResponse;
 import com.itda.backend.dto.response.organization.InstitutionResponse;
 import com.itda.backend.exception.insight.InsightErrorCode;
 import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.global.exception.GlobalExceptionHandler;
 import com.itda.backend.service.insight.InsightGate2QueryService;
 import com.itda.backend.service.insight.InsightGate2Service;
-import com.itda.backend.service.insight.InsightProgressService;
 
 @WebMvcTest(InsightController.class)
 @Import(GlobalExceptionHandler.class)
@@ -53,24 +51,6 @@ class InsightControllerTest {
 
     @MockitoBean
     private InsightGate2Service insightGate2Service;
-
-    @MockitoBean
-    private InsightProgressService insightProgressService;
-
-    @Test
-    void progress_returnsStatusAndSentence() throws Exception {
-        given(insightProgressService.getProgress(any())).willReturn(List.of(InsightProgressResponse.of(
-                1L, "김하늘", "2026-08-17", "2026-08-23", "2026년 8월 3주차",
-                InsightProgressResponse.Status.WAITING_WEEK_END)));
-
-        mockMvc.perform(get(LIST_URL + "/progress"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].childId").value("1"))
-                .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
-                .andExpect(jsonPath("$.data[0].status").value("waiting_week_end"))
-                .andExpect(jsonPath("$.data[0].message").value("이번 주가 끝나면 주간 리포트를 만들어요"));
-        verify(insightGate2QueryService, never()).getInsight(any(), any());
-    }
 
     @Test
     void list_defaultsToPendingAndReturnsScreenShape() throws Exception {

@@ -49,8 +49,6 @@ public interface InsightResultRepository extends JpaRepository<InsightResult, Lo
             @Param("periodFroms") Collection<LocalDate> periodFroms,
             @Param("periodTos") Collection<LocalDate> periodTos);
 
-    List<InsightResult> findByStatusOrderByIdDesc(InsightStatus status);
-
     List<InsightResult> findByChildIdInOrderByIdDesc(Collection<Long> childIds);
 
     List<InsightResult> findByChildIdAndStatusOrderByIdAsc(Long childId, InsightStatus status);

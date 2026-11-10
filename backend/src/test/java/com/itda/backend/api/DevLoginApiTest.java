@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.fixture.UserFixture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,7 +74,7 @@ class DevLoginApiTest {
         assertThat(response.statusCode()).isEqualTo(302);
         assertThat(response.headers().firstValue("Location")).hasValue(SUCCESS_REDIRECT);
         assertThat(response.body()).isEmpty();
-        assertThat(userRepository.findByKakaoId("dev:parent1")).hasValueSatisfying(user -> {
+        assertThat(UserFixture.findByKakaoId(userRepository, "dev:parent1")).hasValueSatisfying(user -> {
             assertThat(user.isSignupCompleted()).isFalse();
         });
 
