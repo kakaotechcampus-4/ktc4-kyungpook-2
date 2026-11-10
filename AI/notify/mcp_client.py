@@ -5,7 +5,7 @@ MCP 클라이언트. AI 서버가 itda-notify 서버의 도구를 부른다.
 ## 왜 AI 서버가 부르나
 
 BE 가 메일 API 를 직접 부르면 그냥 기능이다. **도구를 쓰는 주체가 에이전트여야**
-도구 연동이 된다 (AGENTIC.md §8.2). 그래서 FastAPI 안에서 MCP 를 부른다.
+도구 연동이 된다 (AGENTIC.md 2장 "도구 연동"). 그래서 FastAPI 안에서 MCP 를 부른다.
 
 ## Luna 는 MCP 를 모른다
 

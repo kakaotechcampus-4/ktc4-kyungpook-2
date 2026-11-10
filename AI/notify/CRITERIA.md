@@ -1,7 +1,7 @@
 # 알림 발송 기준
 
 > `AI/notify/` 가 무엇을 내보내고 무엇을 막는지. 코드(`config.py` · `nodes.py`)가 이 문서를 따른다.
-> 설계 배경은 [AGENTIC.md](../AGENTIC.md) §7~8.
+> 설계 배경은 [AGENTIC.md](../AGENTIC.md) 2장 "도구 연동".
 
 ## 0. 다시 쓰지 않는다
 
