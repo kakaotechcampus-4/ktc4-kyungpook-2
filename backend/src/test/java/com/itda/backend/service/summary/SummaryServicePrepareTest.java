@@ -10,9 +10,12 @@ import java.util.Arrays;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.itda.backend.domain.child.Child;
@@ -38,6 +41,7 @@ import com.itda.backend.service.consent.ConsentStateReader;
 
 @DataJpaTest
 @ActiveProfiles("test")
+@ExtendWith(OutputCaptureExtension.class)
 class SummaryServicePrepareTest {
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
@@ -171,6 +175,27 @@ class SummaryServicePrepareTest {
                 "[]", "[]", "[\"" + junho.getId() + "\", \"" + seojun.getId() + "\"]", "{}", null));
 
         assertThat(summaryService.prepareRequest(group(entry)).otherChildNames()).containsExactly("서준호");
+    }
+
+    @Test
+    void 아이_번호가_객체의_값으로_저장돼_있어도_이름을_싣는다() {
+        JournalEntry entry = summarizing("김준호가 서준호, 박민지와 블록을 쌓았다.", 1);
+        em.persistAndFlush(new MatchingResult(entry.getId(), junho.getId(), null, MatchingStatus.AUTO, null, false,
+                "[]", "[]", "{\"self\": " + junho.getId() + ", \"other\": " + seojun.getId()
+                        + ", \"friend\": \"" + minji.getId() + "\"}", "{}", null));
+
+        assertThat(summaryService.prepareRequest(group(entry)).otherChildNames())
+                .containsExactlyInAnyOrder("서준호", "박민지");
+    }
+
+    @Test
+    void 숫자가_아닌_아이_번호는_건너뛰고_그_값을_로그에_남기지_않는다(CapturedOutput output) {
+        JournalEntry entry = summarizing("김준호가 서준호와 블록을 쌓았다.", 1);
+        em.persistAndFlush(new MatchingResult(entry.getId(), junho.getId(), null, MatchingStatus.AUTO, null, false,
+                "[]", "[]", "[\"서준호\\n비밀\", " + seojun.getId() + "]", "{}", null));
+
+        assertThat(summaryService.prepareRequest(group(entry)).otherChildNames()).containsExactly("서준호");
+        assertThat(output).contains("matching_result.mentioned_child_ids").doesNotContain("비밀");
     }
 
     @Test

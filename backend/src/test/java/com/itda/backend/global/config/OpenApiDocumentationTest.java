@@ -1,5 +1,9 @@
 package com.itda.backend.global.config;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -7,6 +11,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -548,6 +556,52 @@ class OpenApiDocumentationTest {
 				.andExpect(jsonPath(entry + ".get.responses.200.content['*/*'].schema['$ref']").value(containsString("GuardianJournalDetailResponse")))
 				.andExpect(jsonPath("$.components.schemas.GuardianJournalDetailResponse.properties.sameDay.items['$ref']")
 						.value(containsString("GuardianJournalResponse")));
+	}
+
+	@Test
+	void errorResponsesReferenceErrorResponseSchema() throws Exception {
+		String errorRef = "#/components/schemas/ErrorResponse";
+		String webhook = "$.paths['/api/v1/webhooks/kakao/unlink'].post.responses.401";
+
+		mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.components.schemas.ErrorResponse.properties.code").exists())
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.401.description").value("인증 필요"))
+				.andExpect(jsonPath("$.paths['/api/v1/dashboard/pipeline'].get.responses.401.content['*/*'].schema['$ref']")
+						.value(errorRef))
+				.andExpect(jsonPath(webhook + ".description").value(containsString("KAKAO_WEBHOOK_UNAUTHORIZED")))
+				.andExpect(jsonPath(webhook + ".content['*/*'].schema['$ref']").value(errorRef))
+				.andExpect(jsonPath("$.paths['/api/v1/raw-records'].get.responses.500.content['*/*'].schema['$ref']")
+						.value(errorRef));
+	}
+
+	@Test
+	void everyErrorResponseInTheDocumentUsesErrorResponseSchema() throws Exception {
+		String body = mockMvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		JsonNode paths = new ObjectMapper().readTree(body).path("paths");
+
+		List<String> wrong = new ArrayList<>();
+		int checked = 0;
+		for (Map.Entry<String, JsonNode> path : paths.properties()) {
+			for (Map.Entry<String, JsonNode> operation : path.getValue().properties()) {
+				for (Map.Entry<String, JsonNode> response : operation.getValue().path("responses").properties()) {
+					String code = response.getKey();
+					if (!code.startsWith("4") && !code.startsWith("5")) {
+						continue;
+					}
+					checked++;
+					String ref = response.getValue().path("content").path("*/*").path("schema").path("$ref").asText("");
+					if (!ref.equals("#/components/schemas/ErrorResponse")) {
+						wrong.add(operation.getKey() + " " + path.getKey() + " " + code + " -> " + ref);
+					}
+				}
+			}
+		}
+
+		assertThat(checked).isGreaterThan(100);
+		assertThat(wrong).isEmpty();
 	}
 
 	@Test
