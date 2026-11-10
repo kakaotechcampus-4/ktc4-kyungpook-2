@@ -176,7 +176,7 @@ public class SummaryService {
             latest.merge(result.getJournalEntryId(), result, (a, b) -> a.getId() > b.getId() ? a : b);
         }
         Set<Long> others = new TreeSet<>();
-        latest.values().forEach(result -> others.addAll(JsonColumns.readLongs(
+        latest.values().forEach(result -> others.addAll(JsonColumns.readLongsAllowingText(
                 result.getMentionedChildIds(), "matching_result.mentioned_child_ids", result.getId())));
         others.remove(childId);
         if (others.isEmpty()) {

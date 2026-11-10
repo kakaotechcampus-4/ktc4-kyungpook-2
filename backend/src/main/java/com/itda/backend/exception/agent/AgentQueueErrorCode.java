@@ -1,5 +1,6 @@
 package com.itda.backend.exception.agent;
 
+import org.slf4j.event.Level;
 import org.springframework.http.HttpStatus;
 
 import com.itda.backend.global.exception.ErrorCode;
@@ -15,4 +16,9 @@ public enum AgentQueueErrorCode implements ErrorCode {
     private final HttpStatus status;
     private final String code;
     private final String message;
+
+    @Override
+    public Level logLevel() {
+        return Level.INFO;
+    }
 }

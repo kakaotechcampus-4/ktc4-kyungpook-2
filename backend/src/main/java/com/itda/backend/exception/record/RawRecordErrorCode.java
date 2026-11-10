@@ -1,5 +1,6 @@
 package com.itda.backend.exception.record;
 
+import org.slf4j.event.Level;
 import org.springframework.http.HttpStatus;
 
 import com.itda.backend.global.exception.ErrorCode;
@@ -22,4 +23,9 @@ public enum RawRecordErrorCode implements ErrorCode {
     private final HttpStatus status;
     private final String code;
     private final String message;
+
+    @Override
+    public Level logLevel() {
+        return this == ENTRY_LIMIT_EXCEEDED || this == UPLOAD_BUSY ? Level.INFO : ErrorCode.super.logLevel();
+    }
 }
