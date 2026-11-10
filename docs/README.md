@@ -3,7 +3,6 @@
 레포 문서의 지도입니다. 처음이면 [루트 README](../README.md)부터 읽습니다.
 
 서비스가 무엇을 하고 일이 어떤 순서로 흐르는지는 [overview.md](overview.md)에 있습니다 — 역할 · 전체 흐름 · 도메인 지도 · 용어.
-도메인별 규칙은 `domains/`에 있습니다 — [계정](domains/account.md) · [기록](domains/records.md) · [검토](domains/review.md) · [아이 · 보호자](domains/child-guardian.md) · [동의](domains/consent.md) · [공유](domains/sharing.md) · [준비물 · 확인사항](domains/checklist.md) · [대시보드](domains/dashboard.md).
 
 ---
 
@@ -25,12 +24,18 @@
 - [api/api-conventions.md](api/api-conventions.md) — API 경로 · 응답 형식 · 오류 코드 · HTTP 상태
 - [db/schema.md](db/schema.md) — 테이블의 뜻과 규칙. 스키마를 바꾸면 Flyway 마이그레이션과 함께 같은 PR에서 고칩니다
 
-## 기능 명세
+## 도메인
 
-- [api/api-spec.md](api/api-spec.md) — 엔드포인트별 요청 · 응답과 구현 상태
-- [frontend/feature-spec.md](frontend/feature-spec.md) — 기능 목록 · 상태 전이 · 제품 규칙
-- [frontend/screen-specs.md](frontend/screen-specs.md) — 화면별 동작
-- [frontend/feature-interfaces.md](frontend/feature-interfaces.md) — 프론트 도메인 타입과 API 함수
+도메인마다 규칙 · 상태 변화 · 선생님과 보호자가 하는 일 · 쓰는 API와 테이블을 한 문서에 담습니다. API 필드는 Swagger에 있습니다.
+
+- [계정](domains/account.md) — 로그인 · 가입 · 약관 · 담당자 넘기기 · 탈퇴
+- [아이 · 보호자](domains/child-guardian.md) — 아이 등록 · 초대 코드 · 기관 연결 요청 · 돌봄 정보
+- [동의](domains/consent.md) — 기관마다 무엇을 공유하나, 철회하면 무엇이 사라지나
+- [기록](domains/records.md) — 업로드 · 매칭 · 검증 · 요약
+- [검토](domains/review.md) — 1차 검토 · 인사이트 · 2차 검토
+- [공유](domains/sharing.md) — 보호자 일지 · 리포트 · 메일 · 기관 수신함
+- [준비물 · 확인사항](domains/checklist.md) — 기관이 보내고 보호자가 확인
+- [대시보드](domains/dashboard.md) — 선생님 차례 · 진행 현황 · AI 상태 · 아이 타임라인
 
 ## AI 설계와 평가
 

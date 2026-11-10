@@ -126,7 +126,7 @@ HTTP/1.1 404 Not Found
 - **역할은 회원가입(`POST /api/v1/auth/signup`)에서 사용자가 직접 정한다.** 카카오 로그인은 신원 확인만 하고, 처음 로그인한 사람은 역할 없는(`users.role = NULL`) 가입 미완료 회원으로 등록된다. 기관 담당자는 가입할 때 기관명·유형·사업자등록번호를 입력하고, 그 자리에서 기관이 만들어진다(기관 1곳당 계정 1개). 역할은 한 번 정해지면 바뀌지 않으며, 다시 가입을 요청하면 `409 ALREADY_SIGNED_UP`, 이미 등록된 사업자등록번호면 `409 DUPLICATE_BUSINESS_NUMBER`다. 기관이 만들어질 때 보호자에게 알려 줄 기관 코드도 함께 생긴다(코드가 동시에 겹치면 `503 INSTITUTION_CODE_ISSUE_FAILED`, 다시 보내면 된다).
 - 가입 미완료 회원은 `/api/v1/auth/me`(조회와 탈퇴) · `/api/v1/auth/signup` · `/api/v1/auth/logout` · `/api/v1/dev/login` 외의 API에서 `403 SIGNUP_NOT_COMPLETED`로 막힌다. 보안 필터 한 곳에서 확인하므로 새 API에도 자동으로 적용된다. `/auth/me`는 가입 미완료를 `401`이 아니라 `signupCompleted: false`로 알려준다.
 - 보호 API의 가입 확인 필터는 존재하지 않는 회원의 JWT를 `401 SESSION_USER_NOT_FOUND`, 탈퇴를 마친 회원의 JWT를 `401 ACCOUNT_WITHDRAWN`으로 즉시 차단한다. 탈퇴를 처리하는 중인 회원은 가입 · 약관 확인보다 먼저 `409 WITHDRAWAL_IN_PROGRESS`로 막는다. 각 API가 회원 서비스를 호출하는지와 관계없이 적용되며, 활성 가입 미완료 회원의 `403`과 구분한다. 데이터베이스 장애 등 예상하지 못한 조회 오류는 필터에서 `500 INTERNAL_SERVER_ERROR` JSON으로 응답하고 인증 쿠키는 유지한다.
-- **개발용 로그인(`GET /api/v1/dev/login?as=`)은 `app.auth.dev-login.enabled=true`(`DEV_LOGIN_ENABLED`)일 때만 존재한다.** 카카오 대신 `dev:{as}`를 `users.kakao_id`로 써서 같은 회원 찾기·생성과 출입증 쿠키 발급을 거친다. 꺼져 있으면 `404`다. 기본값은 꺼짐이고, 배포 서버는 테스트용으로 Compose가 켜 둔다. 정식 오픈 전에는 끈다. 형식은 [API 명세 §2.4.1](api-spec.md#241-개발용-로그인--개발테스트-전용)을 따른다.
+- **개발용 로그인(`GET /api/v1/dev/login?as=`)은 `app.auth.dev-login.enabled=true`(`DEV_LOGIN_ENABLED`)일 때만 존재한다.** 카카오 대신 `dev:{as}`를 `users.kakao_id`로 써서 같은 회원 찾기·생성과 출입증 쿠키 발급을 거친다. 꺼져 있으면 `404`다. 기본값은 꺼짐이고, 배포 서버는 테스트용으로 Compose가 켜 둔다. 정식 오픈 전에는 끈다. 사용법은 [계정 도메인](../domains/account.md#1-로그인)에 있다.
 - 같은 카카오 계정으로 최초 로그인이 동시에 들어오면 회원은 한 번만 생성하고 두 요청 모두 같은 내부 회원 ID를 사용한다. 카카오 ID 유니크 제약 경합에 한해 롤백 후 새 트랜잭션에서 기존 회원을 한 번 조회한다.
 - **JWT의 subject는 내부 `userId`다.** 카카오 회원번호가 아니다. 역할과 소속 기관은 토큰에 담지 않고 요청마다 DB에서 읽는다 — 값이 바뀌면 다음 요청부터 바로 반영되고, 토큰에 박힌 옛 값이 남지 않는다.
 - 보호 API는 인증되지 않은 요청에 `401`, 역할이 맞지 않는 요청에 `403`을 반환한다. 기관 전용 API를 기관 소속이 아닌 회원이 호출하면 `403 ORGANIZATION_NOT_ASSIGNED`다.
@@ -137,7 +137,7 @@ HTTP/1.1 404 Not Found
 - **응답 본문의 PK는 문자열로 직렬화한다.** DB의 `BIGINT`를 그대로 내리면 클라이언트 쪽에서 정밀도가 깎일 수 있다. (AI 연동 경로는 정수 그대로 주고받는다.)
   `"child_1"` 같은 접두사는 붙이지 않고 `"1"`처럼 숫자만 문자열로 내린다. 요청 본문의 ID는 문자열(`"1"`)과 숫자(`1`)를 모두 받는다.
   현재 구현의 예외: `RawRecord`의 `id`와 확인 필요 큐 항목의 `journalEntryId`는 숫자로 나간다.
-- 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.yml.example) 참고).
+- 카카오 OAuth 2.0 클라이언트 시크릿과 `jwt.secret`은 환경 변수 또는 무시되는 `application-secret.yml`로만 제공한다 ([예시 파일](../../backend/src/main/resources/application-secret.example.yml) 참고).
 - 인증 방식은 JWT 쿠키다. 브라우저는 `GET /oauth2/authorization/kakao`로 이동해 카카오 로그인을 시작한다. 카카오 콜백(`GET /login/oauth2/code/kakao`)은 Spring Security가 처리하며, 클라이언트가 직접 호출하지 않는다. 성공 시 서버는 `access_token` httpOnly 쿠키를 발급하고 설정된 프론트엔드 주소로 리다이렉트한다.
 - `access_token` 원본 쿠키는 로그인할 때만 설정하고 현재 로그인 번호를 선택하도록 최대 12시간 보관한다. JWT 자체의 유효시간은 3시간이며, 남은 시간이 절반보다 짧은 API 요청에서는 `access_token_renewal_{sid}` httpOnly 쿠키로 갱신 JWT 를 전달한다. 원본 또는 같은 로그인 번호·회원·최초 로그인 시각의 갱신 JWT 가 유효해야 인증된다. 갱신 쿠키만으로는 인증되지 않는다. 이전 로그인의 응답이 늦게 와도 새 로그인의 쿠키를 덮지 못한다. 프론트는 두 쿠키를 직접 읽거나 조립하지 않고 브라우저 자동 전송을 사용한다.
 - 로그인 실패(state 불일치, 동의 취소, 카카오 장애 등)는 JSON 오류가 아니라 설정된 실패 주소에
