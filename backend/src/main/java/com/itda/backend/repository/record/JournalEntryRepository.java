@@ -120,28 +120,6 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long
     List<LocalDate> findInProgressDates(@Param("statuses") Collection<JournalEntryStatus> statuses,
             @Param("institutionId") String institutionId, @Param("entryDates") Collection<LocalDate> entryDates);
 
-    @Query("select new com.itda.backend.repository.record.GroupStatusCount(e.childId, e.entryDate, e.status, count(e)) "
-            + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
-            + "where e.status in :statuses and r.institutionId = :institutionId "
-            + "and e.childId is not null and e.entryDate is not null and e.deletedAt is null "
-            + "group by e.childId, e.entryDate, e.status")
-    List<GroupStatusCount> countByGroupAndStatus(@Param("statuses") Collection<JournalEntryStatus> statuses,
-            @Param("institutionId") String institutionId);
-
-    @Query("select new com.itda.backend.repository.record.DateCount(e.entryDate, count(e)) "
-            + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
-            + "where e.status in :statuses and r.institutionId = :institutionId and e.entryDate in :entryDates "
-            + "and e.deletedAt is null "
-            + "group by e.entryDate")
-    List<DateCount> countByDate(@Param("statuses") Collection<JournalEntryStatus> statuses,
-            @Param("institutionId") String institutionId, @Param("entryDates") Collection<LocalDate> entryDates);
-
-    @Query("select count(e) from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
-            + "where e.status in :statuses and r.institutionId = :institutionId "
-            + "and e.childId is null and e.deletedAt is null")
-    long countChildUnknown(@Param("statuses") Collection<JournalEntryStatus> statuses,
-            @Param("institutionId") String institutionId);
-
     @Query("select distinct new com.itda.backend.repository.record.InProgressKey(r.institutionId, e.entryDate) "
             + "from JournalEntry e join RawRecord r on r.id = e.rawRecordId "
             + "where e.status in :statuses and e.entryDate is not null and e.deletedAt is null")
