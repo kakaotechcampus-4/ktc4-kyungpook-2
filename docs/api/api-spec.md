@@ -801,7 +801,7 @@ O-15 ~ O-19 · O-63 공통 오류:
 
 | # | 메서드 | 경로 | 설명 | 화면 |
 | --- | --- | --- | --- | --- |
-| O-20 | POST | `/raw-records` | 원본 기록 업로드 (multipart) · 화면이 O-20a · O-20b 로 옮기면 없앰 | I-05 |
+| O-20 | POST | `/raw-records` | 원본 기록 업로드 (multipart) · **없앰** (#497, 화면이 O-20a · O-20b 로 옮김) | I-05 |
 | O-20a | POST | `/raw-records/upload-url` | 저장소로 바로 올릴 주소 받기 · **구현됨** (#450) | I-05 |
 | O-20b | POST | `/raw-records/uploads/{uploadId}/complete` | 다 올렸다고 알리기 → 원본 기록 만들기 · **구현됨** (#450) | I-05 |
 | O-21 | GET | `/raw-records/{id}/status` | 파이프라인 진행 상태 | I-03, I-05 |
@@ -812,6 +812,9 @@ O-15 ~ O-19 · O-63 공통 오류:
 | O-26 | GET | `/raw-records/progress` | 파일별 처리 현황 · **구현됨** | I-03, I-05 |
 | O-27 | POST | `/raw-records/{id}/retry` | 실패한 기록 재처리 · **만들지 않음** (#181) | I-03, I-05 |
 | O-28 | GET | `/matching-queue/{itemId}` | 확인 필요 큐 항목 하나 · **구현됨** (#331) | I-06 |
+
+> **없앰 (#497)** — 화면이 O-20a · O-20b 로 옮겨 `POST /raw-records` 를 지웠습니다. `GET /raw-records` 는 남습니다. 아래 형식 · 크기 · 기록 상한 · 오류 기준은
+> O-20a · O-20b 가 그대로 씁니다.
 
 **O-20 요청** · `multipart/form-data`
 

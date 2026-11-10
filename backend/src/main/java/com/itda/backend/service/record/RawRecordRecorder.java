@@ -8,14 +8,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
-import com.itda.backend.domain.record.RawRecordStatus;
 import com.itda.backend.domain.record.RawRecordUpload;
 import com.itda.backend.exception.record.RawRecordUploadNotFoundException;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
 import com.itda.backend.repository.record.RawRecordUploadRepository;
 import com.itda.backend.service.agent.AgentQueueGuard;
-import com.itda.backend.service.user.LoginUserTransactionService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -28,8 +26,7 @@ public class RawRecordRecorder {
     private final AgentQueueGuard agentQueueGuard;
     private final RawRecordUploadRepository rawRecordUploadRepository;
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public RawRecord accept(RawRecord rawRecord, Long organizationId, List<JournalEntrySplitter.SplitEntry> entries) {
+    private RawRecord accept(RawRecord rawRecord, Long organizationId, List<JournalEntrySplitter.SplitEntry> entries) {
         agentQueueGuard.requireRoom(organizationId, entries.size());
         RawRecord saved = rawRecordRepository.save(rawRecord);
         int seq = 1;
@@ -51,12 +48,5 @@ public class RawRecordRecorder {
         RawRecord saved = accept(rawRecord, organizationId, entries);
         upload.complete(saved.getId());
         return saved;
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void recordFailure(
-            String institutionId, String displayFilename, String storedPath, String contentType, long sizeBytes) {
-        rawRecordRepository.save(new RawRecord(
-                institutionId, displayFilename, storedPath, contentType, sizeBytes, RawRecordStatus.FAILED));
     }
 }

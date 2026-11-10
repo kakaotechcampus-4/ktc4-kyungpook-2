@@ -5,11 +5,7 @@ import java.time.Duration;
 import java.util.OptionalLong;
 import java.util.UUID;
 
-import org.springframework.web.multipart.MultipartFile;
-
 public interface RawFileStorage {
-
-    String store(MultipartFile file, String validatedExtension) throws IOException;
 
     void delete(String storedKey);
 

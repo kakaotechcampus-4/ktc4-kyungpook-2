@@ -3,7 +3,6 @@ package com.itda.backend.api;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,11 +10,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
 
-import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.dto.request.record.RawRecordUploadUrlRequest;
 import com.itda.backend.dto.response.record.RawRecordResponse;
 import com.itda.backend.dto.response.record.RawRecordUploadUrlResponse;
@@ -38,44 +34,6 @@ public class RawRecordController {
     private final RawRecordService rawRecordService;
     private final RecordProgressService recordProgressService;
     private final RawRecordUploadService rawRecordUploadService;
-
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(
-            summary = "원본 기록 업로드",
-            description = "인증 쿠키가 필요합니다. 요청 전에 받은 XSRF-TOKEN 쿠키 값을 "
-                    + "X-XSRF-TOKEN 헤더에 포함해야 합니다. 화면이 저장소로 바로 올리는 업로드(upload-url → PUT → complete, "
-                    + "#450)로 옮기면 없앱니다."
-    )
-    @io.swagger.v3.oas.annotations.responses.ApiResponses({
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "업로드 성공"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "400",
-                    description = "파일 누락, 허용되지 않은 확장자·형식, 너무 긴 파일명 (RAW_RECORD_INVALID_REQUEST)"
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요 또는 없는·탈퇴 회원 (UNAUTHORIZED, SESSION_USER_NOT_FOUND)"
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "403",
-                    description = "CSRF 토큰 누락, 가입 미완료 (SIGNUP_NOT_COMPLETED), 또는 기관 소속이 아닌 사용자"
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "413",
-                    description = "파일 크기 20MB 초과 (RAW_RECORD_FILE_TOO_LARGE)"
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "500",
-                    description = "원본 파일·기록 저장 실패 (RAW_RECORD_STORAGE_FAILED) 또는 가입 상태 조회 서버 오류 (INTERNAL_SERVER_ERROR)"
-            )
-    })
-    public ResponseEntity<ApiResponse<RawRecordResponse>> upload(
-            @AuthenticationPrincipal String userId,
-            @RequestParam("file") MultipartFile file) {
-        RawRecord saved = rawRecordService.ingest(userId, file);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(RawRecordResponse.from(saved)));
-    }
 
     @PostMapping("/upload-url")
     @Operation(

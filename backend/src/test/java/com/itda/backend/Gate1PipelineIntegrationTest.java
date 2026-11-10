@@ -6,7 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -28,7 +28,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -286,10 +285,7 @@ class Gate1PipelineIntegrationTest {
     }
 
     private void upload(String text) throws Exception {
-        MockMultipartFile file = new MockMultipartFile("file", "journal.txt", "text/plain",
-                text.getBytes(StandardCharsets.UTF_8));
-        mockMvc.perform(withAuth(multipart("/api/v1/raw-records").file(file)))
-                .andExpect(status().isCreated());
+        uploadTxt(text.getBytes(StandardCharsets.UTF_8));
     }
 
     private void runPipeline() throws Exception {
@@ -313,6 +309,22 @@ class Gate1PipelineIntegrationTest {
                 .content("{\"decision\": \"%s\", \"version\": \"%s\"}".formatted(decision,
                         Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow(),
                                 journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId)))));
+    }
+
+    /** 화면과 같은 3단계 업로드: 주소 받기 → 그 주소로 올리기 → 완료. */
+    private void uploadTxt(byte[] content) throws Exception {
+        String issued = mockMvc.perform(withAuth(post("/api/v1/raw-records/upload-url"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"filename\": \"journal.txt\", \"contentType\": \"text/plain\", \"size\": %d}"
+                                .formatted(content.length)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String uploadUrl = JsonPath.read(issued, "$.data.uploadUrl");
+        Number uploadId = JsonPath.read(issued, "$.data.uploadId");
+        mockMvc.perform(withAuth(put(uploadUrl)).contentType("text/plain").content(content))
+                .andExpect(status().isOk());
+        mockMvc.perform(withAuth(post("/api/v1/raw-records/uploads/" + uploadId + "/complete")))
+                .andExpect(status().isOk());
     }
 
     private MockHttpServletRequestBuilder withAuth(MockHttpServletRequestBuilder request) throws Exception {

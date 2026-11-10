@@ -2,9 +2,10 @@ package com.itda.backend.api;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import com.itda.backend.service.record.RawRecordUploadService;
@@ -37,6 +37,8 @@ import com.itda.backend.service.record.RawRecordService;
 class RawRecordControllerTest {
 
     private static final String BASE_URL = "/api/v1/raw-records";
+    private static final Long UPLOAD_ID = 1L;
+    private static final String COMPLETE_URL = BASE_URL + "/uploads/" + UPLOAD_ID + "/complete";
 
     @Autowired
     private MockMvc mockMvc;
@@ -61,68 +63,62 @@ class RawRecordControllerTest {
     }
 
     @Test
-    void uploadValidFile_returns201() throws Exception {
+    void completeValidUpload_returns200() throws Exception {
         authenticateAs("kakao-1");
         RawRecord saved = new RawRecord(
                 "kakao-1", "note.csv", "generated-uuid.csv", "text/csv", 10L, RawRecordStatus.PENDING);
-        given(rawRecordService.ingest(anyString(), any())).willReturn(saved);
+        given(rawRecordUploadService.complete(anyString(), eq(UPLOAD_ID))).willReturn(saved);
 
-        MockMultipartFile file =
-                new MockMultipartFile("file", "note.csv", "text/csv", "a,b,c".getBytes());
-
-        mockMvc.perform(multipart(BASE_URL).file(file))
-                .andExpect(status().isCreated())
+        mockMvc.perform(post(COMPLETE_URL))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.institutionId").value("kakao-1"))
                 .andExpect(jsonPath("$.data.status").value("PENDING"));
     }
 
     @Test
-    void uploadInvalidExtension_returns400() throws Exception {
+    void completeInvalidExtension_returns400() throws Exception {
         authenticateAs("kakao-1");
-        given(rawRecordService.ingest(anyString(), any()))
+        given(rawRecordUploadService.complete(anyString(), eq(UPLOAD_ID)))
                 .willThrow(new RawRecordValidationException("unsupported file extension"));
 
-        MockMultipartFile file =
-                new MockMultipartFile("file", "malware.exe", "application/octet-stream", "x".getBytes());
-
-        mockMvc.perform(multipart(BASE_URL).file(file))
+        mockMvc.perform(post(COMPLETE_URL))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.result").value("FAIL"))
                 .andExpect(jsonPath("$.code").value("RAW_RECORD_INVALID_REQUEST"));
     }
 
     @Test
-    void uploadTooManyEntries_returns400WithEntryLimitCode() throws Exception {
+    void completeTooManyEntries_returns400WithEntryLimitCode() throws Exception {
         authenticateAs("kakao-1");
-        given(rawRecordService.ingest(anyString(), any()))
+        given(rawRecordUploadService.complete(anyString(), eq(UPLOAD_ID)))
                 .willThrow(new RawRecordEntryLimitException("too many journal entries in file: 501 > 500"));
 
-        mockMvc.perform(multipart(BASE_URL).file(new MockMultipartFile("file", "note.txt", "text/plain", "x".getBytes())))
+        mockMvc.perform(post(COMPLETE_URL))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.result").value("FAIL"))
                 .andExpect(jsonPath("$.code").value("RAW_RECORD_ENTRY_LIMIT_EXCEEDED"));
     }
 
     @Test
-    void uploadWhileBusy_returns429WithUploadBusyCode() throws Exception {
+    void completeWhileBusy_returns429WithUploadBusyCode() throws Exception {
         authenticateAs("kakao-1");
-        given(rawRecordService.ingest(anyString(), any()))
+        given(rawRecordUploadService.complete(anyString(), eq(UPLOAD_ID)))
                 .willThrow(new RawRecordUploadBusyException("upload slots and waiting queue are full"));
 
-        mockMvc.perform(multipart(BASE_URL).file(new MockMultipartFile("file", "note.txt", "text/plain", "x".getBytes())))
+        mockMvc.perform(post(COMPLETE_URL))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.result").value("FAIL"))
                 .andExpect(jsonPath("$.code").value("RAW_RECORD_UPLOAD_BUSY"));
     }
 
     @Test
-    void uploadWhenAgentQueueFull_returns429WithQueueFullCode() throws Exception {
+    void completeWhenAgentQueueFull_returns429WithQueueFullCode() throws Exception {
         authenticateAs("kakao-1");
-        given(rawRecordService.ingest(anyString(), any()))
+        given(rawRecordUploadService.complete(anyString(), eq(UPLOAD_ID)))
                 .willThrow(new AgentQueueFullException(1L, 1000, 3, 1000));
 
-        mockMvc.perform(multipart(BASE_URL).file(new MockMultipartFile("file", "note.txt", "text/plain", "x".getBytes())))
+        mockMvc.perform(post(COMPLETE_URL))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.result").value("FAIL"))
                 .andExpect(jsonPath("$.code").value("AGENT_QUEUE_FULL"));

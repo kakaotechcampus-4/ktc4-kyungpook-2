@@ -13,13 +13,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.domain.record.RawRecordStatus;
-import com.itda.backend.exception.agent.AgentQueueFullException;
 import com.itda.backend.exception.record.RawRecordEntryLimitException;
 import com.itda.backend.exception.record.RawRecordNotFoundException;
 import com.itda.backend.exception.record.RawRecordStorageException;
@@ -27,8 +25,6 @@ import com.itda.backend.exception.record.RawRecordValidationException;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.record.JournalEntryRepository;
 import com.itda.backend.repository.record.RawRecordRepository;
-import com.itda.backend.service.agent.AgentQueueGuard;
-import com.itda.backend.service.storage.RawFileStorage;
 import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
@@ -55,15 +51,12 @@ public class RawRecordService {
             Pattern.compile("(?<!\\d)(?<month>\\d{2})(?<day>\\d{2})(?!\\d)");
 
     private final RawRecordRepository rawRecordRepository;
-    private final RawRecordRecorder rawRecordRecorder;
-    private final RawFileStorage rawFileStorage;
     private final UserService userService;
     private final JournalEntryRepository journalEntryRepository;
     private final JournalEntrySplitter journalEntrySplitter;
     private final ChildRepository childRepository;
     private final RawTextExtractor rawTextExtractor;
     private final RawRecordUploadGate uploadGate;
-    private final AgentQueueGuard agentQueueGuard;
     private final RawRecordProperties properties;
 
     private String resolveInstitutionId(String userId) {
@@ -122,63 +115,6 @@ public class RawRecordService {
     public List<JournalEntrySplitter.SplitEntry> dated(
             RawRecord rawRecord, List<JournalEntrySplitter.SplitEntry> entries) {
         return withEntryDates(rawRecord, entries);
-    }
-
-    public RawRecord ingest(String userId, MultipartFile file) {
-        Long organizationId = userService.getOrganizationIdOf(userId);
-        String institutionId = String.valueOf(organizationId);
-        if (file == null || file.isEmpty()) {
-            throw new RawRecordValidationException("file is required");
-        }
-
-        ValidatedFile validated = validate(file.getOriginalFilename(), file.getContentType());
-        String displayFilename = validated.displayName();
-        String extension = validated.extension();
-        String contentType = validated.contentType();
-
-        List<JournalEntrySplitter.SplitEntry> entries =
-                splitWithinLimits(extension, () -> readBytes(file, institutionId));
-        agentQueueGuard.peek(organizationId, entries.size());
-
-        String storedPath;
-        try {
-            storedPath = rawFileStorage.store(file, extension);
-        } catch (IOException | RuntimeException e) {
-            log.warn("raw file storage failed for institutionId={}", institutionId);
-            throw new RawRecordStorageException("failed to store raw file", e);
-        }
-
-        RawRecord rawRecord = draft(organizationId, validated, storedPath, file.getSize());
-
-        RawRecord saved;
-        try {
-            saved = rawRecordRecorder.accept(rawRecord, organizationId, withEntryDates(rawRecord, entries));
-        } catch (AgentQueueFullException e) {
-            rawFileStorage.delete(storedPath);
-            throw e;
-        } catch (RuntimeException e) {
-            log.error("failed to persist raw record and journal entries for storedPath={}; raw file is kept", storedPath, e);
-            try {
-                rawRecordRecorder.recordFailure(institutionId, displayFilename, storedPath, contentType, file.getSize());
-            } catch (RuntimeException retryFailure) {
-                log.error("failed to record FAILED status for storedPath={}; "
-                        + "raw file remains untracked in DB but preserved in storage", storedPath, retryFailure);
-            }
-            throw new RawRecordStorageException("failed to persist raw record metadata", e);
-        }
-
-        log.info("raw record intake recorded id={} institutionId={} status={} journalEntries={}",
-                saved.getId(), institutionId, saved.getStatus(), entries.size());
-        return saved;
-    }
-
-    private static byte[] readBytes(MultipartFile file, String institutionId) {
-        try {
-            return file.getBytes();
-        } catch (IOException e) {
-            log.warn("failed to pre-read raw file bytes for splitting institutionId={}", institutionId, e);
-            return null;
-        }
     }
 
     private List<JournalEntrySplitter.SplitEntry> splitIntoEntries(String extension, byte[] fileBytes) {
