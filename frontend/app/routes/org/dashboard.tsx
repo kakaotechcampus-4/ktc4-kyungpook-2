@@ -1,51 +1,55 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Ban,
   Check,
   ChevronRight,
+  FileCheck,
   FileText,
+  Info,
+  Layers,
   Link2,
   PenLine,
+  ScrollText,
   Send,
+  ShieldCheck,
   Sparkles,
+  TriangleAlert,
   Upload,
   UserRound,
+  UserSearch,
   X,
 } from "lucide-react";
 import { Link, useLoaderData, useRevalidator } from "react-router";
-import { Busy } from "@/components/ui";
+import { Busy, ConfirmDialog } from "@/components/ui";
+import { useOrgLive } from "@/components/org/Shell";
 import {
   getAiActivity,
-  getAiStatus,
   getChildren,
   getFileProgress,
   getPipeline,
+  getUploadedFiles,
   UPLOAD_EXTENSIONS,
+  uploadPrecheck,
   uploadRawRecords,
+  type UploadedFile,
 } from "@/lib/api";
 import { fileProgressOf } from "@/lib/pipeline";
 import type { AiActivity, FileProgress, Pipeline, PipelineRow, PipelineTurn, UploadResult } from "@/lib/types";
 import { TourButton } from "@/components/Tour";
 import { usePolling } from "@/lib/usePolling";
+import { useAiProgress, type AiPhase } from "@/lib/aiProgress";
 
-/**
- * 대시보드 — 선생님 차례 · 기록 올리기 · 진행 현황 · 오늘 AI가 한 일 (시안 screenDash).
- * 단계 판정은 서버(O-80)가 하고 화면은 받은 그대로 그린다. 10초마다 다시 받는다(탭이 숨으면 멈춤).
- * 요약은 자동으로 시작하므로(#369) [요약] 버튼이 없다.
- */
 export async function clientLoader() {
-  const [pipeline, activity, files, ai, children] = await Promise.all([
+  const [pipeline, activity, files, children] = await Promise.all([
     getPipeline(),
     getAiActivity(),
     getFileProgress(),
-    getAiStatus().catch(() => null),
-    // 시작하기 체크리스트용. 이미 닫은 기관은 받지 않는다. 못 받아도 대시보드는 띄운다
     readClosed() ? Promise.resolve(null) : getChildren().catch(() => null),
   ]);
   return {
     pipeline,
     activity,
     files,
-    aiDown: ai?.available === false,
     kids: children ? children.length : null,
     guardians: children ? children.filter((c) => c.consent === "granted").length : null,
   };
@@ -53,14 +57,15 @@ export async function clientLoader() {
 
 const POLL_MS = 10_000;
 
-const STEPS = ["아이 찾기", "AI 확인", "요약", "검토", "주간 분석", "분석 승인"] as const;
+const STEPS = ["아이 매칭", "내용 검증", "일지 요약", "요약 검토", "주간 리포트", "리포트 승인"] as const;
+const STEP_ICONS = [UserSearch, ShieldCheck, ScrollText, FileCheck, Layers, Send] as const;
 const STEP_DESC = [
   "AI가 파일 이름과 일지 속 이름을 아동 명부와 맞춰 누구의 기록인지 찾아요",
   "AI가 개인정보·진단명이 있으면 막고, 다른 아이 이름 같은 표현은 표시해요",
-  "AI 확인이 끝나면 AI가 그날 기록을 바로 요약해요",
+  "내용 검증이 끝나면 AI가 그날 기록을 바로 요약해요",
   "선생님이 요약 문장을 읽고 고친 뒤 승인해요",
   "한 주(월~일) 동안 승인한 기록을 모아 AI가 되풀이되는 행동을 찾아요",
-  "선생님이 AI 분석을 읽고 승인하면 보호자와 동의한 기관이 봐요",
+  "선생님이 AI가 쓴 주간 리포트를 읽고 승인하면 보호자와 동의한 기관이 봐요",
 ];
 
 const WD = "일월화수목금토";
@@ -75,33 +80,27 @@ function today(): string {
 
 export default function DashboardPage() {
   const initial = useLoaderData<typeof clientLoader>();
-  const [pipeline, setPipeline] = useState<Pipeline>(initial.pipeline);
+  const live = useOrgLive();
+  const pipeline: Pipeline = live.pipeline ?? initial.pipeline;
+  const aiDown = live.aiDown;
   const [activity, setActivity] = useState<AiActivity>(initial.activity);
   const [files, setFiles] = useState<FileProgress[]>(initial.files);
-  /** AI 가 멈췄으면 AI 차례 줄을 "멈춤" 으로 보인다 (O-82) */
-  const [aiDown, setAiDown] = useState(initial.aiDown);
 
-  // loader 가 다시 돌면(다른 화면에서 처리하고 돌아옴 · revalidate) 새 값으로 바꾼다 — 다음 폴링까지 옛 숫자가 남지 않게
   useEffect(() => {
-    setPipeline(initial.pipeline);
     setActivity(initial.activity);
     setFiles(initial.files);
-    setAiDown(initial.aiDown);
   }, [initial]);
 
-  async function refresh() {
-    const [p, a, f, ai] = await Promise.all([
-      getPipeline(),
-      getAiActivity(),
-      getFileProgress(),
-      getAiStatus().catch(() => null),
-    ]);
-    setPipeline(p);
+  async function refreshOwn() {
+    const [a, f] = await Promise.all([getAiActivity(), getFileProgress()]);
     setActivity(a);
     setFiles(f);
-    setAiDown(ai?.available === false);
   }
-  usePolling(refresh, POLL_MS, true, false);
+  usePolling(refreshOwn, POLL_MS, true, false);
+
+  async function refreshAll() {
+    await Promise.all([live.refresh(), refreshOwn()]);
+  }
 
   const turn = pipeline.turn;
   const total = turn.confirm + turn.blocked + turn.review + turn.approve + turn.requests;
@@ -127,11 +126,11 @@ export default function DashboardPage() {
           <TurnList turn={turn} />
         </Panel>
         <Panel title="기록 올리기">
-          <UploadBox files={files} onUploaded={refresh} />
+          <UploadBox files={files} onUploaded={refreshAll} />
         </Panel>
       </div>
 
-      <ProgressBoard rows={pipeline.rows} aiDown={aiDown} />
+      <ProgressBoard rows={pipeline.rows} aiDown={aiDown} refresh={live.refresh} />
     </div>
   );
 }
@@ -145,8 +144,6 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-/* ── 시작하기 체크리스트 ─────────────────────────── */
-
 const ONB_KEY = "itda.org.onboarding.closed";
 
 function readClosed(): boolean {
@@ -157,10 +154,6 @@ function readClosed(): boolean {
   }
 }
 
-/**
- * 처음 쓰는 기관: 아이가 0명이거나 올린 일지가 0건이면 대시보드 위에 세 단계를 띄운다
- * (아이 등록 → 보호자 초대 → 첫 일지 올리기). 한 번 뜨면 이 방문 동안은 남아 있고, 세 단계를 마치면 [닫기]가 생긴다.
- */
 function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardians: number | null; uploads: number }) {
   const revalidator = useRevalidator();
   const [closed, setClosed] = useState(readClosed);
@@ -219,7 +212,6 @@ function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardia
               try {
                 localStorage.setItem(ONB_KEY, "1");
               } catch {
-                // 저장이 막힌 브라우저 — 이번 방문에서만 닫는다
               }
               setClosed(true);
             }}
@@ -255,15 +247,13 @@ function Onboarding({ kids, guardians, uploads }: { kids: number | null; guardia
   );
 }
 
-/* ── 오늘 AI가 한 일 ─────────────────────────── */
-
 function AiDay({ a }: { a: AiActivity }) {
   const items: [string, number][] = [
     ["기록 나누기", a.split],
-    ["아이 찾기", a.matched],
-    ["AI 확인", a.validated],
-    ["요약", a.summarized],
-    ["주간 분석", a.insights],
+    ["아이 매칭", a.matched],
+    ["내용 검증", a.validated],
+    ["일지 요약", a.summarized],
+    ["주간 리포트", a.insights],
   ];
   const sum = items.reduce((n, [, v]) => n + v, 0);
   return (
@@ -286,13 +276,11 @@ function AiDay({ a }: { a: AiActivity }) {
   );
 }
 
-/* ── 선생님 차례 ─────────────────────────────── */
-
 const TURN: { key: keyof PipelineTurn; label: string; desc: string; icon: typeof Check; href: string }[] = [
   { key: "confirm", label: "아이 확인", desc: "AI가 누구의 기록인지 정하지 못한 일지", icon: UserRound, href: "/check?open=confirm" },
-  { key: "blocked", label: "고쳐야 할 기록", desc: "AI 확인에서 막힌 문장", icon: PenLine, href: "/check?open=blocked" },
-  { key: "review", label: "검토", desc: "AI가 쓴 요약을 읽고 승인", icon: Check, href: "/gate1?open=first" },
-  { key: "approve", label: "분석 승인", desc: "주간 분석을 읽고 보호자에게 보내기", icon: Send, href: "/children?tab=approve&open=first" },
+  { key: "blocked", label: "고쳐야 할 기록", desc: "내용 검증에서 막힌 문장", icon: PenLine, href: "/check?open=blocked" },
+  { key: "review", label: "요약 검토", desc: "AI가 쓴 요약을 읽고 승인", icon: Check, href: "/gate1?open=first" },
+  { key: "approve", label: "리포트 승인", desc: "주간 리포트를 읽고 보호자에게 보내기", icon: Send, href: "/children?tab=approve&open=first" },
   { key: "requests", label: "보호자 연결 요청", desc: "보호자가 기관 코드로 보낸 요청", icon: Link2, href: "/children?tab=req" },
 ];
 
@@ -334,12 +322,14 @@ function TurnList({ turn }: { turn: PipelineTurn }) {
   );
 }
 
-/* ── 기록 올리기 ─────────────────────────────── */
-
 type UploadFailure = Extract<UploadResult, { ok: false }>;
 const FAIL_TEXT = {
   invalid: `올릴 수 없는 형식이에요 (${UPLOAD_EXTENSIONS.join(" · ")})`,
+  empty: "빈 파일이에요",
   too_large: "20MB를 넘는 파일이에요",
+  too_many_entries: "기록이 500건이 넘거나 한 기록이 5,000자를 넘어요. 나눠 올려 주세요",
+  queue_full: "앞서 올린 기록을 처리하고 있어요. 끝나면 다시 올려 주세요",
+  server_busy: "지금 올리는 파일이 많아요. 잠시 뒤 다시 올려 주세요",
   temporary: "잠시 문제가 있어 저장하지 못했어요",
 } as const;
 
@@ -380,10 +370,55 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [failed, setFailed] = useState<UploadFailure[]>([]);
+  const [pending, setPending] = useState<File[] | null>(null);
+  const [check, setCheck] = useState<FullCheck>({ status: "loading" });
+  const fetchSeq = useRef(0);
+  const waitTimer = useRef<number | undefined>(undefined);
+  const locked = useRef(false);
 
-  async function upload(list: FileList | null) {
+  useEffect(() => () => window.clearTimeout(waitTimer.current), []);
+
+  const guardDrop = uploading || pending !== null;
+  useEffect(() => {
+    if (!guardDrop) return;
+    const block = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "none";
+    };
+    window.addEventListener("dragover", block);
+    window.addEventListener("drop", block);
+    return () => {
+      window.removeEventListener("dragover", block);
+      window.removeEventListener("drop", block);
+    };
+  }, [guardDrop]);
+
+  function pick(list: FileList | null) {
     const picked = Array.from(list ?? []);
-    if (!picked.length || uploading) return;
+    if (input.current) input.current.value = "";
+    if (!picked.length || locked.current) return;
+    locked.current = true;
+    setPending(picked);
+    const seq = ++fetchSeq.current;
+    setCheck({ status: "loading" });
+    window.clearTimeout(waitTimer.current);
+    waitTimer.current = window.setTimeout(() => {
+      if (fetchSeq.current === seq) setCheck((c) => (c.status === "loading" ? { status: "failed" } : c));
+    }, FULL_CHECK_WAIT_MS);
+    getUploadedFiles()
+      .then((list) => {
+        if (fetchSeq.current !== seq) return;
+        window.clearTimeout(waitTimer.current);
+        setCheck({ status: "done", list });
+      })
+      .catch(() => {
+        if (fetchSeq.current !== seq) return;
+        window.clearTimeout(waitTimer.current);
+        setCheck({ status: "failed" });
+      });
+  }
+
+  async function upload(picked: File[]) {
     setUploading(true);
     try {
       const results = await uploadRawRecords(picked);
@@ -391,10 +426,11 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
       await onUploaded();
     } finally {
       setUploading(false);
-      if (input.current) input.current.value = "";
+      locked.current = false;
     }
   }
 
+  const dropBlocked = dragging && uploading;
   const states = files.map(fileStatus);
   const working = states.filter((s) => s.tone === "ai").length;
   const bad = states.filter((s) => s.tone === "bad").length;
@@ -405,32 +441,39 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
         data-tour="upload"
         onDragOver={(e) => {
           e.preventDefault();
+          if (uploading) e.dataTransfer.dropEffect = "none";
           setDragging(true);
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          void upload(e.dataTransfer.files);
+          if (uploading) return;
+          pick(e.dataTransfer.files);
         }}
         className={`flex flex-wrap items-center gap-3 rounded-[18px] border-2 border-dashed px-4 py-4 ${
-          dragging ? "border-accent bg-accentsoft" : "border-line2 bg-paper"
+          dropBlocked ? "border-block bg-blocksoft" : dragging ? "border-accent bg-accentsoft" : "border-line2 bg-paper"
         }`}
       >
-        <span className="grid size-11 flex-none place-items-center rounded-full bg-accentsoft text-accentink">
-          <Upload aria-hidden size={22} />
+        <span
+          className={`grid size-11 flex-none place-items-center rounded-full ${
+            dropBlocked ? "bg-paper text-block" : "bg-accentsoft text-accentink"
+          }`}
+        >
+          {dropBlocked ? <Ban aria-hidden size={22} /> : <Upload aria-hidden size={22} />}
         </span>
         <span className="grid min-w-0 flex-1">
-          <b className="text-[15px]">관찰일지 파일을 끌어다 놓으세요</b>
+          <b className={`text-[15px] ${dropBlocked ? "text-block" : ""}`}>
+            {dropBlocked ? "지금 올리는 중이라 놓을 수 없어요. 끝나면 다시 놓아 주세요" : "관찰일지 파일을 끌어다 놓으세요"}
+          </b>
           <span className="text-[13px] text-muted">
             {UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(" · ")} · 20MB까지 · 여러 개를 한 번에 올릴 수 있어요
           </span>
-          {/* 스캔 pdf 는 올라가도 기록이 안 생긴다(BE 가 글자를 못 뽑음) — 올리기 전에 알려 둔다 */}
           <span className="text-[13px] text-muted">스캔하거나 사진으로 만든 PDF는 글자를 읽지 못해요. 워드·한글에서 PDF로 저장한 파일을 올려 주세요</span>
         </span>
         <button
           type="button"
-          disabled={uploading}
+          disabled={uploading || pending !== null}
           onClick={() => input.current?.click()}
           className="tap rounded-full bg-ink px-4 text-[14px] font-bold text-paper hover:brightness-110 disabled:opacity-60"
         >
@@ -442,10 +485,27 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
           multiple
           hidden
           id="upload-input"
+          disabled={uploading || pending !== null}
           accept={UPLOAD_EXTENSIONS.map((e) => `.${e}`).join(",")}
-          onChange={(e) => void upload(e.target.files)}
+          onChange={(e) => pick(e.target.files)}
         />
       </div>
+
+      {pending ? (
+        <UploadConfirm
+          files={pending}
+          uploaded={check.status === "done" ? check.list : files}
+          fullCheck={check.status}
+          onCancel={() => {
+            setPending(null);
+            locked.current = false;
+          }}
+          onConfirm={() => {
+            setPending(null);
+            void upload(pending);
+          }}
+        />
+      ) : null}
 
       {failed.length ? (
         <div className="flex items-start gap-2 rounded-[14px] bg-blocksoft px-3.5 py-2.5 text-[14px] text-block">
@@ -498,14 +558,110 @@ function UploadBox({ files, onUploaded }: { files: FileProgress[]; onUploaded: (
   );
 }
 
-/* ── 진행 현황 ─────────────────────────────── */
+type FullCheck = { status: "loading" } | { status: "failed" } | { status: "done"; list: UploadedFile[] };
+
+const FULL_CHECK_WAIT_MS = 10_000;
+
+const SKIP_NOTE = {
+  invalid: "올릴 수 없는 형식이라 빠져요",
+  empty: "빈 파일이라 빠져요",
+  too_large: "20MB를 넘어 빠져요",
+} as const;
+
+const timeOf = (iso: string) => Date.parse(iso) || 0;
+
+const nameKey = (name: string) =>
+  (name.replace(/\\/g, "/").split("/").pop() ?? name).normalize("NFC").toLowerCase();
+
+function sameNameNote(iso: string): string {
+  if (!timeOf(iso)) return "전에 같은 이름 파일을 올렸어요";
+  const year = new Date(iso).getFullYear();
+  const when = year === new Date().getFullYear() ? uploadedAt(iso) : `${year}년 ${uploadedAt(iso)}`;
+  return `${when}에 같은 이름 파일을 올렸어요`;
+}
+
+function UploadConfirm({
+  files,
+  uploaded,
+  fullCheck,
+  onCancel,
+  onConfirm,
+}: {
+  files: File[];
+  uploaded: UploadedFile[];
+  fullCheck: FullCheck["status"];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const lastUploaded = new Map<string, string>();
+  for (const f of uploaded) {
+    const key = nameKey(f.fileName);
+    const prev = lastUploaded.get(key);
+    if (prev === undefined || timeOf(prev) < timeOf(f.uploadedAt)) lastUploaded.set(key, f.uploadedAt);
+  }
+  const pickedCount = new Map<string, number>();
+  for (const f of files) {
+    if (uploadPrecheck(f)) continue;
+    const key = nameKey(f.name);
+    pickedCount.set(key, (pickedCount.get(key) ?? 0) + 1);
+  }
+
+  const rows = files.map((file) => {
+    const skip = uploadPrecheck(file);
+    if (skip) return { file, note: SKIP_NOTE[skip], same: false, skip: true };
+    const key = nameKey(file.name);
+    const at = lastUploaded.get(key);
+    if (at !== undefined) return { file, note: sameNameNote(at), same: true, skip: false };
+    if ((pickedCount.get(key) ?? 0) > 1)
+      return { file, note: "같이 고른 파일 중에 이름이 같은 게 있어요", same: true, skip: false };
+    return { file, note: null, same: false, skip: false };
+  });
+  const same = rows.filter((r) => r.same).length;
+  const sending = rows.filter((r) => !r.skip).length;
+
+  return (
+    <ConfirmDialog
+      title={sending ? `파일 ${sending}개를 올릴까요?` : "올릴 수 있는 파일이 없어요"}
+      warning={sending ? "올린 뒤에는 취소할 수 없어요" : undefined}
+      confirmLabel="올리기"
+      confirmDisabled={!sending || fullCheck === "loading"}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
+      {same ? (
+        <p className="mb-2 flex items-start gap-1.5 font-bold text-block">
+          <TriangleAlert aria-hidden size={18} className="mt-1 shrink-0" />
+          같은 이름 파일이 {same}개 있어요. 같은 파일이면 취소해 주세요
+        </p>
+      ) : null}
+      {fullCheck === "loading" ? (
+        <p className="mb-2 text-[13px] text-muted">전에 올린 파일과 이름을 맞춰 보는 중이에요…</p>
+      ) : fullCheck === "failed" ? (
+        <p className="mb-2 text-[13px] font-bold text-block">
+          전에 올린 파일 목록을 다 받지 못해 최근 파일과만 맞춰 봤어요. 오래전에 올린 파일인지 한 번 더 확인해 주세요
+        </p>
+      ) : null}
+      <ul className="grid max-h-[240px] gap-1.5 overflow-y-auto">
+        {rows.map(({ file, note }, i) => (
+          <li key={i} className={`grid rounded px-3 py-2 ${note ? "bg-blocksoft text-block" : "bg-surface2"}`}>
+            <b className="truncate text-[14px]" title={file.name}>
+              {file.name}
+            </b>
+            {note ? <span className="text-[13px] font-semibold">{note}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </ConfirmDialog>
+  );
+}
 
 type Filter = "all" | "me" | "run" | "done";
 const isMe = (r: PipelineRow) => r.who === "me";
 const isRun = (r: PipelineRow) => r.who === "ai" || r.who === "wait" || r.who === "other";
 const isDone = (r: PipelineRow) => r.who === "done";
 
-function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean }) {
+function ProgressBoard({ rows, aiDown, refresh }: { rows: PipelineRow[]; aiDown: boolean; refresh: () => Promise<void> }) {
+  const progressOf = useAiProgress(rows, aiDown, refresh);
   const [stage, setStage] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [showDone, setShowDone] = useState(false);
@@ -535,6 +691,8 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
         {STEPS.map((name, i) => {
           const c = by[i];
           const on = stage === i;
+          const Icon = STEP_ICONS[i];
+          const run = c.ai > 0 && !aiDown;
           return (
             <button
               key={name}
@@ -542,15 +700,26 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
               title={STEP_DESC[i]}
               aria-pressed={on}
               onClick={() => setStage(on ? null : i)}
-              className={`grid min-w-0 content-start gap-1 rounded-[14px] border px-2 py-2 text-left ${
+              className={`grid min-w-0 content-start gap-1.5 rounded-[14px] border px-3 py-2.5 text-left ${
                 on ? "border-ink bg-ink text-paper" : c.me ? "border-mark bg-surface" : "border-line bg-surface hover:bg-surface2"
               }`}
             >
-              <span className="flex min-w-0 items-center gap-1">
-                <span className={`grid size-[18px] flex-none place-items-center rounded-full text-[11px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className={`grid size-6 flex-none place-items-center rounded-full text-[12px] font-bold ${on ? "bg-paper text-ink" : "bg-surface2 text-ink2"}`}>
                   {i + 1}
                 </span>
-                <b className="truncate text-[13px]">{name}</b>
+                <b className="truncate text-[13.5px]">{name}</b>
+                <span
+                  className={`relative ml-auto grid size-[22px] flex-none place-items-center rounded-full ${
+                    run
+                      ? "bg-accentsoft text-accentink after:absolute after:inset-0 after:animate-ring after:rounded-full after:border-2 after:border-accent motion-reduce:after:animate-none"
+                      : on
+                        ? "text-paper"
+                        : "text-ink2"
+                  }`}
+                >
+                  <Icon aria-hidden size={15} />
+                </span>
               </span>
               <span className="flex flex-wrap gap-1 text-[11px] leading-[18px] font-bold whitespace-nowrap">
                 {c.me ? <span className="rounded-full bg-mark px-1.5 text-markink">내 차례 {c.me}</span> : null}
@@ -568,6 +737,16 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
           );
         })}
       </div>
+
+      {stage !== null ? (
+        <p role="status" className="mb-3 flex items-start gap-1.5 rounded-[12px] border border-line px-3 py-2.5 text-[14px] leading-normal text-ink2">
+          <Info aria-hidden size={15} className="mt-[3px] flex-none" />
+          <span>
+            <b className="mr-1 text-ink">{STEPS[stage]}</b>
+            {STEP_DESC[stage]}
+          </span>
+        </p>
+      ) : null}
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <div role="tablist" aria-label="상태로 보기" className="flex rounded-full bg-surface2 p-1">
@@ -602,7 +781,7 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
         ) : null}
         {list.length === 0 && doneTail.length ? <p className="px-4 py-6 text-center text-[14px] text-muted">지금 진행 중인 기록이 없어요</p> : null}
         {list.map((r, i) => (
-          <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} />
+          <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} phase={progressOf(r)} />
         ))}
         {doneTail.length ? (
           <>
@@ -614,7 +793,7 @@ function ProgressBoard({ rows, aiDown }: { rows: PipelineRow[]; aiDown: boolean 
             >
               {showDone ? `완료 ${doneTail.length}건 접기` : `완료 ${doneTail.length}건 펼치기`}
             </button>
-            {showDone ? doneTail.map((r, i) => <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} />) : null}
+            {showDone ? doneTail.map((r, i) => <JRow key={rowKey(r, i)} r={r} aiDown={aiDown} phase={null} />) : null}
           </>
         ) : null}
       </div>
@@ -626,7 +805,6 @@ function rowKey(r: PipelineRow, i: number): string {
   return `${r.kind}-${r.childId ?? "x"}-${r.date ?? r.week?.from}-${r.status}-${r.target?.id ?? i}`;
 }
 
-/** 서버 상태를 한 줄 문구와 바로가기로. 바로가기는 선생님 차례(target 있음)에만 */
 function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolean; go?: [string, string] } {
   const id = r.target?.id ? `&id=${encodeURIComponent(r.target.id)}` : "";
   const d = r.detail ?? {};
@@ -655,7 +833,7 @@ function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolea
       };
     case "review":
       return {
-        text: d.noContent ? "요약할 내용이 없대요 · 원문을 보고 확인해 주세요" : "요약이 왔어요 · 읽고 승인해 주세요",
+        text: d.noContent ? "특이사항이 없대요 · 원문을 보고 확인해 주세요" : "요약이 왔어요 · 읽고 승인해 주세요",
         go: ["검토하기", `/gate1?open=summary${id}`],
       };
     case "review_held":
@@ -663,28 +841,26 @@ function describe(r: PipelineRow): { text: string; hold?: boolean; skip?: boolea
     case "regenerating":
       return { text: "기록이 더 들어와서 요약을 다시 만드는 중이에요" };
     case "waiting_week_end":
-      return { text: r.week ? `이번 주가 끝나는 ${md(nextDay(r.week.to))}부터 분석해요` : "이번 주가 끝나면 분석해요" };
+      return { text: r.week ? `이번 주가 끝나는 ${md(nextDay(r.week.to))}부터 리포트를 만들어요` : "이번 주가 끝나면 리포트를 만들어요" };
     case "queued":
-      return { text: "곧 분석을 시작해요" };
+      return { text: "곧 리포트를 만들기 시작해요" };
     case "running":
       return { text: "AI가 되풀이되는 행동을 찾는 중이에요" };
     case "retrying":
-      return { text: "분석을 다시 시도하는 중이에요" };
+      return { text: "리포트 만들기를 다시 시도하는 중이에요" };
     case "not_consented":
-      return { text: "보호자가 주간 분석 공유를 허락하지 않아 우리 기록은 쓰지 않아요" };
+      return { text: "보호자가 주간 리포트 공유를 허락하지 않아 우리 기록은 쓰지 않아요" };
     case "nothing_new":
       return { text: "이번 주는 새로 알릴 내용이 없어요", skip: true };
     case "review_here":
-      return { text: "분석이 왔어요 · 읽고 승인하면 보호자에게 가요", go: ["읽고 승인", `/children?tab=approve&open=insight${id}`] };
+      return { text: "리포트가 왔어요 · 읽고 승인하면 보호자에게 가요", go: ["읽고 승인", `/children?tab=approve&open=insight${id}`] };
     case "insight_held":
-      // Gate 2 보류는 되돌릴 수 없다 — 다시 읽을 화면이 없어 바로가기를 두지 않는다
-      return { text: "분석을 보류해 뒀어요", hold: true };
+      return { text: "리포트를 보류해 뒀어요", hold: true };
     case "review_elsewhere":
       return { text: `${d.approverName ?? "다른 기관"}에서 승인할 차례예요` };
     case "approved":
       return { text: "승인했어요 · 보호자가 볼 수 있어요" };
     default:
-      // 서버가 새 상태를 먼저 보내도 화면이 깨지지 않게
       return { text: "" };
   }
 }
@@ -705,10 +881,13 @@ const DOT = {
   skip: "border-dashed border-line text-line2",
 } as const;
 
-function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
+const SLOW_SEC = 60;
+
+function JRow({ r, aiDown, phase: got }: { r: PipelineRow; aiDown: boolean; phase: AiPhase | null }) {
   const paused = aiDown && r.who === "ai";
+  const phase = paused ? null : got;
   const info = paused ? { ...describe(r), text: "AI 점검 중이라 잠시 멈췄어요 · 돌아오면 이어서 해요" } : describe(r);
-  const sub = r.kind === "week" ? `${r.week?.label ?? ""} 분석` : r.date ? md(r.date) : "";
+  const sub = r.kind === "week" ? `${r.week?.label ?? ""} 리포트` : r.date ? md(r.date) : "";
   const tag = isMe(r) ? (
     info.hold ? (
       <span className="rounded-full bg-surface2 px-2 py-px text-[12px] font-bold text-ink2">보류</span>
@@ -749,7 +928,14 @@ function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
             return (
               <span key={name} className="contents">
                 {i ? <span className={`h-0.5 min-w-1.5 flex-1 ${i <= r.step ? "bg-accent" : "bg-line"}`} /> : null}
-                <span title={name} className={`grid size-6 flex-none place-items-center rounded-full border-2 text-[11px] font-bold ${DOT[c]}`}>
+                <span
+                  title={name}
+                  className={`grid size-6 flex-none place-items-center rounded-full border-2 text-[11px] font-bold ${DOT[c]} ${
+                    c === "ai" && phase
+                      ? "relative after:absolute after:-inset-0.5 after:animate-ring after:rounded-full after:border-2 after:border-accent motion-reduce:after:animate-none"
+                      : ""
+                  }`}
+                >
                   {c === "d" ? "✓" : i + 1}
                 </span>
               </span>
@@ -759,7 +945,24 @@ function JRow({ r, aiDown }: { r: PipelineRow; aiDown: boolean }) {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px]">
           {tag}
           <b>{STEPS[r.step]}</b>
-          <span className="text-ink2">{info.text}</span>
+          {phase ? (
+            <>
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <Sparkles aria-hidden size={15} className="flex-none animate-ai-spin text-accent motion-reduce:animate-none" />
+                <span key={phase.text} className="inline-block animate-rise motion-reduce:animate-none">
+                  <span className="ai-shimmer">
+                    {phase.text}
+                    {r.status === "matching" && r.detail?.count ? ` · 그날 일지 ${r.detail.count}건` : ""}
+                  </span>
+                </span>
+              </span>
+              <span className="text-[13px] text-muted tabular-nums">
+                · {phase.sec > SLOW_SEC ? "조금 오래 걸리고 있어요" : `${phase.sec}초`}
+              </span>
+            </>
+          ) : (
+            <span className="text-ink2">{info.text}</span>
+          )}
         </div>
       </div>
       {info.go && r.target ? (

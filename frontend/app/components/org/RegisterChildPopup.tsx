@@ -7,7 +7,6 @@ import { ListPopup } from "@/components/ui/ListPopup";
 import { ApiError, issueInvitation, registerChild } from "@/lib/api";
 import type { IssuedInvitation, RegisteredChild } from "@/lib/types";
 
-/** 생년월일 상한. 서버가 미래 날짜를 거부한다. toISOString 은 UTC 라 자정 무렵 하루가 어긋나서 직접 만든다 */
 function todayLocal(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -16,10 +15,6 @@ function todayLocal(): string {
 const INPUT =
   "tap w-full rounded-[12px] border border-line2 bg-surface px-3 text-[16px] outline-none focus:border-accent aria-[invalid=true]:border-block";
 
-/**
- * 아이 등록 (O-11) — 아동 목록 [+ 아이 등록] 팝업. 등록하면 서버가 보호자 초대 코드를 함께 발급해
- * 팝업이 그 코드를 보여 준다. 닫으면 `onRegistered` 로 목록을 새로 받는다.
- */
 export function RegisterChildPopup({ onClose, onRegistered }: { onClose: () => void; onRegistered: () => void }) {
   const navigate = useNavigate();
   const [name, setName] = useState("");
@@ -70,7 +65,6 @@ export function RegisterChildPopup({ onClose, onRegistered }: { onClose: () => v
       case "INVALID_REQUEST":
         return setErrors({ form: "이름·생년월일·관리번호를 확인해 주세요." });
       case "INVITE_CODE_ISSUE_FAILED":
-        // 등록 중이었다면 아이도 등록되지 않았다 (한 트랜잭션)
         return setErrors({
           form: registered ? "초대 코드를 만들지 못했어요. 다시 시도해 주세요." : "초대 코드를 만들지 못해 등록되지 않았어요. 다시 시도해 주세요.",
         });
@@ -154,7 +148,6 @@ export function RegisterChildPopup({ onClose, onRegistered }: { onClose: () => v
           />
           {errors.externalId ? <span className="text-[13px] font-bold text-block">{errors.externalId}</span> : null}
         </label>
-        {/* 엔터로도 등록되게 */}
         <button type="submit" hidden />
       </form>
     </ListPopup>

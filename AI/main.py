@@ -1,18 +1,17 @@
-import os
-
 from dotenv import load_dotenv
 
 # import 보다 먼저 부른다 — 모듈이 읽히는 동안 .env 가 보여야 한다.
 load_dotenv()
 
-import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from common import metrics
+from common import metrics, progress
 from common.errors import LlmUnavailable
 from insight.graph import run_insight
 from insight.schemas import InsightInput, InsightOutput
+from notify.graph import run_notify
+from notify.schemas import NotifyInput, NotifyOutput
 from matching.graph import run_matching
 from matching.schemas import MatchingInput, MatchingOutput
 from summary.graph import run_summary
@@ -22,12 +21,6 @@ from validation.llm import is_configured
 from validation.schemas import ValidationInput, ValidationOutput
 
 app = FastAPI(title="ITDA AI")
-
-# 모듈을 읽는 시점에 키가 없다고 죽지 않게 한다.
-# 매칭 그래프는 Luna 없이도 돌아야 트랙 A 가 키 없이 채점 스크립트를 붙일 수 있다.
-LUNA_API_URL = os.environ.get("LUNA_API_URL")
-LUNA_API_KEY = os.environ.get("LUNA_API_KEY")
-
 
 @app.exception_handler(LlmUnavailable)
 def llm_unavailable(request: Request, exc: LlmUnavailable) -> JSONResponse:
@@ -76,17 +69,40 @@ def read_metrics() -> dict:
     return metrics.snapshot()
 
 
+@app.get("/progress")
+async def read_progress() -> list[dict]:
+    """
+    에이전트가 지금 어느 노드에 있는지 (#452). BE 가 1초마다 물어 대시보드 진행 현황에 띄운다.
+
+        [{"agent": "summary", "child_id": 7, "entry_date": "2026-11-08", "institution_id": 3,
+          "node": "write", "elapsed_sec": 12}, ...]
+
+    **async 로 둔다.** sync 엔드포인트는 작업 스레드 풀에서 도는데, 그 풀을 LLM 호출이 오래
+    붙잡고 있다. 진행을 묻는 호출이 그 뒤에 줄 서면 정작 오래 걸릴 때 대답을 못 한다.
+    (snapshot 은 메모리만 보고 lock 도 잠깐이라 이벤트 루프를 막지 않는다)
+
+    어떤 에러가 나도 빈 목록이다 — BE 는 빈 목록이면 기존 고정 문구를 띄운다.
+    """
+    try:
+        return progress.snapshot()
+    except Exception as exc:
+        print(f"[progress] 조회 실패: {exc!r}")
+        return []
+
+
 @app.post("/matching", response_model=MatchingOutput)
 def matching(payload: MatchingInput) -> MatchingOutput:
     """일지 항목 한 건이 어느 아이의 것인지 판정한다."""
-    with metrics.track("/matching", metrics.key_of(payload.journal_entry_id)):
+    with metrics.track("/matching", metrics.key_of(payload.journal_entry_id)), \
+            progress.begin("matching", journal_entry_id=payload.journal_entry_id):
         return run_matching(payload)
 
 
 @app.post("/validation", response_model=ValidationOutput)
 def validation(payload: ValidationInput) -> ValidationOutput:
     """일지 항목 한 건이 저장해도 안전한지 판정한다."""
-    with metrics.track("/validation", metrics.key_of(payload.journal_entry_id)):
+    with metrics.track("/validation", metrics.key_of(payload.journal_entry_id)), \
+            progress.begin("validation", journal_entry_id=payload.journal_entry_id):
         return run_validation(payload)
 
 
@@ -95,7 +111,9 @@ def summary(payload: SummaryInput) -> SummaryOutput:
     """같은 아이의 같은 날 일지 여러 건을 한 편의 요약으로 묶는다."""
     # 요약은 일지 한 건이 아니라 묶음이라, 묶음 키로 센다 (아동 × 날짜 × 기관).
     key = metrics.key_of(payload.child_id, payload.entry_date, payload.institution_id)
-    with metrics.track("/summary", key):
+    with metrics.track("/summary", key), \
+            progress.begin("summary", child_id=payload.child_id, entry_date=payload.entry_date,
+                           institution_id=payload.institution_id):
         return run_summary(payload)
 
 
@@ -103,25 +121,24 @@ def summary(payload: SummaryInput) -> SummaryOutput:
 def insight(payload: InsightInput) -> InsightOutput:
     """한 아이의 승인된 요약들을 겹쳐 기관을 가로지르는 돌봄 패턴을 찾는다."""
     key = metrics.key_of(payload.child_id, payload.period_from, payload.period_to)
-    with metrics.track("/insight", key):
+    with metrics.track("/insight", key), \
+            progress.begin("insight", child_id=payload.child_id, period_from=payload.period_from,
+                           period_to=payload.period_to):
         return run_insight(payload)
 
 
-@app.get("/llm-test")
-def llm_test():
-    """Luna 응답 형태를 확인하기 위한 임시 엔드포인트."""
-    if not (LUNA_API_URL and LUNA_API_KEY):
-        return {"error": "LUNA_API_URL / LUNA_API_KEY 가 설정되지 않았습니다"}
+@app.post("/notify", response_model=NotifyOutput)
+def notify(payload: NotifyInput) -> NotifyOutput:
+    """
+    Gate 2 에서 승인된 인사이트를 보호자에게 메일로 내보낸다 (#419).
 
-    response = requests.post(
-        LUNA_API_URL,
-        json={"messages": [{"role": "user", "content": "안녕하세요, 한 문장으로 자기소개 해주세요."}]},
-        headers={
-            "accept": "application/json",
-            "content-type": "application/json",
-            "Authorization": f"Bearer {LUNA_API_KEY}",
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()
+    셋 중 하나로 끝난다.
+      200 sent            나갔다
+      200 blocked         근거 검사에 걸려 **보내지 않았다**. 교사 확인이 필요하다
+      503 delivery_failed 메일 서버 장애. BE 가 재시도한다
+
+    근거 미달을 503 으로 올리면 BE 가 영원히 재시도한다 — 재시도해도 같은 글이 나온다.
+    """
+    key = metrics.key_of(payload.child_id, payload.notification_id)
+    with metrics.track("/notify", key):
+        return run_notify(payload)

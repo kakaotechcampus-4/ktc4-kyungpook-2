@@ -23,7 +23,6 @@ import com.itda.backend.domain.sharing.ReceiverType;
 import com.itda.backend.domain.sharing.SharingHistory;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
 
-/** 새로 연결된 보호자에게 그 아이의 승인된 인사이트를 연다 (#287). */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(InsightAccessGranter.class)
@@ -55,7 +54,6 @@ class InsightAccessGranterTest {
         centerId = em.persistAndFlush(Organization.of("햇살센터", OrganizationType.CENTER, "1000000002")).getId();
     }
 
-    /** 엄마가 먼저 연결돼 받은 글을, 나중에 연결된 아빠도 같은 보낸 기관으로 받는다. */
     @Test
     void 새로_연결되면_승인된_글이_모두_열린다() {
         Long first = approved(CHILD, 1, schoolId);
@@ -96,10 +94,6 @@ class InsightAccessGranterTest {
         assertThat(sharingHistoryRepository.findAll()).isEmpty();
     }
 
-    /**
-     * 끊었다 다시 연결하면 같은 행을 되살린다 — 새로 넣으면 UNIQUE 에 걸린다. 예전에 본 시각은 남긴다. 본 적이 있는 글을
-     * 안 본 것으로 바꾸면 감사 기록이 틀어진다. 끊긴 동안 승인된 글은 새 행이다.
-     */
     @Test
     void 다시_연결하면_거뒀던_권한을_되살리고_본_시각은_남긴다() {
         Long before = approved(CHILD, 1, schoolId);
@@ -125,7 +119,6 @@ class InsightAccessGranterTest {
         assertThat(sharingHistoryRepository.findAll()).hasSize(3);
     }
 
-    /** 승인할 때 보호자도 동의 기관도 없어 행이 하나도 없던 글. 승인 주체 규칙(학교 > 센터)으로 보낸 기관을 구한다. */
     @Test
     void 다른_권한_행이_없으면_승인_주체_규칙으로_보낸_기관을_정한다() {
         Long alone = approved(CHILD, 1, centerId, schoolId);
@@ -140,7 +133,6 @@ class InsightAccessGranterTest {
         });
     }
 
-    /** 보낸 기관이 없는 권한은 "누가 연 글인지" 가 없다. 만들지 않는다. */
     @Test
     void 근거_기관이_모두_사라진_글은_건너뛴다() {
         approved(CHILD, 1, 999L);
@@ -166,7 +158,6 @@ class InsightAccessGranterTest {
         em.clear();
 
         assertThat(em.find(SharingHistory.class, mother).getGrantedAt()).isEqualTo(motherGrantedAt);
-        // 거둔 기관 권한을 보호자 연결이 되살리면 안 된다 — 기관은 동의로만 연다.
         assertThat(em.find(SharingHistory.class, center).isActive()).isFalse();
     }
 

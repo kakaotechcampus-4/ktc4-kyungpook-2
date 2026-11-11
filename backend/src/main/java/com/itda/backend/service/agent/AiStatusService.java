@@ -10,7 +10,6 @@ import com.itda.backend.service.user.UserService;
 
 import lombok.RequiredArgsConstructor;
 
-/** 기관 화면용 AI 상태. 판정은 {@link AiAvailability} 가 하고 여기서는 기관 사용자인지만 본다. */
 @Service
 @RequiredArgsConstructor
 public class AiStatusService {

@@ -20,12 +20,6 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import com.itda.backend.domain.user.TermKey;
 import com.itda.backend.domain.user.UserRole;
 
-/**
- * 약관 본문 파일과 체크섬 목록.
- *
- * <p>한 판 = 한 본문. 내보낸 문안 파일을 고치면 {@code terms/CHECKSUMS} 와 어긋나 여기서 깨진다 — 글을 바꾸려면
- * 새 판 파일을 더하고 목록에 한 줄을 더한다(그 줄이 리뷰에 보인다).
- */
 class TermsDocumentServiceTest {
 
     private final TermsDocumentService service = new TermsDocumentService();
@@ -78,7 +72,6 @@ class TermsDocumentServiceTest {
         }
     }
 
-    /** {@code .../terms/privacy/2026-11-07.txt} → {@code privacy/2026-11-07.txt} */
     private static String relativePath(Resource resource) {
         try {
             String url = resource.getURL().toString();

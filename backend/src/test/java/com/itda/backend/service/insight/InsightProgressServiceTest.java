@@ -35,7 +35,6 @@ import com.itda.backend.service.agent.WorkerProperties;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
-/** 인사이트 진행 현황 (O-43). 우리 기관이 승인한 주만, 워커의 집기 규칙과 같은 상태로 보인다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({InsightProgressService.class, InsightResultRecorder.class, InsightService.class, ConsentStateReader.class,
@@ -44,7 +43,6 @@ class InsightProgressServiceTest {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final String TEACHER = "99";
-    /** 지난주 수요일. 끝난 주라 워커가 볼 수 있다. */
     private static final LocalDate LAST_WEEK = LocalDate.now(SEOUL).minusWeeks(1);
     private static final String CLAIMS = """
             [{"text": "블록을 혼자 다섯 층 쌓았다.",
@@ -96,7 +94,7 @@ class InsightProgressServiceTest {
         InsightProgressResponse progress = service.getProgress(TEACHER).get(0);
 
         assertThat(progress.status()).isEqualTo(Status.QUEUED);
-        assertThat(progress.message()).isEqualTo("곧 분석을 시작해요");
+        assertThat(progress.message()).isEqualTo("곧 주간 리포트를 만들기 시작해요");
         assertThat(progress.childName()).isEqualTo("김하늘");
         assertThat(progress.periodTo()).isEqualTo(properties.periodEndOf(LAST_WEEK).toString());
     }
@@ -153,13 +151,11 @@ class InsightProgressServiceTest {
         consent(centerId, ConsentField.WEEKLY_INSIGHT);
         Long contextId = approve(centerId, LAST_WEEK);
         run(LAST_WEEK).finish(1, contextId);
-        // 다른 기관이 같은 주에 승인했다. 워커는 재료가 늘었다고 보고 다시 집는다.
         approve(otherId, LAST_WEEK);
 
         assertThat(statuses()).containsExactly(Status.QUEUED);
     }
 
-    /** 워커는 재료가 없으면 집지 않는다. 그 주에 "곧 분석" · "다시 시도" 가 영영 남으면 안 된다. */
     @Test
     void 재료가_없으면_곧_분석이나_다시_시도라고_하지_않는다() {
         consent(centerId, ConsentField.WEEKLY_INSIGHT);
@@ -177,7 +173,6 @@ class InsightProgressServiceTest {
         approve(otherId, LAST_WEEK);
         assertThat(service.getProgress(TEACHER)).isEmpty();
 
-        // 우리 기관이 승인했어도 공유 동의가 없으면 그 아이는 이 기관이 알 일이 아니다 (Gate 1 과 같은 기준).
         approve(centerId, LAST_WEEK);
         assertThat(service.getProgress(TEACHER)).isEmpty();
     }
@@ -191,7 +186,6 @@ class InsightProgressServiceTest {
         em.persistAndFlush(SharingConsent.grant(childId, 7L, organizationId, List.of(field)));
     }
 
-    /** 그 기관이 그날 기록을 Gate 1 에서 승인했다. 승인본 id 를 돌려준다. */
     private Long approve(Long organizationId, LocalDate entryDate) {
         return approve(organizationId, entryDate, CLAIMS);
     }

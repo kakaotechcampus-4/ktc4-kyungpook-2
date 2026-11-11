@@ -13,14 +13,6 @@ import org.springframework.stereotype.Service;
 import com.itda.backend.domain.user.TermKey;
 import com.itda.backend.domain.user.UserRole;
 
-/**
- * 약관 본문. 지금 판({@link TermsCatalog#currentVersion})의 문안 파일 {@code resources/terms/{key}/{판}.txt} 를 준다.
- *
- * <p>파일의 첫 줄이 제목, 그 아래가 본문이다. 본문은 줄바꿈만 살리는 그냥 글이다.
- *
- * <p><b>기동할 때 다섯 개를 모두 읽어 둔다.</b> 판을 올리며 파일을 빠뜨리면 화면에서 처음 열 때가 아니라 기동 때 실패해
- * 어느 파일인지 바로 보인다. 문안은 배포 때만 바뀌므로 다시 읽지 않는다.
- */
 @Service
 public class TermsDocumentService {
 
@@ -32,7 +24,6 @@ public class TermsDocumentService {
         }
     }
 
-    /** 그 역할의 필수 약관을 {@link TermsCatalog#required} 순서(약관 키 선언 순서)로. */
     public List<TermsDocument> forRole(UserRole role) {
         return TermsCatalog.required(role).stream().map(documents::get).toList();
     }
@@ -59,7 +50,6 @@ public class TermsDocumentService {
         return new TermsDocument(key, title, version, TermsCatalog.isDraft(key), body);
     }
 
-    /** 문안 파일의 클래스패스 경로. 키는 API 와 같은 소문자다. */
     static String path(TermKey key, String version) {
         return "terms/" + key.toJson() + "/" + version + ".txt";
     }

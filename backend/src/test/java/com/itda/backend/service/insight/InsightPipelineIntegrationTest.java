@@ -58,25 +58,10 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.summary.ChildContextRepository;
 import com.itda.backend.repository.summary.SummaryResultRepository;
 
-/**
- * 인사이트 워커 한 바퀴 — 승인된 요약이 있는 상태에서 워커를 돌려 {@code insight_result} 가 쌓이고
- * {@code insight_run} 이 닫히는 데까지.
- *
- * <p>AI 응답만 세워 두고 나머지는 실제 코드와 실제 PostgreSQL 이다. H2 로는 UNIQUE 위반이 운영과
- * 다른 모양으로 올라와서 집기 동작을 믿을 수 없다.
- *
- * <p>이 테스트가 덮지 못하는 것은 <b>모델이 실제로 쓸 만한 글을 내는가</b> 하나다. 그건 AI 쪽 평가의
- * 몫이고, BE 책임은 "제대로 보내고 제대로 받아 적는가" 인데 그건 여기서 전부 확인된다.
- */
 @SpringBootTest(properties = {
         "spring.main.allow-bean-definition-overriding=true",
-        // 테스트 프로필은 워커를 꺼 두지만, 이 테스트는 워커를 직접 돌리는 것이 목적이다.
         "app.insight.worker.enabled=true",
-        // 켜면 @Scheduled 틱도 돈다. 틱이 AI /health 를 부르는 순간이 agentServer.reset() 과 expect() 사이에
-        // 끼면 MockRestServiceServer 가 IllegalStateException 을 던진다 (CI 에서 실제로 났다). 간격만 늘리면
-        // 앱이 뜰 때의 첫 틱이 남으므로 첫 실행 자체를 늦춰 틱이 아예 돌지 않게 하고, 워커는 테스트가 직접 돌린다.
         "app.insight.worker.initial-delay-ms=2147483647",
-        // 재시도는 AiAgentClientTest 가 본다. 여기서 켜 두면 503 한 건에 7초를 기다린다.
         "app.ai.retry-backoffs="})
 @ActiveProfiles("test")
 @Testcontainers
@@ -101,7 +86,6 @@ class InsightPipelineIntegrationTest {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
     }
 
-    /** AI 서버만 세워 둔다. 워커·재료 조립·저장은 전부 실제 코드다. */
     @TestConfiguration
     static class StubAgentConfig {
         @Bean
@@ -120,7 +104,6 @@ class InsightPipelineIntegrationTest {
             return stubAgentBuilder.build();
         }
 
-        // 인사이트는 전용 RestClient(#386)를 써서 위 교체가 닿지 않는다. 같은 이름으로 덮어 같은 가짜 서버를 보게 한다.
         @Bean
         RestClient insightAgentRestClient(RestClient.Builder stubAgentBuilder, MockRestServiceServer agentServer) {
             return stubAgentBuilder.build();
@@ -168,7 +151,6 @@ class InsightPipelineIntegrationTest {
                 Organization.of("햇살아동발달센터", OrganizationType.CENTER, "1234567891"));
         childOrganizationRepository.save(ChildOrganization.of(junho.getId(), school.getId()));
         childOrganizationRepository.save(ChildOrganization.of(junho.getId(), center.getId()));
-        // 재료는 "동의 ∩ 명부" 다 (#184). 동의가 없으면 아무 claim 도 쓰지 않는다 — 모르면 막는다.
         consent(school);
         consent(center);
     }
@@ -186,7 +168,6 @@ class InsightPipelineIntegrationTest {
                 """.formatted(text, journalEntryId, quote);
     }
 
-    /** Gate 1 을 통과한 요약 한 건. child_context 에 행이 있다는 것이 곧 승인이다. */
     private SummaryResult approved(Organization institution, LocalDate entryDate, String claims) {
         SummaryResult summary = summaryResultRepository.saveAndFlush(SummaryResult.of(
                 junho.getId(), entryDate, institution.getId(), 1, "요약 본문", claims, "[1041]", "[]", "{}"));
@@ -237,10 +218,6 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /**
-     * 멘토 리뷰(#191) 지적 — Gate 1 승인은 교사가 틈틈이 한다. 한 주치가 한 번에 올라오지 않는다.
-     * 인사이트를 만든 뒤 같은 기간에 요약이 더 승인되면 그 기록도 반영돼야 한다.
-     */
     @Test
     void 같은_기간에_요약이_더_승인되면_다시_집는다() {
         approved(school, periodFrom.plusDays(1), claims("점심 줄에서 차례를 기다렸다.", 1041, "차례를 기다림"));
@@ -258,7 +235,6 @@ class InsightPipelineIntegrationTest {
         assertThat(insightRunRepository.findAll()).singleElement()
                 .satisfies(run -> assertThat(run.getInsightCount()).isEqualTo(1));
 
-        // 수요일 — 같은 주의 다른 기관 요약이 뒤늦게 승인된다
         approved(center, periodFrom.plusDays(3), claims("점심 줄에서 끼어들었다.", 1042, "앞으로 끼어듦"));
 
 
@@ -281,7 +257,6 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /** 늘지 않았으면 건너뛴다. 재호출 방지(§10.2-13)는 그대로 유지돼야 한다. */
     @Test
     void 재료가_늘지_않으면_다시_집지_않는다() {
         approved(school, periodFrom.plusDays(1), claims("혼자 신발을 신었다.", 1041, "혼자 신음"));
@@ -292,7 +267,6 @@ class InsightPipelineIntegrationTest {
                 """, MediaType.APPLICATION_JSON));
         worker.run();
 
-        // 두 번째 차례 — /health 만 기대한다. /insight 가 또 불리면 verify 가 터진다.
         agentServer.reset();
         agentHealthy();
         worker.run();
@@ -301,7 +275,6 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /** 이 장부를 둔 이유다. 두 번째 차례에는 AI 를 아예 부르지 않아야 한다. */
     @Test
     void 인사이트_0건으로_끝나면_다음_차례에_다시_부르지_않는다() {
         approved(school, periodFrom.plusDays(1), claims("혼자 블록을 쌓았다.", 1041, "혼자 쌓음"));
@@ -319,7 +292,6 @@ class InsightPipelineIntegrationTest {
             assertThat(run.getInsightCount()).isZero();
         });
 
-        // 두 번째 차례 — /health 만 기대한다. /insight 가 또 불리면 verify 가 터진다.
         agentServer.reset();
         agentHealthy();
         worker.run();
@@ -328,10 +300,6 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /**
-     * 카드로 고쳐 승인한 요약이 워커를 거쳐 실제 AI 요청까지 간다 (#249, 멘토 리뷰 A4). 교사가 새로 쓴 문장은
-     * 일지 번호가 없어도 빠지지 않고 null 로 실려야 한다 — 빠지면 교사 문장이 인사이트에 영영 못 들어간다.
-     */
     @Test
     void 카드로_고쳐_승인한_요약은_출처를_달고_AI_요청까지_간다() {
         SummaryResult corrected = approved(school, periodFrom.plusDays(1), """
@@ -360,10 +328,6 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /**
-     * #221 이전 방식으로 고쳐 승인한 요약(claims 에 source 가 없음)은 재료에서 빠진다 (#249). 재료가 없으면
-     * 집지도 않는다 — 나중에 다른 요약이 승인되면 그때 다시 봐야 하기 때문이다.
-     */
     @Test
     void 옛_방식으로_고쳐_승인한_요약뿐이면_부르지도_집지도_않는다() {
         SummaryResult corrected =
@@ -376,15 +340,10 @@ class InsightPipelineIntegrationTest {
         worker.run();
 
         assertThat(insightResultRepository.findAll()).isEmpty();
-        // 집지 않아야 한다 — 나중에 다른 요약이 승인되면 그때 다시 봐야 하기 때문이다.
         assertThat(insightRunRepository.findAll()).isEmpty();
         agentServer.verify();
     }
 
-    /**
-     * 503 은 LLM 장애다. 실패 사유와 함께 실패로 남기고, 기다릴 시간이 지나면 다음 판으로 다시 집는다.
-     * 바로 다시 집지 않는다 — 계속 실패하는 아이가 5초마다 맨 앞에 와서 뒤의 아이들을 막는다 (#266).
-     */
     @Test
     void AI가_503이면_실패로_남고_기다렸다가_다음_판으로_다시_집는다() {
         approved(school, periodFrom.plusDays(1), claims("혼자 신발을 신었다.", 1041, "혼자 신음"));
@@ -403,7 +362,6 @@ class InsightPipelineIntegrationTest {
             assertThat(run.getFailureReason()).isEqualTo("llm_unavailable:empty_response");
         });
 
-        // 바로 다음 차례에는 /insight 를 부르지 않는다 (기대하지 않은 호출이면 MockRestServiceServer 가 던진다)
         agentServer.reset();
         agentHealthy();
         worker.run();
@@ -431,7 +389,6 @@ class InsightPipelineIntegrationTest {
         agentServer.verify();
     }
 
-    /** AI 가 꺼져 있으면 아무도 집지 않는다 — 집어 두면 전부 실패로 끝난다. */
     @Test
     void AI가_꺼져_있으면_아무것도_집지_않는다() {
         approved(school, periodFrom.plusDays(1), claims("혼자 블록을 쌓았다.", 1041, "혼자 쌓음"));

@@ -50,7 +50,6 @@ import com.itda.backend.service.child.OrganizationChildGuard;
 import com.itda.backend.service.insight.InsightAccessGranter;
 import com.itda.backend.service.user.UserService;
 
-/** 초대 코드 발급·조회·취소·수락이 실제 DB 행을 어떻게 남기는지 확인한다. 시각은 테스트가 정한다. */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({InvitationService.class, OrganizationChildGuard.class, InviteCodeGenerator.class,
@@ -95,12 +94,15 @@ class InvitationServiceJpaTest {
         other = em.persist(OrganizationFixture.center());
         child = em.persist(Child.of("김하늘", LocalDate.of(2017, 3, 14)));
         em.persist(ChildOrganization.of(child.getId(), ours.getId()));
-        parent = em.persist(UserFixture.parent("kakao-parent", "김보호"));
+        parent = em.persist(UserFixture.parent("kakao-parent"));
 
         given(userService.getOrganizationIdOf(OUR_USER)).willReturn(ours.getId());
         given(userService.getOrganizationIdOf(OTHER_USER)).willReturn(other.getId());
         given(userService.getParentIdOf(PARENT)).willReturn(parent.getId());
         given(userService.getParentIdOf(ORGANIZATION_AS_PARENT))
+                .willThrow(new UserException(UserErrorCode.PARENT_REQUIRED));
+        given(userService.lockParentForLink(PARENT)).willReturn(parent.getId());
+        given(userService.lockParentForLink(ORGANIZATION_AS_PARENT))
                 .willThrow(new UserException(UserErrorCode.PARENT_REQUIRED));
     }
 
@@ -149,8 +151,6 @@ class InvitationServiceJpaTest {
     private static String hyphenatedLowercase(String code) {
         return (code.substring(0, 4) + "-" + code.substring(4)).toLowerCase();
     }
-
-    // --- 발급 ---
 
     @Test
     void 발급한_코드는_8자리이고_10분_뒤_만료된다() {
@@ -210,8 +210,6 @@ class InvitationServiceJpaTest {
                         e -> assertThat(e.getErrorCode()).isEqualTo(UserErrorCode.ORGANIZATION_NOT_ASSIGNED));
     }
 
-    // --- 목록·취소 ---
-
     @Test
     void 목록에는_수락_취소_만료된_코드가_빠진다() {
         IssuedInvitationResponse accepted = issue();
@@ -262,8 +260,6 @@ class InvitationServiceJpaTest {
         assertThat(stored(issued).getStatus()).isEqualTo(InvitationStatus.PENDING);
     }
 
-    // --- 수락 ---
-
     @Test
     void 하이픈과_소문자를_섞어_입력해도_연결된다() {
         IssuedInvitationResponse issued = issue();
@@ -285,10 +281,8 @@ class InvitationServiceJpaTest {
         });
     }
 
-    /** 연결은 동의가 아니다. 수락은 아동 상태를 바꾸지 않고 실제 현재 상태를 돌려준다. */
     @Test
     void 수락은_아동_상태를_바꾸지_않고_실제_상태를_돌려준다() {
-        // 다른 보호자가 이미 동의해 둔 아이
         child.activate();
         em.persist(SharingConsent.grant(child.getId(), 100L, ours.getId(), List.of(ConsentField.DAILY_SUMMARY)));
         em.flush();
@@ -318,8 +312,9 @@ class InvitationServiceJpaTest {
     @Test
     void 한_번_쓴_코드는_다시_쓸_수_없다() {
         IssuedInvitationResponse issued = issue();
-        User otherParent = em.persist(UserFixture.parent("kakao-other-parent", "이보호"));
+        User otherParent = em.persist(UserFixture.parent("kakao-other-parent"));
         given(userService.getParentIdOf("u-other-parent")).willReturn(otherParent.getId());
+        given(userService.lockParentForLink("u-other-parent")).willReturn(otherParent.getId());
         invitationService.accept(PARENT, issued.code());
 
         assertInvalidCode(() -> invitationService.accept("u-other-parent", issued.code()));
@@ -367,7 +362,6 @@ class InvitationServiceJpaTest {
         });
     }
 
-    /** 승인 순간 연결돼 있지 않았던 보호자도 지난 글을 본다 (#287). 검토 전 글은 열지 않는다. */
     @Test
     void 수락하면_그_아이의_승인된_인사이트가_열린다() {
         Long approved = approvedInsight(1);

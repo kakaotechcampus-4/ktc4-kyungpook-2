@@ -34,10 +34,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 보호자 쪽 API(G-04 수락, G-05 본인 연결 해제) — 보안 필터·권한 검사·저장까지 실제로 거친다.
- * 초대 코드는 기관이 O-11 로 아이를 등록할 때 받은 실제 코드를 쓴다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -101,8 +97,8 @@ class GuardianLinkApiTest {
     void setUp() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         organizationId = String.valueOf(organization.getId());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
-        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
+        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -115,9 +111,6 @@ class GuardianLinkApiTest {
         code = JsonPath.read(body, "$.data.invitation.code");
     }
 
-    // --- G-04 수락 ---
-
-    /** 화면에 보이는 XXXX-XXXX 를 소문자로 옮겨 적어도 받는다. 연결은 동의가 아니라 아이는 동의 대기 그대로다. */
     @Test
     void 보호자는_코드로_아이와_연결된다() throws Exception {
         String typed = (code.substring(0, 4) + "-" + code.substring(4)).toLowerCase();
@@ -127,7 +120,6 @@ class GuardianLinkApiTest {
                 .andExpect(jsonPath("$.result").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.childId").value(childId))
                 .andExpect(jsonPath("$.data.childName").value("김하늘"))
-                // 동의 화면(동의 미리보기)으로 넘어가려면 어느 기관에 대한 연결인지 알아야 한다.
                 .andExpect(jsonPath("$.data.organizationId").value(organizationId))
                 .andExpect(jsonPath("$.data.organizationName").value("햇살아동발달센터"))
                 .andExpect(jsonPath("$.data.childStatus").value("pending_consent"));
@@ -139,7 +131,7 @@ class GuardianLinkApiTest {
     @Test
     void 한_번_쓴_코드는_400() throws Exception {
         accept(code, auth(parent)).andExpect(status().isOk());
-        User otherParent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "이보호")));
+        User otherParent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         accept(code, auth(otherParent))
                 .andExpect(status().isBadRequest())
@@ -197,7 +189,7 @@ class GuardianLinkApiTest {
 
     @Test
     void 가입을_마치지_않은_회원은_코드를_쓸_수_없다() throws Exception {
-        User pending = userRepository.save(User.pending(uniqueKakaoId(), "박지현"));
+        User pending = userRepository.save(User.pending(uniqueKakaoId()));
 
         accept(code, auth(pending))
                 .andExpect(status().isForbidden())
@@ -215,8 +207,6 @@ class GuardianLinkApiTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
-
-    // --- G-05 본인 해제 ---
 
     @Test
     void 보호자는_연결을_끊고_새_코드로_다시_연결할_수_있다() throws Exception {

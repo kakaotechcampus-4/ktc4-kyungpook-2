@@ -12,6 +12,8 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
@@ -25,6 +27,7 @@ import com.itda.backend.domain.consent.ConsentRevokeReason;
 import com.itda.backend.domain.consent.ConsentState;
 import com.itda.backend.domain.consent.SharingConsent;
 import com.itda.backend.domain.insight.InsightResult;
+import com.itda.backend.domain.insight.InsightStatus;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.organization.OrganizationType;
 import com.itda.backend.domain.summary.ChildContext;
@@ -37,7 +40,8 @@ import com.itda.backend.exception.insight.InsightException;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
 
-/** Gate 2 검토 목록·단건. 승인 주체인 기관에만, 최신 회차만 보인다. */
+import jakarta.persistence.EntityManagerFactory;
+
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({InsightGate2QueryService.class, InsightEvidenceReader.class, ConsentStateReader.class})
@@ -53,6 +57,9 @@ class InsightGate2QueryServiceTest {
 
     @Autowired
     private InsightGate2QueryService service;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @MockitoBean
     private UserService userService;
@@ -77,8 +84,6 @@ class InsightGate2QueryServiceTest {
         em.persistAndFlush(ChildOrganization.of(childId, centerId));
         em.persistAndFlush(ChildOrganization.of(childId, assistantId));
 
-        // 학교·센터는 주간 인사이트까지 동의했다. 활동지원사는 동의 행 자체가 없다.
-        // 재료를 낸 기관은 동의가 있어야 목록에 보인다 (#257) — 재료를 고를 때도 같은 동의가 필요하다.
         em.persistAndFlush(SharingConsent.grant(childId, 7L, schoolId, List.of(ConsentField.WEEKLY_INSIGHT)));
         em.persistAndFlush(SharingConsent.grant(childId, 7L, centerId, List.of(ConsentField.WEEKLY_INSIGHT)));
 
@@ -97,7 +102,6 @@ class InsightGate2QueryServiceTest {
         insight(1, schoolId, centerId);
 
         assertThat(service.getInsights(SCHOOL_TEACHER, "pending")).hasSize(1);
-        // 센터도 근거를 냈지만 학교가 승인 주체라 목록에서는 조용히 빠진다.
         assertThat(service.getInsights(CENTER_TEACHER, "pending")).isEmpty();
     }
 
@@ -112,7 +116,6 @@ class InsightGate2QueryServiceTest {
                 .isEqualTo(String.valueOf(latest.getId()));
     }
 
-    /** 최신 회차가 이미 승인됐으면 옛 회차의 대기 행이 최신인 척하면 안 된다. */
     @Test
     void 최신_회차가_승인됐으면_옛_회차도_대기_목록에_없다() {
         insight(1, schoolId);
@@ -151,7 +154,6 @@ class InsightGate2QueryServiceTest {
                 });
     }
 
-    /** AI 가 지난 기록에서 찾아 쓴 근거는 이번 주 근거와 구분해 표시한다 (#387). */
     @Test
     void 지난_기록에서_찾아_쓴_근거는_lookedUp으로_표시한다() {
         Long past = pastSummary();
@@ -165,7 +167,6 @@ class InsightGate2QueryServiceTest {
                 .containsExactly(tuple("2026-08-19", false), tuple("2026-07-01", true));
     }
 
-    /** 지난 기록이 대처 근거에만 쓰였어도 근거 목록에 올린다 — 빠지면 화면이 "지난 기록을 찾아 씀" 을 모른다. */
     @Test
     void 대처_근거에만_쓴_지난_기록도_근거에_올린다() {
         Long past = pastSummary();
@@ -180,10 +181,6 @@ class InsightGate2QueryServiceTest {
                 .containsExactly(tuple("2026-08-19", false), tuple("2026-07-01", true));
     }
 
-    /**
-     * AI 가 준 표시를 그대로 믿지 않는다 (#387 코드리뷰). 근거로 인용하지 않은 번호는 근거 목록에 올리지 않고,
-     * 이번 기간 기록은 "지난 기록" 으로 표시하지 않는다.
-     */
     @Test
     void 인용하지_않았거나_이번_기간인_기록은_지난_기록으로_표시하지_않는다() {
         Long notCited = pastSummary();
@@ -204,7 +201,6 @@ class InsightGate2QueryServiceTest {
         return id;
     }
 
-    /** Gate 1 을 통과하지 않은 요약은 근거가 아니다 — 승인본이 없으면 그 줄을 뺀다. */
     @Test
     void 승인본이_없는_요약은_근거에서_빠진다() {
         SummaryResult unapproved = em.persistAndFlush(SummaryResult.of(
@@ -216,7 +212,6 @@ class InsightGate2QueryServiceTest {
         assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).evidence()).isEmpty();
     }
 
-    /** 다른 기관 아이의 인사이트가 목록에 섞이면 안 된다. 명부가 유일한 울타리다. */
     @Test
     void 우리_명부에_없는_아이는_목록에_없다() {
         Long otherChild = em.persistAndFlush(Child.of("박소망", LocalDate.of(2019, 5, 1))).getId();
@@ -225,11 +220,9 @@ class InsightGate2QueryServiceTest {
                 "[]", "[]", "[%d]".formatted(schoolId), false, null));
         em.clear();
 
-        // 학교가 근거를 냈다고 적혀 있어도 그 아이는 학교 명부에 없다.
         assertThat(service.getInsights(SCHOOL_TEACHER, "pending")).isEmpty();
     }
 
-    /** 아이가 우리 기관을 떠난 뒤에는 본문도 이름도 보이면 안 된다 — source_institution_ids 는 굳은 값이다. */
     @Test
     void 연결이_끊긴_뒤에는_단건도_404() {
         InsightResult insight = insight(1, schoolId, centerId);
@@ -243,7 +236,6 @@ class InsightGate2QueryServiceTest {
                 .isEqualTo(InsightErrorCode.NOT_FOUND);
     }
 
-    /** 목록에서 뺀 아이다. 인사이트 재료를 모을 때와 같은 기준으로 가린다. */
     @Test
     void 삭제된_아이의_인사이트는_보이지_않는다() {
         insight(1, schoolId);
@@ -254,10 +246,6 @@ class InsightGate2QueryServiceTest {
         assertThat(service.getInsights(SCHOOL_TEACHER, "pending")).isEmpty();
     }
 
-    /**
-     * claim_id 는 AI 가 쓴 글자다. 숫자가 어긋나 다른 아이 요약을 가리키면 그 아이의 기관·날짜·승인본 id 가
-     * 상관없는 교사 화면에 뜬다.
-     */
     @Test
     void 다른_아이의_요약을_가리키는_근거는_빠진다() {
         Long otherChild = em.persistAndFlush(Child.of("박소망", LocalDate.of(2019, 5, 1))).getId();
@@ -274,7 +262,6 @@ class InsightGate2QueryServiceTest {
                 .satisfies(ref -> assertThat(ref.childContextId()).isEqualTo(String.valueOf(contextId)));
     }
 
-    /** 같은 요약이 여러 claim 의 근거여도 화면에는 한 줄이다. */
     @Test
     void 같은_요약은_근거에_한_번만_나온다() {
         em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "상황", "반응", "본문", null,
@@ -285,7 +272,6 @@ class InsightGate2QueryServiceTest {
         assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).evidence()).hasSize(1);
     }
 
-    /** 기관 행이 사라진 근거는 이름을 모른다. 출처 없는 줄을 올리느니 뺀다. */
     @Test
     void 기관을_찾을_수_없는_근거는_빠진다() {
         SummaryResult orphan = em.persistAndFlush(SummaryResult.of(
@@ -298,7 +284,6 @@ class InsightGate2QueryServiceTest {
         assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).evidence()).isEmpty();
     }
 
-    /** 철회 행이 ACTIVE 행을 덮으면 동의한 기관이 미동의로 보인다. 같은 기관에 두 행이 있을 수 있다. */
     @Test
     void 철회_이력이_있어도_살아_있는_동의가_이긴다() {
         SharingConsent revoked = SharingConsent.grant(childId, 8L, centerId, List.of(ConsentField.WEEKLY_INSIGHT));
@@ -321,7 +306,6 @@ class InsightGate2QueryServiceTest {
                 .isEqualTo("2026년 8월 3주차");
     }
 
-    /** 7일 경계에서 주차가 바뀐다. 14일은 2주차, 15일은 3주차다. */
     @Test
     void 주차는_7일마다_올라간다() {
         em.persistAndFlush(InsightResult.of(childId, LocalDate.of(2026, 9, 14), LocalDate.of(2026, 9, 20), 1,
@@ -341,7 +325,6 @@ class InsightGate2QueryServiceTest {
                 .isEqualTo(InsightErrorCode.INVALID_REQUEST);
     }
 
-    /** 목록은 조용히 빼지만 단건은 왜 못 보는지 알려준다. */
     @Test
     void 단건은_승인_주체가_아니면_403() {
         InsightResult insight = insight(1, schoolId, centerId);
@@ -364,10 +347,6 @@ class InsightGate2QueryServiceTest {
                 .isEqualTo(InsightErrorCode.NOT_FOUND);
     }
 
-    /**
-     * 재료를 낸 센터가 동의를 철회하면, 승인하는 학교도 그 글을 더 못 읽는다 (#257, 멘토님 리뷰 #256 P1).
-     * 승인 버튼만 막으면 목록·상세로 철회된 기관 내용이 섞인 글을 계속 본다. 이미 승인한 글도 같다.
-     */
     @Test
     void 재료_기관이_동의를_철회하면_목록과_상세에서_사라진다() {
         InsightResult pending = insight(1, schoolId, centerId);
@@ -396,7 +375,6 @@ class InsightGate2QueryServiceTest {
         assertThat(service.getInsights(SCHOOL_TEACHER, "approved")).isEmpty();
     }
 
-    /** 하루 요약만 허락한 기관은 승인해도 받지 않으므로, 수신 후보에 미동의로 보인다 (#257). */
     @Test
     void 하루_요약만_허락한_기관은_수신_후보에서_미동의로_보인다() {
         em.persistAndFlush(SharingConsent.grant(childId, 7L, assistantId, List.of(ConsentField.DAILY_SUMMARY)));
@@ -425,7 +403,6 @@ class InsightGate2QueryServiceTest {
         assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
     }
 
-    /** {@code teacher_claim_ids} 처럼 대처 근거도 본다 — 대처 근거는 {@code claim_ids} 에 없다. */
     @Test
     void 교사가_새로_쓴_문장이_대처_근거에만_있어도_교사_작성이다() {
         Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}, {\"text\": \"5분 전에 알려 주니 따라왔다.\", \"source\": \"TEACHER\"}]");
@@ -435,7 +412,6 @@ class InsightGate2QueryServiceTest {
         assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).teacherWritten()).isTrue();
     }
 
-    /** 가리키는 문장을 찾지 못하면 AI 원문인지 알 수 없다. 경고를 띄운다. */
     @Test
     void 근거_문장을_찾지_못하면_교사_작성으로_본다() {
         Long summary = summaryWithClaims("[{\"text\": \"블록을 쌓았다.\"}]");
@@ -492,5 +468,102 @@ class InsightGate2QueryServiceTest {
                 "[\"%d-0\"]".formatted(summaryId), "[1041]", json, sourceInstitutionIds.length > 1, null));
         em.clear();
         return saved;
+    }
+
+    private int pendingCount(Long organizationId, String teacher) {
+        int count = service.countInsights(organizationId, InsightStatus.GATE2_PENDING);
+        assertThat(count).as("대기 수와 대기 목록 건수").isEqualTo(service.getInsights(teacher, "pending").size());
+        return count;
+    }
+
+    @Test
+    void 대기_수는_마지막_회차에_든_글을_모두_센다() {
+        insight(1, schoolId);
+        insight(2, schoolId);
+        insight(2, schoolId);
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isEqualTo(2);
+    }
+
+    @Test
+    void 대기_수도_마지막_회차가_승인됐으면_옛_회차를_세지_않는다() {
+        insight(1, schoolId);
+        Long latestId = insight(2, schoolId).getId();
+        em.find(InsightResult.class, latestId).approveGate2();
+        em.flush();
+        em.clear();
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수는_승인_주체인_기관만_센다() {
+        insight(1, schoolId, centerId);
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isEqualTo(1);
+        assertThat(pendingCount(centerId, CENTER_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수도_재료_기관이_동의를_철회하면_세지_않는다() {
+        insight(1, schoolId, centerId);
+        revokeConsentsTo(centerId);
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수도_명부에서_빠진_아이는_세지_않는다() {
+        insight(1, schoolId);
+        em.find(ChildOrganization.class, schoolLinkId).delete();
+        em.flush();
+        em.clear();
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수도_삭제된_아이는_세지_않는다() {
+        insight(1, schoolId);
+        em.find(Child.class, childId).delete();
+        em.flush();
+        em.clear();
+
+        assertThat(pendingCount(schoolId, SCHOOL_TEACHER)).isZero();
+    }
+
+    @Test
+    void 대기_수는_인사이트_본문을_읽지_않는다() {
+        insight(1, schoolId);
+        insight(1, schoolId);
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+
+        int count = service.countInsights(schoolId, InsightStatus.GATE2_PENDING);
+
+        long loaded = statistics.getEntityStatistics(InsightResult.class.getName()).getLoadCount();
+        statistics.setStatisticsEnabled(false);
+        assertThat(count).isEqualTo(2);
+        assertThat(loaded).isZero();
+    }
+
+    @Test
+    void 근거에만_나오는_기관의_근거_줄도_목록과_단건에_남는다() {
+        Long outsideId = em.persistAndFlush(Organization.of("바깥센터", OrganizationType.CENTER, "1000000009")).getId();
+        Long outsideSummary = em.persistAndFlush(SummaryResult.of(
+                childId, LocalDate.of(2026, 8, 20), outsideId, 1, "바깥 기록", "[]", "[]", "[]", "{}")).getId();
+        Long outsideContext = em.persistAndFlush(ChildContext.of(childId, outsideSummary, "바깥 기록")).getId();
+        InsightResult insight = em.persistAndFlush(InsightResult.of(childId, FROM, TO, 1, "상황", "반응", "본문", null,
+                "[\"%d-0\"]".formatted(outsideSummary), "[]", "[%d]".formatted(schoolId), false, null));
+        em.clear();
+
+        assertThat(service.getInsights(SCHOOL_TEACHER, "pending").get(0).evidence())
+                .singleElement().satisfies(ref -> {
+                    assertThat(ref.childContextId()).isEqualTo(String.valueOf(outsideContext));
+                    assertThat(ref.institution().id()).isEqualTo(String.valueOf(outsideId));
+                });
+        assertThat(service.getInsight(SCHOOL_TEACHER, insight.getId()).evidence())
+                .extracting(ref -> ref.institution().id()).containsExactly(String.valueOf(outsideId));
     }
 }

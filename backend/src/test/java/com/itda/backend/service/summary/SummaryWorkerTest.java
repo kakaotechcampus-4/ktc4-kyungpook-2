@@ -3,6 +3,7 @@ package com.itda.backend.service.summary;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
@@ -31,6 +32,7 @@ import com.itda.backend.domain.record.FailureReason;
 import com.itda.backend.dto.request.summary.SummaryAgentRequest;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentRejectedException;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
 import com.itda.backend.exception.summary.SummaryNoGroundedClaimsException;
 import com.itda.backend.exception.summary.SummaryTargetException;
@@ -93,7 +95,23 @@ class SummaryWorkerTest {
         order.verify(recorder).record(second, requestFor(second), reply2);
     }
 
-    /** 집은 뒤 그 기관 동의가 철회된 묶음은 AI 에 보내지 않는다 (#332). 닫는 일은 레코더가 한다. */
+    @Test
+    void 특이사항_없음뿐인_묶음은_AI를_부르지_않고_요약할_내용_없음으로_남긴다() {
+        ClaimedSummaryGroup claimed = group(8L, 1L, 2L);
+        SummaryAgentRequest request = new SummaryAgentRequest(8L, "아이", "2026-10-08", 3L, "학교",
+                List.of(new SummaryAgentRequest.Source(1L, "특이사항 없음", "2026-10-08"),
+                        new SummaryAgentRequest.Source(2L, "오늘은 특이사항 없었습니다.", "2026-10-08")),
+                List.of());
+        given(summaryService.claimReadyGroups(10)).willReturn(List.of(claimed));
+        given(summaryService.prepareRequest(claimed)).willReturn(request);
+
+        worker.run();
+
+        verify(client, never()).summarize(any());
+        verify(recorder).record(eq(claimed), eq(request),
+                argThat(reply -> reply.response().isNoContent()));
+    }
+
     @Test
     void 동의가_철회된_묶음은_요약하지_않고_다음_묶음을_처리한다() {
         ClaimedSummaryGroup revoked = group(8L, 1L);
@@ -147,7 +165,6 @@ class SummaryWorkerTest {
 
         worker.run();
 
-        // 다시 요약하면 될 수 있는 실패라 시스템 오류가 아니다 — 교사가 묶음 카드에서 다시 요약한다 (#182).
         verify(recorder).recordFailure(first);
         verify(recorder, never()).recordSystemError(any(), any());
         verify(recorder).record(second, requestFor(second), reply2);
@@ -183,6 +200,21 @@ class SummaryWorkerTest {
     }
 
     @Test
+    void 긴_일지가_든_묶음은_AI_를_부르지_않고_CONTENT_TOO_LONG으로_남긴다() {
+        ClaimedSummaryGroup first = group(8L, 1L);
+        ClaimedSummaryGroup second = group(9L, 2L);
+        given(summaryService.claimReadyGroups(10)).willReturn(List.of(first, second));
+        given(summaryService.prepareRequest(first)).willThrow(new AgentContentTooLongException(1L, 5001));
+        given(summaryService.prepareRequest(second)).willReturn(requestFor(second));
+
+        worker.run();
+
+        verify(recorder).recordSystemError(first, FailureReason.CONTENT_TOO_LONG);
+        verify(client, never()).summarize(requestFor(first));
+        verify(client).summarize(requestFor(second));
+    }
+
+    @Test
     void 멈춘_일지_되돌리기는_첫_실행에서_집기_전에_한_번만_한다() {
         given(summaryService.claimReadyGroups(anyInt())).willReturn(List.of());
 
@@ -208,7 +240,6 @@ class SummaryWorkerTest {
 
     @Test
     void 재시도까지_실패하면_실패로_남기지_않고_그_묶음까지_되돌려놓고_멈춘다() {
-        // 요약 단계의 FAILED 는 다시 처리할 길이 없다. AI·LLM 이 잠깐 죽은 것이면 다음 차례에 다시 요약하게 둔다.
         ClaimedSummaryGroup first = group(8L, 1L);
         ClaimedSummaryGroup second = group(9L, 2L);
         ClaimedSummaryGroup third = group(10L, 3L);
@@ -223,7 +254,6 @@ class SummaryWorkerTest {
         verify(summaryService).release(List.of(first, second, third));
         verify(summaryService, never()).prepareRequest(second);
         verify(summaryService, never()).prepareRequest(third);
-        // /health 는 LLM 까지 보지 않아 이 멈춤은 따로 알려야 AI 장애 배너에 뜬다.
         verify(availability).reportCallGaveUp();
     }
 
@@ -254,10 +284,9 @@ class SummaryWorkerTest {
         try {
             worker.run();
         } finally {
-            Thread.interrupted(); // 다른 테스트에 영향이 없도록 인터럽트 표시를 지운다
+            Thread.interrupted();
         }
 
-        // 두 묶음 모두 SUMMARIZING 으로 남기고, 다음에 켜질 때 releaseStuck 이 되돌린다.
         verify(recorder, never()).recordFailure(any());
         verify(recorder, never()).recordSystemError(any(), any());
         verify(summaryService, never()).prepareRequest(second);

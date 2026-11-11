@@ -52,12 +52,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 같은 요청을 두 번 동시에 내릴 때를 PostgreSQL 에서 재현한다. 방식은 {@link LockContention} 이다.
- *
- * <p>정책: 내리기는 조건부 UPDATE 라 뒤의 요청이 앞선 커밋을 기다렸다 조건을 다시 보고 0행이 된다. 둘 다 204 이고 내린 시각은
- * 먼저 커밋한 쪽 값이다. 엔티티를 읽어 고쳐 저장하면 둘 다 "아직 안 내림" 을 보고 나중 것이 처음 시각을 덮는다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -99,7 +93,7 @@ class ChecklistCancelConcurrencyIntegrationTest {
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-staff", "이선생", organization.getId())));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-staff", organization.getId())));
         Child sky = childRepository.save(Child.of("하늘", LocalDate.of(2017, 3, 14)));
         childOrganizationRepository.save(ChildOrganization.of(sky.getId(), organization.getId()));
         checklistId = checklistService.send(String.valueOf(staff.getId()), List.of("실내화를 새로 준비해주세요."),

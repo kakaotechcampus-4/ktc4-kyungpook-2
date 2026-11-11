@@ -6,7 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -28,7 +28,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -102,12 +101,6 @@ import com.itda.backend.service.validation.ValidationWorker;
 
 import jakarta.servlet.http.Cookie;
 
-/**
- * 파일 업로드부터 Gate 1 까지 한 번에 돌린다 — 업로드 → 매칭 → 검증 → [요약] 요청 → 요약 → Gate 1 목록·결정.
- *
- * <p>AI 호출만 가짜로 바꾸고 나머지(API, 워커, 서비스, 레코더, PostgreSQL)는 실제 것을 쓴다. 워커는 테스트 프로필에서
- * 꺼져 있어 스케줄러가 돌지 않으므로 직접 만들어 한 차례씩 돌린다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -172,11 +165,10 @@ class Gate1PipelineIntegrationTest {
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         teacher = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(
-                "pipeline-" + UUID.randomUUID(), "이선생", organization.getId())));
+                "pipeline-" + UUID.randomUUID(), organization.getId())));
         junho = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1)));
         childOrganizationRepository.save(ChildOrganization.of(junho.getId(), organization.getId()));
-        // 매칭 명부는 이 기관에 살아 있는 동의가 있는 아이만 받는다 (DB 스키마 §5.1).
-        User guardian = userRepository.save(UserFixture.parent("parent-" + UUID.randomUUID(), "김보호"));
+        User guardian = userRepository.save(UserFixture.parent("parent-" + UUID.randomUUID()));
         sharingConsentRepository.save(SharingConsent.grant(junho.getId(), guardian.getId(), organization.getId(),
                 List.of(ConsentField.DAILY_SUMMARY)));
 
@@ -193,7 +185,6 @@ class Gate1PipelineIntegrationTest {
         upload("2026-10-08 " + BLOCKS + "\n2026-10-08 " + PUSHED + "\n");
         runPipeline();
 
-        // 목록: 요약 본문, 요약에 들어간 원본의 REVIEW 사유(근거 구간과 겹침)
         Long blocks = entryIdOf(BLOCKS);
         Long pushed = entryIdOf(PUSHED);
         String listed = pendingList()
@@ -207,14 +198,12 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(jsonPath("$.data[0].reviewFlags", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].journalEntryId").value(pushed))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].issueTypes[0]").value("위험행동표현"))
-                // 검증 구간이 짚은 일지를 근거로 든 문장은 두 번째 것뿐이다
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].claimIndexes", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].reviewFlags[0].claimIndexes[0]").value(1))
                 .andReturn().getResponse().getContentAsString();
         Long id = ((Number) JsonPath.read(listed, "$.data[0].id")).longValue();
         String version = JsonPath.read(listed, "$.data[0].version");
 
-        // 문장 카드로 고쳐서 승인 — 첫 문장은 그대로, 둘째는 고치고, 교사가 한 문장을 더한다.
         String edited = BLOCKS + " 친구와 부딪혔다. 낮잠 뒤 차분했다.";
         List<Map<String, Object>> cards = List.of(
                 Map.of("index", 0, "action", "KEEP"),
@@ -230,7 +219,6 @@ class Gate1PipelineIntegrationTest {
 
         assertThat(childContextRepository.findByChildIdOrderByIdDesc(junho.getId())).singleElement()
                 .satisfies(c -> assertThat(c.getContent()).isEqualTo(edited));
-        // 인사이트가 읽는 claims 도 카드 결과로 바뀐다. 요약 본문은 AI 원문 그대로다.
         SummaryResult approved = summaryResultRepository.findById(id).orElseThrow();
         assertThat(approved.getContent()).isEqualTo(BLOCKS + " " + PUSHED);
         JsonNode claims = objectMapper.readTree(approved.getClaims());
@@ -246,7 +234,6 @@ class Gate1PipelineIntegrationTest {
                 .extracting(Approval::getDecision).containsExactly(ApprovalDecision.CORRECTED);
         pendingList().andExpect(jsonPath("$.data", hasSize(0)));
 
-        // 같은 날 일지가 뒤늦게 오면 승인된 판은 두고 새 일지만 새 판으로 요약한다.
         upload("2026-10-08 " + NAP + "\n");
         runPipeline();
 
@@ -276,7 +263,6 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(jsonPath("$.data", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].id").value(summaryId));
 
-        // 보류된 채로는 승인하지 않는다 — 보류를 해제한 뒤 검토 목록에서 승인한다.
         decide(summaryId, "approve")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("SUMMARY_HELD"));
@@ -286,7 +272,6 @@ class Gate1PipelineIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("GATE1_PENDING"));
         assertThat(statusOf(blocks)).isEqualTo(JournalEntryStatus.GATE1_PENDING);
 
-        // 다시 보류해 보류함에서 바로 제거한다.
         decide(summaryId, "hold").andExpect(jsonPath("$.data.status").value("HOLD"));
         decide(summaryId, "remove").andExpect(jsonPath("$.data.status").value("REMOVED"));
         assertThat(journalEntryRepository.findById(blocks).orElseThrow().isDeleted()).isTrue();
@@ -299,16 +284,10 @@ class Gate1PipelineIntegrationTest {
                         ApprovalDecision.REMOVED);
     }
 
-    // ── 흐름 ──
-
     private void upload(String text) throws Exception {
-        MockMultipartFile file = new MockMultipartFile("file", "journal.txt", "text/plain",
-                text.getBytes(StandardCharsets.UTF_8));
-        mockMvc.perform(withAuth(multipart("/api/v1/raw-records").file(file)))
-                .andExpect(status().isCreated());
+        uploadTxt(text.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** 매칭 → 검증 → [요약] 요청 → 요약. 요약은 교사가 누른 묶음만 한다. */
     private void runPipeline() throws Exception {
         matchingWorker.run();
         validationWorker.run();
@@ -330,6 +309,22 @@ class Gate1PipelineIntegrationTest {
                 .content("{\"decision\": \"%s\", \"version\": \"%s\"}".formatted(decision,
                         Gate1Version.of(summaryResultRepository.findById(summaryId).orElseThrow(),
                                 journalEntryRepository.findBySummaryIdAndDeletedAtIsNull(summaryId)))));
+    }
+
+    /** 화면과 같은 3단계 업로드: 주소 받기 → 그 주소로 올리기 → 완료. */
+    private void uploadTxt(byte[] content) throws Exception {
+        String issued = mockMvc.perform(withAuth(post("/api/v1/raw-records/upload-url"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"filename\": \"journal.txt\", \"contentType\": \"text/plain\", \"size\": %d}"
+                                .formatted(content.length)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String uploadUrl = JsonPath.read(issued, "$.data.uploadUrl");
+        Number uploadId = JsonPath.read(issued, "$.data.uploadId");
+        mockMvc.perform(withAuth(put(uploadUrl)).contentType("text/plain").content(content))
+                .andExpect(status().isOk());
+        mockMvc.perform(withAuth(post("/api/v1/raw-records/uploads/" + uploadId + "/complete")))
+                .andExpect(status().isOk());
     }
 
     private MockHttpServletRequestBuilder withAuth(MockHttpServletRequestBuilder request) throws Exception {
@@ -355,9 +350,6 @@ class Gate1PipelineIntegrationTest {
                 junho.getId(), DATE, teacher.getOrganizationId()).orElseThrow();
     }
 
-    // ── 가짜 AI ──
-
-    /** 명부에 준호가 있으면 준호로 자동 확정한다. 동의가 없어 명부에서 빠지면 매칭되지 않는다. */
     private MatchingAgentClient fakeMatchingAgent() {
         MatchingAgentClient client = mock(MatchingAgentClient.class);
         given(client.isAvailable()).willReturn(true);
@@ -379,7 +371,6 @@ class Gate1PipelineIntegrationTest {
         return client;
     }
 
-    /** "밀었다" 가 있으면 앞부분을 짚어 REVIEW, 아니면 PASS. */
     private ValidationAgentClient fakeValidationAgent() {
         ValidationAgentClient client = mock(ValidationAgentClient.class);
         given(client.isAvailable()).willReturn(true);
@@ -401,7 +392,6 @@ class Gate1PipelineIntegrationTest {
         return client;
     }
 
-    /** 일지마다 원문 그대로 한 문장을 쓰고, 앞 네 글자를 근거로 단다. 본문은 문장을 이은 것이다. */
     private SummaryAgentClient fakeSummaryAgent() {
         SummaryAgentClient client = mock(SummaryAgentClient.class);
         given(client.isAvailable()).willReturn(true);

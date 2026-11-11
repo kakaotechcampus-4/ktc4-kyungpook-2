@@ -9,15 +9,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.itda.backend.dto.response.child.OrganizationTimelineEntryResponse;
-import com.itda.backend.global.config.OpenApiConfig;
-import com.itda.backend.global.exception.ErrorResponse;
 import com.itda.backend.global.response.ApiResponse;
 import com.itda.backend.service.child.OrganizationTimelineQueryService;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
@@ -35,23 +30,15 @@ public class OrganizationTimelineController {
                     + "다른 기관 기록은 나오지 않습니다 — 기관 사이에는 Gate 2 를 지난 인사이트(수신함)로만 넘어갑니다. "
                     + "기록이 없는 날은 항목이 없습니다. 같은 날 승인본이 여럿이면 따로 나옵니다. "
                     + "보호자가 우리 기관 동의를 꺼도 지난 기록은 나옵니다.")
-    @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH_SCHEME)
     @io.swagger.v3.oas.annotations.responses.ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
-                    responseCode = "401",
-                    description = "인증 필요",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-            ),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "403",
-                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "가입 미완료 (SIGNUP_NOT_COMPLETED), 기관 소속이 아닌 사용자 (ORGANIZATION_NOT_ASSIGNED)"
             ),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "404",
-                    description = "없거나 삭제됐거나 우리 기관 명부에 없는 아이 (CHILD_NOT_FOUND)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    description = "없거나 삭제됐거나 우리 기관 명부에 없는 아이 (CHILD_NOT_FOUND)"
             )
     })
     public ApiResponse<List<OrganizationTimelineEntryResponse>> timeline(

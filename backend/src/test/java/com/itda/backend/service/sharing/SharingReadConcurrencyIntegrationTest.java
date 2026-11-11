@@ -70,16 +70,6 @@ import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.consent.ConsentService;
 import com.itda.backend.service.invitation.ChildGuardianService;
 
-/**
- * 인사이트 단건 열람이 다른 열람·철회와 겹칠 때를 PostgreSQL 에서 재현한다 (#273). 기관 수신함과 보호자 단건이
- * 같은 열람 경로({@link SharingReadRecorder})를 쓰므로 둘 다 본다.
- *
- * <p>방식은 {@link LockContention} 이다. 먼저 가는 쪽은 바깥 트랜잭션 안에서 실제 서비스를 불러 <b>커밋하지 않고 잠금을 쥔 채</b> 멈춘다 — 서비스
- * 트랜잭션이 바깥에 합류한다. 뒤에 오는 쪽은 MockMvc 로 보내 보안 필터부터 거친다. 뒤의 요청이 먼저 쪽 때문에
- * 멈췄는지 {@code pg_blocking_pids} 로 확인한 뒤 먼저 쪽을 커밋하고, HTTP 응답과 DB 상태를 함께 본다.
- *
- * <p>정책: 철회가 먼저 반영되면 404 와 열람 시각 없음. 열람이 먼저면 200 과 열람 시각을 남긴 뒤 철회된다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -135,13 +125,12 @@ class SharingReadConcurrencyIntegrationTest {
         Organization school = organizationRepository.save(
                 Organization.of("햇살특수학교", OrganizationType.SCHOOL, OrganizationFixture.nextBusinessNumber()));
         center = organizationRepository.save(OrganizationFixture.center());
-        centerStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-center", "센터선생", center.getId())));
-        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
+        centerStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-center", center.getId())));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom")));
 
         childId = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14))).getId();
         childOrganizationRepository.save(ChildOrganization.of(childId, school.getId(), "S-1"));
         childOrganizationRepository.save(ChildOrganization.of(childId, center.getId(), "C-7"));
-        // 초대 코드 경로는 이 테스트의 관심이 아니다. 연결 행은 초대 id 만 있으면 된다.
         childGuardianRepository.save(ChildGuardian.link(childId, mom.getId(), 1L));
         sharingConsentRepository.save(SharingConsent.grant(childId, mom.getId(), school.getId(),
                 List.of(ConsentField.WEEKLY_INSIGHT)));
@@ -151,7 +140,6 @@ class SharingReadConcurrencyIntegrationTest {
         insightId = insightResultRepository.save(InsightResult.of(childId, LocalDate.of(2026, 8, 17),
                 LocalDate.of(2026, 8, 23), 1, "급식실 입장 직후", "소리를 지름", "이동 전 5분 예고가 효과적이었습니다.",
                 null, "[]", "[]", "[%d]".formatted(school.getId()), false, null)).getId();
-        // Gate 2 승인이 만든 것과 같은 모양 — 학교가 승인해 센터와 엄마에게 열었다.
         centerGrantId = sharingHistoryRepository.save(SharingHistory.grant(childId, insightId, school.getId(),
                 ReceiverType.ORGANIZATION, center.getId())).getId();
         momGrantId = sharingHistoryRepository.save(SharingHistory.grant(childId, insightId, school.getId(),
@@ -174,9 +162,6 @@ class SharingReadConcurrencyIntegrationTest {
         }
     }
 
-    // --- 기관 수신함 ---
-
-    /** 같은 권한 행의 열람 시각 UPDATE 끼리는 행 잠금에서 기다린다. 뒤의 UPDATE 는 조건을 다시 보고 0행이 된다. */
     @Test
     void 수신함_동시_열람은_처음_시각을_남기고_둘_다_그_시각을_돌려준다() throws Exception {
         Held<InboxDetailResponse> held = contention.firstHoldsThen(
@@ -222,8 +207,6 @@ class SharingReadConcurrencyIntegrationTest {
         assertNotFound(mockMvc.perform(get(inboxItem()).cookie(auth(centerStaff))).andReturn());
     }
 
-    // --- 보호자 단건 ---
-
     @Test
     void 보호자_동시_열람은_처음_시각을_남기고_둘_다_그_시각을_돌려준다() throws Exception {
         Held<GuardianInsightResponse> held = contention.firstHoldsThen(
@@ -264,8 +247,6 @@ class SharingReadConcurrencyIntegrationTest {
         assertThat(grant.getReadAt()).isEqualTo(held.first().readAt());
         assertThat(grant.isActive()).isFalse();
     }
-
-    // --- 도구 ---
 
     private SharingHistory grant(Long grantId) {
         return sharingHistoryRepository.findById(grantId).orElseThrow();

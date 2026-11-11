@@ -3,7 +3,6 @@ import { Spinner } from "@/components/ui";
 import { getTimeline } from "@/lib/api";
 import type { TimelineEntry } from "@/lib/types";
 
-/** 아이 팝업 [기록] 탭 — 우리 기관이 검토에서 승인한 요약 (O-14). 최근 날짜부터 */
 export function ChildTimeline({ childId }: { childId: string }) {
   const [list, setList] = useState<TimelineEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -20,7 +19,7 @@ export function ChildTimeline({ childId }: { childId: string }) {
       </p>
     );
   }
-  if (list.length === 0) return <p className="text-[15px] text-muted">검토에서 승인한 기록이 아직 없어요</p>;
+  if (list.length === 0) return <p className="text-[15px] text-muted">요약 검토에서 승인한 기록이 아직 없어요</p>;
 
   return (
     <ul className="grid">

@@ -1,6 +1,7 @@
 import type {
   AiActivity,
   FailedSummary,
+  AiProgress,
   AiStatus,
   BlockedItem,
   Child,
@@ -24,8 +25,6 @@ import type {
   SummaryItem,
   TimelineEntry,
 } from "@/lib/types";
-
-/* 기관 ─────────────────────────────────────────────── */
 
 export const CENTER: Institution = {
   id: "inst_center_01",
@@ -51,7 +50,6 @@ export const SPEECH: Institution = {
   type: "center",
   verified: true,
 };
-/** "기관 직접 추가"(초대코드 없이 보호자가 기관 코드로 연결) 데모용 */
 export const ART_ACADEMY: Institution = {
   id: "inst_art_01",
   name: "OO미술학원",
@@ -59,13 +57,8 @@ export const ART_ACADEMY: Institution = {
   verified: true,
 };
 
-/** 로그인한 교사가 소속된 기관 */
 export const MY_INSTITUTION = CENTER;
-/** 우리 기관 코드 — 보호자에게 알려 주면 보호자가 이 코드로 아이 연결을 요청한다 */
 export const MY_INSTITUTION_CODE = "K7P3QX9M";
-export const ME = { name: "박지현", role: "선생님" };
-
-/* 아동 ─────────────────────────────────────────────── */
 
 export const CHILDREN: Child[] = [
   {
@@ -99,12 +92,10 @@ export const CHILDREN: Child[] = [
     id: "child_1077",
     name: "박OO",
     birthDate: "2020-01-25",
-    // 부모 동의 대기 — 업로드·파이프라인 전체가 막힌 상태
     status: "pending_consent",
     institutions: [{ institution: CENTER, consent: "not_granted" }],
   },
   {
-    // 동명이인 데모용 — child_1023 과 이름이 같다. 생년월일로만 구별된다 (확인 필요 큐 mq_01)
     id: "child_1088",
     name: "김OO",
     birthDate: "2021-09-02",
@@ -112,7 +103,6 @@ export const CHILDREN: Child[] = [
     institutions: [{ institution: CENTER, consent: "granted" }],
   },
   {
-    // 다자녀 보호자 데모용 — child_1023 과 같은 보호자의 둘째 아이
     id: "child_2044",
     name: "최OO",
     birthDate: "2021-05-30",
@@ -122,7 +112,6 @@ export const CHILDREN: Child[] = [
     care: { allergies: [], medications: [] },
   },
   {
-    // 기관 연결 요청 데모용 — 학교에만 다니고 우리 기관 명부에는 없다. 보호자가 우리 기관 코드로 요청했다
     id: "child_3011",
     name: "정OO",
     birthDate: "2018-11-26",
@@ -131,23 +120,14 @@ export const CHILDREN: Child[] = [
   },
 ];
 
-/* 기관 연결 요청 (I-09) ────────────────────────────── */
-
-/** 보호자가 우리 기관 코드로 보낸, 기다리는 연결 요청 */
 export const LINK_REQUESTS: PendingLinkRequest[] = [
   {
     child: { id: "child_3011", name: "정OO", birthDate: "2018-11-26" },
-    requesters: [{ name: "정OO 어머니" }],
+    requesterCount: 1,
     requestedAt: "2026-10-29T09:20:00+09:00",
   },
 ];
 
-/* 확인 필요 큐 (I-06) ──────────────────────────────── */
-
-/**
- * 본문에서 word 가 처음 나오는 구간. AI 처럼 **코드포인트** 인덱스로 돌려준다.
- * 손으로 숫자를 적으면 본문을 고칠 때마다 어긋나서 계산으로 둔다.
- */
 function spanOf(text: string, word: string): EvidenceSpan {
   const at = text.indexOf(word);
   if (at === -1) throw new Error(`mock: "${word}" 가 본문에 없습니다`);
@@ -155,10 +135,6 @@ function spanOf(text: string, word: string): EvidenceSpan {
   return { start, end: start + Array.from(word).length };
 }
 
-/**
- * 서버(RecordResponse)처럼 앞 60자만 잘라 목록용 미리보기를 만든다.
- * mq_01·02·05 는 아이 이름이 60자 뒤에 있어서, 미리보기만으로는 누구 기록인지 보이지 않는다.
- */
 function recordText(full: string) {
   return { preview: full.length <= 60 ? full : `${full.slice(0, 60)}…`, fullContent: full };
 }
@@ -169,7 +145,6 @@ const MQ_02 =
   "자유놀이 중 김OO가 블록을 높이 쌓다가 무너지자 잠시 울먹였지만, 다시 처음부터 쌓기 시작함. 한참 뒤 옆자리의 이OO가 블록을 나눠 주었고, 둘이 서로 양보하며 끝까지 완성함.";
 const MQ_03 = "우리 반 막둥이가 새 신발을 자랑하며 친구들에게 보여줌.";
 const MQ_04 = "오후 자유놀이 중 정OO가 장난감을 두고 다툼이 있었고, 스스로 사과함.";
-// 하루 전체를 적은 긴 일지 — 본문 영역이 최대 높이에서 멈추고 스크롤되는지 보는 데모 (#150)
 const MQ_05 = [
   "등원 직후 표정이 굳어 있었고, 교사의 인사에도 반응하지 않은 채 가방을 내려놓지 않음. 10분쯤 지나 좋아하는 자동차 장난감을 건네자 받아 들었음. 최OO는 그 뒤로 친구들 놀이에 스스로 참여함.",
   "10:30 미술 활동. 물감 색을 고를 때 한참 망설였지만 교사가 두 가지만 골라 보여주자 파란색을 골라 끝까지 칠함. 붓을 씻는 순서를 기다리는 동안 손을 흔들며 기다리기 어려워했고, 순서 카드를 보여주니 다시 줄에 섬.",
@@ -197,7 +172,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       ...recordText(MQ_01),
     },
     evidence: [spanOf(MQ_01, "김OO")],
-    // 후보는 명부(CHILDREN)에 있는 아이여야 한다 — 화면이 명부와 맞춰보고 없으면 막는다
     candidates: [
       { childId: "child_1023", name: "김OO", group: "나비반 · 4세반", birthDate: "2019-03-12" },
       { childId: "child_1088", name: "김OO", group: "나비반 · 4세반", birthDate: "2021-09-02" },
@@ -232,7 +206,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
       capturedAt: "2026-08-21T15:05:00+09:00",
       ...recordText(MQ_03),
     },
-    // 이름은 없지만 "막둥이" 가 누구를 가리키는지 사람이 판단할 단서다
     evidence: [spanOf(MQ_03, "막둥이")],
     candidates: [],
   },
@@ -252,8 +225,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     candidates: [],
   },
   {
-    // 표지(이OO)와 본문 판정(최OO)이 어긋나 확인으로 내려온 건.
-    // review 의 추천 아이는 matchedChildId 로만 온다 — candidates 는 multi 전용이다.
     id: "mq_05",
     status: "review",
     matchedChildId: "child_2044",
@@ -270,7 +241,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     candidates: [],
   },
   {
-    // 추천 아이가 명부에 있지만 보호자 동의 전이라 확정할 수 없는 건 (child_1077 은 pending_consent)
     id: "mq_07",
     status: "review",
     matchedChildId: "child_1077",
@@ -285,7 +255,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     candidates: [],
   },
   {
-    // 추천 아이가 명부에서 지워진 건 — 명부에서 찾지 못하면 직접 고르게 한다
     id: "mq_08",
     status: "review",
     matchedChildId: "child_9001",
@@ -300,8 +269,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     candidates: [],
   },
   {
-    // 일지 본문이 비어 있는 건. 서버(RecordResponse.of)는 preview 와 fullContent 를 같은 본문으로
-    // 만들어서 둘이 함께 null 로 온다. 화면은 본문을 못 불러왔다고 안내한다 (#150).
     id: "mq_09",
     status: "unmatched",
     matchedChildId: null,
@@ -317,7 +284,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
     candidates: [],
   },
   {
-    // AI 호출이 실패한 건. 판정이 없으니 후보도 근거도 비어 온다.
     id: "mq_06",
     status: "failed",
     matchedChildId: null,
@@ -333,8 +299,6 @@ export const MATCHING_QUEUE: MatchingItem[] = [
   },
 ];
 
-/* 파일 단위 처리 현황 ─────────────────────────────── */
-
 const entries = (
   prefix: string,
   groups: [count: number, stageIndex: number, state: EntryProgress["state"]][],
@@ -345,10 +309,6 @@ const entries = (
   );
 };
 
-/**
- * 업로드한 파일별로, 거기서 나온 기록이 지금 어느 단계에 있는지.
- * 단계 인덱스는 lib/pipeline.ts 의 PIPELINE_STAGES 기준 (0 등록 · 1 매칭 · 2 검증 · 3 요약 · 4 요약 검토).
- */
 export const FILE_PROGRESS: FileProgress[] = [
   {
     rawRecordId: "rr_0915",
@@ -368,7 +328,6 @@ export const FILE_PROGRESS: FileProgress[] = [
       [2, 1, "waiting"],
       [2, 2, "running"],
       [1, 4, "waiting"],
-      // 매칭 확인에서 "우리 기관 아이 아님"으로 뺀 기록 (BE EXCLUDED)
       [1, 1, "done"],
     ]),
   },
@@ -376,12 +335,9 @@ export const FILE_PROGRESS: FileProgress[] = [
     rawRecordId: "rr_0821c",
     fileName: "0821_특이사항.txt",
     uploadedAt: "2026-08-21T18:05:00+09:00",
-    // 검증에서 BLOCK — 원본을 고쳐야 하므로 사람 대기다
     entries: entries("rr_0821c", [[1, 2, "waiting"]]),
   },
 ];
-
-/* 재입력 요청 큐 (I-07) ────────────────────────────── */
 
 export const BLOCKED_QUEUE: BlockedItem[] = [
   {
@@ -406,7 +362,6 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
       fileName: "0818_특이사항.txt",
       type: null,
       capturedAt: "2026-08-18",
-      // 막힌 문장이 60자 뒤에 있는 경우 — 미리보기로는 무엇을 고칠지 보이지 않는다
       preview:
         "오전 간식 시간에는 평소처럼 자리에 앉아 우유를 마셨고, 친구가 건넨 과자도 받아 먹었다. 바깥놀이…",
       fullContent:
@@ -415,14 +370,10 @@ export const BLOCKED_QUEUE: BlockedItem[] = [
   },
 ];
 
-/* Gate 1 검토 대기 (I-08) ──────────────────────────── */
-
-/** 요약 본문은 문장(claims)을 이은 것이다 — mock 도 그렇게 만든다 */
 function gate1Mock(
   item: Omit<SummaryItem, "content" | "claims" | "entries"> & { sentences: string[] },
 ): SummaryItem {
   const { sentences, ...rest } = item;
-  // 원본 일지는 요약 문장을 조금 늘여 쓴 한 편 + 요약에 안 들어간 일지. 근거 인용은 문장에서 끝의 "다." 를 뺀 구절
   const sourceId = `je_${item.id}`;
   const quotes = sentences.map((t) => t.replace(/다\.$/, ""));
   return {
@@ -441,7 +392,6 @@ function gate1Mock(
 }
 
 export const GATE1_QUEUE: SummaryItem[] = [
-  // 다른 아이 이름 경고 + 요약에 안 들어간 일지 + 검증 REVIEW
   gate1Mock({
     id: "sum_9012",
     childId: "child_1023",
@@ -475,7 +425,6 @@ export const GATE1_QUEUE: SummaryItem[] = [
       },
     ],
   }),
-  // 같은 날 새 기록을 반영하는 중 — 고치기·승인이 잠긴다
   gate1Mock({
     id: "sum_9013",
     childId: "child_1041",
@@ -492,7 +441,6 @@ export const GATE1_QUEUE: SummaryItem[] = [
     uncoveredEntries: [],
     reviewFlags: [],
   }),
-  // 문장을 나누지 못한 요약 — 그대로 승인하거나 제거만 된다
   {
     id: "sum_9015",
     childId: "child_1088",
@@ -511,7 +459,6 @@ export const GATE1_QUEUE: SummaryItem[] = [
     uncoveredEntries: [],
     reviewFlags: [],
   },
-  // 요약할 내용 없음 (#244) — 본문·문장이 비고, 묶인 기록 원본이 uncoveredEntries 로 온다
   {
     id: "sum_9016",
     childId: "child_2044",
@@ -554,10 +501,7 @@ export const GATE1_QUEUE: SummaryItem[] = [
   }),
 ];
 
-/* Child Context 타임라인 (I-09) ───────────────────── */
-
 export const TIMELINE: Record<string, TimelineEntry[]> = {
-  // 관찰 날짜 최근 순, 같은 날은 승인 최근 순 — 서버와 같은 순서로 둔다. 기록이 없는 날은 항목이 없다
   child_1023: [
     {
       id: "ctx_04",
@@ -593,8 +537,6 @@ export const TIMELINE: Record<string, TimelineEntry[]> = {
   ],
 };
 
-/* Insight (I-10, I-11) ─────────────────────────────── */
-
 export const INSIGHTS: Insight[] = [
   {
     id: "ins_5501",
@@ -624,7 +566,6 @@ export const INSIGHTS: Insight[] = [
         label: "등원 기록",
         institution: CENTER,
       },
-      // AI 가 지난 기록에서 찾아 쓴 근거 (#387 · #388) — "지난 기록" 표시를 mock 에서 보려고 둔다
       {
         childContextId: "cc_2914",
         date: "2026-07-17",
@@ -686,9 +627,6 @@ export const INSIGHTS: Insight[] = [
   },
 ];
 
-/* 수신함 (I-12) ────────────────────────────────────── */
-
-// 단건(O-51)이 본문까지 주므로 mock 은 본문을 함께 들고 있다. 목록(getInbox)은 본문을 떼고 준다.
 export const INBOX: InboxDetail[] = [
   {
     id: "in_01",
@@ -727,14 +665,6 @@ export const INBOX: InboxDetail[] = [
   },
 ];
 
-/* 학부모 화면 ──────────────────────────────────────── */
-
-/**
- * 한 보호자 계정에 연결된 아이들. CHILDREN 은 시스템 전체 아동(다른 기관·다른
- * 가정 포함) 목록이고, 이 배열은 그중 "지금 로그인한 보호자"의 아이만 골라낸
- * 뷰다 — 같은 Child 객체를 참조하므로 mutate 계열 API(mock.CHILDREN.find(...))가
- * 그대로 통한다.
- */
 export const PARENT_CHILDREN: Child[] = CHILDREN.filter((c) =>
   ["child_1023", "child_2044"].includes(c.id),
 );
@@ -764,10 +694,6 @@ export const PARENT_ACTIVITY: Record<string, ParentActivity[]> = {
   ],
 };
 
-/**
- * 보호자 기관 공유 내역 (G-45). 김OO 기준 — 센터는 지금 보는 중, 활동지원사는 끈 뒤 가려짐 하나, 미술학원은 명부에서
- * 빠진 기관이라 설정의 "지금은 연결되지 않은 기관" 에 보인다. insightId 는 GUARDIAN_INSIGHTS 와 맞춰 상세로 이어진다
- */
 export const INSTITUTION_SHARES: Record<string, InstitutionShares[]> = {
   child_1023: [
     {
@@ -793,24 +719,37 @@ export const INSTITUTION_SHARES: Record<string, InstitutionShares[]> = {
   ],
 };
 
-/**
- * 보호자가 받은 인사이트 (G-35 · G-36 mock). 승인 시각 최근 순 — 서버와 같은 순서로 둔다.
- * 한 기간에 두 편(하나는 읽음), 함께 보는 기관이 있는 글과 없는 글, 승인 기관을 모르는 글(from: null)을 함께 둔다.
- */
 export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
   {
     id: "gi_01",
     childId: "child_1023",
     childName: "김OO",
     period: "2026년 10월 4주차",
-    content: "활동이 바뀌기 5분 전에 그림 카드로 예고하면, 학교와 센터 모두에서 울음 없이 다음 활동으로 옮겨 갔습니다.",
+    periodFrom: "2026-10-19",
+    periodTo: "2026-10-25",
+    content: "활동이 바뀌기 5분 전에 그림 카드로 예고하면, 학교와 센터 모두에서 울음 없이 다음 활동으로 옮겨 갔어요.",
     from: SCHOOL,
     sharedWith: [CENTER],
     approvedAt: "2026-10-29T17:40:00",
     readAt: null,
     evidence: [
-      { journalEntryId: "jrn_04", date: "2026-08-14", institution: SCHOOL },
-      { journalEntryId: "jrn_05", date: "2026-08-14", institution: CENTER },
+      {
+        journalEntryId: "jrn_04",
+        date: "2026-08-14",
+        institution: SCHOOL,
+        lookedUp: false,
+        sentences: [
+          { text: "국어 시간이 시작되자 책상 아래로 들어갔다.", role: "상황" },
+          { text: "'공부' 카드를 쥐여 주자 5분 뒤 자리에 앉았다.", role: "대처" },
+        ],
+      },
+      {
+        journalEntryId: "jrn_05",
+        date: "2026-08-14",
+        institution: CENTER,
+        lookedUp: false,
+        sentences: [{ text: "간식 시간으로 바뀔 때 울음이 없었다.", role: "상황" }],
+      },
     ],
   },
   {
@@ -818,7 +757,9 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     childId: "child_1023",
     childName: "김OO",
     period: "2026년 10월 4주차",
-    content: "점심 직후에는 소리에 예민해져, 조용한 자리를 먼저 마련하면 오후 활동 참여가 늘었습니다.",
+    periodFrom: "2026-10-19",
+    periodTo: "2026-10-25",
+    content: "점심 직후에는 소리에 예민해져서, 조용한 자리를 먼저 마련하면 오후 활동 참여가 늘었어요.",
     from: SCHOOL,
     sharedWith: [],
     approvedAt: "2026-10-29T17:20:00",
@@ -830,22 +771,111 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
     childId: "child_1023",
     childName: "김OO",
     period: "2026년 10월 3주차",
-    content: "학교에서는 차례를 기다렸지만 센터에서는 끼어드는 일이 잦았습니다. 센터에서도 순서 카드를 쓰면 도움이 될 수 있습니다.",
+    periodFrom: "2026-10-12",
+    periodTo: "2026-10-18",
+    content: "학교에서는 차례를 기다렸지만 센터에서는 끼어드는 일이 잦았어요. 센터에서도 순서 카드를 쓰면 도움이 될 수 있어요.",
     from: SCHOOL,
     sharedWith: [CENTER],
     approvedAt: "2026-10-27T10:00:00",
     readAt: "2026-10-27T21:00:00",
     evidence: [
-      { journalEntryId: "jrn_01", date: "2026-08-21", institution: SCHOOL },
-      { journalEntryId: "jrn_02", date: "2026-08-21", institution: CENTER },
+      {
+        journalEntryId: "jrn_04",
+        date: "2026-08-14",
+        institution: SCHOOL,
+        lookedUp: true,
+        sentences: [{ text: "'공부' 카드를 쥐여 주자 5분 뒤 자리에 앉았다.", role: "대처" }],
+      },
+      {
+        journalEntryId: "jrn_01",
+        date: "2026-08-21",
+        institution: SCHOOL,
+        lookedUp: false,
+        sentences: [{ text: "차례를 기다려 순서대로 발표했다.", role: "상황" }],
+      },
+      {
+        journalEntryId: "jrn_02",
+        date: "2026-08-21",
+        institution: CENTER,
+        lookedUp: false,
+        sentences: [],
+      },
     ],
+  },
+  {
+    id: "quiet-child_1023-2026-10-06",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 10월 1주차",
+    periodFrom: "2026-10-06",
+    periodTo: "2026-10-12",
+    content: null,
+    from: null,
+    sharedWith: [],
+    approvedAt: "2026-10-13T00:00:00",
+    readAt: null,
+    evidence: [],
+    kind: "quiet",
+    quietReason: "NOTHING_NOTABLE",
+  },
+  {
+    id: "gi_05",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 9월 5주차",
+    periodFrom: "2026-09-29",
+    periodTo: "2026-10-05",
+    content: "등원 차량 앞에서 멈춰 서는 날이 이어졌지만, 좋아하는 노래를 틀면 바로 탔어요.",
+    from: CENTER,
+    sharedWith: [],
+    approvedAt: "2026-10-06T09:30:00",
+    readAt: "2026-10-06T19:00:00",
+    evidence: [
+      {
+        journalEntryId: "jrn_06",
+        date: "2026-09-30",
+        lookedUp: false,
+        institution: CENTER,
+        sentences: [{ text: "차량 앞에서 움직이지 않았다.", role: "상황" }],
+      },
+    ],
+  },
+  {
+    id: "gi_06",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 9월 2주차",
+    periodFrom: "2026-09-07",
+    periodTo: "2026-09-13",
+    content: "새로운 음식을 밀어내는 일이 있었지만, 한 입만 권하면 받아들였어요.",
+    from: CENTER,
+    sharedWith: [],
+    approvedAt: "2026-09-14T11:00:00",
+    readAt: "2026-09-14T18:00:00",
+    evidence: [],
+  },
+  {
+    id: "gi_07",
+    childId: "child_1023",
+    childName: "김OO",
+    period: "2026년 8월 3주차",
+    periodFrom: "2026-08-17",
+    periodTo: "2026-08-23",
+    content: "큰 소리가 나는 활동에서는 귀를 막았지만, 미리 알려 주면 그대로 참여했어요.",
+    from: SCHOOL,
+    sharedWith: [],
+    approvedAt: "2026-08-24T10:00:00",
+    readAt: "2026-08-24T20:00:00",
+    evidence: [],
   },
   {
     id: "gi_04",
     childId: "child_2044",
     childName: "최OO",
     period: "2026년 10월 4주차",
-    content: "첫 주에는 미술 활동을 거부했지만, 넷째 주에는 스스로 붓을 들었습니다.",
+    periodFrom: "2026-10-19",
+    periodTo: "2026-10-25",
+    content: "첫 주에는 미술 활동을 거부했지만, 넷째 주에는 스스로 붓을 들었어요.",
     from: null,
     sharedWith: [],
     approvedAt: "2026-10-28T09:00:00",
@@ -854,33 +884,34 @@ export const GUARDIAN_INSIGHTS: GuardianInsight[] = [
   },
 ];
 
-/**
- * 아이별 초대 코드 (O-15~O-17 mock). 만료 여부는 조회할 때 expiresAt 으로 거른다.
- * 10분짜리라 미리 넣어 두면 화면을 열 때쯤 이미 만료돼 있어 비워 둔다.
- */
-export const INVITATIONS: Record<string, LiveInvitation[]> = {};
+export const INVITE_TTL_MS = 10 * 60 * 1000;
+const demoInvitationIssuedAt = Date.now();
 
-/** 아이별 연결된 보호자 (O-18, O-19 mock) */
-export const CHILD_GUARDIANS: Record<string, ChildGuardian[]> = {
-  child_1023: [
-    { userId: "41", name: "김보호", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true },
-    { userId: "52", name: null, linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false },
-  ],
-  child_1041: [
-    { userId: "63", name: "이보호", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true },
+export const INVITATIONS: Record<string, LiveInvitation[]> = {
+  child_1077: [
+    {
+      id: "inv_demo",
+      code: "K7P3QX9M",
+      issuedAt: new Date(demoInvitationIssuedAt).toISOString(),
+      expiresAt: new Date(demoInvitationIssuedAt + INVITE_TTL_MS).toISOString(),
+    },
   ],
 };
 
-/**
- * 보호자가 초대 코드를 수락하면 연결되는 아이 (G-04 mock). 아직 이 보호자의 아이가 아니고
- * 우리 기관 동의가 남은 아이라, 수락 뒤 동의 미리보기(G-02 mock)까지 이어서 볼 수 있다.
- */
-export const INVITED_CHILD_ID = "child_1077";
+export const ROSTER_REMOVED: { childId: string; institutionId: string }[] = [];
 
-/** 학부모를 초대한 기관 (P-02 확인·동의 화면) */
+export const CHILD_GUARDIANS: Record<string, ChildGuardian[]> = {
+  child_1023: [
+    { userId: "41", linkedAt: "2026-09-21T10:03:00+09:00", linkedByThisOrganization: true, invitationCode: "H4QZ8M2R" },
+    { userId: "52", linkedAt: "2026-09-25T18:20:00+09:00", linkedByThisOrganization: false, invitationCode: null },
+  ],
+  child_1041: [
+    { userId: "63", linkedAt: "2026-09-02T09:12:00+09:00", linkedByThisOrganization: true, invitationCode: "T7KD3WNP" },
+  ],
+};
+
 export const INVITING_INSTITUTION = SCHOOL;
 
-/** 오늘의 일지 · 타임라인 */
 export const JOURNAL: JournalEntry[] = [
   {
     id: "jrn_01",
@@ -935,7 +966,6 @@ export const JOURNAL: JournalEntry[] = [
   },
 ];
 
-/** 보호자 › 준비물·확인사항 — 아이별, 최신순. 아직 받은 요청이 없는 아이는 빈 배열. */
 export const CHECKLISTS: Record<string, ChecklistItem[]> = {
   child_1023: [
     {
@@ -945,7 +975,6 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
       items: ["하원 동행 시간을 10분 늦춰도 될까요."],
       sentAt: "2026-11-04T08:40:00",
       confirmedAt: null,
-      confirmedByName: null,
     },
     {
       id: "req_02",
@@ -954,7 +983,6 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
       items: ["간식 알레르기 정보를 확인해주세요."],
       sentAt: "2026-11-03T17:10:00",
       confirmedAt: null,
-      confirmedByName: null,
     },
     {
       id: "req_01",
@@ -963,13 +991,11 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
       items: ["다음 주 현장학습 동의서를 확인해주세요.", "실내화를 새로 준비해주세요."],
       sentAt: "2026-11-03T15:20:00",
       confirmedAt: "2026-11-03T19:02:00",
-      confirmedByName: "김아빠",
     },
   ],
   child_2044: [],
 };
 
-/** 기관 › 준비물·확인사항 — 보낸 요청, 최신순. 보내기 · 내리기가 이 배열을 바꾼다 */
 export const SENT_CHECKLISTS: SentChecklist[] = [
   {
     id: "cl_02",
@@ -978,15 +1004,12 @@ export const SENT_CHECKLISTS: SentChecklist[] = [
     total: 2,
     confirmed: 1,
     targets: [
-      { child: { id: "child_1023", name: "김OO" }, onRoster: true, confirmedAt: "2026-11-03T19:02:00", confirmedByName: "김보호" },
-      { child: { id: "child_1041", name: "이OO" }, onRoster: true, confirmedAt: null, confirmedByName: null },
+      { child: { id: "child_1023", name: "김OO" }, onRoster: true, confirmedAt: "2026-11-03T19:02:00" },
+      { child: { id: "child_1041", name: "이OO" }, onRoster: true, confirmedAt: null },
     ],
   },
 ];
 
-/* ── 대시보드 (O-80 ~ O-82) ──────────────────── */
-
-/** 진행 현황. 단계마다 한두 줄씩, 선생님 차례 줄은 위 큐의 id 를 가리킨다 */
 export const PIPELINE: Pipeline = {
   turn: { confirm: 2, blocked: 2, review: 3, approve: 1, requests: 1 },
   rows: [
@@ -1024,7 +1047,35 @@ export const AI_ACTIVITY: AiActivity = { split: 12, matched: 7, validated: 11, s
 
 export const AI_STATUS: AiStatus = { available: true, since: null };
 
-/** 요약 실패 (O-35). 진행 현황 mock 의 summary_failed 줄(박OO 11/4)과 같은 묶음 */
+const MOCK_PROGRESS_PLAN: { item: Omit<AiProgress["items"][number], "node" | "elapsedSec">; plan: [string, number][] }[] = [
+  { item: { kind: "entry", childId: null, date: "2026-11-06", weekFrom: null, agent: "matching" },
+    plan: [["extract", 2], ["shortlist", 2], ["llm_judge", 6], ["decide", 1]] },
+  { item: { kind: "entry", childId: "child_1041", date: "2026-11-06", weekFrom: null, agent: "validation" },
+    plan: [["perceive", 2], ["act", 8], ["reflect", 2]] },
+  { item: { kind: "entry", childId: "child_1023", date: "2026-11-06", weekFrom: null, agent: "summary" },
+    plan: [["gather", 2], ["write", 60], ["ground", 4], ["assemble", 1]] },
+];
+
+export function mockAiProgress(nowSec = Math.floor(Date.now() / 1000)): AiProgress {
+  return {
+    enabled: true,
+    items: MOCK_PROGRESS_PLAN.map(({ item, plan }) => {
+      const total = plan.reduce((s, [, d]) => s + d, 0);
+      const t = nowSec % total;
+      let x = t;
+      let node = plan[plan.length - 1][0];
+      for (const [n, d] of plan) {
+        if (x < d) {
+          node = n;
+          break;
+        }
+        x -= d;
+      }
+      return { ...item, node, elapsedSec: t };
+    }),
+  };
+}
+
 export const FAILED_SUMMARIES: FailedSummary[] = [
   {
     childId: "child_1077",

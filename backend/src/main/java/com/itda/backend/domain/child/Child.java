@@ -10,28 +10,18 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.itda.backend.global.jpa.TimestampedEntity;
 
-/**
- * 기관에 등록된 아동. 어느 기관에 다니는지는 이 테이블이 아니라 {@code child_organization} 이 가진다.
- *
- * <p>{@code status} 와 {@code deletedAt} 은 다른 것이다 — {@code SUSPENDED} 는 동의가 없어 처리를
- * 멈춘 상태이고, {@code deletedAt} 은 기관이 목록에서 뺀 상태다 (DB 스키마 §5.1).
- *
- * <p>{@code status} 는 기관별 동의({@code sharing_consent})를 요약한 화면용 값이다. 어느 기관이 이 아이를
- * 매칭에 쓸 수 있는지는 이 값이 아니라 그 기관에 대한 동의로 판단한다.
- */
 @Entity
 @Table(name = "child")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Child {
+public class Child extends TimestampedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,19 +30,12 @@ public class Child {
     @Column(nullable = false, length = 100)
     private String name;
 
-    /** AI 매칭 명부(RosterEntry)의 필수값이라 비어 있으면 그 아이는 매칭 대상에서 빠진다. */
     @Column(nullable = false)
     private LocalDate birthdate;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private ChildStatus status;
-
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
@@ -73,15 +56,10 @@ public class Child {
         return new Child(name, birthdate);
     }
 
-    /**
-     * 어느 기관이든 살아 있는 동의가 생겼다. 화면용 요약 상태일 뿐이다 — 매칭 대상인지는 기관별 동의로 판단한다
-     * (DB 스키마 §5.1).
-     */
     public void activate() {
         this.status = ChildStatus.ACTIVE;
     }
 
-    /** 동의한 적은 있지만 살아 있는 동의가 하나도 남지 않았다. */
     public void suspend() {
         this.status = ChildStatus.SUSPENDED;
     }
@@ -96,16 +74,5 @@ public class Child {
 
     public boolean isDeleted() {
         return this.deletedAt != null;
-    }
-
-    @PrePersist
-    void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = this.createdAt;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

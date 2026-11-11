@@ -37,10 +37,6 @@ import com.itda.backend.repository.summary.SummaryResultRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 기관 아동 기록 타임라인(O-14) — 보안 필터·응답 모양까지 실제로 거친다 (#292). 아이는 기관이 O-11 로 등록하고,
- * 승인본은 저장소로 바로 만든다. 정렬·거르기·수정 표시 규칙은 서비스 테스트가 본다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -85,9 +81,9 @@ class OrganizationTimelineApiTest {
     @BeforeEach
     void setUp() throws Exception {
         organization = organizationRepository.save(OrganizationFixture.center());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
         Organization other = organizationRepository.save(OrganizationFixture.center());
-        otherStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "박선생", other.getId())));
+        otherStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), other.getId())));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -124,7 +120,6 @@ class OrganizationTimelineApiTest {
                 .andExpect(jsonPath("$.data").isEmpty());
     }
 
-    /** 다른 기관 아이가 있는지조차 알려 주지 않는다. */
     @Test
     void 다른_기관_아이는_404_CHILD_NOT_FOUND() throws Exception {
         mockMvc.perform(get(timelinePath()).cookie(auth(otherStaff)))
@@ -134,7 +129,7 @@ class OrganizationTimelineApiTest {
 
     @Test
     void 보호자는_403_ORGANIZATION_NOT_ASSIGNED() throws Exception {
-        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
+        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         mockMvc.perform(get(timelinePath()).cookie(auth(parent)))
                 .andExpect(status().isForbidden())

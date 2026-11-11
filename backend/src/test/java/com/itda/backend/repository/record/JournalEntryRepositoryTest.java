@@ -42,7 +42,6 @@ class JournalEntryRepositoryTest {
         assertThat(found.getStatus()).isEqualTo(JournalEntryStatus.PENDING);
     }
 
-    /** 수정 요청 큐의 처리(#357)가 잠그고 읽는다. 삭제 표시된 일지는 처리 대상이 아니다. */
     @Test
     void 잠그고_읽을_때도_삭제된_일지는_빠진다() {
         JournalEntry alive = journalEntryRepository.saveAndFlush(
@@ -61,10 +60,6 @@ class JournalEntryRepositoryTest {
                 "text/plain", 10L, RawRecordStatus.PENDING)).getId();
     }
 
-    /**
-     * 수정 요청 큐의 고치기(#357)가 아동 행을 잠그기 전에 우리 기관 일지인지 잠그지 않고 본다 — 남의 아이 행은 잠그지 않는다.
-     * 원본 파일의 기관으로 판단하고, 일지나 원본 파일이 삭제됐으면 없는 것으로 본다.
-     */
     @Test
     void 우리_기관_원본_파일에서_나온_살아_있는_일지만_우리_것으로_본다() {
         Long ours = rawRecordOf("1");
@@ -88,6 +83,28 @@ class JournalEntryRepositoryTest {
         assertThat(journalEntryRepository.existsOwnedBy(fromRemovedFile.getId(), "1")).isFalse();
         assertThat(journalEntryRepository.existsOwnedBy(direct.getId(), "1")).isFalse();
         assertThat(journalEntryRepository.existsOwnedBy(9999L, "1")).isFalse();
+    }
+
+    @Test
+    void 진행_단계_번역용으로_일지의_기관_아이_날짜를_한_번에_읽는다() {
+        Long ours = rawRecordOf("1");
+        Long theirs = rawRecordOf("2");
+        JournalEntry matching = journalEntryRepository.saveAndFlush(
+                JournalEntry.of(ours, LocalDate.of(2026, 11, 9), "기록", 1));
+        JournalEntry validating = JournalEntry.of(theirs, LocalDate.of(2026, 11, 8), "기록", 1);
+        validating.assignChild(7L);
+        journalEntryRepository.saveAndFlush(validating);
+        JournalEntry deleted = JournalEntry.of(ours, LocalDate.of(2026, 11, 9), "기록", 2);
+        deleted.delete();
+        journalEntryRepository.saveAndFlush(deleted);
+        entityManager.clear();
+
+        List<ProgressEntryKey> keys = journalEntryRepository.findProgressKeys(
+                List.of(matching.getId(), validating.getId(), deleted.getId(), 9999L));
+
+        assertThat(keys).containsExactlyInAnyOrder(
+                new ProgressEntryKey(matching.getId(), null, LocalDate.of(2026, 11, 9), "1"),
+                new ProgressEntryKey(validating.getId(), 7L, LocalDate.of(2026, 11, 8), "2"));
     }
 
     @Test
@@ -130,7 +147,7 @@ class JournalEntryRepositoryTest {
     void 매칭_대상은_원본_파일이_있는_대기_일지를_id_순으로_가져온다() {
         JournalEntry first = save(3L);
         JournalEntry second = save(3L);
-        save(null); // 직접 입력 — 매칭 단계를 건너뛴다 (DB 스키마 §6.2)
+        save(null);
         JournalEntry deleted = save(3L);
         deleted.delete();
         JournalEntry alreadyMatching = save(3L);
@@ -175,7 +192,7 @@ class JournalEntryRepositoryTest {
     void 검증_대상은_매칭이_확정된_일지를_id_순으로_가져온다() {
         JournalEntry first = saveMatched(3L);
         JournalEntry second = saveMatched(3L);
-        save(3L); // 아직 매칭 전
+        save(3L);
         JournalEntry deleted = saveMatched(3L);
         deleted.delete();
         JournalEntry alreadyValidating = saveMatched(3L);
@@ -200,7 +217,6 @@ class JournalEntryRepositoryTest {
     @Test
     void 아동이_비어_있는_일지는_검증_대상에서_뺀다() {
         JournalEntry withoutChild = saveMatched(3L);
-        // 정상 경로로는 생기지 않는다. 판정 대상 없이 보내면 AI 가 REVIEW(대상불명확)로 흘려보내므로 막아 둔다.
         entityManager.getEntityManager()
                 .createNativeQuery("update journal_entry set child_id = null where id = :id")
                 .setParameter("id", withoutChild.getId())
@@ -235,7 +251,6 @@ class JournalEntryRepositoryTest {
                 .containsExactly(kept.getId());
     }
 
-    /** 대시보드 진행 현황(#370)이 읽는 일지 — 우리 기관의 살아 있는, 주어진 상태의 일지만 날짜·id 순으로. */
     @Test
     void 진행_현황은_우리_기관의_살아_있는_주어진_상태_일지만_읽는다() {
         Long ours = rawRecordOf("1");

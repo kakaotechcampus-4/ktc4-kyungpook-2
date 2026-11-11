@@ -46,6 +46,10 @@ build/
 .react-router/
 out/
 coverage/
+# Playwright E2E 결과 (frontend/e2e) — Playwright 가 쓰는 곳만
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
 *.log
 npm-debug.log*
 yarn-error.log*

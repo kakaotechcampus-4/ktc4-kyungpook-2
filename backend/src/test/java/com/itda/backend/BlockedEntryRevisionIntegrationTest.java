@@ -6,7 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -28,7 +28,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -84,13 +83,6 @@ import com.jayway.jsonpath.JsonPath;
 
 import jakarta.servlet.http.Cookie;
 
-/**
- * 검증에서 막힌 일지를 수정 요청 큐에서 고쳐 다시 검증받는 흐름을 한 번에 돌린다 (#357) — 업로드 → 매칭 → 검증(BLOCK)
- * → 큐 → 고치기 → 다시 검증.
- *
- * <p>AI 호출만 가짜로 바꾸고 나머지(API, 워커, 서비스, 레코더, PostgreSQL)는 실제 것을 쓴다 (Gate1PipelineIntegrationTest 와
- * 같은 방식). 워커는 테스트 프로필에서 꺼져 있어 직접 만들어 한 차례씩 돌린다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -140,17 +132,16 @@ class BlockedEntryRevisionIntegrationTest {
     private Child junho;
     private MatchingWorker matchingWorker;
     private ValidationWorker validationWorker;
-    /** 가짜 검증 AI 가 받은 본문 */
     private final List<String> validatedContents = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         teacher = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(
-                "revision-" + UUID.randomUUID(), "이선생", organization.getId())));
+                "revision-" + UUID.randomUUID(), organization.getId())));
         junho = childRepository.save(Child.of("김준호", LocalDate.of(2020, 3, 1)));
         childOrganizationRepository.save(ChildOrganization.of(junho.getId(), organization.getId()));
-        User guardian = userRepository.save(UserFixture.parent("parent-" + UUID.randomUUID(), "김보호"));
+        User guardian = userRepository.save(UserFixture.parent("parent-" + UUID.randomUUID()));
         sharingConsentRepository.save(SharingConsent.grant(junho.getId(), guardian.getId(), organization.getId(),
                 List.of(ConsentField.DAILY_SUMMARY)));
 
@@ -165,7 +156,6 @@ class BlockedEntryRevisionIntegrationTest {
         String cardId = uploadUntilBlocked();
         Long entryId = entryIdOf(BLOCKED);
 
-        // 다시 올리기는 없어졌고, 안 고친 본문은 받지 않는다
         resolve(cardId, "reupload").andExpect(status().isBadRequest());
         revise(cardId, BLOCKED)
                 .andExpect(status().isBadRequest())
@@ -202,7 +192,6 @@ class BlockedEntryRevisionIntegrationTest {
         String secondCard = JsonPath.read(listed, "$.data[0].id");
         assertThat(secondCard).isNotEqualTo(firstCard);
 
-        // 지난 카드로는 처리하지 않는다
         resolve(firstCard, "hold")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_RESULT_OUTDATED"));
@@ -213,14 +202,8 @@ class BlockedEntryRevisionIntegrationTest {
         blockedQueue().andExpect(jsonPath("$.data", hasSize(0)));
     }
 
-    // ── 흐름 ──
-
-    /** 연락처가 든 일지를 올려 매칭·검증을 돌리고, 수정 요청 큐에 뜬 카드 id 를 돌려준다. */
     private String uploadUntilBlocked() throws Exception {
-        MockMultipartFile file = new MockMultipartFile("file", "journal.txt", "text/plain",
-                ("2026-10-08 " + BLOCKED + "\n").getBytes(StandardCharsets.UTF_8));
-        mockMvc.perform(withAuth(multipart("/api/v1/raw-records").file(file)))
-                .andExpect(status().isCreated());
+        uploadTxt(("2026-10-08 " + BLOCKED + "\n").getBytes(StandardCharsets.UTF_8));
         matchingWorker.run();
         validationWorker.run();
 
@@ -248,6 +231,22 @@ class BlockedEntryRevisionIntegrationTest {
                 .content(objectMapper.writeValueAsString(Map.of("action", action))));
     }
 
+    /** 화면과 같은 3단계 업로드: 주소 받기 → 그 주소로 올리기 → 완료. */
+    private void uploadTxt(byte[] content) throws Exception {
+        String issued = mockMvc.perform(withAuth(post("/api/v1/raw-records/upload-url"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"filename\": \"journal.txt\", \"contentType\": \"text/plain\", \"size\": %d}"
+                                .formatted(content.length)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String uploadUrl = JsonPath.read(issued, "$.data.uploadUrl");
+        Number uploadId = JsonPath.read(issued, "$.data.uploadId");
+        mockMvc.perform(withAuth(put(uploadUrl)).contentType("text/plain").content(content))
+                .andExpect(status().isOk());
+        mockMvc.perform(withAuth(post("/api/v1/raw-records/uploads/" + uploadId + "/complete")))
+                .andExpect(status().isOk());
+    }
+
     private MockHttpServletRequestBuilder withAuth(MockHttpServletRequestBuilder request) throws Exception {
         Cookie csrf = mockMvc.perform(get("/api/health")).andReturn().getResponse().getCookie("XSRF-TOKEN");
         Cookie auth = new Cookie(JwtCookie.NAME, jwtProvider.createToken(String.valueOf(teacher.getId())));
@@ -262,9 +261,6 @@ class BlockedEntryRevisionIntegrationTest {
                 .orElseThrow();
     }
 
-    // ── 가짜 AI ──
-
-    /** 명부에 준호가 있으면 준호로 자동 확정한다. */
     private MatchingAgentClient fakeMatchingAgent() {
         MatchingAgentClient client = mock(MatchingAgentClient.class);
         given(client.isAvailable()).willReturn(true);
@@ -283,7 +279,6 @@ class BlockedEntryRevisionIntegrationTest {
         return client;
     }
 
-    /** 전화번호(010-)가 있으면 개인정보로 BLOCK, 아니면 PASS. 받은 본문을 남긴다. */
     private ValidationAgentClient fakeValidationAgent() {
         ValidationAgentClient client = mock(ValidationAgentClient.class);
         given(client.isAvailable()).willReturn(true);

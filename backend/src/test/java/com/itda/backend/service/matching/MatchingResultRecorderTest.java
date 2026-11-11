@@ -102,10 +102,8 @@ class MatchingResultRecorderTest {
         assertThat(result.getStatus()).isEqualTo(MatchingStatus.MULTI);
         assertThat(result.getMultiReason()).isEqualTo(MultiReason.CO_MENTION);
         assertThat(result.getHintMismatch()).isTrue();
-        // 확인 필요 큐(MatchingResultService.buildCandidates)가 "child_id" 키로 읽는다.
         assertThat(result.getCandidates())
                 .isEqualTo("[{\"child_id\":8,\"confidence\":0.62},{\"child_id\":9,\"confidence\":0.6}]");
-        // 검증 단계가 "본문에 다른 아이 이름이 남았는지" 판단할 때 쓴다.
         assertThat(result.getMentionedChildIds()).isEqualTo("[8,9]");
         JournalEntry saved = reload(entry);
         assertThat(saved.getStatus()).isEqualTo(JournalEntryStatus.MATCH_REVIEW);
@@ -126,7 +124,6 @@ class MatchingResultRecorderTest {
 
             MatchingResult result = onlyResultOf(entry.getId());
             assertThat(result.getStatus()).isEqualTo(MatchingStatus.fromJson(status));
-            // 빈 목록은 "이름이 하나도 안 나왔다"는 뜻이라 null 과 구분해서 남긴다.
             assertThat(result.getMentionedChildIds()).isEqualTo("[]");
             JournalEntry saved = reload(entry);
             assertThat(saved.getStatus()).isEqualTo(JournalEntryStatus.MATCH_REVIEW);

@@ -4,14 +4,6 @@ import { TERMS_CHANGED_MESSAGE, TermsForm, useTermsDocuments, type TermItem } fr
 import { ApiError } from "@/lib/api";
 import { agreeTerms, getSession, homePathFor, signOut, type TermKey } from "@/lib/auth";
 
-/**
- * I-16 기관 약관 동의 — 기관 담당자가 가입 뒤 처음, 또는 다시 받는 약관의 판이 올라간 뒤 한 번 본다.
- *
- * 기관 화면 묶음(`org/layout.tsx`) 밖에 둔다. 그 가드가 동의하지 않은 기관을 이리 보내므로 안에 두면 돈다.
- * 머리띠 · 메뉴 없이 회원가입 화면과 같은 모양이다. 동의하지 않으면 기관 화면을 하나도 쓸 수 없어서,
- * 잘못 가입했거나 그만두려는 사람이 나갈 수 있게 아래에 로그아웃을 둔다.
- * 화면이 열리면 기관 약관 본문을 받아 두고, 동의는 그 판으로 보낸다(줄마다 [보기]로 본문을 연다).
- */
 const TERMS: readonly TermItem[] = [
   { key: "org_tos", label: "기관 서비스 이용약관 동의", required: true },
   { key: "org_privacy", label: "담당자 개인정보 수집 동의", required: true },
@@ -47,7 +39,6 @@ export default function OrgTermsPage() {
     } catch (err) {
       setPending(false);
       if (err instanceof ApiError && err.code === "TERMS_VERSION_CHANGED") {
-        // 화면을 연 뒤 약관이 바뀌었다 — 바뀐 약관의 체크만 풀고 다시 보게 한다
         const changed = await terms.reloadChanged();
         setAgreed((prev) => prev.filter((k) => !changed.includes(k)));
         setError(TERMS_CHANGED_MESSAGE);
@@ -61,7 +52,6 @@ export default function OrgTermsPage() {
         navigate("/signup?role=org", { replace: true });
         return;
       }
-      // 체크는 그대로 두고 다시 누를 수 있게 한다
       setError("동의를 저장하지 못했어요. 다시 시도해 주세요.");
     }
   }
@@ -75,12 +65,6 @@ export default function OrgTermsPage() {
   return (
     <div
       className="flex min-h-screen items-center justify-center px-4 py-10 break-keep"
-      /*
-        회원가입(`signup.tsx`) · 보호자 약관과 같은 두 겹 바탕.
-
-        이 화면도 기관 묶음(`org/layout.tsx`) **밖**이라 `org.css` 의 캔버스가 닿지 않는다.
-        가입 → 이 화면 → 대시보드 순으로 보면 가운데 한 장만 맨 크림이었다.
-      */
       style={{
         background:
           "radial-gradient(620px 380px at 100% 0%, #fff0b4 0%, rgb(255 240 180 / 0) 64%)," +

@@ -46,10 +46,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 쓰는 동안의 자동 연장과, 로그아웃한 로그인을 거절하는 동작. 출입증은 과거 시각 시계를 가진 {@link JwtProvider} 로
- * 같은 비밀키로 만들어 "몇 시간 전에 로그인한 사람" 을 흉내 낸다.
- */
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:jwt-renewal;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
         "app.auth.dev-login.enabled=true"
@@ -88,7 +84,7 @@ class JwtRenewalTest {
     void setUp() {
         clock.setTo(NOW);
         parent = TermsFixture.agreeAll(termsAgreementRepository,
-                userRepository.save(UserFixture.parent("kakao-renewal-parent", "김보호")));
+                userRepository.save(UserFixture.parent("kakao-renewal-parent")));
     }
 
     @AfterEach
@@ -98,7 +94,6 @@ class JwtRenewalTest {
         userRepository.deleteAll();
     }
 
-    /** {@code ago} 전에 로그인한 출입증. */
     private String loggedInAgo(Duration ago) {
         Clock past = Clock.offset(clock, ago.negated());
         return new JwtProvider(secret, ttlMs, maxSessionMs, past).createToken(String.valueOf(parent.getId()));
@@ -134,13 +129,11 @@ class JwtRenewalTest {
         return mockMvc.perform(request).andReturn().getResponse();
     }
 
-    /** CSRF 토큰을 실제로 받아 되돌려 보내는 로그아웃. */
     private MockHttpServletResponse logout(MockHttpServletRequestBuilder request, String token) throws Exception {
         Cookie csrf = perform(get("/api/health")).getCookie("XSRF-TOKEN");
         return perform(request.cookie(auth(token), csrf).header("X-XSRF-TOKEN", csrf.getValue()));
     }
 
-    /** 같은 이름·경로의 쿠키는 나중에 도착한 응답으로 교체하는 브라우저 저장소. 이 테스트의 경로는 모두 / 다. */
     private record StoredCookie(Cookie cookie, Instant expiresAt) {}
 
     private class BrowserCookies {
@@ -332,7 +325,6 @@ class JwtRenewalTest {
         assertThat(perform(get(ME).cookie(auth(original), renewalCookie(response))).getStatus()).isEqualTo(200);
     }
 
-    /** 로그아웃 응답에 연장 쿠키가 같이 실리면 만료 쿠키를 덮을 수 있다. */
     @Test
     void logoutDoesNotRenew() throws Exception {
         MockHttpServletResponse response = logout(post(LOGOUT), loggedInAgo(Duration.ofHours(2)));
@@ -342,7 +334,6 @@ class JwtRenewalTest {
                 .satisfies(cookie -> assertThat(cookie).contains("Max-Age=0"));
     }
 
-    /** 인코딩한 주소로 보내도 컨트롤러와 같은 기준으로 로그아웃으로 읽는다. */
     @Test
     void encodedLogoutPathDoesNotRenew() throws Exception {
         MockHttpServletResponse response =
@@ -353,7 +344,6 @@ class JwtRenewalTest {
                 .satisfies(cookie -> assertThat(cookie).contains("Max-Age=0"));
     }
 
-    /** 개발용 로그인은 새 로그인 쿠키를 싣는다. 기존 쿠키의 연장 쿠키가 같이 실리면 어느 쪽이 남을지 순서에 달린다. */
     @Test
     void devLoginWithAnOldCookieIssuesOnlyTheNewLoginCookie() throws Exception {
         String old = loggedInAgo(Duration.ofHours(2));
@@ -373,10 +363,6 @@ class JwtRenewalTest {
         assertThat(accessTokenCookies(response)).isEmpty();
     }
 
-    /**
-     * 로그아웃 직전에 나간 요청이 연장 쿠키 Y 를 받아 두었다가 로그아웃보다 늦게 도착해 Y 를 심는 경우. Y 는 같은 로그인
-     * 번호라 쓸 수 없다. 로그아웃한 X 도 그대로 쓸 수 없다.
-     */
     @Test
     void renewedCookieArrivingAfterLogoutCannotBeUsed() throws Exception {
         String x = loggedInAgo(Duration.ofHours(2));
@@ -386,14 +372,12 @@ class JwtRenewalTest {
 
         MockHttpServletResponse withY = perform(get(ME).cookie(auth(x), y));
         assertThat(withY.getStatus()).isEqualTo(401);
-        // 늦게 도착할 수 있는 응답이라 만료 쿠키도 내려주지 않는다 — 그 사이 새로 로그인한 쿠키를 지우지 않게
         assertThat(accessTokenCookies(withY)).isEmpty();
         assertThat(renewalCookies(withY)).isEmpty();
         assertThat(perform(get(ME).cookie(y)).getStatus()).isEqualTo(401);
         assertThat(perform(get(ME).cookie(auth(x))).getStatus()).isEqualTo(401);
     }
 
-    /** X 가 만료되기 직전에 Y 를 발급하고, 로그아웃은 X 가 만료된 직후 처리되는 경우에도 Y 를 거절한다. */
     @Test
     void renewedCookieCannotReviveLoginWhenOriginalTokenExpiresBeforeLogout() throws Exception {
         String x = loggedInAgo(Duration.ZERO);
@@ -457,7 +441,6 @@ class JwtRenewalTest {
         assertThat(revokedSessionRepository.count()).isZero();
     }
 
-    /** 1기관 1계정이라 한 사람의 로그아웃이 같은 계정의 다른 로그인을 끊으면 안 된다. */
     @Test
     void otherLoginOfTheSameUserSurvivesLogout() throws Exception {
         String mine = loggedInAgo(Duration.ofMinutes(10));
@@ -479,7 +462,6 @@ class JwtRenewalTest {
                 .extracting(RevokedSession::getUserId).isEqualTo(parent.getId());
     }
 
-    /** 자동 연장 전에 발급된 출입증은 로그인 번호가 없어 남길 것이 없다. 쿠키만 지운다. */
     @Test
     void loggingOutWithALegacyTokenOnlyExpiresTheCookie() throws Exception {
         String legacy = Jwts.builder()
@@ -497,7 +479,6 @@ class JwtRenewalTest {
         assertThat(revokedSessionRepository.count()).isZero();
     }
 
-    /** 옛 출입증은 통과하지만 연장하지 않는다 — 로그아웃으로 거절할 번호가 없다. */
     @Test
     void legacyTokenIsAcceptedButNotRenewed() throws Exception {
         String legacy = Jwts.builder()

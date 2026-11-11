@@ -167,7 +167,6 @@ class ValidationWorkerTest {
 
     @Test
     void AI_다운이면_처리_중이던_일지도_실패로_남기지_않고_나머지와_함께_검증_대기로_돌려놓고_멈춘다() {
-        // LLM 만 죽어 있으면 /health 는 통과하고 AI 가 503 을 준다. 지금까지는 차례마다 1건씩 FAILED 로 빠졌다.
         given(validationService.claimMatched(10)).willReturn(List.of(1L, 2L, 3L));
         given(validationService.prepareRequest(1L)).willReturn(targetFor(1L));
         given(client.validate(targetFor(1L).request())).willThrow(new AiAgentUnavailableException("down", null));
@@ -192,7 +191,6 @@ class ValidationWorkerTest {
 
         worker.run();
 
-        // 그 일지는 빠졌으니 대기열을 멈추지 않는다 — AI 가 이 일지만 거절하는 경우 나머지는 정상으로 처리된다.
         verify(recorder).recordFailure(1L, FailureReason.AGENT_UNAVAILABLE);
         verify(validationService).prepareRequest(2L);
         verify(validationService, never()).release(any());
@@ -210,10 +208,9 @@ class ValidationWorkerTest {
         try {
             worker.run();
         } finally {
-            Thread.interrupted(); // 다른 테스트에 영향이 없도록 인터럽트 표시를 지운다
+            Thread.interrupted();
         }
 
-        // 두 건 모두 VALIDATING 으로 남기고, 다음에 켜질 때 releaseStuck 이 되돌린다.
         verify(recorder, never()).recordFailure(any(), any());
         verify(validationService, never()).prepareRequest(2L);
         verify(validationService, never()).release(any());
@@ -276,7 +273,6 @@ class ValidationWorkerTest {
         try {
             worker.run();
         } catch (IllegalStateException ignored) {
-            // 예외는 스케줄러가 로그로 남긴다. 여기서는 쉬기가 걸렸는지만 본다.
         }
 
         clock.advance(Duration.ofSeconds(29));

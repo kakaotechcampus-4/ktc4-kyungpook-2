@@ -6,23 +6,20 @@ import { ParentPageHeader } from "@/components/parent/ParentPageHeader";
 import {
   getJournal,
   getParentChildren,
-  getParentHome,
   getPendingInstitutionRequests,
   isReady,
   loadIfReady,
   loadOpenChecklistCount,
 } from "@/lib/api";
 import { todayDate } from "@/lib/datetime";
-import { readSelectedChildId } from "@/lib/selectedChild";
+import { selectedChildOrInvite } from "@/lib/selectedChild";
 import type { Institution } from "@/lib/types";
 
 export async function clientLoader() {
-  // 서버에 아직 없다. mock 을 불러 진짜 아이 옆에 띄우지 않는다 — 화면은 "준비 중"
   if (!isReady("guardianJournal")) return null;
-  const kids = await getParentChildren();
-  const childId = readSelectedChildId(kids);
-  const [{ child }, journal, pending, openChecklists] = await Promise.all([
-    getParentHome(childId),
+  const child = selectedChildOrInvite(await getParentChildren());
+  const childId = child.id;
+  const [journal, pending, openChecklists] = await Promise.all([
     getJournal(childId),
     loadIfReady("consentRequests", () => getPendingInstitutionRequests(childId)),
     loadOpenChecklistCount(childId),
@@ -32,7 +29,6 @@ export async function clientLoader() {
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-/** 실연동 빌드에서 서버에 아직 없으면 mock 대신 "준비 중"을 보인다 (lib/api.ts BE_READY) */
 export default function TimelinePageRoute() {
   if (!isReady("guardianJournal")) return <ParentNotReadyPage title="오늘의 일지" showChildSwitch />;
   return <TimelinePage />;
@@ -41,17 +37,12 @@ export default function TimelinePageRoute() {
 function TimelinePage() {
   const { child, journal, pending, openChecklists } = useLoaderData<typeof clientLoader>()!;
   const [searchParams, setSearchParams] = useSearchParams();
-  // 기관 유형이 아니라 "이 아이에 연결된 기관 하나하나"를 기준으로 거른다 —
-  // 같은 유형(예: 센터) 기관이 여러 곳이어도 섞이지 않도록.
   const filter = searchParams.get("institution") ?? "all";
 
-  // 일지에는 시각이 없어 날짜가 유일한 시간 정보다. "오늘"은 진짜 오늘 날짜일 때만 쓴다.
   const today = todayDate();
   const now = new Date();
   const dateLabel = `${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAYS[now.getDay()]}요일`;
 
-  // 명부에서 빠진 기관의 지난 일지도 보이므로, 그 기관으로도 거를 수 있어야 한다.
-  // 지금 기관을 먼저(아이 목록 순서), 일지에만 남은 기관을 그 뒤에 기관 id 순으로 둔다.
   const current = child.institutions.map(({ institution }) => institution);
   const past = journal
     .map((j) => j.institution)

@@ -19,21 +19,6 @@ import com.itda.backend.service.user.AccountAccess;
 import com.itda.backend.service.user.UserService;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * 가입을 마치지 않은(역할이 없는) 회원을 API 에서 막는다 → 403 SIGNUP_NOT_COMPLETED.
- * 자기 역할의 서비스 약관에 동의하지 않은 회원(보호자 · 기관 담당자)도 같은 자리에서 막는다 → 403 TERMS_NOT_AGREED.
- * 가입을 먼저 본다.
- *
- * <p>보호 API 마다 확인을 넣지 않고 여기 한 곳에서 막는다. 새 API 가 생겨도 따로 챙기지 않아도 된다.
- * 대가로 로그인한 사용자의 /api 요청마다 조회가 더 일어난다 — 회원 PK 조회 한 번과 약관 동의 기록 조회 한 번. 두 검사를 필터 하나에 두는 것도 회원을 두 번 읽지 않기 위해서다.
- *
- * <p>가입 화면에 필요한 세 경로 — 상태 조회(/auth/me), 가입(/auth/signup), 로그아웃 — 와
- * 헬스 체크, 개발용 로그인, 약관 본문(/terms — 동의하기 전에 읽어야 한다)만 통과시킨다. 개발용 로그인은 가입 미완료 회원의 출입증을 든 채로
- * 다른 테스트 회원으로 바꿔 들어갈 수 있어야 한다. 약관 동의 전에는 여기에 약관 동의(/auth/terms)가 더해진다.
- *
- * <p>{@code @Component} 로 두지 않는다. 그러면 Spring Boot 가 서블릿 필터로도 등록해 보안 체인 밖에서
- * 한 번 더 돈다. SecurityConfig 가 직접 만들어 JWT 필터 바로 뒤에 넣는다.
- */
 @Slf4j
 public class SignupCompletionFilter extends OncePerRequestFilter {
 
@@ -57,7 +42,6 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // 디코딩 전 주소로 보면 "/%61pi/..." 가 이 필터를 건너뛴다 (ApiPaths.pathOf)
         String path = ApiPaths.pathOf(request);
         return !path.startsWith(ApiPaths.API_PREFIX) || ALLOWED_BEFORE_SIGNUP.contains(path);
     }
@@ -68,11 +52,14 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        // 비로그인 요청은 여기서 판단하지 않는다. 뒤의 인가 단계가 401 로 끝낸다.
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof String userId) {
             try {
                 AccountAccess access = userService.accessOf(userId);
+                if (access == AccountAccess.WITHDRAWAL_IN_PROGRESS) {
+                    jsonErrorResponseWriter.write(response, UserErrorCode.WITHDRAWAL_IN_PROGRESS);
+                    return;
+                }
                 if (access == AccountAccess.SIGNUP_NOT_COMPLETED) {
                     jsonErrorResponseWriter.write(response, UserErrorCode.SIGNUP_NOT_COMPLETED);
                     return;
@@ -86,8 +73,6 @@ public class SignupCompletionFilter extends OncePerRequestFilter {
                 jsonErrorResponseWriter.write(response, e.getErrorCode());
                 return;
             } catch (RuntimeException e) {
-                // 필터 예외를 /error 로 넘기면 ERROR 디스패치의 인증 실패가 401 로 바꿀 수 있다.
-                // 장애는 여기서 500 JSON 으로 끝내고 사용자의 인증 쿠키는 유지한다.
                 log.error("가입 · 약관 동의 상태 확인 중 서버 오류가 발생했습니다.", e);
                 jsonErrorResponseWriter.write(response, CommonErrorCode.INTERNAL_SERVER_ERROR);
                 return;

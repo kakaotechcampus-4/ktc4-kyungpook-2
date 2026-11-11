@@ -10,10 +10,6 @@ import com.itda.backend.repository.user.RevokedSessionRepository;
 
 import lombok.RequiredArgsConstructor;
 
-/**
- * 로그아웃한 로그인(출입증의 로그인 번호)을 기록하고, 요청마다 그 번호가 로그아웃했는지 본다. 왜 필요한지는
- * {@link RevokedSession}.
- */
 @Service
 @RequiredArgsConstructor
 public class RevokedSessionService {
@@ -21,12 +17,6 @@ public class RevokedSessionService {
     private final RevokedSessionTransactionService revokedSessionTransactionService;
     private final RevokedSessionRepository revokedSessionRepository;
 
-    /**
-     * 이 로그인을 로그아웃한 것으로 남긴다. 이미 남아 있으면 그대로다 — 같은 로그인의 로그아웃이 겹쳐도 둘 다 성공한다.
-     *
-     * <p>트랜잭션을 걸지 않는다. 저장은 따로 연 트랜잭션에서 하고, 겹쳐서 난 UNIQUE 위반은 그 트랜잭션이 롤백된 뒤 여기서
-     * 넘긴다. 다른 제약 위반은 숨기지 않는다.
-     */
     public void revoke(String sessionId, Long userId) {
         try {
             revokedSessionTransactionService.record(sessionId, userId);

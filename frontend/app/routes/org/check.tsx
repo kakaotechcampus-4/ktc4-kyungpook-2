@@ -14,10 +14,12 @@ import {
   WorkRow,
 } from "@/components/org/WorkList";
 import {
+  AGENT_QUEUE_FULL_TEXT,
   ApiError,
   getBlockedQueue,
   getChildren,
   getMatchingQueue,
+  isAgentQueueFull,
   MAX_REVISED_CONTENT,
   resolveBlockedItem,
   resolveMatchingItem,
@@ -29,16 +31,9 @@ import { formatMonthDay } from "@/lib/datetime";
 import { forgetReinputDrafts, readReinputDrafts, saveReinputDraft, type ReinputDraft } from "@/lib/reinputDraft";
 import type { BlockedItem, ChildListItem, MatchingItem, MatchResolution } from "@/lib/types";
 
-/**
- * 기록 확인 — 옛 매칭 확인(O-22·O-23)과 검증 수정 요청(O-24·O-25)을 한 화면에.
- * 두 칸 모두 한 줄 카드 목록이고, 누르면 처리 팝업이 뜬다. 처리하면 같은 칸 다음 건이 이어서 열린다.
- * 대시보드 바로가기는 `?open=confirm|blocked` (첫 건), `&id=` 를 붙이면 그 건을 연다.
- */
-/** 칸 바꾸기 · `?open=` 지우기로는 다시 불러오지 않는다 (lib/revalidate) */
 export const shouldRevalidate = skipSearchOnlyChange;
 
 export async function clientLoader() {
-  // 명부를 못 받아도 큐는 띄운다. "우리 기관 아이가 아니에요" 는 명부 없이도 처리할 수 있다
   const [confirms, blocked, rosterResult] = await Promise.all([
     getMatchingQueue(),
     getBlockedQueue(),
@@ -47,7 +42,6 @@ export async function clientLoader() {
       () => ({ roster: [] as ChildListItem[], rosterFailed: true }),
     ),
   ]);
-  // 로그인이 풀려 맡겨 둔 고치던 본문(lib/reinputDraft). 목록을 받은 뒤에 읽고, 지우지는 않는다(팝업이 그린 뒤 지움)
   const carried = splitCarried(readReinputDrafts(), blocked.map((b) => b.id));
   return { confirms, blocked, ...rosterResult, carried };
 }
@@ -72,7 +66,6 @@ export default function CheckPage() {
   const cPage = usePage(cw.visible, PAGE);
   const bPage = usePage(bw.visible, PAGE);
 
-  // 대시보드 바로가기: ?open=confirm|blocked[&id=] → 그 건(없으면 첫 건) 팝업을 연 채로
   useEffect(() => {
     const open = params.get("open");
     if (!open) return;
@@ -84,10 +77,8 @@ export default function CheckPage() {
       if (target) walk.open(target.id);
     }
     setParams({}, { replace: true });
-    // 주소의 open 이 바뀔 때만 본다
   }, [params]);
 
-  // 다시 로그인하고 돌아왔으면 맡겨 둔 기록 하나를 바로 연다(바로가기로 온 게 아니면)
   const [autoOpened, setAutoOpened] = useState(false);
   useEffect(() => {
     if (autoOpened || params.get("open")) return;
@@ -96,7 +87,6 @@ export default function CheckPage() {
     if (first) bw.open(first.id);
   }, [autoOpened]);
 
-  /** 처리한 건은 ✓ 2초 뒤 빠진다 — 그 뒤에 목록·메뉴 배지를 서버와 맞춘다 */
   function settle(done: (id: string) => void, id: string) {
     done(id);
     setTimeout(() => revalidator.revalidate(), 2100);
@@ -205,17 +195,10 @@ export default function CheckPage() {
   );
 }
 
-/* ── 아이 확인 ─────────────────────────────────── */
-
-/**
- * 어느 파일의 일지인지. 파일 이름에 명부 아이 이름이 있었으면 그 표지 이름, 없으면 파일 이름.
- * 표지 이름이 없다고 "이름 없음" 이라 하지 않는다 — 일지 본문에는 이름이 있을 수 있다
- */
 function sourceOf(item: MatchingItem): string {
   return item.hintName ? `표지 이름 '${item.hintName}'` : item.record.fileName;
 }
 
-/** AI 가 지목한 아이. review 는 matchedChildId 로만, 후보가 하나면 그 아이 */
 function recommendedId(item: MatchingItem): string | null {
   if (item.matchedChildId) return item.matchedChildId;
   return item.candidates.length === 1 ? item.candidates[0].childId : null;
@@ -227,14 +210,12 @@ function nameOf(childId: string, item: MatchingItem, roster: ChildListItem[]): s
   );
 }
 
-/** AI 가 아이를 정하지 못한 이유 (AI/matching/nodes.py 의 decide) */
 function whyUnsure(item: MatchingItem): string {
   if (item.status === "multi") {
     return item.multiReason === "co_mention"
       ? "한 기록에 여러 아이가 함께 나와요. 대표 아이를 골라 주세요."
       : "이름만으로는 구별되지 않아요. 생년월일을 보고 골라 주세요.";
   }
-  // 못 찾은 이유(이름이 없음 · 명부에 없는 이름)는 서버가 주지 않는다 — 둘 다일 수 있게 말한다
   if (item.status === "unmatched") {
     return "AI가 누구의 기록인지 찾지 못했어요. 일지에 이름이 없거나, 아직 명부에 없는 아이일 수 있어요.";
   }
@@ -242,7 +223,6 @@ function whyUnsure(item: MatchingItem): string {
   return "AI가 한 명을 골랐지만 확정하지 않았어요.";
 }
 
-/** 서버(O-23)는 명부에 없거나 동의가 켜지지 않은 아이로는 확정을 거부한다 — 미리 막고 이유를 보인다 */
 function pickBlocked(c: ChildListItem): string | null {
   if (c.consent === "not_granted") return "보호자 동의 전";
   if (c.consent !== "granted") return "기록 중단";
@@ -268,13 +248,11 @@ function ConfirmPopup({
 }) {
   const rec = recommendedId(item);
   const recChild = rec ? roster.find((r) => r.id === rec) : undefined;
-  // 추천 아이가 고를 수 있는 목록에 있을 때만 미리 고른다(명부에서 빠졌거나 동의 전이면 비워 둔다)
   const recPickable = rec != null && (recChild ? !pickBlocked(recChild) : rosterFailed);
   const [sel, setSel] = useState<string | null>(recPickable ? rec : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 후보가 있으면 앞에 둔다. 명부를 못 받았으면 후보만으로 고른다
   const kids = useMemo(() => {
     const first = new Set(item.candidates.map((c) => c.childId).concat(rec ? [rec] : []));
     const fromRoster = roster.map((r) => ({ id: r.id, name: r.name, birth: r.birthDate, blocked: pickBlocked(r) }));
@@ -297,6 +275,10 @@ function ConfirmPopup({
     } catch (err) {
       if (err instanceof ApiError && (err.status === 404 || err.status === 409)) {
         onStale();
+        return;
+      }
+      if (isAgentQueueFull(err)) {
+        setError(AGENT_QUEUE_FULL_TEXT);
         return;
       }
       setError(
@@ -380,8 +362,6 @@ function ConfirmPopup({
   );
 }
 
-/* ── 고쳐야 할 기록 ─────────────────────────────── */
-
 function BlockedPopup({
   item,
   position,
@@ -399,19 +379,14 @@ function BlockedPopup({
   onClose: () => void;
   onDone: (id: string) => void;
   onStale: () => void;
-  /** 로그인이 풀려 맡겨 둔 이 기록의 고치던 본문 */
   carriedDraft?: ReinputDraft;
-  /** 이 화면에서 401 을 받았다 — 고칠 때마다 맡겨 둔다 */
   loggedOut: boolean;
   onCarriedUsed: (id: string) => void;
   onLoggedOut: () => void;
-  /** 요청이 서버에 닿았다(성공이거나 401 이 아닌 서버 응답) — 로그인이 살아 있다 */
   onReached: () => void;
 }) {
-  // 전체 본문이 없으면(미리보기만 옴) 고치게 두지 않는다 — 잘린 미리보기를 보내면 뒤쪽 본문이 사라진다
   const full = item.record.fullContent;
   const original = full ?? item.record.preview ?? "";
-  // 맡겨 둔 본문은 원래 본문이 그대로일 때만 되살린다 — 그사이 바뀌었으면 옛 본문 위에 덮어쓰지 않는다
   const [restored] = useState(() =>
     carriedDraft && full != null && carriedDraft.original === full ? carriedDraft.draft : null,
   );
@@ -422,12 +397,12 @@ function BlockedPopup({
   const [error, setError] = useState<string | null>(null);
   const [loginLost, setLoginLost] = useState(false);
   const changed = full != null && draft.trim() !== "" && draft.trim() !== original.trim();
+  const tooLong = draft.length > MAX_REVISED_CONTENT;
 
   useEffect(() => {
     if (carriedDraft) onCarriedUsed(item.id);
   }, [carriedDraft, item.id, onCarriedUsed]);
 
-  // 로그인이 풀린 뒤로는 고칠 때마다 맡긴 본문을 갱신한다. 원래대로면 칸을 지운다
   useEffect(() => {
     if (!loggedOut) return;
     saveReinputDraft(item.id, changed && full != null ? { original: full, draft } : null);
@@ -451,7 +426,6 @@ function BlockedPopup({
         onLoggedOut();
         return;
       }
-      // 통신 오류에서는 로그인 여부를 알 수 없다 — 맡긴 본문 보관을 유지한다
       if (err instanceof ApiError) onReached();
       const f = failureOf(err);
       if (f.stale) onStale();
@@ -483,7 +457,7 @@ function BlockedPopup({
                 {loginLost ? <ReloginButton role="org" returnTo="/check" /> : null}
               </span>
             ) : null}
-            <PopButton tone="dark" disabled={!changed || busy} onClick={() => run("revise")}>
+            <PopButton tone="dark" disabled={!changed || tooLong || busy} onClick={() => run("revise")}>
               {busy ? <Busy>보내는 중…</Busy> : "다시 보내기"}
             </PopButton>
           </>
@@ -506,10 +480,18 @@ function BlockedPopup({
             aria-label="고칠 문장"
             value={draft}
             readOnly={full == null}
-            maxLength={MAX_REVISED_CONTENT}
+            aria-invalid={tooLong}
+            aria-describedby="revise-length"
             onChange={(e) => setDraft(e.target.value)}
             className="min-h-[130px] w-full resize-y rounded-[14px] border border-line2 bg-surface px-3.5 py-3 text-[15px] leading-[1.6] text-ink focus:border-accent focus:outline-2 focus:outline-accent"
           />
+          <p
+            id="revise-length"
+            className={`mt-1 text-right text-[13px] ${tooLong ? "font-bold text-block" : "text-ink2"}`}
+          >
+            {tooLong ? "5,000자까지 보낼 수 있어요 · " : null}
+            {draft.length.toLocaleString("ko-KR")} / {MAX_REVISED_CONTENT.toLocaleString("ko-KR")}자
+          </p>
         </PopSection>
       </ListPopup>
       {asking ? (
@@ -522,7 +504,7 @@ function BlockedPopup({
           onCancel={() => setAsking(false)}
           onConfirm={() => run("drop")}
         >
-          요약과 분석에 쓰지 않아요.
+          요약과 리포트에 쓰지 않아요.
         </ConfirmDialog>
       ) : null}
     </>
@@ -531,6 +513,7 @@ function BlockedPopup({
 
 function failureOf(err: unknown): { text: string; stale: boolean } {
   if (!(err instanceof ApiError)) return { text: "네트워크 연결을 확인하고 다시 시도해 주세요.", stale: false };
+  if (isAgentQueueFull(err)) return { text: AGENT_QUEUE_FULL_TEXT, stale: false };
   if (err.status === 400) {
     switch (err.code) {
       case "INVALID_REQUEST":
@@ -541,7 +524,6 @@ function failureOf(err: unknown): { text: string; stale: boolean } {
         return { text: "아이가 명부에서 빠졌거나 공유 동의가 꺼져 다시 확인할 수 없어요. 이 기록은 빼 주세요.", stale: false };
     }
   }
-  // 이미 처리됐거나(400 OUTDATED·INVALID_REQUEST 외) 없어진 건 — 목록을 새로 받는다
   if (err.status === 400 || err.status === 404) return { text: "", stale: true };
   return { text: "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.", stale: false };
 }

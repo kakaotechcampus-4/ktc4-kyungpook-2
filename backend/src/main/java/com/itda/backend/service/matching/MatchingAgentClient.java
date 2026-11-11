@@ -8,7 +8,6 @@ import com.itda.backend.service.agent.AiAgentClient;
 
 import lombok.RequiredArgsConstructor;
 
-/** 매칭 에이전트({@code AI POST /matching}) 호출. 재시도·상태 확인은 {@link AiAgentClient} 가 한다. */
 @Component
 @RequiredArgsConstructor
 public class MatchingAgentClient {

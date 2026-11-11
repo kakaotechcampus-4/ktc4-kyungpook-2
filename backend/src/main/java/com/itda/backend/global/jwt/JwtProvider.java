@@ -20,15 +20,6 @@ import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * 출입증(JWT)을 만들고 읽고 연장한다.
- *
- * <p>로그인할 때 로그인 번호({@code sid})와 처음 로그인한 시각({@code auth_time})을 담는다 — 둘 다 OpenID Connect 와
- * 같은 이름 · 같은 뜻이다. 연장해도 둘은 그대로 옮긴다. 로그아웃은 로그인 번호로 그 로그인의 출입증을 모두 무효로 하고,
- * 최대 로그인 시간은 처음 로그인한 시각부터 잰다.
- *
- * <p>발급과 읽기가 같은 {@link Clock} 을 쓴다. 읽기만 실제 시계로 만료를 보면 고정 시계로 잰 테스트와 실제 동작이 어긋난다.
- */
 @Component
 public class JwtProvider {
 
@@ -57,23 +48,15 @@ public class JwtProvider {
                 .build();
     }
 
-    /** 로그인. 새 로그인 번호를 받고, 지금이 처음 로그인한 시각이 된다. */
     public String createToken(String subject) {
         Instant now = now();
         return build(subject, UUID.randomUUID().toString(), now, now, now.plus(accessTokenTtl));
     }
 
-    /** 서명이 맞고 만료되지 않았으면 그 내용. 아니면 빈 값이다. */
     public Optional<AccessToken> parse(String token) {
         return read(token, false);
     }
 
-    /**
-     * 로그아웃할 로그인을 읽는다. 서명이 맞으면 출입증 자체가 만료됐어도 읽는다 — 만료 직전에 발급한 연장 쿠키가
-     * 아직 도착 중일 수 있다. 최대 로그인 시간이 지났으면 그 로그인의 출입증은 더 쓸 수 없어 기록하지 않는다.
-     * 원본 쿠키에서 현재 로그인 번호를 선택할 때도 사용한다. 이 경우에도 실제 인증할 JWT 는 따로 만료를 검사한다.
-     * 인증에는 만료를 검사하는 {@link #parse(String)} 를 사용한다.
-     */
     public Optional<AccessToken> parseForLogout(String token) {
         return read(token, true)
                 .filter(parsed -> now().isBefore(parsed.loginAt().plus(maxSession)));
@@ -91,7 +74,6 @@ public class JwtProvider {
                 if (!allowExpired) {
                     return Optional.empty();
                 }
-                // JJWT 는 서명을 확인한 뒤 만료 예외를 던진다. 서명 실패 등 다른 오류는 아래에서 거절한다.
                 claims = e.getClaims();
             }
             Number authTime = claims.get(AUTH_TIME, Number.class);
@@ -108,14 +90,6 @@ public class JwtProvider {
         }
     }
 
-    /**
-     * 남은 시간이 유효시간의 절반보다 적으면 새 출입증을 만든다. 로그인 번호 · 처음 로그인한 시각은 그대로이고,
-     * 만료는 "지금 + 유효시간" 과 "처음 로그인 + 최대 로그인 시간" 중 빠른 쪽이다.
-     *
-     * <p>로그인 번호가 없는 옛 출입증은 연장하지 않는다. 로그아웃으로 무효로 할 번호가 없어, 연장하면 로그아웃 뒤
-     * 늦게 도착한 연장 쿠키가 로그인을 되살려도 막을 수 없다. 이미 최대 로그인 시간 끝에 맞춰 둔 출입증도 더 늘릴 수
-     * 없으니 만들지 않는다.
-     */
     public Optional<IssuedToken> renew(AccessToken token) {
         if (token.sessionId() == null) {
             return Optional.empty();
@@ -136,7 +110,6 @@ public class JwtProvider {
         return Optional.of(new IssuedToken(renewed, Duration.between(now, expiresAt)));
     }
 
-    /** JWT 시각은 초 단위라 맞춰 둔다 — 쿠키 만료와 출입증 만료가 같은 초를 가리키게. */
     private Instant now() {
         return clock.instant().truncatedTo(ChronoUnit.SECONDS);
     }

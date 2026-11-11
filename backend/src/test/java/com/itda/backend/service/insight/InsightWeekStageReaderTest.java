@@ -22,7 +22,6 @@ import com.itda.backend.service.insight.InsightWeekStageReader.Stage;
 import com.itda.backend.service.insight.InsightWeekStageReader.Week;
 import com.itda.backend.service.insight.InsightWeekStageReader.WeekStage;
 
-/** 대시보드 5단계(분석 승인) 판정 (#370). 승인 주체는 학교 &gt; 센터 &gt; 활동지원사다 ({@link PrimarySource}). */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import(InsightWeekStageReader.class)
@@ -112,8 +111,39 @@ class InsightWeekStageReaderTest {
         assertThat(reader.stagesOf(center, List.of(WEEK))).isEmpty();
     }
 
+    @Test
+    void 물은_아이와_주의_조합만_답한다() {
+        Week other = new Week(9L, FROM.plusWeeks(1), TO.plusWeeks(1));
+        Week notAsked = new Week(CHILD, FROM.plusWeeks(1), TO.plusWeeks(1));
+        InsightResult mine = insight(1, "[" + center + "]");
+        InsightResult others = insight(other, 1, "[" + center + "]");
+        insight(notAsked, 1, "[" + center + "]");
+
+        assertThat(reader.stagesOf(center, List.of(WEEK, other))).containsOnly(
+                Map.entry(WEEK, new WeekStage(Stage.REVIEW_HERE, mine.getId(), null)),
+                Map.entry(other, new WeekStage(Stage.REVIEW_HERE, others.getId(), null)));
+    }
+
+    @Test
+    void 물은_주_밖의_회차는_답에_영향을_주지_않는다() {
+        Week next = new Week(CHILD, FROM.plusWeeks(1), TO.plusWeeks(1));
+        InsightResult mine = insight(1, "[" + center + "]");
+        for (int revision = 1; revision <= 3; revision++) {
+            InsightResult later = insight(next, revision, "[" + center + "]");
+            later.approveGate2();
+            em.persistAndFlush(later);
+        }
+
+        assertThat(reader.stagesOf(center, List.of(WEEK)))
+                .containsExactly(Map.entry(WEEK, new WeekStage(Stage.REVIEW_HERE, mine.getId(), null)));
+    }
+
     private InsightResult insight(int revision, String sourceInstitutionIds) {
-        return em.persistAndFlush(InsightResult.of(CHILD, FROM, TO, revision, "상황", "반응", "본문", "[]", "[]",
-                "[]", sourceInstitutionIds, sourceInstitutionIds.contains(","), "{}"));
+        return insight(WEEK, revision, sourceInstitutionIds);
+    }
+
+    private InsightResult insight(Week week, int revision, String sourceInstitutionIds) {
+        return em.persistAndFlush(InsightResult.of(week.childId(), week.from(), week.to(), revision, "상황", "반응",
+                "본문", "[]", "[]", "[]", sourceInstitutionIds, sourceInstitutionIds.contains(","), "{}"));
     }
 }

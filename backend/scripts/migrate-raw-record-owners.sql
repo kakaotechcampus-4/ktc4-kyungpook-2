@@ -1,5 +1,3 @@
--- psql 전용. 현재 작업 디렉터리에 raw-record-owner-mapping.csv 를 준비한다.
--- 기본은 검증 후 ROLLBACK. 적용하려면 psql -v apply=true 를 지정한다.
 \set ON_ERROR_STOP on
 \if :{?apply}
 \else
@@ -8,7 +6,6 @@
 
 BEGIN;
 SELECT :'apply'::boolean AS apply_requested;
--- 검사와 UPDATE 사이에 기록이나 회원 소속이 바뀌지 않게 한다.
 LOCK TABLE raw_record IN EXCLUSIVE MODE;
 LOCK TABLE users, organization IN SHARE MODE;
 

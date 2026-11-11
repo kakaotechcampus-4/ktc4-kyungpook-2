@@ -40,21 +40,16 @@ import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.fixture.OrganizationFixture;
 import com.itda.backend.fixture.UserFixture;
 import com.itda.backend.service.child.InstitutionLinkService;
+import com.itda.backend.service.child.GuardianChildGuard;
 import com.itda.backend.service.child.OrganizationChildGuard;
 import com.itda.backend.service.consent.ConsentService;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.insight.InsightAccessRevoker;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 보호자 연결 조회·해제. 아이는 우리 기관과 다른 기관에 함께 다니고, 보호자 한 명은 우리 코드로,
- * 다른 한 명은 다른 기관 코드로 연결돼 있다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
-// InsightAccessRevoker 는 진짜를 넣는다 — 연결 해제가 그 보호자의 열람 권한까지 거두는지(#213)
-// 이 테스트가 같이 지켜준다.
-@Import({ChildGuardianService.class, OrganizationChildGuard.class, ConsentService.class,
+@Import({ChildGuardianService.class, OrganizationChildGuard.class, GuardianChildGuard.class, ConsentService.class,
         ConsentStateReader.class, InsightAccessRevoker.class, InstitutionLinkService.class,
         ChildGuardianServiceJpaTest.ClockConfig.class})
 class ChildGuardianServiceJpaTest {
@@ -98,9 +93,9 @@ class ChildGuardianServiceJpaTest {
         child = em.persist(Child.of("김하늘", LocalDate.of(2017, 3, 14)));
         em.persist(ChildOrganization.of(child.getId(), ours.getId()));
         em.persist(ChildOrganization.of(child.getId(), other.getId()));
-        mother = em.persist(UserFixture.parent("kakao-mother", "김엄마"));
-        father = em.persist(UserFixture.parent("kakao-father", "김아빠"));
-        User stranger = em.persist(UserFixture.parent("kakao-stranger", "남"));
+        mother = em.persist(UserFixture.parent("kakao-mother"));
+        father = em.persist(UserFixture.parent("kakao-father"));
+        User stranger = em.persist(UserFixture.parent("kakao-stranger"));
         link(mother, ours);
         link(father, other);
         em.flush();
@@ -133,10 +128,13 @@ class ChildGuardianServiceJpaTest {
     }
 
     private void link(User guardian, Organization through) {
-        Invitation invitation = Invitation.issue(child.getId(), through.getId(),
-                "CD%06d".formatted(guardian.getId() % 1_000_000), NOW.plusMinutes(10));
+        Invitation invitation = Invitation.issue(child.getId(), through.getId(), codeOf(guardian), NOW.plusMinutes(10));
         em.persist(invitation);
         em.persist(ChildGuardian.link(child.getId(), guardian.getId(), invitation.getId()));
+    }
+
+    private static String codeOf(User guardian) {
+        return "CD%06d".formatted(guardian.getId() % 1_000_000);
     }
 
     private ChildGuardian linkOf(User guardian) {
@@ -153,11 +151,20 @@ class ChildGuardianServiceJpaTest {
     @Test
     void 연결된_보호자를_모두_보여주고_우리_코드로_들어온_사람만_표시한다() {
         assertThat(childGuardianService.listGuardians(OUR_USER, child.getId()))
-                .extracting(ChildGuardianResponse::userId, ChildGuardianResponse::name,
+                .extracting(ChildGuardianResponse::userId,
                         ChildGuardianResponse::linkedByThisOrganization)
                 .containsExactlyInAnyOrder(
-                        org.assertj.core.groups.Tuple.tuple(String.valueOf(mother.getId()), "김엄마", true),
-                        org.assertj.core.groups.Tuple.tuple(String.valueOf(father.getId()), "김아빠", false));
+                        org.assertj.core.groups.Tuple.tuple(String.valueOf(mother.getId()), true),
+                        org.assertj.core.groups.Tuple.tuple(String.valueOf(father.getId()), false));
+    }
+
+    @Test
+    void 우리_코드로_들어온_보호자만_그때_쓴_초대_코드를_보여준다() {
+        assertThat(childGuardianService.listGuardians(OUR_USER, child.getId()))
+                .extracting(ChildGuardianResponse::userId, ChildGuardianResponse::invitationCode)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(String.valueOf(mother.getId()), codeOf(mother)),
+                        org.assertj.core.groups.Tuple.tuple(String.valueOf(father.getId()), null));
     }
 
     @Test
@@ -178,7 +185,6 @@ class ChildGuardianServiceJpaTest {
         assertThat(linkOf(mother).isDeleted()).isTrue();
     }
 
-    /** 연결은 전역이라, 다른 기관을 통해 들어온 보호자를 끊으면 그 기관의 판단을 뒤집게 된다. */
     @Test
     void 다른_기관_코드로_연결된_보호자는_해제할_수_없다() {
         assertThatThrownBy(() -> childGuardianService.unlinkByOrganization(OUR_USER, child.getId(), father.getId()))
@@ -229,7 +235,6 @@ class ChildGuardianServiceJpaTest {
                         e -> assertThat(e.getErrorCode()).isEqualTo(InvitationErrorCode.CHILD_NOT_LINKED));
     }
 
-    /** 끊긴 사람의 동의로 공유가 계속되면 안 된다. 남은 보호자의 동의는 그대로 두므로 아이는 계속 active 다. */
     @Test
     void 기관이_보호자를_끊으면_그_보호자의_동의만_꺼진다() {
         consent(mother, ours);
@@ -248,7 +253,6 @@ class ChildGuardianServiceJpaTest {
         assertThat(em.find(Child.class, child.getId()).getStatus()).isEqualTo(ChildStatus.ACTIVE);
     }
 
-    /** 연결 해제는 전역이라 모든 기관에 대한 그 사람의 동의가 꺼진다. 남은 동의가 없으면 아이는 suspended 다. */
     @Test
     void 보호자가_스스로_끊으면_모든_기관의_자기_동의가_꺼진다() {
         consent(mother, ours);

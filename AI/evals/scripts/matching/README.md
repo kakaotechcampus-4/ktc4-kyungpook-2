@@ -2,6 +2,8 @@
 
 테스트 데이터를 매칭 에이전트에 돌리고 채점한다.
 
+> `build_inputs.py` · `generate_edge_cases.py` 는 `AI/evals/manifests/` 의 가상 아동 데이터를 읽는다. 아이 데이터라 레포에 없으니 AI 담당(근찬)에게 받아 그 폴더에 넣는다.
+
 ```bash
 cd AI
 python evals/scripts/matching/run_eval.py ~/Downloads/matching_inputs.json /tmp/result.json
@@ -13,7 +15,7 @@ python evals/scripts/matching/score.py /tmp/result.json
 채점할 때 매번 다시 부르지 않기 위해서다.
 
 옵션: `--limit N` (앞에서 N 건만), `--workers N` (동시 호출 수, 기본 8).
-`AI/.env` 에 `LUNA_API_URL` 과 `LUNA_API_KEY` 가 있어야 한다.
+`AI/.env` 에 `MATCHING_API_URL` 과 `API_KEY` 가 있어야 한다.
 
 ## 입력 형식
 

@@ -5,7 +5,6 @@ import { getTerms, type TermKey, type TermsDocument } from "@/lib/auth";
 
 export type TermItem = { key: TermKey; label: string; required: boolean };
 
-/** 받아 둔 약관 본문. 체크 줄과 키가 다르면(서버에 약관이 늘거나 줄었다) `mismatch` 다. */
 export type TermsDocs =
   | { status: "loading" }
   | { status: "failed" }
@@ -19,13 +18,6 @@ function sameKeys(docs: TermsDocument[], items: readonly TermItem[]): boolean {
   return keys.size === items.length && items.every((t) => keys.has(t.key));
 }
 
-/**
- * 동의 화면이 열릴 때 그 역할의 약관 본문을 받아 둔다. 보기를 열지 않아도 동의는 이때 받은 판(사용자가 본 화면의 판)으로 보낸다.
- * `enabled` 가 켜질 때마다 다시 받는다 — 보호자 초대 화면은 약관 단계에 들어갈 때만 켠다.
- *
- * 체크 줄 라벨 · 순서 · 필수 여부는 화면이 든다(체크 문구는 "~ 동의"라 약관 제목과 다르다). 서버가 준 키가 체크 줄과
- * 다르면 어느 판에 동의하는지 맞출 수 없어 `mismatch` 로 두고 제출을 막는다.
- */
 export function useTermsDocuments(role: "parent" | "org", items: readonly TermItem[], enabled = true) {
   const [docs, setDocs] = useState<TermsDocs>({ status: "loading" });
   const current = useRef<TermsDocs>(docs);
@@ -43,7 +35,6 @@ export function useTermsDocuments(role: "parent" | "org", items: readonly TermIt
     } catch {
       next = { status: "failed" };
     }
-    // 늦게 온 옛 응답이 새 응답을 덮지 않게 한다
     if (seq === latest.current) {
       current.current = next;
       setDocs(next);
@@ -55,17 +46,12 @@ export function useTermsDocuments(role: "parent" | "org", items: readonly TermIt
     if (enabled) void load();
   }, [enabled, load]);
 
-  /** 체크한 약관마다 받아 둔 판을 붙인다. 받기 전이면 null */
   function versionsOf(keys: TermKey[]): { key: TermKey; version: string }[] | null {
     if (docs.status !== "ready") return null;
     const picked = keys.map((key) => ({ key, version: docs.byKey.get(key)?.version }));
     return picked.every((t) => t.version) ? (picked as { key: TermKey; version: string }[]) : null;
   }
 
-  /**
-   * 409 TERMS_VERSION_CHANGED 뒤에 부른다. 약관을 다시 받고 판이 바뀐 약관의 키를 돌려준다 — 화면은 그 체크만 푼다.
-   * 다시 받지 못했으면 무엇이 바뀌었는지 모르니 모두 돌려준다.
-   */
   async function reloadChanged(): Promise<TermKey[]> {
     const before = current.current;
     const after = await load();
@@ -76,14 +62,6 @@ export function useTermsDocuments(role: "parent" | "org", items: readonly TermIt
   return { docs, retry: load, versionsOf, reloadChanged };
 }
 
-/**
- * 약관 체크박스 목록 · 줄마다 [보기] · 오류 · "동의하고 계속하기". 보호자 초대 화면(P-01)과 기관 약관 화면(I-16)이 쓴다.
- *
- * 체크 상태는 부르는 화면이 쥔다 — 보호자 화면은 코드 단계에서 TERMS_NOT_AGREED 로 돌아오면 체크를 비운다.
- * 저장 중에는 체크박스도 잠가 보낸 약관과 화면의 체크가 어긋나지 않게 한다.
- * 본문(`docs`)을 받기 전 · 받지 못했으면 동의를 막는다 — 어느 판에 동의하는지 보낼 수 없다.
- * 모양은 화면마다 다르다(보호자 = 둥근 모서리, 기관 = 회원가입 화면과 같은 각진 모서리) — `rounded` · `buttonClassName`.
- */
 export function TermsForm({
   terms,
   docs,
@@ -114,7 +92,6 @@ export function TermsForm({
 
   function closeSheet() {
     setReading(null);
-    // 창을 연 [보기]로 돌아간다
     requestAnimationFrame(() => opener.current?.focus());
   }
 
@@ -165,7 +142,6 @@ export function TermsForm({
                   </span>
                 </span>
               </label>
-              {/* label 밖이라 눌러도 체크가 바뀌지 않는다. 폼 안이라 type="button" 이어야 제출되지 않는다 */}
               <button
                 type="button"
                 disabled={!doc}

@@ -29,6 +29,8 @@ import com.itda.backend.exception.validation.ValidationResultErrorCode;
 import com.itda.backend.exception.validation.ValidationResultNotFoundException;
 import com.itda.backend.exception.validation.ValidationResultValidationException;
 import com.itda.backend.service.validation.ValidationQueueService;
+import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.exception.agent.AgentQueueFullException;
 
 @WebMvcTest(ValidationResultController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -62,7 +64,6 @@ class ValidationResultControllerTest {
                 .andExpect(jsonPath("$.data[0].record.fileName").value("0821_특이사항.txt"));
     }
 
-    /** FE는 status 없이 부르지 않지만, 생략돼도 BLOCK 큐를 돌려준다. */
     @Test
     void getQueue_defaultsToBlockWhenStatusOmitted() throws Exception {
         given(validationQueueService.getBlockedQueue(any())).willReturn(List.of());
@@ -73,7 +74,6 @@ class ValidationResultControllerTest {
         verify(validationQueueService).getBlockedQueue(any());
     }
 
-    /** 다른 status를 조용히 BLOCK으로 처리하면 화면이 엉뚱한 목록을 보여준다 — 명시적으로 거절한다. */
     @Test
     void getQueue_rejectsUnsupportedStatus() throws Exception {
         mockMvc.perform(get(BASE_URL).param("status", "REVIEW"))
@@ -96,7 +96,7 @@ class ValidationResultControllerTest {
 
     @Test
     void resolve_unsupportedAction_returns400() throws Exception {
-        willThrow(new ValidationResultValidationException("unsupported action: approve"))
+        willThrow(new ValidationResultValidationException("unsupported action for validation result: 1"))
                 .given(validationQueueService).resolve(any(), any(), any());
 
         mockMvc.perform(post(BASE_URL + "/11/resolve")
@@ -118,8 +118,6 @@ class ValidationResultControllerTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_RESULT_NOT_FOUND"));
     }
 
-    // --- 고쳐서 다시 검사 (#357) -----------------------------------------------------
-
     @Test
     void revise_passesContentToService() throws Exception {
         mockMvc.perform(post(BASE_URL + "/11/revise")
@@ -137,7 +135,6 @@ class ValidationResultControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"  \"}"))
                 .andExpect(status().isBadRequest())
-                // 화면이 이 코드로 "본문이 비어 있거나 너무 길어요"를 고른다
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
         verify(validationQueueService, never()).revise(any(), any(), any());
@@ -145,7 +142,7 @@ class ValidationResultControllerTest {
 
     @Test
     void revise_tooLongContent_returns400WithoutCallingService() throws Exception {
-        String tooLong = "가".repeat(100_001);
+        String tooLong = "가".repeat(JournalEntry.MAX_CONTENT_LENGTH + 1);
 
         mockMvc.perform(post(BASE_URL + "/11/revise")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -155,7 +152,28 @@ class ValidationResultControllerTest {
         verify(validationQueueService, never()).revise(any(), any(), any());
     }
 
-    /** 화면이 거절 이유마다 다른 안내를 하므로 코드를 나눈다 — 고칠 게 없는지, 옛 카드인지, 아이 공유가 끝났는지. */
+    @Test
+    void revise_contentAtMaxLength_callsService() throws Exception {
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"" + "가".repeat(JournalEntry.MAX_CONTENT_LENGTH) + "\"}"))
+                .andExpect(status().isOk());
+
+        verify(validationQueueService).revise(eq(11L), any(), any());
+    }
+
+    @Test
+    void revise_agentQueueFull_returns429() throws Exception {
+        willThrow(new AgentQueueFullException(1L, 1000, 1, 1000))
+                .given(validationQueueService).revise(any(), any(), any());
+
+        mockMvc.perform(post(BASE_URL + "/11/revise")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"고친 글\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("AGENT_QUEUE_FULL"));
+    }
+
     @ParameterizedTest
     @EnumSource(value = ValidationResultErrorCode.class, names = {"CONTENT_UNCHANGED", "OUTDATED", "CHILD_NOT_SHARED"})
     void revise_rejectedForReason_returns400WithItsCode(ValidationResultErrorCode code) throws Exception {
@@ -167,7 +185,6 @@ class ValidationResultControllerTest {
                         .content("{\"content\":\"그대로\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(code.getCode()))
-                // 응답에는 사용자에게 보여도 되는 문구만 — 내부 사유(id 가 든 영어 문장)는 내보내지 않는다
                 .andExpect(jsonPath("$.message").value(code.getMessage()));
     }
 

@@ -63,12 +63,6 @@ import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.InvitationService;
 
-/**
- * Gate 2 승인과 보호자 초대 수락이 겹칠 때를 PostgreSQL 에서 재현한다 (#287). 둘 다 {@code child} 를 FOR UPDATE 로
- * 잡은 뒤 보호자 권한을 만든다 — 승인은 그때 연결된 보호자에게, 수락은 그때 승인된 글을 연다.
- *
- * <p>방식은 {@link LockContention} 이다. 정책: 어느 쪽이 먼저든 새 보호자에게 이 글이 <b>한 번만, 빠짐없이</b> 열린다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -120,13 +114,12 @@ class GuardianLinkInsightConcurrencyIntegrationTest {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
         school = organizationRepository.save(
                 Organization.of("햇살특수학교", OrganizationType.SCHOOL, OrganizationFixture.nextBusinessNumber()));
-        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-school", "학교선생", school.getId())));
-        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
-        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad", "아빠")));
+        schoolStaff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-school", school.getId())));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom")));
+        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad")));
 
         childId = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14))).getId();
         childOrganizationRepository.save(ChildOrganization.of(childId, school.getId(), "S-1"));
-        // 엄마는 먼저 연결돼 학교에 동의했다 — 학교 기록이 재료로 들어간 글을 승인할 수 있다.
         childGuardianRepository.save(ChildGuardian.link(childId, mom.getId(), 1L));
         sharingConsentRepository.save(SharingConsent.grant(childId, mom.getId(), school.getId(),
                 List.of(ConsentField.WEEKLY_INSIGHT)));
@@ -153,7 +146,6 @@ class GuardianLinkInsightConcurrencyIntegrationTest {
         }
     }
 
-    /** 승인은 아빠를 못 본다. 수락이 기다렸다가 방금 승인된 글을 아빠에게 연다. */
     @Test
     void 승인이_먼저면_수락이_기다렸다가_아빠에게_연다() throws Exception {
         String code = invitationService.issue(school.getId(), childId).code();
@@ -173,7 +165,6 @@ class GuardianLinkInsightConcurrencyIntegrationTest {
         assertThat(guardianGrants(mom)).hasSize(1);
     }
 
-    /** 수락 때는 아직 승인 전이라 열 글이 없다. 승인이 기다렸다가 아빠까지 연다 — 두 번 열리지 않는다. */
     @Test
     void 수락이_먼저면_승인이_기다렸다가_아빠까지_연다() throws Exception {
         String code = invitationService.issue(school.getId(), childId).code();
@@ -191,10 +182,8 @@ class GuardianLinkInsightConcurrencyIntegrationTest {
         assertThat(guardianGrants(mom)).hasSize(1);
     }
 
-    // --- 도구 ---
-
     private List<SharingHistory> guardianGrants(User guardian) {
-        return sharingHistoryRepository.findByInsightResultId(insightId).stream()
+        return sharesOf(insightId).stream()
                 .filter(grant -> grant.getReceiverType() == ReceiverType.GUARDIAN
                         && grant.getReceiverId().equals(guardian.getId()))
                 .toList();
@@ -215,5 +204,11 @@ class GuardianLinkInsightConcurrencyIntegrationTest {
         System.arraycopy(cookies, 0, all, 0, cookies.length);
         all[cookies.length] = csrf;
         return request.cookie(all).header("X-XSRF-TOKEN", csrf.getValue());
+    }
+
+    private List<SharingHistory> sharesOf(Long insightResultId) {
+        return sharingHistoryRepository.findAll().stream()
+                .filter(history -> history.getInsightResultId().equals(insightResultId))
+                .toList();
     }
 }

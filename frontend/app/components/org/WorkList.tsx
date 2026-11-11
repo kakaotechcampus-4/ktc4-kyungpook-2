@@ -3,7 +3,6 @@ import { ChevronLeft } from "lucide-react";
 import { Link } from "react-router";
 import { TourButton, type TourScreen } from "@/components/Tour";
 
-/** 대시보드가 아닌 화면의 제목 위 "‹ 대시보드". 화면마다 같은 자리 */
 export function BackHome() {
   return (
     <Link
@@ -16,7 +15,6 @@ export function BackHome() {
   );
 }
 
-/** 화면 머리: ‹ 대시보드 · 제목 · 할 일 한 줄(데이터) */
 export function WorkHead({
   title,
   jobs,
@@ -26,7 +24,6 @@ export function WorkHead({
   title: string;
   jobs?: string[];
   right?: React.ReactNode;
-  /** 제목 옆 "?" 사용법 */
   tour?: TourScreen;
 }) {
   return (
@@ -54,7 +51,6 @@ export function WorkHead({
   );
 }
 
-/** 목록 칸 제목 "아이 확인 3" */
 export function SectionHead({ title, count }: { title: string; count: number }) {
   return (
     <h2 className="flex items-center gap-2 text-[19px] font-extrabold tracking-[-0.02em]">
@@ -80,13 +76,8 @@ export function Chip({ tone, children }: { tone: keyof typeof CHIP; children: Re
 }
 
 const CARD = "rounded-[18px] bg-surface shadow-[0_2px_14px_rgba(120,90,40,0.08)]";
-/** 카드 전체를 눌러 여는 줄의 표시 — 손가락 커서와 hover 그림자 */
 export const CLICKABLE = "cursor-pointer transition-shadow hover:shadow-[0_4px_20px_rgba(120,90,40,0.16)]";
 
-/**
- * 목록 한 줄 카드: 누구 · 미리보기 · 표시 · 버튼. 누르면 처리 팝업이 뜬다.
- * `done` 이면 ✓ 한 줄로 바뀐다(2초 뒤 목록에서 빠진다 — useWalk).
- */
 export function WorkRow({
   who,
   sub,
@@ -100,13 +91,11 @@ export function WorkRow({
   sub: React.ReactNode;
   text: React.ReactNode;
   tag?: React.ReactNode;
-  /** 없으면 버튼 대신 빈칸 — 지금 열 수 없는 건(요약을 다시 만드는 중) */
   action?: string;
   onOpen: () => void;
   done?: React.ReactNode;
 }) {
   if (done) {
-    // 일반 줄과 같은 두 줄 높이로 — 2초 뒤 사라질 때까지 아래 줄이 흔들리지 않게
     return (
       <article className={`${CARD} grid items-center px-[18px] py-3.5`}>
         <div className="grid min-w-0">
@@ -121,7 +110,6 @@ export function WorkRow({
       </article>
     );
   }
-  // 버튼이 있는 줄은 카드 아무 곳이나 눌러도 연다(키보드 사용자는 버튼으로). 버튼은 stopPropagation 으로 두 번 안 열리게.
   return (
     <article
       onClick={action ? onOpen : undefined}
@@ -157,7 +145,6 @@ export function EmptyLine({ children }: { children: React.ReactNode }) {
   return <p className="rounded-[18px] bg-surface/60 px-5 py-6 text-center text-[15px] text-muted">{children}</p>;
 }
 
-/** 팝업 본문의 소제목 칸 */
 export function PopSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
@@ -167,7 +154,6 @@ export function PopSection({ title, children }: { title: string; children: React
   );
 }
 
-/** 팝업 버튼 */
 export function PopButton({
   tone = "line",
   ...props
@@ -186,13 +172,8 @@ export function PopButton({
   );
 }
 
-/** 토스트 자리 — 겹치지 않게 아래에서부터 쌓는다. 0: 되돌리기, 1: 화면 알림, 2: 메뉴 알림(lib/notice), 3: 도착 알림 */
 const TOAST_SLOT = ["bottom-6", "bottom-[84px]", "bottom-[144px]", "bottom-[204px]"] as const;
 
-/**
- * 화면 아래에 잠깐 뜨는 알림 한 줄. `message` 가 바뀔 때마다 `ms`(기본 5초) 보인다. `persist` 면 스스로 사라지지 않는다.
- * `action` 을 주면 오른쪽에 버튼(예: 되돌리기)을 둔다.
- */
 export function Toast({
   message,
   onGone,
@@ -233,11 +214,6 @@ export function Toast({
   );
 }
 
-/**
- * 한 쪽 건수(`size`)만큼 높이를 늘 차지하는 목록. 건수가 적거나 0건이어도 칸 높이가 그대로라
- * 아래 칸이 위로 당겨 올라오지 않는다. 모자란 만큼 보이지 않는 빈 줄을 채우고, 0건이면 그 위에 안내를 띄운다.
- * 쪽 번호 자리도 늘 비워 둔다(한 쪽뿐이라 숨겨도 높이가 같게).
- */
 export function FixedRows({
   size,
   count,
@@ -246,9 +222,7 @@ export function FixedRows({
   children,
 }: {
   size: number;
-  /** 지금 쪽에 그린 줄 수 */
   count: number;
-  /** 0건일 때 안내 */
   empty: React.ReactNode;
   pager?: React.ReactNode;
   children?: React.ReactNode;

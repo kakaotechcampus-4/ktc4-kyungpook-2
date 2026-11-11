@@ -1,18 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-/**
- * 화면별 사용법(코치마크). 제목 옆 "?" 를 누르면 화면이 어두워지고 설명할 부분만 밝게 보인다.
- * 단계는 화면의 `data-tour="이름"` 표시를 가리킨다. 지금 화면에 없는 표시는 건너뛴다(목록이 비었을 때 등).
- * 각 묶음의 첫 화면(기관 대시보드 · 보호자 홈)만 처음 온 사람에게 한 번 자동으로 띄운다.
- *
- * 기관·보호자가 함께 쓰므로 `components/org` 가 아니라 여기 둔다. react 말고는 아무것도 안 받아서
- * 보호자 묶음에 들어가도 무게가 늘지 않는다 (보호자는 SMS 링크로 들어오는 첫 페인트가 중요하다).
- */
 export type TourScreen = "dash" | "check" | "review" | "kids" | "lists" | "home";
 
 interface Step {
-  /** data-tour 이름. 없으면 화면 가운데에 띄운다 */
   at: string | null;
   title: string;
   text: string;
@@ -29,7 +20,7 @@ const TOURS: Record<TourScreen, Step[]> = {
   ],
   check: [
     { at: "confirm", title: "아이 확인", text: "AI가 누구의 기록인지 정하지 못한 일지예요. 일지에 이름이 없거나 비슷한 이름이 여럿일 때 여기로 와요." },
-    { at: "blocked", title: "고쳐야 할 기록", text: "개인정보나 진단명이 있어 AI 확인에서 막힌 기록이에요. 고쳐서 다시 보내거나, 쓰지 않을 기록이면 빼요." },
+    { at: "blocked", title: "고쳐야 할 기록", text: "개인정보나 진단명이 있어 내용 검증에서 막힌 기록이에요. 고쳐서 다시 보내거나, 쓰지 않을 기록이면 빼요." },
     { at: null, title: "팝업에서 처리", text: "카드의 버튼을 누르면 팝업이 열려요. 하나를 처리하면 다음 건이 이어서 떠요." },
   ],
   review: [
@@ -39,20 +30,18 @@ const TOURS: Record<TourScreen, Step[]> = {
       title: "검토하기",
       text: "팝업에서 문장마다 유지·수정·삭제를 고르세요. 문장 옆 [근거]를 누르면 원본 일지에서 그 문장의 근거가 노랗게 보여요. 승인한 뒤 5초 동안은 되돌릴 수 있어요.",
     },
-    { at: null, title: "승인한 뒤에는", text: "승인한 기록은 한 주 단위로 모여 AI가 주간 분석을 해요. 분석이 오면 아동 목록에서 한 번 더 승인해요." },
+    { at: null, title: "승인한 뒤에는", text: "승인한 기록은 한 주 단위로 모여 AI가 주간 리포트를 써요. 리포트가 오면 아동 목록에서 한 번 더 승인해요." },
   ],
   kids: [
-    { at: "tabs", title: "세 칸으로 나눠 봐요", text: "아이: 우리 명부의 아이 카드 · 분석 승인: AI가 쓴 주간 분석을 읽고 승인 · 연결 요청: 보호자가 기관 코드로 보낸 요청" },
+    { at: "tabs", title: "세 칸으로 나눠 봐요", text: "아이: 우리 명부의 아이 카드 · 리포트 승인: AI가 쓴 주간 리포트를 읽고 승인 · 연결 요청: 보호자가 기관 코드로 보낸 요청" },
     { at: "orgcode", title: "우리 기관 코드", text: "이미 다른 기관에 다니는 아이는 새로 등록하지 말고 보호자에게 이 코드를 알려 주세요. 보호자가 연결을 요청하면 [연결 요청]에 떠요. 초대 코드와 달리 만료가 없어요." },
     { at: "register", title: "아이 등록", text: "새 아이를 등록하면 보호자 초대 코드가 나와요. 보호자가 코드로 연결하고 공유에 동의하면 기록을 받을 수 있어요." },
-    { at: "kids", title: "아이 팝업", text: "[열기]를 누르면 분석·기록·보호자 탭이 있는 팝업이 떠요. 다른 기관이 보낸 분석은 [새 분석] 배지로 알려 주고, 지난 분석은 주차별로 묶여 있어요." },
+    { at: "kids", title: "아이 팝업", text: "[열기]를 누르면 리포트·기록·보호자 탭이 있는 팝업이 떠요. 다른 기관이 보낸 리포트는 [새 리포트] 배지로 알려 주고, 지난 리포트는 주차별로 묶여 있어요." },
   ],
   lists: [
     { at: "composer", title: "새로 보내기", text: "준비물이나 확인할 일을 보호자에게 보내요." },
     { at: "sent", title: "확인 현황", text: "보호자가 몇 명 확인했는지 보여요. 필요 없어진 안내는 [내리기]로 내려요." },
   ],
-  // 보호자는 한 달에 몇 번, 그것도 휴대폰으로 들어온다. 선생님 투어(6단계)와 같은 분량을 보지 않는다.
-  // 세 단계만 둔다 — 무엇이 오는지 · 어디서 모아 보는지 · 무엇을 내가 정하는지.
   home: [
     { at: "news", title: "새 소식", text: "기관에서 올린 그날의 기록이에요. 눌러서 전체를 읽을 수 있어요." },
     { at: "orgs", title: "연결된 기관", text: "아이가 다니는 곳이에요. 기관마다 기록을 공유할지 보호자가 정해요." },
@@ -60,14 +49,12 @@ const TOURS: Record<TourScreen, Step[]> = {
   ],
 };
 
-/** 자동 재생은 화면마다 따로 센다 — 하나로 묶으면 기관 투어를 본 사람에게 보호자 투어가 안 뜬다 */
 const seenKey = (screen: TourScreen) => `itda.tour.${screen}.seen`;
 
 function target(at: string | null): HTMLElement | null {
   return at ? document.querySelector<HTMLElement>(`[data-tour="${at}"]`) : null;
 }
 
-/** 제목 옆 "?" — 누르면 그 화면 사용법을 띄운다. `auto` 면 처음 방문 때 한 번 저절로 띄운다 */
 export function TourButton({ screen, auto = false }: { screen: TourScreen; auto?: boolean }) {
   const [steps, setSteps] = useState<Step[] | null>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -83,18 +70,15 @@ export function TourButton({ screen, auto = false }: { screen: TourScreen; auto?
     try {
       seen = localStorage.getItem(seenKey(screen)) === "1";
     } catch {
-      // 저장소가 막힌 브라우저 — 매번 띄우지 않도록 본 것으로 친다
     }
     if (!seen) start();
   }, [auto, start]);
 
   function end() {
-    // 저절로 뜨는 화면만 "봤다"를 남긴다. 손으로 연 투어는 다음에 또 열 수 있어야 한다
     if (auto) {
       try {
         localStorage.setItem(seenKey(screen), "1");
       } catch {
-        // 위와 같음
       }
     }
     setSteps(null);
@@ -113,7 +97,6 @@ export function TourButton({ screen, auto = false }: { screen: TourScreen; auto?
       >
         ?
       </button>
-      {/* 제목(h1) 옆에 있어도 제목의 글꼴·읽기 이름에 섞이지 않게 body 에 그린다 */}
       {steps ? createPortal(<Coach steps={steps} onEnd={end} />, document.body) : null}
     </>
   );

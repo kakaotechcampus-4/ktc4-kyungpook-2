@@ -1,28 +1,3 @@
--- 웹에서 업로드 → 매칭 → 검증을 확인하기 위한 테스트 아이 명부. psql 전용 (#130, #184).
---
--- 매칭 명부는 "그 기관에 대한 보호자 동의(sharing_consent ACTIVE)"가 있는 아이만 쓴다. 테스트 아이 100명에게
--- 일일이 초대 코드 수락과 동의를 할 수 없으니, 이 스크립트가 앱과 같은 행을 직접 만든다:
---   테스트 보호자(users) → 사용된 초대(invitation ACCEPTED) → 보호자 연결(child_guardian) → 동의(sharing_consent)
---
--- 명부는 AI/evals/manifests/잇다_synthetic_100.json 의 등록 100명(dev 80 + holdout 20)이다.
--- AI 채점과 같은 명부다 (AI/evals/scripts/matching/build_inputs.py — "명부는 문제가 아니라 보기").
--- 미등록 50명은 "명부에 없는 아이" 케이스라 넣지 않는다. 업로드할 일지는 dev 만 쓴다.
---
--- 테스트 아이는 위 100명의 (이름, 생년월일)로 찾고, 테스트 보호자와의 연결로 "테스트 아이가 맞다"를 확인한다.
--- 표시용 컬럼이 없어서다. 같은 이름·생일의 실제 아이(등록 API 로 만들었거나 실제 보호자가 연결된 아이)는 건드리지 않는다.
---
--- 사용법 (서버 infra/docker 에서). 기본은 결과만 보여주고 ROLLBACK, 저장하려면 -v apply=true.
--- sharing_consent 테이블이 생기는 BE 를 먼저 배포해야 한다. 테이블이 없으면 바로 멈춘다.
---   dbsql() { docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@"; }
---   dbsql -v action=seed   -v org_id=5 < ../../backend/scripts/test-children.sql   # 100명을 기관 5 명부에 넣고 동의까지
---   dbsql -v action=unlink -v org_id=5 < ../../backend/scripts/test-children.sql   # 기관 5 명부에서만 빼고 그 동의 철회
---   dbsql -v action=purge              < ../../backend/scripts/test-children.sql   # 모든 기관에서 빼고 동의 철회, 아이 삭제
---
--- seed 는 다시 돌려도 빠진 것만 채운다. 테스트 보호자와 이미 연결된 아이에게는 초대 행을 새로 만들지 않는다.
--- 동의 철회는 앱과 같이 REVOKED 로 남긴다(revoke_reason = ROSTER_REMOVED, revoked_by 는 비움). 삭제는 deleted_at 만 채운다.
--- matching_result·validation_result 가 child_id 를 FK 없이 들고 있어서, 행을 지우면 그 결과들이 없는 아이를 가리키게 된다.
--- 기관 id 는 SELECT u.name, o.id, o.name FROM users u JOIN organization o ON o.id = u.organization_id;
--- 실행했으면 #130 에 기관과 action 을 댓글로 남긴다.
 \set ON_ERROR_STOP on
 \if :{?apply}
 \else
@@ -39,12 +14,9 @@
 
 BEGIN;
 SELECT :'apply'::boolean AS apply_requested;
--- db 컨테이너는 UTC 인데 BE 는 Asia/Seoul 로 created_at 을 쓴다. 같은 기준으로 남긴다.
 SET LOCAL TimeZone = 'Asia/Seoul';
--- 앱 트랜잭션이 잡고 있으면 무한정 기다리지 않고 멈춘다 (기다리는 동안 아이 등록·동의도 막힌다).
 SET LOCAL lock_timeout = '5s';
 
--- 동의 테이블은 BE 가 만든다(ddl-auto). 새 BE 배포 전이면 아무것도 하지 않고 멈춘다.
 DO $$
 BEGIN
     IF to_regclass('sharing_consent') IS NULL THEN
@@ -53,7 +25,6 @@ BEGIN
 END
 $$;
 
--- 확인과 쓰기 사이에 다른 등록·연결·동의가 끼어들지 않게 한다. 앱의 잠금 순서와 같은 순서로 잡는다 (DB 스키마 §3.3).
 LOCK TABLE child, child_organization, invitation, child_guardian, sharing_consent IN SHARE ROW EXCLUSIVE MODE;
 
 CREATE TEMP TABLE test_params ON COMMIT DROP AS
@@ -182,21 +153,17 @@ BEGIN
     IF p.action IN ('seed', 'unlink') AND p.org_id IS NULL THEN
         RAISE EXCEPTION 'org_id is required for %', p.action;
     END IF;
-    -- purge 는 모든 기관에서 뺀다. "내 기관만"으로 착각하고 남의 명부까지 지우지 않게 막는다.
     IF p.action = 'purge' AND p.org_id IS NOT NULL THEN
         RAISE EXCEPTION 'purge takes no org_id (use unlink to remove from one organization)';
     END IF;
     IF p.org_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM organization WHERE id = p.org_id) THEN
         RAISE EXCEPTION 'organization % does not exist', p.org_id;
     END IF;
-    -- 같은 kakao_id 로 보호자가 아닌 회원이 있으면 테스트 보호자로 쓸 수 없다.
     IF EXISTS (SELECT 1 FROM users WHERE kakao_id = p.guardian_kakao_id AND role IS DISTINCT FROM 'PARENT') THEN
         RAISE EXCEPTION 'user with kakao_id % exists but is not a PARENT', p.guardian_kakao_id;
     END IF;
     SELECT id INTO test_guardian_id FROM users WHERE kakao_id = p.guardian_kakao_id;
 
-    -- 같은 (이름, 생년월일)이 둘이면 어느 쪽이 테스트 아이인지 알 수 없다.
-    -- 등록 API 는 중복을 막지 않아서 테스트 이름으로 한 번 등록하면 생긴다. 직접 정리할 수 있게 id 를 알려준다.
     SELECT string_agg(format('%s(%s): child.id %s', t.name, t.birthdate, ids), ', ')
     INTO conflict
     FROM test_child t
@@ -209,11 +176,6 @@ BEGIN
         RAISE EXCEPTION 'more than one child has the same name and birthdate as a test child: %', conflict;
     END IF;
 
-    -- 테스트 아이로 인정하는 경우만 바꾼다. 상태(ACTIVE 여부)로는 가르지 않는다 — unlink 하면 테스트 아이도
-    -- SUSPENDED 가 되므로, 상태로 가르면 다시 seed 할 수 없다.
-    --   (1) 테스트 보호자와 연결된 적이 있고(해제 포함), 다른 사람의 연결·동의가 하나도 없다
-    --   (2) 이 스크립트의 예전 판(#130)이 넣은 아이: ACTIVE 이고 연결·동의가 하나도 없다
-    -- 그 밖의 아이(등록 API 로 만든 PENDING_CONSENT 아이, 실제 보호자가 연결된 아이)는 건드리지 않고 멈춘다.
     SELECT string_agg(format('%s(%s): child.id %s %s', c.name, c.birthdate, c.id, c.status), ', ' ORDER BY c.id)
     INTO conflict
     FROM child c JOIN test_child t ON t.name = c.name AND t.birthdate = c.birthdate
@@ -237,18 +199,16 @@ SELECT action = 'seed' AS is_seed, action = 'unlink' AS is_unlink, action = 'pur
 FROM test_params \gset
 
 \if :is_seed
--- 테스트 보호자. 탈퇴 표시돼 있으면 되살린다(kakao_id 는 UNIQUE 라 새로 넣을 수 없다).
-INSERT INTO users (kakao_id, name, role, created_at, updated_at)
-SELECT p.guardian_kakao_id, '테스트 보호자', 'PARENT', now(), now()
-FROM test_params p
-ON CONFLICT (kakao_id) DO NOTHING;
-
 UPDATE users u
-SET deleted_at = NULL, updated_at = now()
+SET kakao_id = 'withdrawn:' || u.id, updated_at = now()
 FROM test_params p
 WHERE u.kakao_id = p.guardian_kakao_id AND u.deleted_at IS NOT NULL;
 
--- 새 아이는 앱과 같이 동의 대기로 넣는다. 아래에서 동의를 넣은 뒤 상태를 다시 계산한다.
+INSERT INTO users (kakao_id, role, created_at, updated_at)
+SELECT p.guardian_kakao_id, 'PARENT', now(), now()
+FROM test_params p
+ON CONFLICT (kakao_id) DO NOTHING;
+
 INSERT INTO child (name, birthdate, status, created_at, updated_at)
 SELECT t.name, t.birthdate, 'PENDING_CONSENT', now(), now()
 FROM test_child t
@@ -264,7 +224,6 @@ FROM test_child t
 JOIN child c ON c.name = t.name AND c.birthdate = t.birthdate AND c.deleted_at IS NULL;
 
 \if :is_seed
--- (child_id, organization_id) 는 UNIQUE 라서 지웠던 연결은 새로 넣지 않고 되살린다.
 UPDATE child_organization co
 SET deleted_at = NULL, updated_at = now()
 FROM test_child_id t, test_params p
@@ -278,9 +237,6 @@ WHERE NOT EXISTS (
     WHERE co.child_id = t.child_id AND co.organization_id = p.org_id
 );
 
--- 보호자 연결. 이미 살아 있는 연결이 있으면 아무것도 하지 않는다 — 초대 행도 만들지 않는다.
--- 연결이 없거나 해제돼 있을 때만, 앱의 초대 수락처럼 "사용된 초대"를 하나 만들고 그 초대로 연결한다(child_guardian 의
--- invitation_id 는 비울 수 없다). 코드는 앱과 같은 31자 알파벳 8자리이고, 겹치면 다시 뽑는다.
 DO $$
 DECLARE
     p test_params%ROWTYPE;
@@ -321,7 +277,6 @@ BEGIN
 END
 $$;
 
--- 이 기관에 대한 테스트 보호자의 살아 있는 동의가 없을 때만 새로 넣는다.
 INSERT INTO sharing_consent (child_id, guardian_id, organization_id, scope, status, created_at, updated_at)
 SELECT t.child_id, u.id, p.org_id, p.scope, 'ACTIVE', now(), now()
 FROM test_child_id t
@@ -333,7 +288,6 @@ WHERE NOT EXISTS (
       AND sc.guardian_id = u.id AND sc.status = 'ACTIVE'
 );
 
--- 같은 기관의 살아 있는 동의는 같은 공유 항목을 가진다 (앱 규칙). 이미 있던 동의도 이 값으로 맞춘다.
 UPDATE sharing_consent sc
 SET scope = p.scope, updated_at = now()
 FROM test_child_id t, test_params p
@@ -347,7 +301,6 @@ SET deleted_at = now(), updated_at = now()
 FROM test_child_id t, test_params p
 WHERE co.child_id = t.child_id AND co.organization_id = p.org_id AND co.deleted_at IS NULL;
 
--- 명부에서 빠진 기관에 대한 동의는 끈다. 사람이 끈 것이 아니라 revoked_by 는 비운다.
 UPDATE sharing_consent sc
 SET status = 'REVOKED', revoked_by = NULL, revoked_at = now(), revoke_reason = 'ROSTER_REMOVED', updated_at = now()
 FROM test_child_id t, test_params p
@@ -366,8 +319,6 @@ FROM test_child_id t
 WHERE sc.child_id = t.child_id AND sc.status = 'ACTIVE';
 \endif
 
--- 아이 상태는 앱과 같은 규칙으로 다시 계산한다: 살아 있는 동의가 있으면 ACTIVE, 동의 행은 있지만 모두 꺼졌으면
--- SUSPENDED, 동의 행이 없으면 그대로(예전 판이 넣은 ACTIVE 아이는 seed 에서 동의가 생긴다).
 UPDATE child c
 SET status = CASE
         WHEN EXISTS (SELECT 1 FROM sharing_consent sc WHERE sc.child_id = c.id AND sc.status = 'ACTIVE') THEN 'ACTIVE'
@@ -389,14 +340,12 @@ FROM test_child_id t
 WHERE c.id = t.child_id;
 \endif
 
--- 결과: 남아 있는 테스트 아이 수와 상태
 SELECT c.status, count(*) AS test_children
 FROM child c JOIN test_child t ON t.name = c.name AND t.birthdate = c.birthdate
 WHERE c.deleted_at IS NULL
 GROUP BY c.status
 ORDER BY c.status;
 
--- 기관별 명부 연결 수와 매칭 명부에 들어가는 수(그 기관에 살아 있는 동의가 있는 아이)
 SELECT co.organization_id, o.name AS organization_name, count(*) AS linked_test_children,
        count(*) FILTER (WHERE EXISTS (
            SELECT 1 FROM sharing_consent sc
@@ -411,7 +360,6 @@ GROUP BY co.organization_id, o.name
 ORDER BY co.organization_id;
 
 \if :is_seed
--- 정답 비교용 대응표 (JSON child_id ↔ DB child.id)
 SELECT manifest_child_id, child_id FROM test_child_id ORDER BY manifest_child_id;
 \endif
 

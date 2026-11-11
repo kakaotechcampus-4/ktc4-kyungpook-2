@@ -5,20 +5,6 @@ import java.util.List;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
-/**
- * 인사이트 에이전트 {@code POST /insight} 요청. 필드는 {@code AI/insight/schemas.py} 의 InsightInput 과 1:1 이다.
- *
- * <p>앞의 에이전트들과 재료가 다르다 — 일지가 아니라 <b>Gate 1 을 통과한 요약의 문장(claim)</b> 을 보낸다.
- * 여러 날·여러 기관의 claim 을 모아 "상황 → 반응 → 대처와 결과" 묶음을 찾는 게 이 에이전트의 일이다.
- *
- * @param periodFrom             재료가 된 기간 시작 (ISO, 예: "2026-10-01")
- * @param consentedInstitutions  보호자가 공유에 동의한 기관. 이 밖의 기관 claim 은 재료에서 뺀다
- *                               (AI/insight/CRITERIA.md §7). {@code sharing_consent} 가 ACTIVE 이고 아이가 지금
- *                               명부에 있는 기관이다 (DB 스키마 §5.5, {@code InsightService})
- * @param historyClaims          같은 아이의 지난 기록 (#387). AI 가 한 기관 이야기뿐인 인사이트를 살릴 때 도구(find_claims)로
- *                               <b>이 안에서만</b> 찾는다 — 찾는 범위는 모델이 아니라 BE 가 정한다. {@code claims} 와 같은
- *                               모양이고 고르는 규칙도 같다(승인·동의). 비면 도구를 쓰지 않는다
- */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record InsightAgentRequest(
         Long childId,
@@ -29,36 +15,12 @@ public record InsightAgentRequest(
         List<Institution> consentedInstitutions,
         List<Claim> historyClaims) {
 
-    /**
-     * 목록은 비어 있더라도 {@code null} 로 보내지 않는다.
-     *
-     * <p>AI 쪽 기본값({@code Field(default_factory=list)})은 <b>키가 없을 때만</b> 쓰인다. 값이 명시적으로
-     * {@code null} 이면 {@code list[Institution]} 검증에 걸려 422 가 되고, 422 는 계약 위반이라 재시도 없이
-     * 바로 실패한다. 조회 결과가 없는 경우가 실제 경로다 — 동의가 모두 철회된 아이면 동의 기관 조회가 비고,
-     * 그 결과가 {@code null} 로 흘러들어올 수 있다.
-     */
     public InsightAgentRequest {
         claims = claims == null ? List.of() : claims;
         consentedInstitutions = consentedInstitutions == null ? List.of() : consentedInstitutions;
         historyClaims = historyClaims == null ? List.of() : historyClaims;
     }
 
-    /**
-     * 승인된 요약 문장 하나 (InsightClaim).
-     *
-     * @param claimId         <b>BE 가 붙인다.</b> 요약에 없는 값이라 {@code "{summary_result.id}-{claims 배열 순서}"}
-     *                        로 만든다. 요약이 배열 순서를 본문 순서로 못 박았으므로 같은 판 안에서는 바뀌지 않는다
-     * @param institutionType <b>한국어다.</b> {@code "학교"}·{@code "센터"}·{@code "활동지원사"}
-     *                        (AI/insight/config.py INSTITUTION_TYPES). 이 문자열이 프롬프트에 그대로 들어가고
-     *                        기관 간 대조도 이 값으로 한다. 기관 <b>이름</b>은 보내지 않는다
-     * @param source          문장을 누가 썼는지 — {@code AI} 원문 그대로 · {@code EDITED} 교사가 고침 ·
-     *                        {@code TEACHER} 교사가 새로 씀. Gate 1 카드 결과로 BE 가 붙인다 (#199).
-     *                        <b>교사 문장은 검증을 거치지 않는다</b> — AI 가 이 값으로 출력에 표시를 달고,
-     *                        Gate 2 화면이 그 표시로 경고를 띄운다
-     * @param evidence        <b>최소 1 건.</b> 근거가 끊긴 문장은 보내지 않는다 — 원문으로 추적되지 않는 내용이
-     *                        다른 기관으로 나가면 안 된다 (CRITERIA §2). 단 {@code TEACHER} 문장은 일지가 없어
-     *                        {@code journalEntryId} 가 비고, 그때 {@code quote} 가 그 문장 자체다
-     */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Claim(
             String claimId,
@@ -70,32 +32,16 @@ public record InsightAgentRequest(
             List<Evidence> evidence) {
     }
 
-    /**
-     * 문장을 누가 썼는지 (AI/insight/schemas.py 의 {@code ClaimSource}).
-     *
-     * <p>⚠️ <b>{@code TEACHER} 만 {@code journal_entry_id} 를 비울 수 있다.</b> {@code AI}·{@code EDITED} 에서
-     * 빠지면 계약이 422 로 돌려보낸다 — 근거가 끊긴 것이기 때문이다.
-     */
     public enum ClaimSource {
-        /** 요약 AI 원문 그대로. {@code source} 가 없는 옛 요약도 이 값으로 읽는다. */
         AI,
-        /** 교사가 고친 문장. 근거는 원래 일지 그대로다. */
         EDITED,
-        /** 교사가 새로 쓴 문장. 근거가 자기 자신이라 일지 번호가 없다. */
         TEACHER
     }
 
-    /**
-     * claim 하나를 뒷받침하는 원본 일지 근거 (InsightEvidence).
-     *
-     * @param quote ⚠️ <b>원문 인용이라 다른 아이 이름이 남아 있다.</b> claim 의 {@code text} 는 익명화됐지만
-     *              이것은 아니다. AI 는 이 값을 프롬프트에 넣지 않고 출력으로도 옮기지 않는다 (CRITERIA §2)
-     */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Evidence(Long journalEntryId, String quote) {
     }
 
-    /** 동의된 기관 하나. 이름은 보내지 않는다. */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Institution(Long institutionId, String institutionType) {
     }

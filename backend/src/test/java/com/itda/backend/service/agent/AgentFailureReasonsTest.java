@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 import com.itda.backend.domain.record.FailureReason;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.exception.agent.AiAgentException;
 import com.itda.backend.exception.agent.AiAgentRejectedException;
 import com.itda.backend.exception.agent.AiAgentUnavailableException;
@@ -29,6 +30,12 @@ class AgentFailureReasonsTest {
     void AI_다운은_AGENT_UNAVAILABLE이다() {
         assertThat(AgentFailureReasons.of(new AiAgentUnavailableException("down", null)))
                 .isEqualTo(FailureReason.AGENT_UNAVAILABLE);
+    }
+
+    @Test
+    void 보낼_수_없는_긴_일지는_CONTENT_TOO_LONG이다() {
+        assertThat(AgentFailureReasons.of(new AgentContentTooLongException(1L, 5001)))
+                .isEqualTo(FailureReason.CONTENT_TOO_LONG);
     }
 
     @Test

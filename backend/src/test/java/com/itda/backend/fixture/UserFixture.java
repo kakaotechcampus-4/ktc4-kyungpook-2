@@ -1,26 +1,46 @@
 package com.itda.backend.fixture;
 
+import java.time.LocalDateTime;
+import java.util.Optional;
+
+import org.springframework.test.util.ReflectionTestUtils;
+
 import com.itda.backend.domain.user.User;
 import com.itda.backend.domain.user.UserRole;
+import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 가입을 마친 회원을 만든다. 운영 코드에는 "처음부터 역할이 있는 회원" 을 만드는 길이 없다 —
- * 카카오 로그인으로 가입 미완료 회원이 생기고, 가입 API 가 역할을 정한다. 테스트도 같은 순서를 밟는다.
- */
 public final class UserFixture {
 
     private UserFixture() {
     }
 
-    public static User organizationUser(String kakaoId, String name, Long organizationId) {
-        User user = User.pending(kakaoId, name);
+    public static User organizationUser(String kakaoId, Long organizationId) {
+        User user = User.pending(kakaoId);
         user.completeSignup(UserRole.ORGANIZATION, organizationId);
         return user;
     }
 
-    public static User parent(String kakaoId, String name) {
-        User user = User.pending(kakaoId, name);
+    public static User parent(String kakaoId) {
+        User user = User.pending(kakaoId);
         user.completeSignup(UserRole.PARENT, null);
         return user;
+    }
+
+    public static User withdrawn(User saved) {
+        LocalDateTime now = LocalDateTime.now();
+        saved.requestWithdrawal(now);
+        saved.markKakaoUnlinked();
+        saved.completeWithdrawal(now);
+        return saved;
+    }
+
+    public static User legacyDeleted(User user) {
+        ReflectionTestUtils.setField(user, "deletedAt", LocalDateTime.now());
+        return user;
+    }
+
+    /** 카카오 회원번호로 찾는다. 운영 코드는 잠금 조회만 쓰므로 테스트에서만 쓰는 조회를 여기 둔다. */
+    public static Optional<User> findByKakaoId(UserRepository userRepository, String kakaoId) {
+        return userRepository.findAll().stream().filter(user -> kakaoId.equals(user.getKakaoId())).findFirst();
     }
 }

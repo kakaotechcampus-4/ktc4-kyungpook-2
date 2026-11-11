@@ -83,13 +83,6 @@ class JournalEntrySplitterTest {
         assertThat(result.get(1).content()).isEqualTo("자유놀이를 했다.");
     }
 
-    // --- 코드리뷰 반영(#71): 날짜 헤더 오탐 회귀 테스트 -------------------------------
-
-    /**
-     * 헤더 후보가 한 줄뿐이면 날짜 헤더로 취급하지 않는다 — 실제 일지는 하루에 기록이
-     * 여러 건이라 날짜 헤더도 여러 번 나오는 게 정상이고, 한 줄만 매칭되면 그건 본문일
-     * 가능성이 크다. 잘못 쪼개서 본문 앞부분을 잃는 것보다 통짜로 두는 게 안전하다.
-     */
     @Test
     void 슬래시_형식_문장이_한_줄뿐이면_날짜_헤더로_보지_않는다() {
         assertThat(splitter.split("3/4 정도를 혼자 해냈다").get(0).content())
@@ -98,7 +91,6 @@ class JournalEntrySplitterTest {
                 .isEqualTo("2/3 이상 먹었다");
     }
 
-    /** 짧은 형식(M/D)은 점 구분을 더 이상 인식하지 않는다 — 소수점·시간 표기와 겹쳐서 오탐했었다. */
     @Test
     void 짧은_형식은_점_구분을_날짜로_인식하지_않는다() {
         assertThat(splitter.split("1.5 시간 동안 집중했다").get(0).content())
@@ -109,12 +101,6 @@ class JournalEntrySplitterTest {
                 .isEqualTo("0.5 정도만 참여했다");
     }
 
-    /**
-     * 분수 표기가 여러 줄이어도 더 이상 잘못 분리되지 않는다 (멘토 리뷰 PR #129 반영).
-     *
-     * <p>예전에는 "헤더 후보가 두 줄 미만"일 때만 막아서 이 경우가 통과했고, 알려진 한계로
-     * 남겨뒀었다. 이제는 줄마다 "날짜 뒤에 수량을 뜻하는 말이 오는지"를 보므로 줄 수와 무관하다.
-     */
     @Test
     void 분수_표기가_여러_줄이어도_날짜_헤더로_보지_않는다() {
         List<SplitEntry> result = splitter.split("3/4 정도를 혼자 해냈다\n2/3 이상 먹었다");
@@ -124,13 +110,6 @@ class JournalEntrySplitterTest {
         assertThat(result.get(0).content()).isEqualTo("3/4 정도를 혼자 해냈다\n2/3 이상 먹었다");
     }
 
-    /**
-     * 날짜 헤더가 하나뿐인 파일도 그 날짜를 쓴다 (멘토 리뷰 PR #129).
-     *
-     * <p>하루치를 한 파일로 올리는 게 가장 흔한 형태인데, 예전 가드는 이걸 전부 날짜 없는
-     * 기록으로 만들었다. 그러면 8월 21일에 관찰한 내용을 10월 7일에 올렸을 때 관찰 날짜가
-     * 업로드 날짜로 저장된다(RawRecordService 의 폴백).
-     */
     @Test
     void 날짜_헤더가_하나뿐이어도_그_날짜를_쓴다() {
         List<SplitEntry> result = splitter.split("8/21 오늘 급식을 잘 먹었다.\n자유놀이 시간에 블록을 쌓았다.");
@@ -140,22 +119,14 @@ class JournalEntrySplitterTest {
         assertThat(result.get(0).content()).isEqualTo("오늘 급식을 잘 먹었다.\n자유놀이 시간에 블록을 쌓았다.");
     }
 
-    /** 날짜로 성립하지 않는 숫자는 헤더가 아니다 — 쪼개 봐야 날짜를 못 채운다. */
     @Test
     void 날짜로_성립하지_않는_숫자는_헤더로_보지_않는다() {
-        // 수량어("이상한")가 아니라 날짜 검사에 걸리는지 보려고 평범한 문장을 쓴다(코드리뷰 반영).
         List<SplitEntry> result = splitter.split("13/45 그냥 숫자로 시작하는 줄\n13/46 또 그런 줄");
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).entryDate()).isNull();
     }
 
-    /**
-     * 일(日)이 12를 넘으면 분수로 쓰지 않으므로 수량어 검사를 걸지 않는다 (코드리뷰 반영).
-     *
-     * <p>관찰일지에서 "이상 행동"은 흔한 표현인데, 수량어 검사를 모든 날짜에 걸면 이 줄이
-     * "이상"에 걸려 날짜를 잃는다 — 고치려던 버그를 다른 입력에서 되살리는 셈이다.
-     */
     @ParameterizedTest
     @ValueSource(strings = {
             "8/21 이상 행동이 관찰됨",
@@ -170,7 +141,6 @@ class JournalEntrySplitterTest {
         assertThat(result.get(0).entryDate()).isNotNull();
     }
 
-    /** 숫자에 조사가 바로 붙으면 문장 안의 분수다 — 날짜 헤더는 공백·콜론으로 본문과 떨어진다. */
     @ParameterizedTest
     @ValueSource(strings = {
             "3/4를 혼자 해냈다",
@@ -186,7 +156,6 @@ class JournalEntrySplitterTest {
         assertThat(result.get(0).content()).isEqualTo(line);
     }
 
-    /** 분수로 읽힐 수 있는 숫자여도 띄어쓰고 평범한 문장이 이어지면 날짜로 본다. */
     @Test
     void 분수_모양_숫자도_수량어가_없으면_날짜로_읽는다() {
         List<SplitEntry> result = splitter.split("3/4 오늘 급식을 잘 먹었다.");
@@ -196,12 +165,6 @@ class JournalEntrySplitterTest {
         assertThat(result.get(0).content()).isEqualTo("오늘 급식을 잘 먹었다.");
     }
 
-    /**
-     * 날짜만 따로 한 줄에 쓰는 형식도 읽는다 (코드리뷰 반영).
-     *
-     * <p>뒤에 아무것도 없으면 구분자도 비는데, 이걸 "조사가 바로 붙었다"로 보면 분수 모양 숫자만
-     * 골라 날짜를 잃는다 — {@code 8/21} 은 일이 12 를 넘어 우회되므로 티가 안 난다.
-     */
     @Test
     void 날짜만_한_줄에_쓴_형식도_날짜로_읽는다() {
         List<SplitEntry> result = splitter.split("3/4\n오늘 급식을 잘 먹었다.");
@@ -211,7 +174,6 @@ class JournalEntrySplitterTest {
         assertThat(result.get(0).content()).isEqualTo("오늘 급식을 잘 먹었다.");
     }
 
-    /** pdf 칸 끝에서 꺾인 줄은 잇고, 공백에서 꺾인 자리는 줄 끝 공백이 남아 띄어쓰기가 보존된다. */
     @Test
     void 꺾인_줄은_잇고_새_날짜와_빈_줄과_날짜만_있는_줄은_그대로_둔다() {
         String pdfText = "2026-03-02 학교 지속 시간까지 필\n요 이상으로 보호자와 \n실랑이가 있었음.\n"
@@ -224,5 +186,26 @@ class JournalEntrySplitterTest {
                 "학교 지속 시간까지 필요 이상으로 보호자와 실랑이가 있었음.",
                 "학교 손을 잡고 이동함.",
                 "오늘 급식을 잘 먹었다.");
+    }
+
+    @Test
+    void 상한을_넘으면_한_건_넘긴_데서_멈춘다() {
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            text.append(LocalDate.of(2026, 1, 1).plusDays(i)).append(" 관찰 ").append(i).append('\n');
+        }
+
+        List<SplitEntry> entries = new JournalEntrySplitter().split(text.toString(), 3);
+
+        assertThat(entries).hasSizeBetween(4, 5);
+        assertThat(entries.get(0).content()).isEqualTo("관찰 0");
+    }
+
+    @Test
+    void 상한_안이면_상한_없이_나눈_것과_같다() {
+        String text = "9/15 블록을 쌓음\n이어진 문장\n\n9/16 점심을 먹음\r\n9/17 낮잠";
+
+        assertThat(new JournalEntrySplitter().split(text, 3)).isEqualTo(new JournalEntrySplitter().split(text));
+        assertThat(new JournalEntrySplitter().split(text)).hasSize(3);
     }
 }

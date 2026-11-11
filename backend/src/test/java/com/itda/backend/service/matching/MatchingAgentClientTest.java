@@ -44,7 +44,6 @@ class MatchingAgentClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder().baseUrl(AI);
         server = MockRestServiceServer.bindTo(builder).build();
-        // 재시도·상태 확인은 AiAgentClientTest 가 본다. 여기서는 매칭 계약(요청·응답 모양)만 본다.
         AiAgentProperties properties = new AiAgentProperties(AI, Duration.ofSeconds(3), Duration.ofSeconds(65),
                 List.of());
         client = new MatchingAgentClient(new AiAgentClient(builder.build(), new ObjectMapper(), properties));

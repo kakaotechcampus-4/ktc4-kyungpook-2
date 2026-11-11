@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.domain.record.RawRecord;
 import com.itda.backend.dto.request.matching.MatchingAgentRequest;
@@ -19,7 +20,6 @@ import com.itda.backend.repository.record.RawRecordRepository;
 
 import lombok.RequiredArgsConstructor;
 
-/** 매칭 워커가 쓰는 일지 집기·요청 조립. AI 호출은 트랜잭션 밖에서 하도록 단계마다 트랜잭션을 나눈다. */
 @Service
 @RequiredArgsConstructor
 public class MatchingService {
@@ -29,7 +29,6 @@ public class MatchingService {
     private final OrganizationRepository organizationRepository;
     private final ChildRepository childRepository;
 
-    /** 대기 일지를 집어 가며 MATCHING 으로 바꾼다. 커밋되면 다음 실행이 같은 일지를 다시 집지 않는다. */
     @Transactional
     public List<Long> claimPending(int batchSize) {
         List<JournalEntry> targets = journalEntryRepository.findMatchingTargets(
@@ -38,16 +37,17 @@ public class MatchingService {
         return targets.stream().map(JournalEntry::getId).toList();
     }
 
-    /** AI 입력은 저장하지 않고 그때그때 조립한다 (DB 스키마 §2.2). */
     @Transactional(readOnly = true)
     public MatchingAgentRequest prepareRequest(Long journalEntryId) {
         JournalEntry entry = journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId)
                 .orElseThrow(() -> new MatchingTargetException("journal entry not found: " + journalEntryId));
+        if (!entry.isSendableToAgent()) {
+            throw new AgentContentTooLongException(journalEntryId, entry.getContent().length());
+        }
         RawRecord rawRecord = rawRecordRepository.findByIdAndDeletedAtIsNull(entry.getRawRecordId())
                 .orElseThrow(() -> new MatchingTargetException("raw record not found: " + entry.getRawRecordId()));
         Long organizationId = organizationIdOf(rawRecord);
 
-        // 이 기관에 대한 동의가 있는 아이만 명부에 넣는다. 다른 기관에만 동의한 아이는 빠진다.
         List<MatchingAgentRequest.RosterEntry> roster = childRepository.findConsentedByOrganizationId(organizationId)
                 .stream()
                 .map(child -> new MatchingAgentRequest.RosterEntry(
@@ -64,7 +64,6 @@ public class MatchingService {
                 toText(rawRecord.getHintBirthdate()));
     }
 
-    /** 집어 갔지만 처리하지 않은 일지를 대기로 돌려놓는다. 이미 다른 상태로 바뀐 일지는 건드리지 않는다. */
     @Transactional
     public void release(List<Long> journalEntryIds) {
         journalEntryRepository.findAllById(journalEntryIds).stream()
@@ -72,12 +71,6 @@ public class MatchingService {
                 .forEach(JournalEntry::releaseMatching);
     }
 
-    /**
-     * AI 가 다운이라 매칭하지 못한 일지를 실패로 남기지 않고 대기로 되돌린다 (#153).
-     *
-     * @return 되돌렸거나 되돌릴 필요가 없으면(이미 다른 상태) {@code true}. 이미 {@code maxReleases} 번 되돌린
-     *         일지면 그대로 두고 {@code false} — 워커가 실패로 남겨 확인 필요 큐로 보낸다
-     */
     @Transactional
     public boolean releaseAfterAgentDown(Long journalEntryId, int maxReleases) {
         JournalEntry entry = journalEntryRepository.findById(journalEntryId)
@@ -93,7 +86,6 @@ public class MatchingService {
         return true;
     }
 
-    /** 이전에 꺼진 앱이 처리하다 만 일지를 대기로 되돌린다. 워커가 첫 실행에서 한 번만 부른다. */
     @Transactional
     public int releaseStuck() {
         List<JournalEntry> stuck = journalEntryRepository.findByStatusAndDeletedAtIsNull(JournalEntryStatus.MATCHING);
@@ -101,11 +93,6 @@ public class MatchingService {
         return stuck.size();
     }
 
-    /**
-     * raw_record.institution_id 는 organization.id 를 문자열로 담는다 (DB 스키마 §6.1). 9/22 이전 행에는 카카오
-     * 회원번호가 들어 있어 숫자로 읽혀도 기관이 없을 수 있다 — 그대로 보내면 빈 명부로 unmatched 가 나와
-     * 원인이 가려지므로 여기서 실패시킨다.
-     */
     private Long organizationIdOf(RawRecord rawRecord) {
         Long organizationId;
         try {

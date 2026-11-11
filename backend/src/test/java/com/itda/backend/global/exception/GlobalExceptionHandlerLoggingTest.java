@@ -29,15 +29,8 @@ import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.sharing.GuardianInstitutionShareService;
 
-/**
- * 잘못된 요청(4xx) 로그에 사용자가 보낸 값이 남지 않는지 실제 출력으로 확인한다.
- *
- * <p>검증 실패·본문 해석 실패의 예외 메시지에는 거부된 값이나 입력 일부가 들어갈 수 있다. 로그에는 예외 종류·상태
- * 코드·필드 이름만 남아야 한다. 로그가 아예 꺼져서 통과하는 일이 없도록 남아야 할 정보도 함께 확인한다.
- */
 @WebMvcTest(controllers = {ChildController.class, GuardianController.class},
         properties = "logging.level.com.itda.backend.global.exception=DEBUG")
-// MockMvc 기본 출력은 요청 본문을 콘솔에 찍어 로그 검사를 오염시키므로 끈다.
 @AutoConfigureMockMvc(addFilters = false, print = MockMvcPrint.NONE)
 @ExtendWith(OutputCaptureExtension.class)
 class GlobalExceptionHandlerLoggingTest {
@@ -78,7 +71,6 @@ class GlobalExceptionHandlerLoggingTest {
         assertThat(output).contains("MethodArgumentNotValidException", "400", "name:Size");
     }
 
-    /** 본문이 도중에 끊기면 필드 경로가 나온다는 보장이 없으니 경로는 확인하지 않는다. */
     @Test
     void brokenJsonLogsExceptionKindButNotInput(CapturedOutput output) throws Exception {
         postBadRequest("{\"externalId\": \"%s\", \"name\": ".formatted(SECRET));
@@ -95,16 +87,14 @@ class GlobalExceptionHandlerLoggingTest {
         assertThat(output).contains("HttpMessageNotReadableException", "400", "path=name");
     }
 
-    /** 없는 경로(404) 메시지에는 요청 경로가 그대로 들어간다("No static resource ..."). 경로도 사용자 입력이다. */
     @Test
     void unknownPathLogsExceptionKindButNotRequestedPath(CapturedOutput output) throws Exception {
-        mockMvc.perform(get(CHILDREN + "/" + SECRET)).andExpect(status().isNotFound());
+        mockMvc.perform(get(CHILDREN + "/" + SECRET + "/nothing")).andExpect(status().isNotFound());
 
         assertThat(output).doesNotContain(SECRET);
         assertThat(output).contains("NoResourceFoundException", "404");
     }
 
-    /** 보호자가 입력한 초대 코드는 권한 그 자체다. 틀린 코드여도 로그에 남기지 않는다. */
     @Test
     void invalidInviteCodeLogsFixedMessageButNotCode(CapturedOutput output) throws Exception {
         given(invitationService.accept(any(), any()))
@@ -116,6 +106,21 @@ class GlobalExceptionHandlerLoggingTest {
                 .andExpect(status().isBadRequest());
 
         assertThat(output).doesNotContain(SECRET);
-        assertThat(output).contains("초대 처리 실패");
+        assertThat(output).contains("요청 처리 실패", "INVALID_INVITE_CODE");
+    }
+
+    @Test
+    void businessExceptionReasonIsLoggedOnOneLine(CapturedOutput output) throws Exception {
+        given(invitationService.accept(any(), any()))
+                .willThrow(new BusinessException(InvitationErrorCode.INVALID_INVITE_CODE,
+                        "reason\nFAKE LOG LINE\r end"));
+
+        mockMvc.perform(post("/api/v1/guardians/me/invitations/accept")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\": \"ABC\"}"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(output).contains("reason=reason_FAKE LOG LINE__end");
+        assertThat(output).doesNotContain("\nFAKE LOG LINE");
     }
 }

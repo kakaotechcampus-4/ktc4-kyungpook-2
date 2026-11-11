@@ -43,12 +43,6 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 같은 보호자의 약관 동의가 겹칠 때를 PostgreSQL 에서 재현한다. 방식은 {@link LockContention} 이다.
- *
- * <p>정책: 동의는 회원 행에서 줄을 선다. 뒤에 온 쪽은 앞쪽이 커밋한 줄을 보고 아무것도 넣지 않는다 — 둘 다 성공하고
- * 약관마다 줄은 하나다. UNIQUE 위반으로 끝나면(잠금을 거치지 않으면) 뒤의 요청이 500 이 된다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -84,7 +78,7 @@ class TermsAgreeConcurrencyIntegrationTest {
     @BeforeEach
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
-        parent = userRepository.save(UserFixture.parent("kakao-terms-parent", "김보호"));
+        parent = userRepository.save(UserFixture.parent("kakao-terms-parent"));
     }
 
     @AfterEach

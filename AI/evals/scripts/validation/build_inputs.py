@@ -17,12 +17,19 @@ from validation.config import ISSUE_LEVEL
 
 PIPELINE_PATH = Path(__file__).parent.parent.parent / "manifests" / "잇다_파이프라인_테스트매니페스트.json"
 SYNTHETIC_PATH = Path(__file__).parent.parent.parent / "manifests" / "잇다_synthetic_100.json"
-# manifests/ 는 아이 데이터라 git 에서 무시되고, fixtures/ 는 우리가 손으로 만든 작은 파일이라 추적된다
+# manifests/ 는 아이 데이터라 git 에 없고, fixtures/ 는 우리가 손으로 만든 작은 파일이라 추적된다
 OVERRIDES_PATH = Path(__file__).parent.parent.parent / "fixtures" / "validation_label_overrides.json"
 LEVEL_RANK = {"PASS": 0, "REVIEW": 1, "BLOCK": 2}
 
+
+def _require(path: Path) -> None:
+    """매니페스트는 git 에 없다. 없으면 FileNotFoundError 대신 어디서 받는지 알려 주고 멈춘다."""
+    if not path.exists():
+        raise SystemExit(f"{path} 가 없습니다. 가상 아동 데이터라 레포에 없습니다 — AI 담당(근찬)에게 받아 AI/evals/manifests/ 에 넣으세요.")
+
 def build_child_name_map():
     """child_id -> 이름 조회용 맵. Matching 쪽 데이터셋을 그대로 재사용."""
+    _require(SYNTHETIC_PATH)
     with open(SYNTHETIC_PATH, encoding="utf-8") as f:
         data = json.load(f)
     all_children = data["dev"] + data["holdout"]
@@ -30,6 +37,7 @@ def build_child_name_map():
 
 
 def build_inputs():
+    _require(PIPELINE_PATH)
     with open(PIPELINE_PATH, encoding="utf-8") as f:
         pipeline = json.load(f)
     name_map = build_child_name_map()

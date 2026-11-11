@@ -32,13 +32,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * POST /api/v1/institutions/me/children — 보안 필터·검증·저장까지 실제로 거친다.
- *
- * <p>CSRF 는 {@code csrf()} 헬퍼로 주입하지 않고, 프론트처럼 XSRF-TOKEN 쿠키를 받아 헤더로 되돌려보낸다.
- * CSRF 검사는 인증·가입 확인보다 먼저 돌기 때문에, 401·SIGNUP_NOT_COMPLETED·ORGANIZATION_NOT_ASSIGNED 를
- * 확인하는 요청에는 유효한 토큰을 넣는다. CSRF 실패는 그 밖의 조건이 모두 통과하는 기관 계정으로만 확인한다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -70,7 +63,7 @@ class RegisterChildApiTest {
 
     private User organizationUser() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        return TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
+        return TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
     }
 
     private Cookie authCookie(User user) {
@@ -170,7 +163,7 @@ class RegisterChildApiTest {
 
     @Test
     void pendingUserWithValidCsrfIsForbiddenUntilSignupCompletes() throws Exception {
-        User pending = userRepository.save(User.pending(uniqueKakaoId(), "박지현"));
+        User pending = userRepository.save(User.pending(uniqueKakaoId()));
 
         mockMvc.perform(registerWithCsrf(authCookie(pending)))
                 .andExpect(status().isForbidden())
@@ -179,7 +172,7 @@ class RegisterChildApiTest {
 
     @Test
     void parentWithValidCsrfIsForbiddenBecauseNoOrganization() throws Exception {
-        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
+        User parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         mockMvc.perform(registerWithCsrf(authCookie(parent)))
                 .andExpect(status().isForbidden())

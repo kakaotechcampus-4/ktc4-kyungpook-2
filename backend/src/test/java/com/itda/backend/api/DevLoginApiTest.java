@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.itda.backend.global.jwt.JwtCookie;
 import com.itda.backend.repository.user.UserRepository;
+import com.itda.backend.fixture.UserFixture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,10 +19,6 @@ import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * 개발용 로그인을 켠 상태에서 실제 필터 체인(가입 미완료 차단 포함)을 거쳐 검증한다.
- * 리다이렉트를 따라가지 않아야 302 와 출입증 쿠키를 그대로 볼 수 있다.
- */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "spring.datasource.url=jdbc:h2:mem:dev-login-http;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
@@ -77,14 +74,13 @@ class DevLoginApiTest {
         assertThat(response.statusCode()).isEqualTo(302);
         assertThat(response.headers().firstValue("Location")).hasValue(SUCCESS_REDIRECT);
         assertThat(response.body()).isEmpty();
-        assertThat(userRepository.findByKakaoId("dev:parent1")).hasValueSatisfying(user -> {
+        assertThat(UserFixture.findByKakaoId(userRepository, "dev:parent1")).hasValueSatisfying(user -> {
             assertThat(user.isSignupCompleted()).isFalse();
-            assertThat(user.getName()).isEqualTo("parent1");
         });
 
         JsonNode me = me(accessTokenOf(response));
         assertThat(me.get("signupCompleted").asBoolean()).isFalse();
-        assertThat(me.get("name").asText()).isEqualTo("parent1");
+        assertThat(me.has("name")).isFalse();
     }
 
     @Test
@@ -96,7 +92,6 @@ class DevLoginApiTest {
         assertThat(userRepository.count()).isEqualTo(1);
     }
 
-    /** 가입 미완료 회원의 출입증을 든 채로도 다른 테스트 회원으로 바꿔 들어갈 수 있어야 한다. */
     @Test
     void pendingUserCanSwitchToAnotherName() throws Exception {
         String parentToken = accessTokenOf(devLogin("parent1", null));

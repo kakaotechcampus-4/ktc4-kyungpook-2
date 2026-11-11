@@ -31,12 +31,16 @@ import com.itda.backend.exception.summary.SummaryException;
 import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.exception.agent.AgentQueueFullException;
+import com.itda.backend.service.agent.AgentQueueGuard;
 
-/** 요약 실패 묶음을 검토에 올리고 교사가 다시 요약하거나 요약 없이 마무리한다 (#369). */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({SummaryFailureService.class, SummaryRunRequests.class, ConsentStateReader.class, ClockConfig.class})
 class SummaryFailureServiceTest {
+
+    @MockitoBean
+    private AgentQueueGuard agentQueueGuard;
 
     private static final LocalDate DATE = LocalDate.of(2026, 10, 8);
     private static final Long ORG = 3L;
@@ -55,7 +59,6 @@ class SummaryFailureServiceTest {
     @MockitoBean
     private UserService userService;
 
-    /** 기본은 자동 요약 꺼짐(mock 의 false). */
     @MockitoBean
     private SummaryProperties summaryProperties;
 
@@ -163,12 +166,24 @@ class SummaryFailureServiceTest {
     }
 
     @Test
+    void AI_처리_줄이_꽉_찼으면_다시_요약하지_않는다() {
+        JournalEntry target = failed(school, junho, DATE, "블록 놀이를 했다.");
+        JournalEntry sameGroup = failed(school, junho, DATE, "점심을 먹었다.");
+        org.mockito.BDDMockito.willThrow(new AgentQueueFullException(ORG, 999, 2, 1000))
+                .given(agentQueueGuard).requireRoom(ORG, 2);
+
+        assertThatThrownBy(() -> service.retry(TEACHER, junho, DATE)).isInstanceOf(AgentQueueFullException.class);
+
+        assertThat(statusOf(target)).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
+        assertThat(statusOf(sameGroup)).isEqualTo(JournalEntryStatus.SUMMARY_FAILED);
+    }
+
+    @Test
     void 자동_요약이_꺼져_있으면_다시_요약할_때_요약_요청도_남긴다() {
         failed(school, junho, DATE, "블록 놀이를 했다.");
 
         service.retry(TEACHER, junho, DATE);
 
-        // 꺼져 있으면 요청이 있는 묶음만 요약하므로, 남기지 않으면 [다시 요약]을 눌러도 멈춰 있다.
         assertThat(runRequests.isRequested(new SummaryGroup(junho, DATE, ORG))).isTrue();
     }
 
@@ -197,7 +212,6 @@ class SummaryFailureServiceTest {
 
     @Test
     void 요약_실패_일지가_없는_묶음은_찾을_수_없다() {
-        // 다른 창에서 이미 처리했거나, 다른 기관 일지다.
         consent(junho, OTHER_ORG);
         failed(center, junho, DATE, "센터 기록");
 

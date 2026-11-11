@@ -29,7 +29,6 @@ import com.itda.backend.domain.record.JournalEntry;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.repository.record.JournalEntryRepository;
 
-/** 시스템 오류 되돌리기 psql 스크립트(#180)의 확인 모드와 적용 모드를 실제 PostgreSQL 에서 실행한다. */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -125,10 +124,8 @@ class SystemErrorRecoveryIntegrationTest {
         assertThat(recovered.getFailureReason()).isNull();
         assertThat(recovered.getAgentRetryCount()).isZero();
         assertThat(recovered.getChildId()).isEqualTo(8L);
-        // DB 는 UTC 로 돌 수 있다(배포 DB 가 그렇다). 앱처럼 한국 시간으로 남겨야 다른 행과 비교된다.
         assertThat(recovered.getUpdatedAt())
                 .isCloseTo(LocalDateTime.now(ZoneId.of("Asia/Seoul")), within(1, ChronoUnit.MINUTES));
-        // 다른 원인·다른 단계는 그대로 둔다.
         assertStillSystemError(agentDownInValidation, FailureReason.AGENT_UNAVAILABLE);
         assertStillSystemError(mismatchInSummary, FailureReason.EVIDENCE_MISMATCH);
     }
@@ -147,7 +144,6 @@ class SystemErrorRecoveryIntegrationTest {
 
     @Test
     void 아이가_정해지지_않은_일지는_되돌리지_않고_따로_보여준다() throws Exception {
-        // 검증 워커는 아이가 없는 일지를 집지 않는다. 검증 대기로 돌리면 화면에서 사라진 채 남는다.
         jdbc.update("update journal_entry set child_id = null, failure_reason = 'INTERNAL_ERROR' where id = ?",
                 rejectedInValidation.getId());
 

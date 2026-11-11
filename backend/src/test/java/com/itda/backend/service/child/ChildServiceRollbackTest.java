@@ -22,19 +22,11 @@ import com.itda.backend.domain.child.ChildOrganization;
 import com.itda.backend.dto.request.child.RegisterChildRequest;
 import com.itda.backend.repository.child.ChildOrganizationRepository;
 import com.itda.backend.repository.child.ChildRepository;
+import com.itda.backend.service.consent.ConsentService;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.invitation.InvitationService;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 기관 연결 저장이 실패하면 먼저 저장한 아동도 남지 않아야 한다.
- *
- * <p>테스트 트랜잭션을 끈다(NOT_SUPPORTED). 그래야 {@code ChildService.register} 의 트랜잭션이 가장 바깥이 되어
- * 실제 롤백을 확인할 수 있다. 트랜잭션이 없으니 TestEntityManager 는 쓰지 않고, 남은 행은 Repository 로 정리한다.
- *
- * <p>연결 저장소는 Spring Data 프록시에 spy 를 거는 대신 통째로 mock 으로 바꿔 실패 지점을 확실히 한다.
- * 그래서 이 테스트만 별도 클래스다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
 @Import({ChildService.class, ConsentStateReader.class})
@@ -58,6 +50,9 @@ class ChildServiceRollbackTest {
 
     @MockitoBean
     private InvitationService invitationService;
+
+    @MockitoBean
+    private ConsentService consentService;
 
     @AfterEach
     void cleanUp() {

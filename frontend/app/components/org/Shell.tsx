@@ -1,61 +1,72 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, FileText, LogOut, TriangleAlert, User } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, FileText, LogOut, TriangleAlert, User, UserRoundCog } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useNavigating } from "@/components/ui/Loading";
 import { Busy } from "@/components/ui";
+import { HandoverDialog } from "@/components/org/HandoverDialog";
 import { Toast } from "@/components/org/WorkList";
-import { getAiStatus, getInbox, getPipeline, loadIfReady } from "@/lib/api";
+import { getAiStatus, getInboxUnreadCount, getPipeline, loadIfReady } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { onNotice } from "@/lib/notice";
+import type { Pipeline } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
 
-/** 머리띠 오른쪽의 내 정보. null 은 서버가 주지 않은 값 — 그 칸을 비운다 */
 export interface OrgShellMe {
-  /** 카카오 닉네임. 동의를 거부하면 없다 */
-  name: string | null;
   institutionName: string | null;
+  withdrawalEnabled: boolean;
 }
 
-/** 메뉴 배지. null 은 백엔드가 아직 없는 기능 — 배지를 띄우지 않는다 */
 export interface OrgShellCounts {
-  /** 아이 확인 + 고쳐야 할 기록 */
   check: number | null;
-  /** 검토 대기 (요약 실패 포함) */
   review: number | null;
-  /** 분석 승인 + 새 분석(안 읽은 수신함) + 보호자 연결 요청 */
   children: number | null;
-  /** 선생님 차례 합계(O-80 turn 다섯 줄). 탭 제목 "(N) 잇다" 에 쓴다 */
   turnTotal: number | null;
-  /** AI 가 멈춘 상태(O-82 available=false). 모든 기관 화면 위에 배너를 띄운다 */
   aiDown: boolean;
-  /** 분석 도착 알림용 — 우리가 승인할 분석 수 · 안 읽은 받은 분석 수 */
   approve: number | null;
   unread: number | null;
 }
 
-/** 메뉴 배지 숫자를 센다. 진행 현황(O-80)의 선생님 차례와 수신함(O-50) 안 읽은 글 */
-export async function loadOrgCounts(): Promise<OrgShellCounts> {
-  // 배지는 덤이다 — 하나가 실패해도 기관 화면 전체(이 값을 쓰는 layout loader)가 깨지지 않게 각각 null 로 둔다.
-  // AI 상태를 못 받았다고 배너를 띄우지도 않는다 — 서버가 "멈췄다" 고 할 때만
-  const [pipeline, inbox, ai] = await Promise.all([
+export interface OrgShellLive {
+  counts: OrgShellCounts;
+  pipeline: Pipeline | null;
+}
+
+export async function loadOrgLive(): Promise<OrgShellLive> {
+  const [pipeline, unreadCount, ai] = await Promise.all([
     loadIfReady("dashboard", getPipeline).catch(() => null),
-    loadIfReady("inbox", getInbox).catch(() => null),
+    loadIfReady("inbox", getInboxUnreadCount).catch(() => null),
     loadIfReady("dashboard", getAiStatus).catch(() => null),
   ]);
   const t = pipeline?.turn;
-  const unread = inbox?.filter((i) => !i.readAt).length ?? 0;
+  const unread = unreadCount ?? 0;
   return {
-    check: t ? t.confirm + t.blocked : null,
-    review: t ? t.review : null,
-    children: t ? t.approve + t.requests + unread : null,
-    turnTotal: t ? t.confirm + t.blocked + t.review + t.approve + t.requests : null,
-    aiDown: ai?.available === false,
-    approve: t ? t.approve : null,
-    unread: inbox ? unread : null,
+    counts: {
+      check: t ? t.confirm + t.blocked : null,
+      review: t ? t.review : null,
+      children: t ? t.approve + t.requests + unread : null,
+      turnTotal: t ? t.confirm + t.blocked + t.review + t.approve + t.requests : null,
+      aiDown: ai?.available === false,
+      approve: t ? t.approve : null,
+      unread: unreadCount,
+    },
+    pipeline,
   };
 }
 
-/** 이전 폴링보다 늘었으면 새로 도착한 분석이 있다. 숫자를 모르면(준비 중) 비교하지 않는다 */
+export interface OrgLive {
+  pipeline: Pipeline | null;
+  aiDown: boolean;
+  refresh: () => Promise<void>;
+}
+
+const OrgLiveContext = createContext<OrgLive | null>(null);
+
+export function useOrgLive(): OrgLive {
+  const live = useContext(OrgLiveContext);
+  if (!live) throw new Error("useOrgLive 는 OrgShell 안에서만 쓴다");
+  return live;
+}
+
 function arrived(prev: OrgShellCounts, next: OrgShellCounts): "approve" | "unread" | null {
   if (prev.approve != null && next.approve != null && next.approve > prev.approve) return "approve";
   if (prev.unread != null && next.unread != null && next.unread > prev.unread) return "unread";
@@ -74,13 +85,12 @@ function nav(counts: OrgShellCounts): NavItem[] {
   return [
     { href: "/dashboard", label: "대시보드" },
     { href: "/check", label: "기록 확인", badge: counts.check },
-    { href: "/gate1", label: "검토", badge: counts.review },
+    { href: "/gate1", label: "요약 검토", badge: counts.review },
     { href: "/children", label: "아동 목록", badge: counts.children },
     { href: "/checklists", label: "준비물·확인사항" },
   ];
 }
 
-/** "셀 수 있는 내 차례"에 쓰는 노랑 배지 */
 function Count({ n }: { n: number }) {
   return (
     <span className="shrink-0 rounded-full bg-mark px-2 py-px text-[13px] font-bold tabular-nums text-markink">
@@ -96,54 +106,44 @@ function isHere(href: string, pathname: string): boolean {
 export function OrgShell({
   children,
   me,
-  counts,
+  live: loaded,
 }: {
   children: React.ReactNode;
   me: OrgShellMe;
-  counts: OrgShellCounts;
+  live: OrgShellLive;
 }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  // 다음 화면을 기다리는 동안 지금 화면을 살짝 흐린다 — 맨 위 막대(NavigationProgress)와 함께
   const navigating = useNavigating();
 
-  // 처음 숫자는 layout 의 clientLoader 가 준다. 화면을 옮기거나 처리 뒤 revalidate 되면 그 값으로 바뀌고,
-  // 그 사이에는 10초마다 직접 다시 센다(탭이 숨으면 멈춤)
-  const [live, setLive] = useState(counts);
-  /** loader 가 다시 센 값이 들어올 때마다 올린다 — 그 전에 떠난 폴링 응답은 버린다(늦게 와서 최신 값을 덮지 않게) */
+  const [live, setLive] = useState(loaded.counts);
+  const [pipeline, setPipeline] = useState(loaded.pipeline);
   const generation = useRef(0);
   useEffect(() => {
     generation.current += 1;
-    setLive(counts);
-  }, [counts]);
-  /**
-   * 분석 도착 알림: 10초 폴링이 이전 값보다 늘었을 때만 띄운다. 첫 로드 · 새로고침 · 선생님이 처리해 다시 센 값(loader)은
-   * 비교 기준만 바꾸고 알리지 않는다.
-   */
+    setLive(loaded.counts);
+    if (loaded.pipeline) setPipeline(loaded.pipeline);
+  }, [loaded]);
   const [arrival, setArrival] = useState<"approve" | "unread" | null>(null);
   const clearArrival = useCallback(() => setArrival(null), []);
-  /** 화면을 떠난 뒤 생긴 알림(lib/notice) */
   const [notice, setNotice] = useState<string | null>(null);
   const clearNotice = useCallback(() => setNotice(null), []);
   useEffect(() => onNotice(setNotice), []);
-  usePolling(
-    async () => {
-      const started = generation.current;
-      const next = await loadOrgCounts();
-      if (started !== generation.current) return;
-      setLive((prev) => {
-        const kind = arrived(prev, next);
-        if (kind) setArrival(kind);
-        return next;
-      });
-    },
-    POLL_MS,
-    true,
-    false,
-  );
+  const refresh = useCallback(async () => {
+    const started = ++generation.current;
+    const next = await loadOrgLive();
+    if (started !== generation.current) return;
+    if (next.pipeline) setPipeline(next.pipeline);
+    setLive((prev) => {
+      const kind = arrived(prev, next.counts);
+      if (kind) setArrival(kind);
+      return next.counts;
+    });
+  }, []);
+  usePolling(refresh, POLL_MS, true, false);
+  const orgLive = useMemo(() => ({ pipeline, aiDown: live.aiDown, refresh }), [pipeline, live.aiDown, refresh]);
   const ITEMS = nav(live);
 
-  // 탭 제목 "(N) 잇다 ITDA" — 다른 탭에 있어도 선생님 차례가 생긴 걸 알 수 있게
   useEffect(() => {
     const base = "잇다 ITDA";
     document.title = live.turnTotal ? `(${live.turnTotal}) ${base}` : base;
@@ -186,11 +186,6 @@ export function OrgShell({
         </nav>
 
         <span className="ml-auto flex shrink-0 items-center gap-2">
-          {me.institutionName ? (
-            <span className="hidden rounded-full bg-surface/90 px-4 py-2 text-[14px] text-ink2 shadow-[0_2px_14px_rgba(120,90,40,0.1)] lg:inline">
-              {me.institutionName}
-            </span>
-          ) : null}
           <AccountMenu me={me} />
         </span>
       </header>
@@ -210,13 +205,13 @@ export function OrgShell({
         aria-busy={navigating}
         className={`mx-auto min-w-0 max-w-[1240px] px-6 pt-4 pb-20 transition-opacity duration-200 ${navigating ? "opacity-60" : ""}`}
       >
-        {children}
+        <OrgLiveContext.Provider value={orgLive}>{children}</OrgLiveContext.Provider>
       </main>
 
       <Toast slot={2} message={notice} onGone={clearNotice} ms={8000} />
       <Toast
         slot={3}
-        message={arrival ? "새 분석이 도착했어요" : null}
+        message={arrival ? "새 리포트가 도착했어요" : null}
         onGone={clearArrival}
         action={{
           label: "보기",
@@ -230,15 +225,10 @@ export function OrgShell({
   );
 }
 
-/**
- * 머리띠 오른쪽 이름 칩 — 누르면 계정 메뉴가 열린다.
- *
- * 전에는 눌러도 아무 일이 없었고, 로그아웃은 화면 어디에도 없었다. 출입증이 httpOnly 쿠키라
- * 프론트가 스스로 지울 수 없어 서버에 부탁해야 한다(`signOut`).
- */
 function AccountMenu({ me }: { me: OrgShellMe }) {
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [handover, setHandover] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
   const navigate = useNavigate();
 
@@ -277,10 +267,10 @@ function AccountMenu({ me }: { me: OrgShellMe }) {
           aria-hidden
           className="flex size-9 items-center justify-center rounded-full bg-accentsoft text-[15px] font-bold text-accentink"
         >
-          {me.name ? me.name.slice(0, 1) : <User size={18} strokeWidth={1.75} />}
+          {me.institutionName ? me.institutionName.slice(0, 1) : <User size={18} strokeWidth={1.75} />}
         </span>
-        <span className="text-[14px] font-semibold whitespace-nowrap text-ink2">
-          {me.name ? `${me.name} 선생님` : "이름 없음"}
+        <span className="max-w-[16rem] truncate text-[14px] font-semibold whitespace-nowrap text-ink2">
+          {me.institutionName ?? "내 기관"}
         </span>
         <ChevronDown
           aria-hidden
@@ -295,11 +285,6 @@ function AccountMenu({ me }: { me: OrgShellMe }) {
           role="menu"
           className="absolute top-[calc(100%+8px)] right-0 z-40 block w-56 rounded-[18px] border border-line bg-surface p-2 shadow-[0_12px_34px_rgba(120,90,40,0.18)]"
         >
-          {me.institutionName ? (
-            <span className="block truncate px-3 py-1.5 text-[13px] text-muted">
-              {me.institutionName}
-            </span>
-          ) : null}
           <Link
             to="/terms/org_tos"
             role="menuitem"
@@ -308,6 +293,20 @@ function AccountMenu({ me }: { me: OrgShellMe }) {
             <FileText aria-hidden size={17} strokeWidth={1.9} className="shrink-0" />
             약관
           </Link>
+          {me.withdrawalEnabled ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                setHandover(true);
+              }}
+              className="tap flex w-full items-center gap-2.5 rounded-[14px] px-3 text-[15px] font-semibold text-ink2 hover:bg-surface2"
+            >
+              <UserRoundCog aria-hidden size={17} strokeWidth={1.9} className="shrink-0" />
+              담당자 넘기기
+            </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"
@@ -320,6 +319,7 @@ function AccountMenu({ me }: { me: OrgShellMe }) {
           </button>
         </span>
       ) : null}
+      {handover ? <HandoverDialog onClose={() => setHandover(false)} /> : null}
     </span>
   );
 }

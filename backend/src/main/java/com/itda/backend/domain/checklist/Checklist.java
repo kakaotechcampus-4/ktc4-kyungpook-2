@@ -16,15 +16,6 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 기관이 보호자에게 보낸 준비물·확인사항 한 건 (DB 스키마 §5.8). 받은 아이마다의 확인은 {@link ChecklistTarget} 이 갖는다.
- *
- * <p><b>보낸 뒤 고치지 않는다.</b> 보호자가 확인한 내용이 나중에 바뀌면 확인의 뜻이 흐려진다. 잘못 보냈으면 내리고(
- * {@code canceled_at}) 다시 보낸다. 내리기는 엔티티 메서드가 아니라 조건부 UPDATE({@code ChecklistRepository.cancelIfActive})
- * 로 한다 — 두 요청이 동시에 "아직 안 내림"을 읽고 각자 저장하면 나중 것이 처음 시각을 덮는다.
- *
- * <p>기관 · 보낸 사람과 연관관계를 맺지 않는다. 다른 테이블처럼 FK 제약 없이 id 컬럼만 둔다.
- */
 @Entity
 @Table(
         name = "checklist",
@@ -40,20 +31,16 @@ public class Checklist {
     @Column(name = "organization_id", nullable = false)
     private Long organizationId;
 
-    /** 준비물 · 확인사항 줄. 1~10줄, 줄마다 1~100자는 요청 검증이 지킨다. */
     @Convert(converter = ChecklistItemsConverter.class)
     @Column(nullable = false, columnDefinition = "TEXT")
     private List<String> items;
 
-    /** 보낸 기관 담당자 ({@code users.id}). */
     @Column(name = "created_by", nullable = false)
     private Long createdBy;
 
-    /** 보낸 시각. */
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    /** 내린 시각. NULL 이면 살아 있다. */
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 

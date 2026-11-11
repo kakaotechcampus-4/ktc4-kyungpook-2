@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.matching.MatchingResult;
 import com.itda.backend.domain.record.JournalEntry;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 import com.itda.backend.domain.record.JournalEntryStatus;
 import com.itda.backend.dto.request.validation.ValidationAgentRequest;
 import com.itda.backend.exception.validation.ValidationTargetException;
@@ -18,7 +19,6 @@ import com.itda.backend.repository.record.JournalEntryRepository;
 
 import lombok.RequiredArgsConstructor;
 
-/** 검증 워커가 쓰는 일지 집기·요청 조립. AI 호출은 트랜잭션 밖에서 하도록 단계마다 트랜잭션을 나눈다. */
 @Service
 @RequiredArgsConstructor
 public class ValidationService {
@@ -27,10 +27,6 @@ public class ValidationService {
     private final MatchingResultRepository matchingResultRepository;
     private final ChildRepository childRepository;
 
-    /**
-     * 매칭이 확정된 일지를 집어 가며 VALIDATING 으로 바꾼다. AI 자동 확정과 선생님이 확인 큐에서 확정한 일지가
-     * 둘 다 MATCHED 로 들어온다. 커밋되면 다음 실행이 같은 일지를 다시 집지 않는다.
-     */
     @Transactional
     public List<Long> claimMatched(int batchSize) {
         List<JournalEntry> targets = journalEntryRepository.findValidationTargets(
@@ -39,16 +35,17 @@ public class ValidationService {
         return targets.stream().map(JournalEntry::getId).toList();
     }
 
-    /** AI 입력은 저장하지 않고 그때그때 조립한다 (DB 스키마 §2.2). */
     @Transactional(readOnly = true)
     public ValidationTarget prepareRequest(Long journalEntryId) {
         JournalEntry entry = journalEntryRepository.findByIdAndDeletedAtIsNull(journalEntryId)
                 .orElseThrow(() -> new ValidationTargetException("journal entry not found: " + journalEntryId));
+        if (!entry.isSendableToAgent()) {
+            throw new AgentContentTooLongException(journalEntryId, entry.getContent().length());
+        }
         Long childId = entry.getChildId();
         if (childId == null) {
             throw new ValidationTargetException("journal entry has no matched child: " + journalEntryId);
         }
-        // 매칭 뒤에 아동이 삭제 표시돼도 이 일지의 주인공은 그대로라 이름을 싣는다.
         String childName = childRepository.findById(childId).map(Child::getName).orElse(null);
         Long matchingResultId = matchingResultRepository.findFirstByJournalEntryIdOrderByIdDesc(journalEntryId)
                 .map(MatchingResult::getId)
@@ -59,7 +56,6 @@ public class ValidationService {
                 matchingResultId);
     }
 
-    /** 집어 갔지만 처리하지 않은 일지를 검증 대기로 돌려놓는다. 이미 다른 상태로 바뀐 일지는 건드리지 않는다. */
     @Transactional
     public void release(List<Long> journalEntryIds) {
         journalEntryRepository.findAllById(journalEntryIds).stream()
@@ -67,12 +63,6 @@ public class ValidationService {
                 .forEach(JournalEntry::releaseValidating);
     }
 
-    /**
-     * AI 가 다운이라 검증하지 못한 일지를 실패로 남기지 않고 검증 대기로 되돌린다 (#153).
-     *
-     * @return 되돌렸거나 되돌릴 필요가 없으면(이미 다른 상태) {@code true}. 이미 {@code maxReleases} 번 되돌린
-     *         일지면 그대로 두고 {@code false} — 워커가 실패로 남긴다
-     */
     @Transactional
     public boolean releaseAfterAgentDown(Long journalEntryId, int maxReleases) {
         JournalEntry entry = journalEntryRepository.findById(journalEntryId)
@@ -88,7 +78,6 @@ public class ValidationService {
         return true;
     }
 
-    /** 이전에 꺼진 앱이 처리하다 만 일지를 검증 대기로 되돌린다. 워커가 첫 실행에서 한 번만 부른다. */
     @Transactional
     public int releaseStuck() {
         List<JournalEntry> stuck = journalEntryRepository.findByStatusAndDeletedAtIsNull(JournalEntryStatus.VALIDATING);

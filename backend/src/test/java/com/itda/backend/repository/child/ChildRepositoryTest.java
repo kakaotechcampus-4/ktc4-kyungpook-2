@@ -86,7 +86,6 @@ class ChildRepositoryTest {
         assertThat(childRepository.findByOrganizationId(1L)).isEmpty();
     }
 
-    /** 화면용 명부(findByOrganizationId)는 동의 전 아동도 포함해야 한다 — 화면에서 상태별로 걸러야 하니까. */
     @Test
     void 화면용_명부는_동의_전_아동도_포함한다() {
         Child child = childRepository.saveAndFlush(Child.of("임유진", LocalDate.of(2019, 11, 26)));
@@ -96,7 +95,6 @@ class ChildRepositoryTest {
         assertThat(childRepository.findByOrganizationId(1L)).extracting(Child::getName).containsExactly("임유진");
     }
 
-    /** AI 매칭 명부(findConsentedByOrganizationId)는 동의 전 아동을 반드시 제외해야 한다 — 동의 없는 아이로 매칭되면 안 되니까. */
     @Test
     void 매칭_명부는_동의_전_아동을_제외한다() {
         Child pending = childRepository.saveAndFlush(Child.of("임유진", LocalDate.of(2019, 11, 26)));
@@ -112,10 +110,6 @@ class ChildRepositoryTest {
         assertThat(roster).extracting(Child::getName).containsExactly("박서연");
     }
 
-    /**
-     * 동의는 기관별이다. 기관 2 에만 동의한 아이는 child.status 가 ACTIVE 여도 기관 1 명부에 들어가면 안 된다.
-     * 철회된 동의도 동의가 아니다.
-     */
     @Test
     void 매칭_명부는_그_기관에_동의한_아동만_넣는다() {
         Child elsewhere = childRepository.saveAndFlush(Child.of("임유진", LocalDate.of(2019, 11, 26)));

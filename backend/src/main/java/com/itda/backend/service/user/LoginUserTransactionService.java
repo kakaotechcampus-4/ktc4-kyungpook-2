@@ -1,5 +1,7 @@
 package com.itda.backend.service.user;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
@@ -10,32 +12,46 @@ import com.itda.backend.domain.user.User;
 import com.itda.backend.repository.user.UserRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
-/** 로그인 저장 작업. 제약 위반 후 조회가 실패한 트랜잭션을 재사용하지 않도록 분리한다. */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class LoginUserTransactionService {
 
     private final UserRepository userRepository;
+    private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public User findOrCreate(String kakaoId, String nickname) {
-        return findAndRefresh(kakaoId, nickname)
-                .orElseGet(() -> userRepository.saveAndFlush(User.pending(kakaoId, nickname)));
+    public User findOrCreate(String kakaoId, LocalDateTime kakaoVerifiedAt) {
+        return findExistingLocked(kakaoId, kakaoVerifiedAt)
+                .orElseGet(() -> userRepository.saveAndFlush(User.pending(kakaoId)));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Optional<User> findExisting(String kakaoId, String nickname) {
-        return findAndRefresh(kakaoId, nickname);
+    public Optional<User> findExisting(String kakaoId, LocalDateTime kakaoVerifiedAt) {
+        return findExistingLocked(kakaoId, kakaoVerifiedAt);
     }
 
-    private Optional<User> findAndRefresh(String kakaoId, String nickname) {
-        return userRepository.findByKakaoIdForUpdate(kakaoId).map(user -> {
+    private Optional<User> findExistingLocked(String kakaoId, LocalDateTime kakaoVerifiedAt) {
+        return userRepository.findByKakaoIdForUpdate(kakaoId).flatMap(user -> {
             if (user.isDeleted()) {
-                user.restore();
+                user.eraseLegacyIdentity();
+                userRepository.flush();
+                return Optional.empty();
             }
-            user.updateName(nickname);
-            return user;
+            if (user.hasKakaoUnlinkReport() && kakaoVerifiedAt != null
+                    && user.getKakaoUnlinkReportedAt().isBefore(kakaoVerifiedAt)) {
+                user.dismissKakaoUnlinkReport();
+            }
+            if (user.isRelinkedAfterWebhookWithdrawal(kakaoVerifiedAt)) {
+                user.cancelWebhookWithdrawal();
+                log.info("연결 해제 웹훅으로 시작된 탈퇴를 다시 연결한 로그인이 취소했습니다: userId={}", user.getId());
+            } else if (user.isRelinkedBeforeCleanup(kakaoVerifiedAt)) {
+                user.reopenKakaoUnlink(LocalDateTime.now(clock));
+                log.info("정리 전에 카카오 로그인이 와서 연결 해제를 다시 부릅니다: userId={}", user.getId());
+            }
+            return Optional.of(user);
         });
     }
 }

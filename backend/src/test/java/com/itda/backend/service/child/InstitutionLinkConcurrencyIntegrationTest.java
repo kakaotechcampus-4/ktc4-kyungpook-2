@@ -56,12 +56,6 @@ import com.itda.backend.service.invitation.ChildGuardianService;
 import com.itda.backend.service.organization.OrganizationService;
 import com.itda.backend.service.user.UserService;
 
-/**
- * 기관 연결 요청·수락·거절, 보호자 연결 해제, 기관 코드 발급이 겹칠 때를 PostgreSQL 에서 재현한다.
- *
- * <p>다른 커넥션(홀더)이 아이 행이나 기관 행을 잠근 채 잡아 둔다. 요청들이 홀더 때문에 멈췄는지
- * {@code pg_blocking_pids} 로 확인한 뒤 풀어서, 잠금을 기다린 다음 최신 상태로 판단하는지 본다.
- */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -108,9 +102,8 @@ class InstitutionLinkConcurrencyIntegrationTest {
         center = organizationRepository.save(center);
         centerCode = center.getCode();
         child = childRepository.save(Child.of("임유진", LocalDate.of(2017, 3, 14)));
-        User mother = userRepository.save(UserFixture.parent("kakao-mother", "엄마"));
-        User staff = userRepository.save(UserFixture.organizationUser("kakao-staff", "센터선생", center.getId()));
-        // 초대 코드 경로는 이 테스트의 관심이 아니다. 연결 행은 초대 id 만 있으면 된다.
+        User mother = userRepository.save(UserFixture.parent("kakao-mother"));
+        User staff = userRepository.save(UserFixture.organizationUser("kakao-staff", center.getId()));
         childGuardianRepository.save(ChildGuardian.link(child.getId(), mother.getId(), 1L));
         given(userService.getParentIdOf(MOTHER)).willReturn(mother.getId());
         given(userService.getOrganizationIdOf(STAFF)).willReturn(center.getId());
@@ -144,7 +137,6 @@ class InstitutionLinkConcurrencyIntegrationTest {
         assertThat(requestRepository.findAll()).singleElement().matches(ChildOrganizationRequest::isPending);
     }
 
-    /** 연결 해제가 먼저 잠금을 얻으면 요청이 거둬진다. 뒤이은 수락은 잠근 뒤 다시 읽으므로 옛 PENDING 을 보지 않는다. */
     @Test
     void 연결_해제가_먼저_끝나면_수락은_실패하고_명부에_오르지_않는다() throws Exception {
         institutionLinkService.request(MOTHER, child.getId(), centerCode);
@@ -180,7 +172,6 @@ class InstitutionLinkConcurrencyIntegrationTest {
                 child.getId(), center.getId())).isTrue();
     }
 
-    /** 코드가 없던 기관을 두 화면이 동시에 열어도 코드는 한 번만 붙는다. 잠근 뒤 비어 있는지 다시 보기 때문이다. */
     @Test
     void 코드가_없던_기관을_동시에_열어도_같은_코드가_나온다() throws Exception {
         Organization fresh = organizationRepository.save(OrganizationFixture.center());
@@ -196,10 +187,6 @@ class InstitutionLinkConcurrencyIntegrationTest {
                 organizationRepository.findById(fresh.getId()).orElseThrow().getCode());
     }
 
-    /**
-     * 홀더가 행을 잠근 채로, 작업을 하나씩 넣고 홀더 때문에 줄을 섰는지 확인한 뒤 다음 작업을 넣는다.
-     * PostgreSQL 은 같은 행을 기다리는 세션에게 줄 선 순서대로 잠금을 주므로 결과도 넣은 순서로 돌려준다.
-     */
     @SafeVarargs
     private List<String> whileHeld(String holderSql, Callable<?>... tasks) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(tasks.length);
@@ -260,7 +247,6 @@ class InstitutionLinkConcurrencyIntegrationTest {
         }
     }
 
-    /** 홀더 때문에 막힌 세션이 있고, 잠금을 기다리는 세션이 {@code expected} 개가 될 때까지 기다린다. */
     private void waitUntilBlocked(int holderPid, int expected) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         try (Connection observer = dataSource.getConnection();

@@ -28,12 +28,6 @@ import com.itda.backend.service.summary.SummaryAgentClientConfig;
 import com.itda.backend.service.summary.SummaryProperties;
 import com.sun.net.httpserver.HttpServer;
 
-/**
- * AI 서버가 실제로 몇 번 불리는지 센다 (#153).
- *
- * <p>{@code MockRestServiceServer} 는 요청 팩토리를 가짜로 바꿔 끼워서 HTTP 라이브러리가 몰래 하는 재시도를
- * 보지 못한다. 그래서 여기서는 진짜 HTTP 서버를 띄우고, 운영과 같은 설정 클래스로 만든 RestClient 로 부른다.
- */
 class AiAgentCallCountTest {
 
     private static final List<Duration> BACKOFFS = List.of(Duration.ZERO, Duration.ZERO);
@@ -46,7 +40,6 @@ class AiAgentCallCountTest {
     @BeforeEach
     void setUp() throws IOException {
         server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
-        // LLM 이 죽었을 때 AI 가 주는 응답 그대로 — 503 + detail.reason
         server.createContext("/", exchange -> {
             calls.incrementAndGet();
             byte[] body = "{\"detail\":{\"reason\":\"llm_unavailable\",\"message\":\"Luna 호출 실패\"}}"
@@ -57,7 +50,6 @@ class AiAgentCallCountTest {
                 out.write(body);
             }
         });
-        // 늦게 답하는 요청이 다음 요청을 막지 않게 한다. 기본은 스레드 하나라 다시 보낸 요청이 앞 요청 뒤에서 기다린다.
         executor = Executors.newCachedThreadPool();
         server.setExecutor(executor);
         server.start();
@@ -68,7 +60,6 @@ class AiAgentCallCountTest {
     @AfterEach
     void tearDown() {
         server.stop(0);
-        // HttpServer.stop 은 직접 넣은 스레드 풀을 닫지 않는다
         executor.shutdownNow();
     }
 
@@ -97,7 +88,6 @@ class AiAgentCallCountTest {
         assertThat(calls.get()).isEqualTo(BACKOFFS.size() + 1);
     }
 
-    /** 진짜 HTTP 의 응답 대기 시간 초과도 시간 초과로 세는지 본다 — 예외 모양은 HTTP 라이브러리가 정한다 (#386). */
     @Test
     void 인사이트용_클라이언트는_응답이_늦으면_한_번만_다시_부른다() {
         server.removeContext("/");

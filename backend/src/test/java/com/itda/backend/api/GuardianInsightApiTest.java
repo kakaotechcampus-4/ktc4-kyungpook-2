@@ -24,6 +24,7 @@ import com.itda.backend.domain.approval.Approval;
 import com.itda.backend.domain.approval.ApprovalDecision;
 import com.itda.backend.domain.child.Child;
 import com.itda.backend.domain.insight.InsightResult;
+import com.itda.backend.domain.invitation.ChildGuardian;
 import com.itda.backend.domain.organization.Organization;
 import com.itda.backend.domain.sharing.ReceiverType;
 import com.itda.backend.domain.sharing.SharingHistory;
@@ -36,15 +37,12 @@ import com.itda.backend.global.jwt.JwtProvider;
 import com.itda.backend.repository.approval.ApprovalRepository;
 import com.itda.backend.repository.child.ChildRepository;
 import com.itda.backend.repository.insight.InsightResultRepository;
+import com.itda.backend.repository.invitation.ChildGuardianRepository;
 import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.sharing.SharingHistoryRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 보호자 받은 인사이트 목록·단건 — 보안 필터와 응답 모양까지 실제로 거친다. 인사이트·승인 기록·권한 행은 저장소로 바로
- * 만든다. Gate 2 를 지나는 과정은 이 테스트의 관심이 아니다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -62,10 +60,12 @@ class GuardianInsightApiTest {
     @Autowired private InsightResultRepository insightResultRepository;
     @Autowired private ApprovalRepository approvalRepository;
     @Autowired private SharingHistoryRepository sharingHistoryRepository;
+    @Autowired private ChildGuardianRepository childGuardianRepository;
 
     private User staff;
     private User parent;
     private Long insightId;
+    private Long childId;
 
     private static String uniqueKakaoId() {
         return "gi-" + UUID.randomUUID();
@@ -78,9 +78,9 @@ class GuardianInsightApiTest {
     @BeforeEach
     void setUp() {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
-        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
-        Long childId = childRepository.save(Child.of("김하늘", LocalDate.of(2017, 3, 14))).getId();
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
+        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
+        childId = childRepository.save(Child.of("김하늘", LocalDate.of(2017, 3, 14))).getId();
 
         InsightResult insight = InsightResult.of(childId, LocalDate.of(2026, 8, 17), LocalDate.of(2026, 8, 23), 1,
                 "급식실 입장 직후", "소리를 지름", "이동 전 5분 예고가 효과적이었습니다.", null, "[]", "[]",
@@ -103,7 +103,6 @@ class GuardianInsightApiTest {
                 .andExpect(jsonPath("$.data[0].period").value("2026년 8월 3주차"))
                 .andExpect(jsonPath("$.data[0].approvedAt").value("2026-10-27T15:30:00"))
                 .andExpect(jsonPath("$.data[0].readAt").value(nullValue()))
-                // 근거 번호가 없는 글도 근거 칸은 빈 배열로 온다 — 화면이 null 을 따로 보지 않게
                 .andExpect(jsonPath("$.data[0].evidence").isArray())
                 .andExpect(jsonPath("$.data[0].evidence.length()").value(0));
     }
@@ -114,6 +113,30 @@ class GuardianInsightApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.approvedAt").value("2026-10-27T15:30:00"))
                 .andExpect(jsonPath("$.data.readAt").isNotEmpty());
+    }
+
+    @Test
+    void 연결된_아이를_고르면_그_아이_것만_온다() throws Exception {
+        childGuardianRepository.save(ChildGuardian.link(childId, parent.getId(), 1L));
+
+        mockMvc.perform(get(INSIGHTS + "?childId=" + childId).cookie(auth(parent)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].childId").value(String.valueOf(childId)));
+    }
+
+    @Test
+    void 연결되지_않은_아이를_고르면_403() throws Exception {
+        mockMvc.perform(get(INSIGHTS + "?childId=" + childId).cookie(auth(parent)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void childId_가_숫자가_아니면_400() throws Exception {
+        mockMvc.perform(get(INSIGHTS + "?childId=abc").cookie(auth(parent)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
     @Test

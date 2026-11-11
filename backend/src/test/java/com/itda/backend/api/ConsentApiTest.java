@@ -35,10 +35,6 @@ import com.itda.backend.repository.organization.OrganizationRepository;
 import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 
-/**
- * 동의 미리보기(G-02)·부여·철회(G-41) — 보안 필터·요청 검증·저장까지 실제로 거친다.
- * 아이는 기관이 O-11 로 등록하고, 보호자가 그때 받은 코드로 G-04 연결을 마친 상태에서 시작한다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -102,8 +98,8 @@ class ConsentApiTest {
     void setUp() throws Exception {
         Organization organization = organizationRepository.save(OrganizationFixture.center());
         organizationId = String.valueOf(organization.getId());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), "이선생", organization.getId())));
-        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "김보호")));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser(uniqueKakaoId(), organization.getId())));
+        parent = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         String body = mockMvc.perform(withCsrf(post(CHILDREN), auth(staff))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -120,9 +116,6 @@ class ConsentApiTest {
                 .andExpect(status().isOk());
     }
 
-    // --- 정상 흐름 ---
-
-    /** 미리보기의 allowedFields 를 그대로 보내면 동의가 되고, 기관 명부에도 active 로 보인다. */
     @Test
     void 미리보기를_보고_동의하면_아이가_active_가_된다() throws Exception {
         mockMvc.perform(get(previewPath()).cookie(auth(parent)))
@@ -151,13 +144,11 @@ class ConsentApiTest {
 
         mockMvc.perform(get(CHILDREN).cookie(auth(staff)))
                 .andExpect(jsonPath("$.data[0].status").value("active"));
-        // 이미 동의한 기관은 동의할 것이 없다.
         mockMvc.perform(get(previewPath()).cookie(auth(parent)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("CONSENT_TARGET_NOT_FOUND"));
     }
 
-    /** revoke 는 allowedFields 를 생략해도 된다. 철회하면 아이는 suspended 가 된다. */
     @Test
     void 동의를_철회하면_suspended_가_된다() throws Exception {
         putConsent("{\"action\": \"grant\", \"allowedFields\": [\"daily_summary\"]}", parent).andExpect(status().isOk());
@@ -177,7 +168,6 @@ class ConsentApiTest {
                 .andExpect(jsonPath("$.data.consent").value("not_granted"));
     }
 
-    /** 연결을 끊으면 그 보호자의 동의도 꺼진다 — 끊긴 사람의 동의로 공유가 계속되면 안 된다. */
     @Test
     void 연결을_끊으면_동의도_꺼진다() throws Exception {
         putConsent("{\"action\": \"grant\", \"allowedFields\": [\"daily_summary\"]}", parent).andExpect(status().isOk());
@@ -188,8 +178,6 @@ class ConsentApiTest {
         mockMvc.perform(get(CHILDREN).cookie(auth(staff)))
                 .andExpect(jsonPath("$.data[0].status").value("suspended"));
     }
-
-    // --- 요청 검증 ---
 
     @Test
     void grant_에서_항목이_없거나_비었거나_null_이_섞이면_400() throws Exception {
@@ -210,7 +198,6 @@ class ConsentApiTest {
                 .andExpect(jsonPath("$.data[0].status").value("pending_consent"));
     }
 
-    /** 요청 필드 이름은 명세대로 camelCase 다. snake_case 로 보내면 항목이 없는 grant 로 읽혀 400 이다. */
     @Test
     void snake_case_필드는_받지_않는다() throws Exception {
         putConsent("{\"action\": \"grant\", \"allowed_fields\": [\"daily_summary\"]}", parent)
@@ -224,8 +211,6 @@ class ConsentApiTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
-    // --- 인증·권한 ---
-
     @Test
     void 로그인하지_않으면_401() throws Exception {
         mockMvc.perform(get(previewPath()))
@@ -235,7 +220,7 @@ class ConsentApiTest {
 
     @Test
     void 가입을_마치지_않으면_403() throws Exception {
-        User pending = userRepository.save(User.pending(uniqueKakaoId(), "가입중"));
+        User pending = userRepository.save(User.pending(uniqueKakaoId()));
 
         mockMvc.perform(get(previewPath()).cookie(auth(pending)))
                 .andExpect(status().isForbidden())
@@ -254,7 +239,7 @@ class ConsentApiTest {
 
     @Test
     void 연결되지_않은_아이면_403_FORBIDDEN() throws Exception {
-        User stranger = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId(), "남")));
+        User stranger = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent(uniqueKakaoId())));
 
         mockMvc.perform(get(previewPath()).cookie(auth(stranger)))
                 .andExpect(status().isForbidden())

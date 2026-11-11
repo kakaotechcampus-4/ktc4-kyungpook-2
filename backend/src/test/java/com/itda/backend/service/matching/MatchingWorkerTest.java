@@ -34,6 +34,8 @@ import com.itda.backend.exception.matching.MatchingTargetException;
 import com.itda.backend.fixture.MutableClock;
 import com.itda.backend.service.agent.AgentDownProperties;
 import com.itda.backend.service.agent.WorkerProperties;
+import com.itda.backend.domain.record.FailureReason;
+import com.itda.backend.exception.agent.AgentContentTooLongException;
 
 @ExtendWith(MockitoExtension.class)
 class MatchingWorkerTest {
@@ -80,7 +82,6 @@ class MatchingWorkerTest {
         order.verify(recorder).record(1L, reply1);
         order.verify(client).match(requestFor(2L));
         order.verify(recorder).record(2L, reply2);
-        // 호출이 응답을 받았다 — LLM 이 살아 있으니 AI 장애 배너를 내린다 (#370).
         verify(availability, times(2)).reportCallSucceeded();
     }
 
@@ -99,6 +100,22 @@ class MatchingWorkerTest {
         verify(recorder, never()).record(eq(1L), any());
         verify(recorder).record(2L, reply2);
         verify(recorder, never()).recordFailure(2L);
+    }
+
+    @Test
+    void 긴_일지는_AI_를_부르지_않고_시스템_오류로_남기고_다음_건을_계속_처리한다() {
+        MatchingAgentReply reply2 = new MatchingAgentReply(null, "{}");
+        given(matchingService.claimPending(10)).willReturn(List.of(1L, 2L));
+        given(matchingService.prepareRequest(1L)).willThrow(new AgentContentTooLongException(1L, 5001));
+        given(matchingService.prepareRequest(2L)).willReturn(requestFor(2L));
+        given(client.match(requestFor(2L))).willReturn(reply2);
+
+        worker.run();
+
+        verify(recorder).recordSystemError(1L, FailureReason.CONTENT_TOO_LONG);
+        verify(recorder, never()).recordFailure(1L);
+        verify(client).match(requestFor(2L));
+        verify(recorder).record(2L, reply2);
     }
 
     @Test
@@ -182,7 +199,6 @@ class MatchingWorkerTest {
         verify(matchingService).release(List.of(2L, 3L));
         verify(matchingService, never()).prepareRequest(2L);
         verify(matchingService, never()).prepareRequest(3L);
-        // /health 는 LLM 까지 보지 않아 이 멈춤을 따로 알려야 AI 장애 배너에 뜬다 (#370).
         verify(availability).reportCallGaveUp();
     }
 
@@ -196,7 +212,6 @@ class MatchingWorkerTest {
 
         worker.run();
 
-        // 그 일지는 빠졌으니 대기열을 멈추지 않는다 — AI 가 이 일지만 거절하는 경우 나머지는 정상으로 처리된다.
         verify(recorder).recordFailure(1L);
         verify(matchingService).prepareRequest(2L);
         verify(matchingService, never()).release(any());
@@ -214,10 +229,9 @@ class MatchingWorkerTest {
         try {
             worker.run();
         } finally {
-            Thread.interrupted(); // 다른 테스트에 영향이 없도록 인터럽트 표시를 지운다
+            Thread.interrupted();
         }
 
-        // 두 건 모두 MATCHING 으로 남기고, 다음에 켜질 때 releaseStuck 이 되돌린다.
         verify(recorder, never()).recordFailure(any());
         verify(matchingService, never()).prepareRequest(2L);
         verify(matchingService, never()).release(any());
@@ -262,7 +276,6 @@ class MatchingWorkerTest {
         try {
             worker.run();
         } catch (IllegalStateException ignored) {
-            // 예외는 스케줄러가 로그로 남긴다. 여기서는 쉬기가 걸렸는지만 본다.
         }
 
         clock.advance(Duration.ofSeconds(29));

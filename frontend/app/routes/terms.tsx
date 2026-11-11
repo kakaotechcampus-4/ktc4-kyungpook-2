@@ -6,11 +6,6 @@ import { getTerms, type TermKey, type TermsDocument } from "@/lib/auth";
 
 const KEYS: readonly TermKey[] = ["tos", "privacy", "org_tos", "org_privacy", "org_child_data"];
 
-/**
- * 약관 화면 `/terms/:key` — 동의한 뒤 다시 읽는 곳. 로그인 없이 연다(약관은 공개 문서다).
- * 보호자 설정 "약관 보기"와 기관 계정 메뉴 "약관"이 연다. 키로 역할을 정하고(`org_` 이면 기관) 같은 역할의 약관을 탭으로 둔다.
- * 어느 묶음(기관 · 보호자)에도 넣지 않는다 — 가드가 로그인 · 동의를 요구하면 동의하기 전에 읽을 수 없다.
- */
 export async function clientLoader({ params }: { params: { key?: string } }) {
   const key = KEYS.find((k) => k === params.key);
   if (!key) return { key: null, docs: [] as TermsDocument[], failed: false };
@@ -27,7 +22,6 @@ export default function TermsPage() {
   const navigation = useNavigation();
   const revalidator = useRevalidator();
   const doc = docs.find((d) => d.key === key);
-  // 약관을 연 화면이 있으면 그리로 돌아간다. 주소로 바로 들어왔으면 돌아갈 곳이 없어 버튼을 숨긴다
   const canGoBack = typeof window !== "undefined" && (window.history.state?.idx ?? 0) > 0;
 
   return (
@@ -87,7 +81,6 @@ export default function TermsPage() {
         <>
           <nav aria-label="약관" className="-mx-1 flex flex-wrap gap-1.5">
             {docs.map((d) => (
-              // 탭끼리 옮길 때는 쌓지 않는다 — 뒤로 가기가 약관을 연 화면으로 바로 돌아간다
               <Link
                 key={d.key}
                 to={`/terms/${d.key}`}

@@ -1,13 +1,10 @@
 import type { TermsDocument } from "@/lib/auth";
 
-/**
- * mock 모드의 약관 본문. 실제 문안은 서버(`backend/src/main/resources/terms/`)에 있고, 여기는 화면 모양만 보이는 짧은 글이다.
- * 순서는 서버와 같다 — 보호자 둘, 기관 셋.
- */
 const VERSION = "2026-11-07";
+const PRIVACY_VERSION = "2026-11-09";
 
-function doc(key: TermsDocument["key"], title: string, body: string): TermsDocument {
-  return { key, title, version: VERSION, effectiveDate: VERSION, draft: true, body };
+function doc(key: TermsDocument["key"], title: string, body: string, version = VERSION): TermsDocument {
+  return { key, title, version, effectiveDate: version, draft: true, body };
 }
 
 export const MOCK_TERMS: TermsDocument[] = [
@@ -19,7 +16,8 @@ export const MOCK_TERMS: TermsDocument[] = [
   doc(
     "privacy",
     "개인정보와 민감정보 수집 · 이용",
-    "1. 일반 개인정보\n- 보호자: 카카오 회원번호, 이름(닉네임)\n- 아이: 이름, 생년월일\n\n2. 민감정보\n- 아이의 알레르기, 복용약\n\n보유 기간: [보유 기간: 팀 확인 필요]\n\n(mock 본문입니다. 실제 문안은 서버가 줍니다.)",
+    "1. 일반 개인정보\n- 보호자: 카카오 회원번호\n- 아이: 이름, 생년월일\n\n2. 민감정보\n- 아이의 알레르기, 복용약\n\n보유 기간: [보유 기간: 팀 확인 필요]\n\n(mock 본문입니다. 실제 문안은 서버가 줍니다.)",
+    PRIVACY_VERSION,
   ),
   doc(
     "org_tos",
@@ -29,7 +27,8 @@ export const MOCK_TERMS: TermsDocument[] = [
   doc(
     "org_privacy",
     "담당자 개인정보 수집 · 이용",
-    "수집 항목: 카카오 회원번호, 이름(닉네임), 소속 기관\n이용 목적: 로그인과 기관 화면 이용\n\n(mock 본문입니다. 실제 문안은 서버가 줍니다.)",
+    "수집 항목: 카카오 회원번호, 소속 기관\n이용 목적: 로그인과 기관 화면 이용\n\n(mock 본문입니다. 실제 문안은 서버가 줍니다.)",
+    PRIVACY_VERSION,
   ),
   doc(
     "org_child_data",

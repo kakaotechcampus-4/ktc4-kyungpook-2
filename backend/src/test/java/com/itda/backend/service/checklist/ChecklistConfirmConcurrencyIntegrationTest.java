@@ -57,15 +57,6 @@ import com.itda.backend.repository.user.TermsAgreementRepository;
 import com.itda.backend.repository.user.UserRepository;
 import com.itda.backend.service.invitation.ChildGuardianService;
 
-/**
- * 확인이 다른 확인 · 내리기와 겹칠 때를 PostgreSQL 에서 재현한다. 방식은 {@link LockContention} 이다 — 먼저 쪽을 커밋 직전에
- * 멈추고, 뒤의 요청이 그 잠금에서 실제로 기다린 뒤에 먼저 쪽을 커밋한다.
- *
- * <p>정책: 확인끼리는 받은 줄({@code checklist_target}) UPDATE 에서 줄을 서고 먼저 한 사람만 남는다. 확인과 내리기는 요청 행
- * ({@code checklist})에서 줄을 선다 — 확인은 공유 잠금, 내리기는 UPDATE. 내리기가 먼저면 확인은 404, 확인이 먼저면 확인이
- * 남고 내리기는 그 뒤에 204 다. 확인과 보호자 연결 해제는 아이 행({@code child})에서 줄을 선다 — 확인은 공유 잠금, 해제는
- * FOR UPDATE. 해제가 먼저면 확인은 403 이고 남지 않으며, 확인이 먼저면 확인이 남고 해제는 그 뒤에 204 다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -114,9 +105,9 @@ class ChecklistConfirmConcurrencyIntegrationTest {
     void setUp() {
         contention = new LockContention(transactionTemplate, entityManager, dataSource);
         Organization organization = organizationRepository.save(OrganizationFixture.center());
-        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-staff", "이선생", organization.getId())));
-        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom", "엄마")));
-        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad", "아빠")));
+        staff = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.organizationUser("kakao-staff", organization.getId())));
+        mom = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-mom")));
+        dad = TermsFixture.agreeAll(termsAgreementRepository, userRepository.save(UserFixture.parent("kakao-dad")));
         Child sky = childRepository.save(Child.of("하늘", LocalDate.of(2017, 3, 14)));
         childId = sky.getId();
         childOrganizationRepository.save(ChildOrganization.of(childId, organization.getId()));
@@ -148,9 +139,9 @@ class ChecklistConfirmConcurrencyIntegrationTest {
                 () -> guardianChecklistService.confirm(principal(mom), childId, checklistId),
                 () -> mockMvc.perform(withCsrf(post(confirmPath()), dad)).andReturn());
 
-        assertThat(held.first().confirmedByName()).isEqualTo("엄마");
+        assertThat(held.first().status()).isEqualTo("confirmed");
         assertThat(held.second().getResponse().getStatus()).isEqualTo(200);
-        assertThat(held.second().getResponse().getContentAsString()).contains("\"confirmedByName\":\"엄마\"");
+        assertThat(held.second().getResponse().getContentAsString()).contains("\"status\":\"confirmed\"");
         assertThat(target().getConfirmedBy()).isEqualTo(mom.getId());
     }
 
@@ -202,13 +193,11 @@ class ChecklistConfirmConcurrencyIntegrationTest {
                 () -> guardianChecklistService.confirm(principal(dad), childId, checklistId),
                 () -> mockMvc.perform(withCsrf(delete("/api/v1/guardians/me/children/" + childId), dad)).andReturn());
 
-        assertThat(held.first().confirmedByName()).isEqualTo("아빠");
+        assertThat(held.first().status()).isEqualTo("confirmed");
         assertThat(held.second().getResponse().getStatus()).isEqualTo(204);
         assertThat(target().getConfirmedBy()).isEqualTo(dad.getId());
         assertThat(childGuardianRepository.existsByChildIdAndUserIdAndDeletedAtIsNull(childId, dad.getId())).isFalse();
     }
-
-    // --- 도구 ---
 
     private ChecklistTarget target() {
         return checklistTargetRepository.findByChecklistIdIn(List.of(checklistId)).get(0);

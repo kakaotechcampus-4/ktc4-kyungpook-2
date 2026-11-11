@@ -42,7 +42,6 @@ class AiAvailabilityTest {
 
     @Test
     void 여러_워커가_한꺼번에_실패를_보고해도_15초가_안_되면_멈춘_것으로_보지_않는다() {
-        // 워커 네 개가 같은 순간 /health 를 본다. 횟수만 세면 한 번 깜빡여도 배너가 뜬다.
         for (int i = 0; i < 8; i++) {
             availability.reportHealth(false);
         }
@@ -63,7 +62,6 @@ class AiAvailabilityTest {
 
     @Test
     void 요약_워커가_재시도_끝에_멈추면_바로_멈춘_것으로_보고_60초는_상태_확인_성공으로_풀지_않는다() {
-        // /health 는 LLM 까지 보지 않아 LLM 장애 동안에도 성공한다. 바로 풀면 5초마다 배너가 깜빡인다.
         availability.reportCallGaveUp();
         Instant since = clock.instant();
 
@@ -106,7 +104,6 @@ class AiAvailabilityTest {
         assertThat(availability.status()).isEqualTo(new AiAvailability.Status(false, firstFailure));
     }
 
-    /** 실패를 보고하고 5초 흐르게 하기를 {@code times} 번 — 마지막 보고 뒤에는 시간을 옮기지 않는다. */
     private void failEvery5Seconds(int times) {
         for (int i = 0; i < times; i++) {
             if (i > 0 || clock.instant().isAfter(NOW.atZone(MutableClock.KST).toInstant())) {

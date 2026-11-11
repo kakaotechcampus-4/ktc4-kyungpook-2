@@ -17,7 +17,6 @@ spring:
             redirect-uri: "{baseUrl}/login/oauth2/code/kakao"
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_post
-            scope: profile_nickname
         provider:
           kakao:
             authorization-uri: https://kauth.kakao.com/oauth/authorize
@@ -28,7 +27,6 @@ spring:
 app:
   cors:
     allowed-origins: http://localhost:3000
-  # 테스트 중에 워커가 실제 AI 를 부르지 않도록 끈다.
   matching:
     worker:
       enabled: false
@@ -38,9 +36,23 @@ app:
   summary:
     worker:
       enabled: false
-    # 요청 기반(#181) 테스트를 그대로 두려고 끈다. 켜진 동작은 테스트가 설정을 직접 넘겨 본다.
     auto-run: false
   insight:
+    worker:
+      enabled: false
+  purge:
+    worker:
+      enabled: false
+  raw-record:
+    direct-upload:
+      sweeper:
+        enabled: false
+  withdrawal:
+    enabled: true
+    wait-for-completion: 2s
+    kakao:
+      admin-key: test-admin-key
+      app-id: "123456"
     worker:
       enabled: false
 

@@ -1,8 +1,10 @@
 package com.itda.backend.exception.record;
 
-public class RawRecordStorageException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
+
+public class RawRecordStorageException extends BusinessException {
 
     public RawRecordStorageException(String message, Throwable cause) {
-        super(message, cause);
+        super(RawRecordErrorCode.STORAGE_FAILED, message, cause);
     }
 }

@@ -297,9 +297,9 @@ def _facts_grounded(text: str, evidence: list[dict], state: SummaryState) -> boo
     기관명 대조는 더 하지 않는다. 묶음이 한 기관 안에서만 이뤄지면서
     "센터 일을 학교 것으로 옮겨 적는" 경우 자체가 입력에서 사라졌다.
 
-    ⚠️ **사람 이름은 검사하지 못한다.** SummaryInput 에 명부가 없어서 어떤
-    글자가 다른 아이 이름인지 알 방법이 없다. 매칭의 mentioned_child_ids 를
-    입력으로 받으면 잡을 수 있다 (schema.md §10.2-11 과 연결된다).
+    이 함수는 숫자와 횟수만 확인한다. 다른 아이 이름은 `assemble` 이 본다 —
+    전달받은 `other_child_names` 가 본문에 남으면 검토 대상(`needs_review`)으로
+    표시한다 (schema.md §5 "다른 아이 이름").
     """
     quotes = " ".join(e["quote"] for e in evidence)
 

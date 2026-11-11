@@ -14,10 +14,6 @@ import com.itda.backend.domain.invitation.ChildGuardian;
 
 public interface ChildGuardianRepository extends JpaRepository<ChildGuardian, Long> {
 
-    /**
-     * 연결·재연결·해제용. 해제된 행도 찾아서 되살릴 수 있게 {@code deletedAt} 조건을 걸지 않는다.
-     * 잠근 뒤 살아 있는지 다시 봐야, 같은 보호자의 동시 재연결이 둘 다 성공하지 않는다.
-     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select g from ChildGuardian g where g.childId = :childId and g.userId = :userId")
     Optional<ChildGuardian> findByChildIdAndUserIdForUpdate(
@@ -25,9 +21,10 @@ public interface ChildGuardianRepository extends JpaRepository<ChildGuardian, Lo
 
     List<ChildGuardian> findByChildIdAndDeletedAtIsNullOrderByLinkedAtAsc(Long childId);
 
-    /** 보호자의 아이 목록(G-10)용. 연결된 순서다 — 같은 시각이면 먼저 만든 행. */
     List<ChildGuardian> findByUserIdAndDeletedAtIsNullOrderByLinkedAtAscIdAsc(Long userId);
 
-    /** 보호자 권한 확인용. 해제된 연결은 권한이 아니다. */
+    @Query("select distinct g.childId from ChildGuardian g where g.userId = :userId and g.deletedAt is null order by g.childId")
+    List<Long> findLinkedChildIds(@Param("userId") Long userId);
+
     boolean existsByChildIdAndUserIdAndDeletedAtIsNull(Long childId, Long userId);
 }

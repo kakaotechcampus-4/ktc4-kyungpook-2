@@ -1,15 +1,10 @@
 package com.itda.backend.exception.invitation;
 
-public class InvitationException extends RuntimeException {
+import com.itda.backend.global.exception.BusinessException;
 
-    private final InvitationErrorCode errorCode;
+public class InvitationException extends BusinessException {
 
     public InvitationException(InvitationErrorCode errorCode) {
-        super(errorCode.getMessage());
-        this.errorCode = errorCode;
-    }
-
-    public InvitationErrorCode getErrorCode() {
-        return errorCode;
+        super(errorCode);
     }
 }

@@ -35,15 +35,11 @@ import com.itda.backend.exception.child.ChildException;
 import com.itda.backend.global.config.ClockConfig;
 import com.itda.backend.service.consent.ConsentStateReader;
 import com.itda.backend.service.user.UserService;
+import com.itda.backend.service.child.GuardianChildGuard;
 
-/**
- * 보호자의 기관 공유 내역 (G-45). 거둔 공유도 보여 주고, "지금 볼 수 있음" 은 기관 수신함과 같은 판정이다.
- *
- * <p>센터가 승인한 리포트 두 편을 학교가 받고, 센터 기록으로 만든 한 편은 활동지원사도 받았다.
- */
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({GuardianInstitutionShareService.class, ConsentStateReader.class, ClockConfig.class})
+@Import({GuardianInstitutionShareService.class, GuardianChildGuard.class, ConsentStateReader.class, ClockConfig.class})
 class GuardianInstitutionShareServiceTest {
 
     private static final String MOM = "u-mom";
@@ -96,7 +92,6 @@ class GuardianInstitutionShareServiceTest {
         em.persistAndFlush(SharingHistory.grant(childId, olderId, centerId, ReceiverType.ORGANIZATION, assistantId));
         schoolNewerGrantId = em.persistAndFlush(
                 SharingHistory.grant(childId, newerId, centerId, ReceiverType.ORGANIZATION, schoolId)).getId();
-        // 보호자 줄과 다른 아이 줄은 내역에 나오면 안 된다.
         em.persist(SharingHistory.grant(childId, newerId, centerId, ReceiverType.GUARDIAN, MOM_ID));
         em.persistAndFlush(
                 SharingHistory.grant(otherChildId, otherChildInsightId, centerId, ReceiverType.ORGANIZATION, schoolId));
@@ -146,7 +141,6 @@ class GuardianInstitutionShareServiceTest {
         assertThat(schoolShares().get(1).visible()).isTrue();
     }
 
-    /** 권한 줄이 살아 있어도 기관 수신함이 숨기면 보호자 화면도 가려짐이다. 거둔 기록이 없어 시각은 없다. */
     @Test
     void 명부에서_빠진_기관은_권한이_남아_있어도_가려짐이고_시각은_없다() {
         em.find(ChildOrganization.class, schoolEnrollmentId).delete();
@@ -179,7 +173,6 @@ class GuardianInstitutionShareServiceTest {
                 .isEqualTo(ChildErrorCode.CHILD_NOT_LINKED);
     }
 
-    /** 보호자 연결 행은 살아 있는데 아이가 삭제됐다. 연결만 보면 삭제된 아이의 내역이 나간다. */
     @Test
     void 연결은_살아_있어도_삭제된_아이는_403() {
         em.find(Child.class, childId).delete();
