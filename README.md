@@ -64,7 +64,8 @@
 
 ## 🏗 구조
 
-<img width="2172" height="724" alt="it-da 시스템 아키텍처 다이어그램" src="https://github.com/user-attachments/assets/1f5bb5ea-da45-4dcd-8170-fc37487cdf0f" />
+<img width="2098" height="750" alt="image" src="https://github.com/user-attachments/assets/23d3e8eb-e9ca-4337-a2c9-328f8217240f" />
+
 
 
 
