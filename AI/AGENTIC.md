@@ -1,15 +1,13 @@
 # Agentic 설계 — 분기 · 도구 · 상태 · 예외
 
 이 문서는 "단계 분기 · 도구 연동 · 상태 관리 · 예외 처리가 실제로 구현되어, 워크플로가 끝까지 안정적으로 돌아가는가"에 답합니다.
-잘된 점과 약한 점을 함께 적습니다. 에이전트마다 무엇을 하는지는 [README](README.md)에 있습니다.
+먼저 에이전트 다섯이 각각 어떻게 생겼는지 보고, 이어서 네 주제를 에이전트를 가로질러 봅니다. 잘된 점과 약한 점을 함께 적습니다.
 
 ---
 
 ## 한눈에
 
-```
-업로드 → 매칭 → 검증 → 요약 → [1차 검토] → 인사이트 → [2차 검토] → 알림 (보호자에게 메일)
-```
+[![업로드부터 매칭 · 검증 · 요약 · 교사 승인 · 인사이트 · 교사 승인 · 알림까지의 AI 워크플로](../docs/images/readme/ai-workflow.webp)](../docs/images/readme/ai-workflow.webp)
 
 - 매칭 · 검증 · 요약 · 인사이트 · 알림은 백엔드 워커가 주기적으로 일을 집어 AI 서버에 보냅니다. 사람이 누르지 않습니다
 - 사람에게 오는 것은 두 가지입니다. AI가 판단하기 어려운 기록(누구 것인지 애매함, 위험한 표현)과 두 번의 승인입니다
@@ -21,6 +19,70 @@
 | 도구 연동 | ⚠️ | 지난 기록을 찾는 읽기 도구 하나와 메일을 보내는 MCP 서버 하나가 있습니다. 읽기 도구는 기본으로 꺼져 있습니다 |
 | 상태 관리 | ✅ | 일지 상태 16개, 멈춘 일은 워커가 켜질 때 되돌립니다 |
 | 예외 처리 | ✅ | "빈 결과"와 "모델 장애"를 섞지 않고, 실패 종류를 나눠 기록합니다 |
+
+---
+
+## 에이전트별로 보기
+
+카드마다 그래프의 노드를 순서대로 그렸습니다. **흰 칸은 코드가 정하고, 초록 칸은 모델이 판단하고, 청록 칸은 도구를 부릅니다.**
+점선 칸은 조건이 맞을 때만 돕니다. 이미지를 누르면 크게 볼 수 있습니다.
+
+### 매칭 — 이 기록은 어느 아이의 것인가
+
+[![매칭 에이전트: extract · shortlist · llm_judge · decide 노드와 AUTO · REVIEW · MULTI · UNMATCHED 판정](../docs/images/agentic/matching.webp)](../docs/images/agentic/matching.webp)
+
+- 판정은 위에서부터 먼저 걸리는 조건이 이깁니다. **글자로 된 근거가 없으면 모델보다 먼저 끊습니다.** 모델은 근거가 없어도 명부의 아무 아이나 골라 높은 확신을 주기 때문입니다
+- `AUTO`는 선생님 확인을 건너뜁니다. 여기서 틀리면 다른 아이의 기록이 보호자에게 가므로, 어떤 지표보다 오매칭 0건이 먼저입니다
+- 판정 이름은 모델의 확신이 아니라 **선생님이 무엇을 해야 하는가**로 지었습니다
+
+코드 [matching/graph.py](matching/graph.py) · [matching/nodes.py](matching/nodes.py) · 기준 [matching/CRITERIA.md](matching/CRITERIA.md)
+
+### 검증 — 그대로 공유해도 안전한가
+
+[![검증 에이전트: perceive · plan · act · reflect 노드와 PASS · REVIEW · BLOCK 판정](../docs/images/agentic/validation.webp)](../docs/images/agentic/validation.webp)
+
+- 위험한 표현은 여덟 가지입니다. 진단명 · 개인정보 표현은 막고(`BLOCK`), 단정 · 추측 · 감정 · 위험 행동 표현, 건강 관리 기록, 여러 아이 언급은 선생님이 확인합니다(`REVIEW`)
+- 단정 · 위험 행동 표현만 **대상 아이 본인 이야기인지** 따집니다. 나머지는 누구 이야기든 보호자에게 전해지는 것 자체가 문제라 따지지 않습니다
+- `BLOCK`된 일지는 선생님이 본문을 고치면 다시 검증을 받습니다 (아래 3. 상태 관리)
+
+코드 [validation/nodes.py](validation/nodes.py) · [validation/config.py](validation/config.py) · 기준 [evals/scripts/validation/README.md](evals/scripts/validation/README.md)
+
+### 요약 — 하루치 일지를 한 편으로
+
+[![요약 에이전트: gather · write · ground · assemble 노드와 문장별 근거 대조](../docs/images/agentic/summary.webp)](../docs/images/agentic/summary.webp)
+
+- 묶음은 **아이 × 날짜 × 기관**입니다. 기관을 가로지르는 문장은 요약이 아니라 승인을 거친 요약 위에서 인사이트가 만듭니다
+- 모델에게는 문장과 인용만 받고, 코드가 네 단계로 거릅니다
+  ```
+  ① 인용을 원문에서 찾는다              못 찾으면 그 근거를 버린다
+  ② 근거가 0개가 된 문장을 버린다
+  ③ 이름 · 숫자 · 시간 · 기관명이 근거에 없으면 버린다
+  ④ 남은 문장으로 본문을 잇고, 반영된 일지를 센다
+  ```
+- 고쳐 쓰는 루프는 재 보고 넣지 않았습니다. 실데이터에서 버려지는 문장이 575개 중 2개(0.35%)뿐이라 고칠 거리가 없습니다. 루프를 넣은 인사이트는 14.9%였습니다
+
+코드 [summary/nodes.py](summary/nodes.py) · 기준 [summary/CRITERIA.md](summary/CRITERIA.md)
+
+### 인사이트 — 여러 기관에 걸친 패턴 찾기
+
+[![인사이트 에이전트: perceive · plan · act · reflect · refine 노드와 성립 조건](../docs/images/agentic/insight.webp)](../docs/images/agentic/insight.webp)
+
+- 인사이트는 요약 한 편에서는 나올 수 없는 묶음입니다. **묶기 · 효과 비교 · 기관 간 차이 · 변화** 중 하나 이상이어야 합니다
+- 동의하지 않은 기관의 기록은 맨 처음(`perceive`)에 뺍니다. 받는 쪽만 막으면 철회된 기관의 기록이 재료로 들어가기 때문입니다
+- 근거가 최소 개수보다 적으면 모델을 부르지 않습니다. 성립할 인사이트가 없기 때문입니다
+- 고쳐 쓰기와 도구는 기본으로 꺼져 있습니다 (`INSIGHT_WEAK_MODE` · `INSIGHT_TOOLS`). 켜면 갈래가 어떻게 나뉘는지는 아래 1. 단계 분기와 2. 도구 연동에 있습니다
+
+코드 [insight/nodes.py](insight/nodes.py) · [insight/tools.py](insight/tools.py) · 기준 [insight/CRITERIA.md](insight/CRITERIA.md)
+
+### 알림 — 승인된 인사이트를 보호자에게
+
+[![알림 에이전트: assemble · check · send 노드와 sent · blocked · no_recipient · 503 결과](../docs/images/agentic/notify.webp)](../docs/images/agentic/notify.webp)
+
+- 아이 정보가 기관 밖으로 나가는 **유일한 길**입니다. 그래서 되돌릴 수 없는 쓰기는 모델이 아니라 코드가 쥡니다
+- 끝나는 길은 다섯입니다 — `sent` · `no_recipient` · `nothing_to_send` · `blocked` · `503`. 받을 사람이 없던 것을 `sent`로 묶지 않습니다. 장애는 아니지만 메일은 나가지 않았기 때문입니다
+- `blocked`는 다시 보내도 같은 글이 나오므로 재시도하지 않고 선생님 확인으로 보냅니다
+
+코드 [notify/graph.py](notify/graph.py) · [notify/nodes.py](notify/nodes.py) · [mcp_servers/itda_notify.py](mcp_servers/itda_notify.py) · 기준 [notify/CRITERIA.md](notify/CRITERIA.md)
 
 ---
 
