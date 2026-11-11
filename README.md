@@ -1,6 +1,6 @@
 # 잇다(ITDA) — 아이를 함께 돌보는 기관의 기록을 보호자에게 잇다
 
-<img width="1774" height="887" alt="image" src="https://github.com/user-attachments/assets/289d6ab4-f632-4a6d-9e8e-b2d4a5eddeb5" />
+![잇다 소개 — 보호자에게 주간 리포트 메일이 도착하고, 리포트와 지난 기록을 여는 모습](docs/images/readme/intro.webp)
 
 > 학교 · 발달센터 · 활동보조 기관과 보호자를 위한 돌봄 기록 공유 서비스
 
